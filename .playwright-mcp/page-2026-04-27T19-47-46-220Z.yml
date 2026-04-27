@@ -1,0 +1,384 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e11]:
+        - img [ref=e12]
+        - text: app.paperworkmonsters.com/assistant
+      - generic [ref=e15]:
+        - complementary [ref=e16]:
+          - generic [ref=e17]:
+            - generic [ref=e21]: Paperwork Monsters
+            - link "My assistant" [ref=e22] [cursor=pointer]:
+              - /url: Paperwork Monsters Assistant.html
+              - img [ref=e24]
+              - generic [ref=e30]: My assistant
+            - navigation [ref=e32]:
+              - button "Dashboard" [ref=e33] [cursor=pointer]:
+                - img [ref=e35]
+                - generic [ref=e38]: Dashboard
+              - button "Jobs 7" [ref=e39] [cursor=pointer]:
+                - img [ref=e41]
+                - generic [ref=e43]: Jobs
+                - generic [ref=e44]: "7"
+              - button "Clients" [ref=e45] [cursor=pointer]:
+                - img [ref=e47]
+                - generic [ref=e50]: Clients
+              - button "Quotes 4" [ref=e51] [cursor=pointer]:
+                - img [ref=e53]
+                - generic [ref=e56]: Quotes
+                - generic [ref=e57]: "4"
+              - button "Contracts" [ref=e58] [cursor=pointer]:
+                - img [ref=e60]
+                - generic [ref=e63]: Contracts
+              - button "Invoices 3" [ref=e64] [cursor=pointer]:
+                - img [ref=e66]
+                - generic [ref=e69]: Invoices
+                - generic [ref=e70]: "3"
+              - button "Payments" [ref=e71] [cursor=pointer]:
+                - img [ref=e73]
+                - generic [ref=e75]: Payments
+              - button "Conversations 2" [ref=e76] [cursor=pointer]:
+                - img [ref=e78]
+                - generic [ref=e80]: Conversations
+                - generic [ref=e81]: "2"
+              - generic [ref=e82]: Account
+              - button "Settings" [ref=e83] [cursor=pointer]:
+                - img [ref=e85]
+                - generic [ref=e88]: Settings
+            - generic [ref=e89]:
+              - generic [ref=e90]: DR
+              - generic [ref=e91]:
+                - generic [ref=e92]: Diego R.
+                - generic [ref=e93]: Riley Roofing Co.
+              - button "Account" [ref=e94] [cursor=pointer]:
+                - img [ref=e95]
+        - main [ref=e97]:
+          - generic [ref=e98]:
+            - button "Toggle sidebar" [ref=e99] [cursor=pointer]:
+              - img [ref=e100]
+            - generic [ref=e102]:
+              - generic [ref=e103]: My assistant · always on
+              - generic [ref=e104]: What can I take off your plate?
+            - generic [ref=e105]:
+              - img [ref=e106]
+              - textbox "Search jobs, clients, invoices..." [ref=e109]
+              - generic [ref=e110]: ⌘K
+            - button [ref=e111] [cursor=pointer]:
+              - img [ref=e112]
+          - generic [ref=e118]:
+            - generic [ref=e119]:
+              - link "Back to dashboard" [ref=e120] [cursor=pointer]:
+                - /url: Paperwork Monsters Dashboard.html
+                - img [ref=e121]
+              - generic [ref=e124]:
+                - generic [ref=e125]: Tom & Linda K. · Garage epoxy
+                - generic [ref=e126]: Quote locked · finishing terms with Bossie
+              - generic [ref=e128]:
+                - button "Share thread" [ref=e129] [cursor=pointer]:
+                  - img [ref=e130]
+                - button "More" [ref=e133] [cursor=pointer]:
+                  - img [ref=e134]
+            - generic [ref=e138]:
+              - generic [ref=e139]:
+                - generic [ref=e140]:
+                  - generic [ref=e141]: Client
+                  - generic [ref=e142]: Tom & Linda K.
+                - generic [ref=e143]:
+                  - generic [ref=e144]: Quote total
+                  - generic [ref=e145]: $3,400
+                - generic [ref=e146]:
+                  - generic [ref=e147]:
+                    - img [ref=e149]
+                    - text: Quote
+                  - generic [ref=e151]: →
+                  - generic [ref=e152]:
+                    - generic [ref=e153]: "2"
+                    - text: Terms
+                  - generic [ref=e154]: →
+                  - generic [ref=e155]:
+                    - generic [ref=e156]: "3"
+                    - text: Send
+                - button "Back to chat" [ref=e157] [cursor=pointer]:
+                  - img [ref=e158]
+                  - text: Back to chat
+              - generic [ref=e160]: Today · 8:42 AM · Phase 1 — Chat
+              - generic [ref=e161]:
+                - generic [ref=e162]: DR
+                - generic [ref=e163]:
+                  - generic [ref=e164]:
+                    - button "Play" [ref=e165] [cursor=pointer]:
+                      - img [ref=e166]
+                    - generic [ref=e195]: 0:23
+                  - generic [ref=e196]: 8:42 AM · transcribed
+              - generic [ref=e199]:
+                - generic [ref=e200]:
+                  - text: Got it —
+                  - strong [ref=e201]: Tom & Linda K.
+                  - text: ", 2-car garage epoxy floor. Heard you say \""
+                  - emphasis [ref=e202]: standard prep, gray base with flakes, two-car about 480 sqft
+                  - text: ."
+                  - text: "Couple quick checks before I draft:"
+                  - list [ref=e203]:
+                    - listitem [ref=e204]: Concrete grinding included or just etch?
+                    - listitem [ref=e205]: Polyurea topcoat or polyaspartic?
+                - generic [ref=e206]: 8:42 AM
+              - generic [ref=e207]:
+                - generic [ref=e208]: DR
+                - generic [ref=e209]:
+                  - generic [ref=e210]:
+                    - text: Grind. Polyaspartic. Here's the floor — couple oil stains in the back corner, factor that in.
+                    - generic [ref=e211]:
+                      - img [ref=e213]
+                      - img [ref=e218]
+                      - img [ref=e223]
+                  - generic [ref=e227]: 8:43 AM
+              - generic [ref=e230]:
+                - generic [ref=e231]:
+                  - text: On it. Pulled your
+                  - strong [ref=e232]: "\"Garage Epoxy — Premium\""
+                  - text: template, swapped in the polyaspartic line, and added 1.5 hr extra prep for the oil staining. Quote ready to look at.
+                - generic [ref=e233]:
+                  - generic [ref=e234]:
+                    - img [ref=e236]
+                    - generic [ref=e239]:
+                      - generic [ref=e240]: "Quote #Q-2026-041"
+                      - generic [ref=e241]: Tom & Linda K. · 2-car garage · ~480 sqft
+                    - generic [ref=e242]: Draft
+                  - generic [ref=e243]:
+                    - generic [ref=e244]:
+                      - generic [ref=e245]: Surface prep + grind
+                      - strong [ref=e246]: $840
+                    - generic [ref=e247]:
+                      - generic [ref=e248]: Polyaspartic system (3-coat)
+                      - strong [ref=e249]: $1,680
+                    - generic [ref=e250]:
+                      - generic [ref=e251]: Color flakes & sealing
+                      - strong [ref=e252]: $520
+                    - generic [ref=e253]:
+                      - generic [ref=e254]: Materials & mobilization
+                      - strong [ref=e255]: $360
+                    - generic [ref=e256]:
+                      - generic [ref=e257]: Total
+                      - strong [ref=e258]: $3,400
+                - generic [ref=e259]: 8:43 AM · 47 sec to draft
+              - generic [ref=e260]:
+                - generic [ref=e261]: DR
+                - generic [ref=e262]:
+                  - generic [ref=e263]: Looks good. Lock it in.
+                  - generic [ref=e264]: 8:44 AM
+              - generic [ref=e267]:
+                - generic [ref=e268]:
+                  - text: Locked at
+                  - strong [ref=e269]: $3,400
+                  - text: . Want to wrap the contract terms now? Should take about 90 seconds — mostly clicks.
+                - generic [ref=e270]:
+                  - img [ref=e272]
+                  - generic [ref=e275]:
+                    - generic [ref=e276]: Continue to terms
+                    - generic [ref=e277]: Payment, warranty, dispute, governing state — 7 quick questions
+                  - button "Start" [ref=e278] [cursor=pointer]:
+                    - text: Start
+                    - img [ref=e279]
+                - generic [ref=e281]: 8:44 AM
+              - generic [ref=e284]:
+                - img [ref=e285]
+                - text: Phase 2 — Contract terms
+              - generic [ref=e291]:
+                - generic [ref=e292]:
+                  - generic [ref=e293]:
+                    - img [ref=e295]
+                    - generic [ref=e298]:
+                      - generic [ref=e299]: Contract terms
+                      - generic [ref=e300]: Tap an answer · last button is always Custom
+                    - generic [ref=e301]:
+                      - img [ref=e302]
+                      - text: Standard residential
+                    - button "All-on-one" [ref=e304] [cursor=pointer]:
+                      - img [ref=e305]
+                      - text: All-on-one
+                  - generic [ref=e306]:
+                    - generic [ref=e307] [cursor=pointer]:
+                      - generic [ref=e308]: ✓
+                      - generic [ref=e309]: "Config:"
+                      - generic [ref=e310]: Standard residential
+                      - img [ref=e311]
+                    - generic [ref=e313] [cursor=pointer]:
+                      - generic [ref=e314]: ✓
+                      - generic [ref=e315]: "Customer:"
+                      - generic [ref=e316]: Tom & Linda K.
+                      - img [ref=e317]
+                    - generic [ref=e319] [cursor=pointer]:
+                      - generic [ref=e320]: ✓
+                      - generic [ref=e321]: "Start:"
+                      - generic [ref=e322]: Mon May 4
+                      - img [ref=e323]
+                    - generic [ref=e325] [cursor=pointer]:
+                      - generic [ref=e326]: ✓
+                      - generic [ref=e327]: "Wraps:"
+                      - generic [ref=e328]: 2 days · May 5
+                      - img [ref=e329]
+                  - generic [ref=e331]:
+                    - generic [ref=e332]: Step 5 of 10 · Payment terms
+                    - heading "How do you want to get paid?" [level=3] [ref=e333]
+                    - generic [ref=e334]:
+                      - button "50 / 50 $1,700 deposit · $1,700 on finish" [ref=e335] [cursor=pointer]:
+                        - text: 50 / 50
+                        - generic [ref=e336]: $1,700 deposit · $1,700 on finish
+                      - button "30 / 30 / 40 $1,020 / $1,020 / $1,360" [ref=e337] [cursor=pointer]:
+                        - text: 30 / 30 / 40
+                        - generic [ref=e338]: $1,020 / $1,020 / $1,360
+                      - button "Net 15 — full $3,400 due 15 days after wrap" [ref=e339] [cursor=pointer]:
+                        - text: Net 15 — full
+                        - generic [ref=e340]: $3,400 due 15 days after wrap
+                      - button "Deposit + balance $500 hold · balance on finish" [ref=e341] [cursor=pointer]:
+                        - text: Deposit + balance
+                        - generic [ref=e342]: $500 hold · balance on finish
+                      - button "Custom… Tell Bossie a different schedule" [ref=e343] [cursor=pointer]:
+                        - img [ref=e344]
+                        - text: Custom…
+                        - generic [ref=e346]: Tell Bossie a different schedule
+                    - generic [ref=e347]:
+                      - img [ref=e348]
+                      - text: "Defaults:"
+                      - strong [ref=e350]: Net 15 · 1.5% late fee
+                      - text: — editable after picking
+                  - generic [ref=e351]:
+                    - generic [ref=e352]: "Up next:"
+                    - generic [ref=e353]:
+                      - generic [ref=e354]: "6"
+                      - text: Warranty
+                    - generic [ref=e355]:
+                      - generic [ref=e356]: "7"
+                      - text: Termination
+                    - generic [ref=e357]:
+                      - generic [ref=e358]: "8"
+                      - text: Dispute
+                    - generic [ref=e359]:
+                      - generic [ref=e360]: "9"
+                      - text: Governing state
+                    - generic [ref=e361]:
+                      - generic [ref=e362]: "10"
+                      - text: State notices
+                  - generic [ref=e363]:
+                    - generic [ref=e364]: 4 of 10 done
+                    - button "Finalize & send" [ref=e367]:
+                      - img [ref=e368]
+                      - text: Finalize & send
+                - generic [ref=e370]: 8:44 AM · autosaving as you tap
+            - generic [ref=e371]:
+              - generic [ref=e372]: "Or just type:"
+              - button "\"Net 30 instead\"" [ref=e373] [cursor=pointer]:
+                - img [ref=e374]
+                - text: "\"Net 30 instead\""
+              - button "Re-open the quote" [ref=e376] [cursor=pointer]:
+                - img [ref=e377]
+                - text: Re-open the quote
+              - button "Use last contract" [ref=e382] [cursor=pointer]:
+                - img [ref=e383]
+                - text: Use last contract
+            - generic [ref=e385]:
+              - generic [ref=e386]:
+                - textbox "Tell me what you need — or hit the mic and just talk." [ref=e387]
+                - generic [ref=e388]:
+                  - button "Attach photo" [ref=e389] [cursor=pointer]:
+                    - img [ref=e390]
+                  - button "Attach file" [ref=e394] [cursor=pointer]:
+                    - img [ref=e395]
+                  - button "Voice memo" [ref=e397] [cursor=pointer]:
+                    - img [ref=e398]
+                  - button "Send" [ref=e401] [cursor=pointer]:
+                    - img [ref=e402]
+              - generic [ref=e404]:
+                - generic [ref=e405]: ⏎
+                - text: send ·
+                - generic [ref=e406]: ⇧⏎
+                - text: new line ·
+                - generic [ref=e407]: ⌘K
+                - text: commands
+    - generic [ref=e408]: Desktop · 1240 × 1040
+  - generic [ref=e410]:
+    - generic [ref=e412]:
+      - generic [ref=e414]:
+        - generic [ref=e415]: 9:41
+        - generic [ref=e416]:
+          - img [ref=e417]
+          - img [ref=e418]
+          - img [ref=e422]
+      - generic [ref=e424]:
+        - button "Back" [ref=e425]:
+          - img [ref=e426]
+        - generic [ref=e430]:
+          - generic [ref=e431]: Tom & Linda K.
+          - generic [ref=e432]: $3,400 · finishing terms
+        - button "More" [ref=e434]:
+          - img [ref=e435]
+      - generic [ref=e439]:
+        - generic [ref=e440]:
+          - generic [ref=e441]: ✓
+          - text: Quote
+        - generic [ref=e442]: ›
+        - generic [ref=e443]:
+          - generic [ref=e444]: "2"
+          - text: Terms
+        - generic [ref=e445]: ›
+        - generic [ref=e446]: Send
+        - generic [ref=e447]: 4/10
+      - generic [ref=e448]:
+        - generic [ref=e449]: Phase 1 — done
+        - generic [ref=e450]:
+          - generic [ref=e451]: DR
+          - generic [ref=e453]:
+            - button "Play" [ref=e454] [cursor=pointer]:
+              - img [ref=e455]
+            - generic [ref=e484]: 0:23
+        - generic [ref=e489]:
+          - img [ref=e491]
+          - generic [ref=e494]:
+            - generic [ref=e495]: Q-2026-041 · $3,400
+            - generic [ref=e496]: 2-car garage · 4 line items
+          - generic [ref=e497]: Locked
+        - generic [ref=e500]: Phase 2 — Terms
+        - generic [ref=e505]:
+          - generic [ref=e506]:
+            - img [ref=e508]
+            - generic [ref=e511]:
+              - generic [ref=e512]: Contract terms
+              - generic [ref=e513]:
+                - img [ref=e514]
+                - text: Standard residential
+          - generic [ref=e516]:
+            - generic [ref=e517]:
+              - generic [ref=e518]: ✓
+              - text: Tom & Linda
+            - generic [ref=e519]:
+              - generic [ref=e520]: ✓
+              - text: May 4
+            - generic [ref=e521]:
+              - generic [ref=e522]: ✓
+              - text: 2 days
+          - generic [ref=e523]:
+            - generic [ref=e524]: Step 5 of 10 · Payment
+            - heading "How do you want to get paid?" [level=3] [ref=e525]
+            - generic [ref=e526]:
+              - button "50 / 50 $1,700 deposit · $1,700 on finish" [ref=e527]:
+                - generic [ref=e528]: 50 / 50
+                - generic [ref=e529]: $1,700 deposit · $1,700 on finish
+              - button "30 / 30 / 40 $1,020 / $1,020 / $1,360" [ref=e530]:
+                - generic [ref=e531]: 30 / 30 / 40
+                - generic [ref=e532]: $1,020 / $1,020 / $1,360
+              - button "Net 15 — full $3,400 due 15 days after wrap" [ref=e533]:
+                - generic [ref=e534]: Net 15 — full
+                - generic [ref=e535]: $3,400 due 15 days after wrap
+              - button "Custom — tell Bossie" [ref=e536]:
+                - img [ref=e537]
+                - text: Custom — tell Bossie
+          - generic [ref=e542]: 4/10
+      - generic [ref=e543]:
+        - generic [ref=e544]:
+          - button "Photo" [ref=e545]:
+            - img [ref=e546]
+          - generic [ref=e550]: Or just type "Net 30 instead"…
+          - button "Voice" [ref=e551]:
+            - img [ref=e552]
+        - generic [ref=e555]: TAP TO ANSWER · TYPE TO OVERRIDE
+    - generic [ref=e557]: Mobile · 380 × 760

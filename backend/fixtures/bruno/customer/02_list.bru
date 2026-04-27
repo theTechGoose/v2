@@ -1,0 +1,23 @@
+meta {
+  name: 02 list customers
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/customers
+  auth: none
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("body is an array", function() {
+    expect(res.getBody()).to.be.an("array");
+  });
+  test("contains created customer", function() {
+    const ids = res.getBody().map((c) => c.id);
+    expect(ids).to.include(bru.getVar("customerId"));
+  });
+}

@@ -1,0 +1,25 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - link "P Paperwork Monsters" [ref=e5] [cursor=pointer]:
+      - /url: /
+      - generic [ref=e6]: P
+      - generic [ref=e7]: Paperwork Monsters
+    - group "Language" [ref=e8]:
+      - button "EN" [ref=e9] [cursor=pointer]
+      - button "ES" [ref=e10] [cursor=pointer]
+  - heading "Check your phone" [level=1] [ref=e11]
+  - paragraph [ref=e12]:
+    - text: We just texted a 6-digit code to
+    - strong [ref=e13]: (512) 555-1234
+  - generic [ref=e14]:
+    - textbox "Digit 1" [ref=e15]
+    - textbox "Digit 2" [ref=e16]
+    - textbox "Digit 3" [ref=e17]
+    - textbox "Digit 4" [ref=e18]
+    - textbox "Digit 5" [ref=e19]
+    - textbox "Digit 6" [ref=e20]
+  - button "Verify" [disabled] [ref=e21]
+  - generic [ref=e22]:
+    - link "Wrong number? Edit" [ref=e23] [cursor=pointer]:
+      - /url: /
+    - button "Resend code" [ref=e24] [cursor=pointer]

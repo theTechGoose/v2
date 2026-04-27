@@ -1,0 +1,19 @@
+meta {
+  name: 05 delete quote
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/quotes/{{quoteId}}
+  auth: none
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("ok flag", function() {
+    expect(res.getBody().ok).to.equal(true);
+  });
+}

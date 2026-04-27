@@ -1,0 +1,15 @@
+meta {
+  name: 09 delete the charge entry (e.g., correction)
+  type: http
+  seq: 9
+}
+
+delete {
+  url: {{baseUrl}}/entries/{{ledgerChargeEntryId}}
+  auth: none
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("ok flag", function() { expect(res.getBody().ok).to.equal(true); });
+}

@@ -1,0 +1,434 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - link "Paperwork Monsters Paperwork Monsters" [ref=e4] [cursor=pointer]:
+      - /url: "#"
+      - img "Paperwork Monsters" [ref=e5]
+      - generic [ref=e6]: Paperwork
+      - emphasis [ref=e7]: Monsters
+    - tablist "Language" [ref=e8]:
+      - button "I speak English" [ref=e9] [cursor=pointer]
+      - button "Yo hablo Español" [ref=e10] [cursor=pointer]
+    - link "Get Started" [ref=e11] [cursor=pointer]:
+      - /url: "#contact"
+  - generic [ref=e13]:
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]: For pros
+        - generic [ref=e17]: Built for contractors who work with their hands
+      - heading "You do the work. We handle the quotes. contracts. invoices. paperwork." [level=1] [ref=e18]:
+        - text: You do the work.
+        - text: We handle the
+        - generic [ref=e20]:
+          - generic [ref=e21]: quotes.
+          - generic [ref=e22]: contracts.
+          - generic [ref=e23]: invoices.
+          - generic [ref=e24]: paperwork.
+      - paragraph [ref=e25]: Quotes, contracts, and invoices done right — so you get paid what your work is worth. No apps to learn. Just text us.
+      - generic [ref=e26]:
+        - link "Get Started →" [ref=e27] [cursor=pointer]:
+          - /url: "#contact"
+        - link "See How It Works" [ref=e28] [cursor=pointer]:
+          - /url: "#how-it-works"
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - generic [ref=e31]: MR
+          - generic [ref=e32]: JG
+          - generic [ref=e33]: CL
+          - generic [ref=e34]: TS
+        - generic [ref=e35]:
+          - strong [ref=e36]: 1,200+ contractors
+          - text: getting paid faster
+    - generic [ref=e38]:
+      - generic [ref=e39]:
+        - img [ref=e41]
+        - generic [ref=e43]:
+          - strong [ref=e44]: Quote sent
+          - emphasis [ref=e45]: 9:42 AM
+      - generic [ref=e46]:
+        - generic [ref=e47]: RH
+        - generic [ref=e48]:
+          - strong [ref=e49]: R. Hernández
+          - emphasis [ref=e50]: Contract signed
+        - img [ref=e52]
+      - generic [ref=e54]:
+        - generic [ref=e55]:
+          - generic [ref=e56]: Quote
+          - generic [ref=e57]: "#PM-2641"
+        - heading [level=4] [ref=e58]: Kitchen remodel
+        - generic [ref=e59]: R. Hernández · Apr 26
+        - generic [ref=e60]:
+          - generic [ref=e61]:
+            - generic [ref=e62]: Cabinets
+            - strong [ref=e63]: $ 4,200
+          - generic [ref=e64]:
+            - generic [ref=e65]: Counters
+            - strong [ref=e66]: $ 3,990
+          - generic [ref=e67]:
+            - generic [ref=e68]: Labor (3 days)
+            - strong [ref=e69]: $ 1,950
+          - generic [ref=e70]:
+            - generic [ref=e71]: Total
+            - strong [ref=e72]: $ 10,990
+        - generic [ref=e75]: Signed ✓
+      - generic [ref=e78]:
+        - generic [ref=e79]:
+          - generic [ref=e80]: PM
+          - generic [ref=e81]:
+            - strong [ref=e82]: Paperwork Monsters
+            - emphasis [ref=e83]: Online • SMS
+        - generic [ref=e84]:
+          - generic [ref=e85]: Kitchen remodel for the Hernández family. Cabinets, quartz counters, 3 days labor.
+          - generic [ref=e86]: Got it. Pulling comps now…
+          - generic [ref=e87]:
+            - generic [ref=e88]:
+              - generic [ref=e89]: Cabinets
+              - strong [ref=e90]: $4,200
+            - generic [ref=e91]:
+              - generic [ref=e92]: Counters
+              - strong [ref=e93]: $3,990
+            - generic [ref=e94]:
+              - generic [ref=e95]: Labor
+              - strong [ref=e96]: $1,950
+            - generic [ref=e97]:
+              - generic [ref=e98]: Total
+              - strong [ref=e99]: $10,990
+            - generic [ref=e100]: Send to client →
+          - generic [ref=e101]: Send it 👍
+        - generic [ref=e102]:
+          - generic [ref=e103]: Type a message…
+          - generic [ref=e104]: ↑
+      - img [ref=e105]
+      - img [ref=e107]
+      - img [ref=e109]
+  - generic [ref=e112]:
+    - generic [ref=e113]:
+      - text: 30% average revenue increase
+      - text: Professional quotes in minutes
+      - text: Contracts with one tap
+      - text: Invoices that track payments
+      - text: No apps to download
+      - text: Just text us
+    - generic [ref=e120]:
+      - text: 30% average revenue increase
+      - text: Professional quotes in minutes
+      - text: Contracts with one tap
+      - text: Invoices that track payments
+      - text: No apps to download
+      - text: Just text us
+  - generic [ref=e128]:
+    - generic [ref=e129]:
+      - generic [ref=e130]: The problem
+      - heading "Good work deserves good paperwork" [level=2] [ref=e131]:
+        - text: Good work deserves
+        - emphasis [ref=e132]: good paperwork
+      - paragraph [ref=e133]: You know your trade. But chasing down quotes on scrap paper and guessing at prices is costing you real money.
+    - generic [ref=e134]:
+      - generic [ref=e135]:
+        - generic [ref=e136]: "01"
+        - heading "Leaving money on the table" [level=3] [ref=e137]
+        - paragraph [ref=e138]: Without solid pricing info, most contractors bid too low. That means less money in your pocket for the same hard work.
+      - generic [ref=e139]:
+        - generic [ref=e140]: "02"
+        - heading "Paperwork that doesn't look right" [level=3] [ref=e141]
+        - paragraph [ref=e142]: Handwritten quotes on notebook paper don't build trust. Clients pick the contractor who looks like they have it together.
+      - generic [ref=e143]:
+        - generic [ref=e144]: "03"
+        - heading "Hours you're not getting paid for" [level=3] [ref=e145]
+        - paragraph [ref=e146]: Every hour figuring out paperwork is an hour you could be on a job site earning real money.
+  - generic [ref=e148]:
+    - generic [ref=e149]:
+      - generic [ref=e150]: One text. Three documents.
+      - heading "Quote, contract, invoice — handled." [level=2] [ref=e151]:
+        - text: Quote, contract, invoice —
+        - emphasis [ref=e152]: handled
+        - text: .
+      - paragraph [ref=e153]: Send us a message. We send back a real document with real numbers — not a sketch on the back of an envelope.
+    - tablist [ref=e154]:
+      - button "01 Quote" [ref=e155] [cursor=pointer]:
+        - generic [ref=e156]: "01"
+        - generic [ref=e157]: Quote
+      - button "02 Contract" [ref=e158] [cursor=pointer]:
+        - generic [ref=e159]: "02"
+        - generic [ref=e160]: Contract
+      - button "03 Invoice" [ref=e161] [cursor=pointer]:
+        - generic [ref=e162]: "03"
+        - generic [ref=e163]: Invoice
+    - generic [ref=e164]:
+      - generic [ref=e165]:
+        - generic [ref=e166]:
+          - heading "Quote" [level=5] [ref=e167]
+          - generic [ref=e168]:
+            - strong [ref=e169]: "#PM-2641"
+            - text: April 26, 2026
+        - generic [ref=e170]:
+          - generic [ref=e171]:
+            - generic [ref=e172]: Demolition & haul-off
+            - generic [ref=e173]: "1"
+            - generic [ref=e174]: $ 850
+            - generic [ref=e175]: $ 850
+          - generic [ref=e176]:
+            - generic [ref=e177]: Cabinets — solid maple
+            - generic [ref=e178]: "12"
+            - generic [ref=e179]: $ 350
+            - generic [ref=e180]: $ 4,200
+          - generic [ref=e181]:
+            - generic [ref=e182]: Quartz countertops (sq ft)
+            - generic [ref=e183]: "42"
+            - generic [ref=e184]: $ 95
+            - generic [ref=e185]: $ 3,990
+          - generic [ref=e186]:
+            - generic [ref=e187]: Plumbing & install labor
+            - generic [ref=e188]: 3 days
+            - generic [ref=e189]: $ 650
+            - generic [ref=e190]: $ 1,950
+        - generic [ref=e191]:
+          - generic [ref=e192]:
+            - generic [ref=e193]: Subtotal
+            - generic [ref=e194]: $ 10,990
+          - generic [ref=e195]:
+            - generic [ref=e196]: Tax (estimate)
+            - generic [ref=e197]: $ 880
+          - generic [ref=e198]:
+            - generic [ref=e199]: Estimate
+            - generic [ref=e200]: $ 11,870
+      - generic [ref=e201]:
+        - heading "Fair prices, not guesses" [level=3] [ref=e202]
+        - paragraph [ref=e203]: We pull from real construction pricing data — adjusted for today's costs and your zip code. You get a low, mid, and high range so you know exactly where you stand.
+        - list [ref=e204]:
+          - listitem [ref=e205]:
+            - img [ref=e206]
+            - text: Low / mid / high pricing ranges
+          - listitem [ref=e208]:
+            - img [ref=e209]
+            - text: Local material costs, refreshed weekly
+          - listitem [ref=e211]:
+            - img [ref=e212]
+            - text: Branded PDF you can text or email
+          - listitem [ref=e214]:
+            - img [ref=e215]
+            - text: Edit anything in one tap
+    - generic [ref=e217]:
+      - generic [ref=e218]:
+        - generic [ref=e219]: Documents sent so far
+        - generic [ref=e220]: "0"
+      - generic [ref=e221]:
+        - generic [ref=e222]: Quotes
+        - generic [ref=e223]: Contracts
+        - generic [ref=e224]: Invoices
+        - generic [ref=e225]: Change orders
+  - generic [ref=e227]:
+    - generic [ref=e228]:
+      - generic [ref=e229]: What we do
+      - heading "We take care of the business side" [level=2] [ref=e230]:
+        - text: We take care of the
+        - emphasis [ref=e231]: business side
+      - paragraph [ref=e232]: From the first quote to the final invoice — we handle it so you can stay on the job.
+    - generic [ref=e233]:
+      - generic [ref=e234]:
+        - img [ref=e236]
+        - generic [ref=e240]:
+          - heading "Fair prices, not guesses" [level=3] [ref=e241]
+          - paragraph [ref=e242]: Real construction pricing data, adjusted for today's costs. Get a low, middle, and high range so you know exactly where you stand.
+      - generic [ref=e243]:
+        - img [ref=e245]
+        - generic [ref=e248]:
+          - heading "Contracts that protect you" [level=3] [ref=e249]
+          - paragraph [ref=e250]: One tap turns your quote into a real contract. Protect your work and look professional to your clients.
+      - generic [ref=e251]:
+        - img [ref=e253]
+        - generic [ref=e256]:
+          - heading "Simple invoicing" [level=3] [ref=e257]
+          - paragraph [ref=e258]: Job done? We turn it into an invoice. Keep track of who's paid and who hasn't — without a spreadsheet.
+      - generic [ref=e259]:
+        - img [ref=e261]
+        - generic [ref=e263]:
+          - heading "Just text us" [level=3] [ref=e264]
+          - paragraph [ref=e265]: No fancy apps. No complicated software. Text us the job details and we do the rest. Simple as that.
+  - generic [ref=e267]:
+    - generic [ref=e268]:
+      - generic [ref=e269]: Straight to the point
+      - heading "How it works" [level=2] [ref=e270]
+      - paragraph [ref=e271]: Three steps. No forms. No software. We meet you where you already are — your phone.
+    - generic [ref=e272]:
+      - generic [ref=e273]:
+        - generic [ref=e274]: "1"
+        - heading "Tell us about the job" [level=3] [ref=e275]
+        - paragraph [ref=e276]: Send us a text with the job details. We'll ask you one question at a time — no long forms, no hassle.
+      - generic [ref=e277]:
+        - generic [ref=e278]: "2"
+        - heading "Check your quote" [level=3] [ref=e279]
+        - paragraph [ref=e280]: We put together a professional quote with fair pricing. Look it over, change what you need, and give us the thumbs up.
+      - generic [ref=e281]:
+        - generic [ref=e282]: "3"
+        - heading "Send it and get paid" [level=3] [ref=e283]
+        - paragraph [ref=e284]: Send the quote to your client. When the job's done, we turn it into a contract and invoice. Everything's in one place.
+  - generic [ref=e286]:
+    - generic [ref=e287]:
+      - generic [ref=e288]: See it in action
+      - heading "Just text us. We handle the rest." [level=2] [ref=e289]
+      - paragraph [ref=e290]: Quotes, contracts, invoices — sent from your phone in seconds. No app to download. No software to learn.
+      - generic [ref=e291]:
+        - generic [ref=e292]: "\""
+        - paragraph [ref=e293]: I used to spend my Sundays writing quotes on notebook paper. Now I text these guys the job details from my truck and get a professional quote back in minutes. My close rate went through the roof.
+        - generic [ref=e294]:
+          - generic [ref=e295]: MR
+          - generic [ref=e296]:
+            - strong [ref=e297]: Mike R.
+            - text: General Contractor · 12 years
+    - generic [ref=e300]:
+      - generic [ref=e302]: 9:41
+      - generic [ref=e310]:
+        - strong [ref=e311]: Paperwork Monsters
+        - generic [ref=e312]: Online
+      - generic [ref=e314]:
+        - generic [ref=e316]: Kitchen remodel for the Hernández family. Cabinets, quartz counters, 3 days labor.
+        - generic [ref=e318]: 9:38 AM
+        - generic [ref=e325]: Got it 👍 What zip code is the job in?
+        - generic [ref=e327]: And rough square footage of countertop?
+        - generic [ref=e329]: 78704. About 42 sq ft of counter.
+        - generic [ref=e336]: Perfect. Quote coming up — typical range for this is $10,800–$12,400.
+        - generic [ref=e338]: "Here's your quote, ready to send:"
+        - generic [ref=e340]:
+          - generic [ref=e341]:
+            - generic [ref=e342]: "Quote · #PM-2641"
+            - generic [ref=e343]: PDF
+          - generic [ref=e344]:
+            - generic [ref=e345]: Cabinets & install
+            - strong [ref=e346]: $ 4,200
+          - generic [ref=e347]:
+            - generic [ref=e348]: Quartz countertops
+            - strong [ref=e349]: $ 3,990
+          - generic [ref=e350]:
+            - generic [ref=e351]: Demo & labor
+            - strong [ref=e352]: $ 2,800
+          - generic [ref=e353]:
+            - generic [ref=e354]: Total
+            - generic [ref=e355]: $ 10,990
+        - generic [ref=e357]: Looks good. Send it to them.
+        - generic [ref=e359]: 9:41 AM ✓ Sent to client
+      - generic [ref=e360]:
+        - generic [ref=e361]: Message
+        - img [ref=e363]
+  - generic [ref=e367]:
+    - generic [ref=e368]:
+      - generic [ref=e369]: Pricing
+      - heading "Pay us from what we make you" [level=2] [ref=e370]:
+        - text: Pay us from
+        - emphasis [ref=e371]: what we make you
+      - paragraph [ref=e372]: Quotes, contracts, invoices, pricing, follow-ups — we run your back office so you can stay on the job site. And it pays for itself.
+    - generic [ref=e373]:
+      - generic [ref=e374]:
+        - generic [ref=e375]:
+          - generic [ref=e376]: Without us
+          - generic [ref=e377]: $ 5,000
+          - generic [ref=e378]:
+            - generic [ref=e379]:
+              - generic [ref=e380]: Your guess at price
+              - generic [ref=e381]: $ 5,000
+            - generic [ref=e382]:
+              - generic [ref=e383]: Hours doing paperwork
+              - generic [ref=e384]: ~6 hrs
+            - generic [ref=e385]:
+              - generic [ref=e386]: Trust from clients
+              - generic [ref=e387]: So-so
+            - generic [ref=e388]:
+              - text: You keep
+              - generic [ref=e389]: $ 5,000
+        - img [ref=e391]
+        - generic [ref=e393]:
+          - text: CON NOSOTROS
+          - generic [ref=e394]: With us
+          - generic [ref=e395]: $ 6,500
+          - generic [ref=e396]:
+            - generic [ref=e397]:
+              - generic [ref=e398]: Real-data pricing
+              - generic [ref=e399]: $ 6,500
+            - generic [ref=e400]:
+              - generic [ref=e401]: Our 10% fee
+              - generic [ref=e402]: − $ 650
+            - generic [ref=e403]:
+              - generic [ref=e404]: Hours doing paperwork
+              - generic [ref=e405]: "0"
+            - generic [ref=e406]:
+              - text: You keep
+              - generic [ref=e407]: $ 5,850
+      - generic [ref=e408]:
+        - generic [ref=e409]:
+          - generic [ref=e410]: $850 more in your pocket.
+          - generic [ref=e411]: A back office that pays for itself. Only charged when your client pays.
+        - link "Start Making More →" [ref=e412] [cursor=pointer]:
+          - /url: "#contact"
+  - generic [ref=e415]:
+    - generic [ref=e416]:
+      - generic [ref=e417]: Let's go
+      - heading "Ready to get the paperwork off your plate?" [level=2] [ref=e418]
+      - paragraph [ref=e419]: Drop your number. We'll text you within the hour and walk you through your first quote — free.
+      - list [ref=e420]:
+        - listitem [ref=e421]:
+          - img [ref=e422]
+          - generic [ref=e424]: No setup fees, no contracts
+        - listitem [ref=e425]:
+          - img [ref=e426]
+          - generic [ref=e428]: First quote free, on us
+        - listitem [ref=e429]:
+          - img [ref=e430]
+          - generic [ref=e432]: English & Spanish, every step
+    - generic [ref=e433]:
+      - generic [ref=e434]:
+        - generic [ref=e435]:
+          - generic [ref=e436]: PM
+          - generic [ref=e437]:
+            - strong [ref=e438]: Paperwork Monsters
+            - emphasis [ref=e439]: Online
+          - img [ref=e442]
+        - generic [ref=e444]:
+          - generic [ref=e446]:
+            - text: 👋 Hey! I'm
+            - strong [ref=e447]: Marisol
+            - text: from Paperwork Monsters.
+          - generic [ref=e449]:
+            - text: Drop your number below and I'll text you within the hour to walk you through your
+            - strong [ref=e450]: first quote — free
+            - text: .
+          - generic: Hi Paperwork Monsters!
+          - generic:
+            - generic [ref=e451]:
+              - img [ref=e452]
+              - img [ref=e454]
+            - generic [ref=e456]:
+              - text: Delivered · Replies in
+              - strong [ref=e457]: ~5 sec
+        - generic [ref=e458]:
+          - generic [ref=e459]: +
+          - textbox [ref=e461]:
+            - /placeholder: Tap to enter your number
+          - button "Send" [ref=e462] [cursor=pointer]:
+            - img [ref=e463]
+      - button "Text me my first quote" [ref=e466] [cursor=pointer]:
+        - generic [ref=e467]: Text me my first quote
+        - img [ref=e468]
+      - generic [ref=e470]:
+        - generic [ref=e471]:
+          - generic [ref=e472]: JG
+          - generic [ref=e473]: CL
+          - generic [ref=e474]: TS
+        - generic [ref=e475]:
+          - strong [ref=e476]: 34 contractors
+          - text: signed up this week
+      - generic [ref=e477]: By submitting, you agree to receive a friendly text from us.
+  - contentinfo [ref=e478]:
+    - generic [ref=e479]:
+      - link "Paperwork Monsters" [ref=e480] [cursor=pointer]:
+        - /url: "#"
+        - generic [ref=e481]: Paperwork
+        - emphasis [ref=e482]: Monsters
+      - generic [ref=e483]:
+        - link "What We Do" [ref=e484] [cursor=pointer]:
+          - /url: "#features"
+        - link "How It Works" [ref=e485] [cursor=pointer]:
+          - /url: "#how-it-works"
+        - link "Pricing" [ref=e486] [cursor=pointer]:
+          - /url: "#pricing"
+        - link "Contact" [ref=e487] [cursor=pointer]:
+          - /url: "#contact"
+      - generic [ref=e488]: © 2026 Paperwork Monsters. All rights reserved.

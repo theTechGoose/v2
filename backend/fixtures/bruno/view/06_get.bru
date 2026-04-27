@@ -1,0 +1,15 @@
+meta {
+  name: 06 get a single view by id
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/views/{{firstViewId}}
+  auth: none
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("id matches", function() { expect(res.getBody().id).to.equal(bru.getVar("firstViewId")); });
+}

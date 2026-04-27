@@ -1,0 +1,30 @@
+meta {
+  name: 03 post -1280 charge (job done)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/entries
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "accountId": "{{ledgerAccountId}}",
+    "amount": -1280,
+    "occurredAt": "2026-04-26T00:00:00Z",
+    "reference": "job:WH-001",
+    "description": "water heater replacement — labor + parts"
+  }
+}
+
+script:post-response {
+  bru.setVar("ledgerChargeEntryId", res.getBody().id);
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("amount is negative (charge)", function() { expect(res.getBody().amount).to.equal(-1280); });
+}

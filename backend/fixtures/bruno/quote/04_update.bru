@@ -1,0 +1,26 @@
+meta {
+  name: 04 update quote
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/quotes/{{quoteId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "status": "sent"
+  }
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("status patched", function() {
+    expect(res.getBody().status).to.equal("sent");
+  });
+}

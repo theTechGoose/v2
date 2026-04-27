@@ -1,0 +1,16 @@
+meta {
+  name: 10 balance after reversing the charge — credit on file
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/accounts/{{ledgerAccountId}}/balance
+  auth: none
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("balance is +1280 (credit on file)", function() { expect(res.getBody().balance.balance).to.equal(1280); });
+  test("only the payment remains", function() { expect(res.getBody().balance.entryCount).to.equal(1); });
+}

@@ -1,0 +1,27 @@
+meta {
+  name: 01 create customer
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/customers
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "Acme Plumbing — ledger demo",
+    "email": "billing@acme.test"
+  }
+}
+
+script:post-response {
+  bru.setVar("ledgerCustomerId", res.getBody().id);
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("returns id", function() { expect(res.getBody().id).to.be.a("string"); });
+}

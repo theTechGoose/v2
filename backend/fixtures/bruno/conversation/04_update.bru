@@ -1,0 +1,26 @@
+meta {
+  name: 04 update conversation
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/conversations/{{conversationId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "title": "Acme — water heater (closed)"
+  }
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("title patched", function() {
+    expect(res.getBody().title).to.equal("Acme — water heater (closed)");
+  });
+}

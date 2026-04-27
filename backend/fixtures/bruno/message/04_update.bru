@@ -1,0 +1,26 @@
+meta {
+  name: 04 update message
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/messages/{{messageId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "content": "When can you start? (edited)"
+  }
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("content patched", function() {
+    expect(res.getBody().content).to.equal("When can you start? (edited)");
+  });
+}

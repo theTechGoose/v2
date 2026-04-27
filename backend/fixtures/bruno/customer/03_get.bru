@@ -1,0 +1,19 @@
+meta {
+  name: 03 get customer
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/customers/{{customerId}}
+  auth: none
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("id matches", function() {
+    expect(res.getBody().id).to.equal(bru.getVar("customerId"));
+  });
+}

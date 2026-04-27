@@ -1,0 +1,64 @@
+import { Body, Context, Controller, Param, Post } from "#danet/core";
+import type { ExecutionContext } from "#danet/core";
+import { IsOptional, IsString, validateSync } from "#class-validator";
+import { plainToInstance } from "#class-transformer";
+import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { SessionStore } from "@users/domain/data/session-store/mod.ts";
+import { requireUser } from "@users/entrypoints/auth-helpers.ts";
+
+class EmailDispatchDto {
+  @IsOptional() @IsString() to?: string;
+  @IsOptional() @IsString() from?: string;
+}
+
+function parseEmailDispatch(input: unknown): EmailDispatchDto {
+  const dto = plainToInstance(EmailDispatchDto, input ?? {});
+  const errors = validateSync(dto);
+  if (errors.length) throw new Error(`invalid dispatch: ${JSON.stringify(errors)}`);
+  return dto;
+}
+
+/**
+ * PaperworkEmailController — three thin POST wrappers around
+ * SendPaperworkEmail. Each renders + dispatches the corresponding
+ * resource. Body is optional; if omitted the recipient is resolved from
+ * the linked customer's email.
+ *
+ *   POST /quotes/:id/email      { to?, from? }
+ *   POST /contracts/:id/email   { to?, from? }
+ *   POST /invoices/:id/email    { to?, from? }
+ *
+ * Note: routes are mounted under their resource prefix so they sit
+ * naturally next to the existing CRUD endpoints; the controller is the
+ * single dispatch surface.
+ */
+@Controller()
+export class PaperworkEmailController {
+  constructor(
+    private flow: SendPaperworkEmail,
+    private users: UserStore,
+    private sessions: SessionStore,
+  ) {}
+
+  @Post("quotes/:id/email")
+  async emailQuote(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const dto = parseEmailDispatch(body);
+    return await this.flow.run(user.id, { kind: "quote", resourceId: id, to: dto.to, from: dto.from });
+  }
+
+  @Post("contracts/:id/email")
+  async emailContract(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const dto = parseEmailDispatch(body);
+    return await this.flow.run(user.id, { kind: "contract", resourceId: id, to: dto.to, from: dto.from });
+  }
+
+  @Post("invoices/:id/email")
+  async emailInvoice(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const dto = parseEmailDispatch(body);
+    return await this.flow.run(user.id, { kind: "invoice", resourceId: id, to: dto.to, from: dto.from });
+  }
+}

@@ -1,0 +1,42 @@
+meta {
+  name: 01 create message
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/messages
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "conversationId": "00000000-0000-0000-0000-0000000000aa",
+    "role": "user",
+    "channel": "email",
+    "subject": "Job request",
+    "fromAddress": "ops@acme.test",
+    "content": "When can you start?"
+  }
+}
+
+script:post-response {
+  bru.setVar("messageId", res.getBody().id);
+  bru.setVar("messageConversationId", res.getBody().conversationId);
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("returns id", function() {
+    expect(res.getBody().id).to.be.a("string");
+  });
+  test("role preserved", function() {
+    expect(res.getBody().role).to.equal("user");
+  });
+  test("channel preserved", function() {
+    expect(res.getBody().channel).to.equal("email");
+  });
+}

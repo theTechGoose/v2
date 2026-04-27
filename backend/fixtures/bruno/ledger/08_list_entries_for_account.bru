@@ -1,0 +1,23 @@
+meta {
+  name: 08 list entries for the account
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/entries?accountId={{ledgerAccountId}}
+  auth: none
+}
+
+params:query {
+  accountId: {{ledgerAccountId}}
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("two entries on this account", function() { expect(res.getBody().length).to.equal(2); });
+  test("running sum equals balance (0)", function() {
+    const sum = res.getBody().reduce((s, e) => s + e.amount, 0);
+    expect(sum).to.equal(0);
+  });
+}

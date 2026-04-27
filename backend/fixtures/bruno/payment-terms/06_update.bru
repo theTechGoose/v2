@@ -1,0 +1,31 @@
+meta {
+  name: 06 update name and replace installments with thirds
+  type: http
+  seq: 6
+}
+
+put {
+  url: {{baseUrl}}/payment-terms/{{paymentTermsId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "1/3, 1/3, 1/3 thirds",
+    "installments": [
+      { "percent": 33.34, "dueDate": "2026-04-01", "label": "Start" },
+      { "percent": 33.33, "dueDate": "2026-05-01", "label": "Mid" },
+      { "percent": 33.33, "dueDate": "2026-06-01", "label": "End" }
+    ]
+  }
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("name patched", function() { expect(res.getBody().name).to.equal("1/3, 1/3, 1/3 thirds"); });
+  test("now has three installments", function() { expect(res.getBody().installments.length).to.equal(3); });
+  test("installment percents preserved", function() {
+    expect(res.getBody().installments[0].percent).to.equal(33.34);
+  });
+}

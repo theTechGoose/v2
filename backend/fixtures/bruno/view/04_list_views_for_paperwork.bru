@@ -1,0 +1,25 @@
+meta {
+  name: 04 list views attached to the quote
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/views?paperworkType=quote&paperworkId={{viewedQuoteId}}
+  auth: none
+}
+
+params:query {
+  paperworkType: quote
+  paperworkId: {{viewedQuoteId}}
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("two views attached", function() { expect(res.getBody().length).to.equal(2); });
+  test("all views point to the same quote", function() {
+    const ids = new Set(res.getBody().map((v) => v.paperworkId));
+    expect(ids.size).to.equal(1);
+    expect([...ids][0]).to.equal(bru.getVar("viewedQuoteId"));
+  });
+}

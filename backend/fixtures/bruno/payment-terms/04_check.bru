@@ -1,0 +1,16 @@
+meta {
+  name: 04 check schedule sums to 100%
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/payment-terms/{{paymentTermsId}}/check
+  auth: none
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("totalPercent equals 100", function() { expect(res.getBody().totalPercent).to.equal(100); });
+  test("isBalanced is true", function() { expect(res.getBody().isBalanced).to.equal(true); });
+}

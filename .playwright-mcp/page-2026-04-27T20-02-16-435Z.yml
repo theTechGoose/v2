@@ -1,0 +1,22 @@
+- generic [ref=e3]:
+  - link "Paperwork Monsters Paperwork Monsters" [ref=e4] [cursor=pointer]:
+    - /url: /
+    - img "Paperwork Monsters" [ref=e5]
+    - generic [ref=e6]: Paperwork
+    - emphasis [ref=e7]: Monsters
+  - heading "Check your phone" [level=1] [ref=e8]
+  - paragraph [ref=e9]:
+    - text: We just texted a 6-digit code to
+    - strong [ref=e10]: (512) 777-0001
+  - generic [ref=e11]:
+    - textbox "Digit 1" [active] [ref=e12]
+    - textbox "Digit 2" [ref=e13]
+    - textbox "Digit 3" [ref=e14]
+    - textbox "Digit 4" [ref=e15]
+    - textbox "Digit 5" [ref=e16]
+    - textbox "Digit 6" [ref=e17]
+  - button "Verify" [disabled] [ref=e18]
+  - generic [ref=e19]:
+    - link "Wrong number? Edit" [ref=e20] [cursor=pointer]:
+      - /url: /
+    - button "Resend code" [ref=e21] [cursor=pointer]

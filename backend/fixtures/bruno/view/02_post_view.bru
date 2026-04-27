@@ -1,0 +1,36 @@
+meta {
+  name: 02 post a view of the quote
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/views
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "paperworkType": "quote",
+    "paperworkId": "{{viewedQuoteId}}",
+    "viewedAt": "2026-04-26T10:00:00Z",
+    "viewerEmail": "ops@acme.test",
+    "userAgent": "Mozilla/5.0 (iPhone)",
+    "ipAddress": "203.0.113.7",
+    "durationMs": 14200
+  }
+}
+
+script:post-response {
+  bru.setVar("firstViewId", res.getBody().id);
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("paperwork link preserved", function() {
+    expect(res.getBody().paperworkType).to.equal("quote");
+    expect(res.getBody().paperworkId).to.equal(bru.getVar("viewedQuoteId"));
+  });
+  test("returns id", function() { expect(res.getBody().id).to.be.a("string"); });
+}

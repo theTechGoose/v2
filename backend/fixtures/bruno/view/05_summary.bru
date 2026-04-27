@@ -1,0 +1,22 @@
+meta {
+  name: 05 paperwork view summary
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/views/summary/quote/{{viewedQuoteId}}
+  auth: none
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("total views = 2", function() { expect(res.getBody().stats.total).to.equal(2); });
+  test("unique viewers = 1", function() { expect(res.getBody().stats.uniqueViewers).to.equal(1); });
+  test("first viewedAt is the earlier timestamp", function() {
+    expect(res.getBody().stats.firstViewedAt).to.equal("2026-04-26T10:00:00Z");
+  });
+  test("last viewedAt is the later timestamp", function() {
+    expect(res.getBody().stats.lastViewedAt).to.equal("2026-04-26T13:00:00Z");
+  });
+}

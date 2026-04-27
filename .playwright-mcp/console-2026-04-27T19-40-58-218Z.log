@@ -1,0 +1,4 @@
+[   10162ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ http://localhost:5173/api/notifications?limit=10:0
+[   20163ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ http://localhost:5173/api/notifications?limit=10:0
+[   30161ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ http://localhost:5173/api/notifications/unread-count:0
+[   30161ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ http://localhost:5173/api/notifications?limit=10:0

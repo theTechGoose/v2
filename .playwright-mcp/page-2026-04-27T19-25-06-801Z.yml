@@ -1,0 +1,180 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "P Paperwork Monsters" [ref=e4] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e5]: P
+        - generic [ref=e6]: Paperwork Monsters
+      - navigation "primary" [ref=e7]:
+        - link "Features" [ref=e8] [cursor=pointer]:
+          - /url: "#features"
+        - link "How it works" [ref=e9] [cursor=pointer]:
+          - /url: "#how-it-works"
+        - link "Pricing" [ref=e10] [cursor=pointer]:
+          - /url: "#pricing"
+      - generic [ref=e11]:
+        - group "Language" [ref=e12]:
+          - button "EN" [pressed] [ref=e13] [cursor=pointer]
+          - button "ES" [ref=e14] [cursor=pointer]
+        - link "Get started" [ref=e15] [cursor=pointer]:
+          - /url: "#contact"
+  - generic [ref=e18]:
+    - generic [ref=e19]: Built for contractors
+    - heading "Quote, contract, and invoice — without the paperwork ." [level=1] [ref=e21]:
+      - text: Quote, contract, and invoice — without the
+      - generic [ref=e22]: paperwork
+      - text: .
+    - paragraph [ref=e23]: Bossie texts your client, drafts the docs, and gets you paid. You just say yes.
+    - generic [ref=e24]:
+      - link "Get my number" [ref=e25] [cursor=pointer]:
+        - /url: "#contact"
+      - link "See how it works" [ref=e26] [cursor=pointer]:
+        - /url: "#how-it-works"
+    - generic [ref=e27]:
+      - generic [ref=e28]:
+        - img [ref=e29]
+        - text: No app to install
+      - generic [ref=e31]:
+        - img [ref=e32]
+        - text: 60-second signup
+      - generic [ref=e34]:
+        - img [ref=e35]
+        - text: Cancel anytime
+  - generic [ref=e47]:
+    - generic [ref=e48]: Quotes · Contracts · Invoices · Reminders · Payments · Reviews
+    - generic [ref=e49]: Quotes · Contracts · Invoices · Reminders · Payments · Reviews
+  - generic [ref=e51]:
+    - generic [ref=e52]:
+      - generic [ref=e53]: The problem
+      - heading "Three things that kill small contractors" [level=2] [ref=e54]
+    - generic [ref=e55]:
+      - article [ref=e56]:
+        - heading "Slow quotes" [level=3] [ref=e57]
+        - paragraph [ref=e58]: Estimates take days to write up. Clients move on.
+      - article [ref=e59]:
+        - heading "Vague contracts" [level=3] [ref=e60]
+        - paragraph [ref=e61]: Scope creep eats your margin and your weekends.
+      - article [ref=e62]:
+        - heading "Late invoices" [level=3] [ref=e63]
+        - paragraph [ref=e64]: Sent too late or never sent at all. Cash gets squeezed.
+  - generic [ref=e66]:
+    - generic [ref=e67]:
+      - generic [ref=e68]: Live preview
+      - heading "What Bossie sends, on your behalf" [level=2] [ref=e69]
+    - generic [ref=e70]:
+      - tablist [ref=e71]:
+        - tab "Quote" [selected] [ref=e72] [cursor=pointer]
+        - tab "Contract" [ref=e73] [cursor=pointer]
+        - tab "Invoice" [ref=e74] [cursor=pointer]
+      - tabpanel [ref=e75]
+  - generic [ref=e83]:
+    - generic [ref=e84]:
+      - generic [ref=e85]: What you get
+      - heading "Everything the office never had time for" [level=2] [ref=e86]
+    - generic [ref=e87]:
+      - article [ref=e88]:
+        - img [ref=e90]
+        - heading "Bilingual SMS" [level=3] [ref=e92]
+        - paragraph [ref=e93]: EN/ES out of the box. Texts that sound like you.
+      - article [ref=e94]:
+        - img [ref=e96]
+        - heading "Auto reminders" [level=3] [ref=e98]
+        - paragraph [ref=e99]: Polite nudges until they pay. No awkward calls.
+      - article [ref=e100]:
+        - img [ref=e102]
+        - heading "Real signatures" [level=3] [ref=e104]
+        - paragraph [ref=e105]: Tap-to-sign contracts. Court-ready.
+      - article [ref=e106]:
+        - img [ref=e108]
+        - heading "Photo intake" [level=3] [ref=e110]
+        - paragraph [ref=e111]: Customers snap pics, Bossie scopes the job.
+  - generic [ref=e113]:
+    - generic [ref=e114]:
+      - generic [ref=e115]: How it works
+      - heading "Three steps. No app to install." [level=2] [ref=e116]
+    - generic [ref=e117]:
+      - article [ref=e118]:
+        - generic [ref=e119]: "1"
+        - heading "Forward the lead" [level=3] [ref=e120]
+        - paragraph [ref=e121]: Drop the customer's number into the chat.
+      - article [ref=e122]:
+        - generic [ref=e123]: "2"
+        - heading "Approve the draft" [level=3] [ref=e124]
+        - paragraph [ref=e125]: Bossie writes a quote — you tap to send.
+      - article [ref=e126]:
+        - generic [ref=e127]: "3"
+        - heading "Get paid" [level=3] [ref=e128]
+        - paragraph [ref=e129]: Invoice goes out, Bossie chases the balance.
+  - generic [ref=e132]:
+    - generic [ref=e133]: Real conversation
+    - heading "It feels like texting your best foreman" [level=2] [ref=e134]
+    - paragraph [ref=e135]: Bossie texts your client, drafts the docs, and gets you paid. You just say yes.
+  - generic [ref=e139]:
+    - generic [ref=e140]:
+      - generic [ref=e141]: Pricing
+      - heading "Pay for what works" [level=2] [ref=e142]
+    - generic [ref=e143]:
+      - article [ref=e144]:
+        - generic [ref=e145]: Without Bossie
+        - generic [ref=e146]: $0/mo
+        - list [ref=e147]:
+          - listitem [ref=e148]: Hours on paperwork
+          - listitem [ref=e149]: Late invoices
+          - listitem [ref=e150]: Lost leads
+      - article [ref=e151]:
+        - generic [ref=e152]: With Bossie
+        - generic [ref=e153]: $49/mo
+        - list [ref=e154]:
+          - listitem [ref=e155]: Quotes in minutes
+          - listitem [ref=e156]: Auto-paid invoices
+          - listitem [ref=e157]: Bilingual replies
+        - link "Get started" [ref=e158] [cursor=pointer]:
+          - /url: "#contact"
+  - generic [ref=e161]:
+    - generic [ref=e162]:
+      - generic [ref=e163]: Get started
+      - heading "Drop your number — Bossie texts you in 60 seconds" [level=3] [ref=e164]
+      - paragraph [ref=e165]: We'll send a 6-digit code to log you in. No app to install.
+    - generic [ref=e166]:
+      - generic [ref=e167]:
+        - generic [ref=e168]: Mobile number
+        - textbox "Mobile number" [ref=e169]:
+          - /placeholder: (512) 555-1234
+      - button "Text me the code" [ref=e170] [cursor=pointer]
+  - contentinfo [ref=e171]:
+    - generic [ref=e172]:
+      - generic [ref=e173]:
+        - generic [ref=e174]:
+          - link "P Paperwork Monsters" [ref=e175] [cursor=pointer]:
+            - /url: /
+            - generic [ref=e176]: P
+            - generic [ref=e177]: Paperwork Monsters
+          - paragraph [ref=e178]: Paperwork Monsters — built for contractors who'd rather be on the truck.
+        - generic [ref=e179]:
+          - heading "Product" [level=4] [ref=e180]
+          - list [ref=e181]:
+            - listitem [ref=e182]:
+              - link "Features" [ref=e183] [cursor=pointer]:
+                - /url: "#features"
+            - listitem [ref=e184]:
+              - link "Pricing" [ref=e185] [cursor=pointer]:
+                - /url: "#pricing"
+        - generic [ref=e186]:
+          - heading "Company" [level=4] [ref=e187]
+          - list [ref=e188]:
+            - listitem [ref=e189]:
+              - link "How it works" [ref=e190] [cursor=pointer]:
+                - /url: "#how-it-works"
+            - listitem [ref=e191]:
+              - link "Get started" [ref=e192] [cursor=pointer]:
+                - /url: "#contact"
+        - generic [ref=e193]:
+          - heading "Legal" [level=4] [ref=e194]
+          - list [ref=e195]:
+            - listitem [ref=e196]:
+              - link "Terms" [ref=e197] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=e198]:
+              - link "Privacy" [ref=e199] [cursor=pointer]:
+                - /url: "#"
+      - paragraph [ref=e200]: © Paperwork Monsters

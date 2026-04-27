@@ -1,0 +1,4 @@
+[      48ms] [ERROR] Access to script at 'fresh-island::DashSidebar_1.tsx' from origin 'http://localhost:5173' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: chrome, chrome-extension, chrome-untrusted, data, http, https, isolated-app. @ http://localhost:5173/assistant:0
+[      48ms] [ERROR] Failed to load resource: net::ERR_FAILED @ fresh-island::DashSidebar_1.tsx:0
+[      48ms] [ERROR] Access to script at 'fresh-island::DashTopbar.tsx' from origin 'http://localhost:5173' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: chrome, chrome-extension, chrome-untrusted, data, http, https, isolated-app. @ http://localhost:5173/assistant:0
+[      48ms] [ERROR] Failed to load resource: net::ERR_FAILED @ fresh-island::DashTopbar.tsx:0

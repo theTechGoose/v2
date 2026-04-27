@@ -1,0 +1,18 @@
+meta {
+  name: 02 list payment terms
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/payment-terms
+  auth: none
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("contains created terms", function() {
+    const ids = res.getBody().map((t) => t.id);
+    expect(ids).to.include(bru.getVar("paymentTermsId"));
+  });
+}

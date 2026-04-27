@@ -1,0 +1,29 @@
+meta {
+  name: 02 list messages by conversation
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/messages?conversationId={{messageConversationId}}
+  auth: none
+}
+
+params:query {
+  conversationId: {{messageConversationId}}
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("filtered to one conversation", function() {
+    const cids = new Set(res.getBody().map((m) => m.conversationId));
+    expect(cids.size).to.equal(1);
+    expect([...cids][0]).to.equal(bru.getVar("messageConversationId"));
+  });
+  test("contains created message", function() {
+    const ids = res.getBody().map((m) => m.id);
+    expect(ids).to.include(bru.getVar("messageId"));
+  });
+}

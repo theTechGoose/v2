@@ -1,0 +1,24 @@
+meta {
+  name: 03 post second view (same viewer, later)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/views
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "paperworkType": "quote",
+    "paperworkId": "{{viewedQuoteId}}",
+    "viewedAt": "2026-04-26T13:00:00Z",
+    "viewerEmail": "ops@acme.test"
+  }
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+}

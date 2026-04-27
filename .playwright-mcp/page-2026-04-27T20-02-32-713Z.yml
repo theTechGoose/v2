@@ -1,0 +1,309 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e8]: Paperwork Monsters
+      - link "My assistant" [ref=e9] [cursor=pointer]:
+        - /url: /assistant
+        - img [ref=e11]
+        - generic [ref=e17]: My assistant
+      - navigation [ref=e19]:
+        - link "Dashboard" [ref=e20] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e22]
+          - generic [ref=e25]: Dashboard
+        - link "Jobs 7" [ref=e26] [cursor=pointer]:
+          - /url: /jobs
+          - img [ref=e28]
+          - generic [ref=e30]: Jobs
+          - generic [ref=e31]: "7"
+        - link "Clients" [ref=e32] [cursor=pointer]:
+          - /url: /clients
+          - img [ref=e34]
+          - generic [ref=e37]: Clients
+        - link "Quotes 4" [ref=e38] [cursor=pointer]:
+          - /url: /quotes
+          - img [ref=e40]
+          - generic [ref=e43]: Quotes
+          - generic [ref=e44]: "4"
+        - link "Contracts" [ref=e45] [cursor=pointer]:
+          - /url: /contracts
+          - img [ref=e47]
+          - generic [ref=e50]: Contracts
+        - link "Invoices 3" [ref=e51] [cursor=pointer]:
+          - /url: /invoices
+          - img [ref=e53]
+          - generic [ref=e56]: Invoices
+          - generic [ref=e57]: "3"
+        - link "Payments" [ref=e58] [cursor=pointer]:
+          - /url: /payments
+          - img [ref=e60]
+          - generic [ref=e62]: Payments
+        - link "Conversations 2" [ref=e63] [cursor=pointer]:
+          - /url: /messages
+          - img [ref=e65]
+          - generic [ref=e67]: Conversations
+          - generic [ref=e68]: "2"
+        - generic [ref=e69]: Account
+        - link "Settings" [ref=e70] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e72]
+          - generic [ref=e75]: Settings
+      - button "+1 Account Your business" [ref=e76] [cursor=pointer]:
+        - generic [ref=e77]: "+1"
+        - generic [ref=e78]:
+          - generic [ref=e79]: Account
+          - generic [ref=e80]: Your business
+        - img [ref=e82]
+  - main [ref=e84]:
+    - generic [ref=e85]:
+      - button "Toggle sidebar" [ref=e86] [cursor=pointer]:
+        - img [ref=e87]
+      - generic [ref=e89]:
+        - generic [ref=e90]: Monday · April 27
+        - generic [ref=e91]: Hey, +15127770001 👋
+      - generic [ref=e92]:
+        - img [ref=e93]
+        - textbox "Search jobs, clients, invoices..." [ref=e96]
+        - text: ⌘K
+      - button "Live activity" [ref=e97] [cursor=pointer]:
+        - generic:
+          - generic:
+            - strong [ref=e99]: Tom & Linda
+            - text: opened your quote
+        - generic [ref=e100]: 2m ago
+      - button "Notifications" [ref=e101] [cursor=pointer]:
+        - img [ref=e102]
+    - generic [ref=e105]:
+      - generic [ref=e107]:
+        - heading "You've billed $0 this month. Let's get those quotes out the door." [level=1] [ref=e108]:
+          - text: You've billed
+          - emphasis [ref=e109]: $0
+          - text: this month.
+          - text: Let's get those quotes out the door.
+        - paragraph [ref=e110]: 4 quotes are sitting with clients. Send a nudge, or fire off a fresh one straight from a text.
+        - generic [ref=e111]:
+          - generic [ref=e112]:
+            - strong [ref=e113]: ▲ 24%
+            - text: vs March
+          - generic [ref=e114]:
+            - strong [ref=e115]: $4,180
+            - text: ahead of last month
+          - generic [ref=e116]:
+            - strong [ref=e117]: 4 quotes
+            - text: awaiting signature
+        - link "My assistant" [ref=e119] [cursor=pointer]:
+          - /url: /assistant
+          - img [ref=e121]
+          - text: My assistant
+      - generic [ref=e131]:
+        - generic [ref=e132]:
+          - img [ref=e134]
+          - generic [ref=e136]: Active jobs
+          - generic [ref=e137]: "7"
+          - generic [ref=e138]:
+            - strong [ref=e139]: ▲ 2
+            - generic [ref=e140]: on the books
+        - generic [ref=e141]:
+          - img [ref=e143]
+          - generic [ref=e146]: Outstanding
+          - generic [ref=e147]: $6,420
+          - generic [ref=e148]:
+            - strong [ref=e149]: 1 overdue
+            - generic [ref=e150]: 4 invoices
+        - generic [ref=e151]:
+          - img [ref=e153]
+          - generic [ref=e156]: Quotes pending
+          - generic [ref=e157]: "4"
+          - generic [ref=e158]:
+            - strong [ref=e159]: 2 viewed
+            - generic [ref=e160]: $12.8k in flight
+        - generic [ref=e161]:
+          - img [ref=e163]
+          - generic [ref=e166]: Avg. job size
+          - generic [ref=e167]: $2,830
+          - generic [ref=e168]:
+            - strong [ref=e169]: ▲ 8%
+            - generic [ref=e170]: last 30 days
+      - generic [ref=e171]:
+        - generic [ref=e172]:
+          - generic [ref=e173]:
+            - generic [ref=e174]:
+              - heading "Active jobs" [level=3] [ref=e176]
+              - generic [ref=e177]: 5 active
+            - link "See all →" [ref=e178] [cursor=pointer]:
+              - /url: /jobs
+          - generic [ref=e179]:
+            - img [ref=e181]
+            - generic [ref=e183]:
+              - heading "Maple Grove Apartments" [level=4] [ref=e185]
+              - generic [ref=e186]:
+                - text: Re-roof — building C
+                - text: Due Today
+            - generic [ref=e190]:
+              - generic [ref=e191]: $4,800
+              - generic [ref=e192]: $2,400 paid
+          - generic [ref=e193]:
+            - img [ref=e195]
+            - generic [ref=e197]:
+              - heading "Sarah Chen" [level=4] [ref=e199]
+              - generic [ref=e200]:
+                - text: Bathroom remodel
+                - text: Due Wed
+            - generic [ref=e204]:
+              - generic [ref=e205]: $8,200
+              - generic [ref=e206]: $3,000 paid
+          - generic [ref=e207]:
+            - img [ref=e209]
+            - generic [ref=e214]:
+              - heading "Marshall & Sons" [level=4] [ref=e216]
+              - generic [ref=e217]:
+                - text: Driveway repour
+                - text: Due Fri
+            - generic [ref=e221]:
+              - generic [ref=e222]: $2,950
+              - generic [ref=e223]: Deposit
+          - generic [ref=e224]:
+            - img [ref=e226]
+            - generic [ref=e230]:
+              - heading "Jana Patel" [level=4] [ref=e232]
+              - generic [ref=e233]:
+                - text: Interior paint · 2BR
+                - text: Due Mon Apr 29
+            - generic [ref=e236]:
+              - generic [ref=e237]: $1,650
+              - generic [ref=e238]: Quoted
+          - generic [ref=e239]:
+            - img [ref=e241]
+            - generic [ref=e246]:
+              - heading "Cobblestone Cafe" [level=4] [ref=e248]
+              - generic [ref=e249]:
+                - text: Patio re-tile
+                - text: Due Apr 30
+            - generic [ref=e253]:
+              - generic [ref=e254]: $3,400
+              - generic [ref=e255]: $1,000 paid
+        - generic [ref=e256]:
+          - generic [ref=e257]:
+            - heading "Quotes awaiting signature" [level=3] [ref=e258]
+            - generic [ref=e259]: 4 out · $12,800
+            - link "See all →" [ref=e260] [cursor=pointer]:
+              - /url: /quotes
+          - generic [ref=e261]:
+            - generic [ref=e262]:
+              - generic [ref=e263]: Tom & Linda K.
+              - generic [ref=e264]: $3,400
+            - generic [ref=e265]:
+              - generic [ref=e266]: Garage epoxy floor
+              - generic [ref=e268]: Sent Mon · Viewed twice 🔥
+            - generic [ref=e269]:
+              - button "Nudge by text" [ref=e270] [cursor=pointer]:
+                - img [ref=e271]
+                - text: Nudge by text
+              - button "View quote" [ref=e274] [cursor=pointer]:
+                - img [ref=e275]
+                - text: View quote
+          - generic [ref=e278]:
+            - generic [ref=e279]:
+              - generic [ref=e280]: Greenleaf HOA
+              - generic [ref=e281]: $5,800
+            - generic [ref=e282]:
+              - generic [ref=e283]: Common area paint
+              - generic [ref=e285]: Sent Tue · Viewed
+            - generic [ref=e286]:
+              - button "Nudge by text" [ref=e287] [cursor=pointer]:
+                - img [ref=e288]
+                - text: Nudge by text
+              - button "View quote" [ref=e291] [cursor=pointer]:
+                - img [ref=e292]
+                - text: View quote
+          - generic [ref=e295]:
+            - generic [ref=e296]:
+              - generic [ref=e297]: Marcus Lin
+              - generic [ref=e298]: $1,920
+            - generic [ref=e299]:
+              - generic [ref=e300]: Kitchen backsplash
+              - generic [ref=e302]: Sent today
+            - generic [ref=e303]:
+              - button "Nudge by text" [ref=e304] [cursor=pointer]:
+                - img [ref=e305]
+                - text: Nudge by text
+              - button "View quote" [ref=e308] [cursor=pointer]:
+                - img [ref=e309]
+                - text: View quote
+          - generic [ref=e312]:
+            - generic [ref=e313]:
+              - generic [ref=e314]: Bayside Properties
+              - generic [ref=e315]: $1,680
+            - generic [ref=e316]:
+              - generic [ref=e317]: 4-unit gutter cleaning
+              - generic [ref=e319]: Sent 4 days ago · cold
+            - generic [ref=e320]:
+              - button "Nudge by text" [ref=e321] [cursor=pointer]:
+                - img [ref=e322]
+                - text: Nudge by text
+              - button "View quote" [ref=e325] [cursor=pointer]:
+                - img [ref=e326]
+                - text: View quote
+      - generic [ref=e329]:
+        - generic [ref=e330]:
+          - generic [ref=e331]:
+            - heading "What we handled today" [level=3] [ref=e332]
+            - generic [ref=e333]: The monsters have been busy
+            - link "Full log →" [ref=e334] [cursor=pointer]:
+              - /url: /activity
+          - generic [ref=e335]:
+            - img [ref=e337]
+            - generic [ref=e339]:
+              - generic [ref=e340]:
+                - strong [ref=e341]: Tom & Linda K.
+                - text: opened your quote for the second time
+              - generic [ref=e342]: 2 min ago
+          - generic [ref=e343]:
+            - img [ref=e345]
+            - generic [ref=e348]:
+              - generic [ref=e349]:
+                - text: You texted us "new job — paint kitchen for Marcus Lin".
+                - strong [ref=e350]: Quote drafted.
+              - generic [ref=e351]: 1 hr ago
+          - generic [ref=e352]:
+            - img [ref=e354]
+            - generic [ref=e357]:
+              - generic [ref=e358]:
+                - strong [ref=e359]: Cobblestone Cafe
+                - text: "paid invoice #INV-198 — $1,000 deposit"
+              - generic [ref=e360]: 3 hr ago
+          - generic [ref=e361]:
+            - img [ref=e363]
+            - generic [ref=e366]:
+              - generic [ref=e367]:
+                - strong [ref=e368]: Sarah Chen
+                - text: e-signed the bathroom remodel contract
+              - generic [ref=e369]: Yesterday
+        - generic [ref=e370]:
+          - generic [ref=e371]:
+            - generic [ref=e372]:
+              - generic [ref=e373]: Money owed to you
+              - generic [ref=e374]: $0
+            - button "Nudge all" [ref=e375] [cursor=pointer]:
+              - img [ref=e376]
+              - text: Nudge all
+          - generic [ref=e383]:
+            - generic [ref=e384]: Current $3,340
+            - generic [ref=e386]: 1–14 days $1,920
+            - generic [ref=e388]: Overdue $1,160
+          - generic [ref=e390]:
+            - generic [ref=e391]:
+              - generic [ref=e392]:
+                - generic [ref=e393]: Hilltop Diner
+                - generic [ref=e394]: "11 days overdue · #INV-204"
+              - generic [ref=e395]: $1,160
+            - generic [ref=e396]:
+              - generic [ref=e397]:
+                - generic [ref=e398]: Sarah Chen
+                - generic [ref=e399]: "Due in 3 days · #INV-208"
+              - generic [ref=e400]: $1,920
+            - generic [ref=e401]:
+              - generic [ref=e402]:
+                - generic [ref=e403]: Maple Grove Apts.
+                - generic [ref=e404]: "Due Apr 30 · #INV-210"
+              - generic [ref=e405]: $3,340

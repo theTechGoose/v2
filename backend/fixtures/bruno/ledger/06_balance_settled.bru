@@ -1,0 +1,18 @@
+meta {
+  name: 06 balance after payment — settled
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/accounts/{{ledgerAccountId}}/balance
+  auth: none
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("balance is 0 (settled)", function() { expect(res.getBody().balance.balance).to.equal(0); });
+  test("charges total is 1280", function() { expect(res.getBody().balance.charges).to.equal(1280); });
+  test("payments total is 1280", function() { expect(res.getBody().balance.payments).to.equal(1280); });
+  test("entry count is 2", function() { expect(res.getBody().balance.entryCount).to.equal(2); });
+}

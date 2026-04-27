@@ -1,0 +1,32 @@
+meta {
+  name: 04 update customer
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/customers/{{customerId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "notes": "VIP — net 15"
+  }
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("patch applied", function() {
+    expect(res.getBody().notes).to.equal("VIP — net 15");
+  });
+  test("name preserved", function() {
+    expect(res.getBody().name).to.equal("Acme Plumbing");
+  });
+  test("updatedAt advanced", function() {
+    expect(res.getBody().updatedAt).to.not.equal(res.getBody().createdAt);
+  });
+}

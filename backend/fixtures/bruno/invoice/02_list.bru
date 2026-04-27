@@ -1,0 +1,20 @@
+meta {
+  name: 02 list invoices
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/invoices
+  auth: none
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("contains created invoice", function() {
+    const ids = res.getBody().map((i) => i.id);
+    expect(ids).to.include(bru.getVar("invoiceId"));
+  });
+}

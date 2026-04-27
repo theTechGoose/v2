@@ -1,0 +1,15 @@
+{
+  "hash": "771041b1",
+  "configHash": "354c3e05",
+  "lockfileHash": "e3b0c442",
+  "browserHash": "180fd76d",
+  "optimized": {
+    "@opentelemetry/api": {
+      "src": "../../node_modules/.deno/@opentelemetry+api@1.9.1/node_modules/@opentelemetry/api/build/esm/index.js",
+      "file": "@opentelemetry_api.js",
+      "fileHash": "e0e991cd",
+      "needsInterop": false
+    }
+  },
+  "chunks": {}
+}

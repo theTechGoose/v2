@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="400" height="200">
+  <defs>
+    <pattern id="confetti" x="0" y="0" width="80" height="80" patternUnits="userSpaceOnUse">
+      <path d="M10 20 q 5 -8, 10 0 t 10 0" fill="none" stroke="#FF6B6B" stroke-width="2" stroke-linecap="round" opacity="0.7"></path>
+      <circle cx="55" cy="15" r="3" fill="#519843" opacity="0.7"></circle>
+      <path d="M60 50 l 6 -2 l 2 6 l -6 2 z" fill="#644536" opacity="0.5"></path>
+      <path d="M20 60 q 4 -6, 8 0" fill="none" stroke="#1A535C" stroke-width="2" stroke-linecap="round" opacity="0.6"></path>
+      <circle cx="40" cy="40" r="2" fill="#FF6B6B" opacity="0.6"></circle>
+      <path d="M70 70 l 3 -5 l 5 3" fill="none" stroke="#519843" stroke-width="2" stroke-linecap="round" opacity="0.7"></path>
+    </pattern>
+  </defs>
+  <rect width="400" height="200" fill="url(#confetti)"></rect>
+</svg>

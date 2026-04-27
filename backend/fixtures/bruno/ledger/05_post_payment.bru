@@ -1,0 +1,26 @@
+meta {
+  name: 05 post +1280 payment (customer pays)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/entries
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "accountId": "{{ledgerAccountId}}",
+    "amount": 1280,
+    "occurredAt": "2026-04-30T15:00:00Z",
+    "reference": "ach:9281",
+    "description": "ACH payment from Acme"
+  }
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("amount is positive (payment)", function() { expect(res.getBody().amount).to.equal(1280); });
+}

@@ -1,0 +1,24 @@
+meta {
+  name: 05 resolve percents against a $1280 contract
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/payment-terms/{{paymentTermsId}}/resolve?total=1280
+  auth: none
+}
+
+params:query {
+  total: 1280
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("echoes the total", function() { expect(res.getBody().total).to.equal(1280); });
+  test("first installment is 50% = 640", function() { expect(res.getBody().installments[0].amount).to.equal(640); });
+  test("second installment is 50% = 640", function() { expect(res.getBody().installments[1].amount).to.equal(640); });
+  test("percents preserved on resolved entries", function() {
+    expect(res.getBody().installments[0].percent).to.equal(50);
+  });
+}

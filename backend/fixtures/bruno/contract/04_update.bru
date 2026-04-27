@@ -1,0 +1,30 @@
+meta {
+  name: 04 update contract
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/contracts/{{contractId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "status": "signed",
+    "signedAt": "2026-04-26T00:00:00Z"
+  }
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("status patched", function() {
+    expect(res.getBody().status).to.equal("signed");
+  });
+  test("signedAt persisted", function() {
+    expect(res.getBody().signedAt).to.equal("2026-04-26T00:00:00Z");
+  });
+}

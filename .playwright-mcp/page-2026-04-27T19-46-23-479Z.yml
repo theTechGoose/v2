@@ -1,0 +1,403 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e8]: Paperwork Monsters
+      - link "My assistant" [ref=e9] [cursor=pointer]:
+        - /url: /assistant
+        - img [ref=e11]
+        - generic [ref=e16]: My assistant
+      - navigation [ref=e17]:
+        - link "Dashboard" [ref=e18] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e20]
+          - text: Dashboard
+        - link "Jobs7" [ref=e23] [cursor=pointer]:
+          - /url: /jobs
+          - img [ref=e25]
+          - text: Jobs7
+        - link "Clients" [ref=e27] [cursor=pointer]:
+          - /url: /clients
+          - img [ref=e29]
+          - text: Clients
+        - link "Quotes4" [ref=e32] [cursor=pointer]:
+          - /url: /quotes
+          - img [ref=e34]
+          - text: Quotes4
+        - link "Contracts" [ref=e37] [cursor=pointer]:
+          - /url: /contracts
+          - img [ref=e39]
+          - text: Contracts
+        - link "Invoices3" [ref=e42] [cursor=pointer]:
+          - /url: /invoices
+          - img [ref=e44]
+          - text: Invoices3
+        - link "Payments" [ref=e47] [cursor=pointer]:
+          - /url: /payments
+          - img [ref=e49]
+          - text: Payments
+        - link "Conversations2" [ref=e51] [cursor=pointer]:
+          - /url: /messages
+          - img [ref=e53]
+          - text: Conversations2
+        - generic [ref=e55]: Account
+        - link "Settings" [ref=e56] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e58]
+          - text: Settings
+      - button "DI Diego Your business" [ref=e61] [cursor=pointer]:
+        - generic [ref=e62]: DI
+        - generic [ref=e63]:
+          - generic [ref=e64]: Diego
+          - generic [ref=e65]: Your business
+        - img [ref=e67]
+  - main [ref=e69]:
+    - generic [ref=e70]:
+      - button "Toggle sidebar" [ref=e71] [cursor=pointer]:
+        - img [ref=e72]
+      - generic [ref=e74]:
+        - generic [ref=e75]: Monday · April 27
+        - generic [ref=e76]: Hey, Diego 👋
+      - generic [ref=e77]:
+        - img [ref=e78]
+        - textbox "Search jobs, clients, invoices..." [ref=e81]
+        - text: ⌘K
+      - button "Live activity" [ref=e82] [cursor=pointer]:
+        - generic [ref=e84]:
+          - strong [ref=e85]: Tom & Linda
+          - text: opened your quote
+        - text: 2m ago
+      - button "Notifications" [ref=e86] [cursor=pointer]:
+        - img [ref=e87]
+    - generic [ref=e90]:
+      - complementary [ref=e91]:
+        - generic [ref=e92]:
+          - heading "Conversations" [level=3] [ref=e93]
+          - generic [ref=e94]: "12"
+        - button "New conversation⌘N" [ref=e95] [cursor=pointer]:
+          - img [ref=e96]
+          - text: New conversation⌘N
+        - generic [ref=e98]:
+          - generic [ref=e99]:
+            - generic [ref=e100]: Today
+            - link "Tom & Linda K. 8m Garage epoxy floor — 2-car, includes prep, primer, and topcoat. Awaiting signature. Sent" [ref=e101] [cursor=pointer]:
+              - /url: /assistant/t1
+              - generic [ref=e102]:
+                - generic [ref=e103]: Tom & Linda K.
+                - generic [ref=e104]: 8m
+              - generic [ref=e105]: Garage epoxy floor — 2-car, includes prep, primer, and topcoat. Awaiting signature.
+              - generic [ref=e106]: Sent
+            - link "Marcus Lin 1h \"Need a quote for kitchen backsplash, ~30 sqft, white subway tile.\" Drafted" [ref=e107] [cursor=pointer]:
+              - /url: /assistant/t2
+              - generic [ref=e108]:
+                - generic [ref=e109]: Marcus Lin
+                - generic [ref=e110]: 1h
+              - generic [ref=e111]: "\"Need a quote for kitchen backsplash, ~30 sqft, white subway tile.\""
+              - generic [ref=e112]: Drafted
+            - 'link "Hilltop Diner 3h Followed up on overdue invoice #INV-204 ($1,160) — payment promised by Friday. Nudged" [ref=e113] [cursor=pointer]':
+              - /url: /assistant/t3
+              - generic [ref=e114]:
+                - generic [ref=e115]: Hilltop Diner
+                - generic [ref=e116]: 3h
+              - generic [ref=e117]: "Followed up on overdue invoice #INV-204 ($1,160) — payment promised by Friday."
+              - generic [ref=e118]: Nudged
+          - generic [ref=e119]:
+            - generic [ref=e120]: Yesterday
+            - link "Sarah Chen Mon Bathroom remodel contract drafted and e-signed. Crew scheduled Wed. Signed" [ref=e121] [cursor=pointer]:
+              - /url: /assistant/t4
+              - generic [ref=e122]:
+                - generic [ref=e123]: Sarah Chen
+                - generic [ref=e124]: Mon
+              - generic [ref=e125]: Bathroom remodel contract drafted and e-signed. Crew scheduled Wed.
+              - generic [ref=e126]: Signed
+            - link "Greenleaf HOA Mon Common area paint quote — 4,200 sqft, two coats, eggshell. Sent" [ref=e127] [cursor=pointer]:
+              - /url: /assistant/t5
+              - generic [ref=e128]:
+                - generic [ref=e129]: Greenleaf HOA
+                - generic [ref=e130]: Mon
+              - generic [ref=e131]: Common area paint quote — 4,200 sqft, two coats, eggshell.
+              - generic [ref=e132]: Sent
+          - generic [ref=e133]:
+            - generic [ref=e134]: This week
+            - 'link "Cobblestone Cafe Sun Patio re-tile invoice #INV-198 sent. $1,000 deposit received. Paid" [ref=e135] [cursor=pointer]':
+              - /url: /assistant/t6
+              - generic [ref=e136]:
+                - generic [ref=e137]: Cobblestone Cafe
+                - generic [ref=e138]: Sun
+              - generic [ref=e139]: "Patio re-tile invoice #INV-198 sent. $1,000 deposit received."
+              - generic [ref=e140]: Paid
+            - link "Bayside Properties Sat 4-unit gutter cleaning quote sent. Cold — 4 days no view. Sent" [ref=e141] [cursor=pointer]:
+              - /url: /assistant/t7
+              - generic [ref=e142]:
+                - generic [ref=e143]: Bayside Properties
+                - generic [ref=e144]: Sat
+              - generic [ref=e145]: 4-unit gutter cleaning quote sent. Cold — 4 days no view.
+              - generic [ref=e146]: Sent
+      - generic [ref=e148]:
+        - generic [ref=e149]:
+          - link "Back to dashboard" [ref=e150] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e151]
+          - generic [ref=e153]:
+            - generic [ref=e154]: Tom & Linda K. · Garage epoxy
+            - generic [ref=e155]: Quote locked · finishing terms with Bossie
+          - generic [ref=e156]:
+            - button "Share thread" [ref=e157] [cursor=pointer]:
+              - img [ref=e158]
+            - button "More" [ref=e161] [cursor=pointer]:
+              - img [ref=e162]
+        - generic [ref=e166]:
+          - generic [ref=e167]:
+            - generic [ref=e168]: ClientTom & Linda K.
+            - generic [ref=e169]: Quote total$3,400
+            - generic [ref=e170]:
+              - generic [ref=e171]:
+                - img [ref=e173]
+                - text: Quote
+              - text: →
+              - generic [ref=e175]: 2Terms
+              - text: →
+              - generic [ref=e176]: 3Send
+            - button "Back to chat" [ref=e177] [cursor=pointer]:
+              - img [ref=e178]
+              - text: Back to chat
+          - generic [ref=e180]: Today · 8:42 AM · Phase 1 — Chat
+          - generic [ref=e181]:
+            - generic [ref=e182]: DR
+            - generic [ref=e183]:
+              - generic [ref=e184]:
+                - button "Play" [ref=e185] [cursor=pointer]:
+                  - img [ref=e186]
+                - text: 0:23
+              - generic [ref=e215]: 8:42 AM · transcribed
+          - generic [ref=e218]:
+            - generic [ref=e219]:
+              - text: Got it —
+              - strong [ref=e220]: Tom & Linda K.
+              - text: ", 2-car garage epoxy floor. Heard you say \""
+              - emphasis [ref=e221]: standard prep, gray base with flakes, two-car about 480 sqft
+              - text: ."
+              - text: "Couple quick checks before I draft:"
+              - list [ref=e222]:
+                - listitem [ref=e223]: Concrete grinding included or just etch?
+                - listitem [ref=e224]: Polyurea topcoat or polyaspartic?
+            - generic [ref=e225]: 8:42 AM
+          - generic [ref=e226]:
+            - generic [ref=e227]: DR
+            - generic [ref=e228]:
+              - generic [ref=e229]:
+                - text: Grind. Polyaspartic. Here's the floor — couple oil stains in the back corner, factor that in.
+                - generic [ref=e230]:
+                  - img [ref=e232]
+                  - img [ref=e237]
+                  - img [ref=e242]
+              - generic [ref=e246]: 8:43 AM
+          - generic [ref=e249]:
+            - generic [ref=e250]:
+              - text: On it. Pulled your
+              - strong [ref=e251]: "\"Garage Epoxy — Premium\""
+              - text: template, swapped in the polyaspartic line, and added 1.5 hr extra prep for the oil staining. Quote ready to look at.
+            - generic [ref=e252]:
+              - generic [ref=e253]:
+                - img [ref=e255]
+                - generic [ref=e258]:
+                  - generic [ref=e259]: "Quote #Q-2026-041"
+                  - generic [ref=e260]: Tom & Linda K. · 2-car garage · ~480 sqft
+                - text: Draft
+              - generic [ref=e261]:
+                - generic [ref=e262]:
+                  - text: Surface prep + grind
+                  - strong [ref=e263]: $840
+                - generic [ref=e264]:
+                  - text: Polyaspartic system (3-coat)
+                  - strong [ref=e265]: $1,680
+                - generic [ref=e266]:
+                  - text: Color flakes & sealing
+                  - strong [ref=e267]: $520
+                - generic [ref=e268]:
+                  - text: Materials & mobilization
+                  - strong [ref=e269]: $360
+                - generic [ref=e270]:
+                  - text: Total
+                  - strong [ref=e271]: $3,400
+            - generic [ref=e272]: 8:43 AM · 47 sec to draft
+          - generic [ref=e273]:
+            - generic [ref=e274]: DR
+            - generic [ref=e275]:
+              - generic [ref=e276]: Looks good. Lock it in.
+              - generic [ref=e277]: 8:44 AM
+          - generic [ref=e280]:
+            - generic [ref=e281]:
+              - text: Locked at
+              - strong [ref=e282]: $3,400
+              - text: . Want to wrap the contract terms now? Should take about 90 seconds — mostly clicks.
+            - generic [ref=e283]:
+              - img [ref=e285]
+              - generic [ref=e288]:
+                - generic [ref=e289]: Continue to terms
+                - generic [ref=e290]: Payment, warranty, dispute, governing state — 7 quick questions
+              - button "Start" [ref=e291] [cursor=pointer]:
+                - text: Start
+                - img [ref=e292]
+            - generic [ref=e294]: 8:44 AM
+          - generic [ref=e297]:
+            - img [ref=e298]
+            - text: Phase 2 — Contract terms
+          - generic [ref=e304]:
+            - generic [ref=e305]:
+              - generic [ref=e306]:
+                - img [ref=e308]
+                - generic [ref=e311]:
+                  - generic [ref=e312]: Contract terms
+                  - generic [ref=e313]: Tap an answer · last button is always Custom
+                - generic [ref=e314]:
+                  - img [ref=e315]
+                  - text: Standard residential
+                - button "All-on-one" [ref=e317] [cursor=pointer]:
+                  - img [ref=e318]
+                  - text: All-on-one
+              - generic [ref=e319]:
+                - generic [ref=e320]:
+                  - text: ✓Config:Standard residential
+                  - img [ref=e321]
+                - generic [ref=e323]:
+                  - text: ✓Customer:Tom & Linda K.
+                  - img [ref=e324]
+                - generic [ref=e326]:
+                  - text: ✓Start:Mon May 4
+                  - img [ref=e327]
+                - generic [ref=e329]:
+                  - text: ✓Wraps:2 days · May 5
+                  - img [ref=e330]
+              - generic [ref=e332]:
+                - generic [ref=e333]: Step 5 of 10 · Payment terms
+                - heading "How do you want to get paid?" [level=3] [ref=e334]
+                - generic [ref=e335]:
+                  - button "50 / 50$1,700 deposit · $1,700 on finish" [ref=e336] [cursor=pointer]
+                  - button "30 / 30 / 40$1,020 / $1,020 / $1,360" [ref=e337] [cursor=pointer]
+                  - button "Net 15 — full$3,400 due 15 days after wrap" [ref=e338] [cursor=pointer]
+                  - button "Deposit + balance$500 hold · balance on finish" [ref=e339] [cursor=pointer]
+                  - button "Custom…Tell Bossie a different schedule" [ref=e340] [cursor=pointer]:
+                    - img [ref=e341]
+                    - text: Custom…Tell Bossie a different schedule
+                - generic [ref=e343]:
+                  - img [ref=e344]
+                  - text: "Defaults:"
+                  - strong [ref=e346]: Net 15 · 1.5% late fee
+                  - text: — editable after picking
+              - generic [ref=e347]:
+                - text: "Up next:"
+                - generic [ref=e348]: 6 Warranty
+                - generic [ref=e349]: 7 Termination
+                - generic [ref=e350]: 8 Dispute
+                - generic [ref=e351]: 9 Governing state
+                - generic [ref=e352]: 10 State notices
+              - generic [ref=e353]:
+                - text: 4 of 10 done
+                - button "Finalize & send" [ref=e354] [cursor=pointer]:
+                  - img [ref=e355]
+                  - text: Finalize & send
+            - generic [ref=e357]: 8:44 AM · autosaving as you tap
+        - generic [ref=e358]:
+          - text: "Or just type:"
+          - button "\"Net 30 instead\"" [ref=e359] [cursor=pointer]:
+            - img [ref=e360]
+            - text: "\"Net 30 instead\""
+          - button "Re-open the quote" [ref=e362] [cursor=pointer]:
+            - img [ref=e363]
+            - text: Re-open the quote
+          - button "Use last contract" [ref=e368] [cursor=pointer]:
+            - img [ref=e369]
+            - text: Use last contract
+        - generic [ref=e371]:
+          - generic [ref=e372]:
+            - textbox "Tell me what you need — or hit the mic and just talk." [ref=e373]
+            - generic [ref=e374]:
+              - button "Attach photo" [ref=e375] [cursor=pointer]:
+                - img [ref=e376]
+              - button "Attach file" [ref=e380] [cursor=pointer]:
+                - img [ref=e381]
+              - button "Voice memo" [ref=e383] [cursor=pointer]:
+                - img [ref=e384]
+              - button "Send" [disabled] [ref=e387] [cursor=pointer]:
+                - img [ref=e388]
+          - generic [ref=e390]: ⏎ send · ⇧⏎ new line · ⌘K commands
+      - complementary [ref=e391]:
+        - generic [ref=e392]:
+          - button "Quote DRAFT" [ref=e393] [cursor=pointer]:
+            - img [ref=e394]
+            - text: Quote DRAFT
+          - button "Client" [ref=e397] [cursor=pointer]:
+            - img [ref=e398]
+            - text: Client
+          - button "Log" [ref=e401] [cursor=pointer]:
+            - img [ref=e402]
+            - text: Log
+        - generic [ref=e405]:
+          - generic [ref=e406]:
+            - generic [ref=e407]:
+              - img [ref=e408]
+              - text: Bossie's docket · today
+            - generic [ref=e410]:
+              - generic [ref=e411]:
+                - generic [ref=e412]: "3"
+                - generic [ref=e413]: Quotes drafted
+              - generic [ref=e414]:
+                - generic [ref=e415]: "7"
+                - generic [ref=e416]: Nudges sent
+              - generic [ref=e417]:
+                - generic [ref=e418]: "2"
+                - generic [ref=e419]: Invoices created
+              - generic [ref=e420]:
+                - generic [ref=e421]: $8.4k
+                - generic [ref=e422]: Out the door
+          - generic [ref=e423]:
+            - generic [ref=e424]:
+              - generic [ref=e425]: Quote · Q-2026-041
+              - generic [ref=e426]: 2-Car Garage Epoxy Floor
+              - generic [ref=e427]:
+                - generic [ref=e428]:
+                  - generic [ref=e429]: Client
+                  - generic [ref=e430]: Tom & Linda K.
+                - generic [ref=e431]:
+                  - generic [ref=e432]: Issued
+                  - generic [ref=e433]: Apr 28, 2026
+                - generic [ref=e434]:
+                  - generic [ref=e435]: Valid through
+                  - generic [ref=e436]: May 28, 2026
+                - generic [ref=e437]:
+                  - generic [ref=e438]: Job site
+                  - generic [ref=e439]: 412 Elm St.
+            - generic [ref=e440]:
+              - generic [ref=e441]:
+                - generic [ref=e442]:
+                  - generic [ref=e443]: Surface prep & concrete grinding
+                  - generic [ref=e444]: ~480 sqft · 1 day · includes oil-stain treatment
+                - generic [ref=e445]: $840
+              - generic [ref=e446]:
+                - generic [ref=e447]:
+                  - generic [ref=e448]: Polyaspartic 3-coat system
+                  - generic [ref=e449]: Primer + base + topcoat · 480 sqft
+                - generic [ref=e450]: $1,680
+              - generic [ref=e451]:
+                - generic [ref=e452]:
+                  - generic [ref=e453]: Decorative flakes & sealing
+                  - generic [ref=e454]: Gray blend · UV-stable sealant
+                - generic [ref=e455]: $520
+              - generic [ref=e456]:
+                - generic [ref=e457]:
+                  - generic [ref=e458]: Materials & mobilization
+                  - generic [ref=e459]: Crew of 2 · 1 truck
+                - generic [ref=e460]: $360
+            - generic [ref=e461]:
+              - generic [ref=e462]: Subtotal$3,400
+              - generic [ref=e463]: Tax (estimated)included
+              - generic [ref=e464]:
+                - strong [ref=e466]: Total
+                - strong [ref=e467]: $3,400
+        - generic [ref=e468]:
+          - button "Preview" [ref=e469] [cursor=pointer]:
+            - img [ref=e470]
+            - text: Preview
+          - button "Send to client" [ref=e473] [cursor=pointer]:
+            - img [ref=e474]
+            - text: Send to client

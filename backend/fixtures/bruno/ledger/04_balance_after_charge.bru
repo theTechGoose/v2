@@ -1,0 +1,18 @@
+meta {
+  name: 04 balance after charge — outstanding
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/accounts/{{ledgerAccountId}}/balance
+  auth: none
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("balance is -1280 (customer owes)", function() { expect(res.getBody().balance.balance).to.equal(-1280); });
+  test("charges total is 1280", function() { expect(res.getBody().balance.charges).to.equal(1280); });
+  test("payments total is 0", function() { expect(res.getBody().balance.payments).to.equal(0); });
+  test("entry count is 1", function() { expect(res.getBody().balance.entryCount).to.equal(1); });
+}

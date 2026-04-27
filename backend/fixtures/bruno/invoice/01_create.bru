@@ -1,0 +1,37 @@
+meta {
+  name: 01 create invoice
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/invoices
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "contractId": "00000000-0000-0000-0000-000000000002",
+    "amount": 1280,
+    "issuedDate": "2026-04-26",
+    "dueDate": "2026-05-26",
+    "status": "issued"
+  }
+}
+
+script:post-response {
+  bru.setVar("invoiceId", res.getBody().id);
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("returns id", function() {
+    expect(res.getBody().id).to.be.a("string");
+  });
+  test("amount preserved", function() {
+    expect(res.getBody().amount).to.equal(1280);
+  });
+}

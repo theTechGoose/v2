@@ -1,0 +1,33 @@
+meta {
+  name: 01 create payment terms (50/50)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/payment-terms
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "50% deposit, 50% on completion",
+    "description": "standard residential schedule",
+    "installments": [
+      { "percent": 50, "dueDate": "2026-04-01", "label": "Deposit" },
+      { "percent": 50, "dueDate": "2026-05-15", "label": "On completion" }
+    ]
+  }
+}
+
+script:post-response {
+  bru.setVar("paymentTermsId", res.getBody().id);
+}
+
+tests {
+  test("status is 200", function() { expect(res.getStatus()).to.equal(200); });
+  test("returns id", function() { expect(res.getBody().id).to.be.a("string"); });
+  test("two installments preserved", function() { expect(res.getBody().installments.length).to.equal(2); });
+  test("first installment percent", function() { expect(res.getBody().installments[0].percent).to.equal(50); });
+}

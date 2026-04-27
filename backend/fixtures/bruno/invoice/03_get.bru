@@ -1,0 +1,19 @@
+meta {
+  name: 03 get invoice
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/invoices/{{invoiceId}}
+  auth: none
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("id matches", function() {
+    expect(res.getBody().id).to.equal(bru.getVar("invoiceId"));
+  });
+}

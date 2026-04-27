@@ -1,0 +1,29 @@
+{
+  "tasks": {
+    "start": "AGENTS_LLM_CLIENT=openai deno run -A --unstable-kv bootstrap/mod.ts",
+    "dev":   "AGENTS_LLM_CLIENT=openai deno run -A --watch --unstable-kv bootstrap/mod.ts",
+    "test": "deno test -A --unstable-kv --parallel"
+  },
+  "imports": {
+    "#mrg-keystone/danet": "jsr:@mrg-keystone/danet@^1.0.2",
+    "#danet/core": "jsr:@danet/core@2",
+    "#reflect-metadata": "npm:reflect-metadata@0.1.13",
+    "#class-validator": "npm:class-validator@0.14.1",
+    "#class-transformer": "npm:class-transformer@0.5.1",
+    "#openai": "npm:openai@4",
+    "#std/assert": "jsr:@std/assert@^1",
+    "@core/": "./src/core/",
+    "@crm/": "./src/crm/",
+    "@paperwork/": "./src/paperwork/",
+    "@communication/": "./src/communication/",
+    "@users/": "./src/users/",
+    "@profile/": "./src/users/profile/",
+    "@agents/": "./src/agents/",
+    "@analytics/": "./src/core/analytics/",
+    "@files/": "./src/core/files/"
+  },
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  }
+}

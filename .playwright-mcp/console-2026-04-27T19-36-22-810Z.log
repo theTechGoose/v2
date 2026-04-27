@@ -1,0 +1,2 @@
+[  106540ms] [ERROR] Access to script at 'fresh-island::CodeInput_11.tsx' from origin 'http://localhost:5173' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: chrome, chrome-extension, chrome-untrusted, data, http, https, isolated-app. @ http://localhost:5173/verify?phone=%2B15125551234:0
+[  106540ms] [ERROR] Failed to load resource: net::ERR_FAILED @ fresh-island::CodeInput_11.tsx:0

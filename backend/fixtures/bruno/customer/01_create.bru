@@ -1,0 +1,40 @@
+meta {
+  name: 01 create customer
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/customers
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "Acme Plumbing",
+    "email": "ops@acme.test",
+    "phoneNumber": "+1-555-0100",
+    "address": "1 Main St"
+  }
+}
+
+script:post-response {
+  bru.setVar("customerId", res.getBody().id);
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("returns id", function() {
+    expect(res.getBody().id).to.be.a("string");
+  });
+  test("echoes name", function() {
+    expect(res.getBody().name).to.equal("Acme Plumbing");
+  });
+  test("has timestamps", function() {
+    expect(res.getBody().createdAt).to.be.a("string");
+    expect(res.getBody().updatedAt).to.be.a("string");
+  });
+}

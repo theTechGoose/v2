@@ -1,0 +1,39 @@
+meta {
+  name: 01 create quote
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/quotes
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "summary": "Replace water heater",
+    "lineItems": [
+      { "description": "50gal tank", "quantity": 1, "unit": "ea", "price": 800 },
+      { "description": "Labor", "quantity": 4, "unit": "hr", "price": 120 }
+    ],
+    "estimatedTotal": 1280,
+    "status": "draft"
+  }
+}
+
+script:post-response {
+  bru.setVar("quoteId", res.getBody().id);
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("returns id", function() {
+    expect(res.getBody().id).to.be.a("string");
+  });
+  test("line items preserved", function() {
+    expect(res.getBody().lineItems).to.have.lengthOf(2);
+  });
+}
