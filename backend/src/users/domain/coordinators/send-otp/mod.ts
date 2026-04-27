@@ -45,6 +45,9 @@ export class SendOtp {
     await this.otps.put({ phoneNumber: normalizedPhone, code, language: input.language });
 
     const body = renderSmsBody(code, input.language ?? "en");
+    if (Deno.env.get("DEV_LOG_OTP") === "1") {
+      console.log(`[otp:debug] code=${code} phone=${normalizedPhone}`);
+    }
     const result = await this.sms.send({ to: normalizedPhone, body });
     if (!result.ok) {
       console.error(`[send-otp] SMS dispatch failed for ${normalizedPhone}: ${result.reason}`);
