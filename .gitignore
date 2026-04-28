@@ -1,0 +1,18 @@
+.env
+.env.*
+!.env.example
+
+node_modules/
+.vite/
+dist/
+build/
+.DS_Store
+*.log
+
+# Fresh build output (built by Deno Deploy)
+front-end/_fresh/
+
+# Local screenshots / scratch
+.playwright-mcp/
+*.png
+
