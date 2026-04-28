@@ -84,14 +84,14 @@
     if (ctaBtn) ctaBtn.textContent = s.sending;
     clearError();
     try {
-      const r = await fetch("/api/auth/verify", {
+      const r = await fetch("/api/auth/verify-otp", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ phoneNumber: phone, code }),
         credentials: "include",
       });
       const j = await r.json();
-      if (r.ok && j.ok) {
+      if (r.ok && j.sessionId) {
         location.href = j.redirectTo || "/dashboard";
         return;
       }
