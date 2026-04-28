@@ -33,7 +33,20 @@ function matchesBackend(pathname: string): boolean {
 export default {
   fetch(req: Request, info: Deno.ServeHandlerInfo): Response | Promise<Response> {
     const url = new URL(req.url);
-    if (matchesBackend(url.pathname)) {
+    let pathname = url.pathname;
+
+    // Frontend islands call `/api/<backend-path>`; strip the `/api` prefix
+    // and let the backend match it via its existing controller routes.
+    if (pathname.startsWith("/api/")) {
+      const stripped = pathname.slice(4);
+      if (matchesBackend(stripped)) {
+        const rewritten = new URL(req.url);
+        rewritten.pathname = stripped;
+        return backend.fetch(new Request(rewritten, req));
+      }
+    }
+
+    if (matchesBackend(pathname)) {
       return backend.fetch(req);
     }
     return (frontend as { fetch: (req: Request, info: Deno.ServeHandlerInfo) => Response | Promise<Response> }).fetch(req, info);
