@@ -1,4 +1,5 @@
 {
+  "workspace": ["./backend", "./front-end"],
   "nodeModulesDir": "manual",
   "tasks": {
     "build": "cd front-end && PATH=\"$PWD/../node_modules/.bin:$PATH\" deno task build",
