@@ -62,8 +62,15 @@ const analyzeFile = async (
 
   const base = path.basename(file.name).split(".")[0];
 
+  // headless/run.tsx pulls @b-fuze/deno-dom (a wasm-backed DOM parser)
+  // which Rollup can't statically include in the SSR bundle. We never
+  // reach this branch in production (main.ts hardcodes runHeadlessChecks:
+  // false), and even @vite-ignore on the dynamic import doesn't stop
+  // SSR build-time analysis. So compose the specifier at runtime to
+  // hide it from Rollup; the import is still callable when explicitly
+  // re-enabled in dev.
   const runChecks = config.runHeadlessChecks
-    ? (await import("./headless/run.tsx")).runChecks
+    ? (await import(["./headless/", "run.tsx"].join(""))).runChecks
     : undefined;
 
   let componentsForFile: Record<string, FunctionComponent> = {};
