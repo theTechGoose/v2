@@ -1,9 +1,12 @@
 import { App, staticFiles } from "fresh";
 import { define, type State } from "./utils.ts";
+import denostories from "denostories";
 
 export const app = new App<State>();
 
 app.use(staticFiles());
+
+app.use(denostories({ runHeadlessChecks: false }));
 
 // Pass a shared value from a middleware
 app.use(async (ctx) => {

@@ -35,7 +35,13 @@ function otelEsmFix(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [otelEsmFix(), fresh()],
+  plugins: [
+    otelEsmFix(),
+    fresh({
+      islandSpecifiers: ["@/denostories/src/components/Menu.tsx"],
+    }),
+  ],
+  assetsInclude: ["**/*.wasm"],
   ssr: {
     noExternal: ["@opentelemetry/api"],
   },

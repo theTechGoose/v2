@@ -1644,8 +1644,12 @@
       },
       "front-end": {
         "dependencies": [
+          "jsr:@b-fuze/deno-dom@~0.1.56",
           "jsr:@fresh/core@^2.3.1",
           "jsr:@fresh/plugin-vite@^1.1.0",
+          "jsr:@std/assert@^1.0.15",
+          "jsr:@std/fs@^1.0.19",
+          "jsr:@wok/case@^1.0.2",
           "npm:@preact/signals@^2.9.0",
           "npm:@types/babel__core@^7.20.5",
           "npm:preact@^10.29.1",
