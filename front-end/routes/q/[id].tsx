@@ -1,6 +1,7 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import PublicAcceptQuote from "../../islands/PublicAcceptQuote.tsx";
+import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 
 interface QuotePublic {
   id: string;
@@ -13,19 +14,13 @@ interface QuotePublic {
   createdAt?: string;
 }
 
-const BACKEND_URL = Deno.env.get("BACKEND_URL") ?? "http://localhost:3000";
-
 export default define.page(async function PublicQuote(ctx) {
   const id = ctx.params.id;
   let quote: QuotePublic | undefined;
   let err: string | undefined;
-  try {
-    const r = await fetch(`${BACKEND_URL}/quotes/${id}/public`, { headers: { accept: "application/json" } });
-    if (r.ok) quote = await r.json();
-    else err = `Quote not found (${r.status})`;
-  } catch (e) {
-    err = (e as Error).message ?? "couldn't load quote";
-  }
+  const r = await ssrBackendGet<QuotePublic>(`/quotes/${id}/public`);
+  if (r.ok) quote = r.data;
+  else err = r.status === 404 ? "Quote not found" : `Quote unavailable (${r.status})`;
 
   return (
     <>

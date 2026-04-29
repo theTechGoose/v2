@@ -1,5 +1,6 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 
 interface InvoicePublic {
   id: string;
@@ -12,19 +13,13 @@ interface InvoicePublic {
   paidAt?: string;
 }
 
-const BACKEND_URL = Deno.env.get("BACKEND_URL") ?? "http://localhost:3000";
-
 export default define.page(async function PublicInvoice(ctx) {
   const id = ctx.params.id;
   let invoice: InvoicePublic | undefined;
   let err: string | undefined;
-  try {
-    const r = await fetch(`${BACKEND_URL}/invoices/${id}/public`, { headers: { accept: "application/json" } });
-    if (r.ok) invoice = await r.json();
-    else err = `Invoice not found (${r.status})`;
-  } catch (e) {
-    err = (e as Error).message ?? "couldn't load invoice";
-  }
+  const r = await ssrBackendGet<InvoicePublic>(`/invoices/${id}/public`);
+  if (r.ok) invoice = r.data;
+  else err = r.status === 404 ? "Invoice not found" : `Invoice unavailable (${r.status})`;
 
   return (
     <>

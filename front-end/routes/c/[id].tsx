@@ -1,6 +1,7 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import PublicSignContract from "../../islands/PublicSignContract.tsx";
+import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 
 interface ContractPublic {
   id: string;
@@ -12,19 +13,13 @@ interface ContractPublic {
   estimatedCompletionDate?: string;
 }
 
-const BACKEND_URL = Deno.env.get("BACKEND_URL") ?? "http://localhost:3000";
-
 export default define.page(async function PublicContract(ctx) {
   const id = ctx.params.id;
   let contract: ContractPublic | undefined;
   let err: string | undefined;
-  try {
-    const r = await fetch(`${BACKEND_URL}/contracts/${id}/public`, { headers: { accept: "application/json" } });
-    if (r.ok) contract = await r.json();
-    else err = `Contract not found (${r.status})`;
-  } catch (e) {
-    err = (e as Error).message ?? "couldn't load contract";
-  }
+  const r = await ssrBackendGet<ContractPublic>(`/contracts/${id}/public`);
+  if (r.ok) contract = r.data;
+  else err = r.status === 404 ? "Contract not found" : `Contract unavailable (${r.status})`;
 
   return (
     <>
