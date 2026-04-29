@@ -1328,6 +1328,19 @@ section { position: relative; }
   display: flex; flex-direction: column; gap: 6px;
 }
 .chat-step.in { opacity: 1; transform: translateY(0) scale(1); }
+/* The PhoneChat island renders chat-steps fresh-mounted with `.in` already
+   set, so the transition above never fires. Use a one-shot keyframe — it
+   runs on element insertion. The two coexist: legacy DOM-mutation flow
+   (transition fires when .in is added later) and island flow (animation
+   fires on mount). */
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+/* Phones don't have visible scrollbars; hide the chat-body's track while
+   keeping the scroll behavior intact. */
+.phone .chat-body { scrollbar-width: none; }
+.phone .chat-body::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .chat-step .bubble { align-self: flex-start; }
 .chat-step.right .bubble, .chat-step.right .quote-card, .chat-step.right .bubble-meta { align-self: flex-end; }
 .chat-step.right { align-items: flex-end; }

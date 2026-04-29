@@ -1,4 +1,4 @@
-import backend from "./backend/handler.ts";
+import backend from "./backend/bootstrap/mod.ts";
 import frontend from "./front-end/_fresh/server.js";
 
 const BACKEND_PREFIXES = [

@@ -12,6 +12,11 @@ import { HandleChatMessage } from "@agents/domain/coordinators/handle-chat-messa
 import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
 import { HandleWizardAnswer } from "@agents/domain/coordinators/handle-wizard-answer/mod.ts";
 import { LoadConversation } from "@agents/domain/coordinators/load-conversation/mod.ts";
+import { LockQuote } from "@agents/domain/coordinators/lock-quote/mod.ts";
+import { AcceptQuote } from "@agents/domain/coordinators/accept-quote/mod.ts";
+import { AcceptContract } from "@agents/domain/coordinators/accept-contract/mod.ts";
+import { SendContract } from "@agents/domain/coordinators/send-contract/mod.ts";
+import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
 import type { LLMClient } from "@agents/domain/business/llm/base/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
@@ -65,6 +70,11 @@ const LlmClientClass = await selectLLMClass();
     TransitionToTerms,
     HandleWizardAnswer,
     LoadConversation,
+    LockQuote,
+    AcceptQuote,
+    AcceptContract,
+    SendContract,
+    SendInvoice,
     { token: LLM_CLIENT, useClass: LlmClientClass },
   ],
 })

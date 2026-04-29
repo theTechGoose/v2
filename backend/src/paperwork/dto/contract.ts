@@ -1,5 +1,6 @@
 import { IsNumber, IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
+import type { ContractMood } from "@paperwork/domain/business/contract-mood/mod.ts";
 
 export class CreateContractDto {
   @IsString()
@@ -31,6 +32,8 @@ export interface Contract extends CreateContractDto {
   userId: string;
   createdAt: string;
   updatedAt: string;
+  /** Computed read-only field: never accepted from request bodies; projected on read. */
+  mood?: ContractMood;
 }
 
 export function parseCreateContract(input: unknown): CreateContractDto {

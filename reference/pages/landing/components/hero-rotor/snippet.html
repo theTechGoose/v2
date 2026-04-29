@@ -1,0 +1,21 @@
+<!-- Source: pages/landing/raw.html lines 1983–1994 (excerpted) -->
+<h1>
+  You do the work.<br/>
+  We handle the
+  <span class="rotor">
+    <span class="rotor-track" id="rotor-track">
+      <span class="word in" data-en="quotes."    data-es="cotizaciones.">quotes.</span>
+      <span class="word"    data-en="contracts." data-es="contratos.">contracts.</span>
+      <span class="word"    data-en="invoices."  data-es="facturas.">invoices.</span>
+      <span class="word"    data-en="paperwork." data-es="papeleo.">paperwork.</span>
+    </span>
+  </span>
+</h1>
+
+<!--
+  Behavior:
+  - The currently visible word has class .word.in (opacity 1, translateY 0).
+  - On rotate, JS adds .word.out to the current word (slide up + blur), then swaps .in to the next.
+  - Cycle interval is set in inline JS (~3.4s).
+  - data-en / data-es are picked up by the LangToggle script that swaps copy on click.
+-->

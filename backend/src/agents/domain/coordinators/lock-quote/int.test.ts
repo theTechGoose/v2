@@ -34,7 +34,7 @@ async function withKv<T>(fn: () => Promise<T>): Promise<T> {
   try { return await fn(); } finally { await resetKv(); }
 }
 
-Deno.test("lock-quote integration: flips quote→sent, appends action_card + continue_cta", async () => {
+Deno.test("lock-quote integration: flips quote→sent, appends action_card only (no continue_cta until accept)", async () => {
   await withKv(async () => {
     const s = fresh();
     const conv = await s.conversations.create({ userId: "u-1", currentPhase: "quote" });
@@ -42,9 +42,8 @@ Deno.test("lock-quote integration: flips quote→sent, appends action_card + con
       summary: "Roof", lineItems: [{ description: "x", quantity: 1, unit: "ea", price: 100 }], estimatedTotal: 100,
     });
     const r = await s.flow.run({ userId: "u-1", conversationId: conv.id, quoteId: quote.id });
-    assertEquals(r.newMessages.length, 2);
+    assertEquals(r.newMessages.length, 1);
     assertEquals(r.newMessages[0].kind, "action_card");
-    assertEquals(r.newMessages[1].kind, "continue_cta");
     const after = await s.quotes.get(quote.id);
     assertEquals(after.status, "sent");
   });

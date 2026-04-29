@@ -51,10 +51,7 @@ export default define.page(function QuotesRoute(ctx) {
       </Head>
 
       <div class="app">
-        <DashSidebar
-          active="quotes"
-          user={user ? { name: user.name, phoneNumber: user.phoneNumber } : undefined}
-        />
+        <DashSidebar active="quotes" />
         <main class="main">
           <DashTopbar
             greetingDate={greetingDate}

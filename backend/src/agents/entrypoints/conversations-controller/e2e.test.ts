@@ -137,6 +137,34 @@ Deno.test("agents conversations e2e: DELETE removes the conversation", async () 
   });
 });
 
+Deno.test("agents conversations e2e: GET /:id/phase returns the projected phase state", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const conv = await fetch(`http://localhost:${port}/agents/conversations`, {
+      method: "POST", headers: { "content-type": "application/json", "x-session-id": sid }, body: "{}",
+    }).then((r) => r.json());
+
+    const fresh = await fetch(`http://localhost:${port}/agents/conversations/${conv.id}/phase`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(fresh.currentPhase, "quote");
+    assertEquals(fresh.canAdvance, false);
+    assertEquals(fresh.nextPhaseHint, "terms");
+    assertEquals(fresh.quoteId, undefined);
+
+    await fetch(`http://localhost:${port}/agents/conversations/${conv.id}/transition-to-terms`, {
+      method: "POST", headers: { "x-session-id": sid },
+    }).then(drain);
+
+    const after = await fetch(`http://localhost:${port}/agents/conversations/${conv.id}/phase`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(after.currentPhase, "terms");
+    assertEquals(after.canAdvance, false);
+    assertEquals(after.nextPhaseHint, undefined);
+  });
+});
+
 Deno.test("agents conversations e2e: GET without session is rejected", async () => {
   await withServer(async (port) => {
     const res = await fetch(`http://localhost:${port}/agents/conversations`);

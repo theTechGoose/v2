@@ -5,22 +5,18 @@ interface NavEntry { id: string; icon: IconName; label: string; count?: number; 
 
 const NAV: NavEntry[] = [
   { id: "home",      icon: "home",     label: "Dashboard",     href: "/dashboard" },
-  { id: "jobs",      icon: "hardhat",  label: "Jobs",          href: "/jobs",      count: 7 },
   { id: "clients",   icon: "user",     label: "Clients",       href: "/clients" },
   { id: "quotes",    icon: "quote",    label: "Quotes",        href: "/quotes",    count: 4 },
   { id: "contracts", icon: "contract", label: "Contracts",     href: "/contracts" },
   { id: "invoices",  icon: "invoice",  label: "Invoices",      href: "/invoices",  count: 3 },
   { id: "payments",  icon: "pay",      label: "Payments",      href: "/payments" },
-  { id: "messages",  icon: "msg",      label: "Conversations", href: "/messages",  count: 2 },
 ];
 
 interface Props {
   active?: string;
-  user?: { name?: string; phoneNumber: string };
-  business?: string;
 }
 
-export default function DashSidebar({ active = "home", user, business }: Props) {
+export default function DashSidebar({ active = "home" }: Props) {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof globalThis.localStorage === "undefined") return false;
     return globalThis.localStorage.getItem("pm:sb-collapsed") === "1";
@@ -34,9 +30,12 @@ export default function DashSidebar({ active = "home", user, business }: Props) 
     });
   }
 
-  const initials = (user?.name ?? user?.phoneNumber ?? "??").trim().slice(0, 2).toUpperCase();
-  const displayName = user?.name ?? "Account";
-  const biz = business ?? "Your business";
+  async function logout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST", headers: { "content-type": "application/json" } });
+    } catch { /* network down — proxy still clears the cookie locally on retry; redirect anyway */ }
+    globalThis.location.href = "/";
+  }
 
   return (
     <aside class={`sb ${collapsed ? "sb--collapsed" : ""}`}>
@@ -69,23 +68,30 @@ export default function DashSidebar({ active = "home", user, business }: Props) 
               {item.count != null ? <span class="nav-item__count">{item.count}</span> : null}
             </a>
           ))}
-          <div class="sb__label">Account</div>
+        </nav>
+
+        <div class="sb__bottom">
+          <div class="sb__bottom-head">
+            <span class="sb__label">Account</span>
+            <button
+              type="button"
+              class="sb__toggle"
+              onClick={toggle}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={collapsed ? "Expand" : "Collapse"}
+            >
+              <I d={<><path d="M6 9l6 6 6-6" /></>} size={14} />
+            </button>
+          </div>
           <a class={`nav-item ${active === "settings" ? "nav-item--active" : ""}`} href="/settings">
             <span class="nav-item__icon"><I d={ICN.cog} size={18} /></span>
             <span class="nav-item__label">Settings</span>
           </a>
-        </nav>
-
-        <button type="button" class="sb__footer" onClick={toggle} title={collapsed ? "Expand" : "Collapse"}>
-          <div class="sb__avatar">{initials}</div>
-          <div class="sb__user-text">
-            <div class="sb__user-name">{displayName}</div>
-            <div class="sb__user-biz">{biz}</div>
-          </div>
-          <span class="sb__cog" aria-hidden="true">
-            <I d={<><path d="M6 9l6 6 6-6" /></>} size={14} />
-          </span>
-        </button>
+          <button type="button" class="nav-item nav-item--logout" onClick={logout}>
+            <span class="nav-item__icon"><I d={ICN.logout} size={18} /></span>
+            <span class="nav-item__label">Log out</span>
+          </button>
+        </div>
       </div>
     </aside>
   );

@@ -1,0 +1,209 @@
+  .pph {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(220px, 0.95fr);
+    gap: 24px;
+    align-items: center;
+    padding: 32px 32px 32px 4px;
+    margin: 4px 0 26px;
+    overflow: visible;
+  }
+  .pph__main { position: relative; z-index: 2; }
+  .pph__eyebrow {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-family: var(--font-heading);
+    font-size: 11px; font-weight: 800;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--brand-pink);
+    margin-bottom: 12px;
+    padding: 5px 11px 5px 9px;
+    background: rgba(255,107,107,0.10);
+    border: 1px solid rgba(255,107,107,0.22);
+    border-radius: var(--radius-pill);
+  }
+  .pph__eyebrow svg { color: var(--brand-pink); }
+  .pph__title {
+    font-family: var(--font-heading);
+    font-weight: 800;
+    font-size: clamp(40px, 5.4vw, 72px);
+    line-height: 0.92;
+    letter-spacing: -0.025em;
+    color: var(--brand-teal);
+    margin: 0 0 12px;
+    font-variant-numeric: tabular-nums;
+    text-wrap: balance;
+  }
+  .pph__title-amount {
+    color: var(--brand-pink);
+    font-style: normal;
+    display: inline-block;
+  }
+  .pph__title-amount sup {
+    font-size: 0.46em;
+    vertical-align: 0.6em;
+    margin-right: 0.06em;
+    font-weight: 800;
+    letter-spacing: 0;
+  }
+  .pph__title-tail {
+    display: block;
+    font-size: clamp(22px, 2.8vw, 36px);
+    color: var(--brand-teal);
+    line-height: 1.05;
+    margin-top: 4px;
+    letter-spacing: -0.018em;
+  }
+  .pph__sub {
+    font-family: var(--font-body);
+    font-size: 15px; line-height: 1.55;
+    color: var(--fg-muted);
+    margin: 14px 0 22px;
+    max-width: 46ch;
+    text-wrap: pretty;
+  }
+  .pph__sub strong { color: var(--brand-teal); font-weight: 700; }
+  .pph__cta-row {
+    display: flex; align-items: center; gap: 14px;
+    flex-wrap: wrap;
+  }
+  .pph__cta {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 13px 20px;
+    background: var(--brand-pink);
+    color: #fff;
+    border: none; border-radius: var(--radius-pill);
+    font-family: var(--font-heading); font-weight: 700; font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 6px 18px -6px rgba(255,107,107,0.55);
+    transition: transform 160ms var(--ease-bounce);
+  }
+  .pph__cta:hover { transform: translateY(-1px); }
+  .pph__ghost {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 16px;
+    background: transparent;
+    color: var(--brand-teal);
+    border: 1px solid rgba(26,83,92,0.18);
+    border-radius: var(--radius-pill);
+    font-family: var(--font-heading); font-weight: 700; font-size: 13px;
+    cursor: pointer;
+    transition: background 160ms;
+  }
+  .pph__ghost:hover { background: rgba(26,83,92,0.04); }
+
+  /* Stack of recent-payment "stubs" on the right */
+  .pph__stack {
+    position: relative;
+    height: 260px;
+    display: block;
+    min-width: 0;
+  }
+  .pph__stub {
+    position: absolute;
+    right: 0;
+    width: clamp(220px, 100%, 280px);
+    background: #fff;
+    border-radius: 18px;
+    border: 1px solid rgba(26,83,92,0.10);
+    box-shadow:
+      0 18px 40px -18px rgba(26,53,48,0.28),
+      0 2px 4px rgba(26,53,48,0.05);
+    padding: 14px 16px;
+    transition: transform 280ms var(--ease-bounce), box-shadow 240ms ease;
+  }
+  .pph__stub--3 { top: 0;    transform: rotate(-4.2deg) translateX(-22px); z-index: 1; }
+  .pph__stub--2 { top: 70px;  transform: rotate(2.6deg)  translateX(8px);   z-index: 2; }
+  .pph__stub--1 { top: 140px; transform: rotate(-1.3deg) translateX(-6px);  z-index: 3; }
+  .pph__stack:hover .pph__stub--1 { transform: rotate(-1.3deg) translate(-6px, -3px); }
+  .pph__stack:hover .pph__stub--2 { transform: rotate(2.6deg)  translate(8px, -2px); }
+  .pph__stack:hover .pph__stub--3 { transform: rotate(-4.2deg) translate(-22px, -1px); }
+
+  .pph__stub-head {
+    display: flex; align-items: center; gap: 9px;
+    margin-bottom: 12px;
+  }
+  .pph__stub-av {
+    width: 30px; height: 30px;
+    border-radius: 9px;
+    display: grid; place-items: center;
+    color: #fff;
+    font-family: var(--font-heading); font-weight: 800; font-size: 11px;
+    letter-spacing: 0.04em;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.22);
+    flex-shrink: 0;
+  }
+  .pph__stub-meta { flex: 1; min-width: 0; line-height: 1.15; }
+  .pph__stub-client {
+    font-family: var(--font-heading);
+    font-weight: 700; font-size: 12.5px; color: var(--brand-teal);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .pph__stub-when {
+    font-family: var(--font-body);
+    font-size: 10.5px;
+    color: var(--fg-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 1px;
+  }
+  .pph__stub-amount {
+    font-family: var(--font-heading);
+    font-weight: 800;
+    font-size: 32px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--brand-teal);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 4px;
+  }
+  .pph__stub-foot {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: var(--font-body);
+    font-size: 11px; color: var(--fg-muted);
+    border-top: 1px dashed rgba(26,83,92,0.18);
+    padding-top: 8px;
+    margin-top: 10px;
+  }
+  .pph__stub-method {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--font-heading); font-weight: 700;
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--brand-teal);
+  }
+  .pph__stub-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-family: var(--font-heading); font-weight: 700;
+    font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: var(--radius-pill);
+    background: var(--green-50);
+    color: var(--green-600);
+  }
+  .pph__stub-tag::before {
+    content: ''; width: 5px; height: 5px; border-radius: 999px;
+    background: var(--green-600);
+  }
+
+  @media (max-width: 760px) {
+    .pph {
+      grid-template-columns: 1fr;
+      padding: 22px 18px 8px;
+      gap: 8px;
+    }
+    .pph__stack {
+      height: 320px;
+      margin-top: 4px;
+    }
+    .pph__stub {
+      right: auto;
+      left: 0;
+      width: min(94%, 320px);
+    }
+    /* Vertical fan — each stub clearly visible */
+    .pph__stub--3 { top: 0;    transform: rotate(-2.6deg) translateX(6px); }
+    .pph__stub--2 { top: 90px;  transform: rotate(1.6deg)  translateX(0); }
+    .pph__stub--1 { top: 180px; transform: rotate(-0.8deg) translateX(8px); }
+    .pph__stack:hover .pph__stub--1 { transform: rotate(-0.8deg) translate(8px, -3px); }
+    .pph__stack:hover .pph__stub--2 { transform: rotate(1.6deg)  translate(0, -2px); }
+    .pph__stack:hover .pph__stub--3 { transform: rotate(-2.6deg) translate(6px, -1px); }
+  }

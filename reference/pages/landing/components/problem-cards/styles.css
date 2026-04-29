@@ -1,0 +1,36 @@
+.problem { padding: 110px 0; }
+
+.problem-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+}
+.problem-card {
+  background: #fff;
+  border-radius: var(--radius-xl);
+  padding: 32px;
+  box-shadow: var(--shadow-md);
+  position: relative;
+  transition: transform 240ms var(--ease-bounce), box-shadow 240ms;
+}
+.problem-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+
+.problem-card .num {
+  font-family: var(--font-heading); font-weight: 800;
+  font-size: 56px;
+  background: linear-gradient(135deg, var(--brand-pink) 0%, var(--coffee-500) 100%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  line-height: 1; letter-spacing: -0.03em;
+  display: block; margin-bottom: 14px;
+  opacity: 0.5;
+}
+.problem-card h3 {
+  font-family: var(--font-heading); font-weight: 800;
+  font-size: 22px; line-height: 1.2; color: var(--brand-teal);
+  margin: 0 0 12px; letter-spacing: -0.01em;
+}
+.problem-card p {
+  margin: 0; font-size: 15px; line-height: 1.6;
+  color: var(--fg-muted);
+}
+
+/* ----- Documents section ----- */

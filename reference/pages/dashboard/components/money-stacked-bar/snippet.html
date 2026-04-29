@@ -1,0 +1,38 @@
+<!-- Source: pages/dashboard/raw.html lines 2538–2599 (Outstanding component) -->
+<div class="money">
+  <div class="money__head">
+    <div>
+      <div class="money__label">Money owed to you</div>
+      <div class="money__amt">$6,420</div>
+    </div>
+    <button class="qbtn qbtn--nudge" style="padding:8px 14px;font-size:12px;">
+      <!-- send icon SVG --> Nudge all
+    </button>
+  </div>
+
+  <!-- 3-segment stacked bar: Current / 1–14 days / Overdue -->
+  <div class="money__bar">
+    <div class="money__bar-seg" style="width:52%;background:var(--brand-green);"></div>
+    <div class="money__bar-seg" style="width:30%;background:var(--coffee-400);"></div>
+    <div class="money__bar-seg" style="width:18%;background:var(--brand-pink);"></div>
+  </div>
+
+  <!-- Legend with colored dots -->
+  <div class="money__legend">
+    <div class="money__legend-item"><span class="money__legend-dot" style="background:var(--brand-green);"></span> Current $3,340</div>
+    <div class="money__legend-item"><span class="money__legend-dot" style="background:var(--coffee-400);"></span> 1–14 days $1,920</div>
+    <div class="money__legend-item"><span class="money__legend-dot" style="background:var(--brand-pink);"></span> Overdue $1,160</div>
+  </div>
+
+  <!-- Detail rows below the bar (dashed top border) -->
+  <div style="border-top:1px dashed rgba(100,69,54,0.15);padding-top:14px;display:flex;flex-direction:column;gap:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="font-family:var(--font-heading);font-weight:800;font-size:13px;color:var(--brand-teal);">Hilltop Diner</div>
+        <div style="font-size:11px;color:var(--pink-700);font-weight:700;margin-top:1px;">11 days overdue · #INV-204</div>
+      </div>
+      <div style="font-family:var(--font-heading);font-weight:800;font-size:14px;color:var(--brand-teal);">$1,160</div>
+    </div>
+    <!-- two more rows: Sarah Chen / Maple Grove Apts. -->
+  </div>
+</div>

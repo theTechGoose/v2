@@ -1,0 +1,4 @@
+/* Reuses shared/phone-preview/styles.css (chassis), and the Assistant page's own
+   chat message styles (.msg, .msg__avatar, .msg__bubble, .action-card__*, .wiz).
+   No phone-thread-specific CSS file is shipped — every selector is shared with
+   the desktop chat or the phone chassis. */

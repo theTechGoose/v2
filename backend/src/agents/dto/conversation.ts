@@ -20,9 +20,18 @@ export interface AgentConversation {
   customerId?: string;            // bound once the agent identifies the customer
   quoteId?: string;               // bound once a quote is locked (phase 1 → 2 trigger)
   contractId?: string;            // bound once contract terms are completed
+  invoiceId?: string;             // bound once the post-contract invoice is created/sent
   currentPhase: AgentPhase;
   title?: string;                 // first user message, truncated
   preview?: string;               // last meaningful message snippet
+  /** Threads-sidebar badge. Set by accept-contract; cleared by load-conversation on next read. */
+  hasUnreadEvent?: boolean;
+  /** Denormalized quote.status so the sidebar chip can show sent/accepted without N+1. */
+  quoteStatus?: string;
+  /** Denormalized contract.status so the sidebar can render a chip without an N+1 lookup. */
+  contractStatus?: string;
+  /** Denormalized invoice.status (sent/paid) for the sidebar chip. */
+  invoiceStatus?: string;
   createdAt: string;
   updatedAt: string;
 }

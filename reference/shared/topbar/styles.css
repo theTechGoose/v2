@@ -1,0 +1,100 @@
+/* Source: pages/dashboard/raw.html lines 587–602, 697–775. Ticker rules live in ../ticker/styles.css. */
+
+.topbar__menu {
+  width: 38px; height: 38px;
+  border-radius: 11px;
+  background: var(--mint-100);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  display: grid; place-items: center;
+  color: var(--brand-teal);
+  flex-shrink: 0;
+  transition: background 160ms, color 160ms, transform 160ms;
+  padding: 0;
+  margin-right: 8px;
+}
+.topbar__menu:hover { background: #fff; transform: translateY(-1px); }
+.topbar__menu:active { transform: translateY(0); }
+.topbar__menu svg { display: block; }
+
+.topbar {
+  height: 60px;
+  flex-shrink: 0;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(255,255,255,0.5);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.topbar__greet { flex-shrink: 0; }
+.topbar__greet-line {
+  font-size: 12px;
+  color: var(--fg-muted);
+  margin-bottom: 1px;
+}
+.topbar__greet-name {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--brand-teal);
+  line-height: 1;
+  white-space: nowrap;
+}
+.topbar__search {
+  flex: 1;
+  min-width: 0;
+  max-width: 560px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255,255,255,0.85);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 16px;
+  margin: 0 auto;
+}
+.topbar__search input {
+  border: none; outline: none; background: transparent;
+  flex: 1;
+  font-family: var(--font-body); font-size: 13px;
+  color: var(--brand-teal);
+}
+.topbar__search input::placeholder { color: var(--fg-subtle); }
+.topbar__kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-subtle);
+  background: rgba(100,69,54,0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.topbar__btn {
+  width: 40px; height: 40px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  display: grid; place-items: center;
+  color: var(--brand-teal);
+  position: relative;
+  flex-shrink: 0;
+}
+.topbar__btn-dot {
+  position: absolute;
+  top: 8px; right: 9px;
+  width: 9px; height: 9px;
+  background: var(--brand-pink);
+  border: 2px solid #fff;
+  border-radius: 999px;
+}
+.topbar__btn-pill {
+  width: auto; padding: 0 14px; gap: 8px;
+  display: flex; align-items: center;
+  height: 40px;
+  font-family: var(--font-heading);
+  font-weight: 700; font-size: 13px;
+  color: var(--brand-teal);
+}

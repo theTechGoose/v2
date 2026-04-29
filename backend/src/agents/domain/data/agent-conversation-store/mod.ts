@@ -95,6 +95,20 @@ export class AgentConversationStore {
     return next;
   }
 
+  /**
+   * Clear hasUnreadEvent without touching `updatedAt`. Reading a thread
+   * shouldn't push it back to the top of the sidebar — only real activity
+   * (a customer accept, a user message) should reorder the list.
+   */
+  async clearUnreadEvent(id: string): Promise<AgentConversation> {
+    const existing = await this.get(id);
+    if (!existing.hasUnreadEvent) return existing;
+    const next: AgentConversation = { ...existing, hasUnreadEvent: false };
+    const kv = await getKv();
+    await kv.set([PREFIX, id], next, { expireIn: TTL_MS });
+    return next;
+  }
+
   async delete(id: string): Promise<void> {
     const conv = await this.tryGet(id);
     if (!conv) return;

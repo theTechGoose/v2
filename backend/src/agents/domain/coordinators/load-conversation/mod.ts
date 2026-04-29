@@ -3,16 +3,20 @@ import { AgentConversationStore } from "@agents/domain/data/agent-conversation-s
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { computeProgress } from "@agents/domain/business/wizard-progress/mod.ts";
 import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
+import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { WizardState } from "@agents/dto/wizard.ts";
 import type { WizardProgress } from "@agents/domain/business/wizard-progress/mod.ts";
+import type { Contract } from "@paperwork/dto/contract.ts";
 
 export interface ConversationSnapshot {
   conversation: AgentConversation;
   messages: AgentMessage[];
   /** Only present when conversation.currentPhase === 'terms'. */
   wizard?: { state: WizardState; progress: WizardProgress };
+  /** Bound contract — populated once the wizard finalizes. */
+  contract?: Contract;
 }
 
 /**
@@ -26,11 +30,15 @@ export class LoadConversation {
   constructor(
     private conversations: AgentConversationStore,
     private messages: AgentMessageStore,
+    private contracts: ContractStore,
   ) {}
 
   async run(input: { userId: string; conversationId: string }): Promise<ConversationSnapshot> {
-    const conv = await this.conversations.get(input.conversationId);
+    let conv = await this.conversations.get(input.conversationId);
     if (conv.userId !== input.userId) throw new Error("forbidden");
+    if (conv.hasUnreadEvent) {
+      conv = await this.conversations.clearUnreadEvent(conv.id);
+    }
     const msgs = await this.messages.listByConversation(input.conversationId);
 
     let wizard: ConversationSnapshot["wizard"];
@@ -42,6 +50,13 @@ export class LoadConversation {
       }
     }
 
-    return { conversation: conv, messages: msgs, wizard };
+    let contract: Contract | undefined;
+    if (conv.contractId) {
+      try {
+        contract = await this.contracts.getOwned(conv.contractId, conv.userId);
+      } catch { /* contract was deleted out from under the conversation — surface conv state without it */ }
+    }
+
+    return { conversation: conv, messages: msgs, wizard, contract };
   }
 }

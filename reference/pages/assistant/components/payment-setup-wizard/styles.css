@@ -1,0 +1,261 @@
+  .wiz {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 4px 14px rgba(20,72,82,0.06);
+    overflow: hidden;
+  }
+  .wiz__head {
+    background: linear-gradient(180deg, var(--coffee-50), #fff);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .wiz__head-icon {
+    width: 30px; height: 30px;
+    border-radius: 9px;
+    background: var(--brand-teal);
+    color: #fff;
+    display: grid; place-items: center;
+  }
+  .wiz__head-txt { flex: 1; min-width: 0; }
+  .wiz__head-title {
+    font-family: var(--font-heading);
+    font-weight: 800;
+    font-size: 13.5px;
+    color: var(--brand-teal);
+    line-height: 1.2;
+  }
+  .wiz__head-sub {
+    font-size: 11px;
+    color: var(--fg-muted);
+    margin-top: 2px;
+  }
+  .wiz__head-config {
+    background: rgba(20,72,82,0.06);
+    color: var(--brand-teal);
+    border: 1px solid var(--border);
+    font-weight: 700;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .wiz__head-mode {
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--fg-muted);
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 5px 9px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 5px;
+    font-family: var(--font-body);
+  }
+
+  /* Completed step chips strip */
+  .wiz__chips {
+    padding: 10px 14px;
+    border-bottom: 1px dashed var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .wiz-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(72, 158, 95, 0.08);
+    color: var(--brand-green);
+    border: 1px solid rgba(72, 158, 95, 0.25);
+    font-weight: 700;
+    font-size: 11px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .wiz-chip__check {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--brand-green);
+    color: #fff;
+    display: grid; place-items: center;
+    font-size: 8px;
+    font-weight: 900;
+    flex-shrink: 0;
+  }
+  .wiz-chip__label {
+    color: var(--fg-subtle);
+    font-weight: 700;
+  }
+  .wiz-chip__val {
+    color: var(--brand-teal);
+    font-weight: 800;
+  }
+  .wiz-chip__edit {
+    color: var(--fg-subtle);
+    margin-left: 2px;
+  }
+
+  /* Active step body */
+  .wiz__step {
+    padding: 14px 16px 4px;
+  }
+  .wiz__step-num {
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    color: var(--brand-pink);
+    text-transform: uppercase;
+  }
+  .wiz__step-q {
+    font-family: var(--font-heading);
+    font-weight: 800;
+    font-size: 16px;
+    color: var(--brand-teal);
+    margin: 4px 0 12px;
+    text-wrap: pretty;
+  }
+  .wiz__opts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .wiz-opt {
+    background: #fff;
+    border: 1.5px solid var(--border);
+    border-radius: 11px;
+    padding: 10px 14px;
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 12.5px;
+    color: var(--brand-teal);
+    cursor: pointer;
+    text-align: left;
+    transition: all 140ms;
+    display: flex; flex-direction: column; gap: 2px;
+    min-width: 140px;
+  }
+  .wiz-opt:hover {
+    border-color: var(--brand-green);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(72,158,95,0.12);
+  }
+  .wiz-opt__sub {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--fg-muted);
+  }
+  .wiz-opt--custom {
+    border-style: dashed;
+    color: var(--fg-muted);
+    background: var(--coffee-50);
+  }
+  .wiz-opt--custom:hover {
+    border-style: solid;
+    color: var(--brand-teal);
+  }
+  .wiz__hint {
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--fg-subtle);
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  /* Remaining steps progress strip */
+  .wiz__rest {
+    padding: 12px 16px 14px;
+    border-top: 1px dashed var(--border);
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+  }
+  .wiz__rest-label {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: var(--fg-subtle);
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .wiz-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--fg-muted);
+    background: var(--coffee-50);
+    border: 1px solid var(--border);
+    padding: 4px 9px;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+  .wiz-pill__num {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid var(--border);
+    display: grid; place-items: center;
+    font-size: 9px;
+    font-weight: 800;
+    color: var(--fg-subtle);
+  }
+
+  /* Wizard footer with finalize */
+  .wiz__foot {
+    background: var(--coffee-50);
+    border-top: 1px solid var(--border);
+    padding: 11px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .wiz__foot-progress {
+    flex: 1;
+    height: 6px;
+    background: rgba(20,72,82,0.08);
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+  }
+  .wiz__foot-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--brand-green), var(--brand-teal));
+    border-radius: 999px;
+  }
+  .wiz__foot-count {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--fg-muted);
+  }
+  .wiz__foot-finalize {
+    background: var(--fg-subtle);
+    color: rgba(255,255,255,0.85);
+    opacity: 0.55;
+    border: none;
+    border-radius: 9px;
+    padding: 8px 14px;
+    font-weight: 800;
+    font-size: 12px;
+    cursor: not-allowed;
+    font-family: var(--font-body);
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  /* Suggestion chips above composer */
+  .suggest {
+    display: flex;
+    gap: 8px;
+    padding: 0 24px 12px;
+    flex-wrap: wrap;
+  }
+  .suggest__chip {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 999px;

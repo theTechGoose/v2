@@ -1,0 +1,92 @@
+/* =========================================================================
+   Sabor Design System — Color tokens
+   Source: extracted/colors_and_type.css (lines 15–100)
+   ========================================================================= */
+
+:root {
+  /* ---------- Brand palette (anchors) -------------------------------- */
+  --brand-mint:    #F7FFF7;   /* Mint Cream    — surface */
+  --brand-pink:    #FF6B6B;   /* Grapefruit    — primary CTA */
+  --brand-teal:    #1A535C;   /* Dark Teal     — text   */
+  --brand-green:   #519843;   /* Medium Jungle — accent */
+  --brand-coffee:  #644536;   /* Coffee Bean   — neutral */
+
+  /* ---------- Tonal scales (derived) --------------------------------- */
+  --pink-50:   #FFF1F1;
+  --pink-100:  #FFD9D9;
+  --pink-200:  #FFB3B3;
+  --pink-300:  #FF8D8D;
+  --pink-400:  #FF7A7A;
+  --pink-500:  #FF6B6B;   /* base */
+  --pink-600:  #FA5252;   /* hover */
+  --pink-700:  #E03131;
+  --pink-800:  #C92A2A;
+
+  --teal-50:   #E8F1F2;
+  --teal-100:  #C8DDE0;
+  --teal-200:  #8FBABF;
+  --teal-300:  #56969E;
+  --teal-400:  #2D737C;
+  --teal-500:  #1A535C;   /* base */
+  --teal-600:  #144048;
+  --teal-700:  #0F3036;
+  --teal-800:  #0A2024;
+
+  --green-50:  #ECF5E9;
+  --green-100: #CFE5C8;
+  --green-200: #A5CD98;
+  --green-300: #7BB568;
+  --green-400: #5FA34F;
+  --green-500: #519843;   /* base */
+  --green-600: #427A37;
+  --green-700: #335D2A;
+
+  --coffee-50:  #F2EBE8;
+  --coffee-100: #DBC9C2;
+  --coffee-200: #B89D90;
+  --coffee-300: #94715F;
+  --coffee-400: #785544;
+  --coffee-500: #644536;   /* base */
+  --coffee-600: #4F362A;
+  --coffee-700: #3A271F;
+
+  /* Mint surface scale */
+  --mint-50:   #FCFFFC;
+  --mint-100:  #F7FFF7;   /* base */
+  --mint-200:  #ECF6EC;
+  --mint-300:  #DDEBDD;
+
+  /* ---------- Semantic colors ---------------------------------------- */
+  --bg:              var(--brand-mint);
+  --bg-alt:          #FFFFFF;
+  --bg-raised:       #FFFFFF;
+  --bg-sunken:       var(--mint-200);
+  --bg-overlay:      rgba(100, 69, 54, 0.40);   /* coffee 40% */
+
+  --fg:              var(--brand-teal);
+  --fg-strong:       var(--teal-700);
+  --fg-muted:        rgba(26, 83, 92, 0.72);
+  --fg-subtle:       rgba(26, 83, 92, 0.55);
+  --fg-on-primary:   #FFFFFF;
+  --fg-on-accent:    #FFFFFF;
+
+  --border:          rgba(100, 69, 54, 0.16);   /* coffee 16% */
+  --border-strong:   rgba(100, 69, 54, 0.32);
+  --border-focus:    var(--brand-green);
+
+  --primary:         var(--brand-green);
+  --primary-hover:   var(--green-600);
+  --primary-press:   var(--green-700);
+  --secondary:       var(--brand-teal);
+  --accent:          var(--brand-pink);
+  --neutral:         var(--brand-coffee);
+
+  --success:         var(--brand-green);
+  --success-bg:      var(--green-50);
+  --warning:         #E8A33D;
+  --warning-bg:      #FFF6E5;
+  --danger:          var(--pink-700);
+  --danger-bg:       var(--pink-50);
+  --info:            var(--brand-teal);
+  --info-bg:         var(--teal-50);
+}

@@ -1,0 +1,19 @@
+<!-- Source: pages/dashboard/raw.html lines 2342–2369 (component) -->
+<button class="topbar__ticker" type="button" aria-label="Live activity">
+  <span class="topbar__ticker-dot"></span>
+  <span class="topbar__ticker-track" aria-live="polite">
+    <!-- One item visible at a time. Replace contents on a setInterval to swap event. -->
+    <span class="topbar__ticker-item">
+      <strong>Tom &amp; Linda</strong> opened your quote
+    </span>
+  </span>
+  <span class="topbar__ticker-time">2m ago</span>
+</button>
+
+<!--
+  Behavior (from the JSX export):
+  - Pulls events from a TICKER_EVENTS array (4 entries in the export).
+  - setInterval rotates index every 3800ms.
+  - Each new .topbar__ticker-item plays the tickerSlideIn keyframe on mount.
+  - .topbar__ticker-dot continuously plays tickerPulse.
+-->

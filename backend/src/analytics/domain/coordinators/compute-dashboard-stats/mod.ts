@@ -3,6 +3,11 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
+import { PAYMENT_METHODS, type PaymentMethod } from "@paperwork/dto/payment.ts";
+import type { Invoice } from "@paperwork/dto/invoice.ts";
+import type { Payment } from "@paperwork/dto/payment.ts";
+import { bucketPendingInvoices } from "@paperwork/domain/business/invoice-aging-buckets/mod.ts";
 import {
   bucketBy12Months,
   lastMonthRevenue,
@@ -10,7 +15,7 @@ import {
   type RevenueRow,
   ytdRevenue,
 } from "@core/business/sparkline/mod.ts";
-import type { DashboardStats } from "@analytics/dto/dashboard-stats.ts";
+import type { DashboardStats, TopPayor } from "@analytics/dto/dashboard-stats.ts";
 
 /**
  * ComputeDashboardStats — fans across CRM + Paperwork stores (all already
@@ -29,17 +34,19 @@ export class ComputeDashboardStats {
     private quotes:    QuoteStore,
     private contracts: ContractStore,
     private invoices:  InvoiceStore,
+    private payments:  PaymentStore,
   ) {}
 
   async run(userId: string, now: Date = new Date()): Promise<DashboardStats> {
     // Five parallel listByUser scans. Each is in-memory after the KV index
     // hit, so they're cheap. If we add 1000-customer accounts this becomes
     // the place to introduce per-resource counters.
-    const [customers, quotes, contracts, invoices] = await Promise.all([
+    const [customers, quotes, contracts, invoices, payments] = await Promise.all([
       this.customers.listByUser(userId),
       this.quotes.listByUser(userId),
       this.contracts.listByUser(userId),
       this.invoices.listByUser(userId),
+      this.payments.listByUser(userId),
     ]);
 
     const quoteCounts = {
@@ -57,10 +64,11 @@ export class ComputeDashboardStats {
 
     const todayIso = now.toISOString().slice(0, 10);
     const invoiceCounts = {
-      total:   invoices.length,
-      pending: invoices.filter((i) => i.status === "pending").length,
-      paid:    invoices.filter((i) => i.status === "paid").length,
-      overdue: invoices.filter((i) => i.status === "pending" && i.dueDate < todayIso).length,
+      total:        invoices.length,
+      pending:      invoices.filter((i) => i.status === "pending").length,
+      paid:         invoices.filter((i) => i.status === "paid").length,
+      overdue:      invoices.filter((i) => i.status === "pending" && i.dueDate < todayIso).length,
+      agingBuckets: bucketPendingInvoices(invoices, now),
     };
 
     // Quoted value: sum of estimatedTotal across quotes that are still
@@ -94,6 +102,40 @@ export class ComputeDashboardStats {
         monthOverMonthPct:  monthOverMonthPct(revenueRows, now),
         sparkline12mo:      bucketBy12Months(revenueRows, now),
       },
+      payments: computePaymentStats(payments, invoices, now),
     };
   }
+}
+
+function computePaymentStats(payments: Payment[], invoices: Invoice[], now: Date) {
+  const yearStart = `${now.getUTCFullYear()}-01-01T00:00:00.000Z`;
+  const receivedYtdCents = Math.trunc(
+    payments
+      .filter((p) => p.receivedAt >= yearStart)
+      .reduce((sum, p) => sum + (p.amount ?? 0), 0) * 100,
+  );
+
+  const methodMixCents = Object.fromEntries(
+    PAYMENT_METHODS.map((m) => [m, 0]),
+  ) as Record<PaymentMethod, number>;
+  for (const p of payments) {
+    methodMixCents[p.method] = (methodMixCents[p.method] ?? 0) + Math.trunc((p.amount ?? 0) * 100);
+  }
+
+  const invoiceCustomer = new Map(invoices.map((i) => [i.id, i.customerId ?? ""]));
+  const totalsByCustomer = new Map<string, number>();
+  for (const p of payments) {
+    const customerId = invoiceCustomer.get(p.invoiceId) ?? "";
+    if (!customerId) continue;
+    totalsByCustomer.set(
+      customerId,
+      (totalsByCustomer.get(customerId) ?? 0) + Math.trunc((p.amount ?? 0) * 100),
+    );
+  }
+  const topPayors: TopPayor[] = [...totalsByCustomer.entries()]
+    .map(([customerId, totalCents]) => ({ customerId, totalCents }))
+    .sort((a, b) => b.totalCents - a.totalCents)
+    .slice(0, 3);
+
+  return { receivedYtdCents, methodMixCents, topPayors };
 }

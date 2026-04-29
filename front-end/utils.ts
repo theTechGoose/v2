@@ -1,11 +1,10 @@
 import { createDefine } from "fresh";
 import type { User } from "./lib/auth.ts";
 
-/**
- * `ctx.state` shape — populated by middlewares.
- *  - `user`: resolved by /dashboard and /assistant middlewares.
- */
+// This specifies the type of "ctx.state" which is used to share
+// data among middlewares, layouts and routes.
 export interface State {
+  shared: string;
   user?: User;
 }
 

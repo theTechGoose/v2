@@ -1,0 +1,109 @@
+/* =========================================================================
+   Sabor Design System — Typography tokens & helpers
+   Source: extracted/colors_and_type.css (lines 8–13, 102–246)
+   ========================================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  /* Font families */
+  --font-heading: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-body:    'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:    ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Type scale */
+  --type-display:  56px;
+  --type-h1:       40px;
+  --type-h2:       32px;
+  --type-h3:       24px;
+  --type-h4:       20px;
+  --type-body:     16px;
+  --type-small:    14px;
+  --type-micro:    12px;
+
+  /* Line heights */
+  --lh-display: 1.05;
+  --lh-tight:   1.15;
+  --lh-snug:    1.30;
+  --lh-body:    1.55;
+
+  /* Tracking */
+  --track-tight:  -0.01em;
+  --track-normal:  0;
+  --track-loose:   0.08em;
+
+  /* Weights */
+  --w-regular:  400;
+  --w-medium:   500;
+  --w-semibold: 600;
+  --w-bold:     700;
+  --w-extra:    800;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--type-body);
+  line-height: var(--lh-body);
+  font-weight: var(--w-regular);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.ds-prose h1, .h1 {
+  font-family: var(--font-heading);
+  font-weight: var(--w-extra);
+  font-size: var(--type-h1);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--track-tight);
+  color: var(--fg);
+  text-wrap: balance;
+}
+.ds-prose h2, .h2 {
+  font-family: var(--font-heading);
+  font-weight: var(--w-bold);
+  font-size: var(--type-h2);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--track-tight);
+  color: var(--fg);
+  text-wrap: balance;
+}
+.ds-prose h3, .h3 {
+  font-family: var(--font-heading);
+  font-weight: var(--w-bold);
+  font-size: var(--type-h3);
+  line-height: var(--lh-snug);
+  color: var(--fg);
+}
+.ds-prose h4, .h4 {
+  font-family: var(--font-heading);
+  font-weight: var(--w-bold);
+  font-size: var(--type-h4);
+  line-height: var(--lh-snug);
+  color: var(--fg);
+}
+.ds-display {
+  font-family: var(--font-heading);
+  font-weight: var(--w-extra);
+  font-size: var(--type-display);
+  line-height: var(--lh-display);
+  letter-spacing: var(--track-tight);
+  color: var(--fg);
+  text-wrap: balance;
+}
+.ds-prose p, .body {
+  font-size: var(--type-body);
+  line-height: var(--lh-body);
+  color: var(--fg);
+}
+.small  { font-size: var(--type-small); line-height: var(--lh-snug); color: var(--fg-muted); }
+.micro  { font-size: var(--type-micro); line-height: var(--lh-snug); color: var(--fg-muted); }
+.eyebrow {
+  font-family: var(--font-heading);
+  font-weight: var(--w-bold);
+  font-size: var(--type-micro);
+  letter-spacing: var(--track-loose);
+  text-transform: uppercase;
+  color: var(--brand-green);
+}

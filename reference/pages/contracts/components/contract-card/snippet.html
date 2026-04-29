@@ -1,0 +1,75 @@
+<!-- Source: pages/contracts/raw.html lines 5182–5266 (ContractCard component) -->
+<!-- Outer card sets --mood-from/--mood-to/--mood-shadow/--mood-status as CSS vars (driven by data). -->
+<div class="kcard"
+     style="--mood-from:#FFB3B3;--mood-to:#FF6B6B;--mood-shadow:rgba(255,107,107,0.3);--mood-status:#C92A2A;">
+  <!-- Mood band (front) -->
+  <div class="kcard__mood">
+    <span class="kcard__status">
+      <span class="kcard__status-dot"></span>
+      IN PROGRESS
+    </span>
+    <span class="kcard__when">Apr 27 → May 4</span>
+    <span class="kcard__numeral">01</span>
+  </div>
+
+  <div class="kcard__av">MG</div>
+
+  <div class="kcard__body">
+    <div class="kcard__client-name">Maple Grove Apartments · #JOB-204</div>
+    <h3 class="kcard__title">Re-roof — Building C</h3>
+    <p class="kcard__story">Crew is two days ahead of schedule. Tear-off done, underlayment going in tomorrow.</p>
+
+    <div class="kcard__prog">
+      <div class="kcard__prog-row">
+        <span class="kcard__prog-lbl">Progress</span>
+        <span class="kcard__prog-pct">50%</span>
+      </div>
+      <div class="kcard__prog-bar">
+        <div class="kcard__prog-fill" style="width:50%;"></div>
+      </div>
+      <div class="kcard__prog-meta">
+        <span>$2,400 paid</span>
+        <span>$2,400 left</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="kcard__foot">
+    <button class="kcard__cta">View milestones <!-- arrow SVG --></button>
+    <div class="kcard__val-wrap">
+      <div class="kcard__val-lbl">Contract</div>
+      <div class="kcard__val-num">$4,800</div>
+    </div>
+  </div>
+
+  <!-- Back face (visible when .kcard--flipped) -->
+  <div class="kcard__back">
+    <div class="kcard__back-head">
+      <button class="kcard__back-close"><!-- x SVG --></button>
+      <div class="kcard__back-eyebrow">#JOB-204 · Maple Grove Apartments</div>
+      <h4 class="kcard__back-big">
+        Re-roof — Building C
+        <small>$4,800 · Apr 27 → May 4</small>
+      </h4>
+    </div>
+    <div class="kcard__back-body">
+      <!-- Milestone rows; modifiers: --done (struck through, check), --current (pink dot) -->
+      <div class="kcard__mile kcard__mile--done">
+        <span class="kcard__mile-check"><!-- check SVG --></span>
+        <span class="kcard__mile-name">Site walk &amp; permits</span>
+        <span class="kcard__mile-date">Apr 24</span>
+      </div>
+      <div class="kcard__mile kcard__mile--current">
+        <span class="kcard__mile-check"></span>
+        <span class="kcard__mile-name">Tear-off complete</span>
+        <span class="kcard__mile-date">Apr 27</span>
+      </div>
+      <!-- additional milestones -->
+    </div>
+    <div class="kcard__back-foot">
+      <button><!-- invoice SVG --> Invoice</button>
+      <button><!-- send SVG --> Text client</button>
+      <button><!-- contract SVG --> View contract</button>
+    </div>
+  </div>
+</div>

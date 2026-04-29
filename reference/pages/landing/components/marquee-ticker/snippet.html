@@ -1,0 +1,18 @@
+<!-- Source: pages/landing/raw.html lines 2106–2111 -->
+<div class="marquee" aria-hidden="true">
+  <div class="marquee-track" id="marquee-track">
+    <!-- The actual contents are injected by JS at runtime, splitting the data-en string on '|'
+         into spans, each separated by a colored dot. The track is duplicated so the loop is seamless. -->
+    <span data-en="30% average revenue increase|Professional quotes in minutes|Contracts with one tap|Invoices that track payments|No apps to download|Just text us"
+          data-es="30% más ingresos en promedio|Cotizaciones pro en minutos|Contratos con un toque|Facturas que rastrean pagos|Sin apps que descargar|Solo escríbenos"></span>
+  </div>
+</div>
+
+<!-- After hydration the rendered DOM looks roughly like:
+     <div class="marquee-track" id="marquee-track">
+       <span class="phrase">30% average revenue increase</span>
+       <span class="dot"></span>
+       <span class="phrase">Professional quotes in minutes</span>
+       …
+       (entire list repeated for the seamless loop)
+     </div> -->

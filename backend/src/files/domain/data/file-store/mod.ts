@@ -84,6 +84,26 @@ export class FileStore {
     return out;
   }
 
+  /**
+   * Patch a subset of metadata fields. Used for async transcription
+   * results; never accepts userId/id/sizeBytes/sha256/pageCount changes
+   * (those are immutable post-create).
+   */
+  async updateMeta(
+    id: string,
+    userId: string,
+    patch: Partial<Pick<FileRecord, "transcriptStatus" | "transcript" | "transcriptError">>,
+  ): Promise<FileRecord> {
+    const existing = await this.getOwnedMeta(id, userId);
+    const definedPatch = Object.fromEntries(
+      Object.entries(patch).filter(([_, v]) => v !== undefined),
+    );
+    const updated: FileRecord = { ...existing, ...definedPatch };
+    const kv = await getKv();
+    await kv.set([META_PREFIX, id], updated);
+    return updated;
+  }
+
   async delete(id: string, userId: string): Promise<void> {
     const meta = await this.getOwnedMeta(id, userId);
     const kv = await getKv();

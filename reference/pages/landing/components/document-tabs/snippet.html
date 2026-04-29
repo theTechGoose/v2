@@ -1,0 +1,51 @@
+<!-- Source: pages/landing/raw.html lines 2143–2190 -->
+<section class="docs">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow-pill">One text. Three documents.</span>
+      <h2>Quote, contract, invoice — <em>handled</em>.</h2>
+      <p>Send us a message. We send back a real document with real numbers — not a sketch on the back of an envelope.</p>
+    </div>
+
+    <div class="doc-tabs" role="tablist">
+      <button class="doc-tab on" data-doc="quote"><span class="step">01</span> Quote</button>
+      <button class="doc-tab"     data-doc="contract"><span class="step">02</span> Contract</button>
+      <button class="doc-tab"     data-doc="invoice"><span class="step">03</span> Invoice</button>
+    </div>
+
+    <div class="doc-stage">
+      <!-- The mockup re-fills its contents from JS when a tab is selected. -->
+      <div class="doc-mockup">
+        <div class="doc-mockup-header">
+          <h5 id="doc-title">Quote</h5>
+          <div class="num">
+            <strong id="doc-num">#PM-2641</strong>
+            <span id="doc-date">April 26, 2026</span>
+          </div>
+        </div>
+        <div id="doc-lines"></div>
+        <div class="doc-totals" id="doc-totals"></div>
+      </div>
+
+      <div class="doc-info" id="doc-info">
+        <h3 id="doc-info-title"></h3>
+        <p id="doc-info-body"></p>
+        <ul id="doc-info-list"></ul>
+      </div>
+    </div>
+
+    <!-- Counter strip below the mockup -->
+    <div class="doc-counter">
+      <div>
+        <div class="label">Documents sent so far</div>
+        <div class="big" id="doc-counter-num">0</div>
+      </div>
+      <div class="types">
+        <span>Quotes</span>
+        <span>Contracts</span>
+        <span>Invoices</span>
+        <span>Change orders</span>
+      </div>
+    </div>
+  </div>
+</section>

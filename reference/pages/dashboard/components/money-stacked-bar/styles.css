@@ -1,0 +1,55 @@
+/* Source: pages/dashboard/raw.html lines 1385–1423 */
+
+.money {
+  background: linear-gradient(135deg, var(--coffee-50) 0%, #fff 100%);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 18px 20px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.money__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.money__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.money__amt {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 32px;
+  color: var(--brand-teal);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.money__bar {
+  height: 8px;
+  background: rgba(100,69,54,0.10);
+  border-radius: 999px;
+  overflow: hidden;
+  display: flex;
+}
+.money__bar-seg { height: 100%; }
+.money__legend {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.money__legend-item { display: flex; align-items: center; gap: 6px; }
+.money__legend-dot { width: 8px; height: 8px; border-radius: 999px; }
+
+/* Footer-row layout that places .money next to .activity panel */
+.footer-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}

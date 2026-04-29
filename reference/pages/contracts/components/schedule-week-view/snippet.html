@@ -1,0 +1,43 @@
+<!-- Source: pages/contracts/raw.html lines 5083–5152 -->
+<section class="csched">
+  <div class="csched__head">
+    <div>
+      <div class="csched__eyebrow">The next 30 days</div>
+      <div class="csched__title">Everything you've committed to, on one strip.</div>
+    </div>
+    <div class="csched__legend">
+      <span><span class="csched__legend-dot" style="background:#FF6B6B;"></span>In progress</span>
+      <span><span class="csched__legend-dot" style="background:rgba(255,255,255,0.3);border:1px dashed rgba(255,255,255,0.6);"></span>Scheduled</span>
+    </div>
+  </div>
+
+  <div class="csched__grid">
+    <!-- One row per week label -->
+    <div class="csched__weekrow">
+      <div class="csched__weeklbl">APR 27</div>
+
+      <!-- Inline CSS var --lanes-h sizes the lane stack -->
+      <div class="csched__weekbar" style="--lanes-h:48px;">
+        <!-- Today indicator (only on the row containing TODAY) -->
+        <div class="csched__today" style="left:30%;"></div>
+
+        <!-- One bar per contract overlapping this week.
+             --bar-from / --bar-to drive the gradient.
+             left/width/top/height are computed and set inline. -->
+        <div class="csched__bar"
+             style="--bar-from:#FF8D8D;--bar-to:#FF6B6B;left:0%;width:65%;top:3px;height:20px;"
+             title="Maple Grove — Apr 27 → May 4">
+          Maple Grove
+        </div>
+
+        <div class="csched__bar csched__bar--scheduled"
+             style="--bar-from:#56969E;--bar-to:#1A535C;left:55%;width:40%;top:27px;height:20px;"
+             title="Cobblestone Cafe — May 1 → May 5">
+          Cobblestone
+        </div>
+      </div>
+    </div>
+
+    <!-- additional weeks: APR 20, MAY 4, MAY 11, MAY 18 -->
+  </div>
+</section>

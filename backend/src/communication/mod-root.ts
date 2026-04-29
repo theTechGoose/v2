@@ -4,12 +4,14 @@ import { ConversationController } from "@communication/entrypoints/conversation-
 import { MessageController } from "@communication/entrypoints/message-controller/mod.ts";
 import { NotificationController } from "@communication/entrypoints/notification-controller/mod.ts";
 import { EmailController } from "@communication/entrypoints/email-controller/mod.ts";
+import { ContactPublicController } from "@communication/entrypoints/contact-public-controller/mod.ts";
 import { ConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
 import { MessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { NotificationStore } from "@communication/domain/data/notification-store/mod.ts";
 import { NotifyOnEvent } from "@communication/domain/coordinators/notify-on-event/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { RateLimiter } from "@core/data/rate-limit/mod.ts";
 
 /**
  * CommunicationModule — covers everything user↔user / user↔customer
@@ -32,6 +34,7 @@ import { EventBus } from "@core/business/events/mod.ts";
     MessageController,
     NotificationController,
     EmailController,
+    ContactPublicController,
   ],
   injectables: [
     ConversationStore,
@@ -40,6 +43,7 @@ import { EventBus } from "@core/business/events/mod.ts";
     EventBus,
     NotifyOnEvent,
     EmailService,
+    RateLimiter,
   ],
 })
 export class CommunicationModule {}

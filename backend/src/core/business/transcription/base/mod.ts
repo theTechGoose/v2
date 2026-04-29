@@ -49,3 +49,12 @@ export interface TranscriptionResponse {
 export interface TranscriptionClient {
   transcribe(req: TranscriptionRequest): Promise<TranscriptionResponse>;
 }
+
+/**
+ * Injection token for the TranscriptionClient. Danet's container resolves
+ * by class constructor by default; for an interface-only contract we use a
+ * string token. FilesModule wires a concrete implementation here
+ * (StubTranscriptionClient by default; OpenAIWhisperClient when
+ * TRANSCRIPTION_CLIENT=openai).
+ */
+export const TRANSCRIPTION_CLIENT = "TRANSCRIPTION_CLIENT";

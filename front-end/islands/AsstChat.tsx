@@ -65,6 +65,7 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [customer, setCustomer] = useState<CustomerLite | undefined>(initialCustomer);
   const [contract, setContract] = useState<ContractLite | undefined>(initialContract);
+  const [quoteId, setQuoteId] = useState<string | undefined>();
   const [draft, setDraft] = useState("");
   /**
    * Tracks `continue_cta` messages whose Review button has been clicked.
@@ -106,6 +107,14 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
     setCustomer(initialCustomer);
     setContract(initialContract);
   }, [conversationId]);
+
+  // Keep the composer focused: on first mount (so users can just start typing)
+  // and again whenever the assistant finishes a turn (sending: true → false).
+  // Without this the textarea was getting blurred whenever it was disabled,
+  // forcing a click back into the input between every message.
+  useEffect(() => {
+    if (!sending) taRef.current?.focus();
+  }, [sending]);
 
   /**
    * Auto-scroll: pin the chat to the bottom whenever the content height
@@ -289,45 +298,50 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
   function pickFile()  { fileInputRef.current?.click(); }
 
   /**
-   * Dev-only: spin up a phase-2 conversation in one shot — quote, lock,
-   * transition to terms, answer the config step — and navigate to it.
-   * Lands the user on the customer step so the wizard UI can be poked
-   * without walking the whole pre-amble each time.
-   *
-   * Gated to localhost in the render pass; the function itself just runs
-   * the API calls and redirects.
+   * Dev-only: spin up a phase-2 conversation in one shot. Bypasses the
+   * LLM (which may be in stub mode) by creating a quote directly, binding
+   * it to a fresh conversation, transitioning to terms, and answering the
+   * config step — leaving the user on the customer step.
    */
   async function seedPhase2() {
     if (sending) return;
     setError(undefined);
     setSending(true);
     try {
-      const r1 = await fetch("/api/agents/chat", {
+      const quote = await fetch("/api/quotes", {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ content: "Quote a kitchen backsplash, 30 sqft." }),
+        body: JSON.stringify({
+          summary: "Kitchen backsplash — 30 sqft",
+          lineItems: [
+            { description: "Backsplash tile install (30 sqft)", quantity: 1, unit: "ea", price: 1200 },
+          ],
+          estimatedTotal: 1200,
+          status: "sent",
+        }),
       }).then((r) => r.json());
-      const id = r1.conversation.id;
-      const card = r1.newMessages.find((m: Message) => m.kind === "action_card");
-      const quoteId = (card?.payload as { quoteId?: string } | undefined)?.quoteId;
-      if (!quoteId) throw new Error("seed: no quote drafted by the LLM");
-      await fetch(`/api/agents/conversations/${id}/lock-quote`, {
+      if (!quote?.id) throw new Error("seed: failed to create stub quote");
+
+      const conv = await fetch("/api/agents/conversations", {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ quoteId }),
-      });
-      await fetch(`/api/agents/conversations/${id}/transition-to-terms`, {
+        body: JSON.stringify({ quoteId: quote.id }),
+      }).then((r) => r.json());
+      if (!conv?.id) throw new Error("seed: failed to start conversation");
+
+      await fetch(`/api/agents/conversations/${conv.id}/transition-to-terms`, {
         method: "POST", credentials: "include",
       });
       await fetch("/api/agents/wizard/answer", {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ conversationId: id, stepId: "config", optionId: "standard_residential" }),
+        body: JSON.stringify({ conversationId: conv.id, stepId: "config", optionId: "standard_residential" }),
       });
-      globalThis.location.href = `/assistant/${id}`;
+
+      globalThis.location.href = `/assistant/${conv.id}`;
     } catch (err) {
       setError(err instanceof Error ? err.message : "seed failed");
       setSending(false);
@@ -432,6 +446,9 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
           const detail = await assistantClient.conversation(convoId);
           if (detail.contract) setContract(detail.contract);
           if (detail.customer) setCustomer(detail.customer);
+          const qId = (detail.conversation as { quoteId?: string } | undefined)?.quoteId
+            ?? (detail.contract as { quoteId?: string } | undefined)?.quoteId;
+          if (qId) setQuoteId(qId);
         } catch (err) {
           setError(err instanceof Error ? err.message : "couldn't load the contract");
           return;
@@ -440,6 +457,53 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
         }
       }
       setPreviewCtaId(message.id);
+      return;
+    }
+    if (payload.toPhase === "invoice") {
+      // Closing handoff: contract is signed, draft + send the invoice.
+      // SendInvoice is idempotent server-side, so a double-click just
+      // re-renders the same action_card. The CTA stays in the chat
+      // history (don't drop it) so the user has a record of the click.
+      if (!convoId) return;
+      setError(undefined);
+      setSending(true);
+      try {
+        const res = await assistantClient.sendInvoice(convoId);
+        setReviewedCtas((prev) => {
+          const next = new Set(prev);
+          next.add(message.id);
+          return next;
+        });
+        if (res.newMessages?.length) {
+          setMessages((m) => [...m, ...res.newMessages]);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "couldn't send the invoice");
+      } finally {
+        setSending(false);
+      }
+    }
+  }
+
+  /**
+   * Dev-only: flip the QUOTE to "accepted" via the AcceptQuote coordinator,
+   * mirroring what the customer's signing surface webhook would do in
+   * production. Appends the server's phase_divider + "Continue to contract"
+   * CTA to the chat in-place so the user can advance to the terms wizard.
+   */
+  async function simulateQuoteAccept(quoteId: string | undefined) {
+    if (sending || !convoId || !quoteId) return;
+    setError(undefined);
+    setSending(true);
+    try {
+      const res = await assistantClient.acceptQuote(convoId, quoteId);
+      if (res.newMessages?.length) {
+        setMessages((m) => [...m, ...res.newMessages]);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "couldn't simulate quote acceptance");
+    } finally {
+      setSending(false);
     }
   }
 
@@ -466,16 +530,27 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
   }
 
   /**
-   * Fires the actual SendContract from the inline preview card. Idempotent
-   * server-side — re-clicks are safe. Flips the CTA into the calmed-down
-   * "Contract sent" state on success.
+   * Fire the post-wizard "Ready to send" CTA: emails the assembled
+   * contract to the customer via the SendContract coordinator. The
+   * quote was already emailed during lock-quote, so this surface is
+   * now contract-only. Idempotent server-side (re-clicks redeliver),
+   * so flipping local state optimistically is safe.
    */
-  async function confirmSendContract(message: Message, contractId: string) {
+  async function confirmSendContract(message: Message) {
     if (sending || !convoId) return;
+    const payload = (message.payload ?? {}) as { contractId?: string };
+    let id = payload.contractId ?? contract?.id;
     setError(undefined);
     setSending(true);
     try {
-      const res = await assistantClient.sendContract(convoId, contractId);
+      if (!id) {
+        const detail = await assistantClient.conversation(convoId);
+        id = detail.contract?.id
+          ?? (detail.conversation as { contractId?: string } | undefined)?.contractId;
+        if (detail.contract) setContract(detail.contract);
+      }
+      if (!id) throw new Error("no contract bound to this conversation");
+      const res = await assistantClient.sendContract(convoId, id);
       setReviewedCtas((prev) => {
         const next = new Set(prev);
         next.add(message.id);
@@ -483,7 +558,7 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
       });
       setContract((c) => c ? { ...c, status: "sent" } : c);
       setPreviewCtaId(null);
-      if (Array.isArray(res.newMessages) && res.newMessages.length > 0) {
+      if (res.newMessages?.length) {
         setMessages((m) => [...m, ...res.newMessages]);
       }
     } catch (err) {
@@ -915,8 +990,8 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                         <button
                           type="button"
                           class="quote-review__send"
-                          onClick={() => confirmSendContract(m, contractId)}
-                          disabled={sending || !contractId}
+                          onClick={() => confirmSendContract(m)}
+                          disabled={sending}
                         >
                           <I d={ICN.send} size={13} sw={2.4} />
                           Send to client
@@ -942,16 +1017,20 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                       <div class="continue-cta__icon"><I d={reviewed ? ICN.check : ICN.contract} size={18} /></div>
                       <div class="continue-cta__txt">
                         <div class="continue-cta__title">
-                          {reviewed ? "Contract sent" : m.content}
+                          {reviewed
+                            ? (payload.toPhase === "invoice" ? "Invoice sent" : "Contract sent")
+                            : m.content}
                         </div>
                         {reviewed
                           ? (
                             <div class="continue-cta__sub">
                               {customer?.email
                                 ? <>emailed to <code>{customer.email}</code></>
-                                : payload.contractId
-                                  ? <>contract <code>{payload.contractId.slice(0, 8)}</code> sent</>
-                                  : "sent"}
+                                : payload.toPhase === "invoice"
+                                  ? "invoice sent to client"
+                                  : contract?.id
+                                    ? <>contract <code>{contract.id.slice(0, 8)}</code> sent</>
+                                    : "sent"}
                             </div>
                           )
                           : payload.summary
@@ -967,7 +1046,14 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                             onClick={() => submitContinueCta(m)}
                             disabled={sending}
                           >
-                            {payload.toPhase === "send" ? "Review" : "Start"} <I d={ICN.arrow} size={11} sw={2.5} />
+                            {payload.toPhase === "send"
+                              ? "Review"
+                              : payload.toPhase === "invoice"
+                                ? "Send invoice"
+                                : payload.toPhase === "terms"
+                                  ? "Continue"
+                                  : "Start"}{" "}
+                            <I d={ICN.arrow} size={11} sw={2.5} />
                           </button>
                         )}
                     </div>
@@ -1157,6 +1243,23 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                             >
                               <I d={ICN.refresh} size={11} /> Re-open
                             </button>
+                            {/* Dev-only: localhost-only trigger to simulate the
+                                customer accepting the quote, since we don't have
+                                a real signing webhook in development. */}
+                            {typeof globalThis.location !== "undefined"
+                              && globalThis.location.hostname === "localhost"
+                              ? (
+                                <button
+                                  type="button"
+                                  class="dev-accept-btn"
+                                  onClick={() => simulateQuoteAccept(payload.quoteId)}
+                                  disabled={sending || !payload.quoteId}
+                                  title="Localhost-only: flip quote to accepted, append phase divider + 'Continue to contract' CTA, set unread."
+                                >
+                                  🔧 {sending ? "Simulating…" : "Simulate customer accepted"}
+                                </button>
+                              )
+                              : null}
                           </div>
                         )
                         : null}
@@ -1200,6 +1303,18 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
             );
           });
           })()}
+        {!empty && sending && messages.length > 0 && messages[messages.length - 1].role === "user"
+          ? (
+            <div class="msg" aria-live="polite" aria-label="Bossie is thinking">
+              <div class="msg__avatar"><img src="/logo-monster.png" alt="" /></div>
+              <div class="msg__bubble msg__bubble--typing">
+                <span class="typing-dot" />
+                <span class="typing-dot" />
+                <span class="typing-dot" />
+              </div>
+            </div>
+          )
+          : null}
       </div>
 
       <div class="composer">
@@ -1221,7 +1336,6 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                 value={draft}
                 onInput={(e) => { setDraft((e.target as HTMLTextAreaElement).value); autosize(); }}
                 onKeyDown={onKeyDown}
-                disabled={sending}
               />
             )}
           <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={onImagePicked} />
@@ -1275,7 +1389,7 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
  * a successful pick via the onSubmit callback, which routes through the
  * shared wizard answer pipeline.
  * =========================================================================== */
-type CustomerStepMode = "menu" | "picking" | "creating";
+type CustomerStepMode = "list" | "creating";
 
 function CustomerStepPanel(props: {
   boundCustomer?: CustomerLite;
@@ -1286,9 +1400,9 @@ function CustomerStepPanel(props: {
   ) => Promise<void>;
 }) {
   const { boundCustomer, sending, onSubmit } = props;
-  const [mode, setMode] = useState<CustomerStepMode>("menu");
+  const [mode, setMode] = useState<CustomerStepMode>("list");
   const [customers, setCustomers] = useState<CustomerLite[] | null>(null);
-  const [loadingList, setLoadingList] = useState(false);
+  const [loadingList, setLoadingList] = useState(true);
   const [search, setSearch] = useState("");
   const [createName, setCreateName] = useState("");
   const [createEmail, setCreateEmail] = useState("");
@@ -1296,13 +1410,19 @@ function CustomerStepPanel(props: {
   const [localErr, setLocalErr] = useState<string | undefined>();
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  // The chat container only auto-scrolls on messages.length change, so
-  // expanding the inline picker/create form leaves the new content below
-  // the fold. Walk up to the chat scroller and pin it to the bottom on
-  // any mode change AND on loading-finished (the list grows once fetched,
-  // so we need a second pass).
+  // Eager load: the user came here to pick a customer, so render the list
+  // immediately rather than asking them to type or click through a menu.
   useEffect(() => {
-    if (mode === "menu") return;
+    let cancelled = false;
+    assistantClient.listCustomers()
+      .then((list) => { if (!cancelled) setCustomers(list); })
+      .catch((err) => { if (!cancelled) setLocalErr(err instanceof Error ? err.message : "couldn't load customers"); })
+      .finally(() => { if (!cancelled) setLoadingList(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Pin the chat to the bottom when the panel grows (mode change, list loaded).
+  useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
     const scroller = el.closest(".chat__scroll") as HTMLElement | null;
@@ -1312,28 +1432,13 @@ function CustomerStepPanel(props: {
     });
   }, [mode, loadingList]);
 
-  async function openPick() {
-    setMode("picking");
-    setLocalErr(undefined);
-    if (customers !== null) return;
-    setLoadingList(true);
-    try {
-      const list = await assistantClient.listCustomers();
-      setCustomers(list);
-    } catch (err) {
-      setLocalErr(err instanceof Error ? err.message : "couldn't load customers");
-    } finally {
-      setLoadingList(false);
-    }
-  }
-
   function openCreate() {
     setMode("creating");
     setLocalErr(undefined);
   }
 
-  function backToMenu() {
-    setMode("menu");
+  function backToList() {
+    setMode("list");
     setLocalErr(undefined);
   }
 
@@ -1344,53 +1449,6 @@ function CustomerStepPanel(props: {
       || (c.email ?? "").toLowerCase().includes(needle)
       || (c.phoneNumber ?? "").toLowerCase().includes(needle);
   }) ?? [];
-
-  if (mode === "picking") {
-    return (
-      <div ref={rootRef} class="wiz__opts" style="flex-direction:column;align-items:stretch;gap:10px">
-        <input
-          type="text"
-          class="cust-pick__search"
-          placeholder="Search customers by name, email, or phone…"
-          value={search}
-          onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
-          autoFocus
-        />
-        {loadingList
-          ? <div class="cust-pick__empty">Loading…</div>
-          : filtered.length === 0
-            ? (
-              <div class="cust-pick__empty">
-                {customers?.length === 0
-                  ? "You haven't created any customers yet."
-                  : "No matches."}
-              </div>
-            )
-            : (
-              <div class="cust-pick__list">
-                {filtered.slice(0, 20).map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    class="cust-pick__row"
-                    onClick={() => onSubmit("pick_existing", { customer: { id: c.id } })}
-                    disabled={sending}
-                  >
-                    <span class="cust-pick__name">{c.name}</span>
-                    {c.email || c.phoneNumber
-                      ? <span class="cust-pick__meta">{c.email ?? c.phoneNumber}</span>
-                      : null}
-                  </button>
-                ))}
-              </div>
-            )}
-        {localErr ? <div class="cust-pick__err">{localErr}</div> : null}
-        <div class="cust-pick__back">
-          <button type="button" class="wiz-opt wiz-opt--ghost" onClick={backToMenu} disabled={sending}>← Back</button>
-        </div>
-      </div>
-    );
-  }
 
   if (mode === "creating") {
     const trimmedName = createName.trim();
@@ -1439,15 +1497,17 @@ function CustomerStepPanel(props: {
           >
             Create &amp; use
           </button>
-          <button type="button" class="cust-create__btn" onClick={backToMenu} disabled={sending}>Back</button>
+          <button type="button" class="cust-create__btn" onClick={backToList} disabled={sending}>Back</button>
         </div>
       </div>
     );
   }
 
-  // Default menu — three options (or two when nothing is bound yet).
+  // Default — clickable list of customers, with "Use [Name] from chat" pinned
+  // to the top when one is bound and a "Create new" row at the bottom.
+  const showFilter = (customers?.length ?? 0) > 6;
   return (
-    <div class="wiz__opts">
+    <div ref={rootRef} class="wiz__opts" style="flex-direction:column;align-items:stretch;gap:8px">
       {boundCustomer
         ? (
           <button
@@ -1463,13 +1523,44 @@ function CustomerStepPanel(props: {
           </button>
         )
         : null}
-      <button type="button" class="wiz-opt" onClick={openPick} disabled={sending}>
-        Pick an existing customer
-        <span class="wiz-opt__sub">Search your CRM</span>
-      </button>
+      {showFilter
+        ? (
+          <input
+            type="text"
+            class="cust-pick__search"
+            placeholder="Filter by name, email, or phone…"
+            value={search}
+            onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
+          />
+        )
+        : null}
+      {loadingList
+        ? <div class="cust-pick__empty">Loading customers…</div>
+        : customers && customers.length === 0
+          ? <div class="cust-pick__empty">No customers yet — create one below.</div>
+          : filtered.length === 0
+            ? <div class="cust-pick__empty">No matches.</div>
+            : (
+              <div class="cust-pick__list">
+                {filtered.slice(0, 50).map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    class="cust-pick__row"
+                    onClick={() => onSubmit("pick_existing", { customer: { id: c.id } })}
+                    disabled={sending}
+                  >
+                    <span class="cust-pick__name">{c.name}</span>
+                    {c.email || c.phoneNumber
+                      ? <span class="cust-pick__meta">{c.email ?? c.phoneNumber}</span>
+                      : null}
+                  </button>
+                ))}
+              </div>
+            )}
+      {localErr ? <div class="cust-pick__err">{localErr}</div> : null}
       <button type="button" class="wiz-opt wiz-opt--custom" onClick={openCreate} disabled={sending}>
-        Create a new customer
-        <span class="wiz-opt__sub">Inline form — name, email, phone</span>
+        + Create a new customer
       </button>
     </div>
   );

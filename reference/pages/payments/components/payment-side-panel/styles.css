@@ -1,0 +1,24 @@
+  .qside { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 16px; }
+  .qside__card {
+    background: #fff;
+    border-radius: var(--radius-xl);
+    padding: 18px;
+    border: 1px solid rgba(26,83,92,0.07);
+  }
+  .qside__head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .qside__title {
+    font-family: var(--font-heading);
+    font-weight: 800; font-size: 14px;
+    color: var(--brand-teal);
+    letter-spacing: -0.01em;
+  }
+  .qside__sub {
+    font-size: 11px; color: var(--fg-muted);
+  }
+  .qbig {
+    display: flex; flex-direction: column;
+    gap: 10px;
+  }

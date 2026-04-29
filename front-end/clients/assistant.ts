@@ -10,26 +10,50 @@ import type { Quote } from "./dashboard.ts";
 
 export type { Quote };
 
-export type ConversationPhase = "chat" | "terms" | "send";
+/** Mirrors backend AgentPhase. */
+export type ConversationPhase = "quote" | "terms";
 
 export interface Conversation {
   id: string;
   userId: string;
+  customerId?: string;
+  quoteId?: string;
+  contractId?: string;
+  invoiceId?: string;
+  currentPhase: ConversationPhase;
   title?: string;
   customerName?: string;
   preview?: string;
-  phase?: ConversationPhase;
-  unread?: boolean;
-  updatedAt: number;
-  createdAt: number;
+  /** Set by accept-contract; cleared by load-conversation on next read. */
+  hasUnreadEvent?: boolean;
+  /** Denormalized quote.status — sent / accepted. */
+  quoteStatus?: string;
+  /** Denormalized contract.status — drives the sidebar chip without an N+1. */
+  contractStatus?: string;
+  /** Denormalized invoice.status — sent / paid. */
+  invoiceStatus?: string;
+  /** ISO-8601 strings (backend returns `new Date().toISOString()`). */
+  updatedAt: string;
+  createdAt: string;
   [k: string]: unknown;
 }
+
+export type MessageKind =
+  | "text"
+  | "voice"
+  | "image"
+  | "file"
+  | "action"
+  | "action_card"
+  | "wizard"
+  | "phase_divider"
+  | "continue_cta";
 
 export interface Message {
   id: string;
   conversationId: string;
-  role: "user" | "assistant";
-  kind?: "text" | "voice" | "action" | "wizard";
+  role: "user" | "assistant" | "system";
+  kind?: MessageKind;
   content: string;
   createdAt: number;
   [k: string]: unknown;
@@ -60,8 +84,11 @@ export interface ConversationDetail {
 
 export interface ChatInput {
   conversationId?: string;
-  content: string;
-  kind?: "text" | "voice";
+  /** Optional for media uploads (voice/image/file) — the backend reads
+   *  the bytes via payload.fileId and supplies content itself. */
+  content?: string;
+  kind?: "text" | "voice" | "image" | "file";
+  payload?: Record<string, unknown>;
 }
 
 export interface ChatResult {
@@ -90,10 +117,85 @@ export const assistantClient = {
   transitionToTerms: (id: string, opts: ApiOptions = {}) =>
     api.post<ConversationDetail>(`/agents/conversations/${id}/transition-to-terms`, undefined, opts),
 
+  /** Flip the active quote to "sent" via the deterministic /lock-quote
+   *  endpoint, bypassing the LLM. Returns the action_card + continue_cta
+   *  to append to the chat. */
+  lockQuote: (conversationId: string, quoteId: string, opts: ApiOptions = {}) =>
+    api.post<{ conversation: Conversation; newMessages: Message[] }>(
+      `/agents/conversations/${conversationId}/lock-quote`,
+      { quoteId },
+      opts,
+    ),
+
+  /** Dev-only: simulate the customer accepting the QUOTE. Flips the
+   *  quote→accepted, emits the chat phase_divider + the "Continue to
+   *  contract" CTA, and sets hasUnreadEvent so the threads sidebar
+   *  bubbles + badges. */
+  acceptQuote: (conversationId: string, quoteId: string, opts: ApiOptions = {}) =>
+    api.post<{ conversation: Conversation; newMessages: Message[] }>(
+      `/agents/conversations/${conversationId}/accept-quote`,
+      { quoteId },
+      opts,
+    ),
+
+  /** Dev-only: simulate the customer accepting the contract so the
+   *  threads-sidebar unread badge UX can be exercised without a signing
+   *  webhook. */
+  acceptContract: (conversationId: string, contractId: string, opts: ApiOptions = {}) =>
+    api.post<{ conversation: Conversation; newMessages: Message[] }>(
+      `/agents/conversations/${conversationId}/accept-contract`,
+      { contractId },
+      opts,
+    ),
+
+  /** Fire the wizard's "Ready to send" CTA: flips contract→sent and
+   *  emails the customer. Idempotent, so a re-click just re-renders. */
+  sendContract: (conversationId: string, contractId: string, opts: ApiOptions = {}) =>
+    api.post<{ conversation: Conversation; newMessages: Message[] }>(
+      `/agents/conversations/${conversationId}/send-contract`,
+      { contractId },
+      opts,
+    ),
+
+  /** Fire the post-contract-acceptance "Continue to invoice" CTA:
+   *  materializes an Invoice from the bound contract (or reuses an
+   *  already-bound one), flips status→sent, and dispatches the
+   *  customer email. Returns the action_card to append to the chat. */
+  sendInvoice: (conversationId: string, opts: ApiOptions = {}) =>
+    api.post<{ conversation: Conversation; newMessages: Message[] }>(
+      `/agents/conversations/${conversationId}/send-invoice`,
+      undefined,
+      opts,
+    ),
+
   chat: (input: ChatInput, opts: ApiOptions = {}) =>
     api.post<ChatResult>("/agents/chat", input, opts),
 
-  /** Read-only quote preview shown in the right pane. Reuses /quotes/:id. */
+  /** Read-only quote preview. Reuses /quotes/:id. */
   quote: (id: string, opts: ApiOptions = {}) =>
     api.get<Quote>(`/quotes/${id}`, opts),
+
+  /** Email the quote to the bound customer. POST /quotes/:id/email. */
+  sendQuote: (id: string, body: { to?: string; from?: string } = {}, opts: ApiOptions = {}) =>
+    api.post<{ ok: boolean }>(`/quotes/${id}/email`, body, opts),
+
+  listCustomers: (opts: ApiOptions = {}) =>
+    safe(() => api.get<CustomerLite[]>("/customers", opts), [] as CustomerLite[]),
+
+  answerWizard: (
+    body: {
+      conversationId: string;
+      stepId: string;
+      optionId: string;
+      customValue?: string;
+      customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string } };
+      followUpValues?: Record<string, string | number>;
+    },
+    opts: ApiOptions = {},
+  ) =>
+    api.post<{
+      conversation: Conversation;
+      wizardState?: unknown;
+      newMessages: Message[];
+    }>("/agents/wizard/answer", body, opts),
 };

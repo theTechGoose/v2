@@ -19,10 +19,7 @@ export function PlaceholderPage({ user, active, title, blurb }: Props) {
         <link rel="stylesheet" href="/dashboard.css" />
       </Head>
       <div class="app">
-        <DashSidebar
-          active={active}
-          user={user ? { name: user.name, phoneNumber: user.phoneNumber } : undefined}
-        />
+        <DashSidebar active={active} />
         <main class="main">
           <DashTopbar
             greetingDate={`${title} · in progress`}

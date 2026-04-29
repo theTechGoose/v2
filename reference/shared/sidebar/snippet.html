@@ -1,0 +1,52 @@
+<!-- Source: pages/dashboard/raw.html lines 2240–2288 (JSX-flavored markup; convert className → class for vanilla HTML) -->
+<aside class="sb">
+  <div class="sb__inner">
+    <div class="sb__brand">
+      <div class="sb__brand-logo">
+        <!-- 30x30 logo image -->
+        <img src="…logo…" alt="" />
+      </div>
+      <div class="sb__brand-text">
+        <div class="sb__brand-name">Paperwork Monsters</div>
+      </div>
+    </div>
+
+    <a class="sb__textus" href="Paperwork Monsters Assistant.html" title="My assistant — AI quote builder">
+      <div class="sb__textus-icon"><!-- crown icon SVG --></div>
+      <div class="sb__textus-text">
+        <span>My assistant</span>
+      </div>
+    </a>
+
+    <div class="sb__divider"></div>
+
+    <nav class="sb__nav">
+      <!-- repeated for each NAV item -->
+      <button class="nav-item nav-item--active">
+        <span class="nav-item__icon"><!-- icon SVG --></span>
+        <span class="nav-item__label">Dashboard</span>
+        <!-- optional count badge -->
+        <span class="nav-item__count">3</span>
+      </button>
+
+      <div class="sb__label">Account</div>
+      <button class="nav-item">
+        <span class="nav-item__icon"><!-- cog SVG --></span>
+        <span class="nav-item__label">Settings</span>
+      </button>
+    </nav>
+
+    <div class="sb__footer">
+      <div class="sb__avatar">DR</div>
+      <div class="sb__user-text">
+        <div class="sb__user-name">Diego R.</div>
+        <div class="sb__user-biz">Riley Roofing Co.</div>
+      </div>
+      <button class="sb__cog" aria-label="Account">
+        <!-- chevron SVG -->
+      </button>
+    </div>
+  </div>
+</aside>
+
+<!-- Add `sb sb--collapsed` to collapse to 84px width (icons-only). -->

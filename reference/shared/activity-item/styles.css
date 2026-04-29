@@ -1,0 +1,31 @@
+/* Source: pages/dashboard/raw.html lines 1431–1446 */
+
+.activity-item {
+  display: flex; gap: 12px;
+  padding: 12px 20px;
+  align-items: flex-start;
+  border-bottom: 1px dashed rgba(100,69,54,0.10);
+}
+.activity-item:last-child { border-bottom: none; }
+
+.activity-item__icon {
+  width: 32px; height: 32px;
+  border-radius: 10px;
+  display: grid; place-items: center;
+  flex-shrink: 0;
+}
+.activity-item__text {
+  font-size: 13px;
+  color: var(--brand-teal);
+  flex: 1;
+  line-height: 1.4;
+}
+.activity-item__text strong {
+  font-family: var(--font-heading);
+  font-weight: 800;
+}
+.activity-item__time {
+  font-size: 11px;
+  color: var(--fg-subtle);
+  margin-top: 2px;
+}

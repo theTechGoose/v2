@@ -1,0 +1,78 @@
+<!-- Source: pages/landing/raw.html lines 2380–2459 -->
+<section class="contact" id="contact">
+  <div class="container">
+    <div class="contact-card">
+      <!-- Left column: copy + checklist -->
+      <div class="contact-info">
+        <span class="eyebrow-pill">Let's go</span>
+        <h2>Ready to get the paperwork off your plate?</h2>
+        <p>Drop your number. We'll text you within the hour and walk you through your first quote — free.</p>
+        <ul class="checks">
+          <li><!-- check SVG --> No setup fees, no contracts</li>
+          <li><!-- check SVG --> First quote free, on us</li>
+          <li><!-- check SVG --> English &amp; Spanish, every step</li>
+        </ul>
+      </div>
+
+      <!-- Right column: phone-style SMS preview + submit form -->
+      <form class="contact-form" id="contact-form">
+        <div class="cf-phone">
+          <div class="cf-phone__hdr">
+            <span class="cf-phone__avatar">PM</span>
+            <span class="cf-phone__name">
+              <strong>Paperwork Monsters</strong>
+              <em>Online <span class="cf-phone__live"></span></em>
+            </span>
+            <span class="cf-phone__call" aria-hidden="true"><!-- phone SVG --></span>
+          </div>
+
+          <div class="cf-phone__body" id="cf-phone-body">
+            <div class="cf-bubble cf-bubble--them">
+              <span>👋 Hey! I'm <strong>Marisol</strong> from Paperwork Monsters.</span>
+            </div>
+            <div class="cf-bubble cf-bubble--them">
+              <span>Drop your number below and I'll text you within the hour…</span>
+            </div>
+            <!-- The user-bubble preview is updated as they type. -->
+            <div class="cf-bubble cf-bubble--me cf-bubble--preview" id="cf-bubble-preview">
+              <span id="cf-preview-text">Hi Paperwork Monsters!</span>
+            </div>
+            <div class="cf-meta" id="cf-meta">
+              <span class="cf-meta__check"><!-- two check SVGs --></span>
+              <span>Delivered · Replies in <strong>~5 sec</strong></span>
+            </div>
+          </div>
+
+          <div class="cf-phone__compose">
+            <span class="cf-phone__plus" aria-hidden="true">+</span>
+            <label for="f-phone" class="cf-phone__field">
+              <input id="f-phone" name="phone" type="tel"
+                     placeholder="Tap to enter your number" required autocomplete="tel" inputmode="tel"/>
+            </label>
+            <button class="cf-phone__send" type="submit" aria-label="Send">
+              <!-- send SVG -->
+            </button>
+          </div>
+        </div>
+
+        <button class="cf-cta submit" type="submit">
+          <span>Text me my first quote</span>
+          <!-- arrow-right SVG -->
+        </button>
+
+        <div class="cf-trust">
+          <div class="cf-trust__avatars">
+            <span class="cf-trust__av" style="background:var(--brand-pink);">JG</span>
+            <span class="cf-trust__av" style="background:var(--brand-teal);">CL</span>
+            <span class="cf-trust__av" style="background:var(--coffee-500);">TS</span>
+          </div>
+          <div class="cf-trust__text">
+            <strong>34 contractors</strong> signed up this week
+          </div>
+        </div>
+
+        <div class="fine">By submitting, you agree to receive a friendly text from us.</div>
+      </form>
+    </div>
+  </div>
+</section>

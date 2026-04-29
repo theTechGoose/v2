@@ -15,7 +15,7 @@ export const TOOL_DEFS = [
     type: "function" as const,
     function: {
       name: "create_quote",
-      description: "Draft a quote for the user to review. Fire AFTER you've gathered scope and pricing — don't ask permission first.",
+      description: "Draft a quote for the user to review. Fire immediately when work is described — don't ask for confirmation, sizes, materials, or anything else first.",
       parameters: {
         type: "object",
         properties: {
@@ -23,12 +23,16 @@ export const TOOL_DEFS = [
           summary:    { type: "string", description: "One-line headline like 'Quote: 2-Car Garage Epoxy Floor'." },
           lineItems: {
             type: "array",
-            description: "Quote line items. Amounts are in CENTS (integer), not dollars.",
+            description: "Quote line items. CRITICAL: amountCents is in CENTS — always multiply your dollar estimate by 100. A $1,200 job is amountCents: 120000, NOT 1200. A $16 job is 1600. If the line item should look like $X.YZ in the UI, send X*100 + YZ.",
             items: {
               type: "object",
               properties: {
-                description: { type: "string" },
-                amountCents: { type: "integer", minimum: 0 },
+                description: { type: "string", description: "Plain-English line, e.g. 'Bathroom tile install (80 sqft, porcelain)'." },
+                amountCents: {
+                  type: "integer",
+                  minimum: 0,
+                  description: "Total dollars × 100. $1,200 → 120000. $850 → 85000. NEVER pass dollars directly.",
+                },
               },
               required: ["description", "amountCents"],
               additionalProperties: false,

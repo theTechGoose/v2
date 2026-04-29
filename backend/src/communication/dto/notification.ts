@@ -1,3 +1,6 @@
+import { IsBoolean, IsIn, IsOptional, IsString, validateSync } from "#class-validator";
+import { plainToInstance } from "#class-transformer";
+
 /**
  * Notification — a unit of "something happened that the user should know about".
  *
@@ -9,26 +12,67 @@
  *
  * `read` is a boolean toggle; the unread badge counts where read === false.
  */
-export type NotificationType =
-  | "quote_sent"
-  | "quote_accepted"
-  | "contract_signed"
-  | "invoice_paid"
-  | "invoice_overdue"
-  | "customer_replied"
-  | "generic";
+export const NOTIFICATION_TYPES = [
+  "quote_sent",
+  "quote_accepted",
+  "contract_signed",
+  "invoice_paid",
+  "invoice_overdue",
+  "customer_replied",
+  "generic",
+] as const;
+export type NotificationType = typeof NOTIFICATION_TYPES[number];
 
-export interface Notification {
+export const NOTIFICATION_ENTITY_TYPES = [
+  "quote",
+  "contract",
+  "invoice",
+  "customer",
+  "conversation",
+] as const;
+export type NotificationEntityType = typeof NOTIFICATION_ENTITY_TYPES[number];
+
+export class CreateNotificationDto {
+  @IsString()
+  @IsIn(NOTIFICATION_TYPES as unknown as string[])
+  type!: NotificationType;
+
+  @IsString()
+  title!: string;
+
+  @IsOptional() @IsString() body?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(NOTIFICATION_ENTITY_TYPES as unknown as string[])
+  entityType?: NotificationEntityType;
+
+  @IsOptional() @IsString() entityId?: string;
+}
+
+export class UpdateNotificationDto {
+  @IsOptional() @IsBoolean() read?: boolean;
+  @IsOptional() @IsString() readAt?: string;
+}
+
+export interface Notification extends CreateNotificationDto {
   id: string;
   userId: string;
-  type: NotificationType;
-  /** Optional link target — `entityType` + `entityId` for the dashboard to deep-link from the bell dropdown. */
-  entityType?: "quote" | "contract" | "invoice" | "customer" | "conversation";
-  entityId?: string;
-  /** Short headline rendered in the bell + ticker. */
-  title: string;
-  body?: string;
   read: boolean;
   readAt?: string;
   createdAt: string;
+}
+
+export function parseCreateNotification(input: unknown): CreateNotificationDto {
+  const dto = plainToInstance(CreateNotificationDto, input);
+  const errors = validateSync(dto);
+  if (errors.length) throw new Error(`invalid notification: ${JSON.stringify(errors)}`);
+  return dto;
+}
+
+export function parseUpdateNotification(input: unknown): UpdateNotificationDto {
+  const dto = plainToInstance(UpdateNotificationDto, input);
+  const errors = validateSync(dto);
+  if (errors.length) throw new Error(`invalid notification patch: ${JSON.stringify(errors)}`);
+  return dto;
 }

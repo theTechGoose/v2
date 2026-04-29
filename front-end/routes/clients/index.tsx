@@ -34,10 +34,7 @@ export default define.page(function ClientsRoute(ctx) {
       </Head>
 
       <div class="app">
-        <DashSidebar
-          active="clients"
-          user={user ? { name: user.name, phoneNumber: user.phoneNumber } : undefined}
-        />
+        <DashSidebar active="clients" />
         <main class="main">
           <DashTopbar
             greetingDate={greetingDate}

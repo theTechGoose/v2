@@ -17,7 +17,10 @@ export interface LockQuoteInput {
 
 export interface LockQuoteResult {
   conversation: AgentConversation;
-  /** action_card (status=sent) + continue_cta to phase 2. */
+  /** action_card with status=sent. The "Continue to terms" prompt is
+   *  intentionally NOT emitted here — it follows customer acceptance,
+   *  via AcceptQuote — so the chat doesn't ask the user to draft terms
+   *  for a quote the customer hasn't yet agreed to. */
   newMessages: AgentMessage[];
 }
 
@@ -35,8 +38,14 @@ export interface LockQuoteResult {
  *   4. Best-effort dispatch paperwork email (failure does NOT abort —
  *      mirrors handle-chat-message's behavior so the user can retry).
  *   5. Append a fresh action_card (status=sent) so the chat shows the
- *      locked totals, plus a continue_cta to phase 2.
+ *      locked totals.
  *   6. Set conv.quoteId so subsequent flows know what to operate on.
+ *
+ * The "Continue to contract" prompt is intentionally NOT emitted here.
+ * It follows customer acceptance (see AcceptQuote): we don't ask the
+ * user to draft contract terms for a quote the customer hasn't agreed
+ * to yet — the chain is quote → contract → invoice, gated on customer
+ * acceptance at each handoff.
  */
 @Injectable()
 export class LockQuote {
@@ -95,23 +104,12 @@ export class LockQuote {
       },
     });
 
-    const cta = await this.messages.append({
-      conversationId: conv.id,
-      role: "assistant",
-      kind: "continue_cta",
-      content: "Continue to terms",
-      payload: {
-        toPhase: "terms",
-        quoteId: fresh.id,
-        summary: "Payment, warranty, dispute, governing state — 7 quick questions",
-      },
-    });
-
     const updated = await this.conversations.update(conv.id, {
       quoteId: fresh.id,
-      preview: `Locked quote: ${fresh.summary ?? fresh.id}`,
+      quoteStatus: "sent",
+      preview: `Quote sent: ${fresh.summary ?? fresh.id}`,
     });
 
-    return { conversation: updated, newMessages: [card, cta] };
+    return { conversation: updated, newMessages: [card] };
   }
 }

@@ -30,6 +30,6 @@ export function unchunk(pages: Uint8Array[]): Uint8Array {
 
 /** SHA-256 of the bytes — for de-dup + integrity checks. Returns lowercase hex. */
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  const hash = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }

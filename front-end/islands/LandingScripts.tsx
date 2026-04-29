@@ -5,14 +5,18 @@
  *   - marquee track render
  *   - doc tabs (Quote/Contract/Invoice) — fills content
  *   - "documents handled" counter (eased on IO intersect)
- *   - chat-body reveal sequence (typing dots + bubbles + progress fill)
  *   - smooth scroll for in-page anchors
  *   - contact form: live SMS preview + submit → backend send-otp → /verify
+ *
+ * The chat-body reveal moved to `<PhoneChat>` — this island now only
+ * pushes language changes to `langSignal` so PhoneChat (and any other
+ * lang-aware island) can react.
  *
  * Mounts as a no-op DOM element; all behavior happens via document queries
  * inside useEffect, mirroring how the prototype's <script> tag worked.
  */
 import { useEffect } from "preact/hooks";
+import { langSignal } from "../lib/lang.ts";
 import { landingClient } from "../clients/landing.ts";
 
 type Lang = "en" | "es";
@@ -222,53 +226,6 @@ const DOC_CONTENT: Record<Lang, Record<"quote" | "contract" | "invoice", DocCopy
   },
 };
 
-interface ChatStep { side: "left" | "right"; kind: "bubble" | "meta" | "typing" | "quote"; cls?: string; text?: string; style?: string }
-
-const CHAT_SCRIPT: Record<Lang, ChatStep[]> = {
-  en: [
-    { side: "right", kind: "bubble", cls: "me", text: "Kitchen remodel for the Hernández family. Cabinets, quartz counters, 3 days labor." },
-    { side: "right", kind: "meta", text: "9:38 AM" },
-    { side: "left", kind: "typing" },
-    { side: "left", kind: "bubble", cls: "them", text: "Got it 👍 What zip code is the job in?" },
-    { side: "left", kind: "bubble", cls: "them", text: "And rough square footage of countertop?" },
-    { side: "right", kind: "bubble", cls: "me", text: "78704. About 42 sq ft of counter." },
-    { side: "left", kind: "typing" },
-    { side: "left", kind: "bubble", cls: "them", text: "Perfect. Quote coming up — typical range for this is $10,800–$12,400." },
-    { side: "left", kind: "bubble", cls: "them", text: "Here's your quote, ready to send:", style: "background:var(--mint-200)" },
-    { side: "right", kind: "quote" },
-    { side: "right", kind: "bubble", cls: "me", text: "Looks good. Send it to them." },
-    { side: "right", kind: "meta", text: "9:41 AM ✓ Sent to client" },
-  ],
-  es: [
-    { side: "right", kind: "bubble", cls: "me", text: "Remodelación cocina para los Hernández. Gabinetes, cubierta de cuarzo, 3 días de mano de obra." },
-    { side: "right", kind: "meta", text: "9:38" },
-    { side: "left", kind: "typing" },
-    { side: "left", kind: "bubble", cls: "them", text: "Listo 👍 ¿Cuál es el código postal del trabajo?" },
-    { side: "left", kind: "bubble", cls: "them", text: "¿Y aproximadamente cuántos pies² de cubierta?" },
-    { side: "right", kind: "bubble", cls: "me", text: "78704. Como 42 pies² de cubierta." },
-    { side: "left", kind: "typing" },
-    { side: "left", kind: "bubble", cls: "them", text: "Perfecto. Va la cotización — rango típico $10.800–$12.400." },
-    { side: "left", kind: "bubble", cls: "them", text: "Aquí está tu cotización, lista para enviar:", style: "background:var(--mint-200)" },
-    { side: "right", kind: "quote" },
-    { side: "right", kind: "bubble", cls: "me", text: "Se ve bien. Mándasela." },
-    { side: "right", kind: "meta", text: "9:41 ✓ Enviado al cliente" },
-  ],
-};
-
-function quoteCardHTML(lang: Lang): string {
-  const t = lang === "es"
-    ? { hd: "Cotización · #PM-2641", l1: "Gabinetes e instalación", l2: "Cubiertas de cuarzo", l3: "Demolición y mano de obra", total: "Total" }
-    : { hd: "Quote · #PM-2641", l1: "Cabinets & install", l2: "Quartz countertops", l3: "Demo & labor", total: "Total" };
-  return `
-  <div class="quote-card">
-    <div class="qc-head"><span>${t.hd}</span><span class="pdf">PDF</span></div>
-    <div class="row"><span>${t.l1}</span><strong>$ 4,200</strong></div>
-    <div class="row"><span>${t.l2}</span><strong>$ 3,990</strong></div>
-    <div class="row"><span>${t.l3}</span><strong>$ 2,800</strong></div>
-    <div class="total"><span>${t.total}</span><span>$ 10,990</span></div>
-  </div>`;
-}
-
 function toE164(raw: string): string {
   const digits = raw.replace(/\D/g, "");
   if (raw.startsWith("+")) return "+" + digits;
@@ -312,7 +269,7 @@ export default function LandingScripts() {
         }
       }
       renderDoc(activeDoc);
-      renderChat();
+      langSignal.value = lang;        // PhoneChat (and any future lang-aware island) react via this signal.
       fitRotor();
       try { globalThis.localStorage?.setItem("pm:lang", lang); } catch { /* SSR-safe */ }
     }
@@ -444,84 +401,6 @@ export default function LandingScripts() {
       cleanups.push(() => io.disconnect());
     }
 
-    /* ================== Chat reveal ================== */
-    const chatBody = document.getElementById("chat-body");
-    const chatFill = document.getElementById("chat-fill");
-    let revealTimers: number[] = [];
-    let revealed = 0;
-
-    function resetReveal(): void {
-      revealTimers.forEach((id) => clearTimeout(id));
-      revealTimers = [];
-      revealed = 0;
-      document.querySelectorAll<HTMLElement>(".chat-step").forEach((s) => s.classList.remove("in"));
-      if (chatFill) chatFill.style.width = "0%";
-    }
-
-    function startReveal(): void {
-      const steps = Array.from(document.querySelectorAll<HTMLElement>(".chat-step"));
-      if (!steps.length || revealed || !chatBody) return;
-      let delay = 0;
-      steps.forEach((step, i) => {
-        const isTyping = step.querySelector(".typing");
-        delay += isTyping ? 350 : (i === 0 ? 200 : 700);
-        revealTimers.push(setTimeout(() => {
-          step.classList.add("in");
-          if (!isTyping && i > 0) {
-            const prev = steps[i - 1];
-            if (prev.querySelector(".typing")) (prev as HTMLElement).style.display = "none";
-          }
-          chatBody.scrollTo({ top: chatBody.scrollHeight, behavior: "smooth" });
-          if (chatFill) chatFill.style.width = Math.round(((i + 1) / steps.length) * 100) + "%";
-        }, delay) as unknown as number);
-        if (isTyping) delay += 1100;
-      });
-      revealed = 1;
-    }
-
-    function renderChat(): void {
-      if (!chatBody) return;
-      chatBody.innerHTML = "";
-      CHAT_SCRIPT[curLang].forEach((s, i) => {
-        const step = document.createElement("div");
-        step.className = "chat-step " + s.side;
-        step.dataset.idx = String(i);
-        if (s.kind === "bubble") {
-          const b = document.createElement("div");
-          b.className = "bubble " + (s.cls ?? "");
-          b.textContent = s.text ?? "";
-          if (s.style) b.style.cssText = s.style;
-          step.appendChild(b);
-        } else if (s.kind === "meta") {
-          const m = document.createElement("div");
-          m.className = "bubble-meta";
-          m.textContent = s.text ?? "";
-          step.appendChild(m);
-        } else if (s.kind === "typing") {
-          const t = document.createElement("div");
-          t.className = "typing";
-          t.innerHTML = "<span></span><span></span><span></span>";
-          step.appendChild(t);
-        } else if (s.kind === "quote") {
-          step.innerHTML = quoteCardHTML(curLang);
-        }
-        chatBody.appendChild(step);
-      });
-      resetReveal();
-    }
-
-    const phoneEl = document.querySelector(".phone");
-    if (phoneEl) {
-      const io = new IntersectionObserver((entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) startReveal();
-          else resetReveal();
-        }
-      }, { threshold: 0.4 });
-      io.observe(phoneEl);
-      cleanups.push(() => io.disconnect());
-    }
-
     /* ================== Contact form ================== */
     const form = document.getElementById("contact-form") as HTMLFormElement | null;
     const phoneInput = document.getElementById("f-phone") as HTMLInputElement | null;
@@ -593,7 +472,6 @@ export default function LandingScripts() {
     /* ================== Init ================== */
     applyLang(curLang);
     renderDoc("quote");
-    renderChat();
 
     return () => {
       cleanups.forEach((c) => { try { c(); } catch { /* noop */ } });

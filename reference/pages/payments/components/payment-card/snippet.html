@@ -1,0 +1,62 @@
+<!-- Source: pages/payments/raw.html lines 5816+ (PaymentCard component, reuses .qcard__* selectors) -->
+<!-- Theming via inline CSS vars from moodForPayment(p):
+     ach     → green-ish (cleared)
+     card    → teal-ish
+     check   → coffee-ish
+     cash    → pink-ish (warm cash-in-hand vibe)
+     transit → muted teal/coffee
+     attention (declined / returned) → red/pink urgency
+-->
+<article class="qcard"
+         style="--mood-from:#5FA34F;--mood-to:#3F7A33;--mood-shadow:rgba(81,152,67,0.35);--mood-status:#3F7A33;">
+  <div class="qcard__mood">
+    <div class="qcard__numeral">01</div>
+    <div class="qcard__status">
+      <span class="qcard__status-dot"></span>
+      LANDED
+    </div>
+  </div>
+
+  <div class="qcard__av">SC</div>
+
+  <div class="qcard__body">
+    <div class="qcard__client-name">Sarah Chen · INV-208</div>
+    <h3 class="qcard__title">$1,920 · ACH transfer</h3>
+    <p class="qcard__story">Auto-pay from her business account, like clockwork. The monsters logged it.</p>
+  </div>
+
+  <div class="qcard__foot">
+    <button class="qcard__cta">View receipt <span>→</span></button>
+    <div class="qcard__val-wrap">
+      <div class="qcard__val-lbl">Amount</div>
+      <div class="qcard__val-num">$1,920</div>
+    </div>
+  </div>
+
+  <div class="qcard__back">
+    <div class="qcard__back-head">
+      <button class="qcard__back-close" aria-label="Close"><!-- x SVG --></button>
+      <div class="qcard__back-eyebrow">Payment timeline</div>
+      <p class="qcard__back-big">3<small> steps · ACH</small></p>
+    </div>
+    <div class="qcard__back-body">
+      <div class="qcard__timeline">
+        <!-- one row per timeline event -->
+        <div class="qcard__topen">
+          <span class="qcard__topen-dot"></span>
+          <div>
+            <div class="qcard__topen-when"><strong>3d ago</strong> · submitted</div>
+          </div>
+          <div class="qcard__topen-dev">Auto-pay</div>
+        </div>
+        <!-- additional rows: in transit / cleared -->
+      </div>
+      <p class="qcard__read">Cleared cleanly. <em>Already in your account.</em></p>
+    </div>
+    <div class="qcard__back-foot">
+      <button>Send receipt</button>
+      <button>Mark reviewed</button>
+      <button>Open invoice</button>
+    </div>
+  </div>
+</article>

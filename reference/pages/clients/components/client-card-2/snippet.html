@@ -1,0 +1,94 @@
+<!-- Source: pages/clients/raw.html lines 4097–4189 (ClientCard component) -->
+<!-- The card uses CSS custom properties to flex per-mood theming:
+     style="--mood-from: <c1>; --mood-to: <c2>; --mood-shadow: <c3>; --mood-status: <c4>;
+            animation-delay: <idx * 35>ms;"
+-->
+<div class="ccard2"
+     style="--mood-from:#FFB3B3;--mood-to:#FF8D8D;--mood-shadow:rgba(255,107,107,0.28);--mood-status:#C92A2A;animation-delay:0ms;">
+  <!-- Mood band: full-bleed gradient using --mood-from → --mood-to -->
+  <div class="ccard2__mood">
+    <div class="ccard2__mood-tex"></div>
+
+    <!-- Big editorial "days since contact" set offset bottom-right.
+         Tier modifier: --warm | --steady | --cool | --cold (controls white-text alpha). -->
+    <div class="ccard2__since ccard2__since--cool">
+      <span class="ccard2__since-num">14</span>
+      <span class="ccard2__since-unit">days ago</span>
+    </div>
+
+    <!-- Glassy status pill (top-left) -->
+    <div class="ccard2__status">
+      <span class="ccard2__status-dot"></span>
+      Hot lead
+    </div>
+
+    <!-- Optional VIP crown (top-right) -->
+    <div class="ccard2__crown">
+      <!-- crown SVG -->
+    </div>
+  </div>
+
+  <!-- Avatar straddles the mood→body border -->
+  <div class="ccard2__av">SK</div>
+
+  <!-- Body copy -->
+  <div class="ccard2__body">
+    <h3 class="ccard2__name">Sarah Chen</h3>
+    <div class="ccard2__seg">
+      <span>Homeowner</span>
+      <span class="ccard2__seg-dot"></span>
+      <span>Last job 3 mo ago</span>
+    </div>
+    <p class="ccard2__story">Bathroom remodel just kicked off. Loves the photo updates — keep them coming.</p>
+  </div>
+
+  <!-- Foot: nudge button + balance summary -->
+  <div class="ccard2__foot">
+    <button class="ccard2__nudge">
+      Send Tuesday update <span class="ccard2__nudge-arrow">→</span>
+    </button>
+    <div class="ccard2__bal-wrap">
+      <div class="ccard2__bal-lbl">Balance</div>
+      <div class="ccard2__bal-val ccard2__bal-val--owe">$1,920 due</div>
+    </div>
+  </div>
+
+  <!-- Slide-up detail panel (toggled via .ccard2--open on outer card) -->
+  <div class="ccard2__panel">
+    <div class="ccard2__panel-head">
+      <div class="ccard2__panel-av">SK</div>
+      <div style="min-width:0;flex:1;">
+        <div class="ccard2__panel-name">Sarah Chen</div>
+        <div class="ccard2__panel-seg">Homeowner · Hot lead</div>
+      </div>
+      <button class="ccard2__panel-x" aria-label="Close">
+        <!-- x SVG -->
+      </button>
+    </div>
+
+    <div class="ccard2__panel-rows">
+      <a class="ccard2__panel-row" href="tel:…">
+        <span class="ccard2__panel-row-icon"><!-- phone SVG --></span>
+        <span class="ccard2__panel-row-text">
+          <div class="ccard2__panel-row-lbl">Phone</div>
+          <div class="ccard2__panel-row-val">(555) 010-0123</div>
+        </span>
+        <span class="ccard2__panel-row-arrow"><!-- arrow SVG --></span>
+      </a>
+      <!-- email and address rows follow -->
+    </div>
+
+    <div class="ccard2__panel-actions">
+      <button class="ccard2__panel-act"><!-- msg SVG --> Message</button>
+      <button class="ccard2__panel-act ccard2__panel-act--pink"><!-- eye SVG --> Open card</button>
+    </div>
+  </div>
+</div>
+
+<!--
+  Behavior notes:
+    - Click outside the foot/panel to open: outer onClick handler.
+    - Inside the panel, e.stopPropagation() prevents card-toggle.
+    - Body content is fixed-height (4 lines × 1.5 × 14.5px ≈ 87px) so foot lines up across the row.
+    - The number on .ccard2__since is computed: < 30 days = day count padded "07"; otherwise weeks.
+-->

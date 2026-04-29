@@ -9,7 +9,7 @@ import { resetKv } from "@core/data/kv/mod.ts";
 @Module({ imports: [AnalyticsModule] })
 class TestApp {}
 
-const PORT = 9091;
+const PORT = 9094;
 
 async function drain(res: Response) { await res.body?.cancel(); }
 

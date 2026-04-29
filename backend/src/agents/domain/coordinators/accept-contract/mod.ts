@@ -68,20 +68,34 @@ export class AcceptContract {
       conversationId: conv.id,
       role: "system",
       kind: "phase_divider",
-      content: "Quote accepted by client",
+      content: "Contract accepted by client",
       payload: {
         phase: 4,
-        label: "Quote accepted by client",
+        label: "Contract accepted by client",
         contractId: contract.id,
+      },
+    });
+
+    // Per the quote → contract → invoice chain, customer acceptance of
+    // the contract is the user's prompt to draft + send the invoice.
+    const cta = await this.messages.append({
+      conversationId: conv.id,
+      role: "assistant",
+      kind: "continue_cta",
+      content: "Continue to invoice",
+      payload: {
+        toPhase: "invoice",
+        contractId: contract.id,
+        summary: "Customer signed — bill the job and send the invoice.",
       },
     });
 
     const updatedConv = await this.conversations.update(conv.id, {
       hasUnreadEvent: true,
       contractStatus: "accepted",
-      preview: "✓ Quote accepted by client",
+      preview: "✓ Contract accepted by client",
     });
 
-    return { conversation: updatedConv, newMessages: [note] };
+    return { conversation: updatedConv, newMessages: [note, cta] };
   }
 }

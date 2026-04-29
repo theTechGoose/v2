@@ -1,0 +1,78 @@
+<!-- Source: pages/assistant/raw.html lines 4424–4518 (rendered inside an assistant .msg bubble) -->
+<div class="wiz">
+  <!-- Header -->
+  <div class="wiz__head">
+    <div class="wiz__head-icon"><!-- contract SVG --></div>
+    <div class="wiz__head-txt">
+      <div class="wiz__head-title">Contract terms</div>
+      <div class="wiz__head-sub">Tap an answer · last button is always Custom</div>
+    </div>
+    <div class="wiz__head-config">
+      <!-- bookmark SVG --> Standard residential
+    </div>
+    <button class="wiz__head-mode" title="Show all on one page">
+      <!-- list SVG --> All-on-one
+    </button>
+  </div>
+
+  <!-- Completed steps surface as inline chips with checkmark and edit pencil -->
+  <div class="wiz__chips">
+    <span class="wiz-chip">
+      <span class="wiz-chip__check">✓</span>
+      <span class="wiz-chip__label">Config:</span>
+      <span class="wiz-chip__val">Standard residential</span>
+      <!-- pencil SVG -->
+    </span>
+    <!-- additional chips for Customer / Start / Wraps -->
+  </div>
+
+  <!-- Active step: question + 4 preset answers + Custom -->
+  <div class="wiz__step">
+    <div class="wiz__step-num">Step 5 of 10 · Payment terms</div>
+    <h3 class="wiz__step-q">How do you want to get paid?</h3>
+    <div class="wiz__opts">
+      <button class="wiz-opt">
+        50 / 50
+        <span class="wiz-opt__sub">$1,700 deposit · $1,700 on finish</span>
+      </button>
+      <button class="wiz-opt">
+        30 / 30 / 40
+        <span class="wiz-opt__sub">$1,020 / $1,020 / $1,360</span>
+      </button>
+      <button class="wiz-opt">
+        Net 15 — full
+        <span class="wiz-opt__sub">$3,400 due 15 days after wrap</span>
+      </button>
+      <button class="wiz-opt">
+        Deposit + balance
+        <span class="wiz-opt__sub">$500 hold · balance on finish</span>
+      </button>
+      <button class="wiz-opt wiz-opt--custom">
+        <!-- plus SVG --> Custom…
+        <span class="wiz-opt__sub">Tell Bossie a different schedule</span>
+      </button>
+    </div>
+    <div class="wiz__hint">
+      <!-- bolt SVG --> Defaults: <strong>Net 15 · 1.5% late fee</strong> — editable after picking
+    </div>
+  </div>
+
+  <!-- Remaining steps as small numbered pills -->
+  <div class="wiz__rest">
+    <span class="wiz__rest-label">Up next:</span>
+    <span class="wiz-pill"><span class="wiz-pill__num">6</span> Warranty</span>
+    <span class="wiz-pill"><span class="wiz-pill__num">7</span> Termination</span>
+    <!-- 8 Dispute, 9 Governing state, 10 State notices -->
+  </div>
+
+  <!-- Footer with progress + finalize CTA -->
+  <div class="wiz__foot">
+    <span class="wiz__foot-count">4 of 10 done</span>
+    <div class="wiz__foot-progress">
+      <div class="wiz__foot-bar" style="width:40%;"></div>
+    </div>
+    <button class="wiz__foot-finalize">
+      <!-- check SVG --> Finalize &amp; send
+    </button>
+  </div>
+</div>

@@ -26,12 +26,12 @@ export default define.page(async function Verify(ctx) {
     <>
       <Head>
         <title>{s["verify.h1"]} · Paperwork Monsters</title>
-        <link rel="stylesheet" href="/landing.css" />
+        <link rel="stylesheet" href="/verify.css" />
       </Head>
       <div class="verify-shell">
         <div class="verify-card">
           <a href="/" class="brand" style="margin:0 auto 4px">
-            <img src="/logo-monster.png" alt="Paperwork Monsters" />
+            <img src="/logo-monster.png" alt="Paperwork Monsters" style="width:38px;height:38px;flex-shrink:0" />
             <span>Paperwork</span>
             <em style="font-style:normal;color:var(--brand-green)">Monsters</em>
           </a>

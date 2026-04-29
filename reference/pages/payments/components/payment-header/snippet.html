@@ -1,0 +1,47 @@
+<!-- Source: pages/payments/raw.html lines 5653–5701 -->
+<header class="pph">
+  <div class="pph__main">
+    <div class="pph__eyebrow">
+      <!-- check SVG --> Payments · April
+    </div>
+    <h1 class="pph__title">
+      <span class="pph__title-amount">
+        <sup>$</sup>11,430
+      </span>
+      <span class="pph__title-tail">showed up this month.</span>
+    </h1>
+    <p class="pph__sub">
+      Plus <strong>$5,590</strong> on the way and <strong>1</strong> that needs a quick text to unstick.
+      The monsters logged every dollar.
+    </p>
+    <div class="pph__cta-row">
+      <button class="pph__cta">
+        <!-- plus SVG --> Record a payment
+      </button>
+      <button class="pph__ghost">
+        <!-- arrow SVG --> Export this month
+      </button>
+    </div>
+  </div>
+
+  <!-- Right-side stack of 3 rotated payment stubs -->
+  <div class="pph__stack" aria-hidden="true">
+    <!-- One stub per most-recent landed payment.
+         Modifier --1 / --2 / --3 controls top + rotate + zIndex. -->
+    <div class="pph__stub pph__stub--3">
+      <div class="pph__stub-head">
+        <div class="pph__stub-av" style="background:linear-gradient(135deg,#9C8074,#5C4034);">JM</div>
+        <div class="pph__stub-meta">
+          <div class="pph__stub-client">Jana Patel</div>
+          <div class="pph__stub-when">Yesterday · INV-208</div>
+        </div>
+      </div>
+      <div class="pph__stub-amount">$1,920</div>
+      <div class="pph__stub-foot">
+        <span class="pph__stub-method"><!-- method icon --> Check</span>
+        <span class="pph__stub-tag">Landed</span>
+      </div>
+    </div>
+    <!-- additional stubs --2 and --1 follow -->
+  </div>
+</header>

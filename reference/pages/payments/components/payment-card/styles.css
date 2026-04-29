@@ -1,0 +1,3 @@
+/* Reuses ../../../quotes/components/quote-item-card/styles.css. The PaymentCard component
+   renders the same .qcard markup with payment-specific moods and timeline content.
+   No additional .qcard rules are introduced on the Payments page. */

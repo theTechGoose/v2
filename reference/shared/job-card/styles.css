@@ -1,0 +1,106 @@
+/* Source: pages/dashboard/raw.html lines 1221–1318 */
+
+.job {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 14px;
+  padding: 14px 20px;
+  border-bottom: 1px dashed rgba(100,69,54,0.10);
+  align-items: center;
+}
+.job:last-child { border-bottom: none; }
+
+.job__icon {
+  width: 44px; height: 44px;
+  border-radius: 14px;
+  display: grid; place-items: center;
+  color: #fff;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.job__title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  min-width: 0;
+  gap: 8px;
+}
+.job__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--brand-teal);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.job__chip {
+  flex-shrink: 0;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* Status chip palette */
+.chip--green  { background: var(--green-50);  color: var(--green-600);  }
+.chip--pink   { background: var(--pink-50);   color: var(--pink-700);   }
+.chip--coffee { background: var(--coffee-50); color: var(--coffee-600); }
+.chip--teal   { background: var(--teal-50);   color: var(--teal-600);   }
+.chip--warn   { background: #FFF6E5;          color: #A57A1B;           }
+
+.job__meta {
+  font-size: 12px;
+  color: var(--fg-muted);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.job__meta-dot {
+  width: 3px; height: 3px;
+  background: var(--fg-subtle);
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.job__progress {
+  margin-top: 8px;
+  height: 5px;
+  background: var(--mint-200);
+  border-radius: 999px;
+  overflow: hidden;
+  max-width: 220px;
+}
+.job__progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  /* width and background are passed inline per row */
+}
+
+.job__amount {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--brand-teal);
+  letter-spacing: -0.01em;
+  text-align: right;
+  white-space: nowrap;
+}
+.job__amount-sub {
+  font-size: 10px;
+  color: var(--fg-muted);
+  font-weight: 600;
+  margin-top: 2px;
+  text-align: right;
+}

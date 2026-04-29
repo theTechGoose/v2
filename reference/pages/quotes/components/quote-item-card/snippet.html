@@ -1,0 +1,69 @@
+<!-- Source: pages/quotes/raw.html lines 5129–5208 (QuoteCard component) -->
+<!-- Theming via inline CSS vars from moodForQuote(q):
+     --mood-from / --mood-to / --mood-shadow / --mood-status -->
+<article class="qcard"
+         style="--mood-from:#9C8074;--mood-to:#5C4034;--mood-shadow:rgba(92,64,52,0.32);--mood-status:#5C4034;">
+  <!-- Mood band (front) -->
+  <div class="qcard__mood">
+    <div class="qcard__numeral">01</div>
+    <div class="qcard__status">
+      <span class="qcard__status-dot"></span>
+      OPENED 3×
+    </div>
+
+    <!-- Engagement read-out: dots representing each open + total count -->
+    <div class="qcard__opens">
+      <!-- OpenDots renders count dots, capped at 5 -->
+      <span class="qcard__opens-dot"></span>
+      <span class="qcard__opens-dot"></span>
+      <span class="qcard__opens-dot"></span>
+      3×
+    </div>
+  </div>
+
+  <div class="qcard__av">TK</div>
+
+  <div class="qcard__body">
+    <div class="qcard__client-name">Tom &amp; Linda K. · Q-204</div>
+    <h3 class="qcard__title">Garage epoxy floor</h3>
+    <p class="qcard__story">Opened the quote 3× in two days. Asked about color the second time — they're warming up.</p>
+  </div>
+
+  <div class="qcard__foot">
+    <button class="qcard__cta">
+      Send the offer <span style="display:inline-block;transition:transform 240ms;">→</span>
+    </button>
+    <div class="qcard__val-wrap">
+      <div class="qcard__val-lbl">Quote</div>
+      <div class="qcard__val-num">$3,400</div>
+    </div>
+  </div>
+
+  <!-- Back: opens timeline + reading + actions -->
+  <div class="qcard__back">
+    <div class="qcard__back-head">
+      <button class="qcard__back-close" aria-label="Close"><!-- x SVG --></button>
+      <div class="qcard__back-eyebrow">The open story</div>
+      <p class="qcard__back-big">3<small> opens · Tom</small></p>
+    </div>
+    <div class="qcard__back-body">
+      <div class="qcard__timeline">
+        <!-- One row per recorded open -->
+        <div class="qcard__topen">
+          <span class="qcard__topen-dot"></span>
+          <div>
+            <div class="qcard__topen-when"><strong>Today</strong> · 9:14 am</div>
+          </div>
+          <div class="qcard__topen-dev">iPhone</div>
+        </div>
+        <!-- additional opens follow -->
+      </div>
+      <p class="qcard__read">They're warm. Send a friendly nudge with a same-week start option.</p>
+    </div>
+    <div class="qcard__back-foot">
+      <button>Resend</button>
+      <button>Copy link</button>
+      <button>View as client</button>
+    </div>
+  </div>
+</article>

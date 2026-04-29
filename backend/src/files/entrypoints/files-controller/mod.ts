@@ -3,6 +3,8 @@ import type { ExecutionContext } from "#danet/core";
 import { IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
+import { ProcessVoiceMemo } from "@files/domain/coordinators/process-voice-memo/mod.ts";
+import { isAudioMime } from "@files/domain/business/audio-mime/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
@@ -25,6 +27,7 @@ function parseCreate(input: unknown): CreateFileDto {
 export class FilesController {
   constructor(
     private store: FileStore,
+    private voiceMemo: ProcessVoiceMemo,
     private users: UserStore,
     private sessions: SessionStore,
   ) {}
@@ -35,18 +38,28 @@ export class FilesController {
    *
    * JSON-friendly upload (no multipart parser dependency). Frontend uses
    * `FileReader.readAsDataURL(file).then(strip-prefix).then(POST)`.
+   *
+   * For audio uploads (mimeType startsWith "audio/"), a fire-and-forget
+   * transcription job is queued; the response returns immediately with
+   * transcriptStatus="pending" so the client knows to poll.
    */
   @Post()
   async upload(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const dto = parseCreate(body);
     const bytes = decodeBase64(dto.base64);
-    const meta = await this.store.create({
+    let meta = await this.store.create({
       userId: user.id,
       filename: dto.filename,
       mimeType: dto.mimeType,
       bytes,
     });
+    if (isAudioMime(dto.mimeType)) {
+      meta = await this.store.updateMeta(meta.id, user.id, { transcriptStatus: "pending" });
+      queueMicrotask(() => {
+        this.voiceMemo.run({ fileId: meta.id, userId: user.id });
+      });
+    }
     return ctx.json(meta);
   }
 
@@ -69,7 +82,7 @@ export class FilesController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const meta = await this.store.getOwnedMeta(id, user.id);
     const bytes = await this.store.readBytes(id);
-    return new Response(bytes, {
+    return new Response(bytes as BodyInit, {
       status: 200,
       headers: {
         "content-type":         meta.mimeType,

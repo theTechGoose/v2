@@ -1,0 +1,23 @@
+  .qbtn {
+    border: 1px solid var(--border);
+    background: #fff;
+    white-space: nowrap;
+    color: var(--brand-teal);
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 11px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .qbtn--nudge { background: var(--brand-pink); color: #fff; border-color: var(--brand-pink); }
+  .qbtn--view  { background: transparent; }
+
+  /* ------ Money owed (right bottom) ------ */
+  .money {
+    background: linear-gradient(135deg, var(--coffee-50) 0%, #fff 100%);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 18px 20px;
+    display: flex; flex-direction: column; gap: 14px;

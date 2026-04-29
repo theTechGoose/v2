@@ -1,6 +1,7 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@b-fuze/deno-dom@~0.1.56": "0.1.56",
     "jsr:@danet/core@2": "2.9.6",
     "jsr:@danet/core@^2.5.1": "2.9.6",
     "jsr:@danet/swagger@2": "2.3.2",
@@ -11,10 +12,9 @@
     "jsr:@deno/loader@~0.3.10": "0.3.14",
     "jsr:@dx/reflect@0.2.14": "0.2.14",
     "jsr:@fresh/build-id@1": "1.0.1",
-    "jsr:@fresh/core@2": "2.3.1",
-    "jsr:@fresh/core@^2.3.0": "2.3.1",
-    "jsr:@fresh/core@^2.3.1": "2.3.1",
-    "jsr:@fresh/plugin-vite@^1.1.0": "1.1.0",
+    "jsr:@fresh/core@2": "2.3.3",
+    "jsr:@fresh/core@^2.3.3": "2.3.3",
+    "jsr:@fresh/plugin-vite@^1.1.2": "1.1.2",
     "jsr:@hono/hono@4.6.3": "4.6.3",
     "jsr:@mrg-keystone/danet@^1.0.2": "1.0.2",
     "jsr:@std/assert@1": "1.0.19",
@@ -28,11 +28,12 @@
     "jsr:@std/html@^1.0.5": "1.0.6",
     "jsr:@std/http@^1.0.21": "1.1.0",
     "jsr:@std/internal@^1.0.12": "1.0.13",
-    "jsr:@std/json@^1.0.2": "1.0.3",
+    "jsr:@std/json@^1.0.2": "1.1.0",
     "jsr:@std/jsonc@^1.0.2": "1.0.2",
     "jsr:@std/media-types@1": "1.1.0",
     "jsr:@std/media-types@^1.1.0": "1.1.0",
     "jsr:@std/net@^1.0.6": "1.0.6",
+    "jsr:@std/path@*": "1.1.4",
     "jsr:@std/path@1": "1.1.4",
     "jsr:@std/path@1.0.6": "1.0.6",
     "jsr:@std/path@^1.1.1": "1.1.4",
@@ -40,6 +41,7 @@
     "jsr:@std/path@^1.1.4": "1.1.4",
     "jsr:@std/semver@^1.0.6": "1.0.8",
     "jsr:@std/uuid@^1.0.9": "1.1.1",
+    "jsr:@wok/case@^1.0.2": "1.0.3",
     "npm:@anatine/zod-openapi@2.2.6": "2.2.6_openapi3-ts@4.5.0_zod@3.23.8",
     "npm:@babel/core@^7.28.0": "7.29.0",
     "npm:@babel/preset-react@^7.27.1": "7.28.5_@babel+core@7.29.0",
@@ -69,6 +71,9 @@
     "npm:zod@3.23.8": "3.23.8"
   },
   "jsr": {
+    "@b-fuze/deno-dom@0.1.56": {
+      "integrity": "8030e2dc1d8750f1682b53462ab893d9c3470f2287feecbe22f44a88c54ab148"
+    },
     "@danet/core@2.9.6": {
       "integrity": "9c2616c2c1814afa4762ec9a80eccae887047629464d247fa1da0a488043ae68",
       "dependencies": [
@@ -125,8 +130,8 @@
         "jsr:@std/encoding"
       ]
     },
-    "@fresh/core@2.3.1": {
-      "integrity": "9cb63e3f6a7e6aeafe6430f1c6f1c14a86172d47d3436c8a0848d149f036f4b0",
+    "@fresh/core@2.3.3": {
+      "integrity": "6c2aad199976644352c89a1d601f3ef331b1d24cdadb53ed469324a303598383",
       "dependencies": [
         "jsr:@deno/esbuild-plugin",
         "jsr:@fresh/build-id",
@@ -150,12 +155,12 @@
         "npm:preact@^10.29.1"
       ]
     },
-    "@fresh/plugin-vite@1.1.0": {
-      "integrity": "7c184c40503b5f39639da978aeff3140e22a7857d2e18a959b931c98eaa871cf",
+    "@fresh/plugin-vite@1.1.2": {
+      "integrity": "4b29946c561781d5e557416d2d63ec44428062667b8b0376897a06d8bb397c7d",
       "dependencies": [
         "jsr:@deno/loader@0.4",
         "jsr:@fresh/core@2",
-        "jsr:@fresh/core@^2.3.0",
+        "jsr:@fresh/core@^2.3.3",
         "jsr:@std/dotenv",
         "jsr:@std/fmt@^1.0.7",
         "jsr:@std/media-types@1",
@@ -206,6 +211,7 @@
     "@std/fs@1.0.23": {
       "integrity": "3ecbae4ce4fee03b180fa710caff36bb5adb66631c46a6460aaad49515565a37",
       "dependencies": [
+        "jsr:@std/internal",
         "jsr:@std/path@^1.1.4"
       ]
     },
@@ -221,8 +227,8 @@
     "@std/internal@1.0.13": {
       "integrity": "2f9546691d4ac2d32859c82dff284aaeac980ddeca38430d07941e7e288725c0"
     },
-    "@std/json@1.0.3": {
-      "integrity": "97d5710996293a027b7aa5f0d1f4fa29f246f269e6b5597e08807613f37d426c"
+    "@std/json@1.1.0": {
+      "integrity": "93330d3ed4054d6b1ffe54b075432c80a5f671be77277b978931e018014cb1cc"
     },
     "@std/jsonc@1.0.2": {
       "integrity": "909605dae3af22bd75b1cbda8d64a32cf1fd2cf6efa3f9e224aba6d22c0f44c7",
@@ -253,6 +259,9 @@
       "dependencies": [
         "jsr:@std/bytes"
       ]
+    },
+    "@wok/case@1.0.3": {
+      "integrity": "0e997a829ed02823857c4b9c30a693ab8f2e582bb25423c69318fcedaf760f15"
     }
   },
   "npm": {
@@ -1629,6 +1638,9 @@
       "integrity": "sha512-XBx9AXhXktjUqnepgTiE5flcKIYWi/rme0Eaj+5Y0lftuGBq+jyRu/md4WnuxqgP1ubdpNCsYEYPxrzVHD8d6g=="
     }
   },
+  "remote": {
+    "https://esm.sh/lucide-preact@0.299.0/?exports=Search,File,ChevronRight,ShieldAlert,CheckCheck": "19aa0933f5e33f12b2af45c3432adff476a393c1af793a18cd966dc4df73e9d3"
+  },
   "workspace": {
     "members": {
       "backend": {
@@ -1645,8 +1657,8 @@
       "front-end": {
         "dependencies": [
           "jsr:@b-fuze/deno-dom@~0.1.56",
-          "jsr:@fresh/core@^2.3.1",
-          "jsr:@fresh/plugin-vite@^1.1.0",
+          "jsr:@fresh/core@^2.3.3",
+          "jsr:@fresh/plugin-vite@^1.1.2",
           "jsr:@std/assert@^1.0.15",
           "jsr:@std/fs@^1.0.19",
           "jsr:@wok/case@^1.0.2",

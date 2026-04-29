@@ -1,0 +1,53 @@
+<!-- Two related elements live in this folder:
+     1) .loopbar — the dark-teal hero strip above the cards (LoopBar component)
+     2) .cloop   — the right-rail "today's loop" detail card (ClientLoop component)
+-->
+
+<!-- 1) LoopBar — pages/clients/raw.html lines 3979–3993 -->
+<div class="loopbar">
+  <div class="loopbar__title">
+    <span class="loopbar__lbl">
+      <span class="loopbar__lbl-dot"></span> Today's loop
+    </span>
+    <span class="loopbar__h">3 friendly check-ins, drafted for you.</span>
+  </div>
+  <div class="loopbar__avs">
+    <div class="loopbar__av" style="background:linear-gradient(135deg,var(--coffee-300),var(--coffee-500));">TK</div>
+    <div class="loopbar__av" style="background:linear-gradient(135deg,var(--coffee-400),#4F362A);">HD</div>
+    <div class="loopbar__av" style="background:linear-gradient(135deg,var(--pink-300),var(--brand-pink));">RY</div>
+    <div class="loopbar__av-meta">
+      Tom · Hilltop · Riverside<br/>
+      <strong>~90 seconds</strong> to send all three
+    </div>
+  </div>
+  <button class="loopbar__cta"><!-- send SVG --> Open the loop</button>
+</div>
+
+
+<!-- 2) ClientLoop — pages/clients/raw.html lines 4274–4299 -->
+<div class="cloop">
+  <div class="cloop__head">
+    <div class="cloop__title">
+      <span class="cloop__title-dot"></span> Today's loop
+    </div>
+    <span class="cloop__count">3 to send</span>
+  </div>
+  <div class="cloop__sub">Drafts the monsters wrote in your voice. Tap to send, edit, or skip.</div>
+
+  <!-- One .cloop__row per draft -->
+  <div class="cloop__row">
+    <div class="cloop__avatar" style="background:var(--brand-coffee);">TK</div>
+    <div style="min-width:0;">
+      <div class="cloop__name">Tom &amp; Linda K.</div>
+      <div class="cloop__why">Used to book quarterly. Quiet 4 months. Spring season starts next week.</div>
+      <div class="cloop__draft">
+        "Morning! Patio season is back — want me to swing by this week and re-seal the studio floor? — D"
+      </div>
+      <div class="cloop__btns">
+        <button class="cloop__btn cloop__btn--send"><!-- send SVG --> Send it</button>
+        <button class="cloop__btn cloop__btn--edit">Edit</button>
+        <button class="cloop__btn cloop__btn--edit">Skip</button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,64 @@
+<!-- Source: pages/payments/raw.html lines 5913–6023 -->
+<!-- The right rail is an <aside class="qside"> containing four .qside__card stat cards. -->
+
+<aside class="qside">
+  <!-- 1) PSideFlow — 12-week cash-flow sparkline -->
+  <div class="qside__card">
+    <div class="qside__title">Cash-flow shape</div>
+    <div class="qside__sub" style="margin:2px 0 12px;">Last 12 weeks · $14.7k this week</div>
+    <svg width="220" height="60" style="display:block;width:100%;height:auto;">
+      <defs>
+        <linearGradient id="cfArea" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%"   stop-color="#FF6B6B" stop-opacity="0.32"/>
+          <stop offset="100%" stop-color="#FF6B6B" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="…filled area…" fill="url(#cfArea)"/>
+      <path d="…line…"        fill="none" stroke="#FF6B6B" stroke-width="2"/>
+      <!-- 12 dots; the last is a fatter terminal -->
+    </svg>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--fg-muted);margin-top:8px;">
+      <span>Feb</span><span>Mar</span><span>Apr</span>
+    </div>
+  </div>
+
+  <!-- 2) PSideTopPayors — top 4 by paid amount this month -->
+  <div class="qside__card">
+    <div class="qside__title">Top payors this month</div>
+    <div class="qside__sub" style="margin:2px 0 14px;">Who actually showed up with money</div>
+    <div class="qside__rows">
+      <div class="qside__row">
+        <div class="qside__rank">01</div>
+        <div class="qside__row-body">
+          <div class="qside__row-name">Greenleaf HOA</div>
+          <div class="qside__bar">
+            <div class="qside__bar-fill"
+                 style="width:100%;background:linear-gradient(90deg,#4F8C6B,#2F6448);"></div>
+          </div>
+        </div>
+        <div class="qside__row-amt">$4,800</div>
+      </div>
+      <!-- additional ranks 02–04 -->
+    </div>
+  </div>
+
+  <!-- 3) PSideMix — segmented bar of payment-method shares -->
+  <div class="qside__card">
+    <div class="qside__title">How they paid</div>
+    <div class="qside__sub" style="margin:2px 0 14px;">Method mix this month</div>
+    <div style="display:flex;height:14px;border-radius:999px;overflow:hidden;
+                box-shadow:inset 0 1px 2px rgba(0,0,0,0.06);margin-bottom:14px;">
+      <!-- One <div> per method with width:<pct>% and background:<methodColor> -->
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;">
+      <!-- One legend chip per method (color swatch + label + pct) -->
+    </div>
+  </div>
+
+  <!-- 4) PSideTip — dark teal "Monster tip" card -->
+  <div class="qside__card" style="background:linear-gradient(135deg,#1A535C,#0F3A40);color:#fff;border:none;">
+    <div class="qside__title" style="color:#fff;margin-bottom:8px;">Monster tip</div>
+    <p>ACH costs you <strong>$0.40</strong> a transfer; card costs you <strong>2.9% + $0.30</strong>.
+       On a $4,800 invoice that's a <strong>$140 difference</strong> — worth nudging Greenleaf toward auto-pay.</p>
+  </div>
+</aside>

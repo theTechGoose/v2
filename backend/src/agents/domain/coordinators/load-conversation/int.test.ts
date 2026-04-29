@@ -19,7 +19,7 @@ function fresh() {
     conversations, messages,
     transition: new TransitionToTerms(conversations, messages),
     wizardAnswer: new HandleWizardAnswer(conversations, messages, quotes, contracts, bus),
-    load: new LoadConversation(conversations, messages),
+    load: new LoadConversation(conversations, messages, contracts),
   };
 }
 

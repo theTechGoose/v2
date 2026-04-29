@@ -1,0 +1,14 @@
+.footer {
+  padding: 48px 0 32px;
+  border-top: 1px solid var(--border);
+}
+.footer-row {
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 16px;
+}
+.footer-row .copy { font-size: 13px; color: var(--fg-muted); }
+.footer-row .links { display: flex; gap: 24px; font-size: 13px; color: var(--fg-muted); }
+.footer-row .links a:hover { color: var(--brand-pink); }
+
+/* ============================================================
+   RESPONSIVE

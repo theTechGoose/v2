@@ -5,7 +5,6 @@ import {
   dashboardClient,
   type DashboardStats,
   type Notification,
-  type Profile,
 } from "../../clients/dashboard.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
@@ -24,14 +23,12 @@ export default define.page(async function Dashboard(ctx) {
   const opts = { sessionId };
   const user = ctx.state.user;
 
-  const [profile, stats, notifications, unreadEnvelope] = await Promise.all([
-    settle(dashboardClient.profile(opts),         undefined as Profile | undefined),
+  const [stats, notifications, unreadEnvelope] = await Promise.all([
     settle(dashboardClient.stats(opts),           undefined as DashboardStats | undefined),
     settle(dashboardClient.notifications(10, opts), [] as Notification[]),
     settle(dashboardClient.unreadCount(opts),     { count: 0 }),
   ]);
 
-  const business = (profile?.businessIdentity as { displayName?: string } | undefined)?.displayName;
   const greetingName = (user?.name ?? user?.phoneNumber ?? "Diego").split(" ")[0];
 
   // Date string: "Tuesday · April 28"
@@ -52,11 +49,7 @@ export default define.page(async function Dashboard(ctx) {
       </Head>
 
       <div class="app">
-        <DashSidebar
-          active="home"
-          user={user ? { name: user.name, phoneNumber: user.phoneNumber } : undefined}
-          business={business}
-        />
+        <DashSidebar active="home" />
         <main class="main">
           <DashTopbar
             greetingDate={greetingDate}

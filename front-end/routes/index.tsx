@@ -1,6 +1,40 @@
 import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import { loadUser } from "../lib/auth.ts";
+import PhoneChat, { type Bubble, type QuoteCopy } from "../islands/PhoneChat.tsx";
+
+const DEMO_SCRIPT_EN: Bubble[] = [
+  { side: "right", kind: "bubble", cls: "me",   text: "Kitchen remodel for the Hernández family. Cabinets, quartz counters, 3 days labor." },
+  { side: "right", kind: "meta",   text: "9:38 AM" },
+  { side: "left",  kind: "typing" },
+  { side: "left",  kind: "bubble", cls: "them", text: "Got it 👍 What zip code is the job in?" },
+  { side: "left",  kind: "bubble", cls: "them", text: "And rough square footage of countertop?" },
+  { side: "right", kind: "bubble", cls: "me",   text: "78704. About 42 sq ft of counter." },
+  { side: "left",  kind: "typing" },
+  { side: "left",  kind: "bubble", cls: "them", text: "Perfect. Quote coming up — typical range for this is $10,800–$12,400." },
+  { side: "left",  kind: "bubble", cls: "them", text: "Here's your quote, ready to send:", style: "background:var(--mint-200)" },
+  { side: "right", kind: "quote" },
+  { side: "right", kind: "bubble", cls: "me",   text: "Looks good. Send it to them." },
+  { side: "right", kind: "meta",   text: "9:41 AM ✓ Sent to client" },
+];
+
+const DEMO_SCRIPT_ES: Bubble[] = [
+  { side: "right", kind: "bubble", cls: "me",   text: "Remodelación cocina para los Hernández. Gabinetes, cubierta de cuarzo, 3 días de mano de obra." },
+  { side: "right", kind: "meta",   text: "9:38" },
+  { side: "left",  kind: "typing" },
+  { side: "left",  kind: "bubble", cls: "them", text: "Listo 👍 ¿Cuál es el código postal del trabajo?" },
+  { side: "left",  kind: "bubble", cls: "them", text: "¿Y aproximadamente cuántos pies² de cubierta?" },
+  { side: "right", kind: "bubble", cls: "me",   text: "78704. Como 42 pies² de cubierta." },
+  { side: "left",  kind: "typing" },
+  { side: "left",  kind: "bubble", cls: "them", text: "Perfecto. Va la cotización — rango típico $10.800–$12.400." },
+  { side: "left",  kind: "bubble", cls: "them", text: "Aquí está tu cotización, lista para enviar:", style: "background:var(--mint-200)" },
+  { side: "right", kind: "quote" },
+  { side: "right", kind: "bubble", cls: "me",   text: "Se ve bien. Mándasela." },
+  { side: "right", kind: "meta",   text: "9:41 ✓ Enviado al cliente" },
+];
+
+const DEMO_QUOTE_EN: QuoteCopy = { hd: "Quote · #PM-2641", l1: "Cabinets & install", l2: "Quartz countertops", l3: "Demo & labor", total: "Total" };
+const DEMO_QUOTE_ES: QuoteCopy = { hd: "Cotización · #PM-2641", l1: "Gabinetes e instalación", l2: "Cubiertas de cuarzo", l3: "Demolición y mano de obra", total: "Total" };
 
 /**
  * Landing route — server-renders the prototype's HTML structure (verbatim from
@@ -362,36 +396,15 @@ export default define.page(async function Landing(ctx) {
             </div>
           </div>
 
-          <div class="phone-wrap">
-            <div class="phone-bg"></div>
-            <div class="phone">
-              <div class="phone-screen">
-                <div class="phone-status">
-                  <span>9:41</span>
-                  <div class="icons"><span></span><span></span><span></span><span></span></div>
-                </div>
-
-                <div class="chat-header">
-                  <div class="av-pm"><img src="/logo-monster.png" alt="" /></div>
-                  <div class="meta">
-                    <strong>Paperwork Monsters</strong>
-                    <span data-i18n="demo.online">Online</span>
-                  </div>
-                </div>
-
-                <div class="chat-progress"><div class="fill" id="chat-fill"></div></div>
-
-                <div class="chat-body" id="chat-body"></div>
-
-                <div class="chat-input">
-                  <div class="field" data-i18n="demo.message">Message</div>
-                  <div class="send">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <PhoneChat
+            script={DEMO_SCRIPT_EN}
+            scriptEs={DEMO_SCRIPT_ES}
+            quote={DEMO_QUOTE_EN}
+            quoteEs={DEMO_QUOTE_ES}
+            messageCopy="Message"
+            messageCopyEs="Mensaje"
+            autoPlayOnView
+          />
         </div>
       </section>
 

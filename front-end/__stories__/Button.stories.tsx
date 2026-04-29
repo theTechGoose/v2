@@ -1,18 +1,10 @@
-import { Button } from "../components/ui/Button.tsx";
+import { Button } from "../components/Button.tsx";
 import type { Story } from "denostories";
 
-export const Primary: Story = () => (
-  <Button variant="primary">Primary action</Button>
-);
+export const Default: Story = () => <Button>Click me</Button>;
 
-export const Outline: Story = () => (
-  <Button variant="outline">Outline action</Button>
-);
+export const Disabled: Story = () => <Button disabled>Disabled</Button>;
 
-export const Ghost: Story = () => (
-  <Button variant="ghost">Ghost action</Button>
-);
-
-export const Large: Story = () => (
-  <Button variant="primary" size="lg">Large primary</Button>
+export const LongLabel: Story = () => (
+  <Button>This is a button with a longer label</Button>
 );

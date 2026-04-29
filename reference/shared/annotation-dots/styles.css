@@ -1,0 +1,18 @@
+/* Source: pages/dashboard/raw.html lines 1727–1739 */
+
+.annot {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 18px;
+  padding: 0 6px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.annot__dot {
+  width: 8px; height: 8px;
+  border-radius: 999px;
+  background: var(--brand-pink);
+}

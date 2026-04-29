@@ -26,7 +26,7 @@ async function seedConvWithContract(s: ReturnType<typeof fresh>, userId: string,
   return await s.conversations.update(conv.id, { contractId });
 }
 
-Deno.test("accept-contract integration: flips status, appends phase_divider, marks conversation unread", async () => {
+Deno.test("accept-contract integration: flips status, appends phase_divider + continue_cta(invoice), marks conversation unread", async () => {
   await withKv(async () => {
     const s = fresh();
     const contract = await s.contracts.create("u-1", { quoteId: "q-1", status: "signed" });
@@ -34,8 +34,11 @@ Deno.test("accept-contract integration: flips status, appends phase_divider, mar
 
     const result = await s.flow.run({ userId: "u-1", conversationId: conv.id, contractId: contract.id });
 
-    assertEquals(result.newMessages.length, 1);
+    assertEquals(result.newMessages.length, 2);
     assertEquals(result.newMessages[0].kind, "phase_divider");
+    assertEquals(result.newMessages[1].kind, "continue_cta");
+    assertEquals((result.newMessages[1].payload as { toPhase?: string } | undefined)?.toPhase, "invoice");
+    assertEquals(result.conversation.hasUnreadEvent, true);
     const after = await s.contracts.get(contract.id);
     assertEquals(after.status, "accepted");
   });
