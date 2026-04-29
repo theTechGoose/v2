@@ -5,6 +5,7 @@ import { applyAnswer, computeProgress } from "@agents/domain/business/wizard-pro
 import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
@@ -16,6 +17,8 @@ export interface WizardAnswerInput {
   stepId: string;
   optionId: string;
   customValue?: string;
+  /** Customer-step payload (only meaningful when stepId === "customer"). */
+  customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string } };
 }
 
 export interface WizardAnswerResult {
@@ -50,6 +53,7 @@ export class HandleWizardAnswer {
     private messages: AgentMessageStore,
     private quotes: QuoteStore,
     private contracts: ContractStore,
+    private customers: CustomerStore,
     private bus: EventBus,
   ) {}
 
@@ -61,16 +65,37 @@ export class HandleWizardAnswer {
     const current = await this.conversations.getWizardState(input.conversationId);
     if (!current) throw new Error("wizard state missing — call transition-to-terms first");
 
+    // Customer step needs special handling: the wizard option `create_new`
+    // is `isCustom: true` but the frontend sends a structured `customer.create`
+    // payload (name/email/phone) instead of a free-text customValue. We
+    // materialize the customer / pick the existing one HERE, bind it onto
+    // the conversation, and synthesize a customValue (the customer's name)
+    // so the generic applyAnswer step doesn't reject it.
+    let customerCustomValue = input.customValue;
+    let boundCustomerId = conv.customerId;
+    let boundCustomerName: string | undefined;
+    if (input.stepId === "customer") {
+      const handled = await this.handleCustomerStep(conv.id, input);
+      boundCustomerId = handled.customerId ?? boundCustomerId;
+      boundCustomerName = handled.customerName;
+      customerCustomValue = handled.customValue ?? customerCustomValue;
+    }
+
     const next = applyAnswer(CONTRACT_TERMS_WIZARD_V1, current, {
       stepId: input.stepId,
       optionId: input.optionId,
-      customValue: input.customValue,
+      customValue: customerCustomValue,
     });
     await this.conversations.putWizardState(input.conversationId, next);
 
     const stepDef = CONTRACT_TERMS_WIZARD_V1.steps.find((s) => s.id === input.stepId)!;
     const optionDef = stepDef.options.find((o) => o.id === input.optionId)!;
-    const pickValue = optionDef.isCustom ? (input.customValue ?? "Custom") : optionDef.label;
+    // For the customer step, prefer the resolved customer's name so the
+    // chat transcript reads "Customer: Jane Doe" rather than "Customer:
+    // Create a new customer".
+    const pickValue = input.stepId === "customer" && boundCustomerName
+      ? boundCustomerName
+      : optionDef.isCustom ? (customerCustomValue ?? "Custom") : optionDef.label;
 
     const userPick = await this.messages.append({
       conversationId: input.conversationId,
@@ -84,6 +109,9 @@ export class HandleWizardAnswer {
     const progress = computeProgress(CONTRACT_TERMS_WIZARD_V1, next);
 
     let convPatch: Partial<AgentConversation> = { preview: `${stepDef.label}: ${pickValue}` };
+    if (input.stepId === "customer" && boundCustomerId && boundCustomerId !== conv.customerId) {
+      convPatch.customerId = boundCustomerId;
+    }
 
     if (progress.isComplete) {
       // Materialize a real Contract row from the conversation's active quote
@@ -119,6 +147,49 @@ export class HandleWizardAnswer {
 
     const updatedConv = await this.conversations.update(input.conversationId, convPatch);
     return { conversation: updatedConv, wizardState: next, newMessages };
+  }
+
+  /**
+   * Resolve the customer step's three flavors:
+   *   - use_active     → reuse conv.customerId (no-op).
+   *   - pick_existing  → verify ownership of `customer.id`, return it.
+   *   - create_new     → create a Customer from `customer.create`, return new id.
+   *
+   * Returns the resolved id (or undefined for use_active when conv has no
+   * bound customer), the customer's display name (for the chat transcript),
+   * and a synthetic customValue so applyAnswer doesn't reject the
+   * isCustom create_new option.
+   */
+  private async handleCustomerStep(
+    _conversationId: string,
+    input: WizardAnswerInput,
+  ): Promise<{ customerId?: string; customerName?: string; customValue?: string }> {
+    if (input.optionId === "create_new") {
+      // Prefer the structured customer.create payload; fall back to a
+      // legacy name-only customValue path so older callers that only
+      // pass `customValue: "<name>"` still work.
+      const create = input.customer?.create;
+      const name = (create?.name ?? input.customValue ?? "").trim();
+      if (!name) {
+        throw new Error("create_new requires customer.create.name (or customValue)");
+      }
+      const created = await this.customers.create(input.userId, {
+        name,
+        ...(create?.email ? { email: create.email.trim() } : {}),
+        ...(create?.phoneNumber ? { phoneNumber: create.phoneNumber.trim() } : {}),
+      });
+      return { customerId: created.id, customerName: created.name, customValue: created.name };
+    }
+    if (input.optionId === "pick_existing") {
+      const id = input.customer?.id;
+      if (typeof id !== "string" || !id) {
+        throw new Error("pick_existing requires customer.id");
+      }
+      const existing = await this.customers.getOwned(id, input.userId);
+      return { customerId: existing.id, customerName: existing.name };
+    }
+    // use_active — no work needed; coordinator falls back to conv.customerId.
+    return {};
   }
 
   /**

@@ -63,6 +63,12 @@ export class WizardAnswerDto {
   @IsOptional()
   @IsString()
   customValue?: string;
+
+  /** Customer-step payload. Validation is intentionally loose; the
+   *  coordinator does the deeper checks (existence, ownership, required
+   *  fields on `create`). */
+  @IsOptional()
+  customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string } };
 }
 
 export function parseWizardAnswer(input: unknown): WizardAnswerDto {

@@ -1,4 +1,5 @@
 import OpenAI from "#openai";
+import { encodeBase64 } from "jsr:@std/encoding/base64";
 import type { LLMClient, LLMRequest, LLMResponse } from "@agents/domain/business/llm/base/mod.ts";
 import { TOOL_DEFS, parseToolCall } from "@agents/domain/business/openai-tools/mod.ts";
 
@@ -45,14 +46,30 @@ export class OpenAILLMClient implements LLMClient {
     // pre-computed business context lands as a second system message so the
     // model can ground answers in real contractor data without us injecting
     // it into the user turn (keeps the user's text faithful).
-    const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+    // deno-lint-ignore no-explicit-any
+    const messages: Array<any> = [
       { role: "system", content: req.systemPrompt },
     ];
     if (req.businessContext && req.businessContext.length > 0) {
       messages.push({ role: "system", content: `Business context (refreshed each turn):\n${req.businessContext}` });
     }
     for (const m of req.messages) {
-      messages.push({ role: m.role, content: m.content });
+      // Vision turn: switch to OpenAI's content-array format with text +
+      // image_url parts. We base64-encode bytes inline; cheaper-bandwidth
+      // approaches (uploading to a CDN, passing a URL) are an optimization
+      // we can do later if costs/latency demand it.
+      if (m.role === "user" && m.images && m.images.length > 0) {
+        const parts: Array<Record<string, unknown>> = [
+          { type: "text", text: m.content || "(see attached image)" },
+        ];
+        for (const img of m.images) {
+          const dataUrl = `data:${img.mimeType};base64,${encodeBase64(img.bytes)}`;
+          parts.push({ type: "image_url", image_url: { url: dataUrl } });
+        }
+        messages.push({ role: m.role, content: parts });
+      } else {
+        messages.push({ role: m.role, content: m.content });
+      }
     }
 
     const completion = await this.client.chat.completions.create({

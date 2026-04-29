@@ -6,6 +6,7 @@
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoney } from "../lib/format.ts";
 import { type Quote } from "../lib/quotes-seed.ts";
+import DeleteQuoteButton from "../islands/DeleteQuoteButton.tsx";
 
 interface HeroProps {
   openCount: number;
@@ -89,6 +90,7 @@ export function DecidedRow({ q }: { q: Quote }) {
       </div>
       <div class={`qdone__amt ${q.stage === "lost" ? "qdone__amt--lost" : ""}`}>${fmtMoney(q.value)}</div>
       <div class="qdone__when">{when}</div>
+      <DeleteQuoteButton id={q.id} variant="icon" />
     </div>
   );
 }
@@ -160,12 +162,14 @@ export function QSideRate({ won, lost }: QSideRateProps) {
   );
 }
 
-export function QSideTip() {
+const DEFAULT_TIP = "Quotes opened 3+ times within 24 hours close 78% of the time when followed up the same day.";
+
+export function QSideTip({ text }: { text?: string } = {}) {
   return (
     <div class="qside__card" style="background:linear-gradient(135deg,#1A535C,#0F3A40);color:#fff;border:none">
       <div class="qside__title" style="color:#fff;margin-bottom:8px">Monster tip</div>
       <p style="font:400 13.5px/1.5 var(--font-body);color:rgba(255,255,255,0.85);margin:0;text-wrap:pretty">
-        Quotes opened 3+ times within 24 hours close <strong style="color:#FF8D8D">78% of the time</strong> when followed up the same day. There's one in your pipeline right now.
+        {text ?? DEFAULT_TIP}
       </p>
     </div>
   );

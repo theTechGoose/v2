@@ -5,6 +5,7 @@ import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.t
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
@@ -20,7 +21,7 @@ function fresh() {
   const customers = new CustomerStore();
   const email = new EmailService();
   const bus = new EventBus();
-  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, email);
+  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, new UserStore(), email);
   return {
     conversations, messages, quotes, contracts, invoices, customers, email, bus, emailer,
     flow: new LockQuote(conversations, messages, quotes, bus, emailer),
@@ -34,7 +35,7 @@ async function withKv<T>(fn: () => Promise<T>): Promise<T> {
   try { return await fn(); } finally { await resetKv(); }
 }
 
-Deno.test("lock-quote integration: flips quote→sent, appends action_card only (no continue_cta until accept)", async () => {
+Deno.test("lock-quote integration: flips quote→sent, appends action_card + continue_cta(toPhase=terms)", async () => {
   await withKv(async () => {
     const s = fresh();
     const conv = await s.conversations.create({ userId: "u-1", currentPhase: "quote" });
@@ -42,8 +43,10 @@ Deno.test("lock-quote integration: flips quote→sent, appends action_card only 
       summary: "Roof", lineItems: [{ description: "x", quantity: 1, unit: "ea", price: 100 }], estimatedTotal: 100,
     });
     const r = await s.flow.run({ userId: "u-1", conversationId: conv.id, quoteId: quote.id });
-    assertEquals(r.newMessages.length, 1);
+    assertEquals(r.newMessages.length, 2);
     assertEquals(r.newMessages[0].kind, "action_card");
+    assertEquals(r.newMessages[1].kind, "continue_cta");
+    assertEquals((r.newMessages[1].payload as { toPhase?: string } | undefined)?.toPhase, "terms");
     const after = await s.quotes.get(quote.id);
     assertEquals(after.status, "sent");
   });

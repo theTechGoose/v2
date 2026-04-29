@@ -16,9 +16,22 @@
 
 export type LLMRole = "user" | "assistant" | "system";
 
+/** Vision attachment on a user turn — passed through to the model in
+ *  whatever the adapter's native image format is (OpenAI uses an
+ *  image_url content part with a base64 data URL). Stub clients ignore. */
+export interface LLMImageAttachment {
+  /** Raw bytes; the adapter base64-encodes when constructing the request. */
+  bytes: Uint8Array;
+  /** MIME type so the data URL gets the right header. */
+  mimeType: string;
+}
+
 export interface LLMTurn {
   role: LLMRole;
   content: string;
+  /** Optional vision attachments (only meaningful on user turns).
+   *  Adapters that don't support vision fall back to content-only. */
+  images?: LLMImageAttachment[];
 }
 
 export interface LLMRequest {

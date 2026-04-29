@@ -7,6 +7,7 @@ import { SYSTEM_PROMPT_QUOTE, SYSTEM_PROMPT_TERMS } from "@agents/domain/busines
 import { isInQuotePhase } from "@agents/domain/business/derive-phase/mod.ts";
 import { deriveTitleFromFirstUserMessage, derivePreview } from "@agents/domain/business/conversation-title/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
@@ -16,8 +17,14 @@ export interface HandleChatInput {
   userId: string;
   conversationId: string;
   content: string;
-  /** 'voice' adds a transcript marker on the user message; payload (fileId etc.) is set by the controller layer. */
-  kind?: "text" | "voice";
+  /** 'voice' is a transcribed user memo; 'image' carries payload.fileId
+   *  and the LLM sees the bytes via FileStore on every turn (history-
+   *  driven, so follow-up questions still see the picture). */
+  kind?: "text" | "voice" | "image";
+  /** Persisted onto the user message's payload so the chat island can
+   *  render an image bubble pointing at /api/files/:fileId — and so
+   *  history-replay can re-fetch image bytes for the LLM each turn. */
+  payload?: Record<string, unknown>;
 }
 
 export interface HandleChatResult {
@@ -58,6 +65,7 @@ export class HandleChatMessage {
     private conversations: AgentConversationStore,
     private messages: AgentMessageStore,
     private quotes: QuoteStore,
+    private files: FileStore,
     private bus: EventBus,
     private emailer: SendPaperworkEmail,
     @Inject(LLM_CLIENT) private llm: LLMClient,
@@ -72,12 +80,37 @@ export class HandleChatMessage {
       role: "user",
       kind: input.kind ?? "text",
       content: input.content,
+      ...(input.payload ? { payload: input.payload } : {}),
     });
 
     const history = await this.messages.listByConversation(conv.id);
-    const llmTurns: LLMTurn[] = history
-      .filter((m) => m.kind === "text" || m.kind === "voice")
-      .map((m) => ({ role: m.role === "system" ? "system" : m.role, content: m.content }));
+    // For image messages, fetch the bytes back from FileStore so the LLM
+    // sees the picture on every turn — not just the one where it was
+    // uploaded. Without this, follow-up questions like "what is in the
+    // photo?" hit a model that can only read the placeholder text
+    // "[Photo attached: foo.png]". We tolerate FileStore failures: a
+    // missing/expired blob falls back to text-only for that turn.
+    const llmTurns: LLMTurn[] = await Promise.all(
+      history
+        .filter((m) => m.kind === "text" || m.kind === "voice" || m.kind === "image")
+        .map(async (m): Promise<LLMTurn> => {
+          const role = m.role === "system" ? "system" : m.role;
+          const turn: LLMTurn = { role, content: m.content };
+          if (m.kind === "image" && role === "user") {
+            const fileId = (m.payload as { fileId?: unknown } | undefined)?.fileId;
+            if (typeof fileId === "string" && fileId) {
+              try {
+                const meta = await this.files.getOwnedMeta(fileId, input.userId);
+                const bytes = await this.files.readBytes(fileId);
+                turn.images = [{ bytes, mimeType: meta.mimeType }];
+              } catch (err) {
+                console.error(`[handle-chat] failed to load image ${fileId}:`, err);
+              }
+            }
+          }
+          return turn;
+        }),
+    );
 
     const systemPrompt = isInQuotePhase(conv) ? SYSTEM_PROMPT_QUOTE : SYSTEM_PROMPT_TERMS;
     const llmResponse = await this.llm.respond({
@@ -86,11 +119,19 @@ export class HandleChatMessage {
       userId: input.userId,
     });
 
+    // The LLM occasionally returns an empty `text` (e.g., on a tool-only
+    // turn or when it doesn't have anything substantive to add). Persisting
+    // that as-is renders as a ghost bubble in the chat. Replace with a
+    // brief acknowledgement so the conversation reads cleanly; if the LLM
+    // ALSO emits an action below, the action_card carries the real signal
+    // and the ack is harmless context.
+    const replyText = llmResponse.text?.trim()
+      || (llmResponse.action ? "On it." : "Got it — what would you like me to do with that?");
     const assistantMsg = await this.messages.append({
       conversationId: conv.id,
       role: "assistant",
       kind: "text",
-      content: llmResponse.text,
+      content: replyText,
     });
 
     const newMessages: AgentMessage[] = [userMsg, assistantMsg];

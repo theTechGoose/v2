@@ -77,6 +77,13 @@ export class SendInvoice {
     const invoice = await this.invoices.getOwned(invoiceId, input.userId);
     const wasAlreadySent = invoice.status === "sent";
 
+    let emailedTo: string | undefined;
+    let emailFailureReason: string | undefined;
+
+    // State flip + bus emit are idempotent — only on first send. Email
+    // dispatch retries every click so a previously-failed delivery
+    // (e.g., POSTMARK_FROM unset on first try) doesn't leave the
+    // invoice stuck in "sent" status without ever reaching the customer.
     if (!wasAlreadySent) {
       await this.invoices.update(invoice.id, input.userId, { status: "sent" });
       await this.bus.emit({
@@ -85,11 +92,15 @@ export class SendInvoice {
         entityId: invoice.id,
         action: "sent",
       });
-      try {
-        await this.emailer.run(input.userId, { kind: "invoice", resourceId: invoice.id });
-      } catch (err) {
-        console.error(`[send-invoice] email dispatch failed for invoice ${invoice.id}:`, err);
-      }
+    }
+    try {
+      const result = await this.emailer.run(input.userId, { kind: "invoice", resourceId: invoice.id });
+      if (result.ok) emailedTo = result.to;
+      else emailFailureReason = result.reason;
+      console.log(`[send-invoice] invoice=${invoice.id} email ok=${result.ok} to=${result.to ?? "<none>"} reason=${result.reason ?? "ok"}`);
+    } catch (err) {
+      emailFailureReason = (err as Error).message ?? "dispatch threw";
+      console.error(`[send-invoice] email dispatch failed for invoice ${invoice.id}:`, err);
     }
 
     const fresh = await this.invoices.getOwned(invoice.id, input.userId);
@@ -99,7 +110,9 @@ export class SendInvoice {
       conversationId: conv.id,
       role: "assistant",
       kind: "action_card",
-      content: `Invoice · due ${fresh.dueDate}`,
+      content: emailedTo
+        ? `Invoice · due ${fresh.dueDate} · sent to ${emailedTo}`
+        : `Invoice · due ${fresh.dueDate} · no email on file`,
       payload: {
         actionType: "invoice",
         status: "sent",
@@ -112,6 +125,8 @@ export class SendInvoice {
         }],
         totalCents,
         dueDate: fresh.dueDate,
+        ...(emailedTo ? { emailedTo } : {}),
+        ...(emailFailureReason ? { emailFailureReason } : {}),
       },
     });
 

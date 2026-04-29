@@ -2,6 +2,7 @@ import { Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
+import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
@@ -41,6 +42,7 @@ export class SendContract {
     private conversations: AgentConversationStore,
     private messages: AgentMessageStore,
     private contracts: ContractStore,
+    private quotes: QuoteStore,
     private bus: EventBus,
     private emailer: SendPaperworkEmail,
   ) {}
@@ -55,6 +57,14 @@ export class SendContract {
     const contract = await this.contracts.getOwned(input.contractId, input.userId);
     const wasAlreadySent = contract.status === "sent";
 
+    let emailedTo: string | undefined;
+    let emailFailureReason: string | undefined;
+
+    // State flip + bus emit are idempotent — only on first send. Email
+    // dispatch is NOT idempotent: a previous attempt that failed (e.g.,
+    // POSTMARK_FROM unset on first try) shouldn't leave us short-circuiting
+    // on subsequent Send clicks. The user clicked "Send to client" — try
+    // to deliver, every time.
     if (!wasAlreadySent) {
       await this.contracts.update(contract.id, input.userId, { status: "sent" });
       await this.bus.emit({
@@ -63,22 +73,62 @@ export class SendContract {
         entityId: contract.id,
         action: "sent",
       });
+    }
+
+    try {
+      const result = await this.emailer.run(input.userId, { kind: "contract", resourceId: contract.id });
+      if (result.ok) emailedTo = result.to;
+      else emailFailureReason = result.reason;
+      console.log(`[send-contract] contract=${contract.id} email ok=${result.ok} to=${result.to ?? "<none>"} reason=${result.reason ?? "ok"}`);
+    } catch (err) {
+      emailFailureReason = (err as Error).message ?? "dispatch threw";
+      console.error(`[send-contract] email dispatch failed for contract ${contract.id}:`, err);
+    }
+
+    // Also (re-)dispatch the linked quote if it was never actually
+    // delivered. LockQuote tries to email at lock time, but the
+    // LLM-drafted quote often has no customerId at that point — the
+    // customer is bound later in the wizard's customer step — so the
+    // dispatch silently no-ops with "no recipient". Backfill
+    // quote.customerId from conv.customerId so the email has somewhere
+    // to go. Only attempts when quote.sentAt is missing (per-resource
+    // idempotency on the quote side, set on first successful dispatch).
+    const quoteId = conv.quoteId ?? contract.quoteId;
+    if (quoteId) {
       try {
-        await this.emailer.run(input.userId, { kind: "contract", resourceId: contract.id });
+        const quote = await this.quotes.getOwned(quoteId, input.userId);
+        if (!quote.sentAt) {
+          if (!quote.customerId && conv.customerId) {
+            await this.quotes.update(quote.id, input.userId, { customerId: conv.customerId });
+          }
+          const r = await this.emailer.run(input.userId, { kind: "quote", resourceId: quote.id });
+          console.log(`[send-contract] quote-backfill quote=${quote.id} email ok=${r.ok} to=${r.to ?? "<none>"} reason=${r.reason ?? "ok"}`);
+        }
       } catch (err) {
-        console.error(`[send-contract] email dispatch failed for contract ${contract.id}:`, err);
+        console.error(`[send-contract] quote backfill dispatch failed for quote ${quoteId}:`, err);
       }
     }
 
+    // Surface the actual delivery outcome in the chat. When there's no
+    // recipient (customer missing email), say so explicitly instead of
+    // misleadingly claiming "Contract sent to client" — the user's
+    // first question is "where did it go?"
+    const dividerContent = emailedTo
+      ? `Contract sent to ${emailedTo}`
+      : emailFailureReason
+        ? `Contract not delivered — ${emailFailureReason}`
+        : "Contract drafted — no email on file for this customer. Add one to deliver.";
     const note = await this.messages.append({
       conversationId: conv.id,
       role: "system",
       kind: "phase_divider",
-      content: wasAlreadySent ? "Contract was already sent" : "Contract sent to client",
+      content: dividerContent,
       payload: {
         phase: 3,
-        label: wasAlreadySent ? "Contract was already sent" : "Contract sent to client",
+        label: dividerContent,
         contractId: contract.id,
+        ...(emailedTo ? { emailedTo } : {}),
+        ...(emailFailureReason ? { emailFailureReason } : {}),
       },
     });
 

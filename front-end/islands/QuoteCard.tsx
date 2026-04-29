@@ -13,6 +13,7 @@ import {
   readingFor,
   stageLabel,
 } from "../lib/quotes-seed.ts";
+import DeleteQuoteButton from "./DeleteQuoteButton.tsx";
 
 interface Props { q: Quote; idx: number }
 
@@ -131,6 +132,7 @@ export default function QuoteCard({ q, idx }: Props) {
           <button type="button" onClick={(e) => e.stopPropagation()}>Resend</button>
           <button type="button" onClick={(e) => e.stopPropagation()}>Copy link</button>
           <button type="button" onClick={(e) => e.stopPropagation()}>View as client</button>
+          <DeleteQuoteButton id={q.id} />
         </div>
       </div>
     </article>

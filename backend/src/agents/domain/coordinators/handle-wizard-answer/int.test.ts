@@ -5,6 +5,7 @@ import { AgentConversationStore } from "@agents/domain/data/agent-conversation-s
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { EventBus, type DomainEvent } from "@core/business/events/mod.ts";
 import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
@@ -15,10 +16,11 @@ function fresh() {
   const messages = new AgentMessageStore();
   const quotes = new QuoteStore();
   const contracts = new ContractStore();
+  const customers = new CustomerStore();
   const bus = new EventBus();
   const transitionFlow = new TransitionToTerms(conversations, messages);
-  const flow = new HandleWizardAnswer(conversations, messages, quotes, contracts, bus);
-  return { conversations, messages, quotes, contracts, bus, transitionFlow, flow };
+  const flow = new HandleWizardAnswer(conversations, messages, quotes, contracts, customers, bus);
+  return { conversations, messages, quotes, contracts, customers, bus, transitionFlow, flow };
 }
 
 async function setupTermsConversation(userId = "u-1") {

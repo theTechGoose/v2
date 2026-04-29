@@ -60,6 +60,68 @@ function fmtKB(bytes: number): string {
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
 }
 
+interface PaymentMilestone {
+  label: string;
+  /** Percentage of the total. Omitted for absolute milestones (e.g. Net 15). */
+  pct?: number;
+  amountCents: number;
+}
+
+/**
+ * Translate the wizard's picked Payment terms into a milestone schedule.
+ * Inputs come straight from the wizard option labels (e.g. "30 / 30 / 40",
+ * "50 / 50", "Net 15 — full", "Deposit + balance") or a custom free-text
+ * answer the user typed. Returns null when we can't confidently parse —
+ * the UI then falls back to the single Total Due number.
+ *
+ * Rounding: amounts are rounded to whole cents; the LAST milestone
+ * absorbs the rounding remainder so the sum equals the total exactly.
+ */
+function buildPaymentMilestones(value: string, totalCents: number): PaymentMilestone[] | null {
+  const v = value.trim().toLowerCase();
+  if (!v || totalCents <= 0) return null;
+
+  // Slash- or comma-separated percentages: "30 / 30 / 40", "50/50", "25, 25, 50".
+  const parts = v.split(/[\/,]+/).map((s) => s.trim()).filter(Boolean);
+  const numbers = parts.map((p) => parseFloat(p)).filter((n) => Number.isFinite(n));
+  const sum = numbers.reduce((a, b) => a + b, 0);
+  if (numbers.length >= 2 && Math.abs(sum - 100) <= 1) {
+    const labels = numbers.length === 2
+      ? ["Deposit", "On completion"]
+      : numbers.length === 3
+        ? ["Deposit", "Midpoint", "On completion"]
+        : numbers.map((_, i) => i === 0 ? "Deposit" : i === numbers.length - 1 ? "On completion" : `Milestone ${i}`);
+    const out: PaymentMilestone[] = numbers.map((pct, i) => ({
+      label: labels[i],
+      pct,
+      amountCents: Math.round((totalCents * pct) / 100),
+    }));
+    const drift = totalCents - out.reduce((s, m) => s + m.amountCents, 0);
+    if (drift !== 0) out[out.length - 1].amountCents += drift;
+    return out;
+  }
+
+  // Net X — single payment due X days after wrap.
+  const netMatch = v.match(/net\s*(\d+)/);
+  if (netMatch) {
+    return [{ label: `Due in full · net ${netMatch[1]}`, amountCents: totalCents }];
+  }
+
+  // "Deposit + balance" — small upfront, balance on completion. No
+  // explicit split in the option label; default to 25/75 (matches the
+  // wizard's deposit_bal preset hint).
+  if (v.includes("deposit") && v.includes("balance")) {
+    const deposit = Math.round(totalCents * 0.25);
+    return [
+      { label: "Deposit",              pct: 25, amountCents: deposit },
+      { label: "Balance on completion", pct: 75, amountCents: totalCents - deposit },
+    ];
+  }
+
+  // Custom / unrecognized — let the caller fall back to the single total.
+  return null;
+}
+
 export default function AsstChat({ conversationId, initialMessages, initialCustomer, initialContract }: Props) {
   const [convoId, setConvoId] = useState<string | undefined>(conversationId);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -97,7 +159,6 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
   const recStartRef = useRef<number>(0);
   const recTickRef = useRef<number | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -187,7 +248,7 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
    * on error. `submit` returns the chat response shape.
    */
   async function submitTurn(
-    optimistic: { role: "user" | "assistant"; kind: "text" | "voice" | "image" | "file"; content: string },
+    optimistic: { role: "user" | "assistant"; kind: "text" | "voice" | "image"; content: string },
     submit: () => Promise<{
       conversation?: { id: string };
       newMessages?: Message[];
@@ -295,7 +356,6 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
   }
 
   function pickImage() { imageInputRef.current?.click(); }
-  function pickFile()  { fileInputRef.current?.click(); }
 
   /**
    * Dev-only: spin up a phase-2 conversation in one shot. Bypasses the
@@ -353,13 +413,6 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
     const file = input.files?.[0];
     if (!file) return;
     sendImage(file);
-    input.value = "";
-  }
-  function onFilePicked(e: Event) {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    sendFile(file);
     input.value = "";
   }
 
@@ -486,45 +539,25 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
   }
 
   /**
-   * Dev-only: flip the QUOTE to "accepted" via the AcceptQuote coordinator,
-   * mirroring what the customer's signing surface webhook would do in
-   * production. Appends the server's phase_divider + "Continue to contract"
-   * CTA to the chat in-place so the user can advance to the terms wizard.
-   */
-  async function simulateQuoteAccept(quoteId: string | undefined) {
-    if (sending || !convoId || !quoteId) return;
-    setError(undefined);
-    setSending(true);
-    try {
-      const res = await assistantClient.acceptQuote(convoId, quoteId);
-      if (res.newMessages?.length) {
-        setMessages((m) => [...m, ...res.newMessages]);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "couldn't simulate quote acceptance");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  /**
-   * Dev-only: flip the contract to "accepted" via the AcceptContract
-   * coordinator so the threads-sidebar notification UX can be exercised
-   * without a real signing webhook. The conversation gets bumped to the
-   * top of the list and `hasUnreadEvent` is set; navigating to /assistant
-   * shows the green pulsing dot until the user reopens the thread.
+   * Dev-only: flip the contract to "accepted" via AcceptContract — the
+   * single customer-facing acceptance event in the chain. The server
+   * appends a phase_divider ("Contract accepted by client") + a
+   * "Continue to invoice" CTA, sets hasUnreadEvent, and bumps preview;
+   * we splice those into the chat in-place so the user can see the
+   * progression without a navigation jump.
    */
   async function simulateCustomerAccept(contractId: string | undefined) {
     if (sending || !convoId || !contractId) return;
     setError(undefined);
     setSending(true);
     try {
-      await assistantClient.acceptContract(convoId, contractId);
-      // The unread badge surfaces in the THREADS list, not on this page,
-      // so jump there so the user can see the bump-to-top + dot.
-      globalThis.location.href = "/assistant";
+      const res = await assistantClient.acceptContract(convoId, contractId);
+      if (res.newMessages?.length) {
+        setMessages((m) => [...m, ...res.newMessages]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "couldn't simulate acceptance");
+    } finally {
       setSending(false);
     }
   }
@@ -703,35 +736,6 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
     }
   }
 
-  /**
-   * Generic file path: upload to /files, then post a chat turn with
-   * kind=file. Backend doesn't parse contents — it just notes the file
-   * exists by name so the assistant can acknowledge / reference it. The
-   * bubble renders a download chip.
-   */
-  async function sendFile(file: File) {
-    await submitTurn(
-      {
-        role: "user",
-        kind: "file",
-        content: `📎 ${file.name} · ${fmtKB(file.size)} — uploading…`,
-      },
-      async () => {
-        const uploaded = await filesClient.uploadBlob(file, file.name);
-        return await assistantClient.chat({
-          conversationId: convoId,
-          kind: "file",
-          payload: { fileId: uploaded.id },
-        }) as {
-          conversation?: { id: string };
-          newMessages?: Message[];
-          message?: Message;
-          conversationId?: string;
-        };
-      },
-    );
-  }
-
   async function toggleRecord() {
     if (recording) {
       recorderRef.current?.stop();
@@ -870,7 +874,8 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
             // visible acknowledgement that the action registered.
             if (m.kind === "continue_cta") {
               const payload = (m.payload ?? {}) as { toPhase?: string; summary?: string; contractId?: string };
-              const reviewed = payload.toPhase === "send" && reviewedCtas.has(m.id);
+              const reviewed = (payload.toPhase === "send" || payload.toPhase === "invoice")
+                && reviewedCtas.has(m.id);
               const previewing = payload.toPhase === "send" && previewCtaId === m.id;
               if (previewing) {
                 const contractId = payload.contractId ?? contract?.id ?? "";
@@ -902,10 +907,18 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                 const totalAmount = typeof contract?.totalAmount === "number"
                   ? contract.totalAmount
                   : lineTotalCents / 100;
+                const totalCentsForBreakdown = Math.round(totalAmount * 100);
                 const totalStr = totalAmount.toLocaleString("en-US", {
                   minimumFractionDigits: 0,
                   maximumFractionDigits: 2,
                 });
+                // Translate the picked payment terms into a milestone schedule
+                // so the customer sees what they actually owe at each step,
+                // not one big number that hides the deposit / balance split.
+                const paymentTerm = termAnswers.find((t) => t.label.toLowerCase() === "payment terms");
+                const milestones = paymentTerm
+                  ? buildPaymentMilestones(paymentTerm.value, totalCentsForBreakdown)
+                  : null;
                 const draftedDate = new Date(m.createdAt).toLocaleDateString("en-US", {
                   month: "long", day: "numeric", year: "numeric",
                 });
@@ -984,6 +997,23 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                         <div class="quote-review__total-amt">
                           <span class="quote-review__total-currency">$</span>{totalStr}
                         </div>
+                        {milestones && milestones.length > 1
+                          ? (
+                            <ul class="quote-review__milestones">
+                              {milestones.map((ms, i) => (
+                                <li key={`ms-${i}`} class="quote-review__milestone">
+                                  <span class="quote-review__milestone-label">
+                                    {ms.label}
+                                    {typeof ms.pct === "number"
+                                      ? <span class="quote-review__milestone-pct"> · {ms.pct}%</span>
+                                      : null}
+                                  </span>
+                                  <strong class="quote-review__milestone-amt">{fmtUSD(ms.amountCents)}</strong>
+                                </li>
+                              ))}
+                            </ul>
+                          )
+                          : null}
                       </section>
 
                       <footer class="quote-review__cta">
@@ -1026,11 +1056,7 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                             <div class="continue-cta__sub">
                               {customer?.email
                                 ? <>emailed to <code>{customer.email}</code></>
-                                : payload.toPhase === "invoice"
-                                  ? "invoice sent to client"
-                                  : contract?.id
-                                    ? <>contract <code>{contract.id.slice(0, 8)}</code> sent</>
-                                    : "sent"}
+                                : <>no email on file — add one to <code>{customer?.name ?? "the customer"}</code> to deliver</>}
                             </div>
                           )
                           : payload.summary
@@ -1243,23 +1269,6 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                             >
                               <I d={ICN.refresh} size={11} /> Re-open
                             </button>
-                            {/* Dev-only: localhost-only trigger to simulate the
-                                customer accepting the quote, since we don't have
-                                a real signing webhook in development. */}
-                            {typeof globalThis.location !== "undefined"
-                              && globalThis.location.hostname === "localhost"
-                              ? (
-                                <button
-                                  type="button"
-                                  class="dev-accept-btn"
-                                  onClick={() => simulateQuoteAccept(payload.quoteId)}
-                                  disabled={sending || !payload.quoteId}
-                                  title="Localhost-only: flip quote to accepted, append phase divider + 'Continue to contract' CTA, set unread."
-                                >
-                                  🔧 {sending ? "Simulating…" : "Simulate customer accepted"}
-                                </button>
-                              )
-                              : null}
                           </div>
                         )
                         : null}
@@ -1270,10 +1279,17 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
               );
             }
 
-            // Default chat bubble (text/voice/image/file).
+            // Default chat bubble (text/voice/image).
             const fileId = (m.payload as { fileId?: string } | undefined)?.fileId;
             const filename = (m.payload as { filename?: string } | undefined)?.filename;
-            const sizeBytes = (m.payload as { sizeBytes?: number } | undefined)?.sizeBytes;
+            // Skip ghost bubbles: a text/voice message with no content and
+            // no attached media is something the LLM (or a buggy persist
+            // path) emitted with no signal — rendering it as an empty pill
+            // looks broken. Phase_divider / continue_cta / action_card /
+            // wizard / image / file are handled above with their own UI.
+            const hasMedia = !!fileId;
+            const hasContent = !!m.content?.trim();
+            if (!hasMedia && !hasContent) return null;
             return (
               <div key={m.id} class={`msg ${m.role === "user" ? "msg--user" : ""}`}>
                 <div class="msg__avatar">
@@ -1284,15 +1300,6 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                     ? (
                       <a class="msg__image" href={`/api/files/${fileId}`} target="_blank" rel="noopener">
                         <img src={`/api/files/${fileId}`} alt={filename ?? "attached image"} />
-                      </a>
-                    )
-                    : null}
-                  {m.kind === "file" && fileId
-                    ? (
-                      <a class="msg__file" href={`/api/files/${fileId}`} target="_blank" rel="noopener" download={filename}>
-                        <I d={ICN.clip} size={14} />
-                        <span class="msg__file-name">{filename ?? "attachment"}</span>
-                        {typeof sizeBytes === "number" ? <span class="msg__file-size">{fmtKB(sizeBytes)}</span> : null}
                       </a>
                     )
                     : null}
@@ -1339,13 +1346,9 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
               />
             )}
           <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={onImagePicked} />
-          <input ref={fileInputRef}  type="file" hidden onChange={onFilePicked} />
           <div class="composer__tools">
             <button type="button" class="composer__btn" title="Attach photo" onClick={pickImage} disabled={recording || sending}>
               <I d={ICN.img} size={17} />
-            </button>
-            <button type="button" class="composer__btn" title="Attach file" onClick={pickFile} disabled={recording || sending}>
-              <I d={ICN.clip} size={17} />
             </button>
             <button
               type="button"

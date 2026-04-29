@@ -17,10 +17,8 @@ export interface LockQuoteInput {
 
 export interface LockQuoteResult {
   conversation: AgentConversation;
-  /** action_card with status=sent. The "Continue to terms" prompt is
-   *  intentionally NOT emitted here — it follows customer acceptance,
-   *  via AcceptQuote — so the chat doesn't ask the user to draft terms
-   *  for a quote the customer hasn't yet agreed to. */
+  /** action_card (status=sent) + continue_cta(toPhase=terms) — the
+   *  user's prompt to advance to phase 2 (terms wizard). */
   newMessages: AgentMessage[];
 }
 
@@ -30,22 +28,23 @@ export interface LockQuoteResult {
  * The LLM-driven path (handle-chat-message) is unreliable for "lock"
  * intents — gpt-4o-mini sometimes drafts another quote instead of
  * locking. Surfacing this as its own endpoint behind the action_card's
- * "Lock it in" button removes the model from the loop entirely:
+ * "Lock it in" button removes the model from the loop entirely.
  *
+ * This is the phase-1 → phase-2 handoff in the chat:
  *   1. Verify ownership of conversation + quote.
- *   2. If the quote is already "sent", short-circuit (idempotent).
- *   3. Flip quote.status = 'sent', emit `quote sent` event.
- *   4. Best-effort dispatch paperwork email (failure does NOT abort —
- *      mirrors handle-chat-message's behavior so the user can retry).
- *   5. Append a fresh action_card (status=sent) so the chat shows the
- *      locked totals.
- *   6. Set conv.quoteId so subsequent flows know what to operate on.
+ *   2. If quote already 'sent', short-circuit (idempotent).
+ *   3. Flip quote.status = 'sent', emit `quote sent`, dispatch the
+ *      customer email (best-effort — failure doesn't abort).
+ *   4. Append the locked action_card (status=sent) + a continue_cta
+ *      to the terms wizard, so the chat advances forward instead of
+ *      dead-ending after the click.
+ *   5. Set conv.quoteId so the wizard / send-contract know what to
+ *      operate on.
  *
- * The "Continue to contract" prompt is intentionally NOT emitted here.
- * It follows customer acceptance (see AcceptQuote): we don't ask the
- * user to draft contract terms for a quote the customer hasn't agreed
- * to yet — the chain is quote → contract → invoice, gated on customer
- * acceptance at each handoff.
+ * The customer-acceptance event lives on the contract (see
+ * AcceptContract), not here — the chain is:
+ *   draft → lock (phase 1) → wizard (phase 2) → send → customer
+ *   signs contract → invoice.
  */
 @Injectable()
 export class LockQuote {
@@ -104,12 +103,24 @@ export class LockQuote {
       },
     });
 
+    const cta = await this.messages.append({
+      conversationId: conv.id,
+      role: "assistant",
+      kind: "continue_cta",
+      content: "Continue to terms",
+      payload: {
+        toPhase: "terms",
+        quoteId: fresh.id,
+        summary: "Payment, warranty, dispute, governing state — 7 quick questions",
+      },
+    });
+
     const updated = await this.conversations.update(conv.id, {
       quoteId: fresh.id,
       quoteStatus: "sent",
       preview: `Quote sent: ${fresh.summary ?? fresh.id}`,
     });
 
-    return { conversation: updated, newMessages: [card] };
+    return { conversation: updated, newMessages: [card, cta] };
   }
 }

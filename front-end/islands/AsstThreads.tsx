@@ -105,12 +105,14 @@ function titleFor(c: Conversation): string {
  * the conversation has reached, not the earliest.
  */
 function deriveChip(c: Conversation): { kind: Chip; label: string } {
+  // Walk the chain backwards (latest stage wins). Customer acceptance
+  // is a single event on the contract — quoteStatus only ever reaches
+  // "sent" in this flow, so no quote-accepted branch is needed.
   if (c.invoiceStatus === "paid")      return { kind: "paid",  label: "Paid" };
   if (c.invoiceStatus === "sent")      return { kind: "sent",  label: "Invoiced" };
   if (c.contractStatus === "accepted") return { kind: "paid",  label: "Signed" };
   if (c.contractStatus === "sent")     return { kind: "sent",  label: "Contract sent" };
   if (c.contractStatus === "draft")    return { kind: "needs", label: "Contract" };
-  if (c.quoteStatus === "accepted")    return { kind: "needs", label: "Quote OK" };
   if (c.quoteStatus === "sent")        return { kind: "sent",  label: "Quote sent" };
   if (c.currentPhase === "terms")      return { kind: "needs", label: "Terms" };
   return { kind: "draft", label: "Drafting" };

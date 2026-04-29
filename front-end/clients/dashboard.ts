@@ -2,17 +2,18 @@
  * HTTP client for the /dashboard page.
  *
  * Backend references:
- *  - profile-composite-controller/mod.ts            (GET /profile)
- *  - core/analytics/.../dashboard-controller/mod.ts (GET /analytics/dashboard)
- *  - notification-controller/mod.ts                 (GET /notifications, /notifications/unread-count)
- *  - paperwork/.../quote-controller/mod.ts          (GET /quotes)
- *  - paperwork/.../invoice-controller/mod.ts        (GET /invoices)
+ *  - users/.../profile-composite-controller/mod.ts        (GET /profile)
+ *  - analytics/.../dashboard-controller/mod.ts            (GET /analytics/dashboard)
+ *  - analytics/.../jobs-controller/mod.ts                 (GET /jobs)
+ *  - communication/.../notification-controller/mod.ts     (GET /notifications, /notifications/unread-count)
+ *  - paperwork/.../invoice-controller/mod.ts              (GET /invoices)
+ *  - crm/.../customer-controller/mod.ts                   (GET /customers)
  *
- * Shapes are intentionally permissive (Record<string, unknown>) where the
- * frontend only needs to read fields by name — it's the backend's job to
- * own the canonical schema. This keeps the frontend a dumb consumer.
+ * Shapes mirror the backend DTOs. Money fields from the dashboard payload
+ * are CENTS — see analytics/dto/dashboard-stats.ts.
  */
 import { api, type ApiOptions } from "../lib/api.ts";
+import type { QuoteCard } from "./quotes.ts";
 
 export interface Profile {
   user: { id: string; name?: string; phoneNumber: string; email?: string; language?: "en" | "es" };
@@ -20,55 +21,119 @@ export interface Profile {
   [k: string]: unknown;
 }
 
+export interface AgingBuckets {
+  current: number;
+  aging1_14d: number;
+  overdue15_30d: number;
+  overdue30plus: number;
+}
+
+export interface InvoiceCounts {
+  total: number;
+  pending: number;
+  paid: number;
+  overdue: number;
+  agingBuckets: AgingBuckets;
+}
+
+export interface QuoteCounts { total: number; draft: number; sent: number; accepted: number }
+export interface ContractCounts { total: number; draft: number; signed: number }
+
+export interface RevenueStats {
+  ytdCents: number;
+  lastMonthCents: number;
+  monthOverMonthPct: number;
+  /** Length-12 array, oldest → newest, monthly paid-invoice totals (cents). */
+  sparkline12mo: number[];
+}
+
+export interface PaymentStats {
+  receivedYtdCents: number;
+  methodMixCents: Record<string, number>;
+  topPayors: Array<{ customerId: string; totalCents: number }>;
+}
+
 export interface DashboardStats {
-  thisMonthBilled?: number;
-  counts?: { quotes?: number; invoices?: number; conversations?: number };
-  sparkline12mo?: number[];
-  [k: string]: unknown;
+  customers: number;
+  quotes: QuoteCounts;
+  contracts: ContractCounts;
+  invoices: InvoiceCounts;
+  /** Sum of estimatedTotal across quotes whose status === 'sent'. CENTS. */
+  quotedValueCents: number;
+  awaitingResponse: number;
+  revenue: RevenueStats;
+  payments: PaymentStats;
 }
 
 export interface Notification {
   id: string;
   userId: string;
-  type: string;
+  type:
+    | "quote_sent"
+    | "quote_accepted"
+    | "contract_signed"
+    | "invoice_paid"
+    | "invoice_overdue"
+    | "customer_replied"
+    | "generic";
   title: string;
-  message?: string;
-  unread: boolean;
-  createdAt: number;
-}
-
-export interface Quote {
-  id: string;
-  userId: string;
-  customerId?: string;
-  summary?: string;
-  estimatedTotal?: number;
-  status?: "draft" | "sent" | "accepted";
-  createdAt: number;
-  updatedAt: number;
-  [k: string]: unknown;
+  body?: string;
+  entityType?: "quote" | "contract" | "invoice" | "customer" | "conversation";
+  entityId?: string;
+  read: boolean;
+  readAt?: string;
+  createdAt: string;
 }
 
 export interface Invoice {
   id: string;
   userId: string;
-  contractId?: string;
+  contractId: string;
   customerId?: string;
   amount?: number;
-  dueDate?: number;
+  issuedDate?: string;
+  dueDate: string;
   status?: "draft" | "pending" | "paid";
-  createdAt: number;
-  updatedAt: number;
+  paidAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  urgency?: { label: string; tone: "ok" | "warn" | "danger"; daysOverdue?: number };
   [k: string]: unknown;
+}
+
+export interface Customer {
+  id: string;
+  userId: string;
+  name: string;
+  email?: string;
+  phoneNumber?: string;
+  [k: string]: unknown;
+}
+
+export type JobStatusKind = "awaiting" | "on_track" | "awaiting_permit" | "overdue" | "complete";
+
+export interface Job {
+  id: string;
+  customer: { id: string; name: string };
+  quote: { id: string; summary: string; estimatedTotal: number };
+  contract: { id: string; status?: string } | null;
+  totalCents: number;
+  paidCents: number;
+  pctPaid: number;
+  nextDueDate: string | null;
+  status: JobStatusKind;
+  statusLabel: string;
 }
 
 export const dashboardClient = {
   profile:        (opts: ApiOptions = {})                     => api.get<Profile>("/profile", opts),
   stats:          (opts: ApiOptions = {})                     => api.get<DashboardStats>("/analytics/dashboard", opts),
+  jobs:           (opts: ApiOptions = {})                     => api.get<Job[]>("/jobs", opts),
   notifications:  (limit = 10, opts: ApiOptions = {})         => api.get<Notification[]>("/notifications", { ...opts, query: { limit } }),
   unreadCount:    (opts: ApiOptions = {})                     => api.get<{ count: number }>("/notifications/unread-count", opts),
   markRead:       (id: string, opts: ApiOptions = {})         => api.post<void>(`/notifications/${id}/read`, undefined, opts),
   markAllRead:    (opts: ApiOptions = {})                     => api.post<void>("/notifications/read-all", undefined, opts),
-  quotes:         (status?: string, opts: ApiOptions = {})    => api.get<Quote[]>("/quotes", { ...opts, query: { status } }),
+  quotes:         (status?: string, opts: ApiOptions = {})    => api.get<QuoteCard[]>("/quotes", { ...opts, query: { status } }),
   invoices:       (status?: string, opts: ApiOptions = {})    => api.get<Invoice[]>("/invoices", { ...opts, query: { status } }),
+  customers:      (opts: ApiOptions = {})                     => api.get<Customer[]>("/customers", opts),
 };

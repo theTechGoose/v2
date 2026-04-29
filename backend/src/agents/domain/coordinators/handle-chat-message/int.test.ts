@@ -6,7 +6,9 @@ import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EmailService, type SendEmailInput } from "@communication/domain/data/email-service/mod.ts";
 import { EventBus, type DomainEvent } from "@core/business/events/mod.ts";
@@ -27,9 +29,10 @@ function fresh() {
     sentEmails.push(input);
     return { ok: true, reason: "test_capture" };
   };
-  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, email);
-  const flow = new HandleChatMessage(conversations, messages, quotes, bus, emailer, llm);
-  return { conversations, messages, llm, quotes, contracts, invoices, customers, bus, email, emailer, sentEmails, flow };
+  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, new UserStore(), email);
+  const files = new FileStore();
+  const flow = new HandleChatMessage(conversations, messages, quotes, files, bus, emailer, llm);
+  return { conversations, messages, llm, quotes, contracts, invoices, customers, files, bus, email, emailer, sentEmails, flow };
 }
 
 Deno.test("handle-chat-message integration: appends [user, assistant] messages and updates preview", async () => {

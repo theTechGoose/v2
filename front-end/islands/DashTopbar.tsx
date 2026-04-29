@@ -18,8 +18,10 @@ const FALLBACK_TICKER: { html: string; time: string }[] = [
   { html: "<strong>Marcus Lin</strong> signed the quote",        time: "1h" },
 ];
 
-function fmtAgo(ts: number): string {
-  const m = Math.max(1, Math.floor((Date.now() - ts) / 60_000));
+function fmtAgo(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const m = Math.max(1, Math.floor((Date.now() - t) / 60_000));
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h`;

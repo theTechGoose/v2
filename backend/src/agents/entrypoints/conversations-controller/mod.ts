@@ -5,7 +5,6 @@ import { StartConversation } from "@agents/domain/coordinators/start-conversatio
 import { LoadConversation } from "@agents/domain/coordinators/load-conversation/mod.ts";
 import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
 import { LockQuote } from "@agents/domain/coordinators/lock-quote/mod.ts";
-import { AcceptQuote } from "@agents/domain/coordinators/accept-quote/mod.ts";
 import { AcceptContract } from "@agents/domain/coordinators/accept-contract/mod.ts";
 import { SendContract } from "@agents/domain/coordinators/send-contract/mod.ts";
 import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
@@ -23,7 +22,6 @@ export class ConversationsController {
     private loadFlow: LoadConversation,
     private transitionFlow: TransitionToTerms,
     private lockFlow: LockQuote,
-    private acceptQuoteFlow: AcceptQuote,
     private acceptFlow: AcceptContract,
     private sendContractFlow: SendContract,
     private sendInvoiceFlow: SendInvoice,
@@ -82,18 +80,6 @@ export class ConversationsController {
     const quoteId = (body as { quoteId?: unknown } | null | undefined)?.quoteId;
     if (typeof quoteId !== "string" || !quoteId) throw new Error("quoteId is required");
     return ctx.json(await this.lockFlow.run({ userId: user.id, conversationId: id, quoteId }));
-  }
-
-  @Post(":id/accept-quote")
-  async acceptQuote(
-    @Context() ctx: ExecutionContext,
-    @Param("id") id: string,
-    @Body() body: unknown,
-  ) {
-    const user = await requireUser(ctx, this.sessions, this.users);
-    const quoteId = (body as { quoteId?: unknown } | null | undefined)?.quoteId;
-    if (typeof quoteId !== "string" || !quoteId) throw new Error("quoteId is required");
-    return ctx.json(await this.acceptQuoteFlow.run({ userId: user.id, conversationId: id, quoteId }));
   }
 
   @Post(":id/accept-contract")

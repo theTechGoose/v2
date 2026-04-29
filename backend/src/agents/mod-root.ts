@@ -2,6 +2,8 @@ import { Module } from "#danet/core";
 import { UsersModule } from "@users/mod-root.ts";
 import { PaperworkModule } from "@paperwork/mod-root.ts";
 import { CommunicationModule } from "@communication/mod-root.ts";
+import { FilesModule } from "@files/mod-root.ts";
+import { CrmModule } from "@crm/mod-root.ts";
 import { ConversationsController } from "@agents/entrypoints/conversations-controller/mod.ts";
 import { ChatController } from "@agents/entrypoints/chat-controller/mod.ts";
 import { WizardController } from "@agents/entrypoints/wizard-controller/mod.ts";
@@ -13,7 +15,6 @@ import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-ter
 import { HandleWizardAnswer } from "@agents/domain/coordinators/handle-wizard-answer/mod.ts";
 import { LoadConversation } from "@agents/domain/coordinators/load-conversation/mod.ts";
 import { LockQuote } from "@agents/domain/coordinators/lock-quote/mod.ts";
-import { AcceptQuote } from "@agents/domain/coordinators/accept-quote/mod.ts";
 import { AcceptContract } from "@agents/domain/coordinators/accept-contract/mod.ts";
 import { SendContract } from "@agents/domain/coordinators/send-contract/mod.ts";
 import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
@@ -60,7 +61,7 @@ const LlmClientClass = await selectLLMClass();
  *   - DELETE /agents/conversations/:id
  */
 @Module({
-  imports: [UsersModule, PaperworkModule, CommunicationModule],
+  imports: [UsersModule, PaperworkModule, CommunicationModule, FilesModule, CrmModule],
   controllers: [ConversationsController, ChatController, WizardController],
   injectables: [
     AgentConversationStore,
@@ -71,7 +72,6 @@ const LlmClientClass = await selectLLMClass();
     HandleWizardAnswer,
     LoadConversation,
     LockQuote,
-    AcceptQuote,
     AcceptContract,
     SendContract,
     SendInvoice,

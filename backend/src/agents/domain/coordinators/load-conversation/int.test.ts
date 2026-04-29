@@ -6,6 +6,7 @@ import { AgentConversationStore } from "@agents/domain/data/agent-conversation-s
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
@@ -14,11 +15,12 @@ function fresh() {
   const messages = new AgentMessageStore();
   const quotes = new QuoteStore();
   const contracts = new ContractStore();
+  const customers = new CustomerStore();
   const bus = new EventBus();
   return {
     conversations, messages,
     transition: new TransitionToTerms(conversations, messages),
-    wizardAnswer: new HandleWizardAnswer(conversations, messages, quotes, contracts, bus),
+    wizardAnswer: new HandleWizardAnswer(conversations, messages, quotes, contracts, customers, bus),
     load: new LoadConversation(conversations, messages, contracts),
   };
 }

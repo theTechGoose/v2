@@ -5,6 +5,7 @@ import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.t
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
@@ -20,7 +21,7 @@ function fresh() {
   const customers = new CustomerStore();
   const email = new EmailService();
   const bus = new EventBus();
-  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, email);
+  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, new UserStore(), email);
   return {
     conversations, messages, contracts, invoices, customers, bus, emailer,
     flow: new SendInvoice(conversations, messages, contracts, invoices, bus, emailer),
@@ -53,7 +54,7 @@ Deno.test("send-invoice: creates invoice from contract, flips→sent, appends ac
   });
 });
 
-Deno.test("send-invoice: idempotent — re-call reuses conv.invoiceId without re-emailing", async () => {
+Deno.test("send-invoice: re-Send retries email but state-flip + bus emit + invoiceId stay idempotent", async () => {
   await withKv(async () => {
     const s = fresh();
     // deno-lint-ignore no-explicit-any
@@ -67,7 +68,10 @@ Deno.test("send-invoice: idempotent — re-call reuses conv.invoiceId without re
     const a = await s.flow.run({ userId: "u-1", conversationId: conv.id });
     const b = await s.flow.run({ userId: "u-1", conversationId: conv.id });
     assertEquals(a.conversation.invoiceId, b.conversation.invoiceId);
-    // First call emits one 'sent' event; second is a no-op on status flip.
+    // State flip + bus emit fire once. Email dispatch retries every
+    // click — a previously-failed delivery (POSTMARK_FROM unset,
+    // network blip) shouldn't leave the invoice "sent" without ever
+    // reaching the customer.
     assertEquals(events.filter((e) => e.action === "sent").length, 1);
   });
 });

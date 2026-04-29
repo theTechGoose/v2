@@ -42,7 +42,6 @@ export type MessageKind =
   | "text"
   | "voice"
   | "image"
-  | "file"
   | "action"
   | "action_card"
   | "wizard"
@@ -84,10 +83,10 @@ export interface ConversationDetail {
 
 export interface ChatInput {
   conversationId?: string;
-  /** Optional for media uploads (voice/image/file) — the backend reads
-   *  the bytes via payload.fileId and supplies content itself. */
+  /** Optional for media uploads (voice/image) — the backend reads the
+   *  bytes via payload.fileId and supplies content itself. */
   content?: string;
-  kind?: "text" | "voice" | "image" | "file";
+  kind?: "text" | "voice" | "image";
   payload?: Record<string, unknown>;
 }
 
@@ -127,20 +126,11 @@ export const assistantClient = {
       opts,
     ),
 
-  /** Dev-only: simulate the customer accepting the QUOTE. Flips the
-   *  quote→accepted, emits the chat phase_divider + the "Continue to
-   *  contract" CTA, and sets hasUnreadEvent so the threads sidebar
-   *  bubbles + badges. */
-  acceptQuote: (conversationId: string, quoteId: string, opts: ApiOptions = {}) =>
-    api.post<{ conversation: Conversation; newMessages: Message[] }>(
-      `/agents/conversations/${conversationId}/accept-quote`,
-      { quoteId },
-      opts,
-    ),
-
-  /** Dev-only: simulate the customer accepting the contract so the
-   *  threads-sidebar unread badge UX can be exercised without a signing
-   *  webhook. */
+  /** Dev-only: simulate the customer signing the contract — the single
+   *  customer-facing acceptance event in the chain. Flips contract→
+   *  accepted, emits the chat phase_divider + "Continue to invoice"
+   *  CTA, and sets hasUnreadEvent so the threads sidebar bubbles +
+   *  badges. */
   acceptContract: (conversationId: string, contractId: string, opts: ApiOptions = {}) =>
     api.post<{ conversation: Conversation; newMessages: Message[] }>(
       `/agents/conversations/${conversationId}/accept-contract`,

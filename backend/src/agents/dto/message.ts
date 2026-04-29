@@ -18,6 +18,7 @@ import { plainToInstance } from "#class-transformer";
 export type MessageKind =
   | "text"
   | "voice"
+  | "image"
   | "action_card"
   | "wizard"
   | "continue_cta"
@@ -40,13 +41,22 @@ export class ChatInputDto {
   @IsString()
   conversationId?: string;        // omitted on the very first message; server creates one
 
+  /** Optional for kind="voice"|"image": the controller derives content
+   *  (transcript for voice, "[photo attached]" for image) before handing
+   *  off to the chat flow. Required (and min length 1) for kind="text". */
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  content!: string;
+  content?: string;
 
   @IsOptional()
-  @IsIn(["text", "voice"])
-  kind?: "text" | "voice";        // 'voice' carries an attached fileId in payload
+  @IsIn(["text", "voice", "image"])
+  kind?: "text" | "voice" | "image";  // voice/image carry an attached fileId in payload
+
+  /** Voice/image carries `{ fileId }`. Validation is intentionally loose —
+   *  the shape is per-kind and the controller does the deeper checks. */
+  @IsOptional()
+  payload?: Record<string, unknown>;
 }
 
 export function parseChatInput(input: unknown): ChatInputDto {

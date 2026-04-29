@@ -30,6 +30,7 @@ export class WizardController {
       stepId: dto.stepId,
       optionId: dto.optionId,
       customValue: dto.customValue,
+      customer: dto.customer,
     }));
   }
 }

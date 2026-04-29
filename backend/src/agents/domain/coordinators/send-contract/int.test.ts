@@ -5,6 +5,7 @@ import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.t
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EmailService, type SendEmailInput } from "@communication/domain/data/email-service/mod.ts";
@@ -25,15 +26,20 @@ function fresh() {
     sentEmails.push(input);
     return { ok: true, reason: "test_capture" };
   };
-  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, email);
-  const flow = new SendContract(conversations, messages, contracts, bus, emailer);
+  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, new UserStore(), email);
+  const flow = new SendContract(conversations, messages, contracts, quotes, bus, emailer);
   return { conversations, messages, contracts, quotes, customers, bus, sentEmails, flow };
 }
 
 async function makeReadyConversation(userId = "u-1") {
   const ctx = fresh();
   const customer = await ctx.customers.create(userId, { name: "Tom & Linda K.", email: "tom@example.com" });
-  const quote = await ctx.quotes.create(userId, { summary: "Roof", lineItems: [], estimatedTotal: 12_500, status: "sent", customerId: customer.id });
+  // sentAt set so the SendContract quote-backfill path stays a no-op
+  // for these tests (the backfill is exercised by its own dedicated test).
+  const quote = await ctx.quotes.create(userId, {
+    summary: "Roof", lineItems: [], estimatedTotal: 12_500,
+    status: "sent", sentAt: new Date().toISOString(), customerId: customer.id,
+  });
   const contract = await ctx.contracts.create(userId, { quoteId: quote.id, customerId: customer.id, status: "draft", totalAmount: 12_500 });
   const created = await ctx.conversations.create({ userId, quoteId: quote.id, customerId: customer.id });
   const conv = await ctx.conversations.update(created.id, { contractId: contract.id });
@@ -82,19 +88,24 @@ Deno.test("send-contract: emits 'sent' DomainEvent on the bus", async () => {
   await resetKv();
 });
 
-Deno.test("send-contract: idempotent — re-call on already-sent contract returns same id without resending email", async () => {
+Deno.test("send-contract: re-Send re-fires email but state-flip + bus emit stay idempotent", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const ctx = await makeReadyConversation();
+  const events: DomainEvent[] = [];
+  ctx.bus.subscribe((e) => { if (e.entityType === "contract" && e.action === "sent") events.push(e); });
 
   await ctx.flow.run({ userId: "u-1", conversationId: ctx.conv.id, contractId: ctx.contract.id });
   assertEquals(ctx.sentEmails.length, 1);
+  assertEquals(events.length, 1);
 
-  // Second call: status already 'sent'. Should not re-fire the email.
+  // Second click: previous attempt may have failed delivery (e.g., POSTMARK_FROM
+  // missing on first try); the user clicks Send again expecting a retry.
+  // Email re-fires; status flip + bus emit do NOT double — those are
+  // one-time state changes.
   await ctx.flow.run({ userId: "u-1", conversationId: ctx.conv.id, contractId: ctx.contract.id });
-  assertEquals(ctx.sentEmails.length, 1, "email must not double-send");
-
-  // Status stays 'sent'.
+  assertEquals(ctx.sentEmails.length, 2, "email retries on every Send click");
+  assertEquals(events.length, 1, "contract:sent bus event fires once");
   const reloaded = await ctx.contracts.getOwned(ctx.contract.id, "u-1");
   assertEquals(reloaded.status, "sent");
   await resetKv();
@@ -113,6 +124,39 @@ Deno.test("send-contract: forbidden across users", async () => {
   // Status untouched.
   const reloaded = await ctx.contracts.getOwned(ctx.contract.id, "u-1");
   assertEquals(reloaded.status, "draft");
+  await resetKv();
+});
+
+Deno.test("send-contract: backfills the quote email when LockQuote couldn't deliver (no quote.sentAt)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("POSTMARK_API_KEY");
+  await resetKv();
+  const ctx = fresh();
+  // Setup mirrors the real bug: customer is bound to conv via the wizard,
+  // but the quote was locked BEFORE the customer existed — so quote.customerId
+  // is missing and quote.sentAt was never stamped.
+  const customer = await ctx.customers.create("u-1", { name: "Late Customer", email: "late@example.com" });
+  const quote = await ctx.quotes.create("u-1", {
+    summary: "Roof", lineItems: [], estimatedTotal: 12_500, status: "sent",
+    // intentionally NO sentAt and NO customerId
+  });
+  const contract = await ctx.contracts.create("u-1", {
+    quoteId: quote.id, customerId: customer.id, status: "draft", totalAmount: 12_500,
+  });
+  const created = await ctx.conversations.create({ userId: "u-1", quoteId: quote.id, customerId: customer.id });
+  const conv = await ctx.conversations.update(created.id, { contractId: contract.id });
+
+  await ctx.flow.run({ userId: "u-1", conversationId: conv.id, contractId: contract.id });
+
+  // Should have sent BOTH the contract and the previously-undelivered quote.
+  assertEquals(ctx.sentEmails.length, 2, "contract + backfilled quote");
+  const subjects = ctx.sentEmails.map((e) => e.subject);
+  assert(subjects.some((s) => /\bRoof\b|\bquote\b/i.test(s)), "quote email dispatched");
+  assert(subjects.some((s) => /contract/i.test(s)), "contract email dispatched");
+  // Quote.customerId must be backfilled from conv.customerId so the
+  // emailer had a recipient to resolve.
+  const reloadedQuote = await ctx.quotes.getOwned(quote.id, "u-1");
+  assertEquals(reloadedQuote.customerId, customer.id);
   await resetKv();
 });
 
