@@ -19,18 +19,21 @@ export interface User {
   updatedAt: number;
 }
 
+// Defaults to OFF so a forgotten env var on prod can't accidentally render
+// auth-gated pages with a stub user. Local dev opts in via
+// DEV_BYPASS_AUTH=1 in .env.
 const DEV_BYPASS = (typeof Deno !== "undefined"
-  ? (Deno.env.get("DEV_BYPASS_AUTH") ?? "1")
+  ? (Deno.env.get("DEV_BYPASS_AUTH") ?? "0")
   : "0") === "1";
 
 /**
  * Resolve the current user from the request's pm_session cookie.
  * Returns undefined if the cookie is missing OR the backend says it's invalid (401/403).
  *
- * If the backend is unreachable AND DEV_BYPASS_AUTH=1 (default during dev),
+ * If the backend is unreachable AND DEV_BYPASS_AUTH=1 (opt-in for local dev),
  * returns a placeholder user so SSR can render the shell — the seed data in
  * /lib/dash-seed.ts and /lib/assistant-seed.ts fills the panels until the
- * backend is up. Set DEV_BYPASS_AUTH=0 to enforce strict auth.
+ * backend is up. Production must NOT set this var.
  */
 const DEV_USER: User = { id: "dev", phoneNumber: "+15125550000", name: "Diego", language: "en", createdAt: 0, updatedAt: 0 };
 
