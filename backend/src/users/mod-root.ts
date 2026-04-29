@@ -9,7 +9,7 @@ import { OtpStore }       from "@users/domain/data/otp-store/mod.ts";
 import { SendOtp }        from "@users/domain/coordinators/send-otp/mod.ts";
 import { VerifyOtp }      from "@users/domain/coordinators/verify-otp/mod.ts";
 import { Logout }         from "@users/domain/coordinators/logout/mod.ts";
-import { SmsService }     from "@users/domain/sms/mod.ts";
+import { SmsService }     from "@users/domain/data/sms/mod.ts";
 
 // --- profile sub-aggregates (folded in from former ProfileModule) ---
 import { BusinessIdentityController } from "@profile/entrypoints/business-identity-controller/mod.ts";
@@ -20,7 +20,7 @@ import { ReferenceController }        from "@profile/entrypoints/reference-contr
 import { ContractDefaultsController } from "@profile/entrypoints/contract-defaults-controller/mod.ts";
 import { ProfileCompositeController } from "@profile/entrypoints/profile-composite-controller/mod.ts";
 
-import { RateLimiter }            from "@core/rate-limit/mod.ts";
+import { RateLimiter }            from "@core/data/rate-limit/mod.ts";
 import { BusinessIdentityStore }  from "@profile/domain/data/business-identity-store/mod.ts";
 import { BusinessAddressStore }   from "@profile/domain/data/business-address-store/mod.ts";
 import { BusinessInsuranceStore } from "@profile/domain/data/business-insurance-store/mod.ts";

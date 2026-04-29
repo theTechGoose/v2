@@ -32,9 +32,16 @@ const DEV_BYPASS = (typeof Deno !== "undefined"
  * /lib/dash-seed.ts and /lib/assistant-seed.ts fills the panels until the
  * backend is up. Set DEV_BYPASS_AUTH=0 to enforce strict auth.
  */
+const DEV_USER: User = { id: "dev", phoneNumber: "+15125550000", name: "Diego", language: "en", createdAt: 0, updatedAt: 0 };
+
 export async function loadUser(req: Request): Promise<User | undefined> {
   const sessionId = readSessionCookie(req.headers.get("cookie"));
-  if (!sessionId) return undefined;
+  if (!sessionId) {
+    // No cookie — let DEV_BYPASS_AUTH=1 stand in a stub user so screenshot
+    // and design-review tooling can hit auth-gated pages without OTP.
+    if (DEV_BYPASS) return DEV_USER;
+    return undefined;
+  }
 
   try {
     return await api.get<User>("/me", { sessionId });
@@ -42,7 +49,7 @@ export async function loadUser(req: Request): Promise<User | undefined> {
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) return undefined;
     if (DEV_BYPASS) {
       // Backend unreachable but cookie present — render the shell with a stub.
-      return { id: "dev", phoneNumber: "+15125550000", name: "Diego", language: "en", createdAt: 0, updatedAt: 0 };
+      return DEV_USER;
     }
     throw err;
   }

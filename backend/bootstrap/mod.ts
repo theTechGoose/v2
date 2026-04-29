@@ -7,7 +7,8 @@ import { AgentsModule } from "@agents/mod-root.ts";
 import { CrmModule } from "@crm/mod-root.ts";
 import { PaperworkModule } from "@paperwork/mod-root.ts";
 import { CommunicationModule } from "@communication/mod-root.ts";
-import { CoreModule } from "@core/mod-root.ts";
+import { FilesModule } from "@files/mod-root.ts";
+import { AnalyticsModule } from "@analytics/mod-root.ts";
 
 @Module({
   imports: [
@@ -16,7 +17,8 @@ import { CoreModule } from "@core/mod-root.ts";
     CrmModule,
     PaperworkModule,
     CommunicationModule,
-    CoreModule,
+    FilesModule,
+    AnalyticsModule,
   ],
 })
 class AppModule {}

@@ -17,10 +17,10 @@
     "@paperwork/": "./src/paperwork/",
     "@communication/": "./src/communication/",
     "@users/": "./src/users/",
-    "@profile/": "./src/users/profile/",
+    "@profile/": "./src/users/",
     "@agents/": "./src/agents/",
-    "@analytics/": "./src/core/analytics/",
-    "@files/": "./src/core/files/"
+    "@analytics/": "./src/analytics/",
+    "@files/": "./src/files/"
   },
   "compilerOptions": {
     "experimentalDecorators": true,

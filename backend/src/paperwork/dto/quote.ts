@@ -42,6 +42,12 @@ export class CreateQuoteDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  @IsOptional() @IsString() sentAt?: string;
+  @IsOptional() @IsString() acceptedAt?: string;
+  @IsOptional() @IsString() lostAt?: string;
+  @IsOptional() @IsString() acceptedSignature?: string;
+  @IsOptional() @IsString() acceptedName?: string;
 }
 
 export class UpdateQuoteDto {
@@ -50,6 +56,11 @@ export class UpdateQuoteDto {
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => LineItemDto) lineItems?: LineItemDto[];
   @IsOptional() @IsNumber() estimatedTotal?: number;
   @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() sentAt?: string;
+  @IsOptional() @IsString() acceptedAt?: string;
+  @IsOptional() @IsString() lostAt?: string;
+  @IsOptional() @IsString() acceptedSignature?: string;
+  @IsOptional() @IsString() acceptedName?: string;
 }
 
 export interface Quote extends CreateQuoteDto {
@@ -58,6 +69,33 @@ export interface Quote extends CreateQuoteDto {
   userId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export type QuoteStage = "draft" | "sent" | "opened" | "cooling" | "stale" | "won" | "lost";
+
+/**
+ * Quote row enriched with the derived stage + engagement signal the /quotes
+ * card consumes. Computed by `BuildQuoteCards`; never persisted.
+ */
+export interface QuoteCard extends Quote {
+  stage:        QuoteStage;
+  daysIn:       number;
+  opens:        number;
+  lastOpenAt:   string | null;
+  sentDays:     number | null;
+  decidedDays:  number | null;
+  customerName: string | null;
+}
+
+export interface QuoteOpenEntry {
+  at:         string;
+  atRel:      string;
+  device:     "desktop" | "mobile" | "tablet" | "unknown";
+  durationMs?: number;
+}
+
+export interface QuoteOpensResponse {
+  opens: QuoteOpenEntry[];
 }
 
 export function parseCreateQuote(input: unknown): CreateQuoteDto {

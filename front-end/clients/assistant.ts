@@ -35,9 +35,26 @@ export interface Message {
   [k: string]: unknown;
 }
 
+export interface CustomerLite {
+  id: string;
+  name: string;
+  email?: string;
+  phoneNumber?: string;
+  [k: string]: unknown;
+}
+
+export interface ContractLite {
+  id: string;
+  status?: string;
+  totalAmount?: number;
+  [k: string]: unknown;
+}
+
 export interface ConversationDetail {
   conversation: Conversation;
   messages: Message[];
+  customer?: CustomerLite;
+  contract?: ContractLite;
   [k: string]: unknown;
 }
 

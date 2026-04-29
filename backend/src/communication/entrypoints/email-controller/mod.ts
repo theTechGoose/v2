@@ -2,10 +2,10 @@ import { Body, Context, Controller, Post } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import { IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
-import { EmailService } from "@communication/domain/email/mod.ts";
+import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
-import { requireUser } from "@users/entrypoints/auth-helpers.ts";
+import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 
 class SendEmailDto {
   @IsString() to!: string;

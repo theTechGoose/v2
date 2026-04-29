@@ -4,7 +4,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
 import { parseUpdateUser } from "@users/dto/user.ts";
-import { requireUser, readSessionId, UnauthorizedError } from "@users/entrypoints/auth-helpers.ts";
+import { requireUser, readSessionId, UnauthorizedError } from "@users/domain/coordinators/require-user/mod.ts";
 
 /**
  * /me — endpoints that act on the currently-authenticated User.

@@ -3,7 +3,7 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
-import { EmailService, type SendEmailResult } from "@communication/domain/email/mod.ts";
+import { EmailService, type SendEmailResult } from "@communication/domain/data/email-service/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
@@ -51,11 +51,13 @@ export class SendPaperworkEmail {
     let htmlBody: string;
     let recipient: string | undefined = input.to;
 
+    let quoteForStamp: Quote | undefined;
     if (input.kind === "quote") {
       const quote = await this.quotes.getOwned(input.resourceId, userId);
       if (!recipient) recipient = await this.resolveCustomerEmail(userId, quote.customerId);
       subject = renderQuoteSubject(quote);
       htmlBody = renderQuoteHtml(quote);
+      quoteForStamp = quote;
     } else if (input.kind === "contract") {
       const contract = await this.contracts.getOwned(input.resourceId, userId);
       if (!recipient) recipient = await this.resolveCustomerEmail(userId, contract.customerId);
@@ -73,6 +75,16 @@ export class SendPaperworkEmail {
     }
 
     const result = await this.email.send({ to: recipient, subject, htmlBody, from: input.from });
+
+    // Stamp the quote's lifecycle: status→"sent" + sentAt→now (idempotent — only if not already set).
+    // Mirrors the public-controller's accept-time stamping and powers the /quotes stage derivation.
+    if (result.ok && input.kind === "quote" && quoteForStamp && !quoteForStamp.sentAt) {
+      await this.quotes.update(input.resourceId, userId, {
+        status: "sent",
+        sentAt: new Date().toISOString(),
+      });
+    }
+
     return { ...result, to: recipient, subject };
   }
 

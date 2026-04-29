@@ -3,9 +3,9 @@ import { define } from "../../utils.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import AsstThreads from "../../islands/AsstThreads.tsx";
-import AsstComposer from "../../islands/AsstComposer.tsx";
+import AsstChat from "../../islands/AsstChat.tsx";
 import AsstDocPane from "../../islands/AsstDocPane.tsx";
-import { ChatHeader, ChatScroll, Suggestions } from "../../components/AssistantSections.tsx";
+import { ChatHeader } from "../../components/AssistantSections.tsx";
 import { SEED_THREADS, seedTotal } from "../../lib/asst-seed.ts";
 
 const WEEKDAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -39,10 +39,8 @@ export default define.page(function AssistantHome(ctx) {
             <AsstThreads threads={SEED_THREADS} total={seedTotal()} />
             <div class="asst__chat-wrap">
               <section class="chat">
-                <ChatHeader client="Tom & Linda K. · Garage epoxy" status="Quote locked · finishing terms with Bossie" />
-                <ChatScroll />
-                <Suggestions />
-                <AsstComposer conversationId="t1" />
+                <ChatHeader client="New conversation" status="Tell Bossie about a job — voice or text" />
+                <AsstChat initialMessages={[]} />
               </section>
             </div>
             <AsstDocPane />

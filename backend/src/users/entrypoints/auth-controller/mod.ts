@@ -4,7 +4,7 @@ import { SendOtp } from "@users/domain/coordinators/send-otp/mod.ts";
 import { VerifyOtp, InvalidCodeError, ExpiredCodeError, RateLimitedError } from "@users/domain/coordinators/verify-otp/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
 import { parseSendOtp, parseVerifyOtp } from "@users/dto/auth.ts";
-import { readSessionId } from "@users/entrypoints/auth-helpers.ts";
+import { readSessionId } from "@users/domain/coordinators/require-user/mod.ts";
 
 @Controller("auth")
 export class AuthController {

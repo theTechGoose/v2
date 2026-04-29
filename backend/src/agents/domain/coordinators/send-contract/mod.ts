@@ -3,7 +3,7 @@ import { AgentConversationStore } from "@agents/domain/data/agent-conversation-s
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
-import { EventBus } from "@core/events/mod.ts";
+import { EventBus } from "@core/business/events/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 

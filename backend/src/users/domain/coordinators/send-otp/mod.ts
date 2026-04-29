@@ -1,6 +1,6 @@
 import { Injectable } from "#danet/core";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
-import { SmsService } from "@users/domain/sms/mod.ts";
+import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import { generateOtpCode } from "@users/domain/business/generate-otp-code/mod.ts";
 import type { Language } from "@users/dto/user.ts";

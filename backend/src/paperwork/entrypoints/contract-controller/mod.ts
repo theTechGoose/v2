@@ -4,7 +4,7 @@ import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { parseCreateContract, parseUpdateContract } from "@paperwork/dto/contract.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
-import { requireUser } from "@users/entrypoints/auth-helpers.ts";
+import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 
 @Controller("contracts")
 export class ContractController {

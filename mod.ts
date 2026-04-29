@@ -30,6 +30,17 @@ function matchesBackend(pathname: string): boolean {
   );
 }
 
+// Path prefixes that the FRONTEND owns even though they overlap a backend
+// route. The backend is still reachable via /api/<path>; we just block
+// direct (non-/api) access so the Fresh page renders for the human.
+const FRONTEND_OVERRIDES = ["/quotes", "/clients"];
+
+function isFrontendOverride(pathname: string): boolean {
+  return FRONTEND_OVERRIDES.some((p) =>
+    pathname === p || pathname.startsWith(p + "/")
+  );
+}
+
 export default {
   fetch(req: Request, info: Deno.ServeHandlerInfo): Response | Promise<Response> {
     const url = new URL(req.url);
@@ -46,7 +57,7 @@ export default {
       }
     }
 
-    if (matchesBackend(pathname)) {
+    if (matchesBackend(pathname) && !isFrontendOverride(pathname)) {
       return backend.fetch(req);
     }
     return (frontend as { fetch: (req: Request, info: Deno.ServeHandlerInfo) => Response | Promise<Response> }).fetch(req, info);

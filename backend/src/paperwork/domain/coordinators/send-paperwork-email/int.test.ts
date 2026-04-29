@@ -4,7 +4,7 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
-import { EmailService, type SendEmailInput } from "@communication/domain/email/mod.ts";
+import { EmailService, type SendEmailInput } from "@communication/domain/data/email-service/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
 interface SetupResult {

@@ -6,7 +6,7 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
-import { EventBus } from "@core/events/mod.ts";
+import { EventBus } from "@core/business/events/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
@@ -78,10 +78,10 @@ export class PaperworkPublicController {
       status: "accepted",
       // The accept action augments the quote with signature metadata if provided.
       // Stored on the quote itself so the contractor can see who accepted.
-      ...(dto.signature ? { acceptedSignature: dto.signature } as Partial<Quote> : {}),
-      ...(dto.name      ? { acceptedName:      dto.name }      as Partial<Quote> : {}),
+      ...(dto.signature ? { acceptedSignature: dto.signature } : {}),
+      ...(dto.name      ? { acceptedName:      dto.name }      : {}),
       acceptedAt: new Date().toISOString(),
-    } as Partial<Quote>);
+    });
 
     const customerName = await lookupCustomerName(this.customers, updated.customerId, existing.userId);
     await this.bus.emit({

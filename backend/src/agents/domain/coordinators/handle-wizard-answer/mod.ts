@@ -5,7 +5,7 @@ import { applyAnswer, computeProgress } from "@agents/domain/business/wizard-pro
 import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
-import { EventBus } from "@core/events/mod.ts";
+import { EventBus } from "@core/business/events/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { WizardState } from "@agents/dto/wizard.ts";

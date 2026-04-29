@@ -7,8 +7,8 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
-import { EmailService, type SendEmailInput } from "@communication/domain/email/mod.ts";
-import { EventBus, type DomainEvent } from "@core/events/mod.ts";
+import { EmailService, type SendEmailInput } from "@communication/domain/data/email-service/mod.ts";
+import { EventBus, type DomainEvent } from "@core/business/events/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
 function fresh() {

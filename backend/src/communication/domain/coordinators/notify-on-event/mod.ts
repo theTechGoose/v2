@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { type DomainEvent, EventBus } from "@core/events/mod.ts";
+import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
 import { NotificationStore } from "@communication/domain/data/notification-store/mod.ts";
 import type { NotificationType } from "@communication/dto/notification.ts";
 

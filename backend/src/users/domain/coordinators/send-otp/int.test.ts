@@ -1,7 +1,7 @@
 import { assert, assertEquals } from "#std/assert";
 import { SendOtp } from "./mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
-import { SmsService } from "@users/domain/sms/mod.ts";
+import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
 interface CapturedSms { to: string; body: string }

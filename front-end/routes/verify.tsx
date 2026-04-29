@@ -2,6 +2,7 @@ import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import { loadUser } from "../lib/auth.ts";
 import { pickLangFromAcceptLanguage, STRINGS, type Lang } from "../lib/lang.ts";
+import CodeInput from "../islands/CodeInput.tsx";
 
 function formatPhoneDisplay(e164: string): string {
   const digits = e164.replace(/\D/g, "").slice(-10);
@@ -26,7 +27,6 @@ export default define.page(async function Verify(ctx) {
       <Head>
         <title>{s["verify.h1"]} · Paperwork Monsters</title>
         <link rel="stylesheet" href="/landing.css" />
-        <script src="/verify-scripts.js" defer></script>
       </Head>
       <div class="verify-shell">
         <div class="verify-card">
@@ -39,25 +39,7 @@ export default define.page(async function Verify(ctx) {
           <p class="muted" style="color:var(--fg-muted);font-size:16px">
             {s["verify.lede"]} <strong style="color:var(--fg)">{display}</strong>
           </p>
-          <div class="code-input">
-            {Array.from({ length: 6 }, (_, i) => (
-              <input
-                key={i}
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={1}
-                aria-label={`Digit ${i + 1}`}
-              />
-            ))}
-          </div>
-          <button class="btn btn-primary btn-lg" type="button" disabled>
-            {s["verify.cta"]}
-          </button>
-          <div class="meta">
-            <a href="/">{s["verify.editPhone"]}</a>
-            <button type="button">{s["verify.resend"]}</button>
-          </div>
+          <CodeInput phoneNumber={phone} initialLang={lang} />
         </div>
       </div>
     </>

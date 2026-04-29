@@ -5,7 +5,7 @@ import { ConversationStore } from "@communication/domain/data/conversation-store
 import { parseCreateMessage, parseUpdateMessage } from "@communication/dto/message.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
-import { requireUser } from "@users/entrypoints/auth-helpers.ts";
+import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 
 /**
  * Messages don't carry their own userId — ownership is inherited via

@@ -4770,3 +4770,80 @@ html, body {
   .asst { grid-template-columns: 1fr; }
   .asst .threads { display: none; }
 }
+
+/* AsstChat empty-state — shown when there are no messages yet. */
+.chat__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 32px;
+  max-width: 480px;
+  margin: 0 auto;
+  gap: 12px;
+}
+.chat__empty-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--mint-100, #e8f3e0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.chat__empty-icon img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+.chat__empty-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--fg, #1a2415);
+}
+.chat__empty-sub {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg-muted, #6b7560);
+}
+.chat__empty-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 360px;
+}
+.chat__empty-prompt {
+  border: 1px solid var(--line, #d8e0d4);
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+.chat__empty-prompt:hover {
+  border-color: var(--brand-green, #4a8c3a);
+  background: var(--mint-50, #f3f8ee);
+}
+.chat__empty-debug {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.chat__empty-debug-btn {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px dashed var(--line, #d8e0d4);
+  background: #fff;
+  color: var(--fg-muted, #6b7560);
+  cursor: pointer;
+}

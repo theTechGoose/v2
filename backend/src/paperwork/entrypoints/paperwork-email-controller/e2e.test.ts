@@ -165,6 +165,82 @@ Deno.test("paperwork-email e2e: cross-tenant POST is rejected", async () => {
   }
 });
 
+Deno.test("paperwork-email e2e: send stamps quote.sentAt + status='sent'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("POSTMARK_API_KEY");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const auth = { "content-type": "application/json", "x-session-id": sid };
+    const customer = await fetch(`http://localhost:${PORT}/customers`, {
+      method: "POST", headers: auth, body: JSON.stringify({ name: "Acme", email: "ops@acme.test" }),
+    }).then((r) => r.json());
+    const quote = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST", headers: auth, body: JSON.stringify({
+        customerId: customer.id, summary: "Roof", lineItems: [], status: "draft",
+      }),
+    }).then((r) => r.json());
+    assertEquals(quote.sentAt, undefined);
+
+    await drain(await fetch(`http://localhost:${PORT}/quotes/${quote.id}/email`, {
+      method: "POST", headers: auth, body: JSON.stringify({}),
+    }));
+
+    const after = await fetch(`http://localhost:${PORT}/quotes/${quote.id}`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assert(typeof after.sentAt === "string" && after.sentAt.length > 0);
+    assertEquals(after.status, "sent");
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+Deno.test("paperwork-email e2e: send is idempotent on resend (sentAt unchanged)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("POSTMARK_API_KEY");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const auth = { "content-type": "application/json", "x-session-id": sid };
+    const customer = await fetch(`http://localhost:${PORT}/customers`, {
+      method: "POST", headers: auth, body: JSON.stringify({ name: "Acme", email: "ops@acme.test" }),
+    }).then((r) => r.json());
+    const quote = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST", headers: auth, body: JSON.stringify({
+        customerId: customer.id, summary: "Roof", lineItems: [],
+      }),
+    }).then((r) => r.json());
+
+    await drain(await fetch(`http://localhost:${PORT}/quotes/${quote.id}/email`, {
+      method: "POST", headers: auth, body: JSON.stringify({}),
+    }));
+    const first = await fetch(`http://localhost:${PORT}/quotes/${quote.id}`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+
+    // Wait long enough that a re-stamp would produce a different ISO string
+    await new Promise((res) => setTimeout(res, 25));
+
+    await drain(await fetch(`http://localhost:${PORT}/quotes/${quote.id}/email`, {
+      method: "POST", headers: auth, body: JSON.stringify({}),
+    }));
+    const second = await fetch(`http://localhost:${PORT}/quotes/${quote.id}`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+
+    assertEquals(second.sentAt, first.sentAt);
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
 Deno.test("paperwork-email e2e: unauthenticated POST rejected", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("POSTMARK_API_KEY");

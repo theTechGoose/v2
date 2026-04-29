@@ -1,6 +1,6 @@
 import { assertEquals } from "#std/assert";
 import { mapEventToNotification, NotifyOnEvent } from "./mod.ts";
-import { EventBus } from "@core/events/mod.ts";
+import { EventBus } from "@core/business/events/mod.ts";
 import { NotificationStore } from "@communication/domain/data/notification-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 

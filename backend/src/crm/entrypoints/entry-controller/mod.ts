@@ -4,7 +4,7 @@ import { EntryStore } from "@crm/domain/data/entry-store/mod.ts";
 import { parseCreateEntry, parseUpdateEntry } from "@crm/dto/entry.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
-import { requireUser } from "@users/entrypoints/auth-helpers.ts";
+import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 
 @Controller("entries")
 export class EntryController {

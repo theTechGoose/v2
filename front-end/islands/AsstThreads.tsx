@@ -12,11 +12,11 @@ export default function AsstThreads({ threads, total }: Props) {
         <h3 class="threads__title">Conversations</h3>
         <span class="threads__count">{total}</span>
       </div>
-      <button type="button" class="threads__new">
+      <a href="/assistant" class="threads__new" style="text-decoration:none">
         <I d={ICN.plus} size={14} sw={2.5} />
         New conversation
         <span class="threads__new-kbd">⌘N</span>
-      </button>
+      </a>
       <div class="threads__list">
         {threads.map((group) => (
           <div key={group.group}>

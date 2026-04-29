@@ -105,6 +105,52 @@ Deno.test("customer e2e: GET /:id by another user is rejected (403)", async () =
   });
 });
 
+Deno.test("customer e2e: POST /customers accepts segment + vip", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const created = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ name: "Acme HOA", segment: "hoa", vip: true }),
+    }).then((r) => r.json());
+    assertEquals(created.segment, "hoa");
+    assertEquals(created.vip, true);
+  });
+});
+
+Deno.test("customer e2e: PUT /customers/:id updates segment + vip", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const created = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ name: "Acme" }),
+    }).then((r) => r.json());
+
+    const updated = await fetch(`http://localhost:${port}/customers/${created.id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ segment: "property_mgmt", vip: true }),
+    }).then((r) => r.json());
+    assertEquals(updated.segment, "property_mgmt");
+    assertEquals(updated.vip, true);
+  });
+});
+
+Deno.test("customer e2e: POST /customers rejects invalid segment", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const res = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ name: "Bad", segment: "not_a_real_segment" }),
+    });
+    const ok = res.ok;
+    await drain(res);
+    assertEquals(ok, false);
+  });
+});
+
 Deno.test("customer e2e: PUT/DELETE by another user are rejected", async () => {
   await withServer(async (port) => {
     const sidA = await login(port, "+15125551234");

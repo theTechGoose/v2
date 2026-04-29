@@ -12,9 +12,9 @@ import { HandleChatMessage } from "@agents/domain/coordinators/handle-chat-messa
 import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
 import { HandleWizardAnswer } from "@agents/domain/coordinators/handle-wizard-answer/mod.ts";
 import { LoadConversation } from "@agents/domain/coordinators/load-conversation/mod.ts";
-import { LLM_CLIENT } from "@agents/domain/llm/token.ts";
-import type { LLMClient } from "@agents/domain/llm/mod.ts";
-import { StubLLMClient } from "@agents/domain/llm/stub/mod.ts";
+import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
+import type { LLMClient } from "@agents/domain/business/llm/base/mod.ts";
+import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
 
 /**
  * Pick the LLM client CLASS at module-load time:
@@ -36,7 +36,7 @@ import { StubLLMClient } from "@agents/domain/llm/stub/mod.ts";
  */
 async function selectLLMClass(): Promise<new () => LLMClient> {
   if (Deno.env.get("AGENTS_LLM_CLIENT") === "openai") {
-    const { OpenAILLMClient } = await import("@agents/domain/llm/openai/mod.ts");
+    const { OpenAILLMClient } = await import("@agents/domain/data/openai/mod.ts");
     return OpenAILLMClient;
   }
   return StubLLMClient;

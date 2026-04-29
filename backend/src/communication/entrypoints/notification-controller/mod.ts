@@ -4,7 +4,7 @@ import { NotificationStore } from "@communication/domain/data/notification-store
 import { NotifyOnEvent } from "@communication/domain/coordinators/notify-on-event/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
-import { requireUser } from "@users/entrypoints/auth-helpers.ts";
+import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 
 @Controller("notifications")
 export class NotificationController {

@@ -1,14 +1,14 @@
 import { Inject, Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
-import type { LLMClient, LLMTurn } from "@agents/domain/llm/mod.ts";
-import { LLM_CLIENT } from "@agents/domain/llm/token.ts";
-import { SYSTEM_PROMPT_QUOTE, SYSTEM_PROMPT_TERMS } from "@agents/domain/llm/openai/prompts.ts";
+import type { LLMClient, LLMTurn } from "@agents/domain/business/llm/base/mod.ts";
+import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
+import { SYSTEM_PROMPT_QUOTE, SYSTEM_PROMPT_TERMS } from "@agents/domain/business/llm-prompts/mod.ts";
 import { isInQuotePhase } from "@agents/domain/business/derive-phase/mod.ts";
 import { deriveTitleFromFirstUserMessage, derivePreview } from "@agents/domain/business/conversation-title/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
-import { EventBus } from "@core/events/mod.ts";
+import { EventBus } from "@core/business/events/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 

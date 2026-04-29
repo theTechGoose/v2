@@ -3,11 +3,16 @@ import { assertEquals } from "#std/assert";
 import { Module } from "#danet/core";
 import { bootstrapServer } from "#mrg-keystone/danet";
 import { PaperworkModule } from "@paperwork/mod-root.ts";
+import { CrmModule } from "@crm/mod-root.ts";
+import { AnalyticsModule } from "@analytics/mod-root.ts";
 import { UsersModule } from "@users/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
-@Module({ imports: [UsersModule, PaperworkModule] })
+// `GET /quotes` (the enriched, stage-derived list) lives in AnalyticsModule's
+// QuotesController. Import it alongside Paperwork so the route is registered
+// for these legacy round-trip tests.
+@Module({ imports: [UsersModule, CrmModule, PaperworkModule, AnalyticsModule] })
 class TestApp {}
 
 const PORT = 9012;
@@ -63,14 +68,19 @@ Deno.test("quote e2e: GET /quotes?status=sent filters", async () => {
     await drain(await fetch(`http://localhost:${PORT}/quotes`, {
       method: "POST", headers: auth, body: JSON.stringify({ summary: "A", lineItems: [], status: "draft" }),
     }));
-    await drain(await fetch(`http://localhost:${PORT}/quotes`, {
+    const b = await fetch(`http://localhost:${PORT}/quotes`, {
       method: "POST", headers: auth, body: JSON.stringify({ summary: "B", lineItems: [], status: "sent" }),
+    }).then((r) => r.json());
+    // Stamp sentAt so the derivation lands B in stage="sent" — the new
+    // ?status= param filters on the derived stage now.
+    await drain(await fetch(`http://localhost:${PORT}/quotes/${b.id}`, {
+      method: "PUT", headers: auth, body: JSON.stringify({ sentAt: new Date().toISOString() }),
     }));
     const sent = await fetch(`http://localhost:${PORT}/quotes?status=sent`, {
       headers: { "x-session-id": sid },
     }).then((r) => r.json());
     assertEquals(sent.length, 1);
-    assertEquals(sent[0].status, "sent");
+    assertEquals(sent[0].stage, "sent");
   } finally {
     await server.stop();
     await resetKv();

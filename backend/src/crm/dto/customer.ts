@@ -1,5 +1,8 @@
-import { IsOptional, IsString, validateSync } from "#class-validator";
+import { IsBoolean, IsIn, IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
+
+export type ClientSegment = "property_mgmt" | "homeowner" | "small_biz" | "hoa";
+export const CLIENT_SEGMENTS: ClientSegment[] = ["property_mgmt", "homeowner", "small_biz", "hoa"];
 
 export class CreateCustomerDto {
   @IsString()
@@ -20,6 +23,14 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsIn(CLIENT_SEGMENTS)
+  segment?: ClientSegment;
+
+  @IsOptional()
+  @IsBoolean()
+  vip?: boolean;
 }
 
 export class UpdateCustomerDto {
@@ -42,6 +53,14 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsIn(CLIENT_SEGMENTS)
+  segment?: ClientSegment;
+
+  @IsOptional()
+  @IsBoolean()
+  vip?: boolean;
 }
 
 export interface Customer extends CreateCustomerDto {
@@ -50,6 +69,27 @@ export interface Customer extends CreateCustomerDto {
   userId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export type CustomerStatus = "active" | "lead" | "owes" | "regular" | "cold";
+export type CustomerLastTone = "hot" | "warm" | "cold";
+
+/**
+ * Enriched customer row for the /clients page. Extends `Customer` with derived
+ * rollups computed by `BuildCustomerCards`. Never persisted — pure projection.
+ */
+export interface CustomerCard extends Customer {
+  lastWhen:         string | null;
+  lastWhenRel:      string;
+  lastTone:         CustomerLastTone;
+  balanceCents:     number;
+  balanceSub:       string;
+  activeJobs:       number;
+  jobsSub:          string;
+  status:           CustomerStatus;
+  temp:             number;
+  daysSinceContact: number;
+  revenue12moCents: number;
 }
 
 export function parseCreateCustomer(input: unknown): CreateCustomerDto {
