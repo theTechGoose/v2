@@ -1,6 +1,16 @@
 import backend from "./backend/bootstrap/mod.ts";
 import frontend from "./front-end/_fresh/server.js";
 
+// Expose the backend handler on a known global so SSR (loadUser, future
+// route loaders) can dispatch in-process instead of self-fetching the
+// public URL. Deno Deploy returns 508 (Loop Detected) on self-fetch from
+// a worker, so HTTP is not an option for same-origin calls. Using a
+// bare-import of the backend module from the front-end would pull
+// server-only deps (decorators, openai SDK, etc.) into the Vite SSR
+// bundle, hence the global.
+(globalThis as { __backendFetch?: typeof backend.fetch }).__backendFetch =
+  backend.fetch.bind(backend);
+
 const BACKEND_PREFIXES = [
   "/agents",
   "/auth",

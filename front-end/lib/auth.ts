@@ -42,9 +42,24 @@ const DEV_BYPASS = (typeof Deno !== "undefined"
  */
 const DEV_USER: User = { id: "dev", phoneNumber: "+15125550000", name: "Diego", language: "en", createdAt: 0, updatedAt: 0 };
 
-function sameOriginBaseUrl(req: Request): string | undefined {
-  try { return new URL(req.url).origin; }
-  catch { return undefined; }
+type BackendFetch = (req: Request) => Response | Promise<Response>;
+
+/** In-process backend handler set by /v2/mod.ts on Deno Deploy boot. When
+ *  present, SSR dispatches /me directly to the backend without HTTP — the
+ *  public URL self-fetch returns 508 (Loop Detected) on Deno Deploy. */
+function getInProcessBackend(): BackendFetch | undefined {
+  return (globalThis as { __backendFetch?: BackendFetch }).__backendFetch;
+}
+
+async function fetchMeInProcess(handler: BackendFetch, sessionId: string): Promise<User | undefined> {
+  const probe = new Request("http://internal/me", {
+    method: "GET",
+    headers: { "x-session-id": sessionId, "accept": "application/json" },
+  });
+  const res = await handler(probe);
+  if (res.status === 401 || res.status === 403) return undefined;
+  if (!res.ok) throw new Error(`/me failed: ${res.status}`);
+  return await res.json() as User;
 }
 
 export async function loadUser(req: Request): Promise<User | undefined> {
@@ -54,13 +69,13 @@ export async function loadUser(req: Request): Promise<User | undefined> {
     return undefined;
   }
 
-  // Prefer the same-origin URL (works on Deno Deploy where mod.ts is the
-  // single entry); api.get falls back to BACKEND_URL only when no baseUrl
-  // is supplied, which works for local dev.
-  const baseUrl = sameOriginBaseUrl(req);
+  // Same-process dispatch on Deno Deploy. Falls back to api.get (over the
+  // dev proxy / BACKEND_URL) when running outside the composed mod.ts.
+  const inProcess = getInProcessBackend();
 
   try {
-    return await api.get<User>("/me", { sessionId, ...(baseUrl ? { baseUrl } : {}) });
+    if (inProcess) return await fetchMeInProcess(inProcess, sessionId);
+    return await api.get<User>("/me", { sessionId });
   } catch (err) {
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) return undefined;
     if (DEV_BYPASS) return DEV_USER;

@@ -16,6 +16,15 @@ const SERVER_BACKEND_URL = (typeof Deno !== "undefined"
   ? Deno.env.get("BACKEND_URL")
   : undefined) ?? "http://localhost:3000";
 
+/** Public backend URL the BROWSER hits directly (cross-origin). Set via
+ *  PUBLIC_BACKEND_URL env on the SSR side and inlined into the HTML by
+ *  the page layout as `window.__PUBLIC_BACKEND_URL`. Falls back to
+ *  same-origin /api so dev still works if the env isn't set. */
+function clientBackendUrl(): string {
+  const fromGlobal = (globalThis as { __PUBLIC_BACKEND_URL?: string }).__PUBLIC_BACKEND_URL;
+  return (fromGlobal && fromGlobal.length > 0) ? fromGlobal.replace(/\/$/, "") : "/api";
+}
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -42,7 +51,7 @@ function isServer(): boolean {
 }
 
 function defaultBaseUrl(): string {
-  return isServer() ? SERVER_BACKEND_URL : "/api";
+  return isServer() ? SERVER_BACKEND_URL : clientBackendUrl();
 }
 
 function buildUrl(path: string, opts: ApiOptions): string {

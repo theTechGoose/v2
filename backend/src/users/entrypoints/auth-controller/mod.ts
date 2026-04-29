@@ -78,19 +78,18 @@ const SESSION_COOKIE_NAME = "pm_session";
 const SESSION_COOKIE_MAX_AGE_S = 60 * 60 * 24 * 30;     // 30 days
 
 function buildSessionCookie(sessionId: string): string {
-  // SameSite=Lax keeps the cookie on top-level navigations (the public
-  // signed/accepted pages POST cross-origin to a different host, and they
-  // don't need this cookie). HttpOnly stops JS from reading it.
-  // Secure is intentionally NOT set so dev (http://localhost) works; the
-  // proxy in production can rewrite to add Secure when terminating TLS.
-  const parts = [
+  // SameSite=None + Secure: the frontend lives on a different origin
+  // from the backend (api.aimonsters.com vs app.aimonsters.com), so the
+  // browser only sends this cookie cross-site when both are set.
+  // HttpOnly stops JS from reading it.
+  return [
     `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}`,
     "Path=/",
     `Max-Age=${SESSION_COOKIE_MAX_AGE_S}`,
     "HttpOnly",
-    "SameSite=Lax",
-  ];
-  return parts.join("; ");
+    "Secure",
+    "SameSite=None",
+  ].join("; ");
 }
 
 function clearSessionCookie(): string {
@@ -99,7 +98,8 @@ function clearSessionCookie(): string {
     "Path=/",
     "Max-Age=0",
     "HttpOnly",
-    "SameSite=Lax",
+    "Secure",
+    "SameSite=None",
   ].join("; ");
 }
 
