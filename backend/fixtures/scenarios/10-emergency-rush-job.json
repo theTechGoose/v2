@@ -1,0 +1,31 @@
+{
+  "id": "emergency-rush-job",
+  "name": "Emergency / weekend rush job",
+  "description": "User wants a same-day emergency quote with a rush surcharge. Assistant should capture both base and surcharge as separate line items.",
+  "category": "create_quote",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Emergency call — burst pipe at the Reilly house. Saturday rate. Repair $475, weekend rush surcharge $150.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Emergency burst pipe repair — Reilly",
+            "lineItems": [
+              { "description": "Burst pipe repair", "amountCents": 47500 },
+              { "description": "Weekend rush surcharge", "amountCents": 15000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    }
+  ]
+}

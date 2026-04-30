@@ -76,7 +76,6 @@ Deno.test("handle-chat-message integration: action 'create_quote' creates a real
     action: {
       type: "create_quote",
       payload: {
-        customerId: "cust-1",
         summary: "Quote: 2-Car Garage Epoxy Floor",
         lineItems: [
           { description: "Surface prep + grind", amountCents:  84_000 },
@@ -86,7 +85,9 @@ Deno.test("handle-chat-message integration: action 'create_quote' creates a real
     },
   }]);
 
-  const conv = await conversations.create({ userId: "u-1" });
+  // Bind a customer at the conversation level (the new contract — the LLM
+  // no longer supplies customerId on create_quote).
+  const conv = await conversations.create({ userId: "u-1", customerId: "cust-1" });
   const result = await flow.run({ userId: "u-1", conversationId: conv.id, content: "draft the quote" });
 
   assertEquals(result.newMessages.length, 3);
@@ -103,8 +104,9 @@ Deno.test("handle-chat-message integration: action 'create_quote' creates a real
   assertEquals(stored.status, "draft");
   assertEquals(stored.lineItems.length, 2);
   assertEquals(stored.estimatedTotal, 2_520);                  // (84_000 + 168_000) / 100
+  assertEquals(stored.customerId, "cust-1");                   // inherited from the conversation
 
-  // Conversation now points at the new quote AND inherits the customer.
+  // Conversation still points at its bound customer + new quote.
   assertEquals(result.conversation.quoteId, cardPayload.quoteId);
   assertEquals(result.conversation.customerId, "cust-1");
 

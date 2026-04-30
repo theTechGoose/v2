@@ -49,6 +49,26 @@ interface Props {
   initialCustomer?: CustomerLite;
   /** Contract bound to this conversation (only present once the wizard completes). */
   initialContract?: ContractLite;
+  /** 1-2 letter user-avatar string. Pre-derived on the server so we don't
+   *  flash a stale or default value while hydrating. */
+  userInitials?: string;
+}
+
+/** Derive a stable 1-2 letter avatar string from whatever user fields we have.
+ *  Order: full name → first+last initials. Single-token name → first 2 letters.
+ *  No name → last 2 digits of phone. Nothing → "?". Used by the assistant chat
+ *  bubble; the previous version hardcoded "DR" which surfaced on every account
+ *  including users with no name set. */
+export function deriveUserInitials(input: { name?: string; phoneNumber?: string }): string {
+  const name = input.name?.trim();
+  if (name) {
+    const parts = name.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  const phone = input.phoneNumber?.replace(/\D/g, "");
+  if (phone && phone.length >= 2) return phone.slice(-2);
+  return "?";
 }
 
 function fmtTime(ts: number | string): string {
@@ -122,7 +142,7 @@ function buildPaymentMilestones(value: string, totalCents: number): PaymentMiles
   return null;
 }
 
-export default function AsstChat({ conversationId, initialMessages, initialCustomer, initialContract }: Props) {
+export default function AsstChat({ conversationId, initialMessages, initialCustomer, initialContract, userInitials = "?" }: Props) {
   const [convoId, setConvoId] = useState<string | undefined>(conversationId);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [customer, setCustomer] = useState<CustomerLite | undefined>(initialCustomer);
@@ -158,7 +178,6 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
   const recChunksRef = useRef<Blob[]>([]);
   const recStartRef = useRef<number>(0);
   const recTickRef = useRef<number | null>(null);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -355,8 +374,6 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
     }
   }
 
-  function pickImage() { imageInputRef.current?.click(); }
-
   /**
    * Dev-only: spin up a phase-2 conversation in one shot. Bypasses the
    * LLM (which may be in stub mode) by creating a quote directly, binding
@@ -406,44 +423,6 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
       setError(err instanceof Error ? err.message : "seed failed");
       setSending(false);
     }
-  }
-
-  function onImagePicked(e: Event) {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    sendImage(file);
-    input.value = "";
-  }
-
-  /**
-   * Picture path: upload to /files, then post a chat turn with kind=image
-   * + payload.fileId. The backend base64-encodes the bytes and ships them
-   * to gpt-4o-mini as a vision attachment, so the assistant can actually
-   * see what was sent. Optimistic bubble shows "uploading…" until the
-   * server responds with the persisted message + assistant reply.
-   */
-  async function sendImage(file: File) {
-    await submitTurn(
-      {
-        role: "user",
-        kind: "image",
-        content: `🖼️ ${file.name} · ${fmtKB(file.size)} — uploading…`,
-      },
-      async () => {
-        const uploaded = await filesClient.uploadBlob(file, file.name);
-        return await assistantClient.chat({
-          conversationId: convoId,
-          kind: "image",
-          payload: { fileId: uploaded.id },
-        }) as {
-          conversation?: { id: string };
-          newMessages?: Message[];
-          message?: Message;
-          conversationId?: string;
-        };
-      },
-    );
   }
 
   /**
@@ -1293,7 +1272,7 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
             return (
               <div key={m.id} class={`msg ${m.role === "user" ? "msg--user" : ""}`}>
                 <div class="msg__avatar">
-                  {m.role === "user" ? "DR" : <img src="/logo-monster.png" alt="" />}
+                  {m.role === "user" ? userInitials : <img src="/logo-monster.png" alt="" />}
                 </div>
                 <div>
                   {m.kind === "image" && fileId
@@ -1345,11 +1324,7 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                 onKeyDown={onKeyDown}
               />
             )}
-          <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={onImagePicked} />
           <div class="composer__tools">
-            <button type="button" class="composer__btn" title="Attach photo" onClick={pickImage} disabled={recording || sending}>
-              <I d={ICN.img} size={17} />
-            </button>
             <button
               type="button"
               class={`composer__btn ${recording ? "composer__btn--rec" : ""}`}

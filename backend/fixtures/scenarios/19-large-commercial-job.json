@@ -1,0 +1,37 @@
+{
+  "id": "large-commercial-job",
+  "name": "Large commercial job with many line items",
+  "description": "Commercial-scale roofing project with mobilization, materials, labor, disposal, and warranty. Assistant should produce all lines without truncating.",
+  "category": "create_quote",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Big one — Riverside Office Park, full reroof on Building C. Mobilization $2,500. Tear-off and disposal $8,400. TPO membrane material $22,000. Insulation board $6,800. Labor $18,500. Flashing & edge metal $3,200. Crane day $1,800. 20-year manufacturer warranty registration $750.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Reroof — Riverside Office Park, Bldg C",
+            "lineItems": [
+              { "description": "Mobilization", "amountCents": 250000 },
+              { "description": "Tear-off and disposal", "amountCents": 840000 },
+              { "description": "TPO membrane material", "amountCents": 2200000 },
+              { "description": "Insulation board", "amountCents": 680000 },
+              { "description": "Labor", "amountCents": 1850000 },
+              { "description": "Flashing & edge metal", "amountCents": 320000 },
+              { "description": "Crane day", "amountCents": 180000 },
+              { "description": "20-year manufacturer warranty registration", "amountCents": 75000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    }
+  ]
+}

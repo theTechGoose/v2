@@ -111,7 +111,7 @@ export class LockQuote {
       payload: {
         toPhase: "terms",
         quoteId: fresh.id,
-        summary: "Payment, warranty, dispute, governing state — 7 quick questions",
+        summary: "Payment, warranty, dispute, governing state — 10 quick steps",
       },
     });
 

@@ -1,0 +1,34 @@
+{
+  "id": "existing-customer-by-name",
+  "name": "Existing customer referenced by name",
+  "description": "User mentions a customer that already exists. Assistant should resolve customerId on the quote rather than creating a new one.",
+  "category": "create_quote",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote",
+    "knownCustomers": [
+      { "id": "cust-acme", "name": "Acme Property Group" }
+    ]
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Draft a pressure-washing quote for Acme Property Group — driveway and walkway, $450 total.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "customerId": "cust-acme",
+            "summary": "Pressure washing — driveway & walkway",
+            "lineItems": [
+              { "description": "Pressure washing — driveway & walkway", "amountCents": 45000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    }
+  ]
+}

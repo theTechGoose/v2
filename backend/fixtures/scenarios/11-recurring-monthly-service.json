@@ -1,0 +1,31 @@
+{
+  "id": "recurring-monthly-service",
+  "name": "Recurring monthly service quote",
+  "description": "User wants a quote for an ongoing monthly retainer. Assistant should capture the monthly amount and label it clearly as recurring in the line item description.",
+  "category": "recurring",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Set up a monthly lawn maintenance quote for the Whitfield HOA — biweekly mowing, edging, blowing. $850/month.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Monthly lawn maintenance — Whitfield HOA",
+            "lineItems": [
+              { "description": "Monthly lawn maintenance — biweekly mow, edge, blow", "amountCents": 85000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"],
+        "assistantContains": ["month"]
+      }
+    }
+  ]
+}

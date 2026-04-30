@@ -57,14 +57,24 @@ function defaultBaseUrl(): string {
 function buildUrl(path: string, opts: ApiOptions): string {
   const base = (opts.baseUrl ?? defaultBaseUrl()).replace(/\/$/, "");
   const p = path.startsWith("/") ? path : `/${path}`;
-  const url = new URL(base + p, isServer() ? "http://_" : globalThis.location.origin);
+  // Same-origin path prefix (e.g. "/api") on the client → return relative URL
+  // so the browser hits the current origin (proxied through routes/api/* in
+  // dev, served in-process on Deno Deploy). Absolute base on the client
+  // (e.g. PUBLIC_BACKEND_URL=https://api.example.com) → return the full URL
+  // so the request actually crosses origins. The previous version stripped
+  // the host unconditionally, which silently turned any cross-origin base
+  // into a same-origin no-prefix request — every API call 404'd if the env
+  // var pointed anywhere other than "/api".
+  const isAbsolute = /^https?:\/\//i.test(base);
+  const url = new URL(base + p, isServer() || isAbsolute ? undefined : globalThis.location.origin);
   if (opts.query) {
     for (const [k, v] of Object.entries(opts.query)) {
       if (v === undefined) continue;
       url.searchParams.set(k, String(v));
     }
   }
-  return isServer() ? url.toString() : url.pathname + url.search;
+  if (isServer() || isAbsolute) return url.toString();
+  return url.pathname + url.search;
 }
 
 async function request<T>(method: string, path: string, body: unknown, opts: ApiOptions): Promise<T> {

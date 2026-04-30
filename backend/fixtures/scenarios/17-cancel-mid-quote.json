@@ -1,0 +1,41 @@
+{
+  "id": "cancel-mid-quote",
+  "name": "User abandons a quote before locking",
+  "description": "User drafts a quote, then changes their mind and says \"never mind.\" Assistant should not lock; it should acknowledge and stand down.",
+  "category": "edge_case",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Quote for the Watanabe job: drywall patch $250.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Drywall patch — Watanabe",
+            "lineItems": [
+              { "description": "Drywall patch", "amountCents": 25000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    },
+    {
+      "user": {
+        "content": "Actually never mind, they backed out. Don't send it.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": null,
+        "responseKinds": ["text"],
+        "assistantContains": ["okay", "ok"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "id": "simple-lawn-care",
+  "name": "Simple lawn care quote",
+  "description": "First-time user describes a small yard job. Assistant should draft a one-line quote without asking clarifying questions.",
+  "category": "create_quote",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "I need to quote a lawn mowing job for the Patel residence. $80.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Lawn mowing — Patel residence",
+            "lineItems": [
+              { "description": "Lawn mowing", "amountCents": 8000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"],
+        "assistantContains": ["quote"]
+      }
+    }
+  ]
+}

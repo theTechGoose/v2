@@ -1,0 +1,32 @@
+{
+  "id": "voice-input-deck-build",
+  "name": "Voice message describing a deck build",
+  "description": "User sends a voice note (transcribed by the backend). Assistant should treat the transcription identically to text and draft a quote.",
+  "category": "create_quote",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Okay so for the Browning job we're looking at a 10 by 14 deck — uh, composite boards, going to be about three thousand two hundred for materials, and labor's twenty-five hundred. Throw in three hundred for permits.",
+        "kind": "voice"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Composite deck build — Browning",
+            "lineItems": [
+              { "description": "Composite deck materials", "amountCents": 320000 },
+              { "description": "Labor — 10x14 deck build", "amountCents": 250000 },
+              { "description": "Permits", "amountCents": 30000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    }
+  ]
+}

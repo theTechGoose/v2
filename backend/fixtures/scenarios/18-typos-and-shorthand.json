@@ -1,0 +1,31 @@
+{
+  "id": "typos-and-shorthand",
+  "name": "Messy shorthand input with typos",
+  "description": "User types fast on mobile with abbreviations and typos. Assistant should still parse customer + amount + scope correctly.",
+  "category": "edge_case",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "qte for delgado - plumbg leak fix undr sink 250 + new shutoff valve 65",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Plumbing repair — Delgado",
+            "lineItems": [
+              { "description": "Leak fix under sink", "amountCents": 25000 },
+              { "description": "New shutoff valve", "amountCents": 6500 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "id": "lock-after-confirm",
+  "name": "Lock quote after user confirmation",
+  "description": "User drafts a quote, then says \"send it.\" Assistant should fire lock_quote on the existing quoteId.",
+  "category": "lock_quote",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Quote for Bryant: gutter cleaning $220.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Gutter cleaning — Bryant",
+            "lineItems": [
+              { "description": "Gutter cleaning", "amountCents": 22000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    },
+    {
+      "user": {
+        "content": "Looks good — send it.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "lock_quote",
+          "payload": { "quoteId": "$lastQuoteId" }
+        },
+        "responseKinds": ["text", "action_card"],
+        "assistantContains": ["sent", "locked", "email"]
+      }
+    }
+  ]
+}

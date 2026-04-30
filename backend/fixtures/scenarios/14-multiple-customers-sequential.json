@@ -1,0 +1,48 @@
+{
+  "id": "multiple-customers-sequential",
+  "name": "Two quotes back-to-back for different customers",
+  "description": "User drafts a quote for one customer, then immediately starts a new one for a different customer in the same conversation. Each quote must be a fresh create_quote, not an update.",
+  "category": "edge_case",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Quote for Alvarez: window cleaning $180.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Window cleaning — Alvarez",
+            "lineItems": [
+              { "description": "Window cleaning", "amountCents": 18000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    },
+    {
+      "user": {
+        "content": "Now one for the Park family — gutter guards installed, $640.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Gutter guards — Park",
+            "lineItems": [
+              { "description": "Gutter guards installed", "amountCents": 64000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    }
+  ]
+}

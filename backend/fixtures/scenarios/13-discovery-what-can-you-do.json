@@ -1,0 +1,23 @@
+{
+  "id": "discovery-what-can-you-do",
+  "name": "Discovery — \"what can you do?\"",
+  "description": "User opens with a non-task question. Assistant should explain its capabilities without firing any tool action.",
+  "category": "discovery",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Hey — what can you actually do for me?",
+        "kind": "text"
+      },
+      "expect": {
+        "action": null,
+        "responseKinds": ["text"],
+        "assistantContains": ["quote"]
+      }
+    }
+  ]
+}

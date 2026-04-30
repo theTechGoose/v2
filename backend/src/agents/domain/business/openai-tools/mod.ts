@@ -19,7 +19,6 @@ export const TOOL_DEFS = [
       parameters: {
         type: "object",
         properties: {
-          customerId: { type: "string", description: "Optional — only when the customer has been identified earlier in the conversation." },
           summary:    { type: "string", description: "One-line headline like 'Quote: 2-Car Garage Epoxy Floor'." },
           lineItems: {
             type: "array",
@@ -92,7 +91,6 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
   switch (call.function.name) {
     case "create_quote": {
       const summary = typeof args.summary === "string" ? args.summary : "";
-      const customerId = typeof args.customerId === "string" ? args.customerId : undefined;
       const rawItems = Array.isArray(args.lineItems) ? args.lineItems : [];
       const lineItems: { description: string; amountCents: number }[] = [];
       for (const item of rawItems) {
@@ -103,7 +101,7 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
         lineItems.push({ description: i.description, amountCents: Math.trunc(i.amountCents) });
       }
       if (!summary || lineItems.length === 0) return undefined;
-      return { type: "create_quote", payload: { summary, customerId, lineItems } };
+      return { type: "create_quote", payload: { summary, lineItems } };
     }
     case "lock_quote": {
       const quoteId = typeof args.quoteId === "string" ? args.quoteId : "";

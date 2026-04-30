@@ -1,0 +1,50 @@
+{
+  "id": "full-flow-to-terms",
+  "name": "Full happy path: create → lock → continue to terms",
+  "description": "Walks the complete phase 1 → phase 2 transition. After lock_quote, assistant should offer request_terms_transition; user accepts.",
+  "category": "terms_transition",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Quote for the O'Brien deck: pressure-treated lumber $1,400, labor for a 12x16 deck $2,800, railing $600.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Deck build — O'Brien",
+            "lineItems": [
+              { "description": "Pressure-treated lumber", "amountCents": 140000 },
+              { "description": "Labor — 12x16 deck", "amountCents": 280000 },
+              { "description": "Railing", "amountCents": 60000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    },
+    {
+      "user": { "content": "Lock it in.", "kind": "text" },
+      "expect": {
+        "action": { "type": "lock_quote", "payload": { "quoteId": "$lastQuoteId" } },
+        "responseKinds": ["text", "action_card"]
+      }
+    },
+    {
+      "user": { "content": "Yeah, set up the contract.", "kind": "text" },
+      "expect": {
+        "action": {
+          "type": "request_terms_transition",
+          "payload": { "quoteId": "$lastQuoteId" }
+        },
+        "responseKinds": ["text", "continue_cta"],
+        "assistantContains": ["terms", "contract"]
+      }
+    }
+  ]
+}

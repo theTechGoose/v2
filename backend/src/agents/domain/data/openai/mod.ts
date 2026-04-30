@@ -72,7 +72,12 @@ export class OpenAILLMClient implements LLMClient {
       }
     }
 
-    const completion = await this.client.chat.completions.create({
+    // One retry on a fully-empty response (no text AND no tool call). This
+    // happens occasionally on gpt-4o-mini when the input is long and tool-
+    // call output is truncated; the user sees zero assistant messages,
+    // which reads as a broken UI. The retry is deterministic enough to be
+    // worth the latency cost (~1s when it triggers).
+    let completion = await this.client.chat.completions.create({
       model: this.model,
       messages,
       tools: TOOL_DEFS as unknown as OpenAI.Chat.Completions.ChatCompletionTool[],
@@ -80,8 +85,21 @@ export class OpenAILLMClient implements LLMClient {
       // Keep responses tight — we want one focused step per turn.
       temperature: 0.2,
     });
+    let choice = completion.choices[0];
+    const isEmpty = (c: typeof choice) =>
+      !((c?.message?.content ?? "").trim()) && (c?.message?.tool_calls ?? []).length === 0;
+    if (isEmpty(choice)) {
+      console.warn("[openai-llm] empty response on first try; retrying once");
+      completion = await this.client.chat.completions.create({
+        model: this.model,
+        messages,
+        tools: TOOL_DEFS as unknown as OpenAI.Chat.Completions.ChatCompletionTool[],
+        tool_choice: "auto",
+        temperature: 0.2,
+      });
+      choice = completion.choices[0];
+    }
 
-    const choice = completion.choices[0];
     const text = choice?.message?.content ?? "";
     const toolCalls = choice?.message?.tool_calls ?? [];
 

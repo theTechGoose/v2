@@ -1,0 +1,31 @@
+{
+  "id": "dollars-to-cents",
+  "name": "Dollar amounts converted to cents correctly",
+  "description": "User states amounts in dollars with decimals. Assistant must convert to cents (integers) on the line items.",
+  "category": "edge_case",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Quote for Nakamura: tree trimming $249.99 and stump grinding $89.50.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Tree work — Nakamura",
+            "lineItems": [
+              { "description": "Tree trimming", "amountCents": 24999 },
+              { "description": "Stump grinding", "amountCents": 8950 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    }
+  ]
+}

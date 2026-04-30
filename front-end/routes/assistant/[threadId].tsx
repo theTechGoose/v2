@@ -4,14 +4,15 @@ import { getSessionId } from "../../lib/auth.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import AsstThreads from "../../islands/AsstThreads.tsx";
-import AsstChat from "../../islands/AsstChat.tsx";
+import AsstChat, { deriveUserInitials } from "../../islands/AsstChat.tsx";
 import { ChatHeader } from "../../components/AssistantSections.tsx";
 import { assistantClient, type Conversation, type ConversationDetail } from "../../clients/assistant.ts";
 
 export default define.page(async function AssistantThread(ctx) {
   const threadId = ctx.params.threadId;
   const user = ctx.state.user;
-  const greetingName = (user?.name ?? user?.phoneNumber ?? "Diego").split(" ")[0];
+  const greetingName = (user?.name ?? user?.phoneNumber ?? "there").split(" ")[0];
+  const userInitials = deriveUserInitials({ name: user?.name, phoneNumber: user?.phoneNumber });
 
   const sessionId = getSessionId(ctx.req);
 
@@ -54,6 +55,7 @@ export default define.page(async function AssistantThread(ctx) {
                   initialMessages={detail?.messages ?? []}
                   initialCustomer={detail?.customer}
                   initialContract={detail?.contract}
+                  userInitials={userInitials}
                 />
               </section>
             </div>

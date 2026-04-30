@@ -11,13 +11,9 @@ interface Props {
   initialNotifications?: Notification[];
 }
 
-const FALLBACK_TICKER: { html: string; time: string }[] = [
-  { html: "<strong>Tom &amp; Linda</strong> opened your quote", time: "2m" },
-  { html: "<strong>Cobblestone Cafe</strong> paid $1,000",     time: "18m" },
-  { html: "<strong>Sarah Chen</strong> sent a photo",            time: "41m" },
-  { html: "<strong>Marcus Lin</strong> signed the quote",        time: "1h" },
-];
-
+// No fallback ticker — when the user has zero real notifications we hide
+// the ticker entirely. Showing seeded "Cobblestone Cafe paid $1,000" to a
+// brand-new account read as fake activity and misled first-run users.
 function fmtAgo(iso: string): string {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return "";
@@ -52,7 +48,7 @@ export default function DashTopbar({ greetingDate, greetingName, greetingOverrid
   const liveItems = items.length > 0 ? items : null;
   const ticker = liveItems
     ? { html: liveItems[tickerIdx % liveItems.length].title, time: fmtAgo(liveItems[tickerIdx % liveItems.length].createdAt) }
-    : FALLBACK_TICKER[tickerIdx % FALLBACK_TICKER.length];
+    : null;
 
   return (
     <header class="topbar">
@@ -68,13 +64,15 @@ export default function DashTopbar({ greetingDate, greetingName, greetingOverrid
         <input placeholder="Search jobs, clients, invoices..." />
         <span class="topbar__kbd">⌘K</span>
       </div>
-      <button type="button" class="topbar__ticker" aria-label="Live activity">
-        <span class="topbar__ticker-dot" />
-        <span class="topbar__ticker-track" aria-live="polite">
-          <span class="topbar__ticker-item" key={tickerIdx} dangerouslySetInnerHTML={{ __html: ticker.html }} />
-        </span>
-        <span class="topbar__ticker-time">{ticker.time} ago</span>
-      </button>
+      {ticker ? (
+        <button type="button" class="topbar__ticker" aria-label="Live activity">
+          <span class="topbar__ticker-dot" />
+          <span class="topbar__ticker-track" aria-live="polite">
+            <span class="topbar__ticker-item" key={tickerIdx} dangerouslySetInnerHTML={{ __html: ticker.html }} />
+          </span>
+          <span class="topbar__ticker-time">{ticker.time} ago</span>
+        </button>
+      ) : null}
       <button type="button" class="topbar__btn" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}>
         <I d={ICN.bell} size={18} />
         {unread > 0 ? <span class="topbar__btn-dot" /> : null}

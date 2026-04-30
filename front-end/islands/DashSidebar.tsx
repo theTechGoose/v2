@@ -3,12 +3,16 @@ import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
 
 interface NavEntry { id: string; icon: IconName; label: string; count?: number; href: string }
 
+// Counts intentionally omitted: previously hardcoded `count: 4` / `count: 3`
+// were displayed as live badges to brand-new accounts that had zero quotes
+// or invoices. If we want real counts here, wire them through props from a
+// dashboardClient query — never seed them.
 const NAV: NavEntry[] = [
   { id: "home",      icon: "home",     label: "Dashboard",     href: "/dashboard" },
   { id: "clients",   icon: "user",     label: "Clients",       href: "/clients" },
-  { id: "quotes",    icon: "quote",    label: "Quotes",        href: "/quotes",    count: 4 },
+  { id: "quotes",    icon: "quote",    label: "Quotes",        href: "/quotes" },
   { id: "contracts", icon: "contract", label: "Contracts",     href: "/contracts" },
-  { id: "invoices",  icon: "invoice",  label: "Invoices",      href: "/invoices",  count: 3 },
+  { id: "invoices",  icon: "invoice",  label: "Invoices",      href: "/invoices" },
   { id: "payments",  icon: "pay",      label: "Payments",      href: "/payments" },
 ];
 

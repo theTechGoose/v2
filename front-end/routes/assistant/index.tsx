@@ -4,13 +4,14 @@ import { getSessionId } from "../../lib/auth.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import AsstThreads from "../../islands/AsstThreads.tsx";
-import AsstChat from "../../islands/AsstChat.tsx";
+import AsstChat, { deriveUserInitials } from "../../islands/AsstChat.tsx";
 import { ChatHeader } from "../../components/AssistantSections.tsx";
 import { assistantClient, type Conversation } from "../../clients/assistant.ts";
 
 export default define.page(async function AssistantHome(ctx) {
   const user = ctx.state.user;
-  const greetingName = (user?.name ?? user?.phoneNumber ?? "Diego").split(" ")[0];
+  const greetingName = (user?.name ?? user?.phoneNumber ?? "there").split(" ")[0];
+  const userInitials = deriveUserInitials({ name: user?.name, phoneNumber: user?.phoneNumber });
 
   const sessionId = getSessionId(ctx.req);
   let initialThreads: Conversation[] = [];
@@ -41,7 +42,7 @@ export default define.page(async function AssistantHome(ctx) {
             <div class="asst__chat-wrap">
               <section class="chat">
                 <ChatHeader client="New conversation" status="Tell Bossie about a job — voice or text" />
-                <AsstChat initialMessages={[]} />
+                <AsstChat initialMessages={[]} userInitials={userInitials} />
               </section>
             </div>
           </div>

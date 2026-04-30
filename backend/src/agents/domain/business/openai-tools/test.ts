@@ -8,7 +8,6 @@ function call(name: string, args: unknown) {
 Deno.test("parseToolCall: create_quote happy path returns the action with cents-truncated line items", () => {
   const out = parseToolCall(call("create_quote", {
     summary: "Quote: Kitchen remodel",
-    customerId: "cust-1",
     lineItems: [
       { description: "Cabinets",     amountCents: 420_000 },
       { description: "Countertops",  amountCents: 399_000.7 },     // truncated
@@ -18,7 +17,6 @@ Deno.test("parseToolCall: create_quote happy path returns the action with cents-
     type: "create_quote",
     payload: {
       summary: "Quote: Kitchen remodel",
-      customerId: "cust-1",
       lineItems: [
         { description: "Cabinets",     amountCents: 420_000 },
         { description: "Countertops",  amountCents: 399_000 },
@@ -27,13 +25,20 @@ Deno.test("parseToolCall: create_quote happy path returns the action with cents-
   });
 });
 
-Deno.test("parseToolCall: create_quote without customerId is allowed", () => {
+// customerId was previously accepted but the model populated it with raw
+// names (e.g. "Mendez") that aren't valid IDs, corrupting joins. The field
+// is gone from the schema; conversation-level customer binding is now the
+// only source of truth.
+Deno.test("parseToolCall: create_quote ignores any customerId argument", () => {
   const out = parseToolCall(call("create_quote", {
     summary: "Quote: Bathroom",
+    customerId: "ignored-string",
     lineItems: [{ description: "Demo", amountCents: 80_000 }],
   }));
   assertEquals(out?.type, "create_quote");
-  if (out?.type === "create_quote") assertEquals(out.payload.customerId, undefined);
+  if (out?.type === "create_quote") {
+    assertEquals(Object.prototype.hasOwnProperty.call(out.payload, "customerId"), false);
+  }
 });
 
 Deno.test("parseToolCall: create_quote with empty lineItems returns undefined", () => {

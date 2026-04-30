@@ -1,7 +1,6 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@b-fuze/deno-dom@~0.1.56": "0.1.56",
     "jsr:@danet/core@2": "2.9.6",
     "jsr:@danet/core@^2.5.1": "2.9.6",
     "jsr:@danet/swagger@2": "2.3.2",
@@ -29,12 +28,10 @@
     "jsr:@std/html@^1.0.5": "1.0.6",
     "jsr:@std/http@^1.0.21": "1.1.0",
     "jsr:@std/internal@^1.0.12": "1.0.13",
-    "jsr:@std/json@^1.0.2": "1.1.0",
     "jsr:@std/jsonc@^1.0.2": "1.0.2",
     "jsr:@std/media-types@1": "1.1.0",
     "jsr:@std/media-types@^1.1.0": "1.1.0",
     "jsr:@std/net@^1.0.6": "1.0.6",
-    "jsr:@std/path@*": "1.1.4",
     "jsr:@std/path@1": "1.1.4",
     "jsr:@std/path@1.0.6": "1.0.6",
     "jsr:@std/path@^1.1.1": "1.1.4",
@@ -42,39 +39,18 @@
     "jsr:@std/path@^1.1.4": "1.1.4",
     "jsr:@std/semver@^1.0.6": "1.0.8",
     "jsr:@std/uuid@^1.0.9": "1.1.1",
-    "jsr:@wok/case@^1.0.2": "1.0.3",
     "npm:@anatine/zod-openapi@2.2.6": "2.2.6_openapi3-ts@4.5.0_zod@3.23.8",
-    "npm:@babel/core@^7.28.0": "7.29.0",
-    "npm:@babel/preset-react@^7.27.1": "7.28.5_@babel+core@7.29.0",
-    "npm:@opentelemetry/api@^1.9.0": "1.9.1",
-    "npm:@preact/signals@^2.5.1": "2.9.0_preact@10.29.1",
-    "npm:@preact/signals@^2.9.0": "2.9.0_preact@10.29.1",
-    "npm:@prefresh/vite@^2.4.8": "2.4.12_preact@10.29.1_vite@7.3.2",
-    "npm:@remix-run/node-fetch-server@0.12": "0.12.0",
-    "npm:@types/babel__core@^7.20.5": "7.20.5",
     "npm:awesome-phonenumber@7.1.0": "7.1.0",
     "npm:class-transformer@0.5.1": "0.5.1",
     "npm:class-validator@0.14.1": "0.14.1",
-    "npm:esbuild-wasm@~0.25.11": "0.25.12",
-    "npm:esbuild@0.25.7": "0.25.7",
-    "npm:esbuild@~0.25.5": "0.25.12",
     "npm:handlebars@^4.7.8": "4.7.8",
     "npm:openai@4": "4.104.0_zod@3.23.8",
     "npm:path-to-regexp@6.2.1": "6.2.1",
-    "npm:preact-render-to-string@^6.6.3": "6.6.7_preact@10.29.1",
-    "npm:preact@^10.28.2": "10.29.1",
-    "npm:preact@^10.29.1": "10.29.1",
     "npm:reflect-metadata@0.1.13": "0.1.13",
-    "npm:rollup@^4.55.1": "4.60.2",
-    "npm:vite@^7.1.3": "7.3.2",
-    "npm:vite@^7.1.4": "7.3.2",
     "npm:zod@3": "3.23.8",
     "npm:zod@3.23.8": "3.23.8"
   },
   "jsr": {
-    "@b-fuze/deno-dom@0.1.56": {
-      "integrity": "8030e2dc1d8750f1682b53462ab893d9c3470f2287feecbe22f44a88c54ab148"
-    },
     "@danet/core@2.9.6": {
       "integrity": "9c2616c2c1814afa4762ec9a80eccae887047629464d247fa1da0a488043ae68",
       "dependencies": [
@@ -112,8 +88,7 @@
       "integrity": "df629467913adc1f960149fdfa3a3430ba8c20381c310fba096db244e6c3c9f6",
       "dependencies": [
         "jsr:@deno/loader@~0.3.10",
-        "jsr:@std/path@^1.1.1",
-        "npm:esbuild@~0.25.5"
+        "jsr:@std/path@^1.1.1"
       ]
     },
     "@deno/loader@0.3.14": {
@@ -146,14 +121,7 @@
         "jsr:@std/net",
         "jsr:@std/path@^1.1.2",
         "jsr:@std/semver",
-        "jsr:@std/uuid",
-        "npm:@opentelemetry/api",
-        "npm:@preact/signals@^2.5.1",
-        "npm:esbuild-wasm",
-        "npm:esbuild@0.25.7",
-        "npm:preact-render-to-string",
-        "npm:preact@^10.28.2",
-        "npm:preact@^10.29.1"
+        "jsr:@std/uuid"
       ]
     },
     "@fresh/plugin-vite@1.1.2": {
@@ -165,14 +133,7 @@
         "jsr:@std/dotenv",
         "jsr:@std/fmt@^1.0.7",
         "jsr:@std/media-types@1",
-        "jsr:@std/path@1",
-        "npm:@babel/core",
-        "npm:@babel/preset-react",
-        "npm:@prefresh/vite",
-        "npm:@remix-run/node-fetch-server",
-        "npm:@types/babel__core",
-        "npm:rollup",
-        "npm:vite@^7.1.4"
+        "jsr:@std/path@1"
       ]
     },
     "@hono/hono@4.6.3": {
@@ -212,7 +173,6 @@
     "@std/fs@1.0.23": {
       "integrity": "3ecbae4ce4fee03b180fa710caff36bb5adb66631c46a6460aaad49515565a37",
       "dependencies": [
-        "jsr:@std/internal",
         "jsr:@std/path@^1.1.4"
       ]
     },
@@ -228,14 +188,8 @@
     "@std/internal@1.0.13": {
       "integrity": "2f9546691d4ac2d32859c82dff284aaeac980ddeca38430d07941e7e288725c0"
     },
-    "@std/json@1.1.0": {
-      "integrity": "93330d3ed4054d6b1ffe54b075432c80a5f671be77277b978931e018014cb1cc"
-    },
     "@std/jsonc@1.0.2": {
-      "integrity": "909605dae3af22bd75b1cbda8d64a32cf1fd2cf6efa3f9e224aba6d22c0f44c7",
-      "dependencies": [
-        "jsr:@std/json"
-      ]
+      "integrity": "909605dae3af22bd75b1cbda8d64a32cf1fd2cf6efa3f9e224aba6d22c0f44c7"
     },
     "@std/media-types@1.1.0": {
       "integrity": "c9d093f0c05c3512932b330e3cc1fe1d627b301db33a4c2c2185c02471d6eaa4"
@@ -260,9 +214,6 @@
       "dependencies": [
         "jsr:@std/bytes"
       ]
-    },
-    "@wok/case@1.0.3": {
-      "integrity": "0e997a829ed02823857c4b9c30a693ab8f2e582bb25423c69318fcedaf760f15"
     }
   },
   "npm": {
@@ -1638,9 +1589,6 @@
     "zod@3.23.8": {
       "integrity": "sha512-XBx9AXhXktjUqnepgTiE5flcKIYWi/rme0Eaj+5Y0lftuGBq+jyRu/md4WnuxqgP1ubdpNCsYEYPxrzVHD8d6g=="
     }
-  },
-  "remote": {
-    "https://esm.sh/lucide-preact@0.299.0/?exports=Search,File,ChevronRight,ShieldAlert,CheckCheck": "19aa0933f5e33f12b2af45c3432adff476a393c1af793a18cd966dc4df73e9d3"
   },
   "workspace": {
     "members": {

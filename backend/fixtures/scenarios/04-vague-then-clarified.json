@@ -1,0 +1,41 @@
+{
+  "id": "vague-then-clarified",
+  "name": "User starts vague, then provides details",
+  "description": "First message is too vague to draft a quote. Assistant should ask for clarification, then draft after the user provides specifics.",
+  "category": "discovery",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "I want to put together a quote.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": null,
+        "responseKinds": ["text"],
+        "assistantContains": ["customer", "what"]
+      }
+    },
+    {
+      "user": {
+        "content": "It's for Marie Dubois — fence repair, $375.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Fence repair — Marie Dubois",
+            "lineItems": [
+              { "description": "Fence repair", "amountCents": 37500 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    }
+  ]
+}

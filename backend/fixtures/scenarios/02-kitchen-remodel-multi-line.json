@@ -1,0 +1,35 @@
+{
+  "id": "kitchen-remodel-multi-line",
+  "name": "Kitchen remodel — multiple line items",
+  "description": "Mid-size remodel with several distinct labor + material lines. Assistant should produce one quote with multiple line items.",
+  "category": "create_quote",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Quote for the Hendersons: kitchen remodel. Demo of existing cabinets $1,200, new shaker cabinets installed $6,500, quartz countertop $3,800, plumbing rerouting for the island $900, and electrical for under-cabinet lighting $600.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Kitchen remodel — Henderson",
+            "lineItems": [
+              { "description": "Demo existing cabinets", "amountCents": 120000 },
+              { "description": "Shaker cabinets — supply & install", "amountCents": 650000 },
+              { "description": "Quartz countertop", "amountCents": 380000 },
+              { "description": "Plumbing rerouting for island", "amountCents": 90000 },
+              { "description": "Electrical — under-cabinet lighting", "amountCents": 60000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"],
+        "assistantContains": ["kitchen"]
+      }
+    }
+  ]
+}

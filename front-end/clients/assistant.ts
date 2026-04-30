@@ -6,9 +6,27 @@
  * returns an empty list (or 404).
  */
 import { api, ApiError, type ApiOptions } from "../lib/api.ts";
-import type { Quote } from "./dashboard.ts";
 
-export type { Quote };
+/** Minimal mirror of the backend Quote DTO — the frontend only needs the
+ *  fields read from `getQuote`. Defined here (not in dashboard.ts) because
+ *  dashboard.ts already grew large; centralize when a third caller appears. */
+export interface QuoteLineItem {
+  description: string;
+  quantity?: number;
+  unit?: string;
+  price?: number;
+}
+export interface Quote {
+  id: string;
+  userId: string;
+  customerId?: string;
+  summary: string;
+  lineItems: QuoteLineItem[];
+  estimatedTotal: number;
+  status: "draft" | "sent" | "accepted" | "declined" | "expired";
+  createdAt: string;
+  updatedAt: string;
+}
 
 /** Mirrors backend AgentPhase. */
 export type ConversationPhase = "quote" | "terms";

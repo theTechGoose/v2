@@ -1,0 +1,42 @@
+{
+  "id": "quote-status-question",
+  "name": "Status question on the active draft",
+  "description": "User asks what's currently on the quote without changing anything. Assistant should answer from state without firing a tool.",
+  "category": "discovery",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Quote for Esposito: chimney sweep $185, cap replacement $120.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Chimney service — Esposito",
+            "lineItems": [
+              { "description": "Chimney sweep", "amountCents": 18500 },
+              { "description": "Cap replacement", "amountCents": 12000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    },
+    {
+      "user": {
+        "content": "What's the total on that quote right now?",
+        "kind": "text"
+      },
+      "expect": {
+        "action": null,
+        "responseKinds": ["text"],
+        "assistantContains": ["305", "$305"]
+      }
+    }
+  ]
+}

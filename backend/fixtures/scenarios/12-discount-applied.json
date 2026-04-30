@@ -1,0 +1,49 @@
+{
+  "id": "discount-applied",
+  "name": "Apply percentage discount as a line item",
+  "description": "User wants to apply a 10% discount. Assistant should re-issue the quote with a negative-cent discount line item.",
+  "category": "revision",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Quote for Liu: garage door install $1,200.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Garage door install — Liu",
+            "lineItems": [
+              { "description": "Garage door install", "amountCents": 120000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    },
+    {
+      "user": {
+        "content": "Apply a 10% returning-customer discount.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Garage door install — Liu",
+            "lineItems": [
+              { "description": "Garage door install", "amountCents": 120000 },
+              { "description": "Returning customer discount (10%)", "amountCents": -12000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    }
+  ]
+}

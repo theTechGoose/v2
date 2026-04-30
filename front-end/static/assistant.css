@@ -1983,10 +1983,18 @@ html, body {
   }
 
   /* Message bubbles */
+  @keyframes msg-in {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0)   scale(1); }
+  }
   .msg {
     display: flex;
     gap: 10px;
     max-width: 88%;
+    animation: msg-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .msg { animation: none; }
   }
   .msg--user {
     align-self: flex-end;

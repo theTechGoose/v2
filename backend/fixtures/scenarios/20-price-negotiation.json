@@ -1,0 +1,57 @@
+{
+  "id": "price-negotiation",
+  "name": "Customer pushed back — adjust then lock",
+  "description": "User reports the customer negotiated. They drop the labor line, then ask to send. Assistant should re-issue create_quote with the new amount, then lock_quote on confirmation.",
+  "category": "revision",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Quote for Mendez: paver patio install — materials $2,200, labor $1,800.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Paver patio install — Mendez",
+            "lineItems": [
+              { "description": "Paver materials", "amountCents": 220000 },
+              { "description": "Labor — paver patio install", "amountCents": 180000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    },
+    {
+      "user": {
+        "content": "They pushed back on labor — drop it to $1,500 and we'll close.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Paver patio install — Mendez",
+            "lineItems": [
+              { "description": "Paver materials", "amountCents": 220000 },
+              { "description": "Labor — paver patio install", "amountCents": 150000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    },
+    {
+      "user": { "content": "Send it.", "kind": "text" },
+      "expect": {
+        "action": { "type": "lock_quote", "payload": { "quoteId": "$lastQuoteId" } },
+        "responseKinds": ["text", "action_card"]
+      }
+    }
+  ]
+}

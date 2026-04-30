@@ -52,7 +52,7 @@ export interface LLMRequest {
  * destructive ops). Add new variants as the action surface grows.
  */
 export type LLMAction =
-  | { type: "create_quote"; payload: { customerId?: string; summary: string; lineItems: { description: string; amountCents: number }[] } }
+  | { type: "create_quote"; payload: { summary: string; lineItems: { description: string; amountCents: number }[] } }
   | { type: "lock_quote"; payload: { quoteId: string } }
   | { type: "request_terms_transition"; payload: { quoteId: string } };
 

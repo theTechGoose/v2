@@ -1,0 +1,50 @@
+{
+  "id": "revise-amount-before-lock",
+  "name": "Revise quote amount before locking",
+  "description": "User drafts a quote, then asks to bump a line item up. Assistant should re-issue create_quote with the revised totals (not lock yet).",
+  "category": "revision",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Quote for Cheung: bathroom tile install $1,800, demo $400.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Bathroom tile — Cheung",
+            "lineItems": [
+              { "description": "Bathroom tile install", "amountCents": 180000 },
+              { "description": "Demo", "amountCents": 40000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    },
+    {
+      "user": {
+        "content": "Actually bump the install to $2,100 — there's more square footage than I thought.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Bathroom tile — Cheung",
+            "lineItems": [
+              { "description": "Bathroom tile install", "amountCents": 210000 },
+              { "description": "Demo", "amountCents": 40000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    }
+  ]
+}

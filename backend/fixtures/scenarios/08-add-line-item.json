@@ -1,0 +1,49 @@
+{
+  "id": "add-line-item",
+  "name": "Add a line item to existing draft",
+  "description": "User adds a forgotten item after the initial draft. Assistant should re-issue create_quote with the original lines plus the new one.",
+  "category": "revision",
+  "initialState": {
+    "userId": "user-1",
+    "phase": "quote"
+  },
+  "turns": [
+    {
+      "user": {
+        "content": "Quote for Sandoval: interior painting (3 bedrooms) $1,500.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Interior painting — Sandoval",
+            "lineItems": [
+              { "description": "Interior painting — 3 bedrooms", "amountCents": 150000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    },
+    {
+      "user": {
+        "content": "Forgot — also add trim and baseboards, $350.",
+        "kind": "text"
+      },
+      "expect": {
+        "action": {
+          "type": "create_quote",
+          "payload": {
+            "summary": "Interior painting — Sandoval",
+            "lineItems": [
+              { "description": "Interior painting — 3 bedrooms", "amountCents": 150000 },
+              { "description": "Trim & baseboards", "amountCents": 35000 }
+            ]
+          }
+        },
+        "responseKinds": ["text", "action_card"]
+      }
+    }
+  ]
+}
