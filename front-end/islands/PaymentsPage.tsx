@@ -176,8 +176,8 @@ export default function PaymentsPage() {
     return () => { alive = false; };
   }, []);
 
-  const customerNames = useMemo(() => new Map(s.customers.map((c) => [c.id, c.name])), [s.customers]);
-  const invoiceById   = useMemo(() => new Map(s.invoices.map((i) => [i.id, i])), [s.invoices]);
+  const customerNames = useMemo(() => new Map((Array.isArray(s.customers) ? s.customers : []).map((c) => [c.id, c.name])), [s.customers]);
+  const invoiceById   = useMemo(() => new Map((Array.isArray(s.invoices) ? s.invoices : []).map((i) => [i.id, i])), [s.invoices]);
 
   if (s.loading) {
     return (

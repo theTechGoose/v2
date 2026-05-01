@@ -93,10 +93,11 @@ export default function QuotesPage() {
       quotesClient.insight().catch(() => null as Insight | null),
     ]).then(([cards, winRate, insight]) => {
       if (!alive) return;
+      const safeCards = Array.isArray(cards) ? cards : [];
       setS({
         loading: false,
         error: null,
-        quotes: cards.map(mapCard),
+        quotes: safeCards.map(mapCard),
         winRate,
         insight,
       });

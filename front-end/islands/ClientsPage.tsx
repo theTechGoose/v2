@@ -83,7 +83,8 @@ export default function ClientsPage() {
     return <div class="cpage-error">Couldn't load clients: {s.error}</div>;
   }
 
-  const { cards, top, segments } = s;
+  const { cards: rawCards, top, segments } = s;
+  const cards = Array.isArray(rawCards) ? rawCards : [];
   const activeJobs = cards.filter((c) => c.status === "active").length;
   const owedTotal = cards.reduce(
     (sum, c) => sum + (c.balanceCents > 0 ? c.balanceCents : 0),

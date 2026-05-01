@@ -77,7 +77,10 @@ export default function ContractsPage() {
     return <div class="kpage-error">Couldn't load contracts: {s.error}</div>;
   }
 
-  const { contracts, customers, quotes } = s;
+  const { contracts: rawContracts, customers: rawCustomers, quotes: rawQuotes } = s;
+  const contracts = Array.isArray(rawContracts) ? rawContracts : [];
+  const customers = Array.isArray(rawCustomers) ? rawCustomers : [];
+  const quotes = Array.isArray(rawQuotes) ? rawQuotes : [];
   const customerNames = new Map(customers.map((c) => [c.id, c.name]));
   const quoteSummaries = new Map(
     quotes

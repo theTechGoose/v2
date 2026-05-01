@@ -129,7 +129,7 @@ export default function InvoicesPage() {
     return () => { alive = false; };
   }, []);
 
-  const customerNames = useMemo(() => new Map(s.customers.map((c) => [c.id, c.name])), [s.customers]);
+  const customerNames = useMemo(() => new Map((Array.isArray(s.customers) ? s.customers : []).map((c) => [c.id, c.name])), [s.customers]);
 
   if (s.loading) {
     return (
@@ -145,7 +145,7 @@ export default function InvoicesPage() {
   }
 
   const now = new Date();
-  const enriched = s.invoices.map((i) => enrich(i, customerNames, now));
+  const enriched = (Array.isArray(s.invoices) ? s.invoices : []).map((i) => enrich(i, customerNames, now));
 
   const overdue  = enriched.filter((i) => i.stage === "overdue").sort((a, b) => b.daysOverdue - a.daysOverdue);
   const out      = enriched.filter((i) => i.stage === "out").sort((a, b) => b.daysIn - a.daysIn);

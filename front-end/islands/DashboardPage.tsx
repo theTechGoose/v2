@@ -389,10 +389,13 @@ export default function DashboardPage() {
   const kpis = { ...pickKpis(stats), activeJobs: jobs.length };
   const customerNames = new Map(customers.map((c) => [c.id, c.name] as const));
 
-  const jobRows: JobRow[] = jobs.slice(0, 5).map((j, i) => jobToRow(j, i, now));
+  const safeJobs = Array.isArray(jobs) ? jobs : [];
+  const jobRows: JobRow[] = safeJobs.slice(0, 5).map((j, i) => jobToRow(j, i, now));
 
   const seenQuoteIds = new Set<string>();
-  const quoteRows: QuoteRow[] = quoteCards
+  const safeQuoteCards = Array.isArray(quoteCards) ? quoteCards : [];
+  const safePendingInvoices = Array.isArray(pendingInvoices) ? pendingInvoices : [];
+  const quoteRows: QuoteRow[] = safeQuoteCards
     .slice()
     .sort((a, b) => (b.sentAt ?? "").localeCompare(a.sentAt ?? ""))
     .filter((q) => {
@@ -403,7 +406,7 @@ export default function DashboardPage() {
     .slice(0, 4)
     .map((q) => quoteToRow(q, now));
 
-  const outstandingRows: OutstandingRow[] = pendingInvoices
+  const outstandingRows: OutstandingRow[] = safePendingInvoices
     .slice()
     .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
     .slice(0, 5)
