@@ -77,6 +77,18 @@ function buildUrl(path: string, opts: ApiOptions): string {
   return url.pathname + url.search;
 }
 
+type InProcessBackend = (req: Request) => Response | Promise<Response>;
+
+/** On Deno Deploy, mod.ts publishes the composed backend handler at
+ *  globalThis.__backendFetch. SSR calls dispatch through it directly —
+ *  no HTTP round-trip, no public-URL self-fetch (which would 508 on
+ *  Deno Deploy), no dependency on BACKEND_URL=http://localhost:3000
+ *  (which would 500 in prod). One client, one decision: at request
+ *  time, prefer in-process; otherwise fall back to a real fetch. */
+function getInProcessBackend(): InProcessBackend | undefined {
+  return (globalThis as { __backendFetch?: InProcessBackend }).__backendFetch;
+}
+
 async function request<T>(method: string, path: string, body: unknown, opts: ApiOptions): Promise<T> {
   const headers: Record<string, string> = {
     "accept": "application/json",
@@ -84,13 +96,35 @@ async function request<T>(method: string, path: string, body: unknown, opts: Api
   if (body !== undefined) headers["content-type"] = "application/json";
   if (opts.sessionId) headers["x-session-id"] = opts.sessionId;
 
-  const res = await fetch(buildUrl(path, opts), {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    credentials: "include",
-    signal: opts.signal,
-  });
+  let res: Response;
+  const inProcess = isServer() ? getInProcessBackend() : undefined;
+  if (inProcess && opts.baseUrl === undefined) {
+    // SSR + composed backend → dispatch in-process. The internal URL
+    // origin is irrelevant; the Danet router only inspects path +
+    // method. Query params from opts.query still need to be appended.
+    const internalUrl = new URL(`http://internal${path.startsWith("/") ? path : `/${path}`}`);
+    if (opts.query) {
+      for (const [k, v] of Object.entries(opts.query)) {
+        if (v === undefined) continue;
+        internalUrl.searchParams.set(k, String(v));
+      }
+    }
+    const reqInit: RequestInit = {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: opts.signal,
+    };
+    res = await inProcess(new Request(internalUrl.toString(), reqInit));
+  } else {
+    res = await fetch(buildUrl(path, opts), {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: "include",
+      signal: opts.signal,
+    });
+  }
 
   const text = await res.text();
   let parsed: unknown = text;
