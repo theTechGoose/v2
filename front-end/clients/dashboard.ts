@@ -115,7 +115,7 @@ export type JobStatusKind = "awaiting" | "on_track" | "awaiting_permit" | "overd
 export interface Job {
   id: string;
   customer: { id: string; name: string };
-  quote: { id: string; summary: string; estimatedTotal: number };
+  quote: { id: string; summary: string; estimatedTotalCents: number };
   contract: { id: string; status?: string } | null;
   totalCents: number;
   paidCents: number;

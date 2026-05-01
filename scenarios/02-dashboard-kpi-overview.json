@@ -1,0 +1,29 @@
+{
+  "id": "dashboard-kpi-overview",
+  "name": "Returning user scans the KPI strip and active jobs",
+  "description": "A loaded dashboard for a contractor mid-season. KPIs, active jobs, outstanding balances, and quotes awaiting all populated. The page should answer 'what should I look at first today?' in under five seconds.",
+  "category": "dashboard",
+  "surface": ["/dashboard"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator — fences and decks",
+    "context": "Two-truck crew, eight active jobs, three quotes out, two invoices overdue."
+  },
+  "preconditions": [
+    "Account has 8 active jobs, 3 outstanding invoices totalling $14,200, 4 quotes awaiting",
+    "Recent activity in the last 24h: 2 quote opens, 1 deposit payment"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /dashboard", "expect": "KPIs above the fold; numbers match the underlying API responses" },
+    { "actor": "user",   "action": "Hovers an Active Job row", "expect": "Hover state is visible (not invisible on light backgrounds); cursor changes to pointer if clickable" },
+    { "actor": "user",   "action": "Clicks an Outstanding row", "expect": "Navigates to the relevant invoice or client page within ~200ms" },
+    { "actor": "user",   "action": "Returns to /dashboard via browser back", "expect": "Scroll position and section ordering are preserved; no full re-fetch flash" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Currency formatting uses thousands separators and no trailing cents (e.g. '$14,200')" },
+    { "aspect": "feel",          "check": "The eye is drawn first to the most actionable item (overdue invoice or stale quote), not the prettiest tile" },
+    { "aspect": "functionality", "check": "Due-date relative labels ('Today', 'Tomorrow', 'Yesterday', '3 days ago') match the user's local timezone" },
+    { "aspect": "accessibility", "check": "KPI tiles are real headings, not divs styled to look like headings" }
+  ]
+}

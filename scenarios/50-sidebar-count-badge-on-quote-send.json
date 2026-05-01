@@ -1,0 +1,29 @@
+{
+  "id": "sidebar-count-badge-on-quote-send",
+  "name": "Quotes count badge in the sidebar increments when a draft is locked + sent",
+  "description": "DashSidebar fetches /analytics/dashboard once on mount and renders nav-item count pills for Clients / Quotes / Contracts / Invoices using ACTIVE counts only (sent quotes, signed contracts, pending invoices). Locking a draft from the assistant should bump the Quotes badge from N to N+1 on the next dashboard hit (or after the polling tick lands).",
+  "category": "dashboard",
+  "surface": ["/assistant", "/dashboard"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego",
+    "role": "Onboarded user with a few quotes already in flight",
+    "context": "Sidebar currently shows 'Quotes 16' — he's about to send #17."
+  },
+  "preconditions": [
+    "DashboardStats.quotes.sent === 16",
+    "Sidebar already hydrated, badge reads '16'"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "On /assistant, drafts and locks a new quote", "expect": "lock_quote action fires; quote.status='sent'; backend emits quote.sent event" },
+    { "actor": "user",   "action": "Navigates to /dashboard", "expect": "Sidebar count badge for Quotes reads '17'; KPI tile 'Quotes pending' also reads 17" },
+    { "actor": "user",   "action": "Without leaving /dashboard, sends another quote in a second browser tab", "expect": "Within poll cycle, Quotes badge updates to '18' without a page refresh on the first tab" },
+    { "actor": "user",   "action": "Voids one of the sent quotes (status → 'void' or 'lost')", "expect": "Badge decrements correctly because pickCounts uses stats.quotes.sent which excludes terminal states" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Badge pill uses brand-pink with white text; positioned to the right of the nav label; only shows when count > 0 (zero counts hide the pill)" },
+    { "aspect": "feel",          "check": "Badge updates feel synchronous on same-tab navigation; cross-tab updates within ≤8s poll" },
+    { "aspect": "functionality", "check": "pickCounts maps clients=customers, quotes=quotes.sent, contracts=contracts.signed, invoices=invoices.pending — never total counts that include drafts" },
+    { "aspect": "accessibility", "check": "Badge text is exposed to screen readers as part of the nav link's accessible name (e.g. 'Quotes, 17')" }
+  ]
+}

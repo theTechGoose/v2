@@ -1,0 +1,30 @@
+{
+  "id": "customer-declines-quote-with-price-reason",
+  "name": "Customer opens public quote, taps Decline, picks 'Price' chip + writes a note",
+  "description": "Public quote actions panel exposes Decline alongside Accept and Ask a question. Decline opens an inline form with reason chips (Price / Timing / Going elsewhere / Other), an optional freetext note, and an optional name field. Submit POSTs /quotes/:id/decline; backend flips quote.status to 'lost', records lostAt + declineReason + declineNote, emits a quote.declined domain event that surfaces as a generic notification on the contractor's bell.",
+  "category": "customer-email",
+  "surface": ["public-quote"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Asha Patel",
+    "role": "Customer received a quote email from Diego",
+    "context": "Got three quotes for the same job; Diego's was the most expensive."
+  },
+  "preconditions": [
+    "Quote exists, status='sent', has a customerId pointing to Asha",
+    "Asha taps the email CTA, lands on /q/{id}"
+  ],
+  "steps": [
+    { "actor": "customer", "action": "Reviews scope + total ($430.00)", "expect": "Hi Asha — here's your quote' greeting renders; line items + total visible; Accept (with type-name input) is primary; secondary buttons 'Ask a question' and 'Decline' below it" },
+    { "actor": "customer", "action": "Taps Decline", "expect": "Decline form expands inline: 4 chip buttons (Price / Timing / Going elsewhere / Other), freetext textarea, optional name field, red 'Send decline' CTA, X button to close" },
+    { "actor": "customer", "action": "Taps Price chip → writes 'Came in higher than I budgeted.' → name 'Asha P.' → Send decline", "expect": "POST /api/quotes/{id}/decline returns 200; success card 'Got it — thanks for letting them know / Your contractor has been notified.' replaces the form; the Accept block also disappears" },
+    { "actor": "customer", "action": "Refreshes the page", "expect": "Quote header now shows DECLINED pill (pink); actions panel hidden entirely (cannot retry decline or accept); contact-back footer still shows contractor phone" },
+    { "actor": "system",   "action": "Contractor side", "expect": "Generic notification on Diego's bell with title 'Asha Patel declined your quote · price' and body 'Came in higher than I budgeted.'" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Decline panel uses muted/red palette to distinguish from the green Accept; chip toggles have a clear active state (pink border + green text)" },
+    { "aspect": "feel",          "check": "Customer never feels they need to write a paragraph to decline; the chips honour quick taps" },
+    { "aspect": "functionality", "check": "Already-accepted quotes return 409 from /decline; the FE renders the pre-existing ACCEPTED pill and never shows the decline option" },
+    { "aspect": "accessibility", "check": "Chip buttons are real <button> elements with role=switch semantics; focus order is reason chips → note → name → Send decline" }
+  ]
+}

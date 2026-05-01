@@ -1,0 +1,29 @@
+{
+  "id": "assistant-offline-message-queue",
+  "name": "Network drops mid-send — message queues locally and auto-retries on reconnect",
+  "description": "Diego is in a rural job site with flaky LTE. He types and sends a message; the network is down. AsstChat marks the message 'sending' visually, doesn't lose the text, and detects the failure. On reconnect (online event or next successful background ping), it retries the send. Duplicate-suppression on the server uses the client message id so a flaky retry never creates two messages.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "On the road",
+    "context": "Driving between jobsites; LTE comes and goes."
+  },
+  "preconditions": [
+    "Browser navigator.onLine is false at the moment of send",
+    "No existing in-flight send"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types and hits send; navigator.onLine is false", "expect": "Message bubble appears in the chat with a 'queued · will send when online' affordance (subtle clock icon, not an error)" },
+    { "actor": "system", "action": "Browser fires 'online' event", "expect": "AsstChat replays the queued message via the same client message id; on success, the affordance flips to delivered" },
+    { "actor": "system", "action": "Server-side handler is idempotent on client id", "expect": "Even if the original POST partially succeeded before the offline detection, the retry doesn't create a duplicate (insert-or-no-op semantics)" },
+    { "actor": "user",   "action": "Sends a second message while still queued", "expect": "Both messages queue in order; both replay in order on reconnect" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Queued state is visually distinct from sent — but not alarming (no red error chrome)" },
+    { "aspect": "feel",          "check": "Diego doesn't worry about losing his words; he can keep working" },
+    { "aspect": "functionality", "check": "Queue survives a tab close (persisted to localStorage and replayed on next mount); ordering is preserved" },
+    { "aspect": "accessibility", "check": "Queued state is announced to screen readers via aria-live='polite' once on transition" }
+  ]
+}

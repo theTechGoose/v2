@@ -51,7 +51,7 @@ export class AuthController {
     try {
       const result = await this.verifyOtp.run({ phoneNumber: dto.phoneNumber, code: dto.code });
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
-      return { sessionId: result.sessionId, userId: result.userId };
+      return { sessionId: result.sessionId, userId: result.userId, isNewUser: result.isNewUser };
     } catch (err) {
       if (err instanceof InvalidCodeError) return errorBody("invalid_code", 401);
       if (err instanceof ExpiredCodeError) return errorBody("expired", 410);
@@ -77,18 +77,26 @@ export class AuthController {
 const SESSION_COOKIE_NAME = "pm_session";
 const SESSION_COOKIE_MAX_AGE_S = 60 * 60 * 24 * 30;     // 30 days
 
+/** True on Deno Deploy (production). False locally. We use this to flip
+ *  cookie attrs: prod gets `Secure; SameSite=None` for cross-origin
+ *  api.* ↔ app.* sharing; local dev gets `SameSite=Lax` with no Secure
+ *  flag because Safari silently drops Secure cookies on http://localhost
+ *  (Chromium tolerates it as a secure context, Safari does not). */
+const IS_PROD = typeof Deno !== "undefined" && Deno.env.get("DENO_DEPLOYMENT_ID") !== undefined;
+
+function cookieAttrs(): string[] {
+  if (IS_PROD) return ["HttpOnly", "Secure", "SameSite=None"];
+  return ["HttpOnly", "SameSite=Lax"];
+}
+
 function buildSessionCookie(sessionId: string): string {
-  // SameSite=None + Secure: the frontend lives on a different origin
-  // from the backend (api.aimonsters.com vs app.aimonsters.com), so the
-  // browser only sends this cookie cross-site when both are set.
-  // HttpOnly stops JS from reading it.
+  // HttpOnly stops JS from reading it. SameSite/Secure pair flips with
+  // env (see cookieAttrs comment).
   return [
     `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}`,
     "Path=/",
     `Max-Age=${SESSION_COOKIE_MAX_AGE_S}`,
-    "HttpOnly",
-    "Secure",
-    "SameSite=None",
+    ...cookieAttrs(),
   ].join("; ");
 }
 
@@ -97,9 +105,7 @@ function clearSessionCookie(): string {
     `${SESSION_COOKIE_NAME}=`,
     "Path=/",
     "Max-Age=0",
-    "HttpOnly",
-    "Secure",
-    "SameSite=None",
+    ...cookieAttrs(),
   ].join("; ");
 }
 

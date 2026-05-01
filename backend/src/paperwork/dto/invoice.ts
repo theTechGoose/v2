@@ -10,6 +10,7 @@ export class CreateInvoiceDto {
   dueDate!: string;
 
   @IsOptional() @IsString() customerId?: string;
+  /** Invoice amount in INTEGER CENTS. Audit1 #3. */
   @IsOptional() @IsNumber() amount?: number;
   @IsOptional() @IsString() issuedDate?: string;
   @IsOptional() @IsString() status?: string;
@@ -19,6 +20,7 @@ export class CreateInvoiceDto {
 export class UpdateInvoiceDto {
   @IsOptional() @IsString() contractId?: string;
   @IsOptional() @IsString() customerId?: string;
+  /** Invoice amount in INTEGER CENTS. Audit1 #3. */
   @IsOptional() @IsNumber() amount?: number;
   @IsOptional() @IsString() issuedDate?: string;
   @IsOptional() @IsString() dueDate?: string;

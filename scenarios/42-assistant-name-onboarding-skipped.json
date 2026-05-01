@@ -1,0 +1,28 @@
+{
+  "id": "assistant-name-onboarding-skipped",
+  "name": "User types 'skip' to defer onboarding; flow continues into the LLM",
+  "description": "After Bossie's name ask, the user replies 'skip' (or 'later' / 'not now'). We stop pestering — drop the ask out of the way, let the next turn route to the LLM. The user's name remains unset; the topbar greeting falls back to 'Hey, there 👋'.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Anonymous contractor",
+    "role": "Skeptical first-timer",
+    "context": "Doesn't want to share their name yet. Just wants to draft a quote."
+  },
+  "preconditions": [
+    "user.name === undefined",
+    "Conversation just opened — first user message was 'Hey', Bossie's reply was the onboarding ask"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Replies 'skip'", "expect": "Assistant does NOT re-ask. Instead, the message routes to the LLM as a normal turn. Reply may be a short ack like 'No problem — what can I help with?' or directly the LLM's response to 'skip'." },
+    { "actor": "user",   "action": "Sends 'Quote a fence repair for the Patels — $350'", "expect": "LLM produces a create_quote action card without ever re-firing the name ask" },
+    { "actor": "user",   "action": "Refreshes /assistant", "expect": "Topbar greeting reads 'Hey, there 👋' (NEVER the phone number); sidebar footer is hidden because identity is still unset" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "No second-chance modal pestering the user; UX respects the skip" },
+    { "aspect": "feel",          "check": "User feels in control — onboarding doesn't gate access to the assistant" },
+    { "aspect": "functionality", "check": "isSkipReply() catches 'skip', 'later', 'not now', 'nope', 'maybe later'; backend does NOT persist any name from these phrases" },
+    { "aspect": "accessibility", "check": "Skip flow leaves the conversation focused; no surprise focus jumps" }
+  ]
+}

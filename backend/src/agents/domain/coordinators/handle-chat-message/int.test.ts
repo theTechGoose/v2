@@ -7,6 +7,7 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
@@ -29,10 +30,12 @@ function fresh() {
     sentEmails.push(input);
     return { ok: true, reason: "test_capture" };
   };
-  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, new UserStore(), email);
+  const users = new UserStore();
+  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, users, email);
   const files = new FileStore();
-  const flow = new HandleChatMessage(conversations, messages, quotes, files, bus, emailer, llm);
-  return { conversations, messages, llm, quotes, contracts, invoices, customers, files, bus, email, emailer, sentEmails, flow };
+  const identity = new BusinessIdentityStore();
+  const flow = new HandleChatMessage(conversations, messages, quotes, files, users, identity, bus, emailer, llm);
+  return { conversations, messages, llm, quotes, contracts, invoices, customers, files, users, identity, bus, email, emailer, sentEmails, flow };
 }
 
 Deno.test("handle-chat-message integration: appends [user, assistant] messages and updates preview", async () => {
@@ -103,7 +106,8 @@ Deno.test("handle-chat-message integration: action 'create_quote' creates a real
   assertEquals(stored.summary, "Quote: 2-Car Garage Epoxy Floor");
   assertEquals(stored.status, "draft");
   assertEquals(stored.lineItems.length, 2);
-  assertEquals(stored.estimatedTotal, 2_520);                  // (84_000 + 168_000) / 100
+  assertEquals(stored.estimatedTotal, 252_000);                // INTEGER CENTS — sum of amountCents (audit1 #3)
+  assertEquals(stored.lineItems[0].price, 84_000);             // CENTS — identity copy from amountCents
   assertEquals(stored.customerId, "cust-1");                   // inherited from the conversation
 
   // Conversation still points at its bound customer + new quote.
@@ -262,5 +266,114 @@ Deno.test("handle-chat-message integration: 'lock_quote' without a customer emai
   assertEquals((await quotes.getOwned(draft.id, "u-1")).status, "sent");
   // No SMTP call captured.
   assertEquals(sentEmails.length, 0);
+  await resetKv();
+});
+
+Deno.test("handle-chat-message integration: P1.1 onboarding — asks for name when user has none and short-circuits the LLM", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, users, flow } = fresh();
+  llm.setScript([{ text: "should-not-fire" }]); // LLM should be skipped
+
+  await users.create({ phoneNumber: "+15125550100" });
+  const me = await users.findByPhone("+15125550100");
+  assert(me);
+  const conv = await conversations.create({ userId: me!.id });
+
+  const result = await flow.run({ userId: me!.id, conversationId: conv.id, content: "Hey" });
+
+  assertEquals(result.newMessages.length, 2);
+  assertEquals(result.newMessages[1].role, "assistant");
+  assert(result.newMessages[1].content.startsWith("Hey 👋 quick one"));
+  // The user's name didn't change (we didn't extract anything).
+  const fresh1 = await users.get(me!.id);
+  assertEquals(fresh1.name, undefined);
+  await resetKv();
+});
+
+Deno.test("handle-chat-message integration: P1.1 onboarding — extracts name + business and persists", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, users, identity, flow } = fresh();
+  llm.setScript([{ text: "should-not-fire" }]);
+
+  await users.create({ phoneNumber: "+15125550100" });
+  const me = await users.findByPhone("+15125550100");
+  assert(me);
+  const conv = await conversations.create({ userId: me!.id });
+
+  // Step 1: Bossie asks
+  await flow.run({ userId: me!.id, conversationId: conv.id, content: "Hey" });
+  // Step 2: User replies with name + biz
+  const result = await flow.run({
+    userId: me!.id,
+    conversationId: conv.id,
+    content: "Diego, Riley Roofing Co.",
+  });
+
+  const after = await users.get(me!.id);
+  assertEquals(after.name, "Diego");
+  const ident = await identity.get(me!.id);
+  assertEquals(ident?.businessName, "Riley Roofing Co.");
+  // Acknowledgement uses the first name.
+  assertEquals(result.newMessages[1].content, "Got it, Diego — what can I help you with?");
+  await resetKv();
+});
+
+Deno.test("handle-chat-message integration: P1.1 onboarding — does not fire on voice messages", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, users, flow } = fresh();
+  llm.setScript([{ text: "Got it — what zip code is the job in?" }]);
+
+  await users.create({ phoneNumber: "+15125550100" });
+  const me = await users.findByPhone("+15125550100");
+  assert(me);
+  const conv = await conversations.create({ userId: me!.id });
+
+  const result = await flow.run({
+    userId: me!.id,
+    conversationId: conv.id,
+    kind: "voice",
+    content: "[voice memo transcript]",
+  });
+
+  // Voice path goes straight to the LLM, no onboarding ask.
+  assertEquals(result.newMessages[1].content, "Got it — what zip code is the job in?");
+  await resetKv();
+});
+
+Deno.test("handle-chat-message integration: P1.1 onboarding — quote-shaped first message skips the ask, hits the LLM", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, users, flow } = fresh();
+  llm.setScript([{ text: "Got it — what zip code is the job in?" }]);
+
+  await users.create({ phoneNumber: "+15125550100" });
+  const me = await users.findByPhone("+15125550100");
+  assert(me);
+  const conv = await conversations.create({ userId: me!.id });
+
+  // The opening message has a quote signal ($) — shouldn't be parsed as
+  // a name reply, but ALSO shouldn't fire the ask (we'd be interrupting
+  // a real request). We let the LLM handle it.
+  const result = await flow.run({
+    userId: me!.id,
+    conversationId: conv.id,
+    content: "Hey",
+  });
+  // First message was just "Hey" — the ask fires.
+  assert(result.newMessages[1].content.startsWith("Hey 👋 quick one"));
+
+  // Second message — user types a real request instead of a name.
+  const result2 = await flow.run({
+    userId: me!.id,
+    conversationId: conv.id,
+    content: "Quote a 2-car garage epoxy floor for the Hernandez family — $480",
+  });
+  // Should hit the LLM, not the ask. The user's name still isn't set.
+  assertEquals(result2.newMessages[1].content, "Got it — what zip code is the job in?");
+  const after = await users.get(me!.id);
+  assertEquals(after.name, undefined);
   await resetKv();
 });

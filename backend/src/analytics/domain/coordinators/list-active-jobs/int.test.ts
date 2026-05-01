@@ -21,7 +21,7 @@ Deno.test("list-active-jobs integration: quote without a contract is 'awaiting s
   await resetKv();
   const { customers, quotes, flow } = fresh();
   const cust = await customers.create("u-1", { name: "Acme" });
-  await quotes.create("u-1", { summary: "Re-roof", lineItems: [], status: "sent", customerId: cust.id, estimatedTotal: 4_800 });
+  await quotes.create("u-1", { summary: "Re-roof", lineItems: [], status: "sent", customerId: cust.id, estimatedTotal: 4_800_00 });
   const jobs = await flow.run("u-1", NOW);
   assertEquals(jobs.length, 1);
   assertEquals(jobs[0].status, "awaiting");
@@ -35,16 +35,17 @@ Deno.test("list-active-jobs integration: signed contract + paid + pending invoic
   await resetKv();
   const { customers, quotes, contracts, invoices, flow } = fresh();
   const cust = await customers.create("u-1", { name: "Maple Grove Apartments" });
-  const q    = await quotes.create("u-1", { summary: "Re-roof bldg C", lineItems: [], status: "accepted", customerId: cust.id, estimatedTotal: 4_800 });
-  const c    = await contracts.create("u-1", { quoteId: q.id, status: "signed", totalAmount: 4_800 });
-  await invoices.create("u-1", { contractId: c.id, dueDate: "2026-04-20", status: "paid",    amount: 2_400, paidAt: "2026-04-10T00:00:00Z" });
-  await invoices.create("u-1", { contractId: c.id, dueDate: "2026-05-20", status: "pending", amount: 2_400 });
+  // Audit1 #3 — money fields are INTEGER CENTS (`_00` marks the dollar intent).
+  const q    = await quotes.create("u-1", { summary: "Re-roof bldg C", lineItems: [], status: "accepted", customerId: cust.id, estimatedTotal: 4_800_00 });
+  const c    = await contracts.create("u-1", { quoteId: q.id, status: "signed", totalAmount: 4_800_00 });
+  await invoices.create("u-1", { contractId: c.id, dueDate: "2026-04-20", status: "paid",    amount: 2_400_00, paidAt: "2026-04-10T00:00:00Z" });
+  await invoices.create("u-1", { contractId: c.id, dueDate: "2026-05-20", status: "pending", amount: 2_400_00 });
 
   const jobs = await flow.run("u-1", NOW);
   assertEquals(jobs.length, 1);
   assertEquals(jobs[0].status, "on_track");
-  assertEquals(jobs[0].totalCents, 480_000);
-  assertEquals(jobs[0].paidCents,  240_000);
+  assertEquals(jobs[0].totalCents, 4_800_00);
+  assertEquals(jobs[0].paidCents,  2_400_00);
   assertEquals(jobs[0].pctPaid, 50);
   assertEquals(jobs[0].nextDueDate, "2026-05-20");
   await resetKv();
@@ -55,9 +56,9 @@ Deno.test("list-active-jobs integration: an overdue invoice flips status to 'ove
   await resetKv();
   const { customers, quotes, contracts, invoices, flow } = fresh();
   const cust = await customers.create("u-1", { name: "Hilltop Diner" });
-  const q    = await quotes.create("u-1", { summary: "Patio re-tile", lineItems: [], status: "accepted", customerId: cust.id, estimatedTotal: 3_400 });
-  const c    = await contracts.create("u-1", { quoteId: q.id, status: "signed", totalAmount: 3_400 });
-  await invoices.create("u-1", { contractId: c.id, dueDate: "2026-03-01", status: "pending", amount: 1_160 });
+  const q    = await quotes.create("u-1", { summary: "Patio re-tile", lineItems: [], status: "accepted", customerId: cust.id, estimatedTotal: 3_400_00 });
+  const c    = await contracts.create("u-1", { quoteId: q.id, status: "signed", totalAmount: 3_400_00 });
+  await invoices.create("u-1", { contractId: c.id, dueDate: "2026-03-01", status: "pending", amount: 1_160_00 });
 
   const jobs = await flow.run("u-1", NOW);
   assertEquals(jobs[0].status, "overdue");
@@ -69,9 +70,9 @@ Deno.test("list-active-jobs integration: all invoices paid + signed → 'complet
   await resetKv();
   const { customers, quotes, contracts, invoices, flow } = fresh();
   const cust = await customers.create("u-1", { name: "Sarah Chen" });
-  const q    = await quotes.create("u-1", { summary: "Bath remodel", lineItems: [], status: "accepted", customerId: cust.id, estimatedTotal: 8_200 });
-  const c    = await contracts.create("u-1", { quoteId: q.id, status: "signed", totalAmount: 8_200 });
-  await invoices.create("u-1", { contractId: c.id, dueDate: "2026-04-01", status: "paid", amount: 8_200, paidAt: "2026-03-28T00:00:00Z" });
+  const q    = await quotes.create("u-1", { summary: "Bath remodel", lineItems: [], status: "accepted", customerId: cust.id, estimatedTotal: 8_200_00 });
+  const c    = await contracts.create("u-1", { quoteId: q.id, status: "signed", totalAmount: 8_200_00 });
+  await invoices.create("u-1", { contractId: c.id, dueDate: "2026-04-01", status: "paid", amount: 8_200_00, paidAt: "2026-03-28T00:00:00Z" });
 
   const jobs = await flow.run("u-1", NOW);
   assertEquals(jobs[0].status, "complete");

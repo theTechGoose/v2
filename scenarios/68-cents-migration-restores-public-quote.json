@@ -1,0 +1,29 @@
+{
+  "id": "cents-migration-restores-public-quote",
+  "name": "Pre-migration $350 quote renders as $350.00 on the public page after the cents backfill",
+  "description": "The cents-shape unification (fmtMoney(cents)) caused legacy KV rows persisted as dollars to render at 1/100 their real scale on customer-facing pages. The one-shot backfill (backend/scripts/backfill-cents.ts) multiplies legacy rows × 100 and stamps _centsMigrated: true. After the script runs, every public quote/contract/invoice URL must show the original real money figure.",
+  "category": "customer-email",
+  "surface": ["public-quote", "public-contract", "public-invoice"],
+  "channel": "email",
+  "persona": {
+    "name": "Asha Patel",
+    "role": "Customer who got a fence-repair quote earlier this month",
+    "context": "Click-throughs from her email; sees the document her contractor sent."
+  },
+  "preconditions": [
+    "Quote 4ae8722b-… persisted pre-migration with estimatedTotal=350 (dollar-shape)",
+    "Backfill script has been run on the KV, stamping _centsMigrated:true and rewriting estimatedTotal=35000"
+  ],
+  "steps": [
+    { "actor": "customer", "action": "Opens /q/4ae8722b-… on her phone", "expect": "Quote summary reads 'Fence repair — Patel'; estimated total renders as $350.00 (NOT $3.50)" },
+    { "actor": "system",   "action": "Reads the persisted Quote", "expect": "estimatedTotal === 35000 (cents); fmtMoneyExact(35000) returns '$350.00'" },
+    { "actor": "customer", "action": "Looks at the line items table", "expect": "Each line price renders cents-correct (e.g. $250.00 + $100.00, not $2.50 + $1.00)" },
+    { "actor": "system",   "action": "Action card in /assistant for the same quote", "expect": "Already rendered $350.00 before the backfill — was sourced from totalCents in the message payload, not from the persisted DTO" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Public quote, public contract, public invoice all share the same cents-correct money rendering across legacy + new rows" },
+    { "aspect": "feel",          "check": "Customer trusts the document — no $3.50 surprise that would prompt a confused reply" },
+    { "aspect": "functionality", "check": "Backfill is idempotent (rerun is a no-op because _centsMigrated:true skips); persisted shape is consistent across stores" },
+    { "aspect": "accessibility", "check": "Money figures are readable as currency by screen readers ('three hundred fifty dollars' via the currency formatter)" }
+  ]
+}

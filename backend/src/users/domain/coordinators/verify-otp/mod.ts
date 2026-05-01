@@ -12,7 +12,7 @@ export class ExpiredCodeError    extends Error { constructor() { super("expired"
 export class RateLimitedError    extends Error { constructor() { super("rate_limited");    this.name = "RateLimitedError"; } }
 
 export interface VerifyOtpInput  { phoneNumber: string; code: string; }
-export interface VerifyOtpResult { sessionId: string; userId: string; }
+export interface VerifyOtpResult { sessionId: string; userId: string; isNewUser: boolean; }
 
 /**
  * VerifyOtp — confirm the code, find-or-create the User, mint a session.
@@ -58,6 +58,6 @@ export class VerifyOtp {
       : await this.users.create({ phoneNumber: phone, language });
 
     const session = await this.sessions.create(user.id);
-    return { sessionId: session.id, userId: user.id };
+    return { sessionId: session.id, userId: user.id, isNewUser: !existing };
   }
 }

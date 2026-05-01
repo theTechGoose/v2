@@ -1,0 +1,28 @@
+{
+  "id": "payments-record-cta-deeplink",
+  "name": "Hero CTAs on /payments deeplink into the assistant with a pre-filled prompt",
+  "description": "The 'Record a payment' and 'Export this month' buttons in the /payments hero used to be decorative. They now anchor to /assistant?seed=<prompt>. AsstChat reads the seed param, pre-fills the composer with a starter line, focuses the textarea, and strips the param from the URL so a refresh doesn't re-seed.",
+  "category": "payments",
+  "surface": ["/payments", "/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Just got cash from a client; wants to log it without typing the framing sentence himself."
+  },
+  "preconditions": [
+    "User authenticated and on /payments"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Clicks 'Record a payment' in the hero", "expect": "Browser navigates to /assistant?seed=Record%20a%20payment%20I%20just%20received." },
+    { "actor": "system", "action": "AsstChat mounts and reads the seed param", "expect": "Composer textarea is pre-filled with 'Record a payment I just received.'; textarea has focus; URL is now /assistant (param stripped via history.replaceState)" },
+    { "actor": "user",   "action": "Hard-refreshes the page", "expect": "No re-seed (the URL no longer carries the param); textarea state is whatever localStorage held, NOT the seed" },
+    { "actor": "user",   "action": "Returns to /payments and clicks 'Export this month'", "expect": "Same behavior with seed='Export this month's payments as a CSV.'; user can edit before sending" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "The CTAs render visually identical to their original button form (text-decoration:none on .pph__cta and .pph__ghost)" },
+    { "aspect": "feel",          "check": "The deeplink feels intentional — the user lands in the right surface with the right sentence ready to send" },
+    { "aspect": "functionality", "check": "useEffect runs once on mount; seed handling is idempotent across navigation" },
+    { "aspect": "accessibility", "check": "Anchors carry the same accessible name as the original buttons; keyboard Enter activates them" }
+  ]
+}

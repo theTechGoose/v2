@@ -18,6 +18,7 @@ import { LockQuote } from "@agents/domain/coordinators/lock-quote/mod.ts";
 import { AcceptContract } from "@agents/domain/coordinators/accept-contract/mod.ts";
 import { SendContract } from "@agents/domain/coordinators/send-contract/mod.ts";
 import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
+import { StartOnboardingConversation } from "@agents/domain/coordinators/start-onboarding-conversation/mod.ts";
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
 import type { LLMClient } from "@agents/domain/business/llm/base/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
@@ -75,6 +76,7 @@ const LlmClientClass = await selectLLMClass();
     AcceptContract,
     SendContract,
     SendInvoice,
+    StartOnboardingConversation,
     { token: LLM_CLIENT, useClass: LlmClientClass },
   ],
 })

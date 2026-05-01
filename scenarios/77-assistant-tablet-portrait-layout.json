@@ -1,0 +1,29 @@
+{
+  "id": "assistant-tablet-portrait-layout",
+  "name": "/assistant on iPad portrait — three-column shell collapses cleanly",
+  "description": "On 1024×1366 portrait (iPad Pro), the standard three-column /assistant layout (sidebar / threads / chat) doesn't fit. The threads column should collapse to a drawer triggered by a button in the chat header; the sidebar stays as a thin rail; the chat composer is touch-friendly.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "iPad-on-job-site user",
+    "context": "Holds the iPad in portrait while talking to a customer. Wants to glance at his thread list when needed."
+  },
+  "preconditions": [
+    "Viewport ~ 1024×1366; tablet user-agent or pointer:coarse",
+    "Existing thread list with 5+ conversations"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /assistant in portrait", "expect": "Sidebar is in narrow rail mode (icons only); threads drawer is closed; chat takes the full remaining width" },
+    { "actor": "user",   "action": "Taps the threads-drawer toggle in the chat header", "expect": "Drawer slides in from the left, overlaying the chat; tapping outside closes it" },
+    { "actor": "user",   "action": "Picks a thread", "expect": "Drawer auto-closes; chat updates to the picked thread" },
+    { "actor": "user",   "action": "Rotates to landscape", "expect": "Three-column layout returns; drawer state resets" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Sidebar rail icons retain hover states; chat composer doesn't shrink below 14px font" },
+    { "aspect": "feel",          "check": "Tablet behavior reads as 'designed-for', not 'desktop squeezed onto tablet'" },
+    { "aspect": "functionality", "check": "Orientation change is responsive (matchMedia listener), not a full reload" },
+    { "aspect": "accessibility", "check": "Drawer toggle has aria-expanded; focus traps inside drawer when open and returns on close" }
+  ]
+}

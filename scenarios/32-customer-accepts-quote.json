@@ -1,0 +1,29 @@
+{
+  "id": "customer-accepts-quote",
+  "name": "Customer accepts the quote on the public page",
+  "description": "From the public quote page, customer taps Accept. They see a confirmation, and the contractor sees the status flip to 'won' and a notification appears.",
+  "category": "customer-email",
+  "surface": ["public-quote", "/quotes", "/dashboard"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Asha Patel",
+    "role": "Homeowner",
+    "context": "Read the quote, happy with the price, ready to commit."
+  },
+  "preconditions": [
+    "Public quote page loaded for an unaccepted quote",
+    "Diego (contractor) has dashboard open in another tab"
+  ],
+  "steps": [
+    { "actor": "customer", "action": "Taps 'Accept'", "expect": "Confirmation step (small modal): 'Confirm acceptance — total $430.00. Diego will be in touch.' with Accept and Cancel" },
+    { "actor": "customer", "action": "Confirms", "expect": "Page updates to 'Accepted ✓' state with a friendly thank-you and next-step text ('Diego will text you to schedule')" },
+    { "actor": "system",   "action": "Backend marks quote decided=won", "expect": "Diego's /quotes shows the quote in decided-won; live activity pill on /dashboard shows 'Patel accepted your quote'" },
+    { "actor": "system",   "action": "Internal notification fires to Diego", "expect": "Push/SMS/email per Diego's preferences within ~30s; bell counter increments" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Accepted state feels celebratory but not gaudy" },
+    { "aspect": "feel",          "check": "Customer never sees an error after Accept — even if the network blips, retry is invisible" },
+    { "aspect": "functionality", "check": "Double-tapping Accept doesn't double-submit; idempotent accept endpoint" },
+    { "aspect": "accessibility", "check": "Confirmation modal traps focus and has a labelled close button" }
+  ]
+}

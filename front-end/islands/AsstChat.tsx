@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { assistantClient, type ContractLite, type CustomerLite, type Message } from "../clients/assistant.ts";
 import { filesClient } from "../clients/files.ts";
+import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
 
 type WizardFieldType = "percent" | "number" | "currency" | "days" | "text";
 
@@ -54,21 +55,31 @@ interface Props {
   userInitials?: string;
 }
 
-/** Derive a stable 1-2 letter avatar string from whatever user fields we have.
- *  Order: full name → first+last initials. Single-token name → first 2 letters.
- *  No name → last 2 digits of phone. Nothing → "?". Used by the assistant chat
- *  bubble; the previous version hardcoded "DR" which surfaced on every account
- *  including users with no name set. */
-export function deriveUserInitials(input: { name?: string; phoneNumber?: string }): string {
+/** Derive a stable 1-2 letter avatar string. Mirrors the backend
+ *  `computeInitials(name, businessName)` so the chat bubble matches the
+ *  sidebar disc. Single-token name + a business → first letter of each
+ *  ("Diego" + "Riley Roofing Co." → "DR"). No name and no business →
+ *  "👤". Phone digits are never used. */
+export function deriveUserInitials(input: { name?: string; businessName?: string; phoneNumber?: string }): string {
   const name = input.name?.trim();
+  const biz = input.businessName?.trim();
   if (name) {
     const parts = name.split(/\s+/).filter(Boolean);
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    if (parts.length === 1) {
+      if (biz) {
+        const bizParts = biz.split(/\s+/).filter(Boolean);
+        if (bizParts.length >= 1) return (parts[0][0] + bizParts[0][0]).toUpperCase();
+      }
+      return parts[0].slice(0, 2).toUpperCase();
+    }
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
-  const phone = input.phoneNumber?.replace(/\D/g, "");
-  if (phone && phone.length >= 2) return phone.slice(-2);
-  return "?";
+  if (biz) {
+    const bizParts = biz.split(/\s+/).filter(Boolean);
+    if (bizParts.length >= 2) return (bizParts[0][0] + bizParts[1][0]).toUpperCase();
+    if (bizParts.length === 1) return bizParts[0].slice(0, 2).toUpperCase();
+  }
+  return "👤";
 }
 
 function fmtTime(ts: number | string): string {
@@ -169,15 +180,45 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
    * firing the answer. Submitting clears it; cancelling clears it too.
    */
   const [followUpPick, setFollowUpPick] = useState<{ messageId: string; optionId: string } | null>(null);
+  // #27 — gates the third empty-state chip ("Nudge an overdue invoice").
+  // null = unknown / not yet loaded → don't render the chip yet (avoids
+  // flashing it on then yanking it away). Sourced from the shared dash
+  // cache so we don't fire a third copy of /analytics/dashboard.
+  const [overdueCount, setOverdueCount] = useState<number | null>(() => {
+    const snap = readCached();
+    return snap?.stats?.invoices.overdue ?? null;
+  });
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recElapsed, setRecElapsed] = useState(0);
+  /** Live transcript surfaced from the Web Speech API. `interim` updates
+   *  as the user keeps speaking; `final` accumulates each finalised chunk
+   *  and is what we send when the user taps Stop. */
+  const [liveInterim, setLiveInterim] = useState("");
+  const [liveFinal, setLiveFinal] = useState("");
+  /** Smoothed audio level 0..1 driven by an AnalyserNode — used to
+   *  animate the visualizer bars so the user has unambiguous feedback
+   *  that the mic is hearing them. */
+  const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState<string | undefined>();
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recChunksRef = useRef<Blob[]>([]);
   const recStartRef = useRef<number>(0);
   const recTickRef = useRef<number | null>(null);
+  const recStreamRef = useRef<MediaStream | null>(null);
+  /** Accumulated final transcript from AssemblyAI's `Turn` frames with
+   *  `end_of_turn=true`. Lives in a ref because the audio-process and
+   *  WS callbacks fire too fast for React state to be authoritative. */
+  const finalSoFarRef = useRef<string>("");
+  // Web Audio plumbing — one AudioContext drives both the visualizer
+  // (AnalyserNode) and the STT pipe (ScriptProcessor → WS).
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sttSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const sttProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const sttSocketRef = useRef<WebSocket | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const levelRafRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -187,6 +228,85 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
     setCustomer(initialCustomer);
     setContract(initialContract);
   }, [conversationId]);
+
+  // ?seed=… pre-fills the composer from a deeplink (e.g. hero CTAs on
+  // /payments / /invoices / /contracts → "Ask Bossie to record a payment").
+  // We strip the param after seeding so a refresh doesn't re-seed.
+  useEffect(() => {
+    if (typeof globalThis.window === "undefined") return;
+    const url = new URL(globalThis.location.href);
+    const seed = url.searchParams.get("seed");
+    if (!seed) return;
+    setDraft(seed);
+    url.searchParams.delete("seed");
+    globalThis.history.replaceState({}, "", url.toString());
+    // Focus on next paint so the composer expands and the user can edit/send.
+    queueMicrotask(() => taRef.current?.focus());
+  }, []);
+
+  // #27 — subscribe to the shared dash cache so the empty-state chip
+  // gating stays fresh even when the dashboard sidebar (the usual driver
+  // of the cache) is the one that triggers the refresh.
+  useEffect(() => {
+    let alive = true;
+    const unsub = subscribeDash((snap) => {
+      if (!alive) return;
+      setOverdueCount(snap.stats?.invoices.overdue ?? 0);
+    });
+    refreshDash().then((snap) => {
+      if (!alive) return;
+      setOverdueCount(snap.stats?.invoices.overdue ?? 0);
+    });
+    return () => {
+      alive = false;
+      unsub();
+    };
+  }, []);
+
+  // P6.12: keep the chat header fresh while the conversation evolves. The
+  // SSR-rendered header on /assistant (no threadId) starts as
+  // "New conversation" and never updates. Broadcast a CustomEvent whenever
+  // the bound customer or contract status changes so a sibling island can
+  // swap the title in place — no page reload needed.
+  useEffect(() => {
+    if (typeof globalThis.window === "undefined") return;
+    const client = customer?.name?.trim();
+    const contractStatus = contract?.status;
+    // Find the most recent quote action_card to derive a meaningful
+    // status. "Drafting…" used to fire as soon as a conversation existed,
+    // which mis-labelled the header on the literal first turn (audit #13).
+    const lastQuoteCard = [...messages].reverse().find((m) => {
+      if (m.kind !== "action_card") return false;
+      const p = m.payload as ActionCardPayload | undefined;
+      return p?.actionType === "quote" || p?.actionType == null;
+    });
+    const quoteStatus = (lastQuoteCard?.payload as ActionCardPayload | undefined)?.status;
+    // The most recent phase_divider tells us where the conversation is in
+    // the wizard timeline. Phase 2 (terms) lands the moment the user
+    // clicks Continue, BEFORE a contract row exists — without this hook
+    // the header sat at "Quote sent" through the entire wizard, which
+    // broke #15 (chip didn't update on transition).
+    const lastDivider = [...messages].reverse().find((m) => m.kind === "phase_divider");
+    const dividerPhase = (lastDivider?.payload as { phase?: number } | undefined)?.phase;
+    let status = "Tell Bossie about a job — voice or text";
+    if (contractStatus === "signed") status = "Contract signed";
+    else if (contractStatus === "sent") status = "Contract out for signature";
+    else if (contract) status = "Contract drafting";
+    else if (dividerPhase === 4) status = "Contract accepted";
+    else if (dividerPhase === 3) status = "Contract sent";
+    else if (dividerPhase === 2) status = "Setting up contract terms";
+    else if (quoteStatus === "accepted") status = "Quote accepted";
+    else if (quoteStatus === "sent") status = "Quote sent";
+    else if (lastQuoteCard) status = "Quote drafted · review";
+    // No status chip at all on a brand-new thread — "Drafting…" before
+    // anything has been drafted reads as broken state.
+    const headerClient = client ?? (lastQuoteCard ? "Conversation" : "New conversation");
+    globalThis.window.dispatchEvent(
+      new CustomEvent("pm:asst-header", {
+        detail: { client: headerClient, status },
+      }),
+    );
+  }, [customer?.name, contract?.id, contract?.status, convoId, messages.length]);
 
   // Keep the composer focused: on first mount (so users can just start typing)
   // and again whenever the assistant finishes a turn (sending: true → false).
@@ -304,6 +424,45 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
           ...m.filter((msg) => msg.id !== tmpId),
           ...res.newMessages!,
         ]);
+        // If this turn produced an onboarding ack/handoff, the user just
+        // saved a profile field (name / business / state / address) —
+        // refresh the dash cache so the sidebar's identity card rebuilds
+        // in real time. Cheap pattern match: the strings are stable
+        // server-side ack copy.
+        const onboardingHit = res.newMessages.some((msg) => {
+          if (msg.role !== "assistant" || msg.kind !== "text") return false;
+          const c = (msg.content ?? "").trim();
+          return c.startsWith("Nice to meet you,") ||
+            c.startsWith("Almost there.") ||
+            c.startsWith("Last one,") ||
+            c.startsWith("Awesome — we're set,");
+        });
+        const handoffFired = res.newMessages.some((msg) => {
+          if (msg.role !== "assistant" || msg.kind !== "text") return false;
+          return (msg.content ?? "").trim().startsWith("Awesome — we're set,");
+        });
+        if (onboardingHit) {
+          refreshDash().catch(() => { /* best-effort */ });
+          if (typeof globalThis.window !== "undefined") {
+            globalThis.window.dispatchEvent(new CustomEvent("pm:profile-updated"));
+          }
+        }
+        // Right after the handoff, surface the "see what your customer
+        // sees" demo chip as a synthetic local-only message. We don't
+        // persist it server-side — it's a one-time UX cue that goes
+        // away on reload. The msg id prefix lets the renderer recognize
+        // it and swap in the chip UI.
+        if (handoffFired) {
+          const demoMsg = {
+            id: `local-onboard-demo-${Date.now()}`,
+            conversationId: convoId ?? "",
+            role: "assistant",
+            kind: "text",
+            content: "PM_ONBOARDING_DEMO_CTA",
+            createdAt: Date.now(),
+          } as unknown as Message;
+          setMessages((m) => [...m, demoMsg]);
+        }
       } else if (res.message) {
         setMessages((m) => [
           ...m.filter((msg) => msg.id !== tmpId),
@@ -338,23 +497,35 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
 
   /**
    * Voice path: upload the recorded blob to /files, then post a chat
-   * turn with kind=voice + payload.fileId. The backend transcribes via
-   * AssemblyAI and returns the persisted user message with the transcript
-   * as content — that replaces our "Transcribing…" stub bubble.
+   * turn with kind=voice + payload.fileId. The backend re-transcribes
+   * via its own pipeline (authoritative) and returns the persisted
+   * user message with the transcript as content — that replaces our
+   * optimistic bubble.
+   *
+   * `liveTranscript` is the realtime transcript captured client-side
+   * via the AssemblyAI streaming proxy. We use it as the optimistic
+   * bubble copy so the user sees their words land immediately rather
+   * than a generic "Transcribing…" placeholder.
    */
-  async function sendVoice(blob: Blob, elapsedSec: number) {
+  async function sendVoice(blob: Blob, elapsedSec: number, liveTranscript?: string) {
+    const optimisticContent = liveTranscript && liveTranscript.length > 0
+      ? liveTranscript
+      : `🎙️ Voice memo · ${elapsedSec}s · ${fmtKB(blob.size)} — transcribing…`;
     await submitTurn(
       {
         role: "user",
         kind: "voice",
-        content: `🎙️ Voice memo · ${elapsedSec}s · ${fmtKB(blob.size)} — transcribing…`,
+        content: optimisticContent,
       },
       async () => {
         const file = await filesClient.uploadBlob(blob, `voice-${Date.now()}.webm`);
         return await assistantClient.chat({
           conversationId: convoId,
           kind: "voice",
-          payload: { fileId: file.id },
+          payload: {
+            fileId: file.id,
+            ...(liveTranscript ? { transcript: liveTranscript } : {}),
+          },
         }) as {
           conversation?: { id: string };
           newMessages?: Message[];
@@ -715,8 +886,134 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
     }
   }
 
+  /** Tear down everything the recording path opened: MediaRecorder, the
+   *  AssemblyAI WS, the audio-level RAF loop, the elapsed timer, and the
+   *  mic stream's tracks. Safe to call multiple times. */
+  function teardownRecording() {
+    if (recTickRef.current) { clearInterval(recTickRef.current); recTickRef.current = null; }
+    if (levelRafRef.current) { cancelAnimationFrame(levelRafRef.current); levelRafRef.current = null; }
+    try { (sttSocketRef.current as WebSocket | null)?.close(); } catch { /* ignore */ }
+    sttSocketRef.current = null;
+    try { sttProcessorRef.current?.disconnect(); } catch { /* ignore */ }
+    sttProcessorRef.current = null;
+    try { sttSourceRef.current?.disconnect(); } catch { /* ignore */ }
+    sttSourceRef.current = null;
+    try { audioCtxRef.current?.close(); } catch { /* ignore */ }
+    audioCtxRef.current = null;
+    analyserRef.current = null;
+    recStreamRef.current?.getTracks().forEach((t) => t.stop());
+    recStreamRef.current = null;
+    setAudioLevel(0);
+  }
+
+  /** Open the WebSocket to our Fresh SSR proxy (`/api/voice/stream`).
+   *  The proxy bridges to AssemblyAI's v3 streaming endpoint with the
+   *  API key kept server-side. Resolves once the upstream sends `Begin`
+   *  (i.e. the session is hot and ready for audio). */
+  function openSttSocket(sampleRate: number): Promise<WebSocket | null> {
+    return new Promise((resolve) => {
+      try {
+        const proto = globalThis.location.protocol === "https:" ? "wss" : "ws";
+        const url = `${proto}://${globalThis.location.host}/api/voice/stream?sample_rate=${sampleRate}`;
+        const ws = new WebSocket(url);
+        ws.binaryType = "arraybuffer";
+        let begun = false;
+        ws.onopen = () => { /* wait for Begin frame from AAI */ };
+        ws.onmessage = (e) => {
+          if (typeof e.data !== "string") return;
+          try {
+            const msg = JSON.parse(e.data);
+            // AssemblyAI v3 message types: Begin / Turn / Termination / error
+            if (msg.type === "Begin") {
+              begun = true;
+              resolve(ws);
+              return;
+            }
+            if (msg.type === "Turn") {
+              const transcript: string = msg.transcript ?? "";
+              if (msg.end_of_turn) {
+                finalSoFarRef.current = (finalSoFarRef.current + " " + transcript).trim();
+                setLiveFinal(finalSoFarRef.current);
+                setLiveInterim("");
+              } else {
+                setLiveInterim(transcript.trim());
+              }
+              return;
+            }
+            if (msg.type === "Termination") {
+              // session over — caller will close
+              return;
+            }
+            if (msg.error || msg.type === "error") {
+              setError(typeof msg.error === "string" ? msg.error : "voice stream error");
+            }
+          } catch { /* non-JSON frame, ignore */ }
+        };
+        ws.onerror = () => {
+          if (!begun) {
+            // The upstream / proxy never came up — resolve null so the
+            // caller can fall back to backend-only transcription.
+            resolve(null);
+          } else {
+            setError("voice stream interrupted");
+          }
+        };
+        ws.onclose = () => { if (!begun) resolve(null); };
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
+  /** Drive `audioLevel` from a tap on the same source feeding the STT
+   *  socket. Smoothed asymmetrically so the bars feel alive. */
+  function startLevelMeter(ctx: AudioContext, source: MediaStreamAudioSourceNode) {
+    try {
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.6;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+      const buf = new Uint8Array(analyser.fftSize);
+      let easedLevel = 0;
+      const tick = () => {
+        if (!analyserRef.current) return;
+        analyserRef.current.getByteTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const v = (buf[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / buf.length);
+        const target = Math.min(1, rms * 2.4);
+        easedLevel = target > easedLevel
+          ? easedLevel + (target - easedLevel) * 0.45
+          : easedLevel + (target - easedLevel) * 0.10;
+        setAudioLevel(easedLevel);
+        levelRafRef.current = requestAnimationFrame(tick);
+      };
+      levelRafRef.current = requestAnimationFrame(tick);
+    } catch { /* visualizer is decorative */ }
+  }
+
+  /** Cancel an in-flight recording without sending. */
+  function cancelRecord() {
+    recChunksRef.current = [];
+    try { recorderRef.current?.stop(); } catch { /* idempotent */ }
+    recorderRef.current = null;
+    teardownRecording();
+    setRecording(false);
+    setLiveInterim("");
+    setLiveFinal("");
+    finalSoFarRef.current = "";
+  }
+
   async function toggleRecord() {
     if (recording) {
+      // Tap-to-stop: finalise the STT socket, then stop MediaRecorder.
+      // The MediaRecorder onstop handler reads the accumulated transcript
+      // and submits the turn.
+      try { (sttSocketRef.current as WebSocket | null)?.send(JSON.stringify({ type: "Terminate" })); } catch { /* ignore */ }
       recorderRef.current?.stop();
       return;
     }
@@ -725,28 +1022,94 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      });
+      recStreamRef.current = stream;
+
+      // 1) MediaRecorder for the authoritative blob (still uploaded to
+      //    /files on stop so the backend's chat handler has the audio
+      //    for archive / re-transcription / training).
       const rec = new MediaRecorder(stream);
       recChunksRef.current = [];
       rec.ondataavailable = (e) => { if (e.data.size > 0) recChunksRef.current.push(e.data); };
       rec.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
-        if (recTickRef.current) { clearInterval(recTickRef.current); recTickRef.current = null; }
-        setRecording(false);
         const elapsed = Math.max(1, Math.round((Date.now() - recStartRef.current) / 1000));
-        const blob = new Blob(recChunksRef.current, { type: rec.mimeType || "audio/webm" });
-        sendVoice(blob, elapsed);
+        const chunks = recChunksRef.current;
+        const transcript = (finalSoFarRef.current.trim() || liveInterim.trim()).trim();
+        teardownRecording();
+        setRecording(false);
+        setLiveInterim("");
+        setLiveFinal("");
+        finalSoFarRef.current = "";
+        if (chunks.length === 0) return;
+        const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+        sendVoice(blob, elapsed, transcript || undefined);
       };
       rec.start();
       recorderRef.current = rec;
+
+      // 2) AudioContext + ScriptProcessor → AssemblyAI streaming WS.
+      const Ctx = (globalThis as unknown as {
+        AudioContext?: new () => AudioContext;
+        webkitAudioContext?: new () => AudioContext;
+      }).AudioContext
+        ?? (globalThis as unknown as { webkitAudioContext?: new () => AudioContext }).webkitAudioContext;
+      if (Ctx) {
+        const ctx = new Ctx();
+        audioCtxRef.current = ctx;
+        const source = ctx.createMediaStreamSource(stream);
+        sttSourceRef.current = source;
+        startLevelMeter(ctx, source);
+
+        // Open WS first so we don't drop the first 100ms of audio
+        // waiting for the upstream Begin.
+        const sampleRate = ctx.sampleRate; // typically 48000
+        const ws = await openSttSocket(sampleRate);
+        sttSocketRef.current = ws;
+
+        if (ws) {
+          // ScriptProcessorNode is deprecated but universally supported
+          // and exactly what we need: a callback every N samples that we
+          // can repackage as Int16 PCM and ship to the WS. AudioWorklet
+          // would be cleaner but requires a separate worklet module file
+          // and adds setup complexity for marginal gain.
+          // deno-lint-ignore deprecation
+          const proc = ctx.createScriptProcessor(4096, 1, 1);
+          sttProcessorRef.current = proc;
+          proc.onaudioprocess = (ev) => {
+            const ws = sttSocketRef.current;
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            const input = ev.inputBuffer.getChannelData(0);
+            const pcm = new Int16Array(input.length);
+            for (let i = 0; i < input.length; i++) {
+              const s = Math.max(-1, Math.min(1, input[i]));
+              pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+            try { ws.send(pcm.buffer); } catch { /* WS may have closed */ }
+          };
+          source.connect(proc);
+          // Sink to a muted gain so the processor stays alive without
+          // playing back through the user's speakers (echo loop).
+          const sink = ctx.createGain();
+          sink.gain.value = 0;
+          proc.connect(sink);
+          sink.connect(ctx.destination);
+        }
+      }
+
       recStartRef.current = Date.now();
       setRecElapsed(0);
+      setLiveInterim("");
+      setLiveFinal("");
+      finalSoFarRef.current = "";
       setRecording(true);
       recTickRef.current = globalThis.setInterval(() => {
         setRecElapsed(Math.round((Date.now() - recStartRef.current) / 1000));
       }, 250) as unknown as number;
     } catch {
       setError("microphone permission denied");
+      teardownRecording();
     }
   }
 
@@ -770,11 +1133,17 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                 <button type="button" class="chat__empty-prompt" onClick={() => sendText("Need a quote for kitchen backsplash, ~30 sqft, white subway tile.")}>
                   Kitchen backsplash quote
                 </button>
-                <button type="button" class="chat__empty-prompt" onClick={() => sendText("Follow up on overdue invoice INV-204.")}>
-                  Nudge an overdue invoice
-                </button>
+                {overdueCount && overdueCount > 0
+                  ? (
+                    <button type="button" class="chat__empty-prompt" onClick={() => sendText("Follow up on the overdue invoices.")}>
+                      Nudge {overdueCount === 1 ? "an overdue invoice" : `${overdueCount} overdue invoices`}
+                    </button>
+                  )
+                  : null}
               </div>
-              {typeof globalThis.location !== "undefined" && globalThis.location.hostname === "localhost"
+              {typeof globalThis.location !== "undefined"
+                && globalThis.location.hostname === "localhost"
+                && new URLSearchParams(globalThis.location.search).has("dev")
                 ? (
                   <div class="chat__empty-debug">
                     <button
@@ -825,9 +1194,21 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
               const wizardStepId = (m.payload as { wizardStepId?: string } | undefined)?.wizardStepId;
               if (m.role === "user" && wizardStepId) {
                 // Compact pick log — one line, no avatar, no bubble.
+                // Real SVG check (not the unstyled ✓ glyph) so it scales
+                // with line-height and gets brand color + a circular pip.
                 return (
-                  <div key={m.id} class="wiz-log">
-                    <span class="wiz-log__check">✓</span>
+                  <div
+                    key={m.id}
+                    class="wiz-log"
+                    style="display:flex;align-items:center;gap:10px;padding:6px 0;font-size:14px;color:var(--fg,#1c2c30);line-height:1.45"
+                  >
+                    <span
+                      class="wiz-log__check"
+                      aria-hidden="true"
+                      style="flex:0 0 auto;width:18px;height:18px;border-radius:50%;background:var(--brand-green,#519843);color:#fff;display:inline-flex;align-items:center;justify-content:center"
+                    >
+                      <I d={ICN.check} size={11} sw={3} />
+                    </span>
                     <span class="wiz-log__text">{m.content}</span>
                   </div>
                 );
@@ -855,6 +1236,28 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
               const payload = (m.payload ?? {}) as { toPhase?: string; summary?: string; contractId?: string };
               const reviewed = (payload.toPhase === "send" || payload.toPhase === "invoice")
                 && reviewedCtas.has(m.id);
+              // Pull the actual delivery outcome from the phase_divider
+              // the server emits AFTER this CTA fires. Falls back to the
+              // local customer.email when no divider is in scope yet
+              // (older threads). Without this the banner can read
+              // "no email on file" even when the dispatch actually
+              // succeeded with a `to:` override.
+              const ctaIdx = visible.indexOf(m);
+              let dispatchedTo: string | undefined;
+              let dispatchFailReason: string | undefined;
+              if (reviewed && ctaIdx >= 0) {
+                for (let i = ctaIdx + 1; i < visible.length; i++) {
+                  const next = visible[i];
+                  if (next.kind !== "phase_divider") continue;
+                  const np = (next.payload ?? {}) as { emailedTo?: string; emailFailureReason?: string };
+                  if (np.emailedTo || np.emailFailureReason) {
+                    dispatchedTo = np.emailedTo;
+                    dispatchFailReason = np.emailFailureReason;
+                    break;
+                  }
+                }
+              }
+              const sentRecipient = dispatchedTo ?? (reviewed ? customer?.email : undefined);
               const previewing = payload.toPhase === "send" && previewCtaId === m.id;
               if (previewing) {
                 const contractId = payload.contractId ?? contract?.id ?? "";
@@ -883,11 +1286,10 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                     if (idx === -1) return { label: raw, value: "" };
                     return { label: raw.slice(0, idx).trim(), value: raw.slice(idx + 1).trim() };
                   });
-                const totalAmount = typeof contract?.totalAmount === "number"
+                const totalCentsForBreakdown = typeof contract?.totalAmount === "number"
                   ? contract.totalAmount
-                  : lineTotalCents / 100;
-                const totalCentsForBreakdown = Math.round(totalAmount * 100);
-                const totalStr = totalAmount.toLocaleString("en-US", {
+                  : lineTotalCents;
+                const totalStr = (totalCentsForBreakdown / 100).toLocaleString("en-US", {
                   minimumFractionDigits: 0,
                   maximumFractionDigits: 2,
                 });
@@ -1018,6 +1420,20 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                   </div>
                 );
               }
+              // Per audit #19: surface the upcoming phase label as an eyebrow
+              // *before* the CTA, so users see "PHASE 2 — CONTRACT TERMS" at
+              // click time, not as a divider that lands after they've already
+              // clicked through. The backend still emits the divider on
+              // transition; once it lands, the chat shows both.
+              const phaseEyebrow = !reviewed
+                ? payload.toPhase === "terms"
+                  ? "Up next · Phase 2 — Contract terms"
+                  : payload.toPhase === "send"
+                    ? "Up next · Send to client"
+                    : payload.toPhase === "invoice"
+                      ? "Up next · Send invoice"
+                      : null
+                : null;
               return (
                 <div key={m.id} class="msg">
                   <div class="msg__avatar"><img src="/logo-monster.png" alt="" /></div>
@@ -1025,6 +1441,11 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                     <div class={`continue-cta ${reviewed ? "continue-cta--done" : ""}`}>
                       <div class="continue-cta__icon"><I d={reviewed ? ICN.check : ICN.contract} size={18} /></div>
                       <div class="continue-cta__txt">
+                        {phaseEyebrow && (
+                          <div style="font-size:10.5px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:var(--brand-pink);margin-bottom:4px">
+                            {phaseEyebrow}
+                          </div>
+                        )}
                         <div class="continue-cta__title">
                           {reviewed
                             ? (payload.toPhase === "invoice" ? "Invoice sent" : "Contract sent")
@@ -1033,9 +1454,11 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                         {reviewed
                           ? (
                             <div class="continue-cta__sub">
-                              {customer?.email
-                                ? <>emailed to <code>{customer.email}</code></>
-                                : <>no email on file — add one to <code>{customer?.name ?? "the customer"}</code> to deliver</>}
+                              {sentRecipient
+                                ? <>emailed to <code>{sentRecipient}</code></>
+                                : dispatchFailReason
+                                  ? <>not delivered — {dispatchFailReason}</>
+                                  : <>no email on file — add one to <code>{customer?.name ?? "the customer"}</code> to deliver</>}
                             </div>
                           )
                           : payload.summary
@@ -1069,6 +1492,7 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                       && payload.toPhase === "send"
                       && typeof globalThis.location !== "undefined"
                       && globalThis.location.hostname === "localhost"
+                      && new URLSearchParams(globalThis.location.search).has("dev")
                       ? (
                         <button
                           type="button"
@@ -1104,7 +1528,14 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                     <div class="wiz">
                       <div class="wiz__step">
                         {typeof payload.stepIdx === "number"
-                          ? <div class="wiz__step-num">Step {payload.stepIdx + 1} of 10</div>
+                          ? (
+                            // #16 — hide the "of 10" total until step 6. Through
+                            // the first half it reads as a daunting commitment;
+                            // past the halfway hump revealing it is reassuring.
+                            <div class="wiz__step-num">
+                              Step {payload.stepIdx + 1}{payload.stepIdx >= 5 ? " of 10" : ""}
+                            </div>
+                          )
                           : null}
                         <h3 class="wiz__step-q">{m.content}</h3>
                         {payload.hint ? <div class="wiz__step-hint">{payload.hint}</div> : null}
@@ -1181,20 +1612,32 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
               const totalCents = payload.totalCents
                 ?? lineItems.reduce((sum, li) => sum + (li.amountCents ?? 0), 0);
               const statusLabel = (payload.status ?? "draft").replace(/^[a-z]/, (c) => c.toUpperCase());
+              // Detect a later action_card for the same quote that has
+              // already advanced past draft. The earlier DRAFT card stays
+              // visible in chat history (audit #18) but its action buttons
+              // would otherwise re-fire against an already-sent quote.
+              const idx = messages.indexOf(m);
+              const supersededBy = payload.quoteId && payload.status === "draft"
+                ? messages.slice(idx + 1).find((later) =>
+                  later.kind === "action_card"
+                  && (later.payload as ActionCardPayload | undefined)?.quoteId === payload.quoteId
+                  && (later.payload as ActionCardPayload | undefined)?.status !== "draft"
+                )
+                : undefined;
+              const isSuperseded = !!supersededBy;
               return (
                 <div key={m.id} class="msg">
                   <div class="msg__avatar"><img src="/logo-monster.png" alt="" /></div>
                   <div style="flex:1;min-width:0">
-                    <div class="action-card">
+                    <div class="action-card" style={isSuperseded ? "opacity:0.55" : undefined}>
                       <div class="action-card__head">
                         <div class="action-card__icon"><I d={ICN.quote} size={16} /></div>
                         <div style="flex:1;min-width:0">
                           <div class="action-card__title">{m.content}</div>
-                          {payload.quoteId
-                            ? <div class="action-card__sub">#{payload.quoteId.slice(0, 8)}</div>
-                            : null}
                         </div>
-                        <span class="action-card__chip">{statusLabel}</span>
+                        <span class="action-card__chip">
+                          {isSuperseded ? "Superseded" : statusLabel}
+                        </span>
                       </div>
                       <div class="action-card__body">
                         {lineItems.map((li, i) => (
@@ -1215,7 +1658,7 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                           )
                           : null}
                       </div>
-                      {payload.status === "draft"
+                      {payload.status === "draft" && !isSuperseded
                         ? (
                           <div class="action-card__cta">
                             <button
@@ -1252,6 +1695,36 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                         )
                         : null}
                     </div>
+                    <div class="msg__time">{fmtTime(m.createdAt)}</div>
+                  </div>
+                </div>
+              );
+            }
+
+            // Synthetic local-only post-handoff demo CTA. Lives in the
+            // chat as a pink chip card so the user sees ONE concrete
+            // next-step ("see what your customer sees") right after the
+            // onboarding handoff. Not persisted; survives only until
+            // refresh.
+            if (m.kind === "text" && m.content === "PM_ONBOARDING_DEMO_CTA") {
+              return (
+                <div key={m.id} class="msg" style="margin-top:6px">
+                  <div class="msg__avatar"><img src="/logo-monster.png" alt="" /></div>
+                  <div style="flex:1;min-width:0">
+                    <a
+                      href="/q/03a22a99-3504-47b4-b6b0-cf62efe881cf"
+                      target="_blank"
+                      rel="noopener"
+                      style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:linear-gradient(135deg,rgba(255,107,107,0.10) 0%,rgba(255,107,107,0.04) 100%);border:1px solid rgba(255,107,107,0.30);border-radius:14px;text-decoration:none;color:inherit;transition:transform 200ms"
+                    >
+                      <span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:#FF6B6B;color:#fff;font-size:18px;flex-shrink:0">👀</span>
+                      <span style="flex:1;min-width:0">
+                        <span style="display:block;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#d94e4e">Try it · 5 seconds</span>
+                        <span style="display:block;margin-top:2px;font-weight:800;color:#144852;font-size:14.5px">See what your customer sees</span>
+                        <span style="display:block;margin-top:2px;font-size:12px;color:#6b7a7e">A live sample quote — branded with everything you just shared. Opens in a new tab.</span>
+                      </span>
+                      <span aria-hidden="true" style="font-size:18px;color:#d94e4e;font-weight:800">→</span>
+                    </a>
                     <div class="msg__time">{fmtTime(m.createdAt)}</div>
                   </div>
                 </div>
@@ -1305,15 +1778,19 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
 
       <div class="composer">
         {error ? <div class="composer__err">{error}</div> : null}
-        <div class={`composer__inner ${recording ? "composer__inner--rec" : ""}`}>
-          {recording
-            ? (
-              <div class="composer__rec">
-                <span class="composer__rec-dot" />
-                Recording · {recElapsed}s — tap mic to stop
-              </div>
-            )
-            : (
+        {recording
+          ? (
+            <RecordingPanel
+              elapsed={recElapsed}
+              level={audioLevel}
+              finalText={liveFinal}
+              interimText={liveInterim}
+              onStop={toggleRecord}
+              onCancel={cancelRecord}
+            />
+          )
+          : (
+            <div class="composer__inner">
               <textarea
                 ref={taRef}
                 class="composer__input"
@@ -1323,30 +1800,174 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                 onInput={(e) => { setDraft((e.target as HTMLTextAreaElement).value); autosize(); }}
                 onKeyDown={onKeyDown}
               />
-            )}
-          <div class="composer__tools">
-            <button
-              type="button"
-              class={`composer__btn ${recording ? "composer__btn--rec" : ""}`}
-              title={recording ? "Stop recording" : "Voice memo"}
-              onClick={toggleRecord}
-              disabled={sending}
-            >
-              <I d={ICN.mic} size={17} />
-            </button>
-            <button
-              type="button"
-              class="composer__send"
-              title="Send"
-              onClick={onSendClick}
-              disabled={sending || recording || !draft.trim()}
-            >
-              <I d={ICN.arrow} size={16} sw={2.4} />
-            </button>
-          </div>
-        </div>
+              <div class="composer__tools">
+                <button
+                  type="button"
+                  class="composer__mic"
+                  aria-label="Voice memo"
+                  title="Tap to talk"
+                  onClick={toggleRecord}
+                  disabled={sending}
+                >
+                  <I d={ICN.mic} size={20} />
+                </button>
+                <button
+                  type="button"
+                  class="composer__send"
+                  title="Send"
+                  onClick={onSendClick}
+                  disabled={sending || !draft.trim()}
+                >
+                  <I d={ICN.arrow} size={16} sw={2.4} />
+                </button>
+              </div>
+            </div>
+          )}
       </div>
     </>
+  );
+}
+
+/** RecordingPanel — glassy "voice mode" surface that takes over the
+ *  composer while the mic is hot.
+ *
+ *  Centerpiece is an animated orb: three concentric circles (core, halo,
+ *  outer halo) each scaled by smoothed audio level, plus three pulse
+ *  rings that ripple outward when level crosses a threshold. The orb
+ *  uses an SVG filter with a soft Gaussian blur for the glow, layered
+ *  under a sharp core so the bloom reads as light, not noise.
+ *
+ *  Below the orb sits a large live transcript — finalised words in full
+ *  brand teal, in-flight interim words in a softer color and italic, so
+ *  the eye understands at a glance which words are "locked in". A small
+ *  fade-in animation on each new finalised chunk makes incoming
+ *  transcript feel alive rather than slammed in. */
+function RecordingPanel(
+  { elapsed, level, finalText, interimText, onStop, onCancel }: {
+    elapsed: number;
+    level: number;
+    finalText: string;
+    interimText: string;
+    onStop: () => void;
+    onCancel: () => void;
+  },
+) {
+  const hasAny = finalText.trim().length > 0 || interimText.trim().length > 0;
+  // Smoothed level → orb scale + glow intensity. The asymmetric easing
+  // happens upstream in startLevelMeter; here we just map.
+  const coreScale = 1 + level * 0.18;
+  const haloScale = 1 + level * 0.42;
+  const outerScale = 1 + level * 0.72;
+  const glowOpacity = 0.35 + level * 0.55;
+  const elapsedLabel = elapsed < 60
+    ? `0:${String(elapsed).padStart(2, "0")}`
+    : `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
+
+  // Use the previous final-text length to key a fade-in span on new
+  // chunks. We split into "old" (already shown) + "new" (just landed)
+  // to animate only the recently transcribed words.
+  const lastFinalLenRef = useRef(0);
+  const oldFinal = finalText.slice(0, lastFinalLenRef.current);
+  const newFinal = finalText.slice(lastFinalLenRef.current);
+  // Update the ref AFTER render so the next render captures what's
+  // already been animated in.
+  useEffect(() => { lastFinalLenRef.current = finalText.length; }, [finalText]);
+
+  return (
+    <div class="rec-panel" role="region" aria-label="Voice memo recording">
+      <div class="rec-panel__bg" aria-hidden="true" />
+      <div class="rec-panel__row">
+        <div class="rec-panel__orb-wrap" aria-hidden="true">
+          <svg class="rec-panel__orb" viewBox="0 0 80 80" width="56" height="56">
+            <defs>
+              <radialGradient id="recOrbCore" cx="50%" cy="45%" r="60%">
+                <stop offset="0%" stop-color="#fff7f7" stop-opacity="1" />
+                <stop offset="55%" stop-color="#ff8a8a" stop-opacity="1" />
+                <stop offset="100%" stop-color="#e63d6d" stop-opacity="1" />
+              </radialGradient>
+              <radialGradient id="recOrbHalo" cx="50%" cy="50%" r="55%">
+                <stop offset="0%" stop-color="#ffb4b4" stop-opacity="0.85" />
+                <stop offset="100%" stop-color="#ff6b9d" stop-opacity="0" />
+              </radialGradient>
+            </defs>
+            {/* Pulse rings */}
+            <circle class="rec-panel__ring rec-panel__ring--1" cx="40" cy="40" r="20" />
+            <circle class="rec-panel__ring rec-panel__ring--2" cx="40" cy="40" r="20" />
+            {/* Outer halo */}
+            <circle
+              cx="40" cy="40" r="34"
+              fill="url(#recOrbHalo)"
+              style={`transform:scale(${outerScale.toFixed(3)});transform-origin:40px 40px;opacity:${glowOpacity.toFixed(3)};transition:transform 70ms ease-out, opacity 90ms ease-out`}
+            />
+            {/* Core */}
+            <circle
+              cx="40" cy="40" r="22"
+              fill="url(#recOrbCore)"
+              style={`transform:scale(${coreScale.toFixed(3)});transform-origin:40px 40px;transition:transform 60ms ease-out`}
+            />
+            {/* Specular highlight */}
+            <ellipse
+              cx="34" cy="35" rx="7" ry="4"
+              fill="rgba(255,255,255,0.55)"
+              style={`transform:scale(${coreScale.toFixed(3)});transform-origin:40px 40px`}
+            />
+          </svg>
+        </div>
+
+        <div class="rec-panel__center">
+          <div class="rec-panel__head">
+            <span class="rec-panel__live">
+              <span class="rec-panel__live-dot" />
+              Live
+            </span>
+            <span class="rec-panel__elapsed">{elapsedLabel}</span>
+          </div>
+          <div class="rec-panel__transcript" aria-live="polite">
+            {hasAny
+              ? (
+                <p class="rec-panel__transcript-text">
+                  <span class="rec-panel__final">{oldFinal}</span>
+                  {newFinal ? <span class="rec-panel__final rec-panel__final--new">{newFinal}</span> : null}
+                  {interimText && finalText ? " " : ""}
+                  <span class="rec-panel__interim">{interimText}</span>
+                  <span class="rec-panel__caret" aria-hidden="true">▍</span>
+                </p>
+              )
+              : (
+                <p class="rec-panel__placeholder">
+                  Start talking — I'll write it out as you speak.
+                </p>
+              )}
+          </div>
+        </div>
+
+        <div class="rec-panel__controls">
+          <button
+            type="button"
+            class="rec-panel__cancel"
+            onClick={onCancel}
+            aria-label="Cancel recording"
+            title="Cancel"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="6" y1="18" x2="18" y2="6" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="rec-panel__stop"
+            onClick={onStop}
+            aria-label="Stop and send"
+            title="Stop & send"
+          >
+            <span class="rec-panel__stop-icon" aria-hidden="true">
+              <span class="rec-panel__stop-square" />
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -1,0 +1,27 @@
+{
+  "id": "clients-top-clients-leaderboard",
+  "name": "Top 5 clients leaderboard",
+  "description": "Sidebar leaderboard ranks clients by lifetime revenue. User uses it as a 'who matters most' anchor and can jump to a client's page from there.",
+  "category": "clients",
+  "surface": ["/clients"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Quarterly review — which 5 clients account for most of his revenue?"
+  },
+  "preconditions": [
+    "Account has 30+ clients with varied revenue history"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Scans the Top Clients widget", "expect": "5 entries with rank, client name/initials, lifetime revenue formatted as currency" },
+    { "actor": "user",   "action": "Clicks #1", "expect": "Navigates to that client's profile / drawer with full timeline" },
+    { "actor": "user",   "action": "Returns to /clients", "expect": "Leaderboard data is the same (cached); no 'loading...' shimmer for already-fetched results" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Rank numbers are visually weighted; #1 stands out from #5" },
+    { "aspect": "feel",          "check": "Tied revenues are broken with a stable secondary sort (e.g. last contact)" },
+    { "aspect": "functionality", "check": "Revenue figures match the sum of paid invoices for that client — sanity check against a known account" },
+    { "aspect": "accessibility", "check": "Leaderboard is an ol with li children; rank conveyed via list semantics not just visuals" }
+  ]
+}

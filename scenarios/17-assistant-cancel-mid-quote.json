@@ -1,0 +1,27 @@
+{
+  "id": "assistant-cancel-mid-quote",
+  "name": "User abandons a half-drafted quote",
+  "description": "User starts a quote, then says 'never mind, scrap that'. The draft must not silently linger in /quotes as a phantom draft.",
+  "category": "assistant",
+  "surface": ["/assistant", "/quotes"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Started talking through a job, customer texted back saying they went with someone else. Wants to abandon."
+  },
+  "preconditions": [
+    "Active draft quote in the current thread"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types 'Never mind, scrap that.'", "expect": "Assistant confirms: 'Got it — discarding the draft. Anything else?' with a clear undo affordance" },
+    { "actor": "user",   "action": "Opens /quotes", "expect": "The just-cancelled draft is NOT in the active pipeline — either deleted or shown only in an Archived tab" },
+    { "actor": "user",   "action": "Returns to /assistant and types 'Wait, bring it back.'", "expect": "If undo window still valid, the draft restores; otherwise a graceful 'too late, want to start over?'" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Cancellation confirmation is unmistakable, not a tiny grey toast" },
+    { "aspect": "feel",          "check": "User feels in control — the app didn't quietly send something they meant to abandon" },
+    { "aspect": "functionality", "check": "Backend marks the quote as discarded with a timestamp — auditable, not just hard-deleted" },
+    { "aspect": "accessibility", "check": "Toast/undo is reachable via keyboard within the announcement window" }
+  ]
+}

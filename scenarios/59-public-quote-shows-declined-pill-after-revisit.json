@@ -1,0 +1,27 @@
+{
+  "id": "public-quote-shows-declined-pill-after-revisit",
+  "name": "Customer who already declined revisits the public quote — sees a DECLINED pill, no actions panel",
+  "description": "Terminal-state visibility on the public quote. Once a quote is accepted (status='accepted') or declined (status='lost'), the actions panel is hidden — there's no way to switch the answer. A status pill in the header tells the customer what they did. Both terminal states render the same redacted projection with the appropriate pill.",
+  "category": "customer-email",
+  "surface": ["public-quote"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Asha Patel",
+    "role": "Came back to the email later",
+    "context": "Tapped the link a second time, possibly forwarded it to a partner."
+  },
+  "preconditions": [
+    "Quote { status: 'lost', lostAt: <yesterday>, declineReason: 'price' }"
+  ],
+  "steps": [
+    { "actor": "customer", "action": "Opens /q/{id} (re-opening the email link)", "expect": "Quote header shows DECLINED pill (pink/maroon, uppercase letterspaced); no Accept input, no decline form, no Ask-a-question — actions panel is null because (accepted || declined) is true" },
+    { "actor": "customer", "action": "Scrolls to the bottom", "expect": "Contact-back footer still shows contractor phone/email so the customer can reach out off-platform if they changed their mind" },
+    { "actor": "customer", "action": "Tries clicking around looking for an undo", "expect": "There is none — the design intentionally requires re-engaging via the contractor (who can re-open from /assistant)" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "DECLINED pill matches the visual weight of the ACCEPTED pill (same size/typography), differentiated only by color" },
+    { "aspect": "feel",          "check": "User isn't given a sketchy 'change my mind' button — preserves trust in the decline as a real signal" },
+    { "aspect": "functionality", "check": "The redacted projection still includes the line items + total so the customer can reference what they declined" },
+    { "aspect": "accessibility", "check": "Pill text is readable by screen readers as part of the document outline; status is announced near the h1" }
+  ]
+}

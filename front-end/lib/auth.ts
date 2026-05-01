@@ -91,3 +91,70 @@ export async function loadUser(req: Request): Promise<User | undefined> {
 export function getSessionId(req: Request): string | undefined {
   return readSessionCookie(req.headers.get("cookie"));
 }
+
+/**
+ * Profile completeness gate.
+ *
+ * Returns the loaded user plus a flag indicating whether onboarding
+ * info (name + businessName) is complete. Used by authed-route
+ * middlewares to redirect to /assistant?onboard=1 when missing.
+ *
+ * Reads `/profile` (the composite endpoint) for businessName so we
+ * don't have to keep two stores in sync. Network errors → treats as
+ * "incomplete" so the user lands on the assistant rather than getting
+ * a half-broken dashboard with no name.
+ */
+export type OnboardingMissing = "name" | "business" | "state";
+
+export interface ProfileGate {
+  user: User | undefined;
+  businessName: string | undefined;
+  state: string | undefined;
+  isComplete: boolean;
+  missing: OnboardingMissing[];
+}
+
+export async function loadProfileGate(req: Request): Promise<ProfileGate> {
+  const user = await loadUser(req);
+  if (!user) return { user: undefined, businessName: undefined, state: undefined, isComplete: false, missing: [] };
+  const sessionId = readSessionCookie(req.headers.get("cookie"));
+  let businessName: string | undefined;
+  let state: string | undefined;
+  if (sessionId) {
+    try {
+      const inProcess = getInProcessBackend();
+      if (inProcess) {
+        const probe = new Request("http://internal/profile", {
+          method: "GET",
+          headers: { "x-session-id": sessionId, "accept": "application/json" },
+        });
+        const res = await inProcess(probe);
+        if (res.ok) {
+          const j = await res.json() as {
+            identity?: { businessName?: string; legalName?: string };
+            address?:  { state?: string };
+          };
+          businessName = j.identity?.businessName?.trim() || j.identity?.legalName?.trim();
+          state = j.address?.state?.trim();
+        }
+      } else {
+        const j = await api.get<{
+          identity?: { businessName?: string; legalName?: string };
+          address?:  { state?: string };
+        }>("/profile", { sessionId });
+        businessName = j.identity?.businessName?.trim() || j.identity?.legalName?.trim();
+        state = j.address?.state?.trim();
+      }
+    } catch (err) {
+      // Profile lookup failed — treat as missing so we surface the
+      // onboarding chat rather than letting the user land on a
+      // dashboard with no brand identity.
+      console.error("[loadProfileGate] profile lookup failed:", (err as Error).message);
+    }
+  }
+  const missing: OnboardingMissing[] = [];
+  if (!user.name || user.name.trim().length === 0) missing.push("name");
+  if (!businessName) missing.push("business");
+  if (!state) missing.push("state");
+  return { user, businessName, state, isComplete: missing.length === 0, missing };
+}

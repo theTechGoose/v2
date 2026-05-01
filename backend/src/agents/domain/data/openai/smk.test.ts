@@ -143,7 +143,11 @@ Deno.test("OpenAILLMClient smoke: tool_call → parsed into create_quote LLMActi
   }
 });
 
-Deno.test("OpenAILLMClient smoke: tool_call without surrounding text gets a fallback line", async () => {
+Deno.test("OpenAILLMClient smoke: card-bearing tool_call leaves text empty (coordinator suppresses the bubble)", async () => {
+  // Audit1 #36 — for actions that emit their own action_card (create_quote,
+  // lock_quote) the LLM client returns an empty text so the chat coordinator
+  // can skip persisting a redundant "Drafting…"/"Locking…" bubble. The card
+  // carries the meaningful state.
   const mock = makeMockFetch(() => chatCompletion(
     null,
     [{ id: "call_2", name: "lock_quote", arguments: JSON.stringify({ quoteId: "q-1" }) }],
@@ -155,7 +159,7 @@ Deno.test("OpenAILLMClient smoke: tool_call without surrounding text gets a fall
     userId: "u-1",
   });
   assertEquals(out.action?.type, "lock_quote");
-  assertEquals(out.text, "Locking the quote.");        // fallback filler
+  assertEquals(out.text, "");
 });
 
 Deno.test("OpenAILLMClient smoke: malformed tool args fall through to text-only response", async () => {

@@ -1,0 +1,28 @@
+{
+  "id": "clients-mobile-card-view",
+  "name": "Clients board on mobile — single-column cards",
+  "description": "On mobile, clients render as a swipeable single-column list with the same status pills and balance as desktop. Sticky topbar; loop card collapses to a horizontal carousel.",
+  "category": "clients",
+  "surface": ["/clients"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Walking back from the truck. Phone-only check on his client list."
+  },
+  "preconditions": [
+    "Mobile viewport (≤414px)",
+    "20+ clients across segments"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /clients on mobile", "expect": "Single-column card list; topbar is sticky; loop card scrollable horizontally" },
+    { "actor": "user",   "action": "Taps a card", "expect": "Full-screen sheet with client detail; close button top-left or down-swipe" },
+    { "actor": "user",   "action": "Long-presses or swipes a card", "expect": "Surface quick actions (call, text, mark cold) — without requiring deep navigation" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Currency, status pills, and timestamps don't truncate awkwardly at 320px width" },
+    { "aspect": "feel",          "check": "Touch targets are ≥44pt; no overlapping tappable regions" },
+    { "aspect": "functionality", "check": "Phone tap on a number invokes tel: dial — verifies on a real device" },
+    { "aspect": "accessibility", "check": "Status pills have textual labels for SR users, not color-only meaning" }
+  ]
+}

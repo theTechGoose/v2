@@ -46,6 +46,7 @@
   border-radius: var(--radius-pill);
   font-family: var(--font-heading); font-weight: 800; font-size: 13px;
   letter-spacing: 0.01em;
+  text-decoration: none;
   cursor: pointer;
   box-shadow: 0 8px 18px -8px rgba(255,107,107,0.55);
   transition: transform var(--dur-fast) var(--ease-out);
@@ -359,10 +360,13 @@
 }
 .qcard__numeral {
   position: absolute;
-  bottom: -18px; right: -6px;
+  /* Anchored just inside the mood block so the descender doesn't get
+     clipped by .qcard__mood's overflow:hidden (#30 — pass-1 audit had it
+     at bottom:-18px which sliced the bottom ~13% of the digit). */
+  bottom: 4px; right: -2px;
   font-family: var(--font-heading);
   font-weight: 900;
-  font-size: 96px;
+  font-size: 88px;
   line-height: 1;
   color: rgba(255,255,255,0.16);
   letter-spacing: -0.04em;

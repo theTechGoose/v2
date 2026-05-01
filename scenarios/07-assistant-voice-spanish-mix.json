@@ -1,0 +1,29 @@
+{
+  "id": "assistant-voice-spanish-mix",
+  "name": "Bilingual user dictates a quote mixing English and Spanish",
+  "description": "Diego presses the mic, describes a paint job switching between English and Spanish (Spanglish). Transcription must capture both, and the assistant should still extract structured line items.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Spanish at home, English with most clients. Habitually code-switches when describing jobs."
+  },
+  "preconditions": [
+    "Microphone permission granted",
+    "User is on /assistant with a clean composer"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Presses the mic button and says: 'Para los Hernández, exterior paint, dos pisos, around twenty-five hundred for labor and seven hundred for paint y supplies.'", "expect": "Mic UI shows recording state with a level meter; tapping again stops" },
+    { "actor": "system", "action": "Backend transcribes and posts as kind=voice", "expect": "Transcript appears in the chat verbatim before the assistant response" },
+    { "actor": "system", "action": "Assistant responds", "expect": "create_quote action with summary referencing 'Hernández', two line items: labor $2,500 and paint+supplies $700, in cents" },
+    { "actor": "user",   "action": "Replies 'Perfecto, mándalo'", "expect": "Assistant interprets as send/lock intent, not as a new quote" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Mic-active state is unmistakable (color + animation), not just a tiny icon swap" },
+    { "aspect": "feel",          "check": "Recording feels low-latency; transcription posts within a couple seconds of stopping" },
+    { "aspect": "functionality", "check": "Transcribed amounts ('twenty-five hundred', 'seven hundred') correctly become 250000 and 70000 cents" },
+    { "aspect": "accessibility", "check": "Mic button has accessible label; recording state is announced; there's a keyboard shortcut alternative" }
+  ]
+}

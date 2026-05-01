@@ -1,6 +1,7 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
+import { fmtMoneyExact } from "../../lib/format.ts";
 
 interface InvoicePublic {
   id: string;
@@ -19,7 +20,7 @@ export default define.page(async function PublicInvoice(ctx) {
   let err: string | undefined;
   const r = await ssrBackendGet<InvoicePublic>(`/invoices/${id}/public`);
   if (r.ok) invoice = r.data;
-  else err = r.status === 404 ? "Invoice not found" : `Invoice unavailable (${r.status})`;
+  else err = "This invoice link expired or was revoked.";
 
   return (
     <>
@@ -69,7 +70,7 @@ function InvoiceCard({ invoice }: { invoice: InvoicePublic }) {
       </table>
       <div style="margin-top:18px;background:linear-gradient(135deg,rgba(81,152,67,0.10),rgba(72,158,95,0.04));border:1px solid rgba(72,158,95,0.20);border-radius:14px;padding:18px 20px;display:flex;justify-content:space-between;align-items:center">
         <div style="font-size:11px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:#519843">Amount due</div>
-        <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:#144852">{fmtUSD(invoice.amount)}</div>
+        <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:#144852">{fmtMoneyExact(invoice.amount)}</div>
       </div>
       {paid
         ? null
@@ -82,7 +83,3 @@ function InvoiceCard({ invoice }: { invoice: InvoicePublic }) {
   );
 }
 
-function fmtUSD(amount: number | undefined): string {
-  if (typeof amount !== "number" || !Number.isFinite(amount)) return "—";
-  return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}

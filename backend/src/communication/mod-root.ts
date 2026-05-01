@@ -5,6 +5,7 @@ import { MessageController } from "@communication/entrypoints/message-controller
 import { NotificationController } from "@communication/entrypoints/notification-controller/mod.ts";
 import { EmailController } from "@communication/entrypoints/email-controller/mod.ts";
 import { ContactPublicController } from "@communication/entrypoints/contact-public-controller/mod.ts";
+import { VoiceStreamController } from "@communication/entrypoints/voice-stream-controller/mod.ts";
 import { ConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
 import { MessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { NotificationStore } from "@communication/domain/data/notification-store/mod.ts";
@@ -35,6 +36,7 @@ import { RateLimiter } from "@core/data/rate-limit/mod.ts";
     NotificationController,
     EmailController,
     ContactPublicController,
+    VoiceStreamController,
   ],
   injectables: [
     ConversationStore,

@@ -1,0 +1,28 @@
+{
+  "id": "assistant-recurring-monthly",
+  "name": "Set up a recurring monthly service quote",
+  "description": "User wants a recurring lawn-care arrangement billed monthly. The assistant should create a quote with a cadence indicator and surface it correctly on the dashboard and quotes pages.",
+  "category": "assistant",
+  "surface": ["/assistant", "/quotes", "/dashboard"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Adding a new recurring HOA contract for a small townhome cluster."
+  },
+  "preconditions": [
+    "Customer 'Maple Court HOA' exists",
+    "Phase = 'quote'"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types: 'Recurring monthly mow + edge for Maple Court HOA, $480/month, May–October.'", "expect": "Assistant creates a quote with one line ($480.00) and metadata: cadence=monthly, season=May–Oct" },
+    { "actor": "user",   "action": "Opens /quotes", "expect": "The Maple Court quote shows a 'Monthly · May–Oct' badge or chip distinguishing it from one-off jobs" },
+    { "actor": "user",   "action": "Opens /dashboard", "expect": "Active jobs / quotes count includes this; outstanding projection uses the recurring amount, not just the first month" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Recurring badge color/shape is consistent with other status indicators on /quotes" },
+    { "aspect": "feel",          "check": "User doesn't have to think about 'how do I represent recurring?' — natural-language phrasing works" },
+    { "aspect": "functionality", "check": "Cadence persists; loading the quote later shows monthly + season correctly without re-derivation" },
+    { "aspect": "accessibility", "check": "Badge text is a real text node, not an icon-only chip — screen readers announce 'Monthly, May to October'" }
+  ]
+}

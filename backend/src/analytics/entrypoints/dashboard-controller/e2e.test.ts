@@ -60,11 +60,12 @@ Deno.test("analytics e2e: GET /analytics/dashboard rolls up after creating quote
     await drain(await fetch(`http://localhost:${PORT}/customers`, {
       method: "POST", headers: auth, body: JSON.stringify({ name: "Acme" }),
     }));
+    // Audit1 #3 — money fields are INTEGER CENTS (`_00` marks dollar intent).
     await drain(await fetch(`http://localhost:${PORT}/quotes`, {
-      method: "POST", headers: auth, body: JSON.stringify({ summary: "x", lineItems: [], status: "sent", estimatedTotal: 1_000 }),
+      method: "POST", headers: auth, body: JSON.stringify({ summary: "x", lineItems: [], status: "sent", estimatedTotal: 1_000_00 }),
     }));
     await drain(await fetch(`http://localhost:${PORT}/quotes`, {
-      method: "POST", headers: auth, body: JSON.stringify({ summary: "y", lineItems: [], status: "sent", estimatedTotal: 2_500 }),
+      method: "POST", headers: auth, body: JSON.stringify({ summary: "y", lineItems: [], status: "sent", estimatedTotal: 2_500_00 }),
     }));
 
     const stats = await fetch(`http://localhost:${PORT}/analytics/dashboard`, {
@@ -73,7 +74,7 @@ Deno.test("analytics e2e: GET /analytics/dashboard rolls up after creating quote
     assertEquals(stats.customers, 1);
     assertEquals(stats.quotes.sent, 2);
     assertEquals(stats.awaitingResponse, 2);
-    assertEquals(stats.quotedValueCents, 350_000);    // (1000 + 2500) * 100
+    assertEquals(stats.quotedValueCents, 1_000_00 + 2_500_00);   // identity sum of cents
   } finally {
     await server.stop();
     await resetKv();

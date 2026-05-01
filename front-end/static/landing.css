@@ -433,11 +433,21 @@ section { position: relative; }
   position: absolute;
   top: 0; left: 0;
   opacity: 0;
+  visibility: hidden;
   transform: translateY(60%);
   filter: blur(6px);
   transition: transform 520ms cubic-bezier(0.34, 1.4, 0.64, 1),
               opacity 380ms ease,
-              filter 380ms ease;
+              filter 380ms ease,
+              visibility 0s linear 380ms;
+}
+.hero h1 .rotor-track .word.in,
+.hero h1 .rotor-track .word.out {
+  visibility: visible;
+  transition: transform 520ms cubic-bezier(0.34, 1.4, 0.64, 1),
+              opacity 380ms ease,
+              filter 380ms ease,
+              visibility 0s linear 0s;
 }
 .hero h1 .rotor-track .word.in {
   opacity: 1;
@@ -1945,4 +1955,124 @@ section { position: relative; }
   .contact-card { grid-template-columns: 1fr; padding: 36px; }
   .doc-counter { flex-direction: column; align-items: flex-start; }
 }
+
+/* ===== 3-step indicator (Phone → Code → You're in) =====
+   Used on the landing CTA, the /verify page, and (optionally) the
+   first /assistant?onboard=1 paint, so the user sees the same visual
+   continuity from sign-up to first quote. */
+.pm-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+.pm-steps__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+}
+.pm-steps__dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+  transition: background 280ms ease, color 280ms ease, box-shadow 280ms ease;
+}
+.pm-steps__item--active .pm-steps__dot {
+  background: var(--brand-pink, #FF6B6B);
+  color: #fff;
+  animation: pm-steps-pulse 1.6s ease-in-out infinite;
+}
+.pm-steps__item--done .pm-steps__dot {
+  background: var(--brand-green, #519843);
+  color: #fff;
+}
+.pm-steps__item--active .pm-steps__label {
+  color: #fff;
+}
+.pm-steps__bar {
+  width: 28px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  transition: background 280ms ease;
+}
+.pm-steps__bar--done {
+  background: var(--brand-pink, #FF6B6B);
+}
+@keyframes pm-steps-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.55); }
+  50%      { box-shadow: 0 0 0 6px rgba(255, 107, 107, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pm-steps__item--active .pm-steps__dot { animation: none; }
+}
+
+/* Light variant for use on light backgrounds (e.g. /verify page). */
+.pm-steps--light { color: rgba(28, 44, 48, 0.50); }
+.pm-steps--light .pm-steps__dot { background: rgba(28, 44, 48, 0.10); color: rgba(28, 44, 48, 0.55); }
+.pm-steps--light .pm-steps__item--active .pm-steps__label { color: var(--ink, #1c2c30); }
+.pm-steps--light .pm-steps__bar { background: rgba(28, 44, 48, 0.10); }
+
+/* ===== Saved-phone chip (returning-user shortcut) =====
+   Display rule scoped to :not([hidden]) so the SSR-rendered chip
+   stays invisible until LandingScripts removes the `hidden`
+   attribute on a returning visitor. */
+.cf-saved[hidden] { display: none !important; }
+.cf-saved {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 12px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.cf-saved__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--brand-pink, #FF6B6B);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform 160ms ease, background 160ms ease;
+}
+.cf-saved__btn:hover { transform: translateY(-1px); background: #d94e4e; }
+.cf-saved__dismiss {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.cf-saved__dismiss:hover { color: #fff; }
 

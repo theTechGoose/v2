@@ -1,0 +1,27 @@
+{
+  "id": "settings-phone-update-propagates",
+  "name": "Updating phone number in /settings propagates to the next public-quote email signature",
+  "description": "Diego updates his contact phone in /settings. The next quote he sends should include the new number in both the email body's contact line and the public-quote page's contact card. Existing already-sent quotes don't change (they're a record of what was sent at that time), but new sends and re-sends use the latest profile.",
+  "category": "settings",
+  "surface": ["/settings", "/assistant", "public-quote", "email"],
+  "channel": "mixed",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Just changed business numbers",
+    "context": "Old number was a Google Voice line; switched to a real Verizon line. Wants new quotes to carry the new number."
+  },
+  "preconditions": [
+    "Profile has phone='+15125550000' (formatted as (512) 555-0000)"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Opens /settings, edits phone to '+15125559999'", "expect": "Settings UI re-renders with formatted '(512) 555-9999'; save lands; toast confirms" },
+    { "actor": "user",   "action": "Returns to /assistant, drafts a new quote, sends", "expect": "Outbound email body contact-line carries '(512) 555-9999'; public-quote /q/<id> renders the new number" },
+    { "actor": "user",   "action": "Re-opens an OLD quote /q/<oldid>", "expect": "Old public quote still shows the original (512) 555-0000 (snapshot semantics: customer's record of what was sent)" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Phone formatting consistent across email + public page (uses fmtPhone)" },
+    { "aspect": "feel",          "check": "User trusts the change took effect — visible everywhere they expect" },
+    { "aspect": "functionality", "check": "Profile is read at email-render time for new sends; public-quote page joins fresh profile, but the EMAIL HTML stored in the audit trail uses what was current at send time" },
+    { "aspect": "accessibility", "check": "Phone number rendered as a tel: link with E.164 form so the customer can tap to call on mobile" }
+  ]
+}

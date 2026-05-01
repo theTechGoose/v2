@@ -116,14 +116,17 @@ export class OpenAILLMClient implements LLMClient {
 }
 
 /** When the model returns a tool call but no surrounding prose, give the
- *  user a short readable filler so the chat doesn't show an empty bubble.
- *  Phrasing intentionally neutral — the action_card / continue_cta the
- *  coordinator appends afterwards carries the real information.
+ *  user a short readable filler. For actions that emit their own
+ *  action_card (create_quote, lock_quote) we return empty — the card is
+ *  more informative than restating "Drafting a quote." next to it, and
+ *  the chat UI shows transient typing dots while the request is in
+ *  flight. The coordinator suppresses an empty assistant bubble for
+ *  these cases so we don't persist a ghost row in scrollback (#36).
  */
 function fallbackTextFor(action: { type: string }): string {
   switch (action.type) {
-    case "create_quote":             return "Drafting a quote.";
-    case "lock_quote":               return "Locking the quote.";
+    case "create_quote":             return "";
+    case "lock_quote":               return "";
     case "request_terms_transition": return "Want to wrap the contract terms now?";
     default:                          return "";
   }

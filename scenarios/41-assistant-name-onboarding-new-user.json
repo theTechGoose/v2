@@ -1,0 +1,30 @@
+{
+  "id": "assistant-name-onboarding-new-user",
+  "name": "Bossie asks for the user's name on the very first message",
+  "description": "Brand-new account with user.name unset. The first text message Bossie receives should be answered with a one-line ask for name + business, NOT routed to the LLM. The user's reply ('Diego, Riley Roofing Co.') is parsed and persisted via PATCH /me + PUT /profile/identity. Subsequent turns use the captured name in the topbar greeting and sidebar footer.",
+  "category": "assistant",
+  "surface": ["/assistant", "/settings"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator, fence + deck contractor, just verified phone",
+    "context": "First time in the app. Has only entered a phone number — nothing else."
+  },
+  "preconditions": [
+    "user.name === undefined",
+    "businessIdentity.businessName === undefined",
+    "No prior conversations"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types 'Hey' and hits Enter", "expect": "Assistant replies in <1s with: 'Hey 👋 quick one before we start — what should I call you? (And what's your business name, if it's different?)'. No LLM round-trip happens." },
+    { "actor": "user",   "action": "Replies 'Diego, Riley Roofing Co.'", "expect": "Assistant: 'Got it, Diego — what can I help you with?'; user.name === 'Diego'; businessIdentity.businessName === 'Riley Roofing Co.'" },
+    { "actor": "user",   "action": "Refreshes the assistant page", "expect": "Topbar greeting reads 'Hey, Diego 👋'; sidebar footer shows DR avatar + 'Diego' + 'Riley Roofing Co.'" },
+    { "actor": "user",   "action": "Navigates to /settings", "expect": "Account card shows Name=Diego; Business identity card shows Display name=Riley Roofing Co." }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Onboarding ask uses plain assistant bubble — no special wizard treatment, just a friendly text turn" },
+    { "aspect": "feel",          "check": "Reply round-trip <300ms because no LLM call happens; the ack feels instant" },
+    { "aspect": "functionality", "check": "extractNameAndBusiness correctly parses the comma-separated form; trailing 'Co.' period is preserved" },
+    { "aspect": "accessibility", "check": "Ask is in chat live region; screen reader announces it like any other assistant turn" }
+  ]
+}

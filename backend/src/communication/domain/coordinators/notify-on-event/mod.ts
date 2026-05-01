@@ -71,6 +71,15 @@ export function mapEventToNotification(event: DomainEvent): NotificationMapping 
   if (event.entityType === "quote" && event.action === "accepted") {
     return { type: "quote_accepted", title: `${customerName} accepted your quote` };
   }
+  if (event.entityType === "quote" && event.action === "declined") {
+    const reason = (event.data?.reason as string | undefined);
+    const reasonLabel = reason ? ` · ${reason.replace(/_/g, " ")}` : "";
+    return {
+      type: "generic",
+      title: `${customerName} declined your quote${reasonLabel}`,
+      body:  (event.data?.note as string | undefined) || undefined,
+    };
+  }
   if (event.entityType === "contract" && event.action === "signed") {
     return { type: "contract_signed", title: `${customerName} signed the contract` };
   }
@@ -82,6 +91,16 @@ export function mapEventToNotification(event: DomainEvent): NotificationMapping 
   }
   if (event.entityType === "message" && event.action === "received") {
     return { type: "customer_replied", title: `${customerName} replied` };
+  }
+  if (event.entityType === "quote" && event.action === "inquiry") {
+    const question = (event.data?.question as string | undefined);
+    return {
+      type: "customer_replied",
+      title: `${customerName} asked a question`,
+      body: question
+        ? (question.length > 140 ? `${question.slice(0, 139)}…` : question)
+        : undefined,
+    };
   }
   return null;
 }

@@ -72,21 +72,19 @@ export class ComputeDashboardStats {
     };
 
     // Quoted value: sum of estimatedTotal across quotes that are still
-    // open (sent but not accepted/declined). estimatedTotal is in DOLLARS
-    // in the DTO; multiply for cents.
-    const quotedValueCents = Math.trunc(
-      quotes
-        .filter((q) => q.status === "sent")
-        .reduce((sum, q) => sum + (q.estimatedTotal ?? 0), 0) * 100,
-    );
+    // open (sent but not accepted/declined). Audit1 #3 — estimatedTotal
+    // is now stored as INTEGER CENTS, so this is a passthrough sum.
+    const quotedValueCents = quotes
+      .filter((q) => q.status === "sent")
+      .reduce((sum, q) => sum + (q.estimatedTotal ?? 0), 0);
 
-    // Revenue rows: each paid invoice contributes amount → revenue.
-    // Invoice.amount is dollars too.
+    // Revenue rows: each paid invoice contributes amount → revenue. Invoice
+    // amounts are also INTEGER CENTS now (no × 100 needed).
     const revenueRows: RevenueRow[] = invoices
       .filter((i) => i.status === "paid" && i.paidAt)
       .map((i) => ({
         paidAt: i.paidAt!,
-        amountCents: Math.trunc((i.amount ?? 0) * 100),
+        amountCents: i.amount ?? 0,
       }));
 
     return {
@@ -108,18 +106,18 @@ export class ComputeDashboardStats {
 }
 
 function computePaymentStats(payments: Payment[], invoices: Invoice[], now: Date) {
+  // Audit1 #3 — Payment.amount is INTEGER CENTS, so all the previous
+  // dollar→cents conversions in this function become identity copies.
   const yearStart = `${now.getUTCFullYear()}-01-01T00:00:00.000Z`;
-  const receivedYtdCents = Math.trunc(
-    payments
-      .filter((p) => p.receivedAt >= yearStart)
-      .reduce((sum, p) => sum + (p.amount ?? 0), 0) * 100,
-  );
+  const receivedYtdCents = payments
+    .filter((p) => p.receivedAt >= yearStart)
+    .reduce((sum, p) => sum + (p.amount ?? 0), 0);
 
   const methodMixCents = Object.fromEntries(
     PAYMENT_METHODS.map((m) => [m, 0]),
   ) as Record<PaymentMethod, number>;
   for (const p of payments) {
-    methodMixCents[p.method] = (methodMixCents[p.method] ?? 0) + Math.trunc((p.amount ?? 0) * 100);
+    methodMixCents[p.method] = (methodMixCents[p.method] ?? 0) + (p.amount ?? 0);
   }
 
   const invoiceCustomer = new Map(invoices.map((i) => [i.id, i.customerId ?? ""]));
@@ -129,7 +127,7 @@ function computePaymentStats(payments: Payment[], invoices: Invoice[], now: Date
     if (!customerId) continue;
     totalsByCustomer.set(
       customerId,
-      (totalsByCustomer.get(customerId) ?? 0) + Math.trunc((p.amount ?? 0) * 100),
+      (totalsByCustomer.get(customerId) ?? 0) + (p.amount ?? 0),
     );
   }
   const topPayors: TopPayor[] = [...totalsByCustomer.entries()]

@@ -12,12 +12,16 @@ interface Props {
   num: string;
   title: string;
   count: number;
+  /** Singular word used in the count label ("0 quotes" / "1 quote"). The
+   *  component is reused by /invoices and /payments which want different
+   *  wording. */
+  unit?: string;
   defaultOpen?: boolean;
   storageKey?: string;
   children?: ComponentChildren;
 }
 
-export default function QuoteTrack({ num, title, count, defaultOpen = true, storageKey, children }: Props) {
+export default function QuoteTrack({ num, title, count, unit = "quote", defaultOpen = true, storageKey, children }: Props) {
   const [open, setOpen] = useState<boolean>(() => {
     if (typeof globalThis.localStorage === "undefined" || !storageKey) return defaultOpen;
     const raw = globalThis.localStorage.getItem(storageKey);
@@ -37,7 +41,7 @@ export default function QuoteTrack({ num, title, count, defaultOpen = true, stor
         <span class="qtrack__chev"><I d={ICN.chev} size={14} sw={2.5} /></span>
         <span class="qtrack__num">{num}</span>
         <span class="qtrack__title">{title}</span>
-        <span class="qtrack__count">{count} {count === 1 ? "quote" : "quotes"}</span>
+        <span class="qtrack__count">{count} {count === 1 ? unit : `${unit}s`}</span>
       </header>
       <div class="qtrack__body">
         <div class="qtrack__body-inner">

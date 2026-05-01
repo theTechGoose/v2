@@ -1,0 +1,28 @@
+{
+  "id": "assistant-first-quote-text",
+  "name": "User drafts their first quote by typing a one-liner",
+  "description": "Brand-new account, first chat message describes a small fence repair. Assistant should produce a single-line quote without 20 follow-up questions, and surface a draft action card the user can tap to send.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Marcus Lee",
+    "role": "Solo handyman, day 1 on the app",
+    "context": "Just verified his phone. Has never created a quote in the app before."
+  },
+  "preconditions": [
+    "User authenticated, no prior threads",
+    "Phase = 'quote'"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types: 'Fence repair for the Patel place — $350.' and hits Enter", "expect": "Message appears immediately in the chat with a sending indicator" },
+    { "actor": "system", "action": "Streams assistant response", "expect": "Assistant text + an action_card titled 'Fence repair — Patel' with one line item at $350.00; no clarifying questions" },
+    { "actor": "user",   "action": "Taps 'Looks good — send it'", "expect": "Quote moves from draft to sent; chat shows confirmation; new thread appears in the sidebar" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Action card visually distinct from chat bubbles; line item amounts right-aligned" },
+    { "aspect": "feel",          "check": "Time from user Enter to first streamed token <1.5s on warm path" },
+    { "aspect": "functionality", "check": "Backend persists the quote with amount in cents (35000), not dollars (350)" },
+    { "aspect": "accessibility", "check": "Streaming text is in a live region; screen reader users hear it without spam" }
+  ]
+}

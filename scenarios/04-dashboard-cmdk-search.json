@@ -1,0 +1,30 @@
+{
+  "id": "dashboard-cmdk-search",
+  "name": "Cmd+K search across jobs, clients, invoices",
+  "description": "User uses the topbar search to jump directly to a record by name or invoice number. The search should be fast, keyboard-first, and span entity types.",
+  "category": "dashboard",
+  "surface": ["/dashboard"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Customer just called about an invoice. Diego is on the dashboard and wants to pull up the record without clicking around."
+  },
+  "preconditions": [
+    "Account has clients including 'Patel', 'Park', 'O'Brien'",
+    "There is at least one invoice with the suffix '-0042'"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Presses Cmd+K (or Ctrl+K on Windows)", "expect": "Search input gets focus; results panel opens" },
+    { "actor": "user",   "action": "Types 'patel'", "expect": "Top hit is the Patel client; secondary hits show Patel's quotes/invoices grouped by type" },
+    { "actor": "user",   "action": "Presses ↓ then Enter on an invoice hit", "expect": "Navigates straight to that invoice page" },
+    { "actor": "user",   "action": "Presses Cmd+K again, types '0042'", "expect": "Numeric/identifier search resolves the matching invoice as the top hit" },
+    { "actor": "user",   "action": "Presses Esc", "expect": "Panel closes and focus returns to where it was" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Result groups have clear icons or labels per entity type" },
+    { "aspect": "feel",          "check": "First keystroke shows results in <150ms on a warm cache" },
+    { "aspect": "functionality", "check": "Diacritics are tolerant — 'O'Brien' matches 'obrien' and 'O Brien'" },
+    { "aspect": "accessibility", "check": "Results expose role=listbox / role=option with aria-selected on the active item" }
+  ]
+}

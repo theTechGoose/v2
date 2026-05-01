@@ -1,0 +1,28 @@
+{
+  "id": "logout-clears-session-from-any-page",
+  "name": "Logout from the sidebar (any authenticated page) clears the session and lands on /",
+  "description": "DashSidebar's Log out button POSTs /api/auth/logout and redirects to /. Backend invalidates the session token; the pm_session cookie is cleared (or replaced with empty + Max-Age=0). After logout, a request to a protected route 302s to / (auth middleware kicks in).",
+  "category": "auth",
+  "surface": ["/dashboard", "/clients", "/quotes", "/contracts", "/invoices", "/jobs", "/payments", "/settings", "/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego",
+    "role": "End of shift",
+    "context": "Wants to be sure the session is closed before he leaves the office laptop."
+  },
+  "preconditions": [
+    "User authenticated, on any of the 9 authenticated pages"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Clicks Log out at the bottom of the sidebar", "expect": "POST /api/auth/logout → backend session-store deletes the token; cookie pm_session is cleared via Set-Cookie: pm_session=; Max-Age=0; window redirects to /" },
+    { "actor": "user",   "action": "Lands on /", "expect": "Public landing page renders; no logged-in shell, no leaked greeting/name, no auth-only sidebar" },
+    { "actor": "user",   "action": "Manually types /dashboard in the URL bar", "expect": "Auth middleware sees no session, 302s to / immediately — no flash of skeleton or shell" },
+    { "actor": "user",   "action": "Clicks Back in the browser", "expect": "Returns to / (no leaked dashboard from history); refreshing /dashboard in any cached tab also redirects to /" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Logout transition feels intentional — brief loading state allowed, but no half-rendered authed pages" },
+    { "aspect": "feel",          "check": "Network blip during logout doesn't leave the user in an undefined state — the FE's redirect-anyway pattern catches that" },
+    { "aspect": "functionality", "check": "Session token is invalidated server-side, not just cookie-cleared client-side; reusing the captured cookie value in another tool fails 401/403" },
+    { "aspect": "accessibility", "check": "Logout button has type=button (not submit), proper button semantics; redirect happens via JS so screen readers announce the new page" }
+  ]
+}

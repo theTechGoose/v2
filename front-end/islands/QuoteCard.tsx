@@ -75,7 +75,7 @@ export default function QuoteCard({ q, idx }: Props) {
       </div>
       <div class="qcard__av">{q.initials}</div>
       <div class="qcard__body">
-        <div class="qcard__client-name">{q.client} · {q.id}</div>
+        <div class="qcard__client-name">{q.client}</div>
         <h3 class="qcard__title">{q.title}</h3>
         <p class="qcard__story">{story}</p>
       </div>
@@ -85,7 +85,7 @@ export default function QuoteCard({ q, idx }: Props) {
         </button>
         <div class="qcard__val-wrap">
           <div class="qcard__val-lbl">Quote</div>
-          <div class="qcard__val-num">${fmtMoney(q.value)}</div>
+          <div class="qcard__val-num">{fmtMoney(q.value)}</div>
         </div>
       </div>
 

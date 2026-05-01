@@ -1,0 +1,31 @@
+{
+  "id": "payments-hero-with-history",
+  "name": "/payments lights up with real data — hero + sparkline + top payors",
+  "description": "An account with real payment history. PaymentsHero shows landed totals; PSideFlow draws a real cash-flow shape; PSideTopPayors ranks the top 4 clients; PSideMix slices method share. The whole page should read as a snapshot of a healthy month, not as KPI plumbing.",
+  "category": "payments",
+  "surface": ["/payments"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Fence + deck contractor, two-truck crew",
+    "context": "End of April. Wants to know which clients actually paid and which method dominated."
+  },
+  "preconditions": [
+    "Account has 12+ landed payments across the last 8 weeks",
+    "Mix of methods: ACH (~60%), card (~25%), check (~15%)",
+    "At least 4 distinct paying clients"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /payments", "expect": "Hero reads '<X> landed this month' as a real money figure (cents-correct, no $0)" },
+    { "actor": "system", "action": "Renders PSideFlow", "expect": "Cash-flow sparkline draws as a curve with 12 weekly points; the right-most dot is larger; subtitle reads 'Last 12 weeks · $X,XXX this week'" },
+    { "actor": "system", "action": "Renders PSideTopPayors", "expect": "Top 4 clients listed by total paid; bar widths scale to the leader; first-place rank is '01'" },
+    { "actor": "system", "action": "Renders PSideMix", "expect": "Donut/legend shows non-zero method slices only; ACH/card/check colors match the design system" },
+    { "actor": "user",   "action": "Hovers a sparkline data-point (week)", "expect": "Subtle dot enlargement; cursor remains default (no broken tooltip)" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "All four right-rail cards have visual rhythm; no card looks empty-but-rendered" },
+    { "aspect": "feel",          "check": "Reads as 'this month was real' — not as scaffolding" },
+    { "aspect": "functionality", "check": "Money formatting uses fmtMoney (no cents) for KPIs and fmtMoneyExact (cents) for receipt totals; no '$NaN'" },
+    { "aspect": "accessibility", "check": "SVG sparkline has role='img' with an aria-label summarizing the trend; client-name list is a real <ul>" }
+  ]
+}

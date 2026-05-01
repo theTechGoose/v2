@@ -1,0 +1,28 @@
+{
+  "id": "customer-asks-question-on-quote",
+  "name": "Customer asks a question instead of accepting/declining",
+  "description": "Public quote page has an 'Ask a question' option. Customer's message routes to the contractor as an inbound conversation, threaded against the quote, without exposing the contractor's email/phone publicly.",
+  "category": "customer-email",
+  "surface": ["public-quote", "/messages", "/quotes"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Janet Park",
+    "role": "Homeowner",
+    "context": "Wants to know if the paint price includes primer."
+  },
+  "preconditions": [
+    "Public quote page loaded for an undecided quote"
+  ],
+  "steps": [
+    { "actor": "customer", "action": "Taps 'Ask a question'", "expect": "Inline composer with a short text field; no required email/name (already known from the quote)" },
+    { "actor": "customer", "action": "Types 'Does this include primer?' and submits", "expect": "Confirmation: 'Sent — Lena will get back to you'" },
+    { "actor": "system",   "action": "Inbound message is created", "expect": "Lena's /messages shows the inbound thread with a link to the quote; her assistant offers a quick draft reply ('Yes, primer is included in the labor line')" },
+    { "actor": "user",     "action": "(Lena) replies", "expect": "Customer receives the reply via email, threaded so it stays in the same Gmail conversation" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Question composer matches the public quote page's tone — quiet, not chatbot-y" },
+    { "aspect": "feel",          "check": "Customer doesn't have to leave the page, sign up, or download anything to ask" },
+    { "aspect": "functionality", "check": "Reply email's In-Reply-To header points to the original message, preserving Gmail threading" },
+    { "aspect": "accessibility", "check": "Composer label is associated; submit button is keyboard reachable" }
+  ]
+}

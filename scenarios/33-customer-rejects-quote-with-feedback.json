@@ -1,0 +1,28 @@
+{
+  "id": "customer-rejects-quote-with-feedback",
+  "name": "Customer declines a quote and leaves a reason",
+  "description": "Customer taps 'Decline' on the public quote page. They're offered an optional 1-line reason. Reason is saved and visible to the contractor without being stored as customer-facing copy.",
+  "category": "customer-email",
+  "surface": ["public-quote", "/quotes"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Sam Browning",
+    "role": "Homeowner",
+    "context": "Got two quotes; this one came in higher. Decided to decline politely."
+  },
+  "preconditions": [
+    "Public quote page loaded for an undecided quote"
+  ],
+  "steps": [
+    { "actor": "customer", "action": "Taps 'Decline'", "expect": "Lightweight prompt: 'Mind sharing why? (optional)' with chips: Price, Timing, Going elsewhere, Other" },
+    { "actor": "customer", "action": "Taps 'Price' and types 'Got a lower bid', then submits", "expect": "Page shows a brief 'Thanks — got it' state; no guilt-trip copy" },
+    { "actor": "system",   "action": "Backend marks quote decided=lost with reason metadata", "expect": "/quotes shows the quote in decided-lost lane; reason visible to contractor on the quote detail" },
+    { "actor": "system",   "action": "Internal notification fires", "expect": "Subtle (no urgent push); appears in the activity feed as 'Browning declined — price'" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Decline path is accessible without making the customer dig" },
+    { "aspect": "feel",          "check": "No emotional manipulation ('Are you sure?'); declining is fast and respectful" },
+    { "aspect": "functionality", "check": "Reason chip + freetext are both stored; analytics aggregate top reasons" },
+    { "aspect": "accessibility", "check": "Reason chips are keyboard-navigable; freetext field is labelled and optional" }
+  ]
+}

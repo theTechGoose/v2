@@ -1,0 +1,26 @@
+{
+  "id": "dashboard-outstanding-no-stray-divider",
+  "name": "Dashboard 'Money owed' panel has no stray dashed divider in the empty state",
+  "description": "Empty-state Outstanding panel: the dashed border-top container that holds invoice rows must NOT render when items.length === 0. Otherwise an orphan dashed line appears under the empty-state copy and visually disconnects the message.",
+  "category": "dashboard",
+  "surface": ["/dashboard"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Marcus Lee",
+    "role": "Fresh account",
+    "context": "First /dashboard load, no invoices."
+  },
+  "preconditions": [
+    "Account has zero invoices and zero outstanding balance"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /dashboard", "expect": "Outstanding panel shows 'Money owed to you' label, '$0' amount, and the empty-state copy 'No invoices yet — once you bill a job, it'll show up here.'" },
+    { "actor": "system", "action": "Outstanding renders the items list", "expect": "When items is empty, the wrapping <div> with border-top:1px dashed is NOT in the DOM at all (gated by items.length > 0); when populated, the divider returns above the rows" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Empty-state copy sits as the visual bottom of the panel; no orphan horizontal line below it" },
+    { "aspect": "feel",          "check": "Panel reads as a single empty unit, not as 'header + body + (mystery section)'" },
+    { "aspect": "functionality", "check": "The same panel transitions cleanly when first invoice lands — divider appears above the new row" },
+    { "aspect": "accessibility", "check": "DOM tree is shorter in the empty state; screen reader doesn't announce a 'separator' that has no items below it" }
+  ]
+}

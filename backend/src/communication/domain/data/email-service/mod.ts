@@ -1,4 +1,14 @@
 import { Injectable } from "#danet/core";
+import { encodeBase64 } from "#std/encoding/base64";
+
+export interface EmailAttachment {
+  /** Filename the recipient sees (e.g., "Contract-1A0AE6B6.pdf"). */
+  name: string;
+  /** Raw bytes; will be base64-encoded into the Postmark payload. */
+  content: Uint8Array;
+  /** MIME type — e.g., "application/pdf", "image/png". */
+  contentType: string;
+}
 
 export interface SendEmailInput {
   to:        string;
@@ -6,6 +16,8 @@ export interface SendEmailInput {
   htmlBody:  string;
   /** Optional From override; otherwise falls back to POSTMARK_FROM env. */
   from?:     string;
+  /** File attachments — Postmark base64-encodes them; we accept raw bytes. */
+  attachments?: EmailAttachment[];
 }
 
 export interface SendEmailResult {
@@ -47,7 +59,10 @@ export class EmailService {
     const from = input.from ?? Deno.env.get("POSTMARK_FROM");
 
     if (!apiKey) {
-      console.log(`[email:dev-mode] would send to=${input.to} subject="${input.subject}"`);
+      const attachLog = input.attachments?.length
+        ? ` attachments=[${input.attachments.map((a) => `${a.name} (${a.contentType}, ${a.content.byteLength}B)`).join(", ")}]`
+        : "";
+      console.log(`[email:dev-mode] would send to=${input.to} subject="${input.subject}"${attachLog}`);
       return { ok: true, reason: "dev_mode_no_dispatch" };
     }
     if (!from) {
@@ -71,6 +86,15 @@ export class EmailService {
           Subject:  input.subject,
           HtmlBody: input.htmlBody,
           MessageStream: "outbound",
+          ...(input.attachments?.length
+            ? {
+              Attachments: input.attachments.map((a) => ({
+                Name:        a.name,
+                Content:     encodeBase64(a.content),
+                ContentType: a.contentType,
+              })),
+            }
+            : {}),
         }),
       });
       if (!res.ok) {

@@ -18,6 +18,7 @@
 import { useEffect } from "preact/hooks";
 import { langSignal } from "../lib/lang.ts";
 import { landingClient } from "../clients/landing.ts";
+import { fmtPhone } from "../lib/format.ts";
 
 type Lang = "en" | "es";
 
@@ -67,10 +68,13 @@ const I18N: Record<Lang, Record<string, string>> = {
     "price.callout": "$850 more in your pocket.", "price.calloutSub": "A back office that pays for itself. Only charged when your client pays.",
     "price.cta": "Start Making More →",
     "cta.eyebrow": "Let's go", "cta.h2": "Ready to get the paperwork off your plate?",
-    "cta.lead": "Drop your number. We'll text you within the hour and walk you through your first quote — free.",
-    "cta.b1": "No setup fees, no contracts", "cta.b2": "First quote free, on us", "cta.b3": "English & Spanish, every step",
-    "cta.label": "Your phone number", "cta.btn": "Text me my first quote",
+    "cta.lead": "Drop your number — we'll text you a 6-digit code. Login or sign up, same form.",
+    "cta.b1": "No setup fees, no contracts", "cta.b2": "First quote on us — for new pros", "cta.b3": "English & Spanish, every step",
+    "cta.label": "Your phone number", "cta.btn": "Send my code",
     "cta.fine": "By submitting, you agree to receive a friendly text from us.",
+    "cta.smsPreview": "Paperwork Monsters: Your code is 482-913. Don't share it.",
+    "cta.steps.phone": "Phone", "cta.steps.code": "Code", "cta.steps.in": "You're in",
+    "cta.useSaved": "Use", "cta.notYou": "Not you?",
     "footer.contact": "Contact", "footer.copy": "© 2026 Paperwork Monsters. All rights reserved.",
   },
   es: {
@@ -118,10 +122,13 @@ const I18N: Record<Lang, Record<string, string>> = {
     "price.callout": "$850 más en tu bolsillo.", "price.calloutSub": "Una oficina que se paga sola. Solo cobramos cuando tu cliente paga.",
     "price.cta": "Empieza a ganar más →",
     "cta.eyebrow": "Vamos", "cta.h2": "¿Listo para quitarte el papeleo de encima?",
-    "cta.lead": "Déjanos tu número. Te escribimos en menos de una hora y te guiamos en tu primera cotización — gratis.",
-    "cta.b1": "Sin cuotas iniciales, sin contratos", "cta.b2": "Primera cotización gratis", "cta.b3": "Inglés y español, en cada paso",
-    "cta.label": "Tu número de teléfono", "cta.btn": "Mándame mi primera cotización",
+    "cta.lead": "Pon tu número — te enviamos un código de 6 dígitos. Entrar o registrarse, mismo formulario.",
+    "cta.b1": "Sin cuotas iniciales, sin contratos", "cta.b2": "Primera cotización gratis — para nuevos pros", "cta.b3": "Inglés y español, en cada paso",
+    "cta.label": "Tu número de teléfono", "cta.btn": "Enviar mi código",
     "cta.fine": "Al enviar, aceptas recibir un mensaje amigable de nuestra parte.",
+    "cta.smsPreview": "Paperwork Monsters: Tu código es 482-913. No lo compartas.",
+    "cta.steps.phone": "Teléfono", "cta.steps.code": "Código", "cta.steps.in": "Listo",
+    "cta.useSaved": "Usar", "cta.notYou": "¿No eres tú?",
     "footer.contact": "Contacto", "footer.copy": "© 2026 Paperwork Monsters. Todos los derechos reservados.",
   },
 };
@@ -306,6 +313,13 @@ export default function LandingScripts() {
       const words = Array.from(track.querySelectorAll<HTMLElement>(".word"));
       let i = 0;
       fitRotor();
+      // Re-fit after the custom font has loaded so Safari doesn't lock
+      // the rotor width to the fallback metric and clip "contracts.".
+      if (document.fonts && typeof document.fonts.ready?.then === "function") {
+        document.fonts.ready.then(fitRotor);
+      }
+      requestAnimationFrame(fitRotor);
+      setTimeout(fitRotor, 1000);
       rotorTimer = setInterval(() => {
         const cur = words[i];
         const next = words[(i + 1) % words.length];
@@ -404,11 +418,16 @@ export default function LandingScripts() {
     /* ================== Contact form ================== */
     const form = document.getElementById("contact-form") as HTMLFormElement | null;
     const phoneInput = document.getElementById("f-phone") as HTMLInputElement | null;
-    const preview = document.getElementById("cf-bubble-preview");
-    const previewText = document.getElementById("cf-preview-text");
     const meta = document.getElementById("cf-meta");
+    const savedWrap = document.getElementById("cf-saved");
+    const savedBtn = document.getElementById("cf-saved-btn") as HTMLButtonElement | null;
+    const savedPhoneEl = document.getElementById("cf-saved-phone");
+    const savedDismiss = document.getElementById("cf-saved-dismiss") as HTMLButtonElement | null;
 
-    function formatPhone(v: string): string {
+    /** Format partial input as the user types: "5125" → "(512) 5".
+     *  fmtPhone() only handles complete 10-digit numbers, so this stays
+     *  local for the as-you-type case. */
+    function formatPhoneInput(v: string): string {
       const d = v.replace(/\D/g, "").slice(0, 10);
       if (!d) return "";
       if (d.length < 4) return "(" + d;
@@ -416,22 +435,44 @@ export default function LandingScripts() {
       return "(" + d.slice(0, 3) + ") " + d.slice(3, 6) + "-" + d.slice(6);
     }
 
-    if (phoneInput && preview && previewText && meta) {
-      const onInput = () => {
-        phoneInput.value = formatPhone(phoneInput.value);
-        const v = phoneInput.value.trim();
-        if (v) {
-          previewText.innerHTML = "Hi! It's " + v + " — send me my first quote please";
-          preview.classList.add("is-real");
-          meta.classList.add("is-real");
-        } else {
-          previewText.innerHTML = "Hi Paperwork Monsters!";
-          preview.classList.remove("is-real");
-          meta.classList.remove("is-real");
-        }
-      };
+    if (phoneInput) {
+      const onInput = () => { phoneInput.value = formatPhoneInput(phoneInput.value); };
       phoneInput.addEventListener("input", onInput);
       cleanups.push(() => phoneInput.removeEventListener("input", onInput));
+    }
+
+    /* Saved-phone chip — shown when localStorage has a previously
+     * verified number, so returning users can one-tap log in. */
+    function readSavedPhone(): string | null {
+      try { return globalThis.localStorage?.getItem("pm:last-phone") ?? null; } catch { return null; }
+    }
+    function clearSavedPhone(): void {
+      try { globalThis.localStorage?.removeItem("pm:last-phone"); } catch { /* SSR-safe */ }
+    }
+    if (savedWrap && savedBtn && savedPhoneEl) {
+      const saved = readSavedPhone();
+      if (saved) {
+        savedPhoneEl.textContent = fmtPhone(saved) || saved;
+        savedWrap.removeAttribute("hidden");
+      }
+      const onSavedClick = () => {
+        const s = readSavedPhone();
+        if (!s || !phoneInput || !form) return;
+        phoneInput.value = formatPhoneInput(s);
+        // Auto-submit once filled.
+        form.requestSubmit?.() ?? form.dispatchEvent(new Event("submit", { cancelable: true }));
+      };
+      savedBtn.addEventListener("click", onSavedClick);
+      cleanups.push(() => savedBtn.removeEventListener("click", onSavedClick));
+      if (savedDismiss) {
+        const onDismiss = () => {
+          clearSavedPhone();
+          savedWrap.setAttribute("hidden", "");
+          phoneInput?.focus();
+        };
+        savedDismiss.addEventListener("click", onDismiss);
+        cleanups.push(() => savedDismiss.removeEventListener("click", onDismiss));
+      }
     }
 
     if (form && phoneInput) {
@@ -450,6 +491,11 @@ export default function LandingScripts() {
         }
         try {
           await landingClient.sendOtp({ phoneNumber: e164, language: curLang });
+          // Persist for next-visit one-tap. The /verify page also writes
+          // this on successful verify (which is more authoritative), but
+          // writing here means the chip works even if the user abandons
+          // verify and comes back later.
+          try { globalThis.localStorage?.setItem("pm:last-phone", e164); } catch { /* SSR-safe */ }
           globalThis.location.href = `/verify?phone=${encodeURIComponent(e164)}`;
         } catch {
           if (cta) {
@@ -457,11 +503,9 @@ export default function LandingScripts() {
             cta.innerHTML = original;
           }
           if (meta) {
-            meta.classList.remove("is-real");
             (meta as HTMLElement).innerHTML = curLang === "es"
               ? '<span class="cf-meta__check">!</span><span style="color:var(--danger)">No pudimos enviar. Intenta otra vez.</span>'
               : '<span class="cf-meta__check">!</span><span style="color:var(--danger)">Couldn\'t send. Try again.</span>';
-            meta.classList.add("is-real");
           }
         }
       };

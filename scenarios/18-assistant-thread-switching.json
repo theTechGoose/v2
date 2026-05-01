@@ -1,0 +1,28 @@
+{
+  "id": "assistant-thread-switching",
+  "name": "Switching between two active assistant threads",
+  "description": "User has two parallel conversations going — one for the Patel fence, one for the Browning paint. Switching threads in the sidebar should preserve scroll position, draft compose text, and not bleed messages between threads.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Multitasking between two prospects who texted within 10 minutes of each other."
+  },
+  "preconditions": [
+    "Two existing threads: 'Patel fence' (15 messages), 'Browning paint' (4 messages)",
+    "User is viewing the Patel thread"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Scrolls halfway up the Patel thread, then types but doesn't send 'add staining' in the composer", "expect": "Composer shows the unsent draft" },
+    { "actor": "user",   "action": "Clicks 'Browning paint' in the sidebar", "expect": "Loads Browning thread; composer is empty (Browning's own draft state, not Patel's)" },
+    { "actor": "user",   "action": "Sends a message in Browning, then clicks back to Patel", "expect": "Patel scroll position restored; the unsent 'add staining' draft is still in the composer" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Active thread in sidebar is unmistakably highlighted" },
+    { "aspect": "feel",          "check": "Switching feels instant on cached threads — no full re-fetch flash" },
+    { "aspect": "functionality", "check": "Per-thread draft state is in localStorage or equivalent; survives a tab reload, scoped per thread" },
+    { "aspect": "accessibility", "check": "Sidebar items are real links/buttons; arrow-key navigation works across thread list" }
+  ]
+}

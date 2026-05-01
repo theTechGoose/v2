@@ -1,0 +1,29 @@
+{
+  "id": "assistant-voice-cancel-mid-recording",
+  "name": "User starts a voice memo, mid-sentence taps Cancel — nothing is sent",
+  "description": "Tests the cancel path on the recording panel. Cancel must teardown MediaRecorder + the WS to AssemblyAI + the AudioContext, drop accumulated audio chunks before the onstop handler tries to upload them, and return the composer to idle with the previous textarea draft preserved.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego",
+    "role": "Realised mid-sentence he was about to send the wrong quote",
+    "context": "Said 'wait, I'm thinking of a different job' and changed his mind."
+  },
+  "preconditions": [
+    "Mic permission granted",
+    "Conversation already has some history — user has a saved draft 'Reminder for the Hernandez deck' in the textarea"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Taps the pink mic button", "expect": "Recording panel mounts; LIVE pill pulsing; timer at 0:00" },
+    { "actor": "user",   "action": "Speaks for ~3s ('quote a fence for the Pat— wait')", "expect": "Live transcript shows 'quote a fence for the Pat'; orb scales with the audio" },
+    { "actor": "user",   "action": "Taps the X (Cancel) button", "expect": "Recording panel unmounts; composer returns with 'Reminder for the Hernandez deck' still in the textarea (nothing got sent); no '🎙️' bubble appears in the chat; backend does NOT receive a chat turn or a /files upload" },
+    { "actor": "system", "action": "Inspect Network tab", "expect": "WS to /api/voice/stream closed cleanly with code 1000; no POST to /api/files/files; no POST to /api/agents/chat" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Cancel × button has enough hit area on touch (≥32px tap target on the mobile breakpoint)" },
+    { "aspect": "feel",          "check": "Cancel feels final — there's no confirmation modal or 'are you sure'; the design trusts the user" },
+    { "aspect": "functionality", "check": "cancelRecord() clears recChunksRef BEFORE calling recorder.stop() so the onstop handler's chunks.length===0 short-circuit fires; mic stream tracks released" },
+    { "aspect": "accessibility", "check": "Cancel button has aria-label='Cancel recording'; focus returns to the textarea after cancel" }
+  ]
+}

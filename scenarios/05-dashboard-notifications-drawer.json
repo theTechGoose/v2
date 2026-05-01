@@ -1,0 +1,29 @@
+{
+  "id": "dashboard-notifications-drawer",
+  "name": "User reviews notifications and marks them read",
+  "description": "Notification bell shows an unread count. Opening the drawer shows a chronological list grouped by type (opens, payments, signatures). Marking read syncs across tabs.",
+  "category": "dashboard",
+  "surface": ["/dashboard"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Lena Park",
+    "role": "Painter, two-person shop",
+    "context": "Comes back to her laptop after lunch. Sees a 5 on the bell."
+  },
+  "preconditions": [
+    "5 unread notifications: 2 quote opens, 1 signature, 1 payment, 1 stale-quote nudge"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Clicks the notification bell", "expect": "Drawer slides in from the right; unread items have a subtle dot or background" },
+    { "actor": "user",   "action": "Clicks a 'Browning signed your contract' notification", "expect": "Navigates to that contract; notification marks read" },
+    { "actor": "user",   "action": "Returns to dashboard", "expect": "Bell count is now 4" },
+    { "actor": "user",   "action": "Clicks 'Mark all read'", "expect": "Bell count drops to 0; drawer entries dim but remain visible" },
+    { "actor": "system", "action": "User has a second tab open on /quotes", "expect": "That tab's bell also drops to 0 within a few seconds (cross-tab sync)" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Unread vs read styling is distinguishable without relying on color alone" },
+    { "aspect": "feel",          "check": "Drawer doesn't push page content — it overlays" },
+    { "aspect": "functionality", "check": "Notifications older than 7 days are collapsed under 'Earlier' and load on demand" },
+    { "aspect": "accessibility", "check": "Drawer traps focus while open; Esc closes it and returns focus to the bell" }
+  ]
+}

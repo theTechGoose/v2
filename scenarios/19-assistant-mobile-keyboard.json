@@ -1,0 +1,29 @@
+{
+  "id": "assistant-mobile-keyboard",
+  "name": "Assistant chat on mobile with the on-screen keyboard open",
+  "description": "Mobile-first audit: composer, sidebar, send button, and streaming messages must all behave correctly when the on-screen keyboard takes half the viewport.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Marcus Lee",
+    "role": "Solo handyman",
+    "context": "iPhone, Safari. Drafting a quote one-handed."
+  },
+  "preconditions": [
+    "Mobile viewport (≤414px wide)",
+    "User is on /assistant with at least one prior message"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Taps the composer", "expect": "Keyboard slides up; composer remains pinned above the keyboard, not hidden behind it" },
+    { "actor": "user",   "action": "Types a long message that wraps to 4 lines", "expect": "Composer auto-grows up to a max height, then scrolls internally; chat above remains scrollable" },
+    { "actor": "user",   "action": "Taps Send", "expect": "Message bubble appears immediately; streaming response scrolls into view automatically; user doesn't need to manually scroll" },
+    { "actor": "user",   "action": "Pulls down to dismiss keyboard", "expect": "Layout returns to full height smoothly — no double scroll bars, no header glitching" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Send button is large enough to tap (≥44pt); contrast meets WCAG AA" },
+    { "aspect": "feel",          "check": "Keyboard transitions don't cause layout jank or content shift" },
+    { "aspect": "functionality", "check": "Streaming auto-scroll respects user scroll: if they manually scroll up to read older messages, auto-scroll pauses" },
+    { "aspect": "accessibility", "check": "Composer label is associated; viewport height accounts for visualViewport API on iOS" }
+  ]
+}

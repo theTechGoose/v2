@@ -1,0 +1,28 @@
+{
+  "id": "quotes-csv-export",
+  "name": "Diego exports the /quotes pipeline as a CSV from the page header",
+  "description": "Bookkeeper's annual ask: a CSV of every quote sent this year, with status, customer name, total (cents-correct dollars in the export), sent date, and decided date. /quotes header carries an 'Export' menu; user picks 'This year (CSV)'; the file downloads with a deterministic filename.",
+  "category": "quotes",
+  "surface": ["/quotes"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Doing year-end paperwork",
+    "context": "Bookkeeper asked for everything quoted in 2026."
+  },
+  "preconditions": [
+    "Account has 100+ quotes spanning the year, mixed statuses",
+    "All money values are cents-correct (post-migration)"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /quotes, opens the page-header 'Export' menu, picks 'This year (CSV)'", "expect": "Browser starts a download named 'quotes-2026.csv' (no millisecond suffix; deterministic for the year)" },
+    { "actor": "system", "action": "Server streams the CSV", "expect": "First row is a header: id,customer,summary,status,total,sentAt,decidedAt,decidedReason; money column is dollars-as-decimal (e.g. 350.00) for spreadsheet ergonomics, NOT cents" },
+    { "actor": "user",   "action": "Opens the file in Numbers/Excel", "expect": "Dates parse as dates; money parses as currency; UTF-8 names with accents survive; commas inside descriptions are properly quoted" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Export menu item uses the same chevron/icon vocabulary as the rest of the page header" },
+    { "aspect": "feel",          "check": "Bookkeeper-friendly — file opens cleanly in Excel/Numbers without import-wizard fights" },
+    { "aspect": "functionality", "check": "Money is fmtMoneyExact-style (dollars.cents) at the boundary; cents-shape internal stays internal" },
+    { "aspect": "accessibility", "check": "Menu is keyboard-navigable; download starts on Enter; no focus loss after the download starts" }
+  ]
+}

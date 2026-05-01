@@ -64,7 +64,15 @@ export class LockQuote {
 
     const wasAlreadySent = quote.status === "sent";
     if (!wasAlreadySent) {
-      await this.quotes.update(quote.id, input.userId, { status: "sent" });
+      // Stamp sentAt here too — the /quotes stage derivation reads sentAt
+      // (not status), and the email-side stamping in SendPaperworkEmail is
+      // skipped when there's no recipient on file. Without this, locking
+      // a quote with no customer email leaves stage="draft" forever even
+      // though status="sent" — which broke the pipeline view (audit #2).
+      await this.quotes.update(quote.id, input.userId, {
+        status: "sent",
+        sentAt: new Date().toISOString(),
+      });
       await this.bus.emit({
         userId: input.userId,
         entityType: "quote",
@@ -80,13 +88,14 @@ export class LockQuote {
 
     // Re-read so the action_card mirrors what's actually persisted.
     const fresh = await this.quotes.getOwned(quote.id, input.userId);
+    // Audit1 #3 — QuoteStore now persists per-unit price in INTEGER CENTS,
+    // so per-line totals are price × quantity (no more × 100). Same for
+    // estimatedTotal.
     const lineItems = (fresh.lineItems ?? []).map((li) => ({
       description: li.description,
-      // QuoteStore uses dollars-per-unit × quantity; the chat surface
-      // expects per-line cents totals.
-      amountCents: Math.round((li.price ?? 0) * (li.quantity ?? 1) * 100),
+      amountCents: Math.round((li.price ?? 0) * (li.quantity ?? 1)),
     }));
-    const totalCents = Math.round((fresh.estimatedTotal ?? 0) * 100);
+    const totalCents = fresh.estimatedTotal ?? 0;
 
     const card = await this.messages.append({
       conversationId: conv.id,
@@ -111,7 +120,7 @@ export class LockQuote {
       payload: {
         toPhase: "terms",
         quoteId: fresh.id,
-        summary: "Payment, warranty, dispute, governing state — 10 quick steps",
+        summary: "Payment, warranty, dispute, governing state — a few quick questions",
       },
     });
 

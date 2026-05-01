@@ -7,6 +7,7 @@
  * by index and projects dates into the strip's day-of-month coordinate.
  */
 import type { Contract, ContractMood } from "../clients/contracts.ts";
+import { fmtMoney } from "./format.ts";
 
 export type ContractStatus =
   | "IN PROGRESS"
@@ -111,9 +112,6 @@ function stripCoord(d: Date | undefined, anchor: Date): number {
   return 8 + daysBetween(anchor, d);
 }
 
-function fmtMoney(n: number): string {
-  return `$${Math.round(n).toLocaleString()}`;
-}
 
 interface BuildArgs {
   contract: Contract;

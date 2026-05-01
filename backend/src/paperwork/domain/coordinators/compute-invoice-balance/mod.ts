@@ -5,8 +5,11 @@ import { balanceDue } from "@paperwork/domain/business/invoice-balance/mod.ts";
 
 export interface InvoiceBalanceResult {
   invoiceId: string;
+  /** Invoice total. INTEGER CENTS (audit1 #3). */
   amount: number;
+  /** Sum of payments. INTEGER CENTS. */
   paidTotal: number;
+  /** Outstanding balance. INTEGER CENTS — `amount - paidTotal`. */
   balance: number;
   status: string;
 }

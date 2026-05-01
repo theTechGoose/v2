@@ -8,6 +8,7 @@ export class CreatePaymentDto {
   @IsString()
   invoiceId!: string;
 
+  /** Payment amount in INTEGER CENTS. Audit1 #3. */
   @IsNumber()
   amount!: number;
 
@@ -22,6 +23,7 @@ export class CreatePaymentDto {
 }
 
 export class UpdatePaymentDto {
+  /** INTEGER CENTS. */
   @IsOptional() @IsNumber() amount?: number;
   @IsOptional() @IsString() @IsIn(PAYMENT_METHODS as unknown as string[]) method?: PaymentMethod;
   @IsOptional() @IsString() receivedAt?: string;

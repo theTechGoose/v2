@@ -1,0 +1,28 @@
+{
+  "id": "messages-redirect-toast-from-old-link",
+  "name": "Visiting /messages redirects to /assistant?from=messages and shows a one-time toast",
+  "description": "Old bookmarks / docs / emails linking to /messages should still work — the route 302s to /assistant. To avoid a silent redirect (audit P6.14), the assistant page mounts a tiny RedirectToast island when ?from=messages is present; it surfaces 'We've consolidated messaging into the assistant.' for ~6s and self-strips the query param so a refresh doesn't re-show it.",
+  "category": "assistant",
+  "surface": ["/messages", "/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Returning user",
+    "role": "Has /messages bookmarked from an earlier version",
+    "context": "Company has been around long enough for old links to exist."
+  },
+  "preconditions": [
+    "User authenticated"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Navigates to /messages directly (typed URL or click bookmark)", "expect": "302 → /assistant?from=messages; the URL bar settles on /assistant?from=messages" },
+    { "actor": "user",   "action": "Looks at the screen", "expect": "RedirectToast island shows a small banner near the top: 'We've consolidated messaging into the assistant.' with optional close X" },
+    { "actor": "system", "action": "After ~6s", "expect": "Toast self-dismisses with a fade; query param '?from=messages' is removed via history.replaceState so a refresh doesn't re-trigger" },
+    { "actor": "user",   "action": "Refreshes the page", "expect": "Toast does NOT reappear — URL is now clean /assistant" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Toast uses a non-intrusive banner color (teal/coffee), not red/error; positioned where it doesn't obscure the chat input or new-conversation hero" },
+    { "aspect": "feel",          "check": "User understands what happened in one glance; the redirect is no longer silent" },
+    { "aspect": "functionality", "check": "history.replaceState strips ONLY the from=messages param, preserves any other params; mount is conditional on the param existing" },
+    { "aspect": "accessibility", "check": "Toast has role=status with aria-live=polite; auto-dismiss timer respects prefers-reduced-motion (uses display:none vs animated fade if reduced)" }
+  ]
+}

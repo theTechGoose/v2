@@ -1,0 +1,27 @@
+{
+  "id": "sidebar-identity-contrast-on-every-page",
+  "name": "Sidebar footer identity ('Diego / Riley Roofing Co.') is readable on the dark teal sidebar",
+  "description": "DashSidebar's footer renders the user's avatar, display name, business name, and a chevron. The inline styles previously used var(--fg) and var(--fg-muted) — light-theme dark colors — which were unreadable against the dark teal sidebar background. Names should be #fff; secondary biz line is rgba(255,255,255,0.6); chevron is rgba(255,255,255,0.55). Also the .sb__toggle button must be visibly styled across all routes (was unstyled on /assistant where dashboard.css doesn't load).",
+  "category": "dashboard",
+  "surface": ["/dashboard", "/clients", "/quotes", "/contracts", "/invoices", "/payments", "/assistant", "/settings"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator with profile populated",
+    "context": "Logged in. Profile has display name 'Diego' and businessName 'Riley Roofing Co.'."
+  },
+  "preconditions": [
+    "Profile snapshot: display='Diego', biz='Riley Roofing Co.', initials='DR'"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Visits each authed page in turn", "expect": "Footer reads 'Diego' (white) over 'Riley Roofing Co.' (rgba 0.6) — both legible; chevron visible at rgba 0.55" },
+    { "actor": "user",   "action": "Inspects /assistant specifically", "expect": "The 28×28 collapse-toggle button to the right of the footer renders as a deliberate styled chevron (not as a tiny default-styled browser button)" },
+    { "actor": "user",   "action": "Inspects with browser contrast checker", "expect": "Display-name text passes WCAG AA contrast against the dark teal background; biz line passes AA Large at 11px or hits AAA Normal" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Footer reads as one cohesive identity block on every page" },
+    { "aspect": "feel",          "check": "User feels seen — the avatar + name combo is the visual anchor" },
+    { "aspect": "functionality", "check": "Inline styles supersede the historical .sb__user-name CSS so behavior is consistent regardless of which page CSS loaded" },
+    { "aspect": "accessibility", "check": "Contrast meets WCAG AA; chevron has aria-hidden since the parent <a> already has a title" }
+  ]
+}

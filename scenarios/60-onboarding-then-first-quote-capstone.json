@@ -1,0 +1,37 @@
+{
+  "id": "onboarding-then-first-quote-capstone",
+  "name": "Capstone — first-time user goes from blank account to sent quote in one continuous flow",
+  "description": "Stitches together the new-user funnel: phone OTP login → /assistant cold load → onboarding ask → name + business captured → first quote drafted → locked + sent → email queued → public-quote brand reflects the just-captured business name. Verifies that no piece of identity propagation needs a manual refresh.",
+  "category": "cross-page",
+  "surface": ["auth", "/assistant", "/quotes", "public-quote", "/dashboard", "/settings", "email"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Brand-new account",
+    "context": "Just landed on / via a referral; phone in hand to verify."
+  },
+  "preconditions": [
+    "No prior session; user record does not yet exist for +15125550100"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "On /, taps 'Get started', enters phone +15125550100, taps Send code", "expect": "OTP SMS dispatched (in dev, the code is in the OtpStore); user is taken to /verify" },
+    { "actor": "user",   "action": "Enters the 6-digit code", "expect": "POST /auth/verify-otp creates User { phoneNumber, name: undefined }; sets pm_session cookie; redirects to /dashboard" },
+    { "actor": "user",   "action": "Lands on /dashboard", "expect": "Skeleton renders; KPIs settle to all zeros; topbar greeting reads 'Hey, there 👋'; sidebar Quotes badge is hidden (count is 0)" },
+    { "actor": "user",   "action": "Clicks My assistant in the sidebar", "expect": "/assistant cold load; empty-state hero 'Start a conversation with Bossie'; composer ready" },
+    { "actor": "user",   "action": "Types 'Hey'", "expect": "Bossie's onboarding ask fires (no LLM call); user.name still undefined" },
+    { "actor": "user",   "action": "Replies 'Diego, Riley Roofing Co.'", "expect": "Backend persists user.name='Diego' + businessIdentity.businessName='Riley Roofing Co.'; assistant: 'Got it, Diego — what can I help you with?'" },
+    { "actor": "user",   "action": "Sends 'Quote a fence repair for the Patels — labor $350 plus materials $80'", "expect": "create_quote action_card with summary 'Fence repair — Patel'; total $430.00" },
+    { "actor": "user",   "action": "Sends 'Lock and send'", "expect": "Quote → status='sent'; email dispatched to the customer; from-name should include 'Diego' (after P1.6 ships)" },
+    { "actor": "user",   "action": "Opens /dashboard in another tab", "expect": "Sidebar Quotes badge reads '1'; KPI Quotes Pending=1; topbar greeting reads 'Hey, Diego 👋'; sidebar footer shows DR avatar + 'Diego' + 'Riley Roofing Co.'" },
+    { "actor": "customer","action": "(Asha) opens the public quote URL in the email", "expect": "Eyebrow reads 'RILEY ROOFING CO.'; greeting 'Hi Asha — here's your quote.'; contact-back footer 'Questions? Reach Diego: <phone>'" }
+  ],
+  "emails": [
+    { "to": "asha@example.com", "trigger": "quote sent", "subject": "Your quote from Diego — fence repair", "linksTo": "public-quote", "expect": "Brand reads as Riley Roofing Co. (NOT Paperwork Monsters); customer's first name in greeting" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Brand consistency through the funnel: skeleton → real dashboard → assistant → public quote all share the visual identity. The customer never sees PAPERWORK MONSTERS." },
+    { "aspect": "feel",          "check": "From OTP code to sent quote is <2 minutes for a confident user; onboarding adds two turns max" },
+    { "aspect": "functionality", "check": "Identity propagation is live: name captured in HandleChatMessage's onboarding short-circuit reaches the public quote BE projection without any cache invalidation step" },
+    { "aspect": "accessibility", "check": "Each step's heading hierarchy reads coherently; OTP code input uses inputmode=numeric + autocomplete=one-time-code" }
+  ]
+}

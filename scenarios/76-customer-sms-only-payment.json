@@ -1,0 +1,29 @@
+{
+  "id": "customer-sms-only-payment",
+  "name": "Customer pays an invoice via SMS link without ever opening the email",
+  "description": "Older homeowner customer prefers texts over email. The system also sends an SMS with the public-invoice link. She taps the link from her Messages app; the page renders mobile-first; she pays via Apple Pay; no email account ever touched.",
+  "category": "customer-email",
+  "surface": ["sms", "public-invoice"],
+  "channel": "sms",
+  "persona": {
+    "name": "Lorraine Becker",
+    "role": "Retired schoolteacher, 67",
+    "context": "Has email but never checks it. Lives in iMessage. Asked the contractor 'just text me'."
+  },
+  "preconditions": [
+    "Customer phone has SMS-opt-in flag set (consent recorded at quote acceptance)",
+    "Invoice is unpaid"
+  ],
+  "steps": [
+    { "actor": "system",   "action": "Invoice is sent — both email and SMS dispatched", "expect": "SMS body fits in one segment: 'Diego from Riley Roofing: $107.50 invoice ready — pay here: <short-link>. Reply STOP to opt out.'" },
+    { "actor": "customer", "action": "Taps the SMS link in Messages", "expect": "Public-invoice page opens in mobile Safari; layout is mobile-first; amount is the first thing visible above the fold" },
+    { "actor": "customer", "action": "Taps 'Pay with Apple Pay' → biometric", "expect": "Stripe charges; success state shown; SMS confirmation sent: 'Thanks! Receipt: <link>'" },
+    { "actor": "customer", "action": "Replies 'STOP' to a future reminder", "expect": "Outbound SMS dispatcher honors the opt-out; future reminders fall back to email only" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "SMS-opened page doesn't hide the amount under hero chrome; one-thumb tap to pay" },
+    { "aspect": "feel",          "check": "Customer never feels she had to 'sign up' for anything — pay and done" },
+    { "aspect": "functionality", "check": "STOP keyword is honored across all SMS senders; consent state is persisted per phone number" },
+    { "aspect": "accessibility", "check": "SMS short-link uses HTTPS; landing page passes mobile a11y checks (tap targets ≥ 44px)" }
+  ]
+}

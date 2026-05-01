@@ -1,0 +1,29 @@
+{
+  "id": "quotes-pipeline-overview",
+  "name": "Quotes page — pipeline track with stages",
+  "description": "User opens /quotes and sees their pipeline laid out by stage: opened, sent, cooling, stale. Cards show client, summary, value, days in stage, and open count.",
+  "category": "quotes",
+  "surface": ["/quotes"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Lena Park",
+    "role": "Painter",
+    "context": "Wants to know which quotes need attention this week."
+  },
+  "preconditions": [
+    "Account has 8 quotes spread across all 4 stages",
+    "At least one quote with multiple opens (engaged)"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /quotes", "expect": "Stage columns/track visible with counts; cards within sorted by daysIn within each stage" },
+    { "actor": "user",   "action": "Hovers a card", "expect": "Subtle hover state; quick summary in tooltip or expanded card section" },
+    { "actor": "user",   "action": "Clicks a card", "expect": "Opens quote detail with full line items, send/edit/lock controls and a public-link copy button" },
+    { "actor": "user",   "action": "Returns via back", "expect": "Stage scroll position restored; engaged cards (high opens) remain visually accented" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Stage colors are consistent with mood/heat ('opened' warm, 'stale' cool); not color-only signal" },
+    { "aspect": "feel",          "check": "Track is scannable left-to-right or top-to-bottom — user knows in 3 seconds where to look" },
+    { "aspect": "functionality", "check": "Open count and daysIn match backend values; no off-by-one rounding" },
+    { "aspect": "accessibility", "check": "Stages are headings or labelled regions; cards have the client name first in the accessible name" }
+  ]
+}

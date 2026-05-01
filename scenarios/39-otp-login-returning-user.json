@@ -1,0 +1,30 @@
+{
+  "id": "otp-login-returning-user",
+  "name": "Returning user logs in via SMS OTP",
+  "description": "User enters their phone, receives a 6-digit code, enters it, and lands back on the page they were trying to reach. Edge cases: wrong code, expired code, resend.",
+  "category": "auth",
+  "surface": ["/", "/verify", "/dashboard"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Logged out a week ago. Trying to get back in to send a quote."
+  },
+  "preconditions": [
+    "Account exists for +1 555 0123",
+    "User is unauthenticated; tried to access /quotes and was bounced to login"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Enters phone number", "expect": "Validation accepts variations: '555-0123', '(555) 0123', '+1 5550123'; submit advances to /verify" },
+    { "actor": "system", "action": "Sends a 6-digit code via SMS", "expect": "Code arrives in <30s; code length and format match what the input expects" },
+    { "actor": "user",   "action": "Types a wrong code", "expect": "Inline error 'That code didn't match — try again' without clearing the field unnecessarily" },
+    { "actor": "user",   "action": "Taps 'Resend code'", "expect": "Resend button is throttled (e.g. 30s cooldown shown as a countdown)" },
+    { "actor": "user",   "action": "Enters correct code", "expect": "Logs in; lands on /quotes (the page they originally tried), not /dashboard" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "OTP input is 6 separate boxes or one auto-advancing box — not a long bare text field" },
+    { "aspect": "feel",          "check": "iOS auto-fills the SMS code; Android one-tap auto-fills via SMS retriever where supported" },
+    { "aspect": "functionality", "check": "Codes expire after a short window (e.g. 10 min); after N wrong attempts, user is locked out with a helpful message" },
+    { "aspect": "accessibility", "check": "OTP boxes are inputs with autocomplete='one-time-code'; error messages associated via aria-describedby" }
+  ]
+}

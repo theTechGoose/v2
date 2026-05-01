@@ -68,7 +68,24 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
     try {
       const result = await verifyClient.verifyOtp({ phoneNumber, code: finalCode });
       if (result.ok) {
-        globalThis.location.href = result.redirectTo;
+        // Persist the verified phone for next-visit one-tap login.
+        try { globalThis.localStorage?.setItem("pm:last-phone", phoneNumber); } catch { /* SSR-safe */ }
+        // Animate Step 3 ("You're in") fill before navigating — visual
+        // continuity with the landing-page progress bar.
+        const codeStep = document.getElementById("pm-step-code");
+        const inStep = document.getElementById("pm-step-in");
+        const bar2 = document.getElementById("pm-step-bar-2");
+        if (codeStep && inStep) {
+          codeStep.classList.remove("pm-steps__item--active");
+          codeStep.classList.add("pm-steps__item--done");
+          const codeDot = codeStep.querySelector(".pm-steps__dot");
+          if (codeDot) codeDot.textContent = "✓";
+          if (bar2) bar2.classList.add("pm-steps__bar--done");
+          inStep.classList.add("pm-steps__item--active");
+          const inDot = inStep.querySelector(".pm-steps__dot");
+          if (inDot) inDot.textContent = "✓";
+        }
+        setTimeout(() => { globalThis.location.href = result.redirectTo; }, 400);
         return;
       }
       const map = {

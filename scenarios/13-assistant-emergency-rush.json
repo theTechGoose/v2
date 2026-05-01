@@ -1,0 +1,35 @@
+{
+  "id": "assistant-emergency-rush",
+  "name": "Same-day emergency quote with a rush surcharge",
+  "description": "Customer called about a burst pipe. User dictates a rush quote and the assistant should both flag urgency in the customer-facing copy and add a clear rush-fee line.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Marcus Lee",
+    "role": "Solo handyman, on-call",
+    "context": "Phone rang at 7am. Wants a quote out before he drives over so the customer agrees in writing."
+  },
+  "preconditions": [
+    "Active /assistant thread, phase 'quote'"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types: 'Emergency for the Diaz family — burst pipe, $250 labor, $80 parts, $100 same-day rush fee. Need to send right now.'", "expect": "Assistant creates a quote with three lines totaling $430.00; summary mentions 'emergency' or 'same-day'" },
+    { "actor": "user",   "action": "Types: 'Lock and send.'", "expect": "Quote locks; the email queued to the customer carries an 'urgent' tone in subject/preview without looking spammy" }
+  ],
+  "emails": [
+    {
+      "to": "diaz@example.com",
+      "trigger": "lock+send",
+      "subject": "Same-day quote for your burst pipe — Marcus",
+      "linksTo": "public-quote",
+      "expect": "Subject conveys urgency; body has a one-line description, total, and an Accept button visible without scrolling on mobile"
+    }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Customer email looks personal, not transactional — sender name is the contractor's, not 'no-reply'" },
+    { "aspect": "feel",          "check": "User can go from voice/text to sent quote in under 60 seconds" },
+    { "aspect": "functionality", "check": "Rush fee is a separate line, not folded into labor — easier to defend if disputed" },
+    { "aspect": "accessibility", "check": "Email passes basic alt-text and heading checks (e.g., Litmus alt-text spot check)" }
+  ]
+}

@@ -424,6 +424,19 @@ html, body {
     overflow: hidden;
   }
   .sb__textus:hover { transform: translateY(-2px); filter: brightness(1.05); }
+  @keyframes pm-assistant-shake {
+    0%, 88%, 100% { transform: translate(0, 0) rotate(0); }
+    90%           { transform: translate(-3px, 0) rotate(-0.6deg); }
+    92%           { transform: translate(3px, 0)  rotate(0.6deg); }
+    94%           { transform: translate(-2px, 0) rotate(-0.4deg); }
+    96%           { transform: translate(2px, 0)  rotate(0.4deg); }
+    98%           { transform: translate(-1px, 0) rotate(0); }
+  }
+  .sb__textus { animation: pm-assistant-shake 5.2s ease-in-out infinite; }
+  .sb__textus:hover, .sb__textus:focus-visible { animation: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .sb__textus { animation: none; }
+  }
   .sb__textus-icon {
     width: 32px; height: 32px;
     background: rgba(255,255,255,0.22);
@@ -2706,7 +2719,8 @@ html, body {
     border-radius: 16px;
     padding: 8px 8px 8px 14px;
     display: flex;
-    align-items: flex-end;
+    /* center: keeps placeholder aligned with mic+send (44px) buttons. */
+    align-items: center;
     gap: 8px;
     transition: border-color 160ms;
   }

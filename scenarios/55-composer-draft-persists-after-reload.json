@@ -1,0 +1,28 @@
+{
+  "id": "composer-draft-persists-after-reload",
+  "name": "Half-typed message survives a page reload via localStorage",
+  "description": "AsstComposer (and the AsstChat composer) writes the in-flight draft to localStorage on every keystroke (key: 'pm:composer:{conversationId|new}'). On mount, it reads back. Reload, route navigation, or accidental tab close shouldn't lose the user's typing.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego",
+    "role": "Got distracted mid-message",
+    "context": "Phone rang — by the time he hung up, the page had reloaded due to a deploy."
+  },
+  "preconditions": [
+    "On /assistant or /assistant/{id}; textarea is empty"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types 'Quote a fence repair for the Patels — labor $350 plus materi' (incomplete) but does NOT hit send", "expect": "localStorage['pm:composer:{convId|new}'] holds the partial text" },
+    { "actor": "user",   "action": "Hard-refreshes the page (Cmd+R)", "expect": "Textarea remounts pre-populated with the same partial text; cursor focused at end" },
+    { "actor": "user",   "action": "Finishes typing 'als $80' and hits Enter", "expect": "Message sends as expected; localStorage entry is removed (cleanup on successful send)" },
+    { "actor": "user",   "action": "Starts typing again, then closes the browser tab without sending", "expect": "Re-opening /assistant later restores the unsent draft from localStorage" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Restored text appears immediately on mount — no flash of empty textarea" },
+    { "aspect": "feel",          "check": "User feels safe typing long messages; no surprise data loss on accidental refresh" },
+    { "aspect": "functionality", "check": "Storage key includes conversationId so drafts don't bleed across threads; key for /assistant (no thread) uses 'new' suffix" },
+    { "aspect": "accessibility", "check": "Restoring text doesn't move the screen-reader focus; the textarea's aria-label is unchanged" }
+  ]
+}

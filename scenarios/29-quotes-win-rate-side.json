@@ -1,0 +1,27 @@
+{
+  "id": "quotes-win-rate-side",
+  "name": "Win-rate side panel with insight tip",
+  "description": "/quotes has a side panel showing win rate, biggest pending quote, and a contextual tip ('Quotes sent on Tuesdays close 24% faster'). Insight should rotate based on real data, not be static.",
+  "category": "quotes",
+  "surface": ["/quotes"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Curious whether his pricing is sticking. Glances at the side panel."
+  },
+  "preconditions": [
+    "Account has at least 30 decided quotes (won + lost) over the past 90 days"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /quotes", "expect": "Side panel: Win rate %, biggest pending quote ($value, client), and 1 insight tip" },
+    { "actor": "user",   "action": "Hovers/taps the win rate", "expect": "Breakdown: won X / decided Y; trend arrow vs prior 90 days" },
+    { "actor": "user",   "action": "Refreshes the page on a different day", "expect": "Insight tip is data-derived (different over time), not a hardcoded copy string" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Win rate is the largest number on the panel; everything else is supporting" },
+    { "aspect": "feel",          "check": "Insight tip feels insightful, not a fortune cookie ('You sent 3 quotes today' is weak — 'Quotes you send before 10am close 18% more often' is strong)" },
+    { "aspect": "functionality", "check": "If <10 decided quotes, panel shows 'Not enough data yet' instead of a misleading rate" },
+    { "aspect": "accessibility", "check": "Trend arrow is paired with text ('up 5pts vs last quarter'), not arrow-alone" }
+  ]
+}

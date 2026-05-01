@@ -1,0 +1,30 @@
+{
+  "id": "customer-asks-question-roundtrip",
+  "name": "Customer uses Ask a question on public quote; contractor sees inquiry on the activity feed",
+  "description": "Inline 'Ask a question' form on the public quote — textarea + optional contact-back + optional name. POST /quotes/:id/inquiry emits a quote.inquiry domain event; the notification mapper converts that to a customer_replied notification with the question as the body so it shows under the bell on the contractor's dashboard.",
+  "category": "customer-email",
+  "surface": ["public-quote", "/dashboard"],
+  "channel": "mixed",
+  "persona": {
+    "name": "Asha Patel",
+    "role": "Wants to clarify timeline before deciding",
+    "context": "Loves the price; needs to know if Diego can start by Friday."
+  },
+  "preconditions": [
+    "Quote sent to Asha; status='sent'",
+    "Diego is logged in on /dashboard in another tab"
+  ],
+  "steps": [
+    { "actor": "customer", "action": "Taps 'Ask a question' on /q/{id}", "expect": "Form expands inline: textarea, contact-back input ('Phone or email'), name input, teal 'Send question' CTA disabled until textarea is non-empty" },
+    { "actor": "customer", "action": "Types 'Can we start next week?' + contact-back '555-123-4567' → Send question", "expect": "POST /api/quotes/{id}/inquiry returns 200; success card '✓ Question sent / Your contractor will follow up directly.' replaces the form" },
+    { "actor": "system",   "action": "Backend emits quote.inquiry event with { customerName, question, contactBack }", "expect": "notify-on-event mapper produces a customer_replied notification with title 'Asha Patel asked a question' and body 'Can we start next week?'" },
+    { "actor": "user",     "action": "(Diego) /dashboard activity feed", "expect": "New entry within 30s: msg icon + 'Asha Patel asked a question · just now'; clicking navigates back to the quote (entityType=quote)" },
+    { "actor": "customer", "action": "Refreshes /q/{id}", "expect": "Quote status is still 'sent' (inquiry doesn't change quote state); Accept/Ask/Decline panel returns to its idle layout — repeat-asks are allowed" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Success card uses teal (informational) coloring distinct from green-accept and pink-decline" },
+    { "aspect": "feel",          "check": "Customer can ask without committing to either accept or decline — preserves optionality" },
+    { "aspect": "functionality", "check": "Inquiry does NOT mutate quote.status; multiple inquiries on the same quote each create their own notification" },
+    { "aspect": "accessibility", "check": "Send button is correctly disabled when question text is empty/whitespace; aria-disabled mirrors the disabled attribute" }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "settings-page-reflects-onboarded-name",
+  "name": "After the assistant captures name + business, /settings shows them under Account + Business identity",
+  "description": "Verifies the persistence path from HandleChatMessage's onboarding short-circuit through to the read side. /settings hits the composite /profile endpoint, which reads UserStore + BusinessIdentityStore. Captured values must surface in the read-only summary cards.",
+  "category": "settings",
+  "surface": ["/assistant", "/settings"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego",
+    "role": "Just onboarded via the assistant",
+    "context": "Wants to confirm what the app stored about him."
+  },
+  "preconditions": [
+    "On /assistant, has just replied 'Diego, Riley Roofing Co.' to the onboarding ask",
+    "Backend confirmed user.name='Diego', businessIdentity.businessName='Riley Roofing Co.'"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Clicks Settings in the sidebar", "expect": "/settings hero shows 'Riley Roofing Co.' as the display name (or 'Diego' as fallback when biz isn't set)" },
+    { "actor": "user",   "action": "Reads the Account card", "expect": "Name=Diego; Phone=+15125550100; Language=English (filled rows only — no 'Nothing set yet.' state)" },
+    { "actor": "user",   "action": "Reads the Business identity card", "expect": "Display name=Riley Roofing Co.; other fields (Legal name, Tagline, Website) show only if the user later sets them — empty fields are NOT rendered" },
+    { "actor": "user",   "action": "Returns to /assistant in a new conversation, sends 'Hey'", "expect": "No onboarding ask fires (user.name is set); LLM handles the message normally" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Settings cards omit empty fields cleanly — no 'Email: —' rows; cards collapse to 'Nothing set yet.' only when ALL fields are unset" },
+    { "aspect": "feel",          "check": "No 'edit' affordance on settings — copy reads 'Edits live in the assistant.' Clear that the assistant is the source of truth" },
+    { "aspect": "functionality", "check": "/profile composite returns identity in the same request as user; cache invalidation isn't needed because settings page is islanded and refetches on mount" },
+    { "aspect": "accessibility", "check": "Card titles use semantic h3; data is in a definition-list-style grid with proper label/value association" }
+  ]
+}

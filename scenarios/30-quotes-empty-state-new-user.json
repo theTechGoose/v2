@@ -1,0 +1,28 @@
+{
+  "id": "quotes-empty-state-new-user",
+  "name": "/quotes empty state for a brand-new user",
+  "description": "User has no quotes yet. /quotes shouldn't just show empty columns — it should illustrate the pipeline and offer a 'Draft your first quote' CTA pointing at /assistant.",
+  "category": "quotes",
+  "surface": ["/quotes"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Marcus Lee",
+    "role": "Solo handyman, day 1",
+    "context": "Curious what /quotes will look like once he has some."
+  },
+  "preconditions": [
+    "Zero quotes in the system",
+    "User authenticated"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /quotes", "expect": "Empty state with the 4 stages shown as a faded/illustrated track and a primary CTA 'Draft your first quote'" },
+    { "actor": "user",   "action": "Clicks the CTA", "expect": "Lands on /assistant with composer focused" },
+    { "actor": "user",   "action": "Returns to /quotes after creating one quote", "expect": "Empty state replaced by the actual pipeline view with the new card visible" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Empty state has the same visual language as the populated view, not a totally different page" },
+    { "aspect": "feel",          "check": "User isn't told what they're missing — they're shown what's possible" },
+    { "aspect": "functionality", "check": "After first quote, the empty state never re-appears (no cache where empty UI flashes between renders)" },
+    { "aspect": "accessibility", "check": "CTA is a real button/link with a descriptive accessible name" }
+  ]
+}

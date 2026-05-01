@@ -29,7 +29,10 @@ export interface Job {
   /** Stable id formed from `quoteId` (the work originates from a quote). */
   id: string;
   customer:   { id: string; name: string };
-  quote:      { id: string; summary: string; estimatedTotal: number };
+  /** Quote summary + estimated total (INTEGER CENTS — same unit as the
+   *  rest of the job, see audit1 #3). Renamed from `estimatedTotal` to
+   *  `estimatedTotalCents` to make the unit visible at the call site. */
+  quote:      { id: string; summary: string; estimatedTotalCents: number };
   contract:   { id: string; status?: string } | null;
   totalCents: number;
   paidCents:  number;
@@ -81,10 +84,12 @@ export class ListActiveJobs {
       if (!customer) continue;          // can't render a job without a customer
 
       const relatedInvoices = contract ? (invoicesByContract.get(contract.id) ?? []) : [];
-      const totalCents = Math.trunc((contract?.totalAmount ?? q.estimatedTotal ?? 0) * 100);
-      const paidCents  = Math.trunc(relatedInvoices
+      // Audit1 #3 — totalAmount, estimatedTotal, and invoice.amount are all
+      // INTEGER CENTS now. The previous schema multiplied by 100 here.
+      const totalCents = contract?.totalAmount ?? q.estimatedTotal ?? 0;
+      const paidCents  = relatedInvoices
         .filter((i) => i.status === "paid")
-        .reduce((sum, i) => sum + (i.amount ?? 0) * 100, 0));
+        .reduce((sum, i) => sum + (i.amount ?? 0), 0);
       const pctPaid    = totalCents > 0 ? Math.round((paidCents / totalCents) * 100) : 0;
 
       const pendingInvoices = relatedInvoices.filter((i) => i.status === "pending");
@@ -114,7 +119,7 @@ export class ListActiveJobs {
       out.push({
         id:         q.id,
         customer:   { id: customer.id, name: customer.name },
-        quote:      { id: q.id, summary: q.summary, estimatedTotal: q.estimatedTotal ?? 0 },
+        quote:      { id: q.id, summary: q.summary, estimatedTotalCents: q.estimatedTotal ?? 0 },
         contract:   contract ? { id: contract.id, status: contract.status } : null,
         totalCents,
         paidCents,

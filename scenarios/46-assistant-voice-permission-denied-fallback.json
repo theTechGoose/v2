@@ -1,0 +1,28 @@
+{
+  "id": "assistant-voice-permission-denied-fallback",
+  "name": "User denies microphone permission — composer surfaces a clear error, mic button stays enabled for retry",
+  "description": "First-tap mic without prior permission. Browser shows the system permission prompt; user clicks Block. The recording panel never opens. Composer surfaces a one-line error ('microphone permission denied') above the textarea; mic button reverts to idle so the user can fix the permission and retry.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Privacy-conscious contractor",
+    "role": "Wary of mic prompts",
+    "context": "Has had bad experiences with apps recording in the background. Is testing the app before trusting it."
+  },
+  "preconditions": [
+    "navigator.permissions.query({ name: 'microphone' }) === 'prompt'"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Taps the pink mic button", "expect": "Browser shows native permission prompt" },
+    { "actor": "user",   "action": "Clicks 'Block'", "expect": "Recording panel does NOT mount; composer surfaces error pill 'microphone permission denied'; mic button is enabled (no permanent disabled state); textarea remains focusable" },
+    { "actor": "user",   "action": "Types a text message instead and hits Enter", "expect": "Text path works normally — voice failure does not poison text" },
+    { "actor": "user",   "action": "Re-taps the mic button after granting permission in browser settings", "expect": "Recording panel mounts; previous error message clears" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Error pill uses pink/red coloring distinct from chat bubbles; doesn't shift the textarea below it" },
+    { "aspect": "feel",          "check": "User is never confused about whether the recording is happening — the permission denial is loud and clear" },
+    { "aspect": "functionality", "check": "teardownRecording() runs even on the catch path so audio context + WS resources are released; setError clears on next successful start" },
+    { "aspect": "accessibility", "check": "Error has role=alert so screen readers announce 'microphone permission denied' immediately" }
+  ]
+}

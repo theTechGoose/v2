@@ -1,0 +1,40 @@
+{
+  "id": "customer-signs-contract",
+  "name": "Customer signs the contract on a phone",
+  "description": "After accepting a quote, customer receives a contract email. They open it, scroll the terms, draw a signature, and submit. Contractor sees the signed contract and can move to invoice.",
+  "category": "customer-email",
+  "surface": ["email", "public-contract", "/contracts", "/dashboard"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Asha Patel",
+    "role": "Homeowner",
+    "context": "Accepted Diego's quote yesterday. Today gets a contract to sign."
+  },
+  "preconditions": [
+    "Diego's account triggered contract send for the won quote",
+    "Contract has terms: scope, deposit %, schedule, exclusions"
+  ],
+  "steps": [
+    { "actor": "system",   "action": "Sends contract email to asha@example.com", "expect": "Subject mentions contract; CTA 'Review and sign'" },
+    { "actor": "customer", "action": "Taps the CTA on iPhone Safari", "expect": "Public contract page renders: full terms readable; signature area at the bottom with a 'Sign' button" },
+    { "actor": "customer", "action": "Scrolls and reads", "expect": "Sticky 'Sign' affordance once user has reached the bottom; no scroll hijack" },
+    { "actor": "customer", "action": "Taps Sign and draws signature with finger", "expect": "Signature canvas accepts touch input; Submit becomes enabled only after a signature is drawn" },
+    { "actor": "customer", "action": "Submits", "expect": "Confirmation 'Signed — Diego will send the deposit invoice next.' Customer can download a PDF copy" },
+    { "actor": "system",   "action": "Diego's /contracts and /dashboard update", "expect": "Contract status flips to signed; activity feed entry; bell notification" }
+  ],
+  "emails": [
+    {
+      "to": "asha@example.com",
+      "trigger": "Diego sends the contract",
+      "subject": "Your contract from Diego — fence repair",
+      "linksTo": "public-contract",
+      "expect": "Email body summarizes scope and deposit so customer knows what they're signing before opening"
+    }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Contract page reads like a clean document, not a CRM screen" },
+    { "aspect": "feel",          "check": "Signing is one continuous action — not a multi-step form" },
+    { "aspect": "functionality", "check": "Submitted signature is stored as both image and structured event with timestamp + IP for audit" },
+    { "aspect": "accessibility", "check": "Signature canvas has a text alternative (typed full name) for users who can't draw" }
+  ]
+}

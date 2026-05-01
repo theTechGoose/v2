@@ -1,0 +1,28 @@
+{
+  "id": "thread-resume-after-overnight-gap",
+  "name": "User opens a conversation from yesterday; chat header is fresh, history scrolls to bottom, composer focuses",
+  "description": "Coming back to a stale thread — opens to the right state without confusion. Chat header (the live ChatHeaderLive island) reflects the current customer + contract status, NOT yesterday's snapshot. Scroll auto-pins to the bottom on first paint; composer auto-focuses for typing.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego",
+    "role": "Back at the desk after a job",
+    "context": "Last night drafted a quote for the Hernandez deck; didn't lock it."
+  },
+  "preconditions": [
+    "Thread { id: T, customer: Hernandez, lastMessage: 23h ago, has draft Quote D }"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Clicks the Hernandez thread in the sidebar", "expect": "Route navigates to /assistant/T; chat scroll is pinned to the bottom (last message visible without manual scroll); ChatHeaderLive renders 'Hernandez K. / Quote drafted · review'" },
+    { "actor": "user",   "action": "Scrolls up to read yesterday's exchange", "expect": "Scroll-position-tracking flag flips to 'not near bottom'; new message arrivals do NOT yank the scroll back" },
+    { "actor": "user",   "action": "Scrolls back to the bottom", "expect": "ResizeObserver detects nearBottom again; auto-pin re-enables for future arrivals" },
+    { "actor": "user",   "action": "Sends 'Bumping labor to $700'", "expect": "create_quote handler updates Quote D in-place (existing draft, status='draft' → updated); thread preview reflects the new summary" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Chat header doesn't briefly show 'New conversation' before swapping to the bound customer name; the live event keeps it accurate from the first paint" },
+    { "aspect": "feel",          "check": "User picks up exactly where they left off — no scroll surprises, no header flash, composer ready" },
+    { "aspect": "functionality", "check": "Draft updates land via N7 update-in-place path: same quoteId, status remains 'draft', no duplicate Quote rows" },
+    { "aspect": "accessibility", "check": "Header live region announces status changes; auto-scroll behavior is 'smooth' for arrivals but instant on initial mount" }
+  ]
+}

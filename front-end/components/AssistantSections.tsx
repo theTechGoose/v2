@@ -191,7 +191,7 @@ export function ChatScroll() {
             <div class="continue-cta__icon"><I d={ICN.contract} size={18} /></div>
             <div class="continue-cta__txt">
               <div class="continue-cta__title">Continue to terms</div>
-              <div class="continue-cta__sub">Payment, warranty, dispute, governing state — 10 quick steps</div>
+              <div class="continue-cta__sub">Payment, warranty, dispute, governing state — a few quick questions</div>
             </div>
             <button type="button" class="continue-cta__btn">
               Start <I d={ICN.arrow} size={11} sw={2.5} />

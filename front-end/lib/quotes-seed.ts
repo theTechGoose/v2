@@ -12,6 +12,10 @@ export interface Quote {
   title: string;
   client: string;
   initials: string;
+  /** Real customer link, when the quote was sent to a known customer. Used
+   *  to compute the "unique clients" KPI on /quotes — unlinked quotes
+   *  ("—") must not collapse into a phantom client (#31). */
+  customerId?: string;
   stage: Stage;
   value: number;
   daysIn: number;

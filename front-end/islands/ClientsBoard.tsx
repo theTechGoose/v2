@@ -21,6 +21,10 @@ import {
   storyLineFor,
 } from "../lib/clients-display.ts";
 
+// Chip set matches the canonical reference (Paperwork Monsters Clients.html)
+// — six entries with the exact labels from the design source. URL
+// bookmarking via ?segment= is additive: it doesn't change the visual
+// chip set, just lets a filtered view be reloaded / shared / back-buttoned.
 type FilterId = ClientStatus | "all";
 
 interface FilterEntry { id: FilterId; label: string }
@@ -32,6 +36,16 @@ const FILTER_DEFS: FilterEntry[] = [
   { id: "regular", label: "Regulars" },
   { id: "cold",    label: "Quiet" },
 ];
+
+const FILTER_IDS: ReadonlyArray<string> = FILTER_DEFS.map((f) => f.id);
+function isFilterId(s: string | null | undefined): s is FilterId {
+  return !!s && FILTER_IDS.includes(s);
+}
+function filterFromSearch(search: string | null | undefined): FilterId {
+  if (!search) return "all";
+  const raw = new URLSearchParams(search).get("segment");
+  return isFilterId(raw) ? raw : "all";
+}
 
 function SinceBadge({ days }: { days: number }) {
   const { tier, num, unit } = sinceBadge(days);
@@ -165,7 +179,14 @@ interface BoardProps {
 }
 
 export default function ClientsBoard({ cards, children }: BoardProps) {
-  const [filter, setFilter] = useState<FilterId>("all");
+  // Filter id ("all" | ClientStatus). Seeded from URL ?segment= so a
+  // reload / shared link / back-button navigates to the same filtered
+  // view. Defaults to "all" (the leftmost chip) when the param is absent
+  // or unrecognized.
+  const [filter, setFilter] = useState<FilterId>(() => {
+    if (typeof globalThis.location === "undefined") return "all";
+    return filterFromSearch(globalThis.location.search);
+  });
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -185,6 +206,25 @@ export default function ClientsBoard({ cards, children }: BoardProps) {
       document.removeEventListener("keydown", onKey);
     };
   }, [openId]);
+
+  // Browser back / forward should re-apply the URL's filter state.
+  useEffect(() => {
+    function onPop() {
+      setFilter(filterFromSearch(globalThis.location.search));
+    }
+    globalThis.addEventListener("popstate", onPop);
+    return () => globalThis.removeEventListener("popstate", onPop);
+  }, []);
+
+  function selectFilter(next: FilterId) {
+    setFilter(next);
+    if (typeof globalThis.location === "undefined") return;
+    const url = new URL(globalThis.location.href);
+    // "all" is the default — represent it by absence of the param.
+    if (next === "all") url.searchParams.delete("segment");
+    else                url.searchParams.set("segment", next);
+    globalThis.history.pushState({ segment: next }, "", url.toString());
+  }
 
   const filterCounts = useMemo(() => {
     const counts: Record<FilterId, number> = {
@@ -221,17 +261,21 @@ export default function ClientsBoard({ cards, children }: BoardProps) {
           />
         </div>
         <div class="ctoolbar2__filters">
-          {FILTER_DEFS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              class={`ctoolbar2__filter ${filter === f.id ? "ctoolbar2__filter--active" : ""}`}
-              onClick={() => setFilter(f.id)}
-            >
-              {f.label}
-              <span class="ctoolbar2__filter-count">{filterCounts[f.id]}</span>
-            </button>
-          ))}
+          {FILTER_DEFS.map((f) => {
+            const active = filter === f.id;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                aria-pressed={active}
+                class={`ctoolbar2__filter ${active ? "ctoolbar2__filter--active" : ""}`}
+                onClick={() => selectFilter(f.id)}
+              >
+                {f.label}
+                <span class="ctoolbar2__filter-count">{filterCounts[f.id]}</span>
+              </button>
+            );
+          })}
         </div>
         <button class="ctoolbar2__sort" type="button">
           Warmth <I d={<path d="m6 9 6 6 6-6" />} size={12} sw={2.5} />

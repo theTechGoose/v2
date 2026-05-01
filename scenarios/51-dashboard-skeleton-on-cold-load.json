@@ -1,0 +1,28 @@
+{
+  "id": "dashboard-skeleton-on-cold-load",
+  "name": "Dashboard renders a layout-shaped skeleton during the SSR → island-fetch gap",
+  "description": "Every authenticated page now uses a top-level data island that fetches on mount. The first render — both server-side and pre-hydration on the client — shows a shimmer skeleton matching the page layout (hero placeholder + 4 KPI tiles + 2 grid panels for /dashboard). No literal 'Loading dashboard…' string ever surfaces.",
+  "category": "dashboard",
+  "surface": ["/dashboard", "/clients", "/quotes", "/contracts", "/invoices", "/jobs", "/payments", "/settings"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Any logged-in user on a cold tab",
+    "role": "First nav of the day",
+    "context": "Hasn't been on /dashboard yet this session — no in-memory fetch cache."
+  },
+  "preconditions": [
+    "User authenticated",
+    "Browser cache cleared OR fresh tab"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Navigates to /dashboard", "expect": "Within the first paint: shimmer skeleton renders (hero block + 4 KPI cards + 2 panel rows). Visible CSS animation 'pmShimmer' on each block (1.4s ease-in-out)." },
+    { "actor": "system", "action": "Island mounts, useEffect fires fetches in parallel: /analytics/dashboard, /jobs, /quotes, /invoices, /customers, /notifications", "expect": "All resolve in <800ms on warm path; skeleton is replaced by the live data render — no 'Loading dashboard…' literal ever flashes" },
+    { "actor": "user",   "action": "Toggles offline + refreshes", "expect": "Skeleton renders; after timeout, error pill 'Couldn't load dashboard: …' replaces it (graceful degradation)" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Skeleton blocks match the height of the real content they're replacing (hero ~200px, KPI tile ~110px, panel rows ~280px) so there's no layout jump on hydration" },
+    { "aspect": "feel",          "check": "Visual shimmer reads as 'app is working' rather than 'app is broken'; cold-path → live data feels like a smooth fade" },
+    { "aspect": "functionality", "check": "ShimmerStyle keyframes are inlined inside the skeleton component so even SSR HTML carries the animation; same skeleton primitives are shared across all 7 page islands" },
+    { "aspect": "accessibility", "check": "Skeleton elements are aria-hidden so screen readers don't read out a series of meaningless 'group' / 'image' announcements" }
+  ]
+}

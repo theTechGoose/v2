@@ -1,0 +1,28 @@
+{
+  "id": "quotes-track-expand-state-after-rerender",
+  "name": "Expanded quotes track stays expanded across data refresh",
+  "description": "/quotes shows three numbered tracks (Out for response / Drafting / Decided this month), all collapsed by default per the canonical reference. When the user expands one and a sibling island triggers a dash-cache refresh, the expanded state must NOT collapse back. The track island owns its own UI state independently of the data refresh cycle.",
+  "category": "quotes",
+  "surface": ["/quotes"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Reviewing pipeline mid-day",
+    "context": "Wants to see what's awaiting response without losing the expanded view when a quote opens an email and the activity feed pulses."
+  },
+  "preconditions": [
+    "Account has 3+ sent quotes in 'Out for response' track"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /quotes", "expect": "All three tracks are collapsed; counts render in the header" },
+    { "actor": "user",   "action": "Clicks the 'Out for response' track header", "expect": "Track expands; aria-expanded=true; quote cards are visible" },
+    { "actor": "system", "action": "Sibling island triggers refreshDash() (e.g. via subscribeDash listener)", "expect": "Track stays expanded; counts may update in the header but state is preserved" },
+    { "actor": "user",   "action": "Reloads the page", "expect": "Tracks return to collapsed (default state — expansion is in-memory, not persisted, by design)" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Chevron rotation animates with the same cubic-bezier as elsewhere; no jump on data refresh" },
+    { "aspect": "feel",          "check": "User feels their interaction is sticky during a session — they can investigate without losing place" },
+    { "aspect": "functionality", "check": "QuoteTrack uses local useState for open/closed; data props can change without remounting and resetting" },
+    { "aspect": "accessibility", "check": "aria-expanded toggles in sync with visible state; focus stays on the header button after activation" }
+  ]
+}

@@ -82,6 +82,97 @@ Deno.test("public e2e: POST /quotes/:id/accept (no session) flips status to acce
   }
 });
 
+Deno.test("public e2e: POST /quotes/:id/decline flips status to lost and records reason/note", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const q = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ summary: "Job", lineItems: [], status: "sent" }),
+    }).then((r) => r.json());
+
+    const out = await fetch(`http://localhost:${PORT}/quotes/${q.id}/decline`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "price", note: "Came in higher than I budgeted." }),
+    }).then((r) => r.json());
+    assertEquals(out.ok, true);
+
+    const refetched = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
+    assertEquals(refetched.status, "lost");
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+Deno.test("public e2e: POST /quotes/:id/decline cannot revoke an already-accepted quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const q = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ summary: "Job", lineItems: [], status: "sent" }),
+    }).then((r) => r.json());
+
+    await drain(await fetch(`http://localhost:${PORT}/quotes/${q.id}/accept`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Tom K." }),
+    }));
+
+    const declineRes = await fetch(`http://localhost:${PORT}/quotes/${q.id}/decline`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "price" }),
+    });
+    assertEquals(declineRes.status, 409);
+    await drain(declineRes);
+
+    const refetched = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
+    assertEquals(refetched.status, "accepted");
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+Deno.test("public e2e: POST /quotes/:id/inquiry returns 200 and does NOT change quote status", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const q = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ summary: "Job", lineItems: [], status: "sent" }),
+    }).then((r) => r.json());
+
+    const out = await fetch(`http://localhost:${PORT}/quotes/${q.id}/inquiry`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question: "Can we start next week instead?", contactBack: "555-1234" }),
+    }).then((r) => r.json());
+    assertEquals(out.ok, true);
+
+    const refetched = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
+    assertEquals(refetched.status, "sent");
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
 Deno.test("public e2e: GET /contracts/:id/public works WITHOUT a session, redacts userId", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();

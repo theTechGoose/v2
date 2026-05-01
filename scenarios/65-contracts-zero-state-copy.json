@@ -1,0 +1,27 @@
+{
+  "id": "contracts-zero-state-copy",
+  "name": "/contracts hero swaps subtitle on the all-zero state",
+  "description": "Fresh account: zero in-flight jobs, zero pending deposits, zero starting next week. The default subtitle '0 jobs running today · $0 in deposits still to bill · 0 starting next week' is not editorial — three zeros in one sentence reads as scaffolding. Detect the all-zero state and swap to: 'Nothing in flight yet — when contracts get signed they'll show up here, with the next milestone watched.' Also hide the secondary 'Active value · $0' line in this state.",
+  "category": "contracts",
+  "surface": ["/contracts"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Marcus Lee",
+    "role": "Solo handyman exploring",
+    "context": "Hasn't promoted a quote to a contract yet."
+  },
+  "preconditions": [
+    "Account has zero contracts in flight, zero pending deposits, zero starting soon"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /contracts", "expect": "Hero h1 still reads '$0 of work you've already promised.' (the line is honest about the value)" },
+    { "actor": "system", "action": "ContractsHero detects allZero", "expect": "Subtitle reads 'Nothing in flight yet — when contracts get signed they'll show up here, with the next milestone watched.'; the 'Active value · $0' secondary line is omitted" },
+    { "actor": "user",   "action": "Once a contract gets signed (state changes)", "expect": "Hero swaps back to the data-bearing subtitle and the active-value line returns" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Hero typography hierarchy is preserved — empty-state subtitle wraps to ~2 lines like the data variant" },
+    { "aspect": "feel",          "check": "First-time visitor reads the subtitle and understands what this page will become" },
+    { "aspect": "functionality", "check": "allZero gate is the single source of truth — no second computation downstream" },
+    { "aspect": "accessibility", "check": "h1 + p semantic order is unchanged; no hidden duplicate copy in the DOM" }
+  ]
+}

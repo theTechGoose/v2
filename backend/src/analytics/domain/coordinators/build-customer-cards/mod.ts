@@ -82,7 +82,8 @@ function buildOne(
   // Treat "deposit"/"credit" status as negative balance, "paid" as zero, "pending" as owed.
   let balanceCents = 0;
   for (const i of myInvoices) {
-    const cents = Math.trunc((i.amount ?? 0) * 100);
+    // Audit1 #3 — invoice.amount is INTEGER CENTS now (no × 100).
+    const cents = i.amount ?? 0;
     if (i.status === "pending") balanceCents += cents;
     else if (i.status === "credit" || i.status === "deposit") balanceCents -= cents;
   }
@@ -108,7 +109,8 @@ function buildOne(
   for (const i of myInvoices) {
     if (i.status !== "paid" || !i.paidAt) continue;
     const t = new Date(i.paidAt).getTime();
-    if (t >= twelveMoAgo) revenue12moCents += Math.trunc((i.amount ?? 0) * 100);
+    // INTEGER CENTS passthrough.
+    if (t >= twelveMoAgo) revenue12moCents += i.amount ?? 0;
   }
 
   // ---------------- status precedence ----------------
@@ -196,7 +198,8 @@ function buildBalanceSub(
   if (balanceCents < 0) return `${formatDollars(-balanceCents)} on file`;
   const openQuote = quotes.find((q) => q.status === "sent");
   if (openQuote) {
-    return `settled · quote out ${formatDollars(Math.trunc((openQuote.estimatedTotal ?? 0) * 100))}`;
+    // estimatedTotal is INTEGER CENTS now (audit1 #3).
+    return `settled · quote out ${formatDollars(openQuote.estimatedTotal ?? 0)}`;
   }
   return "settled";
 }

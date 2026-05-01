@@ -1,0 +1,29 @@
+{
+  "id": "quote-revision-after-rejection",
+  "name": "Diego sends a v2 quote after the customer declined the original on price",
+  "description": "Customer declined v1 with feedback ('a bit high — could you do $400?'). The /assistant surfaces the rejection in the same thread, suggests a re-quote, and lets Diego adjust line items. The new quote (v2) is linked to v1 via a 'revisionOf' reference so the timeline reads as one negotiation, not two unrelated quotes.",
+  "category": "assistant",
+  "surface": ["/assistant", "/quotes", "public-quote", "email"],
+  "channel": "mixed",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Negotiation in progress",
+    "context": "Got a polite no on the fence quote; wants to come down $30 without losing margin."
+  },
+  "preconditions": [
+    "Quote v1 exists with status='lost' and lostReason='price'",
+    "Conversation thread for this quote is still active"
+  ],
+  "steps": [
+    { "actor": "system", "action": "Customer rejection lands; thread receives a phase_event divider 'Customer declined — price'", "expect": "Assistant nudges: 'Want to send a revised version?'" },
+    { "actor": "user",   "action": "On /assistant: 'Yes, drop labor by $30; keep materials'", "expect": "LLM emits create_quote action with v1.lineItems but labor reduced by 3000 cents; payload includes revisionOf=<v1 id>" },
+    { "actor": "user",   "action": "Locks and sends v2", "expect": "QuoteStore.create writes v2 with revisionOf reference; email sent; /quotes shows v2 in 'Out for response' with a small 'v2 · revision of v1' chip" },
+    { "actor": "customer", "action": "Receives email, opens public-quote v2", "expect": "Page header includes 'Revised quote — replaces an earlier estimate'; v1 link is read-only" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "v2 chip in /quotes makes the relationship visible at a glance; not a separate orphaned card" },
+    { "aspect": "feel",          "check": "Customer reads v2 as 'continued conversation', not 'second sales push'" },
+    { "aspect": "functionality", "check": "QuoteCard rendering reads revisionOf and links back to v1 in the timeline; analytics treat them as one funnel, not two" },
+    { "aspect": "accessibility", "check": "Revision chip has descriptive aria-label ('Revision of quote V1, sent April 28')" }
+  ]
+}

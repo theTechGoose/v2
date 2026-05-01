@@ -1,0 +1,28 @@
+{
+  "id": "contractor-bell-shows-customer-inquiry",
+  "name": "Bell + activity feed reflect a customer inquiry within ~30s of the event",
+  "description": "After a customer submits an inquiry on the public quote, the contractor's notification bell unread count increments; the dashboard 'What we handled today' panel surfaces a new entry. Verifies the event → notification mapping and the dashboard's polling/SSE refresh cadence.",
+  "category": "dashboard",
+  "surface": ["/dashboard"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego",
+    "role": "Glancing at /dashboard between jobs",
+    "context": "Has the dashboard open in a tab; checks it when he gets a moment."
+  },
+  "preconditions": [
+    "Diego logged in on /dashboard",
+    "An inquiry was posted to one of his quotes ~10s ago"
+  ],
+  "steps": [
+    { "actor": "system", "action": "/dashboard refresh fires (poll or initial load)", "expect": "Activity feed entry: pink msg icon, 'Asha Patel asked a question' (title) + 'Can we start next week?' (body), 'just now' time" },
+    { "actor": "user",   "action": "Clicks the bell icon in the topbar", "expect": "Notifications drawer (when wired) lists the same inquiry; unread count was 1 before click, drops to 0 on mark-read" },
+    { "actor": "user",   "action": "Clicks the activity entry", "expect": "Routes to /quotes/{id} (or back to the public quote preview); the inquiry context is visible somewhere — a sidebar entry / drawer / inline card" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Inquiry uses the customer_replied skin (msg icon, coffee-50 bg) so it's visually distinct from quote_sent / quote_accepted entries" },
+    { "aspect": "feel",          "check": "Latency from inquiry submission to bell increment ≤ poll interval; the contractor sees customer signal quickly" },
+    { "aspect": "functionality", "check": "Notification is scoped to the contractor's userId only — other tenants never see it. entityType=quote so the deep-link works." },
+    { "aspect": "accessibility", "check": "Bell shows aria-label with the unread count; activity entry is a button with descriptive aria-label" }
+  ]
+}

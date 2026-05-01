@@ -1,0 +1,30 @@
+{
+  "id": "public-invoice-apple-pay-ios",
+  "name": "Public invoice on iOS Safari shows Apple Pay button with correct amount",
+  "description": "Customer opens the deposit-invoice link from email on her iPhone. iOS Safari + Stripe Payment Request API surfaces an Apple Pay button. The button charge amount must match the invoice's cents-correct value; tapping it presents Touch/Face ID; success returns to the page with a paid state.",
+  "category": "customer-email",
+  "surface": ["public-invoice"],
+  "channel": "email",
+  "persona": {
+    "name": "Asha Patel",
+    "role": "iPhone user, Apple Pay set up",
+    "context": "Tapped the email CTA from Mail; landed on the public invoice."
+  },
+  "preconditions": [
+    "Stripe Payment Request configured with Apple Pay merchant ID",
+    "Invoice in 'unpaid' status, amount in cents-correct (post-migration)",
+    "User-Agent reflects iOS Safari (or Chrome iOS — same UIWebKit)"
+  ],
+  "steps": [
+    { "actor": "customer", "action": "Opens /i/<id> on iOS Safari", "expect": "Page detects PaymentRequest API support; Apple Pay button mounts above the manual card form" },
+    { "actor": "system",   "action": "Reads invoice.amount (cents) and currency='usd'", "expect": "Apple Pay sheet is configured with displayItems totaling the invoice (cents-correct, e.g. 10750 = $107.50)" },
+    { "actor": "customer", "action": "Taps Apple Pay → confirms with Face ID", "expect": "Stripe charges via Payment Request; on success, Stripe webhook updates Invoice → paid; client shows confirmation state" },
+    { "actor": "customer", "action": "Refreshes the page", "expect": "Invoice now reads 'Paid · receipt sent'; no Apple Pay button (already paid)" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Apple Pay button uses the canonical 'rounded' Apple-supplied style; not a custom-painted impostor" },
+    { "aspect": "feel",          "check": "Tap-to-pay flow is two taps (CTA → biometric); no unnecessary in-page form" },
+    { "aspect": "functionality", "check": "Cents-correct amount; Stripe idempotency keys in place; refunds flow back to the same invoice" },
+    { "aspect": "accessibility", "check": "Apple Pay button has accessible label 'Pay with Apple Pay'; the page also offers a manual-card fallback for users without Apple Pay" }
+  ]
+}

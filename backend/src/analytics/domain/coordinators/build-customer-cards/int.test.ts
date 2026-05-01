@@ -121,8 +121,9 @@ Deno.test("balanceCents: positive when invoices owed (deposits offset)", async (
   await withKv(async () => {
     const { customers, invoices, flow } = fresh();
     const c = await customers.create("u-1", { name: "Acme" });
-    await invoices.create("u-1", { contractId: "k", customerId: c.id, dueDate: "2026-04-30", status: "pending", amount: 200 });
-    await invoices.create("u-1", { contractId: "k", customerId: c.id, dueDate: "2026-04-15", status: "deposit", amount: 50 });
+    // Audit1 #3 — invoice.amount is INTEGER CENTS now.
+    await invoices.create("u-1", { contractId: "k", customerId: c.id, dueDate: "2026-04-30", status: "pending", amount: 200_00 });
+    await invoices.create("u-1", { contractId: "k", customerId: c.id, dueDate: "2026-04-15", status: "deposit", amount: 50_00 });
     const [card] = await flow.run("u-1", NOW_FIXED);
     assertEquals(card.balanceCents, 200_00 - 50_00);
   });
@@ -142,8 +143,9 @@ Deno.test("revenue12moCents: excludes invoices outside window", async () => {
   await withKv(async () => {
     const { customers, invoices, flow } = fresh();
     const c = await customers.create("u-1", { name: "Acme" });
-    await invoices.create("u-1", { contractId: "k", customerId: c.id, dueDate: "2025-03-01", status: "paid", amount: 500, paidAt: isoOffset(400) });
-    await invoices.create("u-1", { contractId: "k", customerId: c.id, dueDate: "2026-04-01", status: "paid", amount: 200, paidAt: isoOffset(20) });
+    // INTEGER CENTS.
+    await invoices.create("u-1", { contractId: "k", customerId: c.id, dueDate: "2025-03-01", status: "paid", amount: 500_00, paidAt: isoOffset(400) });
+    await invoices.create("u-1", { contractId: "k", customerId: c.id, dueDate: "2026-04-01", status: "paid", amount: 200_00, paidAt: isoOffset(20) });
     const [card] = await flow.run("u-1", NOW_FIXED);
     assertEquals(card.revenue12moCents, 200_00);
   });

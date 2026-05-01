@@ -1,0 +1,28 @@
+{
+  "id": "public-quote-brand-falls-back-without-name",
+  "name": "Public quote eyebrow falls back to YOUR CONTRACTOR when the contractor has no name set",
+  "description": "Tests the public-quote shell's brand fallback chain: contractor.businessName → contractor.name → 'Your contractor' (rendered uppercase via CSS). Once P1.1 onboarding captures a name, the same public link automatically re-brands without any FE change because the BE projection already reads UserStore + BusinessIdentityStore.",
+  "category": "customer-email",
+  "surface": ["public-quote"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Asha Patel (customer)",
+    "role": "Receiving a quote from a contractor who hasn't onboarded yet",
+    "context": "Got the quote email; opens it on her phone."
+  },
+  "preconditions": [
+    "Contractor account: user.name === undefined; businessIdentity.businessName === undefined",
+    "Quote sent + email dispatched"
+  ],
+  "steps": [
+    { "actor": "customer", "action": "Opens /q/{id}", "expect": "Eyebrow at top of the card reads 'YOUR CONTRACTOR' (uppercase via text-transform); contact-back footer reads 'Questions? Reach your contractor: <phone>' because contractor.name is unset" },
+    { "actor": "user",     "action": "(Contractor) on /assistant replies to the onboarding ask: 'Diego, Riley Roofing Co.'", "expect": "user.name='Diego'; businessIdentity.businessName='Riley Roofing Co.'" },
+    { "actor": "customer", "action": "Refreshes the public quote page", "expect": "Eyebrow now reads 'RILEY ROOFING CO.' (uppercase); contact-back reads 'Questions? Reach Diego: <phone>' — no FE deploy required" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Eyebrow uppercase styling is consistent regardless of source string; long business names wrap or truncate gracefully (max-width: 640px container)" },
+    { "aspect": "feel",          "check": "Customer never sees PAPERWORK MONSTERS as the brand — that violates the 'whitelabel-feel' goal of the public surface" },
+    { "aspect": "functionality", "check": "BE projection in public-controller never includes contractor.userId or other internal fields; tests assert 'userId' NOT in pub" },
+    { "aspect": "accessibility", "check": "Eyebrow is decorative copy; the actual h1 is the quote summary, which screen readers announce first" }
+  ]
+}

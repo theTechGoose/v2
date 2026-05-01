@@ -60,7 +60,8 @@ Deno.test("jobs e2e: GET /jobs synthesizes Job from quote+customer (awaiting)", 
     const quote = await fetch(`http://localhost:${PORT}/quotes`, {
       method: "POST", headers: auth, body: JSON.stringify({
         customerId: customer.id, summary: "Roof tear-off", lineItems: [],
-        status: "sent", estimatedTotal: 12_500,
+        // Audit1 #3 — INTEGER CENTS.
+        status: "sent", estimatedTotal: 12_500_00,
       }),
     }).then((r) => r.json());
 
@@ -71,7 +72,7 @@ Deno.test("jobs e2e: GET /jobs synthesizes Job from quote+customer (awaiting)", 
     assertEquals(jobs.length, 1);
     assertEquals(jobs[0].customer.name, "Acme Roofing");
     assertEquals(jobs[0].quote.id, quote.id);
-    assertEquals(jobs[0].quote.estimatedTotal, 12_500);
+    assertEquals(jobs[0].quote.estimatedTotalCents, 12_500_00);    // renamed for unit clarity
     assertEquals(jobs[0].status, "awaiting");
     assertEquals(jobs[0].statusLabel, "Awaiting signature");
     assertEquals(jobs[0].contract, null);
@@ -96,18 +97,18 @@ Deno.test("jobs e2e: GET /jobs marks overdue when an invoice is past due", async
     const quote = await fetch(`http://localhost:${PORT}/quotes`, {
       method: "POST", headers: auth, body: JSON.stringify({
         customerId: customer.id, summary: "Driveway", lineItems: [],
-        status: "accepted", estimatedTotal: 8_000,
+        status: "accepted", estimatedTotal: 8_000_00,
       }),
     }).then((r) => r.json());
     const contract = await fetch(`http://localhost:${PORT}/contracts`, {
       method: "POST", headers: auth, body: JSON.stringify({
-        quoteId: quote.id, customerId: customer.id, status: "signed", totalAmount: 8_000,
+        quoteId: quote.id, customerId: customer.id, status: "signed", totalAmount: 8_000_00,
       }),
     }).then((r) => r.json());
     await drain(await fetch(`http://localhost:${PORT}/invoices`, {
       method: "POST", headers: auth, body: JSON.stringify({
         contractId: contract.id, customerId: customer.id, dueDate: "2020-01-01",
-        amount: 8_000, status: "pending",
+        amount: 8_000_00, status: "pending",
       }),
     }));
 
@@ -139,7 +140,7 @@ Deno.test("jobs e2e: A's jobs and B's jobs are isolated", async () => {
     }).then((r) => r.json());
     await drain(await fetch(`http://localhost:${PORT}/quotes`, {
       method: "POST", headers: authA, body: JSON.stringify({
-        customerId: customer.id, summary: "x", lineItems: [], status: "sent", estimatedTotal: 100,
+        customerId: customer.id, summary: "x", lineItems: [], status: "sent", estimatedTotal: 100_00,
       }),
     }));
 

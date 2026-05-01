@@ -1,0 +1,29 @@
+{
+  "id": "dashboard-live-activity",
+  "name": "Live activity pill updates as customers interact",
+  "description": "User leaves the dashboard tab open while a customer opens an emailed quote. The 'Live activity' pill in the topbar should update from 'All quiet' to a fresh event without a hard refresh.",
+  "category": "dashboard",
+  "surface": ["/dashboard"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Lena Park",
+    "role": "Painter, two-person shop",
+    "context": "Sent a $4,800 interior paint quote to the Browning family this morning. Keeps the dashboard open in a pinned tab."
+  },
+  "preconditions": [
+    "A quote has been sent to a customer in the last hour",
+    "Dashboard tab has been open for >30 seconds"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Has /dashboard open in a background tab", "expect": "Live activity pill reads 'All quiet — nothing new'" },
+    { "actor": "customer", "action": "Opens the quote email and clicks the link", "expect": "Backend records a quote-open event" },
+    { "actor": "system", "action": "Pushes / polls the open event", "expect": "Pill updates to 'Browning opened your quote' within ~10s without page reload" },
+    { "actor": "user",   "action": "Clicks the pill", "expect": "Opens an activity feed (drawer or page) showing the open with timestamp" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Pill animates subtly when content changes (not a jarring layout shift)" },
+    { "aspect": "feel",          "check": "Update arrives close to real time — feels alive, not stale" },
+    { "aspect": "functionality", "check": "Activity feed is sorted newest-first and de-duplicates rapid repeat opens" },
+    { "aspect": "accessibility", "check": "Update is announced via aria-live=polite so screen reader users notice it" }
+  ]
+}

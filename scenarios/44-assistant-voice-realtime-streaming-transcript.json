@@ -1,0 +1,30 @@
+{
+  "id": "assistant-voice-realtime-streaming-transcript",
+  "name": "Voice memo with realtime AssemblyAI streaming transcript",
+  "description": "Pink mic button → backend WebSocket bridge to AssemblyAI Streaming v3. Browser captures Int16 PCM via AudioContext + ScriptProcessor, streams chunks over /api/voice/stream (Vite proxy → backend voice-stream-controller → AssemblyAI). Interim transcripts appear in the live panel as the user speaks; finalised text fades in chunk-by-chunk. On Stop & send, the final transcript becomes the optimistic user-bubble copy.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego",
+    "role": "Onboarded contractor on the road",
+    "context": "Truck cab, hands greasy, dictating a quote between job sites."
+  },
+  "preconditions": [
+    "ASSEMBLYAI_API_KEY set on the backend",
+    "Browser mic permission granted",
+    "Conversation phase = 'quote'"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Taps the prominent pink mic button", "expect": "Composer is replaced by the compact recording panel: 56px gradient orb (pulsing rings), LIVE pill + 0:00 timer, italic placeholder 'Start talking — I'll write it out as you speak.', X cancel + green ⏹ stop. WS to /api/voice/stream opens; AssemblyAI 'Begin' frame received in <2s." },
+    { "actor": "user",   "action": "Speaks: 'Quote a fence repair for the Patels — three hundred and fifty dollars'", "expect": "Interim transcript appears italic/dim while speaking; finalised words land in solid teal with a 280ms blur-to-clear fade per chunk; orb scales with audio level; pulse rings ripple outward" },
+    { "actor": "user",   "action": "Taps Stop & send", "expect": "Recording panel collapses; user bubble appears with the final transcript as content (no '🎙️ transcribing…' placeholder); MediaRecorder blob still uploads to /files for backend authoritative re-transcription" },
+    { "actor": "system", "action": "Backend processes the chat turn", "expect": "create_quote action_card with the parsed numbers; total $350.00" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Orb gradient + glow reads as premium without dominating the chat — fits in the same vertical footprint as the idle composer" },
+    { "aspect": "feel",          "check": "First interim transcript word appears within ~400ms of speech; the user doesn't doubt the mic is hot" },
+    { "aspect": "functionality", "check": "API key never appears in browser DevTools / Network tab; only the proxy URL ws://host/api/voice/stream is visible" },
+    { "aspect": "accessibility", "check": "Recording panel is role=region, aria-label='Voice memo recording'; transcript region is aria-live=polite so screen readers track interim text" }
+  ]
+}

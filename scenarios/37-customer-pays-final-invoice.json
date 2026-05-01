@@ -1,0 +1,30 @@
+{
+  "id": "customer-pays-final-invoice",
+  "name": "Customer pays the final invoice after job completion",
+  "description": "Job is complete. Final invoice (balance after deposit) goes out. Customer pays. The job record now shows fully paid; outstanding KPI for the contractor returns to baseline.",
+  "category": "customer-email",
+  "surface": ["email", "public-invoice", "/invoices", "/dashboard"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Asha Patel",
+    "role": "Homeowner",
+    "context": "Diego finished the fence repair this morning. Final invoice for $322.50 (balance) follows."
+  },
+  "preconditions": [
+    "Job marked complete in /jobs",
+    "Deposit of $107.50 already paid",
+    "Total job $430.00, remaining balance $322.50"
+  ],
+  "steps": [
+    { "actor": "system",   "action": "Final invoice generated and emailed", "expect": "Email shows breakdown: total $430, deposit -$107.50, balance due $322.50" },
+    { "actor": "customer", "action": "Pays via card or Apple Pay", "expect": "Same payment flow as deposit; success state; receipt emailed" },
+    { "actor": "system",   "action": "Backend marks job paid in full", "expect": "Job state on /jobs flips to paid; client status moves from 'active' to 'won/recent' on /clients; outstanding KPI on /dashboard decreases by $322.50" },
+    { "actor": "user",     "action": "(Diego) opens /dashboard", "expect": "Activity feed entry 'Patel paid in full — $322.50'; client card moves out of 'owes' segment" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Balance breakdown on the public invoice is unambiguous — no customer should call asking 'why is this less than the quote?'" },
+    { "aspect": "feel",          "check": "End-of-job feels tidy — receipt + thank-you email closes the loop" },
+    { "aspect": "functionality", "check": "Partial payments are supported (e.g. customer pays $200, $122.50 still owed) without breaking the totals" },
+    { "aspect": "accessibility", "check": "Currency line items use proper aria-label so screen readers announce 'balance due, three hundred twenty-two dollars and fifty cents'" }
+  ]
+}

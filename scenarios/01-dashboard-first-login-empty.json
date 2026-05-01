@@ -1,0 +1,30 @@
+{
+  "id": "dashboard-first-login-empty",
+  "name": "First-time user lands on an empty dashboard",
+  "description": "Brand-new account: no jobs, no quotes, no clients yet. Dashboard should still feel inviting — empty states, a clear next action (talk to the assistant), and KPIs that read 0 without looking broken.",
+  "category": "dashboard",
+  "surface": ["/dashboard"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Marcus Lee",
+    "role": "Solo handyman just signed up",
+    "context": "Heard about Paperwork Monsters from a Facebook ad. First time logging in after verifying his phone."
+  },
+  "preconditions": [
+    "User account exists, OTP-verified",
+    "No quotes, contracts, invoices, jobs, or clients in the system",
+    "User just landed on /dashboard for the first time"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /dashboard", "expect": "Hero greeting uses first name and weekday/date; no flash of unstyled content" },
+    { "actor": "system", "action": "Renders KPI strip", "expect": "Active jobs 0, Owed $0, Quotes 0 — formatted (not 'NaN' or '$0.00') and not styled like errors" },
+    { "actor": "system", "action": "Renders Activity, Active Jobs, Outstanding, Quotes Awaiting sections", "expect": "Each shows a friendly empty state with a one-line nudge and a primary CTA pointing at /assistant" },
+    { "actor": "user",   "action": "Clicks the assistant CTA", "expect": "Navigates to /assistant with the threads sidebar empty and the chat composer focused" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Empty states are illustrated or iconic, not raw text dumps" },
+    { "aspect": "feel",          "check": "First impression is 'welcome' not 'broken'" },
+    { "aspect": "functionality", "check": "Sidebar nav badges show 0 (or are hidden) — no stale numbers from another tenant" },
+    { "aspect": "accessibility", "check": "Hero greeting has a single h1; KPI labels are read by screen readers as label + value pairs" }
+  ]
+}

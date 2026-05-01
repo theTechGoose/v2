@@ -1,0 +1,29 @@
+{
+  "id": "clients-segments-filter",
+  "name": "Filter the client board by segment (active / leads / owes / cold)",
+  "description": "User clicks the 'Owes' segment chip to focus on accounts with balances. The board filters; URL reflects the filter so it's bookmarkable.",
+  "category": "clients",
+  "surface": ["/clients"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Lena Park",
+    "role": "Painter",
+    "context": "Friday afternoon — chasing payments before the weekend."
+  },
+  "preconditions": [
+    "Account has clients across all four segments",
+    "At least 4 clients in 'owes' segment"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /clients", "expect": "Segment chips visible with counts: Active 12, Leads 7, Owes 4, Cold 9" },
+    { "actor": "user",   "action": "Clicks 'Owes'", "expect": "Board shows only the 4 owe-ing clients; URL updates to /clients?segment=owes; chip shows selected state" },
+    { "actor": "user",   "action": "Reloads the page", "expect": "Filter persists from the URL — board still shows only owes" },
+    { "actor": "user",   "action": "Clicks the chip again to deselect", "expect": "Filter clears; URL drops the param" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Selected vs unselected chip states are obvious without color alone" },
+    { "aspect": "feel",          "check": "Filter applies instantly — no full-page reload" },
+    { "aspect": "functionality", "check": "Browser back navigates between filter states (history is pushed, not replaced)" },
+    { "aspect": "accessibility", "check": "Chips have aria-pressed reflecting selected state" }
+  ]
+}

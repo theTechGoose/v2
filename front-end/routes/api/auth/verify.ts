@@ -37,8 +37,10 @@ export const handler = define.handlers({
     if (upstreamCookie) headers.set("set-cookie", upstreamCookie);
 
     if (res.ok && typeof parsed.sessionId === "string") {
+      const isNewUser = parsed.isNewUser === true;
+      const redirectTo = isNewUser ? "/assistant?onboard=1" : "/dashboard?welcome=back";
       return new Response(
-        JSON.stringify({ ok: true, sessionId: parsed.sessionId, userId: parsed.userId, redirectTo: "/dashboard" }),
+        JSON.stringify({ ok: true, sessionId: parsed.sessionId, userId: parsed.userId, isNewUser, redirectTo }),
         { status: 200, headers },
       );
     }

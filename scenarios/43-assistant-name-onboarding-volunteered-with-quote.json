@@ -1,0 +1,28 @@
+{
+  "id": "assistant-name-onboarding-volunteered-with-quote",
+  "name": "First message contains both a job request AND name signal — quote wins, ask is skipped",
+  "description": "User opens with 'Quote a fence for the Patels — $350' on a brand-new account. The ask short-circuit checks looksLikeJobRequest() before firing; the message has a quote signal ($) so we skip the ask entirely and route to the LLM. The user's name stays unset for now — Bossie can re-ask on a future conversation when there's no in-flight request.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Impatient contractor",
+    "role": "Knows what they want; doesn't want a chat",
+    "context": "Just wants to draft a quote in two seconds."
+  },
+  "preconditions": [
+    "user.name === undefined",
+    "No prior conversations"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types 'Quote a fence repair for the Patels — $350' and hits Enter", "expect": "looksLikeJobRequest=true (dollar sign + 5+ words). Assistant produces a create_quote action_card directly. NO 'Hey 👋 quick one' ask appears." },
+    { "actor": "user",   "action": "Sends 'Looks good — send it'", "expect": "Quote locks; email queued. Onboarding ask still hasn't fired." },
+    { "actor": "user",   "action": "Starts a NEW conversation with 'Hey'", "expect": "On this fresh thread, Bossie now fires the onboarding ask (history.length === 1, user.name still null)" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "No interruption modal between the user's request and the action card" },
+    { "aspect": "feel",          "check": "Power user is rewarded — they don't get blocked on a name prompt for a clear job request" },
+    { "aspect": "functionality", "check": "looksLikeJobRequest catches the $ and word-count >= 5 cases; trade vocabulary (fence, deck, roof, etc.) also bails out" },
+    { "aspect": "accessibility", "check": "No interrupting focus jump — first action card lands as expected" }
+  ]
+}

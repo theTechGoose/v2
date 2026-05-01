@@ -5,6 +5,7 @@
  * The interactive Track collapse + ContractCard flip live in islands/.
  */
 import { I, ICN } from "../lib/dash-icons.tsx";
+import { fmtMoney } from "../lib/format.ts";
 import type { ContractCard } from "../lib/contracts-shape.ts";
 
 interface HeroProps {
@@ -16,10 +17,6 @@ interface HeroProps {
   pendingDeposits: number;
 }
 
-function fmtMoney(n: number): string {
-  return Math.round(n).toLocaleString();
-}
-
 export function ContractsHero({
   totalValue,
   contractCount,
@@ -28,6 +25,7 @@ export function ContractsHero({
   startingSoonCount,
   pendingDeposits,
 }: HeroProps) {
+  const allZero = inFlightCount === 0 && pendingDeposits === 0 && startingSoonCount === 0;
   return (
     <section class="kph">
       <div class="kph__inner">
@@ -37,22 +35,30 @@ export function ContractsHero({
             Work in flight · {contractCount} {contractCount === 1 ? "contract" : "contracts"}
           </div>
           <h1 class="kph__title">
-            <em>${fmtMoney(totalValue)}</em> of work<br />
+            <em>{fmtMoney(totalValue)}</em> of work<br />
             you've already promised.
           </h1>
           <p class="kph__sub">
-            {inFlightCount} {inFlightCount === 1 ? "job" : "jobs"} running today ·{" "}
-            <strong>${fmtMoney(pendingDeposits)} in deposits</strong> still to bill ·{" "}
-            {startingSoonCount} starting next week. The monsters are watching the next
-            milestone on every one of them.
+            {allZero
+              ? <>Nothing in flight yet — when contracts get signed they'll show up here, with the next milestone watched.</>
+              : (
+                <>
+                  {inFlightCount} {inFlightCount === 1 ? "job" : "jobs"} running today ·{" "}
+                  <strong>{fmtMoney(pendingDeposits)} in deposits</strong> still to bill ·{" "}
+                  {startingSoonCount} starting next week. The monsters are watching the next
+                  milestone on every one of them.
+                </>
+              )}
           </p>
-          <p class="kph__sub" style="margin-top:6px;font-size:12.5px;opacity:0.75">
-            Active value · ${fmtMoney(inFlightValue)}
-          </p>
+          {!allZero && (
+            <p class="kph__sub" style="margin-top:6px;font-size:12.5px;opacity:0.75">
+              Active value · {fmtMoney(inFlightValue)}
+            </p>
+          )}
         </div>
-        <button class="kph__cta" type="button">
+        <a class="kph__cta" href={`/assistant?seed=${encodeURIComponent("Schedule a job — I want to turn an accepted quote into a contract.")}`}>
           <I d={ICN.plus} size={14} sw={2.5} /> Schedule a job
-        </button>
+        </a>
       </div>
     </section>
   );
@@ -86,28 +92,28 @@ export function ContractsKpis({
         <div class="kkpi__num kkpi__num--pink">
           {inProgressCount} {inProgressCount === 1 ? "job" : "jobs"}
         </div>
-        <div class="kkpi__sub">${fmtMoney(inProgressValue)} active</div>
+        <div class="kkpi__sub">{fmtMoney(inProgressValue)} active</div>
       </div>
       <div class="kkpi__card">
         <div class="kkpi__lbl">Starting soon</div>
         <div class="kkpi__num">
           {startingSoonCount} {startingSoonCount === 1 ? "job" : "jobs"}
         </div>
-        <div class="kkpi__sub">${fmtMoney(startingSoonValue)} · next 14 days</div>
+        <div class="kkpi__sub">{fmtMoney(startingSoonValue)} · next 14 days</div>
       </div>
       <div class="kkpi__card">
         <div class="kkpi__lbl">Wrapping up</div>
         <div class="kkpi__num">
           {wrappingUpCount} {wrappingUpCount === 1 ? "job" : "jobs"}
         </div>
-        <div class="kkpi__sub">${fmtMoney(wrappingUpLeft)} left to bill</div>
+        <div class="kkpi__sub">{fmtMoney(wrappingUpLeft)} left to bill</div>
       </div>
       <div class="kkpi__card">
         <div class="kkpi__lbl">Closed this month</div>
         <div class="kkpi__num">
           {closedCount} {closedCount === 1 ? "job" : "jobs"}
         </div>
-        <div class="kkpi__sub">${fmtMoney(closedValue)} · all paid</div>
+        <div class="kkpi__sub">{fmtMoney(closedValue)} · all paid</div>
       </div>
     </div>
   );

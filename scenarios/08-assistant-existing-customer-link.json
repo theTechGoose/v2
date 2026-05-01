@@ -1,0 +1,28 @@
+{
+  "id": "assistant-existing-customer-link",
+  "name": "Assistant links a quote to an existing customer by name",
+  "description": "User says 'another quote for Mrs. Park'. Assistant should resolve to the existing client record (not create a new one) and pre-fill name/email/phone on the draft.",
+  "category": "assistant",
+  "surface": ["/assistant", "/clients"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Lena Park",
+    "role": "Painter",
+    "context": "Has worked with Mrs. Park (a different person — same last name) before. Three Park-family clients exist."
+  },
+  "preconditions": [
+    "Existing clients: 'Janet Park', 'Sue Park', 'Mike Park'",
+    "Janet is the most recent contact"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types: 'New quote for Park — touch up trim, $220.'", "expect": "Assistant detects the ambiguity and asks 'Janet, Sue, or Mike Park?' with three quick-pick chips" },
+    { "actor": "user",   "action": "Taps 'Janet Park'", "expect": "Assistant proceeds with a create_quote tied to Janet's customerId — not a new customer record" },
+    { "actor": "user",   "action": "Opens /clients afterward", "expect": "Janet's card shows the new quote in her timeline; client count is unchanged" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Quick-pick chips are visually distinguishable from regular text and tappable on mobile" },
+    { "aspect": "feel",          "check": "Disambiguation feels like one extra tap, not a long form" },
+    { "aspect": "functionality", "check": "If only one match exists, the assistant skips the disambiguation and proceeds directly" },
+    { "aspect": "accessibility", "check": "Chips are real buttons with role=button and Enter/Space activates them" }
+  ]
+}

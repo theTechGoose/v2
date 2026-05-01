@@ -1,0 +1,29 @@
+{
+  "id": "assistant-lock-and-terms",
+  "name": "Lock a quote and continue into contract terms",
+  "description": "Happy path through phase 1 → phase 2. Quote is created, locked, then the assistant offers a 'Set up the contract?' continue CTA which transitions to terms phase.",
+  "category": "assistant",
+  "surface": ["/assistant", "/contracts"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "O'Brien deck build — quote already drafted in this conversation."
+  },
+  "preconditions": [
+    "Active thread with a draft quote already created in a prior turn",
+    "Phase = 'quote'"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types 'Lock it in.'", "expect": "lock_quote action fires; chat shows the quote moving to sent/locked state; an action_card displays the locked quote" },
+    { "actor": "system", "action": "Assistant emits a continue_cta", "expect": "Inline CTA card reads 'Set up the contract?' with primary 'Yes, let's go' and secondary 'Not yet'" },
+    { "actor": "user",   "action": "Taps 'Yes, let's go'", "expect": "Phase transitions to 'terms'; assistant prompts for deposit, schedule, exclusions one at a time" },
+    { "actor": "user",   "action": "Opens /contracts in a new tab", "expect": "A draft contract for the O'Brien job is now listed" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Continue CTA is visually anchored — clearly the next action, not buried in text" },
+    { "aspect": "feel",          "check": "Phase transition feels intentional; the chat header or banner reflects 'Now setting up contract terms'" },
+    { "aspect": "functionality", "check": "If the user dismisses the CTA, returning to the thread still shows the quote was locked — phase falls back to 'quote' cleanly" },
+    { "aspect": "accessibility", "check": "Continue CTA is reachable via Tab; both buttons announce their role" }
+  ]
+}

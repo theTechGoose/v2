@@ -1,0 +1,38 @@
+{
+  "id": "customer-late-payment-reminder",
+  "name": "Automated late-payment reminder email",
+  "description": "Invoice is 7 days past due. System sends a polite reminder on the contractor's behalf. Reminder cadence is bounded (no spam) and the contractor can override or pause it.",
+  "category": "customer-email",
+  "surface": ["email", "public-invoice", "/invoices"],
+  "channel": "email",
+  "persona": {
+    "name": "Mike Park",
+    "role": "Homeowner",
+    "context": "Forgot about an invoice — life happens."
+  },
+  "preconditions": [
+    "Invoice $640.00 due 7 days ago, unpaid",
+    "Reminder cadence enabled in Diego's settings: 7d, 14d, 30d"
+  ],
+  "steps": [
+    { "actor": "system", "action": "At day 7, generates and queues a reminder email", "expect": "Email is friendly, not aggressive; from Diego's name; reuses the original public invoice link" },
+    { "actor": "system", "action": "Sends to mike@example.com", "expect": "Subject e.g. 'Quick reminder — invoice for fence repair'; body opens with 'Hi Mike, just a friendly nudge…'" },
+    { "actor": "customer", "action": "Pays via the link", "expect": "Future reminders for this invoice are cancelled" },
+    { "actor": "user",   "action": "(Diego) opens /invoices and pauses reminders for a different overdue invoice", "expect": "Toggle on the invoice; backend marks reminders disabled; no further emails sent for that invoice" }
+  ],
+  "emails": [
+    {
+      "to": "mike@example.com",
+      "trigger": "Day 7 reminder cron",
+      "subject": "Quick reminder — invoice for fence repair",
+      "linksTo": "public-invoice",
+      "expect": "Tone is human; no bold red text; signed off in Diego's voice"
+    }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Email is visually identical to the original invoice email — familiar, not 'collections department'" },
+    { "aspect": "feel",          "check": "Reminder feels like a person nudging, not a debt collector" },
+    { "aspect": "functionality", "check": "Reminders respect the contractor's per-account cadence config; suppressed when invoice is paid or cancelled" },
+    { "aspect": "accessibility", "check": "All key info (amount, due date, link) present in plain text body for non-HTML email clients" }
+  ]
+}

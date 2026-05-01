@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { I, ICN } from "../lib/dash-icons.tsx";
+import { I } from "../lib/dash-icons.tsx";
 import { dashboardClient, type Notification } from "../clients/dashboard.ts";
 
 interface Props {
@@ -52,31 +52,35 @@ export default function DashTopbar({ greetingDate, greetingName, greetingOverrid
 
   return (
     <header class="topbar">
-      <button class="topbar__menu" type="button" aria-label="Toggle sidebar">
+      <button
+        class="topbar__menu"
+        type="button"
+        aria-label="Toggle sidebar"
+        onClick={() => globalThis.dispatchEvent(new CustomEvent("pm:sb-toggle"))}
+      >
         <I d={<><path d="M3 6h18M3 12h18M3 18h18" /></>} size={18} />
       </button>
       <div class="topbar__greet">
         <div class="topbar__greet-line">{greetingDate}</div>
         <div class="topbar__greet-name">{greetingOverride ?? `Hey, ${greetingName} 👋`}</div>
       </div>
-      <div class="topbar__search">
-        <I d={ICN.search} size={16} />
-        <input placeholder="Search jobs, clients, invoices..." />
-        <span class="topbar__kbd">⌘K</span>
-      </div>
+      {/* Search + notifications drawer are not built yet; hide their
+          affordances until the underlying features ship rather than
+          advertise dead controls (audit #6, #7). */}
+      <div style="flex:1" aria-hidden="true" />
       {ticker ? (
-        <button type="button" class="topbar__ticker" aria-label="Live activity">
+        // Anchored to /dashboard#activity so the pill is no longer inert:
+        // on the dashboard it scrolls to the on-page activity panel; from
+        // any other page it routes to the dashboard and lands on the same
+        // anchor (#21 — the click was decorative on day 1).
+        <a href="/dashboard#activity" class="topbar__ticker" aria-label="Live activity — open feed">
           <span class="topbar__ticker-dot" />
           <span class="topbar__ticker-track" aria-live="polite">
             <span class="topbar__ticker-item" key={tickerIdx} dangerouslySetInnerHTML={{ __html: ticker.html }} />
           </span>
           <span class="topbar__ticker-time">{ticker.time} ago</span>
-        </button>
+        </a>
       ) : null}
-      <button type="button" class="topbar__btn" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}>
-        <I d={ICN.bell} size={18} />
-        {unread > 0 ? <span class="topbar__btn-dot" /> : null}
-      </button>
     </header>
   );
 }

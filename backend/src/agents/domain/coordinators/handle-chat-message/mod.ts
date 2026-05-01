@@ -6,8 +6,30 @@ import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
 import { SYSTEM_PROMPT_QUOTE, SYSTEM_PROMPT_TERMS } from "@agents/domain/business/llm-prompts/mod.ts";
 import { isInQuotePhase } from "@agents/domain/business/derive-phase/mod.ts";
 import { deriveTitleFromFirstUserMessage, derivePreview } from "@agents/domain/business/conversation-title/mod.ts";
+import {
+  extractAddressOnly,
+  extractAddressViaLLM,
+  extractBusinessOnly,
+  extractNameAndBusiness,
+  extractNameOnly,
+  extractStateOnly,
+  isAffirmativeReply,
+  isSkipReply,
+  looksLikeJobRequest,
+  onboardAskStateWithGuess,
+  ONBOARD_ASK_ADDRESS,
+  ONBOARD_ASK_BUSINESS,
+  ONBOARD_ASK_NAME,
+  ONBOARD_HANDOFF,
+  ONBOARDING_ASK_TEXT,
+  stateFromPhone,
+  type ParsedAddress,
+} from "@agents/domain/business/onboarding/mod.ts";
+import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
@@ -26,6 +48,21 @@ const CONFIRM_LOCK_RE =
  *  "Quote for X", "for the Xs", "X residence/place/family", "the X family",
  *  "at the X place". Used to decide whether to overwrite the assistant text
  *  with "Drafted — who's this for?" (audit2 N6). */
+/** Pick the message that should drive the conversation list preview.
+ *  Walks newMessages backwards picking the most-meaningful surface:
+ *    1. action_card — quote/contract/invoice summary lands as the preview.
+ *    2. assistant text — the model's reply if no card was produced.
+ *  Returns undefined if neither is present (e.g. only a continue_cta or a
+ *  user message), so the caller can leave the existing preview untouched. */
+function pickPreviewSource(msgs: AgentMessage[]): string | undefined {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (m.role !== "assistant") continue;
+    if (m.kind === "action_card" || m.kind === "text") return m.content;
+  }
+  return undefined;
+}
+
 function userMentionedCustomer(text: string): boolean {
   if (!text) return false;
   const t = text.trim();
@@ -97,6 +134,9 @@ export class HandleChatMessage {
     private messages: AgentMessageStore,
     private quotes: QuoteStore,
     private files: FileStore,
+    private users: UserStore,
+    private identity: BusinessIdentityStore,
+    private addresses: BusinessAddressStore,
     private bus: EventBus,
     private emailer: SendPaperworkEmail,
     @Inject(LLM_CLIENT) private llm: LLMClient,
@@ -115,6 +155,245 @@ export class HandleChatMessage {
     });
 
     const history = await this.messages.listByConversation(conv.id);
+
+    // ---- Onboarding (single-question, conversational) ----
+    // We collect TWO fields, in order: (1) user.name, (2) businessName.
+    // On any turn where one of these is still missing, Bossie asks for
+    // exactly that one — not both at once. The user's reply is parsed,
+    // the field is persisted, and we either ask the next field or, if
+    // we just completed the second one, fire a friendly handoff:
+    //   "Awesome, we're set. Okay — can we start with your first quote?"
+    // Voice messages bypass this entirely; "skip / later / not now"
+    // drops the ask out of the way. Real-job-shaped first messages
+    // (e.g. "Quote a fence — $350") also bypass onboarding so we don't
+    // block real work behind a name prompt.
+    const inputIsText = (input.kind ?? "text") === "text" && typeof input.content === "string";
+    if (inputIsText) {
+      const me = await this.users.get(input.userId).catch(() => null);
+      const ident = await this.identity.get(input.userId).catch(() => null);
+      const addr = await this.addresses.get(input.userId).catch(() => null);
+      const needsName    = !me?.name || me.name.trim().length === 0;
+      const needsBiz     = !ident?.businessName || ident.businessName.trim().length === 0;
+      const needsState   = !addr?.state || addr.state.trim().length === 0;
+      const needsAddress = !addr?.postal || addr.postal.trim().length === 0;
+      if (needsName || needsBiz || needsState || needsAddress) {
+        const text = input.content.trim();
+        const isFirstTurn = history.length === 1;
+        const lastAssistant = [...history].reverse().find((m) => m.role === "assistant" && m.kind === "text");
+        const lastAsk = lastAssistant?.content ?? "";
+        const justAskedName = lastAsk === ONBOARD_ASK_NAME ||
+          lastAsk.startsWith("Hey 👋 quick one") || lastAsk.startsWith("Hey there 👋");
+        const justAskedBiz = lastAsk.startsWith("Nice to meet you,");
+        const justAskedState = lastAsk.startsWith("Almost there. Which state") ||
+          lastAsk.startsWith("Almost there. Looks like you're in");
+        // Treat the parse-error retry as another address ask so the user's
+        // next reply still routes through the address branch instead of
+        // falling into the LLM (which would hallucinate a quote from
+        // address-shaped text — see audit2 N7).
+        const justAskedAddress = lastAsk.startsWith("Last one,") ||
+          lastAsk.startsWith("Hmm, couldn't quite parse");
+        const userVolunteered = isFirstTurn && extractNameAndBusiness(text);
+        const firstNameOf = (n: string | undefined): string => n?.trim().split(/\s+/)[0] ?? "there";
+
+        // 1) NAME
+        if (needsName) {
+          if (userVolunteered && userVolunteered.name) {
+            await this.users.update(input.userId, { name: userVolunteered.name });
+            if (userVolunteered.businessName) {
+              await this.identity.upsert(input.userId, { businessName: userVolunteered.businessName });
+            }
+            const stillNeedsBiz = !userVolunteered.businessName && needsBiz;
+            const firstName = firstNameOf(userVolunteered.name);
+            const nextAsk = stillNeedsBiz
+              ? ONBOARD_ASK_BUSINESS(firstName)
+              : (needsState ? onboardAskStateWithGuess(firstName, me?.phoneNumber) : ONBOARD_HANDOFF(firstName));
+            const ack = await this.messages.append({
+              conversationId: conv.id, role: "assistant", kind: "text", content: nextAsk,
+            });
+            const updated = await this.conversations.update(conv.id, {
+              ...(history.length === 1 ? { title: deriveTitleFromFirstUserMessage(input.content) } : {}),
+              preview: derivePreview(ack.content),
+            });
+            return { conversation: updated, newMessages: [userMsg, ack] };
+          }
+          if (justAskedName && !isSkipReply(text) && !looksLikeJobRequest(text)) {
+            const parsed = extractNameOnly(text);
+            if (parsed) {
+              await this.users.update(input.userId, { name: parsed });
+              const firstName = firstNameOf(parsed);
+              const nextAsk = needsBiz
+                ? ONBOARD_ASK_BUSINESS(firstName)
+                : (needsState ? onboardAskStateWithGuess(firstName, me?.phoneNumber) : ONBOARD_HANDOFF(firstName));
+              const ack = await this.messages.append({
+                conversationId: conv.id, role: "assistant", kind: "text", content: nextAsk,
+              });
+              const updated = await this.conversations.update(conv.id, {
+                ...(history.length === 1 ? { title: deriveTitleFromFirstUserMessage(input.content) } : {}),
+                preview: derivePreview(ack.content),
+              });
+              return { conversation: updated, newMessages: [userMsg, ack] };
+            }
+            const ask = await this.messages.append({
+              conversationId: conv.id, role: "assistant", kind: "text",
+              content: "Sorry, didn't quite catch that — what should I call you? (just your first name is fine)",
+            });
+            const updated = await this.conversations.update(conv.id, { preview: derivePreview(ask.content) });
+            return { conversation: updated, newMessages: [userMsg, ask] };
+          }
+          if ((isFirstTurn || !lastAssistant) && !isSkipReply(text) && !looksLikeJobRequest(text)) {
+            const ask = await this.messages.append({
+              conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_ASK_NAME,
+            });
+            const updated = await this.conversations.update(conv.id, {
+              ...(history.length === 1 ? { title: deriveTitleFromFirstUserMessage(input.content) } : {}),
+              preview: derivePreview(ask.content),
+            });
+            return { conversation: updated, newMessages: [userMsg, ask] };
+          }
+        } else if (needsBiz) {
+          // 2) BUSINESS NAME
+          const firstName = firstNameOf(me?.name);
+          if (justAskedBiz && !isSkipReply(text)) {
+            const parsed = extractBusinessOnly(text);
+            if (parsed) {
+              await this.identity.upsert(input.userId, { businessName: parsed });
+              const nextAsk = needsState ? onboardAskStateWithGuess(firstName, me?.phoneNumber) : ONBOARD_HANDOFF(firstName);
+              const ack = await this.messages.append({
+                conversationId: conv.id, role: "assistant", kind: "text", content: nextAsk,
+              });
+              const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
+              return { conversation: updated, newMessages: [userMsg, ack] };
+            }
+            const ask = await this.messages.append({
+              conversationId: conv.id, role: "assistant", kind: "text",
+              content: "What's the business called? (e.g. \"Riley Roofing Co.\" — solo is fine too)",
+            });
+            const updated = await this.conversations.update(conv.id, { preview: derivePreview(ask.content) });
+            return { conversation: updated, newMessages: [userMsg, ask] };
+          }
+          if (!isSkipReply(text) && !looksLikeJobRequest(text)) {
+            const ask = await this.messages.append({
+              conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_ASK_BUSINESS(firstName),
+            });
+            const updated = await this.conversations.update(conv.id, {
+              ...(history.length === 1 ? { title: deriveTitleFromFirstUserMessage(input.content) } : {}),
+              preview: derivePreview(ask.content),
+            });
+            return { conversation: updated, newMessages: [userMsg, ask] };
+          }
+        } else if (needsState) {
+          // 3) STATE — uses phone-area-code guess when available so the
+          //    user can confirm with a one-tap "yes" instead of typing.
+          const firstName = firstNameOf(me?.name);
+          const phoneGuess = stateFromPhone(me?.phoneNumber);
+          const askedWithGuess = lastAsk.startsWith("Almost there. Looks like you're in");
+
+          if (justAskedState && !isSkipReply(text)) {
+            // Affirmative reply to a guess → save the guessed state.
+            if (askedWithGuess && phoneGuess && isAffirmativeReply(text)) {
+              await this.addresses.upsert(input.userId, { state: phoneGuess });
+              const ack = await this.messages.append({
+                conversationId: conv.id, role: "assistant", kind: "text",
+                content: needsAddress ? ONBOARD_ASK_ADDRESS(firstName) : ONBOARD_HANDOFF(firstName),
+              });
+              const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
+              return { conversation: updated, newMessages: [userMsg, ack] };
+            }
+            const parsed = extractStateOnly(text);
+            if (parsed) {
+              await this.addresses.upsert(input.userId, { state: parsed });
+              const ack = await this.messages.append({
+                conversationId: conv.id, role: "assistant", kind: "text",
+                content: needsAddress ? ONBOARD_ASK_ADDRESS(firstName) : ONBOARD_HANDOFF(firstName),
+              });
+              const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
+              return { conversation: updated, newMessages: [userMsg, ack] };
+            }
+            const ask = await this.messages.append({
+              conversationId: conv.id, role: "assistant", kind: "text",
+              content: "Hmm, didn't recognize that — try the 2-letter code (CA, TX, NY) or the full state name.",
+            });
+            const updated = await this.conversations.update(conv.id, { preview: derivePreview(ask.content) });
+            return { conversation: updated, newMessages: [userMsg, ask] };
+          }
+          if (!isSkipReply(text) && !looksLikeJobRequest(text)) {
+            const ask = await this.messages.append({
+              conversationId: conv.id, role: "assistant", kind: "text",
+              content: onboardAskStateWithGuess(firstName, me?.phoneNumber),
+            });
+            const updated = await this.conversations.update(conv.id, {
+              ...(history.length === 1 ? { title: deriveTitleFromFirstUserMessage(input.content) } : {}),
+              preview: derivePreview(ask.content),
+            });
+            return { conversation: updated, newMessages: [userMsg, ask] };
+          }
+        } else if (needsAddress) {
+          // 4) ADDRESS — last question, free-form parse. "skip" jumps
+          //    straight to the handoff so the user isn't blocked.
+          const firstName = firstNameOf(me?.name);
+          if (justAskedAddress) {
+            if (isSkipReply(text)) {
+              // Stamp postal with a sentinel-empty value? No — skipping
+              // should just hand off without persisting. needsAddress will
+              // remain true so a later turn could re-ask, but we don't
+              // re-prompt within the same thread (consistent with the
+              // name-skip path elsewhere).
+              const ack = await this.messages.append({
+                conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_HANDOFF(firstName),
+              });
+              const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
+              return { conversation: updated, newMessages: [userMsg, ack] };
+            }
+            // Try the cheap regex parse first. Accept if it picked up
+            // either a zip OR (city + state) — strict enough to avoid
+            // saving "219 delano way myrtle beach" as a street alone.
+            const regexParsed = extractAddressOnly(text);
+            const regexEnough = regexParsed && (regexParsed.postal || (regexParsed.city && regexParsed.state));
+            let final: ParsedAddress | undefined = regexEnough ? regexParsed : undefined;
+            // Fall back to the LLM for shapes the regex can't unambiguously
+            // split — no commas, missing zip, lowercase city/state, etc.
+            // The LLM's job is structured extraction only, no prose. We
+            // accept its result if it gives us at least state OR (street
+            // + city) — enough to render a real return address on docs.
+            if (!final) {
+              const llmParsed = await extractAddressViaLLM(this.llm, text, input.userId);
+              if (llmParsed && (llmParsed.state || llmParsed.postal || (llmParsed.street && llmParsed.city))) {
+                final = llmParsed;
+              }
+            }
+            if (final) {
+              await this.addresses.upsert(input.userId, final);
+              const ack = await this.messages.append({
+                conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_HANDOFF(firstName),
+              });
+              const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
+              return { conversation: updated, newMessages: [userMsg, ack] };
+            }
+            const ask = await this.messages.append({
+              conversationId: conv.id, role: "assistant", kind: "text",
+              content: "Hmm, couldn't quite parse that. Try \"123 Main St, Austin, TX 78701\" — or just say \"skip\".",
+            });
+            const updated = await this.conversations.update(conv.id, { preview: derivePreview(ask.content) });
+            return { conversation: updated, newMessages: [userMsg, ask] };
+          }
+          if (!looksLikeJobRequest(text)) {
+            const ask = await this.messages.append({
+              conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_ASK_ADDRESS(firstName),
+            });
+            const updated = await this.conversations.update(conv.id, {
+              ...(history.length === 1 ? { title: deriveTitleFromFirstUserMessage(input.content) } : {}),
+              preview: derivePreview(ask.content),
+            });
+            return { conversation: updated, newMessages: [userMsg, ask] };
+          }
+        }
+        // skip or job request → fall through to normal LLM flow.
+      }
+    }
+    // Stash the legacy ask for compatibility (kept so existing tests
+    // referencing this constant continue to compile).
+    const _legacyAsk = ONBOARDING_ASK_TEXT;
+    void _legacyAsk;
 
     // ---- N5 fast-path: confirmation → fire lock_quote without the LLM ----
     // The model is unreliable at calling lock_quote on short confirmations
@@ -198,14 +477,16 @@ export class HandleChatMessage {
       });
     }
 
-    // The LLM occasionally returns an empty `text` (e.g., on a tool-only
-    // turn or when it doesn't have anything substantive to add). Persisting
-    // that as-is renders as a ghost bubble in the chat. Replace with a
-    // brief acknowledgement so the conversation reads cleanly; if the LLM
-    // ALSO emits an action below, the action_card carries the real signal
-    // and the ack is harmless context.
-    let replyText = llmResponse.text?.trim()
-      || (llmResponse.action ? "On it." : "Got it — what would you like me to do with that?");
+    // Whether this turn produces a rich follow-up bubble (action_card, etc.)
+    // that supersedes any standalone assistant text. For these actions we
+    // prefer NOT to persist a redundant prose bubble — the card carries the
+    // real signal, and the chat UI renders transient typing dots while the
+    // request is in flight (#36 — kill the persistent "Drafting a quote."
+    // filler that lingers in scrollback after the card lands).
+    const actionType = llmResponse.action?.type;
+    const cardBearingAction = actionType === "create_quote" || actionType === "lock_quote";
+
+    const llmText = llmResponse.text?.trim() ?? "";
 
     // N6 — deterministic ask-for-name. Fire only on the FIRST draft of a
     // conversation (i.e., before this turn there was no quoteId bound). On
@@ -214,22 +495,45 @@ export class HandleChatMessage {
     // an ask every time. Restricting to first-draft handles that. We also
     // skip when the conversation already has a customerId (set by start-
     // conversation or the wizard's customer step).
-    if (
-      llmResponse.action?.type === "create_quote" &&
+    const askForNameOverride = (
+      actionType === "create_quote" &&
       !conv.quoteId &&
       !conv.customerId &&
       !userMentionedCustomer(input.content)
-    ) {
-      replyText = "Drafted — who's this for?";
-    }
-    const assistantMsg = await this.messages.append({
-      conversationId: conv.id,
-      role: "assistant",
-      kind: "text",
-      content: replyText,
-    });
+    ) ? "Drafted — who's this for?" : undefined;
 
-    const newMessages: AgentMessage[] = [userMsg, assistantMsg];
+    // Resolve the final text:
+    //   1. N6 override wins (deterministic name prompt)
+    //   2. Else use the LLM's prose if it provided any
+    //   3. Else for card-bearing actions, leave empty — we won't persist
+    //      a bubble at all
+    //   4. Else fall back to "On it." / generic ack so the chat doesn't go
+    //      silent on a tool-only turn
+    let replyText: string;
+    let suppressTextBubble = false;
+    if (askForNameOverride) {
+      replyText = askForNameOverride;
+    } else if (llmText) {
+      replyText = llmText;
+    } else if (cardBearingAction) {
+      replyText = "";
+      suppressTextBubble = true;
+    } else if (llmResponse.action) {
+      replyText = "On it.";
+    } else {
+      replyText = "Got it — what would you like me to do with that?";
+    }
+
+    const newMessages: AgentMessage[] = [userMsg];
+    if (!suppressTextBubble) {
+      const assistantMsg = await this.messages.append({
+        conversationId: conv.id,
+        role: "assistant",
+        kind: "text",
+        content: replyText,
+      });
+      newMessages.push(assistantMsg);
+    }
     let convPatch: Partial<AgentConversation> = {};
 
     if (llmResponse.action) {
@@ -237,17 +541,18 @@ export class HandleChatMessage {
 
       // ---- create_quote: persist real Quote → emit action_card with real id ----
       if (action.type === "create_quote") {
-        // Convert LLM line items (cents-per-line) into the Quote DTO shape
-        // (price-per-unit in dollars, quantity 1). The DTO carries quantity
-        // for trades like sqft/hours; the LLM stays at the "totalled-line"
-        // abstraction in v1.
+        // Audit1 #3 — line item amounts persist as INTEGER CENTS, matching
+        // the LLM's `amountCents` payload. The previous schema divided by
+        // 100 here to store dollars; we no longer do that conversion.
+        // quantity stays 1 because the LLM emits one totalled line per
+        // trade (sqft/hours folded into the amount).
         const dtoLineItems = action.payload.lineItems.map((l) => ({
           description: l.description,
           quantity:    1,
           unit:        "ea",
-          price:       l.amountCents / 100,
+          price:       l.amountCents,
         }));
-        const estimatedTotal = action.payload.lineItems.reduce((sum, l) => sum + l.amountCents, 0) / 100;
+        const estimatedTotal = action.payload.lineItems.reduce((sum, l) => sum + l.amountCents, 0);
 
         // customerId is no longer accepted from the LLM — it was being
         // populated with raw names like "Mendez" and corrupting joins.
@@ -336,9 +641,12 @@ export class HandleChatMessage {
           // the Lock-it-in button. Multi-tool fan-out isn't supported in
           // the LLM client (only the first tool call is honored), so the
           // transition card is server-driven instead of model-driven.
+          // Audit1 #3 — line items already speak INTEGER CENTS, so this is
+          // an identity copy. The previous schema multiplied by 100 here to
+          // rebuild cents from dollars; that conversion is gone.
           const sentLineItems = (locked.lineItems ?? []).map((li) => ({
             description: li.description,
-            amountCents: Math.round((li.price ?? 0) * 100),
+            amountCents: li.price ?? 0,
           }));
           const totalCents = sentLineItems.reduce((s, l) => s + l.amountCents, 0);
           const sentCard = await this.messages.append({
@@ -363,7 +671,7 @@ export class HandleChatMessage {
             payload: {
               toPhase: "terms",
               quoteId,
-              summary: "Payment, warranty, dispute, governing state — 10 quick steps",
+              summary: "Payment, warranty, dispute, governing state — a few quick questions",
             },
           });
           newMessages.push(cta);
@@ -389,7 +697,7 @@ export class HandleChatMessage {
           payload: {
             toPhase: "terms",
             quoteId,
-            summary: "Payment, warranty, dispute, governing state — 10 quick steps",
+            summary: "Payment, warranty, dispute, governing state — a few quick questions",
           },
         });
         newMessages.push(cta);
@@ -400,7 +708,13 @@ export class HandleChatMessage {
     if (history.length === 0 || (history.length === 1 && history[0].id === userMsg.id)) {
       convPatch.title = deriveTitleFromFirstUserMessage(input.content);
     }
-    convPatch.preview = derivePreview((newMessages[newMessages.length - 1] ?? userMsg).content);
+    // Audit P6.13 — preview priority: latest action_card (quote/contract/invoice
+    // summary) > latest assistant text > do nothing. Never the user prompt:
+    // the sidebar should reflect what the assistant did, not what the user
+    // said. continue_cta messages ("Continue to terms") are skipped — they're
+    // navigation glue, not status.
+    const previewSource = pickPreviewSource(newMessages);
+    if (previewSource) convPatch.preview = derivePreview(previewSource);
 
     const updated = await this.conversations.update(conv.id, convPatch);
     return { conversation: updated, newMessages };

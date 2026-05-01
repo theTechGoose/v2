@@ -1,0 +1,27 @@
+{
+  "id": "quotes-opens-spike",
+  "name": "Quote with high open count flagged as engaged",
+  "description": "Customer opens a quote 5 times in two days but hasn't decided. /quotes should treat opens >=3 as a strong engagement signal and call attention to the card.",
+  "category": "quotes",
+  "surface": ["/quotes"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Lena Park",
+    "role": "Painter",
+    "context": "Wants to know which prospects are warm so she can call instead of waiting."
+  },
+  "preconditions": [
+    "Quote 'Kim — kitchen cabinets' has 5 opens, sent 2 days ago, no decision"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /quotes", "expect": "Kim card in 'sent' stage shows an 'engaged' badge or accent; opens count is prominent (e.g. '5 opens')" },
+    { "actor": "user",   "action": "Clicks the card", "expect": "Detail shows open history with timestamps (5 entries) — useful for picking when to call" },
+    { "actor": "user",   "action": "Taps 'Call now'", "expect": "tel: link initiates the dial on mobile or shows the number prominently on desktop" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Engaged accent is energizing (warm color, badge) — not alarming like an error" },
+    { "aspect": "feel",          "check": "Highest-engagement quotes float to the top of their stage" },
+    { "aspect": "functionality", "check": "Open events are de-duped within a 60-second window so a single visit isn't counted as 3" },
+    { "aspect": "accessibility", "check": "'5 opens' is in the card's accessible name, not just a visual badge" }
+  ]
+}

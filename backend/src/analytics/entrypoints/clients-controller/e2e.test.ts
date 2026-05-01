@@ -115,7 +115,7 @@ Deno.test("clients e2e: GET /clients spot-checks status==='owes' end-to-end (pen
         customerId: c.id,
         dueDate: "2026-04-01",
         status: "pending",
-        amount: 250,
+        amount: 250_00,                // INTEGER CENTS (audit1 #3)
       }),
     }).then((r) => r.json());
 

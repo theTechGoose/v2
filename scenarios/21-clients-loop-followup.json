@@ -1,0 +1,29 @@
+{
+  "id": "clients-loop-followup",
+  "name": "Daily 'loop' — three clients to reach out to today",
+  "description": "/clients surfaces a 'today's loop' card with 3 stale leads or owe-ing accounts. User works through them one at a time without losing place.",
+  "category": "clients",
+  "surface": ["/clients"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Morning routine: open clients, work the loop, then start jobs."
+  },
+  "preconditions": [
+    "At least 5 clients with status 'lead' or 'owes', sorted by daysSinceContact desc",
+    "Top 3 picks should be the most stale"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /clients", "expect": "Hero shows a 'Today's loop · 3 follow-ups' card with the 3 picks visible" },
+    { "actor": "user",   "action": "Clicks the first pick", "expect": "Drawer or card expands with phone, last contact, last quote/invoice context" },
+    { "actor": "user",   "action": "Taps 'Send a check-in'", "expect": "Pre-filled message draft (matching customer's preferred channel) opens; user can edit and send" },
+    { "actor": "system", "action": "User sends", "expect": "Loop card removes the completed pick and reveals a fourth candidate, OR shows 'Loop done — nice work' if exhausted" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Loop card is visually distinct from the broader client board — it's the morning's headline" },
+    { "aspect": "feel",          "check": "Each follow-up takes <30 seconds end-to-end" },
+    { "aspect": "functionality", "check": "Order is deterministic across SSR/CSR — no flicker re-sort on hydration" },
+    { "aspect": "accessibility", "check": "Loop card has a heading and the 3 picks are an ordered list, not styled divs" }
+  ]
+}

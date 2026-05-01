@@ -1,0 +1,37 @@
+{
+  "id": "quotes-stale-nudge",
+  "name": "User nudges a stale quote",
+  "description": "A quote sat in 'sent' for 11 days with no opens. /quotes flags it as stale; user clicks 'Nudge' to send a friendly follow-up.",
+  "category": "quotes",
+  "surface": ["/quotes"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Friday review. Doesn't want a quote to die quietly."
+  },
+  "preconditions": [
+    "Quote 'Garcia patio' sent 11 days ago, 0 opens",
+    "Customer has email + phone on file; preferred channel = email"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Opens /quotes", "expect": "Garcia card is in the 'stale' stage with an explicit 'Nudge' affordance" },
+    { "actor": "user",   "action": "Clicks 'Nudge'", "expect": "Modal/sheet with a pre-written friendly message ('Hi Garcia family — circling back on the patio quote...') editable" },
+    { "actor": "user",   "action": "Sends", "expect": "Card moves out of stale (or marker shows 'Nudged 1m ago'); the activity feed records the nudge" }
+  ],
+  "emails": [
+    {
+      "to": "garcia@example.com",
+      "trigger": "user clicks Send in nudge modal",
+      "subject": "Quick follow-up — your patio quote",
+      "linksTo": "public-quote",
+      "expect": "Email is from Diego's name, not 'Paperwork Monsters'; warm tone; CTA repeats the quote total and Accept button"
+    }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Stale stage has visual decay (dim, muted) — but not depressing" },
+    { "aspect": "feel",          "check": "User can nudge without composing from scratch; default copy doesn't feel canned" },
+    { "aspect": "functionality", "check": "Quote can only be nudged once per 48h to avoid spamming customers" },
+    { "aspect": "accessibility", "check": "Nudge button has an accessible name including the client name ('Nudge Garcia patio')" }
+  ]
+}

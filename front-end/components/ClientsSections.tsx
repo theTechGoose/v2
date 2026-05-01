@@ -19,18 +19,28 @@ interface ClientsHeroProps {
 
 export function ClientsHero({ totalClients, activeJobs, owedTotal, quietCount }: ClientsHeroProps) {
   const owedFmt = owedTotal.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const empty = totalClients === 0;
   return (
     <div class="ph2">
       <div>
         <div class="ph2__crumb">
           <span class="ph2__crumb-dot" /> Clients · {totalClients} on the books
         </div>
-        <h1 class="ph2__title">
-          The <em>{numberWord(totalClients)} {totalClients === 1 ? "person" : "people"}</em><br />who keep the lights on.
-        </h1>
-        <p class="ph2__sub">
-          <strong>{activeJobs} jobs in flight</strong> · <strong>${owedFmt}</strong> currently owed to you · <strong>{quietCount} quiet</strong> {quietCount === 1 ? "client" : "clients"} worth a hello.
-        </p>
+        {empty ? (
+          <>
+            <h1 class="ph2__title">Let's add your <em>first client</em>.<br />They'll keep the lights on.</h1>
+            <p class="ph2__sub">Once a quote ships through the assistant, the customer lands here automatically.</p>
+          </>
+        ) : (
+          <>
+            <h1 class="ph2__title">
+              The <em>{numberWord(totalClients)} {totalClients === 1 ? "person" : "people"}</em><br />who keep the lights on.
+            </h1>
+            <p class="ph2__sub">
+              <strong>{activeJobs} {activeJobs === 1 ? "job" : "jobs"} in flight</strong> · <strong>${owedFmt}</strong> currently owed to you · <strong>{quietCount} quiet</strong> {quietCount === 1 ? "client" : "clients"} worth a hello.
+            </p>
+          </>
+        )}
       </div>
       <button class="ph2__cta" type="button">
         <I d={ICN.plus} size={14} /> Add a client

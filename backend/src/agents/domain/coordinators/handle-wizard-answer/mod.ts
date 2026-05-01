@@ -199,9 +199,23 @@ export class HandleWizardAnswer {
    * points at a real contract, reuse it.
    */
   private async finalizeContract(conv: AgentConversation): Promise<string | undefined> {
+    // Walk the conversation messages and project the user's wizard picks
+    // into a labeled terms array. Each pick lives on a `text` user message
+    // with payload.wizardStepId — the chat transcript is the canonical
+    // record. We snapshot it onto the contract so the public page can
+    // render the agreed terms without re-loading the conversation.
+    const terms = await this.captureTerms(conv.id);
+
     if (conv.contractId) {
       try {
-        await this.contracts.getOwned(conv.contractId, conv.userId);
+        const existing = await this.contracts.getOwned(conv.contractId, conv.userId);
+        // If terms aren't already persisted, patch them in. Idempotent on
+        // re-runs (same picks → same terms).
+        if (!Array.isArray(existing.terms) || existing.terms.length === 0) {
+          if (terms.length) {
+            await this.contracts.update(conv.contractId, conv.userId, { terms });
+          }
+        }
         return conv.contractId;                  // already finalized — keep it
       } catch { /* fall through and try to recreate */ }
     }
@@ -222,6 +236,7 @@ export class HandleWizardAnswer {
       ...(conv.customerId ? { customerId: conv.customerId } : {}),
       status: "draft",
       ...(typeof totalAmount === "number" ? { totalAmount } : {}),
+      ...(terms.length ? { terms } : {}),
     });
     await this.bus.emit({
       userId: conv.userId,
@@ -231,5 +246,28 @@ export class HandleWizardAnswer {
       data: { quoteId: conv.quoteId, customerId: conv.customerId },
     });
     return contract.id;
+  }
+
+  /** Project wizard-answer chat messages into a labeled terms array. */
+  private async captureTerms(conversationId: string): Promise<{ stepId: string; label: string; value: string }[]> {
+    const msgs = await this.messages.listByConversation(conversationId);
+    const picks: { stepId: string; label: string; value: string }[] = [];
+    const seen = new Set<string>();
+    for (const m of msgs) {
+      if (m.role !== "user" || m.kind !== "text") continue;
+      const p = m.payload as { wizardStepId?: string } | undefined;
+      const stepId = p?.wizardStepId;
+      if (!stepId || seen.has(stepId)) continue;
+      seen.add(stepId);
+      // The user-pick message content reads "Label: Value" — split on the
+      // first colon to peel them apart safely.
+      const raw = m.content ?? "";
+      const idx = raw.indexOf(":");
+      const label = idx >= 0 ? raw.slice(0, idx).trim() : stepId;
+      const value = idx >= 0 ? raw.slice(idx + 1).trim() : raw.trim();
+      if (!value) continue;
+      picks.push({ stepId, label, value });
+    }
+    return picks;
   }
 }

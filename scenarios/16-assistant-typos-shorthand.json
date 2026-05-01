@@ -1,0 +1,26 @@
+{
+  "id": "assistant-typos-shorthand",
+  "name": "Tolerant parsing of typos, shorthand, and missing punctuation",
+  "description": "User dashes off a message with typos and shorthand: 'fence repare 350 + matrials 80 for the obriens'. Assistant should parse it without nitpicking.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Marcus Lee",
+    "role": "Solo handyman",
+    "context": "On his phone in the truck. Thumb-typing fast between jobs."
+  },
+  "preconditions": [
+    "Phase = 'quote'"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types 'fence repare 350 + matrials 80 for the obriens'", "expect": "Assistant creates a quote: 'Fence repair — O'Brien' with two line items totaling $430.00. No 'I didn't understand' loop" },
+    { "actor": "user",   "action": "Types 'lock'", "expect": "Locks the quote without asking 'lock what?'" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Action card shows the corrected words in the summary; user's typed message is preserved verbatim in the chat history" },
+    { "aspect": "feel",          "check": "Mobile feels forgiving — no 'please rephrase' nags" },
+    { "aspect": "functionality", "check": "If multiple O'Brien customers exist, disambiguation still kicks in (consistent with scenario 08)" },
+    { "aspect": "accessibility", "check": "Composer auto-grow doesn't push the send button off-screen on small viewports" }
+  ]
+}

@@ -45,24 +45,26 @@ Deno.test("compute-dashboard-stats integration: payment stats roll up YTD, metho
   const { customers, invoices, payments, flow } = fresh();
   const acme = await customers.create("u-1", { name: "Acme" });
   const beta = await customers.create("u-1", { name: "Beta" });
+  // Audit1 #3 — invoice/payment amounts are INTEGER CENTS now. The
+  // `_00` suffix on each literal makes the dollar intent visible.
   const invA = await invoices.create("u-1", {
-    contractId: "c-1", dueDate: "2026-05-01", amount: 200, customerId: acme.id, status: "pending",
+    contractId: "c-1", dueDate: "2026-05-01", amount: 200_00, customerId: acme.id, status: "pending",
   });
   const invB = await invoices.create("u-1", {
-    contractId: "c-2", dueDate: "2026-05-01", amount: 50, customerId: beta.id, status: "pending",
+    contractId: "c-2", dueDate: "2026-05-01", amount: 50_00, customerId: beta.id, status: "pending",
   });
   await payments.create("u-1", {
-    invoiceId: invA.id, amount: 150, method: "cash", receivedAt: "2026-02-10T00:00:00.000Z",
+    invoiceId: invA.id, amount: 150_00, method: "cash", receivedAt: "2026-02-10T00:00:00.000Z",
   });
   await payments.create("u-1", {
-    invoiceId: invA.id, amount: 50, method: "card", receivedAt: "2026-03-01T00:00:00.000Z",
+    invoiceId: invA.id, amount: 50_00, method: "card", receivedAt: "2026-03-01T00:00:00.000Z",
   });
   await payments.create("u-1", {
-    invoiceId: invB.id, amount: 50, method: "check", receivedAt: "2026-04-05T00:00:00.000Z",
+    invoiceId: invB.id, amount: 50_00, method: "check", receivedAt: "2026-04-05T00:00:00.000Z",
   });
   // Prior-year payment must NOT contribute to YTD.
   await payments.create("u-1", {
-    invoiceId: invA.id, amount: 10, method: "cash", receivedAt: "2025-12-15T00:00:00.000Z",
+    invoiceId: invA.id, amount: 10_00, method: "cash", receivedAt: "2025-12-15T00:00:00.000Z",
   });
 
   const stats = await flow.run("u-1", NOW);
@@ -84,16 +86,17 @@ Deno.test("compute-dashboard-stats integration: counts roll up status filters pe
   const { customers, quotes, contracts, invoices, flow } = fresh();
   await customers.create("u-1", { name: "Acme" });
   await customers.create("u-1", { name: "Beta" });
-  await quotes.create("u-1", { summary: "a", lineItems: [], status: "sent",     estimatedTotal: 1_000 });
-  await quotes.create("u-1", { summary: "b", lineItems: [], status: "sent",     estimatedTotal: 2_500 });
+  // Audit1 #3 — money fields are INTEGER CENTS now (`_00` suffix marks dollars).
+  await quotes.create("u-1", { summary: "a", lineItems: [], status: "sent",     estimatedTotal: 1_000_00 });
+  await quotes.create("u-1", { summary: "b", lineItems: [], status: "sent",     estimatedTotal: 2_500_00 });
   await quotes.create("u-1", { summary: "c", lineItems: [], status: "draft" });
   await contracts.create("u-1", { quoteId: "x", status: "signed" });
-  await invoices.create("u-1", { contractId: "y", dueDate: "2026-04-30", status: "pending", amount: 100 });
-  await invoices.create("u-1", { contractId: "y", dueDate: "2026-03-01", status: "pending", amount: 50 });   // overdue (date < today)
-  await invoices.create("u-1", { contractId: "y", dueDate: "2026-04-01", status: "paid", amount: 1_240, paidAt: "2026-03-15T00:00:00Z" });
+  await invoices.create("u-1", { contractId: "y", dueDate: "2026-04-30", status: "pending", amount: 100_00 });
+  await invoices.create("u-1", { contractId: "y", dueDate: "2026-03-01", status: "pending", amount: 50_00 });   // overdue (date < today)
+  await invoices.create("u-1", { contractId: "y", dueDate: "2026-04-01", status: "paid", amount: 1_240_00, paidAt: "2026-03-15T00:00:00Z" });
 
   // Cross-user noise that MUST NOT contaminate u-1's stats.
-  await quotes.create("u-2", { summary: "noise", lineItems: [], status: "sent", estimatedTotal: 99_999 });
+  await quotes.create("u-2", { summary: "noise", lineItems: [], status: "sent", estimatedTotal: 99_999_00 });
 
   const stats = await flow.run("u-1", NOW);
   assertEquals(stats.customers, 2);
@@ -103,7 +106,7 @@ Deno.test("compute-dashboard-stats integration: counts roll up status filters pe
   assertEquals(stats.invoices.pending, 2);
   assertEquals(stats.invoices.paid, 1);
   assertEquals(stats.invoices.overdue, 1);                   // dueDate 2026-03-01 < today
-  assertEquals(stats.quotedValueCents, (1_000 + 2_500) * 100);
+  assertEquals(stats.quotedValueCents, 1_000_00 + 2_500_00);   // identity sum of cents-stored estimatedTotals
   assertEquals(stats.awaitingResponse, 2);
   assertEquals(stats.revenue.lastMonthCents, 124_000);       // March: $1,240 = 124,000 cents
 
@@ -114,10 +117,11 @@ Deno.test("compute-dashboard-stats integration: revenue sparkline only counts pa
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { invoices, flow } = fresh();
-  await invoices.create("u-1", { contractId: "x", dueDate: "2026-03-01", status: "paid", amount: 100, paidAt: "2026-03-10T00:00:00Z" });
-  await invoices.create("u-1", { contractId: "x", dueDate: "2026-04-01", status: "paid", amount: 200, paidAt: "2026-04-12T00:00:00Z" });
-  await invoices.create("u-1", { contractId: "x", dueDate: "2026-05-01", status: "pending", amount: 999 });    // unpaid → ignored
-  await invoices.create("u-1", { contractId: "x", dueDate: "2024-04-01", status: "paid", amount: 500, paidAt: "2024-04-10T00:00:00Z" });    // >12mo → ignored
+  // INTEGER CENTS — `_00` suffix marks the dollar intent.
+  await invoices.create("u-1", { contractId: "x", dueDate: "2026-03-01", status: "paid", amount: 100_00, paidAt: "2026-03-10T00:00:00Z" });
+  await invoices.create("u-1", { contractId: "x", dueDate: "2026-04-01", status: "paid", amount: 200_00, paidAt: "2026-04-12T00:00:00Z" });
+  await invoices.create("u-1", { contractId: "x", dueDate: "2026-05-01", status: "pending", amount: 999_00 });    // unpaid → ignored
+  await invoices.create("u-1", { contractId: "x", dueDate: "2024-04-01", status: "paid", amount: 500_00, paidAt: "2024-04-10T00:00:00Z" });    // >12mo → ignored
 
   const stats = await flow.run("u-1", NOW);
   assertEquals(stats.revenue.sparkline12mo.length, 12);
@@ -147,9 +151,9 @@ Deno.test("compute-dashboard-stats integration: month-over-month percentage from
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { invoices, flow } = fresh();
-  // Feb: 1000, Mar: 1240 → +24%
-  await invoices.create("u-1", { contractId: "x", dueDate: "2026-02-01", status: "paid", amount: 1_000, paidAt: "2026-02-10T00:00:00Z" });
-  await invoices.create("u-1", { contractId: "x", dueDate: "2026-03-01", status: "paid", amount: 1_240, paidAt: "2026-03-10T00:00:00Z" });
+  // Feb: $1,000, Mar: $1,240 → +24%. Stored as INTEGER CENTS.
+  await invoices.create("u-1", { contractId: "x", dueDate: "2026-02-01", status: "paid", amount: 1_000_00, paidAt: "2026-02-10T00:00:00Z" });
+  await invoices.create("u-1", { contractId: "x", dueDate: "2026-03-01", status: "paid", amount: 1_240_00, paidAt: "2026-03-10T00:00:00Z" });
   const stats = await flow.run("u-1", NOW);
   assertEquals(stats.revenue.monthOverMonthPct, 24);
   await resetKv();

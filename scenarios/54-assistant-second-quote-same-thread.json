@@ -1,0 +1,28 @@
+{
+  "id": "assistant-second-quote-same-thread",
+  "name": "User drafts a second quote in the same conversation; both action cards live in the thread",
+  "description": "After locking + sending Quote A, user types another job description in the same thread. The handler should NOT update Quote A in-place (it's already 'sent'); instead it creates Quote B as a fresh draft, binds conv.quoteId to B, and renders a new action_card. The thread's preview reflects whichever quote was last interacted with.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego",
+    "role": "Multi-tasking — quoting two jobs back-to-back from the same chat",
+    "context": "Easier to use one thread than spawn a new conversation for every job."
+  },
+  "preconditions": [
+    "Conversation has Quote A (status='sent', summary='Patel fence repair', $430)",
+    "Same thread, no new message yet"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Sends 'New quote — Hernandez deck stain, $620 labor + $180 materials'", "expect": "create_quote action_card for Quote B in the same thread; conv.quoteId now points to Quote B; Quote A's card is unchanged earlier in the scroll" },
+    { "actor": "user",   "action": "Sends 'Looks good — send it'", "expect": "lock_quote fires for Quote B (NOT A); Quote B status flips to 'sent'; email queued to Hernandez customer" },
+    { "actor": "user",   "action": "Re-opens Quote A's card and clicks 'Re-open' (from the sent action_card)", "expect": "Conversation continues; LLM is told 'reopen the patel quote'; conv.quoteId rebinds to Quote A so further edits target it" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Both action_cards are visually distinct in the scroll; the second one isn't accidentally rendered as a duplicate of the first" },
+    { "aspect": "feel",          "check": "User isn't forced to start a new conversation for each job — the thread is conversational, not transactional" },
+    { "aspect": "functionality", "check": "QuoteStore creates a new Quote row for B (not update-in-place on A); conv.quoteId rebinds correctly on each create_quote" },
+    { "aspect": "accessibility", "check": "Thread scroll preserves position when new card lands at the bottom; user isn't yanked away from the previous card" }
+  ]
+}

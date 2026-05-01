@@ -8,6 +8,7 @@ import { LockQuote } from "@agents/domain/coordinators/lock-quote/mod.ts";
 import { AcceptContract } from "@agents/domain/coordinators/accept-contract/mod.ts";
 import { SendContract } from "@agents/domain/coordinators/send-contract/mod.ts";
 import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
+import { StartOnboardingConversation } from "@agents/domain/coordinators/start-onboarding-conversation/mod.ts";
 import { parseCreateAgentConversation } from "@agents/dto/conversation.ts";
 import { shouldTransitionToTerms } from "@agents/domain/business/derive-phase/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -25,6 +26,7 @@ export class ConversationsController {
     private acceptFlow: AcceptContract,
     private sendContractFlow: SendContract,
     private sendInvoiceFlow: SendInvoice,
+    private onboardingFlow: StartOnboardingConversation,
     private users: UserStore,
     private sessions: SessionStore,
   ) {}
@@ -41,6 +43,21 @@ export class ConversationsController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const dto = parseCreateAgentConversation(body);
     return ctx.json(await this.startFlow.run({ userId: user.id, ...dto }));
+  }
+
+  /**
+   * POST /agents/conversations/onboarding-start
+   *
+   * Used by the FE when a user lands on /assistant?onboard=1. Creates a
+   * fresh conversation and seeds the first onboarding ask so the user
+   * sees the question immediately — no "type to start" friction. Idempotent
+   * is up to the caller (we always create a new conversation; the FE is
+   * expected to redirect away on the first hit and never call again).
+   */
+  @Post("onboarding-start")
+  async onboardingStart(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return ctx.json(await this.onboardingFlow.run({ userId: user.id }));
   }
 
   @Get(":id")

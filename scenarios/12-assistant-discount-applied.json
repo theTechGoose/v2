@@ -1,0 +1,26 @@
+{
+  "id": "assistant-discount-applied",
+  "name": "Apply a 10% loyalty discount on top of a multi-line quote",
+  "description": "User asks for a 10% discount across the whole quote. The assistant should compute and add a discount line (negative amount), not silently rewrite individual lines.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Lena Park",
+    "role": "Painter",
+    "context": "Repeat customer, second job this year. Lena gives 10% off as a thank-you."
+  },
+  "preconditions": [
+    "Draft quote in current thread totals $3,200 across three lines"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types: 'Give them 10% off as a loyalty discount.'", "expect": "Assistant adds a 'Loyalty discount (10%)' line at -$320.00; new total $2,880.00" },
+    { "actor": "user",   "action": "Types: 'Make it a flat $300 off instead.'", "expect": "Discount line updates to -$300.00; total $2,900.00 — original three lines untouched" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Negative line items are clearly styled as deductions (e.g. green or with a minus sign), not confusable with regular lines" },
+    { "aspect": "feel",          "check": "Discount math is visible — user can sanity-check the percentage" },
+    { "aspect": "functionality", "check": "Stored as amountCents = -32000 / -30000; subtotal/total computed downstream not pre-baked" },
+    { "aspect": "accessibility", "check": "Currency negatives are read as 'minus three hundred and twenty dollars', not '-320'" }
+  ]
+}

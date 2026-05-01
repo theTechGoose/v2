@@ -85,7 +85,7 @@ export class LoadProfile {
       tax: redactTaxForOwner(tax),
       contractDefaults,
       references,
-      initials: computeInitials(user.name),
+      initials: computeInitials(user.name, identity?.businessName),
     };
   }
 

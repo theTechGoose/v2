@@ -54,6 +54,7 @@
   border: none; cursor: pointer;
   font-family: var(--font-heading); font-weight: 700;
   font-size: 14px;
+  text-decoration: none;
   box-shadow: 0 8px 18px -6px rgba(255,107,107,0.55);
   transition: transform 240ms var(--ease-bounce);
   flex-shrink: 0;

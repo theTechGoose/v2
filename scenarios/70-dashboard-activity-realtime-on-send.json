@@ -1,0 +1,29 @@
+{
+  "id": "dashboard-activity-realtime-on-send",
+  "name": "Sending a quote on /assistant pushes a new entry into /dashboard activity feed without refresh",
+  "description": "When a quote is locked-and-sent in the assistant, the system records an activity event ('Quote sent to your client'). If /dashboard is open in another tab (same browser session), the shared dash-cache subscriber on the dashboard activity panel should pick up the new event on the next refreshDash() — without a full page reload. The activity entry appears at the top with the correct icon and 'just now' relative time.",
+  "category": "dashboard",
+  "surface": ["/dashboard", "/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Multi-tab workflow",
+    "context": "Has /dashboard pinned in tab 1 and /assistant in tab 2."
+  },
+  "preconditions": [
+    "User authenticated; both tabs reflect the same session",
+    "Account has at least 2 prior activity events"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "(tab 2 /assistant) Drafts and locks a new quote", "expect": "Action card flips to 'sent'; assistant emits a new activity event server-side" },
+    { "actor": "system", "action": "(tab 1 /dashboard) Next refreshDash() tick fires", "expect": "DashCache snapshot includes the new activity entry; subscribers re-render without flicker" },
+    { "actor": "user",   "action": "(tab 1 /dashboard) Looks at activity panel", "expect": "Top row shows the new 'Quote sent to your client' event with correct icon (.activity-item__icon) and 'just now' time" },
+    { "actor": "user",   "action": "(tab 1) Sidebar count badges update", "expect": "Quotes badge increments by 1 if the new quote enters the 'sent' track" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "New activity row inserts above existing rows without layout jank" },
+    { "aspect": "feel",          "check": "Cross-tab consistency feels live without being noisy — no toast spam" },
+    { "aspect": "functionality", "check": "DashCache is the single source; sidebar and activity panel both subscribe to it" },
+    { "aspect": "accessibility", "check": "New row is announced via an aria-live='polite' region or only on the user's next focus event (not interrupting)" }
+  ]
+}

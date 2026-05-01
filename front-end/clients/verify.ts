@@ -19,7 +19,7 @@ export interface VerifyOtpInput {
 export type VerifyOtpError = "invalid_code" | "expired" | "rate_limited";
 
 export type VerifyOtpResult =
-  | { ok: true; sessionId: string; userId: string; redirectTo: string }
+  | { ok: true; sessionId: string; userId: string; isNewUser: boolean; redirectTo: string }
   | { ok: false; error: VerifyOtpError };
 
 export interface ResendOtpInput {
@@ -38,9 +38,11 @@ function asError(raw: unknown): VerifyOtpError {
 export const verifyClient = {
   async verifyOtp(input: VerifyOtpInput, opts: ApiOptions = {}): Promise<VerifyOtpResult> {
     try {
-      const raw = await api.post<{ sessionId?: string; userId?: string }>("/auth/verify-otp", input, opts);
+      const raw = await api.post<{ sessionId?: string; userId?: string; isNewUser?: boolean }>("/auth/verify-otp", input, opts);
       if (typeof raw.sessionId === "string" && typeof raw.userId === "string") {
-        return { ok: true, sessionId: raw.sessionId, userId: raw.userId, redirectTo: "/dashboard" };
+        const isNewUser = raw.isNewUser === true;
+        const redirectTo = isNewUser ? "/assistant?onboard=1" : "/dashboard?welcome=back";
+        return { ok: true, sessionId: raw.sessionId, userId: raw.userId, isNewUser, redirectTo };
       }
       return { ok: false, error: "invalid_code" };
     } catch (err) {

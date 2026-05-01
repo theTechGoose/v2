@@ -95,7 +95,8 @@ Deno.test("send-paperwork-email integration: contract dispatch renders status + 
   const customer = await customers.create("u-1", { name: "Acme", email: "ops@acme.test" });
   const quote = await quotes.create("u-1", { summary: "x", lineItems: [], customerId: customer.id });
   const contract = await contracts.create("u-1", {
-    quoteId: quote.id, customerId: customer.id, status: "draft", totalAmount: 1234,
+    // Audit1 #3 — INTEGER CENTS.
+    quoteId: quote.id, customerId: customer.id, status: "draft", totalAmount: 1_234_00,
   });
 
   await flow.run("u-1", { kind: "contract", resourceId: contract.id });
@@ -115,7 +116,7 @@ Deno.test("send-paperwork-email integration: invoice dispatch renders amount + d
   const contract = await contracts.create("u-1", { quoteId: quote.id, customerId: customer.id });
   const invoice = await invoices.create("u-1", {
     contractId: contract.id, customerId: customer.id, dueDate: "2026-05-01",
-    amount: 999, status: "pending",
+    amount: 999_00, status: "pending",        // INTEGER CENTS
   });
 
   await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });

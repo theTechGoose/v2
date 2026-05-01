@@ -1,0 +1,28 @@
+{
+  "id": "assistant-record-payment-manual",
+  "name": "Diego logs a cash payment via the assistant — '$500 cash from Patel for invoice #123'",
+  "description": "Some payments don't arrive through Stripe (cash, check, ACH outside the app). Diego tells the assistant about a payment he just received. The LLM extracts amount + method + invoice reference; surfaces a record_payment action card; on confirm, persists a Payment row, marks the linked Invoice 'paid' (or partial), and pulses /payments + /dashboard outstanding.",
+  "category": "assistant",
+  "surface": ["/assistant", "/payments", "/dashboard", "/invoices"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Just got cash on the jobsite",
+    "context": "Standing next to his truck. Wants to log the payment before he forgets."
+  },
+  "preconditions": [
+    "Invoice #123 (Patel · fence) exists in 'unpaid' status, amount $500.00 (50000 cents)"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "On /assistant: 'I just got $500 cash from Patel for invoice #123'", "expect": "LLM extracts amount=50000 cents, method='cash', invoiceRef='#123'; emits a record_payment action card with those fields populated" },
+    { "actor": "user",   "action": "Reviews the card, taps 'Confirm and log'", "expect": "PaymentStore.create persists Payment {amount:50000, method:'cash', invoiceId:'<resolved>', receivedAt:now}; Invoice → paid; activity event 'Payment received · $500 cash · Patel'" },
+    { "actor": "system", "action": "Cross-page propagation", "expect": "/payments hero increments landed; PSideTopPayors gains/updates Patel; /dashboard 'Money owed' decreases by $500" },
+    { "actor": "user",   "action": "Says 'Actually it was $250, not $500'", "expect": "Assistant offers an inline correction; UpdatePaymentDto path (amount=25000) re-runs; Invoice flips to 'partial'" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Action card matches the existing send_quote/send_contract card visual — same chrome, different verb" },
+    { "aspect": "feel",          "check": "User trusts the assistant got the amount right because it shows it back as a confirmable card" },
+    { "aspect": "functionality", "check": "Cents math is correct end-to-end; invoice 'partial' vs 'paid' status flips on the right boundary" },
+    { "aspect": "accessibility", "check": "Card form fields are labeled; amount uses inputmode='numeric'" }
+  ]
+}

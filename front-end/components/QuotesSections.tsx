@@ -4,7 +4,7 @@
  * The interactive Track collapse + QuoteCard flip live in islands/.
  */
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtMoney } from "../lib/format.ts";
+import { fmtMoney, pluralize } from "../lib/format.ts";
 import { type Quote } from "../lib/quotes-seed.ts";
 import DeleteQuoteButton from "../islands/DeleteQuoteButton.tsx";
 
@@ -16,6 +16,8 @@ interface HeroProps {
 }
 
 export function QuotesHero({ openCount, openTotal, staleCount, clientCount }: HeroProps) {
+  const empty = openCount === 0;
+  const allWarm = !empty && staleCount === 0;
   return (
     <div class="qph">
       <div>
@@ -23,14 +25,38 @@ export function QuotesHero({ openCount, openTotal, staleCount, clientCount }: He
           <span class="qph__eyebrow-dot" />
           The pipeline this week
         </div>
-        <h1 class="qph__title">
-          <em>${fmtMoney(openTotal)}</em> of work sitting with clients,<br />
-          {staleCount} {staleCount === 1 ? "quote" : "quotes"} that need a nudge.
-        </h1>
-        <p class="qph__sub">
-          {openCount} open quotes across {clientCount} clients. The monsters
-          flagged <strong>{staleCount}</strong> as cooling off — start there, then hit the hot ones while they're still warm.
-        </p>
+        {empty ? (
+          <>
+            <h1 class="qph__title">
+              <em>Nothing in the pipeline yet.</em><br />
+              Draft your first quote in the assistant.
+            </h1>
+            <p class="qph__sub">
+              Quotes you send land here automatically — opens, replies, and stale flags are tracked for you.
+            </p>
+          </>
+        ) : allWarm ? (
+          <>
+            <h1 class="qph__title">
+              <em>{fmtMoney(openTotal)}</em> of work sitting with clients —<br />
+              all of it warm.
+            </h1>
+            <p class="qph__sub">
+              {pluralize(openCount, "open quote")} across {pluralize(clientCount, "client")}. Nothing's gone cold yet — the monsters will flag it the moment something does.
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 class="qph__title">
+              <em>{fmtMoney(openTotal)}</em> of work sitting with clients,<br />
+              {pluralize(staleCount, "quote")} that {staleCount === 1 ? "needs" : "need"} a nudge.
+            </h1>
+            <p class="qph__sub">
+              {pluralize(openCount, "open quote")} across {pluralize(clientCount, "client")}. The monsters
+              flagged <strong>{staleCount}</strong> as cooling off — start there, then hit the hot ones while they're still warm.
+            </p>
+          </>
+        )}
       </div>
       <button class="qph__cta" type="button">
         <I d={ICN.plus} size={14} sw={2.5} /> New quote
@@ -49,12 +75,18 @@ interface KpisProps {
   winRate: number;
 }
 
+/** Below this threshold the win-rate percentage is mathematically true but
+ *  operationally meaningless (one accept becomes "100%"). Show only the
+ *  breakdown until enough quotes have decided. */
+const WIN_RATE_MIN_N = 5;
+
 export function QuotesKpis({ outValue, outCount, draftCount, decidedCount, wonCount, lostCount, winRate }: KpisProps) {
+  const winRateConfident = decidedCount >= WIN_RATE_MIN_N;
   return (
     <div class="qkpi">
       <div class="qkpi__cell qkpi__cell--accent">
         <div class="qkpi__lbl">Out for response</div>
-        <div class="qkpi__val">${fmtMoney(outValue)}</div>
+        <div class="qkpi__val">{fmtMoney(outValue)}</div>
         <div class="qkpi__sub">{outCount} quotes waiting</div>
       </div>
       <div class="qkpi__cell">
@@ -69,8 +101,16 @@ export function QuotesKpis({ outValue, outCount, draftCount, decidedCount, wonCo
       </div>
       <div class="qkpi__cell">
         <div class="qkpi__lbl">Win rate (90d)</div>
-        <div class="qkpi__val">{winRate}%</div>
-        <div class="qkpi__sub">↑ 8 pts vs Q1</div>
+        <div class="qkpi__val">
+          {winRateConfident ? `${winRate}%` : "—"}
+        </div>
+        <div class="qkpi__sub">
+          {decidedCount === 0
+            ? "Not enough data yet"
+            : winRateConfident
+              ? `${decidedCount} decided`
+              : `${wonCount} won · ${lostCount} lost · need ${WIN_RATE_MIN_N - decidedCount} more`}
+        </div>
       </div>
     </div>
   );
@@ -86,9 +126,9 @@ export function DecidedRow({ q }: { q: Quote }) {
       </div>
       <div>
         <div class="qdone__title">{q.title}</div>
-        <div class="qdone__client">{q.client} · {q.id}</div>
+        <div class="qdone__client">{q.client}</div>
       </div>
-      <div class={`qdone__amt ${q.stage === "lost" ? "qdone__amt--lost" : ""}`}>${fmtMoney(q.value)}</div>
+      <div class={`qdone__amt ${q.stage === "lost" ? "qdone__amt--lost" : ""}`}>{fmtMoney(q.value)}</div>
       <div class="qdone__when">{when}</div>
       <DeleteQuoteButton id={q.id} variant="icon" />
     </div>
@@ -117,7 +157,7 @@ export function QSideBig({ open }: QSideBigProps) {
                 <div class="qbig__name">{q.client}</div>
                 <div class="qbig__sub">{q.title}</div>
               </div>
-              <span class="qbig__amt">${fmtMoney(q.value)}</span>
+              <span class="qbig__amt">{fmtMoney(q.value)}</span>
             </div>
             <div class="qbar"><div class="qbar__fill" style={`width: ${(q.value / max) * 100}%`} /></div>
           </div>
@@ -131,9 +171,10 @@ interface QSideRateProps { won: number; lost: number }
 
 export function QSideRate({ won, lost }: QSideRateProps) {
   const decided = won + lost;
+  const confident = decided >= WIN_RATE_MIN_N;
   const pct = decided > 0 ? Math.round((won / decided) * 100) : 0;
   const C = Math.PI * 42;
-  const dash = (pct / 100) * C;
+  const dash = confident ? (pct / 100) * C : 0;
   return (
     <div class="qside__card">
       <div class="qside__head">
@@ -145,7 +186,9 @@ export function QSideRate({ won, lost }: QSideRateProps) {
       <div class="qrate">
         <svg class="qrate__svg" viewBox="0 0 110 70">
           <path d="M 13 60 A 42 42 0 0 1 97 60" fill="none" stroke="var(--mint-200)" stroke-width="10" stroke-linecap="round" />
-          <path d="M 13 60 A 42 42 0 0 1 97 60" fill="none" stroke="url(#qg)" stroke-width="10" stroke-linecap="round" stroke-dasharray={`${dash} ${C}`} />
+          {confident && (
+            <path d="M 13 60 A 42 42 0 0 1 97 60" fill="none" stroke="url(#qg)" stroke-width="10" stroke-linecap="round" stroke-dasharray={`${dash} ${C}`} />
+          )}
           <defs>
             <linearGradient id="qg" x1="0" x2="1">
               <stop offset="0%" stop-color="#5FA34F" />
@@ -154,8 +197,21 @@ export function QSideRate({ won, lost }: QSideRateProps) {
           </defs>
         </svg>
         <div>
-          <div class="qrate__num">{pct}<span class="qrate__num-pct">%</span></div>
-          <div class="qrate__lbl">{won} won · {lost} lost<br />of {decided} decided</div>
+          {confident ? (
+            <>
+              <div class="qrate__num">{pct}<span class="qrate__num-pct">%</span></div>
+              <div class="qrate__lbl">{won} won · {lost} lost<br />of {decided} decided</div>
+            </>
+          ) : (
+            <>
+              <div class="qrate__num" style="font-size:32px;color:var(--fg-muted)">—</div>
+              <div class="qrate__lbl">
+                {decided === 0
+                  ? <>No quotes decided yet</>
+                  : <>{won} won · {lost} lost<br />need {WIN_RATE_MIN_N - decided} more to call it</>}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

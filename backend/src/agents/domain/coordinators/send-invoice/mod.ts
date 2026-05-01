@@ -104,7 +104,8 @@ export class SendInvoice {
     }
 
     const fresh = await this.invoices.getOwned(invoice.id, input.userId);
-    const totalCents = Math.round((fresh.amount ?? 0) * 100);
+    // Audit1 #3 — invoice.amount is INTEGER CENTS already.
+    const totalCents = fresh.amount ?? 0;
 
     const card = await this.messages.append({
       conversationId: conv.id,

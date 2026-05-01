@@ -1,0 +1,28 @@
+{
+  "id": "clients-add-private-note",
+  "name": "User adds a private note on a client",
+  "description": "User opens a client card and writes a private note — 'gate code is 4429, dog is friendly'. Note is internal only and never appears in customer-facing copy.",
+  "category": "clients",
+  "surface": ["/clients"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Marcus Lee",
+    "role": "Solo handyman",
+    "context": "Just left a job site, wants to capture details before he forgets."
+  },
+  "preconditions": [
+    "Client 'Patel residence' exists",
+    "User is authenticated"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Opens the Patel client", "expect": "Client detail / drawer shows a 'Notes' section labeled 'Private — never shown to customer'" },
+    { "actor": "user",   "action": "Types 'gate code 4429, dog is friendly' and saves", "expect": "Note persists with timestamp and author; appears top of the notes list" },
+    { "actor": "user",   "action": "Generates an emailed quote for Patel", "expect": "Note text is NOT included in the email or the public-quote page — verified by inspecting both" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "'Private' label is unmistakable — uses lock or eye-off icon, not just lighter text" },
+    { "aspect": "feel",          "check": "Save is reflected immediately, no full-page reload" },
+    { "aspect": "functionality", "check": "Notes are stored on a separate field that the customer-facing renderers explicitly do not read" },
+    { "aspect": "accessibility", "check": "Note textarea has a visible label; private-only warning is in the accessible name or description" }
+  ]
+}

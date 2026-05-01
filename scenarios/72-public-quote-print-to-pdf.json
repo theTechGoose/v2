@@ -1,0 +1,28 @@
+{
+  "id": "public-quote-print-to-pdf",
+  "name": "Customer prints public quote to PDF for their records",
+  "description": "Asha receives the quote email, opens the public-quote page, and uses Cmd+P / browser 'Print to PDF' to save it. The print stylesheet must hide non-essential UI (the accept/decline action bar, the small 'powered by' chrome at the bottom is OK to keep), preserve the header (contractor + business + contact), keep the line-items table legible, and break-page sensibly between the table and the totals.",
+  "category": "customer-email",
+  "surface": ["public-quote"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Asha Patel",
+    "role": "Customer who keeps physical records",
+    "context": "Wants to file the quote in her renovation folder before deciding."
+  },
+  "preconditions": [
+    "Public quote URL is reachable; quote is in 'sent' status (not yet decided)"
+  ],
+  "steps": [
+    { "actor": "customer", "action": "Opens /q/<id>", "expect": "Page renders normally — accept/decline bar visible, header card visible" },
+    { "actor": "customer", "action": "Hits Cmd+P", "expect": "Print preview hides the accept/decline action bar (e.g. via @media print { .qpub__cta-row { display: none } })" },
+    { "actor": "system",   "action": "@media print rules apply", "expect": "Body background is white; inks are dark; line-items table has visible borders for printed legibility" },
+    { "actor": "customer", "action": "Saves as PDF and re-opens it", "expect": "PDF includes contractor identity, scope sentence, full line items, and the cents-correct total; QR/URL footer optional" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Printed page reads as a clean document — typography survives the loss of color" },
+    { "aspect": "feel",          "check": "Customer feels they have a real record without screenshotting" },
+    { "aspect": "functionality", "check": "Page-break controls keep totals on the same page as the last line item when possible" },
+    { "aspect": "accessibility", "check": "Tagged PDF (where supported) preserves the table semantics" }
+  ]
+}

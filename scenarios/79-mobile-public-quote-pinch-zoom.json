@@ -1,0 +1,27 @@
+{
+  "id": "mobile-public-quote-pinch-zoom",
+  "name": "Customer pinch-zooms the line-items table on a small-screen public quote",
+  "description": "On a 360px-wide Android phone, the public-quote line items table can't render at desktop density. The page uses a viewport meta that ALLOWS user-scalable=yes (no maximum-scale lock-out) so the customer can pinch to zoom the table for detail. Header and totals stay readable at default zoom too — pinch-zoom is a backstop, not the only way to read.",
+  "category": "customer-email",
+  "surface": ["public-quote"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Asha Patel",
+    "role": "Reviewing the quote on her older Android",
+    "context": "Holding the phone close — small text is hard to read without zooming."
+  },
+  "preconditions": [
+    "Public quote URL reachable; quote has 5+ line items with mixed quantities and units"
+  ],
+  "steps": [
+    { "actor": "customer", "action": "Opens /q/<id> on a 360px viewport", "expect": "Header (contractor + business + scope) is legible at default zoom; line items table is readable but compact" },
+    { "actor": "customer", "action": "Pinch-zooms in on the line items table", "expect": "Browser allows zoom up to ~3×; no script blocks the gesture; layout reflows aren't required" },
+    { "actor": "customer", "action": "Pinch-zooms back out", "expect": "Page returns cleanly to default zoom; no orphan scroll position" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Viewport meta is 'width=device-width, initial-scale=1' WITHOUT maximum-scale=1 or user-scalable=no" },
+    { "aspect": "feel",          "check": "Customer never feels trapped in a too-small layout" },
+    { "aspect": "functionality", "check": "Table cells use overflow-wrap so long descriptions don't horizontal-scroll the whole page on default zoom" },
+    { "aspect": "accessibility", "check": "WCAG 1.4.4 (resize text) is satisfied at 200% browser zoom; pinch-zoom is allowed per WCAG 1.4.10" }
+  ]
+}

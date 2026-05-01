@@ -1,0 +1,27 @@
+{
+  "id": "assistant-status-question",
+  "name": "User asks the assistant 'has the Patel quote been opened yet?'",
+  "description": "Read-side question, not a write. Assistant should query the data and answer with a concrete fact, including timestamp — not redirect to /quotes.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Sent a quote two days ago, hasn't heard back. Wants to know if the customer even opened it."
+  },
+  "preconditions": [
+    "Patel quote was sent 2 days ago",
+    "Customer opened it once, 4 hours ago"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types: 'Has Patel opened the quote yet?'", "expect": "Assistant answers: 'Yes — opened once, about 4 hours ago. Hasn't responded.' with an inline link to the quote" },
+    { "actor": "user",   "action": "Types: 'Send a friendly nudge.'", "expect": "Assistant offers a draft follow-up message with an action card to send (text/email per customer preference)" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Inline link to the quote stands out as a link, not as plain text" },
+    { "aspect": "feel",          "check": "Answer is direct — no 'let me check' filler" },
+    { "aspect": "functionality", "check": "Open count and timestamp match what /quotes shows; nudge message respects customer's preferred channel" },
+    { "aspect": "accessibility", "check": "Relative time ('about 4 hours ago') has a tooltip with the absolute timestamp for screen readers" }
+  ]
+}

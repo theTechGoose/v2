@@ -1,0 +1,28 @@
+{
+  "id": "payments-sparkline-empty-state",
+  "name": "PSideFlow shows empty-state copy when no payments have landed yet",
+  "description": "Fresh account on /payments — every weekly bucket is zero. The cash-flow card must NOT draw a flat horizontal line (which reads as a chart bug). It should swap to an empty-state message: 'Nothing's landed yet — once payments roll in, the shape lights up.'",
+  "category": "payments",
+  "surface": ["/payments"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Marcus Lee",
+    "role": "Solo handyman, just signed up",
+    "context": "Hasn't billed anyone yet. Curious what /payments looks like before any money lands."
+  },
+  "preconditions": [
+    "Account has zero recorded payments",
+    "User on /payments"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /payments", "expect": "Hero subtitle handles the all-zero case (no awkward 'You've landed $0 this month' phrasing)" },
+    { "actor": "system", "action": "Renders PSideFlow card", "expect": "Title 'Cash-flow shape' + subtitle 'Last 12 weeks · nothing yet'; body reads 'Nothing's landed yet — once payments roll in, the shape lights up.'; NO svg path is drawn" },
+    { "actor": "user",   "action": "Inspects the card visually", "expect": "No thin red line at the bottom of the chart area; no zero-area gradient fill" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Card height matches the data-bearing variant so the right-rail rhythm doesn't shift later" },
+    { "aspect": "feel",          "check": "Reads as 'waiting' not 'broken' — the copy promises something will happen" },
+    { "aspect": "functionality", "check": "PSideFlow's hasData branch is the source of truth; no dead SVG fragments leak through" },
+    { "aspect": "accessibility", "check": "Empty-state body is a plain <div> with normal contrast; not aria-hidden" }
+  ]
+}

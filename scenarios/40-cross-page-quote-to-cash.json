@@ -1,0 +1,43 @@
+{
+  "id": "cross-page-quote-to-cash",
+  "name": "Full quote-to-cash funnel across all pages",
+  "description": "Capstone scenario: one customer journey traversing /assistant → /quotes → public-quote → /contracts → public-contract → /invoices → public-invoice → /dashboard. Every state transition must be visible to both the contractor and the customer at the right moment.",
+  "category": "cross-page",
+  "surface": ["/assistant", "/quotes", "/contracts", "/invoices", "/payments", "/dashboard", "/clients", "public-quote", "public-contract", "public-invoice", "email"],
+  "channel": "mixed",
+  "persona": {
+    "name": "Diego Martínez (contractor) + Asha Patel (customer)",
+    "role": "Two-actor end-to-end",
+    "context": "From 'I need a fence quote' to 'paid in full' in one continuous flow."
+  },
+  "preconditions": [
+    "Diego authenticated; Asha is a known client with email + phone",
+    "Stripe configured; SMS and email senders verified"
+  ],
+  "steps": [
+    { "actor": "user",     "action": "(Diego) on /assistant: 'New quote for Patel — fence repair, $350 labor, $80 materials'", "expect": "create_quote action card; total $430.00" },
+    { "actor": "user",     "action": "(Diego) 'Lock and send'", "expect": "Quote locks; email queued to Asha; appears in /quotes 'sent' stage" },
+    { "actor": "customer", "action": "(Asha) opens email, taps CTA, accepts on public quote page", "expect": "Quote → decided-won; Diego sees activity event; assistant offers contract" },
+    { "actor": "user",     "action": "(Diego) on /assistant: 'Yes, set up the contract'", "expect": "request_terms_transition; phase = terms; assistant prompts deposit %, schedule, exclusions" },
+    { "actor": "user",     "action": "(Diego) provides contract terms; sends contract", "expect": "Contract email queued; appears in /contracts as 'sent'" },
+    { "actor": "customer", "action": "(Asha) signs contract on phone", "expect": "Contract → signed; Diego notified; deposit invoice auto-created" },
+    { "actor": "system",   "action": "Deposit invoice email sent ($107.50)", "expect": "Asha receives within 1 minute; appears in /invoices unpaid" },
+    { "actor": "customer", "action": "(Asha) pays deposit via Apple Pay", "expect": "Receipt sent; invoice → paid; /payments updates" },
+    { "actor": "user",     "action": "(Diego) does the work; marks job complete", "expect": "Final invoice auto-created for $322.50" },
+    { "actor": "customer", "action": "(Asha) pays final invoice", "expect": "Job → fully paid; /dashboard outstanding decreases; /clients moves Patel out of 'active' to 'recent'" }
+  ],
+  "emails": [
+    { "to": "asha@example.com", "trigger": "quote sent",     "subject": "Your fence repair quote — Diego",        "linksTo": "public-quote",    "expect": "renders cleanly across major clients" },
+    { "to": "asha@example.com", "trigger": "contract sent",  "subject": "Your contract from Diego — fence repair", "linksTo": "public-contract", "expect": "scope summary visible in body" },
+    { "to": "asha@example.com", "trigger": "deposit invoice","subject": "Deposit invoice — fence repair",           "linksTo": "public-invoice",  "expect": "amount above the fold" },
+    { "to": "asha@example.com", "trigger": "deposit paid",   "subject": "Receipt — $107.50 paid",                   "linksTo": "public-invoice",  "expect": "receipt within 30s" },
+    { "to": "asha@example.com", "trigger": "final invoice",  "subject": "Final invoice — fence repair",            "linksTo": "public-invoice",  "expect": "balance breakdown clear" },
+    { "to": "asha@example.com", "trigger": "final paid",     "subject": "Receipt — $322.50 paid",                   "linksTo": "public-invoice",  "expect": "thank-you note in body" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Customer-facing pages share a coherent visual identity across quote → contract → invoice" },
+    { "aspect": "feel",          "check": "Each transition feels deliberate — no orphaned states or 'now what?' moments for either actor" },
+    { "aspect": "functionality", "check": "All state transitions are consistent: contractor and customer never see contradictory truth at the same time" },
+    { "aspect": "accessibility", "check": "Every customer-facing public page passes axe-core baseline; every contractor page has heading hierarchy that reads coherently" }
+  ]
+}

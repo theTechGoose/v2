@@ -1,0 +1,27 @@
+{
+  "id": "assistant-large-commercial",
+  "name": "Large commercial quote with multiple sections",
+  "description": "$58,400 commercial roof project with materials, labor, equipment rental, and permits. Stress test for layout — the action card and downstream public quote page must remain readable, not overflow.",
+  "category": "assistant",
+  "surface": ["/assistant", "/quotes", "public-quote"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Ahmed Salah",
+    "role": "Roofing GC",
+    "context": "Bidding on a small commercial flat-roof job. Higher stakes — wants the quote to look as professional as a print PDF."
+  },
+  "preconditions": [
+    "Phase = 'quote'"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types a long multi-line description with 7 line items: TPO membrane $18,200, insulation $9,400, fasteners/adhesive $2,800, labor 6 days $19,800, crane rental $3,400, dumpster $1,200, permits $3,600", "expect": "Assistant produces a single create_quote with all 7 line items and a coherent summary" },
+    { "actor": "user",   "action": "Opens the action card", "expect": "Line items wrap cleanly; long descriptions don't overflow the card; total $58,400.00 is readable" },
+    { "actor": "user",   "action": "Sends the quote and opens the public-quote URL in a new tab", "expect": "Customer-facing page renders with the same line items, totals, and a clear Accept button" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Currency columns align across all rows; no jagged right edges" },
+    { "aspect": "feel",          "check": "Big totals don't feel cramped — typography handles 5- and 6-figure amounts gracefully" },
+    { "aspect": "functionality", "check": "Public quote URL renders without auth and is shareable; opening it counts as an open exactly once" },
+    { "aspect": "accessibility", "check": "Public quote page passes basic axe checks: contrast, single h1, labelled form controls" }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "assistant-add-line-mid-draft",
+  "name": "Add a line item to a draft already on screen",
+  "description": "User had a draft quote with two lines. Mid-conversation, they realize they forgot a line. The assistant should update the existing draft, not create a new quote.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Marcus Lee",
+    "role": "Solo handyman",
+    "context": "Drafting a kitchen sink replacement; forgot to include haul-away fee."
+  },
+  "preconditions": [
+    "Active draft quote in the current thread with: 'Sink replacement' $480 and 'Plumbing materials' $120",
+    "Phase = 'quote'"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types: 'Add a $40 haul-away fee.'", "expect": "Assistant uses an update/append-line tool — same quoteId as before" },
+    { "actor": "system", "action": "Assistant responds", "expect": "Action card reflects 3 line items totaling $640.00; previous lines still listed" },
+    { "actor": "user",   "action": "Types: 'Actually scratch that, $50 not 40.'", "expect": "Assistant updates the haul-away line to $50 (in cents 5000), totals reflect $650.00 — still no new quote" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Updated action cards visually replace the prior card or clearly mark it superseded — no two stale cards stacked" },
+    { "aspect": "feel",          "check": "Edits feel conversational; user doesn't need to know the word 'edit'" },
+    { "aspect": "functionality", "check": "Backend has one quoteId with three line items, not three quotes" },
+    { "aspect": "accessibility", "check": "Updated total is announced via aria-live so the change is noticeable without re-scanning" }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "id": "assistant-vague-then-clarified",
+  "name": "User starts vague, assistant asks one targeted question",
+  "description": "User opens with 'Quote for the usual at the Browning house.' The assistant doesn't have enough context, so it asks ONE clarifying question — not a list of five.",
+  "category": "assistant",
+  "surface": ["/assistant"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Diego Martínez",
+    "role": "Owner-operator",
+    "context": "Repeat customer (Browning) with 3 prior jobs of different types. 'The usual' is genuinely ambiguous."
+  },
+  "preconditions": [
+    "Customer 'Browning' has prior quotes for: deck staining, pressure washing, fence repair"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Types 'Quote for the usual at the Browning house.'", "expect": "Assistant replies with ONE question: 'Which usual — staining ($1,800 last time), pressure washing ($420), or fence repair ($350)?'" },
+    { "actor": "user",   "action": "Replies 'staining, same as last spring'", "expect": "Assistant creates a quote referencing prior staining job amount as a starting point, with the line item visible in an action_card" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Past prices in the question are formatted, not raw cents" },
+    { "aspect": "feel",          "check": "Conversation stays one question deep — no interrogation feel" },
+    { "aspect": "functionality", "check": "Assistant pulled the prior amounts from the customer's history, not random numbers" },
+    { "aspect": "accessibility", "check": "Quoted amounts in the prompt are spoken naturally by screen readers ('$1,800' not 'one eight zero zero zero zero')" }
+  ]
+}

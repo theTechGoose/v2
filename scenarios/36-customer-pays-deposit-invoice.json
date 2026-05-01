@@ -1,0 +1,46 @@
+{
+  "id": "customer-pays-deposit-invoice",
+  "name": "Customer pays a deposit invoice via Stripe",
+  "description": "After contract signing, a deposit invoice is generated and emailed. Customer pays via card on the public invoice page. Funds + receipt are recorded.",
+  "category": "customer-email",
+  "surface": ["email", "public-invoice", "/invoices", "/payments", "/dashboard"],
+  "channel": "web-mobile",
+  "persona": {
+    "name": "Asha Patel",
+    "role": "Homeowner",
+    "context": "Contract just signed. Diego asked for a 25% deposit."
+  },
+  "preconditions": [
+    "Contract signed, deposit invoice created at $107.50 (25% of $430)",
+    "Stripe payment integration configured for Diego's account"
+  ],
+  "steps": [
+    { "actor": "system",   "action": "Sends deposit invoice email", "expect": "Subject 'Deposit invoice — fence repair'; body lists amount, due date, and a Pay CTA" },
+    { "actor": "customer", "action": "Opens email and taps Pay", "expect": "Public invoice page loads; line items, total $107.50, and a 'Pay $107.50' button visible above the fold" },
+    { "actor": "customer", "action": "Taps Pay, enters card details", "expect": "Stripe Elements (or equivalent) renders inline; supports Apple Pay if available; clear error messaging on bad card" },
+    { "actor": "customer", "action": "Submits payment", "expect": "Success state with receipt. PDF receipt downloadable. Email receipt sent within ~30s." },
+    { "actor": "system",   "action": "Diego's /payments and /dashboard update", "expect": "Payment appears in /payments; outstanding KPI on /dashboard decreases; activity feed records the payment" }
+  ],
+  "emails": [
+    {
+      "to": "asha@example.com",
+      "trigger": "Diego sends deposit invoice",
+      "subject": "Deposit invoice from Diego — fence repair",
+      "linksTo": "public-invoice",
+      "expect": "Plain-text fallback works; amount and due date visible without images"
+    },
+    {
+      "to": "asha@example.com",
+      "trigger": "Successful payment",
+      "subject": "Receipt — $107.50 paid",
+      "linksTo": "public-invoice",
+      "expect": "Receipt arrives within 30s; lists last4 of card; no full card data anywhere in the email"
+    }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Pay button is the most prominent element on the public invoice page" },
+    { "aspect": "feel",          "check": "Payment feels safe — clear branding, lock icon, business name match" },
+    { "aspect": "functionality", "check": "Idempotency: refreshing the success page doesn't double-charge" },
+    { "aspect": "accessibility", "check": "Stripe Elements pass the platform's a11y baseline; error messages are associated with the relevant field" }
+  ]
+}

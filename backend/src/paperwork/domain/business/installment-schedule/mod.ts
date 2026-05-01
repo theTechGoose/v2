@@ -17,9 +17,12 @@ export function isBalanced(installments: Pick<Installment, "percent">[]): boolea
 }
 
 export function applyTo(installments: Installment[], total: number): ResolvedInstallment[] {
+  // Audit1 #3 — `total` and the resulting `amount` are both INTEGER CENTS.
+  // The formula stays a simple percentage application (percent of total),
+  // but we round AFTER the divide so the result is always whole cents.
   return installments.map((i) => ({
     ...i,
-    amount: Math.round(i.percent * total) / 100,
+    amount: Math.round((i.percent * total) / 100),
   }));
 }
 

@@ -606,6 +606,8 @@ html, body {
     overflow: hidden;
     cursor: pointer;
     transition: all 180ms;
+    color: inherit;
+    text-decoration: none;
   }
   .topbar__ticker:hover {
     background: #fff;
@@ -2341,6 +2343,8 @@ html, body {
     overflow: hidden;
     cursor: pointer;
     transition: all 180ms;
+    color: inherit;
+    text-decoration: none;
   }
   .topbar__ticker:hover {
     background: #fff;
@@ -4897,7 +4901,12 @@ html, body {
     border-radius: 16px;
     padding: 8px 8px 8px 14px;
     display: flex;
-    align-items: flex-end;
+    /* center: keeps the placeholder line aligned with the mic+send
+       buttons. flex-end was leaving the textarea (38px) flush at the
+       bottom of the 44px mic, pushing placeholder text above visual
+       center. When the textarea grows multi-line it still grows
+       upward; the buttons land at the column center, which reads fine. */
+    align-items: center;
     gap: 8px;
     transition: border-color 160ms;
   }
@@ -4919,44 +4928,291 @@ html, body {
   }
   .composer__input::placeholder { color: var(--fg-subtle); }
 
-  /* Recording state — keep the bar at full width by giving the badge
-     the same flex behavior the textarea has. Without flex:1 the badge
-     hugs its content and the composer collapses on the right. */
-  .composer__inner--rec {
-    border-color: var(--brand-green);
-    background: #fff;
+  /* Big, unmistakable mic button. Brand pink so it visually says "talk
+     to me" rather than reading like another rounded icon. The send
+     button sits next to it and is intentionally smaller — the mic is
+     the primary affordance for this assistant. */
+  .composer__mic {
+    width: 44px; height: 44px;
+    border: none;
+    border-radius: 999px;
+    background: var(--brand-pink, #ff6b6b);
+    color: #fff;
+    cursor: pointer;
+    display: grid; place-items: center;
+    box-shadow: 0 6px 14px rgba(255, 107, 107, 0.32);
+    transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+    flex-shrink: 0;
   }
-  .composer__rec {
-    flex: 1;
+  .composer__mic:hover {
+    transform: translateY(-1px);
+    background: #ff5757;
+    box-shadow: 0 8px 18px rgba(255, 107, 107, 0.45);
+  }
+  .composer__mic:active { transform: translateY(0); }
+  .composer__mic:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: 0 2px 6px rgba(255, 107, 107, 0.18);
+  }
+  .composer__mic::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 999px;
+    pointer-events: none;
+  }
+  /* Resting halo so the mic always reads as the action target even when
+     the composer has focus inside the textarea. */
+  .composer__mic { position: relative; }
+  .composer__mic::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 999px;
+    border: 1.5px solid rgba(255, 107, 107, 0.22);
+    opacity: 0;
+    transition: opacity 200ms;
+    pointer-events: none;
+  }
+  .composer__inner:hover .composer__mic::after,
+  .composer__mic:focus-visible::after { opacity: 1; }
+
+  /* ============================================================
+     Voice mode — compact horizontal strip. Premium aesthetics
+     (glow, gradient halo, blinking caret, breathing orb) but tuned
+     for one-row layout that stays under ~88px tall on mobile.
+     ============================================================ */
+  .rec-panel {
+    position: relative;
+    overflow: hidden;
+    border-radius: 16px;
+    padding: 10px 12px;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.96)),
+      radial-gradient(120% 100% at 0% 0%, rgba(255,182,182,0.45), rgba(255,255,255,0) 55%),
+      radial-gradient(120% 100% at 100% 100%, rgba(180,228,210,0.30), rgba(255,255,255,0) 65%),
+      #fff;
+    border: 1px solid rgba(216, 64, 58, 0.18);
+    box-shadow:
+      0 10px 24px -12px rgba(216, 64, 58, 0.30),
+      0 6px 14px -8px rgba(20, 72, 82, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    animation: rec-panel-enter 240ms cubic-bezier(.2,.9,.25,1.05);
+  }
+  @keyframes rec-panel-enter {
+    0%   { transform: translateY(4px) scale(0.99); opacity: 0; }
+    100% { transform: translateY(0)   scale(1);    opacity: 1; }
+  }
+  .rec-panel__bg {
+    position: absolute;
+    inset: -30% -20%;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 15% 30%, rgba(255, 107, 107, 0.10), transparent 35%),
+      radial-gradient(circle at 85% 70%, rgba(81, 152, 67, 0.08), transparent 40%);
+    filter: blur(24px);
+    animation: rec-panel-bg-drift 14s ease-in-out infinite alternate;
+    z-index: 0;
+  }
+  @keyframes rec-panel-bg-drift {
+    0%   { transform: translate3d(0,   0,   0) scale(1); }
+    100% { transform: translate3d(2%, -1.5%, 0) scale(1.06); }
+  }
+  .rec-panel > *:not(.rec-panel__bg) { position: relative; z-index: 1; }
+
+  /* Single horizontal row: orb · transcript · controls. */
+  .rec-panel__row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 56px;
+  }
+
+  /* Orb — small (56px) but still uses the multi-layer gradient + halo. */
+  .rec-panel__orb-wrap {
+    flex: 0 0 auto;
+    width: 56px; height: 56px;
+    display: grid; place-items: center;
+  }
+  .rec-panel__orb { display: block; overflow: visible; }
+  .rec-panel__ring {
+    fill: none;
+    stroke: rgba(255, 107, 107, 0.5);
+    stroke-width: 2;
+    transform-origin: 40px 40px;
+    transform: scale(0.85);
+    opacity: 0;
+    animation: rec-ring 2.2s ease-out infinite;
+  }
+  .rec-panel__ring--1 { animation-delay: 0s;   }
+  .rec-panel__ring--2 { animation-delay: 1.1s; }
+  @keyframes rec-ring {
+    0%   { transform: scale(0.85); opacity: 0.55; stroke-width: 2.5; }
+    80%  { transform: scale(1.6);  opacity: 0;    stroke-width: 0.8; }
+    100% { transform: scale(1.6);  opacity: 0;    stroke-width: 0.8; }
+  }
+
+  /* Center column: head row (live + timer) + transcript. */
+  .rec-panel__center {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .rec-panel__head {
     display: flex;
     align-items: center;
     gap: 8px;
-    min-height: 38px;
-    padding: 8px 0;
-    font-size: 13.5px;
-    font-weight: 600;
-    color: var(--brand-teal);
-    letter-spacing: 0.01em;
   }
-  .composer__rec-dot {
-    width: 9px; height: 9px;
+  .rec-panel__live {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px 2px 6px;
+    border-radius: 999px;
+    background: rgba(216, 64, 58, 0.10);
+    color: #d8403a;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+  }
+  .rec-panel__live-dot {
+    width: 6px; height: 6px;
     border-radius: 999px;
     background: #d8403a;
-    box-shadow: 0 0 0 0 rgba(216, 64, 58, 0.55);
-    animation: composer-rec-pulse 1.1s ease-out infinite;
+    box-shadow: 0 0 0 0 rgba(216, 64, 58, 0.65);
+    animation: rec-live-pulse 1.05s ease-out infinite;
+  }
+  @keyframes rec-live-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(216, 64, 58, 0.65); }
+    100% { box-shadow: 0 0 0 6px rgba(216, 64, 58, 0); }
+  }
+  .rec-panel__elapsed {
+    margin-left: auto;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-weight: 700;
+    color: var(--fg-muted, #6b7560);
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Transcript — single-line clipped on narrow widths, two lines on wider. */
+  .rec-panel__transcript {
+    min-height: 22px;
+    max-height: 44px;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .rec-panel__transcript-text {
+    margin: 0;
+    font-size: 14.5px;
+    line-height: 1.4;
+    color: var(--brand-teal, #144852);
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    /* Clip to two lines max so the strip stays compact. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .rec-panel__final { color: var(--brand-teal, #144852); }
+  .rec-panel__final--new { animation: rec-final-fade 280ms ease-out both; }
+  @keyframes rec-final-fade {
+    0%   { opacity: 0; filter: blur(4px); }
+    100% { opacity: 1; filter: blur(0); }
+  }
+  .rec-panel__interim {
+    color: rgba(20, 72, 82, 0.45);
+    font-style: italic;
+  }
+  .rec-panel__caret {
+    display: inline-block;
+    margin-left: 1px;
+    color: rgba(216, 64, 58, 0.7);
+    animation: rec-caret-blink 1s steps(2, start) infinite;
+    font-weight: 700;
+  }
+  @keyframes rec-caret-blink {
+    50% { opacity: 0; }
+  }
+  .rec-panel__placeholder {
+    margin: 0;
+    color: var(--fg-muted, #6b7560);
+    font-style: italic;
+    font-size: 13.5px;
+    line-height: 1.4;
+  }
+
+  /* Controls — two icon-only circular buttons on the right. */
+  .rec-panel__controls {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .rec-panel__cancel {
+    width: 36px; height: 36px;
+    display: grid; place-items: center;
+    background: transparent;
+    border: 1px solid rgba(20, 72, 82, 0.12);
+    color: var(--fg-muted, #6b7560);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 140ms;
     flex-shrink: 0;
   }
-  @keyframes composer-rec-pulse {
-    0%   { box-shadow: 0 0 0 0 rgba(216, 64, 58, 0.55); }
-    100% { box-shadow: 0 0 0 8px rgba(216, 64, 58, 0); }
+  .rec-panel__cancel:hover {
+    background: rgba(20, 72, 82, 0.04);
+    color: var(--brand-teal, #144852);
+    border-color: rgba(20, 72, 82, 0.22);
   }
-  .composer__btn--rec {
-    background: rgba(216, 64, 58, 0.12);
-    color: #d8403a;
+  .rec-panel__stop {
+    width: 44px; height: 44px;
+    display: grid; place-items: center;
+    background: linear-gradient(135deg, #5fb352, #4a8c3d);
+    color: #fff;
+    border: 0;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow:
+      0 8px 18px -6px rgba(81, 152, 67, 0.55),
+      0 2px 6px -2px rgba(81, 152, 67, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+    flex-shrink: 0;
   }
-  .composer__btn--rec:hover {
-    background: rgba(216, 64, 58, 0.2);
-    color: #d8403a;
+  .rec-panel__stop:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.06);
+    box-shadow:
+      0 12px 22px -6px rgba(81, 152, 67, 0.65),
+      0 4px 10px -2px rgba(81, 152, 67, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+  .rec-panel__stop:active { transform: translateY(0); }
+  .rec-panel__stop-icon { display: grid; place-items: center; }
+  .rec-panel__stop-square {
+    display: block;
+    width: 12px; height: 12px;
+    background: #fff;
+    border-radius: 3px;
+  }
+
+  /* Mobile (<= 480px): tighten further — 12px padding, slightly smaller orb,
+     hide the elapsed timer (still visible on the live pill via aria). */
+  @media (max-width: 480px) {
+    .rec-panel { padding: 8px 10px; border-radius: 14px; }
+    .rec-panel__orb-wrap { width: 44px; height: 44px; }
+    .rec-panel__orb { width: 44px !important; height: 44px !important; }
+    .rec-panel__transcript-text { font-size: 13.5px; }
+    .rec-panel__cancel { width: 32px; height: 32px; }
+    .rec-panel__stop { width: 40px; height: 40px; }
+    .rec-panel__stop-square { width: 10px; height: 10px; }
   }
 
   .composer__tools {
@@ -5227,16 +5483,15 @@ html, body {
     font-size: 10.5px;
   }
 
-  @media (max-width: 1400px) {
-    .asst { grid-template-columns: 280px 1fr 360px; }
-  }
-  @media (max-width: 1200px) {
-    .asst { grid-template-columns: 1fr 1fr; }
-    .threads { display: none; }
-  }
+  /* Audit #9: replace the prior @max-1400 / @max-1200 cascade — at 1200
+     the chat panel was collapsing to ~320px because the base grid below
+     declared a 2-col 320px+1fr template and the @max-1200 rule then set
+     1fr 1fr while hiding threads, leaving the chat in a single cell that
+     followed the original 320px column. The shell now keeps the full
+     3-column layout until the docpane truly can't fit (~1100px).  */
 .asst {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr) 360px;
   align-items: stretch;
   justify-content: stretch;
   height: calc(100vh - 60px);
@@ -5244,6 +5499,12 @@ html, body {
   padding: 0;
   gap: 0;
   overflow: hidden;
+}
+/* Collapse the right column when there's no docpane to fill it (most
+   threads, until the user is in a quote/contract context). Otherwise
+   the freed space sits empty next to a narrowed chat panel. */
+.asst:not(:has(.docpane)) {
+  grid-template-columns: 280px minmax(0, 1fr);
 }
 .asst__chat-wrap {
   display: flex;
@@ -5264,7 +5525,11 @@ html, body {
   min-height: 0;
   overflow-y: auto;
 }
-@media (max-width: 768px) {
+@media (max-width: 1099px) {
+  .asst { grid-template-columns: 260px minmax(0, 1fr); }
+  .asst .docpane { display: none; }
+}
+@media (max-width: 880px) {
   .asst { grid-template-columns: 1fr; }
   .asst .threads { display: none; }
 }
@@ -5344,4 +5609,21 @@ html, body {
   background: #fff;
   color: var(--fg-muted, #6b7560);
   cursor: pointer;
+}
+
+/* Subtle attention-grabbing shake on the assistant CTA. Loops every
+   ~5s, pauses on hover/focus, respects reduced-motion. Lives at the
+   end of the file so both copies of .sb__textus inherit it. */
+@keyframes pm-assistant-shake {
+  0%, 88%, 100% { transform: translate(0, 0) rotate(0); }
+  90%           { transform: translate(-3px, 0) rotate(-0.6deg); }
+  92%           { transform: translate(3px, 0)  rotate(0.6deg); }
+  94%           { transform: translate(-2px, 0) rotate(-0.4deg); }
+  96%           { transform: translate(2px, 0)  rotate(0.4deg); }
+  98%           { transform: translate(-1px, 0) rotate(0); }
+}
+.sb__textus { animation: pm-assistant-shake 5.2s ease-in-out infinite; }
+.sb__textus:hover, .sb__textus:focus-visible { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .sb__textus { animation: none; }
 }

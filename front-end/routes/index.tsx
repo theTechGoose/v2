@@ -156,10 +156,10 @@ export default define.page(async function Landing(ctx) {
                 <h4 class="hs-doc__title" data-i18n="doc.q.title">Kitchen remodel</h4>
                 <div class="hs-doc__client">R. Hernández · Apr 26</div>
                 <div class="hs-doc__rows">
-                  <div class="hs-doc__row"><span data-i18n="doc.q.l1">Cabinets</span><strong>$ 4,200</strong></div>
-                  <div class="hs-doc__row"><span data-i18n="doc.q.l2">Counters</span><strong>$ 3,990</strong></div>
-                  <div class="hs-doc__row"><span data-i18n="doc.q.l3">Labor (3 days)</span><strong>$ 1,950</strong></div>
-                  <div class="hs-doc__row hs-doc__row--total"><span data-i18n="doc.total">Total</span><strong>$ 10,990</strong></div>
+                  <div class="hs-doc__row"><span data-i18n="doc.q.l1">Cabinets</span><strong>$4,200.00</strong></div>
+                  <div class="hs-doc__row"><span data-i18n="doc.q.l2">Counters</span><strong>$3,990.00</strong></div>
+                  <div class="hs-doc__row"><span data-i18n="doc.q.l3">Labor (3 days)</span><strong>$1,950.00</strong></div>
+                  <div class="hs-doc__row hs-doc__row--total"><span data-i18n="doc.total">Total</span><strong>$10,990.00</strong></div>
                 </div>
                 <div class="hs-doc__sign">
                   <div class="hs-doc__sign-line"></div>
@@ -421,12 +421,12 @@ export default define.page(async function Landing(ctx) {
             <div class="pricing-math">
               <div class="math-col">
                 <div class="label" data-i18n="price.without">Without us</div>
-                <div class="price">$ 5,000</div>
+                <div class="price">$5,000</div>
                 <div class="breakdown">
-                  <div class="line"><span data-i18n="price.w1">Your guess at price</span><span>$ 5,000</span></div>
+                  <div class="line"><span data-i18n="price.w1">Your guess at price</span><span>$5,000</span></div>
                   <div class="line"><span data-i18n="price.w2">Hours doing paperwork</span><span data-i18n="price.w2v">~6 hrs</span></div>
                   <div class="line"><span data-i18n="price.w3">Trust from clients</span><span data-i18n="price.w3v">So-so</span></div>
-                  <div class="keep"><span data-i18n="price.keep">You keep</span><span style="float:right">$ 5,000</span></div>
+                  <div class="keep"><span data-i18n="price.keep">You keep</span><span style="float:right">$5,000</span></div>
                 </div>
               </div>
 
@@ -436,12 +436,12 @@ export default define.page(async function Landing(ctx) {
 
               <div class="math-col us">
                 <div class="label" data-i18n="price.with">With us</div>
-                <div class="price" style="color:var(--brand-green)">$ 6,500</div>
+                <div class="price" style="color:var(--brand-green)">$6,500</div>
                 <div class="breakdown">
-                  <div class="line"><span data-i18n="price.u1">Real-data pricing</span><span>$ 6,500</span></div>
-                  <div class="line fee"><span data-i18n="price.u2">Our 10% fee</span><span>− $ 650</span></div>
+                  <div class="line"><span data-i18n="price.u1">Real-data pricing</span><span>$6,500</span></div>
+                  <div class="line fee"><span data-i18n="price.u2">Our 10% fee</span><span>− $650</span></div>
                   <div class="line"><span data-i18n="price.u3">Hours doing paperwork</span><span>0</span></div>
-                  <div class="keep"><span data-i18n="price.keep2">You keep</span><span style="float:right">$ 5,850</span></div>
+                  <div class="keep"><span data-i18n="price.keep2">You keep</span><span style="float:right">$5,850</span></div>
                 </div>
               </div>
             </div>
@@ -463,16 +463,41 @@ export default define.page(async function Landing(ctx) {
           <div class="contact-card">
             <div class="contact-info">
               <span class="eyebrow-pill" data-i18n="cta.eyebrow">Let's go</span>
+              <ol class="pm-steps" aria-label="Sign-in steps">
+                <li class="pm-steps__item pm-steps__item--active">
+                  <span class="pm-steps__dot">1</span>
+                  <span class="pm-steps__label" data-i18n="cta.steps.phone">Phone</span>
+                </li>
+                <span class="pm-steps__bar" aria-hidden="true"></span>
+                <li class="pm-steps__item">
+                  <span class="pm-steps__dot">2</span>
+                  <span class="pm-steps__label" data-i18n="cta.steps.code">Code</span>
+                </li>
+                <span class="pm-steps__bar" aria-hidden="true"></span>
+                <li class="pm-steps__item">
+                  <span class="pm-steps__dot">3</span>
+                  <span class="pm-steps__label" data-i18n="cta.steps.in">You're in</span>
+                </li>
+              </ol>
               <h2 data-i18n="cta.h2">Ready to get the paperwork off your plate?</h2>
-              <p data-i18n="cta.lead">Drop your number. We'll text you within the hour and walk you through your first quote — free.</p>
+              <p data-i18n="cta.lead">Drop your number — we'll text you a 6-digit code. Login or sign up, same form.</p>
               <ul class="checks">
                 <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg> <span data-i18n="cta.b1">No setup fees, no contracts</span></li>
-                <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg> <span data-i18n="cta.b2">First quote free, on us</span></li>
+                <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg> <span data-i18n="cta.b2">First quote on us — for new pros</span></li>
                 <li><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg> <span data-i18n="cta.b3">English & Spanish, every step</span></li>
               </ul>
             </div>
 
             <form class="contact-form" id="contact-form">
+              {/* Saved-phone chip — populated by LandingScripts when localStorage.pm:last-phone is present. */}
+              <div class="cf-saved" id="cf-saved" hidden>
+                <span class="cf-saved__hint" data-i18n="cta.useSaved">Use</span>
+                <button type="button" class="cf-saved__btn" id="cf-saved-btn">
+                  <span id="cf-saved-phone">(xxx) xxx-xxxx</span>
+                </button>
+                <button type="button" class="cf-saved__dismiss" id="cf-saved-dismiss" data-i18n="cta.notYou">Not you?</button>
+              </div>
+
               <div class="cf-phone">
                 <div class="cf-phone__hdr">
                   <span class="cf-phone__avatar">PM</span>
@@ -487,20 +512,17 @@ export default define.page(async function Landing(ctx) {
 
                 <div class="cf-phone__body" id="cf-phone-body">
                   <div class="cf-bubble cf-bubble--them">
-                    <span>👋 Hey! I'm <strong>Marisol</strong> from Paperwork Monsters.</span>
+                    <span>👋 Welcome to <strong>Paperwork Monsters</strong>.</span>
                   </div>
-                  <div class="cf-bubble cf-bubble--them">
-                    <span>Drop your number below and I'll text you within the hour to walk you through your <strong>first quote — free</strong>.</span>
-                  </div>
-                  <div class="cf-bubble cf-bubble--me cf-bubble--preview" id="cf-bubble-preview">
-                    <span id="cf-preview-text">Hi Paperwork Monsters!</span>
+                  <div class="cf-bubble cf-bubble--them" id="cf-bubble-sms">
+                    <span data-i18n="cta.smsPreview">Paperwork Monsters: Your code is 482-913. Don't share it.</span>
                   </div>
                   <div class="cf-meta" id="cf-meta">
                     <span class="cf-meta__check">
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="margin-left:-5px"><polyline points="20 6 9 17 4 12" /></svg>
                     </span>
-                    <span>Delivered · Replies in <strong>~5 sec</strong></span>
+                    <span>Delivered · Auto-fills on iOS</span>
                   </div>
                 </div>
 
@@ -516,7 +538,7 @@ export default define.page(async function Landing(ctx) {
               </div>
 
               <button class="cf-cta submit" type="submit">
-                <span data-i18n="cta.btn">Text me my first quote</span>
+                <span data-i18n="cta.btn">Send my code</span>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
               </button>
 

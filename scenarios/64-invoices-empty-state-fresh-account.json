@@ -1,0 +1,28 @@
+{
+  "id": "invoices-empty-state-fresh-account",
+  "name": "/invoices on a fresh account renders cleanly with zero invoices",
+  "description": "Brand-new account: no contracts signed, so no invoices exist. The /invoices hero, KPI strip, three tracks (Overdue / In flight / Paid), and right-rail cards must all read as 'waiting' rather than 'broken'. The hero subtitle should NOT say 'Nothing past due' — it should welcome the user.",
+  "category": "invoices",
+  "surface": ["/invoices"],
+  "channel": "web-desktop",
+  "persona": {
+    "name": "Marcus Lee",
+    "role": "Solo handyman",
+    "context": "Hasn't sent a quote yet, let alone an invoice. Just exploring."
+  },
+  "preconditions": [
+    "Account has zero contracts and zero invoices"
+  ],
+  "steps": [
+    { "actor": "user",   "action": "Loads /invoices", "expect": "Hero renders without empty-state title-tail bug (no awkward two-line break on the headline)" },
+    { "actor": "system", "action": "Renders KPI strip", "expect": "All four cells read $0 / 0 with friendly sub-labels; uses .qkpi grid (canonical) NOT .qkpis outer + .qkpi item (post-audit fix)" },
+    { "actor": "system", "action": "Renders three QuoteTrack islands (overdue/in-flight/paid)", "expect": "Each track is collapsed by default; header + chevron visible; clicking expands inline; counts read '0 invoices'" },
+    { "actor": "user",   "action": "Clicks 'New invoice' hero CTA", "expect": "Navigates to /assistant?seed=Draft%20a%20new%20invoice%20for%20me. — composer pre-filled" }
+  ],
+  "evaluationCriteria": [
+    { "aspect": "look",          "check": "Hero, KPIs, and three tracks share the same card width — no orphan margins from the 4-cell vs 4-cell-grid mismatch" },
+    { "aspect": "feel",          "check": "Reads as 'we're ready when you are' — not 'we showed you scaffolding'" },
+    { "aspect": "functionality", "check": "QuoteTrack island is the canonical one (header + chevron + body-inner); count label uses unit='invoice'" },
+    { "aspect": "accessibility", "check": "Track headers are real <button>s with aria-expanded; keyboard space/enter toggles" }
+  ]
+}

@@ -64,6 +64,10 @@ interface Strings {
   "verify.errInvalid": string;
   "verify.errExpired": string;
   "verify.errRate": string;
+  "welcome.back": string;
+  "cta.steps.phone": string;
+  "cta.steps.code": string;
+  "cta.steps.in": string;
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -132,6 +136,10 @@ export const STRINGS: Record<Lang, Strings> = {
     "verify.errInvalid": "That code didn't match. Try again.",
     "verify.errExpired": "Code expired — request a new one.",
     "verify.errRate": "Too many tries. Wait a minute and try again.",
+    "welcome.back": "Welcome back, {firstName}.",
+    "cta.steps.phone": "Phone",
+    "cta.steps.code": "Code",
+    "cta.steps.in": "You're in",
   },
   es: {
     "nav.features": "Funciones",
@@ -198,6 +206,10 @@ export const STRINGS: Record<Lang, Strings> = {
     "verify.errInvalid": "Ese código no coincide. Intenta de nuevo.",
     "verify.errExpired": "El código expiró. Pide uno nuevo.",
     "verify.errRate": "Demasiados intentos. Espera un minuto.",
+    "welcome.back": "Bienvenido de nuevo, {firstName}.",
+    "cta.steps.phone": "Teléfono",
+    "cta.steps.code": "Código",
+    "cta.steps.in": "Listo",
   },
 };
 
