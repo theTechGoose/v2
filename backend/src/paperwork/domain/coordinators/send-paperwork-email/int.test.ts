@@ -4,6 +4,7 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { EmailService, type SendEmailInput } from "@communication/domain/data/email-service/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
@@ -33,7 +34,7 @@ function fresh(): SetupResult {
     return { ok: true, reason: "test_capture" };
   };
   void original;
-  const flow = new SendPaperworkEmail(quotes, contracts, invoices, customers, new UserStore(), email);
+  const flow = new SendPaperworkEmail(quotes, contracts, invoices, customers, new UserStore(), new BusinessIdentityStore(), email);
   return { flow, customers, quotes, contracts, invoices, email, sent };
 }
 

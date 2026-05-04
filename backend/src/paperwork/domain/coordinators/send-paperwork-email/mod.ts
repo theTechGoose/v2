@@ -4,6 +4,8 @@ import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
+import type { BusinessIdentity } from "@users/dto/business-identity.ts";
 import { EmailService, type SendEmailResult } from "@communication/domain/data/email-service/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
@@ -47,11 +49,13 @@ export class SendPaperworkEmail {
     private invoices: InvoiceStore,
     private customers: CustomerStore,
     private users: UserStore,
+    private identity: BusinessIdentityStore,
     private email: EmailService,
   ) {}
 
   async run(userId: string, input: SendPaperworkEmailInput): Promise<SendPaperworkEmailResult> {
     const sender = await this.tryGetUser(userId);
+    const senderBiz = await this.tryGetBusinessIdentity(userId);
 
     let subject: string;
     let htmlBody: string;
@@ -69,7 +73,7 @@ export class SendPaperworkEmail {
       // it directly. Otherwise we fall back to the quote-public page.
       const boundContract = await this.findContractForQuote(userId, quote.id);
       subject = renderQuoteSubject(quote, sender);
-      htmlBody = renderQuoteHtml(quote, customer, sender, boundContract);
+      htmlBody = renderQuoteHtml(quote, customer, sender, senderBiz, boundContract);
       quoteForStamp = quote;
     } else if (input.kind === "contract") {
       const contract = await this.contracts.getOwned(input.resourceId, userId);
@@ -92,7 +96,7 @@ export class SendPaperworkEmail {
       // with the resolved quote (or a synthesized one when missing).
       const quoteForSubject = quoteForBody ?? quoteFromContract(contract);
       subject = renderQuoteSubject(quoteForSubject, sender);
-      htmlBody = renderQuoteHtml(quoteForBody ?? quoteFromContract(contract), customer, sender, contract);
+      htmlBody = renderQuoteHtml(quoteForBody ?? quoteFromContract(contract), customer, sender, senderBiz, contract);
     } else {
       const invoice = await this.invoices.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
@@ -127,6 +131,11 @@ export class SendPaperworkEmail {
 
   private async tryGetUser(userId: string): Promise<User | undefined> {
     try { return await this.users.get(userId); }
+    catch { return undefined; }
+  }
+
+  private async tryGetBusinessIdentity(userId: string): Promise<BusinessIdentity | undefined> {
+    try { return (await this.identity.get(userId)) ?? undefined; }
     catch { return undefined; }
   }
 
@@ -325,7 +334,7 @@ function renderQuoteSubject(q: Quote, sender: User | undefined): string {
  * All inline styles, table-based layout for Gmail/Outlook safety, no
  * remote images that mail clients block.
  */
-function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User | undefined, contract?: Contract): string {
+function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User | undefined, senderBiz: BusinessIdentity | undefined, contract?: Contract): string {
   const docNumber = `#${q.id.slice(0, 8).toUpperCase()}`;
   const drafted = fmtDate(q.createdAt);
   const total = q.estimatedTotal ?? q.lineItems.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0);
@@ -389,8 +398,9 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
   const greeting = customerFirst
     ? `Hi ${escapeHtml(customerFirst)} 👋`
     : `Hi there 👋`;
+  const senderBizName = senderBiz?.businessName?.trim() || (senderBiz as { legalName?: string } | undefined)?.legalName?.trim();
   const introLine = senderFirst
-    ? `${escapeHtml(senderFirst)} from ${escapeHtml(sender?.name?.trim() && sender?.name?.trim() !== senderFirst ? "their crew" : "Paperwork Monsters")} put this together for you.`
+    ? `${escapeHtml(senderFirst)}${senderBizName ? ` from ${escapeHtml(senderBizName)}` : ""} put this together for you.`
     : `Your contractor put this together for you.`;
   const senderRoleLine = sender?.name?.trim()
     ? `${escapeHtml(sender.name.trim())}`
