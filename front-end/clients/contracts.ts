@@ -42,6 +42,8 @@ export const contractsClient = {
     api.get<Contract[]>("/contracts", { ...opts, query: { status } }),
   get:    (id: string, opts: ApiOptions = {}) =>
     api.get<Contract>(`/contracts/${id}`, opts),
+  update: (id: string, patch: Record<string, unknown>, opts: ApiOptions = {}) =>
+    api.put<Contract>(`/contracts/${id}`, patch, opts),
   delete: (id: string, opts: ApiOptions = {}) =>
     api.delete<{ ok: true }>(`/contracts/${id}`, opts),
 };

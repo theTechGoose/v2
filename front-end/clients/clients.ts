@@ -71,4 +71,6 @@ export const clientsClient = {
   list:     (opts: ApiOptions = {})              => api.get<CustomerCard[]>("/clients", opts),
   top:      (limit = 5, opts: ApiOptions = {})   => api.get<TopClientsResponse>("/analytics/clients/top", { ...opts, query: { limit } }),
   segments: (opts: ApiOptions = {})              => api.get<ClientSegmentsResponse>("/analytics/clients/segments", opts),
+  update:   (id: string, patch: Record<string, unknown>, opts: ApiOptions = {}) =>
+    api.put<CustomerCard>(`/customers/${id}`, patch, opts),
 };

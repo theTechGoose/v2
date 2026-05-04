@@ -63,8 +63,8 @@ export class TransitionToTerms {
       conversationId: conv.id,
       role: "system",
       kind: "phase_divider",
-      content: "Phase 2 — Contract terms",
-      payload: { phase: 2, label: "Phase 2 — Contract terms" },
+      content: "A little more info",
+      payload: { phase: 2, label: "A little more info" },
     });
 
     const firstStep = CONTRACT_TERMS_WIZARD_V1.steps[0];

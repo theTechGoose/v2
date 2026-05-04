@@ -37,7 +37,7 @@ export default function AsstComposer({ conversationId }: Props) {
       <div class="composer__inner">
         <textarea
           class="composer__input"
-          placeholder="Tell me what you need — or hit the mic and just talk."
+          placeholder="help me draft a kitchen remodel quote"
           rows={1}
           value={draft}
           onInput={(e) => setDraft((e.target as HTMLTextAreaElement).value)}

@@ -147,7 +147,7 @@ export const ONBOARD_ASK_STATE = (firstName: string): string =>
 export const ONBOARD_ASK_ADDRESS = (firstName: string): string =>
   `Last one, ${firstName} — what's your business address? Paste it on one line: street, city, state zip (e.g. "123 Main St, Austin, TX 78701"). Solo / no office? Just say "skip".`;
 export const ONBOARD_HANDOFF = (firstName: string): string =>
-  `Awesome — we're set, ${firstName}. Okay, can we start with your first quote? What do you have in mind?`;
+  `Awesome — we're set, ${firstName}. Okay, can we start with your first quote? Tell me anything — for example: "I have a full bathroom remodel down to the studs, I would like to rebuild the bathroom."`;
 
 /** Two-letter US state abbreviations → full names. Used by the state
  *  extractor and surfaced on customer-facing contracts. */

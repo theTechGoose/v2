@@ -31,6 +31,10 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsBoolean()
   vip?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isBusiness?: boolean;
 }
 
 export class UpdateCustomerDto {
@@ -61,6 +65,10 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsBoolean()
   vip?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isBusiness?: boolean;
 }
 
 export interface Customer extends CreateCustomerDto {

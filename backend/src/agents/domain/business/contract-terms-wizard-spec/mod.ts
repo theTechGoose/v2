@@ -24,11 +24,11 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
     {
       id: "customer",
       label: "Customer",
-      question: "Who is this contract for?",
+      question: "We've locked the quote down! Is this for a business or a person?",
       options: [
         { id: "use_active",          label: "Use the customer from chat" },
         { id: "pick_existing",       label: "Pick an existing customer" },
-        { id: "create_new",          label: "Create a new customer", isCustom: true },
+        { id: "create_new",          label: "Add a new business or person", isCustom: true },
       ],
     },
     {

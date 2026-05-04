@@ -18,7 +18,7 @@ export interface WizardAnswerInput {
   optionId: string;
   customValue?: string;
   /** Customer-step payload (only meaningful when stepId === "customer"). */
-  customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string } };
+  customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string; isBusiness?: boolean } };
 }
 
 export interface WizardAnswerResult {
@@ -177,6 +177,7 @@ export class HandleWizardAnswer {
         name,
         ...(create?.email ? { email: create.email.trim() } : {}),
         ...(create?.phoneNumber ? { phoneNumber: create.phoneNumber.trim() } : {}),
+        ...(typeof create?.isBusiness === "boolean" ? { isBusiness: create.isBusiness } : {}),
       });
       return { customerId: created.id, customerName: created.name, customValue: created.name };
     }

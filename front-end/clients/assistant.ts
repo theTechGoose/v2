@@ -196,7 +196,7 @@ export const assistantClient = {
       stepId: string;
       optionId: string;
       customValue?: string;
-      customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string } };
+      customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string; isBusiness?: boolean } };
       followUpValues?: Record<string, string | number>;
     },
     opts: ApiOptions = {},

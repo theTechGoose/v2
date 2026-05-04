@@ -333,7 +333,7 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
                   </div>
                   <div>
                     <div style={`font-weight:800;color:${GREEN};font-size:16px`}>Signed and binding</div>
-                    <div style={`margin-top:2px;color:${MUTED};font-size:13px`}>A countersigned PDF + first invoice will land in your inbox shortly.</div>
+                    <div style={`margin-top:2px;color:${MUTED};font-size:13px`}>Please allow up to 2 minutes before checking your email inbox. Don't forget to check spam.</div>
                   </div>
                 </div>
               )}

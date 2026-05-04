@@ -49,6 +49,9 @@ export interface Insight {
 
 export const quotesClient = {
   list:    (status?: string, opts: ApiOptions = {}) => api.get<QuoteCard[]>("/quotes", { ...opts, query: { status } }),
+  get:     (id: string, opts: ApiOptions = {})      => api.get<QuoteCard>(`/quotes/${id}`, opts),
+  update:  (id: string, patch: Record<string, unknown>, opts: ApiOptions = {}) =>
+    api.put<QuoteCard>(`/quotes/${id}`, patch, opts),
   winRate: (days = 90, opts: ApiOptions = {})      => api.get<WinRate>("/analytics/quotes/win-rate", { ...opts, query: { days } }),
   insight: (opts: ApiOptions = {})                  => api.get<Insight>("/analytics/quotes/insight", opts),
   delete:  (id: string, opts: ApiOptions = {})      => api.delete<{ ok: true }>(`/quotes/${id}`, opts),

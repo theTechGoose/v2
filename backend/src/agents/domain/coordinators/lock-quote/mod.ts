@@ -116,11 +116,10 @@ export class LockQuote {
       conversationId: conv.id,
       role: "assistant",
       kind: "continue_cta",
-      content: "Continue to terms",
+      content: "We've locked the quote down! Is this for a business or a person?",
       payload: {
         toPhase: "terms",
         quoteId: fresh.id,
-        summary: "Payment, warranty, dispute, governing state — a few quick questions",
       },
     });
 

@@ -251,7 +251,7 @@ export default function PublicSignContract({ contractId }: Props) {
         </div>
         <div style={`font-weight:800;color:${GREEN};font-size:18px`}>Signed and binding</div>
         <div style={`margin-top:6px;color:${MUTED};font-size:13px;max-width:320px;margin-left:auto;margin-right:auto`}>
-          Your contractor's been notified. A countersigned PDF + first invoice will land in your inbox shortly.
+          Please allow up to 2 minutes before checking your email inbox. Don't forget to check spam.
         </div>
       </div>
     );

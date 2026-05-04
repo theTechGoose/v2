@@ -43,11 +43,24 @@ import type { AgentMessage } from "@agents/dto/message.ts";
 const CONFIRM_LOCK_RE =
   /^\s*(lock\s*it\s*in|lock\s*it|lock|send\s*it|send\s*now|send|fire\s*it\s*off|fire\s*it|ship\s*it|ship|do\s*it|go\s*ahead|go\s*for\s*it|looks?\s*good|looks?\s*right|looks?\s*great|perfect|nice|sounds?\s*good|yes|yep|yup|yeah|sure)\b/i;
 
-/** Heuristic: did the user mention a customer name in the message that
- *  triggered create_quote? Looks for the patterns the prompt examples use:
- *  "Quote for X", "for the Xs", "X residence/place/family", "the X family",
- *  "at the X place". Used to decide whether to overwrite the assistant text
- *  with "Drafted — who's this for?" (audit2 N6). */
+/** Strip "who's this for?" / "whose place is this?" / similar customer-name
+ *  asks from LLM prose. The customer is collected via the wizard AFTER the
+ *  user clicks "Lock it in", so any preemptive ask in the create_quote
+ *  reply is duplicative. We strip surgically rather than re-prompting the
+ *  LLM so we don't burn another round-trip. */
+function stripCustomerAsk(text: string): string {
+  return text
+    .replace(/\b(?:who'?s|who is)\s+this\s+for\??/gi, "")
+    .replace(/\bwhose\s+(?:place|home|house|name)\s+is\s+this\??/gi, "")
+    .replace(/\bwho\s+(?:is\s+)?the\s+(?:customer|client)\??/gi, "")
+    .replace(/\bwhat'?s\s+the\s+(?:customer|client)'?s?\s+name\??/gi, "")
+    .replace(/[ \t]+([.?!])/g, "$1")
+    .replace(/\s+—\s*$/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+\n/g, "\n")
+    .trim();
+}
+
 /** Pick the message that should drive the conversation list preview.
  *  Walks newMessages backwards picking the most-meaningful surface:
  *    1. action_card — quote/contract/invoice summary lands as the preview.
@@ -61,24 +74,6 @@ function pickPreviewSource(msgs: AgentMessage[]): string | undefined {
     if (m.kind === "action_card" || m.kind === "text") return m.content;
   }
   return undefined;
-}
-
-function userMentionedCustomer(text: string): boolean {
-  if (!text) return false;
-  const t = text.trim();
-  // "Quote for X" / "qte for X" / "for delgado" — lowercase OK; user types
-  // fast on mobile and casing isn't a signal here.
-  if (/\b(?:quote|qte)\s+for\s+[a-z]/i.test(t)) return true;
-  if (/\bfor\s+(the\s+)?[A-Z][a-zA-Z'’-]+(?:\s+[A-Z][a-zA-Z'’-]+)*\b/.test(t)) return true;
-  if (/\b[A-Z][a-zA-Z'’-]+(?:'s|s)?\s+(residence|place|house|home|family|HOA|property)\b/i.test(t)) return true;
-  if (/\bthe\s+[A-Z][a-zA-Z'’-]+s\b/.test(t)) return true;
-  if (/\bat\s+the\s+[A-Z][a-zA-Z'’-]+\s+place\b/.test(t)) return true;
-  // Proper-noun cluster of 2+ capitalised tokens that aren't sentence-start
-  // ("Riverside Office Park", "Acme Property Group"). Lower bar than the
-  // patterns above; deliberately permissive — false-positive is harmless
-  // (don't ask), false-negative is what we're trying to avoid.
-  if (/\b[A-Z][a-zA-Z'’-]+\s+[A-Z][a-zA-Z'’-]+(?:\s+[A-Z][a-zA-Z'’-]+)?\b/.test(t)) return true;
-  return false;
 }
 
 export interface HandleChatInput {
@@ -488,33 +483,24 @@ export class HandleChatMessage {
 
     const llmText = llmResponse.text?.trim() ?? "";
 
-    // N6 — deterministic ask-for-name. Fire only on the FIRST draft of a
-    // conversation (i.e., before this turn there was no quoteId bound). On
-    // revisions ("bump install to $2,100", "drop the discount") the user
-    // typically isn't repeating the customer name, so we'd false-positive
-    // an ask every time. Restricting to first-draft handles that. We also
-    // skip when the conversation already has a customerId (set by start-
-    // conversation or the wizard's customer step).
-    const askForNameOverride = (
-      actionType === "create_quote" &&
-      !conv.quoteId &&
-      !conv.customerId &&
-      !userMentionedCustomer(input.content)
-    ) ? "Drafted — who's this for?" : undefined;
-
     // Resolve the final text:
-    //   1. N6 override wins (deterministic name prompt)
-    //   2. Else use the LLM's prose if it provided any
-    //   3. Else for card-bearing actions, leave empty — we won't persist
-    //      a bubble at all
-    //   4. Else fall back to "On it." / generic ack so the chat doesn't go
-    //      silent on a tool-only turn
+    //   1. Use the LLM's prose if it provided any (we strip any "who's this
+    //      for?" style asks server-side below — the customer is collected
+    //      after lock-in, not before).
+    //   2. Else for card-bearing actions, leave empty — we won't persist a
+    //      bubble at all.
+    //   3. Else fall back to "On it." / generic ack so the chat doesn't go
+    //      silent on a tool-only turn.
     let replyText: string;
     let suppressTextBubble = false;
-    if (askForNameOverride) {
-      replyText = askForNameOverride;
-    } else if (llmText) {
-      replyText = llmText;
+    if (llmText) {
+      replyText = stripCustomerAsk(llmText);
+      // If stripping nuked everything (the LLM only said the ask), and we
+      // emitted an action card anyway, don't persist an empty bubble.
+      if (!replyText.trim() && cardBearingAction) {
+        replyText = "";
+        suppressTextBubble = true;
+      }
     } else if (cardBearingAction) {
       replyText = "";
       suppressTextBubble = true;
@@ -667,11 +653,10 @@ export class HandleChatMessage {
             conversationId: conv.id,
             role: "assistant",
             kind: "continue_cta",
-            content: "Continue to terms",
+            content: "We've locked the quote down! Is this for a business or a person?",
             payload: {
               toPhase: "terms",
               quoteId,
-              summary: "Payment, warranty, dispute, governing state — a few quick questions",
             },
           });
           newMessages.push(cta);
@@ -693,11 +678,10 @@ export class HandleChatMessage {
           conversationId: conv.id,
           role: "assistant",
           kind: "continue_cta",
-          content: "Continue to terms",
+          content: "We've locked the quote down! Is this for a business or a person?",
           payload: {
             toPhase: "terms",
             quoteId,
-            summary: "Payment, warranty, dispute, governing state — a few quick questions",
           },
         });
         newMessages.push(cta);

@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { assistantClient, type ContractLite, type CustomerLite, type Message } from "../clients/assistant.ts";
 import { filesClient } from "../clients/files.ts";
+import { quotesClient } from "../clients/quotes.ts";
+import { clientsClient } from "../clients/clients.ts";
+import { contractsClient } from "../clients/contracts.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
 
 type WizardFieldType = "percent" | "number" | "currency" | "days" | "text";
@@ -169,6 +172,24 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
    */
   const [reviewedCtas, setReviewedCtas] = useState<Set<string>>(new Set());
   /**
+   * Kind ("business" | "person") the user picked on the lock-quote CTA.
+   * Recorded when they click Business or Person on the post-lock CTA so
+   * the wizard's customer step can skip its own kind picker and jump
+   * straight to the existing-or-new picker for that kind.
+   */
+  const [precommittedKind, setPrecommittedKind] = useState<"business" | "person" | null>(null);
+  /**
+   * stepId of the contract term currently being re-edited inline. Driving
+   * a `null → stepId → null` cycle expands the term row into the wizard's
+   * option buttons for that step, lets the user pick a new value, and
+   * collapses back. Picking PUTs the contract directly (no rewinding the
+   * wizard state) — the contract IS the source of truth post-wizard.
+   */
+  const [editingTermStepId, setEditingTermStepId] = useState<string | null>(null);
+  /** When the user clicks "Custom" inside a term picker, we swap the
+   *  options out for a single free-text input. Tracks (stepId, draft). */
+  const [customTermDraft, setCustomTermDraft] = useState<{ stepId: string; value: string } | null>(null);
+  /**
    * Set when the user clicks "Review" on the wizard's send CTA. Drives the
    * inline contract preview card (total/customer/dates) so the user can
    * actually look the contract over before clicking "Send to client".
@@ -294,7 +315,7 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
     else if (contract) status = "Contract drafting";
     else if (dividerPhase === 4) status = "Contract accepted";
     else if (dividerPhase === 3) status = "Contract sent";
-    else if (dividerPhase === 2) status = "Setting up contract terms";
+    else if (dividerPhase === 2) status = "Gathering a little more info";
     else if (quoteStatus === "accepted") status = "Quote accepted";
     else if (quoteStatus === "sent") status = "Quote sent";
     else if (lastQuoteCard) status = "Quote drafted · review";
@@ -606,11 +627,14 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
    * The CTA is removed client-side after click so the user can't fire it
    * twice while the request is in flight.
    */
-  async function submitContinueCta(message: Message) {
+  async function submitContinueCta(message: Message, kind?: "business" | "person") {
     if (sending) return;
     const payload = (message.payload ?? {}) as { toPhase?: string; contractId?: string };
     if (payload.toPhase === "terms") {
       if (!convoId) return;
+      // Stash the kind picked on the CTA so CustomerStepPanel can skip its
+      // own kind picker. Cleared when the panel consumes it.
+      if (kind) setPrecommittedKind(kind);
       setError(undefined);
       setSending(true);
       // Optimistically drop the CTA so it doesn't linger after the click.
@@ -751,6 +775,74 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
     }
   }
 
+  // Inline-edit handlers for the quote-review preview. Each one fetches
+  // the canonical record (the action_card payload only carries display
+  // shape, not the full LineItemDto / ContractTerm), splices the field,
+  // and PUTs the merged record back. Failure: revert the DOM by setting
+  // textContent on the contentEditable element.
+  async function onEditLineDesc(quoteId: string, lineIdx: number, original: string, el: HTMLElement) {
+    const next = (el.innerText ?? "").trim();
+    if (!quoteId || next === original.trim()) return;
+    if (!next) { el.innerText = original; return; }
+    try {
+      const q = await quotesClient.get(quoteId);
+      const items = Array.isArray(q.lineItems) ? [...q.lineItems] : [];
+      if (!items[lineIdx]) throw new Error("line item index out of range");
+      items[lineIdx] = { ...items[lineIdx], description: next };
+      await quotesClient.update(quoteId, { lineItems: items });
+    } catch (err) {
+      el.innerText = original;
+      setError(err instanceof Error ? err.message : "couldn't save edit");
+    }
+  }
+
+  async function onEditCustomerName(customerId: string | undefined, original: string, el: HTMLElement) {
+    const next = (el.innerText ?? "").trim();
+    if (!customerId || next === original.trim()) return;
+    if (!next) { el.innerText = original; return; }
+    try {
+      await clientsClient.update(customerId, { name: next });
+      setCustomer((c) => c ? { ...c, name: next } : c);
+    } catch (err) {
+      el.innerText = original;
+      setError(err instanceof Error ? err.message : "couldn't save edit");
+    }
+  }
+
+  // Pick a new option for an already-answered wizard term. Patches the
+  // contract's terms[] entry by stepId and PUTs the contract — does NOT
+  // rewind the wizard state. The chat-history wizard answer message stays
+  // as-is (historical record); the contract reflects the latest pick.
+  async function pickTermOption(contractId: string | undefined, stepId: string, label: string, optionLabel: string) {
+    if (!contractId) return;
+    setEditingTermStepId(null);
+    try {
+      const c = await contractsClient.get(contractId);
+      const existing = Array.isArray(c.terms) ? [...(c.terms as { stepId: string; label: string; value: string }[])] : [];
+      const idx = existing.findIndex((t) => t.stepId === stepId);
+      const nextTerm = { stepId, label, value: optionLabel };
+      const terms = idx === -1 ? [...existing, nextTerm] : existing.map((t, i) => i === idx ? nextTerm : t);
+      await contractsClient.update(contractId, { terms });
+      // Reflect the pick locally so the user sees it without a reload —
+      // the term answer is sourced from chat messages with wizardStepId,
+      // so synthesize a refresh by appending a new user-pick message.
+      setMessages((m) => [
+        ...m,
+        {
+          id: `local-term-edit-${stepId}-${Date.now()}`,
+          conversationId: convoId ?? "",
+          role: "user",
+          kind: "text",
+          content: `${label}: ${optionLabel}`,
+          createdAt: Date.now(),
+          payload: { wizardStepId: stepId },
+        } as Message,
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "couldn't save edit");
+    }
+  }
+
   /**
    * Click handler for an action_card's "Lock it in" button. Goes
    * directly to the dedicated /lock-quote endpoint instead of round-
@@ -825,7 +917,7 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
     payload?: {
       customer?: {
         id?: string;
-        create?: { name: string; email?: string; phoneNumber?: string };
+        create?: { name: string; email?: string; phoneNumber?: string; isBusiness?: boolean };
       };
     },
   ) {
@@ -843,7 +935,7 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
       stepId: string;
       optionId: string;
       customValue?: string;
-      customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string } };
+      customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string; isBusiness?: boolean } };
       followUpValues?: Record<string, string | number>;
     },
   ) {
@@ -1127,19 +1219,15 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                 Tell me about a job — voice or text. I'll draft the quote, walk through contract terms, and have it ready to send.
               </p>
               <div class="chat__empty-prompts">
-                <button type="button" class="chat__empty-prompt" onClick={() => sendText("Quote a 2-car garage epoxy floor, ~480 sqft, polyaspartic.")}>
-                  Quote a garage epoxy floor
+                <button type="button" class="chat__empty-prompt" onClick={() => sendText("I already have my price range — please help me draft the scope.")}>
+                  I already have my price range — please help me draft the scope.
                 </button>
-                <button type="button" class="chat__empty-prompt" onClick={() => sendText("Need a quote for kitchen backsplash, ~30 sqft, white subway tile.")}>
-                  Kitchen backsplash quote
+                <button type="button" class="chat__empty-prompt" onClick={() => sendText("I have all of the job details and would like help with pricing appropriately.")}>
+                  I have all of the job details and would like help with pricing appropriately.
                 </button>
-                {overdueCount && overdueCount > 0
-                  ? (
-                    <button type="button" class="chat__empty-prompt" onClick={() => sendText("Follow up on the overdue invoices.")}>
-                      Nudge {overdueCount === 1 ? "an overdue invoice" : `${overdueCount} overdue invoices`}
-                    </button>
-                  )
-                  : null}
+                <button type="button" class="chat__empty-prompt" onClick={() => sendText("I have some of the job details and need a simple quote.")}>
+                  I have some of the job details and need a simple quote.
+                </button>
               </div>
               {typeof globalThis.location !== "undefined"
                 && globalThis.location.hostname === "localhost"
@@ -1275,17 +1363,28 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                 // Wizard terms — every text msg with a wizardStepId is one
                 // answered step ("Start: ASAP", "Wraps: 1 week", ...). Skip
                 // the customer step since we render the customer block below.
-                const termAnswers = messages
-                  .filter((x) => {
-                    const p = x.payload as { wizardStepId?: string } | undefined;
-                    return x.kind === "text" && !!p?.wizardStepId && p.wizardStepId !== "customer";
-                  })
-                  .map((x) => {
-                    const raw = x.content ?? "";
-                    const idx = raw.indexOf(":");
-                    if (idx === -1) return { label: raw, value: "" };
-                    return { label: raw.slice(0, idx).trim(), value: raw.slice(idx + 1).trim() };
-                  });
+                // Walk newest → oldest so the LATEST pick for each stepId
+                // wins. Without dedupe, a re-edit (which appends a fresh
+                // wizardStepId message via pickTermOption) would render the
+                // same term row twice in the preview.
+                const termsByStep = new Map<string, { stepId: string; label: string; value: string; firstIdx: number }>();
+                for (let i = messages.length - 1; i >= 0; i--) {
+                  const x = messages[i];
+                  const p = x.payload as { wizardStepId?: string } | undefined;
+                  const sid = p?.wizardStepId;
+                  if (x.kind !== "text" || !sid || sid === "customer") continue;
+                  if (termsByStep.has(sid)) continue;
+                  const raw = x.content ?? "";
+                  const colon = raw.indexOf(":");
+                  const label = colon === -1 ? raw : raw.slice(0, colon).trim();
+                  const value = colon === -1 ? "" : raw.slice(colon + 1).trim();
+                  termsByStep.set(sid, { stepId: sid, label, value, firstIdx: i });
+                }
+                // Render in original order — sort by the index of the FIRST
+                // appearance so the visual order matches the wizard walk.
+                const termAnswers = Array.from(termsByStep.values())
+                  .sort((a, b) => a.firstIdx - b.firstIdx)
+                  .map(({ stepId, label, value }) => ({ stepId, label, value }));
                 const totalCentsForBreakdown = typeof contract?.totalAmount === "number"
                   ? contract.totalAmount
                   : lineTotalCents;
@@ -1300,9 +1399,6 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                 const milestones = paymentTerm
                   ? buildPaymentMilestones(paymentTerm.value, totalCentsForBreakdown)
                   : null;
-                const draftedDate = new Date(m.createdAt).toLocaleDateString("en-US", {
-                  month: "long", day: "numeric", year: "numeric",
-                });
                 return (
                   <div key={m.id} class="quote-review-wrap">
                     <article class="quote-review">
@@ -1315,7 +1411,6 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                         </div>
                         <div class="quote-review__head-right">
                           <span class="quote-review__chip">Draft</span>
-                          <div class="quote-review__date">Drafted {draftedDate}</div>
                         </div>
                       </header>
 
@@ -1323,7 +1418,13 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                         ? (
                           <section class="quote-review__hero">
                             <div class="quote-review__hero-label">Prepared for</div>
-                            <div class="quote-review__hero-name">{customer.name}</div>
+                            <div
+                              class="quote-review__hero-name quote-review__editable"
+                              contentEditable
+                              spellcheck={true}
+                              lang="en"
+                              onBlur={(e) => onEditCustomerName(customer.id, customer.name, e.currentTarget as HTMLElement)}
+                            >{customer.name}</div>
                             {(customer.email || customer.phoneNumber)
                               ? (
                                 <div class="quote-review__hero-meta">
@@ -1344,7 +1445,16 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                             <div class="quote-review__lines">
                               {lineItems.map((li, i) => (
                                 <div key={`li-${i}`} class="quote-review__line">
-                                  <span class="quote-review__line-desc">{li.description}</span>
+                                  <span
+                                    class="quote-review__line-desc quote-review__editable"
+                                    contentEditable
+                                    spellcheck={true}
+                                    lang="en"
+                                          onBlur={(e) => {
+                                      const qid = lockedPayload.quoteId;
+                                      if (qid) onEditLineDesc(qid, i, li.description, e.currentTarget as HTMLElement);
+                                    }}
+                                  >{li.description}</span>
                                   <span class="quote-review__line-amt">{fmtUSD(li.amountCents)}</span>
                                 </div>
                               ))}
@@ -1362,12 +1472,122 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                           <section class="quote-review__section">
                             <div class="quote-review__section-label">Terms</div>
                             <dl class="quote-review__terms">
-                              {termAnswers.map((t, i) => (
-                                <div key={`t-${i}`} class="quote-review__term">
-                                  <dt>{t.label}</dt>
-                                  <dd>{t.value}</dd>
-                                </div>
-                              ))}
+                              {termAnswers.map((t, i) => {
+                                // contractId from the parent scope defaults to "" via `?? ""`,
+                                // so use || not ?? to fall back to contract.id when empty.
+                                const cid = contractId || contract?.id;
+                                const isEditing = editingTermStepId === t.stepId;
+                                // Find the original wizard message for this stepId
+                                // so we can re-render its options inline. Searching
+                                // backwards picks up the most recent re-ask if the
+                                // user has already edited this term once.
+                                const wizMsg = isEditing
+                                  ? [...messages].reverse().find((x) =>
+                                    x.kind === "wizard"
+                                    && (x.payload as { stepId?: string } | undefined)?.stepId === t.stepId
+                                  )
+                                  : undefined;
+                                const wizOpts = (wizMsg?.payload as { options?: WizardOption[] } | undefined)?.options ?? [];
+                                return (
+                                  <div key={`t-${i}`} class="quote-review__term" style={isEditing ? "grid-column:1 / -1" : undefined}>
+                                    <dt>{t.label}</dt>
+                                    {isEditing
+                                      ? (
+                                        <dd style="margin-top:4px">
+                                          {customTermDraft && customTermDraft.stepId === t.stepId
+                                            ? (
+                                              <div style="display:flex;flex-direction:column;gap:8px">
+                                                <input
+                                                  type="text"
+                                                  class="cust-pick__search"
+                                                  placeholder={`Type a custom ${t.label.toLowerCase()}…`}
+                                                  value={customTermDraft.value}
+                                                  onInput={(e) => setCustomTermDraft({ stepId: t.stepId, value: (e.target as HTMLInputElement).value })}
+                                                  autoFocus
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === "Enter" && customTermDraft.value.trim()) {
+                                                      const v = customTermDraft.value.trim();
+                                                      setCustomTermDraft(null);
+                                                      pickTermOption(cid, t.stepId, t.label, v);
+                                                    } else if (e.key === "Escape") {
+                                                      setCustomTermDraft(null);
+                                                    }
+                                                  }}
+                                                />
+                                                <div style="display:flex;gap:8px">
+                                                  <button
+                                                    type="button"
+                                                    class="cust-create__btn cust-create__btn--primary"
+                                                    disabled={sending || !customTermDraft.value.trim()}
+                                                    onClick={() => {
+                                                      const v = customTermDraft.value.trim();
+                                                      setCustomTermDraft(null);
+                                                      pickTermOption(cid, t.stepId, t.label, v);
+                                                    }}
+                                                  >
+                                                    Save
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    class="cust-create__btn"
+                                                    onClick={() => setCustomTermDraft(null)}
+                                                    disabled={sending}
+                                                  >
+                                                    Back
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            )
+                                            : (
+                                              <div class="wiz__opts" style="flex-direction:column;align-items:stretch;gap:6px">
+                                                {wizOpts.filter((o) => !o.isCustom).map((opt) => (
+                                                  <button
+                                                    key={opt.id}
+                                                    type="button"
+                                                    class={`wiz-opt ${opt.label === t.value ? "wiz-opt--selected" : ""}`}
+                                                    onClick={() => pickTermOption(cid, t.stepId, t.label, opt.label)}
+                                                    disabled={sending}
+                                                  >
+                                                    {opt.label}
+                                                    {opt.sub ? <span class="wiz-opt__sub">{opt.sub}</span> : null}
+                                                  </button>
+                                                ))}
+                                                <button
+                                                  type="button"
+                                                  class="wiz-opt wiz-opt--custom"
+                                                  onClick={() => setCustomTermDraft({ stepId: t.stepId, value: "" })}
+                                                  disabled={sending}
+                                                >
+                                                  + Custom · type your own
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  class="wiz-opt wiz-opt--custom"
+                                                  onClick={() => { setEditingTermStepId(null); setCustomTermDraft(null); }}
+                                                  disabled={sending}
+                                                >
+                                                  Cancel
+                                                </button>
+                                              </div>
+                                            )}
+                                        </dd>
+                                      )
+                                      : (
+                                        <dd>
+                                          <button
+                                            type="button"
+                                            class="quote-review__term-edit"
+                                            onClick={() => setEditingTermStepId(t.stepId)}
+                                            disabled={!cid || !t.stepId}
+                                            title="Edit"
+                                          >
+                                            {t.value}
+                                          </button>
+                                        </dd>
+                                      )}
+                                  </div>
+                                );
+                              })}
                             </dl>
                           </section>
                         )
@@ -1427,7 +1647,7 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
               // transition; once it lands, the chat shows both.
               const phaseEyebrow = !reviewed
                 ? payload.toPhase === "terms"
-                  ? "Up next · Phase 2 — Contract terms"
+                  ? "We need a little more info"
                   : payload.toPhase === "send"
                     ? "Up next · Send to client"
                     : payload.toPhase === "invoice"
@@ -1467,23 +1687,42 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                       </div>
                       {reviewed
                         ? null
-                        : (
-                          <button
-                            type="button"
-                            class="continue-cta__btn"
-                            onClick={() => submitContinueCta(m)}
-                            disabled={sending}
-                          >
-                            {payload.toPhase === "send"
-                              ? "Review"
-                              : payload.toPhase === "invoice"
-                                ? "Send invoice"
-                                : payload.toPhase === "terms"
-                                  ? "Continue"
+                        : payload.toPhase === "terms"
+                          ? (
+                            <div style="display:flex;gap:8px;flex-shrink:0">
+                              <button
+                                type="button"
+                                class="continue-cta__btn"
+                                onClick={() => submitContinueCta(m, "business")}
+                                disabled={sending}
+                              >
+                                Business
+                              </button>
+                              <button
+                                type="button"
+                                class="continue-cta__btn"
+                                onClick={() => submitContinueCta(m, "person")}
+                                disabled={sending}
+                              >
+                                Person
+                              </button>
+                            </div>
+                          )
+                          : (
+                            <button
+                              type="button"
+                              class="continue-cta__btn"
+                              onClick={() => submitContinueCta(m)}
+                              disabled={sending}
+                            >
+                              {payload.toPhase === "send"
+                                ? "Review"
+                                : payload.toPhase === "invoice"
+                                  ? "Send invoice"
                                   : "Start"}{" "}
-                            <I d={ICN.arrow} size={11} sw={2.5} />
-                          </button>
-                        )}
+                              <I d={ICN.arrow} size={11} sw={2.5} />
+                            </button>
+                          )}
                     </div>
                     {/* Dev-only trigger: simulate the customer accepting the
                         quote so the threads-sidebar notification UX can be
@@ -1537,13 +1776,22 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                             </div>
                           )
                           : null}
-                        <h3 class="wiz__step-q">{m.content}</h3>
+                        {/* Customer step renders its own heading inside the
+                            panel because the prompt swaps after picking
+                            Business / Person ("What is the business name?"
+                            etc). Every other wizard step uses the static
+                            wizard-supplied question. */}
+                        {!isCustomerStep
+                          ? <h3 class="wiz__step-q">{m.content}</h3>
+                          : null}
                         {payload.hint ? <div class="wiz__step-hint">{payload.hint}</div> : null}
                         {(() => {
                           if (isCustomerStep) {
                             return (
                               <CustomerStepPanel
                                 boundCustomer={customer}
+                                initialKind={precommittedKind ?? undefined}
+                                onKindConsumed={() => setPrecommittedKind(null)}
                                 sending={sending}
                                 onSubmit={(optionId, body) => submitCustomerStep(m, optionId, body)}
                               />
@@ -1790,38 +2038,41 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
             />
           )
           : (
-            <div class="composer__inner">
-              <textarea
-                ref={taRef}
-                class="composer__input"
-                placeholder="Tell me what you need — or hit the mic and just talk."
-                rows={1}
-                value={draft}
-                onInput={(e) => { setDraft((e.target as HTMLTextAreaElement).value); autosize(); }}
-                onKeyDown={onKeyDown}
-              />
-              <div class="composer__tools">
-                <button
-                  type="button"
-                  class="composer__mic"
-                  aria-label="Voice memo"
-                  title="Tap to talk"
-                  onClick={toggleRecord}
-                  disabled={sending}
-                >
-                  <I d={ICN.mic} size={20} />
-                </button>
-                <button
-                  type="button"
-                  class="composer__send"
-                  title="Send"
-                  onClick={onSendClick}
-                  disabled={sending || !draft.trim()}
-                >
-                  <I d={ICN.arrow} size={16} sw={2.4} />
-                </button>
+            <>
+              <div class="composer__inner">
+                <textarea
+                  ref={taRef}
+                  class="composer__input"
+                  placeholder="help me draft a kitchen remodel quote"
+                  rows={1}
+                  value={draft}
+                  onInput={(e) => { setDraft((e.target as HTMLTextAreaElement).value); autosize(); }}
+                  onKeyDown={onKeyDown}
+                />
+                <div class="composer__tools">
+                  <button
+                    type="button"
+                    class="composer__mic"
+                    aria-label="Voice memo"
+                    title="Tap to talk"
+                    onClick={toggleRecord}
+                    disabled={sending}
+                  >
+                    <I d={ICN.mic} size={20} />
+                  </button>
+                  <button
+                    type="button"
+                    class="composer__send"
+                    title="Send"
+                    onClick={onSendClick}
+                    disabled={sending || !draft.trim()}
+                  >
+                    <I d={ICN.arrow} size={16} sw={2.4} />
+                  </button>
+                </div>
               </div>
-            </div>
+              <div class="composer__hint">Need something different? Tell me anything you want — how can I help?</div>
+            </>
           )}
       </div>
     </>
@@ -1988,18 +2239,41 @@ function RecordingPanel(
  * a successful pick via the onSubmit callback, which routes through the
  * shared wizard answer pipeline.
  * =========================================================================== */
-type CustomerStepMode = "list" | "creating";
+type CustomerStepView = "list" | "form";
+type CustomerKind = "business" | "person";
 
 function CustomerStepPanel(props: {
   boundCustomer?: CustomerLite;
+  /** Pre-picked from the lock-quote CTA. Drives whether labels read
+   *  "business" vs "person" and the form's heading + placeholder. */
+  initialKind?: CustomerKind;
+  /** Fired once when the panel consumes `initialKind`, so the parent can
+   *  clear the precommitted value and not re-apply it on a back-and-forth. */
+  onKindConsumed?: () => void;
   sending: boolean;
   onSubmit: (
     optionId: "use_active" | "pick_existing" | "create_new",
-    body?: { customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string } } },
+    body?: { customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string; isBusiness?: boolean } } },
   ) => Promise<void>;
 }) {
-  const { boundCustomer, sending, onSubmit } = props;
-  const [mode, setMode] = useState<CustomerStepMode>("list");
+  const { boundCustomer, initialKind, onKindConsumed, sending, onSubmit } = props;
+  // Two views, walked in order:
+  //   1. list — Use [bound] from chat / pick existing / create a new
+  //             [business|person]. The kind itself is picked on the
+  //             lock-quote CTA, not here, so this is the entry point.
+  //   2. form — name + phone + email, with the heading swapped to ask for
+  //             the right thing ("What is the business name?" etc.)
+  // `initialKind` is supplied by the lock-quote CTA. On the rare edge
+  // case of a page reload with no precommit, we fall back to "person"
+  // (the most common kind) rather than blocking the user.
+  const [view, setView] = useState<CustomerStepView>("list");
+  const [kind] = useState<CustomerKind>(initialKind ?? "person");
+
+  // Consume the precommitted kind exactly once so the parent can clear it.
+  useEffect(() => {
+    if (initialKind && onKindConsumed) onKindConsumed();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [customers, setCustomers] = useState<CustomerLite[] | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [search, setSearch] = useState("");
@@ -2009,8 +2283,6 @@ function CustomerStepPanel(props: {
   const [localErr, setLocalErr] = useState<string | undefined>();
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  // Eager load: the user came here to pick a customer, so render the list
-  // immediately rather than asking them to type or click through a menu.
   useEffect(() => {
     let cancelled = false;
     assistantClient.listCustomers()
@@ -2020,7 +2292,6 @@ function CustomerStepPanel(props: {
     return () => { cancelled = true; };
   }, []);
 
-  // Pin the chat to the bottom when the panel grows (mode change, list loaded).
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
@@ -2029,15 +2300,15 @@ function CustomerStepPanel(props: {
     requestAnimationFrame(() => {
       scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
     });
-  }, [mode, loadingList]);
+  }, [view, kind, loadingList]);
 
-  function openCreate() {
-    setMode("creating");
+  function backToList() {
+    setView("list");
     setLocalErr(undefined);
   }
 
-  function backToList() {
-    setMode("list");
+  function openCreate() {
+    setView("form");
     setLocalErr(undefined);
   }
 
@@ -2048,119 +2319,131 @@ function CustomerStepPanel(props: {
       || (c.email ?? "").toLowerCase().includes(needle)
       || (c.phoneNumber ?? "").toLowerCase().includes(needle);
   }) ?? [];
+  const isBusiness = kind === "business";
+  const kindLabel = isBusiness ? "business" : "person";
 
-  if (mode === "creating") {
+  // ---- View: form ----
+  if (view === "form") {
     const trimmedName = createName.trim();
     const submitDisabled = sending || trimmedName.length === 0;
+    const formHeading = isBusiness ? "What is the business name?" : "What is the customer's name?";
+    const namePlaceholder = isBusiness ? "Business name" : "Customer name";
     return (
-      <div ref={rootRef} class="cust-create">
-        <div class="cust-create__row">
+      <div ref={rootRef}>
+        <h3 class="wiz__step-q">{formHeading}</h3>
+        <div class="cust-create" style="margin-top:8px">
           <input
             type="text"
             class="cust-pick__search"
-            placeholder="Name (required)"
+            placeholder={namePlaceholder}
+            aria-label={namePlaceholder}
             value={createName}
             onInput={(e) => setCreateName((e.target as HTMLInputElement).value)}
             autoFocus
           />
-          <input
-            type="email"
-            class="cust-pick__search"
-            placeholder="Email"
-            value={createEmail}
-            onInput={(e) => setCreateEmail((e.target as HTMLInputElement).value)}
-          />
-        </div>
-        <input
-          type="tel"
-          class="cust-pick__search"
-          placeholder="Phone (optional)"
-          value={createPhone}
-          onInput={(e) => setCreatePhone((e.target as HTMLInputElement).value)}
-        />
-        {localErr ? <div class="cust-pick__err">{localErr}</div> : null}
-        <div class="cust-create__actions">
-          <button
-            type="button"
-            class="cust-create__btn cust-create__btn--primary"
-            disabled={submitDisabled}
-            onClick={() => onSubmit("create_new", {
-              customer: {
-                create: {
-                  name: trimmedName,
-                  ...(createEmail.trim() ? { email: createEmail.trim() } : {}),
-                  ...(createPhone.trim() ? { phoneNumber: createPhone.trim() } : {}),
+          <div class="cust-create__row">
+            <input
+              type="tel"
+              class="cust-pick__search"
+              placeholder="Phone"
+              value={createPhone}
+              onInput={(e) => setCreatePhone((e.target as HTMLInputElement).value)}
+            />
+            <input
+              type="email"
+              class="cust-pick__search"
+              placeholder="Email"
+              value={createEmail}
+              onInput={(e) => setCreateEmail((e.target as HTMLInputElement).value)}
+            />
+          </div>
+          {localErr ? <div class="cust-pick__err">{localErr}</div> : null}
+          <div class="cust-create__actions">
+            <button
+              type="button"
+              class="cust-create__btn cust-create__btn--primary"
+              disabled={submitDisabled}
+              onClick={() => onSubmit("create_new", {
+                customer: {
+                  create: {
+                    name: trimmedName,
+                    ...(createEmail.trim() ? { email: createEmail.trim() } : {}),
+                    ...(createPhone.trim() ? { phoneNumber: createPhone.trim() } : {}),
+                    isBusiness,
+                  },
                 },
-              },
-            })}
-          >
-            Create &amp; use
-          </button>
-          <button type="button" class="cust-create__btn" onClick={backToList} disabled={sending}>Back</button>
+              })}
+            >
+              Save &amp; continue
+            </button>
+            <button type="button" class="cust-create__btn" onClick={backToList} disabled={sending}>Back</button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Default — clickable list of customers, with "Use [Name] from chat" pinned
-  // to the top when one is bound and a "Create new" row at the bottom.
+  // ---- View: default — list (kind already picked on the lock-quote CTA) ----
   const showFilter = (customers?.length ?? 0) > 6;
   return (
-    <div ref={rootRef} class="wiz__opts" style="flex-direction:column;align-items:stretch;gap:8px">
-      {boundCustomer
-        ? (
-          <button
-            type="button"
-            class="wiz-opt"
-            onClick={() => onSubmit("use_active")}
-            disabled={sending}
-          >
-            Use {boundCustomer.name} from chat
-            {boundCustomer.email
-              ? <span class="wiz-opt__sub">{boundCustomer.email}</span>
-              : null}
-          </button>
-        )
-        : null}
-      {showFilter
-        ? (
-          <input
-            type="text"
-            class="cust-pick__search"
-            placeholder="Filter by name, email, or phone…"
-            value={search}
-            onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
-          />
-        )
-        : null}
-      {loadingList
-        ? <div class="cust-pick__empty">Loading customers…</div>
-        : customers && customers.length === 0
-          ? <div class="cust-pick__empty">No customers yet — create one below.</div>
-          : filtered.length === 0
-            ? <div class="cust-pick__empty">No matches.</div>
-            : (
-              <div class="cust-pick__list">
-                {filtered.slice(0, 50).map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    class="cust-pick__row"
-                    onClick={() => onSubmit("pick_existing", { customer: { id: c.id } })}
-                    disabled={sending}
-                  >
-                    <span class="cust-pick__name">{c.name}</span>
-                    {c.email || c.phoneNumber
-                      ? <span class="cust-pick__meta">{c.email ?? c.phoneNumber}</span>
-                      : null}
-                  </button>
-                ))}
-              </div>
-            )}
-      {localErr ? <div class="cust-pick__err">{localErr}</div> : null}
-      <button type="button" class="wiz-opt wiz-opt--custom" onClick={openCreate} disabled={sending}>
-        + Create a new customer
-      </button>
+    <div ref={rootRef}>
+      <h3 class="wiz__step-q">Use an existing {kindLabel} or add a new one</h3>
+      <div class="wiz__opts" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:8px">
+        {boundCustomer
+          ? (
+            <button
+              type="button"
+              class="wiz-opt"
+              onClick={() => onSubmit("use_active")}
+              disabled={sending}
+            >
+              Use {boundCustomer.name} from chat
+              {boundCustomer.email
+                ? <span class="wiz-opt__sub">{boundCustomer.email}</span>
+                : null}
+            </button>
+          )
+          : null}
+        {showFilter
+          ? (
+            <input
+              type="text"
+              class="cust-pick__search"
+              placeholder="Filter by name, email, or phone…"
+              value={search}
+              onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
+            />
+          )
+          : null}
+        {loadingList
+          ? <div class="cust-pick__empty">Loading customers…</div>
+          : customers && customers.length === 0
+            ? <div class="cust-pick__empty">No saved customers yet — add one below.</div>
+            : filtered.length === 0
+              ? <div class="cust-pick__empty">No matches.</div>
+              : (
+                <div class="cust-pick__list">
+                  {filtered.slice(0, 50).map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      class="cust-pick__row"
+                      onClick={() => onSubmit("pick_existing", { customer: { id: c.id } })}
+                      disabled={sending}
+                    >
+                      <span class="cust-pick__name">{c.name}</span>
+                      {c.email || c.phoneNumber
+                        ? <span class="cust-pick__meta">{c.email ?? c.phoneNumber}</span>
+                        : null}
+                    </button>
+                  ))}
+                </div>
+              )}
+        {localErr ? <div class="cust-pick__err">{localErr}</div> : null}
+        <button type="button" class="wiz-opt wiz-opt--custom" onClick={openCreate} disabled={sending}>
+          + Add a new {kindLabel}
+        </button>
+      </div>
     </div>
   );
 }
