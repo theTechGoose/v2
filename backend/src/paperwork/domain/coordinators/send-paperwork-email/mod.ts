@@ -292,7 +292,6 @@ function shell(opts: {
           ${senderPhoneLine}
         </td></tr>
       </table>
-      <div style="margin-top:14px;font-size:11px;color:${COLOR_MUTED};">Powered by Paperwork Monsters</div>
     </td></tr>
   </table>
 </body>
@@ -524,7 +523,7 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
         </td></tr>
 
       </table>
-      <div style="margin-top:18px;font-size:11px;color:#a8b2b3;letter-spacing:.04em">Powered by Paperwork Monsters · sent because ${escapeHtml(senderFirst ?? "your contractor")} drafted this for you</div>
+      <div style="margin-top:18px;font-size:11px;color:#a8b2b3;letter-spacing:.04em">Sent because ${escapeHtml(senderFirst ?? "your contractor")} drafted this for you</div>
     </td></tr>
   </table>
 </body>

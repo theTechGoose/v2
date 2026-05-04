@@ -230,7 +230,7 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
   const { contract, quote, customer, contractor, businessName, invoiceId, invoiceAmount } = opts;
   const customerFirst = customer?.name?.trim().split(/\s+/)[0];
   const contractorFirst = contractor?.name?.trim()?.split(/\s+/)[0];
-  const biz = businessName ?? contractor?.name ?? "Paperwork Monsters";
+  const biz = businessName ?? contractor?.name ?? "your contractor";
   const summary = (quote?.summary ?? "your project").replace(/^\s*quote\s*:\s*/i, "");
   const docNumber = `#${contract.id.slice(0, 8).toUpperCase()}`;
   const total = contract.totalAmount ?? quote?.estimatedTotal ?? 0;
@@ -318,7 +318,6 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
           ${contractor?.email ? `<div style="margin-top:2px;color:${COLOR_INK};font-size:13px">${escapeHtml(contractor.email)}</div>` : ""}
         </td></tr>
       </table>
-      <div style="margin-top:14px;font-size:11px;color:#a8b2b3;letter-spacing:.04em">Powered by Paperwork Monsters</div>
     </td></tr>
   </table>
 </body>

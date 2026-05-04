@@ -42,9 +42,9 @@ export class RenderContractPdf {
 
     const pdf = await PDFDocument.create();
     pdf.setTitle(`Contract #${contract.id.slice(0, 8).toUpperCase()}`);
-    pdf.setAuthor(contractor?.name ?? businessName ?? "Paperwork Monsters");
+    pdf.setAuthor(contractor?.name ?? businessName ?? "Contractor");
     pdf.setSubject(quote?.summary ?? "Service Agreement");
-    pdf.setProducer("Paperwork Monsters");
+    pdf.setProducer(businessName ?? contractor?.name ?? "Contractor");
     pdf.setCreationDate(new Date(contract.createdAt));
     pdf.setModificationDate(new Date());
 
@@ -80,7 +80,7 @@ export class RenderContractPdf {
     y = H - 8;
 
     // business eyebrow
-    const biz = (businessName ?? contractor?.name ?? "Paperwork Monsters").toUpperCase();
+    const biz = (businessName ?? contractor?.name ?? "Your Contractor").toUpperCase();
     y -= 32;
     drawCenteredText(page, biz, W, y, bold, 9, PINK_DARK, 0.18);
 
@@ -300,7 +300,7 @@ export class RenderContractPdf {
     y -= 14;
     drawCenteredText(
       page,
-      `Powered by Paperwork Monsters · Contract #${contract.id.slice(0, 8).toUpperCase()} · Generated ${fmtDate(new Date().toISOString())}`,
+      `Contract #${contract.id.slice(0, 8).toUpperCase()} · Generated ${fmtDate(new Date().toISOString())}`,
       W, y, reg, 8, MUTED, 0,
     );
 
