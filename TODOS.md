@@ -1,0 +1,42 @@
+- [ ] Update assistant composer placeholder + add secondary helper line
+  - [ ] In `front-end/islands/AsstChat.tsx` around line 1797, change the composer textarea `placeholder` from `"Tell me what you need — or hit the mic and just talk."` to `"help me draft a kitchen remodel quote"`
+  - [ ] Mirror the same change in `front-end/islands/AsstComposer.tsx` line 41 placeholder
+  - [ ] Below the `.composer__inner` block (and above the existing `.composer__hint` keyboard-shortcuts row in `AsstChat.tsx`), add a new helper line div with class `composer__helper` containing the copy `"Need something different? Tell me anything you want — how can I help?"`
+  - [ ] Add `.composer__helper` styles to `front-end/static/assistant-page.css` (small, muted, brand-pink accent — match existing `.composer__hint` typography but not monospace)
+  - [ ] Verify: load `/assistant`, see new placeholder in textarea and the helper line under the composer; placeholder disappears after first keystroke
+- [ ] Replace the three empty-state quick-start prompt buttons with the new specific copy
+  - [ ] In `front-end/islands/AsstChat.tsx` (lines 1129–1142), replace the existing two/three `chat__empty-prompt` buttons with three new buttons whose visible labels are: 1) `"I already have my price range — please help me draft the scope."`, 2) `"I have all of the job details and would like help with pricing appropriately."`, 3) `"I have some of the job details and need a simple quote."`
+  - [ ] Each button's `onClick` should fire `sendText(<the same copy>)` so the assistant receives the full sentence as the user's first message
+  - [ ] Remove the conditional `overdueCount > 0` "Nudge an overdue invoice" button and the `overdueCount` state plumbing if no longer needed (or leave the state in place but stop rendering the chip)
+  - [ ] Verify: load `/assistant` with no messages — see exactly three full-sentence prompt cards; clicking one posts that exact sentence into the conversation
+- [ ] Extend onboarding handoff copy with example prompts of what the chat can do
+  - [ ] In `backend/src/agents/domain/business/onboarding/mod.ts`, update `ONBOARD_HANDOFF` (line 149) to append a short example list ending with the literal sample: `"I have a full bathroom remodel down to the studs, I would like to rebuild the bathroom."`
+  - [ ] Keep the existing greeting (`Awesome — we're set, ${firstName}.`) but extend the body so Bossie shows 2–3 example phrasings the user can copy/adapt
+  - [ ] Verify: trigger onboarding (visit `/assistant?onboard=1` as a fresh user) and complete the name/business/state/address asks — the handoff message should include the example prompts including the "full bathroom remodel" sample
+- [ ] Remove the "Drafted {date}" text from the quote completion preview
+  - [ ] In `front-end/islands/AsstChat.tsx` (around lines 1303 and 1318), delete the `draftedDate` const and the `<div class="quote-review__date">Drafted {draftedDate}</div>` element from the `<header class="quote-review__head">`
+  - [ ] Keep the `Draft` chip for now (it's the status pill, not the "Drafted" caption)
+  - [ ] Verify: complete the wizard so the inline quote-review preview renders — no "Drafted Month Day, Year" text appears in the header
+- [ ] Update Lock-in completion copy so it asks "business or person?" right under the quote
+  - [ ] In `front-end/islands/AsstChat.tsx`, change the assistant text/CTA shown after the quote is sent so the headline reads `"Paperwork assistant has completed your quote. Is this for a business or a person?"`
+  - [ ] The copy currently emitted by the lock_quote action lives in the assistant message that introduces the continue_cta to "terms" — update the text source in `backend/src/agents/domain/coordinators/handle-chat-message/mod.ts` (the path that fires after `lock_quote`, around lines 624–684) so the assistant message content is the new sentence
+  - [ ] Reorder DOM in `AsstChat.tsx` so the "Lock in Quote" / continue-cta card renders directly underneath the completed quote action_card with no intervening assistant chat bubbles or spacing
+  - [ ] Verify: lock a quote in a conversation — the next visible block is the quote card, immediately followed by a CTA card whose title is "Paperwork assistant has completed your quote. Is this for a business or a person?" with two buttons (Business / Person)
+- [ ] Add Business vs. Person branching to the customer step
+  - [ ] In `backend/src/agents/domain/business/contract-terms-wizard-spec/mod.ts` (lines 24–33), replace the `customer` step's three options with a two-option entry `{ id: "kind_business", label: "Business" }` and `{ id: "kind_person", label: "Person" }` (keep `id: "customer"` and `label: "Customer"` so persisted state stays compatible)
+  - [ ] In `backend/src/agents/domain/coordinators/handle-wizard-answer/mod.ts` `handleCustomerStep` (lines 152–193), branch on `optionId`: `kind_business` → require `customer.create.businessName`, persist as the customer name field with a `kind: "business"` flag; `kind_person` → require `customer.create.name`, persist as `kind: "person"`
+  - [ ] Update `CustomerLite` / `customer` DTO in `backend/src/crm/dto/customer.ts` (or equivalent) to carry an optional `kind: "business" | "person"` field; update `CustomerStore.create` to persist it
+  - [ ] In `front-end/islands/AsstChat.tsx` `CustomerStepPanel` (lines 1993–2166), replace the list/create modes with: a `kind` selector ("Business" / "Person") that, once chosen, swaps in the appropriate three-field form
+  - [ ] Business form fields: `Business name` (required), `Phone`, `Email`. Person form fields: `Customer name` (required, label `"What is your customer's name?"`), `Phone`, `Email`
+  - [ ] On submit, post `optionId: "kind_business"` or `"kind_person"` with the matching `customer.create` payload
+  - [ ] Verify: pick "Business" → form shows "Business name", "Phone", "Email" with the required name field; pick "Person" → form shows "What is your customer's name?", "Phone", "Email"; submitting either advances the wizard and the new customer record carries the correct `kind`
+- [ ] Make the quote preview editable inline with spell-check + grammar-check enabled
+  - [ ] In `front-end/islands/AsstChat.tsx` quote-review block (lines 1306–1421), wrap each editable field (line item description, line item amount, terms `dd` value, customer name) in `contentEditable`-true `<span>`s with `spellcheck="true"` (and a noop `onBlur` handler stub for now if no save endpoint exists yet)
+  - [ ] Add a small dashed underline / hover affordance via a new `.quote-review__editable` CSS class so users see what's editable
+  - [ ] On `onBlur` of any editable field, POST the updated value to a new `PATCH /api/quotes/:id` endpoint (extend `backend/src/paperwork/entrypoints/quotes-controller` with a partial-update method that takes `{ lineItems?, customerName? }`) — return the patched quote and update local state
+  - [ ] If a `PATCH /api/quotes/:id` already exists, reuse it; otherwise add the route + controller method and a corresponding `QuoteStore.update` call
+  - [ ] Verify: open the quote-review in a thread, click any line item description and edit it, blur — the chat re-renders with the new text and a network call to PATCH the quote returns 200; right-click on an edited word with a typo shows the browser's spell-check suggestions
+- [ ] Add the post-signing email notice on the contract view
+  - [ ] In `front-end/routes/c/[id].tsx` (around lines 329–339), update the `signed` notice block so the second line reads exactly `"Please allow up to 2 minutes before checking your email inbox. Don't forget to check spam."` (replacing the current "A countersigned PDF + first invoice will land in your inbox shortly." line)
+  - [ ] Mirror the same copy in `front-end/islands/PublicSignContract.tsx` (line 254) so the inline post-sign success state matches
+  - [ ] Verify: sign a contract end-to-end at `/c/<id>` — the green "Signed and binding" card now shows the new "allow up to 2 minutes / check spam" notice; reload the page (SSR signed state) and the same copy is present

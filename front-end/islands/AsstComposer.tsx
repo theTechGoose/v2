@@ -2,7 +2,9 @@ import { useEffect, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { assistantClient } from "../clients/assistant.ts";
 
-interface Props { conversationId?: string }
+interface Props {
+  conversationId?: string;
+}
 
 export default function AsstComposer({ conversationId }: Props) {
   const [draft, setDraft] = useState("");
@@ -29,7 +31,11 @@ export default function AsstComposer({ conversationId }: Props) {
       setDraft("");
       globalThis.localStorage?.removeItem(storageKey);
       globalThis.location.reload();
-    } catch { /* backend not ready */ } finally { setSending(false); }
+    } catch {
+      /* backend not ready */
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -37,17 +43,34 @@ export default function AsstComposer({ conversationId }: Props) {
       <div class="composer__inner">
         <textarea
           class="composer__input"
-          placeholder="help me draft a kitchen remodel quote"
+          placeholder="EX: My client wants a 10x10 concrete slab. Please help me figure out a price"
           rows={1}
           value={draft}
           onInput={(e) => setDraft((e.target as HTMLTextAreaElement).value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
         />
         <div class="composer__tools">
-          <button type="button" class="composer__btn" title="Attach photo"><I d={ICN.img} size={17} /></button>
-          <button type="button" class="composer__btn" title="Attach file"><I d={ICN.clip} size={17} /></button>
-          <button type="button" class="composer__btn" title="Voice memo"><I d={ICN.mic} size={17} /></button>
-          <button type="button" class="composer__send" title="Send" onClick={send} disabled={sending || !draft.trim()}>
+          <button type="button" class="composer__btn" title="Attach photo">
+            <I d={ICN.img} size={17} />
+          </button>
+          <button type="button" class="composer__btn" title="Attach file">
+            <I d={ICN.clip} size={17} />
+          </button>
+          <button type="button" class="composer__btn" title="Voice memo">
+            <I d={ICN.mic} size={17} />
+          </button>
+          <button
+            type="button"
+            class="composer__send"
+            title="Send"
+            onClick={send}
+            disabled={sending || !draft.trim()}
+          >
             <I d={ICN.arrow} size={16} sw={2.4} />
           </button>
         </div>
