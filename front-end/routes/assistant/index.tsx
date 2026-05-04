@@ -2,13 +2,14 @@ import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { getSessionId } from "../../lib/auth.ts";
 import { api } from "../../lib/api.ts";
+import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import AsstThreads from "../../islands/AsstThreads.tsx";
 import AsstChat, { deriveUserInitials } from "../../islands/AsstChat.tsx";
 import ChatHeaderLive from "../../islands/ChatHeaderLive.tsx";
 import RedirectToast from "../../islands/RedirectToast.tsx";
-import { assistantClient, type Conversation } from "../../clients/assistant.ts";
+import { type Conversation } from "../../clients/assistant.ts";
 import { profileClient, type ProfileSnapshot } from "../../clients/profile.ts";
 
 export default define.page(async function AssistantHome(ctx) {
@@ -44,10 +45,12 @@ export default define.page(async function AssistantHome(ctx) {
     }
   }
 
-  const [initialThreads, profile] = await Promise.all([
-    assistantClient.conversations(50, { sessionId }).catch(() => [] as Conversation[]),
-    profileClient.get({ sessionId }).catch(() => null as ProfileSnapshot | null),
-  ]);
+  // In-process SSR fetch — see [threadId].tsx note. The standard HTTP
+  // path 500s on Deno Deploy when BACKEND_URL isn't set.
+  const threadsRes = await ssrBackendGetAuthed<Conversation[]>(`/agents/conversations?limit=50`, sessionId)
+    .catch(() => ({ ok: false, status: 0 } as { ok: false; status: number }));
+  const initialThreads = (threadsRes.ok && Array.isArray(threadsRes.data)) ? threadsRes.data : [];
+  const profile = await profileClient.get({ sessionId }).catch(() => null as ProfileSnapshot | null);
 
   const businessName = profile?.identity?.businessName ?? profile?.identity?.displayName;
   const userInitials = profile?.initials && profile.initials !== "?"

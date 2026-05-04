@@ -1,6 +1,7 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { getSessionId } from "../../lib/auth.ts";
+import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import AsstThreads from "../../islands/AsstThreads.tsx";
@@ -21,11 +22,21 @@ export default define.page(async function AssistantThread(ctx) {
   // also clears hasUnreadEvent server-side, so by the time the sidebar list
   // resolves the badge is already gone for the active thread. Profile gives
   // us the canonical initials (matches the sidebar disc).
-  const [detail, initialThreads, profile] = await Promise.all([
-    assistantClient.conversation(threadId, { sessionId }).catch(() => undefined as ConversationDetail | undefined),
-    assistantClient.conversations(50, { sessionId }).catch(() => [] as Conversation[]),
-    profileClient.get({ sessionId }).catch(() => null as ProfileSnapshot | null),
-  ]);
+  // Conversation detail uses the in-process backend (when available) so
+  // SSR works on Deno Deploy without a reachable BACKEND_URL — the
+  // localhost:3000 default 500s in prod and the public-URL self-fetch
+  // would 508 (Loop Detected). The list + profile still go through the
+  // regular HTTP client (the existing path is fine in dev; on prod they
+  // go through their own callers / are tolerant of empty fallbacks).
+  const detailRes = await ssrBackendGetAuthed<ConversationDetail>(
+    `/agents/conversations/${threadId}`,
+    sessionId,
+  ).catch(() => ({ ok: false, status: 0 } as { ok: false; status: number }));
+  const detail = detailRes.ok ? detailRes.data : undefined;
+  const threadsRes = await ssrBackendGetAuthed<Conversation[]>(`/agents/conversations?limit=50`, sessionId)
+    .catch(() => ({ ok: false, status: 0 } as { ok: false; status: number }));
+  const initialThreads = (threadsRes.ok && Array.isArray(threadsRes.data)) ? threadsRes.data : [];
+  const profile = await profileClient.get({ sessionId }).catch(() => null as ProfileSnapshot | null);
 
   const businessName = profile?.identity?.businessName ?? profile?.identity?.displayName;
   const userInitials = profile?.initials && profile.initials !== "?"

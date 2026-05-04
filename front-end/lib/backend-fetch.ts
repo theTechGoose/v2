@@ -43,3 +43,14 @@ export async function ssrBackendGet<T = unknown>(path: string, headers: Record<s
   }
   return { ok: true, status: res.status, data: await res.json() as T };
 }
+
+/** Same shape as ssrBackendGet but for authed endpoints — forwards the
+ *  caller's session via the `x-session-id` header that requireUser() reads. */
+export async function ssrBackendGetAuthed<T = unknown>(
+  path: string,
+  sessionId: string | undefined,
+  headers: Record<string, string> = {},
+): Promise<{ ok: boolean; status: number; data?: T; errorText?: string }> {
+  const merged = sessionId ? { ...headers, "x-session-id": sessionId } : headers;
+  return ssrBackendGet<T>(path, merged);
+}
