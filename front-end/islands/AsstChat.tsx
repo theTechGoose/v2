@@ -26,6 +26,65 @@ interface WizardOption {
   followUp?: { fields: WizardFollowUpField[] };
 }
 
+/**
+ * Term-edit picker fallback: a static map of stepId → preset options for
+ * the contract-terms wizard. Used when the term row is being edited
+ * inline and no matching wizard message is in chat scope (older threads,
+ * or threads where the wizard messages were pruned). Mirrors
+ * `CONTRACT_TERMS_WIZARD_V1` in the backend — keep in sync if that spec
+ * grows new steps. The `customer` step is intentionally excluded since
+ * its picker has its own dedicated panel.
+ */
+const TERM_OPTIONS_FALLBACK: Record<string, { label: string; sub?: string }[]> = {
+  config: [
+    { label: "Standard residential", sub: "Most homes, simple jobs" },
+    { label: "Standard commercial",  sub: "Businesses, HOAs" },
+    { label: "Start blank",          sub: "I'll choose every option" },
+  ],
+  start_date: [
+    { label: "ASAP",       sub: "Within 7 days" },
+    { label: "Next week",  sub: "7–14 days out" },
+    { label: "Next month", sub: "30+ days out" },
+  ],
+  wraps: [
+    { label: "1 day" },
+    { label: "2–3 days" },
+    { label: "1 week" },
+    { label: "2 weeks" },
+  ],
+  payment_terms: [
+    { label: "50 / 50",            sub: "Half deposit, half on finish" },
+    { label: "30 / 30 / 40",       sub: "Deposit, midpoint, finish" },
+    { label: "Net 15 — full",      sub: "Due 15 days after wrap" },
+    { label: "Deposit + balance",  sub: "Small hold, balance on finish" },
+  ],
+  warranty: [
+    { label: "No warranty" },
+    { label: "6 months" },
+    { label: "12 months" },
+    { label: "24 months" },
+  ],
+  termination: [
+    { label: "7 days" },
+    { label: "14 days" },
+    { label: "30 days" },
+  ],
+  dispute: [
+    { label: "Mediation",   sub: "Try to settle informally first" },
+    { label: "Arbitration", sub: "Binding decision, no court" },
+    { label: "Court",       sub: "Standard small-claims path" },
+  ],
+  governing_state: [
+    { label: "Use my business state" },
+    { label: "Use the job site state" },
+  ],
+  state_notices: [
+    { label: "Yes",          sub: "Recommended" },
+    { label: "No",           sub: "I'll add my own" },
+    { label: "Review first", sub: "Show me what's included" },
+  ],
+};
+
 interface ActionCardLineItem {
   description: string;
   amountCents: number;
@@ -1487,7 +1546,18 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                                     && (x.payload as { stepId?: string } | undefined)?.stepId === t.stepId
                                   )
                                   : undefined;
-                                const wizOpts = (wizMsg?.payload as { options?: WizardOption[] } | undefined)?.options ?? [];
+                                const wizOptsRaw = (wizMsg?.payload as { options?: WizardOption[] } | undefined)?.options ?? [];
+                                // Fall back to the static spec when the chat scope
+                                // doesn't carry the options (older threads, pruned
+                                // history, etc.). Otherwise the picker would render
+                                // with only Custom + Cancel.
+                                const wizOpts: WizardOption[] = wizOptsRaw.length > 0
+                                  ? wizOptsRaw
+                                  : (TERM_OPTIONS_FALLBACK[t.stepId] ?? []).map((o, i) => ({
+                                    id: `fallback-${i}`,
+                                    label: o.label,
+                                    sub: o.sub,
+                                  }));
                                 return (
                                   <div key={`t-${i}`} class="quote-review__term" style={isEditing ? "grid-column:1 / -1" : undefined}>
                                     <dt>{t.label}</dt>
