@@ -871,7 +871,8 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
   // Pick a new option for an already-answered wizard term. Patches the
   // contract's terms[] entry by stepId and PUTs the contract — does NOT
   // rewind the wizard state. The chat-history wizard answer message stays
-  // as-is (historical record); the contract reflects the latest pick.
+  // as-is (historical record); the contract reflects the latest pick and
+  // the preview reads from contract.terms going forward.
   async function pickTermOption(contractId: string | undefined, stepId: string, label: string, optionLabel: string) {
     if (!contractId) return;
     setEditingTermStepId(null);
@@ -882,21 +883,11 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
       const nextTerm = { stepId, label, value: optionLabel };
       const terms = idx === -1 ? [...existing, nextTerm] : existing.map((t, i) => i === idx ? nextTerm : t);
       await contractsClient.update(contractId, { terms });
-      // Reflect the pick locally so the user sees it without a reload —
-      // the term answer is sourced from chat messages with wizardStepId,
-      // so synthesize a refresh by appending a new user-pick message.
-      setMessages((m) => [
-        ...m,
-        {
-          id: `local-term-edit-${stepId}-${Date.now()}`,
-          conversationId: convoId ?? "",
-          role: "user",
-          kind: "text",
-          content: `${label}: ${optionLabel}`,
-          createdAt: Date.now(),
-          payload: { wizardStepId: stepId },
-        } as Message,
-      ]);
+      // Reflect the pick on local contract state so the preview re-renders
+      // without a reload. Don't append a synthetic chat message — that
+      // would render as an out-of-order "Payment terms: 50/50 ✓" log
+      // *after* the Contract sent CTA, which looks like a bug.
+      setContract((cur) => cur ? { ...cur, terms } as typeof cur : cur);
     } catch (err) {
       setError(err instanceof Error ? err.message : "couldn't save edit");
     }
@@ -1422,25 +1413,35 @@ export default function AsstChat({ conversationId, initialMessages, initialCusto
                 // Wizard terms — every text msg with a wizardStepId is one
                 // answered step ("Start: ASAP", "Wraps: 1 week", ...). Skip
                 // the customer step since we render the customer block below.
-                // Walk newest → oldest so the LATEST pick for each stepId
-                // wins. Without dedupe, a re-edit (which appends a fresh
-                // wizardStepId message via pickTermOption) would render the
-                // same term row twice in the preview.
+                // Prefer contract.terms (the source of truth) when present.
+                // Fall back to a chronological walk over wizardStepId-tagged
+                // chat messages (older threads, in-flight wizard runs that
+                // haven't materialized a contract row yet). Either way, dedupe
+                // by stepId — a re-edit emits another tagged message but the
+                // term row should only render once.
+                const contractTerms = Array.isArray(contract?.terms)
+                  ? (contract!.terms as { stepId: string; label: string; value: string }[])
+                  : null;
                 const termsByStep = new Map<string, { stepId: string; label: string; value: string; firstIdx: number }>();
-                for (let i = messages.length - 1; i >= 0; i--) {
-                  const x = messages[i];
-                  const p = x.payload as { wizardStepId?: string } | undefined;
-                  const sid = p?.wizardStepId;
-                  if (x.kind !== "text" || !sid || sid === "customer") continue;
-                  if (termsByStep.has(sid)) continue;
-                  const raw = x.content ?? "";
-                  const colon = raw.indexOf(":");
-                  const label = colon === -1 ? raw : raw.slice(0, colon).trim();
-                  const value = colon === -1 ? "" : raw.slice(colon + 1).trim();
-                  termsByStep.set(sid, { stepId: sid, label, value, firstIdx: i });
+                if (contractTerms && contractTerms.length > 0) {
+                  contractTerms.forEach((t, i) => {
+                    if (!t?.stepId || t.stepId === "customer") return;
+                    termsByStep.set(t.stepId, { stepId: t.stepId, label: t.label, value: t.value, firstIdx: i });
+                  });
+                } else {
+                  for (let i = messages.length - 1; i >= 0; i--) {
+                    const x = messages[i];
+                    const p = x.payload as { wizardStepId?: string } | undefined;
+                    const sid = p?.wizardStepId;
+                    if (x.kind !== "text" || !sid || sid === "customer") continue;
+                    if (termsByStep.has(sid)) continue;
+                    const raw = x.content ?? "";
+                    const colon = raw.indexOf(":");
+                    const label = colon === -1 ? raw : raw.slice(0, colon).trim();
+                    const value = colon === -1 ? "" : raw.slice(colon + 1).trim();
+                    termsByStep.set(sid, { stepId: sid, label, value, firstIdx: i });
+                  }
                 }
-                // Render in original order — sort by the index of the FIRST
-                // appearance so the visual order matches the wizard walk.
                 const termAnswers = Array.from(termsByStep.values())
                   .sort((a, b) => a.firstIdx - b.firstIdx)
                   .map(({ stepId, label, value }) => ({ stepId, label, value }));

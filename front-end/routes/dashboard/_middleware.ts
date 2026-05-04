@@ -4,11 +4,13 @@ import { loadProfileGate } from "../../lib/auth.ts";
 /** Auth + onboarding gate.
  *
  *  - No session → redirect to "/".
- *  - Session but missing name / businessName → redirect to
- *    /assistant?onboard=1 so Bossie can collect what we need before
- *    the customer-facing surfaces become reachable. /assistant and
- *    /settings keep their own (looser) gate so the user can complete
- *    onboarding or edit values manually.
+ *  - Session but missing name OR businessName → redirect to
+ *    /assistant?onboard=1 so Bossie can collect those before the
+ *    customer-facing surfaces become reachable.
+ *  - Missing `state` alone is NOT a hard block on the dashboard.
+ *    The user can browse freely; state is only required when they
+ *    actually go to send a contract (the wizard's governing-state
+ *    step re-asks if it's still missing at that point).
  *  - Otherwise → populate ctx.state.user and continue.
  */
 export const handler = define.middleware(async (ctx) => {

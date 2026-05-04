@@ -156,5 +156,14 @@ export async function loadProfileGate(req: Request): Promise<ProfileGate> {
   if (!user.name || user.name.trim().length === 0) missing.push("name");
   if (!businessName) missing.push("business");
   if (!state) missing.push("state");
-  return { user, businessName, state, isComplete: missing.length === 0, missing };
+  // `isComplete` controls whether route middlewares redirect the user
+  // back to onboarding. Only name + businessName actually block: state is
+  // a contract-templating concern, not a navigation prerequisite. Users
+  // were getting redirected from /dashboard to /assistant?onboard=1 just
+  // because they hadn't picked a state yet — that's the bug. The wizard's
+  // governing-state step still re-asks if state is missing at contract
+  // time. `missing` keeps tracking state so the onboarding progress strip
+  // and any post-onboarding nudges can still surface it.
+  const blocking = missing.filter((m) => m !== "state");
+  return { user, businessName, state, isComplete: blocking.length === 0, missing };
 }
