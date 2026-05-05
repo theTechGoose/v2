@@ -1072,6 +1072,82 @@ export default function AsstChat({
     }
   }
 
+  /**
+   * Save an inline edit to a line-item amount. The user types a money
+   * value into the `.quote-review__line-amt` span (we treat free text:
+   * "$1,500", "1500.00", "1500" — all parse to 1500 dollars). On blur:
+   *   - parse → cents; bail if invalid (revert)
+   *   - PATCH the quote with the new price (in dollars, matching the
+   *     existing API contract used by `seedPhase2`)
+   *   - optimistically replace the action_card payload in local
+   *     messages state so the Total Due (which reads from
+   *     `lockedPayload.totalCents`) recalculates without a refresh
+   */
+  async function onEditLineAmount(
+    quoteId: string,
+    actionCardId: string,
+    lineIdx: number,
+    originalCents: number,
+    el: HTMLElement,
+  ) {
+    const cleaned = (el.innerText ?? "").replace(/[^\d.]/g, "");
+    const dollars = parseFloat(cleaned);
+    if (!Number.isFinite(dollars) || dollars < 0) {
+      el.innerText = fmtUSD(originalCents);
+      return;
+    }
+    const nextCents = Math.round(dollars * 100);
+    if (nextCents === originalCents) {
+      el.innerText = fmtUSD(originalCents); // re-format so trailing junk is cleaned
+      return;
+    }
+    try {
+      const q = await quotesClient.get(quoteId);
+      const items = Array.isArray(q.lineItems) ? [...q.lineItems] : [];
+      if (!items[lineIdx]) throw new Error("line item index out of range");
+      items[lineIdx] = { ...items[lineIdx], price: dollars };
+      const newTotal = items.reduce(
+        (s: number, it: { price?: number; quantity?: number }) =>
+          s + (Number(it.price) || 0) * (Number(it.quantity) || 1),
+        0,
+      );
+      await quotesClient.update(quoteId, {
+        lineItems: items,
+        estimatedTotal: newTotal,
+      });
+      // Reformat to canonical display (commas + cents) after save.
+      el.innerText = fmtUSD(nextCents);
+      // Optimistic patch: rewrite the matching action_card payload so
+      // the preview's lineItems + totalCents reflect the new value
+      // immediately. Other action_cards are untouched.
+      setMessages((msgs) =>
+        msgs.map((m) => {
+          if (m.id !== actionCardId) return m;
+          const p = (m.payload ?? {}) as ActionCardPayload;
+          const li = Array.isArray(p.lineItems) ? [...p.lineItems] : [];
+          if (li[lineIdx]) {
+            li[lineIdx] = { ...li[lineIdx], amountCents: nextCents };
+          }
+          const recomputed = li.reduce(
+            (s, it) => s + (it.amountCents ?? 0),
+            0,
+          );
+          return {
+            ...m,
+            payload: {
+              ...p,
+              lineItems: li,
+              totalCents: recomputed,
+            },
+          };
+        }),
+      );
+    } catch (err) {
+      el.innerText = fmtUSD(originalCents);
+      setError(err instanceof Error ? err.message : "couldn't save edit");
+    }
+  }
+
   async function onEditCustomerName(
     customerId: string | undefined,
     original: string,
@@ -1985,7 +2061,40 @@ export default function AsstChat({
                                   >
                                     {li.description}
                                   </span>
-                                  <span class="quote-review__line-amt">
+                                  <span
+                                    class="quote-review__line-amt quote-review__editable"
+                                    contentEditable
+                                    spellcheck={false}
+                                    inputMode="decimal"
+                                    onFocus={(e) => {
+                                      // Select all on focus so the user can just
+                                      // type to overwrite the amount.
+                                      const el = e.currentTarget as HTMLElement;
+                                      const range = document.createRange();
+                                      range.selectNodeContents(el);
+                                      const sel = globalThis.getSelection();
+                                      sel?.removeAllRanges();
+                                      sel?.addRange(range);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        (e.currentTarget as HTMLElement).blur();
+                                      }
+                                    }}
+                                    onBlur={(e) => {
+                                      const qid = lockedPayload.quoteId;
+                                      const cardId = lockedCard?.id;
+                                      if (qid && cardId)
+                                        onEditLineAmount(
+                                          qid,
+                                          cardId,
+                                          i,
+                                          li.amountCents,
+                                          e.currentTarget as HTMLElement,
+                                        );
+                                    }}
+                                  >
                                     {fmtUSD(li.amountCents)}
                                   </span>
                                 </div>
