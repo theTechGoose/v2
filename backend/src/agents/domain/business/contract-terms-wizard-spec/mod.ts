@@ -13,7 +13,7 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
   steps: [
     {
       id: "config",
-      label: "Config",
+      label: "Job type",
       question: "Pick a starting preset:",
       options: [
         { id: "standard_residential", label: "Standard residential",  sub: "Most homes, simple jobs" },
@@ -44,7 +44,7 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
     },
     {
       id: "wraps",
-      label: "Wraps",
+      label: "Time to finish",
       question: "How long until substantial completion?",
       options: [
         { id: "1_day",   label: "1 day" },
@@ -56,7 +56,7 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
     },
     {
       id: "payment_terms",
-      label: "Payment terms",
+      label: "How you pay",
       question: "How do you want to get paid?",
       options: [
         { id: "50_50",      label: "50 / 50",            sub: "Half deposit, half on finish" },
@@ -69,7 +69,7 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
     },
     {
       id: "warranty",
-      label: "Warranty",
+      label: "Guarantee",
       question: "What warranty do you stand behind?",
       options: [
         { id: "none",           label: "No warranty" },
@@ -81,7 +81,7 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
     },
     {
       id: "termination",
-      label: "Termination",
+      label: "If you cancel",
       question: "How much notice to terminate the contract?",
       options: [
         { id: "7",  label: "7 days" },
@@ -92,7 +92,7 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
     },
     {
       id: "dispute",
-      label: "Dispute",
+      label: "If we disagree",
       question: "How do you want to handle disputes?",
       options: [
         { id: "mediation",   label: "Mediation",   sub: "Try to settle informally first" },
@@ -102,7 +102,7 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
     },
     {
       id: "governing_state",
-      label: "Governing state",
+      label: "Legal state",
       question: "Which state's laws govern the contract?",
       options: [
         { id: "use_business_state", label: "Use my business state" },
@@ -112,7 +112,7 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
     },
     {
       id: "state_notices",
-      label: "State notices",
+      label: "Required notices",
       question: "Auto-include the legally required state notices?",
       options: [
         { id: "yes",   label: "Yes",     sub: "Recommended" },

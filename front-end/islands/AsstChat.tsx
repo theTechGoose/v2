@@ -11,6 +11,7 @@ import { quotesClient } from "../clients/quotes.ts";
 import { clientsClient } from "../clients/clients.ts";
 import { contractsClient } from "../clients/contracts.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
+import MoneyInput from "./MoneyInput.tsx";
 
 type WizardFieldType = "percent" | "number" | "currency" | "days" | "text";
 
@@ -269,6 +270,12 @@ export default function AsstChat({
   );
   const [quoteId, setQuoteId] = useState<string | undefined>();
   const [draft, setDraft] = useState("");
+  /** Inline price-capture flow opened by the "I already have my price"
+   *  empty-state prompt. When set, renders the MoneyInput card in place
+   *  of the three preset prompts. `priceCents` tracks the live value so
+   *  Continue can hand the value to the phase-2 kickoff. */
+  const [priceCaptureOpen, setPriceCaptureOpen] = useState(false);
+  const [priceCents, setPriceCents] = useState<number | null>(null);
   /**
    * Tracks `continue_cta` messages whose Review button has been clicked.
    * Drives the inline "Drafted ✓" confirmation state — replaces the
@@ -527,6 +534,25 @@ export default function AsstChat({
       );
   }, [previewCtaId]);
 
+  // Auto-open the editable quote-review when the wizard emits its
+  // "Ready to send" CTA. The CTA banner itself is suppressed below
+  // (felt redundant), so this effect is the single entry point. Tracked
+  // per-message-id in a ref so cancelling the preview doesn't re-trigger.
+  const autoOpenedCtasRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (previewCtaId !== null) return;
+    for (const m of messages) {
+      if (m.kind !== "continue_cta") continue;
+      const p = (m.payload ?? {}) as { toPhase?: string };
+      if (p.toPhase !== "send") continue;
+      if (reviewedCtas.has(m.id)) continue;
+      if (autoOpenedCtasRef.current.has(m.id)) continue;
+      autoOpenedCtasRef.current.add(m.id);
+      submitContinueCta(m).catch(() => {});
+      break;
+    }
+  }, [messages, previewCtaId, reviewedCtas]);
+
   function autosize() {
     const ta = taRef.current;
     if (!ta) return;
@@ -730,6 +756,60 @@ export default function AsstChat({
    * it to a fresh conversation, transitioning to terms, and answering the
    * config step — leaving the user on the customer step.
    */
+  /**
+   * Continue handler for the inline "I already have my price" flow.
+   * Mirrors `seedPhase2` but uses the price the user typed in the
+   * MoneyInput, doesn't auto-answer the config step, and doesn't seed
+   * any sample line description — the user picks the config and edits
+   * the scope inline once the wizard lands. End result: number → phase
+   * 2 wizard → final editable quote, exactly the existing flow.
+   */
+  async function startWithPrice(cents: number) {
+    if (sending || cents <= 0) return;
+    setError(undefined);
+    setSending(true);
+    try {
+      const dollars = cents / 100;
+      const quote = await fetch("/api/quotes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          summary: "New job",
+          lineItems: [
+            {
+              description: "Scope of work",
+              quantity: 1,
+              unit: "ea",
+              price: dollars,
+            },
+          ],
+          estimatedTotal: dollars,
+          status: "sent",
+        }),
+      }).then((r) => r.json());
+      if (!quote?.id) throw new Error("failed to create quote");
+
+      const conv = await fetch("/api/agents/conversations", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ quoteId: quote.id }),
+      }).then((r) => r.json());
+      if (!conv?.id) throw new Error("failed to start conversation");
+
+      await fetch(`/api/agents/conversations/${conv.id}/transition-to-terms`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      globalThis.location.href = `/assistant/${conv.id}`;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "couldn't start");
+      setSending(false);
+    }
+  }
+
   async function seedPhase2() {
     if (sending) return;
     setError(undefined);
@@ -1515,42 +1595,72 @@ export default function AsstChat({
               Tell me about a job — voice or text. I'll draft the quote, walk
               through contract terms, and have it ready to send.
             </p>
-            <div class="chat__empty-prompts">
-              <button
-                type="button"
-                class="chat__empty-prompt"
-                onClick={() =>
-                  sendText(
-                    "I already have my price range — please help me draft the scope.",
-                  )
-                }
-              >
-                I already have my price range — please help me draft the scope.
-              </button>
-              <button
-                type="button"
-                class="chat__empty-prompt"
-                onClick={() =>
-                  sendText(
-                    "I have all of the job details and would like help with pricing appropriately.",
-                  )
-                }
-              >
-                I have all of the job details and would like help with pricing
-                appropriately.
-              </button>
-              <button
-                type="button"
-                class="chat__empty-prompt"
-                onClick={() =>
-                  sendText(
-                    "I have some of the job details and need a simple quote.",
-                  )
-                }
-              >
-                I have some of the job details and need a simple quote.
-              </button>
-            </div>
+            {priceCaptureOpen ? (
+              <div class="chat__price-capture">
+                <div class="chat__price-capture-head">
+                  <button
+                    type="button"
+                    class="chat__price-back"
+                    onClick={() => {
+                      setPriceCaptureOpen(false);
+                      setPriceCents(null);
+                    }}
+                    aria-label="Back to prompts"
+                  >
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                      <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                    </svg>
+                    Back
+                  </button>
+                  <h4 class="chat__price-title">What's the price?</h4>
+                  <p class="chat__price-sub">
+                    I'll build the scope around it.
+                  </p>
+                </div>
+                <MoneyInput onChange={setPriceCents} />
+                <button
+                  type="button"
+                  class="chat__price-continue"
+                  disabled={(priceCents ?? 0) <= 0 || sending}
+                  onClick={() => startWithPrice(priceCents!)}
+                >
+                  {sending ? "Setting up…" : "Continue →"}
+                </button>
+              </div>
+            ) : (
+              <div class="chat__empty-prompts">
+                <button
+                  type="button"
+                  class="chat__empty-prompt"
+                  onClick={() => setPriceCaptureOpen(true)}
+                >
+                  I already have my price — let's draft the scope.
+                </button>
+                <button
+                  type="button"
+                  class="chat__empty-prompt"
+                  onClick={() =>
+                    sendText(
+                      "I have all of the job details and would like help with pricing appropriately.",
+                    )
+                  }
+                >
+                  I have all of the job details and would like help with pricing
+                  appropriately.
+                </button>
+                <button
+                  type="button"
+                  class="chat__empty-prompt"
+                  onClick={() =>
+                    sendText(
+                      "I have some of the job details and need a simple quote.",
+                    )
+                  }
+                >
+                  I have some of the job details and need a simple quote.
+                </button>
+              </div>
+            )}
             {typeof globalThis.location !== "undefined" &&
             globalThis.location.hostname === "localhost" &&
             new URLSearchParams(globalThis.location.search).has("dev") ? (
@@ -1788,7 +1898,7 @@ export default function AsstChat({
                   // so the customer sees what they actually owe at each step,
                   // not one big number that hides the deposit / balance split.
                   const paymentTerm = termAnswers.find(
-                    (t) => t.label.toLowerCase() === "payment terms",
+                    (t) => t.stepId === "payment_terms",
                   );
                   const milestones = paymentTerm
                     ? buildPaymentMilestones(
@@ -1816,7 +1926,7 @@ export default function AsstChat({
                         {customer?.name ? (
                           <section class="quote-review__hero">
                             <div class="quote-review__hero-label">
-                              Prepared for
+                              For
                             </div>
                             <div
                               class="quote-review__hero-name quote-review__editable"
@@ -1852,7 +1962,7 @@ export default function AsstChat({
                         {lineItems.length > 0 ? (
                           <section class="quote-review__section">
                             <div class="quote-review__section-label">
-                              Scope of work
+                              What we'll do
                             </div>
                             <div class="quote-review__lines">
                               {lineItems.map((li, i) => (
@@ -1890,7 +2000,7 @@ export default function AsstChat({
 
                         {termAnswers.length > 0 ? (
                           <section class="quote-review__section">
-                            <div class="quote-review__section-label">Terms</div>
+                            <div class="quote-review__section-label">The deal</div>
                             <dl class="quote-review__terms">
                               {termAnswers.map((t, i) => {
                                 // contractId from the parent scope defaults to "" via `?? ""`,
@@ -2150,6 +2260,17 @@ export default function AsstChat({
                       </article>
                     </div>
                   );
+                }
+                // The "Ready to send" banner is intentionally suppressed —
+                // the editable quote-review opens automatically on wizard
+                // completion via the autoOpenedCtasRef effect. The reviewed
+                // success state ("Contract sent") still renders below.
+                if (
+                  payload.toPhase === "send" &&
+                  !reviewed &&
+                  !previewing
+                ) {
+                  return null;
                 }
                 // Per audit #19: surface the upcoming phase label as an eyebrow
                 // *before* the CTA, so users see "PHASE 2 — CONTRACT TERMS" at
