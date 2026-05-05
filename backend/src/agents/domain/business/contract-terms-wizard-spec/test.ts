@@ -1,20 +1,15 @@
 import { assert, assertEquals, assertThrows } from "#std/assert";
 import { CONTRACT_TERMS_WIZARD_V1, getWizardSpec } from "./mod.ts";
 
-Deno.test("contract-terms-wizard-spec: has exactly 10 steps in the documented order", () => {
-  assertEquals(CONTRACT_TERMS_WIZARD_V1.steps.length, 10);
+Deno.test("contract-terms-wizard-spec: has exactly 5 steps in the documented order", () => {
+  assertEquals(CONTRACT_TERMS_WIZARD_V1.steps.length, 5);
   const ids = CONTRACT_TERMS_WIZARD_V1.steps.map((s) => s.id);
   assertEquals(ids, [
-    "config",
     "customer",
     "start_date",
     "wraps",
     "payment_terms",
     "warranty",
-    "termination",
-    "dispute",
-    "governing_state",
-    "state_notices",
   ]);
 });
 
@@ -36,12 +31,6 @@ Deno.test("contract-terms-wizard-spec: option ids are unique within each step", 
     const ids = step.options.map((o) => o.id);
     assertEquals(new Set(ids).size, ids.length, `step ${step.id} has duplicate option ids`);
   }
-});
-
-Deno.test("contract-terms-wizard-spec: dispute step exposes only allowed Contract DTO methods", () => {
-  const dispute = CONTRACT_TERMS_WIZARD_V1.steps.find((s) => s.id === "dispute")!;
-  const ids = dispute.options.map((o) => o.id);
-  assertEquals(ids, ["mediation", "arbitration", "court"]);
 });
 
 Deno.test("getWizardSpec: returns the canonical spec by id", () => {

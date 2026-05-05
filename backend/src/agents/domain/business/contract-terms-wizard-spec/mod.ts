@@ -1,26 +1,23 @@
 import type { WizardSpec } from "@agents/dto/wizard.ts";
 
 /**
- * The canonical 10-step contract-terms wizard. Surfaced by the agent in
- * phase 2 (terms). Each step's option `id` lines up with what eventually
- * lands on the Contract DTO (see backend.md §3.A wizard step table).
+ * 5-step contract-terms wizard. Surfaced by the agent in phase 2 (terms).
+ * Each step's option `id` lines up with what eventually lands on the
+ * Contract DTO (see backend.md §3.A wizard step table).
  *
- * The spec is a constant — there's intentionally no DB-driven flexibility
- * yet. If marketing wants to tweak copy, edit this file.
+ * The previous 10-step wizard collected `config`, `termination`,
+ * `dispute`, `governing_state`, and `state_notices` interactively.
+ * Those choices are now baked into the contract templates as static
+ * boilerplate (7-day termination, small-claims dispute path, governing
+ * law tied to the work-performed state, plus a fuller boilerplate clause
+ * set rendered in the contract page + PDF).
+ *
+ * The spec is a constant — there's intentionally no DB-driven
+ * flexibility yet. If marketing wants to tweak copy, edit this file.
  */
 export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
   id: "contract-terms-v1",
   steps: [
-    {
-      id: "config",
-      label: "Job type",
-      question: "Pick a starting preset:",
-      options: [
-        { id: "standard_residential", label: "Standard residential",  sub: "Most homes, simple jobs" },
-        { id: "standard_commercial",  label: "Standard commercial",   sub: "Businesses, HOAs" },
-        { id: "blank",                 label: "Start blank",            sub: "I'll choose every option" },
-      ],
-    },
     {
       id: "customer",
       label: "Customer",
@@ -77,47 +74,6 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
         { id: "12_months",      label: "12 months" },
         { id: "24_months",      label: "24 months" },
         { id: "custom_months",  label: "Custom", isCustom: true },
-      ],
-    },
-    {
-      id: "termination",
-      label: "If you cancel",
-      question: "How much notice to terminate the contract?",
-      options: [
-        { id: "7",  label: "7 days" },
-        { id: "14", label: "14 days" },
-        { id: "30", label: "30 days" },
-        { id: "custom", label: "Custom", isCustom: true },
-      ],
-    },
-    {
-      id: "dispute",
-      label: "If we disagree",
-      question: "How do you want to handle disputes?",
-      options: [
-        { id: "mediation",   label: "Mediation",   sub: "Try to settle informally first" },
-        { id: "arbitration", label: "Arbitration", sub: "Binding decision, no court" },
-        { id: "court",       label: "Court",       sub: "Standard small-claims path" },
-      ],
-    },
-    {
-      id: "governing_state",
-      label: "Legal state",
-      question: "Which state's laws govern the contract?",
-      options: [
-        { id: "use_business_state", label: "Use my business state" },
-        { id: "use_job_state",      label: "Use the job site state" },
-        { id: "custom",              label: "Pick a different state", isCustom: true },
-      ],
-    },
-    {
-      id: "state_notices",
-      label: "Required notices",
-      question: "Auto-include the legally required state notices?",
-      options: [
-        { id: "yes",   label: "Yes",     sub: "Recommended" },
-        { id: "no",    label: "No",       sub: "I'll add my own" },
-        { id: "review",label: "Review first", sub: "Show me what's included" },
       ],
     },
   ],

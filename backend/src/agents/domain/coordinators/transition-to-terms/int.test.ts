@@ -26,7 +26,7 @@ Deno.test("transition-to-terms integration: flips phase, seeds wizard, appends d
 
   const wizardPayload = result.newMessages[1].payload as { stepId: string; stepIdx: number };
   assertEquals(wizardPayload.stepIdx, 0);
-  assertEquals(wizardPayload.stepId, "config");
+  assertEquals(wizardPayload.stepId, "customer");
 
   const state = await conversations.getWizardState(conv.id);
   assertEquals(state?.activeStepIdx, 0);

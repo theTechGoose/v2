@@ -211,14 +211,20 @@ export class RenderContractPdf {
     y = drawSectionHeader(page, y, M, "05", "Fine print, in plain English", bold, PINK, TEAL);
     y -= 12;
     const clauses = [
-      ["Performance.", `${contractor?.name ?? "The Contractor"} will perform the work above with reasonable care and in line with industry standards.`],
-      ["Changes.", "Any change to scope or price needs both sides to confirm in writing — a chat message counts."],
-      ["Payment.", paymentClause(contract.terms)],
-      ["Warranty.", warrantyClause(contract.terms)],
-      ["Termination.", terminationClause(contract.terms)],
-      ["Disputes.", disputeClause(contract.terms)],
-      ["Governing law.", governingClause(contract.terms)],
-      ["Entire agreement.", "This contract — plus any line-item or schedule changes both parties confirm in writing — is the whole deal."],
+      ["Governing Law.", "This agreement is governed by the laws of the state where the work is performed."],
+      ["Scope of Work.", "Contractor will perform only the work described in this agreement. Any additional work must be approved by both parties and may result in additional charges."],
+      ["Payment Terms.", "Payment is due as outlined in this agreement. Late payments may be subject to additional fees as allowed by law."],
+      ["Change Orders.", "Any changes to the work must be agreed to in writing and may affect the total price and project timeline."],
+      ["Customer Responsibilities.", "Customer agrees to provide access to the job site and ensure the work area is ready for the Contractor to perform the agreed services."],
+      ["Delays and Unforeseen Conditions.", "Contractor is not responsible for delays caused by weather, material availability, site conditions, or other circumstances outside of their control."],
+      ["Warranty.", "Contractor warrants their workmanship for the period stated in this agreement. This warranty applies to labor only and does not cover materials, normal wear and tear, misuse, or damage caused by others."],
+      ["Limitation of Liability.", "Contractor's liability under this agreement is limited to the total amount paid by the Customer for the work performed."],
+      ["Right to Stop Work.", "Contractor reserves the right to stop work if payments are not made as agreed."],
+      ["Termination.", "Either party may cancel this agreement by providing 7 days' written notice."],
+      ["Dispute Resolution.", "The parties agree to attempt to resolve any disputes in good faith. Any legal action will take place in small claims or local court in the state where the work is performed."],
+      ["Permits and Compliance.", "Contractor is not responsible for obtaining permits unless specifically stated. Customer is responsible for ensuring all necessary approvals are in place unless otherwise agreed."],
+      ["Indemnification.", "Customer agrees to hold Contractor harmless for damages or issues arising from conditions beyond the Contractor's control."],
+      ["Entire Agreement.", "This agreement represents the full understanding between both parties and replaces any prior discussions or agreements."],
     ];
     for (let i = 0; i < clauses.length; i++) {
       addPageIfNeeded(34);
@@ -393,34 +399,6 @@ function dataUrlToBytes(dataUrl: string): Uint8Array | undefined {
 
 function termValue(terms: ContractTerm[] | undefined, stepId: string): string | undefined {
   return terms?.find((t) => t.stepId === stepId)?.value;
-}
-
-function paymentClause(terms: ContractTerm[] | undefined): string {
-  const v = termValue(terms, "payment_terms");
-  if (!v) return "Invoices are due net 15 unless otherwise noted; 1.5%/mo late fee on unpaid balances.";
-  return `Payment follows the schedule above (${v}). Invoices are due net 15 unless otherwise noted; 1.5%/mo late fee on unpaid balances.`;
-}
-function warrantyClause(terms: ContractTerm[] | undefined): string {
-  const v = termValue(terms, "warranty");
-  if (!v || /^no(ne)?$/i.test(v)) return "No warranty beyond what's required by state law.";
-  return `Workmanship is warranted for ${v} from substantial completion. Manufacturer warranties on materials pass through.`;
-}
-function terminationClause(terms: ContractTerm[] | undefined): string {
-  const v = termValue(terms, "termination");
-  if (!v) return "Either party may terminate for material breach with 14 days' written notice.";
-  return `Either party may terminate for material breach with ${v} written notice. Work performed and materials acquired through termination are payable.`;
-}
-function disputeClause(terms: ContractTerm[] | undefined): string {
-  const v = termValue(terms, "dispute");
-  if (!v) return "Disputes will be settled informally first, then through good-faith mediation.";
-  return `Disputes will be resolved by ${v.toLowerCase()} before any other forum.`;
-}
-function governingClause(terms: ContractTerm[] | undefined): string {
-  const v = termValue(terms, "governing_state");
-  if (!v) return "This contract is governed by the laws of the state where the work is performed.";
-  if (/job\s*site|use the job/i.test(v)) return "This contract is governed by the laws of the state where the work is performed.";
-  if (/business\s*state|use my business/i.test(v)) return "This contract is governed by the laws of the contractor's home state.";
-  return `This contract is governed by the laws of ${v}.`;
 }
 
 function computeMilestones(total: number, terms: ContractTerm[] | undefined): { label: string; amount: number; when: string }[] {

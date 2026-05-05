@@ -43,12 +43,12 @@ Deno.test("load-conversation integration: includes wizard state + progress when 
   const { conversations, transition, wizardAnswer, load } = fresh();
   const conv = await conversations.create({ userId: "u-1" });
   await transition.run({ userId: "u-1", conversationId: conv.id });
-  await wizardAnswer.run({ userId: "u-1", conversationId: conv.id, stepId: "config", optionId: "standard_residential" });
+  await wizardAnswer.run({ userId: "u-1", conversationId: conv.id, stepId: "customer", optionId: "use_active" });
 
   const snap = await load.run({ userId: "u-1", conversationId: conv.id });
   assertEquals(snap.conversation.currentPhase, "terms");
   assertEquals(snap.wizard?.state.activeStepIdx, 1);
-  assertEquals(snap.wizard?.progress.activeStep?.id, "customer");
+  assertEquals(snap.wizard?.progress.activeStep?.id, "start_date");
   assertEquals(snap.wizard?.progress.completedSteps.length, 1);
   await resetKv();
 });

@@ -285,14 +285,20 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
           <section style="margin-top:30px">
             <SectionLabel n="05" title="Fine print, in plain English" hint="The legal-but-honest stuff" />
             <ol style={`margin:14px 0 0;padding-left:20px;color:${INK};font-size:14px;line-height:1.65`}>
-              <li><strong>Performance.</strong> {contractorName ?? "The Contractor"} will perform the work above with reasonable care and in line with industry standards.</li>
-              <li><strong>Changes.</strong> Any change to scope or price needs both sides to confirm in writing — a chat message counts.</li>
-              <li><strong>Payment.</strong> {paymentTermsBlurb(contract.terms)}</li>
-              <li><strong>Warranty.</strong> {warrantyBlurb(contract.terms)}</li>
-              <li><strong>Termination.</strong> {terminationBlurb(contract.terms)}</li>
-              <li><strong>Disputes.</strong> {disputeBlurb(contract.terms)}</li>
-              <li><strong>Governing law.</strong> {governingBlurb(contract.terms, contractor?.state)}</li>
-              <li><strong>Entire agreement.</strong> This contract — plus any line-item or schedule changes both parties confirm in writing — is the whole deal.</li>
+              <li><strong>Governing Law.</strong> This agreement is governed by the laws of the state where the work is performed.</li>
+              <li><strong>Scope of Work.</strong> Contractor will perform only the work described in this agreement. Any additional work must be approved by both parties and may result in additional charges.</li>
+              <li><strong>Payment Terms.</strong> Payment is due as outlined in this agreement. Late payments may be subject to additional fees as allowed by law.</li>
+              <li><strong>Change Orders.</strong> Any changes to the work must be agreed to in writing and may affect the total price and project timeline.</li>
+              <li><strong>Customer Responsibilities.</strong> Customer agrees to provide access to the job site and ensure the work area is ready for the Contractor to perform the agreed services.</li>
+              <li><strong>Delays and Unforeseen Conditions.</strong> Contractor is not responsible for delays caused by weather, material availability, site conditions, or other circumstances outside of their control.</li>
+              <li><strong>Warranty.</strong> Contractor warrants their workmanship for the period stated in this agreement. This warranty applies to labor only and does not cover materials, normal wear and tear, misuse, or damage caused by others.</li>
+              <li><strong>Limitation of Liability.</strong> Contractor's liability under this agreement is limited to the total amount paid by the Customer for the work performed.</li>
+              <li><strong>Right to Stop Work.</strong> Contractor reserves the right to stop work if payments are not made as agreed.</li>
+              <li><strong>Termination.</strong> Either party may cancel this agreement by providing 7 days' written notice.</li>
+              <li><strong>Dispute Resolution.</strong> The parties agree to attempt to resolve any disputes in good faith. Any legal action will take place in small claims or local court in the state where the work is performed.</li>
+              <li><strong>Permits and Compliance.</strong> Contractor is not responsible for obtaining permits unless specifically stated. Customer is responsible for ensuring all necessary approvals are in place unless otherwise agreed.</li>
+              <li><strong>Indemnification.</strong> Customer agrees to hold Contractor harmless for damages or issues arising from conditions beyond the Contractor's control.</li>
+              <li><strong>Entire Agreement.</strong> This agreement represents the full understanding between both parties and replaces any prior discussions or agreements.</li>
             </ol>
           </section>
 
@@ -439,48 +445,6 @@ function expandTermValue(term: Term, contractorState: string | undefined): strin
     return term.value;
   }
   return term.value;
-}
-
-function paymentTermsBlurb(terms: Term[] | undefined): string {
-  const v = termValue(terms, "payment_terms");
-  if (!v) return "Invoices are due net 15 unless otherwise noted; 1.5%/mo late fee on unpaid balances.";
-  return `Payment follows the schedule above (${v}). Invoices are due net 15 unless otherwise noted; 1.5%/mo late fee on unpaid balances.`;
-}
-
-function warrantyBlurb(terms: Term[] | undefined): string {
-  const v = termValue(terms, "warranty");
-  if (!v || /^no(ne)?$/i.test(v)) return "No warranty beyond what's required by state law.";
-  return `Workmanship is warranted for ${v} from substantial completion. Manufacturer warranties on materials pass through.`;
-}
-
-function terminationBlurb(terms: Term[] | undefined): string {
-  const v = termValue(terms, "termination");
-  if (!v) return "Either party may terminate for material breach with 14 days' written notice.";
-  return `Either party may terminate for material breach with ${v} written notice. Work performed and materials acquired through termination are payable.`;
-}
-
-function disputeBlurb(terms: Term[] | undefined): string {
-  const v = termValue(terms, "dispute");
-  if (!v) return "Disputes will be settled informally first, then through good-faith mediation.";
-  return `Disputes will be resolved by ${v.toLowerCase()} before any other forum.`;
-}
-
-function governingBlurb(terms: Term[] | undefined, contractorState?: string): string {
-  const v = termValue(terms, "governing_state");
-  const stateName = expandStateName(contractorState);
-  if (!v) {
-    return stateName
-      ? `This contract is governed by ${stateName} law.`
-      : "This contract is governed by the laws of the state where the work is performed.";
-  }
-  if (/job\s*site|use the job/i.test(v)) return "This contract is governed by the laws of the state where the work is performed.";
-  if (/business\s*state|use my business/i.test(v)) {
-    return stateName
-      ? `This contract is governed by ${stateName} law (the contractor's home state).`
-      : "This contract is governed by the laws of the contractor's home state.";
-  }
-  const explicit = expandStateName(v) ?? v;
-  return `This contract is governed by ${explicit} law.`;
 }
 
 function computeMilestones(total: number, terms: Term[] | undefined): { label: string; amount: number; when: string }[] {

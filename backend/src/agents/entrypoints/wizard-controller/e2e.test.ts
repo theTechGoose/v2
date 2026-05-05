@@ -59,34 +59,28 @@ Deno.test("agents wizard e2e: full happy path — answer step 0, get step 1 back
     const result = await fetch(`http://localhost:${port}/agents/wizard/answer`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-session-id": sid },
-      body: JSON.stringify({ conversationId: cid, stepId: "config", optionId: "standard_residential" }),
+      body: JSON.stringify({ conversationId: cid, stepId: "customer", optionId: "use_active" }),
     }).then((r) => r.json());
 
     assertEquals(result.wizardState.activeStepIdx, 1);
     assertEquals(result.newMessages.length, 2);
     assertEquals(result.newMessages[0].role, "user");
-    assertEquals(result.newMessages[0].content, "Config: Standard residential");
     assertEquals(result.newMessages[1].kind, "wizard");
-    assertEquals((result.newMessages[1].payload as { stepId: string }).stepId, "customer");
+    assertEquals((result.newMessages[1].payload as { stepId: string }).stepId, "start_date");
   });
 });
 
-Deno.test("agents wizard e2e: completing all 10 steps yields a continue_cta to send", async () => {
+Deno.test("agents wizard e2e: completing all 5 steps yields a continue_cta to send", async () => {
   await withServer(async (port) => {
     const sid = await login(port);
     const cid = await setupTermsConv(port, sid);
 
     const sequence = [
-      ["config",          "standard_residential"],
       ["customer",         "use_active"],
       ["start_date",       "asap"],
       ["wraps",            "1_week"],
       ["payment_terms",    "50_50"],
       ["warranty",         "12_months"],
-      ["termination",      "14"],
-      ["dispute",          "mediation"],
-      ["governing_state",  "use_business_state"],
-      ["state_notices",    "yes"],
     ];
 
     let last;
@@ -98,7 +92,7 @@ Deno.test("agents wizard e2e: completing all 10 steps yields a continue_cta to s
       }).then((r) => r.json());
     }
 
-    assertEquals(last.wizardState.activeStepIdx, 10);
+    assertEquals(last.wizardState.activeStepIdx, 5);
     assertEquals(last.newMessages[last.newMessages.length - 1].kind, "continue_cta");
   });
 });
@@ -127,7 +121,7 @@ Deno.test("agents wizard e2e: posting before transition (still in 'quote') is re
     const res = await fetch(`http://localhost:${port}/agents/wizard/answer`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-session-id": sid },
-      body: JSON.stringify({ conversationId: conv.id, stepId: "config", optionId: "standard_residential" }),
+      body: JSON.stringify({ conversationId: conv.id, stepId: "customer", optionId: "use_active" }),
     });
     const ok = res.ok;
     await drain(res);
@@ -139,12 +133,6 @@ Deno.test("agents wizard e2e: custom option requires customValue", async () => {
   await withServer(async (port) => {
     const sid = await login(port);
     const cid = await setupTermsConv(port, sid);
-    // Move past 'config'
-    await fetch(`http://localhost:${port}/agents/wizard/answer`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-session-id": sid },
-      body: JSON.stringify({ conversationId: cid, stepId: "config", optionId: "standard_residential" }),
-    }).then(drain);
 
     // 'customer.create_new' is isCustom — without customValue should fail
     const res = await fetch(`http://localhost:${port}/agents/wizard/answer`, {

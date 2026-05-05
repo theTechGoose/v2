@@ -847,16 +847,6 @@ export default function AsstChat({
         method: "POST",
         credentials: "include",
       });
-      await fetch("/api/agents/wizard/answer", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          conversationId: conv.id,
-          stepId: "config",
-          optionId: "standard_residential",
-        }),
-      });
 
       globalThis.location.href = `/assistant/${conv.id}`;
     } catch (err) {
