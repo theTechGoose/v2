@@ -49,9 +49,9 @@ const TERM_OPTIONS_FALLBACK: Record<string, { label: string; sub?: string }[]> =
       { label: "Start blank", sub: "I'll choose every option" },
     ],
     start_date: [
-      { label: "ASAP", sub: "Within 7 days" },
-      { label: "Next week", sub: "7–14 days out" },
-      { label: "Next month", sub: "30+ days out" },
+      { label: "Right away" },
+      { label: "Next week" },
+      { label: "Next Month" },
     ],
     wraps: [
       { label: "1 day" },
@@ -60,10 +60,10 @@ const TERM_OPTIONS_FALLBACK: Record<string, { label: string; sub?: string }[]> =
       { label: "2 weeks" },
     ],
     payment_terms: [
-      { label: "50 / 50", sub: "Half deposit, half on finish" },
-      { label: "30 / 30 / 40", sub: "Deposit, midpoint, finish" },
-      { label: "Net 15 — full", sub: "Due 15 days after wrap" },
-      { label: "Deposit + balance", sub: "Small hold, balance on finish" },
+      { label: "Get paid on completion", sub: "Same-day payment" },
+      { label: "50/50", sub: "Half upfront, half when done" },
+      { label: "30/30/40", sub: "Start, halfway, done" },
+      { label: "Deposit + balance", sub: "Small upfront, rest when done" },
     ],
     warranty: [
       { label: "No warranty" },
@@ -438,7 +438,7 @@ export default function AsstChat({
     const dividerPhase = (
       lastDivider?.payload as { phase?: number } | undefined
     )?.phase;
-    let status = "Tell Bossie about a job — voice or text";
+    let status = "Your PM Assistant is here to help!";
     if (contractStatus === "signed") status = "Contract signed";
     else if (contractStatus === "sent") status = "Contract out for signature";
     else if (contract) status = "Contract drafting";
@@ -1656,10 +1656,9 @@ export default function AsstChat({
             <div class="chat__empty-icon">
               <img src="/logo-monster.png" alt="" />
             </div>
-            <h3 class="chat__empty-title">Start a conversation with Bossie</h3>
+            <h3 class="chat__empty-title">Select a box or tell me about your job!</h3>
             <p class="chat__empty-sub">
-              Tell me about a job — voice or text. I'll draft the quote, walk
-              through contract terms, and have it ready to send.
+              Talk or type. I'll write your quote, contract, and invoice, ready to send!
             </p>
             {priceCaptureOpen ? (
               <div class="chat__price-capture">
@@ -1700,30 +1699,29 @@ export default function AsstChat({
                   class="chat__empty-prompt"
                   onClick={() => setPriceCaptureOpen(true)}
                 >
-                  I already have my price — let's draft the scope.
+                  I know my price, write it up.
                 </button>
                 <button
                   type="button"
                   class="chat__empty-prompt"
                   onClick={() =>
                     sendText(
-                      "I have all of the job details and would like help with pricing appropriately.",
+                      "I know the job, help me price it.",
                     )
                   }
                 >
-                  I have all of the job details and would like help with pricing
-                  appropriately.
+                  I know the job, help me price it.
                 </button>
                 <button
                   type="button"
                   class="chat__empty-prompt"
                   onClick={() =>
                     sendText(
-                      "I have some of the job details and need a simple quote.",
+                      "Just give me a quick quote.",
                     )
                   }
                 >
-                  I have some of the job details and need a simple quote.
+                  Just give me a quick quote.
                 </button>
               </div>
             )}
@@ -2868,7 +2866,7 @@ export default function AsstChat({
               <textarea
                 ref={taRef}
                 class="composer__input"
-                placeholder="EX: My client wants a 10x10 concrete slab. Please help me figure out how to price"
+                placeholder="Ex: Customer wants a 10'x10' slab, what should I charge?"
                 rows={1}
                 value={draft}
                 onInput={(e) => {
@@ -2900,8 +2898,7 @@ export default function AsstChat({
               </div>
             </div>
             <div class="composer__hint">
-              Need something different? Tell me anything you want — how can I
-              help?
+              Not sure? Just tell me about the job.
             </div>
           </>
         )}
@@ -3225,10 +3222,8 @@ function CustomerStepPanel(props: {
   if (view === "form") {
     const trimmedName = createName.trim();
     const submitDisabled = sending || trimmedName.length === 0;
-    const formHeading = isBusiness
-      ? "What is the business name?"
-      : "What is the customer's name?";
-    const namePlaceholder = isBusiness ? "Business name" : "Customer name";
+    const formHeading = "Who is this for?";
+    const namePlaceholder = "Name";
     return (
       <div ref={rootRef}>
         <h3 class="wiz__step-q">{formHeading}</h3>
@@ -3246,7 +3241,7 @@ function CustomerStepPanel(props: {
             <input
               type="tel"
               class="cust-pick__search"
-              placeholder="Phone"
+              placeholder="Phone Number"
               value={createPhone}
               onInput={(e) =>
                 setCreatePhone((e.target as HTMLInputElement).value)
@@ -3255,7 +3250,7 @@ function CustomerStepPanel(props: {
             <input
               type="email"
               class="cust-pick__search"
-              placeholder="Email"
+              placeholder="Email (optional)"
               value={createEmail}
               onInput={(e) =>
                 setCreateEmail((e.target as HTMLInputElement).value)
@@ -3285,7 +3280,7 @@ function CustomerStepPanel(props: {
                 })
               }
             >
-              Save &amp; continue
+              Next
             </button>
             <button
               type="button"
@@ -3305,7 +3300,7 @@ function CustomerStepPanel(props: {
   const showFilter = (customers?.length ?? 0) > 6;
   return (
     <div ref={rootRef}>
-      <h3 class="wiz__step-q">Use an existing {kindLabel} or add a new one</h3>
+      <h3 class="wiz__step-q">Pick a customer</h3>
       <div
         class="wiz__opts"
         style="flex-direction:column;align-items:stretch;gap:8px;margin-top:8px"
@@ -3369,7 +3364,7 @@ function CustomerStepPanel(props: {
           onClick={openCreate}
           disabled={sending}
         >
-          + Add a new {kindLabel}
+          + New Customer
         </button>
       </div>
     </div>

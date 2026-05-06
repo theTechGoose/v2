@@ -5312,12 +5312,21 @@ html, body {
   .composer__send:hover { transform: translateY(-1px); }
   .composer__hint {
     font-size: 10.5px;
-    color: var(--fg-subtle);
+    color: var(--brand-green);
+    font-weight: 700;
     margin-top: 8px;
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 0 4px;
+    animation: composerHintPulse 1.8s ease-in-out infinite;
+  }
+  @keyframes composerHintPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .composer__hint { animation: none; }
   }
   .composer__hint kbd {
     font-family: var(--font-mono);

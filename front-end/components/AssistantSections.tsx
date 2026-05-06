@@ -258,31 +258,28 @@ export function ChatScroll() {
 
             <div class="wiz__step">
               <div class="wiz__step-num">Step 5 of 10 · Payment terms</div>
-              <h3 class="wiz__step-q">How do you want to get paid?</h3>
+              <h3 class="wiz__step-q">When do you want to get paid?</h3>
               <div class="wiz__opts">
                 <button type="button" class="wiz-opt">
-                  50 / 50
-                  <span class="wiz-opt__sub">$1,700 deposit · $1,700 on finish</span>
+                  Get paid on completion
+                  <span class="wiz-opt__sub">Same-day payment</span>
                 </button>
                 <button type="button" class="wiz-opt">
-                  30 / 30 / 40
-                  <span class="wiz-opt__sub">$1,020 / $1,020 / $1,360</span>
+                  50/50
+                  <span class="wiz-opt__sub">Half upfront, half when done</span>
                 </button>
                 <button type="button" class="wiz-opt">
-                  Net 15 — full
-                  <span class="wiz-opt__sub">$3,400 due 15 days after wrap</span>
+                  30/30/40
+                  <span class="wiz-opt__sub">Start, halfway, done</span>
                 </button>
                 <button type="button" class="wiz-opt">
                   Deposit + balance
-                  <span class="wiz-opt__sub">$500 hold · balance on finish</span>
+                  <span class="wiz-opt__sub">Small upfront, rest when done</span>
                 </button>
                 <button type="button" class="wiz-opt wiz-opt--custom">
-                  <I d={ICN.plus} size={11} sw={2.5} /> Custom…
-                  <span class="wiz-opt__sub">Tell Bossie a different schedule</span>
+                  <I d={ICN.plus} size={11} sw={2.5} /> Custom
+                  <span class="wiz-opt__sub">Set your own terms</span>
                 </button>
-              </div>
-              <div class="wiz__hint">
-                <I d={ICN.bolt} size={11} /> Defaults: <strong style="color:var(--brand-teal);margin:0 4px">Net 15 · 1.5% late fee</strong> — editable after picking
               </div>
             </div>
 

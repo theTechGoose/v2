@@ -465,8 +465,8 @@ function computeMilestones(total: number, terms: Term[] | undefined): { label: s
       { label: "Final", amount: total - a - b, when: "On completion" },
     ];
   }
-  if (v.includes("net 15")) {
-    return [{ label: "Net 15", amount: total, when: "Due 15 days after wrap" }];
+  if (v.includes("completion") || v.includes("net 15")) {
+    return [{ label: "Final", amount: total, when: "On completion" }];
   }
   if (v.includes("deposit") && v.includes("balance")) {
     const dep = Math.round(total * 0.20);

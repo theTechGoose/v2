@@ -78,8 +78,8 @@ export default define.page(async function AssistantHome(ctx) {
             <div class="asst__chat-wrap">
               <section class="chat">
                 <ChatHeaderLive
-                  initialClient="New conversation"
-                  initialStatus="Tell Bossie about a job — voice or text"
+                  initialClient="New Conversation"
+                  initialStatus="Your PM Assistant is here to help!"
                 />
                 <AsstChat initialMessages={[]} userInitials={userInitials} />
               </section>
