@@ -4362,6 +4362,294 @@ html, body {
     flex-direction: column;
     gap: 6px;
   }
+  .cust-pick__list--scroll {
+    max-height: 220px;
+    overflow-y: auto;
+    padding-right: 2px;
+    scroll-behavior: smooth;
+  }
+
+  /* Customer picker — collapsed dropdown trigger that expands inline. */
+  .cust-dd { width: 100%; }
+  .cust-dd__trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    background: #fff;
+    border: 1.5px solid var(--border);
+    border-radius: 11px;
+    padding: 10px 14px;
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--brand-teal);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 140ms;
+  }
+  .cust-dd__trigger:hover:not(:disabled) { border-color: var(--brand-green); }
+  .cust-dd__trigger:disabled { opacity: 0.55; cursor: default; }
+  .cust-dd__placeholder { color: var(--fg-subtle); font-weight: 600; }
+  .cust-dd__chevron {
+    color: var(--fg-subtle);
+    transition: transform 160ms;
+    flex: 0 0 auto;
+  }
+  .cust-dd--open .cust-dd__chevron { transform: rotate(180deg); }
+  .cust-dd__panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #fff;
+    border: 1.5px solid var(--brand-green);
+    border-radius: 11px;
+    padding: 8px;
+    animation: custDdReveal 140ms ease-out;
+  }
+  @keyframes custDdReveal {
+    from { opacity: 0; transform: translateY(-2px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Calendar — start_date "Pick a date" custom option */
+  .cal {
+    background: #fff;
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    max-width: 340px;
+  }
+  .cal__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .cal__title {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--brand-teal);
+    letter-spacing: 0.01em;
+  }
+  .cal__nav {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--brand-teal);
+    cursor: pointer;
+    transition: border-color 140ms, background 140ms, color 140ms;
+  }
+  .cal__nav:hover:not(:disabled) {
+    border-color: var(--brand-green);
+    color: var(--brand-green);
+  }
+  .cal__nav:disabled { opacity: 0.4; cursor: default; }
+  .cal__weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+  }
+  .cal__weekday {
+    text-align: center;
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-subtle);
+    padding: 4px 0;
+  }
+  .cal__grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+  }
+  .cal__day {
+    aspect-ratio: 1 / 1;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 12.5px;
+    color: var(--brand-teal);
+    cursor: pointer;
+    transition: background 120ms, color 120ms, border-color 120ms;
+  }
+  .cal__day:hover:not(:disabled):not(.cal__day--selected) {
+    background: var(--green-50);
+    color: var(--brand-green);
+  }
+  .cal__day--outside { color: rgba(33, 64, 80, 0.28); }
+  .cal__day--today { border-color: var(--brand-green); }
+  .cal__day--selected {
+    background: var(--brand-green);
+    color: #fff;
+    box-shadow: 0 4px 10px rgba(81, 152, 67, 0.30);
+  }
+  .cal__day:disabled {
+    color: rgba(33, 64, 80, 0.22);
+    cursor: default;
+    text-decoration: line-through;
+    text-decoration-color: rgba(33, 64, 80, 0.18);
+  }
+  .cal__footer {
+    display: flex;
+    align-items: center;
+    padding: 6px 4px 0;
+    border-top: 1px dashed var(--border);
+  }
+  .cal__picked {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--fg-subtle);
+  }
+
+  /* Duration picker — wraps "Custom" option (number + unit, structured) */
+  .dur {
+    background: #fff;
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    max-width: 360px;
+  }
+  .dur__head { display: flex; flex-direction: column; gap: 2px; }
+  .dur__title {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--brand-teal);
+  }
+  .dur__sub {
+    font-family: var(--font-body);
+    font-weight: 500;
+    font-size: 11.5px;
+    color: var(--fg-subtle);
+  }
+  .dur__row {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 8px;
+  }
+  .dur__num { text-align: center; font-weight: 700; font-size: 16px; }
+  .dur__unit { font-weight: 700; font-size: 13px; cursor: pointer; }
+  .dur__presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .dur__chip {
+    background: #fff;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 11.5px;
+    color: var(--brand-teal);
+    cursor: pointer;
+    transition: border-color 140ms, background 140ms, color 140ms;
+  }
+  .dur__chip:hover:not(:disabled) { border-color: var(--brand-green); }
+  .dur__chip:disabled { opacity: 0.55; cursor: default; }
+  .dur__chip--active {
+    background: var(--brand-green);
+    border-color: var(--brand-green);
+    color: #fff;
+  }
+  .dur__preview {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--green-50);
+    border-radius: 9px;
+    border: 1px dashed var(--green-200);
+  }
+  .dur__preview-label {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 11.5px;
+    color: var(--fg-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .dur__preview-val {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--brand-green);
+  }
+  /* Bossie ask-phase chat header */
+  .dur__bossie {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: var(--green-50);
+    border: 1px solid var(--green-200);
+    border-radius: 11px;
+    padding: 10px 12px;
+  }
+  .dur__bossie-tag {
+    font-family: var(--font-body);
+    font-weight: 800;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--brand-green);
+  }
+  .dur__bossie-msg {
+    font-family: var(--font-body);
+    font-weight: 500;
+    font-size: 12.5px;
+    color: var(--brand-teal);
+    line-height: 1.45;
+  }
+  .dur__textarea {
+    resize: none;
+    font-family: var(--font-body);
+    font-size: 13px;
+    line-height: 1.45;
+    padding: 10px 12px;
+  }
+  .dur__warn {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 11.5px;
+    color: #b15500;
+    background: #fff4e0;
+    border: 1px dashed #f0c27a;
+    border-radius: 8px;
+    padding: 6px 10px;
+    margin-top: 4px;
+  }
+  .dur__chip--ghost {
+    background: transparent;
+    border-style: dashed;
+    color: var(--fg-subtle);
+  }
+  .dur__chip--ghost:hover:not(:disabled) {
+    color: var(--brand-green);
+    border-color: var(--brand-green);
+  }
   .cust-pick__row {
     display: flex;
     align-items: center;
@@ -4471,6 +4759,72 @@ html, body {
   .cust-create__btn--primary:hover:not(:disabled) {
     background: #437b37;
     border-color: #437b37;
+  }
+
+  /* Split button — pick the currently-selected customer or open the menu */
+  .cust-split {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+    background: var(--brand-green);
+    border: 1.5px solid var(--brand-green);
+    border-radius: 11px;
+    transition: background 140ms, border-color 140ms;
+  }
+  .cust-split:hover { background: #437b37; border-color: #437b37; }
+  .cust-split:has(.cust-split__main:disabled) { opacity: 0.65; }
+  .cust-split__main {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    color: #fff;
+    border: none;
+    border-radius: 9.5px 0 0 9.5px;
+    padding: 10px 16px;
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .cust-split__main:disabled { cursor: default; }
+  .cust-split__menu {
+    position: static;
+    display: flex;
+    align-items: stretch;
+    border-left: 1px solid rgba(255, 255, 255, 0.28);
+  }
+  .cust-split__caret {
+    background: transparent;
+    color: #fff;
+    border: none;
+    border-radius: 0 9.5px 9.5px 0;
+    padding: 0 14px;
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .cust-split__caret::-webkit-details-marker { display: none; }
+  .cust-split__caret::marker { display: none; content: ""; }
+  .cust-split__list {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 260px;
+    max-height: 280px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.10);
+    padding: 6px;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
 
   /* Quote-review card — final wizard preview before "Send to client" */

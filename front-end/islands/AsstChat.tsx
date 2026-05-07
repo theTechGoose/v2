@@ -324,6 +324,18 @@ export default function AsstChat({
     messageId: string;
     optionId: string;
   } | null>(null);
+  // start_date "Pick a date" — when armed, renders an inline date picker
+  // in place of the option grid for that wizard message.
+  const [customDatePick, setCustomDatePick] = useState<{
+    messageId: string;
+    optionId: string;
+  } | null>(null);
+  // wraps "Custom" — structured number + unit picker so the contract gets a
+  // clean duration string ("3 weeks") without relying on free-text parsing.
+  const [customDurationPick, setCustomDurationPick] = useState<{
+    messageId: string;
+    optionId: string;
+  } | null>(null);
   // #27 — gates the third empty-state chip ("Nudge an overdue invoice").
   // null = unknown / not yet loaded → don't render the chip yet (avoids
   // flashing it on then yanking it away). Sourced from the shared dash
@@ -2581,6 +2593,44 @@ export default function AsstChat({
                                 />
                               );
                             }
+                            if (
+                              customDatePick &&
+                              customDatePick.messageId === m.id
+                            ) {
+                              return (
+                                <CustomDatePickerForm
+                                  sending={sending}
+                                  onSubmit={(dateStr) => {
+                                    setCustomDatePick(null);
+                                    postWizardAnswer(m, {
+                                      stepId: payload.stepId!,
+                                      optionId: customDatePick.optionId,
+                                      customValue: dateStr,
+                                    });
+                                  }}
+                                  onCancel={() => setCustomDatePick(null)}
+                                />
+                              );
+                            }
+                            if (
+                              customDurationPick &&
+                              customDurationPick.messageId === m.id
+                            ) {
+                              return (
+                                <CustomDurationPickerForm
+                                  sending={sending}
+                                  onSubmit={(durationStr) => {
+                                    setCustomDurationPick(null);
+                                    postWizardAnswer(m, {
+                                      stepId: payload.stepId!,
+                                      optionId: customDurationPick.optionId,
+                                      customValue: durationStr,
+                                    });
+                                  }}
+                                  onCancel={() => setCustomDurationPick(null)}
+                                />
+                              );
+                            }
                             return (
                               <div class="wiz__opts">
                                 {opts.map((opt) => (
@@ -2591,6 +2641,26 @@ export default function AsstChat({
                                     onClick={() => {
                                       if (opt.followUp) {
                                         setFollowUpPick({
+                                          messageId: m.id,
+                                          optionId: opt.id,
+                                        });
+                                        return;
+                                      }
+                                      if (
+                                        opt.isCustom &&
+                                        payload.stepId === "start_date"
+                                      ) {
+                                        setCustomDatePick({
+                                          messageId: m.id,
+                                          optionId: opt.id,
+                                        });
+                                        return;
+                                      }
+                                      if (
+                                        opt.isCustom &&
+                                        payload.stepId === "wraps"
+                                      ) {
+                                        setCustomDurationPick({
                                           messageId: m.id,
                                           optionId: opt.id,
                                         });
@@ -3158,6 +3228,7 @@ function CustomerStepPanel(props: {
   const [customers, setCustomers] = useState<CustomerLite[] | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [search, setSearch] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createEmail, setCreateEmail] = useState("");
   const [createPhone, setCreatePhone] = useState("");
@@ -3205,18 +3276,16 @@ function CustomerStepPanel(props: {
     setLocalErr(undefined);
   }
 
-  const filtered =
-    customers?.filter((c) => {
-      if (!search.trim()) return true;
-      const needle = search.trim().toLowerCase();
-      return (
-        c.name.toLowerCase().includes(needle) ||
-        (c.email ?? "").toLowerCase().includes(needle) ||
-        (c.phoneNumber ?? "").toLowerCase().includes(needle)
-      );
-    }) ?? [];
   const isBusiness = kind === "business";
-  const kindLabel = isBusiness ? "business" : "person";
+  const filtered = (customers ?? []).filter((c) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      c.name.toLowerCase().includes(q) ||
+      (c.email ?? "").toLowerCase().includes(q) ||
+      (c.phoneNumber ?? "").toLowerCase().includes(q)
+    );
+  });
 
   // ---- View: form ----
   if (view === "form") {
@@ -3296,8 +3365,7 @@ function CustomerStepPanel(props: {
     );
   }
 
-  // ---- View: default — list (kind already picked on the lock-quote CTA) ----
-  const showFilter = (customers?.length ?? 0) > 6;
+  // ---- View: default — dropdown (kind already picked on the lock-quote CTA) ----
   return (
     <div ref={rootRef}>
       <h3 class="wiz__step-q">Pick a customer</h3>
@@ -3318,43 +3386,89 @@ function CustomerStepPanel(props: {
             ) : null}
           </button>
         ) : null}
-        {showFilter ? (
-          <input
-            type="text"
-            class="cust-pick__search"
-            placeholder="Filter by name, email, or phone…"
-            value={search}
-            onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
-          />
-        ) : null}
         {loadingList ? (
           <div class="cust-pick__empty">Loading customers…</div>
         ) : customers && customers.length === 0 ? (
           <div class="cust-pick__empty">
             No saved customers yet — add one below.
           </div>
-        ) : filtered.length === 0 ? (
-          <div class="cust-pick__empty">No matches.</div>
         ) : (
-          <div class="cust-pick__list">
-            {filtered.slice(0, 50).map((c) => (
+          <div class={`cust-dd ${pickerOpen ? "cust-dd--open" : ""}`}>
+            {!pickerOpen ? (
               <button
-                key={c.id}
                 type="button"
-                class="cust-pick__row"
-                onClick={() =>
-                  onSubmit("pick_existing", { customer: { id: c.id } })
-                }
+                class="cust-dd__trigger"
+                onClick={() => setPickerOpen(true)}
                 disabled={sending}
               >
-                <span class="cust-pick__name">{c.name}</span>
-                {c.email || c.phoneNumber ? (
-                  <span class="cust-pick__meta">
-                    {c.email ?? c.phoneNumber}
-                  </span>
-                ) : null}
+                <span class="cust-dd__placeholder">Pick a customer</span>
+                <svg
+                  class="cust-dd__chevron"
+                  viewBox="0 0 12 12"
+                  width="12"
+                  height="12"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M2 4l4 4 4-4"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    fill="none"
+                  />
+                </svg>
               </button>
-            ))}
+            ) : (
+              <div class="cust-dd__panel">
+                <input
+                  type="text"
+                  class="cust-pick__search"
+                  placeholder={
+                    (customers?.length ?? 0) > 5
+                      ? `Search ${customers?.length} customers…`
+                      : "Search customers…"
+                  }
+                  value={search}
+                  onInput={(e) =>
+                    setSearch((e.target as HTMLInputElement).value)
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setSearch("");
+                      setPickerOpen(false);
+                    }
+                  }}
+                  autoFocus
+                />
+                {filtered.length === 0 ? (
+                  <div class="cust-pick__empty">No matches.</div>
+                ) : (
+                  <div class="cust-pick__list cust-pick__list--scroll">
+                    {filtered.slice(0, 100).map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        class="cust-pick__row"
+                        onClick={() =>
+                          onSubmit("pick_existing", {
+                            customer: { id: c.id },
+                          })
+                        }
+                        disabled={sending}
+                      >
+                        <span class="cust-pick__name">{c.name}</span>
+                        {c.email || c.phoneNumber ? (
+                          <span class="cust-pick__meta">
+                            {c.email ?? c.phoneNumber}
+                          </span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
         {localErr ? <div class="cust-pick__err">{localErr}</div> : null}
@@ -3515,6 +3629,445 @@ function WizardFollowUpForm(props: {
           disabled={sending}
         >
           Back
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Inline date picker for the start_date "Pick a date" custom option.
+ *  Renders a styled month grid with prev/next navigation. Past dates are
+ *  disabled (job can't start in the past). */
+function CustomDatePickerForm(props: {
+  sending: boolean;
+  onSubmit: (dateStr: string) => void;
+  onCancel: () => void;
+}) {
+  const { sending, onSubmit, onCancel } = props;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const [picked, setPicked] = useState<Date>(today);
+  const [viewMonth, setViewMonth] = useState(
+    new Date(today.getFullYear(), today.getMonth(), 1),
+  );
+
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+  const toIso = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  const firstOfMonth = new Date(
+    viewMonth.getFullYear(),
+    viewMonth.getMonth(),
+    1,
+  );
+  const startDow = firstOfMonth.getDay();
+  const daysInMonth = new Date(
+    viewMonth.getFullYear(),
+    viewMonth.getMonth() + 1,
+    0,
+  ).getDate();
+  const cells: { date: Date; outside: boolean }[] = [];
+  for (let i = startDow - 1; i >= 0; i--) {
+    const d = new Date(firstOfMonth);
+    d.setDate(d.getDate() - i - 1);
+    cells.push({ date: d, outside: true });
+  }
+  for (let i = 1; i <= daysInMonth; i++) {
+    cells.push({
+      date: new Date(viewMonth.getFullYear(), viewMonth.getMonth(), i),
+      outside: false,
+    });
+  }
+  while (cells.length < 42) {
+    const next = new Date(cells[cells.length - 1].date);
+    next.setDate(next.getDate() + 1);
+    cells.push({ date: next, outside: true });
+  }
+
+  const monthLabel = viewMonth.toLocaleString("default", {
+    month: "long",
+    year: "numeric",
+  });
+  const weekdays = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+  const prevDisabled =
+    viewMonth.getFullYear() === today.getFullYear() &&
+    viewMonth.getMonth() === today.getMonth();
+  const stepMonth = (delta: number) =>
+    setViewMonth(
+      new Date(viewMonth.getFullYear(), viewMonth.getMonth() + delta, 1),
+    );
+
+  const submitDisabled = sending || picked < today;
+  const longLabel = picked.toLocaleDateString("default", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  return (
+    <div class="cal" style="margin-top:8px">
+      <div class="cal__head">
+        <button
+          type="button"
+          class="cal__nav"
+          onClick={() => stepMonth(-1)}
+          disabled={prevDisabled || sending}
+          aria-label="Previous month"
+        >
+          <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+            <path d="M8 2L4 6l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+          </svg>
+        </button>
+        <div class="cal__title">{monthLabel}</div>
+        <button
+          type="button"
+          class="cal__nav"
+          onClick={() => stepMonth(1)}
+          disabled={sending}
+          aria-label="Next month"
+        >
+          <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+            <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+          </svg>
+        </button>
+      </div>
+      <div class="cal__weekdays">
+        {weekdays.map((w) => (
+          <span key={w} class="cal__weekday">{w}</span>
+        ))}
+      </div>
+      <div class="cal__grid">
+        {cells.map(({ date, outside }) => {
+          const past = date < today;
+          const selected = sameDay(date, picked);
+          const isToday = sameDay(date, today);
+          const cls = [
+            "cal__day",
+            outside ? "cal__day--outside" : "",
+            selected ? "cal__day--selected" : "",
+            isToday && !selected ? "cal__day--today" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          return (
+            <button
+              key={toIso(date)}
+              type="button"
+              class={cls}
+              disabled={past || sending}
+              onClick={() => setPicked(date)}
+            >
+              {date.getDate()}
+            </button>
+          );
+        })}
+      </div>
+      <div class="cal__footer">
+        <span class="cal__picked">{longLabel}</span>
+      </div>
+      <div class="cust-create__actions">
+        <button
+          type="button"
+          class="cust-create__btn cust-create__btn--primary"
+          onClick={() => onSubmit(toIso(picked))}
+          disabled={submitDisabled}
+        >
+          Use this date
+        </button>
+        <button
+          type="button"
+          class="cust-create__btn"
+          onClick={onCancel}
+          disabled={sending}
+        >
+          Back
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Best-effort free-text duration parser. Handles numerics ("3 weeks"),
+ *  word-numerics ("a week", "couple of months"), fractions ("half a month"),
+ *  and abbreviations. Returns null when nothing recognisable is found —
+ *  caller falls back to the manual form. Confidence is "ok" for clean
+ *  numeric matches, "guess" when we had to interpret words/fractions. */
+function parseDurationGuess(
+  text: string,
+): { n: number; unit: "days" | "weeks" | "months"; confidence: "ok" | "guess" } | null {
+  const t = text.toLowerCase().trim();
+  if (!t) return null;
+  let unit: "days" | "weeks" | "months";
+  if (/\bmonths?\b|\bmos?\b|\bmo\b/.test(t)) unit = "months";
+  else if (/\bweeks?\b|\bwks?\b/.test(t)) unit = "weeks";
+  else if (/\bdays?\b|\bd\b/.test(t)) unit = "days";
+  else return null;
+  let n: number | null = null;
+  let confidence: "ok" | "guess" = "guess";
+  const numMatch = t.match(/(\d+(\.\d+)?)/);
+  const wordNums: Record<string, number> = {
+    a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5,
+    six: 6, seven: 7, eight: 8, nine: 9, ten: 10, couple: 2, few: 3,
+  };
+  if (numMatch) {
+    n = parseFloat(numMatch[1]);
+    confidence = Number.isInteger(n) && !/half|about|roughly|~/.test(t) ? "ok" : "guess";
+  } else {
+    for (const [w, v] of Object.entries(wordNums)) {
+      const re = new RegExp(`\\b${w}\\b`);
+      if (re.test(t)) {
+        n = v;
+        break;
+      }
+    }
+  }
+  if (n == null) return null;
+  if (/half/.test(t) && /\band\b/.test(t)) n = n + 0.5;
+  else if (/half/.test(t) && n === 1) n = 0.5;
+  const rounded = Math.max(1, Math.min(99, Math.round(n)));
+  return { n: rounded, unit, confidence };
+}
+
+/** Inline duration picker for the wraps "Custom" option. Two-phase Bossie
+ *  flow: chat-style ask → free-text parse → structured verify form. The
+ *  contract value always comes from the verify form so an LLM/parser miss
+ *  never propagates — the user has the final word. */
+function CustomDurationPickerForm(props: {
+  sending: boolean;
+  onSubmit: (durationStr: string) => void;
+  onCancel: () => void;
+}) {
+  const { sending, onSubmit, onCancel } = props;
+  const [phase, setPhase] = useState<"ask" | "verify">("ask");
+  const [freeText, setFreeText] = useState("");
+  const [parseFailed, setParseFailed] = useState(false);
+  const [n, setN] = useState("3");
+  const [unit, setUnit] = useState<"days" | "weeks" | "months">("weeks");
+  const [confidence, setConfidence] = useState<"ok" | "guess" | "fail">("ok");
+  const [heardFrom, setHeardFrom] = useState("");
+
+  const num = Math.max(1, Math.min(99, Number(n) || 0));
+  const valid = Number.isFinite(num) && num >= 1 && num <= 99;
+  const unitLabel = num === 1 ? unit.replace(/s$/, "") : unit;
+  const preview = valid ? `${num} ${unitLabel}` : "—";
+
+  const presets: { label: string; n: string; unit: typeof unit }[] = [
+    { label: "3 days", n: "3", unit: "days" },
+    { label: "5 days", n: "5", unit: "days" },
+    { label: "1 week", n: "1", unit: "weeks" },
+    { label: "2 weeks", n: "2", unit: "weeks" },
+    { label: "1 month", n: "1", unit: "months" },
+  ];
+
+  function tryParseAndAdvance() {
+    const raw = freeText.trim();
+    if (!raw) return;
+    const parsed = parseDurationGuess(raw);
+    setHeardFrom(raw);
+    if (parsed) {
+      setN(String(parsed.n));
+      setUnit(parsed.unit);
+      setConfidence(parsed.confidence);
+      setParseFailed(false);
+    } else {
+      setConfidence("fail");
+      setParseFailed(true);
+    }
+    setPhase("verify");
+  }
+
+  if (phase === "ask") {
+    return (
+      <div class="dur dur--ask" style="margin-top:8px">
+        <div class="dur__bossie">
+          <span class="dur__bossie-tag">Bossie</span>
+          <span class="dur__bossie-msg">
+            How long will it take? Tell me however you want — "3 weeks",
+            "about a month", "10 business days". I'll show you what I heard
+            before locking it in.
+          </span>
+        </div>
+        <textarea
+          class="cust-pick__search dur__textarea"
+          placeholder="e.g. about 3 weeks, a month and a half, 10 days…"
+          value={freeText}
+          onInput={(e) =>
+            setFreeText((e.target as HTMLTextAreaElement).value)
+          }
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              tryParseAndAdvance();
+            }
+          }}
+          rows={2}
+          autoFocus
+        />
+        <div class="dur__presets">
+          {presets.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              class="dur__chip"
+              onClick={() => {
+                setN(p.n);
+                setUnit(p.unit);
+                setConfidence("ok");
+                setHeardFrom(p.label);
+                setParseFailed(false);
+                setPhase("verify");
+              }}
+              disabled={sending}
+            >
+              {p.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            class="dur__chip dur__chip--ghost"
+            onClick={() => {
+              setHeardFrom("");
+              setConfidence("fail");
+              setParseFailed(true);
+              setPhase("verify");
+            }}
+            disabled={sending}
+          >
+            Or set it manually
+          </button>
+        </div>
+        <div class="cust-create__actions">
+          <button
+            type="button"
+            class="cust-create__btn cust-create__btn--primary"
+            onClick={tryParseAndAdvance}
+            disabled={sending || !freeText.trim()}
+          >
+            Continue →
+          </button>
+          <button
+            type="button"
+            class="cust-create__btn"
+            onClick={onCancel}
+            disabled={sending}
+          >
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div class="dur dur--verify" style="margin-top:8px">
+      <div class="dur__head">
+        <strong class="dur__title">
+          {confidence === "fail"
+            ? "Set the duration"
+            : confidence === "guess"
+            ? "Did I hear that right?"
+            : "Got it — confirm and we'll lock it in"}
+        </strong>
+        {heardFrom ? (
+          <span class="dur__sub">
+            You said: <em>"{heardFrom}"</em>
+          </span>
+        ) : (
+          <span class="dur__sub">
+            Pick a number and a unit — I'll write it into the contract.
+          </span>
+        )}
+        {confidence === "guess" ? (
+          <span class="dur__warn">
+            ⚠ Best guess — please double-check before locking in.
+          </span>
+        ) : null}
+        {parseFailed ? (
+          <span class="dur__warn">
+            I couldn't read that as a duration — set it manually.
+          </span>
+        ) : null}
+      </div>
+      <div class="dur__row">
+        <input
+          type="number"
+          class="cust-pick__search dur__num"
+          inputMode="numeric"
+          min={1}
+          max={99}
+          value={n}
+          onInput={(e) => {
+            const raw = (e.target as HTMLInputElement).value;
+            if (raw === "") setN("");
+            else setN(String(Math.max(1, Math.min(99, Number(raw) || 1))));
+          }}
+          onBlur={() => {
+            if (!n || Number(n) < 1) setN("1");
+          }}
+          autoFocus
+          aria-label="Number"
+        />
+        <select
+          class="cust-pick__search dur__unit"
+          value={unit}
+          onChange={(e) =>
+            setUnit(
+              (e.currentTarget as HTMLSelectElement).value as typeof unit,
+            )
+          }
+          aria-label="Unit"
+        >
+          <option value="days">Days</option>
+          <option value="weeks">Weeks</option>
+          <option value="months">Months</option>
+        </select>
+      </div>
+      <div class="dur__presets">
+        {presets.map((p) => {
+          const active = n === p.n && unit === p.unit;
+          return (
+            <button
+              key={p.label}
+              type="button"
+              class={`dur__chip ${active ? "dur__chip--active" : ""}`}
+              onClick={() => {
+                setN(p.n);
+                setUnit(p.unit);
+              }}
+              disabled={sending}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+      <div class="dur__preview">
+        <span class="dur__preview-label">Contract reads:</span>
+        <span class="dur__preview-val">{preview}</span>
+      </div>
+      <div class="cust-create__actions">
+        <button
+          type="button"
+          class="cust-create__btn cust-create__btn--primary"
+          onClick={() => onSubmit(preview)}
+          disabled={!valid || sending}
+        >
+          Lock it in
+        </button>
+        <button
+          type="button"
+          class="cust-create__btn"
+          onClick={() => {
+            setPhase("ask");
+            setParseFailed(false);
+          }}
+          disabled={sending}
+        >
+          Try a different way
         </button>
       </div>
     </div>
