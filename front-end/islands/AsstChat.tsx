@@ -1740,15 +1740,16 @@ export default function AsstChat({
       <div class="chat__scroll" ref={scrollRef}>
         {empty ? (
           <div class="chat__empty">
-            <div class="chat__empty-icon">
-              <img src="/logo-monster.png" alt="" />
-            </div>
-            <h3 class="chat__empty-title">
-              Select a box or tell me about your job!
-            </h3>
-            <p class="chat__empty-sub">
-              Click on a box or the text field below to get started!
-            </p>
+            {!priceCaptureOpen && (
+              <>
+                <div class="chat__empty-icon">
+                  <img src="/logo-monster.png" alt="" />
+                </div>
+                <h3 class="chat__empty-title">
+                  Click on a box or the text field below to get started!
+                </h3>
+              </>
+            )}
             {priceCaptureOpen ? (
               <div class="chat__price-capture">
                 <div class="chat__price-capture-head">
@@ -1779,7 +1780,9 @@ export default function AsstChat({
                     Back
                   </button>
                   <h4 class="chat__price-title">What's the price?</h4>
-                  <p class="chat__price-sub">I'll build the job details around it.</p>
+                  <p class="chat__price-sub">
+                    I'll build the job details around it.
+                  </p>
                 </div>
                 <MoneyInput onChange={setPriceCents} />
                 <button
@@ -2066,7 +2069,9 @@ export default function AsstChat({
                       <article class="quote-review">
                         <header class="quote-review__head">
                           <div class="quote-review__head-left">
-                            <div class="quote-review__kind">Quote</div>
+                            <div class="quote-review__kind">
+                              Quote + Agreement
+                            </div>
                             {contractId ? (
                               <div class="quote-review__num">
                                 #{contractId.slice(0, 8)}
@@ -2187,7 +2192,7 @@ export default function AsstChat({
                         {termAnswers.length > 0 ? (
                           <section class="quote-review__section">
                             <div class="quote-review__section-label">
-                              The deal
+                              Job Details
                             </div>
                             <dl class="quote-review__terms">
                               {termAnswers.map((t, i) => {
@@ -3564,7 +3569,9 @@ function CustomerStepPanel(props: {
                 onClick={() => setPickerOpen(true)}
                 disabled={sending}
               >
-                <span class="cust-dd__placeholder">Pick a customer</span>
+                <span class="cust-dd__placeholder">
+                  Click Here For Existing Customers
+                </span>
                 <svg
                   class="cust-dd__chevron"
                   viewBox="0 0 12 12"
@@ -4051,12 +4058,16 @@ function CustomDurationPickerForm(props: {
   const unitLabel = num === 1 ? unit.replace(/s$/, "") : unit;
   const preview = valid ? `${num} ${unitLabel}` : "—";
 
-  const presets: { label: string; n: string; unit: typeof unit }[] = [
-    { label: "3 days", n: "3", unit: "days" },
-    { label: "5 days", n: "5", unit: "days" },
-    { label: "1 week", n: "1", unit: "weeks" },
-    { label: "2 weeks", n: "2", unit: "weeks" },
-    { label: "1 month", n: "1", unit: "months" },
+  const presets: {
+    label: string;
+    n: string;
+    unit: typeof unit;
+    confidence: "ok" | "guess";
+  }[] = [
+    { label: "1 day", n: "1", unit: "days", confidence: "ok" },
+    { label: "2–3 days", n: "3", unit: "days", confidence: "guess" },
+    { label: "1 week", n: "1", unit: "weeks", confidence: "ok" },
+    { label: "2 weeks", n: "2", unit: "weeks", confidence: "ok" },
   ];
 
   function tryParseAndAdvance() {
@@ -4110,7 +4121,7 @@ function CustomDurationPickerForm(props: {
               onClick={() => {
                 setN(p.n);
                 setUnit(p.unit);
-                setConfidence("ok");
+                setConfidence(p.confidence);
                 setHeardFrom(p.label);
                 setParseFailed(false);
                 setPhase("verify");
@@ -4294,9 +4305,24 @@ function parseWarrantyGuess(text: string): {
   let confidence: "ok" | "guess" = "guess";
   const numMatch = t.match(/(\d+(\.\d+)?)/);
   const wordNums: Record<string, number> = {
-    a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5,
-    six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11,
-    twelve: 12, eighteen: 18, twenty: 20, thirty: 30, sixty: 60,
+    a: 1,
+    an: 1,
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+    eighteen: 18,
+    twenty: 20,
+    thirty: 30,
+    sixty: 60,
     ninety: 90,
   };
   if (numMatch) {
@@ -4385,12 +4411,36 @@ function CustomWarrantyPickerForm(props: {
     label: string;
     apply: () => void;
   }[] = [
-    { label: "30 days",  apply: () => { setKind("term"); setN("30"); setUnit("days"); } },
-    { label: "90 days",  apply: () => { setKind("term"); setN("90"); setUnit("days"); } },
-    { label: "6 months", apply: () => { setKind("term"); setN("6");  setUnit("months"); } },
-    { label: "12 months",apply: () => { setKind("term"); setN("12"); setUnit("months"); } },
-    { label: "2 years",  apply: () => { setKind("term"); setN("2");  setUnit("years"); } },
-    { label: "Lifetime", apply: () => { setKind("lifetime"); } },
+    {
+      label: "No warranty",
+      apply: () => {
+        setKind("none");
+      },
+    },
+    {
+      label: "6 months",
+      apply: () => {
+        setKind("term");
+        setN("6");
+        setUnit("months");
+      },
+    },
+    {
+      label: "12 months",
+      apply: () => {
+        setKind("term");
+        setN("12");
+        setUnit("months");
+      },
+    },
+    {
+      label: "24 months",
+      apply: () => {
+        setKind("term");
+        setN("24");
+        setUnit("months");
+      },
+    },
   ];
 
   function tryParseAndAdvance() {
@@ -4527,9 +4577,7 @@ function CustomWarrantyPickerForm(props: {
           class="cust-pick__search dur__unit"
           value={kind}
           onChange={(e) =>
-            setKind(
-              (e.currentTarget as HTMLSelectElement).value as typeof kind,
-            )
+            setKind((e.currentTarget as HTMLSelectElement).value as typeof kind)
           }
           aria-label="Warranty type"
         >
@@ -4564,7 +4612,8 @@ function CustomWarrantyPickerForm(props: {
             onChange={(e) => {
               const next = (e.currentTarget as HTMLSelectElement)
                 .value as typeof unit;
-              const nextCap = next === "days" ? 365 : next === "months" ? 60 : 25;
+              const nextCap =
+                next === "days" ? 365 : next === "months" ? 60 : 25;
               if (Number(n) > nextCap) setN(String(nextCap));
               setUnit(next);
             }}
@@ -4686,8 +4735,7 @@ function parsePaymentGuess(text: string): {
     if (nums.length > 4) nums = nums.slice(0, 4);
     const sum = nums.reduce((a, b) => a + b, 0);
     if (Math.abs(sum - 100) <= 1 && nums.length >= 2) {
-      const conf =
-        sum === 100 && /[\/,]/.test(t) ? "ok" : "guess";
+      const conf = sum === 100 && /[\/,]/.test(t) ? "ok" : "guess";
       return { mode: "split", splits: nums, confidence: conf };
     }
   }
@@ -4745,11 +4793,34 @@ function CustomPaymentPickerForm(props: {
   const valid = mode === "net" ? Number.isFinite(days) : splitsValid;
 
   const presets: { label: string; apply: () => void }[] = [
-    { label: "Net 30", apply: () => { setMode("net"); setNetDays("30"); } },
-    { label: "Net 7",  apply: () => { setMode("net"); setNetDays("7"); } },
-    { label: "Due on completion", apply: () => { setMode("net"); setNetDays("0"); } },
-    { label: "40 / 60", apply: () => { setMode("split"); setSplits(["40", "60"]); } },
-    { label: "25 / 25 / 50", apply: () => { setMode("split"); setSplits(["25", "25", "50"]); } },
+    {
+      label: "Get paid on completion",
+      apply: () => {
+        setMode("net");
+        setNetDays("0");
+      },
+    },
+    {
+      label: "50 / 50",
+      apply: () => {
+        setMode("split");
+        setSplits(["50", "50"]);
+      },
+    },
+    {
+      label: "30 / 30 / 40",
+      apply: () => {
+        setMode("split");
+        setSplits(["30", "30", "40"]);
+      },
+    },
+    {
+      label: "Deposit + balance",
+      apply: () => {
+        setMode("split");
+        setSplits(["25", "75"]);
+      },
+    },
   ];
 
   function applyParsed(p: ReturnType<typeof parsePaymentGuess>) {
@@ -4825,14 +4896,14 @@ function CustomPaymentPickerForm(props: {
         <div class="dur__bossie">
           <span class="dur__bossie-tag">Bossie</span>
           <span class="dur__bossie-msg">
-            How do you want to get paid? Tell me however you want — "Net 30",
-            "half up front, half on done", "25/25/50". I'll show you what I
-            heard before locking it in.
+            How do you want to get paid? Tell me however you want — "on
+            completion", "50/50", "30/30/40", "deposit + balance". I'll show you
+            what I heard before locking it in.
           </span>
         </div>
         <textarea
           class="cust-pick__search dur__textarea"
-          placeholder="e.g. net 30, 50/50 split, third up front then the rest…"
+          placeholder="e.g. on completion, 50/50 split, deposit + balance…"
           value={freeText}
           onInput={(e) => setFreeText((e.target as HTMLTextAreaElement).value)}
           onKeyDown={(e) => {
@@ -4914,8 +4985,7 @@ function CustomPaymentPickerForm(props: {
           </span>
         ) : (
           <span class="dur__sub">
-            Pick a mode and enter the numbers — I'll write it into the
-            contract.
+            Pick a mode and enter the numbers — I'll write it into the contract.
           </span>
         )}
         {confidence === "guess" ? (
@@ -4964,9 +5034,7 @@ function CustomPaymentPickerForm(props: {
               min={0}
               max={180}
               value={netDays}
-              onInput={(e) =>
-                setNetDays((e.target as HTMLInputElement).value)
-              }
+              onInput={(e) => setNetDays((e.target as HTMLInputElement).value)}
               onBlur={() => {
                 if (!netDays || Number(netDays) < 0) setNetDays("0");
               }}
