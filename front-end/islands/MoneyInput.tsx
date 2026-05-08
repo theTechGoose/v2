@@ -165,7 +165,7 @@ export default function MoneyInput(
   // Split display into integer / decimal halves so the cents render smaller
   const dotIdx = display.indexOf(".");
   const intStr = dotIdx === -1 ? display : display.slice(0, dotIdx);
-  const decStr = dotIdx === -1 ? "" : display.slice(dotIdx); // includes "."
+  const decStr = dotIdx === -1 ? "" : display.slice(dotIdx + 1); // bare cents, no dot
 
   return (
     <>
@@ -188,7 +188,7 @@ export default function MoneyInput(
           <div class="mi__amount">
             <Odometer text={intStr || "0"} className="mi__int" empty={!hasValue} />
             <Odometer
-              text={decStr || ".00"}
+              text={decStr || "00"}
               className="mi__dec"
               empty={!hasValue}
             />
@@ -494,9 +494,9 @@ const STYLES = `
   font-feature-settings: "tnum" 1, "lnum" 1;
   letter-spacing: -0.035em;
   line-height: 1;
-  min-height: 96px;
+  min-height: var(--mi-hero, 88px);
   white-space: nowrap;
-  overflow: hidden;
+  overflow: visible;
   padding-bottom: 4px;
 }
 .mi__int {
@@ -506,11 +506,12 @@ const STYLES = `
   transition: color 260ms, opacity 220ms, font-size 260ms;
 }
 .mi__dec {
-  font-size: calc(var(--mi-hero, 88px) * 0.5);
+  font-size: calc(var(--mi-hero, 88px) * 0.36);
   font-weight: 700;
   color: rgba(15,48,54,0.32);
-  margin-left: 2px;
+  margin-left: 4px;
   letter-spacing: -0.02em;
+  align-self: flex-start;
   transition: color 260ms, font-size 260ms;
 }
 .mi.has-value .mi__dec { color: rgba(26,83,92,0.55); }

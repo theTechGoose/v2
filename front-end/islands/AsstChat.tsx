@@ -336,6 +336,20 @@ export default function AsstChat({
     messageId: string;
     optionId: string;
   } | null>(null);
+  // warranty "Custom" — same two-phase Bossie chat → verify pattern as the
+  // duration picker, but tuned for warranty language (months/years/lifetime)
+  // so the contract reads cleanly ("12 months", "2 years", "Lifetime").
+  const [customWarrantyPick, setCustomWarrantyPick] = useState<{
+    messageId: string;
+    optionId: string;
+  } | null>(null);
+  // payment_terms "Custom" — chat-with-verify Bossie flow that produces a
+  // clean payment string ("Net 30", "30 / 30 / 40") that buildPaymentMilestones
+  // can parse. Free-text never lands on the contract directly.
+  const [customPaymentPick, setCustomPaymentPick] = useState<{
+    messageId: string;
+    optionId: string;
+  } | null>(null);
   // #27 — gates the third empty-state chip ("Nudge an overdue invoice").
   // null = unknown / not yet loaded → don't render the chip yet (avoids
   // flashing it on then yanking it away). Sourced from the shared dash
@@ -781,7 +795,6 @@ export default function AsstChat({
     setError(undefined);
     setSending(true);
     try {
-      const dollars = cents / 100;
       const quote = await fetch("/api/quotes", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -793,10 +806,10 @@ export default function AsstChat({
               description: "Job details",
               quantity: 1,
               unit: "ea",
-              price: dollars,
+              price: cents,
             },
           ],
-          estimatedTotal: dollars,
+          estimatedTotal: cents,
           status: "sent",
         }),
       }).then((r) => r.json());
@@ -838,10 +851,10 @@ export default function AsstChat({
               description: "Backsplash tile install (30 sqft)",
               quantity: 1,
               unit: "ea",
-              price: 1200,
+              price: 120000,
             },
           ],
-          estimatedTotal: 1200,
+          estimatedTotal: 120000,
           status: "sent",
         }),
       }).then((r) => r.json());
@@ -1107,15 +1120,17 @@ export default function AsstChat({
       const q = await quotesClient.get(quoteId);
       const items = Array.isArray(q.lineItems) ? [...q.lineItems] : [];
       if (!items[lineIdx]) throw new Error("line item index out of range");
-      items[lineIdx] = { ...items[lineIdx], price: dollars };
-      const newTotal = items.reduce(
+      // Per LineItemDto / UpdateQuoteDto in paperwork/dto/quote.ts, both
+      // `price` and `estimatedTotal` are INTEGER CENTS (audit1 #3 migration).
+      items[lineIdx] = { ...items[lineIdx], price: nextCents };
+      const newTotalCents = items.reduce(
         (s: number, it: { price?: number; quantity?: number }) =>
           s + (Number(it.price) || 0) * (Number(it.quantity) || 1),
         0,
       );
       await quotesClient.update(quoteId, {
         lineItems: items,
-        estimatedTotal: newTotal,
+        estimatedTotal: newTotalCents,
       });
       // Reformat to canonical display (commas + cents) after save.
       el.innerText = fmtUSD(nextCents);
@@ -1143,6 +1158,69 @@ export default function AsstChat({
       );
     } catch (err) {
       el.innerText = fmtUSD(originalCents);
+      setError(err instanceof Error ? err.message : "couldn't save edit");
+    }
+  }
+
+  /**
+   * Save an inline edit to the grand total. The user types a money value
+   * into the `.quote-review__total-amt` span; strip non-numeric chars and
+   * convert to cents. Persistence:
+   *   - PUT /quotes/:id  — `estimatedTotal` so the canonical record matches
+   *   - PUT /contracts/:id (when a contract exists) — `totalAmount` is what
+   *     the preview reads from (`totalCentsForBreakdown`), so updating it
+   *     refreshes the displayed total + recomputes payment milestones.
+   *   - When no contract is bound, patch the action_card payload's
+   *     `totalCents` so the on-screen total reflects the edit.
+   * Line items are NOT touched — the Subtotal row keeps showing the line
+   * sum so the user sees the override delta.
+   */
+  async function onEditTotal(
+    quoteId: string | undefined,
+    actionCardId: string | undefined,
+    contractId: string | undefined,
+    originalCents: number,
+    el: HTMLElement,
+  ) {
+    const cleaned = (el.innerText ?? "").replace(/[^\d.]/g, "");
+    const dollars = parseFloat(cleaned);
+    const fmtPlain = (cents: number) =>
+      (cents / 100).toLocaleString("en-US", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      });
+    if (!Number.isFinite(dollars) || dollars < 0) {
+      el.innerText = fmtPlain(originalCents);
+      return;
+    }
+    const nextCents = Math.round(dollars * 100);
+    if (nextCents === originalCents) {
+      el.innerText = fmtPlain(originalCents);
+      return;
+    }
+    if (!quoteId) {
+      el.innerText = fmtPlain(originalCents);
+      return;
+    }
+    try {
+      await quotesClient.update(quoteId, { estimatedTotal: nextCents });
+      if (contractId) {
+        await contractsClient.update(contractId, { totalAmount: nextCents });
+        setContract((cur) =>
+          cur ? ({ ...cur, totalAmount: nextCents } as typeof cur) : cur,
+        );
+      } else if (actionCardId) {
+        setMessages((msgs) =>
+          msgs.map((m) => {
+            if (m.id !== actionCardId) return m;
+            const p = (m.payload ?? {}) as ActionCardPayload;
+            return { ...m, payload: { ...p, totalCents: nextCents } };
+          }),
+        );
+      }
+      el.innerText = fmtPlain(nextCents);
+    } catch (err) {
+      el.innerText = fmtPlain(originalCents);
       setError(err instanceof Error ? err.message : "couldn't save edit");
     }
   }
@@ -2321,7 +2399,37 @@ export default function AsstChat({
                           <div class="quote-review__total-label">Total due</div>
                           <div class="quote-review__total-amt">
                             <span class="quote-review__total-currency">$</span>
-                            {totalStr}
+                            <span
+                              class="quote-review__total-num quote-review__editable"
+                              contentEditable
+                              spellcheck={false}
+                              inputMode="decimal"
+                              onFocus={(e) => {
+                                const el = e.currentTarget as HTMLElement;
+                                const range = document.createRange();
+                                range.selectNodeContents(el);
+                                const sel = globalThis.getSelection();
+                                sel?.removeAllRanges();
+                                sel?.addRange(range);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  (e.currentTarget as HTMLElement).blur();
+                                }
+                              }}
+                              onBlur={(e) =>
+                                onEditTotal(
+                                  lockedPayload.quoteId,
+                                  lockedCard?.id,
+                                  contractId || contract?.id,
+                                  totalCentsForBreakdown,
+                                  e.currentTarget as HTMLElement,
+                                )
+                              }
+                            >
+                              {totalStr}
+                            </span>
                           </div>
                           {milestones && milestones.length > 1 ? (
                             <ul class="quote-review__milestones">
@@ -2628,6 +2736,44 @@ export default function AsstChat({
                                 />
                               );
                             }
+                            if (
+                              customWarrantyPick &&
+                              customWarrantyPick.messageId === m.id
+                            ) {
+                              return (
+                                <CustomWarrantyPickerForm
+                                  sending={sending}
+                                  onSubmit={(warrantyStr) => {
+                                    setCustomWarrantyPick(null);
+                                    postWizardAnswer(m, {
+                                      stepId: payload.stepId!,
+                                      optionId: customWarrantyPick.optionId,
+                                      customValue: warrantyStr,
+                                    });
+                                  }}
+                                  onCancel={() => setCustomWarrantyPick(null)}
+                                />
+                              );
+                            }
+                            if (
+                              customPaymentPick &&
+                              customPaymentPick.messageId === m.id
+                            ) {
+                              return (
+                                <CustomPaymentPickerForm
+                                  sending={sending}
+                                  onSubmit={(paymentStr) => {
+                                    setCustomPaymentPick(null);
+                                    postWizardAnswer(m, {
+                                      stepId: payload.stepId!,
+                                      optionId: customPaymentPick.optionId,
+                                      customValue: paymentStr,
+                                    });
+                                  }}
+                                  onCancel={() => setCustomPaymentPick(null)}
+                                />
+                              );
+                            }
                             return (
                               <div class="wiz__opts">
                                 {opts.map((opt) => (
@@ -2658,6 +2804,26 @@ export default function AsstChat({
                                         payload.stepId === "wraps"
                                       ) {
                                         setCustomDurationPick({
+                                          messageId: m.id,
+                                          optionId: opt.id,
+                                        });
+                                        return;
+                                      }
+                                      if (
+                                        opt.isCustom &&
+                                        payload.stepId === "payment_terms"
+                                      ) {
+                                        setCustomPaymentPick({
+                                          messageId: m.id,
+                                          optionId: opt.id,
+                                        });
+                                        return;
+                                      }
+                                      if (
+                                        opt.isCustom &&
+                                        payload.stepId === "warranty"
+                                      ) {
+                                        setCustomWarrantyPick({
                                           messageId: m.id,
                                           optionId: opt.id,
                                         });
@@ -3654,6 +3820,8 @@ function CustomDatePickerForm(props: {
     a.getDate() === b.getDate();
   const toIso = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const toUsDate = (d: Date) =>
+    `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
 
   const firstOfMonth = new Date(
     viewMonth.getFullYear(),
@@ -3786,7 +3954,7 @@ function CustomDatePickerForm(props: {
         <button
           type="button"
           class="cust-create__btn cust-create__btn--primary"
-          onClick={() => onSubmit(toIso(picked))}
+          onClick={() => onSubmit(toUsDate(picked))}
           disabled={submitDisabled}
         >
           Use this date
@@ -4073,6 +4241,843 @@ function CustomDurationPickerForm(props: {
         <span class="dur__preview-label">Contract reads:</span>
         <span class="dur__preview-val">{preview}</span>
       </div>
+      <div class="cust-create__actions">
+        <button
+          type="button"
+          class="cust-create__btn cust-create__btn--primary"
+          onClick={() => onSubmit(preview)}
+          disabled={!valid || sending}
+        >
+          Lock it in
+        </button>
+        <button
+          type="button"
+          class="cust-create__btn"
+          onClick={() => {
+            setPhase("ask");
+            setParseFailed(false);
+          }}
+          disabled={sending}
+        >
+          Try a different way
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Best-effort warranty-language parser. Recognises months/years and the
+ *  "lifetime" / "no warranty" extremes that read naturally on a contract.
+ *  Returns null when nothing matches — caller falls back to the manual
+ *  form. Confidence mirrors the duration parser: "ok" for clean numerics,
+ *  "guess" when we leaned on word-numbers or fuzzy phrases. */
+function parseWarrantyGuess(text: string): {
+  kind: "term" | "lifetime" | "none";
+  n?: number;
+  unit?: "days" | "months" | "years";
+  confidence: "ok" | "guess";
+} | null {
+  const t = text.toLowerCase().trim();
+  if (!t) return null;
+  if (/\blifetime\b|\bforever\b|\blife\b/.test(t)) {
+    return { kind: "lifetime", confidence: "ok" };
+  }
+  if (/\bno warranty\b|\bnone\b|\bno guarantee\b|\bas[- ]is\b/.test(t)) {
+    return { kind: "none", confidence: "ok" };
+  }
+  let unit: "days" | "months" | "years";
+  if (/\byears?\b|\byrs?\b/.test(t)) unit = "years";
+  else if (/\bmonths?\b|\bmos?\b|\bmo\b/.test(t)) unit = "months";
+  else if (/\bdays?\b|\bd\b/.test(t)) unit = "days";
+  else return null;
+  let n: number | null = null;
+  let confidence: "ok" | "guess" = "guess";
+  const numMatch = t.match(/(\d+(\.\d+)?)/);
+  const wordNums: Record<string, number> = {
+    a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5,
+    six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11,
+    twelve: 12, eighteen: 18, twenty: 20, thirty: 30, sixty: 60,
+    ninety: 90,
+  };
+  if (numMatch) {
+    n = Number(numMatch[1]);
+    confidence = "ok";
+  } else {
+    for (const w of Object.keys(wordNums)) {
+      if (new RegExp(`\\b${w}\\b`).test(t)) {
+        n = wordNums[w];
+        break;
+      }
+    }
+  }
+  if (/half a |a half|and a half/.test(t) && n !== null) n += 0.5;
+  if (/\bcouple\b/.test(t) && n === null) n = 2;
+  if (n === null) return null;
+
+  // Normalise unwieldy values to a unit that reads better on a contract:
+  //   "370 days" → "1 year"  (within ±30 days of a whole year)
+  //   "180 days" → "6 months"
+  //   "24 months" → "2 years" (clean multiples only)
+  // Confidence drops to "guess" whenever we transform the unit so the
+  // verify card flags it for the user instead of looking certain.
+  if (unit === "days" && n >= 330) {
+    const years = Math.round(n / 365);
+    if (years >= 1 && Math.abs(n - years * 365) <= 30) {
+      n = years;
+      unit = "years";
+      confidence = "guess";
+    } else {
+      n = Math.round(n / 30);
+      unit = "months";
+      confidence = "guess";
+    }
+  } else if (unit === "days" && n >= 60) {
+    n = Math.round(n / 30);
+    unit = "months";
+    confidence = "guess";
+  } else if (unit === "months" && n >= 24 && n % 12 === 0) {
+    n = n / 12;
+    unit = "years";
+  }
+
+  const cap = unit === "days" ? 365 : unit === "months" ? 60 : 25;
+  const rounded = Math.max(1, Math.min(cap, Math.round(n)));
+  return { kind: "term", n: rounded, unit, confidence };
+}
+
+/** Inline warranty picker for the "What warranty do you stand behind?"
+ *  step. Same two-phase Bossie pattern as the duration picker — natural
+ *  chat, parse, then a structured verify form so the contract value is
+ *  always confirmed by the user. Supports days/months/years plus the
+ *  extremes (Lifetime, No warranty) that contractors actually use. */
+function CustomWarrantyPickerForm(props: {
+  sending: boolean;
+  onSubmit: (warrantyStr: string) => void;
+  onCancel: () => void;
+}) {
+  const { sending, onSubmit, onCancel } = props;
+  const [phase, setPhase] = useState<"ask" | "verify">("ask");
+  const [freeText, setFreeText] = useState("");
+  const [parseFailed, setParseFailed] = useState(false);
+  const [kind, setKind] = useState<"term" | "lifetime" | "none">("term");
+  const [n, setN] = useState("12");
+  const [unit, setUnit] = useState<"days" | "months" | "years">("months");
+  const [confidence, setConfidence] = useState<"ok" | "guess" | "fail">("ok");
+  const [heardFrom, setHeardFrom] = useState("");
+
+  // Cap depends on unit so realistic warranty terms aren't truncated:
+  // up to a year in days, 5 years in months, 25 years in years.
+  const cap = unit === "days" ? 365 : unit === "months" ? 60 : 25;
+  const num = Math.max(1, Math.min(cap, Number(n) || 0));
+  const valid =
+    kind !== "term" || (Number.isFinite(num) && num >= 1 && num <= cap);
+  const unitLabel = num === 1 ? unit.replace(/s$/, "") : unit;
+  const preview =
+    kind === "lifetime"
+      ? "Lifetime"
+      : kind === "none"
+        ? "No warranty"
+        : valid
+          ? `${num} ${unitLabel}`
+          : "—";
+
+  const presets: {
+    label: string;
+    apply: () => void;
+  }[] = [
+    { label: "30 days",  apply: () => { setKind("term"); setN("30"); setUnit("days"); } },
+    { label: "90 days",  apply: () => { setKind("term"); setN("90"); setUnit("days"); } },
+    { label: "6 months", apply: () => { setKind("term"); setN("6");  setUnit("months"); } },
+    { label: "12 months",apply: () => { setKind("term"); setN("12"); setUnit("months"); } },
+    { label: "2 years",  apply: () => { setKind("term"); setN("2");  setUnit("years"); } },
+    { label: "Lifetime", apply: () => { setKind("lifetime"); } },
+  ];
+
+  function tryParseAndAdvance() {
+    const raw = freeText.trim();
+    if (!raw) return;
+    const parsed = parseWarrantyGuess(raw);
+    setHeardFrom(raw);
+    if (parsed) {
+      setKind(parsed.kind);
+      if (parsed.kind === "term") {
+        setN(String(parsed.n));
+        setUnit(parsed.unit!);
+      }
+      setConfidence(parsed.confidence);
+      setParseFailed(false);
+    } else {
+      setConfidence("fail");
+      setParseFailed(true);
+    }
+    setPhase("verify");
+  }
+
+  if (phase === "ask") {
+    return (
+      <div class="dur dur--ask" style="margin-top:8px">
+        <div class="dur__bossie">
+          <span class="dur__bossie-tag">Bossie</span>
+          <span class="dur__bossie-msg">
+            How long do you stand behind your work? Tell me however you want —
+            "12 months", "1 year", "90 days", "lifetime". I'll show you what I
+            heard before locking it in.
+          </span>
+        </div>
+        <textarea
+          class="cust-pick__search dur__textarea"
+          placeholder="e.g. 1 year, 18 months, 90 days, lifetime…"
+          value={freeText}
+          onInput={(e) => setFreeText((e.target as HTMLTextAreaElement).value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              tryParseAndAdvance();
+            }
+          }}
+          rows={2}
+          autoFocus
+        />
+        <div class="dur__presets">
+          {presets.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              class="dur__chip"
+              onClick={() => {
+                p.apply();
+                setConfidence("ok");
+                setHeardFrom(p.label);
+                setParseFailed(false);
+                setPhase("verify");
+              }}
+              disabled={sending}
+            >
+              {p.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            class="dur__chip dur__chip--ghost"
+            onClick={() => {
+              setHeardFrom("");
+              setConfidence("fail");
+              setParseFailed(true);
+              setPhase("verify");
+            }}
+            disabled={sending}
+          >
+            Or set it manually
+          </button>
+        </div>
+        <div class="cust-create__actions">
+          <button
+            type="button"
+            class="cust-create__btn cust-create__btn--primary"
+            onClick={tryParseAndAdvance}
+            disabled={sending || !freeText.trim()}
+          >
+            Continue →
+          </button>
+          <button
+            type="button"
+            class="cust-create__btn"
+            onClick={onCancel}
+            disabled={sending}
+          >
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div class="dur dur--verify" style="margin-top:8px">
+      <div class="dur__head">
+        <strong class="dur__title">
+          {confidence === "fail"
+            ? "Set the warranty"
+            : confidence === "guess"
+              ? "Did I hear that right?"
+              : "Got it — confirm and we'll lock it in"}
+        </strong>
+        {heardFrom ? (
+          <span class="dur__sub">
+            You said: <em>"{heardFrom}"</em>
+          </span>
+        ) : (
+          <span class="dur__sub">
+            Pick a length — I'll write it into the contract.
+          </span>
+        )}
+        {confidence === "guess" ? (
+          <span class="dur__warn">
+            ⚠ Best guess — please double-check before locking in.
+          </span>
+        ) : null}
+        {parseFailed ? (
+          <span class="dur__warn">
+            I couldn't read that as a warranty term — set it manually.
+          </span>
+        ) : null}
+      </div>
+      <div class="dur__row">
+        <select
+          class="cust-pick__search dur__unit"
+          value={kind}
+          onChange={(e) =>
+            setKind(
+              (e.currentTarget as HTMLSelectElement).value as typeof kind,
+            )
+          }
+          aria-label="Warranty type"
+        >
+          <option value="term">Set a term</option>
+          <option value="lifetime">Lifetime</option>
+          <option value="none">No warranty</option>
+        </select>
+      </div>
+      {kind === "term" ? (
+        <div class="dur__row">
+          <input
+            type="number"
+            class="cust-pick__search dur__num"
+            inputMode="numeric"
+            min={1}
+            max={cap}
+            value={n}
+            onInput={(e) => {
+              const raw = (e.target as HTMLInputElement).value;
+              if (raw === "") setN("");
+              else setN(String(Math.max(1, Math.min(cap, Number(raw) || 1))));
+            }}
+            onBlur={() => {
+              if (!n || Number(n) < 1) setN("1");
+            }}
+            autoFocus
+            aria-label="Number"
+          />
+          <select
+            class="cust-pick__search dur__unit"
+            value={unit}
+            onChange={(e) => {
+              const next = (e.currentTarget as HTMLSelectElement)
+                .value as typeof unit;
+              const nextCap = next === "days" ? 365 : next === "months" ? 60 : 25;
+              if (Number(n) > nextCap) setN(String(nextCap));
+              setUnit(next);
+            }}
+            aria-label="Unit"
+          >
+            <option value="days">Days</option>
+            <option value="months">Months</option>
+            <option value="years">Years</option>
+          </select>
+        </div>
+      ) : null}
+      <div class="dur__presets">
+        {presets.map((p) => {
+          const active = p.label === preview;
+          return (
+            <button
+              key={p.label}
+              type="button"
+              class={`dur__chip ${active ? "dur__chip--active" : ""}`}
+              onClick={() => p.apply()}
+              disabled={sending}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+      <div class="dur__preview">
+        <span class="dur__preview-label">Contract reads:</span>
+        <span class="dur__preview-val">{preview}</span>
+      </div>
+      <div class="cust-create__actions">
+        <button
+          type="button"
+          class="cust-create__btn cust-create__btn--primary"
+          onClick={() => onSubmit(preview)}
+          disabled={!valid || sending}
+        >
+          Lock it in
+        </button>
+        <button
+          type="button"
+          class="cust-create__btn"
+          onClick={() => {
+            setPhase("ask");
+            setParseFailed(false);
+          }}
+          disabled={sending}
+        >
+          Try a different way
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Best-effort free-text payment-terms parser. Recognises "Net X" (single
+ *  payment), comma/slash-separated percentage splits ("50/50", "30 30 40"),
+ *  and "paid upfront / in full" phrasings. Returns null when nothing maps
+ *  cleanly so the verify form falls back to manual mode. */
+function parsePaymentGuess(text: string): {
+  mode: "net" | "split";
+  netDays?: number;
+  splits?: number[];
+  confidence: "ok" | "guess";
+} | null {
+  const t = text.toLowerCase().trim();
+  if (!t) return null;
+
+  // Net X — single payment X days after invoice. "net 30", "net15", "net-7".
+  const netMatch = t.match(/\bnet[\s-]*(\d{1,3})\b/);
+  if (netMatch) {
+    const days = Math.max(0, Math.min(180, parseInt(netMatch[1], 10)));
+    return { mode: "net", netDays: days, confidence: "ok" };
+  }
+
+  // "Due on completion / on delivery / when done / same day" → Net 0.
+  if (
+    /\b(on (completion|delivery|done|finish)|when (done|finished|complete)|same[\s-]?day|on the day|due on)\b/.test(
+      t,
+    )
+  ) {
+    return { mode: "net", netDays: 0, confidence: "guess" };
+  }
+
+  // "Paid upfront / in full / 100%" → 100/0 split (deposit-only).
+  if (/\b(upfront|up front|in full|100\s*%|prepay|prepaid)\b/.test(t)) {
+    return { mode: "split", splits: [100, 0], confidence: "guess" };
+  }
+
+  // Substitute fraction-words with their digit values so the digit extractor
+  // picks them up alongside explicit percentages. Critical: "half now, 40%
+  // midway, 10% at end" must yield [50, 40, 10] — never short-circuit on
+  // "half" alone before reading the rest of the sentence.
+  const subbed = t
+    .replace(/\btwo[\s-]thirds?\b/g, "67")
+    .replace(/\bthree[\s-]quarters?\b/g, "75")
+    .replace(/\b(?:a |one )?third\b/g, "33")
+    .replace(/\b(?:a |one )?quarter\b/g, "25")
+    .replace(/\bhalves\b/g, "50")
+    .replace(/\bhalf\b/g, "50");
+
+  // Percentage splits — pull every 1-3 digit run, keep only those that read
+  // like milestone shares (≤100 each).
+  const numMatches = Array.from(subbed.matchAll(/(\d{1,3})\s*%?/g))
+    .map((m) => parseInt(m[1], 10))
+    .filter((n) => Number.isFinite(n) && n >= 0 && n <= 100);
+  if (numMatches.length >= 2) {
+    let nums = numMatches.slice();
+    // Strip a trailing "100" total mention when prior numbers already sum to 100.
+    if (nums.length >= 3) {
+      const lead = nums.slice(0, -1).reduce((a, b) => a + b, 0);
+      if (lead === 100 && nums[nums.length - 1] === 100) {
+        nums = nums.slice(0, -1);
+      }
+    }
+    // Cap to 4 milestones, keep the first occurrences (closer to user intent
+    // than trailing summary mentions).
+    if (nums.length > 4) nums = nums.slice(0, 4);
+    const sum = nums.reduce((a, b) => a + b, 0);
+    if (Math.abs(sum - 100) <= 1 && nums.length >= 2) {
+      const conf =
+        sum === 100 && /[\/,]/.test(t) ? "ok" : "guess";
+      return { mode: "split", splits: nums, confidence: conf };
+    }
+  }
+
+  // Single fraction or percent — assume remainder lands on completion.
+  // "a third up front" → 33/67, "30% deposit" → 30/70.
+  if (numMatches.length === 1 && numMatches[0] > 0 && numMatches[0] < 100) {
+    const dep = numMatches[0];
+    return {
+      mode: "split",
+      splits: [dep, 100 - dep],
+      confidence: "guess",
+    };
+  }
+
+  return null;
+}
+
+/** Inline payment-terms picker for the payment_terms "Custom" option.
+ *  Two-phase Bossie flow mirroring the duration picker: chat-style ask →
+ *  deterministic parser → structured verify form (Net days OR milestone
+ *  splits). The contract value always comes from the verify form's preview
+ *  string so a parser miss never propagates downstream. */
+function CustomPaymentPickerForm(props: {
+  sending: boolean;
+  onSubmit: (paymentStr: string) => void;
+  onCancel: () => void;
+}) {
+  const { sending, onSubmit, onCancel } = props;
+  const [phase, setPhase] = useState<"ask" | "verify">("ask");
+  const [freeText, setFreeText] = useState("");
+  const [parseFailed, setParseFailed] = useState(false);
+  const [mode, setMode] = useState<"net" | "split">("net");
+  const [netDays, setNetDays] = useState("30");
+  const [splits, setSplits] = useState<string[]>(["50", "50"]);
+  const [confidence, setConfidence] = useState<"ok" | "guess" | "fail">("ok");
+  const [heardFrom, setHeardFrom] = useState("");
+
+  const days = Math.max(0, Math.min(180, Number(netDays) || 0));
+  const splitNums = splits.map((s) =>
+    Math.max(0, Math.min(100, Number(s) || 0)),
+  );
+  const splitSum = splitNums.reduce((a, b) => a + b, 0);
+  const splitsValid = splitNums.length >= 2 && splitSum === 100;
+
+  const preview =
+    mode === "net"
+      ? days === 0
+        ? "Net 0 — due on completion"
+        : `Net ${days}`
+      : splitsValid
+        ? splitNums.join(" / ")
+        : "—";
+
+  const valid = mode === "net" ? Number.isFinite(days) : splitsValid;
+
+  const presets: { label: string; apply: () => void }[] = [
+    { label: "Net 30", apply: () => { setMode("net"); setNetDays("30"); } },
+    { label: "Net 7",  apply: () => { setMode("net"); setNetDays("7"); } },
+    { label: "Due on completion", apply: () => { setMode("net"); setNetDays("0"); } },
+    { label: "40 / 60", apply: () => { setMode("split"); setSplits(["40", "60"]); } },
+    { label: "25 / 25 / 50", apply: () => { setMode("split"); setSplits(["25", "25", "50"]); } },
+  ];
+
+  function applyParsed(p: ReturnType<typeof parsePaymentGuess>) {
+    if (!p) return;
+    if (p.mode === "net") {
+      setMode("net");
+      setNetDays(String(p.netDays ?? 30));
+    } else {
+      setMode("split");
+      const arr = (p.splits ?? [50, 50]).slice(0, 4).map(String);
+      while (arr.length < 2) arr.push("0");
+      setSplits(arr);
+    }
+    setConfidence(p.confidence);
+    setParseFailed(false);
+  }
+
+  function tryParseAndAdvance() {
+    const raw = freeText.trim();
+    if (!raw) return;
+    const parsed = parsePaymentGuess(raw);
+    setHeardFrom(raw);
+    if (parsed) {
+      applyParsed(parsed);
+    } else {
+      setConfidence("fail");
+      setParseFailed(true);
+    }
+    setPhase("verify");
+  }
+
+  function setSplitAt(idx: number, raw: string) {
+    const next = splits.slice();
+    next[idx] =
+      raw === "" ? "" : String(Math.max(0, Math.min(100, Number(raw) || 0)));
+    setSplits(next);
+  }
+
+  function addMilestone() {
+    if (splits.length >= 4) return;
+    // Take 10% off the last milestone to seed the new one — keeps total
+    // closer to 100 so the user has less rebalancing to do.
+    const last = Math.max(0, Number(splits[splits.length - 1]) || 0);
+    const seed = Math.min(last, 10);
+    const next = splits.slice();
+    next[next.length - 1] = String(last - seed);
+    next.push(String(seed));
+    setSplits(next);
+  }
+
+  function removeMilestone(idx: number) {
+    if (splits.length <= 2) return;
+    const removed = Number(splits[idx]) || 0;
+    const next = splits.filter((_, i) => i !== idx);
+    next[next.length - 1] = String(
+      Math.min(100, (Number(next[next.length - 1]) || 0) + removed),
+    );
+    setSplits(next);
+  }
+
+  function autoBalance() {
+    if (mode !== "split" || splits.length < 2) return;
+    const lead = splitNums.slice(0, -1).reduce((a, b) => a + b, 0);
+    const tail = Math.max(0, Math.min(100, 100 - lead));
+    const next = splits.slice();
+    next[next.length - 1] = String(tail);
+    setSplits(next);
+  }
+
+  if (phase === "ask") {
+    return (
+      <div class="dur dur--ask" style="margin-top:8px">
+        <div class="dur__bossie">
+          <span class="dur__bossie-tag">Bossie</span>
+          <span class="dur__bossie-msg">
+            How do you want to get paid? Tell me however you want — "Net 30",
+            "half up front, half on done", "25/25/50". I'll show you what I
+            heard before locking it in.
+          </span>
+        </div>
+        <textarea
+          class="cust-pick__search dur__textarea"
+          placeholder="e.g. net 30, 50/50 split, third up front then the rest…"
+          value={freeText}
+          onInput={(e) => setFreeText((e.target as HTMLTextAreaElement).value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              tryParseAndAdvance();
+            }
+          }}
+          rows={2}
+          autoFocus
+        />
+        <div class="dur__presets">
+          {presets.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              class="dur__chip"
+              onClick={() => {
+                p.apply();
+                setConfidence("ok");
+                setHeardFrom(p.label);
+                setParseFailed(false);
+                setPhase("verify");
+              }}
+              disabled={sending}
+            >
+              {p.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            class="dur__chip dur__chip--ghost"
+            onClick={() => {
+              setHeardFrom("");
+              setConfidence("fail");
+              setParseFailed(true);
+              setPhase("verify");
+            }}
+            disabled={sending}
+          >
+            Or set it manually
+          </button>
+        </div>
+        <div class="cust-create__actions">
+          <button
+            type="button"
+            class="cust-create__btn cust-create__btn--primary"
+            onClick={tryParseAndAdvance}
+            disabled={sending || !freeText.trim()}
+          >
+            Continue →
+          </button>
+          <button
+            type="button"
+            class="cust-create__btn"
+            onClick={onCancel}
+            disabled={sending}
+          >
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div class="dur dur--verify pay" style="margin-top:8px">
+      <div class="dur__head">
+        <strong class="dur__title">
+          {confidence === "fail"
+            ? "Set your payment terms"
+            : confidence === "guess"
+              ? "Did I hear that right?"
+              : "Got it — confirm and we'll lock it in"}
+        </strong>
+        {heardFrom ? (
+          <span class="dur__sub">
+            You said: <em>"{heardFrom}"</em>
+          </span>
+        ) : (
+          <span class="dur__sub">
+            Pick a mode and enter the numbers — I'll write it into the
+            contract.
+          </span>
+        )}
+        {confidence === "guess" ? (
+          <span class="dur__warn">
+            ⚠ Best guess — please double-check before locking in.
+          </span>
+        ) : null}
+        {parseFailed ? (
+          <span class="dur__warn">
+            I couldn't read that as payment terms — set it manually.
+          </span>
+        ) : null}
+      </div>
+
+      <div class="pay__modes" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "net"}
+          class={`pay__mode ${mode === "net" ? "pay__mode--active" : ""}`}
+          onClick={() => setMode("net")}
+          disabled={sending}
+        >
+          One payment
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "split"}
+          class={`pay__mode ${mode === "split" ? "pay__mode--active" : ""}`}
+          onClick={() => setMode("split")}
+          disabled={sending}
+        >
+          Split payments
+        </button>
+      </div>
+
+      {mode === "net" ? (
+        <div class="pay__net">
+          <label class="pay__net-label">
+            Due
+            <input
+              type="number"
+              class="cust-pick__search pay__net-num"
+              inputMode="numeric"
+              min={0}
+              max={180}
+              value={netDays}
+              onInput={(e) =>
+                setNetDays((e.target as HTMLInputElement).value)
+              }
+              onBlur={() => {
+                if (!netDays || Number(netDays) < 0) setNetDays("0");
+              }}
+              autoFocus
+              aria-label="Days after invoice"
+            />
+            days after the invoice
+          </label>
+          <span class="pay__net-hint">
+            {days === 0
+              ? "0 = paid same day the work wraps."
+              : `Customer has ${days} day${days === 1 ? "" : "s"} to pay after you send the invoice.`}
+          </span>
+        </div>
+      ) : (
+        <div class="pay__split">
+          <div class="pay__split-rows">
+            {splits.map((val, idx) => {
+              const labelText =
+                splits.length === 2
+                  ? idx === 0
+                    ? "Deposit"
+                    : "On completion"
+                  : idx === 0
+                    ? "Deposit"
+                    : idx === splits.length - 1
+                      ? "On completion"
+                      : `Milestone ${idx}`;
+              return (
+                <div key={idx} class="pay__split-row">
+                  <input
+                    type="number"
+                    class="cust-pick__search pay__split-pct"
+                    inputMode="numeric"
+                    min={0}
+                    max={100}
+                    value={val}
+                    onInput={(e) =>
+                      setSplitAt(idx, (e.target as HTMLInputElement).value)
+                    }
+                    onBlur={() => {
+                      if (val === "") setSplitAt(idx, "0");
+                    }}
+                    aria-label={`${labelText} percentage`}
+                  />
+                  <span class="pay__split-pctsign">%</span>
+                  <span class="pay__split-lbl">{labelText}</span>
+                  {splits.length > 2 ? (
+                    <button
+                      type="button"
+                      class="pay__split-del"
+                      onClick={() => removeMilestone(idx)}
+                      aria-label={`Remove ${labelText}`}
+                      disabled={sending}
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          <div class="pay__split-tools">
+            {splits.length < 4 ? (
+              <button
+                type="button"
+                class="dur__chip dur__chip--ghost"
+                onClick={addMilestone}
+                disabled={sending}
+              >
+                + Add milestone
+              </button>
+            ) : null}
+            {!splitsValid ? (
+              <button
+                type="button"
+                class="dur__chip"
+                onClick={autoBalance}
+                disabled={sending}
+              >
+                Auto-balance to 100%
+              </button>
+            ) : null}
+            <span
+              class={`pay__split-sum ${splitsValid ? "pay__split-sum--ok" : "pay__split-sum--bad"}`}
+            >
+              Total: {splitSum}%
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div class="dur__presets">
+        {presets.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            class="dur__chip"
+            onClick={p.apply}
+            disabled={sending}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      <div class="dur__preview">
+        <span class="dur__preview-label">Contract reads:</span>
+        <span class="dur__preview-val">{preview}</span>
+      </div>
+
       <div class="cust-create__actions">
         <button
           type="button"
