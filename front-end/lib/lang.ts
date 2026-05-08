@@ -89,7 +89,7 @@ export const STRINGS: Record<Lang, Strings> = {
     "problems.title": "Three things that kill small contractors",
     "problems.cards": [
       { t: "Slow quotes",     d: "Estimates take days to write up. Clients move on." },
-      { t: "Vague contracts", d: "Scope creep eats your margin and your weekends." },
+      { t: "Vague contracts", d: "Job-detail creep eats your margin and your weekends." },
       { t: "Late invoices",   d: "Sent too late or never sent at all. Cash gets squeezed." },
     ],
     "docs.eyebrow": "Live preview",
@@ -101,7 +101,7 @@ export const STRINGS: Record<Lang, Strings> = {
       { t: "Bilingual SMS",   d: "EN/ES out of the box. Texts that sound like you." },
       { t: "Auto reminders",  d: "Polite nudges until they pay. No awkward calls." },
       { t: "Real signatures", d: "Tap-to-sign contracts. Court-ready." },
-      { t: "Photo intake",    d: "Customers snap pics, Bossie scopes the job." },
+      { t: "Photo intake",    d: "Customers snap pics, Bossie writes the job details." },
     ],
     "how.eyebrow": "How it works",
     "how.title": "Three steps. No app to install.",

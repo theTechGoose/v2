@@ -228,20 +228,20 @@ export class PaperworkPublicController {
       const [contractor, customer, quote] = await Promise.all([
         loadContractor(this.users, this.identity, this.addresses, c.userId),
         lookupCustomerName(this.customers, c.customerId, c.userId),
-        // Public contract page surfaces the linked quote's scope so the
+        // Public contract page surfaces the linked quote's job details so the
         // customer sees what they're agreeing to before signing. The
         // quote read is best-effort; a missing/forbidden quote shouldn't
         // 404 the contract.
         c.quoteId ? this.quotes.get(c.quoteId).catch(() => undefined) : Promise.resolve(undefined),
       ]);
-      const scope = quote
+      const jobDetails = quote
         ? { summary: quote.summary, lineItems: quote.lineItems }
         : undefined;
       return ctx.json({
         ...redactContract(c),
         contractor,
         customer: customer ? { name: customer } : undefined,
-        scope,
+        jobDetails,
         terms: c.terms ?? [],
       });
     } catch (e) { return notFoundResponse(ctx, e); }

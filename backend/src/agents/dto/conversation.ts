@@ -3,7 +3,7 @@ import { plainToInstance } from "#class-transformer";
 
 /**
  * Two-phase agent flow:
- *   - 'quote' — free-form chat where Bossie figures out scope/pricing,
+ *   - 'quote' — free-form chat where Bossie figures out job details and pricing,
  *     emits an action_card when a quote is drafted, then offers to advance.
  *   - 'terms' — structured wizard where the user picks options to assemble
  *     contract terms (10 steps, see contract-terms-wizard-spec).

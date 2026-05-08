@@ -25,7 +25,7 @@ export interface RenderContractPdfInput {
  *   • Pink ribbon at top, business name eyebrow
  *   • Hero title (quote summary), contract number + dates
  *   • Recital block (Between Contractor / Client)
- *   • Scope of work table (line items)
+ *   • Job details table (line items)
  *   • Contract value box
  *   • Wizard-captured terms (two-column grid)
  *   • Plain-English fine print (8 numbered clauses)
@@ -109,8 +109,8 @@ export class RenderContractPdf {
     drawWrappedText(page, recital, M, y, W - 2 * M, reg, 10, MUTED, 13);
     y -= 30;
 
-    // Section: Scope of work
-    y = drawSectionHeader(page, y, M, "01", "Scope of work", bold, PINK, TEAL);
+    // Section: Job details
+    y = drawSectionHeader(page, y, M, "01", "Job details", bold, PINK, TEAL);
     y -= 8;
     if (quote?.lineItems?.length) {
       // Table headers
@@ -212,7 +212,7 @@ export class RenderContractPdf {
     y -= 12;
     const clauses = [
       ["Governing Law.", "This agreement is governed by the laws of the state where the work is performed."],
-      ["Scope of Work.", "Contractor will perform only the work described in this agreement. Any additional work must be approved by both parties and may result in additional charges."],
+      ["Job Details.", "Contractor will perform only the work described in this agreement. Any additional work must be approved by both parties and may result in additional charges."],
       ["Payment Terms.", "Payment is due as outlined in this agreement. Late payments may be subject to additional fees as allowed by law."],
       ["Change Orders.", "Any changes to the work must be agreed to in writing and may affect the total price and project timeline."],
       ["Customer Responsibilities.", "Customer agrees to provide access to the job site and ensure the work area is ready for the Contractor to perform the agreed services."],

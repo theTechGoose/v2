@@ -55,7 +55,7 @@ export const QSTORIES: Record<string, string> = {
   "Q-1107": "Tom & Linda opened this three times today — they’re shopping. Knock $150 off if they book this week and you close it.",
   "Q-1106": "Margaret peeked Tuesday, again Wednesday morning. Greenleaf says yes by Thursday — send a friendly nudge tomorrow.",
   "Q-1108": "Just sent; give it 24 hours before you tap on the door. New leads need a beat.",
-  "Q-1104": "Four days of silence on a 4-unit gutter quote. Property managers ghost when budget tightens — ask if scope needs trimming.",
+  "Q-1104": "Four days of silence on a 4-unit gutter quote. Property managers ghost when budget tightens — ask if job details need trimming.",
   "Q-1103": "Mike opened it twice but the city permit is the holdup. Send him a status note so he knows you’re tracking it.",
   "Q-1101": "Twelve days, one open, no reply. Hilltop is broke this month — offer to split the deck job into two payments and close it.",
   "Q-1102": "Riverside hasn’t opened it. Re-send with the subject line “spring patio season” and a fresh deadline.",
@@ -120,7 +120,7 @@ export const readingFor = (q: Quote, opens: OpenEvent[]): ReadingChunk => {
   if (q.stage === "opened")
     return { text: "One peek and a pause. A ", em: "friendly nudge", tail: " usually breaks the silence." };
   if (q.stage === "cooling")
-    return { text: "Opened a few times early, then went quiet. Worth a ", em: "scope trim", tail: " and a re-send." };
+    return { text: "Opened a few times early, then went quiet. Worth a ", em: "job-details trim", tail: " and a re-send." };
   if (q.stage === "stale")
     return { text: "Lots of attention, then gone cold. Last shot: ", em: "win it back", tail: " with a sharper offer." };
   if (q.stage === "sent")

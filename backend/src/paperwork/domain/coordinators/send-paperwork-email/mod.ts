@@ -454,7 +454,7 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
         <!-- divider -->
         <tr><td style="padding:24px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
 
-        <!-- scope label + lines -->
+        <!-- job details label + lines -->
         <tr><td style="padding:18px 36px 0">
           <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">Here's what we'll handle</div>
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:6px;border-collapse:collapse">

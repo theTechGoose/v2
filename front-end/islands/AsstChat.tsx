@@ -773,7 +773,7 @@ export default function AsstChat({
    * Mirrors `seedPhase2` but uses the price the user typed in the
    * MoneyInput, doesn't auto-answer the config step, and doesn't seed
    * any sample line description — the user picks the config and edits
-   * the scope inline once the wizard lands. End result: number → phase
+   * the job details inline once the wizard lands. End result: number → phase
    * 2 wizard → final editable quote, exactly the existing flow.
    */
   async function startWithPrice(cents: number) {
@@ -790,7 +790,7 @@ export default function AsstChat({
           summary: "New job",
           lineItems: [
             {
-              description: "Scope of work",
+              description: "Job details",
               quantity: 1,
               unit: "ea",
               price: dollars,
@@ -1130,10 +1130,7 @@ export default function AsstChat({
           if (li[lineIdx]) {
             li[lineIdx] = { ...li[lineIdx], amountCents: nextCents };
           }
-          const recomputed = li.reduce(
-            (s, it) => s + (it.amountCents ?? 0),
-            0,
-          );
+          const recomputed = li.reduce((s, it) => s + (it.amountCents ?? 0), 0);
           return {
             ...m,
             payload: {
@@ -1668,9 +1665,11 @@ export default function AsstChat({
             <div class="chat__empty-icon">
               <img src="/logo-monster.png" alt="" />
             </div>
-            <h3 class="chat__empty-title">Select a box or tell me about your job!</h3>
+            <h3 class="chat__empty-title">
+              Select a box or tell me about your job!
+            </h3>
             <p class="chat__empty-sub">
-              Talk or type. I'll write your quote, contract, and invoice, ready to send!
+              Click on a box or the text field below to get started!
             </p>
             {priceCaptureOpen ? (
               <div class="chat__price-capture">
@@ -1684,15 +1683,25 @@ export default function AsstChat({
                     }}
                     aria-label="Back to prompts"
                   >
-                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                      <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                    <svg
+                      viewBox="0 0 16 16"
+                      width="14"
+                      height="14"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M10 3L5 8l5 5"
+                        stroke="currentColor"
+                        stroke-width="2.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        fill="none"
+                      />
                     </svg>
                     Back
                   </button>
                   <h4 class="chat__price-title">What's the price?</h4>
-                  <p class="chat__price-sub">
-                    I'll build the scope around it.
-                  </p>
+                  <p class="chat__price-sub">I'll build the job details around it.</p>
                 </div>
                 <MoneyInput onChange={setPriceCents} />
                 <button
@@ -1716,22 +1725,14 @@ export default function AsstChat({
                 <button
                   type="button"
                   class="chat__empty-prompt"
-                  onClick={() =>
-                    sendText(
-                      "I know the job, help me price it.",
-                    )
-                  }
+                  onClick={() => sendText("I know the job, help me price it.")}
                 >
                   I know the job, help me price it.
                 </button>
                 <button
                   type="button"
                   class="chat__empty-prompt"
-                  onClick={() =>
-                    sendText(
-                      "Just give me a quick quote.",
-                    )
-                  }
+                  onClick={() => sendText("Just give me a quick quote.")}
                 >
                   Just give me a quick quote.
                 </button>
@@ -2001,9 +2002,7 @@ export default function AsstChat({
 
                         {customer?.name ? (
                           <section class="quote-review__hero">
-                            <div class="quote-review__hero-label">
-                              For
-                            </div>
+                            <div class="quote-review__hero-label">For</div>
                             <div
                               class="quote-review__hero-name quote-review__editable"
                               contentEditable
@@ -2109,7 +2108,9 @@ export default function AsstChat({
 
                         {termAnswers.length > 0 ? (
                           <section class="quote-review__section">
-                            <div class="quote-review__section-label">The deal</div>
+                            <div class="quote-review__section-label">
+                              The deal
+                            </div>
                             <dl class="quote-review__terms">
                               {termAnswers.map((t, i) => {
                                 // contractId from the parent scope defaults to "" via `?? ""`,
@@ -2374,11 +2375,7 @@ export default function AsstChat({
                 // the editable quote-review opens automatically on wizard
                 // completion via the autoOpenedCtasRef effect. The reviewed
                 // success state ("Contract sent") still renders below.
-                if (
-                  payload.toPhase === "send" &&
-                  !reviewed &&
-                  !previewing
-                ) {
+                if (payload.toPhase === "send" && !reviewed && !previewing) {
                   return null;
                 }
                 // Per audit #19: surface the upcoming phase label as an eyebrow
@@ -3368,7 +3365,7 @@ function CustomerStepPanel(props: {
   // ---- View: default — dropdown (kind already picked on the lock-quote CTA) ----
   return (
     <div ref={rootRef}>
-      <h3 class="wiz__step-q">Pick a customer</h3>
+      <h3 class="wiz__step-q">Pick a Customer</h3>
       <div
         class="wiz__opts"
         style="flex-direction:column;align-items:stretch;gap:8px;margin-top:8px"
@@ -3719,7 +3716,14 @@ function CustomDatePickerForm(props: {
           aria-label="Previous month"
         >
           <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-            <path d="M8 2L4 6l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+            <path
+              d="M8 2L4 6l4 4"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              fill="none"
+            />
           </svg>
         </button>
         <div class="cal__title">{monthLabel}</div>
@@ -3731,13 +3735,22 @@ function CustomDatePickerForm(props: {
           aria-label="Next month"
         >
           <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-            <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+            <path
+              d="M4 2l4 4-4 4"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              fill="none"
+            />
           </svg>
         </button>
       </div>
       <div class="cal__weekdays">
         {weekdays.map((w) => (
-          <span key={w} class="cal__weekday">{w}</span>
+          <span key={w} class="cal__weekday">
+            {w}
+          </span>
         ))}
       </div>
       <div class="cal__grid">
@@ -3796,9 +3809,11 @@ function CustomDatePickerForm(props: {
  *  and abbreviations. Returns null when nothing recognisable is found —
  *  caller falls back to the manual form. Confidence is "ok" for clean
  *  numeric matches, "guess" when we had to interpret words/fractions. */
-function parseDurationGuess(
-  text: string,
-): { n: number; unit: "days" | "weeks" | "months"; confidence: "ok" | "guess" } | null {
+function parseDurationGuess(text: string): {
+  n: number;
+  unit: "days" | "weeks" | "months";
+  confidence: "ok" | "guess";
+} | null {
   const t = text.toLowerCase().trim();
   if (!t) return null;
   let unit: "days" | "weeks" | "months";
@@ -3810,12 +3825,25 @@ function parseDurationGuess(
   let confidence: "ok" | "guess" = "guess";
   const numMatch = t.match(/(\d+(\.\d+)?)/);
   const wordNums: Record<string, number> = {
-    a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5,
-    six: 6, seven: 7, eight: 8, nine: 9, ten: 10, couple: 2, few: 3,
+    a: 1,
+    an: 1,
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+    couple: 2,
+    few: 3,
   };
   if (numMatch) {
     n = parseFloat(numMatch[1]);
-    confidence = Number.isInteger(n) && !/half|about|roughly|~/.test(t) ? "ok" : "guess";
+    confidence =
+      Number.isInteger(n) && !/half|about|roughly|~/.test(t) ? "ok" : "guess";
   } else {
     for (const [w, v] of Object.entries(wordNums)) {
       const re = new RegExp(`\\b${w}\\b`);
@@ -3886,18 +3914,16 @@ function CustomDurationPickerForm(props: {
         <div class="dur__bossie">
           <span class="dur__bossie-tag">Bossie</span>
           <span class="dur__bossie-msg">
-            How long will it take? Tell me however you want — "3 weeks",
-            "about a month", "10 business days". I'll show you what I heard
-            before locking it in.
+            How long will it take? Tell me however you want — "3 weeks", "about
+            a month", "10 business days". I'll show you what I heard before
+            locking it in.
           </span>
         </div>
         <textarea
           class="cust-pick__search dur__textarea"
           placeholder="e.g. about 3 weeks, a month and a half, 10 days…"
           value={freeText}
-          onInput={(e) =>
-            setFreeText((e.target as HTMLTextAreaElement).value)
-          }
+          onInput={(e) => setFreeText((e.target as HTMLTextAreaElement).value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -3969,8 +3995,8 @@ function CustomDurationPickerForm(props: {
           {confidence === "fail"
             ? "Set the duration"
             : confidence === "guess"
-            ? "Did I hear that right?"
-            : "Got it — confirm and we'll lock it in"}
+              ? "Did I hear that right?"
+              : "Got it — confirm and we'll lock it in"}
         </strong>
         {heardFrom ? (
           <span class="dur__sub">
@@ -4015,9 +4041,7 @@ function CustomDurationPickerForm(props: {
           class="cust-pick__search dur__unit"
           value={unit}
           onChange={(e) =>
-            setUnit(
-              (e.currentTarget as HTMLSelectElement).value as typeof unit,
-            )
+            setUnit((e.currentTarget as HTMLSelectElement).value as typeof unit)
           }
           aria-label="Unit"
         >

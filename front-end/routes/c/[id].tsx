@@ -63,7 +63,7 @@ interface ContractPublic {
   customerSignedName?: string;
   contractor?: Contractor;
   customer?: { name?: string };
-  scope?: { summary?: string; lineItems?: LineItem[] };
+  jobDetails?: { summary?: string; lineItems?: LineItem[] };
   terms?: Term[];
   createdAt?: string;
 }
@@ -132,7 +132,7 @@ function ErrorCard({ message }: { message: string }) {
 function ContractDoc({ contract }: { contract: ContractPublic }) {
   const signed = contract.status === "signed";
   const declined = contract.status === "declined";
-  const total = contract.totalAmount ?? sumLineTotals(contract.scope?.lineItems);
+  const total = contract.totalAmount ?? sumLineTotals(contract.jobDetails?.lineItems);
   const customerName = contract.customer?.name?.trim();
   const customerFirst = customerName?.split(/\s+/)[0];
   const contractor = contract.contractor;
@@ -141,9 +141,9 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
   const contractorFirst = contractorName?.split(/\s+/)[0];
   const senderInitials = initialsFromName(contractorName ?? businessLabel);
 
-  const items = contract.scope?.lineItems ?? [];
+  const items = contract.jobDetails?.lineItems ?? [];
   const showQty = items.some((li) => (li.quantity ?? 1) > 1);
-  const summary = (contract.scope?.summary ?? "Service Agreement").replace(/^\s*quote\s*:\s*/i, "").trim();
+  const summary = (contract.jobDetails?.summary ?? "Service Agreement").replace(/^\s*quote\s*:\s*/i, "").trim();
   const heroTitle = summary.replace(/\b\w/g, (c) => c.toUpperCase());
 
   const effective = contract.effectiveDate ?? contract.createdAt;
@@ -191,14 +191,14 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
           <section style={`margin-top:22px;padding:18px 22px;background:rgba(255,107,107,0.04);border:1px solid rgba(255,107,107,0.18);border-radius:14px`}>
             <div style={`font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${PINK_DARK};margin-bottom:8px`}>The deal in plain English</div>
             <p style={`margin:0;color:${INK};font-size:15px;line-height:1.55`}>
-              {customerFirst ? `Hi ${customerFirst} —` : "Hi there —"} this is the contract for <strong>{summary.toLowerCase()}</strong>. The scope, money, schedule, and the legal-but-honest stuff are below. Read it through, and when it looks right, type your name at the bottom and tap sign. We'll countersign and you'll have a PDF in your inbox.
+              {customerFirst ? `Hi ${customerFirst} —` : "Hi there —"} this is the contract for <strong>{summary.toLowerCase()}</strong>. The job details, money, schedule, and the legal-but-honest stuff are below. Read it through, and when it looks right, type your name at the bottom and tap sign. We'll countersign and you'll have a PDF in your inbox.
             </p>
           </section>
 
-          {/* Scope of work */}
+          {/* Job details */}
           {items.length > 0 && (
             <section style="margin-top:30px">
-              <SectionLabel n="01" title="Scope of work" hint="What we're actually doing" />
+              <SectionLabel n="01" title="Job details" hint="What we're actually doing" />
               <table style="width:100%;border-collapse:collapse;margin-top:14px">
                 <thead>
                   <tr>
@@ -286,7 +286,7 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
             <SectionLabel n="05" title="Fine print, in plain English" hint="The legal-but-honest stuff" />
             <ol style={`margin:14px 0 0;padding-left:20px;color:${INK};font-size:14px;line-height:1.65`}>
               <li><strong>Governing Law.</strong> This agreement is governed by the laws of the state where the work is performed.</li>
-              <li><strong>Scope of Work.</strong> Contractor will perform only the work described in this agreement. Any additional work must be approved by both parties and may result in additional charges.</li>
+              <li><strong>Job Details.</strong> Contractor will perform only the work described in this agreement. Any additional work must be approved by both parties and may result in additional charges.</li>
               <li><strong>Payment Terms.</strong> Payment is due as outlined in this agreement. Late payments may be subject to additional fees as allowed by law.</li>
               <li><strong>Change Orders.</strong> Any changes to the work must be agreed to in writing and may affect the total price and project timeline.</li>
               <li><strong>Customer Responsibilities.</strong> Customer agrees to provide access to the job site and ensure the work area is ready for the Contractor to perform the agreed services.</li>

@@ -162,7 +162,7 @@ const DOC_CONTENT: Record<Lang, Record<"quote" | "contract" | "invoice", DocCopy
     contract: {
       title: "Contract", num: "#PM-2641-C", date: "April 26, 2026",
       lines: [
-        ["Scope: Kitchen remodel — Hernández", "", "", "✓"],
+        ["Job details: Kitchen remodel — Hernández", "", "", "✓"],
         ["Start date", "", "", "May 2"],
         ["Substantial completion", "", "", "May 14"],
         ["Deposit (25%)", "", "", "$ 2,500"],
@@ -171,7 +171,7 @@ const DOC_CONTENT: Record<Lang, Record<"quote" | "contract" | "invoice", DocCopy
       ],
       totals: [["Total contract value", "$ 10,990"], ["Signed by client", "✓ Apr 26"], ["Status", "Active"]],
       infoTitle: "Contracts that protect you",
-      infoBody: "One tap turns your quote into a real, lawyer-reviewed contract. Spell out the scope, the schedule, and the payments — so there are no surprises later.",
+      infoBody: "One tap turns your quote into a real, lawyer-reviewed contract. Spell out the job details, the schedule, and the payments — so there are no surprises later.",
       infoList: ["State-specific terms, ready to go", "E-signature from your client", "Auto deposit + progress milestones", "Stored alongside the job, forever"],
     },
     invoice: {

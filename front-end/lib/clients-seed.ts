@@ -66,7 +66,7 @@ export const STORIES: Record<string, Story> = {
   "Tom & Linda Kowalski":   { line: "They opened the garage epoxy quote twice today. Hot lead. Knock $150 off if they book this week and you’ll close it.",         cta: "Send the warm offer" },
   "Jana Patel":             { line: "Paint job Monday, deposit already in. Easy week. Drop a confirmation text Sunday night and call it good.",                       cta: "Schedule Sunday text" },
   "Marcus Lin":             { line: "New lead — kitchen backsplash quote went out this morning. Give it a day, then check in if quiet.",                              cta: "Set 48-hour follow-up" },
-  "Bayside Properties":     { line: "Quote’s been sitting four days. Property managers ghost when budget tightens; ask if scope needs trimming.",                  cta: "Ask if scope is right" },
+  "Bayside Properties":     { line: "Quote’s been sitting four days. Property managers ghost when budget tightens; ask if job details need trimming.",                  cta: "Ask if job details are right" },
   "Riverside Yoga":         { line: "Used to book monthly, quiet six weeks. Patio season starts next week — perfect excuse to reconnect.",                            cta: "Pitch the spring re-seal" },
   "Ortega Rentals":         { line: "Two months silent. Mateo manages eight units across town — when he goes quiet, he’s usually deciding between you and someone cheaper.", cta: "Win him back" },
 };

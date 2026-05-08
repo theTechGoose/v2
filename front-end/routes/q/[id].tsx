@@ -97,16 +97,16 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
         <div style="margin-top:14px;color:#1c2c30;font-size:14px">Hi {customerName.split(/\s+/)[0]} — here's your quote.</div>
       )}
       {quote.summary && (
-        // #26 — derived scope framing. The line items table is still the
-        // canonical scope; this sentence just orients the customer before
-        // they read it. Avoids a Quote DTO schema change.
+        // #26 — derived job-details framing. The line items table is still
+        // the canonical job details; this sentence just orients the customer
+        // before they read it. Avoids a Quote DTO schema change.
         <p style="margin:10px 0 0;color:#4a5a5e;font-size:13.5px;line-height:1.55">
-          This estimate covers {scopeBlurb(quote.summary)}{" "}
+          This estimate covers {jobDetailsBlurb(quote.summary)}{" "}
           — {quote.lineItems.length === 1 ? "a single line of work" : `${quote.lineItems.length} lines of work`} broken down below.
         </p>
       )}
       <div style="height:1px;background:#e3e8e6;margin:20px 0"></div>
-      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#6b7a7e">Scope of work</div>
+      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#6b7a7e">Job details</div>
       <table style="width:100%;border-collapse:collapse;margin-top:8px">
         <thead>
           <tr>
@@ -151,8 +151,8 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
 }
 
 /** Lower-case + strip the leading "Quote: " prefix the LLM sometimes emits,
- *  so the derived scope sentence reads naturally. "Quote: 2-Car Garage Epoxy
- *  Floor" → "2-car garage epoxy floor". */
-function scopeBlurb(summary: string): string {
+ *  so the derived job-details sentence reads naturally. "Quote: 2-Car Garage
+ *  Epoxy Floor" → "2-car garage epoxy floor". */
+function jobDetailsBlurb(summary: string): string {
   return summary.replace(/^\s*quote\s*:\s*/i, "").toLowerCase();
 }
