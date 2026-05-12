@@ -7,6 +7,7 @@ import { CrmModule } from "@crm/mod-root.ts";
 import { ConversationsController } from "@agents/entrypoints/conversations-controller/mod.ts";
 import { ChatController } from "@agents/entrypoints/chat-controller/mod.ts";
 import { WizardController } from "@agents/entrypoints/wizard-controller/mod.ts";
+import { JobDetailsController } from "@agents/entrypoints/job-details-controller/mod.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { StartConversation } from "@agents/domain/coordinators/start-conversation/mod.ts";
@@ -19,6 +20,7 @@ import { AcceptContract } from "@agents/domain/coordinators/accept-contract/mod.
 import { SendContract } from "@agents/domain/coordinators/send-contract/mod.ts";
 import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
 import { StartOnboardingConversation } from "@agents/domain/coordinators/start-onboarding-conversation/mod.ts";
+import { PolishJobDetails } from "@agents/domain/coordinators/polish-job-details/mod.ts";
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
 import type { LLMClient } from "@agents/domain/business/llm/base/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
@@ -63,7 +65,7 @@ const LlmClientClass = await selectLLMClass();
  */
 @Module({
   imports: [UsersModule, PaperworkModule, CommunicationModule, FilesModule, CrmModule],
-  controllers: [ConversationsController, ChatController, WizardController],
+  controllers: [ConversationsController, ChatController, WizardController, JobDetailsController],
   injectables: [
     AgentConversationStore,
     AgentMessageStore,
@@ -77,6 +79,7 @@ const LlmClientClass = await selectLLMClass();
     SendContract,
     SendInvoice,
     StartOnboardingConversation,
+    PolishJobDetails,
     { token: LLM_CLIENT, useClass: LlmClientClass },
   ],
 })

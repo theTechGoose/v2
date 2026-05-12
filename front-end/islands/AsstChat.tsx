@@ -102,6 +102,8 @@ interface ActionCardPayload {
   status?: "draft" | "sent" | "void" | string;
   quoteId?: string;
   customerId?: string;
+  /** Polished narrative produced from the user's raw job-details input. */
+  description?: string;
   lineItems?: ActionCardLineItem[];
   totalCents?: number;
 }
@@ -269,6 +271,13 @@ export default function AsstChat({
     initialContract,
   );
   const [quoteId, setQuoteId] = useState<string | undefined>();
+  /** Full quote row, fetched lazily when the conversation has a quoteId.
+   *  Used by the post-wizard quote-review preview to render `description`
+   *  + `lineItems` without depending on an in-thread action_card. */
+  const [quote, setQuote] = useState<
+    | { id: string; summary?: string; description?: string; lineItems?: { description: string; quantity?: number; unit?: string; price?: number }[]; estimatedTotal?: number }
+    | undefined
+  >();
   const [draft, setDraft] = useState("");
   /** Inline price-capture flow opened by the "I already have my price"
    *  empty-state prompt. When set, renders the MoneyInput card in place
@@ -276,6 +285,27 @@ export default function AsstChat({
    *  Continue can hand the value to the phase-2 kickoff. */
   const [priceCaptureOpen, setPriceCaptureOpen] = useState(false);
   const [priceCents, setPriceCents] = useState<number | null>(null);
+  /** Set after the user clicks Continue on the price step. While true,
+   *  the chat input no longer routes to the LLM chat — instead its
+   *  next submission is treated as raw job-details, sent through the
+   *  polish endpoint, then used to seed the new quote + phase 2 wizard. */
+  const [awaitingJobDetails, setAwaitingJobDetails] = useState(false);
+  const [pendingPriceCents, setPendingPriceCents] = useState<number | null>(null);
+  /** Captures the raw text the user submitted at the job-details step
+   *  so we can render an optimistic user bubble + "Polishing…" indicator
+   *  while the polish + create-quote + transition chain runs. */
+  const [submittedJobDetails, setSubmittedJobDetails] = useState<string | null>(null);
+  /** Inline contact-recovery inputs keyed by the failure phase_divider id.
+   *  When SendContract reports a missing/invalid email or phone, we let
+   *  the user type it right under the divider; saving patches the
+   *  customer profile so we have it next time too. */
+  const [recoveryDraft, setRecoveryDraft] = useState<Record<string, { email?: string; phone?: string }>>({});
+  const [recoverySavingId, setRecoverySavingId] = useState<string | null>(null);
+  /** Selected channel for the quote-review send action. Smart-defaults
+   *  from customer.email/phoneNumber: both → both, email-only → email,
+   *  phone-only → sms. Overridable via the split-button chevron menu. */
+  const [sendChannel, setSendChannel] = useState<"email" | "sms" | "both">("both");
+  const [channelMenuOpen, setChannelMenuOpen] = useState(false);
   /**
    * Tracks `continue_cta` messages whose Review button has been clicked.
    * Drives the inline "Drafted ✓" confirmation state — replaces the
@@ -397,7 +427,88 @@ export default function AsstChat({
     setMessages(initialMessages);
     setCustomer(initialCustomer);
     setContract(initialContract);
+    // Seed quoteId from the bound contract (when present) so the
+    // quote-fetch effect below kicks in without waiting for a CTA click.
+    const seedQuoteId = (initialContract as { quoteId?: string } | undefined)
+      ?.quoteId;
+    if (seedQuoteId) setQuoteId(seedQuoteId);
   }, [conversationId]);
+
+  // If we still don't have a quoteId on the route (terms phase but no
+  // contract bound yet — the "I know my price → job details" flow lands
+  // here before the wizard finalizes), pull it from the conversation.
+  useEffect(() => {
+    if (!convoId || quoteId) return;
+    let cancelled = false;
+    assistantClient
+      .conversation(convoId)
+      .then((detail) => {
+        if (cancelled) return;
+        const qId =
+          (detail.conversation as { quoteId?: string } | undefined)?.quoteId ??
+          (detail.contract as { quoteId?: string } | undefined)?.quoteId;
+        if (qId) setQuoteId(qId);
+      })
+      .catch(() => { /* preview falls back to action_card */ });
+    return () => { cancelled = true; };
+  }, [convoId, quoteId]);
+
+  // Close the send-channel menu on outside click / Esc.
+  useEffect(() => {
+    if (!channelMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (t.closest(".quote-review__send-split")) return;
+      setChannelMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setChannelMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [channelMenuOpen]);
+
+  // Pick the send channel based on what contact info we actually have
+  // for this customer. The user can still override via the chevron menu.
+  useEffect(() => {
+    const hasEmail = !!customer?.email;
+    const hasPhone = !!customer?.phoneNumber;
+    if (hasEmail && hasPhone) setSendChannel("both");
+    else if (hasEmail) setSendChannel("email");
+    else if (hasPhone) setSendChannel("sms");
+    else setSendChannel("both");
+  }, [customer?.email, customer?.phoneNumber]);
+
+  // Whenever the active quoteId changes, fetch the full quote so the
+  // post-wizard preview can render description + lineItems without
+  // depending on a synthesized in-thread action_card.
+  useEffect(() => {
+    if (!quoteId) {
+      setQuote(undefined);
+      return;
+    }
+    let cancelled = false;
+    quotesClient
+      .get(quoteId)
+      .then((q) => {
+        if (!cancelled) {
+          setQuote({
+            id: q.id,
+            summary: q.summary,
+            description: q.description,
+            lineItems: q.lineItems,
+            estimatedTotal: q.estimatedTotal,
+          });
+        }
+      })
+      .catch(() => { /* silent — preview falls back to action_card */ });
+    return () => { cancelled = true; };
+  }, [quoteId]);
 
   // ?seed=… pre-fills the composer from a deeplink (e.g. hero CTAs on
   // /payments / /invoices / /contracts → "Ask Bossie to record a payment").
@@ -697,6 +808,15 @@ export default function AsstChat({
   async function sendText(content: string) {
     const trimmed = content.trim();
     if (!trimmed) return;
+    // Empty-state job-details capture: the chat input is acting as
+    // the answer surface for "tell me the job details", not a chat turn.
+    // Intercept here so we don't fire a generic LLM call.
+    if (awaitingJobDetails && pendingPriceCents != null) {
+      setDraft("");
+      autosize();
+      await submitJobDetails(trimmed);
+      return;
+    }
     setDraft("");
     autosize();
     await submitTurn(
@@ -784,26 +904,54 @@ export default function AsstChat({
    */
   /**
    * Continue handler for the inline "I already have my price" flow.
-   * Mirrors `seedPhase2` but uses the price the user typed in the
-   * MoneyInput, doesn't auto-answer the config step, and doesn't seed
-   * any sample line description — the user picks the config and edits
-   * the job details inline once the wizard lands. End result: number → phase
-   * 2 wizard → final editable quote, exactly the existing flow.
+   * Stashes the captured price and flips into the "tell me the job details"
+   * mode — the chat input becomes the answer surface for that step.
+   * The next chat-input submission routes through `submitJobDetails`,
+   * which polishes the raw text via LLM and kicks off the phase-2 flow.
    */
-  async function startWithPrice(cents: number) {
+  function onPriceContinue(cents: number) {
     if (sending || cents <= 0) return;
     setError(undefined);
+    setPendingPriceCents(cents);
+    setPriceCaptureOpen(false);
+    setAwaitingJobDetails(true);
+  }
+
+  /**
+   * Runs after the user types the raw job description in the chat input.
+   * Calls the polish endpoint, then materializes the quote + conversation
+   * with the polished summary/description and transitions to phase 2.
+   */
+  async function submitJobDetails(raw: string) {
+    const cents = pendingPriceCents;
+    const trimmed = raw.trim();
+    if (sending || !trimmed || cents == null || cents <= 0) return;
+    setError(undefined);
+    setSubmittedJobDetails(trimmed);
     setSending(true);
     try {
+      let polished: { summary: string; description: string };
+      try {
+        polished = await assistantClient.polishJobDetails(raw, cents);
+      } catch (err) {
+        console.warn("[asst] polish failed, falling back to raw:", err);
+        const firstLine = raw.split("\n")[0].trim();
+        polished = {
+          summary: firstLine.split(/\s+/).slice(0, 8).join(" ") || "New job",
+          description: raw.trim(),
+        };
+      }
+
       const quote = await fetch("/api/quotes", {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          summary: "New job",
+          summary: polished.summary,
+          description: polished.description,
           lineItems: [
             {
-              description: "Job details",
+              description: polished.summary,
               quantity: 1,
               unit: "ea",
               price: cents,
@@ -831,6 +979,7 @@ export default function AsstChat({
       globalThis.location.href = `/assistant/${conv.id}`;
     } catch (err) {
       setError(err instanceof Error ? err.message : "couldn't start");
+      setSubmittedJobDetails(null);
       setSending(false);
     }
   }
@@ -1016,13 +1165,60 @@ export default function AsstChat({
   }
 
   /**
-   * Fire the post-wizard "Ready to send" CTA: emails the assembled
-   * contract to the customer via the SendContract coordinator. The
-   * quote was already emailed during lock-quote, so this surface is
-   * now contract-only. Idempotent server-side (re-clicks redeliver),
-   * so flipping local state optimistically is safe.
+   * Save inline-typed customer email/phone to the customer profile,
+   * then re-fire SendContract on the same channel so the doc actually
+   * reaches the client. Used by the recovery form rendered below a
+   * delivery-failure phase_divider.
    */
-  async function confirmSendContract(message: Message) {
+  async function saveContactAndRetry(
+    dividerId: string,
+    args: { contractId: string; channel: "email" | "sms" | "both" },
+  ) {
+    if (!convoId || !customer?.id) return;
+    const draft = recoveryDraft[dividerId] ?? {};
+    const email = draft.email?.trim();
+    const phone = draft.phone?.trim();
+    if (!email && !phone) return;
+
+    setRecoverySavingId(dividerId);
+    setError(undefined);
+    try {
+      const patch: { email?: string; phoneNumber?: string } = {};
+      if (email) patch.email = email;
+      if (phone) patch.phoneNumber = phone;
+      const updated = await clientsClient.update(customer.id, patch);
+      setCustomer((c) => (c ? { ...c, ...patch } as typeof c : c));
+      // Local optimistic patch for downstream renders that read the
+      // customer block straight off our state (the assistant header,
+      // the quote-review hero, etc.). We still trust the server row
+      // for canonical values via updated.
+      void updated;
+      const res = await assistantClient.sendContract(convoId, args.contractId, args.channel);
+      if (res.newMessages?.length) {
+        setMessages((m) => [...m, ...res.newMessages]);
+      }
+      setRecoveryDraft((prev) => {
+        const next = { ...prev };
+        delete next[dividerId];
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "couldn't save & resend");
+    } finally {
+      setRecoverySavingId(null);
+    }
+  }
+
+  /**
+   * Fire the post-wizard "Ready to send" CTA: dispatches the assembled
+   * contract to the customer via the SendContract coordinator on the
+   * requested channel (text, email, or both). Idempotent server-side
+   * (re-clicks redeliver), so flipping local state optimistically is safe.
+   */
+  async function confirmSendContract(
+    message: Message,
+    channel: "email" | "sms" | "both" = "email",
+  ) {
     if (sending || !convoId) return;
     const payload = (message.payload ?? {}) as { contractId?: string };
     let id = payload.contractId ?? contract?.id;
@@ -1038,7 +1234,7 @@ export default function AsstChat({
         if (detail.contract) setContract(detail.contract);
       }
       if (!id) throw new Error("no contract bound to this conversation");
-      const res = await assistantClient.sendContract(convoId, id);
+      const res = await assistantClient.sendContract(convoId, id, channel);
       setReviewedCtas((prev) => {
         const next = new Set(prev);
         next.add(message.id);
@@ -1740,7 +1936,7 @@ export default function AsstChat({
       <div class="chat__scroll" ref={scrollRef}>
         {empty ? (
           <div class="chat__empty">
-            {!priceCaptureOpen && (
+            {!priceCaptureOpen && !awaitingJobDetails && (
               <>
                 <div class="chat__empty-icon">
                   <img src="/logo-monster.png" alt="" />
@@ -1750,7 +1946,41 @@ export default function AsstChat({
                 </h3>
               </>
             )}
-            {priceCaptureOpen ? (
+            {awaitingJobDetails ? (
+              <div class="chat__details-flow">
+                <div class="chat__details-prompt">
+                  <div class="chat__details-prompt-avatar">
+                    <img src="/logo-monster.png" alt="" />
+                  </div>
+                  <div class="chat__details-prompt-bubble">
+                    <strong>Okay great</strong> — tell me the job details.
+                    <span class="chat__details-prompt-hint">
+                      Type below. I'll clean it up so it reads sharp on the quote.
+                    </span>
+                  </div>
+                </div>
+                {submittedJobDetails ? (
+                  <>
+                    <div class="chat__details-user">
+                      <div class="chat__details-user-bubble">
+                        {submittedJobDetails}
+                      </div>
+                    </div>
+                    <div class="chat__details-prompt">
+                      <div class="chat__details-prompt-avatar">
+                        <img src="/logo-monster.png" alt="" />
+                      </div>
+                      <div class="chat__details-prompt-bubble chat__details-prompt-bubble--working">
+                        <span class="chat__details-dots" aria-hidden="true">
+                          <span></span><span></span><span></span>
+                        </span>
+                        Polishing your job details…
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : priceCaptureOpen ? (
               <div class="chat__price-capture">
                 <div class="chat__price-capture-head">
                   <button
@@ -1789,7 +2019,7 @@ export default function AsstChat({
                   type="button"
                   class="chat__price-continue"
                   disabled={(priceCents ?? 0) <= 0 || sending}
-                  onClick={() => startWithPrice(priceCents!)}
+                  onClick={() => onPriceContinue(priceCents!)}
                 >
                   {sending ? "Setting up…" : "Continue →"}
                 </button>
@@ -1869,6 +2099,29 @@ export default function AsstChat({
               if (stepId && answeredStepIds.has(stepId)) return false;
               return m.id === activeWizardId;
             });
+            // The recovery form should appear ONLY on the most recent
+            // failure-divider — otherwise older failures duplicate the
+            // form everywhere and clutter the thread.
+            let lastRecoveryDividerId: string | undefined;
+            for (let i = visible.length - 1; i >= 0; i--) {
+              const cand = visible[i];
+              if (cand.kind !== "phase_divider") continue;
+              const cp = (cand.payload ?? {}) as {
+                contractId?: string;
+                emailedTo?: string;
+                textedTo?: string;
+                emailFailureReason?: string;
+                smsFailureReason?: string;
+              };
+              if (!cp.contractId) continue;
+              const eMissing = !cp.emailedTo && !!cp.emailFailureReason && !customer?.email;
+              const pMissing = !cp.textedTo && !!cp.smsFailureReason &&
+                (!customer?.phoneNumber || /Invalid|21211/i.test(cp.smsFailureReason ?? ""));
+              if (eMissing || pMissing) {
+                lastRecoveryDividerId = cand.id;
+                break;
+              }
+            }
             return visible.map((m) => {
               const wizardStepId = (
                 m.payload as { wizardStepId?: string } | undefined
@@ -1896,16 +2149,115 @@ export default function AsstChat({
               }
               // Phase divider — full-width separator with a label, no avatar/bubble.
               if (m.kind === "phase_divider") {
-                const label =
-                  (m.payload as { label?: string } | undefined)?.label ??
-                  m.content;
+                const dp = (m.payload ?? {}) as {
+                  label?: string;
+                  contractId?: string;
+                  channel?: "email" | "sms" | "both";
+                  emailedTo?: string;
+                  textedTo?: string;
+                  emailFailureReason?: string;
+                  smsFailureReason?: string;
+                };
+                const label = dp.label ?? m.content;
+                // Show the recovery form when this divider belongs to a
+                // send-contract attempt that failed (or partially failed)
+                // due to missing/invalid contact info, AND we still have
+                // a customer bound (we need a row to patch).
+                // Channel may be missing on older threads (pre-channel-
+                // routing dividers). Infer from which failure reason is
+                // present so the recovery UI still shows up.
+                const inferredChannel: "email" | "sms" | "both" | undefined =
+                  dp.channel ??
+                  (dp.emailFailureReason && dp.smsFailureReason
+                    ? "both"
+                    : dp.smsFailureReason
+                    ? "sms"
+                    : dp.emailFailureReason
+                    ? "email"
+                    : undefined);
+                const emailMissing = !dp.emailedTo && !!dp.emailFailureReason &&
+                  !customer?.email;
+                const phoneMissing = !dp.textedTo && !!dp.smsFailureReason &&
+                  (!customer?.phoneNumber || /Invalid|21211/i.test(dp.smsFailureReason));
+                const needRecovery =
+                  !!dp.contractId && !!customer?.id && !!inferredChannel &&
+                  (emailMissing || phoneMissing) &&
+                  m.id === lastRecoveryDividerId;
+                const draft = recoveryDraft[m.id] ?? {};
+                const saving = recoverySavingId === m.id;
+                const askEmail = needRecovery && emailMissing;
+                const askPhone = needRecovery && phoneMissing;
                 return (
-                  <div key={m.id} class="phase-divider">
-                    <div class="phase-divider__line" />
-                    <div class="phase-divider__label">
-                      <I d={ICN.contract} size={11} /> {label}
+                  <div key={m.id}>
+                    <div class="phase-divider">
+                      <div class="phase-divider__line" />
+                      <div class="phase-divider__label">
+                        <I d={ICN.contract} size={11} /> {label}
+                      </div>
+                      <div class="phase-divider__line" />
                     </div>
-                    <div class="phase-divider__line" />
+                    {needRecovery ? (
+                      <div class="recovery-card">
+                        <div class="recovery-card__head">
+                          <strong>
+                            {askEmail && askPhone
+                              ? "Add their email & phone to deliver"
+                              : askEmail
+                              ? "Add their email to deliver"
+                              : "Add their phone to deliver"}
+                          </strong>
+                          <span class="recovery-card__hint">
+                            Saved to {customer?.name ?? "this customer"} for next time.
+                          </span>
+                        </div>
+                        <div class="recovery-card__fields">
+                          {askEmail ? (
+                            <input
+                              type="email"
+                              class="recovery-card__input"
+                              placeholder="customer@email.com"
+                              value={draft.email ?? ""}
+                              disabled={saving}
+                              onInput={(e) => {
+                                const v = (e.target as HTMLInputElement).value;
+                                setRecoveryDraft((p) => ({ ...p, [m.id]: { ...p[m.id], email: v } }));
+                              }}
+                            />
+                          ) : null}
+                          {askPhone ? (
+                            <input
+                              type="tel"
+                              class="recovery-card__input"
+                              placeholder="(555) 555-5555"
+                              value={draft.phone ?? ""}
+                              disabled={saving}
+                              onInput={(e) => {
+                                const v = (e.target as HTMLInputElement).value;
+                                setRecoveryDraft((p) => ({ ...p, [m.id]: { ...p[m.id], phone: v } }));
+                              }}
+                            />
+                          ) : null}
+                          <button
+                            type="button"
+                            class="recovery-card__save"
+                            disabled={
+                              saving ||
+                              (!draft.email?.trim() && !draft.phone?.trim()) ||
+                              (askEmail && !askPhone && !draft.email?.trim()) ||
+                              (askPhone && !askEmail && !draft.phone?.trim())
+                            }
+                            onClick={() =>
+                              saveContactAndRetry(m.id, {
+                                contractId: dp.contractId!,
+                                channel: inferredChannel ?? "email",
+                              })
+                            }
+                          >
+                            {saving ? "Saving…" : "Save & resend"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 );
               }
@@ -1969,13 +2321,27 @@ export default function AsstChat({
                     );
                   const lockedPayload = (lockedCard?.payload ??
                     {}) as ActionCardPayload;
-                  const lineItems = lockedPayload.lineItems ?? [];
+                  // Fall back to the fetched quote when no action_card
+                  // is present (the "I know my price → job details" flow
+                  // skips lock-quote and doesn't emit one).
+                  const quoteLineItems = (quote?.lineItems ?? []).map((li) => ({
+                    description: li.description,
+                    amountCents: Math.round(
+                      (li.price ?? 0) * (li.quantity ?? 1),
+                    ),
+                  }));
+                  const lineItems = (lockedPayload.lineItems?.length
+                    ? lockedPayload.lineItems
+                    : quoteLineItems);
                   const lineTotalCents =
                     lockedPayload.totalCents ??
+                    quote?.estimatedTotal ??
                     lineItems.reduce(
                       (sum, li) => sum + (li.amountCents ?? 0),
                       0,
                     );
+                  const polishedDescription =
+                    lockedPayload.description ?? quote?.description;
                   // Wizard terms — every text msg with a wizardStepId is one
                   // answered step ("Start: ASAP", "Wraps: 1 week", ...). Skip
                   // the customer step since we render the customer block below.
@@ -2080,6 +2446,15 @@ export default function AsstChat({
                           </div>
                           <div class="quote-review__head-right">
                             <span class="quote-review__chip">Draft</span>
+                            <button
+                              type="button"
+                              class="quote-review__close"
+                              aria-label="Close preview"
+                              onClick={() => setPreviewCtaId(null)}
+                              disabled={sending}
+                            >
+                              <I d={ICN.x} size={14} sw={2.4} />
+                            </button>
                           </div>
                         </header>
 
@@ -2143,48 +2518,8 @@ export default function AsstChat({
                                   >
                                     {li.description}
                                   </span>
-                                  <span
-                                    class="quote-review__line-amt quote-review__editable"
-                                    contentEditable
-                                    spellcheck={false}
-                                    inputMode="decimal"
-                                    onFocus={(e) => {
-                                      // Select all on focus so the user can just
-                                      // type to overwrite the amount.
-                                      const el = e.currentTarget as HTMLElement;
-                                      const range = document.createRange();
-                                      range.selectNodeContents(el);
-                                      const sel = globalThis.getSelection();
-                                      sel?.removeAllRanges();
-                                      sel?.addRange(range);
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        (e.currentTarget as HTMLElement).blur();
-                                      }
-                                    }}
-                                    onBlur={(e) => {
-                                      const qid = lockedPayload.quoteId;
-                                      const cardId = lockedCard?.id;
-                                      if (qid && cardId)
-                                        onEditLineAmount(
-                                          qid,
-                                          cardId,
-                                          i,
-                                          li.amountCents,
-                                          e.currentTarget as HTMLElement,
-                                        );
-                                    }}
-                                  >
-                                    {fmtUSD(li.amountCents)}
-                                  </span>
                                 </div>
                               ))}
-                            </div>
-                            <div class="quote-review__subtotal">
-                              <span>Subtotal</span>
-                              <strong>{fmtUSD(lineTotalCents)}</strong>
                             </div>
                           </section>
                         ) : null}
@@ -2462,23 +2797,88 @@ export default function AsstChat({
                         </section>
 
                         <footer class="quote-review__cta">
-                          <button
-                            type="button"
-                            class="quote-review__send"
-                            onClick={() => confirmSendContract(m)}
-                            disabled={sending}
-                          >
-                            <I d={ICN.send} size={13} sw={2.4} />
-                            Send to client
-                          </button>
-                          <button
-                            type="button"
-                            class="quote-review__cancel"
-                            onClick={() => setPreviewCtaId(null)}
-                            disabled={sending}
-                          >
-                            Cancel
-                          </button>
+                          <div class="quote-review__send-split">
+                            <button
+                              type="button"
+                              class="quote-review__send-main"
+                              onClick={() => confirmSendContract(m, sendChannel)}
+                              disabled={sending}
+                            >
+                              <I d={ICN.send} size={14} sw={2.4} />
+                              {sending
+                                ? "Sending…"
+                                : sendChannel === "both"
+                                ? "Send by Text + Email"
+                                : sendChannel === "sms"
+                                ? "Send by Text"
+                                : "Send by Email"}
+                            </button>
+                            <button
+                              type="button"
+                              class="quote-review__send-caret"
+                              aria-label="Choose how to send"
+                              aria-expanded={channelMenuOpen ? "true" : "false"}
+                              onClick={() => setChannelMenuOpen((o) => !o)}
+                              disabled={sending}
+                            >
+                              <I d={ICN.chev} size={12} sw={2.4} />
+                            </button>
+                            {channelMenuOpen ? (
+                              <div class="quote-review__send-menu" role="menu">
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  class={`quote-review__send-menu-item${
+                                    sendChannel === "both" ? " is-current" : ""
+                                  }`}
+                                  onClick={() => {
+                                    setSendChannel("both");
+                                    setChannelMenuOpen(false);
+                                  }}
+                                >
+                                  <I d={ICN.send} size={13} sw={2.4} />
+                                  <span class="quote-review__send-menu-label">
+                                    Text + Email
+                                  </span>
+                                  <span class="quote-review__send-menu-tag">
+                                    Recommended
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  class={`quote-review__send-menu-item${
+                                    sendChannel === "sms" ? " is-current" : ""
+                                  }`}
+                                  onClick={() => {
+                                    setSendChannel("sms");
+                                    setChannelMenuOpen(false);
+                                  }}
+                                >
+                                  <I d={ICN.phone} size={13} sw={2.4} />
+                                  <span class="quote-review__send-menu-label">
+                                    Text only
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  class={`quote-review__send-menu-item${
+                                    sendChannel === "email" ? " is-current" : ""
+                                  }`}
+                                  onClick={() => {
+                                    setSendChannel("email");
+                                    setChannelMenuOpen(false);
+                                  }}
+                                >
+                                  <I d={ICN.mail} size={13} sw={2.4} />
+                                  <span class="quote-review__send-menu-label">
+                                    Email only
+                                  </span>
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
                         </footer>
                       </article>
                     </div>
@@ -3087,7 +3487,13 @@ export default function AsstChat({
         ) : null}
       </div>
 
-      <div class="composer">
+      <div
+        class={`composer${
+          awaitingJobDetails && !submittedJobDetails && !draft.trim()
+            ? " composer--flash"
+            : ""
+        }`}
+      >
         {error ? <div class="composer__err">{error}</div> : null}
         {recording ? (
           <RecordingPanel

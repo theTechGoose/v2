@@ -7,6 +7,7 @@ import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
 interface QuotePublic {
   id: string;
   summary: string;
+  description?: string;
   customerId?: string;
   estimatedTotal?: number;
   lineItems: { description: string; quantity?: number; unit?: string; price?: number }[];
@@ -96,7 +97,9 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
       {customerName && (
         <div style="margin-top:14px;color:#1c2c30;font-size:14px">Hi {customerName.split(/\s+/)[0]} — here's your quote.</div>
       )}
-      {quote.summary && (
+      {quote.description ? (
+        <p style="margin:10px 0 0;color:#1c2c30;font-size:14.5px;line-height:1.6;white-space:pre-wrap">{quote.description}</p>
+      ) : quote.summary && (
         // #26 — derived job-details framing. The line items table is still
         // the canonical job details; this sentence just orients the customer
         // before they read it. Avoids a Quote DTO schema change.
@@ -106,7 +109,7 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
         </p>
       )}
       <div style="height:1px;background:#e3e8e6;margin:20px 0"></div>
-      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#6b7a7e">Job details</div>
+      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#6b7a7e">Line items</div>
       <table style="width:100%;border-collapse:collapse;margin-top:8px">
         <thead>
           <tr>

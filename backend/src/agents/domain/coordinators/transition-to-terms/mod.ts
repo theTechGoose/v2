@@ -59,6 +59,8 @@ export class TransitionToTerms {
     const state = freshState(CONTRACT_TERMS_WIZARD_V1);
     await this.conversations.putWizardState(conv.id, state);
 
+    const newMessages: AgentMessage[] = [];
+
     const divider = await this.messages.append({
       conversationId: conv.id,
       role: "system",
@@ -76,6 +78,7 @@ export class TransitionToTerms {
       payload: { specId: CONTRACT_TERMS_WIZARD_V1.id, stepIdx: 0, stepId: firstStep.id, options: firstStep.options, hint: firstStep.hint },
     });
 
-    return { conversation: updated, newMessages: [divider, wizardMsg] };
+    newMessages.push(divider, wizardMsg);
+    return { conversation: updated, newMessages };
   }
 }

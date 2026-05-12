@@ -118,9 +118,13 @@ export class ConversationsController {
     @Body() body: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const contractId = (body as { contractId?: unknown } | null | undefined)?.contractId;
+    const b = (body ?? {}) as { contractId?: unknown; channel?: unknown };
+    const contractId = b.contractId;
     if (typeof contractId !== "string" || !contractId) throw new Error("contractId is required");
-    return ctx.json(await this.sendContractFlow.run({ userId: user.id, conversationId: id, contractId }));
+    const channel = b.channel === "sms" || b.channel === "both" || b.channel === "email"
+      ? b.channel
+      : "email";
+    return ctx.json(await this.sendContractFlow.run({ userId: user.id, conversationId: id, contractId, channel }));
   }
 
   @Post(":id/send-invoice")

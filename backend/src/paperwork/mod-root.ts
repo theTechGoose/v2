@@ -16,8 +16,10 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import { PaymentTermsStore } from "@paperwork/domain/data/payment-terms-store/mod.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
+import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { SummarizePaperworkViews } from "@paperwork/domain/coordinators/summarize-paperwork-views/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
+import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
 import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-invoice-balance/mod.ts";
 import { RenderContractPdf } from "@paperwork/domain/coordinators/render-contract-pdf/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
@@ -41,8 +43,10 @@ import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-sign
     ViewStore,
     PaymentTermsStore,
     PaymentStore,
+    ShortLinkStore,
     SummarizePaperworkViews,
     SendPaperworkEmail,
+    SendPaperworkSms,
     ComputeInvoiceBalance,
     RenderContractPdf,
     SendSignedConfirmation,

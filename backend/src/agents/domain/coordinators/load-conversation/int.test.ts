@@ -21,7 +21,7 @@ function fresh() {
     conversations, messages,
     transition: new TransitionToTerms(conversations, messages),
     wizardAnswer: new HandleWizardAnswer(conversations, messages, quotes, contracts, customers, bus),
-    load: new LoadConversation(conversations, messages, contracts),
+    load: new LoadConversation(conversations, messages, contracts, customers),
   };
 }
 

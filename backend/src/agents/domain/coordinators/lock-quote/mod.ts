@@ -107,6 +107,7 @@ export class LockQuote {
         status: "sent",
         quoteId: fresh.id,
         ...(fresh.customerId ? { customerId: fresh.customerId } : {}),
+        ...(fresh.description ? { description: fresh.description } : {}),
         lineItems,
         totalCents,
       },

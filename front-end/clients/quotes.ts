@@ -17,6 +17,8 @@ export interface QuoteCard {
   customerId?: string;
   customerName: string | null;
   summary?: string;
+  description?: string;
+  lineItems?: { description: string; quantity?: number; unit?: string; price?: number }[];
   estimatedTotal?: number;
   status?: string;
   sentAt?: string;

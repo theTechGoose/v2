@@ -4,11 +4,13 @@ import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.t
 import { computeProgress } from "@agents/domain/business/wizard-progress/mod.ts";
 import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { WizardState } from "@agents/dto/wizard.ts";
 import type { WizardProgress } from "@agents/domain/business/wizard-progress/mod.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
+import type { Customer } from "@crm/dto/customer.ts";
 
 export interface ConversationSnapshot {
   conversation: AgentConversation;
@@ -17,6 +19,8 @@ export interface ConversationSnapshot {
   wizard?: { state: WizardState; progress: WizardProgress };
   /** Bound contract — populated once the wizard finalizes. */
   contract?: Contract;
+  /** Bound customer — resolved from conv.customerId or contract.customerId. */
+  customer?: Customer;
 }
 
 /**
@@ -31,6 +35,7 @@ export class LoadConversation {
     private conversations: AgentConversationStore,
     private messages: AgentMessageStore,
     private contracts: ContractStore,
+    private customers: CustomerStore,
   ) {}
 
   async run(input: { userId: string; conversationId: string }): Promise<ConversationSnapshot> {
@@ -57,6 +62,18 @@ export class LoadConversation {
       } catch { /* contract was deleted out from under the conversation — surface conv state without it */ }
     }
 
-    return { conversation: conv, messages: msgs, wizard, contract };
+    // Bound customer — prefer the conversation's customerId, fall back to
+    // the contract's. Needed so the recovery UI (and any per-customer
+    // surfaces) can render without a follow-up fetch. Best-effort: a
+    // forbidden/missing row just leaves customer undefined.
+    let customer: Customer | undefined;
+    const customerId = conv.customerId ?? contract?.customerId;
+    if (customerId) {
+      try {
+        customer = await this.customers.getOwned(customerId, conv.userId);
+      } catch { /* surface the rest of the snapshot without customer */ }
+    }
+
+    return { conversation: conv, messages: msgs, wizard, contract, customer };
   }
 }

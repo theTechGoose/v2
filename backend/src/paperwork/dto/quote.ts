@@ -31,6 +31,13 @@ export class CreateQuoteDto {
   @IsString()
   summary!: string;
 
+  /** Polished narrative produced from the user's raw job description.
+   *  Rendered on the quote preview, the customer-facing quote email,
+   *  and projected into the contract page's jobDetails. */
+  @IsOptional()
+  @IsString()
+  description?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => LineItemDto)
@@ -56,6 +63,7 @@ export class CreateQuoteDto {
 export class UpdateQuoteDto {
   @IsOptional() @IsString() customerId?: string;
   @IsOptional() @IsString() summary?: string;
+  @IsOptional() @IsString() description?: string;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => LineItemDto) lineItems?: LineItemDto[];
   /** INTEGER CENTS. */
   @IsOptional() @IsNumber() estimatedTotal?: number;

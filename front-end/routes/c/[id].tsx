@@ -63,7 +63,7 @@ interface ContractPublic {
   customerSignedName?: string;
   contractor?: Contractor;
   customer?: { name?: string };
-  jobDetails?: { summary?: string; lineItems?: LineItem[] };
+  jobDetails?: { summary?: string; description?: string; lineItems?: LineItem[] };
   terms?: Term[];
   createdAt?: string;
 }
@@ -199,6 +199,9 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
           {items.length > 0 && (
             <section style="margin-top:30px">
               <SectionLabel n="01" title="Job details" hint="What we're actually doing" />
+              {contract.jobDetails?.description && (
+                <p style={`margin:14px 0 0;color:${INK};font-size:15px;line-height:1.6;white-space:pre-wrap`}>{contract.jobDetails.description}</p>
+              )}
               <table style="width:100%;border-collapse:collapse;margin-top:14px">
                 <thead>
                   <tr>

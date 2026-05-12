@@ -21,6 +21,8 @@ export interface Quote {
   userId: string;
   customerId?: string;
   summary: string;
+  /** Polished narrative produced from the user's raw job-details input. */
+  description?: string;
   lineItems: QuoteLineItem[];
   estimatedTotal: number;
   status: "draft" | "sent" | "accepted" | "declined" | "expired";
@@ -157,11 +159,17 @@ export const assistantClient = {
     ),
 
   /** Fire the wizard's "Ready to send" CTA: flips contract→sent and
-   *  emails the customer. Idempotent, so a re-click just re-renders. */
-  sendContract: (conversationId: string, contractId: string, opts: ApiOptions = {}) =>
+   *  dispatches via the requested channel (email, sms, or both).
+   *  Idempotent on state, but dispatch fires every time the user clicks. */
+  sendContract: (
+    conversationId: string,
+    contractId: string,
+    channel: "email" | "sms" | "both" = "email",
+    opts: ApiOptions = {},
+  ) =>
     api.post<{ conversation: Conversation; newMessages: Message[] }>(
       `/agents/conversations/${conversationId}/send-contract`,
-      { contractId },
+      { contractId, channel },
       opts,
     ),
 
@@ -206,4 +214,14 @@ export const assistantClient = {
       wizardState?: unknown;
       newMessages: Message[];
     }>("/agents/wizard/answer", body, opts),
+
+  /** One-shot LLM pass: turns the user's raw job description into a
+   *  polished {summary, description} pair. Used by the empty-state
+   *  "tell me the job details" step before the quote is created. */
+  polishJobDetails: (raw: string, priceCents?: number, opts: ApiOptions = {}) =>
+    api.post<{ summary: string; description: string }>(
+      "/agents/job-details/polish",
+      { raw, ...(typeof priceCents === "number" ? { priceCents } : {}) },
+      opts,
+    ),
 };

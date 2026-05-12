@@ -12,6 +12,7 @@ import { BusinessAddressStore } from "@profile/domain/data/business-address-stor
 import { EventBus } from "@core/business/events/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
+import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
@@ -106,7 +107,21 @@ export class PaperworkPublicController {
     private addresses: BusinessAddressStore,
     private bus:       EventBus,
     private signedConfirmation: SendSignedConfirmation,
+    private shortlinks: ShortLinkStore,
   ) {}
+
+  /**
+   * GET /s/:code — resolve a shortlink code to its kind + id so the
+   * front-end can issue a 302 to the canonical public surface.
+   * Returns 404 when the code is unknown.
+   */
+  @Get("s/:code")
+  async resolveShortlink(@Context() ctx: ExecutionContext, @Param("code") code: string) {
+    try {
+      const link = await this.shortlinks.get(code);
+      return ctx.json({ kind: link.kind, id: link.id });
+    } catch (e) { return notFoundResponse(ctx, e); }
+  }
 
   // ---------- quotes ----------
 
@@ -235,7 +250,7 @@ export class PaperworkPublicController {
         c.quoteId ? this.quotes.get(c.quoteId).catch(() => undefined) : Promise.resolve(undefined),
       ]);
       const jobDetails = quote
-        ? { summary: quote.summary, lineItems: quote.lineItems }
+        ? { summary: quote.summary, description: quote.description, lineItems: quote.lineItems }
         : undefined;
       return ctx.json({
         ...redactContract(c),
@@ -382,6 +397,7 @@ function redactQuote(q: Quote) {
   return {
     id:             q.id,
     summary:        q.summary,
+    description:    q.description,
     customerId:     q.customerId,
     lineItems:      q.lineItems,
     estimatedTotal: q.estimatedTotal,

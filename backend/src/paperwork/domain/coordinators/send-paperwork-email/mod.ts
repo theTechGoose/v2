@@ -454,6 +454,15 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
         <!-- divider -->
         <tr><td style="padding:24px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
 
+        ${q.description ? `
+        <!-- polished job-details narrative -->
+        <tr><td style="padding:18px 36px 0">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">Job details</div>
+          <p style="margin:8px 0 0;font-size:15px;line-height:1.55;color:${COLOR_INK};white-space:pre-wrap">${escapeHtml(q.description)}</p>
+        </td></tr>
+        <tr><td style="padding:18px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
+        ` : ""}
+
         <!-- job details label + lines -->
         <tr><td style="padding:18px 36px 0">
           <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">Here's what we'll handle</div>
