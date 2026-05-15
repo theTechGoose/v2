@@ -143,14 +143,16 @@ export class SendPaperworkSms {
 
 // ---------- public URL ------------------------------------------------------
 
+/** SMS links must be reachable for the customer — localhost is useless
+ *  in their inbox. So if APP_URL is set, we always honor it (no FORCE
+ *  flag gymnastics). Falls back to the prod host in prod, localhost
+ *  in dev as a last resort. */
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
-  const force = Deno.env.get("APP_URL_FORCE") === "1";
+  if (explicit) return explicit;
   const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod"
     || !!Deno.env.get("DENO_DEPLOYMENT_ID");
-  if (isProd) return explicit ?? "https://paperworkmonsters.com";
-  if (force && explicit) return explicit;
-  return "http://localhost:5173";
+  return isProd ? "https://paperworkmonsters.com" : "http://localhost:5173";
 })();
 
 // ---------- bodies ----------------------------------------------------------
@@ -175,7 +177,7 @@ function renderQuoteBody(q: Quote, c: Customer | undefined, sender: User | undef
   const summary = (q.summary ?? "your project").replace(/^\s*quote\s*:\s*/i, "").trim();
   const lead = hi ? `Hi ${hi}, ` : "";
   const tail = who ? ` — ${who}` : "";
-  return `${lead}your quote for ${summary} is ready (${fmtUSD(total)}). Review & accept: ${url}${tail}`;
+  return `${lead}your quote for ${summary} is ready (${fmtUSD(total)}). Love the quote? Sign up now: ${url}${tail}`;
 }
 
 function renderContractBody(c: Contract, q: Quote | undefined, cust: Customer | undefined, sender: User | undefined, url: string): string {
