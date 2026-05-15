@@ -63,7 +63,7 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
       options: [
         {
           id: "net_15",
-          label: "Get paid on completion",
+          label: "Payment upon completion",
           sub: "Same-day payment",
         },
         { id: "50_50", label: "50/50", sub: "Half upfront, half when done" },

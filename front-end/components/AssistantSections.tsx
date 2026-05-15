@@ -261,7 +261,7 @@ export function ChatScroll() {
               <h3 class="wiz__step-q">When do you want to get paid?</h3>
               <div class="wiz__opts">
                 <button type="button" class="wiz-opt">
-                  Get paid on completion
+                  Payment upon completion
                   <span class="wiz-opt__sub">Same-day payment</span>
                 </button>
                 <button type="button" class="wiz-opt">

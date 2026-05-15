@@ -4,6 +4,7 @@ import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
@@ -11,6 +12,7 @@ import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
+import type { BusinessIdentity } from "@users/dto/business-identity.ts";
 
 export type PaperworkKind = "quote" | "contract" | "invoice";
 
@@ -50,12 +52,14 @@ export class SendPaperworkSms {
     private invoices: InvoiceStore,
     private customers: CustomerStore,
     private users: UserStore,
+    private identity: BusinessIdentityStore,
     private sms: SmsService,
     private shortlinks: ShortLinkStore,
   ) {}
 
   async run(userId: string, input: SendPaperworkSmsInput): Promise<SendPaperworkSmsResult> {
     const sender = await this.tryGetUser(userId);
+    const senderBiz = await this.tryGetBusinessIdentity(userId);
 
     let recipient: string | undefined = input.to;
     let body: string;
@@ -71,7 +75,7 @@ export class SendPaperworkSms {
         ? { kind: "contract", id: boundContract.id }
         : { kind: "quote", id: quote.id };
       const shortUrl = await this.mintShortUrl(userId, linkResource);
-      body = renderQuoteBody(quote, customer, sender, shortUrl);
+      body = renderQuoteBody(quote, customer, sender, senderBiz, shortUrl);
     } else if (input.kind === "contract") {
       const contract = await this.contracts.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, contract.customerId);
@@ -82,7 +86,7 @@ export class SendPaperworkSms {
         catch { /* fall through */ }
       }
       const shortUrl = await this.mintShortUrl(userId, { kind: "contract", id: contract.id });
-      body = renderContractBody(contract, quoteForBody, customer, sender, shortUrl);
+      body = renderContractBody(contract, quoteForBody, customer, sender, senderBiz, shortUrl);
     } else {
       const invoice = await this.invoices.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
@@ -112,6 +116,11 @@ export class SendPaperworkSms {
 
   private async tryGetUser(userId: string): Promise<User | undefined> {
     try { return await this.users.get(userId); }
+    catch { return undefined; }
+  }
+
+  private async tryGetBusinessIdentity(userId: string): Promise<BusinessIdentity | undefined> {
+    try { return await this.identity.get(userId) ?? undefined; }
     catch { return undefined; }
   }
 
@@ -170,24 +179,80 @@ function fmtUSD(cents: number | undefined): string {
   return `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
-function renderQuoteBody(q: Quote, c: Customer | undefined, sender: User | undefined, url: string): string {
+/** Roadmap p.8 template:
+ *    Hi {customerFirst}, this is {senderFirst} from {businessName}.
+ *
+ *    Your quote for {jobName} is ready: {url}
+ *
+ *    Please let me know if you have any questions. I look forward to working with you!
+ *
+ *  Fallbacks: drop the salutation line when customerFirst is missing,
+ *  drop the "from {businessName}" suffix when businessName is missing,
+ *  fall back to `summary` then "your project" when jobName is missing.
+ */
+function renderQuoteBody(
+  q: Quote,
+  c: Customer | undefined,
+  sender: User | undefined,
+  senderBiz: BusinessIdentity | undefined,
+  url: string,
+): string {
   const hi = customerFirst(c);
   const who = senderFirst(sender);
-  const total = q.estimatedTotal ?? q.lineItems.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0);
-  const summary = (q.summary ?? "your project").replace(/^\s*quote\s*:\s*/i, "").trim();
-  const lead = hi ? `Hi ${hi}, ` : "";
-  const tail = who ? ` — ${who}` : "";
-  return `${lead}your quote for ${summary} is ready (${fmtUSD(total)}). Love the quote? Sign up now: ${url}${tail}`;
+  const biz = businessName(senderBiz);
+  const jobName = (q.jobName?.trim()
+    || q.summary?.replace(/^\s*quote\s*:\s*/i, "").trim()
+    || "your project");
+  return composeSmsBody({ hi, who, biz, jobName, url, kind: "quote" });
 }
 
-function renderContractBody(c: Contract, q: Quote | undefined, cust: Customer | undefined, sender: User | undefined, url: string): string {
+function renderContractBody(
+  _c: Contract,
+  q: Quote | undefined,
+  cust: Customer | undefined,
+  sender: User | undefined,
+  senderBiz: BusinessIdentity | undefined,
+  url: string,
+): string {
   const hi = customerFirst(cust);
   const who = senderFirst(sender);
-  const total = c.totalAmount ?? q?.estimatedTotal;
-  const summary = (q?.summary ?? "your project").replace(/^\s*quote\s*:\s*/i, "").trim();
-  const lead = hi ? `Hi ${hi}, ` : "";
-  const tail = who ? ` — ${who}` : "";
-  return `${lead}your contract for ${summary} is ready to sign (${fmtUSD(total)}). Sign here: ${url}${tail}`;
+  const biz = businessName(senderBiz);
+  const jobName = (q?.jobName?.trim()
+    || q?.summary?.replace(/^\s*quote\s*:\s*/i, "").trim()
+    || "your project");
+  return composeSmsBody({ hi, who, biz, jobName, url, kind: "contract" });
+}
+
+function composeSmsBody(p: {
+  hi: string | undefined;
+  who: string | undefined;
+  biz: string | undefined;
+  jobName: string;
+  url: string;
+  kind: "quote" | "contract";
+}): string {
+  const intro = p.hi
+    ? p.who && p.biz
+      ? `Hi ${p.hi}, this is ${p.who} from ${p.biz}.`
+      : p.who
+      ? `Hi ${p.hi}, this is ${p.who}.`
+      : `Hi ${p.hi}.`
+    : p.who && p.biz
+    ? `This is ${p.who} from ${p.biz}.`
+    : p.who
+    ? `This is ${p.who}.`
+    : null;
+  const noun = p.kind === "quote" ? "quote" : "contract";
+  const lines: string[] = [];
+  if (intro) lines.push(intro);
+  lines.push(`Your ${noun} for ${p.jobName} is ready: ${p.url}`);
+  lines.push("Please let me know if you have any questions. I look forward to working with you!");
+  return lines.join("\n\n");
+}
+
+function businessName(b: BusinessIdentity | undefined): string | undefined {
+  const name = b?.businessName?.trim() || b?.legalName?.trim();
+  return name || undefined;
 }
 
 function renderInvoiceBody(i: Invoice, cust: Customer | undefined, sender: User | undefined, url: string): string {

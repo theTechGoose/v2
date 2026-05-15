@@ -16,6 +16,8 @@ export interface SendEmailInput {
   htmlBody:  string;
   /** Optional From override; otherwise falls back to POSTMARK_FROM env. */
   from?:     string;
+  /** Optional CC list — Postmark accepts a comma-separated string. */
+  cc?:       string[];
   /** File attachments — Postmark base64-encodes them; we accept raw bytes. */
   attachments?: EmailAttachment[];
 }
@@ -83,6 +85,7 @@ export class EmailService {
         body: JSON.stringify({
           From:     from,
           To:       input.to,
+          ...(input.cc?.length ? { Cc: input.cc.join(", ") } : {}),
           Subject:  input.subject,
           HtmlBody: input.htmlBody,
           MessageStream: "outbound",

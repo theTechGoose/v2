@@ -216,10 +216,12 @@ export const assistantClient = {
     }>("/agents/wizard/answer", body, opts),
 
   /** One-shot LLM pass: turns the user's raw job description into a
-   *  polished {summary, description} pair. Used by the empty-state
-   *  "tell me the job details" step before the quote is created. */
+   *  polished {summary, jobName, description} triple. Used by the
+   *  empty-state "tell me the job details" step before the quote is
+   *  created. `jobName` is the 3-words-or-less label used as the
+   *  human-facing identifier across the platform. */
   polishJobDetails: (raw: string, priceCents?: number, opts: ApiOptions = {}) =>
-    api.post<{ summary: string; description: string }>(
+    api.post<{ summary: string; jobName: string; description: string }>(
       "/agents/job-details/polish",
       { raw, ...(typeof priceCents === "number" ? { priceCents } : {}) },
       opts,

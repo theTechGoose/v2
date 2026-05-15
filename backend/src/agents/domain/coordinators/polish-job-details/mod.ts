@@ -13,6 +13,11 @@ export interface PolishJobDetailsInput {
 export interface PolishJobDetailsResult {
   /** Short title (≤8 words) used in headings, email subjects, etc. */
   summary: string;
+  /** Ultra-short label, three words or less, Title Case, used as the
+   *  primary human-facing job identifier across the platform: in-chat
+   *  card title, contract hero, email subject, SMS body. Falls back
+   *  to `summary` downstream when this is missing. */
+  jobName: string;
   /** Polished 1–3 sentence paragraph rendered on the quote, quote email,
    *  and the contract page's job-details section. */
   description: string;
@@ -21,9 +26,10 @@ export interface PolishJobDetailsResult {
 const SYSTEM_PROMPT = `You polish a contractor's raw job description into clean, professional copy a customer will read on a quote.
 
 OUTPUT — return JSON only, no prose, no code fences:
-  { "summary": "<short title, max 8 words, title case>", "description": "<1-3 sentences, professional, third-person>" }
+  { "jobName": "<3 words or less, Title Case>", "summary": "<short title, max 8 words, title case>", "description": "<1-3 sentences, professional, third-person>" }
 
 RULES:
+- jobName is a noun-phrase label like "Backyard Junk Removal" or "Kitchen Remodel" — three words or fewer, Title Case, no punctuation.
 - Use only facts the contractor stated. Do NOT invent materials, scope, square footage, brands, durations, or warranties.
 - No filler hype ("we'll do an amazing job"). Keep it concrete and calm.
 - No first-person ("I'll …"). Write as the contractor describing what the job covers.
@@ -67,8 +73,13 @@ export class PolishJobDetails {
 
     const parsed = tryParseJson(text);
     if (parsed && typeof parsed.summary === "string" && typeof parsed.description === "string") {
+      const summary = clampSummary(parsed.summary);
+      const jobName = typeof parsed.jobName === "string" && parsed.jobName.trim()
+        ? clampJobName(parsed.jobName)
+        : deriveJobName(summary);
       return {
-        summary: clampSummary(parsed.summary),
+        summary,
+        jobName,
         description: parsed.description.trim(),
       };
     }
@@ -76,7 +87,7 @@ export class PolishJobDetails {
   }
 }
 
-function tryParseJson(s: string): { summary?: unknown; description?: unknown } | undefined {
+function tryParseJson(s: string): { summary?: unknown; jobName?: unknown; description?: unknown } | undefined {
   if (!s) return undefined;
   const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = (fenced ? fenced[1] : s).trim();
@@ -95,11 +106,28 @@ function clampSummary(s: string): string {
   return words.length <= 8 ? cleaned : words.slice(0, 8).join(" ");
 }
 
+function clampJobName(s: string): string {
+  const cleaned = s.trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s+/g, " ");
+  const words = cleaned.split(" ").filter(Boolean).slice(0, 3);
+  return words.map(titleCaseWord).join(" ");
+}
+
+function deriveJobName(summary: string): string {
+  return clampJobName(summary);
+}
+
+function titleCaseWord(w: string): string {
+  if (!w) return w;
+  return w[0].toUpperCase() + w.slice(1).toLowerCase();
+}
+
 function fallback(raw: string): PolishJobDetailsResult {
   const firstLine = raw.split(/\n/)[0].trim();
   const summaryWords = firstLine.split(/\s+/).slice(0, 8).join(" ");
+  const summary = summaryWords || "New job";
   return {
-    summary: summaryWords || "New job",
+    summary,
+    jobName: deriveJobName(summary),
     description: raw,
   };
 }

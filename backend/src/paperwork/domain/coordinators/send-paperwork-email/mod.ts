@@ -72,7 +72,7 @@ export class SendPaperworkEmail {
       // If a contract has already been finalized for this quote, link to
       // it directly. Otherwise we fall back to the quote-public page.
       const boundContract = await this.findContractForQuote(userId, quote.id);
-      subject = renderQuoteSubject(quote, sender);
+      subject = renderQuoteSubject(quote, sender, senderBiz, customer);
       htmlBody = renderQuoteHtml(quote, customer, sender, senderBiz, boundContract);
       quoteForStamp = quote;
     } else if (input.kind === "contract") {
@@ -95,7 +95,7 @@ export class SendPaperworkEmail {
       // present this as a quote review. Reuse the quote subject builder
       // with the resolved quote (or a synthesized one when missing).
       const quoteForSubject = quoteForBody ?? quoteFromContract(contract);
-      subject = renderQuoteSubject(quoteForSubject, sender);
+      subject = renderQuoteSubject(quoteForSubject, sender, senderBiz, customer);
       htmlBody = renderQuoteHtml(quoteForBody ?? quoteFromContract(contract), customer, sender, senderBiz, contract);
     } else {
       const invoice = await this.invoices.getOwned(input.resourceId, userId);
@@ -109,7 +109,16 @@ export class SendPaperworkEmail {
       return { ok: false, reason: "no recipient: pass `to` or attach a customer with an email", to: "", subject };
     }
 
-    const result = await this.email.send({ to: recipient, subject, htmlBody, from: input.from });
+    // Roadmap p.7: contractor lands a copy on every outbound, so they can
+    // forward and have a paper trail in their own inbox.
+    const cc = sender?.email ? [sender.email] : undefined;
+    // Roadmap p.7 + scope answer: From is a per-business alias at the
+    // paperworkmonster.com domain (e.g. acme@paperworkmonster.com) when
+    // the business identity has one set. Falls back to noreply@... and
+    // then to the configured POSTMARK_FROM env when neither is available.
+    const from = input.from ?? resolveSenderFrom(senderBiz);
+
+    const result = await this.email.send({ to: recipient, subject, htmlBody, from, cc });
 
     // Stamp the quote's lifecycle: status→"sent" + sentAt→now (idempotent — only if not already set).
     // Mirrors the public-controller's accept-time stamping and powers the /quotes stage derivation.
@@ -186,6 +195,22 @@ const APP_URL = (() => {
   return "http://localhost:5173";
 })();
 
+/** Outbound domain for the per-business alias system (roadmap p.7). All
+ *  customer-facing email goes out as `<alias>@${SEND_DOMAIN}` so contractors
+ *  get a unique address that can be forwarded to their personal inbox. */
+const SEND_DOMAIN = (Deno.env.get("PAPERWORK_SEND_DOMAIN") ?? "paperworkmonster.com").trim();
+
+/** Resolve the per-business From address. Uses the business identity's
+ *  `emailAlias` when present; falls back to `noreply@${SEND_DOMAIN}`. The
+ *  EmailService falls back further to POSTMARK_FROM env if needed. */
+function resolveSenderFrom(biz: BusinessIdentity | undefined): string {
+  const alias = biz?.emailAlias?.trim();
+  if (alias && /^[a-z0-9-]+$/.test(alias)) {
+    return `${alias}@${SEND_DOMAIN}`;
+  }
+  return `noreply@${SEND_DOMAIN}`;
+}
+
 const COLOR_TEAL  = "#144852";
 const COLOR_GREEN = "#519843";
 const COLOR_INK   = "#1c2c30";
@@ -260,7 +285,10 @@ function shell(opts: {
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
     <tr><td align="center" style="padding:32px 16px;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width:600px;background:${COLOR_CARD};border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(20,72,82,0.08);">
-        <tr><td style="padding:28px 32px 0;">
+        <tr><td align="center" style="padding:24px 32px 0;">
+          <img src="${APP_URL}/logo.svg" alt="Paperwork Monsters" width="160" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:160px;">
+        </td></tr>
+        <tr><td style="padding:24px 32px 0;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
             <tr>
               <td style="vertical-align:top">
@@ -304,15 +332,22 @@ const COLOR_PINK = "#FF6B6B";
 const COLOR_PINK_DARK = "#d94e4e";
 const COLOR_CREAM = "#fffdf7";
 
-function renderQuoteSubject(q: Quote, sender: User | undefined): string {
-  const who = sender?.name?.trim()?.split(/\s+/)[0];
-  const summary = q.summary?.replace(/^\s*quote\s*:\s*/i, "").trim() || "your project";
-  // Subject lands in the inbox row — frame as "your quote for X is
-  // ready" (audit2 N9). Body carries the dollar amount; the subject
-  // stays human and excited rather than money-forward.
-  return who
-    ? `Your quote for ${summary} is ready — from ${who}`
-    : `Your quote for ${summary} is ready`;
+function renderQuoteSubject(
+  q: Quote,
+  sender: User | undefined,
+  senderBiz: BusinessIdentity | undefined,
+  customer: Customer | undefined,
+): string {
+  // Roadmap p.7 format: "{Business Name}" Quote for "{Customer Name}", "{Job Name}"
+  const businessName = senderBiz?.businessName?.trim()
+    || senderBiz?.legalName?.trim()
+    || sender?.name?.trim()
+    || "Paperwork Monsters";
+  const customerName = customer?.name?.trim() || "Customer";
+  const jobName = (q.jobName?.trim()
+    || q.summary?.replace(/^\s*quote\s*:\s*/i, "").trim()
+    || "Project");
+  return `"${businessName}" Quote for "${customerName}", "${jobName}"`;
 }
 
 /**

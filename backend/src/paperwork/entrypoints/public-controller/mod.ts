@@ -242,7 +242,7 @@ export class PaperworkPublicController {
       const c = await this.contracts.get(id);
       const [contractor, customer, quote] = await Promise.all([
         loadContractor(this.users, this.identity, this.addresses, c.userId),
-        lookupCustomerName(this.customers, c.customerId, c.userId),
+        lookupCustomerPublic(this.customers, c.customerId, c.userId),
         // Public contract page surfaces the linked quote's job details so the
         // customer sees what they're agreeing to before signing. The
         // quote read is best-effort; a missing/forbidden quote shouldn't
@@ -250,12 +250,12 @@ export class PaperworkPublicController {
         c.quoteId ? this.quotes.get(c.quoteId).catch(() => undefined) : Promise.resolve(undefined),
       ]);
       const jobDetails = quote
-        ? { summary: quote.summary, description: quote.description, lineItems: quote.lineItems }
+        ? { summary: quote.summary, jobName: quote.jobName, description: quote.description, lineItems: quote.lineItems }
         : undefined;
       return ctx.json({
         ...redactContract(c),
         contractor,
-        customer: customer ? { name: customer } : undefined,
+        customer,
         jobDetails,
         terms: c.terms ?? [],
       });
@@ -453,6 +453,22 @@ async function lookupCustomerName(
   try {
     const c = await customers.getOwned(customerId, ownerId);
     return c.name;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Safe-to-expose customer projection for public preview "To:" block.
+ *  Returns name + phone + email; intentionally omits anything internal. */
+async function lookupCustomerPublic(
+  customers: CustomerStore,
+  customerId: string | undefined,
+  ownerId: string,
+): Promise<{ name?: string; phoneNumber?: string; email?: string } | undefined> {
+  if (!customerId) return undefined;
+  try {
+    const c = await customers.getOwned(customerId, ownerId);
+    return { name: c.name, phoneNumber: c.phoneNumber, email: c.email };
   } catch {
     return undefined;
   }

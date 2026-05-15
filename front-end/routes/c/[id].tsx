@@ -62,8 +62,8 @@ interface ContractPublic {
   signedAt?: string;
   customerSignedName?: string;
   contractor?: Contractor;
-  customer?: { name?: string };
-  jobDetails?: { summary?: string; description?: string; lineItems?: LineItem[] };
+  customer?: { name?: string; phoneNumber?: string; email?: string };
+  jobDetails?: { summary?: string; jobName?: string; description?: string; lineItems?: LineItem[] };
   terms?: Term[];
   createdAt?: string;
 }
@@ -144,7 +144,10 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
   const items = contract.jobDetails?.lineItems ?? [];
   const showQty = items.some((li) => (li.quantity ?? 1) > 1);
   const summary = (contract.jobDetails?.summary ?? "Service Agreement").replace(/^\s*quote\s*:\s*/i, "").trim();
-  const heroTitle = summary.replace(/\b\w/g, (c) => c.toUpperCase());
+  const jobNameRaw = contract.jobDetails?.jobName?.trim();
+  const heroTitle = (jobNameRaw && jobNameRaw.length > 0)
+    ? jobNameRaw
+    : summary.replace(/\b\w/g, (c) => c.toUpperCase());
 
   const effective = contract.effectiveDate ?? contract.createdAt;
   const milestones = computeMilestones(total, contract.terms);
@@ -182,17 +185,27 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
           </h1>
           {customerName && (
             <div style={`margin-top:10px;color:${MUTED};font-size:14px`}>
-              Between <strong style={`color:${INK}`}>{businessLabel}</strong> ("Contractor") and <strong style={`color:${INK}`}>{customerName}</strong> ("Client")
+              Between <strong style={`color:${INK}`}>{businessLabel}</strong> and <strong style={`color:${INK}`}>{customerName}</strong>
               {effective ? <> · effective <strong style={`color:${INK}`}>{fmtDate(effective)}</strong></> : null}
             </div>
           )}
 
-          {/* Recital */}
-          <section style={`margin-top:22px;padding:18px 22px;background:rgba(255,107,107,0.04);border:1px solid rgba(255,107,107,0.18);border-radius:14px`}>
-            <div style={`font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${PINK_DARK};margin-bottom:8px`}>The deal in plain English</div>
-            <p style={`margin:0;color:${INK};font-size:15px;line-height:1.55`}>
-              {customerFirst ? `Hi ${customerFirst} —` : "Hi there —"} this is the contract for <strong>{summary.toLowerCase()}</strong>. The job details, money, schedule, and the legal-but-honest stuff are below. Read it through, and when it looks right, type your name at the bottom and tap sign. We'll countersign and you'll have a PDF in your inbox.
-            </p>
+          {/* To / From block */}
+          <section style="margin-top:24px;display:grid;grid-template-columns:1fr 1fr;gap:14px" class="ctr__tofrom">
+            <PartyCard
+              role="To"
+              name={customerName}
+              email={contract.customer?.email}
+              phone={contract.customer?.phoneNumber}
+            />
+            <PartyCard
+              role="From"
+              name={contractorName}
+              businessName={contractor?.businessName?.trim()}
+              email={contractor?.email}
+              phone={contractor?.phoneNumber}
+              address={contractor?.addressLine}
+            />
           </section>
 
           {/* Job details */}
@@ -254,39 +267,34 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
             </section>
           )}
 
-          {/* Schedule */}
-          {(contract.startDate || contract.estimatedCompletionDate) && (
+          {/* Terms — Start/Estimated completion (was "03 Schedule") merged
+              with the wizard-captured terms grid (was "04 Terms"). Warranty
+              is hidden when the contractor answered "No warranty"; the
+              legal-text warranty clause in Fine Print below still applies. */}
+          {(contract.startDate || contract.estimatedCompletionDate || (contract.terms && contract.terms.length > 0)) && (
             <section style="margin-top:30px">
-              <SectionLabel n="03" title="Schedule" hint="When work happens" />
-              <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <SectionLabel n="03" title="Terms" hint="What you agreed to in the chat" />
+              <div class="ctr__terms-grid" style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
                 {contract.startDate && (
                   <KV k="Start" v={fmtDate(contract.startDate)} />
                 )}
                 {contract.estimatedCompletionDate && (
                   <KV k="Estimated completion" v={fmtDate(contract.estimatedCompletionDate)} />
                 )}
+                {(contract.terms ?? [])
+                  .filter((t) => t.stepId !== "customer" && !isEmptyWarranty(t))
+                  .map((t) => (
+                    <KV key={t.stepId} k={t.label} v={expandTermValue(t, contractor?.state)} />
+                  ))}
               </div>
             </section>
           )}
 
-          {/* Wizard-captured terms grid. Some wizard answers are
-              shorthand ("Use my business state", "Yes") that don't mean
-              anything to the customer — expand them into full sentences
-              using the contractor's state. */}
-          {contract.terms && contract.terms.length > 0 && (
-            <section style="margin-top:30px">
-              <SectionLabel n="04" title="Terms" hint="What you agreed to in the chat" />
-              <div class="ctr__terms-grid" style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
-                {contract.terms.filter((t) => t.stepId !== "customer").map((t) => (
-                  <KV key={t.stepId} k={t.label} v={expandTermValue(t, contractor?.state)} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Boilerplate clauses (always present, plain English) */}
-          <section style="margin-top:30px">
-            <SectionLabel n="05" title="Fine print, in plain English" hint="The legal-but-honest stuff" />
+          {/* Boilerplate clauses (always present, plain English) — un-numbered
+              per roadmap p.5: this is the "Fine print" subsection of Terms. */}
+          <section style="margin-top:24px">
+            <div style={`font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;color:${TEAL};font-size:15px;letter-spacing:-0.01em`}>Fine print, in plain English</div>
+            <div style={`font-size:12px;color:${MUTED};margin-top:2px;margin-bottom:6px`}>The legal-but-honest stuff</div>
             <ol style={`margin:14px 0 0;padding-left:20px;color:${INK};font-size:14px;line-height:1.65`}>
               <li><strong>Governing Law.</strong> This agreement is governed by the laws of the state where the work is performed.</li>
               <li><strong>Job Details.</strong> Contractor will perform only the work described in this agreement. Any additional work must be approved by both parties and may result in additional charges.</li>
@@ -310,11 +318,11 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
               the customer's filled cursive name + date after signing. */}
           {!declined && (
             <section style={`margin-top:36px;padding-top:28px;border-top:2px dashed rgba(255,107,107,0.30)`}>
-              <SectionLabel n="06" title="Sign here" hint={signed ? "Both signatures captured" : `By signing, ${customerFirst ?? "you"} agree to everything above`} />
+              <SectionLabel n="04" title="Sign here" hint={signed ? "Both signatures captured" : `By signing below, ${customerFirst ?? "you"} agree to everything above`} />
               <div style="margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:stretch">
                 {/* Contractor card */}
                 <div style={`padding:14px 16px;background:#fff;border:1px solid ${LINE};border-radius:12px;min-height:96px;display:flex;flex-direction:column;justify-content:flex-end`}>
-                  <div style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}>Contractor signed</div>
+                  <div style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}>Contractor Signature</div>
                   <div style={`margin-top:6px;font-family:'Snell Roundhand','Brush Script MT',cursive;font-size:26px;color:${TEAL};line-height:1.1`}>{contractorName ?? businessLabel}</div>
                   <div style={`margin-top:4px;font-size:11px;color:${MUTED}`}>{effective ? fmtDate(effective) : "today"}</div>
                 </div>
@@ -322,7 +330,7 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
                 {signed
                   ? (
                     <div style={`padding:14px 16px;background:#fff;border:1px solid ${LINE};border-radius:12px;min-height:96px;display:flex;flex-direction:column;justify-content:flex-end`}>
-                      <div style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}>{customerFirst ? `${customerName ?? customerFirst} signed` : "Client signed"}</div>
+                      <div style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}>{customerFirst ? `${customerName ?? customerFirst} Signature` : "Client Signature"}</div>
                       <div style={`margin-top:6px;font-family:'Snell Roundhand','Brush Script MT',cursive;font-size:26px;color:${TEAL};line-height:1.1`}>{contract.customerSignedName ?? customerName ?? "—"}</div>
                       <div style={`margin-top:4px;font-size:11px;color:${MUTED}`}>{contract.signedAt ? fmtDate(contract.signedAt) : "today"}</div>
                     </div>
@@ -351,20 +359,27 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
 
           {/* Contact card */}
           {(contractor?.phoneNumber || contractor?.email) && (
-            <footer style={`margin-top:36px;padding-top:22px;border-top:1px solid ${LINE};display:flex;align-items:center;gap:14px;flex-wrap:wrap`}>
+            <footer style={`margin-top:36px;padding-top:22px;border-top:1px solid ${LINE};display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap`}>
               <div style={`width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,${GREEN} 0%,#71a85f 100%);color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;letter-spacing:.04em;flex-shrink:0`}>{senderInitials}</div>
               <div style="min-width:0;flex:1">
-                <div style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}>Questions before signing? Reach {contractorFirst ?? "your contractor"}</div>
-                <div style={`margin-top:3px;display:flex;gap:14px;flex-wrap:wrap;font-size:13.5px`}>
-                  {contractor?.phoneNumber && <a href={telHref(contractor.phoneNumber)} style={`color:${TEAL};text-decoration:none;font-weight:700`}>{fmtPhone(contractor.phoneNumber)}</a>}
-                  {contractor?.email && <a href={`mailto:${contractor.email}`} style={`color:${TEAL};text-decoration:none;font-weight:700`}>{contractor.email}</a>}
+                <div style={`color:${INK};font-size:14px;line-height:1.5`}>
+                  Questions before signing?{" "}
+                  {contractor?.phoneNumber && (
+                    <>Call <a href={telHref(contractor.phoneNumber)} style={`color:${TEAL};text-decoration:none;font-weight:700`}>{fmtPhone(contractor.phoneNumber)}</a></>
+                  )}
+                  {contractor?.phoneNumber && contractor?.email ? " or " : ""}
+                  {contractor?.email && (
+                    <>email <a href={`mailto:${contractor.email}`} style={`color:${TEAL};text-decoration:none;font-weight:700`}>{contractor.email}</a></>
+                  )}
+                  {"! I look forward to working with you."}
                 </div>
               </div>
             </footer>
           )}
         </div>
       </article>
-      <div style={`text-align:center;margin-top:18px;font-size:11px;color:#a8b2b3;letter-spacing:.04em`}>
+      <div style={`display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px;font-size:11px;color:#a8b2b3;letter-spacing:.04em`}>
+        <img src="/logo.svg" alt="" height="14" style="height:14px;width:auto;opacity:0.6;display:block" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
         Powered by Paperwork Monsters · Contract #{contract.id.slice(0, 8).toUpperCase()}
       </div>
     </>
@@ -394,6 +409,36 @@ function KV({ k, v }: { k: string; v: string }) {
     <div style={`background:#fff;border:1px solid ${LINE};border-radius:12px;padding:12px 14px`}>
       <div style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}>{k}</div>
       <div style={`margin-top:5px;color:${INK};font-weight:700;font-size:14px;line-height:1.35`}>{v}</div>
+    </div>
+  );
+}
+
+function PartyCard(props: {
+  role: "To" | "From";
+  name?: string;
+  businessName?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+}) {
+  const displayName = props.name?.trim();
+  const biz = props.businessName?.trim();
+  return (
+    <div style={`background:#fff;border:1px solid ${LINE};border-radius:12px;padding:14px 16px`}>
+      <div style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}>{props.role}</div>
+      <div style={`margin-top:6px;color:${INK};font-weight:800;font-size:15px;line-height:1.25`}>{displayName ?? "—"}</div>
+      {biz && biz !== displayName && (
+        <div style={`margin-top:2px;color:${MUTED};font-size:12.5px;line-height:1.3`}>{biz}</div>
+      )}
+      {props.phone && (
+        <div style={`margin-top:4px;font-size:12.5px;line-height:1.35`}><a href={telHref(props.phone)} style={`color:${TEAL};text-decoration:none;font-weight:600`}>{fmtPhone(props.phone)}</a></div>
+      )}
+      {props.email && (
+        <div style={`margin-top:2px;font-size:12.5px;line-height:1.35`}><a href={`mailto:${props.email}`} style={`color:${TEAL};text-decoration:none;font-weight:600`}>{props.email}</a></div>
+      )}
+      {props.address && (
+        <div style={`margin-top:4px;color:${MUTED};font-size:12px;line-height:1.35`}>{props.address}</div>
+      )}
     </div>
   );
 }
@@ -448,6 +493,15 @@ function expandTermValue(term: Term, contractorState: string | undefined): strin
     return term.value;
   }
   return term.value;
+}
+
+/** Hide warranty term row when the contractor selected "No warranty" — the
+ *  legal-text warranty clause in the Fine Print still applies. The warranty
+ *  step id from the wizard is `warranty`; some users type "none" / "n/a". */
+function isEmptyWarranty(term: Term): boolean {
+  if (term.stepId !== "warranty") return false;
+  const v = term.value.trim().toLowerCase();
+  return v === "" || v === "no warranty" || v === "none" || v === "n/a" || v === "no";
 }
 
 function computeMilestones(total: number, terms: Term[] | undefined): { label: string; amount: number; when: string }[] {

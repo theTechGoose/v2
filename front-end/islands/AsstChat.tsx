@@ -60,7 +60,7 @@ const TERM_OPTIONS_FALLBACK: Record<string, { label: string; sub?: string }[]> =
       { label: "2 weeks" },
     ],
     payment_terms: [
-      { label: "Get paid on completion", sub: "Same-day payment" },
+      { label: "Payment upon completion", sub: "Same-day payment" },
       { label: "50/50", sub: "Half upfront, half when done" },
       { label: "30/30/40", sub: "Start, halfway, done" },
       { label: "Deposit + balance", sub: "Small upfront, rest when done" },
@@ -99,13 +99,37 @@ interface ActionCardLineItem {
 
 interface ActionCardPayload {
   actionType?: string;
-  status?: "draft" | "sent" | "void" | string;
+  status?: "draft" | "sent" | "viewed" | "approved" | "void" | string;
   quoteId?: string;
   customerId?: string;
   /** Polished narrative produced from the user's raw job-details input. */
   description?: string;
   lineItems?: ActionCardLineItem[];
   totalCents?: number;
+}
+
+/** Map a Quote/Contract status to the human-facing chip label on the
+ *  in-chat Quote+Agreement card. Keeps the chip in sync with the doc's
+ *  lifecycle: Draft → Sent → Viewed → Approved. */
+function statusChipLabel(status: string | undefined): string {
+  switch ((status ?? "draft").toLowerCase()) {
+    case "sent":
+      return "Sent";
+    case "opened":
+    case "viewed":
+      return "Viewed";
+    case "won":
+    case "accepted":
+    case "approved":
+    case "signed":
+      return "Approved";
+    case "void":
+    case "declined":
+    case "lost":
+      return "Declined";
+    default:
+      return "Draft";
+  }
 }
 
 function fmtUSD(cents: number): string {
@@ -930,14 +954,16 @@ export default function AsstChat({
     setSubmittedJobDetails(trimmed);
     setSending(true);
     try {
-      let polished: { summary: string; description: string };
+      let polished: { summary: string; jobName: string; description: string };
       try {
         polished = await assistantClient.polishJobDetails(raw, cents);
       } catch (err) {
         console.warn("[asst] polish failed, falling back to raw:", err);
         const firstLine = raw.split("\n")[0].trim();
+        const summary = firstLine.split(/\s+/).slice(0, 8).join(" ") || "New job";
         polished = {
-          summary: firstLine.split(/\s+/).slice(0, 8).join(" ") || "New job",
+          summary,
+          jobName: summary.split(/\s+/).slice(0, 3).join(" "),
           description: raw.trim(),
         };
       }
@@ -948,6 +974,7 @@ export default function AsstChat({
         credentials: "include",
         body: JSON.stringify({
           summary: polished.summary,
+          jobName: polished.jobName,
           description: polished.description,
           lineItems: [
             {
@@ -2403,10 +2430,23 @@ export default function AsstChat({
                   }
                   const termAnswers = Array.from(termsByStep.values())
                     .sort((a, b) => a.firstIdx - b.firstIdx)
+                    // Drop warranty row entirely when the contractor picked
+                    // "No warranty" — the legal-text warranty clause in the
+                    // contract's Fine Print still applies.
+                    .filter(({ stepId, value }) => {
+                      if (stepId !== "warranty") return true;
+                      const v = value.trim().toLowerCase();
+                      return !(v === "" || v === "no warranty" || v === "none" || v === "n/a" || v === "no");
+                    })
                     .map(({ stepId, label, value }) => ({
                       stepId,
                       label,
-                      value,
+                      // Time-to-complete reads as an estimate, not a hard
+                      // promise — surface that on the card to match the
+                      // customer-facing wording.
+                      value: stepId === "time_to_complete" && value && !/^estimated\s*:/i.test(value)
+                        ? `Estimated: ${value}`
+                        : value,
                     }));
                   const totalCentsForBreakdown =
                     typeof contract?.totalAmount === "number"
@@ -2445,7 +2485,7 @@ export default function AsstChat({
                             ) : null}
                           </div>
                           <div class="quote-review__head-right">
-                            <span class="quote-review__chip">Draft</span>
+                            <span class="quote-review__chip">{statusChipLabel(lockedPayload.status)}</span>
                             <button
                               type="button"
                               class="quote-review__close"
@@ -2527,7 +2567,7 @@ export default function AsstChat({
                         {termAnswers.length > 0 ? (
                           <section class="quote-review__section">
                             <div class="quote-review__section-label">
-                              Job Details
+                              Terms
                             </div>
                             <dl class="quote-review__terms">
                               {termAnswers.map((t, i) => {
@@ -2808,10 +2848,10 @@ export default function AsstChat({
                               {sending
                                 ? "Sending…"
                                 : sendChannel === "both"
-                                ? "Send by Text + Email"
+                                ? "Click here to send by Text + Email"
                                 : sendChannel === "sms"
-                                ? "Send by Text"
-                                : "Send by Email"}
+                                ? "Click here to send by Text"
+                                : "Click here to send by Email"}
                             </button>
                             <button
                               type="button"
@@ -3487,6 +3527,24 @@ export default function AsstChat({
         ) : null}
       </div>
 
+      {(() => {
+        // Roadmap p.2: hide the composer when the user is in a "tapping-only"
+        // structured step — the MoneyInput screen, or any unanswered wizard
+        // card that exposes its own options. Text input has no place there
+        // and was visually distracting customers during testing.
+        const answeredStepIds = new Set<string>();
+        for (const x of messages) {
+          const sid = (x.payload as { wizardStepId?: string } | undefined)?.wizardStepId;
+          if (x.kind === "text" && sid) answeredStepIds.add(sid);
+        }
+        const hasUnansweredWizard = messages.some((m) => {
+          if (m.kind !== "wizard") return false;
+          const sid = (m.payload as { stepId?: string } | undefined)?.stepId;
+          return !sid || !answeredStepIds.has(sid);
+        });
+        const composerHidden = priceCaptureOpen || hasUnansweredWizard;
+        if (composerHidden) return null;
+        return (
       <div
         class={`composer${
           awaitingJobDetails && !submittedJobDetails && !draft.trim()
@@ -3547,6 +3605,8 @@ export default function AsstChat({
           </>
         )}
       </div>
+        );
+      })()}
     </>
   );
 }
@@ -5200,7 +5260,7 @@ function CustomPaymentPickerForm(props: {
 
   const presets: { label: string; apply: () => void }[] = [
     {
-      label: "Get paid on completion",
+      label: "Payment upon completion",
       apply: () => {
         setMode("net");
         setNetDays("0");
