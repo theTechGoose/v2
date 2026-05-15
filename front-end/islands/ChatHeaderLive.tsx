@@ -38,9 +38,6 @@ export default function ChatHeaderLive({ initialClient, initialStatus }: Props) 
       <a href="/dashboard" class="chat__head-btn" title="Back to dashboard" style="text-decoration:none">
         <I d={ICN.back} size={15} />
       </a>
-      <div class="chat__avatar">
-        <img src="/logo-monster.png" alt="" />
-      </div>
       <div class="chat__head-info">
         <div class="chat__head-title">{client}</div>
         <div class="chat__head-sub">

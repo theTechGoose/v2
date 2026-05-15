@@ -121,14 +121,10 @@ export default function DashSidebar({ active = "home" }: Props) {
       <div class="sb__inner">
         <div class="sb__brand">
           <div class="sb__brand-logo">
-            {/* BW line-art monster, inverted at render so the black strokes
-                become white against the green tile. The colored furry
-                variant lives at /logo-monster.png and stays in use for
-                chat avatars, public docs, and the email shell. */}
             <img
-              src="/logo-mono.png"
+              src="/logo-monster-card.png"
               alt=""
-              style="width:30px;height:30px;object-fit:contain;filter:invert(1)"
+              style="width:30px;height:30px;object-fit:cover;border-radius:8px;display:block"
             />
           </div>
           <div class="sb__brand-text">

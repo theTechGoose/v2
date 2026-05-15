@@ -315,6 +315,13 @@ export default function AsstChat({
    *  polish endpoint, then used to seed the new quote + phase 2 wizard. */
   const [awaitingJobDetails, setAwaitingJobDetails] = useState(false);
   const [pendingPriceCents, setPendingPriceCents] = useState<number | null>(null);
+  /** First-button flow is now "details first, price second." When the user
+   *  taps "I know my price, write it up." we ask for the job details up
+   *  front and stash the raw text here. After the user types it and
+   *  submits, we flip to the price-capture screen with this populated,
+   *  and the price-Continue handler combines both pieces to build the
+   *  quote. (The other two flows ignore this — they go through the LLM.) */
+  const [pendingJobDetailsRaw, setPendingJobDetailsRaw] = useState<string | null>(null);
   /** Captures the raw text the user submitted at the job-details step
    *  so we can render an optimistic user bubble + "Polishing…" indicator
    *  while the polish + create-quote + transition chain runs. */
@@ -834,8 +841,11 @@ export default function AsstChat({
     if (!trimmed) return;
     // Empty-state job-details capture: the chat input is acting as
     // the answer surface for "tell me the job details", not a chat turn.
-    // Intercept here so we don't fire a generic LLM call.
-    if (awaitingJobDetails && pendingPriceCents != null) {
+    // Intercept here so we don't fire a generic LLM call. This fires
+    // for both flow orders (details-first or price-first) — submitJobDetails
+    // itself decides whether to stash + open the price screen or to run
+    // the polish + quote-create directly.
+    if (awaitingJobDetails) {
       setDraft("");
       autosize();
       await submitJobDetails(trimmed);
@@ -938,21 +948,65 @@ export default function AsstChat({
     setError(undefined);
     setPendingPriceCents(cents);
     setPriceCaptureOpen(false);
-    setAwaitingJobDetails(true);
+    // If the user already gave us the job details (details-first flow on
+    // the first button), the price is the last piece — kick off polish
+    // + quote-creation immediately. Otherwise flip into the legacy
+    // "now tell me the details" prompt mode.
+    if (pendingJobDetailsRaw && pendingJobDetailsRaw.trim().length > 0) {
+      // Re-mount the details-flow UI so the user sees their earlier
+      // details bubble + the "Polishing your job details…" indicator
+      // while the polish + quote-create chain runs.
+      setAwaitingJobDetails(true);
+      // Pass cents explicitly — pendingPriceCents state hasn't committed
+      // yet at the time the microtask fires, so the submit fn would
+      // otherwise read null and loop back into the "open price screen"
+      // branch, asking for the price a second time.
+      queueMicrotask(() => { void submitJobDetails(pendingJobDetailsRaw, cents); });
+    } else {
+      setAwaitingJobDetails(true);
+    }
   }
 
   /**
    * Runs after the user types the raw job description in the chat input.
-   * Calls the polish endpoint, then materializes the quote + conversation
-   * with the polished summary/description and transitions to phase 2.
+   *
+   * Two entry paths converge here:
+   *   - Legacy "price → details" flow: pendingPriceCents was set on
+   *     /onPriceContinue first; we polish + create the quote immediately.
+   *   - New "details → price" flow (first button): no price yet. We
+   *     stash the raw text and open the price-capture screen; once the
+   *     user hits Continue there, /onPriceContinue replays this fn with
+   *     the stashed raw.
    */
-  async function submitJobDetails(raw: string) {
-    const cents = pendingPriceCents;
+  async function submitJobDetails(raw: string, centsOverride?: number) {
     const trimmed = raw.trim();
-    if (sending || !trimmed || cents == null || cents <= 0) return;
+    if (sending || !trimmed) return;
     setError(undefined);
+
+    // Callers that just set the price in the same tick (onPriceContinue)
+    // pass `centsOverride` so we don't rely on the not-yet-committed
+    // `pendingPriceCents` React state. Without this, the state would
+    // still read null and we'd loop back into the "open price screen"
+    // branch — asking the user for the price a second time.
+    const cents = centsOverride ?? pendingPriceCents;
+    if (cents == null || cents <= 0) {
+      // Details-first path: stash the raw and pop the price screen.
+      setPendingJobDetailsRaw(trimmed);
+      setSubmittedJobDetails(trimmed);
+      setAwaitingJobDetails(false);
+      setPriceCaptureOpen(true);
+      return;
+    }
+
     setSubmittedJobDetails(trimmed);
     setSending(true);
+    // Hold the "Polishing your job details…" indicator on screen for at
+    // least this long even when the API returns instantly. Without this
+    // floor, fast dev / stub responses make the indicator flash for
+    // ~50ms — the user sees nothing happen between "Continue" on the
+    // price screen and the new quote appearing.
+    const polishStartedAt = Date.now();
+    const MIN_VISIBLE_MS = 700;
     try {
       let polished: { summary: string; jobName: string; description: string };
       try {
@@ -966,6 +1020,10 @@ export default function AsstChat({
           jobName: summary.split(/\s+/).slice(0, 3).join(" "),
           description: raw.trim(),
         };
+      }
+      const elapsed = Date.now() - polishStartedAt;
+      if (elapsed < MIN_VISIBLE_MS) {
+        await new Promise((r) => setTimeout(r, MIN_VISIBLE_MS - elapsed));
       }
 
       const quote = await fetch("/api/quotes", {
@@ -2056,7 +2114,13 @@ export default function AsstChat({
                 <button
                   type="button"
                   class="chat__empty-prompt"
-                  onClick={() => setPriceCaptureOpen(true)}
+                  onClick={() => {
+                    // Inverted flow: ask for job details FIRST, then price.
+                    // submitJobDetails will detect the missing price and
+                    // open the price-capture screen after stashing the raw.
+                    setPendingJobDetailsRaw(null);
+                    setAwaitingJobDetails(true);
+                  }}
                 >
                   I know my price, write it up.
                 </button>

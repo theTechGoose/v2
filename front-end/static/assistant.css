@@ -378,7 +378,10 @@ html, body {
     background: var(--brand-green);
     border-radius: 11px;
     display: grid; place-items: center;
-    box-shadow: 0 6px 14px rgba(81,152,67,0.4);
+    /* Ambient green glow — see dashboard.css for the canonical block. */
+    box-shadow:
+      0 8px 24px -4px rgba(81,152,67,0.55),
+      0 0 40px 4px rgba(81,152,67,0.32);
     transform: rotate(-4deg);
   }
   .sb__brand-name {
