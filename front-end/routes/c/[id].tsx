@@ -379,7 +379,7 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
         </div>
       </article>
       <div style={`display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px;font-size:11px;color:#a8b2b3;letter-spacing:.04em`}>
-        <img src="/logo.svg" alt="" height="14" style="height:14px;width:auto;opacity:0.6;display:block" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+        <img src="/logo.png" alt="" height="16" style="height:16px;width:auto;opacity:0.7;display:block" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
         Powered by Paperwork Monsters · Contract #{contract.id.slice(0, 8).toUpperCase()}
       </div>
     </>

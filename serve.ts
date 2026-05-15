@@ -12,8 +12,11 @@ const ROOT = new URL(".", import.meta.url).pathname;
 const BACKEND_DIR = `${ROOT}backend`;
 const FRONTEND_DIR = `${ROOT}front-end`;
 
-const BACKEND_PORT = Number(Deno.env.get("BACKEND_PORT") ?? 3000);
-const FRONTEND_PORT = Number(Deno.env.get("FRONTEND_PORT") ?? 5173);
+// Dev-only defaults bumped off 3000/5173 because too many other random
+// projects squat on those ports. Override via BACKEND_PORT / FRONTEND_PORT
+// if you really need the classic values.
+const BACKEND_PORT = Number(Deno.env.get("BACKEND_PORT") ?? 4280);
+const FRONTEND_PORT = Number(Deno.env.get("FRONTEND_PORT") ?? 5280);
 
 interface ChildSpec {
   name: string;

@@ -45,7 +45,7 @@ export default function Topbar({ greeting, initialUnread = 0, initialNotificatio
   return (
     <header class="topbar">
       <a href="/" class="topbar__brand" aria-label="Paperwork Monsters home" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:inherit;margin-right:14px">
-        <img src="/logo.svg" alt="" height="22" style="height:22px;width:auto;display:block" />
+        <img src="/logo.png" alt="" height="26" style="height:26px;width:auto;display:block" />
       </a>
       <div class="topbar__greeting">{greeting} <span aria-hidden="true">👋</span></div>
       <input type="search" placeholder="Search jobs, customers, invoices…" class="topbar__search" />

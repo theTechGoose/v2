@@ -121,7 +121,15 @@ export default function DashSidebar({ active = "home" }: Props) {
       <div class="sb__inner">
         <div class="sb__brand">
           <div class="sb__brand-logo">
-            <img src="/logo-monster.png" alt="" style="width:30px;height:30px;object-fit:contain" />
+            {/* BW line-art monster, inverted at render so the black strokes
+                become white against the green tile. The colored furry
+                variant lives at /logo-monster.png and stays in use for
+                chat avatars, public docs, and the email shell. */}
+            <img
+              src="/logo-mono.png"
+              alt=""
+              style="width:30px;height:30px;object-fit:contain;filter:invert(1)"
+            />
           </div>
           <div class="sb__brand-text">
             <div class="sb__brand-name">Paperwork Monsters</div>

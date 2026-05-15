@@ -1,6 +1,15 @@
 import { defineConfig } from "vite";
 import { fresh } from "@fresh/plugin-vite";
 
+// Dev ports — match serve.ts's defaults but allow env override so anyone
+// running vite directly (without serve.ts) can still pin them. PORT is
+// the standard env vite/Node respects; BACKEND_URL/BACKEND_PORT drive
+// the websocket proxy target.
+const FRONTEND_PORT = Number(process.env.PORT ?? 5280);
+const BACKEND_URL = process.env.BACKEND_URL
+  ?? `http://localhost:${process.env.BACKEND_PORT ?? 4280}`;
+const BACKEND_WS = BACKEND_URL.replace(/^http/, "ws");
+
 export default defineConfig({
   plugins: [
     fresh({
@@ -13,6 +22,8 @@ export default defineConfig({
   // returning "Blocked request". Safe in dev only — vite respects this
   // setting just for the dev server.
   server: {
+    port: FRONTEND_PORT,
+    strictPort: true,
     allowedHosts: [".ngrok.app", ".ngrok-free.app", ".trycloudflare.com"],
     // WebSocket proxy: AssemblyAI streaming runs through the backend
     // (Deno's `Deno.upgradeWebSocket` works there; Vite's Node http
@@ -22,7 +33,7 @@ export default defineConfig({
     // proxy in routes/api/[...path].ts.
     proxy: {
       "/api/voice/stream": {
-        target: "ws://localhost:3000",
+        target: BACKEND_WS,
         ws: true,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/voice/, "/voice"),

@@ -318,3 +318,121 @@ Deno.test("public e2e: by-quote lookup returns null when no contract exists", as
     await resetKv();
   }
 });
+
+Deno.test("public e2e: POST /invoices/:id/claim-payment flips status to claimed and records intent", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    // Seed: quote → contract → invoice (status=sent).
+    const quote = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ summary: "Job", lineItems: [] }),
+    }).then((r) => r.json());
+    const contract = await fetch(`http://localhost:${PORT}/contracts`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ quoteId: quote.id, totalAmount: 100_00 }),
+    }).then((r) => r.json());
+    const inv = await fetch(`http://localhost:${PORT}/invoices`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ contractId: contract.id, dueDate: "2026-06-01", amount: 100_00, status: "sent" }),
+    }).then((r) => r.json());
+
+    // Customer (no session) claims a check payment.
+    const claim = await fetch(`http://localhost:${PORT}/invoices/${inv.id}/claim-payment`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "check", reference: "#1234", claimedBy: "Hans" }),
+    }).then((r) => r.json());
+    assertEquals(claim.ok, true);
+
+    const pub = await fetch(`http://localhost:${PORT}/invoices/${inv.id}/public`).then((r) => r.json());
+    assertEquals(pub.status, "claimed");
+    assertEquals(pub.paymentIntent?.method, "check");
+    assertEquals(pub.paymentIntent?.reference, "#1234");
+    assertEquals(pub.paymentIntent?.claimedBy, "Hans");
+    assertEquals(pub.paymentIntent?.amount, 100_00);
+    assert(!("userId" in pub), "userId must NOT leak to /public");
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+Deno.test("public e2e: claim-payment rejects unknown methods", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const quote = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ summary: "x", lineItems: [] }),
+    }).then((r) => r.json());
+    const contract = await fetch(`http://localhost:${PORT}/contracts`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ quoteId: quote.id }),
+    }).then((r) => r.json());
+    const inv = await fetch(`http://localhost:${PORT}/invoices`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ contractId: contract.id, dueDate: "2026-06-01", amount: 100, status: "sent" }),
+    }).then((r) => r.json());
+
+    const res = await fetch(`http://localhost:${PORT}/invoices/${inv.id}/claim-payment`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "bitcoin" }),
+    });
+    // Bad method short-circuits with a 5xx (parseClaim throws).
+    assert(!res.ok);
+    await res.body?.cancel();
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+Deno.test("public e2e: claim-payment is 409 when invoice already paid", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const quote = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ summary: "x", lineItems: [] }),
+    }).then((r) => r.json());
+    const contract = await fetch(`http://localhost:${PORT}/contracts`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ quoteId: quote.id }),
+    }).then((r) => r.json());
+    const inv = await fetch(`http://localhost:${PORT}/invoices`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ contractId: contract.id, dueDate: "2026-06-01", amount: 100, status: "paid" }),
+    }).then((r) => r.json());
+
+    const res = await fetch(`http://localhost:${PORT}/invoices/${inv.id}/claim-payment`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "check" }),
+    });
+    assertEquals(res.status, 409);
+    await res.body?.cancel();
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});

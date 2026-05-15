@@ -93,11 +93,24 @@ export interface Invoice {
   amount?: number;
   issuedDate?: string;
   dueDate: string;
-  status?: "draft" | "pending" | "paid";
+  status?: "scheduled" | "draft" | "pending" | "sent" | "viewed" | "claimed" | "paid" | "void";
   paidAt?: string;
   createdAt: string;
   updatedAt: string;
   urgency?: { label: string; tone: "ok" | "warn" | "danger"; daysOverdue?: number };
+  /** Scheduled-fire date for status=scheduled invoices. */
+  scheduledFor?: string;
+  installmentIndex?: number;
+  installmentTotal?: number;
+  remindersMuted?: boolean;
+  /** Customer-side claim awaiting contractor confirmation. */
+  paymentIntent?: {
+    method: string;
+    amount: number;
+    reference?: string;
+    claimedAt: string;
+    claimedBy?: string;
+  };
   [k: string]: unknown;
 }
 

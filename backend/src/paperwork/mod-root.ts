@@ -10,6 +10,7 @@ import { PaymentTermsController } from "@paperwork/entrypoints/payment-terms-con
 import { PaymentController } from "@paperwork/entrypoints/payment-controller/mod.ts";
 import { PaperworkPublicController } from "@paperwork/entrypoints/public-controller/mod.ts";
 import { PaperworkEmailController } from "@paperwork/entrypoints/paperwork-email-controller/mod.ts";
+import { CronController } from "@paperwork/entrypoints/cron-controller/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -22,7 +23,13 @@ import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwor
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
 import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-invoice-balance/mod.ts";
 import { RenderContractPdf } from "@paperwork/domain/coordinators/render-contract-pdf/mod.ts";
+import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
+import { ConfirmPayment } from "@paperwork/domain/coordinators/confirm-payment/mod.ts";
+import { SendPaymentReminder } from "@paperwork/domain/coordinators/send-payment-reminder/mod.ts";
+import { ScheduleInvoiceNudges } from "@paperwork/domain/coordinators/schedule-invoice-nudges/mod.ts";
+import { ComputeInvoiceForecast } from "@paperwork/domain/coordinators/compute-invoice-forecast/mod.ts";
+import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/record-payment-from-utterance/mod.ts";
 
 @Module({
   imports: [UsersModule, CrmModule, CommunicationModule],
@@ -35,6 +42,7 @@ import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-sign
     PaymentController,
     PaperworkPublicController,
     PaperworkEmailController,
+    CronController,
   ],
   injectables: [
     QuoteStore,
@@ -49,7 +57,13 @@ import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-sign
     SendPaperworkSms,
     ComputeInvoiceBalance,
     RenderContractPdf,
+    RenderReceiptPdf,
     SendSignedConfirmation,
+    ConfirmPayment,
+    SendPaymentReminder,
+    ScheduleInvoiceNudges,
+    ComputeInvoiceForecast,
+    RecordPaymentFromUtterance,
   ],
 })
 export class PaperworkModule {}

@@ -1,0 +1,15 @@
+{
+  "name": "v2-cypress",
+  "version": "0.0.0",
+  "private": true,
+  "description": "End-to-end tests for the v2 contractor app. Lives outside the Deno workspace so cypress's npm-native install path doesn't fight nodeModulesDir=manual.",
+  "scripts": {
+    "open": "cypress open",
+    "run": "cypress run",
+    "run:invoice": "cypress run --spec 'e2e/invoice-*.cy.ts'"
+  },
+  "devDependencies": {
+    "cypress": "^13.15.0",
+    "typescript": "^5.6.0"
+  }
+}

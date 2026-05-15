@@ -118,25 +118,47 @@ export class SendSignedConfirmation {
       return { ok: false, reason: `pdf_render_failed: ${(err as Error).message}` };
     }
 
-    // ---- 2. Create first invoice (deposit, if applicable)
+    // ---- 2. Create the full milestone set (first invoice sent now,
+    // remaining ones scheduled for equal-spaced dates over the contract's
+    // completion window).
     const total = contract.totalAmount ?? 0;
-    const firstAmount = computeFirstInvoiceAmount(total, contract.terms);
+    const milestoneAmounts = computeMilestoneAmounts(total, contract.terms);
     let invoiceId: string | undefined;
-    if (firstAmount > 0) {
-      try {
-        const dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() + 7); // due in a week — first deposit
-        const invoice = await this.invoices.create(userId, {
-          contractId: contract.id,
-          ...(contract.customerId ? { customerId: contract.customerId } : {}),
-          amount: firstAmount,
-          dueDate: dueDate.toISOString().slice(0, 10),
-          issuedDate: new Date().toISOString().slice(0, 10),
-          status: "sent",
-        });
-        invoiceId = invoice.id;
-      } catch (err) {
-        console.error("[send-signed-confirmation] auto-invoice failed:", err);
+    if (milestoneAmounts.length > 0) {
+      const today = new Date();
+      const todayIso = today.toISOString().slice(0, 10);
+      const scheduledDates = computeScheduledDates(
+        milestoneAmounts.length,
+        contract.startDate,
+        contract.estimatedCompletionDate,
+        today,
+      );
+      const installmentTotal = milestoneAmounts.length;
+      for (let i = 0; i < milestoneAmounts.length; i++) {
+        const amount = milestoneAmounts[i];
+        const isFirst = i === 0;
+        try {
+          // First milestone fires immediately (matches prior behavior);
+          // the rest are scheduled placeholders the contractor nudge cron
+          // will surface on their scheduledFor date.
+          const dueDate = isFirst
+            ? addDaysIso(today, 7)
+            : addDaysIso(parseIsoDate(scheduledDates[i]), 7);
+          const invoice = await this.invoices.create(userId, {
+            contractId: contract.id,
+            ...(contract.customerId ? { customerId: contract.customerId } : {}),
+            amount,
+            dueDate,
+            installmentIndex: i + 1,
+            installmentTotal,
+            ...(isFirst
+              ? { issuedDate: todayIso, status: "sent" }
+              : { status: "scheduled", scheduledFor: scheduledDates[i] }),
+          });
+          if (isFirst) invoiceId = invoice.id;
+        } catch (err) {
+          console.error(`[send-signed-confirmation] milestone ${i + 1}/${installmentTotal} create failed:`, err);
+        }
       }
     }
 
@@ -144,7 +166,7 @@ export class SendSignedConfirmation {
     const subject = `Signed: ${quote?.summary ?? "your contract"} — countersigned PDF + first invoice`;
     const html = renderSignedConfirmationHtml({
       contract, quote, customer, contractor, businessName,
-      invoiceId, invoiceAmount: firstAmount,
+      invoiceId, invoiceAmount: milestoneAmounts[0] ?? 0,
     });
     const fileName = `Contract-${contract.id.slice(0, 8).toUpperCase()}.pdf`;
     const sent = await this.email.send({
@@ -184,15 +206,85 @@ export class SendSignedConfirmation {
 
 /* ---------------- helpers ---------------- */
 
-function computeFirstInvoiceAmount(total: number, terms: ContractTerm[] | undefined): number {
-  if (!total || total <= 0) return 0;
+/** Resolve the contractor's chosen payment terms into one amount per
+ *  milestone, in INTEGER CENTS. Mirrors the display logic in
+ *  `render-contract-pdf/mod.ts:computeMilestones` but returns just the
+ *  amounts (the labels/timing live on the public preview). Sum is always
+ *  exactly `total` — the last milestone absorbs rounding. */
+export function computeMilestoneAmounts(total: number, terms: ContractTerm[] | undefined): number[] {
+  if (!total || total <= 0) return [];
   const v = terms?.find((t) => t.stepId === "payment_terms")?.value?.toLowerCase() ?? "";
-  if (v.includes("50") && v.includes("/")) return Math.round(total / 2);
-  if (v.includes("30") && v.includes("40")) return Math.round(total * 0.30);
-  if (v.includes("net 15")) return total;
-  if (v.includes("deposit") && v.includes("balance")) return Math.round(total * 0.20);
-  // Default: 30% deposit
-  return Math.round(total * 0.30);
+  if (v.includes("50") && v.includes("/")) {
+    const a = Math.round(total / 2);
+    return [a, total - a];
+  }
+  if (v.includes("30") && v.includes("40")) {
+    const a = Math.round(total * 0.30);
+    const b = Math.round(total * 0.30);
+    return [a, b, total - a - b];
+  }
+  if (v.includes("completion") || v.includes("net 15") || v.includes("upon completion")) {
+    return [total];
+  }
+  if (v.includes("deposit") && v.includes("balance")) {
+    const dep = Math.round(total * 0.20);
+    return [dep, total - dep];
+  }
+  // Default: 30% deposit + balance.
+  const dep = Math.round(total * 0.30);
+  return [dep, total - dep];
+}
+
+/** Equal-spaced scheduledFor dates for milestones 2..N. The first
+ *  milestone fires immediately (issued today) so it doesn't need a
+ *  scheduledFor — we return its slot as today's date anyway for the
+ *  array shape, but callers should ignore it.
+ *
+ *  Window math:
+ *    - If contract has both startDate and estimatedCompletionDate, span
+ *      that interval.
+ *    - Otherwise fall back to a 14-day default window from today.
+ *    - Each subsequent milestone gets (i / N) of the window.
+ */
+export function computeScheduledDates(
+  count: number,
+  startDate: string | undefined,
+  estimatedCompletionDate: string | undefined,
+  today: Date,
+): string[] {
+  if (count <= 0) return [];
+  const start = startDate ? parseIsoDate(startDate) : today;
+  const end = estimatedCompletionDate
+    ? parseIsoDate(estimatedCompletionDate)
+    : addDays(today, 14);
+  const windowMs = Math.max(end.getTime() - start.getTime(), 24 * 3600 * 1000);
+  const out: string[] = [];
+  for (let i = 0; i < count; i++) {
+    if (i === 0) {
+      out.push(today.toISOString().slice(0, 10));
+      continue;
+    }
+    const offsetMs = Math.round((windowMs * i) / (count - 1 || 1));
+    const d = new Date(start.getTime() + offsetMs);
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+function parseIsoDate(iso: string): Date {
+  // Treat dates as UTC midnight to avoid TZ drift on day arithmetic.
+  const d = new Date(`${iso}T00:00:00Z`);
+  return Number.isFinite(d.getTime()) ? d : new Date();
+}
+
+function addDays(d: Date, days: number): Date {
+  const next = new Date(d.getTime());
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function addDaysIso(d: Date, days: number): string {
+  return addDays(d, days).toISOString().slice(0, 10);
 }
 
 function fmtUSD(cents: number | undefined): string {

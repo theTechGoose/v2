@@ -15,7 +15,8 @@ import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-sign
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
-import type { Invoice } from "@paperwork/dto/invoice.ts";
+import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
+import { AcceptedPaymentMethods } from "@profile/dto/business-identity.ts";
 
 /**
  * Map a NotFoundError into a 404 JSON response. Public endpoints used to
@@ -316,17 +317,141 @@ export class PaperworkPublicController {
   async getInvoicePublic(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     try {
       const i = await this.invoices.get(id);
-      const [contractor, customer] = await Promise.all([
+      const [contractor, customer, contract, siblings] = await Promise.all([
         loadContractor(this.users, this.identity, this.addresses, i.userId),
-        lookupCustomerName(this.customers, i.customerId, i.userId),
+        lookupCustomerPublic(this.customers, i.customerId, i.userId),
+        // The public page surfaces job context (the linked contract's
+        // quote summary + jobName) so the customer sees what they're
+        // paying for. Best-effort — a missing contract shouldn't 404.
+        i.contractId ? this.contracts.get(i.contractId).catch(() => undefined) : Promise.resolve(undefined),
+        // Sibling invoices for the same contract — used to render the
+        // "Invoice X of Y" framing and the "What you've paid so far"
+        // strip on the public page.
+        i.contractId ? this.invoices.listByUser(i.userId).then((all) => all.filter((row) => row.contractId === i.contractId)).catch(() => []) : Promise.resolve([]),
       ]);
+      // Resolve the linked quote for jobName/summary/lineItems projection.
+      let jobDetails: { summary?: string; jobName?: string; description?: string } | undefined;
+      if (contract?.quoteId) {
+        try {
+          const q = await this.quotes.get(contract.quoteId);
+          jobDetails = { summary: q.summary, jobName: q.jobName, description: q.description };
+        } catch { /* fall through */ }
+      }
+      // Project sibling invoices into a public-safe shape, sorted by
+      // installmentIndex (or createdAt as fallback).
+      const sortedSiblings = siblings
+        .slice()
+        .sort((a, b) => {
+          const ai = a.installmentIndex ?? 99;
+          const bi = b.installmentIndex ?? 99;
+          if (ai !== bi) return ai - bi;
+          return (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
+        })
+        .map((row) => ({
+          id:               row.id,
+          amount:           row.amount,
+          status:           row.status,
+          paidAt:           row.paidAt,
+          installmentIndex: row.installmentIndex,
+          installmentTotal: row.installmentTotal,
+        }));
+      // Method config drives the public page's "How would you like to
+      // pay?" buttons. We surface only methods the contractor has
+      // explicitly enabled (handles non-empty).
+      const acceptedMethods = projectAcceptedMethods(contractor);
       return ctx.json({
         ...redactInvoice(i),
         contractor,
-        customer: customer ? { name: customer } : undefined,
+        customer,
+        jobDetails,
+        siblings: sortedSiblings,
+        acceptedMethods,
       });
     } catch (e) { return notFoundResponse(ctx, e); }
   }
+
+  /**
+   * Customer-side "I'm paying you by X" claim.
+   *
+   * Records a PaymentIntent on the invoice and flips status to
+   * `claimed`. No auth — knowledge of the invoice id is the capability,
+   * matching the rest of the public surface.
+   *
+   * Idempotent: replaying the same body just overwrites the existing
+   * intent; we don't keep a history (the contractor confirms or rejects
+   * in one step, so there's no audit need beyond that).
+   */
+  @Post("invoices/:id/claim-payment")
+  async claimInvoicePayment(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+    const dto = parseClaim(body);
+    try {
+      const invoice = await this.invoices.get(id);
+      if (invoice.status === "paid") {
+        return ctx.json({ ok: false, reason: "already_paid" }, 409);
+      }
+      if (invoice.status === "void") {
+        return ctx.json({ ok: false, reason: "void" }, 409);
+      }
+      const updated = await this.invoices.update(id, invoice.userId, {
+        status: "claimed",
+        paymentIntent: {
+          method: dto.method as PaymentMethod,
+          amount: invoice.amount ?? 0,
+          ...(dto.reference ? { reference: dto.reference } : {}),
+          claimedAt: new Date().toISOString(),
+          ...(dto.claimedBy ? { claimedBy: dto.claimedBy } : {}),
+        },
+      });
+      // Fire a domain event so the contractor's bell + activity feed
+      // surface the claim.
+      await this.bus.emit({
+        userId: invoice.userId,
+        entityType: "invoice",
+        entityId: updated.id,
+        action: "claimed",
+        data: { method: dto.method, reference: dto.reference ?? "" },
+      });
+      return ctx.json({ ok: true, invoiceId: updated.id });
+    } catch (e) { return notFoundResponse(ctx, e); }
+  }
+}
+
+/** Validation DTO for the public claim endpoint. */
+class ClaimPaymentDto {
+  @IsString() method!: string;
+  @IsOptional() @IsString() reference?: string;
+  @IsOptional() @IsString() claimedBy?: string;
+}
+
+function parseClaim(input: unknown): ClaimPaymentDto {
+  const dto = plainToInstance(ClaimPaymentDto, input);
+  const errors = validateSync(dto);
+  if (errors.length) throw new Error(`invalid claim body: ${JSON.stringify(errors)}`);
+  const allowed = new Set(["check", "venmo", "zelle", "cashapp", "cash", "ach", "other"]);
+  if (!allowed.has(dto.method)) throw new Error(`invalid method: ${dto.method}`);
+  return dto;
+}
+
+/** Project the contractor's accepted-payment methods (set in their
+ *  business-identity settings) into the shape the public page consumes:
+ *  one row per enabled method with the handle/address to display.
+ *
+ *  We never expose ACH routing/account numbers in clear text — the
+ *  public page renders a "Ask the contractor for ACH details" stub for
+ *  ACH instead, with the real numbers only surfaced via a separate
+ *  authenticated request flow (out of v1 scope). */
+function projectAcceptedMethods(contractor: { acceptedPaymentMethods?: AcceptedPaymentMethods } | undefined): Array<{ method: string; handle?: string }> {
+  const m = contractor?.acceptedPaymentMethods;
+  if (!m) return [];
+  const out: Array<{ method: string; handle?: string }> = [];
+  if (m.check?.enabled) out.push({ method: "check", handle: m.check.mailTo });
+  if (m.venmo?.enabled) out.push({ method: "venmo", handle: m.venmo.handle });
+  if (m.zelle?.enabled) out.push({ method: "zelle", handle: m.zelle.handle });
+  if (m.cashapp?.enabled) out.push({ method: "cashapp", handle: m.cashapp.cashtag });
+  if (m.cash?.enabled) out.push({ method: "cash" });
+  if (m.ach?.enabled) out.push({ method: "ach" });
+  if (m.other?.enabled) out.push({ method: "other", handle: m.other.instructions });
+  return out;
 }
 
 interface PublicContractor {
@@ -341,6 +466,11 @@ interface PublicContractor {
   /** 2-letter state code (e.g. "CA"). Drives the public contract's
    *  "Governing law" + "State notices" copy. */
   state?: string;
+  /** Per-method payment config from business-identity. Used by the
+   *  invoice public page to render the "How would you like to pay?"
+   *  buttons. ACH routing/account numbers are stripped here — only the
+   *  enabled flag survives onto the public surface. */
+  acceptedPaymentMethods?: AcceptedPaymentMethods;
 }
 
 /** Public-safe contractor projection — never returns internal IDs or
@@ -359,16 +489,30 @@ async function loadContractor(
     ]);
     if (!user && !ident && !addr) return undefined;
     return {
-      name:         user?.name,
-      businessName: ident?.businessName ?? ident?.legalName,
-      phoneNumber:  user?.phoneNumber,
-      email:        user?.email,
-      addressLine:  composeAddressLine(addr),
-      state:        addr?.state?.trim() || undefined,
+      name:                   user?.name,
+      businessName:           ident?.businessName ?? ident?.legalName,
+      phoneNumber:            user?.phoneNumber,
+      email:                  user?.email,
+      addressLine:            composeAddressLine(addr),
+      state:                  addr?.state?.trim() || undefined,
+      acceptedPaymentMethods: redactAcceptedMethods(ident?.acceptedPaymentMethods),
     };
   } catch {
     return undefined;
   }
+}
+
+/** Strip ACH routing/account numbers from the public projection — the
+ *  customer page should only know that ACH is *offered*, not how to
+ *  reach the bank account. Other methods pass through unchanged. */
+function redactAcceptedMethods(m: AcceptedPaymentMethods | undefined): AcceptedPaymentMethods | undefined {
+  if (!m) return undefined;
+  return {
+    ...m,
+    ach: m.ach
+      ? { enabled: m.ach.enabled }
+      : undefined,
+  };
 }
 
 export function composeAddressLine(
@@ -430,16 +574,23 @@ function redactContract(c: Contract) {
 
 function redactInvoice(i: Invoice) {
   return {
-    id:          i.id,
-    contractId:  i.contractId,
-    customerId:  i.customerId,
-    amount:      i.amount,
-    issuedDate:  i.issuedDate,
-    dueDate:     i.dueDate,
-    status:      i.status,
-    paidAt:      i.paidAt,
-    createdAt:   i.createdAt,
-    // omit: userId, updatedAt
+    id:                i.id,
+    contractId:        i.contractId,
+    customerId:        i.customerId,
+    amount:            i.amount,
+    issuedDate:        i.issuedDate,
+    dueDate:           i.dueDate,
+    status:            i.status,
+    paidAt:            i.paidAt,
+    createdAt:         i.createdAt,
+    installmentIndex:  i.installmentIndex,
+    installmentTotal:  i.installmentTotal,
+    scheduledFor:      i.scheduledFor,
+    // The paymentIntent is safe to surface so the public page can render
+    // a "you said you paid by X on Y" confirmation strip after the
+    // customer submits a claim.
+    paymentIntent:     i.paymentIntent,
+    // omit: userId, updatedAt, remindersMuted, reminderHistory (internal)
   };
 }
 
