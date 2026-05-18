@@ -16,7 +16,7 @@
     "Public quote URL active and unauthenticated-accessible"
   ],
   "steps": [
-    { "actor": "system",  "action": "Email is sent from Diego's name to asha@example.com", "expect": "From: 'Diego Martínez via Paperwork Monsters'; subject mentions 'fence repair' and 'Diego'; preview text is meaningful" },
+    { "actor": "system",  "action": "Email is sent from Diego's name to asha@example.com", "expect": "From: 'Diego Martínez via Paperwork Monster'; subject mentions 'fence repair' and 'Diego'; preview text is meaningful" },
     { "actor": "customer", "action": "Opens email in Gmail mobile (iOS)", "expect": "Renders correctly: brand color visible, no broken images, line items legible, CTA button tappable" },
     { "actor": "customer", "action": "Taps 'View quote'", "expect": "Public quote page loads in browser; total, line items, business name, and Accept/Decline/Question buttons visible without scrolling on a 6.1\" phone" },
     { "actor": "system",   "action": "Open event recorded", "expect": "Backend logs exactly one quote-open event with timestamp + user agent; Diego's /quotes page reflects it within ~10s" }

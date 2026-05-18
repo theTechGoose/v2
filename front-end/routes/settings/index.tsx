@@ -39,7 +39,7 @@ export default define.page(function SettingsRoute(ctx) {
   return (
     <>
       <Head>
-        <title>Settings · Paperwork Monsters</title>
+        <title>Settings · Paperwork Monster</title>
         <link rel="stylesheet" href="/dashboard.css" />
       </Head>
       <div class="app">

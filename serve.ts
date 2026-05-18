@@ -33,7 +33,15 @@ const children: ChildSpec[] = [
     cwd: BACKEND_DIR,
     cmd: "deno",
     args: ["task", "dev"],
-    env: { PORT: String(BACKEND_PORT), AGENTS_LLM_CLIENT: "openai" },
+    // APP_URL is passed so paperwork email/SMS coordinators emit links
+    // that resolve to *this* dev frontend (port matches FRONTEND_PORT)
+    // instead of the hardcoded :5173 fallback. Without it, dev links in
+    // outbound paperwork open a dead port.
+    env: {
+      PORT: String(BACKEND_PORT),
+      AGENTS_LLM_CLIENT: "openai",
+      APP_URL: `http://localhost:${FRONTEND_PORT}`,
+    },
     color: "\x1b[36m", // cyan
   },
   {

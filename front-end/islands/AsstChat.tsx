@@ -326,6 +326,13 @@ export default function AsstChat({
    *  so we can render an optimistic user bubble + "Polishing…" indicator
    *  while the polish + create-quote + transition chain runs. */
   const [submittedJobDetails, setSubmittedJobDetails] = useState<string | null>(null);
+  /** In-flight polish promise, kicked off the moment the user submits the
+   *  raw job-details bubble. The price-step then `await`s it before
+   *  creating the quote, so the heavy LLM call runs *while* the customer
+   *  is typing the price — not after they hit Continue. */
+  const polishInFlightRef = useRef<
+    Promise<{ summary: string; jobName: string; description: string } | null> | null
+  >(null);
   /** Inline contact-recovery inputs keyed by the failure phase_divider id.
    *  When SendContract reports a missing/invalid email or phone, we let
    *  the user type it right under the divider; saving patches the
@@ -953,10 +960,11 @@ export default function AsstChat({
     // + quote-creation immediately. Otherwise flip into the legacy
     // "now tell me the details" prompt mode.
     if (pendingJobDetailsRaw && pendingJobDetailsRaw.trim().length > 0) {
-      // Re-mount the details-flow UI so the user sees their earlier
-      // details bubble + the "Polishing your job details…" indicator
-      // while the polish + quote-create chain runs.
-      setAwaitingJobDetails(true);
+      // Keep the price screen mounted while the polish + quote-create
+      // chain runs in the background. The Continue button flips to
+      // "Setting up…" (driven by `sending`); navigation kicks the user
+      // to the new quote when the chain finishes. No interstitial.
+      setPriceCaptureOpen(true);
       // Pass cents explicitly — pendingPriceCents state hasn't committed
       // yet at the time the microtask fires, so the submit fn would
       // otherwise read null and loop back into the "open price screen"
@@ -991,52 +999,62 @@ export default function AsstChat({
     const cents = centsOverride ?? pendingPriceCents;
     if (cents == null || cents <= 0) {
       // Details-first path: stash the raw and pop the price screen.
+      // Kick off the polish NOW so the LLM call runs in parallel while
+      // the user types the price (and continues running through phase 2
+      // if needed). The quote-create path below reuses this in-flight
+      // promise rather than starting a fresh one.
       setPendingJobDetailsRaw(trimmed);
       setSubmittedJobDetails(trimmed);
       setAwaitingJobDetails(false);
       setPriceCaptureOpen(true);
+      polishInFlightRef.current = assistantClient
+        .polishJobDetails(raw)
+        .catch((err) => {
+          console.warn("[asst] polish failed, keeping heuristic:", err);
+          return null;
+        });
       return;
     }
 
     setSubmittedJobDetails(trimmed);
     setSending(true);
-    // Hold the "Polishing your job details…" indicator on screen for at
-    // least this long even when the API returns instantly. Without this
-    // floor, fast dev / stub responses make the indicator flash for
-    // ~50ms — the user sees nothing happen between "Continue" on the
-    // price screen and the new quote appearing.
-    const polishStartedAt = Date.now();
-    const MIN_VISIBLE_MS = 700;
     try {
-      let polished: { summary: string; jobName: string; description: string };
-      try {
-        polished = await assistantClient.polishJobDetails(raw, cents);
-      } catch (err) {
-        console.warn("[asst] polish failed, falling back to raw:", err);
-        const firstLine = raw.split("\n")[0].trim();
-        const summary = firstLine.split(/\s+/).slice(0, 8).join(" ") || "New job";
-        polished = {
-          summary,
-          jobName: summary.split(/\s+/).slice(0, 3).join(" "),
-          description: raw.trim(),
-        };
-      }
-      const elapsed = Date.now() - polishStartedAt;
-      if (elapsed < MIN_VISIBLE_MS) {
-        await new Promise((r) => setTimeout(r, MIN_VISIBLE_MS - elapsed));
-      }
+      // Heuristic summary/jobName so the quote can be created immediately
+      // without blocking on the LLM polish. Polish was kicked off at
+      // job-details submit (it's already been running while the user
+      // typed the price). We don't await it on the critical path — the
+      // PUT below patches the quote when it lands.
+      const firstLine = raw.split("\n")[0].trim();
+      const heuristicSummary = firstLine.split(/\s+/).slice(0, 8).join(" ") || "New job";
+      const heuristicJobName = heuristicSummary.split(/\s+/).slice(0, 3).join(" ");
+      const draft = {
+        summary: heuristicSummary,
+        jobName: heuristicJobName,
+        description: raw.trim(),
+      };
+
+      // Reuse the polish promise started at job-details submit. If the
+      // user came in through a path that skipped that step (legacy
+      // price→details flow), kick one off here as a fallback.
+      const polishPromise = polishInFlightRef.current ?? assistantClient
+        .polishJobDetails(raw, cents)
+        .catch((err) => {
+          console.warn("[asst] polish failed, keeping heuristic:", err);
+          return null;
+        });
+      polishInFlightRef.current = null;
 
       const quote = await fetch("/api/quotes", {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          summary: polished.summary,
-          jobName: polished.jobName,
-          description: polished.description,
+          summary: draft.summary,
+          jobName: draft.jobName,
+          description: draft.description,
           lineItems: [
             {
-              description: polished.summary,
+              description: draft.summary,
               quantity: 1,
               unit: "ea",
               price: cents,
@@ -1047,6 +1065,30 @@ export default function AsstChat({
         }),
       }).then((r) => r.json());
       if (!quote?.id) throw new Error("failed to create quote");
+
+      // When polish lands (post-navigation is fine), patch the quote with
+      // the refined fields. Errors are swallowed — the heuristic stands.
+      void polishPromise.then((polished) => {
+        if (!polished) return;
+        return fetch(`/api/quotes/${quote.id}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            summary: polished.summary,
+            jobName: polished.jobName,
+            description: polished.description,
+            lineItems: [
+              {
+                description: polished.summary,
+                quantity: 1,
+                unit: "ea",
+                price: cents,
+              },
+            ],
+          }),
+        }).catch(() => {});
+      });
 
       const conv = await fetch("/api/agents/conversations", {
         method: "POST",

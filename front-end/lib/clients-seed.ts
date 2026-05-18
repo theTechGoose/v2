@@ -1,5 +1,5 @@
 /**
- * Seed data ported verbatim from Paperwork Monsters Clients.html.
+ * Seed data ported verbatim from Paperwork Monster Clients.html.
  * Used as a fallback while the backend's per-client roll-up endpoints
  * (`/clients` derived fields, `/analytics/clients/top`,
  * `/analytics/clients/segments`) come online.

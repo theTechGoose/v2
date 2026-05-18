@@ -39,7 +39,7 @@ export default define.page(function PaymentsRoute(ctx) {
   return (
     <>
       <Head>
-        <title>Payments · Paperwork Monsters</title>
+        <title>Payments · Paperwork Monster</title>
         <link key="css-dashboard" rel="stylesheet" href="/dashboard.css" />
         <link key="css-quotes" rel="stylesheet" href="/quotes.css" />
         <link key="css-payments" rel="stylesheet" href="/payments.css" />

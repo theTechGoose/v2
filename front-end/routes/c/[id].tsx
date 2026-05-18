@@ -89,7 +89,7 @@ export default define.page(async function PublicContract(ctx) {
   return (
     <>
       <Head>
-        <title>Contract · Paperwork Monsters</title>
+        <title>Contract · Paperwork Monster</title>
         <link rel="stylesheet" href="/landing.css" />
         <style>{`
           @media (max-width: 720px) {
@@ -120,7 +120,7 @@ export default define.page(async function PublicContract(ctx) {
 function ErrorCard({ message }: { message: string }) {
   return (
     <>
-      <div style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN};text-align:center;margin-bottom:18px`}>Paperwork Monsters</div>
+      <div style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN};text-align:center;margin-bottom:18px`}>Paperwork Monster</div>
       <div style="background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center">
         <div style={`font-weight:800;color:${TEAL};font-size:18px`}>Hmm, can't open this</div>
         <p style={`margin:8px 0 0;color:${MUTED};font-size:14px`}>{message}</p>
@@ -136,7 +136,7 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
   const customerName = contract.customer?.name?.trim();
   const customerFirst = customerName?.split(/\s+/)[0];
   const contractor = contract.contractor;
-  const businessLabel = contractor?.businessName?.trim() || contractor?.name?.trim() || "Paperwork Monsters";
+  const businessLabel = contractor?.businessName?.trim() || contractor?.name?.trim() || "Paperwork Monster";
   const contractorName = contractor?.name?.trim();
   const contractorFirst = contractorName?.split(/\s+/)[0];
   const senderInitials = initialsFromName(contractorName ?? businessLabel);
@@ -380,7 +380,7 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
       </article>
       <div style={`display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px;font-size:11px;color:#a8b2b3;letter-spacing:.04em`}>
         <img src="/logo.png" alt="" height="16" style="height:16px;width:auto;opacity:0.7;display:block" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-        Powered by Paperwork Monsters · Contract #{contract.id.slice(0, 8).toUpperCase()}
+        Powered by Paperwork Monster · Contract #{contract.id.slice(0, 8).toUpperCase()}
       </div>
     </>
   );

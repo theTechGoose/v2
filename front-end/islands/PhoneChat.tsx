@@ -232,7 +232,7 @@ export default function PhoneChat(props: Props) {
             <div class="chat-header">
               <div class="av-pm"><img src="/logo-monster.png" alt="" /></div>
               <div class="meta">
-                <strong>Paperwork Monsters</strong>
+                <strong>Paperwork Monster</strong>
                 <span>{lang === "es" ? "En línea" : "Online"}</span>
               </div>
             </div>

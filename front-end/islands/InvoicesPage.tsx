@@ -1,6 +1,6 @@
 /**
  * /invoices island — receivables view matching the canonical reference
- * (reference/extracted/Paperwork Monsters Invoices.html). Despite the URL
+ * (reference/extracted/Paperwork Monster Invoices.html). Despite the URL
  * saying "Invoices", the components share the Quotes code path with copy +
  * stage names swapped — that's why the classes are `.qph__*` / `.qkpi__*` /
  * `.qtrack__*` / `.qcard__*` (loaded from quotes.css).
@@ -445,6 +445,54 @@ function InvoiceCard({ inv, idx, now }: { inv: EnrichedInvoice; idx: number; now
       setBusy(false);
     }
   }
+  function doOpenInvoice(e: Event) {
+    e.stopPropagation();
+    // Public invoice page is the canonical detail surface today — opens
+    // in a new tab so the dashboard stays put.
+    globalThis.open(`/i/${inv.id}`, "_blank", "noopener,noreferrer");
+  }
+  async function doSendText(e: Event) {
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/invoices/${inv.id}/text`, { method: "POST", credentials: "include" });
+      if (r.ok) globalThis.location.reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function doSendNow(e: Event) {
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    try {
+      // Fire both channels — the backend coordinator handles "no
+      // email/phone on file" gracefully and the user gets a fresh state
+      // on reload either way.
+      await Promise.allSettled([
+        fetch(`/api/invoices/${inv.id}/email`, { method: "POST", credentials: "include" }),
+        fetch(`/api/invoices/${inv.id}/text`, { method: "POST", credentials: "include" }),
+      ]);
+      globalThis.location.reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+  function doFinishDraft(e: Event) {
+    e.stopPropagation();
+    // Drafts are continued from the assistant — no per-invoice
+    // conversation lookup yet, so we drop the user on the assistant home
+    // where they can pick up the draft thread.
+    globalThis.location.href = "/assistant";
+  }
+  function ctaAction(e: Event) {
+    if (inv.stage === "claimed")   return doConfirmReceived(e);
+    if (inv.stage === "overdue")   return doSendText(e);
+    if (inv.stage === "scheduled") return doSendNow(e);
+    if (inv.stage === "drafting")  return doFinishDraft(e);
+    return doOpenInvoice(e);
+  }
   async function doToggleMute(e: Event) {
     e.stopPropagation();
     if (busy) return;
@@ -487,7 +535,7 @@ function InvoiceCard({ inv, idx, now }: { inv: EnrichedInvoice; idx: number; now
           type="button"
           class="qcard__cta"
           data-cy={`invoice-cta-${inv.stage}`}
-          onClick={inv.stage === "claimed" ? doConfirmReceived : (e) => e.stopPropagation()}
+          onClick={ctaAction}
           disabled={busy}
         >
           {busy ? "…" : cta} <span style="display:inline-block;transition:transform 240ms">→</span>
@@ -528,13 +576,13 @@ function InvoiceCard({ inv, idx, now }: { inv: EnrichedInvoice; idx: number; now
         <div class="qcard__back-foot">
           <button
             type="button"
-            onClick={inv.stage === "claimed" ? doConfirmReceived : (e) => e.stopPropagation()}
+            onClick={ctaAction}
             disabled={busy}
             data-cy={`invoice-back-cta-${inv.stage}`}
           >
             {busy ? "…" : cta.replace(/ →$/, "")}
           </button>
-          <button type="button" onClick={(e) => e.stopPropagation()}>Open</button>
+          <button type="button" onClick={doOpenInvoice}>Open</button>
           {(inv.stage === "overdue" || inv.stage === "out") ? (
             <button
               type="button"
@@ -546,7 +594,7 @@ function InvoiceCard({ inv, idx, now }: { inv: EnrichedInvoice; idx: number; now
               {inv.remindersMuted ? "Muted" : "Mute"}
             </button>
           ) : (
-            <button type="button" onClick={(e) => e.stopPropagation()}>Text client</button>
+            <button type="button" onClick={doSendText} disabled={busy}>Text client</button>
           )}
         </div>
       </div>

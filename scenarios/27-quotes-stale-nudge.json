@@ -25,7 +25,7 @@
       "trigger": "user clicks Send in nudge modal",
       "subject": "Quick follow-up — your patio quote",
       "linksTo": "public-quote",
-      "expect": "Email is from Diego's name, not 'Paperwork Monsters'; warm tone; CTA repeats the quote total and Accept button"
+      "expect": "Email is from Diego's name, not 'Paperwork Monster'; warm tone; CTA repeats the quote total and Accept button"
     }
   ],
   "evaluationCriteria": [

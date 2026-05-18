@@ -25,9 +25,13 @@ const APP_URL = (() => {
   const force = Deno.env.get("APP_URL_FORCE") === "1";
   const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod"
     || !!Deno.env.get("DENO_DEPLOYMENT_ID");
-  if (isProd) return explicit ?? "https://paperworkmonsters.com";
+  if (isProd) return explicit ?? "https://paperworkmonster.com";
+  // Honor explicit APP_URL in dev when it targets localhost (set by
+  // serve.ts to point at the running frontend port). FORCE remains the
+  // opt-in for tunnel URLs.
+  if (explicit && /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(explicit)) return explicit;
   if (force && explicit) return explicit;
-  return "http://localhost:5173";
+  return "http://localhost:5280";
 })();
 
 /**

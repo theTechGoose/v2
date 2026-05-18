@@ -59,6 +59,6 @@ export class SendOtp {
 
 /** Localized SMS body. Kept short so it fits in a single SMS segment. */
 function renderSmsBody(code: string, language: Language): string {
-  if (language === "es") return `Tu código de Paperwork Monsters: ${code}`;
-  return `Your Paperwork Monsters code: ${code}`;
+  if (language === "es") return `Tu código de Paperwork Monster: ${code}`;
+  return `Your Paperwork Monster code: ${code}`;
 }

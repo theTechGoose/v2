@@ -6,7 +6,7 @@ import { type CachedDash, readCached, refreshDash, subscribeDash } from "../lib/
 interface NavEntry { id: string; icon: IconName; label: string; href: string; countKey?: CountKey }
 type CountKey = "clients" | "quotes" | "contracts" | "invoices";
 
-// Canonical NAV from the reference design (Paperwork Monsters Dashboard.html).
+// Canonical NAV from the reference design (Paperwork Monster Dashboard.html).
 // `countKey` maps a sidebar entry to a derived count from /analytics/dashboard.
 // We never seed counts client-side — if the fetch fails or returns 0, the
 // badge is omitted (rendering an empty pill on a fresh account looks broken).
@@ -128,7 +128,7 @@ export default function DashSidebar({ active = "home" }: Props) {
             />
           </div>
           <div class="sb__brand-text">
-            <div class="sb__brand-name">Paperwork Monsters</div>
+            <div class="sb__brand-name">Paperwork Monster</div>
           </div>
         </div>
 

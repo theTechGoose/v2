@@ -26,7 +26,7 @@
     { "actor": "customer","action": "(Asha) opens the public quote URL in the email", "expect": "Eyebrow reads 'RILEY ROOFING CO.'; greeting 'Hi Asha — here's your quote.'; contact-back footer 'Questions? Reach Diego: <phone>'" }
   ],
   "emails": [
-    { "to": "asha@example.com", "trigger": "quote sent", "subject": "Your quote from Diego — fence repair", "linksTo": "public-quote", "expect": "Brand reads as Riley Roofing Co. (NOT Paperwork Monsters); customer's first name in greeting" }
+    { "to": "asha@example.com", "trigger": "quote sent", "subject": "Your quote from Diego — fence repair", "linksTo": "public-quote", "expect": "Brand reads as Riley Roofing Co. (NOT Paperwork Monster); customer's first name in greeting" }
   ],
   "evaluationCriteria": [
     { "aspect": "look",          "check": "Brand consistency through the funnel: skeleton → real dashboard → assistant → public quote all share the visual identity. The customer never sees PAPERWORK MONSTERS." },

@@ -113,9 +113,9 @@ export class SendPaperworkEmail {
     // forward and have a paper trail in their own inbox.
     const cc = sender?.email ? [sender.email] : undefined;
     // Roadmap p.7 + scope answer: From is a per-business alias at the
-    // paperworkmonster.com domain (e.g. acme@paperworkmonster.com) when
-    // the business identity has one set. Falls back to noreply@... and
-    // then to the configured POSTMARK_FROM env when neither is available.
+    // SEND_DOMAIN (e.g. acme@monsterrg.com) when the business identity
+    // has one set. Falls back to noreply@... and then to the configured
+    // POSTMARK_FROM env when neither is available.
     const from = input.from ?? resolveSenderFrom(senderBiz);
 
     const result = await this.email.send({ to: recipient, subject, htmlBody, from, cc });
@@ -172,10 +172,10 @@ export class SendPaperworkEmail {
  * Resolve the public-facing app URL for customer-facing email links.
  *
  * In **dev** (APP_ENV unset or "dev") always hand out
- * `http://localhost:5173` so the contractor's local Vite server picks the
- * link up — even if `APP_URL` is set to an ngrok tunnel that has since
- * gone offline. Set `APP_URL_FORCE=1` to opt in to ngrok-style URLs for
- * a demo.
+ * `http://localhost:5280` (the serve.ts orchestrator default) so the
+ * contractor's local Vite server picks the link up. APP_URL is honored
+ * when it targets localhost. Set `APP_URL_FORCE=1` to opt in to
+ * ngrok-style / public URLs for a demo.
  *
  * In **prod** (`APP_ENV=prod` or running on Deno Deploy), prefer
  * `APP_URL`; fall back to the production host so a missing env doesn't
@@ -187,18 +187,25 @@ const APP_URL = (() => {
   const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod"
     || !!Deno.env.get("DENO_DEPLOYMENT_ID");
   if (isProd) {
-    return explicit ?? "https://paperworkmonsters.com";
+    return explicit ?? "https://paperworkmonster.com";
+  }
+  // Honor explicit APP_URL in dev when it targets localhost — that's how
+  // the serve.ts orchestrator wires the backend to the *running* frontend
+  // port. The FORCE gate stays as the opt-in for ngrok / tunnel URLs we
+  // don't want to trust by accident.
+  if (explicit && /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(explicit)) {
+    return explicit;
   }
   if (force && explicit) {
     return explicit;
   }
-  return "http://localhost:5173";
+  return "http://localhost:5280";
 })();
 
 /** Outbound domain for the per-business alias system (roadmap p.7). All
  *  customer-facing email goes out as `<alias>@${SEND_DOMAIN}` so contractors
  *  get a unique address that can be forwarded to their personal inbox. */
-const SEND_DOMAIN = (Deno.env.get("PAPERWORK_SEND_DOMAIN") ?? "paperworkmonster.com").trim();
+const SEND_DOMAIN = (Deno.env.get("PAPERWORK_SEND_DOMAIN") ?? "monsterrg.com").trim();
 
 /** Resolve the per-business From address. Uses the business identity's
  *  `emailAlias` when present; falls back to `noreply@${SEND_DOMAIN}`. The
@@ -286,7 +293,7 @@ function shell(opts: {
     <tr><td align="center" style="padding:32px 16px;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width:600px;background:${COLOR_CARD};border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(20,72,82,0.08);">
         <tr><td align="center" style="padding:24px 32px 0;">
-          <img src="${APP_URL}/logo-email.png" alt="Paperwork Monsters" width="160" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:160px;">
+          <img src="${APP_URL}/logo-email.png" alt="Paperwork Monster" width="160" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:160px;">
         </td></tr>
         <tr><td style="padding:24px 32px 0;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
@@ -342,7 +349,7 @@ function renderQuoteSubject(
   const businessName = senderBiz?.businessName?.trim()
     || senderBiz?.legalName?.trim()
     || sender?.name?.trim()
-    || "Paperwork Monsters";
+    || "Paperwork Monster";
   const customerName = customer?.name?.trim() || "Customer";
   const jobName = (q.jobName?.trim()
     || q.summary?.replace(/^\s*quote\s*:\s*/i, "").trim()

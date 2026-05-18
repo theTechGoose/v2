@@ -39,7 +39,7 @@ export default define.page(function ContractsRoute(ctx) {
   return (
     <>
       <Head>
-        <title>Contracts · Paperwork Monsters</title>
+        <title>Contracts · Paperwork Monster</title>
         <link key="css-dashboard" rel="stylesheet" href="/dashboard.css" />
         <link key="css-contracts" rel="stylesheet" href="/contracts.css" />
       </Head>

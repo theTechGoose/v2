@@ -29,7 +29,7 @@ export default define.page(async function PublicQuote(ctx) {
   return (
     <>
       <Head>
-        <title>{quote?.summary ?? "Quote"} · Paperwork Monsters</title>
+        <title>{quote?.summary ?? "Quote"} · Paperwork Monster</title>
         <link rel="stylesheet" href="/landing.css" />
       </Head>
       <PublicShell brand={quote?.contractor?.businessName ?? quote?.contractor?.name} address={quote?.contractor?.addressLine}>
@@ -54,7 +54,7 @@ function PublicShell({ children, brand, address }: { children: preact.ComponentC
         )}
         {!address && <div style="height:12px"></div>}
         {children}
-        <div style="margin-top:18px;text-align:center;color:#b9c1bf;font-size:10px;letter-spacing:.08em">powered by Paperwork Monsters</div>
+        <div style="margin-top:18px;text-align:center;color:#b9c1bf;font-size:10px;letter-spacing:.08em">powered by Paperwork Monster</div>
       </div>
     </div>
   );

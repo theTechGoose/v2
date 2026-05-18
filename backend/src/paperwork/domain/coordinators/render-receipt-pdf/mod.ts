@@ -54,7 +54,7 @@ export class RenderReceiptPdf {
     });
 
     // Brand eyebrow
-    const businessLabel = (businessName ?? contractor?.name ?? "Paperwork Monsters").toUpperCase();
+    const businessLabel = (businessName ?? contractor?.name ?? "Paperwork Monster").toUpperCase();
     page.drawText(businessLabel, {
       x: M, y: H - 50, size: 9, font: bold, color: rgb(0.85, 0.31, 0.31),
     });
@@ -123,7 +123,7 @@ export class RenderReceiptPdf {
         x: M, y: footerY - 6, size: 11, font: bold, color: rgb(0.08, 0.28, 0.32),
       });
     }
-    page.drawText("Powered by Paperwork Monsters", {
+    page.drawText("Powered by Paperwork Monster", {
       x: M, y: footerY - 30, size: 8, font: reg, color: rgb(0.66, 0.70, 0.70),
     });
 

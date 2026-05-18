@@ -82,7 +82,7 @@ export default define.page(async function AssistantThread(ctx) {
   return (
     <>
       <Head>
-        <title>Assistant · Paperwork Monsters</title>
+        <title>Assistant · Paperwork Monster</title>
         <link rel="stylesheet" href="/assistant-page.css" />
       </Head>
       <div class="app">

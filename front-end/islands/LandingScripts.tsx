@@ -72,10 +72,10 @@ const I18N: Record<Lang, Record<string, string>> = {
     "cta.b1": "No setup fees, no contracts", "cta.b2": "First quote on us — for new pros", "cta.b3": "English & Spanish, every step",
     "cta.label": "Your phone number", "cta.btn": "Send my code",
     "cta.fine": "By submitting, you agree to receive a friendly text from us.",
-    "cta.smsPreview": "Paperwork Monsters: Your code is 482-913. Don't share it.",
+    "cta.smsPreview": "Paperwork Monster: Your code is 482-913. Don't share it.",
     "cta.steps.phone": "Phone", "cta.steps.code": "Code", "cta.steps.in": "You're in",
     "cta.useSaved": "Use", "cta.notYou": "Not you?",
-    "footer.contact": "Contact", "footer.copy": "© 2026 Paperwork Monsters. All rights reserved.",
+    "footer.contact": "Contact", "footer.copy": "© 2026 Paperwork Monster. All rights reserved.",
   },
   es: {
     "nav.features": "Qué hacemos", "nav.how": "Cómo funciona", "nav.pricing": "Precios", "nav.cta": "Empezar",
@@ -126,10 +126,10 @@ const I18N: Record<Lang, Record<string, string>> = {
     "cta.b1": "Sin cuotas iniciales, sin contratos", "cta.b2": "Primera cotización gratis — para nuevos pros", "cta.b3": "Inglés y español, en cada paso",
     "cta.label": "Tu número de teléfono", "cta.btn": "Enviar mi código",
     "cta.fine": "Al enviar, aceptas recibir un mensaje amigable de nuestra parte.",
-    "cta.smsPreview": "Paperwork Monsters: Tu código es 482-913. No lo compartas.",
+    "cta.smsPreview": "Paperwork Monster: Tu código es 482-913. No lo compartas.",
     "cta.steps.phone": "Teléfono", "cta.steps.code": "Código", "cta.steps.in": "Listo",
     "cta.useSaved": "Usar", "cta.notYou": "¿No eres tú?",
-    "footer.contact": "Contacto", "footer.copy": "© 2026 Paperwork Monsters. Todos los derechos reservados.",
+    "footer.contact": "Contacto", "footer.copy": "© 2026 Paperwork Monster. Todos los derechos reservados.",
   },
 };
 

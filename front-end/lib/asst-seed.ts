@@ -1,6 +1,6 @@
 /**
  * Static seed for the assistant — ported verbatim from
- * Paperwork Monsters Assistant.html. Used until the backend's `/agents/*`
+ * Paperwork Monster Assistant.html. Used until the backend's `/agents/*`
  * endpoints flesh out (per spec, those are deferred).
  */
 

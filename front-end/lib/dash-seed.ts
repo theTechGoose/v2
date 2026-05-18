@@ -1,6 +1,6 @@
 /**
  * Static seed for the dashboard, ported verbatim from
- * Paperwork Monsters Dashboard.html. Used as a visual fallback when the
+ * Paperwork Monster Dashboard.html. Used as a visual fallback when the
  * backend hasn't yet returned real data — once the user has actual jobs,
  * quotes, and activity, the route swaps in the live values and the
  * structure stays identical.

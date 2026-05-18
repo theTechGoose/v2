@@ -65,7 +65,7 @@ export default define.page(async function PublicInvoice(ctx) {
   return (
     <>
       <Head>
-        <title>Invoice · Paperwork Monsters</title>
+        <title>Invoice · Paperwork Monster</title>
         <link rel="stylesheet" href="/landing.css" />
       </Head>
       <div style={`min-height:100vh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};padding:32px 16px 64px`}>
@@ -82,7 +82,7 @@ export default define.page(async function PublicInvoice(ctx) {
 function ErrorCard({ message }: { message: string }) {
   return (
     <>
-      <div style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN};text-align:center;margin-bottom:18px`}>Paperwork Monsters</div>
+      <div style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN};text-align:center;margin-bottom:18px`}>Paperwork Monster</div>
       <div style={`background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center`}>
         <div style={`font-weight:800;color:${TEAL};font-size:18px`}>Hmm, can't open this</div>
         <p style={`margin:8px 0 0;color:${MUTED};font-size:14px`}>{message}</p>
@@ -97,7 +97,7 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
   const pastDue = !paid && !claimed && isPastDue(invoice.dueDate);
   const businessLabel = invoice.contractor?.businessName?.trim()
     || invoice.contractor?.name?.trim()
-    || "Paperwork Monsters";
+    || "Paperwork Monster";
   const jobName = invoice.jobDetails?.jobName?.trim()
     || invoice.jobDetails?.summary?.trim()
     || "Project";
@@ -194,7 +194,7 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
       </div>
       <div style={`display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;font-size:11px;color:#a8b2b3;letter-spacing:.04em`}>
         <img src="/logo.png" alt="" height="16" style="height:16px;width:auto;opacity:0.7;display:block" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-        Powered by Paperwork Monsters · Invoice #{invoice.id.slice(0, 8).toUpperCase()}
+        Powered by Paperwork Monster · Invoice #{invoice.id.slice(0, 8).toUpperCase()}
       </div>
     </article>
   );

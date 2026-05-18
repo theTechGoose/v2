@@ -1,6 +1,6 @@
 /**
  * Server-rendered Assistant page chrome — ported verbatim from
- * Paperwork Monsters Assistant.html. The DocPane tabs and Composer textarea
+ * Paperwork Monster Assistant.html. The DocPane tabs and Composer textarea
  * become islands; everything else is static SSR.
  */
 import { I, ICN } from "../lib/dash-icons.tsx";

@@ -1,6 +1,6 @@
 /**
  * /payments island — editorial "money landed" treatment matching the
- * canonical reference (reference/extracted/Paperwork Monsters Payments.html).
+ * canonical reference (reference/extracted/Paperwork Monster Payments.html).
  *
  * Structure:
  *   PaymentsHero  (.pph + stub stack of recent landed payments)

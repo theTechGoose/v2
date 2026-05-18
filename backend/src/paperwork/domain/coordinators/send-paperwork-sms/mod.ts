@@ -161,7 +161,7 @@ const APP_URL = (() => {
   if (explicit) return explicit;
   const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod"
     || !!Deno.env.get("DENO_DEPLOYMENT_ID");
-  return isProd ? "https://paperworkmonsters.com" : "http://localhost:5173";
+  return isProd ? "https://paperworkmonster.com" : "http://localhost:5280";
 })();
 
 // ---------- bodies ----------------------------------------------------------

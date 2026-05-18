@@ -1,6 +1,6 @@
 /**
  * Server-rendered Dashboard sections, ported verbatim from
- * Paperwork Monsters Dashboard.html. Only the Ticker (animated number)
+ * Paperwork Monster Dashboard.html. Only the Ticker (animated number)
  * pieces are islands — everything else is static SSR.
  */
 import { I, ICN, type IconName } from "../lib/dash-icons.tsx";

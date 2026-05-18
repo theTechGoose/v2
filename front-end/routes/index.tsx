@@ -38,7 +38,7 @@ const DEMO_QUOTE_ES: QuoteCopy = { hd: "Cotización · #PM-2641", l1: "Gabinetes
 
 /**
  * Landing route — server-renders the prototype's HTML structure (verbatim from
- * Paperwork Monsters Landing.html) with `data-i18n` attributes the
+ * Paperwork Monster Landing.html) with `data-i18n` attributes the
  * <LandingScripts> island substitutes on hydration. Styling lives in
  * /static/landing.css.
  */
@@ -49,7 +49,7 @@ export default define.page(async function Landing(ctx) {
   return (
     <>
       <Head>
-        <title>Paperwork Monsters — You do the work. We handle the paperwork.</title>
+        <title>Paperwork Monster — You do the work. We handle the paperwork.</title>
         <meta name="description" content="Quotes, contracts, and invoices done right — built for contractors. No app to install. Just text us." />
         <link rel="stylesheet" href="/landing.css" />
         <script src="/landing-scripts.js" defer></script>
@@ -59,7 +59,7 @@ export default define.page(async function Landing(ctx) {
       <div class="nav-wrap">
         <div class="container nav">
           <a href="#" class="brand">
-            <img src="/logo-monster.png" alt="Paperwork Monsters" />
+            <img src="/logo-monster.png" alt="Paperwork Monster" />
             <span data-i18n="brand1">Paperwork</span>
             <em data-i18n="brand2" style="font-style:normal;color:var(--brand-green)">Monsters</em>
           </a>
@@ -173,7 +173,7 @@ export default define.page(async function Landing(ctx) {
                   <div class="hs-chat__hdr">
                     <span class="hs-chat__avatar">PM</span>
                     <span class="hs-chat__name">
-                      <strong>Paperwork Monsters</strong>
+                      <strong>Paperwork Monster</strong>
                       <em>Online • SMS</em>
                     </span>
                   </div>
@@ -502,7 +502,7 @@ export default define.page(async function Landing(ctx) {
                 <div class="cf-phone__hdr">
                   <span class="cf-phone__avatar">PM</span>
                   <span class="cf-phone__name">
-                    <strong>Paperwork Monsters</strong>
+                    <strong>Paperwork Monster</strong>
                     <em>Online <span class="cf-phone__live"></span></em>
                   </span>
                   <span class="cf-phone__call" aria-hidden="true">
@@ -512,10 +512,10 @@ export default define.page(async function Landing(ctx) {
 
                 <div class="cf-phone__body" id="cf-phone-body">
                   <div class="cf-bubble cf-bubble--them">
-                    <span>👋 Welcome to <strong>Paperwork Monsters</strong>.</span>
+                    <span>👋 Welcome to <strong>Paperwork Monster</strong>.</span>
                   </div>
                   <div class="cf-bubble cf-bubble--them" id="cf-bubble-sms">
-                    <span data-i18n="cta.smsPreview">Paperwork Monsters: Your code is 482-913. Don't share it.</span>
+                    <span data-i18n="cta.smsPreview">Paperwork Monster: Your code is 482-913. Don't share it.</span>
                   </div>
                   <div class="cf-meta" id="cf-meta">
                     <span class="cf-meta__check">
@@ -572,7 +572,7 @@ export default define.page(async function Landing(ctx) {
             <a href="#pricing" data-i18n="nav.pricing">Pricing</a>
             <a href="#contact" data-i18n="footer.contact">Contact</a>
           </div>
-          <div class="copy" data-i18n="footer.copy">© 2026 Paperwork Monsters. All rights reserved.</div>
+          <div class="copy" data-i18n="footer.copy">© 2026 Paperwork Monster. All rights reserved.</div>
         </div>
       </footer>
 

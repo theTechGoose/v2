@@ -41,7 +41,7 @@ export default define.page(function Dashboard(ctx) {
   return (
     <>
       <Head>
-        <title>Dashboard · Paperwork Monsters</title>
+        <title>Dashboard · Paperwork Monster</title>
         <link rel="stylesheet" href="/dashboard.css" />
       </Head>
 

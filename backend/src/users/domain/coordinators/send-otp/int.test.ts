@@ -45,7 +45,7 @@ Deno.test("send-otp integration: defaults to English copy when language omitted"
   await resetKv();
   const { smsCalls, flow } = freshFlow();
   await flow.run({ phoneNumber: "+15125551234" });
-  assert(smsCalls[0].body.startsWith("Your Paperwork Monsters code:"));
+  assert(smsCalls[0].body.startsWith("Your Paperwork Monster code:"));
   await resetKv();
 });
 

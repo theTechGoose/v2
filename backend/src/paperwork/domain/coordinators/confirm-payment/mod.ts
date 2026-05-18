@@ -115,7 +115,7 @@ export class ConfirmPayment {
         let shortUrl = "";
         try {
           const link = await this.shortlinks.findOrCreate(userId, "invoice", invoice.id);
-          const appUrl = Deno.env.get("APP_URL") ?? "https://paperworkmonsters.com";
+          const appUrl = Deno.env.get("APP_URL") ?? "https://paperworkmonster.com";
           shortUrl = `${appUrl}/s/${link.code}`;
         } catch { /* fall through to no-url body */ }
         const customerFirst = customer.name?.trim().split(/\s+/)[0];
@@ -175,7 +175,7 @@ function renderReceiptHtml(opts: {
   intent: { method: PaymentMethod; reference?: string };
   amount: number;
 }): string {
-  const businessLabel = opts.businessName ?? opts.contractor?.name ?? "Paperwork Monsters";
+  const businessLabel = opts.businessName ?? opts.contractor?.name ?? "Paperwork Monster";
   const customerFirst = opts.customer?.name?.trim().split(/\s+/)[0];
   return `<!doctype html>
 <html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">

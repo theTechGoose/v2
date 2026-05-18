@@ -19,7 +19,7 @@ export default define.page(function App({ Component }) {
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/logo.png" />
-        <title>Paperwork Monsters</title>
+        <title>Paperwork Monster</title>
         {bootScript ? <script dangerouslySetInnerHTML={{ __html: bootScript }} /> : null}
       </head>
       <body>

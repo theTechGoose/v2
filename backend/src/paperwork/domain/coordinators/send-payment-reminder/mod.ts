@@ -112,7 +112,7 @@ export class SendPaymentReminder {
       this.users.get(userId).catch(() => undefined),
       this.identity.get(userId).catch(() => null),
     ]);
-    const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || sender?.name?.trim() || "Paperwork Monsters";
+    const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || sender?.name?.trim() || "Paperwork Monster";
     const customerFirst = customer?.name?.trim().split(/\s+/)[0];
     const senderFirst = sender?.name?.trim().split(/\s+/)[0];
     const copy = composeReminderCopy({ day, customerFirst, senderFirst, businessName, invoice });
@@ -121,7 +121,7 @@ export class SendPaymentReminder {
     let url = "";
     try {
       const link = await this.shortlinks.findOrCreate(userId, "invoice", invoice.id);
-      const appUrl = Deno.env.get("APP_URL") ?? "https://paperworkmonsters.com";
+      const appUrl = Deno.env.get("APP_URL") ?? "https://paperworkmonster.com";
       url = `${appUrl}/s/${link.code}`;
     } catch { /* fall through */ }
 

@@ -1,5 +1,5 @@
 /**
- * Seed data ported verbatim from Paperwork Monsters Quotes.html.
+ * Seed data ported verbatim from Paperwork Monster Quotes.html.
  * Used as a fallback while the backend's per-quote engagement endpoints
  * (`/quotes` derived `stage`/`opens`/`daysIn`, `/quotes/:id/opens`,
  * `/analytics/quotes/win-rate`, `/analytics/quotes/insight`) come online.
