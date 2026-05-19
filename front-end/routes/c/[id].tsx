@@ -89,7 +89,7 @@ export default define.page(async function PublicContract(ctx) {
   return (
     <>
       <Head>
-        <title>Contract · Paperwork Monster</title>
+        <title>Quote & Agreement · Paperwork Monster</title>
         <link rel="stylesheet" href="/landing.css" />
         <style>{`
           @media (max-width: 720px) {
@@ -169,7 +169,7 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
             <div>
               <span style={`display:inline-block;background:rgba(255,107,107,0.10);color:${PINK_DARK};font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;padding:6px 12px;border-radius:999px`}>
-                Contract · #{contract.id.slice(0, 8).toUpperCase()}
+                Quote & Agreement · #{contract.id.slice(0, 8).toUpperCase()}
               </span>
             </div>
             {signed
@@ -243,7 +243,7 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
               {/* Total card */}
               <div style={`margin-top:18px;background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:18px;padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px`}>
                 <div>
-                  <div style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}>Contract value</div>
+                  <div style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}>Agreement value</div>
                   <div style={`margin-top:4px;color:${MUTED};font-size:12px`}>all in, no surprises</div>
                 </div>
                 <div class="ctr__total-amt" style={`font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${TEAL};line-height:1;font-variant-numeric:tabular-nums`}>{fmtMoneyExact(total)}</div>
@@ -380,7 +380,7 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
       </article>
       <div style={`display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px;font-size:11px;color:#a8b2b3;letter-spacing:.04em`}>
         <img src="/logo.png" alt="" height="16" style="height:16px;width:auto;opacity:0.7;display:block" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-        Powered by Paperwork Monster · Contract #{contract.id.slice(0, 8).toUpperCase()}
+        Powered by Paperwork Monster · Agreement #{contract.id.slice(0, 8).toUpperCase()}
       </div>
     </>
   );
@@ -471,6 +471,9 @@ function termValue(terms: Term[] | undefined, stepId: string): string | undefine
  *  notices → a sentence the customer can actually act on. */
 function expandTermValue(term: Term, contractorState: string | undefined): string {
   const stateName = expandStateName(contractorState);
+  if (term.stepId === "wraps") {
+    return `Estimated ${term.value}`;
+  }
   if (term.stepId === "governing_state") {
     if (/use my business|business state/i.test(term.value)) {
       return stateName ? `${stateName} law` : term.value;

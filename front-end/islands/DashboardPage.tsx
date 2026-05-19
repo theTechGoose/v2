@@ -29,6 +29,7 @@ import {
 import { type IconName } from "../lib/dash-icons.tsx";
 import { fmtMoney } from "../lib/format.ts";
 import { ShimmerStyle, SkelBlock } from "../components/Skeletons.tsx";
+import SetupChecklist from "./SetupChecklist.tsx";
 
 const SHORT_MONTH = [
   "Jan",
@@ -443,6 +444,7 @@ export default function DashboardPage() {
         pendingQuotes={kpis.pendingQuotes}
         outstandingOverdue={kpis.outstandingOverdue}
       />
+      <SetupChecklist />
       <Kpis
         activeJobs={kpis.activeJobs}
         outstanding={kpis.outstanding}

@@ -240,7 +240,26 @@ export class PaperworkPublicController {
   @Get("contracts/:id/public")
   async getContractPublic(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     try {
-      const c = await this.contracts.get(id);
+      let c = await this.contracts.get(id);
+      // First view by the customer flips the status from sent → viewed so
+      // the contractor's quote-review chip and threads list reflect that
+      // the link actually landed. Idempotent: only fires once (subsequent
+      // GETs find a non-"sent" status and skip).
+      if (c.status === "sent") {
+        try {
+          c = await this.contracts.update(id, c.userId, { status: "viewed" } as Partial<Contract>);
+          await this.bus.emit({
+            userId: c.userId,
+            entityType: "contract",
+            entityId: c.id,
+            action: "viewed",
+          });
+        } catch (err) {
+          // Don't fail the public render if the bookkeeping write fails —
+          // the customer still needs to see the document.
+          console.warn(`[contracts/${id}/public] mark-viewed failed:`, err);
+        }
+      }
       const [contractor, customer, quote] = await Promise.all([
         loadContractor(this.users, this.identity, this.addresses, c.userId),
         lookupCustomerPublic(this.customers, c.customerId, c.userId),

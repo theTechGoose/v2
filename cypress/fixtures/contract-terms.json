@@ -1,0 +1,14 @@
+{
+  "standard": {
+    "depositPercent": 25,
+    "paymentSchedule": "net-30",
+    "warrantyDays": 90,
+    "exclusions": ["Permit fees", "Dumpster rental"]
+  },
+  "halfUpFront": {
+    "depositPercent": 50,
+    "paymentSchedule": "on-completion",
+    "warrantyDays": 180,
+    "exclusions": []
+  }
+}

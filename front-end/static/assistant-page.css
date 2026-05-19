@@ -5158,6 +5158,44 @@ html, body {
   }
   .quote-review__dot { color: var(--fg-subtle); }
 
+  .quote-review__hero { padding-right: 44px; }
+  .quote-review__swap {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    border: 1px solid rgba(72,158,95,0.28);
+    background: rgba(255,255,255,0.85);
+    color: var(--brand-green);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 140ms, transform 140ms, box-shadow 140ms, color 140ms;
+  }
+  .quote-review__swap:hover {
+    background: var(--brand-green);
+    color: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px -4px rgba(72,158,95,0.55);
+  }
+  .quote-review__swap:disabled { opacity: 0.5; cursor: default; transform: none; }
+  .quote-review__hero-field--empty:not(:focus)::before {
+    content: attr(data-placeholder);
+    color: var(--fg-subtle);
+    font-style: italic;
+  }
+  .quote-review__swap-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed rgba(72,158,95,0.28);
+  }
+
   .quote-review__section {
     display: flex;
     flex-direction: column;

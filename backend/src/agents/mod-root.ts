@@ -20,6 +20,8 @@ import { AcceptContract } from "@agents/domain/coordinators/accept-contract/mod.
 import { SendContract } from "@agents/domain/coordinators/send-contract/mod.ts";
 import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
 import { StartOnboardingConversation } from "@agents/domain/coordinators/start-onboarding-conversation/mod.ts";
+import { BindConversationCustomer } from "@agents/domain/coordinators/bind-conversation-customer/mod.ts";
+import { EnsureSampleQuote } from "@agents/domain/coordinators/ensure-sample-quote/mod.ts";
 import { PolishJobDetails } from "@agents/domain/coordinators/polish-job-details/mod.ts";
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
 import type { LLMClient } from "@agents/domain/business/llm/base/mod.ts";
@@ -79,6 +81,8 @@ const LlmClientClass = await selectLLMClass();
     SendContract,
     SendInvoice,
     StartOnboardingConversation,
+    BindConversationCustomer,
+    EnsureSampleQuote,
     PolishJobDetails,
     { token: LLM_CLIENT, useClass: LlmClientClass },
   ],

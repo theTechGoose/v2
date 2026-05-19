@@ -9,6 +9,8 @@ import { AcceptContract } from "@agents/domain/coordinators/accept-contract/mod.
 import { SendContract } from "@agents/domain/coordinators/send-contract/mod.ts";
 import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
 import { StartOnboardingConversation } from "@agents/domain/coordinators/start-onboarding-conversation/mod.ts";
+import { BindConversationCustomer } from "@agents/domain/coordinators/bind-conversation-customer/mod.ts";
+import { EnsureSampleQuote } from "@agents/domain/coordinators/ensure-sample-quote/mod.ts";
 import { parseCreateAgentConversation } from "@agents/dto/conversation.ts";
 import { shouldTransitionToTerms } from "@agents/domain/business/derive-phase/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -27,6 +29,8 @@ export class ConversationsController {
     private sendContractFlow: SendContract,
     private sendInvoiceFlow: SendInvoice,
     private onboardingFlow: StartOnboardingConversation,
+    private bindCustomerFlow: BindConversationCustomer,
+    private sampleQuoteFlow: EnsureSampleQuote,
     private users: UserStore,
     private sessions: SessionStore,
   ) {}
@@ -131,6 +135,31 @@ export class ConversationsController {
   async sendInvoice(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
     return ctx.json(await this.sendInvoiceFlow.run({ userId: user.id, conversationId: id }));
+  }
+
+  /**
+   * POST /agents/onboarding/sample-quote
+   *
+   * Per-user idempotent "see what your customer sees" quote. Returns
+   * { quoteId } so the FE can navigate to /q/<quoteId>. Surfaced by the
+   * synthetic post-handoff CTA in AsstChat.
+   */
+  @Post("/sample-quote")
+  async sampleQuote(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return ctx.json(await this.sampleQuoteFlow.run({ userId: user.id }));
+  }
+
+  @Post(":id/bind-customer")
+  async bindCustomer(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const customerId = (body as { customerId?: unknown } | null | undefined)?.customerId;
+    if (typeof customerId !== "string" || !customerId) throw new Error("customerId is required");
+    return ctx.json(await this.bindCustomerFlow.run({ userId: user.id, conversationId: id, customerId }));
   }
 
   @Delete(":id")

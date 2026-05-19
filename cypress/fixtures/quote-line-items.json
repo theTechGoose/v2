@@ -1,0 +1,19 @@
+{
+  "single": [
+    { "description": "Fence repair", "quantity": 1, "unit": "ea", "price": 35000 }
+  ],
+  "multiLine": [
+    { "description": "Labor — fence repair", "quantity": 4, "unit": "hr", "price": 7500 },
+    { "description": "Cedar boards (6ft)", "quantity": 12, "unit": "ea", "price": 1800 },
+    { "description": "Hardware + fasteners", "quantity": 1, "unit": "lot", "price": 4500 }
+  ],
+  "withDiscount": [
+    { "description": "Full bathroom remodel", "quantity": 1, "unit": "ea", "price": 850000 },
+    { "description": "10% repeat-customer discount", "quantity": 1, "unit": "ea", "price": -85000 }
+  ],
+  "rushSurcharge": [
+    { "description": "Emergency plumbing — labor", "quantity": 3, "unit": "hr", "price": 12500 },
+    { "description": "PVC fittings + supplies", "quantity": 1, "unit": "lot", "price": 8500 },
+    { "description": "Rush surcharge (same-day)", "quantity": 1, "unit": "ea", "price": 15000 }
+  ]
+}

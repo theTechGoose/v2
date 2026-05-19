@@ -6,10 +6,23 @@
   "scripts": {
     "open": "cypress open",
     "run": "cypress run",
-    "run:invoice": "cypress run --spec 'e2e/invoice-*.cy.ts'"
+    "run:auth": "cypress run --spec 'e2e/auth-*.cy.ts'",
+    "run:dashboard": "cypress run --spec 'e2e/dashboard-*.cy.ts'",
+    "run:assistant": "cypress run --spec 'e2e/assistant-*.cy.ts'",
+    "run:quotes": "cypress run --spec 'e2e/quotes-*.cy.ts'",
+    "run:public": "cypress run --spec 'e2e/public-*.cy.ts'",
+    "run:clients": "cypress run --spec 'e2e/clients-*.cy.ts'",
+    "run:invoice": "cypress run --spec 'e2e/invoice-*.cy.ts'",
+    "run:payments": "cypress run --spec 'e2e/payments-*.cy.ts'",
+    "run:settings": "cypress run --spec 'e2e/settings-*.cy.ts'",
+    "run:responsive": "cypress run --spec 'e2e/responsive-*.cy.ts'",
+    "run:e2e-funnel": "cypress run --spec 'e2e/funnel-*.cy.ts'",
+    "run:onboarding": "cypress run --spec 'e2e/onboarding-*.cy.ts'"
   },
   "devDependencies": {
+    "axe-core": "^4.10.0",
     "cypress": "^13.15.0",
+    "cypress-axe": "^1.5.0",
     "typescript": "^5.6.0"
   }
 }

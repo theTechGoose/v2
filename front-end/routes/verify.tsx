@@ -33,7 +33,7 @@ export default define.page(async function Verify(ctx) {
           <a href="/" class="brand" style="margin:0 auto 4px">
             <img src="/logo-monster.png" alt="Paperwork Monster" style="width:38px;height:38px;flex-shrink:0" />
             <span>Paperwork</span>
-            <em style="font-style:normal;color:var(--brand-green)">Monsters</em>
+            <em style="font-style:normal;color:var(--brand-green)">Monster</em>
           </a>
           <ol class="pm-steps" aria-label="Sign-in steps">
             <li class="pm-steps__item pm-steps__item--done">

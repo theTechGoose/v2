@@ -36,7 +36,27 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
   const s = STRINGS[lang];
 
   function setSlot(i: number, val: string) {
-    const v = val.replace(/\D/g, "").slice(-1);
+    const digitsOnly = val.replace(/\D/g, "");
+    // Multi-digit input — iOS SMS autofill, Android one-time-code suggestion,
+    // or a plain paste that bypasses the paste handler. Spread the digits
+    // across the remaining slots starting at i, focus the last filled box,
+    // and auto-submit if we've completed the full code.
+    if (digitsOnly.length > 1) {
+      setDigits((prev) => {
+        const next = prev.slice();
+        for (let k = 0; k < digitsOnly.length && i + k < SLOT_COUNT; k++) {
+          next[i + k] = digitsOnly[k];
+        }
+        return next;
+      });
+      const lastIdx = Math.min(i + digitsOnly.length - 1, SLOT_COUNT - 1);
+      refs[lastIdx].current?.focus();
+      if (i + digitsOnly.length >= SLOT_COUNT) {
+        submit(digitsOnly.slice(0, SLOT_COUNT));
+      }
+      return;
+    }
+    const v = digitsOnly.slice(-1);
     setDigits((prev) => {
       const next = prev.slice();
       next[i] = v;
@@ -124,7 +144,6 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
             type="text"
             inputMode="numeric"
             autoComplete="one-time-code"
-            maxLength={1}
             value={d}
             onInput={(e) => setSlot(i, (e.target as HTMLInputElement).value)}
             onKeyDown={(e) => onKeyDown(i, e)}

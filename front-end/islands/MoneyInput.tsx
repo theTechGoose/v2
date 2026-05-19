@@ -19,6 +19,8 @@ import { useEffect, useRef, useState } from "preact/hooks";
 interface MoneyInputProps {
   initialCents?: number;
   onChange?: (cents: number | null) => void;
+  onSubmit?: (cents: number) => void;
+  autoFocus?: boolean;
   name?: string;
 }
 
@@ -26,7 +28,7 @@ const CHIP_PRESETS_CENTS = [50_00, 100_00, 500_00, 1_000_00, 5_000_00];
 const MAGNITUDE_REF_CENTS = 100_000_000_00; // bar fills at $100M (log scale)
 
 export default function MoneyInput(
-  { initialCents = 0, onChange, name }: MoneyInputProps,
+  { initialCents = 0, onChange, onSubmit, autoFocus, name }: MoneyInputProps,
 ) {
   const inputRef = useRef<HTMLInputElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -45,6 +47,12 @@ export default function MoneyInput(
     const id = requestAnimationFrame(() => setReady(true));
     return () => cancelAnimationFrame(id);
   }, []);
+
+  useEffect(() => {
+    if (!autoFocus) return;
+    const id = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [autoFocus]);
 
   // Measure available stage width so the auto-shrink formula adapts to
   // wherever the card is mounted (story shell, chat panel, sidebar…).
@@ -112,6 +120,11 @@ export default function MoneyInput(
       const dir = e.key === "ArrowUp" ? 1 : -1;
       const next = Math.max(0, (cents ?? 0) + step * dir);
       setValue(next === 0 ? null : next);
+      return;
+    }
+    if (e.key === "Enter" && onSubmit && (cents ?? 0) > 0) {
+      e.preventDefault();
+      onSubmit(cents!);
     }
   }
 

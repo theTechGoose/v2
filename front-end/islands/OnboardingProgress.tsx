@@ -127,6 +127,18 @@ export default function OnboardingProgress({ initialStep = 0 }: Props) {
 
   if (hidden) return null;
 
+  function quickReply(text: string) {
+    globalThis.dispatchEvent(new CustomEvent("pm:onboard-send-text", { detail: { text } }));
+  }
+
+  function skipSetup() {
+    // Mark "skip" so the gate doesn't bounce them back on next visit
+    // (best-effort — the FE doesn't currently persist a skip flag, so the
+    // user will see onboarding again on next ?onboard=1 visit. Acceptable
+    // for now; the dashboard checklist will catch them).
+    globalThis.location.assign("/dashboard");
+  }
+
   const pct = (step / TOTAL_STEPS) * 100;
   const message = done
     ? "🎉 You're set — let's draft your first quote!"
@@ -172,11 +184,43 @@ export default function OnboardingProgress({ initialStep = 0 }: Props) {
                 />
               );
             })}
-            <div style="flex:1;height:3px;border-radius:999px;background:rgba(255,107,107,0.15);overflow:hidden;margin-left:4px">
+            <div
+              role="progressbar"
+              aria-label="Onboarding progress"
+              aria-valuemin={0}
+              aria-valuemax={TOTAL_STEPS}
+              aria-valuenow={step}
+              style="flex:1;height:3px;border-radius:999px;background:rgba(255,107,107,0.15);overflow:hidden;margin-left:4px"
+            >
               <div style={`height:100%;background:${done ? GREEN : `linear-gradient(90deg,${PINK} 0%,${PINK_DARK} 100%)`};width:${pct}%;transition:width 480ms cubic-bezier(0.34,1.56,0.64,1);border-radius:999px`} />
             </div>
             <span style={`font-size:11px;font-weight:800;color:${done ? GREEN : PINK_DARK};letter-spacing:.06em;min-width:30px;text-align:right`}>{step}/{TOTAL_STEPS}</span>
           </div>
+          {/* Step-specific quick replies. Banner-level so they're discoverable
+              regardless of which step the assistant is currently on, and
+              non-blocking (you can still type your own answer below). */}
+          {!done && (
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+              {step === 2 && (
+                <>
+                  <button type="button" onClick={() => quickReply("Yes")} style={`appearance:none;font:inherit;font-weight:700;font-size:11.5px;padding:5px 11px;border-radius:999px;border:1px solid ${GREEN};background:#fff;color:${GREEN};cursor:pointer`}>
+                    Yes — sounds right
+                  </button>
+                  <button type="button" onClick={() => quickReply("different state")} style={`appearance:none;font:inherit;font-weight:700;font-size:11.5px;padding:5px 11px;border-radius:999px;border:1px solid rgba(20,72,82,0.20);background:#fff;color:${TEAL};cursor:pointer`}>
+                    Different state
+                  </button>
+                </>
+              )}
+              {step === 3 && (
+                <button type="button" onClick={() => quickReply("skip")} style={`appearance:none;font:inherit;font-weight:700;font-size:11.5px;padding:5px 11px;border-radius:999px;border:1px solid rgba(20,72,82,0.20);background:#fff;color:${TEAL};cursor:pointer`}>
+                  Skip
+                </button>
+              )}
+              <button type="button" onClick={skipSetup} style={`appearance:none;font:inherit;font-weight:600;font-size:11.5px;padding:5px 11px;border-radius:999px;border:1px dashed rgba(20,72,82,0.20);background:transparent;color:${INK};opacity:0.7;cursor:pointer;margin-left:auto`}>
+                Skip setup · do this later
+              </button>
+            </div>
+          )}
         </div>
       </div>
       <style>{`

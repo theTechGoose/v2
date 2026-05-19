@@ -41,7 +41,7 @@ export class RenderContractPdf {
     const { contract, quote, customer, contractor, businessName } = input;
 
     const pdf = await PDFDocument.create();
-    pdf.setTitle(`Contract #${contract.id.slice(0, 8).toUpperCase()}`);
+    pdf.setTitle(`Quote & Agreement #${contract.id.slice(0, 8).toUpperCase()}`);
     pdf.setAuthor(contractor?.name ?? businessName ?? "Contractor");
     pdf.setSubject(quote?.summary ?? "Service Agreement");
     pdf.setProducer(businessName ?? contractor?.name ?? "Contractor");
@@ -86,7 +86,7 @@ export class RenderContractPdf {
 
     // doc tag pill (left) + status (right)
     y -= 32;
-    const docNum = `CONTRACT · #${contract.id.slice(0, 8).toUpperCase()}`;
+    const docNum = `QUOTE & AGREEMENT · #${contract.id.slice(0, 8).toUpperCase()}`;
     page.drawText(docNum, { x: M, y, size: 8.5, font: bold, color: PINK_DARK });
     const statusText = contract.status === "signed"
       ? `SIGNED ${fmtDateUpper(contract.signedAt)}`
@@ -134,7 +134,7 @@ export class RenderContractPdf {
     addPageIfNeeded(70);
     y -= 4;
     page.drawRectangle({ x: M, y: y - 56, width: W - 2 * M, height: 56, color: GREEN_BG, borderWidth: 0 });
-    page.drawText("CONTRACT VALUE", { x: M + 16, y: y - 22, size: 9, font: bold, color: GREEN });
+    page.drawText("AGREEMENT VALUE", { x: M + 16, y: y - 22, size: 9, font: bold, color: GREEN });
     page.drawText("all in, no surprises", { x: M + 16, y: y - 36, size: 9, font: reg, color: MUTED });
     const total = contract.totalAmount ?? quote?.estimatedTotal ?? 0;
     const totalStr = fmtUSD(total);
@@ -200,7 +200,8 @@ export class RenderContractPdf {
           const cx = M + c * (cellW + gap);
           page.drawRectangle({ x: cx, y: y - rowH, width: cellW, height: rowH, borderColor: LINE, borderWidth: 0.5 });
           page.drawText(t.label.toUpperCase(), { x: cx + 10, y: y - 14, size: 7.5, font: bold, color: MUTED });
-          page.drawText(t.value, { x: cx + 10, y: y - 28, size: 10.5, font: bold, color: INK });
+          const displayValue = t.stepId === "wraps" ? `Estimated ${t.value}` : t.value;
+          page.drawText(displayValue, { x: cx + 10, y: y - 28, size: 10.5, font: bold, color: INK });
         }
         y -= rowH + 6;
       }

@@ -8,13 +8,15 @@ import {
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
 function freshFlow() {
-  const otps     = new OtpStore();
-  const users    = new UserStore();
-  const sessions = new SessionStore();
-  return { otps, users, sessions, flow: new VerifyOtp(otps, users, sessions) };
+  const otps       = new OtpStore();
+  const users      = new UserStore();
+  const sessions   = new SessionStore();
+  const identities = new BusinessIdentityStore();
+  return { otps, users, sessions, identities, flow: new VerifyOtp(otps, users, sessions, identities) };
 }
 
 Deno.test("verify-otp integration: first-time signup creates user with OTP language and session", async () => {
@@ -111,6 +113,38 @@ Deno.test("verify-otp integration: too many attempts throws RateLimitedError", a
     () => flow.run({ phoneNumber: "+15125551234", code: "123456" }),
     RateLimitedError,
   );
+
+  await resetKv();
+});
+
+Deno.test("verify-otp integration: dev master OTP on a fresh phone creates a user with NO seeded defaults and reports isNewUser=true", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("DEV_MASTER_OTP_SEED_DEFAULTS");
+  await resetKv();
+  const { users, identities, flow } = freshFlow();
+
+  const result = await flow.run({ phoneNumber: "+15125550999", code: "000000" });
+  assertEquals(result.isNewUser, true);
+
+  const user = await users.get(result.userId);
+  // Must NOT be auto-seeded "Dev User".
+  assertEquals(user.name ?? null, null);
+  const biz = await identities.get(result.userId);
+  // Must NOT be auto-seeded "Dev Business".
+  assertEquals(biz, null);
+
+  await resetKv();
+});
+
+Deno.test("verify-otp integration: dev master OTP on an EXISTING phone reports isNewUser=false", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("DEV_MASTER_OTP_SEED_DEFAULTS");
+  await resetKv();
+  const { users, flow } = freshFlow();
+
+  await users.create({ phoneNumber: "+15125550888", language: "en" });
+  const result = await flow.run({ phoneNumber: "+15125550888", code: "000000" });
+  assertEquals(result.isNewUser, false);
 
   await resetKv();
 });

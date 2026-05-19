@@ -61,7 +61,7 @@ export default define.page(async function Landing(ctx) {
           <a href="#" class="brand">
             <img src="/logo-monster.png" alt="Paperwork Monster" />
             <span data-i18n="brand1">Paperwork</span>
-            <em data-i18n="brand2" style="font-style:normal;color:var(--brand-green)">Monsters</em>
+            <em data-i18n="brand2" style="font-style:normal;color:var(--brand-green)">Monster</em>
           </a>
 
           <div class="lang-toggle" role="tablist" aria-label="Language">
@@ -564,7 +564,7 @@ export default define.page(async function Landing(ctx) {
         <div class="container footer-row">
           <a href="#" class="brand">
             <img src="/logo-monster.png" alt="" />
-            <span>Paperwork</span><em style="font-style:normal;color:var(--brand-green)">Monsters</em>
+            <span>Paperwork</span><em style="font-style:normal;color:var(--brand-green)">Monster</em>
           </a>
           <div class="links">
             <a href="#features" data-i18n="nav.features">What We Do</a>

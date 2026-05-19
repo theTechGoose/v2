@@ -1,0 +1,21 @@
+{
+  "email": "dev@paperworkmonster.com",
+  "name": "Diego Martinez",
+  "businessName": "Martinez Fencing & Repair",
+  "legalName": "Martinez Fencing LLC",
+  "phone": "+15125551234",
+  "language": "en",
+  "address": {
+    "street": "742 Evergreen Terrace",
+    "city": "Austin",
+    "state": "TX",
+    "postal": "78701"
+  },
+  "acceptedPaymentMethods": {
+    "venmo": { "enabled": true, "handle": "@diego-martinez" },
+    "check": { "enabled": true, "mailTo": "742 Evergreen Terrace, Austin TX 78701" },
+    "zelle": { "enabled": true, "handle": "diego@martinez-fencing.com" },
+    "cashapp": { "enabled": false },
+    "ach": { "enabled": false }
+  }
+}

@@ -198,6 +198,31 @@ export const assistantClient = {
   listCustomers: (opts: ApiOptions = {}) =>
     safe(() => api.get<CustomerLite[]>("/customers", opts), [] as CustomerLite[]),
 
+  /** Idempotent "see what your customer sees" sample quote. Returns the
+   *  per-user quoteId so the onboarding-handoff CTA can link to a
+   *  branded preview owned by the current user, not a hardcoded
+   *  Dev Business quote. */
+  ensureSampleQuote: (opts: ApiOptions = {}) =>
+    api.post<{ quoteId: string; created: boolean }>(
+      "/agents/conversations/sample-quote",
+      {},
+      opts,
+    ),
+
+  /** Re-point a conversation (and its bound contract, if any) at a
+   *  different customer the contractor owns. Used by the quote-review
+   *  surface's "swap customer" pencil. */
+  bindCustomer: (
+    conversationId: string,
+    customerId: string,
+    opts: ApiOptions = {},
+  ) =>
+    api.post<{ conversation: Conversation; customer: CustomerLite }>(
+      `/agents/conversations/${conversationId}/bind-customer`,
+      { customerId },
+      opts,
+    ),
+
   answerWizard: (
     body: {
       conversationId: string;

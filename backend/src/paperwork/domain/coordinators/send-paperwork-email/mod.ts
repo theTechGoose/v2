@@ -260,7 +260,7 @@ function fmtDate(iso: string | undefined): string {
  *  CTA button row, footer). All inline-styled — Gmail/Outlook strip <style>. */
 function shell(opts: {
   preheader: string;
-  kind: "Quote" | "Contract" | "Invoice";
+  kind: "Quote" | "Agreement" | "Invoice";
   docNumber: string;
   drafted: string;
   greeting: string;
@@ -383,7 +383,7 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
   // otherwise the legacy quote-public page (still cents-correct, still
   // accept/decline). Customers in both cases land on a real document.
   const ctaUrl = contract ? `${APP_URL}/c/${contract.id}` : `${APP_URL}/q/${q.id}`;
-  const ctaLabel = contract ? "Sound good? Sign the contract" : "Sound good? Accept this quote";
+  const ctaLabel = contract ? "Sound good? Sign the agreement" : "Sound good? Accept this quote";
 
   const customerFirst = customer?.name?.trim().split(/\s+/)[0];
   const senderFirst = sender?.name?.trim()?.split(/\s+/)[0];
@@ -541,7 +541,7 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
             <tr>
               ${[
                 ["1", "You accept", "Tap the button above"],
-                ["2", "Sign the contract", "Quick e-sign, takes a minute"],
+                ["2", "Sign the agreement", "Quick e-sign, takes a minute"],
                 ["3", "Pick a start day", "We'll text to confirm"],
                 ["4", "Done & dusted", "Receipt + warranty in your inbox"],
               ].map(([n, t, sub]) => `<td valign="top" align="center" style="width:25%;padding:0 6px">
@@ -585,7 +585,7 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
 
 function renderContractSubject(c: Contract, sender: User | undefined): string {
   const who = sender?.name?.trim()?.split(/\s+/)[0];
-  const tail = `contract #${c.id.slice(0, 8).toUpperCase()}`;
+  const tail = `agreement #${c.id.slice(0, 8).toUpperCase()}`;
   return who ? `Sign your ${tail} from ${who}` : `Please sign your ${tail}`;
 }
 
@@ -630,7 +630,7 @@ function renderContractHtml(c: Contract, customer: Customer | undefined, sender:
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:18px;background:linear-gradient(135deg,rgba(81,152,67,0.10),rgba(72,158,95,0.04));border:1px solid rgba(72,158,95,0.20);border-radius:14px;">
       <tr>
         <td style="padding:18px 20px;">
-          <div style="font-size:11px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:${COLOR_GREEN};">Contract value</div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:${COLOR_GREEN};">Agreement value</div>
         </td>
         <td style="padding:18px 20px;text-align:right;">
           <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:${COLOR_TEAL};">${fmtUSD(total)}</div>
@@ -641,14 +641,14 @@ function renderContractHtml(c: Contract, customer: Customer | undefined, sender:
   const senderFirst = sender?.name?.trim()?.split(/\s+/)[0];
   const introWho = senderFirst ? `${escapeHtml(senderFirst)} pulled` : "We pulled";
   return shell({
-    preheader: `Sign your contract — ${fmtUSD(total)}`,
-    kind: "Contract",
+    preheader: `Sign your agreement — ${fmtUSD(total)}`,
+    kind: "Agreement",
     docNumber,
     drafted,
     greeting: customerGreeting(customer),
-    intro: `${introWho} the contract together based on what you accepted. Have a quick read — when it looks right, tap below and sign with your name. Takes about a minute.`,
+    intro: `${introWho} the agreement together based on what you accepted. Have a quick read — when it looks right, tap below and sign with your name. Takes about a minute.`,
     body,
-    ctaLabel: "Looks good — sign the contract",
+    ctaLabel: "Looks good — sign the agreement",
     ctaUrl: `${APP_URL}/c/${c.id}`,
     sender,
   });

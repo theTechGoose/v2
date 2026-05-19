@@ -18,17 +18,24 @@ export interface BusinessIdentity {
   logoUrl?: string;
   tagline?: string;
   websiteUrl?: string;
+  /** Per-method enable flags + handles (Venmo @, Zelle email, etc.).
+   *  Shape mirrors backend AcceptedPaymentMethods but kept permissive so
+   *  consumers only need the .enabled flag for gating logic. */
+  acceptedPaymentMethods?: Partial<Record<
+    "check" | "venmo" | "zelle" | "cashapp" | "cash" | "ach" | "other",
+    { enabled?: boolean; handle?: string; cashtag?: string; mailTo?: string; routingNumber?: string; accountNumberMasked?: string; instructions?: string }
+  >>;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface BusinessAddress {
   userId: string;
-  line1?: string;
-  line2?: string;
+  street?: string;
+  unit?: string;
   city?: string;
   state?: string;
-  postalCode?: string;
+  postal?: string;
   country?: string;
   createdAt: string;
   updatedAt: string;
@@ -76,4 +83,10 @@ export interface ProfileSnapshot {
 
 export const profileClient = {
   get: (opts: ApiOptions = {}) => api.get<ProfileSnapshot>("/profile", opts),
+  /** PATCH the authenticated user (name, email, language). */
+  updateUser: (patch: Record<string, unknown>, opts: ApiOptions = {}) =>
+    api.put<ProfileUser>("/me", patch, opts),
+  /** PATCH the business identity (businessName, logoFileId, etc.). */
+  updateIdentity: (patch: Record<string, unknown>, opts: ApiOptions = {}) =>
+    api.put<BusinessIdentity>("/profile/identity", patch, opts),
 };

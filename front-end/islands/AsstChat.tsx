@@ -108,6 +108,22 @@ interface ActionCardPayload {
   totalCents?: number;
 }
 
+/** Compose the composer placeholder. During onboarding we want it to
+ *  echo the question Bossie is asking rather than the generic job-mode
+ *  slab example, otherwise new users wonder if they're in the right
+ *  surface. After onboarding hands off, revert to the job example. */
+function composerPlaceholder(msgs: Message[]): string {
+  const lastAssistant = [...msgs].reverse().find((m) => m.role === "assistant" && m.kind === "text");
+  const text = (lastAssistant?.content ?? "").toLowerCase();
+  if (/what should i call you|what.s your (first )?name/.test(text)) return "Your first name";
+  if (/what.s your business called|business name/.test(text)) return "Your business name";
+  if (/looks like you.re in|which state|right state/.test(text)) return "2-letter state code (SC, TX, NY)";
+  if (/business address|paste it on one line/.test(text)) return "Street, city, state ZIP — or 'skip'";
+  if (/email/.test(text)) return "name@yourbusiness.com — or 'skip'";
+  if (/payment|venmo|zelle|cash app|how.*get paid/.test(text)) return "Venmo @handle, Zelle email, etc.";
+  return "Ex: Customer wants a 10'x10' slab, what should I charge?";
+}
+
 /** Map a Quote/Contract status to the human-facing chip label on the
  *  in-chat Quote+Agreement card. Keeps the chip in sync with the doc's
  *  lifecycle: Draft → Sent → Viewed → Approved. */
@@ -294,6 +310,18 @@ export default function AsstChat({
   const [contract, setContract] = useState<ContractLite | undefined>(
     initialContract,
   );
+  /** Per-user "see what your customer sees" sample quote URL. Minted
+   *  lazily — eagerly fetched on mount when the synthetic onboarding-
+   *  handoff CTA is in the thread so cmd+click works without a round-
+   *  trip. The click handler falls back to inline mint+open if this
+   *  isn't ready yet. */
+  const [sampleQuoteUrl, setSampleQuoteUrl] = useState<string | undefined>(undefined);
+  /** Swap-customer pencil in the quote-review hero. Lazily loads the
+   *  user's saved customers on first open. */
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  const [customerPickerList, setCustomerPickerList] = useState<CustomerLite[] | null>(null);
+  const [customerPickerSearch, setCustomerPickerSearch] = useState("");
+  const [customerPickerBusy, setCustomerPickerBusy] = useState(false);
   const [quoteId, setQuoteId] = useState<string | undefined>();
   /** Full quote row, fetched lazily when the conversation has a quoteId.
    *  Used by the post-wizard quote-review preview to render `description`
@@ -459,6 +487,59 @@ export default function AsstChat({
   const levelRafRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // ── Assistant history stack ──────────────────────────────────────
+  // Snapshots of UI-only state pushed before every user-initiated
+  // view change. The back button (chat__head-btn) pops the latest.
+  interface ViewSnapshot {
+    priceCaptureOpen: boolean;
+    awaitingJobDetails: boolean;
+    submittedJobDetails: string | null;
+    pendingJobDetailsRaw: string | null;
+    pendingPriceCents: number | null;
+    priceCents: number | null;
+  }
+  const historyStackRef = useRef<ViewSnapshot[]>([]);
+
+  function broadcastHistoryDepth() {
+    globalThis.dispatchEvent(
+      new CustomEvent("pm:asst-history", {
+        detail: { depth: historyStackRef.current.length },
+      }),
+    );
+  }
+
+  function pushHistory() {
+    historyStackRef.current.push({
+      priceCaptureOpen,
+      awaitingJobDetails,
+      submittedJobDetails,
+      pendingJobDetailsRaw,
+      pendingPriceCents,
+      priceCents,
+    });
+    broadcastHistoryDepth();
+  }
+
+  function popHistory() {
+    const snap = historyStackRef.current.pop();
+    if (!snap) return;
+    setPriceCaptureOpen(snap.priceCaptureOpen);
+    setAwaitingJobDetails(snap.awaitingJobDetails);
+    setSubmittedJobDetails(snap.submittedJobDetails);
+    setPendingJobDetailsRaw(snap.pendingJobDetailsRaw);
+    setPendingPriceCents(snap.pendingPriceCents);
+    setPriceCents(snap.priceCents);
+    broadcastHistoryDepth();
+  }
+
+  // Listen for the back-button click event from ChatHeaderLive.
+  useEffect(() => {
+    function onBack() { popHistory(); }
+    globalThis.addEventListener("pm:asst-back", onBack);
+    return () => globalThis.removeEventListener("pm:asst-back", onBack);
+  });
+  // ── end history stack ───────────────────────────────────────────
 
   useEffect(() => {
     setConvoId(conversationId);
@@ -648,6 +729,48 @@ export default function AsstChat({
     if (!sending) taRef.current?.focus();
   }, [sending]);
 
+  // Auto-focus the composer when the "awaiting job details" view appears
+  // (user clicked "I know my price, write it up."). Without this the user
+  // has to manually click the textarea before typing.
+  useEffect(() => {
+    if (awaitingJobDetails && !submittedJobDetails) {
+      queueMicrotask(() => taRef.current?.focus());
+    }
+  }, [awaitingJobDetails, submittedJobDetails]);
+
+  // Onboarding banner quick-reply chips (Yes / Different state / Skip /
+  // Skip setup) dispatch this event with the reply text. AsstChat owns
+  // the chat transport, so we forward the text through sendText so it
+  // hits the same onboarding handler as a manually typed answer.
+  useEffect(() => {
+    function onQuickReply(e: Event) {
+      const text = (e as CustomEvent<{ text?: string }>).detail?.text;
+      if (typeof text === "string" && text.trim().length > 0) {
+        void sendText(text);
+      }
+    }
+    globalThis.addEventListener("pm:onboard-send-text", onQuickReply);
+    return () => globalThis.removeEventListener("pm:onboard-send-text", onQuickReply);
+  }, []);
+
+  // Eagerly mint the per-user sample quote URL once the synthetic
+  // onboarding-handoff CTA appears in the thread. Cheap (server-side
+  // idempotent) and ensures cmd+click on the link opens the right URL
+  // without an inline round-trip.
+  useEffect(() => {
+    if (sampleQuoteUrl) return;
+    const hasCta = messages.some(
+      (m) => m.kind === "text" && m.content === "PM_ONBOARDING_DEMO_CTA",
+    );
+    if (!hasCta) return;
+    let cancelled = false;
+    assistantClient
+      .ensureSampleQuote()
+      .then((r) => { if (!cancelled) setSampleQuoteUrl(`/q/${r.quoteId}`); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [messages, sampleQuoteUrl]);
+
   /**
    * Auto-scroll: pin the chat to the bottom whenever the content height
    * grows AND the user was already near the bottom (within 120px). The
@@ -708,6 +831,39 @@ export default function AsstChat({
         el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }),
       );
   }, [previewCtaId]);
+
+  // While the inline quote-review preview is open and the bound contract
+  // hasn't reached a terminal state (signed / declined), poll its row
+  // every 8s so the status chip ticks forward as the customer interacts:
+  //   Sent → Viewed (first public GET) → Approved (sign).
+  // No SSE channel exists today; polling here is scoped to the preview
+  // surface to keep traffic minimal.
+  useEffect(() => {
+    if (previewCtaId === null) return;
+    const cid = contract?.id;
+    if (!cid) return;
+    const TERMINAL = new Set(["signed", "accepted", "approved", "declined", "void", "lost"]);
+    if (TERMINAL.has((contract?.status ?? "").toLowerCase())) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const fresh = await contractsClient.get(cid);
+        if (cancelled) return;
+        setContract((cur) => {
+          if (!cur || cur.id !== cid) return cur;
+          if (cur.status === fresh.status) return cur;
+          return { ...cur, ...fresh } as typeof cur;
+        });
+      } catch {
+        /* swallow — next tick will retry */
+      }
+    };
+    const id = globalThis.setInterval(tick, 8_000);
+    return () => {
+      cancelled = true;
+      globalThis.clearInterval(id);
+    };
+  }, [previewCtaId, contract?.id, contract?.status]);
 
   // Auto-open the editable quote-review when the wizard emits its
   // "Ready to send" CTA. The CTA banner itself is suppressed below
@@ -1003,6 +1159,7 @@ export default function AsstChat({
       // the user types the price (and continues running through phase 2
       // if needed). The quote-create path below reuses this in-flight
       // promise rather than starting a fresh one.
+      pushHistory();
       setPendingJobDetailsRaw(trimmed);
       setSubmittedJobDetails(trimmed);
       setAwaitingJobDetails(false);
@@ -1564,6 +1721,61 @@ export default function AsstChat({
       setCustomer((c) => (c ? { ...c, name: next } : c));
     } catch (err) {
       el.innerText = original;
+      setError(err instanceof Error ? err.message : "couldn't save edit");
+    }
+  }
+
+  function openCustomerPicker() {
+    setCustomerPickerOpen(true);
+    setCustomerPickerSearch("");
+    if (customerPickerList !== null) return;
+    assistantClient
+      .listCustomers()
+      .then((list) => setCustomerPickerList(list))
+      .catch((err) =>
+        setError(err instanceof Error ? err.message : "couldn't load customers"),
+      );
+  }
+
+  async function onBindDifferentCustomer(nextCustomer: CustomerLite) {
+    if (!convoId || customerPickerBusy) return;
+    if (nextCustomer.id === customer?.id) {
+      setCustomerPickerOpen(false);
+      return;
+    }
+    setCustomerPickerBusy(true);
+    try {
+      const res = await assistantClient.bindCustomer(convoId, nextCustomer.id);
+      setCustomer(res.customer);
+      setContract((c) => (c ? ({ ...c, customerId: res.customer.id } as typeof c) : c));
+      setCustomerPickerOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "couldn't switch customer");
+    } finally {
+      setCustomerPickerBusy(false);
+    }
+  }
+
+  /** Generic inline-edit handler for the customer's email + phone in the
+   *  quote-review hero. Empty next value clears the field (allowed); the
+   *  PUT goes through whether the field had a prior value or not. */
+  async function onEditCustomerField(
+    field: "email" | "phoneNumber",
+    customerId: string | undefined,
+    original: string | undefined,
+    el: HTMLElement,
+  ) {
+    const next = (el.innerText ?? "").trim();
+    const prev = (original ?? "").trim();
+    if (!customerId || next === prev) return;
+    try {
+      const patch = { [field]: next.length === 0 ? null : next } as Record<string, unknown>;
+      await clientsClient.update(customerId, patch);
+      setCustomer((c) =>
+        c ? { ...c, [field]: next.length === 0 ? undefined : next } : c,
+      );
+    } catch (err) {
+      el.innerText = prev;
       setError(err instanceof Error ? err.message : "couldn't save edit");
     }
   }
@@ -2141,7 +2353,14 @@ export default function AsstChat({
                     I'll build the job details around it.
                   </p>
                 </div>
-                <MoneyInput onChange={setPriceCents} />
+                <MoneyInput
+                  autoFocus
+                  onChange={setPriceCents}
+                  onSubmit={(cents) => {
+                    if (sending) return;
+                    onPriceContinue(cents);
+                  }}
+                />
                 <button
                   type="button"
                   class="chat__price-continue"
@@ -2160,8 +2379,14 @@ export default function AsstChat({
                     // Inverted flow: ask for job details FIRST, then price.
                     // submitJobDetails will detect the missing price and
                     // open the price-capture screen after stashing the raw.
+                    pushHistory();
                     setPendingJobDetailsRaw(null);
                     setAwaitingJobDetails(true);
+                    // Synchronous focus inside the user gesture so iOS
+                    // Safari pops the keyboard. The effect at L707 is
+                    // belt-and-suspenders for cases where the ref isn't
+                    // ready yet at click time.
+                    taRef.current?.focus();
                   }}
                 >
                   I know my price, write it up.
@@ -2591,7 +2816,11 @@ export default function AsstChat({
                             ) : null}
                           </div>
                           <div class="quote-review__head-right">
-                            <span class="quote-review__chip">{statusChipLabel(lockedPayload.status)}</span>
+                            <span class="quote-review__chip">
+                              {statusChipLabel(
+                                contract?.status ?? lockedPayload.status,
+                              )}
+                            </span>
                             <button
                               type="button"
                               class="quote-review__close"
@@ -2607,6 +2836,25 @@ export default function AsstChat({
                         {customer?.name ? (
                           <section class="quote-review__hero">
                             <div class="quote-review__hero-label">For</div>
+                            <button
+                              type="button"
+                              class="quote-review__swap"
+                              aria-label="Switch customer"
+                              title="Switch customer"
+                              onClick={openCustomerPicker}
+                              disabled={customerPickerBusy}
+                            >
+                              <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+                                <path
+                                  d="M14.06 3.94a1.5 1.5 0 0 1 2.12 0l1.88 1.88a1.5 1.5 0 0 1 0 2.12L8.5 17.5 3 19l1.5-5.5z"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  stroke-width="1.6"
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round"
+                                />
+                              </svg>
+                            </button>
                             <div
                               class="quote-review__hero-name quote-review__editable"
                               contentEditable
@@ -2622,17 +2870,114 @@ export default function AsstChat({
                             >
                               {customer.name}
                             </div>
-                            {customer.email || customer.phoneNumber ? (
-                              <div class="quote-review__hero-meta">
-                                {customer.email ? (
-                                  <span>{customer.email}</span>
-                                ) : null}
-                                {customer.email && customer.phoneNumber ? (
-                                  <span class="quote-review__dot">·</span>
-                                ) : null}
-                                {customer.phoneNumber ? (
-                                  <span>{customer.phoneNumber}</span>
-                                ) : null}
+                            <div class="quote-review__hero-meta">
+                              <span
+                                class={`quote-review__editable quote-review__hero-field${customer.email ? "" : " quote-review__hero-field--empty"}`}
+                                contentEditable
+                                spellcheck={false}
+                                data-placeholder="add email"
+                                onBlur={(e) =>
+                                  onEditCustomerField(
+                                    "email",
+                                    customer.id,
+                                    customer.email,
+                                    e.currentTarget as HTMLElement,
+                                  )
+                                }
+                              >
+                                {customer.email ?? ""}
+                              </span>
+                              <span class="quote-review__dot">·</span>
+                              <span
+                                class={`quote-review__editable quote-review__hero-field${customer.phoneNumber ? "" : " quote-review__hero-field--empty"}`}
+                                contentEditable
+                                spellcheck={false}
+                                data-placeholder="add phone"
+                                onBlur={(e) =>
+                                  onEditCustomerField(
+                                    "phoneNumber",
+                                    customer.id,
+                                    customer.phoneNumber,
+                                    e.currentTarget as HTMLElement,
+                                  )
+                                }
+                              >
+                                {customer.phoneNumber ?? ""}
+                              </span>
+                            </div>
+                            {customerPickerOpen ? (
+                              <div class="quote-review__swap-panel">
+                                <input
+                                  type="text"
+                                  class="cust-pick__search"
+                                  placeholder={
+                                    customerPickerList && customerPickerList.length > 5
+                                      ? `Search ${customerPickerList.length} customers…`
+                                      : "Search customers…"
+                                  }
+                                  value={customerPickerSearch}
+                                  autoFocus
+                                  onInput={(e) =>
+                                    setCustomerPickerSearch(
+                                      (e.target as HTMLInputElement).value,
+                                    )
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Escape") {
+                                      setCustomerPickerOpen(false);
+                                    }
+                                  }}
+                                />
+                                {customerPickerList === null ? (
+                                  <div class="cust-pick__empty">Loading customers…</div>
+                                ) : (() => {
+                                  const q = customerPickerSearch.trim().toLowerCase();
+                                  const filtered = (customerPickerList ?? []).filter((c) => {
+                                    if (c.id === customer.id) return false;
+                                    if (!q) return true;
+                                    return (
+                                      c.name.toLowerCase().includes(q) ||
+                                      (c.email ?? "").toLowerCase().includes(q) ||
+                                      (c.phoneNumber ?? "").toLowerCase().includes(q)
+                                    );
+                                  });
+                                  if (filtered.length === 0) {
+                                    return (
+                                      <div class="cust-pick__empty">
+                                        {q ? "No matches." : "No other customers saved yet."}
+                                      </div>
+                                    );
+                                  }
+                                  return (
+                                    <div class="cust-pick__list cust-pick__list--scroll">
+                                      {filtered.slice(0, 100).map((c) => (
+                                        <button
+                                          key={c.id}
+                                          type="button"
+                                          class="cust-pick__row"
+                                          disabled={customerPickerBusy}
+                                          onClick={() => onBindDifferentCustomer(c)}
+                                        >
+                                          <span class="cust-pick__name">{c.name}</span>
+                                          {c.email || c.phoneNumber ? (
+                                            <span class="cust-pick__meta">
+                                              {c.email ?? c.phoneNumber}
+                                            </span>
+                                          ) : null}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+                                <button
+                                  type="button"
+                                  class="cust-create__btn"
+                                  onClick={() => setCustomerPickerOpen(false)}
+                                  disabled={customerPickerBusy}
+                                  style="margin-top:8px"
+                                >
+                                  Cancel
+                                </button>
                               </div>
                             ) : null}
                           </section>
@@ -2870,7 +3215,7 @@ export default function AsstChat({
                                           disabled={!cid || !t.stepId}
                                           title="Edit"
                                         >
-                                          {t.value}
+                                          {t.stepId === "wraps" ? `Estimated ${t.value}` : t.value}
                                         </button>
                                       </dd>
                                     )}
@@ -3531,9 +3876,26 @@ export default function AsstChat({
                     </div>
                     <div style="flex:1;min-width:0">
                       <a
-                        href="/q/03a22a99-3504-47b4-b6b0-cf62efe881cf"
+                        href={sampleQuoteUrl ?? "#"}
                         target="_blank"
                         rel="noopener"
+                        onClick={(e) => {
+                          // If the per-user sample isn't minted yet, mint
+                          // synchronously inside the click so the same tab
+                          // can still navigate. Falls back to a no-op if
+                          // the request fails — better than landing on a
+                          // 404 or a stranger's branded quote.
+                          if (sampleQuoteUrl) return;
+                          e.preventDefault();
+                          assistantClient
+                            .ensureSampleQuote()
+                            .then((r) => {
+                              const url = `/q/${r.quoteId}`;
+                              setSampleQuoteUrl(url);
+                              globalThis.open(url, "_blank", "noopener");
+                            })
+                            .catch(() => {});
+                        }}
                         style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:linear-gradient(135deg,rgba(255,107,107,0.10) 0%,rgba(255,107,107,0.04) 100%);border:1px solid rgba(255,107,107,0.30);border-radius:14px;text-decoration:none;color:inherit;transition:transform 200ms"
                       >
                         <span
@@ -3674,7 +4036,7 @@ export default function AsstChat({
               <textarea
                 ref={taRef}
                 class="composer__input"
-                placeholder="Ex: Customer wants a 10'x10' slab, what should I charge?"
+                placeholder={composerPlaceholder(messages)}
                 rows={1}
                 value={draft}
                 onInput={(e) => {

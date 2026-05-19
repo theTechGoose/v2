@@ -148,6 +148,44 @@ export const ONBOARD_ASK_ADDRESS = (firstName: string): string =>
   `Last one, ${firstName} — what's your business address? Paste it on one line: street, city, state zip (e.g. "123 Main St, Austin, TX 78701"). Solo / no office? Just say "skip".`;
 export const ONBOARD_HANDOFF = (firstName: string): string =>
   `Awesome — we're set, ${firstName}. Okay, can we start with your first quote? Tell me anything — for example: "I have a full bathroom remodel down to the studs, I would like to rebuild the bathroom."`;
+/** Combined email + payment-method ask. Single question on purpose so
+ *  the user types one quick line and we extract whichever pieces they
+ *  give us (email regex; payment handle keyword-match). Both are nice
+ *  to have but not blocking — "skip" jumps to the handoff. */
+export const ONBOARD_ASK_PAYOUT = (firstName: string): string =>
+  `One more thing, ${firstName} — what's your email, and how would you like to get paid? (Venmo, Zelle, Cash App, ACH, or check. Just type something like "venmo @rafa, rafa@x.com" — or "skip".)`;
+
+/** Pull a single email out of a free-text reply. */
+export function extractEmail(raw: string): string | undefined {
+  const m = raw.match(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/);
+  return m ? m[0].toLowerCase() : undefined;
+}
+
+/** Heuristic payment-handle parse. Returns the FIRST method we recognize
+ *  with its handle (if any). The acceptedPaymentMethods shape supports
+ *  multiple — onboarding intentionally captures only one to stay light;
+ *  the user can add more from Settings later. */
+export interface ParsedPayout {
+  method: "venmo" | "zelle" | "cashapp" | "ach" | "check" | "cash" | "other";
+  handle?: string;
+}
+export function extractPayout(raw: string): ParsedPayout | undefined {
+  const t = raw.trim();
+  if (!t) return undefined;
+  const lower = t.toLowerCase();
+  // Venmo @handle
+  let m = lower.match(/venmo[^a-z0-9@]*(@?[a-z0-9._-]+)?/);
+  if (m) return { method: "venmo", handle: m[1] ? (m[1].startsWith("@") ? m[1] : `@${m[1]}`) : undefined };
+  // Cash App $tag
+  m = lower.match(/cash\s*app[^a-z0-9$]*(\$?[a-z0-9._-]+)?/);
+  if (m) return { method: "cashapp", handle: m[1] ? (m[1].startsWith("$") ? m[1] : `$${m[1]}`) : undefined };
+  m = lower.match(/zelle[^a-z0-9@]*([\w.+-]+@[\w-]+(?:\.[\w-]+)+|\+?\d[\d\s().-]{6,})?/);
+  if (m) return { method: "zelle", handle: m[1]?.trim() };
+  if (/\bach\b|wire/i.test(t)) return { method: "ach" };
+  if (/\bcheck\b/i.test(t)) return { method: "check" };
+  if (/\bcash\b/i.test(t)) return { method: "cash" };
+  return undefined;
+}
 
 /** Two-letter US state abbreviations → full names. Used by the state
  *  extractor and surfaced on customer-facing contracts. */

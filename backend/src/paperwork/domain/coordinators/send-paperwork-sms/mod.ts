@@ -242,7 +242,7 @@ function composeSmsBody(p: {
     : p.who
     ? `This is ${p.who}.`
     : null;
-  const noun = p.kind === "quote" ? "quote" : "contract";
+  const noun = p.kind === "quote" ? "quote" : "agreement";
   const lines: string[] = [];
   if (intro) lines.push(intro);
   lines.push(`Your ${noun} for ${p.jobName} is ready: ${p.url}`);

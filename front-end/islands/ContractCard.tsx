@@ -163,7 +163,13 @@ export default function ContractCard({ c, idx }: Props) {
           <button type="button" onClick={(e) => e.stopPropagation()}>
             <I d={ICN.send} size={13} /> Text client
           </button>
-          <button type="button" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              globalThis.location.assign(`/c/${c.id}`);
+            }}
+          >
             <I d={ICN.contract} size={13} /> View contract
           </button>
         </div>

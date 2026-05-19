@@ -20,8 +20,11 @@ import {
   ONBOARD_ASK_ADDRESS,
   ONBOARD_ASK_BUSINESS,
   ONBOARD_ASK_NAME,
+  ONBOARD_ASK_PAYOUT,
   ONBOARD_HANDOFF,
   ONBOARDING_ASK_TEXT,
+  extractEmail,
+  extractPayout,
   stateFromPhone,
   type ParsedAddress,
 } from "@agents/domain/business/onboarding/mod.ts";
@@ -171,7 +174,24 @@ export class HandleChatMessage {
       const needsBiz     = !ident?.businessName || ident.businessName.trim().length === 0;
       const needsState   = !addr?.state || addr.state.trim().length === 0;
       const needsAddress = !addr?.postal || addr.postal.trim().length === 0;
-      if (needsName || needsBiz || needsState || needsAddress) {
+      const needsEmail   = !me?.email || me.email.trim().length === 0;
+      const acceptedAny  = Object.values(ident?.acceptedPaymentMethods ?? {}).some(
+        (m) => m && (m as { enabled?: boolean }).enabled === true,
+      );
+      const needsPayout  = !acceptedAny;
+      // Pick the assistant's next ask once name/biz/state/address are
+      // done. Email + payment are the two nice-to-haves that come last;
+      // either missing routes to the combined payout ask, otherwise we
+      // hand off into job-quoting mode.
+      const postAddressAsk = (
+        firstName: string,
+        needEmail: boolean,
+        needPay: boolean,
+      ): string =>
+        needEmail || needPay
+          ? ONBOARD_ASK_PAYOUT(firstName)
+          : ONBOARD_HANDOFF(firstName);
+      if (needsName || needsBiz || needsState || needsAddress || needsEmail || needsPayout) {
         const text = input.content.trim();
         const isFirstTurn = history.length === 1;
         const lastAssistant = [...history].reverse().find((m) => m.role === "assistant" && m.kind === "text");
@@ -201,7 +221,7 @@ export class HandleChatMessage {
             const firstName = firstNameOf(userVolunteered.name);
             const nextAsk = stillNeedsBiz
               ? ONBOARD_ASK_BUSINESS(firstName)
-              : (needsState ? onboardAskStateWithGuess(firstName, me?.phoneNumber) : ONBOARD_HANDOFF(firstName));
+              : (needsState ? onboardAskStateWithGuess(firstName, me?.phoneNumber) : postAddressAsk(firstName, needsEmail, needsPayout));
             const ack = await this.messages.append({
               conversationId: conv.id, role: "assistant", kind: "text", content: nextAsk,
             });
@@ -218,7 +238,7 @@ export class HandleChatMessage {
               const firstName = firstNameOf(parsed);
               const nextAsk = needsBiz
                 ? ONBOARD_ASK_BUSINESS(firstName)
-                : (needsState ? onboardAskStateWithGuess(firstName, me?.phoneNumber) : ONBOARD_HANDOFF(firstName));
+                : (needsState ? onboardAskStateWithGuess(firstName, me?.phoneNumber) : postAddressAsk(firstName, needsEmail, needsPayout));
               const ack = await this.messages.append({
                 conversationId: conv.id, role: "assistant", kind: "text", content: nextAsk,
               });
@@ -252,7 +272,7 @@ export class HandleChatMessage {
             const parsed = extractBusinessOnly(text);
             if (parsed) {
               await this.identity.upsert(input.userId, { businessName: parsed });
-              const nextAsk = needsState ? onboardAskStateWithGuess(firstName, me?.phoneNumber) : ONBOARD_HANDOFF(firstName);
+              const nextAsk = needsState ? onboardAskStateWithGuess(firstName, me?.phoneNumber) : postAddressAsk(firstName, needsEmail, needsPayout);
               const ack = await this.messages.append({
                 conversationId: conv.id, role: "assistant", kind: "text", content: nextAsk,
               });
@@ -289,7 +309,7 @@ export class HandleChatMessage {
               await this.addresses.upsert(input.userId, { state: phoneGuess });
               const ack = await this.messages.append({
                 conversationId: conv.id, role: "assistant", kind: "text",
-                content: needsAddress ? ONBOARD_ASK_ADDRESS(firstName) : ONBOARD_HANDOFF(firstName),
+                content: needsAddress ? ONBOARD_ASK_ADDRESS(firstName) : postAddressAsk(firstName, needsEmail, needsPayout),
               });
               const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
               return { conversation: updated, newMessages: [userMsg, ack] };
@@ -299,7 +319,7 @@ export class HandleChatMessage {
               await this.addresses.upsert(input.userId, { state: parsed });
               const ack = await this.messages.append({
                 conversationId: conv.id, role: "assistant", kind: "text",
-                content: needsAddress ? ONBOARD_ASK_ADDRESS(firstName) : ONBOARD_HANDOFF(firstName),
+                content: needsAddress ? ONBOARD_ASK_ADDRESS(firstName) : postAddressAsk(firstName, needsEmail, needsPayout),
               });
               const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
               return { conversation: updated, newMessages: [userMsg, ack] };
@@ -334,7 +354,7 @@ export class HandleChatMessage {
               // re-prompt within the same thread (consistent with the
               // name-skip path elsewhere).
               const ack = await this.messages.append({
-                conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_HANDOFF(firstName),
+                conversationId: conv.id, role: "assistant", kind: "text", content: postAddressAsk(firstName, needsEmail, needsPayout),
               });
               const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
               return { conversation: updated, newMessages: [userMsg, ack] };
@@ -359,7 +379,7 @@ export class HandleChatMessage {
             if (final) {
               await this.addresses.upsert(input.userId, final);
               const ack = await this.messages.append({
-                conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_HANDOFF(firstName),
+                conversationId: conv.id, role: "assistant", kind: "text", content: postAddressAsk(firstName, needsEmail, needsPayout),
               });
               const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
               return { conversation: updated, newMessages: [userMsg, ack] };
@@ -379,6 +399,45 @@ export class HandleChatMessage {
               ...(history.length === 1 ? { title: deriveTitleFromFirstUserMessage(input.content) } : {}),
               preview: derivePreview(ask.content),
             });
+            return { conversation: updated, newMessages: [userMsg, ask] };
+          }
+        } else if (needsEmail || needsPayout) {
+          // 5) EMAIL + PAYMENT — combined ask, both optional. We parse
+          //    out an email and a payment handle (whichever the user
+          //    provided), persist them, and hand off. "skip" jumps
+          //    straight to handoff so nothing here is blocking.
+          const firstName = firstNameOf(me?.name);
+          const justAskedPayout = lastAsk.startsWith("One more thing,");
+          if (justAskedPayout) {
+            if (!isSkipReply(text)) {
+              const email = extractEmail(text);
+              if (email) await this.users.update(input.userId, { email });
+              const payout = extractPayout(text);
+              if (payout) {
+                const patch: Record<string, unknown> = {
+                  ...(ident?.acceptedPaymentMethods ?? {}),
+                };
+                if (payout.method === "venmo") patch.venmo = { enabled: true, handle: payout.handle };
+                else if (payout.method === "cashapp") patch.cashapp = { enabled: true, cashtag: payout.handle };
+                else if (payout.method === "zelle") patch.zelle = { enabled: true, handle: payout.handle };
+                else if (payout.method === "check") patch.check = { enabled: true };
+                else if (payout.method === "cash") patch.cash = { enabled: true };
+                else if (payout.method === "ach") patch.ach = { enabled: true };
+                else patch.other = { enabled: true, instructions: text.trim().slice(0, 200) };
+                await this.identity.upsert(input.userId, { acceptedPaymentMethods: patch as never });
+              }
+            }
+            const ack = await this.messages.append({
+              conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_HANDOFF(firstName),
+            });
+            const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
+            return { conversation: updated, newMessages: [userMsg, ack] };
+          }
+          if (!looksLikeJobRequest(text)) {
+            const ask = await this.messages.append({
+              conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_ASK_PAYOUT(firstName),
+            });
+            const updated = await this.conversations.update(conv.id, { preview: derivePreview(ask.content) });
             return { conversation: updated, newMessages: [userMsg, ask] };
           }
         }
