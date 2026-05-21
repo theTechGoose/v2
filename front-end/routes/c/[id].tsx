@@ -2,7 +2,7 @@ import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import PublicSignContract from "../../islands/PublicSignContract.tsx";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
-import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
+import { detailLines, fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
 
 interface Contractor {
   name?: string;
@@ -152,6 +152,14 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
   const effective = contract.effectiveDate ?? contract.createdAt;
   const milestones = computeMilestones(total, contract.terms);
 
+  // Sequential section numbers. Sections are conditionally rendered, so
+  // hardcoding 01/02/03 leaves gaps (01,03,…) when one is absent — which
+  // reads as a mistake. Each rendered SectionHeader pulls the next number
+  // in source order via short-circuit eval, so the sequence is always
+  // gapless regardless of which optional sections appear.
+  let sec = 0;
+  const num = () => String(++sec).padStart(2, "0");
+
   return (
     <>
       {/* Sticky brand strip */}
@@ -210,38 +218,58 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
 
           {/* Job details */}
           {items.length > 0 && (
-            <section style="margin-top:30px">
-              <SectionLabel n="01" title="Job details" hint="What we're actually doing" />
-              {contract.jobDetails?.description && (
-                <p style={`margin:14px 0 0;color:${INK};font-size:15px;line-height:1.6;white-space:pre-wrap`}>{contract.jobDetails.description}</p>
+            <section style="margin-top:36px">
+              <SectionHeader n={num()} title="Job details" />
+              {(() => {
+                const lines = detailLines(contract.jobDetails?.description);
+                if (lines.length === 0) return null;
+                return lines.length > 1
+                  ? (
+                    <ul style={`margin:0;padding:0;list-style:none;color:${INK};font-size:15px;line-height:1.6`}>
+                      {lines.map((l, i) => (
+                        <li key={i} style="position:relative;padding:5px 0 5px 22px">
+                          <span style={`position:absolute;left:2px;top:13px;width:6px;height:6px;border-radius:50%;background:${GREEN}`}></span>
+                          {l}
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                  : (
+                    <p style={`margin:0;color:${INK};font-size:15px;line-height:1.6;white-space:pre-wrap`}>{lines[0]}</p>
+                  );
+              })()}
+              {/* Line-item breakdown only for multi-line quotes — a single
+                  line just repeats the total card, and the Job details
+                  bullets above already describe the scope. */}
+              {items.length > 1 && (
+                <table style="width:100%;border-collapse:collapse;margin-top:14px">
+                  <thead>
+                    <tr>
+                      <th style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:left`}>Description</th>
+                      {showQty && (
+                        <th style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:right`}>Qty</th>
+                      )}
+                      <th style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:right`}>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((li, i) => {
+                      const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
+                      return (
+                        <tr key={i}>
+                          <td style={`padding:14px 0;border-bottom:1px solid ${LINE};color:${INK};font-size:15px;font-weight:600`}>{li.description}</td>
+                          {showQty && (
+                            <td style={`padding:14px 0;border-bottom:1px solid ${LINE};color:${MUTED};font-size:13px;text-align:right`}>{li.quantity ?? 1} {li.unit ?? "ea"}</td>
+                          )}
+                          <td style={`padding:14px 0;border-bottom:1px solid ${LINE};color:${INK};font-size:15px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums`}>{fmtMoneyExact(lineTotal)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               )}
-              <table style="width:100%;border-collapse:collapse;margin-top:14px">
-                <thead>
-                  <tr>
-                    <th style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:left`}>Description</th>
-                    {showQty && (
-                      <th style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:right`}>Qty</th>
-                    )}
-                    <th style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:right`}>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((li, i) => {
-                    const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
-                    return (
-                      <tr key={i}>
-                        <td style={`padding:14px 0;border-bottom:1px solid ${LINE};color:${INK};font-size:15px;font-weight:600`}>{li.description}</td>
-                        {showQty && (
-                          <td style={`padding:14px 0;border-bottom:1px solid ${LINE};color:${MUTED};font-size:13px;text-align:right`}>{li.quantity ?? 1} {li.unit ?? "ea"}</td>
-                        )}
-                        <td style={`padding:14px 0;border-bottom:1px solid ${LINE};color:${INK};font-size:15px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums`}>{fmtMoneyExact(lineTotal)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {/* Total card */}
-              <div style={`margin-top:18px;background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:18px;padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px`}>
+              {/* Total card — the money moment */}
+              <div style={`margin-top:20px;background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:16px;padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px`}>
                 <div>
                   <div style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}>Agreement value</div>
                   <div style={`margin-top:4px;color:${MUTED};font-size:12px`}>all in, no surprises</div>
@@ -253,12 +281,12 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
 
           {/* Payment milestones */}
           {milestones.length > 0 && (
-            <section style="margin-top:30px">
-              <SectionLabel n="02" title="Payment schedule" hint="When the money moves" />
-              <div class="ctr__milestones" style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+            <section style="margin-top:36px">
+              <SectionHeader n={num()} title="Payment schedule" />
+              <div class="ctr__milestones" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
                 {milestones.map((m, i) => (
                   <div key={i} style={`background:#fff;border:1px solid ${LINE};border-radius:14px;padding:14px 16px`}>
-                    <div style={`font-size:11px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:${PINK_DARK}`}>{m.label}</div>
+                    <div style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}>{m.label}</div>
                     <div style={`margin-top:6px;color:${TEAL};font-weight:900;font-size:20px;font-variant-numeric:tabular-nums`}>{fmtMoneyExact(m.amount)}</div>
                     <div style={`margin-top:2px;color:${MUTED};font-size:12px`}>{m.when}</div>
                   </div>
@@ -267,35 +295,35 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
             </section>
           )}
 
-          {/* Terms — Start/Estimated completion (was "03 Schedule") merged
-              with the wizard-captured terms grid (was "04 Terms"). Warranty
-              is hidden when the contractor answered "No warranty"; the
-              legal-text warranty clause in Fine Print below still applies. */}
-          {(contract.startDate || contract.estimatedCompletionDate || (contract.terms && contract.terms.length > 0)) && (
-            <section style="margin-top:30px">
-              <SectionLabel n="03" title="Terms" hint="What you agreed to in the chat" />
-              <div class="ctr__terms-grid" style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
-                {contract.startDate && (
-                  <KV k="Start" v={fmtDate(contract.startDate)} />
+          {/* Terms — the wizard-captured term grid (Start, completion,
+              payment, warranty) and the plain-English legal clauses, under a
+              single "Terms" header. The grid is conditional; the clauses are
+              always present, so this whole section always renders. Warranty
+              row is hidden when "No warranty" was chosen — clause 7 still
+              applies. */}
+          {(() => {
+            const hasTermGrid = !!(contract.startDate || contract.estimatedCompletionDate ||
+              (contract.terms && contract.terms.length > 0));
+            return (
+              <section style="margin-top:36px">
+                <SectionHeader n={num()} title="Terms" />
+                {hasTermGrid && (
+                  <div class="ctr__terms-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                    {contract.startDate && (
+                      <KV k="Start" v={fmtDate(contract.startDate)} />
+                    )}
+                    {contract.estimatedCompletionDate && (
+                      <KV k="Estimated completion" v={fmtDate(contract.estimatedCompletionDate)} />
+                    )}
+                    {(contract.terms ?? [])
+                      .filter((t) => t.stepId !== "customer" && !isEmptyWarranty(t))
+                      .map((t) => (
+                        <KV key={t.stepId} k={t.label} v={expandTermValue(t, contractor?.state)} />
+                      ))}
+                  </div>
                 )}
-                {contract.estimatedCompletionDate && (
-                  <KV k="Estimated completion" v={fmtDate(contract.estimatedCompletionDate)} />
-                )}
-                {(contract.terms ?? [])
-                  .filter((t) => t.stepId !== "customer" && !isEmptyWarranty(t))
-                  .map((t) => (
-                    <KV key={t.stepId} k={t.label} v={expandTermValue(t, contractor?.state)} />
-                  ))}
-              </div>
-            </section>
-          )}
-
-          {/* Boilerplate clauses (always present, plain English) — un-numbered
-              per roadmap p.5: this is the "Fine print" subsection of Terms. */}
-          <section style="margin-top:24px">
-            <div style={`font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;color:${TEAL};font-size:15px;letter-spacing:-0.01em`}>Fine print, in plain English</div>
-            <div style={`font-size:12px;color:${MUTED};margin-top:2px;margin-bottom:6px`}>The legal-but-honest stuff</div>
-            <ol style={`margin:14px 0 0;padding-left:20px;color:${INK};font-size:14px;line-height:1.65`}>
+                {hasTermGrid && <div style={`margin-top:22px;height:1px;background:${LINE}`} />}
+                <ol style={`margin:${hasTermGrid ? "22px" : "0"} 0 0;padding-left:20px;color:${INK};font-size:14px;line-height:1.65`}>
               <li><strong>Governing Law.</strong> This agreement is governed by the laws of the state where the work is performed.</li>
               <li><strong>Job Details.</strong> Contractor will perform only the work described in this agreement. Any additional work must be approved by both parties and may result in additional charges.</li>
               <li><strong>Payment Terms.</strong> Payment is due as outlined in this agreement. Late payments may be subject to additional fees as allowed by law.</li>
@@ -310,15 +338,20 @@ function ContractDoc({ contract }: { contract: ContractPublic }) {
               <li><strong>Permits and Compliance.</strong> Contractor is not responsible for obtaining permits unless specifically stated. Customer is responsible for ensuring all necessary approvals are in place unless otherwise agreed.</li>
               <li><strong>Indemnification.</strong> Customer agrees to hold Contractor harmless for damages or issues arising from conditions beyond the Contractor's control.</li>
               <li><strong>Entire Agreement.</strong> This agreement represents the full understanding between both parties and replaces any prior discussions or agreements.</li>
-            </ol>
-          </section>
+                </ol>
+              </section>
+            );
+          })()}
 
           {/* Signature block — both cards render in both states; the
               right card swaps from "type your name below" placeholder to
               the customer's filled cursive name + date after signing. */}
           {!declined && (
-            <section style={`margin-top:36px;padding-top:28px;border-top:2px dashed rgba(255,107,107,0.30)`}>
-              <SectionLabel n="04" title="Sign here" hint={signed ? "Both signatures captured" : `By signing below, ${customerFirst ?? "you"} agree to everything above`} />
+            <section style="margin-top:36px">
+              <SectionHeader n={num()} title="Sign here" />
+              <div style={`margin:-4px 0 0;color:${MUTED};font-size:13px;line-height:1.5`}>
+                {signed ? "Both signatures captured." : `By signing below, ${customerFirst ?? "you"} agree to everything above.`}
+              </div>
               <div style="margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:stretch">
                 {/* Contractor card */}
                 <div style={`padding:14px 16px;background:#fff;border:1px solid ${LINE};border-radius:12px;min-height:96px;display:flex;flex-direction:column;justify-content:flex-end`}>
@@ -392,14 +425,18 @@ function Pill({ bg, color, label }: { bg: string; color: string; label: string }
   );
 }
 
-function SectionLabel({ n, title, hint }: { n: string; title: string; hint?: string }) {
+/** One consistent section header across the whole document: a teal numbered
+ *  badge + an uppercase letter-spaced title + a full-width hairline rule.
+ *  The header owns the spacing below it, so section content sits flush
+ *  under the rule (content margin-top:0). */
+function SectionHeader({ n, title }: { n: string; title: string }) {
   return (
-    <div style="display:flex;align-items:center;gap:12px">
-      <span style={`display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:${PINK};color:#fff;font-weight:800;font-size:12px;letter-spacing:.04em;flex-shrink:0`}>{n}</span>
-      <div>
-        <div style={`font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;color:${TEAL};font-size:18px;line-height:1.1`}>{title}</div>
-        {hint && <div style={`font-size:12px;color:${MUTED};margin-top:2px`}>{hint}</div>}
+    <div style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:11px">
+        <span style={`display:inline-flex;align-items:center;justify-content:center;width:25px;height:25px;border-radius:50%;background:${TEAL};color:#fff;font-weight:800;font-size:11px;flex-shrink:0;font-variant-numeric:tabular-nums`}>{n}</span>
+        <div style={`font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:800;color:${TEAL};font-size:13px;letter-spacing:.14em;text-transform:uppercase`}>{title}</div>
       </div>
+      <div style={`margin-top:12px;height:1px;background:${LINE}`} />
     </div>
   );
 }

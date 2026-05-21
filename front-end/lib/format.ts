@@ -58,3 +58,15 @@ export function telHref(raw: string | null | undefined): string {
   return `tel:${raw}`;
 }
 
+/** Split a quote's free-text `description` into scope-of-work lines.
+ *  The "I know my price" flow stores newline-separated bullets here;
+ *  legacy/LLM flows store a 1–3 sentence paragraph (one line). Strips any
+ *  leading bullet glyph so the renderer can supply its own marker. Callers
+ *  render a bulleted list when >1 line, else a single paragraph. */
+export function detailLines(description: string | null | undefined): string[] {
+  return (description ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\s*[••\-*]\s*/, "").trim())
+    .filter((l) => l.length > 0);
+}
+

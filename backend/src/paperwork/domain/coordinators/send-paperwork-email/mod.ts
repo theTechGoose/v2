@@ -436,6 +436,25 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
     </tr>`;
   }).join("");
 
+  // Job-details block. The "I know my price" flow stores newline-separated
+  // scope lines in description; legacy/LLM flows store a 1–3 sentence
+  // paragraph. Render email-safe dot+text rows when multi-line (mirrors the
+  // line-item dot styling), else a paragraph.
+  const descLines = (q.description ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\s*[••\-*]\s*/, "").trim())
+    .filter(Boolean);
+  const descBlock = descLines.length > 1
+    ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:8px;border-collapse:collapse"><tbody>${
+      descLines.map((l) =>
+        `<tr>
+            <td style="vertical-align:top;width:18px;padding:8px 0 0"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${COLOR_PINK}"></span></td>
+            <td style="vertical-align:top;padding:3px 0;font-size:15px;line-height:1.5;color:${COLOR_INK}">${escapeHtml(l)}</td>
+          </tr>`
+      ).join("")
+    }</tbody></table>`
+    : `<p style="margin:8px 0 0;font-size:15px;line-height:1.55;color:${COLOR_INK};white-space:pre-wrap">${escapeHtml(descLines[0] ?? "")}</p>`;
+
   const greeting = customerFirst
     ? `Hi ${escapeHtml(customerFirst)} 👋`
     : `Hi there 👋`;
@@ -497,21 +516,25 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
         <tr><td style="padding:24px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
 
         ${q.description ? `
-        <!-- polished job-details narrative -->
+        <!-- job-details: bulleted scope of work (or paragraph if single line) -->
         <tr><td style="padding:18px 36px 0">
           <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">Job details</div>
-          <p style="margin:8px 0 0;font-size:15px;line-height:1.55;color:${COLOR_INK};white-space:pre-wrap">${escapeHtml(q.description)}</p>
+          ${descBlock}
         </td></tr>
         <tr><td style="padding:18px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
         ` : ""}
 
-        <!-- job details label + lines -->
+        <!-- line-item breakdown: only for multi-line quotes. A single line
+             just repeats the total below, and the Job details block above
+             already covers the scope. -->
+        ${q.lineItems.length > 1 ? `
         <tr><td style="padding:18px 36px 0">
           <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">Here's what we'll handle</div>
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:6px;border-collapse:collapse">
             <tbody>${lineRows}</tbody>
           </table>
         </td></tr>
+        ` : ""}
 
         <!-- total card (the money moment) -->
         <tr><td style="padding:24px 36px 0">

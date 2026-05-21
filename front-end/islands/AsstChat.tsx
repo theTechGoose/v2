@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
+import { detailLines } from "../lib/format.ts";
 import {
   assistantClient,
   type ContractLite,
   type CustomerLite,
+  type JobOption,
   type Message,
 } from "../clients/assistant.ts";
 import { filesClient } from "../clients/files.ts";
@@ -91,6 +93,53 @@ const TERM_OPTIONS_FALLBACK: Record<string, { label: string; sub?: string }[]> =
       { label: "Review first", sub: "Show me what's included" },
     ],
   };
+
+/** One editable bullet on the "Job Details" picker screen. `deleted`
+ *  is a soft toggle (the "x"/restore affordance) so the row can be
+ *  brought back without losing its text. */
+interface BulletDraft {
+  id: string;
+  text: string;
+  deleted: boolean;
+}
+
+/** Editable mirror of a server-returned JobOption — the picker lets the
+ *  contractor delete/restore/edit bullets and append a custom one. */
+interface JobOptionDraft {
+  id: string;
+  jobName: string;
+  summary: string;
+  bullets: BulletDraft[];
+}
+
+let bulletSeq = 0;
+function toOptionDrafts(options: JobOption[]): JobOptionDraft[] {
+  return options.map((o) => ({
+    id: o.id,
+    jobName: o.jobName,
+    summary: o.summary,
+    bullets: o.bullets.map((text) => ({ id: `b${++bulletSeq}`, text, deleted: false })),
+  }));
+}
+
+/** Client-side last resort if the options endpoint itself errors (network
+ *  / 4xx). The backend already returns a heuristic fallback on LLM failure,
+ *  so this only fires when the request never completed. Mirrors that
+ *  heuristic so the picker still renders three usable options. */
+function localFallbackOptions(raw: string): JobOption[] {
+  const lines = raw
+    .split(/[\n.;]+/)
+    .map((l) => l.trim().replace(/\s+/g, " "))
+    .filter(Boolean);
+  const base = (lines.length > 0 ? lines : [raw.trim()]).slice(0, 4);
+  const summary = base[0]?.split(/\s+/).slice(0, 8).join(" ") || "New job";
+  const jobName = summary.split(/\s+/).slice(0, 3).join(" ");
+  return [
+    { id: "opt1", jobName, summary, bullets: base },
+    { id: "opt2", jobName, summary, bullets: base.slice(0, 3) },
+    { id: "opt3", jobName, summary, bullets: [...base.slice(0, 3), "Jobsite cleanup"].slice(0, 4) },
+  ];
+}
 
 interface ActionCardLineItem {
   description: string;
@@ -354,13 +403,40 @@ export default function AsstChat({
    *  so we can render an optimistic user bubble + "Polishing…" indicator
    *  while the polish + create-quote + transition chain runs. */
   const [submittedJobDetails, setSubmittedJobDetails] = useState<string | null>(null);
-  /** In-flight polish promise, kicked off the moment the user submits the
-   *  raw job-details bubble. The price-step then `await`s it before
-   *  creating the quote, so the heavy LLM call runs *while* the customer
-   *  is typing the price — not after they hit Continue. */
-  const polishInFlightRef = useRef<
-    Promise<{ summary: string; jobName: string; description: string } | null> | null
-  >(null);
+  /** "Job Details" picker screen (the LLM-generated scope-of-work options).
+   *  Shown at the END of phase 2, right before the quote review. */
+  const [jobOptionsOpen, setJobOptionsOpen] = useState(false);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [jobOptions, setJobOptions] = useState<JobOptionDraft[] | null>(null);
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  /** Which bullet is open for inline edit, keyed by option+bullet id. */
+  const [editingBullet, setEditingBullet] = useState<{ optionId: string; bulletId: string } | null>(null);
+  /** Per-option draft text for the trailing "add your own" input row. */
+  const [customDrafts, setCustomDrafts] = useState<Record<string, string>>({});
+  /** When set, renders the "Want me to professionalize that?" popup for
+   *  the bullet that was just edited or added. */
+  const [proPopup, setProPopup] = useState<{ optionId: string; bulletId: string } | null>(null);
+  const [proBusy, setProBusy] = useState(false);
+  /** In-flight options generation, kicked off the moment the user submits
+   *  the raw job-details bubble so the LLM runs while they type the price. */
+  const optionsInFlightRef = useRef<Promise<{ options: JobOption[] } | null> | null>(null);
+  /** Snapshot of a bullet's text at edit-start, so commit can tell whether
+   *  it actually changed (and only then offer to professionalize). */
+  const editOriginalRef = useRef<string>("");
+  /** Set once the user starts editing the picker (delete/edit/add). Blocks
+   *  the silent heuristic→LLM upgrade so we never clobber their changes. */
+  const optionsTouchedRef = useRef(false);
+  /** True when this conversation entered phase 2 via the "I know my price"
+   *  flow and still owes the Job Details picker before the quote review.
+   *  Driven by a sessionStorage marker so it survives the page load that
+   *  hands off into the terms wizard. */
+  const [needsJobPolish, setNeedsJobPolish] = useState(false);
+  /** Raw job-details text carried from phase 1, used to (re)generate the
+   *  scope-of-work options in phase 2. */
+  const jobPolishRawRef = useRef<string | null>(null);
+  /** The "Ready to send" CTA whose review we deferred until the picker is
+   *  done. Set when we intercept it; consumed by applyJobOption. */
+  const pendingReviewCtaRef = useRef<string | null>(null);
   /** Inline contact-recovery inputs keyed by the failure phase_divider id.
    *  When SendContract reports a missing/invalid email or phone, we let
    *  the user type it right under the divider; saving patches the
@@ -498,6 +574,7 @@ export default function AsstChat({
     pendingJobDetailsRaw: string | null;
     pendingPriceCents: number | null;
     priceCents: number | null;
+    jobOptionsOpen: boolean;
   }
   const historyStackRef = useRef<ViewSnapshot[]>([]);
 
@@ -517,6 +594,7 @@ export default function AsstChat({
       pendingJobDetailsRaw,
       pendingPriceCents,
       priceCents,
+      jobOptionsOpen,
     });
     broadcastHistoryDepth();
   }
@@ -530,6 +608,7 @@ export default function AsstChat({
     setPendingJobDetailsRaw(snap.pendingJobDetailsRaw);
     setPendingPriceCents(snap.pendingPriceCents);
     setPriceCents(snap.priceCents);
+    setJobOptionsOpen(snap.jobOptionsOpen);
     broadcastHistoryDepth();
   }
 
@@ -628,6 +707,31 @@ export default function AsstChat({
       .catch(() => { /* silent — preview falls back to action_card */ });
     return () => { cancelled = true; };
   }, [quoteId]);
+
+  // Phase-2 entry from the "I know my price" flow: a sessionStorage marker
+  // (written just before the hand-off page load) carries the raw job
+  // details. Kick off the scope-of-work generation NOW so it runs in the
+  // background the whole time the user answers wizard questions — by the
+  // time the wizard finishes, the Job Details picker opens instantly. The
+  // marker is cleared once the picker is applied (see applyJobOption).
+  useEffect(() => {
+    if (!convoId) return;
+    let raw: string | null = null;
+    try {
+      raw = globalThis.sessionStorage?.getItem(`pm:jobpolish:${convoId}`) ?? null;
+    } catch { /* sessionStorage unavailable — skip */ }
+    if (!raw || !raw.trim()) return;
+    jobPolishRawRef.current = raw;
+    setNeedsJobPolish(true);
+    if (!optionsInFlightRef.current) {
+      optionsInFlightRef.current = assistantClient
+        .generateJobOptions(raw)
+        .catch((err) => {
+          console.warn("[asst] phase-2 job-options generation failed:", err);
+          return null;
+        });
+    }
+  }, [convoId]);
 
   // ?seed=… pre-fills the composer from a deeplink (e.g. hero CTAs on
   // /payments / /invoices / /contracts → "Ask Bossie to record a payment").
@@ -1005,13 +1109,13 @@ export default function AsstChat({
     // Empty-state job-details capture: the chat input is acting as
     // the answer surface for "tell me the job details", not a chat turn.
     // Intercept here so we don't fire a generic LLM call. This fires
-    // for both flow orders (details-first or price-first) — submitJobDetails
-    // itself decides whether to stash + open the price screen or to run
-    // the polish + quote-create directly.
+    // The chat input is acting as the job-details answer surface: stash the
+    // text and open the price screen (the quote + terms hand-off happens on
+    // price Continue).
     if (awaitingJobDetails) {
       setDraft("");
       autosize();
-      await submitJobDetails(trimmed);
+      submitJobDetails(trimmed);
       return;
     }
     setDraft("");
@@ -1110,142 +1214,175 @@ export default function AsstChat({
     if (sending || cents <= 0) return;
     setError(undefined);
     setPendingPriceCents(cents);
-    setPriceCaptureOpen(false);
-    // If the user already gave us the job details (details-first flow on
-    // the first button), the price is the last piece — kick off polish
-    // + quote-creation immediately. Otherwise flip into the legacy
-    // "now tell me the details" prompt mode.
     if (pendingJobDetailsRaw && pendingJobDetailsRaw.trim().length > 0) {
-      // Keep the price screen mounted while the polish + quote-create
-      // chain runs in the background. The Continue button flips to
-      // "Setting up…" (driven by `sending`); navigation kicks the user
-      // to the new quote when the chain finishes. No interstitial.
-      setPriceCaptureOpen(true);
-      // Pass cents explicitly — pendingPriceCents state hasn't committed
-      // yet at the time the microtask fires, so the submit fn would
-      // otherwise read null and loop back into the "open price screen"
-      // branch, asking for the price a second time.
-      queueMicrotask(() => { void submitJobDetails(pendingJobDetailsRaw, cents); });
+      // Price + details in hand → create the quote now and hand off into the
+      // terms wizard. The Job Details picker is deferred to the END of phase
+      // 2 (right before the quote review): generation runs in the background
+      // while the user answers wizard questions, so they never wait on it.
+      // Keep the price screen mounted (its Continue flips to "Setting up…"
+      // via `sending`) so we don't flash the prompts before navigating.
+      void startQuoteFromRaw(pendingJobDetailsRaw, cents);
     } else {
+      setPriceCaptureOpen(false);
       setAwaitingJobDetails(true);
     }
   }
 
   /**
-   * Runs after the user types the raw job description in the chat input.
-   *
-   * Two entry paths converge here:
-   *   - Legacy "price → details" flow: pendingPriceCents was set on
-   *     /onPriceContinue first; we polish + create the quote immediately.
-   *   - New "details → price" flow (first button): no price yet. We
-   *     stash the raw text and open the price-capture screen; once the
-   *     user hits Continue there, /onPriceContinue replays this fn with
-   *     the stashed raw.
+   * Opens the "Job Details" picker at the end of phase 2. The generation
+   * was kicked off on phase-2 mount and has been running the whole time the
+   * user answered wizard questions, so it's almost always already resolved
+   * → the picker opens instantly. We still render a local heuristic first
+   * (so the screen is never blank) and silently swap in the LLM options when
+   * they land, unless the user has already started editing.
    */
-  async function submitJobDetails(raw: string, centsOverride?: number) {
-    const trimmed = raw.trim();
-    if (sending || !trimmed) return;
-    setError(undefined);
+  async function openJobPicker() {
+    const raw = (jobPolishRawRef.current ?? quote?.description ?? "").trim();
+    optionsTouchedRef.current = false;
+    setJobOptionsOpen(true);
+    setOptionsLoading(false);
+    const heuristic = toOptionDrafts(localFallbackOptions(raw || "New job"));
+    setJobOptions(heuristic);
+    setSelectedOptionId(heuristic[0]?.id ?? null);
 
-    // Callers that just set the price in the same tick (onPriceContinue)
-    // pass `centsOverride` so we don't rely on the not-yet-committed
-    // `pendingPriceCents` React state. Without this, the state would
-    // still read null and we'd loop back into the "open price screen"
-    // branch — asking the user for the price a second time.
-    const cents = centsOverride ?? pendingPriceCents;
-    if (cents == null || cents <= 0) {
-      // Details-first path: stash the raw and pop the price screen.
-      // Kick off the polish NOW so the LLM call runs in parallel while
-      // the user types the price (and continues running through phase 2
-      // if needed). The quote-create path below reuses this in-flight
-      // promise rather than starting a fresh one.
-      pushHistory();
-      setPendingJobDetailsRaw(trimmed);
-      setSubmittedJobDetails(trimmed);
-      setAwaitingJobDetails(false);
-      setPriceCaptureOpen(true);
-      polishInFlightRef.current = assistantClient
-        .polishJobDetails(raw)
-        .catch((err) => {
-          console.warn("[asst] polish failed, keeping heuristic:", err);
-          return null;
-        });
+    const inflight = optionsInFlightRef.current ?? assistantClient
+      .generateJobOptions(raw)
+      .catch((err) => {
+        console.warn("[asst] job-options generation failed, keeping heuristic:", err);
+        return null;
+      });
+    optionsInFlightRef.current = null;
+    const res = await inflight;
+    if (res?.options && res.options.length > 0 && !optionsTouchedRef.current) {
+      const drafts = toOptionDrafts(res.options);
+      setJobOptions(drafts);
+      setSelectedOptionId((prev) =>
+        prev && drafts.some((d) => d.id === prev) ? prev : (drafts[0]?.id ?? null)
+      );
+    }
+  }
+
+  // ── Job Details picker handlers ──────────────────────────────────
+  function toggleBulletDeleted(optionId: string, bulletId: string) {
+    optionsTouchedRef.current = true;
+    setJobOptions((prev) =>
+      prev?.map((o) =>
+        o.id === optionId
+          ? {
+            ...o,
+            bullets: o.bullets.map((b) =>
+              b.id === bulletId ? { ...b, deleted: !b.deleted } : b
+            ),
+          }
+          : o
+      ) ?? prev
+    );
+  }
+
+  function setBulletText(optionId: string, bulletId: string, text: string) {
+    setJobOptions((prev) =>
+      prev?.map((o) =>
+        o.id === optionId
+          ? {
+            ...o,
+            bullets: o.bullets.map((b) => (b.id === bulletId ? { ...b, text } : b)),
+          }
+          : o
+      ) ?? prev
+    );
+  }
+
+  function startBulletEdit(optionId: string, bulletId: string, current: string) {
+    optionsTouchedRef.current = true;
+    editOriginalRef.current = current;
+    setEditingBullet({ optionId, bulletId });
+  }
+
+  /** Commit an inline bullet edit. If the text actually changed, offer to
+   *  professionalize it via the popup. */
+  function commitBulletEdit(optionId: string, bulletId: string) {
+    setEditingBullet(null);
+    const opt = jobOptions?.find((o) => o.id === optionId);
+    const next = (opt?.bullets.find((b) => b.id === bulletId)?.text ?? "").trim();
+    if (next && next !== editOriginalRef.current.trim()) {
+      setProPopup({ optionId, bulletId });
+    }
+  }
+
+  /** Append the trailing "add your own" bullet, then offer to professionalize. */
+  function addCustomBullet(optionId: string) {
+    const text = (customDrafts[optionId] ?? "").trim();
+    if (!text) return;
+    optionsTouchedRef.current = true;
+    const id = `b${++bulletSeq}`;
+    setJobOptions((prev) =>
+      prev?.map((o) =>
+        o.id === optionId
+          ? { ...o, bullets: [...o.bullets, { id, text, deleted: false }] }
+          : o
+      ) ?? prev
+    );
+    setCustomDrafts((prev) => ({ ...prev, [optionId]: "" }));
+    setProPopup({ optionId, bulletId: id });
+  }
+
+  async function confirmProfessionalize() {
+    if (!proPopup || proBusy) return;
+    const { optionId, bulletId } = proPopup;
+    const b = jobOptions?.find((o) => o.id === optionId)?.bullets.find((x) => x.id === bulletId);
+    if (!b) {
+      setProPopup(null);
       return;
     }
+    setProBusy(true);
+    try {
+      const res = await assistantClient.professionalizeBullet(b.text);
+      if (res?.text) setBulletText(optionId, bulletId, res.text);
+    } catch (err) {
+      console.warn("[asst] professionalize failed, keeping text:", err);
+    } finally {
+      setProBusy(false);
+      setProPopup(null);
+    }
+  }
 
-    setSubmittedJobDetails(trimmed);
+  function dismissProfessionalize() {
+    if (proBusy) return;
+    setProPopup(null);
+  }
+
+  /**
+   * Create the quote + conversation from the raw job-details text and hand
+   * off into the terms wizard (phase 2). The Job Details picker is NOT shown
+   * here — it's deferred to the end of phase 2. We stash the raw text in
+   * sessionStorage (keyed by the new conversation id) so the phase-2 mount
+   * can kick off generation in the background and re-open the picker before
+   * the quote review. Navigation is a full page load, hence sessionStorage
+   * rather than an in-memory promise.
+   */
+  async function startQuoteFromRaw(raw: string, cents: number) {
+    if (sending) return;
+    setError(undefined);
+    setSubmittedJobDetails(raw.trim());
     setSending(true);
     try {
-      // Heuristic summary/jobName so the quote can be created immediately
-      // without blocking on the LLM polish. Polish was kicked off at
-      // job-details submit (it's already been running while the user
-      // typed the price). We don't await it on the critical path — the
-      // PUT below patches the quote when it lands.
       const firstLine = raw.split("\n")[0].trim();
-      const heuristicSummary = firstLine.split(/\s+/).slice(0, 8).join(" ") || "New job";
-      const heuristicJobName = heuristicSummary.split(/\s+/).slice(0, 3).join(" ");
-      const draft = {
-        summary: heuristicSummary,
-        jobName: heuristicJobName,
-        description: raw.trim(),
-      };
-
-      // Reuse the polish promise started at job-details submit. If the
-      // user came in through a path that skipped that step (legacy
-      // price→details flow), kick one off here as a fallback.
-      const polishPromise = polishInFlightRef.current ?? assistantClient
-        .polishJobDetails(raw, cents)
-        .catch((err) => {
-          console.warn("[asst] polish failed, keeping heuristic:", err);
-          return null;
-        });
-      polishInFlightRef.current = null;
-
+      const summary = firstLine.split(/\s+/).slice(0, 8).join(" ") || "New job";
+      const jobName = summary.split(/\s+/).slice(0, 3).join(" ");
       const quote = await fetch("/api/quotes", {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          summary: draft.summary,
-          jobName: draft.jobName,
-          description: draft.description,
-          lineItems: [
-            {
-              description: draft.summary,
-              quantity: 1,
-              unit: "ea",
-              price: cents,
-            },
-          ],
+          summary,
+          jobName,
+          description: raw.trim(),
+          lineItems: [{ description: summary, quantity: 1, unit: "ea", price: cents }],
           estimatedTotal: cents,
           status: "sent",
         }),
       }).then((r) => r.json());
       if (!quote?.id) throw new Error("failed to create quote");
-
-      // When polish lands (post-navigation is fine), patch the quote with
-      // the refined fields. Errors are swallowed — the heuristic stands.
-      void polishPromise.then((polished) => {
-        if (!polished) return;
-        return fetch(`/api/quotes/${quote.id}`, {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            summary: polished.summary,
-            jobName: polished.jobName,
-            description: polished.description,
-            lineItems: [
-              {
-                description: polished.summary,
-                quantity: 1,
-                unit: "ea",
-                price: cents,
-              },
-            ],
-          }),
-        }).catch(() => {});
-      });
 
       const conv = await fetch("/api/agents/conversations", {
         method: "POST",
@@ -1260,12 +1397,85 @@ export default function AsstChat({
         credentials: "include",
       });
 
+      try {
+        globalThis.sessionStorage?.setItem(`pm:jobpolish:${conv.id}`, raw.trim());
+      } catch { /* sessionStorage unavailable — picker just won't auto-open */ }
+
       globalThis.location.href = `/assistant/${conv.id}`;
     } catch (err) {
       setError(err instanceof Error ? err.message : "couldn't start");
       setSubmittedJobDetails(null);
       setSending(false);
     }
+  }
+
+  /**
+   * Apply the picked option at the end of phase 2: surviving bullets become
+   * the quote description, the option's summary/jobName seed the quote and
+   * its price line. Patches the existing quote (created in phase 1), then
+   * opens the deferred quote review.
+   */
+  async function applyJobOption() {
+    if (sending) return;
+    const opt = jobOptions?.find((o) => o.id === selectedOptionId);
+    if (!opt) {
+      setError("pick an option first");
+      return;
+    }
+    const live = opt.bullets.filter((b) => !b.deleted && b.text.trim().length > 0);
+    const description = live.map((b) => b.text.trim()).join("\n");
+    const summary = (opt.summary || opt.jobName || "New job").trim();
+    const jobName = (opt.jobName || summary).trim();
+    setError(undefined);
+    setSending(true);
+    try {
+      if (quoteId) {
+        const items = quote?.lineItems && quote.lineItems.length > 0
+          ? quote.lineItems.map((li, i) => (i === 0 ? { ...li, description: summary } : li))
+          : undefined;
+        await quotesClient.update(quoteId, {
+          description: description || summary,
+          summary,
+          jobName,
+          ...(items ? { lineItems: items } : {}),
+        });
+        setQuote((q) =>
+          q
+            ? { ...q, summary, description: description || summary, lineItems: items ?? q.lineItems }
+            : q
+        );
+      }
+      try {
+        globalThis.sessionStorage?.removeItem(`pm:jobpolish:${convoId}`);
+      } catch { /* ignore */ }
+      setNeedsJobPolish(false);
+      setJobOptionsOpen(false);
+      const ctaId = pendingReviewCtaRef.current;
+      pendingReviewCtaRef.current = null;
+      if (ctaId) setPreviewCtaId(ctaId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "couldn't save job details");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /**
+   * "Details-first" step of the "I know my price" flow: the user typed the
+   * raw job description into the chat input. Stash it and open the price
+   * screen. On price Continue, `startQuoteFromRaw` creates the quote and
+   * hands off into the terms wizard; the Job Details picker is deferred to
+   * the end of phase 2.
+   */
+  function submitJobDetails(raw: string) {
+    const trimmed = raw.trim();
+    if (sending || !trimmed) return;
+    setError(undefined);
+    pushHistory();
+    setPendingJobDetailsRaw(trimmed);
+    setSubmittedJobDetails(trimmed);
+    setAwaitingJobDetails(false);
+    setPriceCaptureOpen(true);
   }
 
   async function seedPhase2() {
@@ -1390,6 +1600,16 @@ export default function AsstChat({
         } finally {
           setSending(false);
         }
+      }
+      // End of phase 2 — right before the quote review. If this conversation
+      // came in through the "I know my price" flow, show the Job Details
+      // picker first (its options were generated in the background while the
+      // user answered wizard questions). applyJobOption patches the quote and
+      // then re-fires the review for this CTA.
+      if (needsJobPolish) {
+        pendingReviewCtaRef.current = message.id;
+        void openJobPicker();
+        return;
       }
       setPreviewCtaId(message.id);
       return;
@@ -1535,35 +1755,6 @@ export default function AsstChat({
       );
     } finally {
       setSending(false);
-    }
-  }
-
-  // Inline-edit handlers for the quote-review preview. Each one fetches
-  // the canonical record (the action_card payload only carries display
-  // shape, not the full LineItemDto / ContractTerm), splices the field,
-  // and PUTs the merged record back. Failure: revert the DOM by setting
-  // textContent on the contentEditable element.
-  async function onEditLineDesc(
-    quoteId: string,
-    lineIdx: number,
-    original: string,
-    el: HTMLElement,
-  ) {
-    const next = (el.innerText ?? "").trim();
-    if (!quoteId || next === original.trim()) return;
-    if (!next) {
-      el.innerText = original;
-      return;
-    }
-    try {
-      const q = await quotesClient.get(quoteId);
-      const items = Array.isArray(q.lineItems) ? [...q.lineItems] : [];
-      if (!items[lineIdx]) throw new Error("line item index out of range");
-      items[lineIdx] = { ...items[lineIdx], description: next };
-      await quotesClient.update(quoteId, { lineItems: items });
-    } catch (err) {
-      el.innerText = original;
-      setError(err instanceof Error ? err.message : "couldn't save edit");
     }
   }
 
@@ -2273,9 +2464,9 @@ export default function AsstChat({
   return (
     <>
       <div class="chat__scroll" ref={scrollRef}>
-        {empty ? (
+        {(empty || jobOptionsOpen) ? (
           <div class="chat__empty">
-            {!priceCaptureOpen && !awaitingJobDetails && (
+            {!priceCaptureOpen && !awaitingJobDetails && !jobOptionsOpen && (
               <>
                 <div class="chat__empty-icon">
                   <img src="/logo-monster.png" alt="" />
@@ -2285,7 +2476,177 @@ export default function AsstChat({
                 </h3>
               </>
             )}
-            {awaitingJobDetails ? (
+            {jobOptionsOpen ? (
+              <div class="chat__jobopts">
+                <div class="chat__jobopts-head">
+                  <h4 class="chat__jobopts-title">Job Details</h4>
+                  <p class="chat__jobopts-sub">
+                    Pick the closest job description below and make any changes you want.
+                  </p>
+                </div>
+                {optionsLoading || !jobOptions ? (
+                  <div class="chat__jobopts-loading">
+                    <span class="chat__details-dots" aria-hidden="true">
+                      <span></span><span></span><span></span>
+                    </span>
+                    Writing up your options…
+                  </div>
+                ) : (
+                  <>
+                    <div class="chat__jobopts-list">
+                      {jobOptions.map((opt, i) => {
+                        const selected = selectedOptionId === opt.id;
+                        return (
+                          <div
+                            key={opt.id}
+                            class={`chat__jobopt${selected ? " is-selected" : ""}`}
+                            onClick={() => setSelectedOptionId(opt.id)}
+                            role="button"
+                            tabIndex={0}
+                          >
+                            <div class="chat__jobopt-head">
+                              <span class="chat__jobopt-radio" aria-hidden="true"></span>
+                              <span class="chat__jobopt-name">
+                                {opt.jobName || `Option ${i + 1}`}
+                              </span>
+                            </div>
+                            <ul class="chat__jobopt-bullets">
+                              {opt.bullets.map((b) => {
+                                const isEditing = editingBullet?.optionId === opt.id &&
+                                  editingBullet?.bulletId === b.id;
+                                return (
+                                  <li
+                                    key={b.id}
+                                    class={`chat__jobopt-bullet${b.deleted ? " is-deleted" : ""}`}
+                                  >
+                                    {isEditing ? (
+                                      <input
+                                        type="text"
+                                        class="chat__jobopt-edit"
+                                        value={b.text}
+                                        autoFocus
+                                        onClick={(e) => e.stopPropagation()}
+                                        onInput={(e) =>
+                                          setBulletText(
+                                            opt.id,
+                                            b.id,
+                                            (e.target as HTMLInputElement).value,
+                                          )}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") {
+                                            e.preventDefault();
+                                            commitBulletEdit(opt.id, b.id);
+                                          } else if (e.key === "Escape") {
+                                            setBulletText(opt.id, b.id, editOriginalRef.current);
+                                            setEditingBullet(null);
+                                          }
+                                        }}
+                                        onBlur={() => commitBulletEdit(opt.id, b.id)}
+                                      />
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        class="chat__jobopt-text"
+                                        disabled={b.deleted}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (!b.deleted) startBulletEdit(opt.id, b.id, b.text);
+                                        }}
+                                      >
+                                        {b.text}
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      class="chat__jobopt-x"
+                                      aria-label={b.deleted ? "Restore bullet" : "Delete bullet"}
+                                      title={b.deleted ? "Restore" : "Delete"}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleBulletDeleted(opt.id, b.id);
+                                      }}
+                                    >
+                                      {b.deleted ? "↺" : "×"}
+                                    </button>
+                                  </li>
+                                );
+                              })}
+                              {selected ? (
+                                <li class="chat__jobopt-add">
+                                  <input
+                                    type="text"
+                                    class="chat__jobopt-add-input"
+                                    placeholder="Add your own…"
+                                    value={customDrafts[opt.id] ?? ""}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onInput={(e) =>
+                                      setCustomDrafts((prev) => ({
+                                        ...prev,
+                                        [opt.id]: (e.target as HTMLInputElement).value,
+                                      }))}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        addCustomBullet(opt.id);
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    class="chat__jobopt-add-btn"
+                                    aria-label="Add bullet"
+                                    disabled={!(customDrafts[opt.id] ?? "").trim()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      addCustomBullet(opt.id);
+                                    }}
+                                  >
+                                    +
+                                  </button>
+                                </li>
+                              ) : null}
+                            </ul>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      class="chat__price-continue"
+                      disabled={!selectedOptionId || sending}
+                      onClick={applyJobOption}
+                    >
+                      {sending ? "Setting up…" : "Continue →"}
+                    </button>
+                  </>
+                )}
+                {proPopup ? (
+                  <div class="chat__pro-pop" onClick={dismissProfessionalize}>
+                    <div class="chat__pro-pop-card" onClick={(e) => e.stopPropagation()}>
+                      <p class="chat__pro-pop-msg">Want me to professionalize that?</p>
+                      <div class="chat__pro-pop-actions">
+                        <button
+                          type="button"
+                          class="chat__pro-pop-no"
+                          disabled={proBusy}
+                          onClick={dismissProfessionalize}
+                        >
+                          No
+                        </button>
+                        <button
+                          type="button"
+                          class="chat__pro-pop-yes"
+                          disabled={proBusy}
+                          onClick={confirmProfessionalize}
+                        >
+                          {proBusy ? "Polishing…" : "Yes"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : awaitingJobDetails ? (
               <div class="chat__details-flow">
                 <div class="chat__details-prompt">
                   <div class="chat__details-prompt-avatar">
@@ -2983,37 +3344,24 @@ export default function AsstChat({
                           </section>
                         ) : null}
 
-                        {lineItems.length > 0 ? (
-                          <section class="quote-review__section">
-                            <div class="quote-review__section-label">
-                              What we'll do
-                            </div>
-                            <div class="quote-review__lines">
-                              {lineItems.map((li, i) => (
-                                <div key={`li-${i}`} class="quote-review__line">
-                                  <span
-                                    class="quote-review__line-desc quote-review__editable"
-                                    contentEditable
-                                    spellcheck={true}
-                                    lang="en"
-                                    onBlur={(e) => {
-                                      const qid = lockedPayload.quoteId;
-                                      if (qid)
-                                        onEditLineDesc(
-                                          qid,
-                                          i,
-                                          li.description,
-                                          e.currentTarget as HTMLElement,
-                                        );
-                                    }}
-                                  >
-                                    {li.description}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </section>
-                        ) : null}
+                        {(() => {
+                          const lines = detailLines(polishedDescription);
+                          if (lines.length === 0) return null;
+                          return (
+                            <section class="quote-review__section">
+                              <div class="quote-review__section-label">
+                                Job details
+                              </div>
+                              {lines.length > 1 ? (
+                                <ul class="quote-review__details">
+                                  {lines.map((l, i) => <li key={i}>{l}</li>)}
+                                </ul>
+                              ) : (
+                                <p class="quote-review__details-text">{lines[0]}</p>
+                              )}
+                            </section>
+                          );
+                        })()}
 
                         {termAnswers.length > 0 ? (
                           <section class="quote-review__section">
@@ -3804,6 +4152,24 @@ export default function AsstChat({
                           </span>
                         </div>
                         <div class="action-card__body">
+                          {(() => {
+                            const lines = detailLines(payload.description);
+                            if (lines.length === 0) return null;
+                            return (
+                              <div class="action-card__details">
+                                <div class="action-card__details-label">
+                                  Job details
+                                </div>
+                                {lines.length > 1 ? (
+                                  <ul class="action-card__details-list">
+                                    {lines.map((l, i) => <li key={i}>{l}</li>)}
+                                  </ul>
+                                ) : (
+                                  <p class="action-card__details-text">{lines[0]}</p>
+                                )}
+                              </div>
+                            );
+                          })()}
                           {lineItems.map((li, i) => (
                             <div key={i} class="action-card__row">
                               <span>{li.description}</span>
@@ -4010,7 +4376,7 @@ export default function AsstChat({
           const sid = (m.payload as { stepId?: string } | undefined)?.stepId;
           return !sid || !answeredStepIds.has(sid);
         });
-        const composerHidden = priceCaptureOpen || hasUnansweredWizard;
+        const composerHidden = priceCaptureOpen || jobOptionsOpen || hasUnansweredWizard;
         if (composerHidden) return null;
         return (
       <div

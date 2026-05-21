@@ -2178,6 +2178,51 @@ html, body {
     padding: 4px 0;
   }
   .action-card__row strong { color: var(--brand-teal); font-family: var(--font-heading); font-weight: 800; }
+  .action-card__details {
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(20,72,82,0.08);
+  }
+  .action-card__details-label {
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+    margin-bottom: 6px;
+  }
+  .action-card__details-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .action-card__details-list li {
+    position: relative;
+    padding-left: 14px;
+    color: var(--fg, #1a2415);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .action-card__details-list li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 7px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--brand-green, #519843);
+  }
+  .action-card__details-text {
+    margin: 0;
+    color: var(--fg, #1a2415);
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
   .action-card__cta {
     display: flex; gap: 8px; margin-top: 12px;
   }

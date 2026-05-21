@@ -2,7 +2,7 @@ import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import PublicQuoteActions from "../../islands/PublicQuoteActions.tsx";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
-import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
+import { detailLines, fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
 
 interface QuotePublic {
   id: string;
@@ -97,44 +97,71 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
       {customerName && (
         <div style="margin-top:14px;color:#1c2c30;font-size:14px">Hi {customerName.split(/\s+/)[0]} — here's your quote.</div>
       )}
-      {quote.description ? (
-        <p style="margin:10px 0 0;color:#1c2c30;font-size:14.5px;line-height:1.6;white-space:pre-wrap">{quote.description}</p>
-      ) : quote.summary && (
-        // #26 — derived job-details framing. The line items table is still
-        // the canonical job details; this sentence just orients the customer
-        // before they read it. Avoids a Quote DTO schema change.
-        <p style="margin:10px 0 0;color:#4a5a5e;font-size:13.5px;line-height:1.55">
-          This estimate covers {jobDetailsBlurb(quote.summary)}{" "}
-          — {quote.lineItems.length === 1 ? "a single line of work" : `${quote.lineItems.length} lines of work`} broken down below.
-        </p>
-      )}
-      <div style="height:1px;background:#e3e8e6;margin:20px 0"></div>
-      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#6b7a7e">Line items</div>
-      <table style="width:100%;border-collapse:collapse;margin-top:8px">
-        <thead>
-          <tr>
-            <th style="padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:left">Description</th>
-            {showQty && (
-              <th style="padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:right">Qty</th>
-            )}
-            <th style="padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:right">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {quote.lineItems.map((li, i) => {
-            const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
-            return (
-              <tr key={i}>
-                <td style="padding:10px 0;border-bottom:1px solid #e3e8e6;color:#1c2c30;font-size:14px">{li.description}</td>
+      {(() => {
+        const lines = detailLines(quote.description);
+        if (lines.length > 1) {
+          return (
+            <ul style="margin:10px 0 0;padding:0;list-style:none;color:#1c2c30;font-size:14.5px;line-height:1.6">
+              {lines.map((l, i) => (
+                <li key={i} style="position:relative;padding:3px 0 3px 18px">
+                  <span style="position:absolute;left:0;top:10px;width:6px;height:6px;border-radius:50%;background:#519843"></span>
+                  {l}
+                </li>
+              ))}
+            </ul>
+          );
+        }
+        if (lines.length === 1) {
+          return (
+            <p style="margin:10px 0 0;color:#1c2c30;font-size:14.5px;line-height:1.6;white-space:pre-wrap">{lines[0]}</p>
+          );
+        }
+        // #26 — derived job-details framing when there's no description. The
+        // line items table is still the canonical job details; this sentence
+        // just orients the customer before they read it.
+        return quote.summary
+          ? (
+            <p style="margin:10px 0 0;color:#4a5a5e;font-size:13.5px;line-height:1.55">
+              This estimate covers {jobDetailsBlurb(quote.summary)}{" "}
+              — {quote.lineItems.length === 1 ? "a single line of work" : `${quote.lineItems.length} lines of work`} broken down below.
+            </p>
+          )
+          : null;
+      })()}
+      {/* Line-item breakdown only for multi-line quotes — a single line just
+          repeats the estimated total, and the job-details bullets above
+          already describe the scope. */}
+      {quote.lineItems.length > 1 && (
+        <>
+          <div style="height:1px;background:#e3e8e6;margin:20px 0"></div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#6b7a7e">Line items</div>
+          <table style="width:100%;border-collapse:collapse;margin-top:8px">
+            <thead>
+              <tr>
+                <th style="padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:left">Description</th>
                 {showQty && (
-                  <td style="padding:10px 0;border-bottom:1px solid #e3e8e6;color:#6b7a7e;font-size:13px;text-align:right">{li.quantity ?? 1}</td>
+                  <th style="padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:right">Qty</th>
                 )}
-                <td style="padding:10px 0;border-bottom:1px solid #e3e8e6;color:#1c2c30;font-size:14px;font-weight:700;text-align:right">{fmtMoneyExact(lineTotal)}</td>
+                <th style="padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:right">Amount</th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {quote.lineItems.map((li, i) => {
+                const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
+                return (
+                  <tr key={i}>
+                    <td style="padding:10px 0;border-bottom:1px solid #e3e8e6;color:#1c2c30;font-size:14px">{li.description}</td>
+                    {showQty && (
+                      <td style="padding:10px 0;border-bottom:1px solid #e3e8e6;color:#6b7a7e;font-size:13px;text-align:right">{li.quantity ?? 1}</td>
+                    )}
+                    <td style="padding:10px 0;border-bottom:1px solid #e3e8e6;color:#1c2c30;font-size:14px;font-weight:700;text-align:right">{fmtMoneyExact(lineTotal)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </>
+      )}
       <div style="margin-top:18px;background:linear-gradient(135deg,rgba(81,152,67,0.10),rgba(72,158,95,0.04));border:1px solid rgba(72,158,95,0.20);border-radius:14px;padding:18px 20px;display:flex;justify-content:space-between;align-items:center">
         <div style="font-size:11px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:#519843">Estimated total</div>
         <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:#144852">{fmtMoneyExact(total)}</div>

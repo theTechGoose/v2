@@ -23,6 +23,8 @@ import { StartOnboardingConversation } from "@agents/domain/coordinators/start-o
 import { BindConversationCustomer } from "@agents/domain/coordinators/bind-conversation-customer/mod.ts";
 import { EnsureSampleQuote } from "@agents/domain/coordinators/ensure-sample-quote/mod.ts";
 import { PolishJobDetails } from "@agents/domain/coordinators/polish-job-details/mod.ts";
+import { GenerateJobOptions } from "@agents/domain/coordinators/generate-job-options/mod.ts";
+import { ProfessionalizeBullet } from "@agents/domain/coordinators/professionalize-bullet/mod.ts";
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
 import type { LLMClient } from "@agents/domain/business/llm/base/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
@@ -84,6 +86,8 @@ const LlmClientClass = await selectLLMClass();
     BindConversationCustomer,
     EnsureSampleQuote,
     PolishJobDetails,
+    GenerateJobOptions,
+    ProfessionalizeBullet,
     { token: LLM_CLIENT, useClass: LlmClientClass },
   ],
 })

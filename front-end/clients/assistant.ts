@@ -30,6 +30,17 @@ export interface Quote {
   updatedAt: string;
 }
 
+/** One of three scope-of-work options returned by generateJobOptions.
+ *  The "Job Details" picker screen renders these as editable bullet
+ *  lists; the picked option's surviving bullets become the quote's
+ *  description, and its jobName/summary seed the quote. */
+export interface JobOption {
+  id: string;
+  jobName: string;
+  summary: string;
+  bullets: string[];
+}
+
 /** Mirrors backend AgentPhase. */
 export type ConversationPhase = "quote" | "terms";
 
@@ -249,6 +260,26 @@ export const assistantClient = {
     api.post<{ summary: string; jobName: string; description: string }>(
       "/agents/job-details/polish",
       { raw, ...(typeof priceCents === "number" ? { priceCents } : {}) },
+      opts,
+    ),
+
+  /** LLM pass that turns the raw job description into three editable
+   *  scope-of-work options for the "Job Details" picker screen. The user
+   *  edits bullets and picks one option before the quote is built. */
+  generateJobOptions: (raw: string, priceCents?: number, opts: ApiOptions = {}) =>
+    api.post<{ options: JobOption[] }>(
+      "/agents/job-details/options",
+      { raw, ...(typeof priceCents === "number" ? { priceCents } : {}) },
+      opts,
+    ),
+
+  /** Single-line cleanup: rewrites one rough bullet into a tidy scope
+   *  line. Called when the user edits/adds a bullet and opts in to the
+   *  "professionalize that?" prompt on the Job Details screen. */
+  professionalizeBullet: (text: string, opts: ApiOptions = {}) =>
+    api.post<{ text: string }>(
+      "/agents/job-details/professionalize",
+      { text },
       opts,
     ),
 };
