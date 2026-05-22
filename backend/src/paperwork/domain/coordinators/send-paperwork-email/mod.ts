@@ -113,7 +113,7 @@ export class SendPaperworkEmail {
     // forward and have a paper trail in their own inbox.
     const cc = sender?.email ? [sender.email] : undefined;
     // Roadmap p.7 + scope answer: From is a per-business alias at the
-    // SEND_DOMAIN (e.g. acme@monsterrg.com) when the business identity
+    // SEND_DOMAIN (e.g. acme@paperworkmonster.com) when the business identity
     // has one set. Falls back to noreply@... and then to the configured
     // POSTMARK_FROM env when neither is available.
     const from = input.from ?? resolveSenderFrom(senderBiz);
@@ -205,7 +205,7 @@ const APP_URL = (() => {
 /** Outbound domain for the per-business alias system (roadmap p.7). All
  *  customer-facing email goes out as `<alias>@${SEND_DOMAIN}` so contractors
  *  get a unique address that can be forwarded to their personal inbox. */
-const SEND_DOMAIN = (Deno.env.get("PAPERWORK_SEND_DOMAIN") ?? "monsterrg.com").trim();
+const SEND_DOMAIN = "paperworkmonster.com";
 
 /** Resolve the per-business From address. Uses the business identity's
  *  `emailAlias` when present; falls back to `noreply@${SEND_DOMAIN}`. The
