@@ -22,7 +22,18 @@ const SERVER_BACKEND_URL = (typeof Deno !== "undefined"
  *  same-origin /api so dev still works if the env isn't set. */
 function clientBackendUrl(): string {
   const fromGlobal = (globalThis as { __PUBLIC_BACKEND_URL?: string }).__PUBLIC_BACKEND_URL;
-  return (fromGlobal && fromGlobal.length > 0) ? fromGlobal.replace(/\/$/, "") : "/api";
+  if (!fromGlobal || fromGlobal.length === 0) return "/api";
+  const base = fromGlobal.replace(/\/$/, "");
+  // A same-origin absolute base (e.g. the app's own web origin) has no backend
+  // mounted at its root — on this origin the API is only reachable through the
+  // /api proxy. Using the bare origin as the base would drop the prefix and
+  // 404 every call, so collapse it to "/api". Genuinely cross-origin bases (a
+  // standalone backend host) are used verbatim.
+  try {
+    const loc = (globalThis as { location?: Location }).location;
+    if (loc && new URL(base).origin === loc.origin) return "/api";
+  } catch { /* base isn't an absolute URL — fall through and use as-is */ }
+  return base;
 }
 
 export class ApiError extends Error {
