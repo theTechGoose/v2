@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { detailLines } from "../lib/format.ts";
+import { api } from "../lib/api.ts";
 import {
   assistantClient,
   type ContractLite,
@@ -411,8 +412,6 @@ export default function AsstChat({
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   /** Which bullet is open for inline edit, keyed by option+bullet id. */
   const [editingBullet, setEditingBullet] = useState<{ optionId: string; bulletId: string } | null>(null);
-  /** Per-option draft text for the trailing "add your own" input row. */
-  const [customDrafts, setCustomDrafts] = useState<Record<string, string>>({});
   /** When set, renders the "Want me to professionalize that?" popup for
    *  the bullet that was just edited or added. */
   const [proPopup, setProPopup] = useState<{ optionId: string; bulletId: string } | null>(null);
@@ -426,6 +425,12 @@ export default function AsstChat({
   /** Set once the user starts editing the picker (delete/edit/add). Blocks
    *  the silent heuristic→LLM upgrade so we never clobber their changes. */
   const optionsTouchedRef = useRef(false);
+  /** Inline-edit + "add your own" inputs are UNCONTROLLED (defaultValue,
+   *  commit on blur/Enter). Re-rendering this whole island on every keystroke
+   *  was dropping characters and lagging — so we read values from the DOM at
+   *  commit time instead of tracking them in state. */
+  const addInputRef = useRef<HTMLInputElement | null>(null);
+  const editEscapedRef = useRef(false);
   /** True when this conversation entered phase 2 via the "I know my price"
    *  flow and still owes the Job Details picker before the quote review.
    *  Driven by a sessionStorage marker so it survives the page load that
@@ -1298,20 +1303,20 @@ export default function AsstChat({
     setEditingBullet({ optionId, bulletId });
   }
 
-  /** Commit an inline bullet edit. If the text actually changed, offer to
-   *  professionalize it via the popup. */
-  function commitBulletEdit(optionId: string, bulletId: string) {
+  /** Commit an inline bullet edit (uncontrolled input → value read on blur).
+   *  Updates state once; offers to professionalize only when the text
+   *  actually changed. Empty input reverts to the original (no blank rows). */
+  function commitBulletEdit(optionId: string, bulletId: string, value: string) {
     setEditingBullet(null);
-    const opt = jobOptions?.find((o) => o.id === optionId);
-    const next = (opt?.bullets.find((b) => b.id === bulletId)?.text ?? "").trim();
-    if (next && next !== editOriginalRef.current.trim()) {
-      setProPopup({ optionId, bulletId });
-    }
+    const next = value.trim();
+    if (!next || next === editOriginalRef.current.trim()) return;
+    setBulletText(optionId, bulletId, next);
+    setProPopup({ optionId, bulletId });
   }
 
   /** Append the trailing "add your own" bullet, then offer to professionalize. */
-  function addCustomBullet(optionId: string) {
-    const text = (customDrafts[optionId] ?? "").trim();
+  function addCustomBullet(optionId: string, raw: string) {
+    const text = (raw ?? "").trim();
     if (!text) return;
     optionsTouchedRef.current = true;
     const id = `b${++bulletSeq}`;
@@ -1322,7 +1327,6 @@ export default function AsstChat({
           : o
       ) ?? prev
     );
-    setCustomDrafts((prev) => ({ ...prev, [optionId]: "" }));
     setProPopup({ optionId, bulletId: id });
   }
 
@@ -1369,33 +1373,27 @@ export default function AsstChat({
       const firstLine = raw.split("\n")[0].trim();
       const summary = firstLine.split(/\s+/).slice(0, 8).join(" ") || "New job";
       const jobName = summary.split(/\s+/).slice(0, 3).join(" ");
-      const quote = await fetch("/api/quotes", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          summary,
-          jobName,
-          description: raw.trim(),
-          lineItems: [{ description: summary, quantity: 1, unit: "ea", price: cents }],
-          estimatedTotal: cents,
-          status: "sent",
-        }),
-      }).then((r) => r.json());
+      // Use the api helper (same base as quotesClient/assistantClient) — NOT
+      // a raw /api/* fetch. In prod the api helper hits the standalone backend
+      // directly while /api/* bounces through the Fresh proxy; mixing the two
+      // creates the quote on one backend and reads/updates it on another, so
+      // the later GET/PUT /quotes/:id 404s. Keep all quote ops on one path.
+      const quote = await api.post<{ id?: string }>("/quotes", {
+        summary,
+        jobName,
+        description: raw.trim(),
+        lineItems: [{ description: summary, quantity: 1, unit: "ea", price: cents }],
+        estimatedTotal: cents,
+        status: "sent",
+      });
       if (!quote?.id) throw new Error("failed to create quote");
 
-      const conv = await fetch("/api/agents/conversations", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ quoteId: quote.id }),
-      }).then((r) => r.json());
+      const conv = await api.post<{ id?: string }>("/agents/conversations", {
+        quoteId: quote.id,
+      });
       if (!conv?.id) throw new Error("failed to start conversation");
 
-      await fetch(`/api/agents/conversations/${conv.id}/transition-to-terms`, {
-        method: "POST",
-        credentials: "include",
-      });
+      await api.post(`/agents/conversations/${conv.id}/transition-to-terms`);
 
       try {
         globalThis.sessionStorage?.setItem(`pm:jobpolish:${conv.id}`, raw.trim());
@@ -2523,25 +2521,31 @@ export default function AsstChat({
                                       <input
                                         type="text"
                                         class="chat__jobopt-edit"
-                                        value={b.text}
+                                        defaultValue={b.text}
                                         autoFocus
                                         onClick={(e) => e.stopPropagation()}
-                                        onInput={(e) =>
-                                          setBulletText(
-                                            opt.id,
-                                            b.id,
-                                            (e.target as HTMLInputElement).value,
-                                          )}
                                         onKeyDown={(e) => {
+                                          const el = e.currentTarget as HTMLInputElement;
                                           if (e.key === "Enter") {
                                             e.preventDefault();
-                                            commitBulletEdit(opt.id, b.id);
+                                            el.blur();
                                           } else if (e.key === "Escape") {
-                                            setBulletText(opt.id, b.id, editOriginalRef.current);
-                                            setEditingBullet(null);
+                                            editEscapedRef.current = true;
+                                            el.blur();
                                           }
                                         }}
-                                        onBlur={() => commitBulletEdit(opt.id, b.id)}
+                                        onBlur={(e) => {
+                                          if (editEscapedRef.current) {
+                                            editEscapedRef.current = false;
+                                            setEditingBullet(null);
+                                            return;
+                                          }
+                                          commitBulletEdit(
+                                            opt.id,
+                                            b.id,
+                                            (e.currentTarget as HTMLInputElement).value,
+                                          );
+                                        }}
                                       />
                                     ) : (
                                       <button
@@ -2574,20 +2578,17 @@ export default function AsstChat({
                               {selected ? (
                                 <li class="chat__jobopt-add">
                                   <input
+                                    ref={addInputRef}
                                     type="text"
                                     class="chat__jobopt-add-input"
                                     placeholder="Add your own…"
-                                    value={customDrafts[opt.id] ?? ""}
                                     onClick={(e) => e.stopPropagation()}
-                                    onInput={(e) =>
-                                      setCustomDrafts((prev) => ({
-                                        ...prev,
-                                        [opt.id]: (e.target as HTMLInputElement).value,
-                                      }))}
                                     onKeyDown={(e) => {
                                       if (e.key === "Enter") {
                                         e.preventDefault();
-                                        addCustomBullet(opt.id);
+                                        const el = e.currentTarget as HTMLInputElement;
+                                        addCustomBullet(opt.id, el.value);
+                                        el.value = "";
                                       }
                                     }}
                                   />
@@ -2595,10 +2596,13 @@ export default function AsstChat({
                                     type="button"
                                     class="chat__jobopt-add-btn"
                                     aria-label="Add bullet"
-                                    disabled={!(customDrafts[opt.id] ?? "").trim()}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      addCustomBullet(opt.id);
+                                      const el = addInputRef.current;
+                                      if (el) {
+                                        addCustomBullet(opt.id, el.value);
+                                        el.value = "";
+                                      }
                                     }}
                                   >
                                     +
