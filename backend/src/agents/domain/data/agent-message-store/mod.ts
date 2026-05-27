@@ -1,9 +1,13 @@
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
-import type { AgentMessage, MessageKind, MessageRole } from "@agents/dto/message.ts";
+import type {
+  AgentMessage,
+  MessageKind,
+  MessageRole,
+} from "@agents/dto/message.ts";
 
-const PREFIX = "agent_message";                     // [PREFIX, conversationId, createdAt, id] → AgentMessage
-const TTL_MS = 30 * 24 * 60 * 60 * 1_000;           // 30 days, matches conversation TTL
+const PREFIX = "agent_message"; // [PREFIX, conversationId, createdAt, id] → AgentMessage
+const TTL_MS = 30 * 24 * 60 * 60 * 1_000; // 30 days, matches conversation TTL
 
 /**
  * AgentMessageStore — append-only log of messages per conversation.
@@ -36,14 +40,16 @@ export class AgentMessageStore {
       createdAt,
     };
     const kv = await getKv();
-    await kv.set([PREFIX, input.conversationId, createdAt, id], msg, { expireIn: TTL_MS });
+    await kv.set([PREFIX, input.conversationId, createdAt, id], msg, {
+      expireIn: TTL_MS,
+    });
     return msg;
   }
 
   async listByConversation(conversationId: string): Promise<AgentMessage[]> {
     const kv = await getKv();
     const out: AgentMessage[] = [];
-    const iter = kv.list<AgentMessage>({ prefix: [PREFIX, conversationId] });    // ascending = oldest-first
+    const iter = kv.list<AgentMessage>({ prefix: [PREFIX, conversationId] }); // ascending = oldest-first
     for await (const entry of iter) out.push(entry.value);
     return out;
   }
@@ -56,10 +62,29 @@ export class AgentMessageStore {
     }
   }
 
-  /** Most-recent meaningful message (skips system + phase_divider) — for thread previews. */
-  async latestPreviewable(conversationId: string): Promise<AgentMessage | null> {
+  /**
+   * Delete a specific set of messages by id. Used by the wizard "back"
+   * (rewind) flow to drop the trailing step + pick so the previous step
+   * becomes the active one again. No-op for ids that don't exist.
+   */
+  async deleteByIds(conversationId: string, ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const target = new Set(ids);
     const kv = await getKv();
-    const iter = kv.list<AgentMessage>({ prefix: [PREFIX, conversationId] }, { reverse: true });
+    const iter = kv.list<AgentMessage>({ prefix: [PREFIX, conversationId] });
+    for await (const entry of iter) {
+      if (target.has(entry.value.id)) await kv.delete(entry.key);
+    }
+  }
+
+  /** Most-recent meaningful message (skips system + phase_divider) — for thread previews. */
+  async latestPreviewable(
+    conversationId: string,
+  ): Promise<AgentMessage | null> {
+    const kv = await getKv();
+    const iter = kv.list<AgentMessage>({ prefix: [PREFIX, conversationId] }, {
+      reverse: true,
+    });
     for await (const entry of iter) {
       const m = entry.value;
       if (m.role === "system") continue;

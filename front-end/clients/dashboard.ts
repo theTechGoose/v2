@@ -16,8 +16,16 @@ import { api, type ApiOptions } from "../lib/api.ts";
 import type { QuoteCard } from "./quotes.ts";
 
 export interface Profile {
-  user: { id: string; name?: string; phoneNumber: string; email?: string; language?: "en" | "es" };
-  businessIdentity?: { displayName?: string; logoUrl?: string } & Record<string, unknown>;
+  user: {
+    id: string;
+    name?: string;
+    phoneNumber: string;
+    email?: string;
+    language?: "en" | "es";
+  };
+  businessIdentity?:
+    & { displayName?: string; logoUrl?: string }
+    & Record<string, unknown>;
   [k: string]: unknown;
 }
 
@@ -36,8 +44,17 @@ export interface InvoiceCounts {
   agingBuckets: AgingBuckets;
 }
 
-export interface QuoteCounts { total: number; draft: number; sent: number; accepted: number }
-export interface ContractCounts { total: number; draft: number; signed: number }
+export interface QuoteCounts {
+  total: number;
+  draft: number;
+  sent: number;
+  accepted: number;
+}
+export interface ContractCounts {
+  total: number;
+  draft: number;
+  signed: number;
+}
 
 export interface RevenueStats {
   ytdCents: number;
@@ -93,11 +110,23 @@ export interface Invoice {
   amount?: number;
   issuedDate?: string;
   dueDate: string;
-  status?: "scheduled" | "draft" | "pending" | "sent" | "viewed" | "claimed" | "paid" | "void";
+  status?:
+    | "scheduled"
+    | "draft"
+    | "pending"
+    | "sent"
+    | "viewed"
+    | "claimed"
+    | "paid"
+    | "void";
   paidAt?: string;
   createdAt: string;
   updatedAt: string;
-  urgency?: { label: string; tone: "ok" | "warn" | "danger"; daysOverdue?: number };
+  urgency?: {
+    label: string;
+    tone: "ok" | "warn" | "danger";
+    daysOverdue?: number;
+  };
   /** Scheduled-fire date for status=scheduled invoices. */
   scheduledFor?: string;
   installmentIndex?: number;
@@ -123,7 +152,12 @@ export interface Customer {
   [k: string]: unknown;
 }
 
-export type JobStatusKind = "awaiting" | "on_track" | "awaiting_permit" | "overdue" | "complete";
+export type JobStatusKind =
+  | "awaiting"
+  | "on_track"
+  | "awaiting_permit"
+  | "overdue"
+  | "complete";
 
 export interface Job {
   id: string;
@@ -139,14 +173,21 @@ export interface Job {
 }
 
 export const dashboardClient = {
-  profile:        (opts: ApiOptions = {})                     => api.get<Profile>("/profile", opts),
-  stats:          (opts: ApiOptions = {})                     => api.get<DashboardStats>("/analytics/dashboard", opts),
-  jobs:           (opts: ApiOptions = {})                     => api.get<Job[]>("/jobs", opts),
-  notifications:  (limit = 10, opts: ApiOptions = {})         => api.get<Notification[]>("/notifications", { ...opts, query: { limit } }),
-  unreadCount:    (opts: ApiOptions = {})                     => api.get<{ count: number }>("/notifications/unread-count", opts),
-  markRead:       (id: string, opts: ApiOptions = {})         => api.post<void>(`/notifications/${id}/read`, undefined, opts),
-  markAllRead:    (opts: ApiOptions = {})                     => api.post<void>("/notifications/read-all", undefined, opts),
-  quotes:         (status?: string, opts: ApiOptions = {})    => api.get<QuoteCard[]>("/quotes", { ...opts, query: { status } }),
-  invoices:       (status?: string, opts: ApiOptions = {})    => api.get<Invoice[]>("/invoices", { ...opts, query: { status } }),
-  customers:      (opts: ApiOptions = {})                     => api.get<Customer[]>("/customers", opts),
+  profile: (opts: ApiOptions = {}) => api.get<Profile>("/profile", opts),
+  stats: (opts: ApiOptions = {}) =>
+    api.get<DashboardStats>("/analytics/dashboard", opts),
+  jobs: (opts: ApiOptions = {}) => api.get<Job[]>("/jobs", opts),
+  notifications: (limit = 10, opts: ApiOptions = {}) =>
+    api.get<Notification[]>("/notifications", { ...opts, query: { limit } }),
+  unreadCount: (opts: ApiOptions = {}) =>
+    api.get<{ count: number }>("/notifications/unread-count", opts),
+  markRead: (id: string, opts: ApiOptions = {}) =>
+    api.post<void>(`/notifications/${id}/read`, undefined, opts),
+  markAllRead: (opts: ApiOptions = {}) =>
+    api.post<void>("/notifications/read-all", undefined, opts),
+  quotes: (status?: string, opts: ApiOptions = {}) =>
+    api.get<QuoteCard[]>("/quotes", { ...opts, query: { status } }),
+  invoices: (status?: string, opts: ApiOptions = {}) =>
+    api.get<Invoice[]>("/invoices", { ...opts, query: { status } }),
+  customers: (opts: ApiOptions = {}) => api.get<Customer[]>("/customers", opts),
 };

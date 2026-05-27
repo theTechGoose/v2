@@ -162,7 +162,9 @@ export default function QuotesPage() {
         // Only count quotes with a real customer link. Two unlinked quotes
         // shouldn't collapse into a single phantom "—" client (#31).
         clientCount={new Set(
-          open.map((q) => q.customerId).filter((id): id is string => Boolean(id)),
+          open.map((q) => q.customerId).filter((id): id is string =>
+            Boolean(id)
+          ),
         ).size}
       />
       <QuotesKpis

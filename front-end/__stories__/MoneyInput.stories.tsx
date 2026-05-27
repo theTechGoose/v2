@@ -40,9 +40,7 @@ export const WithLiveReadout: Story = () => {
   return (
     <div style={SHELL_STYLE}>
       <MoneyInput onChange={setCents} />
-      <div
-        style="display:flex;gap:10px;align-items:baseline;margin-top:14px;padding-left:4px;font:12px Inter,system-ui,sans-serif;color:#7E8F92"
-      >
+      <div style="display:flex;gap:10px;align-items:baseline;margin-top:14px;padding-left:4px;font:12px Inter,system-ui,sans-serif;color:#7E8F92">
         <span style="text-transform:uppercase;letter-spacing:.12em;font-weight:700;font-size:10px">
           cents
         </span>

@@ -6,7 +6,10 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import type { BusinessIdentity } from "@users/dto/business-identity.ts";
-import { EmailService, type SendEmailResult } from "@communication/domain/data/email-service/mod.ts";
+import {
+  EmailService,
+  type SendEmailResult,
+} from "@communication/domain/data/email-service/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
@@ -53,7 +56,10 @@ export class SendPaperworkEmail {
     private email: EmailService,
   ) {}
 
-  async run(userId: string, input: SendPaperworkEmailInput): Promise<SendPaperworkEmailResult> {
+  async run(
+    userId: string,
+    input: SendPaperworkEmailInput,
+  ): Promise<SendPaperworkEmailResult> {
     const sender = await this.tryGetUser(userId);
     const senderBiz = await this.tryGetBusinessIdentity(userId);
 
@@ -73,7 +79,13 @@ export class SendPaperworkEmail {
       // it directly. Otherwise we fall back to the quote-public page.
       const boundContract = await this.findContractForQuote(userId, quote.id);
       subject = renderQuoteSubject(quote, sender, senderBiz, customer);
-      htmlBody = renderQuoteHtml(quote, customer, sender, senderBiz, boundContract);
+      htmlBody = renderQuoteHtml(
+        quote,
+        customer,
+        sender,
+        senderBiz,
+        boundContract,
+      );
       quoteForStamp = quote;
     } else if (input.kind === "contract") {
       const contract = await this.contracts.getOwned(input.resourceId, userId);
@@ -86,8 +98,9 @@ export class SendPaperworkEmail {
       // back gracefully.
       let quoteForBody: Quote | undefined;
       if (contract.quoteId) {
-        try { quoteForBody = await this.quotes.getOwned(contract.quoteId, userId); }
-        catch { /* fall through to contract-only */ }
+        try {
+          quoteForBody = await this.quotes.getOwned(contract.quoteId, userId);
+        } catch { /* fall through to contract-only */ }
       }
       // The customer sees a quote-styled email with a "sign" CTA — the
       // subject must match that framing. "Sign your contract #ABCD..."
@@ -95,8 +108,19 @@ export class SendPaperworkEmail {
       // present this as a quote review. Reuse the quote subject builder
       // with the resolved quote (or a synthesized one when missing).
       const quoteForSubject = quoteForBody ?? quoteFromContract(contract);
-      subject = renderQuoteSubject(quoteForSubject, sender, senderBiz, customer);
-      htmlBody = renderQuoteHtml(quoteForBody ?? quoteFromContract(contract), customer, sender, senderBiz, contract);
+      subject = renderQuoteSubject(
+        quoteForSubject,
+        sender,
+        senderBiz,
+        customer,
+      );
+      htmlBody = renderQuoteHtml(
+        quoteForBody ?? quoteFromContract(contract),
+        customer,
+        sender,
+        senderBiz,
+        contract,
+      );
     } else {
       const invoice = await this.invoices.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
@@ -106,7 +130,12 @@ export class SendPaperworkEmail {
     }
 
     if (!recipient) {
-      return { ok: false, reason: "no recipient: pass `to` or attach a customer with an email", to: "", subject };
+      return {
+        ok: false,
+        reason: "no recipient: pass `to` or attach a customer with an email",
+        to: "",
+        subject,
+      };
     }
 
     // Roadmap p.7: contractor lands a copy on every outbound, so they can
@@ -118,11 +147,20 @@ export class SendPaperworkEmail {
     // POSTMARK_FROM env when neither is available.
     const from = input.from ?? resolveSenderFrom(senderBiz);
 
-    const result = await this.email.send({ to: recipient, subject, htmlBody, from, cc });
+    const result = await this.email.send({
+      to: recipient,
+      subject,
+      htmlBody,
+      from,
+      cc,
+    });
 
     // Stamp the quote's lifecycle: status→"sent" + sentAt→now (idempotent — only if not already set).
     // Mirrors the public-controller's accept-time stamping and powers the /quotes stage derivation.
-    if (result.ok && input.kind === "quote" && quoteForStamp && !quoteForStamp.sentAt) {
+    if (
+      result.ok && input.kind === "quote" && quoteForStamp &&
+      !quoteForStamp.sentAt
+    ) {
       await this.quotes.update(input.resourceId, userId, {
         status: "sent",
         sentAt: new Date().toISOString(),
@@ -132,26 +170,43 @@ export class SendPaperworkEmail {
     return { ...result, to: recipient, subject };
   }
 
-  private async tryGetCustomer(userId: string, customerId: string | undefined): Promise<Customer | undefined> {
+  private async tryGetCustomer(
+    userId: string,
+    customerId: string | undefined,
+  ): Promise<Customer | undefined> {
     if (!customerId) return undefined;
-    try { return await this.customers.getOwned(customerId, userId); }
-    catch { return undefined; }
+    try {
+      return await this.customers.getOwned(customerId, userId);
+    } catch {
+      return undefined;
+    }
   }
 
   private async tryGetUser(userId: string): Promise<User | undefined> {
-    try { return await this.users.get(userId); }
-    catch { return undefined; }
+    try {
+      return await this.users.get(userId);
+    } catch {
+      return undefined;
+    }
   }
 
-  private async tryGetBusinessIdentity(userId: string): Promise<BusinessIdentity | undefined> {
-    try { return (await this.identity.get(userId)) ?? undefined; }
-    catch { return undefined; }
+  private async tryGetBusinessIdentity(
+    userId: string,
+  ): Promise<BusinessIdentity | undefined> {
+    try {
+      return (await this.identity.get(userId)) ?? undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Find a contract owned by `userId` whose quoteId matches `quoteId`.
    *  Used by the quote-email path so the CTA can link straight to the
    *  bonafide contract page (no separate accept-quote step). */
-  private async findContractForQuote(userId: string, quoteId: string): Promise<Contract | undefined> {
+  private async findContractForQuote(
+    userId: string,
+    quoteId: string,
+  ): Promise<Contract | undefined> {
     try {
       const all = await this.contracts.listByUser(userId);
       // Prefer the most recently updated contract bound to the quote so a
@@ -159,7 +214,9 @@ export class SendPaperworkEmail {
       // current one.
       return all
         .filter((c) => c.quoteId === quoteId)
-        .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))[0];
+        .sort((a, b) =>
+          (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
+        )[0];
     } catch {
       return undefined;
     }
@@ -184,8 +241,8 @@ export class SendPaperworkEmail {
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
   const force = Deno.env.get("APP_URL_FORCE") === "1";
-  const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod"
-    || !!Deno.env.get("DENO_DEPLOYMENT_ID");
+  const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod" ||
+    !!Deno.env.get("DENO_DEPLOYMENT_ID");
   if (isProd) {
     return explicit ?? "https://paperworkmonster.com";
   }
@@ -218,13 +275,13 @@ function resolveSenderFrom(biz: BusinessIdentity | undefined): string {
   return `noreply@${SEND_DOMAIN}`;
 }
 
-const COLOR_TEAL  = "#144852";
+const COLOR_TEAL = "#144852";
 const COLOR_GREEN = "#519843";
-const COLOR_INK   = "#1c2c30";
+const COLOR_INK = "#1c2c30";
 const COLOR_MUTED = "#6b7a7e";
-const COLOR_LINE  = "#e3e8e6";
-const COLOR_BG    = "#f7f6f1";
-const COLOR_CARD  = "#ffffff";
+const COLOR_LINE = "#e3e8e6";
+const COLOR_BG = "#f7f6f1";
+const COLOR_CARD = "#ffffff";
 
 function senderName(u: User | undefined): string {
   return u?.name?.trim() || "your contractor";
@@ -239,7 +296,12 @@ function fmtUSD(cents: number | undefined): string {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "—";
   // Audit1 #3 — money fields are INTEGER CENTS across the backend now.
   // Divide once at the format step.
-  return `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${
+    (cents / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }`;
 }
 
 function fmtDate(iso: string | undefined): string {
@@ -252,7 +314,10 @@ function fmtDate(iso: string | undefined): string {
   const d = new Date(isDateOnly ? `${iso}T12:00:00Z` : iso);
   if (Number.isNaN(+d)) return iso;
   return d.toLocaleDateString("en-US", {
-    month: "long", day: "numeric", year: "numeric", timeZone: "UTC",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
   });
 }
 
@@ -270,12 +335,29 @@ function shell(opts: {
   ctaUrl: string;
   sender: User | undefined;
 }): string {
-  const { preheader, kind, docNumber, drafted, greeting, intro, body, ctaLabel, ctaUrl, sender } = opts;
+  const {
+    preheader,
+    kind,
+    docNumber,
+    drafted,
+    greeting,
+    intro,
+    body,
+    ctaLabel,
+    ctaUrl,
+    sender,
+  } = opts;
   const senderEmailLine = sender?.email
-    ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px"><a href="mailto:${escapeHtml(sender.email)}" style="color:${COLOR_MUTED};text-decoration:none">${escapeHtml(sender.email)}</a></div>`
+    ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px"><a href="mailto:${
+      escapeHtml(sender.email)
+    }" style="color:${COLOR_MUTED};text-decoration:none">${
+      escapeHtml(sender.email)
+    }</a></div>`
     : "";
   const senderPhoneLine = sender?.phoneNumber
-    ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px">${escapeHtml(sender.phoneNumber)}</div>`
+    ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px">${
+      escapeHtml(sender.phoneNumber)
+    }</div>`
     : "";
 
   return `<!doctype html>
@@ -288,7 +370,9 @@ function shell(opts: {
   <title>${escapeHtml(kind)} ${escapeHtml(docNumber)}</title>
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
-  <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${escapeHtml(preheader)}</span>
+  <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
+    escapeHtml(preheader)
+  }</span>
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
     <tr><td align="center" style="padding:32px 16px;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width:600px;background:${COLOR_CARD};border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(20,72,82,0.08);">
@@ -299,12 +383,18 @@ function shell(opts: {
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
             <tr>
               <td style="vertical-align:top">
-                <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_GREEN};">${escapeHtml(kind)}</div>
-                <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:${COLOR_TEAL};margin-top:4px;">${escapeHtml(docNumber)}</div>
+                <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_GREEN};">${
+    escapeHtml(kind)
+  }</div>
+                <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:${COLOR_TEAL};margin-top:4px;">${
+    escapeHtml(docNumber)
+  }</div>
               </td>
               <td style="vertical-align:top;text-align:right;">
                 <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED};">Drafted</div>
-                <div style="color:${COLOR_INK};font-weight:700;margin-top:4px;">${escapeHtml(drafted)}</div>
+                <div style="color:${COLOR_INK};font-weight:700;margin-top:4px;">${
+    escapeHtml(drafted)
+  }</div>
               </td>
             </tr>
           </table>
@@ -316,13 +406,21 @@ function shell(opts: {
         </td></tr>
         <tr><td style="padding:24px 32px 0;">${body}</td></tr>
         <tr><td style="padding:28px 32px 0;text-align:center;">
-          <a href="${escapeAttr(ctaUrl)}" style="display:inline-block;background:${COLOR_GREEN};color:#ffffff;text-decoration:none;font-weight:800;font-size:15px;padding:14px 28px;border-radius:12px;box-shadow:0 6px 14px rgba(81,152,67,0.35);">${escapeHtml(ctaLabel)} →</a>
-          <div style="margin-top:10px;font-size:12px;color:${COLOR_MUTED};">or paste this link into your browser:<br><a href="${escapeAttr(ctaUrl)}" style="color:${COLOR_MUTED};">${escapeHtml(ctaUrl)}</a></div>
+          <a href="${
+    escapeAttr(ctaUrl)
+  }" style="display:inline-block;background:${COLOR_GREEN};color:#ffffff;text-decoration:none;font-weight:800;font-size:15px;padding:14px 28px;border-radius:12px;box-shadow:0 6px 14px rgba(81,152,67,0.35);">${
+    escapeHtml(ctaLabel)
+  } →</a>
+          <div style="margin-top:10px;font-size:12px;color:${COLOR_MUTED};">or paste this link into your browser:<br><a href="${
+    escapeAttr(ctaUrl)
+  }" style="color:${COLOR_MUTED};">${escapeHtml(ctaUrl)}</a></div>
         </td></tr>
         <tr><td style="padding:32px 32px 0;"><div style="height:1px;background:${COLOR_LINE};"></div></td></tr>
         <tr><td style="padding:20px 32px 28px;">
           <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED};">From</div>
-          <div style="margin-top:6px;font-weight:800;color:${COLOR_TEAL};font-size:15px;">${escapeHtml(senderName(sender))}</div>
+          <div style="margin-top:6px;font-weight:800;color:${COLOR_TEAL};font-size:15px;">${
+    escapeHtml(senderName(sender))
+  }</div>
           ${senderEmailLine}
           ${senderPhoneLine}
         </td></tr>
@@ -337,7 +435,6 @@ function shell(opts: {
 
 const COLOR_PINK = "#FF6B6B";
 const COLOR_PINK_DARK = "#d94e4e";
-const COLOR_CREAM = "#fffdf7";
 
 function renderQuoteSubject(
   q: Quote,
@@ -345,16 +442,20 @@ function renderQuoteSubject(
   senderBiz: BusinessIdentity | undefined,
   customer: Customer | undefined,
 ): string {
-  // Roadmap p.7 format: "{Business Name}" Quote for "{Customer Name}", "{Job Name}"
-  const businessName = senderBiz?.businessName?.trim()
-    || senderBiz?.legalName?.trim()
-    || sender?.name?.trim()
-    || "Paperwork Monster";
+  // Roadmap p.7: drop the literal quote marks → {Business} Quote for {Customer}, {Job Name}
+  const businessName = senderBiz?.businessName?.trim() ||
+    senderBiz?.legalName?.trim() ||
+    sender?.name?.trim() ||
+    "Paperwork Monster";
   const customerName = customer?.name?.trim() || "Customer";
-  const jobName = (q.jobName?.trim()
-    || q.summary?.replace(/^\s*quote\s*:\s*/i, "").trim()
-    || "Project");
-  return `"${businessName}" Quote for "${customerName}", "${jobName}"`;
+  const jobName = q.jobName?.trim() ||
+    q.summary?.replace(/^\s*quote\s*:\s*/i, "").trim() ||
+    "Project";
+  // Roadmap p.13: the SUBJECT goes to the customer, so it follows the
+  // contractor's outgoing-comms language (default en), not their UI language.
+  return senderBiz?.commsLanguage === "es"
+    ? `${businessName} Cotización para ${customerName}, ${jobName}`
+    : `${businessName} Quote for ${customerName}, ${jobName}`;
 }
 
 /**
@@ -375,15 +476,65 @@ function renderQuoteSubject(
  * All inline styles, table-based layout for Gmail/Outlook safety, no
  * remote images that mail clients block.
  */
-function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User | undefined, senderBiz: BusinessIdentity | undefined, contract?: Contract): string {
+function renderQuoteHtml(
+  q: Quote,
+  customer: Customer | undefined,
+  sender: User | undefined,
+  senderBiz: BusinessIdentity | undefined,
+  contract?: Contract,
+): string {
   const docNumber = `#${q.id.slice(0, 8).toUpperCase()}`;
   const drafted = fmtDate(q.createdAt);
-  const total = q.estimatedTotal ?? q.lineItems.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0);
+  const total = q.estimatedTotal ??
+    q.lineItems.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0);
+  // Roadmap p.13: the email goes to the customer, so it follows the
+  // contractor's outgoing-comms language (default en), not their UI language.
+  const es = senderBiz?.commsLanguage === "es";
+  const L = {
+    docLang: es ? "es" : "en",
+    titleWord: es ? "Cotización" : "Quote",
+    quoteTag: es ? "Cotización" : "Quote",
+    drafted: es ? "Creada" : "Drafted",
+    preparedFor: es ? "Preparada para" : "Prepared for",
+    by: es ? "por" : "by",
+    introTail: es
+      ? "Lectura rápida — las partidas abajo, el total en verde, y un botón cuando estés listo."
+      : "Quick read — line items below, the total in green, and a button when you're ready.",
+    jobDetails: es ? "Detalles del trabajo" : "Job details",
+    whatWeHandle: es ? "Esto es lo que haremos" : "Here's what we'll handle",
+    estimatedTotal: es ? "Total estimado" : "Estimated total",
+    allIn: es ? "todo incluido, sin sorpresas" : "all in, no surprises",
+    pasteLink: es
+      ? "o pega este enlace en tu navegador:"
+      : "or paste this link into your browser:",
+    whatNext: es ? "Qué sigue" : "What happens next",
+    questions: es ? "¿Preguntas? Escríbeme" : "Questions? Reach out",
+    yourContractor: es ? "Tu contratista" : "Your contractor",
+    steps: es
+      ? [
+        ["1", "Aceptas", "Toca el botón de arriba"],
+        ["2", "Firmas el acuerdo", "Firma electrónica, toma un minuto"],
+        ["3", "Eliges fecha de inicio", "Te escribimos para confirmar"],
+        ["4", "Listo", "Recibo + garantía en tu correo"],
+      ]
+      : [
+        ["1", "You accept", "Tap the button above"],
+        ["2", "Sign the agreement", "Quick e-sign, takes a minute"],
+        ["3", "Pick a start day", "We'll text to confirm"],
+        ["4", "Done & dusted", "Receipt + warranty in your inbox"],
+      ],
+  };
   // CTA points at the contract page when a contract has been finalized;
   // otherwise the legacy quote-public page (still cents-correct, still
   // accept/decline). Customers in both cases land on a real document.
-  const ctaUrl = contract ? `${APP_URL}/c/${contract.id}` : `${APP_URL}/q/${q.id}`;
-  const ctaLabel = contract ? "Sound good? Sign the agreement" : "Sound good? Accept this quote";
+  const ctaUrl = contract
+    ? `${APP_URL}/c/${contract.id}`
+    : `${APP_URL}/q/${q.id}`;
+  const ctaLabel = contract
+    ? (es ? "¿Todo bien? Firma el acuerdo" : "Sound good? Sign the agreement")
+    : (es
+      ? "¿Todo bien? Acepta esta cotización"
+      : "Sound good? Accept this quote");
 
   const customerFirst = customer?.name?.trim().split(/\s+/)[0];
   const senderFirst = sender?.name?.trim()?.split(/\s+/)[0];
@@ -391,15 +542,21 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
     const n = sender?.name?.trim();
     if (!n) return "PM";
     const parts = n.split(/\s+/).filter(Boolean);
-    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
     return parts[0].slice(0, 2).toUpperCase();
   })();
 
-  const summaryClean = (q.summary ?? "Your project").replace(/^\s*quote\s*:\s*/i, "").trim();
+  const summaryClean = (q.summary ?? (es ? "Tu proyecto" : "Your project"))
+    .replace(/^\s*quote\s*:\s*/i, "")
+    .trim();
   // Title case for visual weight in the hero.
   const heroTitle = summaryClean.replace(/\b\w/g, (c) => c.toUpperCase());
 
-  const preheader = `${customerFirst ? `For ${customerFirst} — ` : ""}${summaryClean} · ${fmtUSD(total)}`;
+  const preheader = `${
+    customerFirst ? `${es ? "Para" : "For"} ${customerFirst} — ` : ""
+  }${summaryClean} · ${fmtUSD(total)}`;
 
   // Line items rendered as visual rows (not a generic header-table) — each
   // line gets a small pink dot and right-aligned amount. Reads more like a
@@ -449,34 +606,45 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
       descLines.map((l) =>
         `<tr>
             <td style="vertical-align:top;width:18px;padding:8px 0 0"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${COLOR_PINK}"></span></td>
-            <td style="vertical-align:top;padding:3px 0;font-size:15px;line-height:1.5;color:${COLOR_INK}">${escapeHtml(l)}</td>
+            <td style="vertical-align:top;padding:3px 0;font-size:15px;line-height:1.5;color:${COLOR_INK}">${
+          escapeHtml(l)
+        }</td>
           </tr>`
       ).join("")
     }</tbody></table>`
-    : `<p style="margin:8px 0 0;font-size:15px;line-height:1.55;color:${COLOR_INK};white-space:pre-wrap">${escapeHtml(descLines[0] ?? "")}</p>`;
+    : `<p style="margin:8px 0 0;font-size:15px;line-height:1.55;color:${COLOR_INK};white-space:pre-wrap">${
+      escapeHtml(descLines[0] ?? "")
+    }</p>`;
 
   const greeting = customerFirst
-    ? `Hi ${escapeHtml(customerFirst)} 👋`
-    : `Hi there 👋`;
-  const senderBizName = senderBiz?.businessName?.trim() || (senderBiz as { legalName?: string } | undefined)?.legalName?.trim();
+    ? `${es ? "Hola" : "Hi"} ${escapeHtml(customerFirst)} 👋`
+    : (es ? `Hola 👋` : `Hi there 👋`);
+  const senderBizName = senderBiz?.businessName?.trim() ||
+    (senderBiz as { legalName?: string } | undefined)?.legalName?.trim();
   const introLine = senderFirst
-    ? `${escapeHtml(senderFirst)}${senderBizName ? ` from ${escapeHtml(senderBizName)}` : ""} put this together for you.`
-    : `Your contractor put this together for you.`;
+    ? `${escapeHtml(senderFirst)}${
+      senderBizName ? ` ${es ? "de" : "from"} ${escapeHtml(senderBizName)}` : ""
+    } ${es ? "preparó esto para ti." : "put this together for you."}`
+    : (es
+      ? `Tu contratista preparó esto para ti.`
+      : `Your contractor put this together for you.`);
   const senderRoleLine = sender?.name?.trim()
     ? `${escapeHtml(sender.name.trim())}`
-    : "Your contractor";
+    : L.yourContractor;
 
   return `<!doctype html>
-<html lang="en">
+<html lang="${L.docLang}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light only">
   <meta name="supported-color-schemes" content="light only">
-  <title>Quote ${escapeHtml(docNumber)}</title>
+  <title>${L.titleWord} ${escapeHtml(docNumber)}</title>
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
-  <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${escapeHtml(preheader)}</span>
+  <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
+    escapeHtml(preheader)
+  }</span>
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
     <tr><td align="center" style="padding:40px 16px;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="640" style="max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
@@ -489,10 +657,12 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
             <tr>
               <td style="vertical-align:top">
-                <span style="display:inline-block;background:rgba(255,107,107,0.10);color:${COLOR_PINK_DARK};font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;padding:6px 12px;border-radius:999px">Quote · ${escapeHtml(docNumber)}</span>
+                <span style="display:inline-block;background:rgba(255,107,107,0.10);color:${COLOR_PINK_DARK};font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;padding:6px 12px;border-radius:999px">${L.quoteTag} · ${
+    escapeHtml(docNumber)
+  }</span>
               </td>
               <td style="vertical-align:top;text-align:right;color:${COLOR_MUTED};font-size:12px;font-weight:600">
-                Drafted ${escapeHtml(drafted)}
+                ${L.drafted} ${escapeHtml(drafted)}
               </td>
             </tr>
           </table>
@@ -500,52 +670,76 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
 
         <!-- hero title -->
         <tr><td style="padding:18px 36px 0;">
-          <h1 style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:36px;letter-spacing:-0.025em;color:${COLOR_TEAL};line-height:1.05">${escapeHtml(heroTitle)}</h1>
-          ${customerFirst ? `<div style="margin-top:10px;color:${COLOR_MUTED};font-size:14px">Prepared for <strong style="color:${COLOR_INK}">${escapeHtml(customerFirst)}</strong>${senderFirst ? ` by <strong style="color:${COLOR_INK}">${escapeHtml(senderFirst)}</strong>` : ""}</div>` : ""}
+          <h1 style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:36px;letter-spacing:-0.025em;color:${COLOR_TEAL};line-height:1.05">${
+    escapeHtml(heroTitle)
+  }</h1>
+          ${
+    customerFirst
+      ? `<div style="margin-top:10px;color:${COLOR_MUTED};font-size:14px">${L.preparedFor} <strong style="color:${COLOR_INK}">${
+        escapeHtml(customerFirst)
+      }</strong>${
+        senderFirst
+          ? ` ${L.by} <strong style="color:${COLOR_INK}">${
+            escapeHtml(senderFirst)
+          }</strong>`
+          : ""
+      }</div>`
+      : ""
+  }
         </td></tr>
 
         <!-- greeting + warm intro -->
         <tr><td style="padding:28px 36px 0;">
           <p style="margin:0 0 8px;font-size:16px;font-weight:700;color:${COLOR_INK}">${greeting}</p>
           <p style="margin:0;font-size:15px;color:${COLOR_INK};line-height:1.55">
-            ${introLine} Quick read — line items below, the total in green, and a button when you're ready.
+            ${introLine} ${L.introTail}
           </p>
         </td></tr>
 
         <!-- divider -->
         <tr><td style="padding:24px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
 
-        ${q.description ? `
+        ${
+    q.description
+      ? `
         <!-- job-details: bulleted scope of work (or paragraph if single line) -->
         <tr><td style="padding:18px 36px 0">
-          <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">Job details</div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">${L.jobDetails}</div>
           ${descBlock}
         </td></tr>
         <tr><td style="padding:18px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
-        ` : ""}
+        `
+      : ""
+  }
 
         <!-- line-item breakdown: only for multi-line quotes. A single line
              just repeats the total below, and the Job details block above
              already covers the scope. -->
-        ${q.lineItems.length > 1 ? `
+        ${
+    q.lineItems.length > 1
+      ? `
         <tr><td style="padding:18px 36px 0">
-          <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">Here's what we'll handle</div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">${L.whatWeHandle}</div>
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:6px;border-collapse:collapse">
             <tbody>${lineRows}</tbody>
           </table>
         </td></tr>
-        ` : ""}
+        `
+      : ""
+  }
 
         <!-- total card (the money moment) -->
         <tr><td style="padding:24px 36px 0">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:18px">
             <tr>
               <td style="padding:22px 24px">
-                <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_GREEN}">Estimated total</div>
-                <div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">all in, no surprises</div>
+                <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_GREEN}">${L.estimatedTotal}</div>
+                <div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">${L.allIn}</div>
               </td>
               <td style="padding:22px 24px;text-align:right;vertical-align:middle">
-                <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${fmtUSD(total)}</div>
+                <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
+    fmtUSD(total)
+  }</div>
               </td>
             </tr>
           </table>
@@ -553,25 +747,32 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
 
         <!-- big CTA -->
         <tr><td style="padding:28px 36px 0;text-align:center">
-          <a href="${escapeAttr(ctaUrl)}" style="display:inline-block;background:${COLOR_GREEN};color:#ffffff;text-decoration:none;font-weight:800;font-size:16px;padding:18px 32px;border-radius:14px;box-shadow:0 10px 22px -6px rgba(81,152,67,0.55);letter-spacing:.005em">${escapeHtml(ctaLabel)} &nbsp;→</a>
-          <div style="margin-top:14px;font-size:11px;color:${COLOR_MUTED}">or paste this link into your browser:<br><a href="${escapeAttr(ctaUrl)}" style="color:${COLOR_MUTED};word-break:break-all">${escapeHtml(ctaUrl)}</a></div>
+          <a href="${
+    escapeAttr(ctaUrl)
+  }" style="display:inline-block;background:${COLOR_GREEN};color:#ffffff;text-decoration:none;font-weight:800;font-size:16px;padding:18px 32px;border-radius:14px;box-shadow:0 10px 22px -6px rgba(81,152,67,0.55);letter-spacing:.005em">${
+    escapeHtml(ctaLabel)
+  } &nbsp;→</a>
+          <div style="margin-top:14px;font-size:11px;color:${COLOR_MUTED}">${L.pasteLink}<br><a href="${
+    escapeAttr(ctaUrl)
+  }" style="color:${COLOR_MUTED};word-break:break-all">${
+    escapeHtml(ctaUrl)
+  }</a></div>
         </td></tr>
 
         <!-- "what happens next" timeline strip -->
         <tr><td style="padding:32px 36px 0">
-          <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED};text-align:center;margin-bottom:14px">What happens next</div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED};text-align:center;margin-bottom:14px">${L.whatNext}</div>
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
             <tr>
-              ${[
-                ["1", "You accept", "Tap the button above"],
-                ["2", "Sign the agreement", "Quick e-sign, takes a minute"],
-                ["3", "Pick a start day", "We'll text to confirm"],
-                ["4", "Done & dusted", "Receipt + warranty in your inbox"],
-              ].map(([n, t, sub]) => `<td valign="top" align="center" style="width:25%;padding:0 6px">
+              ${
+    L.steps.map(([n, t, sub]) =>
+      `<td valign="top" align="center" style="width:25%;padding:0 6px">
                 <div style="display:inline-block;width:30px;height:30px;border-radius:50%;background:${COLOR_PINK};color:#fff;font-weight:800;line-height:30px;text-align:center;font-size:13px">${n}</div>
                 <div style="margin-top:8px;color:${COLOR_INK};font-weight:700;font-size:13px">${t}</div>
                 <div style="margin-top:2px;color:${COLOR_MUTED};font-size:11px;line-height:1.4">${sub}</div>
-              </td>`).join("")}
+              </td>`
+    ).join("")
+  }
             </tr>
           </table>
         </td></tr>
@@ -584,20 +785,42 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
             <tr>
               <td valign="middle" style="width:48px">
-                <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,${COLOR_GREEN} 0%,#71a85f 100%);color:#fff;font-weight:800;font-size:14px;line-height:44px;text-align:center;letter-spacing:.04em">${escapeHtml(senderInitials)}</div>
+                <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,${COLOR_GREEN} 0%,#71a85f 100%);color:#fff;font-weight:800;font-size:14px;line-height:44px;text-align:center;letter-spacing:.04em">${
+    escapeHtml(senderInitials)
+  }</div>
               </td>
               <td valign="middle" style="padding-left:14px">
-                <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED}">Questions? Reach out</div>
-                <div style="margin-top:3px;font-weight:800;color:${COLOR_TEAL};font-size:15px">${escapeHtml(senderRoleLine)}</div>
-                ${sender?.phoneNumber ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="tel:${escapeAttr(sender.phoneNumber)}" style="color:${COLOR_INK};text-decoration:none">${escapeHtml(sender.phoneNumber)}</a></div>` : ""}
-                ${sender?.email ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="mailto:${escapeAttr(sender.email)}" style="color:${COLOR_INK};text-decoration:none">${escapeHtml(sender.email)}</a></div>` : ""}
+                <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED}">${L.questions}</div>
+                <div style="margin-top:3px;font-weight:800;color:${COLOR_TEAL};font-size:15px">${
+    escapeHtml(senderRoleLine)
+  }</div>
+                ${
+    sender?.phoneNumber
+      ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="tel:${
+        escapeAttr(sender.phoneNumber)
+      }" style="color:${COLOR_INK};text-decoration:none">${
+        escapeHtml(sender.phoneNumber)
+      }</a></div>`
+      : ""
+  }
+                ${
+    sender?.email
+      ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="mailto:${
+        escapeAttr(sender.email)
+      }" style="color:${COLOR_INK};text-decoration:none">${
+        escapeHtml(sender.email)
+      }</a></div>`
+      : ""
+  }
               </td>
             </tr>
           </table>
         </td></tr>
 
       </table>
-      <div style="margin-top:18px;font-size:11px;color:#a8b2b3;letter-spacing:.04em">Sent because ${escapeHtml(senderFirst ?? "your contractor")} drafted this for you</div>
+      <div style="margin-top:18px;font-size:11px;color:#a8b2b3;letter-spacing:.04em">Sent because ${
+    escapeHtml(senderFirst ?? "your contractor")
+  } drafted this for you</div>
     </td></tr>
   </table>
 </body>
@@ -605,12 +828,6 @@ function renderQuoteHtml(q: Quote, customer: Customer | undefined, sender: User 
 }
 
 // ---------- contract ----------------------------------------------------------
-
-function renderContractSubject(c: Contract, sender: User | undefined): string {
-  const who = sender?.name?.trim()?.split(/\s+/)[0];
-  const tail = `agreement #${c.id.slice(0, 8).toUpperCase()}`;
-  return who ? `Sign your ${tail} from ${who}` : `Please sign your ${tail}`;
-}
 
 /**
  * Synthesize a Quote-shaped object from a Contract when no real quote is
@@ -623,58 +840,17 @@ function quoteFromContract(c: Contract): Quote {
     id: c.id,
     userId: c.userId,
     summary: "Service Agreement",
-    lineItems: [{ description: "Service Agreement", quantity: 1, unit: "ea", price: c.totalAmount ?? 0 }],
+    lineItems: [{
+      description: "Service Agreement",
+      quantity: 1,
+      unit: "ea",
+      price: c.totalAmount ?? 0,
+    }],
     estimatedTotal: c.totalAmount ?? 0,
     status: c.status ?? "draft",
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
   } as Quote;
-}
-
-function renderContractHtml(c: Contract, customer: Customer | undefined, sender: User | undefined): string {
-  const docNumber = `#${c.id.slice(0, 8)}`;
-  const drafted = fmtDate(c.effectiveDate ?? c.startDate);
-  const total = c.totalAmount;
-
-  const startLine = c.startDate
-    ? `<tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">Start</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;">${escapeHtml(fmtDate(c.startDate))}</td></tr>`
-    : "";
-  const completeLine = c.estimatedCompletionDate
-    ? `<tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">Estimated completion</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;">${escapeHtml(fmtDate(c.estimatedCompletionDate))}</td></tr>`
-    : "";
-
-  const body = `
-    <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED};">Project details</div>
-    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:8px;border-collapse:collapse;">
-      ${startLine}
-      ${completeLine}
-      <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">Status</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;text-transform:capitalize;">${escapeHtml(c.status ?? "draft")}</td></tr>
-    </table>
-    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:18px;background:linear-gradient(135deg,rgba(81,152,67,0.10),rgba(72,158,95,0.04));border:1px solid rgba(72,158,95,0.20);border-radius:14px;">
-      <tr>
-        <td style="padding:18px 20px;">
-          <div style="font-size:11px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:${COLOR_GREEN};">Agreement value</div>
-        </td>
-        <td style="padding:18px 20px;text-align:right;">
-          <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:${COLOR_TEAL};">${fmtUSD(total)}</div>
-        </td>
-      </tr>
-    </table>`;
-
-  const senderFirst = sender?.name?.trim()?.split(/\s+/)[0];
-  const introWho = senderFirst ? `${escapeHtml(senderFirst)} pulled` : "We pulled";
-  return shell({
-    preheader: `Sign your agreement — ${fmtUSD(total)}`,
-    kind: "Agreement",
-    docNumber,
-    drafted,
-    greeting: customerGreeting(customer),
-    intro: `${introWho} the agreement together based on what you accepted. Have a quick read — when it looks right, tap below and sign with your name. Takes about a minute.`,
-    body,
-    ctaLabel: "Looks good — sign the agreement",
-    ctaUrl: `${APP_URL}/c/${c.id}`,
-    sender,
-  });
 }
 
 // ---------- invoice -----------------------------------------------------------
@@ -685,7 +861,11 @@ function renderInvoiceSubject(i: Invoice, sender: User | undefined): string {
   return who ? `${tail} from ${who}` : tail;
 }
 
-function renderInvoiceHtml(i: Invoice, customer: Customer | undefined, sender: User | undefined): string {
+function renderInvoiceHtml(
+  i: Invoice,
+  customer: Customer | undefined,
+  sender: User | undefined,
+): string {
   const docNumber = `#${i.id.slice(0, 8)}`;
   const drafted = fmtDate(i.issuedDate ?? new Date().toISOString());
   const amount = i.amount;
@@ -693,9 +873,15 @@ function renderInvoiceHtml(i: Invoice, customer: Customer | undefined, sender: U
   const body = `
     <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED};">Invoice details</div>
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:8px;border-collapse:collapse;">
-      <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">Issued</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;">${escapeHtml(fmtDate(i.issuedDate))}</td></tr>
-      <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">Due</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;">${escapeHtml(fmtDate(i.dueDate))}</td></tr>
-      <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">Status</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;text-transform:capitalize;">${escapeHtml(i.status ?? "pending")}</td></tr>
+      <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">Issued</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;">${
+    escapeHtml(fmtDate(i.issuedDate))
+  }</td></tr>
+      <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">Due</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;">${
+    escapeHtml(fmtDate(i.dueDate))
+  }</td></tr>
+      <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">Status</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;text-transform:capitalize;">${
+    escapeHtml(i.status ?? "pending")
+  }</td></tr>
     </table>
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:18px;background:linear-gradient(135deg,rgba(81,152,67,0.10),rgba(72,158,95,0.04));border:1px solid rgba(72,158,95,0.20);border-radius:14px;">
       <tr>
@@ -703,18 +889,23 @@ function renderInvoiceHtml(i: Invoice, customer: Customer | undefined, sender: U
           <div style="font-size:11px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:${COLOR_GREEN};">Amount due</div>
         </td>
         <td style="padding:18px 20px;text-align:right;">
-          <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:${COLOR_TEAL};">${fmtUSD(amount)}</div>
+          <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:${COLOR_TEAL};">${
+    fmtUSD(amount)
+  }</div>
         </td>
       </tr>
     </table>`;
 
   return shell({
-    preheader: `Invoice ${docNumber} — ${fmtUSD(amount)} due ${fmtDate(i.dueDate)}`,
+    preheader: `Invoice ${docNumber} — ${fmtUSD(amount)} due ${
+      fmtDate(i.dueDate)
+    }`,
     kind: "Invoice",
     docNumber,
     drafted,
     greeting: customerGreeting(customer),
-    intro: `Thanks for the work — here's the invoice. Tap below to view and pay.`,
+    intro:
+      `Thanks for the work — here's the invoice. Tap below to view and pay.`,
     body,
     ctaLabel: "View & pay invoice",
     ctaUrl: `${APP_URL}/i/${i.id}`,
@@ -725,11 +916,16 @@ function renderInvoiceHtml(i: Invoice, customer: Customer | undefined, sender: U
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => {
     switch (c) {
-      case "&": return "&amp;";
-      case "<": return "&lt;";
-      case ">": return "&gt;";
-      case '"': return "&quot;";
-      default:  return "&#39;";
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      default:
+        return "&#39;";
     }
   });
 }

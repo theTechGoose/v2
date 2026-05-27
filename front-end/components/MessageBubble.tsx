@@ -1,7 +1,10 @@
 import type { Message } from "../clients/assistant.ts";
 
 function fmtTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return new Date(ts).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 export function MessageBubble({ msg }: { msg: Message }) {

@@ -31,23 +31,36 @@ function fmtDate(iso: string | undefined): string {
 
 function buildMilestones(c: Card, now = new Date()): Milestone[] {
   const start = c.startDate ? new Date(c.startDate) : undefined;
-  const end   = c.completionDate ? new Date(c.completionDate) : undefined;
+  const end = c.completionDate ? new Date(c.completionDate) : undefined;
   if (!start && !end) {
     return [
       { name: "Contract signed", date: "—", done: c.mood !== "draft" },
-      { name: "Work in progress", date: "—", done: c.mood === "completed" || c.mood === "wrapping-up", current: c.mood === "active" },
-      { name: "Final invoice + close-out", date: "—", done: c.mood === "completed", current: c.mood === "wrapping-up" },
+      {
+        name: "Work in progress",
+        date: "—",
+        done: c.mood === "completed" || c.mood === "wrapping-up",
+        current: c.mood === "active",
+      },
+      {
+        name: "Final invoice + close-out",
+        date: "—",
+        done: c.mood === "completed",
+        current: c.mood === "wrapping-up",
+      },
     ];
   }
   const s = start ?? end!;
   const e = end ?? start!;
-  const span = Math.max(1, Math.round((e.getTime() - s.getTime()) / 86_400_000));
+  const span = Math.max(
+    1,
+    Math.round((e.getTime() - s.getTime()) / 86_400_000),
+  );
   const stops = [
-    { offset: 0,        name: "Site walk + start" },
-    { offset: 0.25,     name: "First milestone" },
-    { offset: 0.55,     name: "Mid-point check-in" },
-    { offset: 0.85,     name: "Punch-list" },
-    { offset: 1,        name: "Final walk + close" },
+    { offset: 0, name: "Site walk + start" },
+    { offset: 0.25, name: "First milestone" },
+    { offset: 0.55, name: "Mid-point check-in" },
+    { offset: 0.85, name: "Punch-list" },
+    { offset: 1, name: "Final walk + close" },
   ];
   return stops.map((stop) => {
     const dt = new Date(s.getTime() + span * stop.offset * 86_400_000);
@@ -68,8 +81,7 @@ export default function ContractCard({ c, idx }: Props) {
   const [flipped, setFlipped] = useState(false);
   const milestones = buildMilestones(c);
 
-  const styleStr =
-    `--mood-from:${c.moodFrom};` +
+  const styleStr = `--mood-from:${c.moodFrom};` +
     `--mood-to:${c.moodTo};` +
     `--mood-shadow:${c.moodShadow};` +
     `--mood-status:${c.statusColor};`;
@@ -119,7 +131,11 @@ export default function ContractCard({ c, idx }: Props) {
       </div>
 
       <div class="kcard__foot">
-        <button class="kcard__cta" type="button" onClick={(e) => e.stopPropagation()}>
+        <button
+          class="kcard__cta"
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+        >
           {c.cta} <I d={ICN.arrow} size={11} sw={2.5} />
         </button>
         <div class="kcard__val-wrap">
@@ -128,15 +144,26 @@ export default function ContractCard({ c, idx }: Props) {
         </div>
       </div>
 
-      <div class="kcard__back" aria-hidden={!flipped} onClick={(e) => e.stopPropagation()}>
+      <div
+        class="kcard__back"
+        aria-hidden={!flipped}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div class="kcard__back-head">
           <button
             class="kcard__back-close"
             type="button"
-            onClick={(e) => { e.stopPropagation(); setFlipped(false); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setFlipped(false);
+            }}
             aria-label="Close"
-          ><I d={ICN.x} size={14} sw={2.5} /></button>
-          <div class="kcard__back-eyebrow">#{c.id.slice(0, 8)} · {c.client}</div>
+          >
+            <I d={ICN.x} size={14} sw={2.5} />
+          </button>
+          <div class="kcard__back-eyebrow">
+            #{c.id.slice(0, 8)} · {c.client}
+          </div>
           <h4 class="kcard__back-big">
             {c.title}
             <small>{c.total} · {c.when}</small>
@@ -146,7 +173,9 @@ export default function ContractCard({ c, idx }: Props) {
           {milestones.map((m, mi) => (
             <div
               key={mi}
-              class={`kcard__mile ${m.done ? "kcard__mile--done" : ""} ${m.current ? "kcard__mile--current" : ""}`}
+              class={`kcard__mile ${m.done ? "kcard__mile--done" : ""} ${
+                m.current ? "kcard__mile--current" : ""
+              }`}
             >
               <span class="kcard__mile-check">
                 {m.done && <I d={ICN.check} size={12} sw={3} />}

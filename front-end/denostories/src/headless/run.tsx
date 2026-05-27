@@ -1,4 +1,4 @@
-import { DOMParser, type HTMLDocument } from '@b-fuze/deno-dom/wasm';
+import { DOMParser, type HTMLDocument } from "@b-fuze/deno-dom/wasm";
 
 import { renderToString } from "preact-render-to-string";
 import { HeadlessCheckResultI, HeadlessCheckType, Story } from "../types.ts";

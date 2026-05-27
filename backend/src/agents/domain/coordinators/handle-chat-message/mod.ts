@@ -1,32 +1,42 @@
 import { Inject, Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
-import type { LLMClient, LLMResponse, LLMTurn } from "@agents/domain/business/llm/base/mod.ts";
+import type {
+  LLMClient,
+  LLMResponse,
+  LLMTurn,
+} from "@agents/domain/business/llm/base/mod.ts";
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
-import { SYSTEM_PROMPT_QUOTE, SYSTEM_PROMPT_TERMS } from "@agents/domain/business/llm-prompts/mod.ts";
+import {
+  SYSTEM_PROMPT_QUOTE,
+  SYSTEM_PROMPT_TERMS,
+} from "@agents/domain/business/llm-prompts/mod.ts";
 import { isInQuotePhase } from "@agents/domain/business/derive-phase/mod.ts";
-import { deriveTitleFromFirstUserMessage, derivePreview } from "@agents/domain/business/conversation-title/mod.ts";
+import {
+  derivePreview,
+  deriveTitleFromFirstUserMessage,
+} from "@agents/domain/business/conversation-title/mod.ts";
 import {
   extractAddressOnly,
   extractAddressViaLLM,
   extractBusinessOnly,
+  extractEmail,
   extractNameAndBusiness,
   extractNameOnly,
+  extractPayout,
   extractStateOnly,
   isAffirmativeReply,
   isSkipReply,
   looksLikeJobRequest,
-  onboardAskStateWithGuess,
   ONBOARD_ASK_ADDRESS,
   ONBOARD_ASK_BUSINESS,
   ONBOARD_ASK_NAME,
   ONBOARD_ASK_PAYOUT,
   ONBOARD_HANDOFF,
+  onboardAskStateWithGuess,
   ONBOARDING_ASK_TEXT,
-  extractEmail,
-  extractPayout,
-  stateFromPhone,
   type ParsedAddress,
+  stateFromPhone,
 } from "@agents/domain/business/onboarding/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
@@ -165,20 +175,23 @@ export class HandleChatMessage {
     // drops the ask out of the way. Real-job-shaped first messages
     // (e.g. "Quote a fence — $350") also bypass onboarding so we don't
     // block real work behind a name prompt.
-    const inputIsText = (input.kind ?? "text") === "text" && typeof input.content === "string";
+    const inputIsText = (input.kind ?? "text") === "text" &&
+      typeof input.content === "string";
     if (inputIsText) {
       const me = await this.users.get(input.userId).catch(() => null);
       const ident = await this.identity.get(input.userId).catch(() => null);
       const addr = await this.addresses.get(input.userId).catch(() => null);
-      const needsName    = !me?.name || me.name.trim().length === 0;
-      const needsBiz     = !ident?.businessName || ident.businessName.trim().length === 0;
-      const needsState   = !addr?.state || addr.state.trim().length === 0;
+      const needsName = !me?.name || me.name.trim().length === 0;
+      const needsBiz = !ident?.businessName ||
+        ident.businessName.trim().length === 0;
+      const needsState = !addr?.state || addr.state.trim().length === 0;
       const needsAddress = !addr?.postal || addr.postal.trim().length === 0;
-      const needsEmail   = !me?.email || me.email.trim().length === 0;
-      const acceptedAny  = Object.values(ident?.acceptedPaymentMethods ?? {}).some(
-        (m) => m && (m as { enabled?: boolean }).enabled === true,
-      );
-      const needsPayout  = !acceptedAny;
+      const needsEmail = !me?.email || me.email.trim().length === 0;
+      const acceptedAny = Object.values(ident?.acceptedPaymentMethods ?? {})
+        .some(
+          (m) => m && (m as { enabled?: boolean }).enabled === true,
+        );
+      const needsPayout = !acceptedAny;
       // Pick the assistant's next ask once name/biz/state/address are
       // done. Email + payment are the two nice-to-haves that come last;
       // either missing routes to the combined payout ask, otherwise we
@@ -191,15 +204,22 @@ export class HandleChatMessage {
         needEmail || needPay
           ? ONBOARD_ASK_PAYOUT(firstName)
           : ONBOARD_HANDOFF(firstName);
-      if (needsName || needsBiz || needsState || needsAddress || needsEmail || needsPayout) {
+      if (
+        needsName || needsBiz || needsState || needsAddress || needsEmail ||
+        needsPayout
+      ) {
         const text = input.content.trim();
         const isFirstTurn = history.length === 1;
-        const lastAssistant = [...history].reverse().find((m) => m.role === "assistant" && m.kind === "text");
+        const lastAssistant = [...history].reverse().find((m) =>
+          m.role === "assistant" && m.kind === "text"
+        );
         const lastAsk = lastAssistant?.content ?? "";
         const justAskedName = lastAsk === ONBOARD_ASK_NAME ||
-          lastAsk.startsWith("Hey 👋 quick one") || lastAsk.startsWith("Hey there 👋");
+          lastAsk.startsWith("Hey 👋 quick one") ||
+          lastAsk.startsWith("Hey there 👋");
         const justAskedBiz = lastAsk.startsWith("Nice to meet you,");
-        const justAskedState = lastAsk.startsWith("Almost there. Which state") ||
+        const justAskedState =
+          lastAsk.startsWith("Almost there. Which state") ||
           lastAsk.startsWith("Almost there. Looks like you're in");
         // Treat the parse-error retry as another address ask so the user's
         // next reply still routes through the address branch instead of
@@ -208,59 +228,93 @@ export class HandleChatMessage {
         const justAskedAddress = lastAsk.startsWith("Last one,") ||
           lastAsk.startsWith("Hmm, couldn't quite parse");
         const userVolunteered = isFirstTurn && extractNameAndBusiness(text);
-        const firstNameOf = (n: string | undefined): string => n?.trim().split(/\s+/)[0] ?? "there";
+        const firstNameOf = (n: string | undefined): string =>
+          n?.trim().split(/\s+/)[0] ?? "there";
 
         // 1) NAME
         if (needsName) {
           if (userVolunteered && userVolunteered.name) {
-            await this.users.update(input.userId, { name: userVolunteered.name });
+            await this.users.update(input.userId, {
+              name: userVolunteered.name,
+            });
             if (userVolunteered.businessName) {
-              await this.identity.upsert(input.userId, { businessName: userVolunteered.businessName });
+              await this.identity.upsert(input.userId, {
+                businessName: userVolunteered.businessName,
+              });
             }
             const stillNeedsBiz = !userVolunteered.businessName && needsBiz;
             const firstName = firstNameOf(userVolunteered.name);
             const nextAsk = stillNeedsBiz
               ? ONBOARD_ASK_BUSINESS(firstName)
-              : (needsState ? onboardAskStateWithGuess(firstName, me?.phoneNumber) : postAddressAsk(firstName, needsEmail, needsPayout));
+              : (needsState
+                ? onboardAskStateWithGuess(firstName, me?.phoneNumber)
+                : postAddressAsk(firstName, needsEmail, needsPayout));
             const ack = await this.messages.append({
-              conversationId: conv.id, role: "assistant", kind: "text", content: nextAsk,
+              conversationId: conv.id,
+              role: "assistant",
+              kind: "text",
+              content: nextAsk,
             });
             const updated = await this.conversations.update(conv.id, {
-              ...(history.length === 1 ? { title: deriveTitleFromFirstUserMessage(input.content) } : {}),
+              ...(history.length === 1
+                ? { title: deriveTitleFromFirstUserMessage(input.content) }
+                : {}),
               preview: derivePreview(ack.content),
             });
             return { conversation: updated, newMessages: [userMsg, ack] };
           }
-          if (justAskedName && !isSkipReply(text) && !looksLikeJobRequest(text)) {
+          if (
+            justAskedName && !isSkipReply(text) && !looksLikeJobRequest(text)
+          ) {
             const parsed = extractNameOnly(text);
             if (parsed) {
               await this.users.update(input.userId, { name: parsed });
               const firstName = firstNameOf(parsed);
               const nextAsk = needsBiz
                 ? ONBOARD_ASK_BUSINESS(firstName)
-                : (needsState ? onboardAskStateWithGuess(firstName, me?.phoneNumber) : postAddressAsk(firstName, needsEmail, needsPayout));
+                : (needsState
+                  ? onboardAskStateWithGuess(firstName, me?.phoneNumber)
+                  : postAddressAsk(firstName, needsEmail, needsPayout));
               const ack = await this.messages.append({
-                conversationId: conv.id, role: "assistant", kind: "text", content: nextAsk,
+                conversationId: conv.id,
+                role: "assistant",
+                kind: "text",
+                content: nextAsk,
               });
               const updated = await this.conversations.update(conv.id, {
-                ...(history.length === 1 ? { title: deriveTitleFromFirstUserMessage(input.content) } : {}),
+                ...(history.length === 1
+                  ? { title: deriveTitleFromFirstUserMessage(input.content) }
+                  : {}),
                 preview: derivePreview(ack.content),
               });
               return { conversation: updated, newMessages: [userMsg, ack] };
             }
             const ask = await this.messages.append({
-              conversationId: conv.id, role: "assistant", kind: "text",
-              content: "Sorry, didn't quite catch that — what should I call you? (just your first name is fine)",
-            });
-            const updated = await this.conversations.update(conv.id, { preview: derivePreview(ask.content) });
-            return { conversation: updated, newMessages: [userMsg, ask] };
-          }
-          if ((isFirstTurn || !lastAssistant) && !isSkipReply(text) && !looksLikeJobRequest(text)) {
-            const ask = await this.messages.append({
-              conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_ASK_NAME,
+              conversationId: conv.id,
+              role: "assistant",
+              kind: "text",
+              content:
+                "Sorry, didn't quite catch that — what should I call you? (just your first name is fine)",
             });
             const updated = await this.conversations.update(conv.id, {
-              ...(history.length === 1 ? { title: deriveTitleFromFirstUserMessage(input.content) } : {}),
+              preview: derivePreview(ask.content),
+            });
+            return { conversation: updated, newMessages: [userMsg, ask] };
+          }
+          if (
+            (isFirstTurn || !lastAssistant) && !isSkipReply(text) &&
+            !looksLikeJobRequest(text)
+          ) {
+            const ask = await this.messages.append({
+              conversationId: conv.id,
+              role: "assistant",
+              kind: "text",
+              content: ONBOARD_ASK_NAME,
+            });
+            const updated = await this.conversations.update(conv.id, {
+              ...(history.length === 1
+                ? { title: deriveTitleFromFirstUserMessage(input.content) }
+                : {}),
               preview: derivePreview(ask.content),
             });
             return { conversation: updated, newMessages: [userMsg, ask] };
@@ -271,27 +325,46 @@ export class HandleChatMessage {
           if (justAskedBiz && !isSkipReply(text)) {
             const parsed = extractBusinessOnly(text);
             if (parsed) {
-              await this.identity.upsert(input.userId, { businessName: parsed });
-              const nextAsk = needsState ? onboardAskStateWithGuess(firstName, me?.phoneNumber) : postAddressAsk(firstName, needsEmail, needsPayout);
-              const ack = await this.messages.append({
-                conversationId: conv.id, role: "assistant", kind: "text", content: nextAsk,
+              await this.identity.upsert(input.userId, {
+                businessName: parsed,
               });
-              const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
+              const nextAsk = needsState
+                ? onboardAskStateWithGuess(firstName, me?.phoneNumber)
+                : postAddressAsk(firstName, needsEmail, needsPayout);
+              const ack = await this.messages.append({
+                conversationId: conv.id,
+                role: "assistant",
+                kind: "text",
+                content: nextAsk,
+              });
+              const updated = await this.conversations.update(conv.id, {
+                preview: derivePreview(ack.content),
+              });
               return { conversation: updated, newMessages: [userMsg, ack] };
             }
             const ask = await this.messages.append({
-              conversationId: conv.id, role: "assistant", kind: "text",
-              content: "What's the business called? (e.g. \"Riley Roofing Co.\" — solo is fine too)",
+              conversationId: conv.id,
+              role: "assistant",
+              kind: "text",
+              content:
+                'What\'s the business called? (e.g. "Riley Roofing Co." — solo is fine too)',
             });
-            const updated = await this.conversations.update(conv.id, { preview: derivePreview(ask.content) });
+            const updated = await this.conversations.update(conv.id, {
+              preview: derivePreview(ask.content),
+            });
             return { conversation: updated, newMessages: [userMsg, ask] };
           }
           if (!isSkipReply(text) && !looksLikeJobRequest(text)) {
             const ask = await this.messages.append({
-              conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_ASK_BUSINESS(firstName),
+              conversationId: conv.id,
+              role: "assistant",
+              kind: "text",
+              content: ONBOARD_ASK_BUSINESS(firstName),
             });
             const updated = await this.conversations.update(conv.id, {
-              ...(history.length === 1 ? { title: deriveTitleFromFirstUserMessage(input.content) } : {}),
+              ...(history.length === 1
+                ? { title: deriveTitleFromFirstUserMessage(input.content) }
+                : {}),
               preview: derivePreview(ask.content),
             });
             return { conversation: updated, newMessages: [userMsg, ask] };
@@ -301,43 +374,66 @@ export class HandleChatMessage {
           //    user can confirm with a one-tap "yes" instead of typing.
           const firstName = firstNameOf(me?.name);
           const phoneGuess = stateFromPhone(me?.phoneNumber);
-          const askedWithGuess = lastAsk.startsWith("Almost there. Looks like you're in");
+          const askedWithGuess = lastAsk.startsWith(
+            "Almost there. Looks like you're in",
+          );
 
           if (justAskedState && !isSkipReply(text)) {
             // Affirmative reply to a guess → save the guessed state.
             if (askedWithGuess && phoneGuess && isAffirmativeReply(text)) {
               await this.addresses.upsert(input.userId, { state: phoneGuess });
               const ack = await this.messages.append({
-                conversationId: conv.id, role: "assistant", kind: "text",
-                content: needsAddress ? ONBOARD_ASK_ADDRESS(firstName) : postAddressAsk(firstName, needsEmail, needsPayout),
+                conversationId: conv.id,
+                role: "assistant",
+                kind: "text",
+                content: needsAddress
+                  ? ONBOARD_ASK_ADDRESS(firstName)
+                  : postAddressAsk(firstName, needsEmail, needsPayout),
               });
-              const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
+              const updated = await this.conversations.update(conv.id, {
+                preview: derivePreview(ack.content),
+              });
               return { conversation: updated, newMessages: [userMsg, ack] };
             }
             const parsed = extractStateOnly(text);
             if (parsed) {
               await this.addresses.upsert(input.userId, { state: parsed });
               const ack = await this.messages.append({
-                conversationId: conv.id, role: "assistant", kind: "text",
-                content: needsAddress ? ONBOARD_ASK_ADDRESS(firstName) : postAddressAsk(firstName, needsEmail, needsPayout),
+                conversationId: conv.id,
+                role: "assistant",
+                kind: "text",
+                content: needsAddress
+                  ? ONBOARD_ASK_ADDRESS(firstName)
+                  : postAddressAsk(firstName, needsEmail, needsPayout),
               });
-              const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
+              const updated = await this.conversations.update(conv.id, {
+                preview: derivePreview(ack.content),
+              });
               return { conversation: updated, newMessages: [userMsg, ack] };
             }
             const ask = await this.messages.append({
-              conversationId: conv.id, role: "assistant", kind: "text",
-              content: "Hmm, didn't recognize that — try the 2-letter code (CA, TX, NY) or the full state name.",
+              conversationId: conv.id,
+              role: "assistant",
+              kind: "text",
+              content:
+                "Hmm, didn't recognize that — try the 2-letter code (CA, TX, NY) or the full state name.",
             });
-            const updated = await this.conversations.update(conv.id, { preview: derivePreview(ask.content) });
+            const updated = await this.conversations.update(conv.id, {
+              preview: derivePreview(ask.content),
+            });
             return { conversation: updated, newMessages: [userMsg, ask] };
           }
           if (!isSkipReply(text) && !looksLikeJobRequest(text)) {
             const ask = await this.messages.append({
-              conversationId: conv.id, role: "assistant", kind: "text",
+              conversationId: conv.id,
+              role: "assistant",
+              kind: "text",
               content: onboardAskStateWithGuess(firstName, me?.phoneNumber),
             });
             const updated = await this.conversations.update(conv.id, {
-              ...(history.length === 1 ? { title: deriveTitleFromFirstUserMessage(input.content) } : {}),
+              ...(history.length === 1
+                ? { title: deriveTitleFromFirstUserMessage(input.content) }
+                : {}),
               preview: derivePreview(ask.content),
             });
             return { conversation: updated, newMessages: [userMsg, ask] };
@@ -354,49 +450,80 @@ export class HandleChatMessage {
               // re-prompt within the same thread (consistent with the
               // name-skip path elsewhere).
               const ack = await this.messages.append({
-                conversationId: conv.id, role: "assistant", kind: "text", content: postAddressAsk(firstName, needsEmail, needsPayout),
+                conversationId: conv.id,
+                role: "assistant",
+                kind: "text",
+                content: postAddressAsk(firstName, needsEmail, needsPayout),
               });
-              const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
+              const updated = await this.conversations.update(conv.id, {
+                preview: derivePreview(ack.content),
+              });
               return { conversation: updated, newMessages: [userMsg, ack] };
             }
             // Try the cheap regex parse first. Accept if it picked up
             // either a zip OR (city + state) — strict enough to avoid
             // saving "219 delano way myrtle beach" as a street alone.
             const regexParsed = extractAddressOnly(text);
-            const regexEnough = regexParsed && (regexParsed.postal || (regexParsed.city && regexParsed.state));
-            let final: ParsedAddress | undefined = regexEnough ? regexParsed : undefined;
+            const regexEnough = regexParsed &&
+              (regexParsed.postal || (regexParsed.city && regexParsed.state));
+            let final: ParsedAddress | undefined = regexEnough
+              ? regexParsed
+              : undefined;
             // Fall back to the LLM for shapes the regex can't unambiguously
             // split — no commas, missing zip, lowercase city/state, etc.
             // The LLM's job is structured extraction only, no prose. We
             // accept its result if it gives us at least state OR (street
             // + city) — enough to render a real return address on docs.
             if (!final) {
-              const llmParsed = await extractAddressViaLLM(this.llm, text, input.userId);
-              if (llmParsed && (llmParsed.state || llmParsed.postal || (llmParsed.street && llmParsed.city))) {
+              const llmParsed = await extractAddressViaLLM(
+                this.llm,
+                text,
+                input.userId,
+              );
+              if (
+                llmParsed &&
+                (llmParsed.state || llmParsed.postal ||
+                  (llmParsed.street && llmParsed.city))
+              ) {
                 final = llmParsed;
               }
             }
             if (final) {
               await this.addresses.upsert(input.userId, final);
               const ack = await this.messages.append({
-                conversationId: conv.id, role: "assistant", kind: "text", content: postAddressAsk(firstName, needsEmail, needsPayout),
+                conversationId: conv.id,
+                role: "assistant",
+                kind: "text",
+                content: postAddressAsk(firstName, needsEmail, needsPayout),
               });
-              const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
+              const updated = await this.conversations.update(conv.id, {
+                preview: derivePreview(ack.content),
+              });
               return { conversation: updated, newMessages: [userMsg, ack] };
             }
             const ask = await this.messages.append({
-              conversationId: conv.id, role: "assistant", kind: "text",
-              content: "Hmm, couldn't quite parse that. Try \"123 Main St, Austin, TX 78701\" — or just say \"skip\".",
+              conversationId: conv.id,
+              role: "assistant",
+              kind: "text",
+              content:
+                'Hmm, couldn\'t quite parse that. Try "123 Main St, Austin, TX 78701" — or just say "skip".',
             });
-            const updated = await this.conversations.update(conv.id, { preview: derivePreview(ask.content) });
+            const updated = await this.conversations.update(conv.id, {
+              preview: derivePreview(ask.content),
+            });
             return { conversation: updated, newMessages: [userMsg, ask] };
           }
           if (!looksLikeJobRequest(text)) {
             const ask = await this.messages.append({
-              conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_ASK_ADDRESS(firstName),
+              conversationId: conv.id,
+              role: "assistant",
+              kind: "text",
+              content: ONBOARD_ASK_ADDRESS(firstName),
             });
             const updated = await this.conversations.update(conv.id, {
-              ...(history.length === 1 ? { title: deriveTitleFromFirstUserMessage(input.content) } : {}),
+              ...(history.length === 1
+                ? { title: deriveTitleFromFirstUserMessage(input.content) }
+                : {}),
               preview: derivePreview(ask.content),
             });
             return { conversation: updated, newMessages: [userMsg, ask] };
@@ -417,27 +544,48 @@ export class HandleChatMessage {
                 const patch: Record<string, unknown> = {
                   ...(ident?.acceptedPaymentMethods ?? {}),
                 };
-                if (payout.method === "venmo") patch.venmo = { enabled: true, handle: payout.handle };
-                else if (payout.method === "cashapp") patch.cashapp = { enabled: true, cashtag: payout.handle };
-                else if (payout.method === "zelle") patch.zelle = { enabled: true, handle: payout.handle };
-                else if (payout.method === "check") patch.check = { enabled: true };
-                else if (payout.method === "cash") patch.cash = { enabled: true };
-                else if (payout.method === "ach") patch.ach = { enabled: true };
-                else patch.other = { enabled: true, instructions: text.trim().slice(0, 200) };
-                await this.identity.upsert(input.userId, { acceptedPaymentMethods: patch as never });
+                if (payout.method === "venmo") {
+                  patch.venmo = { enabled: true, handle: payout.handle };
+                } else if (payout.method === "cashapp") {
+                  patch.cashapp = { enabled: true, cashtag: payout.handle };
+                } else if (payout.method === "zelle") {
+                  patch.zelle = { enabled: true, handle: payout.handle };
+                } else if (payout.method === "check") {
+                  patch.check = { enabled: true };
+                } else if (payout.method === "cash") {
+                  patch.cash = { enabled: true };
+                } else if (payout.method === "ach") {
+                  patch.ach = { enabled: true };
+                } else {patch.other = {
+                    enabled: true,
+                    instructions: text.trim().slice(0, 200),
+                  };}
+                await this.identity.upsert(input.userId, {
+                  acceptedPaymentMethods: patch as never,
+                });
               }
             }
             const ack = await this.messages.append({
-              conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_HANDOFF(firstName),
+              conversationId: conv.id,
+              role: "assistant",
+              kind: "text",
+              content: ONBOARD_HANDOFF(firstName),
             });
-            const updated = await this.conversations.update(conv.id, { preview: derivePreview(ack.content) });
+            const updated = await this.conversations.update(conv.id, {
+              preview: derivePreview(ack.content),
+            });
             return { conversation: updated, newMessages: [userMsg, ack] };
           }
           if (!looksLikeJobRequest(text)) {
             const ask = await this.messages.append({
-              conversationId: conv.id, role: "assistant", kind: "text", content: ONBOARD_ASK_PAYOUT(firstName),
+              conversationId: conv.id,
+              role: "assistant",
+              kind: "text",
+              content: ONBOARD_ASK_PAYOUT(firstName),
             });
-            const updated = await this.conversations.update(conv.id, { preview: derivePreview(ask.content) });
+            const updated = await this.conversations.update(conv.id, {
+              preview: derivePreview(ask.content),
+            });
             return { conversation: updated, newMessages: [userMsg, ask] };
           }
         }
@@ -491,15 +639,22 @@ export class HandleChatMessage {
           const role = m.role === "system" ? "system" : m.role;
           if (m.kind === "action_card") {
             const p = (m.payload ?? {}) as {
-              actionType?: string; status?: string;
+              actionType?: string;
+              status?: string;
               lineItems?: { description: string; amountCents: number }[];
               totalCents?: number;
             };
             const lines = (p.lineItems ?? [])
-              .map((l) => `  - ${l.description}: $${(l.amountCents / 100).toFixed(2)}`)
+              .map((l) =>
+                `  - ${l.description}: $${(l.amountCents / 100).toFixed(2)}`
+              )
               .join("\n");
-            const total = typeof p.totalCents === "number" ? `$${(p.totalCents / 100).toFixed(2)}` : "?";
-            const summary = `[Quote ${p.status ?? "draft"}: ${m.content || ""}\n${lines}\nTotal: ${total}]`;
+            const total = typeof p.totalCents === "number"
+              ? `$${(p.totalCents / 100).toFixed(2)}`
+              : "?";
+            const summary = `[Quote ${p.status ?? "draft"}: ${
+              m.content || ""
+            }\n${lines}\nTotal: ${total}]`;
             return { role, content: summary };
           }
           if (m.kind === "continue_cta") {
@@ -507,14 +662,21 @@ export class HandleChatMessage {
           }
           const turn: LLMTurn = { role, content: m.content };
           if (m.kind === "image" && role === "user") {
-            const fileId = (m.payload as { fileId?: unknown } | undefined)?.fileId;
+            const fileId = (m.payload as { fileId?: unknown } | undefined)
+              ?.fileId;
             if (typeof fileId === "string" && fileId) {
               try {
-                const meta = await this.files.getOwnedMeta(fileId, input.userId);
+                const meta = await this.files.getOwnedMeta(
+                  fileId,
+                  input.userId,
+                );
                 const bytes = await this.files.readBytes(fileId);
                 turn.images = [{ bytes, mimeType: meta.mimeType }];
               } catch (err) {
-                console.error(`[handle-chat] failed to load image ${fileId}:`, err);
+                console.error(
+                  `[handle-chat] failed to load image ${fileId}:`,
+                  err,
+                );
               }
             }
           }
@@ -523,7 +685,16 @@ export class HandleChatMessage {
     );
 
     if (!llmResponse) {
-      const systemPrompt = isInQuotePhase(conv) ? SYSTEM_PROMPT_QUOTE : SYSTEM_PROMPT_TERMS;
+      const base = isInQuotePhase(conv)
+        ? SYSTEM_PROMPT_QUOTE
+        : SYSTEM_PROMPT_TERMS;
+      // Roadmap p.13: the assistant talks to the CONTRACTOR, so it follows
+      // their UI language (user.language) — it would be odd for the app to
+      // be in Spanish while the assistant replies in English.
+      const me = await this.users.get(input.userId).catch(() => undefined);
+      const systemPrompt = me?.language === "es"
+        ? `${base}\n\nIMPORTANT: The contractor's language is Spanish. Write ALL of your replies to them in neutral Latin-American Spanish.`
+        : base;
       llmResponse = await this.llm.respond({
         systemPrompt,
         messages: llmTurns,
@@ -538,7 +709,8 @@ export class HandleChatMessage {
     // request is in flight (#36 — kill the persistent "Drafting a quote."
     // filler that lingers in scrollback after the card lands).
     const actionType = llmResponse.action?.type;
-    const cardBearingAction = actionType === "create_quote" || actionType === "lock_quote";
+    const cardBearingAction = actionType === "create_quote" ||
+      actionType === "lock_quote";
 
     const llmText = llmResponse.text?.trim() ?? "";
 
@@ -579,7 +751,7 @@ export class HandleChatMessage {
       });
       newMessages.push(assistantMsg);
     }
-    let convPatch: Partial<AgentConversation> = {};
+    const convPatch: Partial<AgentConversation> = {};
 
     if (llmResponse.action) {
       const action = llmResponse.action;
@@ -593,11 +765,14 @@ export class HandleChatMessage {
         // trade (sqft/hours folded into the amount).
         const dtoLineItems = action.payload.lineItems.map((l) => ({
           description: l.description,
-          quantity:    1,
-          unit:        "ea",
-          price:       l.amountCents,
+          quantity: 1,
+          unit: "ea",
+          price: l.amountCents,
         }));
-        const estimatedTotal = action.payload.lineItems.reduce((sum, l) => sum + l.amountCents, 0);
+        const estimatedTotal = action.payload.lineItems.reduce(
+          (sum, l) => sum + l.amountCents,
+          0,
+        );
 
         // customerId is no longer accepted from the LLM — it was being
         // populated with raw names like "Mendez" and corrupting joins.
@@ -616,7 +791,10 @@ export class HandleChatMessage {
         let quote;
         if (conv.quoteId) {
           try {
-            const existing = await this.quotes.getOwned(conv.quoteId, input.userId);
+            const existing = await this.quotes.getOwned(
+              conv.quoteId,
+              input.userId,
+            );
             if (existing.status === "draft") {
               quote = await this.quotes.update(conv.quoteId, input.userId, {
                 summary: action.payload.summary,
@@ -646,10 +824,13 @@ export class HandleChatMessage {
           payload: {
             actionType: "quote",
             status: "draft",
-            quoteId: quote.id,                     // real id from the store
+            quoteId: quote.id, // real id from the store
             customerId: quote.customerId,
-            lineItems: action.payload.lineItems,    // keep cents-shape for the frontend
-            totalCents: action.payload.lineItems.reduce((s, l) => s + l.amountCents, 0),
+            lineItems: action.payload.lineItems, // keep cents-shape for the frontend
+            totalCents: action.payload.lineItems.reduce(
+              (s, l) => s + l.amountCents,
+              0,
+            ),
           },
         });
         newMessages.push(card);
@@ -664,16 +845,16 @@ export class HandleChatMessage {
           action: "drafted",
           data: { customerId, summary: action.payload.summary },
         });
-      }
-
-      // ---- lock_quote: flip the active quote status to 'sent' ----
+      } // ---- lock_quote: flip the active quote status to 'sent' ----
       else if (action.type === "lock_quote") {
         // Use the conversation's quoteId, NOT the one the LLM made up. The
         // coordinator is the source of truth for which quote is "active".
         const quoteId = conv.quoteId ?? action.payload.quoteId;
         if (quoteId) {
-          const locked = await this.quotes.update(quoteId, input.userId, { status: "sent" });
-          convPatch.quoteId = quoteId;             // ensure conv.quoteId is set
+          const locked = await this.quotes.update(quoteId, input.userId, {
+            status: "sent",
+          });
+          convPatch.quoteId = quoteId; // ensure conv.quoteId is set
           await this.bus.emit({
             userId: input.userId,
             entityType: "quote",
@@ -693,7 +874,10 @@ export class HandleChatMessage {
             description: li.description,
             amountCents: li.price ?? 0,
           }));
-          const totalCents = sentLineItems.reduce((s, l) => s + l.amountCents, 0);
+          const totalCents = sentLineItems.reduce(
+            (s, l) => s + l.amountCents,
+            0,
+          );
           const sentCard = await this.messages.append({
             conversationId: conv.id,
             role: "assistant",
@@ -712,7 +896,8 @@ export class HandleChatMessage {
             conversationId: conv.id,
             role: "assistant",
             kind: "continue_cta",
-            content: "We've locked the quote down! Is this for a business or a person?",
+            content:
+              "We've locked the quote down! Is this for a business or a person?",
             payload: {
               toPhase: "terms",
               quoteId,
@@ -723,21 +908,26 @@ export class HandleChatMessage {
           // turn — the lock already succeeded, and the user can retry the
           // dispatch from the UI.
           try {
-            await this.emailer.run(input.userId, { kind: "quote", resourceId: quoteId });
+            await this.emailer.run(input.userId, {
+              kind: "quote",
+              resourceId: quoteId,
+            });
           } catch (err) {
-            console.error(`[chat:lock_quote] email dispatch failed for quote ${quoteId}:`, err);
+            console.error(
+              `[chat:lock_quote] email dispatch failed for quote ${quoteId}:`,
+              err,
+            );
           }
         }
-      }
-
-      // ---- request_terms_transition: surface a "Continue to terms" card ----
+      } // ---- request_terms_transition: surface a "Continue to terms" card ----
       else if (action.type === "request_terms_transition") {
         const quoteId = conv.quoteId ?? action.payload.quoteId;
         const cta = await this.messages.append({
           conversationId: conv.id,
           role: "assistant",
           kind: "continue_cta",
-          content: "We've locked the quote down! Is this for a business or a person?",
+          content:
+            "We've locked the quote down! Is this for a business or a person?",
           payload: {
             toPhase: "terms",
             quoteId,
@@ -748,7 +938,10 @@ export class HandleChatMessage {
     }
 
     // Title locks in on the very first user message in the conversation.
-    if (history.length === 0 || (history.length === 1 && history[0].id === userMsg.id)) {
+    if (
+      history.length === 0 ||
+      (history.length === 1 && history[0].id === userMsg.id)
+    ) {
       convPatch.title = deriveTitleFromFirstUserMessage(input.content);
     }
     // Audit P6.13 — preview priority: latest action_card (quote/contract/invoice

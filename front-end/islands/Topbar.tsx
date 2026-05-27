@@ -8,7 +8,9 @@ interface Props {
   initialNotifications?: Notification[];
 }
 
-export default function Topbar({ greeting, initialUnread = 0, initialNotifications = [] }: Props) {
+export default function Topbar(
+  { greeting, initialUnread = 0, initialNotifications = [] }: Props,
+) {
   const [unread, setUnread] = useState(initialUnread);
   const [items, setItems] = useState<Notification[]>(initialNotifications);
   const [tickerIdx, setTickerIdx] = useState(0);
@@ -31,7 +33,11 @@ export default function Topbar({ greeting, initialUnread = 0, initialNotificatio
 
     const idA = setInterval(pollUnread, 30_000);
     const idB = setInterval(pollItems, 10_000);
-    return () => { stopped = true; clearInterval(idA); clearInterval(idB); };
+    return () => {
+      stopped = true;
+      clearInterval(idA);
+      clearInterval(idB);
+    };
   }, []);
 
   useEffect(() => {
@@ -44,18 +50,43 @@ export default function Topbar({ greeting, initialUnread = 0, initialNotificatio
 
   return (
     <header class="topbar">
-      <a href="/" class="topbar__brand" aria-label="Paperwork Monster home" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:inherit;margin-right:14px">
-        <img src="/logo.png" alt="" height="26" style="height:26px;width:auto;display:block" />
+      <a
+        href="/"
+        class="topbar__brand"
+        aria-label="Paperwork Monster home"
+        style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:inherit;margin-right:14px"
+      >
+        <img
+          src="/logo.png"
+          alt=""
+          height="26"
+          style="height:26px;width:auto;display:block"
+        />
       </a>
-      <div class="topbar__greeting">{greeting} <span aria-hidden="true">👋</span></div>
-      <input type="search" placeholder="Search jobs, customers, invoices…" class="topbar__search" />
+      <div class="topbar__greeting">
+        {greeting} <span aria-hidden="true">👋</span>
+      </div>
+      <input
+        type="search"
+        placeholder="Search jobs, customers, invoices…"
+        class="topbar__search"
+      />
       <div class="topbar__right">
-        {ticker ? (
-          <span class="micro" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-            {ticker.title}
-          </span>
-        ) : null}
-        <button class="bell" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}>
+        {ticker
+          ? (
+            <span
+              class="micro"
+              style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            >
+              {ticker.title}
+            </span>
+          )
+          : null}
+        <button
+          type="button"
+          class="bell"
+          aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}
+        >
           <Icon name="bell" />
           {unread > 0 ? <span class="bell__dot" /> : null}
         </button>

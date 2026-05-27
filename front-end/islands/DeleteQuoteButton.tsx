@@ -40,7 +40,9 @@ export default function DeleteQuoteButton({
         disabled={busy}
         aria-label="Delete quote"
         title="Delete quote"
-      >×</button>
+      >
+        ×
+      </button>
     );
   }
 

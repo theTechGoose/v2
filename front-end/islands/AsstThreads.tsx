@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { assistantClient, type Conversation } from "../clients/assistant.ts";
 
@@ -15,6 +15,32 @@ const DAY = 24 * HOUR;
 
 export default function AsstThreads({ initialThreads, activeId }: Props) {
   const [threads, setThreads] = useState<Conversation[]>(initialThreads);
+  // Roadmap p.4: QuickBooks-style minimize for the conversation list. We
+  // toggle a class on the parent .asst grid so its first column narrows to a
+  // rail, and a class on the aside so the inner content collapses to icons.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (typeof globalThis.localStorage === "undefined") return false;
+    return globalThis.localStorage.getItem("pm:threads-collapsed") === "1";
+  });
+  const asideRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const parent = asideRef.current?.parentElement;
+    if (parent) parent.classList.toggle("asst--threads-collapsed", collapsed);
+  }, [collapsed]);
+
+  function toggleCollapsed() {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        globalThis.localStorage?.setItem(
+          "pm:threads-collapsed",
+          next ? "1" : "0",
+        );
+      } catch { /* SSR-safe */ }
+      return next;
+    });
+  }
 
   // Live-refresh: poll on an interval so a customer accept (which flips
   // hasUnreadEvent + bumps updatedAt server-side) shows up here without
@@ -45,24 +71,62 @@ export default function AsstThreads({ initialThreads, activeId }: Props) {
     };
   }, []);
 
-  const sorted = [...threads].sort((a, b) => tsOf(b.updatedAt) - tsOf(a.updatedAt));
+  const sorted = [...threads].sort((a, b) =>
+    tsOf(b.updatedAt) - tsOf(a.updatedAt)
+  );
   const groups = groupByRecency(sorted);
   const total = threads.length;
 
   return (
-    <aside class="threads">
+    <aside
+      ref={asideRef}
+      class={`threads ${collapsed ? "threads--collapsed" : ""}`}
+    >
       <div class="threads__head">
+        <button
+          type="button"
+          class="threads__toggle"
+          onClick={toggleCollapsed}
+          aria-label={collapsed
+            ? "Expand conversations"
+            : "Collapse conversations"}
+          title={collapsed ? "Expand" : "Collapse"}
+        >
+          <I
+            d={collapsed
+              ? (
+                <>
+                  <path d="M3 6h18M3 12h18M3 18h18" />
+                </>
+              )
+              : (
+                <>
+                  <path d="M15 18l-6-6 6-6" />
+                </>
+              )}
+            size={16}
+          />
+        </button>
         <h3 class="threads__title">Conversations</h3>
         <span class="threads__count">{total}</span>
       </div>
-      <a href="/assistant" class="threads__new" style="text-decoration:none">
+      <a
+        href="/assistant"
+        class="threads__new"
+        style="text-decoration:none"
+        title="New conversation"
+      >
         <I d={ICN.plus} size={14} sw={2.5} />
-        New conversation
+        <span class="threads__new-label">New conversation</span>
         <span class="threads__new-kbd">⌘N</span>
       </a>
       <div class="threads__list">
         {groups.length === 0
-          ? <div class="threads__empty">No conversations yet — start one below.</div>
+          ? (
+            <div class="threads__empty">
+              No conversations yet — start one below.
+            </div>
+          )
           : groups.map((group) => (
             <div key={group.label}>
               <div class="threads__group-label">{group.label}</div>
@@ -72,17 +136,28 @@ export default function AsstThreads({ initialThreads, activeId }: Props) {
                   <a
                     key={c.id}
                     href={`/assistant/${c.id}`}
-                    class={`thread ${c.id === activeId ? "thread--active" : ""} ${c.hasUnreadEvent ? "thread--unread" : ""}`}
+                    class={`thread ${
+                      c.id === activeId ? "thread--active" : ""
+                    } ${c.hasUnreadEvent ? "thread--unread" : ""}`}
                     style="text-decoration:none;text-align:left;width:100%;display:block"
                   >
                     <div class="thread__head">
-                      {c.hasUnreadEvent ? <span class="thread__unread-dot" aria-label="new event" /> : null}
+                      {c.hasUnreadEvent
+                        ? (
+                          <span
+                            class="thread__unread-dot"
+                            aria-label="new event"
+                          />
+                        )
+                        : null}
                       <span class="thread__client">{titleFor(c)}</span>
                       <span class="thread__time">{fmtTime(c.updatedAt)}</span>
                     </div>
                     <div class="thread__preview">{c.preview ?? "—"}</div>
                     <div class="thread__chips">
-                      <span class={`thread__chip thread__chip--${chip.kind}`}>{chip.label}</span>
+                      <span class={`thread__chip thread__chip--${chip.kind}`}>
+                        {chip.label}
+                      </span>
                     </div>
                   </a>
                 );
@@ -108,13 +183,15 @@ function deriveChip(c: Conversation): { kind: Chip; label: string } {
   // Walk the chain backwards (latest stage wins). Customer acceptance
   // is a single event on the contract — quoteStatus only ever reaches
   // "sent" in this flow, so no quote-accepted branch is needed.
-  if (c.invoiceStatus === "paid")      return { kind: "paid",  label: "Paid" };
-  if (c.invoiceStatus === "sent")      return { kind: "sent",  label: "Invoiced" };
-  if (c.contractStatus === "accepted") return { kind: "paid",  label: "Signed" };
-  if (c.contractStatus === "sent")     return { kind: "sent",  label: "Contract sent" };
-  if (c.contractStatus === "draft")    return { kind: "needs", label: "Contract" };
-  if (c.quoteStatus === "sent")        return { kind: "sent",  label: "Quote sent" };
-  if (c.currentPhase === "terms")      return { kind: "needs", label: "Terms" };
+  if (c.invoiceStatus === "paid") return { kind: "paid", label: "Paid" };
+  if (c.invoiceStatus === "sent") return { kind: "sent", label: "Invoiced" };
+  if (c.contractStatus === "accepted") return { kind: "paid", label: "Signed" };
+  if (c.contractStatus === "sent") {
+    return { kind: "sent", label: "Contract sent" };
+  }
+  if (c.contractStatus === "draft") return { kind: "needs", label: "Contract" };
+  if (c.quoteStatus === "sent") return { kind: "sent", label: "Quote sent" };
+  if (c.currentPhase === "terms") return { kind: "needs", label: "Terms" };
   return { kind: "draft", label: "Drafting" };
 }
 
@@ -130,15 +207,18 @@ function fmtTime(iso: string): string {
   if (!t) return "";
   const diff = Date.now() - t;
   if (diff < 60_000) return "now";
-  if (diff < HOUR)   return `${Math.floor(diff / 60_000)}m`;
-  if (diff < DAY)    return `${Math.floor(diff / HOUR)}h`;
+  if (diff < HOUR) return `${Math.floor(diff / 60_000)}m`;
+  if (diff < DAY) return `${Math.floor(diff / HOUR)}h`;
   if (diff < 7 * DAY) return WEEKDAY_SHORT[new Date(t).getDay()];
   const d = new Date(t);
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-function groupByRecency(convs: Conversation[]): { label: string; items: Conversation[] }[] {
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+function groupByRecency(
+  convs: Conversation[],
+): { label: string; items: Conversation[] }[] {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
   const yesterdayStart = todayStart.getTime() - DAY;
   const weekStart = todayStart.getTime() - 7 * DAY;
 
@@ -148,16 +228,16 @@ function groupByRecency(convs: Conversation[]): { label: string; items: Conversa
   const older: Conversation[] = [];
   for (const c of convs) {
     const t = tsOf(c.updatedAt);
-    if (t >= todayStart.getTime())   today.push(c);
-    else if (t >= yesterdayStart)    yesterday.push(c);
-    else if (t >= weekStart)         week.push(c);
-    else                             older.push(c);
+    if (t >= todayStart.getTime()) today.push(c);
+    else if (t >= yesterdayStart) yesterday.push(c);
+    else if (t >= weekStart) week.push(c);
+    else older.push(c);
   }
 
   return [
-    { label: "Today",     items: today },
+    { label: "Today", items: today },
     { label: "Yesterday", items: yesterday },
     { label: "This week", items: week },
-    { label: "Earlier",   items: older },
+    { label: "Earlier", items: older },
   ].filter((g) => g.items.length > 0);
 }

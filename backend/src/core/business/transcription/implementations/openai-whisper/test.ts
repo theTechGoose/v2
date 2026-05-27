@@ -19,9 +19,9 @@ Deno.test("openai-whisper: posts multipart to /audio/transcriptions with model +
 
   let capturedUrl: string | null = null;
   let capturedAuth: string | null = null;
-  let capturedFormFields: Record<string, string> = {};
+  const capturedFormFields: Record<string, string> = {};
 
-  client.fetchOverride = async (input: Request | URL | string, init?: RequestInit) => {
+  client.fetchOverride = (input: Request | URL | string, init?: RequestInit) => {
     capturedUrl = String(input);
     const headers = new Headers(init?.headers ?? {});
     capturedAuth = headers.get("authorization");
@@ -29,9 +29,11 @@ Deno.test("openai-whisper: posts multipart to /audio/transcriptions with model +
     for (const [k, v] of form.entries()) {
       capturedFormFields[k] = typeof v === "string" ? v : `<blob:${(v as Blob).type}>`;
     }
-    return new Response(
-      JSON.stringify({ text: "hello world", language: "en", duration: 1.25 }),
-      { status: 200, headers: { "content-type": "application/json" } },
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({ text: "hello world", language: "en", duration: 1.25 }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
     );
   };
 
@@ -59,8 +61,8 @@ Deno.test("openai-whisper: posts multipart to /audio/transcriptions with model +
 Deno.test("openai-whisper: surfaces non-2xx as a thrown error", async () => {
   Deno.env.set("OPENAI_API_KEY", "test-key");
   const client = new OpenAIWhisperClient();
-  client.fetchOverride = async () =>
-    new Response("bad audio", { status: 400 });
+  client.fetchOverride = () =>
+    Promise.resolve(new Response("bad audio", { status: 400 }));
   await assertRejects(
     () => client.transcribe({ audio: new Uint8Array([0]), userId: "u-1" }),
     Error,

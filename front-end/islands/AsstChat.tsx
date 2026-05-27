@@ -119,7 +119,11 @@ function toOptionDrafts(options: JobOption[]): JobOptionDraft[] {
     id: o.id,
     jobName: o.jobName,
     summary: o.summary,
-    bullets: o.bullets.map((text) => ({ id: `b${++bulletSeq}`, text, deleted: false })),
+    bullets: o.bullets.map((text) => ({
+      id: `b${++bulletSeq}`,
+      text,
+      deleted: false,
+    })),
   }));
 }
 
@@ -138,7 +142,12 @@ function localFallbackOptions(raw: string): JobOption[] {
   return [
     { id: "opt1", jobName, summary, bullets: base },
     { id: "opt2", jobName, summary, bullets: base.slice(0, 3) },
-    { id: "opt3", jobName, summary, bullets: [...base.slice(0, 3), "Jobsite cleanup"].slice(0, 4) },
+    {
+      id: "opt3",
+      jobName,
+      summary,
+      bullets: [...base.slice(0, 3), "Jobsite cleanup"].slice(0, 4),
+    },
   ];
 }
 
@@ -163,14 +172,26 @@ interface ActionCardPayload {
  *  slab example, otherwise new users wonder if they're in the right
  *  surface. After onboarding hands off, revert to the job example. */
 function composerPlaceholder(msgs: Message[]): string {
-  const lastAssistant = [...msgs].reverse().find((m) => m.role === "assistant" && m.kind === "text");
+  const lastAssistant = [...msgs].reverse().find((m) =>
+    m.role === "assistant" && m.kind === "text"
+  );
   const text = (lastAssistant?.content ?? "").toLowerCase();
-  if (/what should i call you|what.s your (first )?name/.test(text)) return "Your first name";
-  if (/what.s your business called|business name/.test(text)) return "Your business name";
-  if (/looks like you.re in|which state|right state/.test(text)) return "2-letter state code (SC, TX, NY)";
-  if (/business address|paste it on one line/.test(text)) return "Street, city, state ZIP — or 'skip'";
+  if (/what should i call you|what.s your (first )?name/.test(text)) {
+    return "Your first name";
+  }
+  if (/what.s your business called|business name/.test(text)) {
+    return "Your business name";
+  }
+  if (/looks like you.re in|which state|right state/.test(text)) {
+    return "2-letter state code (SC, TX, NY)";
+  }
+  if (/business address|paste it on one line/.test(text)) {
+    return "Street, city, state ZIP — or 'skip'";
+  }
   if (/email/.test(text)) return "name@yourbusiness.com — or 'skip'";
-  if (/payment|venmo|zelle|cash app|how.*get paid/.test(text)) return "Venmo @handle, Zelle email, etc.";
+  if (/payment|venmo|zelle|cash app|how.*get paid/.test(text)) {
+    return "Venmo @handle, Zelle email, etc.";
+  }
   return "Ex: Customer wants a 10'x10' slab, what should I charge?";
 }
 
@@ -218,6 +239,14 @@ interface Props {
   /** 1-2 letter user-avatar string. Pre-derived on the server so we don't
    *  flash a stale or default value while hydrating. */
   userInitials?: string;
+  /** Contractor "FROM" details for the quote/agreement preview card
+   *  (roadmap p.5 — Quote & Agreement Preview.docx). */
+  from?: {
+    business?: string;
+    name?: string;
+    phone?: string;
+    email?: string;
+  };
 }
 
 /** Derive a stable 1-2 letter avatar string. Mirrors the backend
@@ -237,8 +266,9 @@ export function deriveUserInitials(input: {
     if (parts.length === 1) {
       if (biz) {
         const bizParts = biz.split(/\s+/).filter(Boolean);
-        if (bizParts.length >= 1)
+        if (bizParts.length >= 1) {
           return (parts[0][0] + bizParts[0][0]).toUpperCase();
+        }
       }
       return parts[0].slice(0, 2).toUpperCase();
     }
@@ -246,8 +276,9 @@ export function deriveUserInitials(input: {
   }
   if (biz) {
     const bizParts = biz.split(/\s+/).filter(Boolean);
-    if (bizParts.length >= 2)
+    if (bizParts.length >= 2) {
       return (bizParts[0][0] + bizParts[1][0]).toUpperCase();
+    }
     if (bizParts.length === 1) return bizParts[0].slice(0, 2).toUpperCase();
   }
   return "👤";
@@ -296,18 +327,17 @@ function buildPaymentMilestones(
     .filter((n) => Number.isFinite(n));
   const sum = numbers.reduce((a, b) => a + b, 0);
   if (numbers.length >= 2 && Math.abs(sum - 100) <= 1) {
-    const labels =
-      numbers.length === 2
-        ? ["Deposit", "On completion"]
-        : numbers.length === 3
-          ? ["Deposit", "Midpoint", "On completion"]
-          : numbers.map((_, i) =>
-              i === 0
-                ? "Deposit"
-                : i === numbers.length - 1
-                  ? "On completion"
-                  : `Milestone ${i}`,
-            );
+    const labels = numbers.length === 2
+      ? ["Deposit", "On completion"]
+      : numbers.length === 3
+      ? ["Deposit", "Midpoint", "On completion"]
+      : numbers.map((_, i) =>
+        i === 0
+          ? "Deposit"
+          : i === numbers.length - 1
+          ? "On completion"
+          : `Milestone ${i}`
+      );
     const out: PaymentMilestone[] = numbers.map((pct, i) => ({
       label: labels[i],
       pct,
@@ -351,6 +381,7 @@ export default function AsstChat({
   initialCustomer,
   initialContract,
   userInitials = "?",
+  from,
 }: Props) {
   const [convoId, setConvoId] = useState<string | undefined>(conversationId);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -365,11 +396,15 @@ export default function AsstChat({
    *  handoff CTA is in the thread so cmd+click works without a round-
    *  trip. The click handler falls back to inline mint+open if this
    *  isn't ready yet. */
-  const [sampleQuoteUrl, setSampleQuoteUrl] = useState<string | undefined>(undefined);
+  const [sampleQuoteUrl, setSampleQuoteUrl] = useState<string | undefined>(
+    undefined,
+  );
   /** Swap-customer pencil in the quote-review hero. Lazily loads the
    *  user's saved customers on first open. */
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
-  const [customerPickerList, setCustomerPickerList] = useState<CustomerLite[] | null>(null);
+  const [customerPickerList, setCustomerPickerList] = useState<
+    CustomerLite[] | null
+  >(null);
   const [customerPickerSearch, setCustomerPickerSearch] = useState("");
   const [customerPickerBusy, setCustomerPickerBusy] = useState(false);
   const [quoteId, setQuoteId] = useState<string | undefined>();
@@ -377,7 +412,18 @@ export default function AsstChat({
    *  Used by the post-wizard quote-review preview to render `description`
    *  + `lineItems` without depending on an in-thread action_card. */
   const [quote, setQuote] = useState<
-    | { id: string; summary?: string; description?: string; lineItems?: { description: string; quantity?: number; unit?: string; price?: number }[]; estimatedTotal?: number }
+    | {
+      id: string;
+      summary?: string;
+      description?: string;
+      lineItems?: {
+        description: string;
+        quantity?: number;
+        unit?: string;
+        price?: number;
+      }[];
+      estimatedTotal?: number;
+    }
     | undefined
   >();
   const [draft, setDraft] = useState("");
@@ -392,33 +438,53 @@ export default function AsstChat({
    *  next submission is treated as raw job-details, sent through the
    *  polish endpoint, then used to seed the new quote + phase 2 wizard. */
   const [awaitingJobDetails, setAwaitingJobDetails] = useState(false);
-  const [pendingPriceCents, setPendingPriceCents] = useState<number | null>(null);
+  const [pendingPriceCents, setPendingPriceCents] = useState<number | null>(
+    null,
+  );
   /** First-button flow is now "details first, price second." When the user
    *  taps "I know my price, write it up." we ask for the job details up
    *  front and stash the raw text here. After the user types it and
    *  submits, we flip to the price-capture screen with this populated,
    *  and the price-Continue handler combines both pieces to build the
    *  quote. (The other two flows ignore this — they go through the LLM.) */
-  const [pendingJobDetailsRaw, setPendingJobDetailsRaw] = useState<string | null>(null);
+  const [pendingJobDetailsRaw, setPendingJobDetailsRaw] = useState<
+    string | null
+  >(null);
   /** Captures the raw text the user submitted at the job-details step
    *  so we can render an optimistic user bubble + "Polishing…" indicator
    *  while the polish + create-quote + transition chain runs. */
-  const [submittedJobDetails, setSubmittedJobDetails] = useState<string | null>(null);
+  const [submittedJobDetails, setSubmittedJobDetails] = useState<string | null>(
+    null,
+  );
   /** "Job Details" picker screen (the LLM-generated scope-of-work options).
    *  Shown at the END of phase 2, right before the quote review. */
   const [jobOptionsOpen, setJobOptionsOpen] = useState(false);
+  // Roadmap p.10: "I know the job, help me price it." — when set, the
+  // price-capture screen shows three LLM-suggested tiers (+ custom entry).
+  const [suggestPricing, setSuggestPricing] = useState(false);
+  const [priceSuggestions, setPriceSuggestions] = useState<
+    Array<
+      { tier: string; label: string; priceCents: number; rationale: string }
+    > | null
+  >(null);
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [jobOptions, setJobOptions] = useState<JobOptionDraft[] | null>(null);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   /** Which bullet is open for inline edit, keyed by option+bullet id. */
-  const [editingBullet, setEditingBullet] = useState<{ optionId: string; bulletId: string } | null>(null);
+  const [editingBullet, setEditingBullet] = useState<
+    { optionId: string; bulletId: string } | null
+  >(null);
   /** When set, renders the "Want me to professionalize that?" popup for
    *  the bullet that was just edited or added. */
-  const [proPopup, setProPopup] = useState<{ optionId: string; bulletId: string } | null>(null);
+  const [proPopup, setProPopup] = useState<
+    { optionId: string; bulletId: string } | null
+  >(null);
   const [proBusy, setProBusy] = useState(false);
   /** In-flight options generation, kicked off the moment the user submits
    *  the raw job-details bubble so the LLM runs while they type the price. */
-  const optionsInFlightRef = useRef<Promise<{ options: JobOption[] } | null> | null>(null);
+  const optionsInFlightRef = useRef<
+    Promise<{ options: JobOption[] } | null> | null
+  >(null);
   /** Snapshot of a bullet's text at edit-start, so commit can tell whether
    *  it actually changed (and only then offer to professionalize). */
   const editOriginalRef = useRef<string>("");
@@ -446,12 +512,16 @@ export default function AsstChat({
    *  When SendContract reports a missing/invalid email or phone, we let
    *  the user type it right under the divider; saving patches the
    *  customer profile so we have it next time too. */
-  const [recoveryDraft, setRecoveryDraft] = useState<Record<string, { email?: string; phone?: string }>>({});
+  const [recoveryDraft, setRecoveryDraft] = useState<
+    Record<string, { email?: string; phone?: string }>
+  >({});
   const [recoverySavingId, setRecoverySavingId] = useState<string | null>(null);
   /** Selected channel for the quote-review send action. Smart-defaults
    *  from customer.email/phoneNumber: both → both, email-only → email,
    *  phone-only → sms. Overridable via the split-button chevron menu. */
-  const [sendChannel, setSendChannel] = useState<"email" | "sms" | "both">("both");
+  const [sendChannel, setSendChannel] = useState<"email" | "sms" | "both">(
+    "both",
+  );
   const [channelMenuOpen, setChannelMenuOpen] = useState(false);
   /**
    * Tracks `continue_cta` messages whose Review button has been clicked.
@@ -482,10 +552,12 @@ export default function AsstChat({
   );
   /** When the user clicks "Custom" inside a term picker, we swap the
    *  options out for a single free-text input. Tracks (stepId, draft). */
-  const [customTermDraft, setCustomTermDraft] = useState<{
-    stepId: string;
-    value: string;
-  } | null>(null);
+  const [customTermDraft, setCustomTermDraft] = useState<
+    {
+      stepId: string;
+      value: string;
+    } | null
+  >(null);
   /**
    * Set when the user clicks "Review" on the wizard's send CTA. Drives the
    * inline contract preview card (total/customer/dates) so the user can
@@ -497,41 +569,51 @@ export default function AsstChat({
    * the (messageId, optionId) here and render the inline form instead of
    * firing the answer. Submitting clears it; cancelling clears it too.
    */
-  const [followUpPick, setFollowUpPick] = useState<{
-    messageId: string;
-    optionId: string;
-  } | null>(null);
+  const [followUpPick, setFollowUpPick] = useState<
+    {
+      messageId: string;
+      optionId: string;
+    } | null
+  >(null);
   // start_date "Pick a date" — when armed, renders an inline date picker
   // in place of the option grid for that wizard message.
-  const [customDatePick, setCustomDatePick] = useState<{
-    messageId: string;
-    optionId: string;
-  } | null>(null);
+  const [customDatePick, setCustomDatePick] = useState<
+    {
+      messageId: string;
+      optionId: string;
+    } | null
+  >(null);
   // wraps "Custom" — structured number + unit picker so the contract gets a
   // clean duration string ("3 weeks") without relying on free-text parsing.
-  const [customDurationPick, setCustomDurationPick] = useState<{
-    messageId: string;
-    optionId: string;
-  } | null>(null);
+  const [customDurationPick, setCustomDurationPick] = useState<
+    {
+      messageId: string;
+      optionId: string;
+    } | null
+  >(null);
   // warranty "Custom" — same two-phase Bossie chat → verify pattern as the
   // duration picker, but tuned for warranty language (months/years/lifetime)
   // so the contract reads cleanly ("12 months", "2 years", "Lifetime").
-  const [customWarrantyPick, setCustomWarrantyPick] = useState<{
-    messageId: string;
-    optionId: string;
-  } | null>(null);
+  const [customWarrantyPick, setCustomWarrantyPick] = useState<
+    {
+      messageId: string;
+      optionId: string;
+    } | null
+  >(null);
   // payment_terms "Custom" — chat-with-verify Bossie flow that produces a
   // clean payment string ("Net 30", "30 / 30 / 40") that buildPaymentMilestones
   // can parse. Free-text never lands on the contract directly.
-  const [customPaymentPick, setCustomPaymentPick] = useState<{
-    messageId: string;
-    optionId: string;
-  } | null>(null);
+  const [customPaymentPick, setCustomPaymentPick] = useState<
+    {
+      messageId: string;
+      optionId: string;
+    } | null
+  >(null);
   // #27 — gates the third empty-state chip ("Nudge an overdue invoice").
   // null = unknown / not yet loaded → don't render the chip yet (avoids
   // flashing it on then yanking it away). Sourced from the shared dash
   // cache so we don't fire a third copy of /analytics/dashboard.
-  const [overdueCount, setOverdueCount] = useState<number | null>(() => {
+  const [, setOverdueCount] = useState<number | null>(() => {
     const snap = readCached();
     return snap?.stats?.invoices.overdue ?? null;
   });
@@ -619,7 +701,9 @@ export default function AsstChat({
 
   // Listen for the back-button click event from ChatHeaderLive.
   useEffect(() => {
-    function onBack() { popHistory(); }
+    function onBack() {
+      popHistory();
+    }
     globalThis.addEventListener("pm:asst-back", onBack);
     return () => globalThis.removeEventListener("pm:asst-back", onBack);
   });
@@ -649,11 +733,13 @@ export default function AsstChat({
         if (cancelled) return;
         const qId =
           (detail.conversation as { quoteId?: string } | undefined)?.quoteId ??
-          (detail.contract as { quoteId?: string } | undefined)?.quoteId;
+            (detail.contract as { quoteId?: string } | undefined)?.quoteId;
         if (qId) setQuoteId(qId);
       })
-      .catch(() => { /* preview falls back to action_card */ });
-    return () => { cancelled = true; };
+      .catch(() => {/* preview falls back to action_card */});
+    return () => {
+      cancelled = true;
+    };
   }, [convoId, quoteId]);
 
   // Close the send-channel menu on outside click / Esc.
@@ -709,8 +795,10 @@ export default function AsstChat({
           });
         }
       })
-      .catch(() => { /* silent — preview falls back to action_card */ });
-    return () => { cancelled = true; };
+      .catch(() => {/* silent — preview falls back to action_card */});
+    return () => {
+      cancelled = true;
+    };
   }, [quoteId]);
 
   // Phase-2 entry from the "I know my price" flow: a sessionStorage marker
@@ -723,7 +811,8 @@ export default function AsstChat({
     if (!convoId) return;
     let raw: string | null = null;
     try {
-      raw = globalThis.sessionStorage?.getItem(`pm:jobpolish:${convoId}`) ?? null;
+      raw = globalThis.sessionStorage?.getItem(`pm:jobpolish:${convoId}`) ??
+        null;
     } catch { /* sessionStorage unavailable — skip */ }
     if (!raw || !raw.trim()) return;
     jobPolishRawRef.current = raw;
@@ -815,8 +904,8 @@ export default function AsstChat({
     else if (lastQuoteCard) status = "Quote drafted · review";
     // No status chip at all on a brand-new thread — "Drafting…" before
     // anything has been drafted reads as broken state.
-    const headerClient =
-      client ?? (lastQuoteCard ? "Conversation" : "New conversation");
+    const headerClient = client ??
+      (lastQuoteCard ? "Conversation" : "New conversation");
     globalThis.window.dispatchEvent(
       new CustomEvent("pm:asst-header", {
         detail: { client: headerClient, status },
@@ -859,7 +948,8 @@ export default function AsstChat({
       }
     }
     globalThis.addEventListener("pm:onboard-send-text", onQuickReply);
-    return () => globalThis.removeEventListener("pm:onboard-send-text", onQuickReply);
+    return () =>
+      globalThis.removeEventListener("pm:onboard-send-text", onQuickReply);
   }, []);
 
   // Eagerly mint the per-user sample quote URL once the synthetic
@@ -875,9 +965,13 @@ export default function AsstChat({
     let cancelled = false;
     assistantClient
       .ensureSampleQuote()
-      .then((r) => { if (!cancelled) setSampleQuoteUrl(`/q/${r.quoteId}`); })
+      .then((r) => {
+        if (!cancelled) setSampleQuoteUrl(`/q/${r.quoteId}`);
+      })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [messages, sampleQuoteUrl]);
 
   /**
@@ -899,8 +993,8 @@ export default function AsstChat({
     let nearBottom = true;
     const STICK_THRESHOLD = 120;
     function updateNearBottom() {
-      const distFromBottom =
-        scroller!.scrollHeight - scroller!.scrollTop - scroller!.clientHeight;
+      const distFromBottom = scroller!.scrollHeight - scroller!.scrollTop -
+        scroller!.clientHeight;
       nearBottom = distFromBottom <= STICK_THRESHOLD;
     }
     function pin() {
@@ -935,10 +1029,11 @@ export default function AsstChat({
   useEffect(() => {
     if (previewCtaId === null) return;
     const el = scrollRef.current;
-    if (el)
+    if (el) {
       requestAnimationFrame(() =>
-        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }),
+        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
       );
+    }
   }, [previewCtaId]);
 
   // While the inline quote-review preview is open and the bound contract
@@ -951,7 +1046,14 @@ export default function AsstChat({
     if (previewCtaId === null) return;
     const cid = contract?.id;
     if (!cid) return;
-    const TERMINAL = new Set(["signed", "accepted", "approved", "declined", "void", "lost"]);
+    const TERMINAL = new Set([
+      "signed",
+      "accepted",
+      "approved",
+      "declined",
+      "void",
+      "lost",
+    ]);
     if (TERMINAL.has((contract?.status ?? "").toLowerCase())) return;
     let cancelled = false;
     const tick = async () => {
@@ -1159,10 +1261,9 @@ export default function AsstChat({
     elapsedSec: number,
     liveTranscript?: string,
   ) {
-    const optimisticContent =
-      liveTranscript && liveTranscript.length > 0
-        ? liveTranscript
-        : `🎙️ Voice memo · ${elapsedSec}s · ${fmtKB(blob.size)} — transcribing…`;
+    const optimisticContent = liveTranscript && liveTranscript.length > 0
+      ? liveTranscript
+      : `🎙️ Voice memo · ${elapsedSec}s · ${fmtKB(blob.size)} — transcribing…`;
     await submitTurn(
       {
         role: "user",
@@ -1253,7 +1354,10 @@ export default function AsstChat({
     const inflight = optionsInFlightRef.current ?? assistantClient
       .generateJobOptions(raw)
       .catch((err) => {
-        console.warn("[asst] job-options generation failed, keeping heuristic:", err);
+        console.warn(
+          "[asst] job-options generation failed, keeping heuristic:",
+          err,
+        );
         return null;
       });
     optionsInFlightRef.current = null;
@@ -1262,7 +1366,9 @@ export default function AsstChat({
       const drafts = toOptionDrafts(res.options);
       setJobOptions(drafts);
       setSelectedOptionId((prev) =>
-        prev && drafts.some((d) => d.id === prev) ? prev : (drafts[0]?.id ?? null)
+        prev && drafts.some((d) => d.id === prev)
+          ? prev
+          : (drafts[0]?.id ?? null)
       );
     }
   }
@@ -1290,14 +1396,20 @@ export default function AsstChat({
         o.id === optionId
           ? {
             ...o,
-            bullets: o.bullets.map((b) => (b.id === bulletId ? { ...b, text } : b)),
+            bullets: o.bullets.map((
+              b,
+            ) => (b.id === bulletId ? { ...b, text } : b)),
           }
           : o
       ) ?? prev
     );
   }
 
-  function startBulletEdit(optionId: string, bulletId: string, current: string) {
+  function startBulletEdit(
+    optionId: string,
+    bulletId: string,
+    current: string,
+  ) {
     optionsTouchedRef.current = true;
     editOriginalRef.current = current;
     setEditingBullet({ optionId, bulletId });
@@ -1333,7 +1445,9 @@ export default function AsstChat({
   async function confirmProfessionalize() {
     if (!proPopup || proBusy) return;
     const { optionId, bulletId } = proPopup;
-    const b = jobOptions?.find((o) => o.id === optionId)?.bullets.find((x) => x.id === bulletId);
+    const b = jobOptions?.find((o) => o.id === optionId)?.bullets.find((x) =>
+      x.id === bulletId
+    );
     if (!b) {
       setProPopup(null);
       return;
@@ -1382,7 +1496,12 @@ export default function AsstChat({
         summary,
         jobName,
         description: raw.trim(),
-        lineItems: [{ description: summary, quantity: 1, unit: "ea", price: cents }],
+        lineItems: [{
+          description: summary,
+          quantity: 1,
+          unit: "ea",
+          price: cents,
+        }],
         estimatedTotal: cents,
         status: "sent",
       });
@@ -1396,7 +1515,10 @@ export default function AsstChat({
       await api.post(`/agents/conversations/${conv.id}/transition-to-terms`);
 
       try {
-        globalThis.sessionStorage?.setItem(`pm:jobpolish:${conv.id}`, raw.trim());
+        globalThis.sessionStorage?.setItem(
+          `pm:jobpolish:${conv.id}`,
+          raw.trim(),
+        );
       } catch { /* sessionStorage unavailable — picker just won't auto-open */ }
 
       globalThis.location.href = `/assistant/${conv.id}`;
@@ -1420,7 +1542,9 @@ export default function AsstChat({
       setError("pick an option first");
       return;
     }
-    const live = opt.bullets.filter((b) => !b.deleted && b.text.trim().length > 0);
+    const live = opt.bullets.filter((b) =>
+      !b.deleted && b.text.trim().length > 0
+    );
     const description = live.map((b) => b.text.trim()).join("\n");
     const summary = (opt.summary || opt.jobName || "New job").trim();
     const jobName = (opt.jobName || summary).trim();
@@ -1429,7 +1553,10 @@ export default function AsstChat({
     try {
       if (quoteId) {
         const items = quote?.lineItems && quote.lineItems.length > 0
-          ? quote.lineItems.map((li, i) => (i === 0 ? { ...li, description: summary } : li))
+          ? quote.lineItems.map((
+            li,
+            i,
+          ) => (i === 0 ? { ...li, description: summary } : li))
           : undefined;
         await quotesClient.update(quoteId, {
           description: description || summary,
@@ -1439,7 +1566,12 @@ export default function AsstChat({
         });
         setQuote((q) =>
           q
-            ? { ...q, summary, description: description || summary, lineItems: items ?? q.lineItems }
+            ? {
+              ...q,
+              summary,
+              description: description || summary,
+              lineItems: items ?? q.lineItems,
+            }
             : q
         );
       }
@@ -1452,7 +1584,9 @@ export default function AsstChat({
       pendingReviewCtaRef.current = null;
       if (ctaId) setPreviewCtaId(ctaId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "couldn't save job details");
+      setError(
+        err instanceof Error ? err.message : "couldn't save job details",
+      );
     } finally {
       setSending(false);
     }
@@ -1474,6 +1608,9 @@ export default function AsstChat({
     setSubmittedJobDetails(trimmed);
     setAwaitingJobDetails(false);
     setPriceCaptureOpen(true);
+    // "Help me price it" path: kick off the LLM price suggestions so they're
+    // ready on the price-capture screen.
+    if (suggestPricing) void fetchPriceSuggestions(trimmed);
   }
 
   async function seedPhase2() {
@@ -1585,9 +1722,8 @@ export default function AsstChat({
           const detail = await assistantClient.conversation(convoId);
           if (detail.contract) setContract(detail.contract);
           if (detail.customer) setCustomer(detail.customer);
-          const qId =
-            (detail.conversation as { quoteId?: string } | undefined)
-              ?.quoteId ??
+          const qId = (detail.conversation as { quoteId?: string } | undefined)
+            ?.quoteId ??
             (detail.contract as { quoteId?: string } | undefined)?.quoteId;
           if (qId) setQuoteId(qId);
         } catch (err) {
@@ -1695,7 +1831,11 @@ export default function AsstChat({
       // the quote-review hero, etc.). We still trust the server row
       // for canonical values via updated.
       void updated;
-      const res = await assistantClient.sendContract(convoId, args.contractId, args.channel);
+      const res = await assistantClient.sendContract(
+        convoId,
+        args.contractId,
+        args.channel,
+      );
       if (res.newMessages?.length) {
         setMessages((m) => [...m, ...res.newMessages]);
       }
@@ -1729,8 +1869,7 @@ export default function AsstChat({
     try {
       if (!id) {
         const detail = await assistantClient.conversation(convoId);
-        id =
-          detail.contract?.id ??
+        id = detail.contract?.id ??
           (detail.conversation as { contractId?: string } | undefined)
             ?.contractId;
         if (detail.contract) setContract(detail.contract);
@@ -1753,81 +1892,6 @@ export default function AsstChat({
       );
     } finally {
       setSending(false);
-    }
-  }
-
-  /**
-   * Save an inline edit to a line-item amount. The user types a money
-   * value into the `.quote-review__line-amt` span (we treat free text:
-   * "$1,500", "1500.00", "1500" — all parse to 1500 dollars). On blur:
-   *   - parse → cents; bail if invalid (revert)
-   *   - PATCH the quote with the new price (in dollars, matching the
-   *     existing API contract used by `seedPhase2`)
-   *   - optimistically replace the action_card payload in local
-   *     messages state so the Total Due (which reads from
-   *     `lockedPayload.totalCents`) recalculates without a refresh
-   */
-  async function onEditLineAmount(
-    quoteId: string,
-    actionCardId: string,
-    lineIdx: number,
-    originalCents: number,
-    el: HTMLElement,
-  ) {
-    const cleaned = (el.innerText ?? "").replace(/[^\d.]/g, "");
-    const dollars = parseFloat(cleaned);
-    if (!Number.isFinite(dollars) || dollars < 0) {
-      el.innerText = fmtUSD(originalCents);
-      return;
-    }
-    const nextCents = Math.round(dollars * 100);
-    if (nextCents === originalCents) {
-      el.innerText = fmtUSD(originalCents); // re-format so trailing junk is cleaned
-      return;
-    }
-    try {
-      const q = await quotesClient.get(quoteId);
-      const items = Array.isArray(q.lineItems) ? [...q.lineItems] : [];
-      if (!items[lineIdx]) throw new Error("line item index out of range");
-      // Per LineItemDto / UpdateQuoteDto in paperwork/dto/quote.ts, both
-      // `price` and `estimatedTotal` are INTEGER CENTS (audit1 #3 migration).
-      items[lineIdx] = { ...items[lineIdx], price: nextCents };
-      const newTotalCents = items.reduce(
-        (s: number, it: { price?: number; quantity?: number }) =>
-          s + (Number(it.price) || 0) * (Number(it.quantity) || 1),
-        0,
-      );
-      await quotesClient.update(quoteId, {
-        lineItems: items,
-        estimatedTotal: newTotalCents,
-      });
-      // Reformat to canonical display (commas + cents) after save.
-      el.innerText = fmtUSD(nextCents);
-      // Optimistic patch: rewrite the matching action_card payload so
-      // the preview's lineItems + totalCents reflect the new value
-      // immediately. Other action_cards are untouched.
-      setMessages((msgs) =>
-        msgs.map((m) => {
-          if (m.id !== actionCardId) return m;
-          const p = (m.payload ?? {}) as ActionCardPayload;
-          const li = Array.isArray(p.lineItems) ? [...p.lineItems] : [];
-          if (li[lineIdx]) {
-            li[lineIdx] = { ...li[lineIdx], amountCents: nextCents };
-          }
-          const recomputed = li.reduce((s, it) => s + (it.amountCents ?? 0), 0);
-          return {
-            ...m,
-            payload: {
-              ...p,
-              lineItems: li,
-              totalCents: recomputed,
-            },
-          };
-        }),
-      );
-    } catch (err) {
-      el.innerText = fmtUSD(originalCents);
-      setError(err instanceof Error ? err.message : "couldn't save edit");
     }
   }
 
@@ -1876,7 +1940,7 @@ export default function AsstChat({
       if (contractId) {
         await contractsClient.update(contractId, { totalAmount: nextCents });
         setContract((cur) =>
-          cur ? ({ ...cur, totalAmount: nextCents } as typeof cur) : cur,
+          cur ? ({ ...cur, totalAmount: nextCents } as typeof cur) : cur
         );
       } else if (actionCardId) {
         setMessages((msgs) =>
@@ -1884,7 +1948,7 @@ export default function AsstChat({
             if (m.id !== actionCardId) return m;
             const p = (m.payload ?? {}) as ActionCardPayload;
             return { ...m, payload: { ...p, totalCents: nextCents } };
-          }),
+          })
         );
       }
       el.innerText = fmtPlain(nextCents);
@@ -1922,7 +1986,7 @@ export default function AsstChat({
       .listCustomers()
       .then((list) => setCustomerPickerList(list))
       .catch((err) =>
-        setError(err instanceof Error ? err.message : "couldn't load customers"),
+        setError(err instanceof Error ? err.message : "couldn't load customers")
       );
   }
 
@@ -1936,7 +2000,9 @@ export default function AsstChat({
     try {
       const res = await assistantClient.bindCustomer(convoId, nextCustomer.id);
       setCustomer(res.customer);
-      setContract((c) => (c ? ({ ...c, customerId: res.customer.id } as typeof c) : c));
+      setContract((
+        c,
+      ) => (c ? ({ ...c, customerId: res.customer.id } as typeof c) : c));
       setCustomerPickerOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "couldn't switch customer");
@@ -1958,10 +2024,13 @@ export default function AsstChat({
     const prev = (original ?? "").trim();
     if (!customerId || next === prev) return;
     try {
-      const patch = { [field]: next.length === 0 ? null : next } as Record<string, unknown>;
+      const patch = { [field]: next.length === 0 ? null : next } as Record<
+        string,
+        unknown
+      >;
       await clientsClient.update(customerId, patch);
       setCustomer((c) =>
-        c ? { ...c, [field]: next.length === 0 ? undefined : next } : c,
+        c ? { ...c, [field]: next.length === 0 ? undefined : next } : c
       );
     } catch (err) {
       el.innerText = prev;
@@ -1989,10 +2058,9 @@ export default function AsstChat({
         : [];
       const idx = existing.findIndex((t) => t.stepId === stepId);
       const nextTerm = { stepId, label, value: optionLabel };
-      const terms =
-        idx === -1
-          ? [...existing, nextTerm]
-          : existing.map((t, i) => (i === idx ? nextTerm : t));
+      const terms = idx === -1
+        ? [...existing, nextTerm]
+        : existing.map((t, i) => (i === idx ? nextTerm : t));
       await contractsClient.update(contractId, { terms });
       // Reflect the pick on local contract state so the preview re-renders
       // without a reload. Don't append a synthetic chat message — that
@@ -2049,7 +2117,6 @@ export default function AsstChat({
     if (!stepId) return;
     let customValue: string | undefined;
     if (opt.isCustom) {
-      // deno-lint-ignore no-alert
       const v = prompt(`${opt.label}:`);
       if (!v || !v.trim()) return;
       customValue = v.trim();
@@ -2156,6 +2223,68 @@ export default function AsstChat({
     }
   }
 
+  /**
+   * Step one wizard question backwards so it can be re-edited (roadmap p.2).
+   * The server drops the trailing step + pick; we reload the conversation so
+   * the previous step's wizard card (which the optimistic flow had removed
+   * locally) is restored as the active question.
+   */
+  async function goBackWizard() {
+    if (sending || !convoId) return;
+    setError(undefined);
+    setSending(true);
+    try {
+      await assistantClient.rewindWizard(convoId);
+      const snap = await assistantClient.conversation(convoId);
+      if (snap && Array.isArray(snap.messages)) setMessages(snap.messages);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "couldn't go back a step");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /**
+   * Shared entry for the "I know my price, write it up." and "Just give me a
+   * quick quote." starters. Per roadmap p.11 the two are merged: both ask for
+   * job details first, then open the price-capture screen. submitJobDetails
+   * detects the missing price and stashes the raw before opening it.
+   */
+  function startKnownPriceFlow() {
+    pushHistory();
+    setSuggestPricing(false);
+    setPriceSuggestions(null);
+    setPendingJobDetailsRaw(null);
+    setAwaitingJobDetails(true);
+    // Synchronous focus inside the user gesture so iOS Safari pops the
+    // keyboard. The effect at the awaitingJobDetails mount is a fallback.
+    taRef.current?.focus();
+  }
+
+  /**
+   * "I know the job, help me price it." (roadmap p.10): same details-first
+   * capture, but the price-capture screen then offers three LLM-suggested
+   * tiers (+ the manual input as the 4th custom option) instead of asking
+   * the contractor to name a price cold.
+   */
+  function startHelpMePriceFlow() {
+    pushHistory();
+    setSuggestPricing(true);
+    setPriceSuggestions(null);
+    setPendingJobDetailsRaw(null);
+    setAwaitingJobDetails(true);
+    taRef.current?.focus();
+  }
+
+  async function fetchPriceSuggestions(raw: string) {
+    try {
+      const res = await assistantClient.suggestPrices(raw);
+      setPriceSuggestions(res.options ?? []);
+    } catch {
+      setPriceSuggestions([]);
+    }
+  }
+
   /** Tear down everything the recording path opened: MediaRecorder, the
    *  AssemblyAI WS, the audio-level RAF loop, the elapsed timer, and the
    *  mic stream's tracks. Safe to call multiple times. */
@@ -2206,7 +2335,8 @@ export default function AsstChat({
     return new Promise((resolve) => {
       try {
         const proto = globalThis.location.protocol === "https:" ? "wss" : "ws";
-        const url = `${proto}://${globalThis.location.host}/api/voice/stream?sample_rate=${sampleRate}`;
+        const url =
+          `${proto}://${globalThis.location.host}/api/voice/stream?sample_rate=${sampleRate}`;
         const ws = new WebSocket(url);
         ws.binaryType = "arraybuffer";
         let begun = false;
@@ -2295,10 +2425,9 @@ export default function AsstChat({
         }
         const rms = Math.sqrt(sum / buf.length);
         const target = Math.min(1, rms * 2.4);
-        easedLevel =
-          target > easedLevel
-            ? easedLevel + (target - easedLevel) * 0.45
-            : easedLevel + (target - easedLevel) * 0.1;
+        easedLevel = target > easedLevel
+          ? easedLevel + (target - easedLevel) * 0.45
+          : easedLevel + (target - easedLevel) * 0.1;
         setAudioLevel(easedLevel);
         levelRafRef.current = requestAnimationFrame(tick);
       };
@@ -2383,13 +2512,12 @@ export default function AsstChat({
       recorderRef.current = rec;
 
       // 2) AudioContext + ScriptProcessor → AssemblyAI streaming WS.
-      const Ctx =
-        (
-          globalThis as unknown as {
-            AudioContext?: new () => AudioContext;
-            webkitAudioContext?: new () => AudioContext;
-          }
-        ).AudioContext ??
+      const Ctx = (
+        globalThis as unknown as {
+          AudioContext?: new () => AudioContext;
+          webkitAudioContext?: new () => AudioContext;
+        }
+      ).AudioContext ??
         (
           globalThis as unknown as {
             webkitAudioContext?: new () => AudioContext;
@@ -2414,7 +2542,6 @@ export default function AsstChat({
           // can repackage as Int16 PCM and ship to the WS. AudioWorklet
           // would be cleaner but requires a separate worklet module file
           // and adds setup complexity for marginal gain.
-          // deno-lint-ignore deprecation
           const proc = ctx.createScriptProcessor(4096, 1, 1);
           sttProcessorRef.current = proc;
           proc.onaudioprocess = (ev) => {
@@ -2462,1907 +2589,2229 @@ export default function AsstChat({
   return (
     <>
       <div class="chat__scroll" ref={scrollRef}>
-        {(empty || jobOptionsOpen) ? (
-          <div class="chat__empty">
-            {!priceCaptureOpen && !awaitingJobDetails && !jobOptionsOpen && (
-              <>
-                <div class="chat__empty-icon">
-                  <img src="/logo-monster.png" alt="" />
-                </div>
-                <h3 class="chat__empty-title">
-                  Click on a box or the text field below to get started!
-                </h3>
-              </>
-            )}
-            {jobOptionsOpen ? (
-              <div class="chat__jobopts">
-                <div class="chat__jobopts-head">
-                  <h4 class="chat__jobopts-title">Job Details</h4>
-                  <p class="chat__jobopts-sub">
-                    Pick the closest job description below and make any changes you want.
-                  </p>
-                </div>
-                {optionsLoading || !jobOptions ? (
-                  <div class="chat__jobopts-loading">
-                    <span class="chat__details-dots" aria-hidden="true">
-                      <span></span><span></span><span></span>
-                    </span>
-                    Writing up your options…
-                  </div>
-                ) : (
-                  <>
-                    <div class="chat__jobopts-list">
-                      {jobOptions.map((opt, i) => {
-                        const selected = selectedOptionId === opt.id;
-                        return (
-                          <div
-                            key={opt.id}
-                            class={`chat__jobopt${selected ? " is-selected" : ""}`}
-                            onClick={() => setSelectedOptionId(opt.id)}
-                            role="button"
-                            tabIndex={0}
-                          >
-                            <div class="chat__jobopt-head">
-                              <span class="chat__jobopt-radio" aria-hidden="true"></span>
-                              <span class="chat__jobopt-name">
-                                {opt.jobName || `Option ${i + 1}`}
-                              </span>
-                            </div>
-                            <ul class="chat__jobopt-bullets">
-                              {opt.bullets.map((b) => {
-                                const isEditing = editingBullet?.optionId === opt.id &&
-                                  editingBullet?.bulletId === b.id;
-                                return (
-                                  <li
-                                    key={b.id}
-                                    class={`chat__jobopt-bullet${b.deleted ? " is-deleted" : ""}`}
-                                  >
-                                    {isEditing ? (
-                                      <input
-                                        type="text"
-                                        class="chat__jobopt-edit"
-                                        defaultValue={b.text}
-                                        autoFocus
-                                        onClick={(e) => e.stopPropagation()}
-                                        onKeyDown={(e) => {
-                                          const el = e.currentTarget as HTMLInputElement;
-                                          if (e.key === "Enter") {
-                                            e.preventDefault();
-                                            el.blur();
-                                          } else if (e.key === "Escape") {
-                                            editEscapedRef.current = true;
-                                            el.blur();
-                                          }
-                                        }}
-                                        onBlur={(e) => {
-                                          if (editEscapedRef.current) {
-                                            editEscapedRef.current = false;
-                                            setEditingBullet(null);
-                                            return;
-                                          }
-                                          commitBulletEdit(
-                                            opt.id,
-                                            b.id,
-                                            (e.currentTarget as HTMLInputElement).value,
-                                          );
-                                        }}
-                                      />
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        class="chat__jobopt-text"
-                                        disabled={b.deleted}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          if (!b.deleted) startBulletEdit(opt.id, b.id, b.text);
-                                        }}
-                                      >
-                                        {b.text}
-                                      </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      class="chat__jobopt-x"
-                                      aria-label={b.deleted ? "Restore bullet" : "Delete bullet"}
-                                      title={b.deleted ? "Restore" : "Delete"}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleBulletDeleted(opt.id, b.id);
-                                      }}
-                                    >
-                                      {b.deleted ? "↺" : "×"}
-                                    </button>
-                                  </li>
-                                );
-                              })}
-                              {selected ? (
-                                <li class="chat__jobopt-add">
-                                  <input
-                                    ref={addInputRef}
-                                    type="text"
-                                    class="chat__jobopt-add-input"
-                                    placeholder="Add your own…"
-                                    onClick={(e) => e.stopPropagation()}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        const el = e.currentTarget as HTMLInputElement;
-                                        addCustomBullet(opt.id, el.value);
-                                        el.value = "";
-                                      }
-                                    }}
-                                  />
-                                  <button
-                                    type="button"
-                                    class="chat__jobopt-add-btn"
-                                    aria-label="Add bullet"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const el = addInputRef.current;
-                                      if (el) {
-                                        addCustomBullet(opt.id, el.value);
-                                        el.value = "";
-                                      }
-                                    }}
-                                  >
-                                    +
-                                  </button>
-                                </li>
-                              ) : null}
-                            </ul>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <button
-                      type="button"
-                      class="chat__price-continue"
-                      disabled={!selectedOptionId || sending}
-                      onClick={applyJobOption}
-                    >
-                      {sending ? "Setting up…" : "Continue →"}
-                    </button>
-                  </>
-                )}
-                {proPopup ? (
-                  <div class="chat__pro-pop" onClick={dismissProfessionalize}>
-                    <div class="chat__pro-pop-card" onClick={(e) => e.stopPropagation()}>
-                      <p class="chat__pro-pop-msg">Want me to professionalize that?</p>
-                      <div class="chat__pro-pop-actions">
-                        <button
-                          type="button"
-                          class="chat__pro-pop-no"
-                          disabled={proBusy}
-                          onClick={dismissProfessionalize}
-                        >
-                          No
-                        </button>
-                        <button
-                          type="button"
-                          class="chat__pro-pop-yes"
-                          disabled={proBusy}
-                          onClick={confirmProfessionalize}
-                        >
-                          {proBusy ? "Polishing…" : "Yes"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : awaitingJobDetails ? (
-              <div class="chat__details-flow">
-                <div class="chat__details-prompt">
-                  <div class="chat__details-prompt-avatar">
+        {(empty || jobOptionsOpen)
+          ? (
+            <div class="chat__empty">
+              {!priceCaptureOpen && !awaitingJobDetails && !jobOptionsOpen && (
+                <>
+                  <div class="chat__empty-icon">
                     <img src="/logo-monster.png" alt="" />
                   </div>
-                  <div class="chat__details-prompt-bubble">
-                    <strong>Okay great</strong> — tell me the job details.
-                    <span class="chat__details-prompt-hint">
-                      Type below. I'll clean it up so it reads sharp on the quote.
-                    </span>
-                  </div>
-                </div>
-                {submittedJobDetails ? (
-                  <>
-                    <div class="chat__details-user">
-                      <div class="chat__details-user-bubble">
-                        {submittedJobDetails}
-                      </div>
+                  <h3 class="chat__empty-title">
+                    Click on a box or the text field below to get started!
+                  </h3>
+                </>
+              )}
+              {jobOptionsOpen
+                ? (
+                  <div class="chat__jobopts">
+                    <div class="chat__jobopts-head">
+                      <h4 class="chat__jobopts-title">Job Details</h4>
+                      <p class="chat__jobopts-sub">
+                        Pick the closest job description below and make any
+                        changes you want.
+                      </p>
                     </div>
+                    {optionsLoading || !jobOptions
+                      ? (
+                        <div class="chat__jobopts-loading">
+                          <span class="chat__details-dots" aria-hidden="true">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                          </span>
+                          Writing up your options…
+                        </div>
+                      )
+                      : (
+                        <>
+                          <div class="chat__jobopts-list">
+                            {jobOptions.map((opt, i) => {
+                              const selected = selectedOptionId === opt.id;
+                              return (
+                                <div
+                                  key={opt.id}
+                                  class={`chat__jobopt${
+                                    selected ? " is-selected" : ""
+                                  }`}
+                                  onClick={() => setSelectedOptionId(opt.id)}
+                                  role="button"
+                                  tabIndex={0}
+                                >
+                                  <div class="chat__jobopt-head">
+                                    <span
+                                      class="chat__jobopt-radio"
+                                      aria-hidden="true"
+                                    >
+                                    </span>
+                                    <span class="chat__jobopt-name">
+                                      {opt.jobName || `Option ${i + 1}`}
+                                    </span>
+                                  </div>
+                                  <ul class="chat__jobopt-bullets">
+                                    {opt.bullets.map((b) => {
+                                      const isEditing =
+                                        editingBullet?.optionId === opt.id &&
+                                        editingBullet?.bulletId === b.id;
+                                      return (
+                                        <li
+                                          key={b.id}
+                                          class={`chat__jobopt-bullet${
+                                            b.deleted ? " is-deleted" : ""
+                                          }`}
+                                        >
+                                          {isEditing
+                                            ? (
+                                              <input
+                                                type="text"
+                                                class="chat__jobopt-edit"
+                                                defaultValue={b.text}
+                                                autoFocus
+                                                onClick={(e) =>
+                                                  e.stopPropagation()}
+                                                onKeyDown={(e) => {
+                                                  const el = e
+                                                    .currentTarget as HTMLInputElement;
+                                                  if (e.key === "Enter") {
+                                                    e.preventDefault();
+                                                    el.blur();
+                                                  } else if (
+                                                    e.key === "Escape"
+                                                  ) {
+                                                    editEscapedRef.current =
+                                                      true;
+                                                    el.blur();
+                                                  }
+                                                }}
+                                                onBlur={(e) => {
+                                                  if (editEscapedRef.current) {
+                                                    editEscapedRef.current =
+                                                      false;
+                                                    setEditingBullet(null);
+                                                    return;
+                                                  }
+                                                  commitBulletEdit(
+                                                    opt.id,
+                                                    b.id,
+                                                    (e.currentTarget as HTMLInputElement)
+                                                      .value,
+                                                  );
+                                                }}
+                                              />
+                                            )
+                                            : (
+                                              <button
+                                                type="button"
+                                                class="chat__jobopt-text"
+                                                disabled={b.deleted}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  if (!b.deleted) {
+                                                    startBulletEdit(
+                                                      opt.id,
+                                                      b.id,
+                                                      b.text,
+                                                    );
+                                                  }
+                                                }}
+                                              >
+                                                {b.text}
+                                              </button>
+                                            )}
+                                          <button
+                                            type="button"
+                                            class="chat__jobopt-x"
+                                            aria-label={b.deleted
+                                              ? "Restore bullet"
+                                              : "Delete bullet"}
+                                            title={b.deleted
+                                              ? "Restore"
+                                              : "Delete"}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              toggleBulletDeleted(opt.id, b.id);
+                                            }}
+                                          >
+                                            {b.deleted ? "↺" : "×"}
+                                          </button>
+                                        </li>
+                                      );
+                                    })}
+                                    {selected
+                                      ? (
+                                        <li class="chat__jobopt-add">
+                                          <input
+                                            ref={addInputRef}
+                                            type="text"
+                                            class="chat__jobopt-add-input"
+                                            placeholder="Add your own…"
+                                            onClick={(e) => e.stopPropagation()}
+                                            onKeyDown={(e) => {
+                                              if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                const el = e
+                                                  .currentTarget as HTMLInputElement;
+                                                addCustomBullet(
+                                                  opt.id,
+                                                  el.value,
+                                                );
+                                                el.value = "";
+                                              }
+                                            }}
+                                          />
+                                          <button
+                                            type="button"
+                                            class="chat__jobopt-add-btn"
+                                            aria-label="Add bullet"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const el = addInputRef.current;
+                                              if (el) {
+                                                addCustomBullet(
+                                                  opt.id,
+                                                  el.value,
+                                                );
+                                                el.value = "";
+                                              }
+                                            }}
+                                          >
+                                            +
+                                          </button>
+                                        </li>
+                                      )
+                                      : null}
+                                  </ul>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <button
+                            type="button"
+                            class="chat__price-continue"
+                            disabled={!selectedOptionId || sending}
+                            onClick={applyJobOption}
+                          >
+                            {sending ? "Setting up…" : "Continue →"}
+                          </button>
+                        </>
+                      )}
+                    {proPopup
+                      ? (
+                        <div
+                          class="chat__pro-pop"
+                          onClick={dismissProfessionalize}
+                        >
+                          <div
+                            class="chat__pro-pop-card"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <p class="chat__pro-pop-msg">
+                              Want me to professionalize that?
+                            </p>
+                            <div class="chat__pro-pop-actions">
+                              <button
+                                type="button"
+                                class="chat__pro-pop-no"
+                                disabled={proBusy}
+                                onClick={dismissProfessionalize}
+                              >
+                                No
+                              </button>
+                              <button
+                                type="button"
+                                class="chat__pro-pop-yes"
+                                disabled={proBusy}
+                                onClick={confirmProfessionalize}
+                              >
+                                {proBusy ? "Polishing…" : "Yes"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                      : null}
+                  </div>
+                )
+                : awaitingJobDetails
+                ? (
+                  <div class="chat__details-flow">
                     <div class="chat__details-prompt">
                       <div class="chat__details-prompt-avatar">
                         <img src="/logo-monster.png" alt="" />
                       </div>
-                      <div class="chat__details-prompt-bubble chat__details-prompt-bubble--working">
-                        <span class="chat__details-dots" aria-hidden="true">
-                          <span></span><span></span><span></span>
+                      <div class="chat__details-prompt-bubble">
+                        <strong>Okay great</strong> — tell me the job details.
+                        <span class="chat__details-prompt-hint">
+                          Type below. I'll clean it up so it reads sharp on the
+                          quote.
                         </span>
-                        Polishing your job details…
                       </div>
                     </div>
-                  </>
-                ) : null}
-              </div>
-            ) : priceCaptureOpen ? (
-              <div class="chat__price-capture">
-                <div class="chat__price-capture-head">
-                  <button
-                    type="button"
-                    class="chat__price-back"
-                    onClick={() => {
-                      setPriceCaptureOpen(false);
-                      setPriceCents(null);
-                    }}
-                    aria-label="Back to prompts"
-                  >
-                    <svg
-                      viewBox="0 0 16 16"
-                      width="14"
-                      height="14"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M10 3L5 8l5 5"
-                        stroke="currentColor"
-                        stroke-width="2.2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        fill="none"
-                      />
-                    </svg>
-                    Back
-                  </button>
-                  <h4 class="chat__price-title">What's the price?</h4>
-                  <p class="chat__price-sub">
-                    I'll build the job details around it.
-                  </p>
-                </div>
-                <MoneyInput
-                  autoFocus
-                  onChange={setPriceCents}
-                  onSubmit={(cents) => {
-                    if (sending) return;
-                    onPriceContinue(cents);
-                  }}
-                />
-                <button
-                  type="button"
-                  class="chat__price-continue"
-                  disabled={(priceCents ?? 0) <= 0 || sending}
-                  onClick={() => onPriceContinue(priceCents!)}
-                >
-                  {sending ? "Setting up…" : "Continue →"}
-                </button>
-              </div>
-            ) : (
-              <div class="chat__empty-prompts">
-                <button
-                  type="button"
-                  class="chat__empty-prompt"
-                  onClick={() => {
-                    // Inverted flow: ask for job details FIRST, then price.
-                    // submitJobDetails will detect the missing price and
-                    // open the price-capture screen after stashing the raw.
-                    pushHistory();
-                    setPendingJobDetailsRaw(null);
-                    setAwaitingJobDetails(true);
-                    // Synchronous focus inside the user gesture so iOS
-                    // Safari pops the keyboard. The effect at L707 is
-                    // belt-and-suspenders for cases where the ref isn't
-                    // ready yet at click time.
-                    taRef.current?.focus();
-                  }}
-                >
-                  I know my price, write it up.
-                </button>
-                <button
-                  type="button"
-                  class="chat__empty-prompt"
-                  onClick={() => sendText("I know the job, help me price it.")}
-                >
-                  I know the job, help me price it.
-                </button>
-                <button
-                  type="button"
-                  class="chat__empty-prompt"
-                  onClick={() => sendText("Just give me a quick quote.")}
-                >
-                  Just give me a quick quote.
-                </button>
-              </div>
-            )}
-            {typeof globalThis.location !== "undefined" &&
-            globalThis.location.hostname === "localhost" &&
-            new URLSearchParams(globalThis.location.search).has("dev") ? (
-              <div class="chat__empty-debug">
-                <button
-                  type="button"
-                  class="chat__empty-debug-btn"
-                  onClick={seedPhase2}
-                  disabled={sending}
-                  title="Quote → lock → transition → answer config. Lands on the customer step."
-                >
-                  🔧 {sending ? "Seeding…" : "Seed phase 2 wizard"}
-                </button>
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          (() => {
-            // Phase-2 density: collapse any wizard card whose stepId has
-            // already been answered (the answer log carries that info as
-            // `text` messages with `payload.wizardStepId`). Among the
-            // remaining unanswered wizards, only the most-recent one stays
-            // visible so the active step always sits at the bottom.
-            // Earlier logic only kept the latest wizard regardless of
-            // answer state, which left the very first card stuck on screen
-            // when the user re-opened a thread mid-flow.
-            const answeredStepIds = new Set<string>();
-            for (const x of messages) {
-              const sid = (x.payload as { wizardStepId?: string } | undefined)
-                ?.wizardStepId;
-              if (x.kind === "text" && sid) answeredStepIds.add(sid);
-            }
-            let activeWizardId: string | undefined;
-            for (let i = messages.length - 1; i >= 0; i--) {
-              const m = messages[i];
-              if (m.kind !== "wizard") continue;
-              const stepId = (m.payload as { stepId?: string } | undefined)
-                ?.stepId;
-              if (!stepId || !answeredStepIds.has(stepId)) {
-                activeWizardId = m.id;
-                break;
-              }
-            }
-            const visible = messages.filter((m) => {
-              if (m.kind !== "wizard") return true;
-              const stepId = (m.payload as { stepId?: string } | undefined)
-                ?.stepId;
-              if (stepId && answeredStepIds.has(stepId)) return false;
-              return m.id === activeWizardId;
-            });
-            // The recovery form should appear ONLY on the most recent
-            // failure-divider — otherwise older failures duplicate the
-            // form everywhere and clutter the thread.
-            let lastRecoveryDividerId: string | undefined;
-            for (let i = visible.length - 1; i >= 0; i--) {
-              const cand = visible[i];
-              if (cand.kind !== "phase_divider") continue;
-              const cp = (cand.payload ?? {}) as {
-                contractId?: string;
-                emailedTo?: string;
-                textedTo?: string;
-                emailFailureReason?: string;
-                smsFailureReason?: string;
-              };
-              if (!cp.contractId) continue;
-              const eMissing = !cp.emailedTo && !!cp.emailFailureReason && !customer?.email;
-              const pMissing = !cp.textedTo && !!cp.smsFailureReason &&
-                (!customer?.phoneNumber || /Invalid|21211/i.test(cp.smsFailureReason ?? ""));
-              if (eMissing || pMissing) {
-                lastRecoveryDividerId = cand.id;
-                break;
-              }
-            }
-            return visible.map((m) => {
-              const wizardStepId = (
-                m.payload as { wizardStepId?: string } | undefined
-              )?.wizardStepId;
-              if (m.role === "user" && wizardStepId) {
-                // Compact pick log — one line, no avatar, no bubble.
-                // Real SVG check (not the unstyled ✓ glyph) so it scales
-                // with line-height and gets brand color + a circular pip.
-                return (
-                  <div
-                    key={m.id}
-                    class="wiz-log"
-                    style="display:flex;align-items:center;gap:10px;padding:6px 0;font-size:14px;color:var(--fg,#1c2c30);line-height:1.45"
-                  >
-                    <span
-                      class="wiz-log__check"
-                      aria-hidden="true"
-                      style="flex:0 0 auto;width:18px;height:18px;border-radius:50%;background:var(--brand-green,#519843);color:#fff;display:inline-flex;align-items:center;justify-content:center"
-                    >
-                      <I d={ICN.check} size={11} sw={3} />
-                    </span>
-                    <span class="wiz-log__text">{m.content}</span>
+                    {submittedJobDetails
+                      ? (
+                        <>
+                          <div class="chat__details-user">
+                            <div class="chat__details-user-bubble">
+                              {submittedJobDetails}
+                            </div>
+                          </div>
+                          <div class="chat__details-prompt">
+                            <div class="chat__details-prompt-avatar">
+                              <img src="/logo-monster.png" alt="" />
+                            </div>
+                            <div class="chat__details-prompt-bubble chat__details-prompt-bubble--working">
+                              <span
+                                class="chat__details-dots"
+                                aria-hidden="true"
+                              >
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                              </span>
+                              Polishing your job details…
+                            </div>
+                          </div>
+                        </>
+                      )
+                      : null}
                   </div>
-                );
+                )
+                : priceCaptureOpen
+                ? (
+                  <div class="chat__price-capture">
+                    <div class="chat__price-capture-head">
+                      <button
+                        type="button"
+                        class="chat__price-back"
+                        onClick={() => {
+                          setPriceCaptureOpen(false);
+                          setPriceCents(null);
+                          setSuggestPricing(false);
+                          setPriceSuggestions(null);
+                        }}
+                        aria-label="Back to prompts"
+                      >
+                        <svg
+                          viewBox="0 0 16 16"
+                          width="14"
+                          height="14"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M10 3L5 8l5 5"
+                            stroke="currentColor"
+                            stroke-width="2.2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            fill="none"
+                          />
+                        </svg>
+                        Back
+                      </button>
+                      <h4 class="chat__price-title">
+                        {suggestPricing ? "Pick a price" : "What's the price?"}
+                      </h4>
+                      <p class="chat__price-sub">
+                        {suggestPricing
+                          ? "Tap a suggestion, or enter your own below."
+                          : "I'll build the job details around it."}
+                      </p>
+                    </div>
+                    {/* Roadmap p.10: three suggested tiers (+ custom input). */}
+                    {suggestPricing && (
+                      <div
+                        class="chat__price-tiers"
+                        style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"
+                      >
+                        {priceSuggestions === null
+                          ? (
+                            <div style="font-size:13px;color:var(--fg-muted,#6b7560);padding:6px 2px">
+                              Pricing this job…
+                            </div>
+                          )
+                          : priceSuggestions.map((t) => (
+                            <button
+                              key={t.tier}
+                              type="button"
+                              disabled={sending}
+                              onClick={() => onPriceContinue(t.priceCents)}
+                              style="display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:12px 14px;border:1px solid var(--border,#d8dcd5);border-radius:12px;background:#fff;cursor:pointer;font:inherit"
+                            >
+                              <span style="min-width:0">
+                                <span style="display:block;font-weight:800;font-size:14px;color:var(--fg)">
+                                  {t.label}
+                                </span>
+                                {t.rationale
+                                  ? (
+                                    <span style="display:block;font-size:12px;color:var(--fg-muted,#6b7560)">
+                                      {t.rationale}
+                                    </span>
+                                  )
+                                  : null}
+                              </span>
+                              <span style="font-weight:800;font-size:16px;color:var(--brand-green,#519843);flex-shrink:0">
+                                ${(t.priceCents / 100).toLocaleString("en-US")}
+                              </span>
+                            </button>
+                          ))}
+                        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-muted,#6b7560);margin-top:4px">
+                          Or enter a custom price
+                        </div>
+                      </div>
+                    )}
+                    <MoneyInput
+                      autoFocus={!suggestPricing}
+                      onChange={setPriceCents}
+                      onSubmit={(cents) => {
+                        if (sending) return;
+                        onPriceContinue(cents);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      class="chat__price-continue"
+                      disabled={(priceCents ?? 0) <= 0 || sending}
+                      onClick={() => onPriceContinue(priceCents!)}
+                    >
+                      {sending ? "Setting up…" : "Continue →"}
+                    </button>
+                  </div>
+                )
+                : (
+                  <div class="chat__empty-prompts">
+                    <button
+                      type="button"
+                      class="chat__empty-prompt"
+                      onClick={startKnownPriceFlow}
+                    >
+                      I know my price, write it up.
+                    </button>
+                    <button
+                      type="button"
+                      class="chat__empty-prompt"
+                      onClick={startHelpMePriceFlow}
+                    >
+                      I know the job, help me price it.
+                    </button>
+                    <button
+                      type="button"
+                      class="chat__empty-prompt"
+                      onClick={startKnownPriceFlow}
+                    >
+                      Just give me a quick quote.
+                    </button>
+                  </div>
+                )}
+              {typeof globalThis.location !== "undefined" &&
+                  globalThis.location.hostname === "localhost" &&
+                  new URLSearchParams(globalThis.location.search).has("dev")
+                ? (
+                  <div class="chat__empty-debug">
+                    <button
+                      type="button"
+                      class="chat__empty-debug-btn"
+                      onClick={seedPhase2}
+                      disabled={sending}
+                      title="Quote → lock → transition → answer config. Lands on the customer step."
+                    >
+                      🔧 {sending ? "Seeding…" : "Seed phase 2 wizard"}
+                    </button>
+                  </div>
+                )
+                : null}
+            </div>
+          )
+          : (
+            (() => {
+              // Phase-2 density: collapse any wizard card whose stepId has
+              // already been answered (the answer log carries that info as
+              // `text` messages with `payload.wizardStepId`). Among the
+              // remaining unanswered wizards, only the most-recent one stays
+              // visible so the active step always sits at the bottom.
+              // Earlier logic only kept the latest wizard regardless of
+              // answer state, which left the very first card stuck on screen
+              // when the user re-opened a thread mid-flow.
+              const answeredStepIds = new Set<string>();
+              for (const x of messages) {
+                const sid = (x.payload as { wizardStepId?: string } | undefined)
+                  ?.wizardStepId;
+                if (x.kind === "text" && sid) answeredStepIds.add(sid);
               }
-              // Phase divider — full-width separator with a label, no avatar/bubble.
-              if (m.kind === "phase_divider") {
-                const dp = (m.payload ?? {}) as {
-                  label?: string;
+              let activeWizardId: string | undefined;
+              for (let i = messages.length - 1; i >= 0; i--) {
+                const m = messages[i];
+                if (m.kind !== "wizard") continue;
+                const stepId = (m.payload as { stepId?: string } | undefined)
+                  ?.stepId;
+                if (!stepId || !answeredStepIds.has(stepId)) {
+                  activeWizardId = m.id;
+                  break;
+                }
+              }
+              const visible = messages.filter((m) => {
+                if (m.kind !== "wizard") return true;
+                const stepId = (m.payload as { stepId?: string } | undefined)
+                  ?.stepId;
+                if (stepId && answeredStepIds.has(stepId)) return false;
+                return m.id === activeWizardId;
+              });
+              // The recovery form should appear ONLY on the most recent
+              // failure-divider — otherwise older failures duplicate the
+              // form everywhere and clutter the thread.
+              let lastRecoveryDividerId: string | undefined;
+              for (let i = visible.length - 1; i >= 0; i--) {
+                const cand = visible[i];
+                if (cand.kind !== "phase_divider") continue;
+                const cp = (cand.payload ?? {}) as {
                   contractId?: string;
-                  channel?: "email" | "sms" | "both";
                   emailedTo?: string;
                   textedTo?: string;
                   emailFailureReason?: string;
                   smsFailureReason?: string;
                 };
-                const label = dp.label ?? m.content;
-                // Show the recovery form when this divider belongs to a
-                // send-contract attempt that failed (or partially failed)
-                // due to missing/invalid contact info, AND we still have
-                // a customer bound (we need a row to patch).
-                // Channel may be missing on older threads (pre-channel-
-                // routing dividers). Infer from which failure reason is
-                // present so the recovery UI still shows up.
-                const inferredChannel: "email" | "sms" | "both" | undefined =
-                  dp.channel ??
-                  (dp.emailFailureReason && dp.smsFailureReason
-                    ? "both"
-                    : dp.smsFailureReason
-                    ? "sms"
-                    : dp.emailFailureReason
-                    ? "email"
-                    : undefined);
-                const emailMissing = !dp.emailedTo && !!dp.emailFailureReason &&
+                if (!cp.contractId) continue;
+                const eMissing = !cp.emailedTo && !!cp.emailFailureReason &&
                   !customer?.email;
-                const phoneMissing = !dp.textedTo && !!dp.smsFailureReason &&
-                  (!customer?.phoneNumber || /Invalid|21211/i.test(dp.smsFailureReason));
-                const needRecovery =
-                  !!dp.contractId && !!customer?.id && !!inferredChannel &&
-                  (emailMissing || phoneMissing) &&
-                  m.id === lastRecoveryDividerId;
-                const draft = recoveryDraft[m.id] ?? {};
-                const saving = recoverySavingId === m.id;
-                const askEmail = needRecovery && emailMissing;
-                const askPhone = needRecovery && phoneMissing;
-                return (
-                  <div key={m.id}>
-                    <div class="phase-divider">
-                      <div class="phase-divider__line" />
-                      <div class="phase-divider__label">
-                        <I d={ICN.contract} size={11} /> {label}
-                      </div>
-                      <div class="phase-divider__line" />
-                    </div>
-                    {needRecovery ? (
-                      <div class="recovery-card">
-                        <div class="recovery-card__head">
-                          <strong>
-                            {askEmail && askPhone
-                              ? "Add their email & phone to deliver"
-                              : askEmail
-                              ? "Add their email to deliver"
-                              : "Add their phone to deliver"}
-                          </strong>
-                          <span class="recovery-card__hint">
-                            Saved to {customer?.name ?? "this customer"} for next time.
-                          </span>
-                        </div>
-                        <div class="recovery-card__fields">
-                          {askEmail ? (
-                            <input
-                              type="email"
-                              class="recovery-card__input"
-                              placeholder="customer@email.com"
-                              value={draft.email ?? ""}
-                              disabled={saving}
-                              onInput={(e) => {
-                                const v = (e.target as HTMLInputElement).value;
-                                setRecoveryDraft((p) => ({ ...p, [m.id]: { ...p[m.id], email: v } }));
-                              }}
-                            />
-                          ) : null}
-                          {askPhone ? (
-                            <input
-                              type="tel"
-                              class="recovery-card__input"
-                              placeholder="(555) 555-5555"
-                              value={draft.phone ?? ""}
-                              disabled={saving}
-                              onInput={(e) => {
-                                const v = (e.target as HTMLInputElement).value;
-                                setRecoveryDraft((p) => ({ ...p, [m.id]: { ...p[m.id], phone: v } }));
-                              }}
-                            />
-                          ) : null}
-                          <button
-                            type="button"
-                            class="recovery-card__save"
-                            disabled={
-                              saving ||
-                              (!draft.email?.trim() && !draft.phone?.trim()) ||
-                              (askEmail && !askPhone && !draft.email?.trim()) ||
-                              (askPhone && !askEmail && !draft.phone?.trim())
-                            }
-                            onClick={() =>
-                              saveContactAndRetry(m.id, {
-                                contractId: dp.contractId!,
-                                channel: inferredChannel ?? "email",
-                              })
-                            }
-                          >
-                            {saving ? "Saving…" : "Save & resend"}
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                );
+                const pMissing = !cp.textedTo && !!cp.smsFailureReason &&
+                  (!customer?.phoneNumber ||
+                    /Invalid|21211/i.test(cp.smsFailureReason ?? ""));
+                if (eMissing || pMissing) {
+                  lastRecoveryDividerId = cand.id;
+                  break;
+                }
               }
+              return visible.map((m) => {
+                const wizardStepId = (
+                  m.payload as { wizardStepId?: string } | undefined
+                )?.wizardStepId;
+                if (m.role === "user" && wizardStepId) {
+                  // Compact pick log — one line, no avatar, no bubble.
+                  // Real SVG check (not the unstyled ✓ glyph) so it scales
+                  // with line-height and gets brand color + a circular pip.
+                  return (
+                    <div
+                      key={m.id}
+                      class="wiz-log"
+                      style="display:flex;align-items:center;gap:10px;padding:6px 0;font-size:14px;color:var(--fg,#1c2c30);line-height:1.45"
+                    >
+                      <span
+                        class="wiz-log__check"
+                        aria-hidden="true"
+                        style="flex:0 0 auto;width:18px;height:18px;border-radius:50%;background:var(--brand-green,#519843);color:#fff;display:inline-flex;align-items:center;justify-content:center"
+                      >
+                        <I d={ICN.check} size={11} sw={3} />
+                      </span>
+                      <span class="wiz-log__text">{m.content}</span>
+                    </div>
+                  );
+                }
+                // Phase divider — full-width separator with a label, no avatar/bubble.
+                if (m.kind === "phase_divider") {
+                  const dp = (m.payload ?? {}) as {
+                    label?: string;
+                    contractId?: string;
+                    channel?: "email" | "sms" | "both";
+                    emailedTo?: string;
+                    textedTo?: string;
+                    emailFailureReason?: string;
+                    smsFailureReason?: string;
+                  };
+                  const label = dp.label ?? m.content;
+                  // Show the recovery form when this divider belongs to a
+                  // send-contract attempt that failed (or partially failed)
+                  // due to missing/invalid contact info, AND we still have
+                  // a customer bound (we need a row to patch).
+                  // Channel may be missing on older threads (pre-channel-
+                  // routing dividers). Infer from which failure reason is
+                  // present so the recovery UI still shows up.
+                  const inferredChannel: "email" | "sms" | "both" | undefined =
+                    dp.channel ??
+                      (dp.emailFailureReason && dp.smsFailureReason
+                        ? "both"
+                        : dp.smsFailureReason
+                        ? "sms"
+                        : dp.emailFailureReason
+                        ? "email"
+                        : undefined);
+                  const emailMissing = !dp.emailedTo &&
+                    !!dp.emailFailureReason &&
+                    !customer?.email;
+                  const phoneMissing = !dp.textedTo && !!dp.smsFailureReason &&
+                    (!customer?.phoneNumber ||
+                      /Invalid|21211/i.test(dp.smsFailureReason));
+                  const needRecovery = !!dp.contractId && !!customer?.id &&
+                    !!inferredChannel &&
+                    (emailMissing || phoneMissing) &&
+                    m.id === lastRecoveryDividerId;
+                  const draft = recoveryDraft[m.id] ?? {};
+                  const saving = recoverySavingId === m.id;
+                  const askEmail = needRecovery && emailMissing;
+                  const askPhone = needRecovery && phoneMissing;
+                  return (
+                    <div key={m.id}>
+                      <div class="phase-divider">
+                        <div class="phase-divider__line" />
+                        <div class="phase-divider__label">
+                          <I d={ICN.contract} size={11} /> {label}
+                        </div>
+                        <div class="phase-divider__line" />
+                      </div>
+                      {needRecovery
+                        ? (
+                          <div class="recovery-card">
+                            <div class="recovery-card__head">
+                              <strong>
+                                {askEmail && askPhone
+                                  ? "Add their email & phone to deliver"
+                                  : askEmail
+                                  ? "Add their email to deliver"
+                                  : "Add their phone to deliver"}
+                              </strong>
+                              <span class="recovery-card__hint">
+                                Saved to {customer?.name ?? "this customer"}
+                                {" "}
+                                for next time.
+                              </span>
+                            </div>
+                            <div class="recovery-card__fields">
+                              {askEmail
+                                ? (
+                                  <input
+                                    type="email"
+                                    class="recovery-card__input"
+                                    placeholder="customer@email.com"
+                                    value={draft.email ?? ""}
+                                    disabled={saving}
+                                    onInput={(e) => {
+                                      const v =
+                                        (e.target as HTMLInputElement).value;
+                                      setRecoveryDraft((p) => ({
+                                        ...p,
+                                        [m.id]: { ...p[m.id], email: v },
+                                      }));
+                                    }}
+                                  />
+                                )
+                                : null}
+                              {askPhone
+                                ? (
+                                  <input
+                                    type="tel"
+                                    class="recovery-card__input"
+                                    placeholder="(555) 555-5555"
+                                    value={draft.phone ?? ""}
+                                    disabled={saving}
+                                    onInput={(e) => {
+                                      const v =
+                                        (e.target as HTMLInputElement).value;
+                                      setRecoveryDraft((p) => ({
+                                        ...p,
+                                        [m.id]: { ...p[m.id], phone: v },
+                                      }));
+                                    }}
+                                  />
+                                )
+                                : null}
+                              <button
+                                type="button"
+                                class="recovery-card__save"
+                                disabled={saving ||
+                                  (!draft.email?.trim() &&
+                                    !draft.phone?.trim()) ||
+                                  (askEmail && !askPhone &&
+                                    !draft.email?.trim()) ||
+                                  (askPhone && !askEmail &&
+                                    !draft.phone?.trim())}
+                                onClick={() =>
+                                  saveContactAndRetry(m.id, {
+                                    contractId: dp.contractId!,
+                                    channel: inferredChannel ?? "email",
+                                  })}
+                              >
+                                {saving ? "Saving…" : "Save & resend"}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                        : null}
+                    </div>
+                  );
+                }
 
-              // Continue-CTA — clickable card that fires phase transition.
-              // For toPhase=send (wizard complete), clicking the Review button
-              // transitions the card itself into a calm "Drafted ✓" state
-              // showing the contract id inline. No popup — the user gets a
-              // visible acknowledgement that the action registered.
-              if (m.kind === "continue_cta") {
-                const payload = (m.payload ?? {}) as {
-                  toPhase?: string;
-                  summary?: string;
-                  contractId?: string;
-                };
-                const reviewed =
-                  (payload.toPhase === "send" ||
+                // Continue-CTA — clickable card that fires phase transition.
+                // For toPhase=send (wizard complete), clicking the Review button
+                // transitions the card itself into a calm "Drafted ✓" state
+                // showing the contract id inline. No popup — the user gets a
+                // visible acknowledgement that the action registered.
+                if (m.kind === "continue_cta") {
+                  const payload = (m.payload ?? {}) as {
+                    toPhase?: string;
+                    summary?: string;
+                    contractId?: string;
+                  };
+                  const reviewed = (payload.toPhase === "send" ||
                     payload.toPhase === "invoice") &&
-                  reviewedCtas.has(m.id);
-                // Pull the actual delivery outcome from the phase_divider
-                // the server emits AFTER this CTA fires. Falls back to the
-                // local customer.email when no divider is in scope yet
-                // (older threads). Without this the banner can read
-                // "no email on file" even when the dispatch actually
-                // succeeded with a `to:` override.
-                const ctaIdx = visible.indexOf(m);
-                let dispatchedTo: string | undefined;
-                let dispatchFailReason: string | undefined;
-                if (reviewed && ctaIdx >= 0) {
-                  for (let i = ctaIdx + 1; i < visible.length; i++) {
-                    const next = visible[i];
-                    if (next.kind !== "phase_divider") continue;
-                    const np = (next.payload ?? {}) as {
-                      emailedTo?: string;
-                      emailFailureReason?: string;
-                    };
-                    if (np.emailedTo || np.emailFailureReason) {
-                      dispatchedTo = np.emailedTo;
-                      dispatchFailReason = np.emailFailureReason;
-                      break;
+                    reviewedCtas.has(m.id);
+                  // Pull the actual delivery outcome from the phase_divider
+                  // the server emits AFTER this CTA fires. Falls back to the
+                  // local customer.email when no divider is in scope yet
+                  // (older threads). Without this the banner can read
+                  // "no email on file" even when the dispatch actually
+                  // succeeded with a `to:` override.
+                  const ctaIdx = visible.indexOf(m);
+                  let dispatchedTo: string | undefined;
+                  let dispatchFailReason: string | undefined;
+                  if (reviewed && ctaIdx >= 0) {
+                    for (let i = ctaIdx + 1; i < visible.length; i++) {
+                      const next = visible[i];
+                      if (next.kind !== "phase_divider") continue;
+                      const np = (next.payload ?? {}) as {
+                        emailedTo?: string;
+                        emailFailureReason?: string;
+                      };
+                      if (np.emailedTo || np.emailFailureReason) {
+                        dispatchedTo = np.emailedTo;
+                        dispatchFailReason = np.emailFailureReason;
+                        break;
+                      }
                     }
                   }
-                }
-                const sentRecipient =
-                  dispatchedTo ?? (reviewed ? customer?.email : undefined);
-                const previewing =
-                  payload.toPhase === "send" && previewCtaId === m.id;
-                if (previewing) {
-                  const contractId = payload.contractId ?? contract?.id ?? "";
-                  // Pull line items from the most recent locked/sent action_card
-                  // (status="sent" is the locked quote; fall back to "draft").
-                  const lockedCard = [...messages]
-                    .reverse()
-                    .find(
-                      (x) =>
-                        x.kind === "action_card" &&
-                        ((x.payload as ActionCardPayload | undefined)
-                          ?.status === "sent" ||
-                          (x.payload as ActionCardPayload | undefined)
-                            ?.status === "draft"),
-                    );
-                  const lockedPayload = (lockedCard?.payload ??
-                    {}) as ActionCardPayload;
-                  // Fall back to the fetched quote when no action_card
-                  // is present (the "I know my price → job details" flow
-                  // skips lock-quote and doesn't emit one).
-                  const quoteLineItems = (quote?.lineItems ?? []).map((li) => ({
-                    description: li.description,
-                    amountCents: Math.round(
-                      (li.price ?? 0) * (li.quantity ?? 1),
-                    ),
-                  }));
-                  const lineItems = (lockedPayload.lineItems?.length
-                    ? lockedPayload.lineItems
-                    : quoteLineItems);
-                  const lineTotalCents =
-                    lockedPayload.totalCents ??
-                    quote?.estimatedTotal ??
-                    lineItems.reduce(
-                      (sum, li) => sum + (li.amountCents ?? 0),
-                      0,
-                    );
-                  const polishedDescription =
-                    lockedPayload.description ?? quote?.description;
-                  // Wizard terms — every text msg with a wizardStepId is one
-                  // answered step ("Start: ASAP", "Wraps: 1 week", ...). Skip
-                  // the customer step since we render the customer block below.
-                  // Prefer contract.terms (the source of truth) when present.
-                  // Fall back to a chronological walk over wizardStepId-tagged
-                  // chat messages (older threads, in-flight wizard runs that
-                  // haven't materialized a contract row yet). Either way, dedupe
-                  // by stepId — a re-edit emits another tagged message but the
-                  // term row should only render once.
-                  const contractTerms = Array.isArray(contract?.terms)
-                    ? (contract!.terms as {
+                  const sentRecipient = dispatchedTo ??
+                    (reviewed ? customer?.email : undefined);
+                  const previewing = payload.toPhase === "send" &&
+                    previewCtaId === m.id;
+                  if (previewing) {
+                    const contractId = payload.contractId ?? contract?.id ?? "";
+                    // Pull line items from the most recent locked/sent action_card
+                    // (status="sent" is the locked quote; fall back to "draft").
+                    const lockedCard = [...messages]
+                      .reverse()
+                      .find(
+                        (x) =>
+                          x.kind === "action_card" &&
+                          ((x.payload as ActionCardPayload | undefined)
+                                ?.status === "sent" ||
+                            (x.payload as ActionCardPayload | undefined)
+                                ?.status === "draft"),
+                      );
+                    const lockedPayload = (lockedCard?.payload ??
+                      {}) as ActionCardPayload;
+                    // Fall back to the fetched quote when no action_card
+                    // is present (the "I know my price → job details" flow
+                    // skips lock-quote and doesn't emit one).
+                    const quoteLineItems = (quote?.lineItems ?? []).map((
+                      li,
+                    ) => ({
+                      description: li.description,
+                      amountCents: Math.round(
+                        (li.price ?? 0) * (li.quantity ?? 1),
+                      ),
+                    }));
+                    const lineItems = lockedPayload.lineItems?.length
+                      ? lockedPayload.lineItems
+                      : quoteLineItems;
+                    const lineTotalCents = lockedPayload.totalCents ??
+                      quote?.estimatedTotal ??
+                      lineItems.reduce(
+                        (sum, li) => sum + (li.amountCents ?? 0),
+                        0,
+                      );
+                    const polishedDescription = lockedPayload.description ??
+                      quote?.description;
+                    // Wizard terms — every text msg with a wizardStepId is one
+                    // answered step ("Start: ASAP", "Wraps: 1 week", ...). Skip
+                    // the customer step since we render the customer block below.
+                    // Prefer contract.terms (the source of truth) when present.
+                    // Fall back to a chronological walk over wizardStepId-tagged
+                    // chat messages (older threads, in-flight wizard runs that
+                    // haven't materialized a contract row yet). Either way, dedupe
+                    // by stepId — a re-edit emits another tagged message but the
+                    // term row should only render once.
+                    const contractTerms = Array.isArray(contract?.terms)
+                      ? (contract!.terms as {
                         stepId: string;
                         label: string;
                         value: string;
                       }[])
-                    : null;
-                  const termsByStep = new Map<
-                    string,
-                    {
-                      stepId: string;
-                      label: string;
-                      value: string;
-                      firstIdx: number;
-                    }
-                  >();
-                  if (contractTerms && contractTerms.length > 0) {
-                    contractTerms.forEach((t, i) => {
-                      if (!t?.stepId || t.stepId === "customer") return;
-                      termsByStep.set(t.stepId, {
-                        stepId: t.stepId,
-                        label: t.label,
-                        value: t.value,
-                        firstIdx: i,
+                      : null;
+                    const termsByStep = new Map<
+                      string,
+                      {
+                        stepId: string;
+                        label: string;
+                        value: string;
+                        firstIdx: number;
+                      }
+                    >();
+                    if (contractTerms && contractTerms.length > 0) {
+                      contractTerms.forEach((t, i) => {
+                        if (!t?.stepId || t.stepId === "customer") return;
+                        termsByStep.set(t.stepId, {
+                          stepId: t.stepId,
+                          label: t.label,
+                          value: t.value,
+                          firstIdx: i,
+                        });
                       });
-                    });
-                  } else {
-                    for (let i = messages.length - 1; i >= 0; i--) {
-                      const x = messages[i];
-                      const p = x.payload as
-                        | { wizardStepId?: string }
-                        | undefined;
-                      const sid = p?.wizardStepId;
-                      if (x.kind !== "text" || !sid || sid === "customer")
-                        continue;
-                      if (termsByStep.has(sid)) continue;
-                      const raw = x.content ?? "";
-                      const colon = raw.indexOf(":");
-                      const label =
-                        colon === -1 ? raw : raw.slice(0, colon).trim();
-                      const value =
-                        colon === -1 ? "" : raw.slice(colon + 1).trim();
-                      termsByStep.set(sid, {
-                        stepId: sid,
+                    } else {
+                      for (let i = messages.length - 1; i >= 0; i--) {
+                        const x = messages[i];
+                        const p = x.payload as
+                          | { wizardStepId?: string }
+                          | undefined;
+                        const sid = p?.wizardStepId;
+                        if (x.kind !== "text" || !sid || sid === "customer") {
+                          continue;
+                        }
+                        if (termsByStep.has(sid)) continue;
+                        const raw = x.content ?? "";
+                        const colon = raw.indexOf(":");
+                        const label = colon === -1
+                          ? raw
+                          : raw.slice(0, colon).trim();
+                        const value = colon === -1
+                          ? ""
+                          : raw.slice(colon + 1).trim();
+                        termsByStep.set(sid, {
+                          stepId: sid,
+                          label,
+                          value,
+                          firstIdx: i,
+                        });
+                      }
+                    }
+                    const termAnswers = Array.from(termsByStep.values())
+                      .sort((a, b) => a.firstIdx - b.firstIdx)
+                      // Drop warranty row entirely when the contractor picked
+                      // "No warranty" — the legal-text warranty clause in the
+                      // contract's Fine Print still applies.
+                      .filter(({ stepId, value }) => {
+                        if (stepId !== "warranty") return true;
+                        const v = value.trim().toLowerCase();
+                        return !(v === "" || v === "no warranty" ||
+                          v === "none" || v === "n/a" || v === "no");
+                      })
+                      .map(({ stepId, label, value }) => ({
+                        stepId,
                         label,
-                        value,
-                        firstIdx: i,
-                      });
-                    }
-                  }
-                  const termAnswers = Array.from(termsByStep.values())
-                    .sort((a, b) => a.firstIdx - b.firstIdx)
-                    // Drop warranty row entirely when the contractor picked
-                    // "No warranty" — the legal-text warranty clause in the
-                    // contract's Fine Print still applies.
-                    .filter(({ stepId, value }) => {
-                      if (stepId !== "warranty") return true;
-                      const v = value.trim().toLowerCase();
-                      return !(v === "" || v === "no warranty" || v === "none" || v === "n/a" || v === "no");
-                    })
-                    .map(({ stepId, label, value }) => ({
-                      stepId,
-                      label,
-                      // Time-to-complete reads as an estimate, not a hard
-                      // promise — surface that on the card to match the
-                      // customer-facing wording.
-                      value: stepId === "time_to_complete" && value && !/^estimated\s*:/i.test(value)
-                        ? `Estimated: ${value}`
-                        : value,
-                    }));
-                  const totalCentsForBreakdown =
-                    typeof contract?.totalAmount === "number"
-                      ? contract.totalAmount
-                      : lineTotalCents;
-                  const totalStr = (
-                    totalCentsForBreakdown / 100
-                  ).toLocaleString("en-US", {
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 2,
-                  });
-                  // Translate the picked payment terms into a milestone schedule
-                  // so the customer sees what they actually owe at each step,
-                  // not one big number that hides the deposit / balance split.
-                  const paymentTerm = termAnswers.find(
-                    (t) => t.stepId === "payment_terms",
-                  );
-                  const milestones = paymentTerm
-                    ? buildPaymentMilestones(
+                        // Time-to-complete reads as an estimate, not a hard
+                        // promise — surface that on the card to match the
+                        // customer-facing wording.
+                        value: stepId === "time_to_complete" && value &&
+                            !/^estimated\s*:/i.test(value)
+                          ? `Estimated: ${value}`
+                          : value,
+                      }));
+                    const totalCentsForBreakdown =
+                      typeof contract?.totalAmount === "number"
+                        ? contract.totalAmount
+                        : lineTotalCents;
+                    const totalStr = (
+                      totalCentsForBreakdown / 100
+                    ).toLocaleString("en-US", {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 2,
+                    });
+                    // Translate the picked payment terms into a milestone schedule
+                    // so the customer sees what they actually owe at each step,
+                    // not one big number that hides the deposit / balance split.
+                    const paymentTerm = termAnswers.find(
+                      (t) => t.stepId === "payment_terms",
+                    );
+                    const milestones = paymentTerm
+                      ? buildPaymentMilestones(
                         paymentTerm.value,
                         totalCentsForBreakdown,
                       )
-                    : null;
-                  return (
-                    <div key={m.id} class="quote-review-wrap">
-                      <article class="quote-review">
-                        <header class="quote-review__head">
-                          <div class="quote-review__head-left">
-                            <div class="quote-review__kind">
-                              Quote + Agreement
-                            </div>
-                            {contractId ? (
-                              <div class="quote-review__num">
-                                #{contractId.slice(0, 8)}
+                      : null;
+                    return (
+                      <div key={m.id} class="quote-review-wrap">
+                        <article class="quote-review">
+                          <header class="quote-review__head">
+                            <div class="quote-review__head-left">
+                              <div class="quote-review__kind">
+                                Quote + Agreement
                               </div>
-                            ) : null}
-                          </div>
-                          <div class="quote-review__head-right">
-                            <span class="quote-review__chip">
-                              {statusChipLabel(
-                                contract?.status ?? lockedPayload.status,
-                              )}
-                            </span>
-                            <button
-                              type="button"
-                              class="quote-review__close"
-                              aria-label="Close preview"
-                              onClick={() => setPreviewCtaId(null)}
-                              disabled={sending}
-                            >
-                              <I d={ICN.x} size={14} sw={2.4} />
-                            </button>
-                          </div>
-                        </header>
-
-                        {customer?.name ? (
-                          <section class="quote-review__hero">
-                            <div class="quote-review__hero-label">For</div>
-                            <button
-                              type="button"
-                              class="quote-review__swap"
-                              aria-label="Switch customer"
-                              title="Switch customer"
-                              onClick={openCustomerPicker}
-                              disabled={customerPickerBusy}
-                            >
-                              <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-                                <path
-                                  d="M14.06 3.94a1.5 1.5 0 0 1 2.12 0l1.88 1.88a1.5 1.5 0 0 1 0 2.12L8.5 17.5 3 19l1.5-5.5z"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  stroke-width="1.6"
-                                  stroke-linecap="round"
-                                  stroke-linejoin="round"
-                                />
-                              </svg>
-                            </button>
-                            <div
-                              class="quote-review__hero-name quote-review__editable"
-                              contentEditable
-                              spellcheck={true}
-                              lang="en"
-                              onBlur={(e) =>
-                                onEditCustomerName(
-                                  customer.id,
-                                  customer.name,
-                                  e.currentTarget as HTMLElement,
+                              {contractId
+                                ? (
+                                  <div class="quote-review__num">
+                                    #{contractId.slice(0, 8)}
+                                  </div>
                                 )
-                              }
-                            >
-                              {customer.name}
+                                : null}
                             </div>
-                            <div class="quote-review__hero-meta">
-                              <span
-                                class={`quote-review__editable quote-review__hero-field${customer.email ? "" : " quote-review__hero-field--empty"}`}
-                                contentEditable
-                                spellcheck={false}
-                                data-placeholder="add email"
-                                onBlur={(e) =>
-                                  onEditCustomerField(
-                                    "email",
-                                    customer.id,
-                                    customer.email,
-                                    e.currentTarget as HTMLElement,
-                                  )
-                                }
-                              >
-                                {customer.email ?? ""}
+                            <div class="quote-review__head-right">
+                              <span class="quote-review__chip">
+                                {statusChipLabel(
+                                  contract?.status ?? lockedPayload.status,
+                                )}
                               </span>
-                              <span class="quote-review__dot">·</span>
-                              <span
-                                class={`quote-review__editable quote-review__hero-field${customer.phoneNumber ? "" : " quote-review__hero-field--empty"}`}
-                                contentEditable
-                                spellcheck={false}
-                                data-placeholder="add phone"
-                                onBlur={(e) =>
-                                  onEditCustomerField(
-                                    "phoneNumber",
-                                    customer.id,
-                                    customer.phoneNumber,
-                                    e.currentTarget as HTMLElement,
-                                  )
-                                }
+                              <button
+                                type="button"
+                                class="quote-review__close"
+                                aria-label="Close preview"
+                                onClick={() => setPreviewCtaId(null)}
+                                disabled={sending}
                               >
-                                {customer.phoneNumber ?? ""}
-                              </span>
+                                <I d={ICN.x} size={14} sw={2.4} />
+                              </button>
                             </div>
-                            {customerPickerOpen ? (
-                              <div class="quote-review__swap-panel">
-                                <input
-                                  type="text"
-                                  class="cust-pick__search"
-                                  placeholder={
-                                    customerPickerList && customerPickerList.length > 5
-                                      ? `Search ${customerPickerList.length} customers…`
-                                      : "Search customers…"
-                                  }
-                                  value={customerPickerSearch}
-                                  autoFocus
-                                  onInput={(e) =>
-                                    setCustomerPickerSearch(
-                                      (e.target as HTMLInputElement).value,
+                          </header>
+
+                          {
+                            /* Roadmap p.5 (Preview.docx): FROM = the contractor.
+                              Read-only; the editable TO (customer) follows. */
+                          }
+                          {from && (from.business || from.name)
+                            ? (
+                              <section
+                                class="quote-review__hero"
+                                style="opacity:.92"
+                              >
+                                <div class="quote-review__hero-label">From</div>
+                                <div class="quote-review__hero-name">
+                                  {from.business || from.name}
+                                </div>
+                                <div class="quote-review__hero-meta">
+                                  {from.name && from.business
+                                    ? <span>{from.name}</span>
+                                    : null}
+                                  {from.phone
+                                    ? (
+                                      <>
+                                        <span class="quote-review__dot">·</span>
+                                        <span>{from.phone}</span>
+                                      </>
                                     )
-                                  }
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Escape") {
-                                      setCustomerPickerOpen(false);
-                                    }
-                                  }}
-                                />
-                                {customerPickerList === null ? (
-                                  <div class="cust-pick__empty">Loading customers…</div>
-                                ) : (() => {
-                                  const q = customerPickerSearch.trim().toLowerCase();
-                                  const filtered = (customerPickerList ?? []).filter((c) => {
-                                    if (c.id === customer.id) return false;
-                                    if (!q) return true;
-                                    return (
-                                      c.name.toLowerCase().includes(q) ||
-                                      (c.email ?? "").toLowerCase().includes(q) ||
-                                      (c.phoneNumber ?? "").toLowerCase().includes(q)
-                                    );
-                                  });
-                                  if (filtered.length === 0) {
-                                    return (
-                                      <div class="cust-pick__empty">
-                                        {q ? "No matches." : "No other customers saved yet."}
-                                      </div>
-                                    );
-                                  }
-                                  return (
-                                    <div class="cust-pick__list cust-pick__list--scroll">
-                                      {filtered.slice(0, 100).map((c) => (
-                                        <button
-                                          key={c.id}
-                                          type="button"
-                                          class="cust-pick__row"
-                                          disabled={customerPickerBusy}
-                                          onClick={() => onBindDifferentCustomer(c)}
-                                        >
-                                          <span class="cust-pick__name">{c.name}</span>
-                                          {c.email || c.phoneNumber ? (
-                                            <span class="cust-pick__meta">
-                                              {c.email ?? c.phoneNumber}
-                                            </span>
-                                          ) : null}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  );
-                                })()}
+                                    : null}
+                                  {from.email
+                                    ? (
+                                      <>
+                                        <span class="quote-review__dot">·</span>
+                                        <span>{from.email}</span>
+                                      </>
+                                    )
+                                    : null}
+                                </div>
+                              </section>
+                            )
+                            : null}
+
+                          {customer?.name
+                            ? (
+                              <section class="quote-review__hero">
+                                <div class="quote-review__hero-label">For</div>
                                 <button
                                   type="button"
-                                  class="cust-create__btn"
-                                  onClick={() => setCustomerPickerOpen(false)}
+                                  class="quote-review__swap"
+                                  aria-label="Switch customer"
+                                  title="Switch customer"
+                                  onClick={openCustomerPicker}
                                   disabled={customerPickerBusy}
-                                  style="margin-top:8px"
                                 >
-                                  Cancel
+                                  <svg
+                                    viewBox="0 0 20 20"
+                                    width="18"
+                                    height="18"
+                                    aria-hidden="true"
+                                  >
+                                    <path
+                                      d="M14.06 3.94a1.5 1.5 0 0 1 2.12 0l1.88 1.88a1.5 1.5 0 0 1 0 2.12L8.5 17.5 3 19l1.5-5.5z"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      stroke-width="1.6"
+                                      stroke-linecap="round"
+                                      stroke-linejoin="round"
+                                    />
+                                  </svg>
                                 </button>
-                              </div>
-                            ) : null}
-                          </section>
-                        ) : null}
+                                <div
+                                  class="quote-review__hero-name quote-review__editable"
+                                  contentEditable
+                                  spellcheck
+                                  lang="en"
+                                  onBlur={(e) =>
+                                    onEditCustomerName(
+                                      customer.id,
+                                      customer.name,
+                                      e.currentTarget as HTMLElement,
+                                    )}
+                                >
+                                  {customer.name}
+                                </div>
+                                <div class="quote-review__hero-meta">
+                                  <span
+                                    class={`quote-review__editable quote-review__hero-field${
+                                      customer.email
+                                        ? ""
+                                        : " quote-review__hero-field--empty"
+                                    }`}
+                                    contentEditable
+                                    spellcheck={false}
+                                    data-placeholder="add email"
+                                    onBlur={(e) =>
+                                      onEditCustomerField(
+                                        "email",
+                                        customer.id,
+                                        customer.email,
+                                        e.currentTarget as HTMLElement,
+                                      )}
+                                  >
+                                    {customer.email ?? ""}
+                                  </span>
+                                  <span class="quote-review__dot">·</span>
+                                  <span
+                                    class={`quote-review__editable quote-review__hero-field${
+                                      customer.phoneNumber
+                                        ? ""
+                                        : " quote-review__hero-field--empty"
+                                    }`}
+                                    contentEditable
+                                    spellcheck={false}
+                                    data-placeholder="add phone"
+                                    onBlur={(e) =>
+                                      onEditCustomerField(
+                                        "phoneNumber",
+                                        customer.id,
+                                        customer.phoneNumber,
+                                        e.currentTarget as HTMLElement,
+                                      )}
+                                  >
+                                    {customer.phoneNumber ?? ""}
+                                  </span>
+                                </div>
+                                {customerPickerOpen
+                                  ? (
+                                    <div class="quote-review__swap-panel">
+                                      <input
+                                        type="text"
+                                        class="cust-pick__search"
+                                        placeholder={customerPickerList &&
+                                            customerPickerList.length > 5
+                                          ? `Search ${customerPickerList.length} customers…`
+                                          : "Search customers…"}
+                                        value={customerPickerSearch}
+                                        autoFocus
+                                        onInput={(e) =>
+                                          setCustomerPickerSearch(
+                                            (e.target as HTMLInputElement)
+                                              .value,
+                                          )}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Escape") {
+                                            setCustomerPickerOpen(false);
+                                          }
+                                        }}
+                                      />
+                                      {customerPickerList === null
+                                        ? (
+                                          <div class="cust-pick__empty">
+                                            Loading customers…
+                                          </div>
+                                        )
+                                        : (() => {
+                                          const q = customerPickerSearch.trim()
+                                            .toLowerCase();
+                                          const filtered =
+                                            (customerPickerList ?? []).filter(
+                                              (c) => {
+                                                if (c.id === customer.id) {
+                                                  return false;
+                                                }
+                                                if (!q) return true;
+                                                return (
+                                                  c.name.toLowerCase().includes(
+                                                    q,
+                                                  ) ||
+                                                  (c.email ?? "").toLowerCase()
+                                                    .includes(q) ||
+                                                  (c.phoneNumber ?? "")
+                                                    .toLowerCase().includes(q)
+                                                );
+                                              },
+                                            );
+                                          if (filtered.length === 0) {
+                                            return (
+                                              <div class="cust-pick__empty">
+                                                {q
+                                                  ? "No matches."
+                                                  : "No other customers saved yet."}
+                                              </div>
+                                            );
+                                          }
+                                          return (
+                                            <div class="cust-pick__list cust-pick__list--scroll">
+                                              {filtered.slice(0, 100).map((
+                                                c,
+                                              ) => (
+                                                <button
+                                                  key={c.id}
+                                                  type="button"
+                                                  class="cust-pick__row"
+                                                  disabled={customerPickerBusy}
+                                                  onClick={() =>
+                                                    onBindDifferentCustomer(c)}
+                                                >
+                                                  <span class="cust-pick__name">
+                                                    {c.name}
+                                                  </span>
+                                                  {c.email || c.phoneNumber
+                                                    ? (
+                                                      <span class="cust-pick__meta">
+                                                        {c.email ??
+                                                          c.phoneNumber}
+                                                      </span>
+                                                    )
+                                                    : null}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          );
+                                        })()}
+                                      <button
+                                        type="button"
+                                        class="cust-create__btn"
+                                        onClick={() =>
+                                          setCustomerPickerOpen(false)}
+                                        disabled={customerPickerBusy}
+                                        style="margin-top:8px"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  )
+                                  : null}
+                              </section>
+                            )
+                            : null}
 
-                        {(() => {
-                          const lines = detailLines(polishedDescription);
-                          if (lines.length === 0) return null;
-                          return (
-                            <section class="quote-review__section">
-                              <div class="quote-review__section-label">
-                                Job details
-                              </div>
-                              {lines.length > 1 ? (
-                                <ul class="quote-review__details">
-                                  {lines.map((l, i) => <li key={i}>{l}</li>)}
-                                </ul>
-                              ) : (
-                                <p class="quote-review__details-text">{lines[0]}</p>
-                              )}
-                            </section>
-                          );
-                        })()}
+                          {(() => {
+                            const lines = detailLines(polishedDescription);
+                            if (lines.length === 0) return null;
+                            return (
+                              <section class="quote-review__section">
+                                <div class="quote-review__section-label">
+                                  Job details
+                                </div>
+                                {lines.length > 1
+                                  ? (
+                                    <ul class="quote-review__details">
+                                      {lines.map((l, i) => (
+                                        <li key={i}>{l}</li>
+                                      ))}
+                                    </ul>
+                                  )
+                                  : (
+                                    <p class="quote-review__details-text">
+                                      {lines[0]}
+                                    </p>
+                                  )}
+                              </section>
+                            );
+                          })()}
 
-                        {termAnswers.length > 0 ? (
-                          <section class="quote-review__section">
-                            <div class="quote-review__section-label">
-                              Terms
-                            </div>
-                            <dl class="quote-review__terms">
-                              {termAnswers.map((t, i) => {
-                                // contractId from the parent scope defaults to "" via `?? ""`,
-                                // so use || not ?? to fall back to contract.id when empty.
-                                const cid = contractId || contract?.id;
-                                const isEditing =
-                                  editingTermStepId === t.stepId;
-                                // Find the original wizard message for this stepId
-                                // so we can re-render its options inline. Searching
-                                // backwards picks up the most recent re-ask if the
-                                // user has already edited this term once.
-                                const wizMsg = isEditing
-                                  ? [...messages]
-                                      .reverse()
-                                      .find(
-                                        (x) =>
-                                          x.kind === "wizard" &&
-                                          (
-                                            x.payload as
-                                              | { stepId?: string }
-                                              | undefined
-                                          )?.stepId === t.stepId,
-                                      )
-                                  : undefined;
-                                const wizOptsRaw =
-                                  (
-                                    wizMsg?.payload as
-                                      | { options?: WizardOption[] }
-                                      | undefined
-                                  )?.options ?? [];
-                                // Fall back to the static spec when the chat scope
-                                // doesn't carry the options (older threads, pruned
-                                // history, etc.). Otherwise the picker would render
-                                // with only Custom + Cancel.
-                                const wizOpts: WizardOption[] =
-                                  wizOptsRaw.length > 0
-                                    ? wizOptsRaw
-                                    : (
+                          {termAnswers.length > 0
+                            ? (
+                              <section class="quote-review__section">
+                                <div class="quote-review__section-label">
+                                  Terms
+                                </div>
+                                <dl class="quote-review__terms">
+                                  {termAnswers.map((t, i) => {
+                                    // contractId from the parent scope defaults to "" via `?? ""`,
+                                    // so use || not ?? to fall back to contract.id when empty.
+                                    const cid = contractId || contract?.id;
+                                    const isEditing =
+                                      editingTermStepId === t.stepId;
+                                    // Find the original wizard message for this stepId
+                                    // so we can re-render its options inline. Searching
+                                    // backwards picks up the most recent re-ask if the
+                                    // user has already edited this term once.
+                                    const wizMsg = isEditing
+                                      ? [...messages]
+                                        .reverse()
+                                        .find(
+                                          (x) =>
+                                            x.kind === "wizard" &&
+                                            (
+                                                x.payload as
+                                                  | { stepId?: string }
+                                                  | undefined
+                                              )?.stepId === t.stepId,
+                                        )
+                                      : undefined;
+                                    const wizOptsRaw = (
+                                      wizMsg?.payload as
+                                        | { options?: WizardOption[] }
+                                        | undefined
+                                    )?.options ?? [];
+                                    // Fall back to the static spec when the chat scope
+                                    // doesn't carry the options (older threads, pruned
+                                    // history, etc.). Otherwise the picker would render
+                                    // with only Custom + Cancel.
+                                    const wizOpts: WizardOption[] =
+                                      wizOptsRaw.length > 0 ? wizOptsRaw : (
                                         TERM_OPTIONS_FALLBACK[t.stepId] ?? []
                                       ).map((o, i) => ({
                                         id: `fallback-${i}`,
                                         label: o.label,
                                         sub: o.sub,
                                       }));
-                                return (
-                                  <div
-                                    key={`t-${i}`}
-                                    class="quote-review__term"
-                                    style={
-                                      isEditing
-                                        ? "grid-column:1 / -1"
-                                        : undefined
-                                    }
-                                  >
-                                    <dt>{t.label}</dt>
-                                    {isEditing ? (
-                                      <dd style="margin-top:4px">
-                                        {customTermDraft &&
-                                        customTermDraft.stepId === t.stepId ? (
-                                          <div style="display:flex;flex-direction:column;gap:8px">
-                                            <input
-                                              type="text"
-                                              class="cust-pick__search"
-                                              placeholder={`Type a custom ${t.label.toLowerCase()}…`}
-                                              value={customTermDraft.value}
-                                              onInput={(e) =>
-                                                setCustomTermDraft({
-                                                  stepId: t.stepId,
-                                                  value: (
-                                                    e.target as HTMLInputElement
-                                                  ).value,
-                                                })
-                                              }
-                                              autoFocus
-                                              onKeyDown={(e) => {
-                                                if (
-                                                  e.key === "Enter" &&
-                                                  customTermDraft.value.trim()
-                                                ) {
-                                                  const v =
-                                                    customTermDraft.value.trim();
-                                                  setCustomTermDraft(null);
-                                                  pickTermOption(
-                                                    cid,
-                                                    t.stepId,
-                                                    t.label,
-                                                    v,
-                                                  );
-                                                } else if (e.key === "Escape") {
-                                                  setCustomTermDraft(null);
-                                                }
-                                              }}
-                                            />
-                                            <div style="display:flex;gap:8px">
+                                    return (
+                                      <div
+                                        key={`t-${i}`}
+                                        class="quote-review__term"
+                                        style={isEditing
+                                          ? "grid-column:1 / -1"
+                                          : undefined}
+                                      >
+                                        <dt>{t.label}</dt>
+                                        {isEditing
+                                          ? (
+                                            <dd style="margin-top:4px">
+                                              {customTermDraft &&
+                                                  customTermDraft.stepId ===
+                                                    t.stepId
+                                                ? (
+                                                  <div style="display:flex;flex-direction:column;gap:8px">
+                                                    <input
+                                                      type="text"
+                                                      class="cust-pick__search"
+                                                      placeholder={`Type a custom ${t.label.toLowerCase()}…`}
+                                                      value={customTermDraft
+                                                        .value}
+                                                      onInput={(e) =>
+                                                        setCustomTermDraft({
+                                                          stepId: t.stepId,
+                                                          value: (
+                                                            e.target as HTMLInputElement
+                                                          ).value,
+                                                        })}
+                                                      autoFocus
+                                                      onKeyDown={(e) => {
+                                                        if (
+                                                          e.key === "Enter" &&
+                                                          customTermDraft.value
+                                                            .trim()
+                                                        ) {
+                                                          const v =
+                                                            customTermDraft
+                                                              .value.trim();
+                                                          setCustomTermDraft(
+                                                            null,
+                                                          );
+                                                          pickTermOption(
+                                                            cid,
+                                                            t.stepId,
+                                                            t.label,
+                                                            v,
+                                                          );
+                                                        } else if (
+                                                          e.key === "Escape"
+                                                        ) {
+                                                          setCustomTermDraft(
+                                                            null,
+                                                          );
+                                                        }
+                                                      }}
+                                                    />
+                                                    <div style="display:flex;gap:8px">
+                                                      <button
+                                                        type="button"
+                                                        class="cust-create__btn cust-create__btn--primary"
+                                                        disabled={sending ||
+                                                          !customTermDraft.value
+                                                            .trim()}
+                                                        onClick={() => {
+                                                          const v =
+                                                            customTermDraft
+                                                              .value.trim();
+                                                          setCustomTermDraft(
+                                                            null,
+                                                          );
+                                                          pickTermOption(
+                                                            cid,
+                                                            t.stepId,
+                                                            t.label,
+                                                            v,
+                                                          );
+                                                        }}
+                                                      >
+                                                        Save
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        class="cust-create__btn"
+                                                        onClick={() =>
+                                                          setCustomTermDraft(
+                                                            null,
+                                                          )}
+                                                        disabled={sending}
+                                                      >
+                                                        Back
+                                                      </button>
+                                                    </div>
+                                                  </div>
+                                                )
+                                                : (
+                                                  <div
+                                                    class="wiz__opts"
+                                                    style="flex-direction:column;align-items:stretch;gap:6px"
+                                                  >
+                                                    {wizOpts
+                                                      .filter((o) =>
+                                                        !o.isCustom
+                                                      )
+                                                      .map((opt) => (
+                                                        <button
+                                                          key={opt.id}
+                                                          type="button"
+                                                          class={`wiz-opt ${
+                                                            opt.label ===
+                                                                t.value
+                                                              ? "wiz-opt--selected"
+                                                              : ""
+                                                          }`}
+                                                          onClick={() =>
+                                                            pickTermOption(
+                                                              cid,
+                                                              t.stepId,
+                                                              t.label,
+                                                              opt.label,
+                                                            )}
+                                                          disabled={sending}
+                                                        >
+                                                          {opt.label}
+                                                          {opt.sub
+                                                            ? (
+                                                              <span class="wiz-opt__sub">
+                                                                {opt.sub}
+                                                              </span>
+                                                            )
+                                                            : null}
+                                                        </button>
+                                                      ))}
+                                                    <button
+                                                      type="button"
+                                                      class="wiz-opt wiz-opt--custom"
+                                                      onClick={() =>
+                                                        setCustomTermDraft({
+                                                          stepId: t.stepId,
+                                                          value: "",
+                                                        })}
+                                                      disabled={sending}
+                                                    >
+                                                      + Custom · type your own
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      class="wiz-opt wiz-opt--custom"
+                                                      onClick={() => {
+                                                        setEditingTermStepId(
+                                                          null,
+                                                        );
+                                                        setCustomTermDraft(
+                                                          null,
+                                                        );
+                                                      }}
+                                                      disabled={sending}
+                                                    >
+                                                      Cancel
+                                                    </button>
+                                                  </div>
+                                                )}
+                                            </dd>
+                                          )
+                                          : (
+                                            <dd>
                                               <button
                                                 type="button"
-                                                class="cust-create__btn cust-create__btn--primary"
-                                                disabled={
-                                                  sending ||
-                                                  !customTermDraft.value.trim()
-                                                }
-                                                onClick={() => {
-                                                  const v =
-                                                    customTermDraft.value.trim();
-                                                  setCustomTermDraft(null);
-                                                  pickTermOption(
-                                                    cid,
-                                                    t.stepId,
-                                                    t.label,
-                                                    v,
-                                                  );
-                                                }}
-                                              >
-                                                Save
-                                              </button>
-                                              <button
-                                                type="button"
-                                                class="cust-create__btn"
+                                                class="quote-review__term-edit"
                                                 onClick={() =>
-                                                  setCustomTermDraft(null)
-                                                }
-                                                disabled={sending}
+                                                  setEditingTermStepId(
+                                                    t.stepId,
+                                                  )}
+                                                disabled={!cid || !t.stepId}
+                                                title="Edit"
                                               >
-                                                Back
+                                                {t.stepId === "wraps"
+                                                  ? `Estimated ${t.value}`
+                                                  : t.value}
                                               </button>
-                                            </div>
-                                          </div>
-                                        ) : (
-                                          <div
-                                            class="wiz__opts"
-                                            style="flex-direction:column;align-items:stretch;gap:6px"
-                                          >
-                                            {wizOpts
-                                              .filter((o) => !o.isCustom)
-                                              .map((opt) => (
-                                                <button
-                                                  key={opt.id}
-                                                  type="button"
-                                                  class={`wiz-opt ${opt.label === t.value ? "wiz-opt--selected" : ""}`}
-                                                  onClick={() =>
-                                                    pickTermOption(
-                                                      cid,
-                                                      t.stepId,
-                                                      t.label,
-                                                      opt.label,
-                                                    )
-                                                  }
-                                                  disabled={sending}
-                                                >
-                                                  {opt.label}
-                                                  {opt.sub ? (
-                                                    <span class="wiz-opt__sub">
-                                                      {opt.sub}
-                                                    </span>
-                                                  ) : null}
-                                                </button>
-                                              ))}
-                                            <button
-                                              type="button"
-                                              class="wiz-opt wiz-opt--custom"
-                                              onClick={() =>
-                                                setCustomTermDraft({
-                                                  stepId: t.stepId,
-                                                  value: "",
-                                                })
-                                              }
-                                              disabled={sending}
-                                            >
-                                              + Custom · type your own
-                                            </button>
-                                            <button
-                                              type="button"
-                                              class="wiz-opt wiz-opt--custom"
-                                              onClick={() => {
-                                                setEditingTermStepId(null);
-                                                setCustomTermDraft(null);
-                                              }}
-                                              disabled={sending}
-                                            >
-                                              Cancel
-                                            </button>
-                                          </div>
-                                        )}
-                                      </dd>
-                                    ) : (
-                                      <dd>
-                                        <button
-                                          type="button"
-                                          class="quote-review__term-edit"
-                                          onClick={() =>
-                                            setEditingTermStepId(t.stepId)
-                                          }
-                                          disabled={!cid || !t.stepId}
-                                          title="Edit"
-                                        >
-                                          {t.stepId === "wraps" ? `Estimated ${t.value}` : t.value}
-                                        </button>
-                                      </dd>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </dl>
-                          </section>
-                        ) : null}
+                                            </dd>
+                                          )}
+                                      </div>
+                                    );
+                                  })}
+                                </dl>
+                              </section>
+                            )
+                            : null}
 
-                        <section class="quote-review__total">
-                          <div class="quote-review__total-label">Total due</div>
-                          <div class="quote-review__total-amt">
-                            <span class="quote-review__total-currency">$</span>
-                            <span
-                              class="quote-review__total-num quote-review__editable"
-                              contentEditable
-                              spellcheck={false}
-                              inputMode="decimal"
-                              onFocus={(e) => {
-                                const el = e.currentTarget as HTMLElement;
-                                const range = document.createRange();
-                                range.selectNodeContents(el);
-                                const sel = globalThis.getSelection();
-                                sel?.removeAllRanges();
-                                sel?.addRange(range);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  (e.currentTarget as HTMLElement).blur();
-                                }
-                              }}
-                              onBlur={(e) =>
-                                onEditTotal(
-                                  lockedPayload.quoteId,
-                                  lockedCard?.id,
-                                  contractId || contract?.id,
-                                  totalCentsForBreakdown,
-                                  e.currentTarget as HTMLElement,
-                                )
-                              }
-                            >
-                              {totalStr}
-                            </span>
-                          </div>
-                          {milestones && milestones.length > 1 ? (
-                            <ul class="quote-review__milestones">
-                              {milestones.map((ms, i) => (
-                                <li
-                                  key={`ms-${i}`}
-                                  class="quote-review__milestone"
-                                >
-                                  <span class="quote-review__milestone-label">
-                                    {ms.label}
-                                    {typeof ms.pct === "number" ? (
-                                      <span class="quote-review__milestone-pct">
-                                        {" "}
-                                        · {ms.pct}%
+                          <section class="quote-review__total">
+                            <div class="quote-review__total-label">
+                              Total due
+                            </div>
+                            <div class="quote-review__total-amt">
+                              <span class="quote-review__total-currency">
+                                $
+                              </span>
+                              <span
+                                class="quote-review__total-num quote-review__editable"
+                                contentEditable
+                                spellcheck={false}
+                                inputMode="decimal"
+                                onFocus={(e) => {
+                                  const el = e.currentTarget as HTMLElement;
+                                  const range = document.createRange();
+                                  range.selectNodeContents(el);
+                                  const sel = globalThis.getSelection();
+                                  sel?.removeAllRanges();
+                                  sel?.addRange(range);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    (e.currentTarget as HTMLElement).blur();
+                                  }
+                                }}
+                                onBlur={(e) =>
+                                  onEditTotal(
+                                    lockedPayload.quoteId,
+                                    lockedCard?.id,
+                                    contractId || contract?.id,
+                                    totalCentsForBreakdown,
+                                    e.currentTarget as HTMLElement,
+                                  )}
+                              >
+                                {totalStr}
+                              </span>
+                            </div>
+                            {milestones && milestones.length > 1
+                              ? (
+                                <ul class="quote-review__milestones">
+                                  {milestones.map((ms, i) => (
+                                    <li
+                                      key={`ms-${i}`}
+                                      class="quote-review__milestone"
+                                    >
+                                      <span class="quote-review__milestone-label">
+                                        {ms.label}
+                                        {typeof ms.pct === "number"
+                                          ? (
+                                            <span class="quote-review__milestone-pct">
+                                              {" "}
+                                              · {ms.pct}%
+                                            </span>
+                                          )
+                                          : null}
                                       </span>
-                                    ) : null}
-                                  </span>
-                                  <strong class="quote-review__milestone-amt">
-                                    {fmtUSD(ms.amountCents)}
-                                  </strong>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : null}
-                        </section>
+                                      <strong class="quote-review__milestone-amt">
+                                        {fmtUSD(ms.amountCents)}
+                                      </strong>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )
+                              : null}
+                          </section>
 
-                        <footer class="quote-review__cta">
-                          <div class="quote-review__send-split">
-                            <button
-                              type="button"
-                              class="quote-review__send-main"
-                              onClick={() => confirmSendContract(m, sendChannel)}
-                              disabled={sending}
-                            >
-                              <I d={ICN.send} size={14} sw={2.4} />
-                              {sending
-                                ? "Sending…"
-                                : sendChannel === "both"
-                                ? "Click here to send by Text + Email"
-                                : sendChannel === "sms"
-                                ? "Click here to send by Text"
-                                : "Click here to send by Email"}
-                            </button>
-                            <button
-                              type="button"
-                              class="quote-review__send-caret"
-                              aria-label="Choose how to send"
-                              aria-expanded={channelMenuOpen ? "true" : "false"}
-                              onClick={() => setChannelMenuOpen((o) => !o)}
-                              disabled={sending}
-                            >
-                              <I d={ICN.chev} size={12} sw={2.4} />
-                            </button>
-                            {channelMenuOpen ? (
-                              <div class="quote-review__send-menu" role="menu">
+                          <footer class="quote-review__cta">
+                            <div class="quote-review__send-split">
+                              <button
+                                type="button"
+                                class="quote-review__send-main"
+                                onClick={() =>
+                                  confirmSendContract(m, sendChannel)}
+                                disabled={sending}
+                              >
+                                <I d={ICN.send} size={14} sw={2.4} />
+                                {sending
+                                  ? "Sending…"
+                                  : sendChannel === "both"
+                                  ? "Click here to send by Text + Email"
+                                  : sendChannel === "sms"
+                                  ? "Click here to send by Text"
+                                  : "Click here to send by Email"}
+                              </button>
+                              <button
+                                type="button"
+                                class="quote-review__send-caret"
+                                aria-label="Choose how to send"
+                                aria-expanded={channelMenuOpen
+                                  ? "true"
+                                  : "false"}
+                                onClick={() => setChannelMenuOpen((o) => !o)}
+                                disabled={sending}
+                              >
+                                <I d={ICN.chev} size={12} sw={2.4} />
+                              </button>
+                              {channelMenuOpen
+                                ? (
+                                  <div
+                                    class="quote-review__send-menu"
+                                    role="menu"
+                                  >
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      class={`quote-review__send-menu-item${
+                                        sendChannel === "both"
+                                          ? " is-current"
+                                          : ""
+                                      }`}
+                                      onClick={() => {
+                                        setSendChannel("both");
+                                        setChannelMenuOpen(false);
+                                      }}
+                                    >
+                                      <I d={ICN.send} size={13} sw={2.4} />
+                                      <span class="quote-review__send-menu-label">
+                                        Text + Email
+                                      </span>
+                                      <span class="quote-review__send-menu-tag">
+                                        Recommended
+                                      </span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      class={`quote-review__send-menu-item${
+                                        sendChannel === "sms"
+                                          ? " is-current"
+                                          : ""
+                                      }`}
+                                      onClick={() => {
+                                        setSendChannel("sms");
+                                        setChannelMenuOpen(false);
+                                      }}
+                                    >
+                                      <I d={ICN.phone} size={13} sw={2.4} />
+                                      <span class="quote-review__send-menu-label">
+                                        Text only
+                                      </span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      class={`quote-review__send-menu-item${
+                                        sendChannel === "email"
+                                          ? " is-current"
+                                          : ""
+                                      }`}
+                                      onClick={() => {
+                                        setSendChannel("email");
+                                        setChannelMenuOpen(false);
+                                      }}
+                                    >
+                                      <I d={ICN.mail} size={13} sw={2.4} />
+                                      <span class="quote-review__send-menu-label">
+                                        Email only
+                                      </span>
+                                    </button>
+                                  </div>
+                                )
+                                : null}
+                            </div>
+                          </footer>
+                        </article>
+                      </div>
+                    );
+                  }
+                  // The "Ready to send" banner is intentionally suppressed —
+                  // the editable quote-review opens automatically on wizard
+                  // completion via the autoOpenedCtasRef effect. The reviewed
+                  // success state ("Contract sent") still renders below.
+                  if (payload.toPhase === "send" && !reviewed && !previewing) {
+                    return null;
+                  }
+                  // Per audit #19: surface the upcoming phase label as an eyebrow
+                  // *before* the CTA, so users see "PHASE 2 — CONTRACT TERMS" at
+                  // click time, not as a divider that lands after they've already
+                  // clicked through. The backend still emits the divider on
+                  // transition; once it lands, the chat shows both.
+                  const phaseEyebrow = !reviewed
+                    ? payload.toPhase === "terms"
+                      ? "We need a little more info"
+                      : payload.toPhase === "send"
+                      ? "Up next · Send to client"
+                      : payload.toPhase === "invoice"
+                      ? "Up next · Send invoice"
+                      : null
+                    : null;
+                  return (
+                    <div key={m.id} class="msg">
+                      <div class="msg__avatar">
+                        <img src="/logo-monster.png" alt="" />
+                      </div>
+                      <div style="flex:1;min-width:0">
+                        <div
+                          class={`continue-cta ${
+                            reviewed ? "continue-cta--done" : ""
+                          }`}
+                        >
+                          <div class="continue-cta__icon">
+                            <I
+                              d={reviewed ? ICN.check : ICN.contract}
+                              size={18}
+                            />
+                          </div>
+                          <div class="continue-cta__txt">
+                            {phaseEyebrow && (
+                              <div style="font-size:10.5px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:var(--brand-pink);margin-bottom:4px">
+                                {phaseEyebrow}
+                              </div>
+                            )}
+                            <div class="continue-cta__title">
+                              {reviewed
+                                ? payload.toPhase === "invoice"
+                                  ? "Invoice sent"
+                                  : "Contract sent"
+                                : m.content}
+                            </div>
+                            {reviewed
+                              ? (
+                                <div class="continue-cta__sub">
+                                  {sentRecipient
+                                    ? (
+                                      <>
+                                        emailed to <code>{sentRecipient}</code>
+                                      </>
+                                    )
+                                    : dispatchFailReason
+                                    ? <>not delivered — {dispatchFailReason}</>
+                                    : (
+                                      <>
+                                        no email on file — add one to{" "}
+                                        <code>
+                                          {customer?.name ?? "the customer"}
+                                        </code>{" "}
+                                        to deliver
+                                      </>
+                                    )}
+                                </div>
+                              )
+                              : payload.summary
+                              ? (
+                                <div class="continue-cta__sub">
+                                  {payload.summary}
+                                </div>
+                              )
+                              : null}
+                          </div>
+                          {reviewed
+                            ? null
+                            : payload.toPhase === "terms"
+                            ? (
+                              <div style="display:flex;gap:8px;flex-shrink:0">
                                 <button
                                   type="button"
-                                  role="menuitem"
-                                  class={`quote-review__send-menu-item${
-                                    sendChannel === "both" ? " is-current" : ""
-                                  }`}
-                                  onClick={() => {
-                                    setSendChannel("both");
-                                    setChannelMenuOpen(false);
-                                  }}
+                                  class="continue-cta__btn"
+                                  onClick={() =>
+                                    submitContinueCta(m, "business")}
+                                  disabled={sending}
                                 >
-                                  <I d={ICN.send} size={13} sw={2.4} />
-                                  <span class="quote-review__send-menu-label">
-                                    Text + Email
-                                  </span>
-                                  <span class="quote-review__send-menu-tag">
-                                    Recommended
-                                  </span>
+                                  Business
                                 </button>
                                 <button
                                   type="button"
-                                  role="menuitem"
-                                  class={`quote-review__send-menu-item${
-                                    sendChannel === "sms" ? " is-current" : ""
-                                  }`}
-                                  onClick={() => {
-                                    setSendChannel("sms");
-                                    setChannelMenuOpen(false);
-                                  }}
+                                  class="continue-cta__btn"
+                                  onClick={() => submitContinueCta(m, "person")}
+                                  disabled={sending}
                                 >
-                                  <I d={ICN.phone} size={13} sw={2.4} />
-                                  <span class="quote-review__send-menu-label">
-                                    Text only
-                                  </span>
-                                </button>
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  class={`quote-review__send-menu-item${
-                                    sendChannel === "email" ? " is-current" : ""
-                                  }`}
-                                  onClick={() => {
-                                    setSendChannel("email");
-                                    setChannelMenuOpen(false);
-                                  }}
-                                >
-                                  <I d={ICN.mail} size={13} sw={2.4} />
-                                  <span class="quote-review__send-menu-label">
-                                    Email only
-                                  </span>
+                                  Person
                                 </button>
                               </div>
-                            ) : null}
-                          </div>
-                        </footer>
-                      </article>
+                            )
+                            : (
+                              <button
+                                type="button"
+                                class="continue-cta__btn"
+                                onClick={() => submitContinueCta(m)}
+                                disabled={sending}
+                              >
+                                {payload.toPhase === "send"
+                                  ? "Review"
+                                  : payload.toPhase === "invoice"
+                                  ? "Send invoice"
+                                  : "Start"}{" "}
+                                <I d={ICN.arrow} size={11} sw={2.5} />
+                              </button>
+                            )}
+                        </div>
+                        {
+                          /* Dev-only trigger: simulate the customer accepting the
+                        quote so the threads-sidebar notification UX can be
+                        tested without a real signing webhook. */
+                        }
+                        {reviewed &&
+                            payload.toPhase === "send" &&
+                            typeof globalThis.location !== "undefined" &&
+                            globalThis.location.hostname === "localhost" &&
+                            new URLSearchParams(globalThis.location.search).has(
+                              "dev",
+                            )
+                          ? (
+                            <button
+                              type="button"
+                              class="dev-accept-btn"
+                              onClick={() =>
+                                simulateCustomerAccept(payload.contractId)}
+                              disabled={sending}
+                              title="Localhost-only: flip contract to accepted, bump conversation, set unread."
+                            >
+                              🔧 {sending
+                                ? "Simulating…"
+                                : "Simulate customer accepted"}
+                            </button>
+                          )
+                          : null}
+                        <div class="msg__time">{fmtTime(m.createdAt)}</div>
+                      </div>
                     </div>
                   );
                 }
-                // The "Ready to send" banner is intentionally suppressed —
-                // the editable quote-review opens automatically on wizard
-                // completion via the autoOpenedCtasRef effect. The reviewed
-                // success state ("Contract sent") still renders below.
-                if (payload.toPhase === "send" && !reviewed && !previewing) {
-                  return null;
-                }
-                // Per audit #19: surface the upcoming phase label as an eyebrow
-                // *before* the CTA, so users see "PHASE 2 — CONTRACT TERMS" at
-                // click time, not as a divider that lands after they've already
-                // clicked through. The backend still emits the divider on
-                // transition; once it lands, the chat shows both.
-                const phaseEyebrow = !reviewed
-                  ? payload.toPhase === "terms"
-                    ? "We need a little more info"
-                    : payload.toPhase === "send"
-                      ? "Up next · Send to client"
-                      : payload.toPhase === "invoice"
-                        ? "Up next · Send invoice"
-                        : null
-                  : null;
-                return (
-                  <div key={m.id} class="msg">
-                    <div class="msg__avatar">
-                      <img src="/logo-monster.png" alt="" />
-                    </div>
-                    <div style="flex:1;min-width:0">
-                      <div
-                        class={`continue-cta ${reviewed ? "continue-cta--done" : ""}`}
-                      >
-                        <div class="continue-cta__icon">
-                          <I
-                            d={reviewed ? ICN.check : ICN.contract}
-                            size={18}
-                          />
-                        </div>
-                        <div class="continue-cta__txt">
-                          {phaseEyebrow && (
-                            <div style="font-size:10.5px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:var(--brand-pink);margin-bottom:4px">
-                              {phaseEyebrow}
-                            </div>
-                          )}
-                          <div class="continue-cta__title">
-                            {reviewed
-                              ? payload.toPhase === "invoice"
-                                ? "Invoice sent"
-                                : "Contract sent"
-                              : m.content}
-                          </div>
-                          {reviewed ? (
-                            <div class="continue-cta__sub">
-                              {sentRecipient ? (
-                                <>
-                                  emailed to <code>{sentRecipient}</code>
-                                </>
-                              ) : dispatchFailReason ? (
-                                <>not delivered — {dispatchFailReason}</>
-                              ) : (
-                                <>
-                                  no email on file — add one to{" "}
-                                  <code>
-                                    {customer?.name ?? "the customer"}
-                                  </code>{" "}
-                                  to deliver
-                                </>
-                              )}
-                            </div>
-                          ) : payload.summary ? (
-                            <div class="continue-cta__sub">
-                              {payload.summary}
-                            </div>
-                          ) : null}
-                        </div>
-                        {reviewed ? null : payload.toPhase === "terms" ? (
-                          <div style="display:flex;gap:8px;flex-shrink:0">
-                            <button
-                              type="button"
-                              class="continue-cta__btn"
-                              onClick={() => submitContinueCta(m, "business")}
-                              disabled={sending}
-                            >
-                              Business
-                            </button>
-                            <button
-                              type="button"
-                              class="continue-cta__btn"
-                              onClick={() => submitContinueCta(m, "person")}
-                              disabled={sending}
-                            >
-                              Person
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            class="continue-cta__btn"
-                            onClick={() => submitContinueCta(m)}
-                            disabled={sending}
-                          >
-                            {payload.toPhase === "send"
-                              ? "Review"
-                              : payload.toPhase === "invoice"
-                                ? "Send invoice"
-                                : "Start"}{" "}
-                            <I d={ICN.arrow} size={11} sw={2.5} />
-                          </button>
-                        )}
-                      </div>
-                      {/* Dev-only trigger: simulate the customer accepting the
-                        quote so the threads-sidebar notification UX can be
-                        tested without a real signing webhook. */}
-                      {reviewed &&
-                      payload.toPhase === "send" &&
-                      typeof globalThis.location !== "undefined" &&
-                      globalThis.location.hostname === "localhost" &&
-                      new URLSearchParams(globalThis.location.search).has(
-                        "dev",
-                      ) ? (
-                        <button
-                          type="button"
-                          class="dev-accept-btn"
-                          onClick={() =>
-                            simulateCustomerAccept(payload.contractId)
-                          }
-                          disabled={sending}
-                          title="Localhost-only: flip contract to accepted, bump conversation, set unread."
-                        >
-                          🔧{" "}
-                          {sending
-                            ? "Simulating…"
-                            : "Simulate customer accepted"}
-                        </button>
-                      ) : null}
-                      <div class="msg__time">{fmtTime(m.createdAt)}</div>
-                    </div>
-                  </div>
-                );
-              }
 
-              // Wizard step — question + clickable option buttons.
-              if (m.kind === "wizard") {
-                const payload = (m.payload ?? {}) as {
-                  stepId?: string;
-                  stepIdx?: number;
-                  options?: WizardOption[];
-                  hint?: string;
-                };
-                const opts = payload.options ?? [];
-                const isCustomerStep = payload.stepId === "customer";
-                return (
-                  <div key={m.id} class="msg">
-                    <div class="msg__avatar">
-                      <img src="/logo-monster.png" alt="" />
-                    </div>
-                    <div style="flex:1;min-width:0">
-                      <div class="wiz">
-                        <div class="wiz__step">
-                          {typeof payload.stepIdx === "number" ? (
-                            // #16 — hide the "of 10" total until step 6. Through
-                            // the first half it reads as a daunting commitment;
-                            // past the halfway hump revealing it is reassuring.
-                            <div class="wiz__step-num">
-                              Step {payload.stepIdx + 1}
-                              {payload.stepIdx >= 5 ? " of 10" : ""}
-                            </div>
-                          ) : null}
-                          {/* Customer step renders its own heading inside the
+                // Wizard step — question + clickable option buttons.
+                if (m.kind === "wizard") {
+                  const payload = (m.payload ?? {}) as {
+                    stepId?: string;
+                    stepIdx?: number;
+                    options?: WizardOption[];
+                    hint?: string;
+                  };
+                  const opts = payload.options ?? [];
+                  const isCustomerStep = payload.stepId === "customer";
+                  return (
+                    <div key={m.id} class="msg">
+                      <div class="msg__avatar">
+                        <img src="/logo-monster.png" alt="" />
+                      </div>
+                      <div style="flex:1;min-width:0">
+                        <div class="wiz">
+                          <div class="wiz__step">
+                            {typeof payload.stepIdx === "number"
+                              ? (
+                                // #16 — hide the "of 10" total until step 6. Through
+                                // the first half it reads as a daunting commitment;
+                                // past the halfway hump revealing it is reassuring.
+                                <div class="wiz__step-num">
+                                  Step {payload.stepIdx + 1}
+                                  {payload.stepIdx >= 5 ? " of 10" : ""}
+                                </div>
+                              )
+                              : null}
+                            {
+                              /* Customer step renders its own heading inside the
                             panel because the prompt swaps after picking
                             Business / Person ("What is the business name?"
                             etc). Every other wizard step uses the static
-                            wizard-supplied question. */}
-                          {!isCustomerStep ? (
-                            <h3 class="wiz__step-q">{m.content}</h3>
-                          ) : null}
-                          {payload.hint ? (
-                            <div class="wiz__step-hint">{payload.hint}</div>
-                          ) : null}
-                          {(() => {
-                            if (isCustomerStep) {
-                              return (
-                                <CustomerStepPanel
-                                  boundCustomer={customer}
-                                  initialKind={precommittedKind ?? undefined}
-                                  onKindConsumed={() =>
-                                    setPrecommittedKind(null)
-                                  }
-                                  sending={sending}
-                                  onSubmit={(optionId, body) =>
-                                    submitCustomerStep(m, optionId, body)
-                                  }
-                                />
-                              );
+                            wizard-supplied question. */
                             }
-                            const activeFollowUp =
-                              followUpPick && followUpPick.messageId === m.id
-                                ? opts.find(
+                            {!isCustomerStep
+                              ? <h3 class="wiz__step-q">{m.content}</h3>
+                              : null}
+                            {payload.hint
+                              ? <div class="wiz__step-hint">{payload.hint}</div>
+                              : null}
+                            {(() => {
+                              if (isCustomerStep) {
+                                return (
+                                  <CustomerStepPanel
+                                    boundCustomer={customer}
+                                    initialKind={precommittedKind ?? undefined}
+                                    onKindConsumed={() =>
+                                      setPrecommittedKind(null)}
+                                    sending={sending}
+                                    onSubmit={(optionId, body) =>
+                                      submitCustomerStep(m, optionId, body)}
+                                  />
+                                );
+                              }
+                              const activeFollowUp =
+                                followUpPick && followUpPick.messageId === m.id
+                                  ? opts.find(
                                     (o) => o.id === followUpPick.optionId,
                                   )
-                                : null;
-                            if (activeFollowUp && activeFollowUp.followUp) {
-                              return (
-                                <WizardFollowUpForm
-                                  option={activeFollowUp}
-                                  quoteTotalCents={latestSentQuoteCents(
-                                    messages,
-                                  )}
-                                  sending={sending}
-                                  onSubmit={(values) => {
-                                    setFollowUpPick(null);
-                                    postWizardAnswer(m, {
-                                      stepId: payload.stepId!,
-                                      optionId: activeFollowUp.id,
-                                      followUpValues: values,
-                                    });
-                                  }}
-                                  onCancel={() => setFollowUpPick(null)}
-                                />
-                              );
-                            }
-                            if (
-                              customDatePick &&
-                              customDatePick.messageId === m.id
-                            ) {
-                              return (
-                                <CustomDatePickerForm
-                                  sending={sending}
-                                  onSubmit={(dateStr) => {
-                                    setCustomDatePick(null);
-                                    postWizardAnswer(m, {
-                                      stepId: payload.stepId!,
-                                      optionId: customDatePick.optionId,
-                                      customValue: dateStr,
-                                    });
-                                  }}
-                                  onCancel={() => setCustomDatePick(null)}
-                                />
-                              );
-                            }
-                            if (
-                              customDurationPick &&
-                              customDurationPick.messageId === m.id
-                            ) {
-                              return (
-                                <CustomDurationPickerForm
-                                  sending={sending}
-                                  onSubmit={(durationStr) => {
-                                    setCustomDurationPick(null);
-                                    postWizardAnswer(m, {
-                                      stepId: payload.stepId!,
-                                      optionId: customDurationPick.optionId,
-                                      customValue: durationStr,
-                                    });
-                                  }}
-                                  onCancel={() => setCustomDurationPick(null)}
-                                />
-                              );
-                            }
-                            if (
-                              customWarrantyPick &&
-                              customWarrantyPick.messageId === m.id
-                            ) {
-                              return (
-                                <CustomWarrantyPickerForm
-                                  sending={sending}
-                                  onSubmit={(warrantyStr) => {
-                                    setCustomWarrantyPick(null);
-                                    postWizardAnswer(m, {
-                                      stepId: payload.stepId!,
-                                      optionId: customWarrantyPick.optionId,
-                                      customValue: warrantyStr,
-                                    });
-                                  }}
-                                  onCancel={() => setCustomWarrantyPick(null)}
-                                />
-                              );
-                            }
-                            if (
-                              customPaymentPick &&
-                              customPaymentPick.messageId === m.id
-                            ) {
-                              return (
-                                <CustomPaymentPickerForm
-                                  sending={sending}
-                                  onSubmit={(paymentStr) => {
-                                    setCustomPaymentPick(null);
-                                    postWizardAnswer(m, {
-                                      stepId: payload.stepId!,
-                                      optionId: customPaymentPick.optionId,
-                                      customValue: paymentStr,
-                                    });
-                                  }}
-                                  onCancel={() => setCustomPaymentPick(null)}
-                                />
-                              );
-                            }
-                            return (
-                              <div class="wiz__opts">
-                                {opts.map((opt) => (
-                                  <button
-                                    key={opt.id}
-                                    type="button"
-                                    class={`wiz-opt ${opt.isCustom ? "wiz-opt--custom" : ""}`}
-                                    onClick={() => {
-                                      if (opt.followUp) {
-                                        setFollowUpPick({
-                                          messageId: m.id,
-                                          optionId: opt.id,
-                                        });
-                                        return;
-                                      }
-                                      if (
-                                        opt.isCustom &&
-                                        payload.stepId === "start_date"
-                                      ) {
-                                        setCustomDatePick({
-                                          messageId: m.id,
-                                          optionId: opt.id,
-                                        });
-                                        return;
-                                      }
-                                      if (
-                                        opt.isCustom &&
-                                        payload.stepId === "wraps"
-                                      ) {
-                                        setCustomDurationPick({
-                                          messageId: m.id,
-                                          optionId: opt.id,
-                                        });
-                                        return;
-                                      }
-                                      if (
-                                        opt.isCustom &&
-                                        payload.stepId === "payment_terms"
-                                      ) {
-                                        setCustomPaymentPick({
-                                          messageId: m.id,
-                                          optionId: opt.id,
-                                        });
-                                        return;
-                                      }
-                                      if (
-                                        opt.isCustom &&
-                                        payload.stepId === "warranty"
-                                      ) {
-                                        setCustomWarrantyPick({
-                                          messageId: m.id,
-                                          optionId: opt.id,
-                                        });
-                                        return;
-                                      }
-                                      submitWizardAnswer(m, opt);
+                                  : null;
+                              if (activeFollowUp && activeFollowUp.followUp) {
+                                return (
+                                  <WizardFollowUpForm
+                                    option={activeFollowUp}
+                                    quoteTotalCents={latestSentQuoteCents(
+                                      messages,
+                                    )}
+                                    sending={sending}
+                                    onSubmit={(values) => {
+                                      setFollowUpPick(null);
+                                      postWizardAnswer(m, {
+                                        stepId: payload.stepId!,
+                                        optionId: activeFollowUp.id,
+                                        followUpValues: values,
+                                      });
                                     }}
-                                    disabled={sending}
-                                  >
-                                    {opt.label}
-                                    {opt.sub ? (
-                                      <span class="wiz-opt__sub">
-                                        {opt.sub}
-                                      </span>
-                                    ) : null}
-                                  </button>
-                                ))}
-                              </div>
-                            );
-                          })()}
+                                    onCancel={() => setFollowUpPick(null)}
+                                  />
+                                );
+                              }
+                              if (
+                                customDatePick &&
+                                customDatePick.messageId === m.id
+                              ) {
+                                return (
+                                  <CustomDatePickerForm
+                                    sending={sending}
+                                    onSubmit={(dateStr) => {
+                                      setCustomDatePick(null);
+                                      postWizardAnswer(m, {
+                                        stepId: payload.stepId!,
+                                        optionId: customDatePick.optionId,
+                                        customValue: dateStr,
+                                      });
+                                    }}
+                                    onCancel={() => setCustomDatePick(null)}
+                                  />
+                                );
+                              }
+                              if (
+                                customDurationPick &&
+                                customDurationPick.messageId === m.id
+                              ) {
+                                return (
+                                  <CustomDurationPickerForm
+                                    sending={sending}
+                                    onSubmit={(durationStr) => {
+                                      setCustomDurationPick(null);
+                                      postWizardAnswer(m, {
+                                        stepId: payload.stepId!,
+                                        optionId: customDurationPick.optionId,
+                                        customValue: durationStr,
+                                      });
+                                    }}
+                                    onCancel={() => setCustomDurationPick(null)}
+                                  />
+                                );
+                              }
+                              if (
+                                customWarrantyPick &&
+                                customWarrantyPick.messageId === m.id
+                              ) {
+                                return (
+                                  <CustomWarrantyPickerForm
+                                    sending={sending}
+                                    onSubmit={(warrantyStr) => {
+                                      setCustomWarrantyPick(null);
+                                      postWizardAnswer(m, {
+                                        stepId: payload.stepId!,
+                                        optionId: customWarrantyPick.optionId,
+                                        customValue: warrantyStr,
+                                      });
+                                    }}
+                                    onCancel={() => setCustomWarrantyPick(null)}
+                                  />
+                                );
+                              }
+                              if (
+                                customPaymentPick &&
+                                customPaymentPick.messageId === m.id
+                              ) {
+                                return (
+                                  <CustomPaymentPickerForm
+                                    sending={sending}
+                                    onSubmit={(paymentStr) => {
+                                      setCustomPaymentPick(null);
+                                      postWizardAnswer(m, {
+                                        stepId: payload.stepId!,
+                                        optionId: customPaymentPick.optionId,
+                                        customValue: paymentStr,
+                                      });
+                                    }}
+                                    onCancel={() => setCustomPaymentPick(null)}
+                                  />
+                                );
+                              }
+                              return (
+                                <div class="wiz__opts">
+                                  {opts.map((opt) => (
+                                    <button
+                                      key={opt.id}
+                                      type="button"
+                                      class={`wiz-opt ${
+                                        opt.isCustom ? "wiz-opt--custom" : ""
+                                      }`}
+                                      onClick={() => {
+                                        if (opt.followUp) {
+                                          setFollowUpPick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
+                                        if (
+                                          opt.isCustom &&
+                                          payload.stepId === "start_date"
+                                        ) {
+                                          setCustomDatePick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
+                                        if (
+                                          opt.isCustom &&
+                                          payload.stepId === "wraps"
+                                        ) {
+                                          setCustomDurationPick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
+                                        if (
+                                          opt.isCustom &&
+                                          payload.stepId === "payment_terms"
+                                        ) {
+                                          setCustomPaymentPick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
+                                        if (
+                                          opt.isCustom &&
+                                          payload.stepId === "warranty"
+                                        ) {
+                                          setCustomWarrantyPick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
+                                        submitWizardAnswer(m, opt);
+                                      }}
+                                      disabled={sending}
+                                    >
+                                      {opt.label}
+                                      {opt.sub
+                                        ? (
+                                          <span class="wiz-opt__sub">
+                                            {opt.sub}
+                                          </span>
+                                        )
+                                        : null}
+                                    </button>
+                                  ))}
+                                </div>
+                              );
+                            })()}
+                            {
+                              /* Roadmap p.2: Back button to re-edit prior steps.
+                              Hidden on the first step (nothing to go back to). */
+                            }
+                            {typeof payload.stepIdx === "number" &&
+                                payload.stepIdx > 0
+                              ? (
+                                <button
+                                  type="button"
+                                  class="wiz__back"
+                                  disabled={sending}
+                                  onClick={goBackWizard}
+                                  style="margin-top:12px;background:none;border:none;color:var(--fg-muted,#6b7560);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:4px 2px"
+                                >
+                                  ← Back
+                                </button>
+                              )
+                              : null}
+                          </div>
                         </div>
+                        <div class="msg__time">{fmtTime(m.createdAt)}</div>
                       </div>
-                      <div class="msg__time">{fmtTime(m.createdAt)}</div>
                     </div>
-                  </div>
-                );
-              }
+                  );
+                }
 
-              // Action card — currently the only actionType is "quote", but
-              // the renderer is structured so other types (contract, invoice)
-              // can land here later. Buttons short-circuit the LLM by posting
-              // shortcut text into the chat so the model fires lock_quote /
-              // its sibling tools without the user having to type.
-              if (m.kind === "action_card") {
-                const payload = (m.payload ?? {}) as ActionCardPayload;
-                const lineItems = payload.lineItems ?? [];
-                const totalCents =
-                  payload.totalCents ??
-                  lineItems.reduce((sum, li) => sum + (li.amountCents ?? 0), 0);
-                const statusLabel = (payload.status ?? "draft").replace(
-                  /^[a-z]/,
-                  (c) => c.toUpperCase(),
-                );
-                // Detect a later action_card for the same quote that has
-                // already advanced past draft. The earlier DRAFT card stays
-                // visible in chat history (audit #18) but its action buttons
-                // would otherwise re-fire against an already-sent quote.
-                const idx = messages.indexOf(m);
-                const supersededBy =
-                  payload.quoteId && payload.status === "draft"
-                    ? messages
+                // Action card — currently the only actionType is "quote", but
+                // the renderer is structured so other types (contract, invoice)
+                // can land here later. Buttons short-circuit the LLM by posting
+                // shortcut text into the chat so the model fires lock_quote /
+                // its sibling tools without the user having to type.
+                if (m.kind === "action_card") {
+                  const payload = (m.payload ?? {}) as ActionCardPayload;
+                  const lineItems = payload.lineItems ?? [];
+                  const totalCents = payload.totalCents ??
+                    lineItems.reduce(
+                      (sum, li) => sum + (li.amountCents ?? 0),
+                      0,
+                    );
+                  // Roadmap p.5: progress the badge Draft → Sent → Viewed →
+                  // Approved via the shared label map (backend flips the
+                  // underlying status as the customer opens/signs).
+                  const statusLabel = statusChipLabel(payload.status);
+                  // Detect a later action_card for the same quote that has
+                  // already advanced past draft. The earlier DRAFT card stays
+                  // visible in chat history (audit #18) but its action buttons
+                  // would otherwise re-fire against an already-sent quote.
+                  const idx = messages.indexOf(m);
+                  const supersededBy =
+                    payload.quoteId && payload.status === "draft"
+                      ? messages
                         .slice(idx + 1)
                         .find(
                           (later) =>
                             later.kind === "action_card" &&
                             (later.payload as ActionCardPayload | undefined)
-                              ?.quoteId === payload.quoteId &&
+                                ?.quoteId === payload.quoteId &&
                             (later.payload as ActionCardPayload | undefined)
-                              ?.status !== "draft",
+                                ?.status !== "draft",
                         )
-                    : undefined;
-                const isSuperseded = !!supersededBy;
-                return (
-                  <div key={m.id} class="msg">
-                    <div class="msg__avatar">
-                      <img src="/logo-monster.png" alt="" />
-                    </div>
-                    <div style="flex:1;min-width:0">
-                      <div
-                        class="action-card"
-                        style={isSuperseded ? "opacity:0.55" : undefined}
-                      >
-                        <div class="action-card__head">
-                          <div class="action-card__icon">
-                            <I d={ICN.quote} size={16} />
+                      : undefined;
+                  const isSuperseded = !!supersededBy;
+                  return (
+                    <div key={m.id} class="msg">
+                      <div class="msg__avatar">
+                        <img src="/logo-monster.png" alt="" />
+                      </div>
+                      <div style="flex:1;min-width:0">
+                        <div
+                          class="action-card"
+                          style={isSuperseded ? "opacity:0.55" : undefined}
+                        >
+                          <div class="action-card__head">
+                            <div class="action-card__icon">
+                              <I d={ICN.quote} size={16} />
+                            </div>
+                            <div style="flex:1;min-width:0">
+                              <div class="action-card__title">{m.content}</div>
+                            </div>
+                            <span class="action-card__chip">
+                              {isSuperseded ? "Superseded" : statusLabel}
+                            </span>
                           </div>
-                          <div style="flex:1;min-width:0">
-                            <div class="action-card__title">{m.content}</div>
-                          </div>
-                          <span class="action-card__chip">
-                            {isSuperseded ? "Superseded" : statusLabel}
-                          </span>
-                        </div>
-                        <div class="action-card__body">
-                          {(() => {
-                            const lines = detailLines(payload.description);
-                            if (lines.length === 0) return null;
-                            return (
-                              <div class="action-card__details">
-                                <div class="action-card__details-label">
-                                  Job details
+                          <div class="action-card__body">
+                            {(() => {
+                              const lines = detailLines(payload.description);
+                              if (lines.length === 0) return null;
+                              return (
+                                <div class="action-card__details">
+                                  <div class="action-card__details-label">
+                                    Job details
+                                  </div>
+                                  {lines.length > 1
+                                    ? (
+                                      <ul class="action-card__details-list">
+                                        {lines.map((l, i) => (
+                                          <li key={i}>{l}</li>
+                                        ))}
+                                      </ul>
+                                    )
+                                    : (
+                                      <p class="action-card__details-text">
+                                        {lines[0]}
+                                      </p>
+                                    )}
                                 </div>
-                                {lines.length > 1 ? (
-                                  <ul class="action-card__details-list">
-                                    {lines.map((l, i) => <li key={i}>{l}</li>)}
-                                  </ul>
-                                ) : (
-                                  <p class="action-card__details-text">{lines[0]}</p>
-                                )}
+                              );
+                            })()}
+                            {lineItems.map((li, i) => (
+                              <div key={i} class="action-card__row">
+                                <span>{li.description}</span>
+                                <strong>{fmtUSD(li.amountCents)}</strong>
                               </div>
-                            );
-                          })()}
-                          {lineItems.map((li, i) => (
-                            <div key={i} class="action-card__row">
-                              <span>{li.description}</span>
-                              <strong>{fmtUSD(li.amountCents)}</strong>
-                            </div>
-                          ))}
-                          {lineItems.length > 0 ? (
-                            <div
-                              class="action-card__row"
-                              style="border-top:1px solid rgba(20,72,82,0.08);margin-top:6px;padding-top:8px"
-                            >
-                              <span style="font-weight:700;color:var(--brand-teal)">
-                                Total
-                              </span>
-                              <strong style="font-size:15px">
-                                {fmtUSD(totalCents)}
-                              </strong>
-                            </div>
-                          ) : null}
+                            ))}
+                            {lineItems.length > 0
+                              ? (
+                                <div
+                                  class="action-card__row"
+                                  style="border-top:1px solid rgba(20,72,82,0.08);margin-top:6px;padding-top:8px"
+                                >
+                                  <span style="font-weight:700;color:var(--brand-teal)">
+                                    Total
+                                  </span>
+                                  <strong style="font-size:15px">
+                                    {fmtUSD(totalCents)}
+                                  </strong>
+                                </div>
+                              )
+                              : null}
+                          </div>
+                          {payload.status === "draft" && !isSuperseded
+                            ? (
+                              <div class="action-card__cta">
+                                <button
+                                  type="button"
+                                  class="action-card__btn action-card__btn--primary"
+                                  onClick={() => lockActionCard(m, payload)}
+                                  disabled={sending || !payload.quoteId}
+                                >
+                                  <I d={ICN.bolt} size={11} /> Lock it in
+                                </button>
+                                <button
+                                  type="button"
+                                  class="action-card__btn"
+                                  onClick={() => setDraft("")}
+                                  disabled={sending}
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                            )
+                            : null}
+                          {payload.status === "sent"
+                            ? (
+                              <div class="action-card__cta">
+                                <button
+                                  type="button"
+                                  class="action-card__btn"
+                                  onClick={() => sendText("Re-open the quote.")}
+                                  disabled={sending}
+                                >
+                                  <I d={ICN.refresh} size={11} /> Re-open
+                                </button>
+                              </div>
+                            )
+                            : null}
                         </div>
-                        {payload.status === "draft" && !isSuperseded ? (
-                          <div class="action-card__cta">
-                            <button
-                              type="button"
-                              class="action-card__btn action-card__btn--primary"
-                              onClick={() => lockActionCard(m, payload)}
-                              disabled={sending || !payload.quoteId}
-                            >
-                              <I d={ICN.bolt} size={11} /> Lock it in
-                            </button>
-                            <button
-                              type="button"
-                              class="action-card__btn"
-                              onClick={() => setDraft("")}
-                              disabled={sending}
-                            >
-                              Edit
-                            </button>
-                          </div>
-                        ) : null}
-                        {payload.status === "sent" ? (
-                          <div class="action-card__cta">
-                            <button
-                              type="button"
-                              class="action-card__btn"
-                              onClick={() => sendText("Re-open the quote.")}
-                              disabled={sending}
-                            >
-                              <I d={ICN.refresh} size={11} /> Re-open
-                            </button>
-                          </div>
-                        ) : null}
+                        <div class="msg__time">{fmtTime(m.createdAt)}</div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Synthetic local-only post-handoff demo CTA. Lives in the
+                // chat as a pink chip card so the user sees ONE concrete
+                // next-step ("see what your customer sees") right after the
+                // onboarding handoff. Not persisted; survives only until
+                // refresh.
+                if (
+                  m.kind === "text" && m.content === "PM_ONBOARDING_DEMO_CTA"
+                ) {
+                  return (
+                    <div key={m.id} class="msg" style="margin-top:6px">
+                      <div class="msg__avatar">
+                        <img src="/logo-monster.png" alt="" />
+                      </div>
+                      <div style="flex:1;min-width:0">
+                        <a
+                          href={sampleQuoteUrl ?? "#"}
+                          target="_blank"
+                          rel="noopener"
+                          onClick={(e) => {
+                            // If the per-user sample isn't minted yet, mint
+                            // synchronously inside the click so the same tab
+                            // can still navigate. Falls back to a no-op if
+                            // the request fails — better than landing on a
+                            // 404 or a stranger's branded quote.
+                            if (sampleQuoteUrl) return;
+                            e.preventDefault();
+                            assistantClient
+                              .ensureSampleQuote()
+                              .then((r) => {
+                                const url = `/q/${r.quoteId}`;
+                                setSampleQuoteUrl(url);
+                                globalThis.open(url, "_blank", "noopener");
+                              })
+                              .catch(() => {});
+                          }}
+                          style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:linear-gradient(135deg,rgba(255,107,107,0.10) 0%,rgba(255,107,107,0.04) 100%);border:1px solid rgba(255,107,107,0.30);border-radius:14px;text-decoration:none;color:inherit;transition:transform 200ms"
+                        >
+                          <span
+                            aria-hidden="true"
+                            style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:#FF6B6B;color:#fff;font-size:18px;flex-shrink:0"
+                          >
+                            👀
+                          </span>
+                          <span style="flex:1;min-width:0">
+                            <span style="display:block;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#d94e4e">
+                              Try it · 5 seconds
+                            </span>
+                            <span style="display:block;margin-top:2px;font-weight:800;color:#144852;font-size:14.5px">
+                              See what your customer sees
+                            </span>
+                            <span style="display:block;margin-top:2px;font-size:12px;color:#6b7a7e">
+                              A live sample quote — branded with everything you
+                              just shared. Opens in a new tab.
+                            </span>
+                          </span>
+                          <span
+                            aria-hidden="true"
+                            style="font-size:18px;color:#d94e4e;font-weight:800"
+                          >
+                            →
+                          </span>
+                        </a>
+                        <div class="msg__time">{fmtTime(m.createdAt)}</div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Default chat bubble (text/voice/image).
+                const fileId = (m.payload as { fileId?: string } | undefined)
+                  ?.fileId;
+                const filename =
+                  (m.payload as { filename?: string } | undefined)
+                    ?.filename;
+                // Skip ghost bubbles: a text/voice message with no content and
+                // no attached media is something the LLM (or a buggy persist
+                // path) emitted with no signal — rendering it as an empty pill
+                // looks broken. Phase_divider / continue_cta / action_card /
+                // wizard / image / file are handled above with their own UI.
+                const hasMedia = !!fileId;
+                const hasContent = !!m.content?.trim();
+                if (!hasMedia && !hasContent) return null;
+                return (
+                  <div
+                    key={m.id}
+                    class={`msg ${m.role === "user" ? "msg--user" : ""}`}
+                  >
+                    <div class="msg__avatar">
+                      {m.role === "user"
+                        ? userInitials
+                        : <img src="/logo-monster.png" alt="" />}
+                    </div>
+                    <div>
+                      {m.kind === "image" && fileId
+                        ? (
+                          <a
+                            class="msg__image"
+                            href={`/api/files/${fileId}`}
+                            target="_blank"
+                            rel="noopener"
+                          >
+                            <img
+                              src={`/api/files/${fileId}`}
+                              alt={filename ?? "attached image"}
+                            />
+                          </a>
+                        )
+                        : null}
+                      <div class="msg__bubble" style="white-space:pre-wrap">
+                        {m.content}
                       </div>
                       <div class="msg__time">{fmtTime(m.createdAt)}</div>
                     </div>
                   </div>
                 );
-              }
-
-              // Synthetic local-only post-handoff demo CTA. Lives in the
-              // chat as a pink chip card so the user sees ONE concrete
-              // next-step ("see what your customer sees") right after the
-              // onboarding handoff. Not persisted; survives only until
-              // refresh.
-              if (m.kind === "text" && m.content === "PM_ONBOARDING_DEMO_CTA") {
-                return (
-                  <div key={m.id} class="msg" style="margin-top:6px">
-                    <div class="msg__avatar">
-                      <img src="/logo-monster.png" alt="" />
-                    </div>
-                    <div style="flex:1;min-width:0">
-                      <a
-                        href={sampleQuoteUrl ?? "#"}
-                        target="_blank"
-                        rel="noopener"
-                        onClick={(e) => {
-                          // If the per-user sample isn't minted yet, mint
-                          // synchronously inside the click so the same tab
-                          // can still navigate. Falls back to a no-op if
-                          // the request fails — better than landing on a
-                          // 404 or a stranger's branded quote.
-                          if (sampleQuoteUrl) return;
-                          e.preventDefault();
-                          assistantClient
-                            .ensureSampleQuote()
-                            .then((r) => {
-                              const url = `/q/${r.quoteId}`;
-                              setSampleQuoteUrl(url);
-                              globalThis.open(url, "_blank", "noopener");
-                            })
-                            .catch(() => {});
-                        }}
-                        style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:linear-gradient(135deg,rgba(255,107,107,0.10) 0%,rgba(255,107,107,0.04) 100%);border:1px solid rgba(255,107,107,0.30);border-radius:14px;text-decoration:none;color:inherit;transition:transform 200ms"
-                      >
-                        <span
-                          aria-hidden="true"
-                          style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:#FF6B6B;color:#fff;font-size:18px;flex-shrink:0"
-                        >
-                          👀
-                        </span>
-                        <span style="flex:1;min-width:0">
-                          <span style="display:block;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#d94e4e">
-                            Try it · 5 seconds
-                          </span>
-                          <span style="display:block;margin-top:2px;font-weight:800;color:#144852;font-size:14.5px">
-                            See what your customer sees
-                          </span>
-                          <span style="display:block;margin-top:2px;font-size:12px;color:#6b7a7e">
-                            A live sample quote — branded with everything you
-                            just shared. Opens in a new tab.
-                          </span>
-                        </span>
-                        <span
-                          aria-hidden="true"
-                          style="font-size:18px;color:#d94e4e;font-weight:800"
-                        >
-                          →
-                        </span>
-                      </a>
-                      <div class="msg__time">{fmtTime(m.createdAt)}</div>
-                    </div>
-                  </div>
-                );
-              }
-
-              // Default chat bubble (text/voice/image).
-              const fileId = (m.payload as { fileId?: string } | undefined)
-                ?.fileId;
-              const filename = (m.payload as { filename?: string } | undefined)
-                ?.filename;
-              // Skip ghost bubbles: a text/voice message with no content and
-              // no attached media is something the LLM (or a buggy persist
-              // path) emitted with no signal — rendering it as an empty pill
-              // looks broken. Phase_divider / continue_cta / action_card /
-              // wizard / image / file are handled above with their own UI.
-              const hasMedia = !!fileId;
-              const hasContent = !!m.content?.trim();
-              if (!hasMedia && !hasContent) return null;
-              return (
-                <div
-                  key={m.id}
-                  class={`msg ${m.role === "user" ? "msg--user" : ""}`}
-                >
-                  <div class="msg__avatar">
-                    {m.role === "user" ? (
-                      userInitials
-                    ) : (
-                      <img src="/logo-monster.png" alt="" />
-                    )}
-                  </div>
-                  <div>
-                    {m.kind === "image" && fileId ? (
-                      <a
-                        class="msg__image"
-                        href={`/api/files/${fileId}`}
-                        target="_blank"
-                        rel="noopener"
-                      >
-                        <img
-                          src={`/api/files/${fileId}`}
-                          alt={filename ?? "attached image"}
-                        />
-                      </a>
-                    ) : null}
-                    <div class="msg__bubble" style="white-space:pre-wrap">
-                      {m.content}
-                    </div>
-                    <div class="msg__time">{fmtTime(m.createdAt)}</div>
-                  </div>
-                </div>
-              );
-            });
-          })()
-        )}
+              });
+            })()
+          )}
         {!empty &&
-        sending &&
-        messages.length > 0 &&
-        messages[messages.length - 1].role === "user" ? (
-          <div class="msg" aria-live="polite" aria-label="Bossie is thinking">
-            <div class="msg__avatar">
-              <img src="/logo-monster.png" alt="" />
+            sending &&
+            messages.length > 0 &&
+            messages[messages.length - 1].role === "user"
+          ? (
+            <div class="msg" aria-live="polite" aria-label="Bossie is thinking">
+              <div class="msg__avatar">
+                <img src="/logo-monster.png" alt="" />
+              </div>
+              <div class="msg__bubble msg__bubble--typing">
+                <span class="typing-dot" />
+                <span class="typing-dot" />
+                <span class="typing-dot" />
+              </div>
             </div>
-            <div class="msg__bubble msg__bubble--typing">
-              <span class="typing-dot" />
-              <span class="typing-dot" />
-              <span class="typing-dot" />
-            </div>
-          </div>
-        ) : null}
+          )
+          : null}
       </div>
 
       {(() => {
@@ -4372,7 +4821,8 @@ export default function AsstChat({
         // and was visually distracting customers during testing.
         const answeredStepIds = new Set<string>();
         for (const x of messages) {
-          const sid = (x.payload as { wizardStepId?: string } | undefined)?.wizardStepId;
+          const sid = (x.payload as { wizardStepId?: string } | undefined)
+            ?.wizardStepId;
           if (x.kind === "text" && sid) answeredStepIds.add(sid);
         }
         const hasUnansweredWizard = messages.some((m) => {
@@ -4380,69 +4830,72 @@ export default function AsstChat({
           const sid = (m.payload as { stepId?: string } | undefined)?.stepId;
           return !sid || !answeredStepIds.has(sid);
         });
-        const composerHidden = priceCaptureOpen || jobOptionsOpen || hasUnansweredWizard;
+        const composerHidden = priceCaptureOpen || jobOptionsOpen ||
+          hasUnansweredWizard;
         if (composerHidden) return null;
         return (
-      <div
-        class={`composer${
-          awaitingJobDetails && !submittedJobDetails && !draft.trim()
-            ? " composer--flash"
-            : ""
-        }`}
-      >
-        {error ? <div class="composer__err">{error}</div> : null}
-        {recording ? (
-          <RecordingPanel
-            elapsed={recElapsed}
-            level={audioLevel}
-            finalText={liveFinal}
-            interimText={liveInterim}
-            onStop={toggleRecord}
-            onCancel={cancelRecord}
-          />
-        ) : (
-          <>
-            <div class="composer__inner">
-              <textarea
-                ref={taRef}
-                class="composer__input"
-                placeholder={composerPlaceholder(messages)}
-                rows={1}
-                value={draft}
-                onInput={(e) => {
-                  setDraft((e.target as HTMLTextAreaElement).value);
-                  autosize();
-                }}
-                onKeyDown={onKeyDown}
-              />
-              <div class="composer__tools">
-                <button
-                  type="button"
-                  class="composer__mic"
-                  aria-label="Voice memo"
-                  title="Tap to talk"
-                  onClick={toggleRecord}
-                  disabled={sending}
-                >
-                  <I d={ICN.mic} size={20} />
-                </button>
-                <button
-                  type="button"
-                  class="composer__send"
-                  title="Send"
-                  onClick={onSendClick}
-                  disabled={sending || !draft.trim()}
-                >
-                  <I d={ICN.arrow} size={16} sw={2.4} />
-                </button>
-              </div>
-            </div>
-            <div class="composer__hint">
-              Not sure? Just tell me about the job.
-            </div>
-          </>
-        )}
-      </div>
+          <div
+            class={`composer${
+              awaitingJobDetails && !submittedJobDetails && !draft.trim()
+                ? " composer--flash"
+                : ""
+            }`}
+          >
+            {error ? <div class="composer__err">{error}</div> : null}
+            {recording
+              ? (
+                <RecordingPanel
+                  elapsed={recElapsed}
+                  level={audioLevel}
+                  finalText={liveFinal}
+                  interimText={liveInterim}
+                  onStop={toggleRecord}
+                  onCancel={cancelRecord}
+                />
+              )
+              : (
+                <>
+                  <div class="composer__inner">
+                    <textarea
+                      ref={taRef}
+                      class="composer__input"
+                      placeholder={composerPlaceholder(messages)}
+                      rows={1}
+                      value={draft}
+                      onInput={(e) => {
+                        setDraft((e.target as HTMLTextAreaElement).value);
+                        autosize();
+                      }}
+                      onKeyDown={onKeyDown}
+                    />
+                    <div class="composer__tools">
+                      <button
+                        type="button"
+                        class="composer__mic"
+                        aria-label="Voice memo"
+                        title="Tap to talk"
+                        onClick={toggleRecord}
+                        disabled={sending}
+                      >
+                        <I d={ICN.mic} size={20} />
+                      </button>
+                      <button
+                        type="button"
+                        class="composer__send"
+                        title="Send"
+                        onClick={onSendClick}
+                        disabled={sending || !draft.trim()}
+                      >
+                        <I d={ICN.arrow} size={16} sw={2.4} />
+                      </button>
+                    </div>
+                  </div>
+                  <div class="composer__hint">
+                    Not sure? Just tell me about the job.
+                  </div>
+                </>
+              )}
+          </div>
         );
       })()}
     </>
@@ -4482,13 +4935,11 @@ function RecordingPanel({
   // Smoothed level → orb scale + glow intensity. The asymmetric easing
   // happens upstream in startLevelMeter; here we just map.
   const coreScale = 1 + level * 0.18;
-  const haloScale = 1 + level * 0.42;
   const outerScale = 1 + level * 0.72;
   const glowOpacity = 0.35 + level * 0.55;
-  const elapsedLabel =
-    elapsed < 60
-      ? `0:${String(elapsed).padStart(2, "0")}`
-      : `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
+  const elapsedLabel = elapsed < 60
+    ? `0:${String(elapsed).padStart(2, "0")}`
+    : `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
 
   // Use the previous final-text length to key a fade-in span on new
   // chunks. We split into "old" (already shown) + "new" (just landed)
@@ -4543,7 +4994,11 @@ function RecordingPanel({
               cy="40"
               r="34"
               fill="url(#recOrbHalo)"
-              style={`transform:scale(${outerScale.toFixed(3)});transform-origin:40px 40px;opacity:${glowOpacity.toFixed(3)};transition:transform 70ms ease-out, opacity 90ms ease-out`}
+              style={`transform:scale(${
+                outerScale.toFixed(3)
+              });transform-origin:40px 40px;opacity:${
+                glowOpacity.toFixed(3)
+              };transition:transform 70ms ease-out, opacity 90ms ease-out`}
             />
             {/* Core */}
             <circle
@@ -4551,7 +5006,9 @@ function RecordingPanel({
               cy="40"
               r="22"
               fill="url(#recOrbCore)"
-              style={`transform:scale(${coreScale.toFixed(3)});transform-origin:40px 40px;transition:transform 60ms ease-out`}
+              style={`transform:scale(${
+                coreScale.toFixed(3)
+              });transform-origin:40px 40px;transition:transform 60ms ease-out`}
             />
             {/* Specular highlight */}
             <ellipse
@@ -4560,7 +5017,9 @@ function RecordingPanel({
               rx="7"
               ry="4"
               fill="rgba(255,255,255,0.55)"
-              style={`transform:scale(${coreScale.toFixed(3)});transform-origin:40px 40px`}
+              style={`transform:scale(${
+                coreScale.toFixed(3)
+              });transform-origin:40px 40px`}
             />
           </svg>
         </div>
@@ -4574,25 +5033,29 @@ function RecordingPanel({
             <span class="rec-panel__elapsed">{elapsedLabel}</span>
           </div>
           <div class="rec-panel__transcript" aria-live="polite">
-            {hasAny ? (
-              <p class="rec-panel__transcript-text">
-                <span class="rec-panel__final">{oldFinal}</span>
-                {newFinal ? (
-                  <span class="rec-panel__final rec-panel__final--new">
-                    {newFinal}
+            {hasAny
+              ? (
+                <p class="rec-panel__transcript-text">
+                  <span class="rec-panel__final">{oldFinal}</span>
+                  {newFinal
+                    ? (
+                      <span class="rec-panel__final rec-panel__final--new">
+                        {newFinal}
+                      </span>
+                    )
+                    : null}
+                  {interimText && finalText ? " " : ""}
+                  <span class="rec-panel__interim">{interimText}</span>
+                  <span class="rec-panel__caret" aria-hidden="true">
+                    ▍
                   </span>
-                ) : null}
-                {interimText && finalText ? " " : ""}
-                <span class="rec-panel__interim">{interimText}</span>
-                <span class="rec-panel__caret" aria-hidden="true">
-                  ▍
-                </span>
-              </p>
-            ) : (
-              <p class="rec-panel__placeholder">
-                Start talking — I'll write it out as you speak.
-              </p>
-            )}
+                </p>
+              )
+              : (
+                <p class="rec-panel__placeholder">
+                  Start talking — I'll write it out as you speak.
+                </p>
+              )}
           </div>
         </div>
 
@@ -4715,10 +5178,11 @@ function CustomerStepPanel(props: {
         if (!cancelled) setCustomers(list);
       })
       .catch((err) => {
-        if (!cancelled)
+        if (!cancelled) {
           setLocalErr(
             err instanceof Error ? err.message : "couldn't load customers",
           );
+        }
       })
       .finally(() => {
         if (!cancelled) setLoadingList(false);
@@ -4785,8 +5249,7 @@ function CustomerStepPanel(props: {
               placeholder="Phone Number"
               value={createPhone}
               onInput={(e) =>
-                setCreatePhone((e.target as HTMLInputElement).value)
-              }
+                setCreatePhone((e.target as HTMLInputElement).value)}
             />
             <input
               type="email"
@@ -4794,8 +5257,7 @@ function CustomerStepPanel(props: {
               placeholder="Email (optional)"
               value={createEmail}
               onInput={(e) =>
-                setCreateEmail((e.target as HTMLInputElement).value)
-              }
+                setCreateEmail((e.target as HTMLInputElement).value)}
             />
           </div>
           {localErr ? <div class="cust-pick__err">{localErr}</div> : null}
@@ -4818,8 +5280,7 @@ function CustomerStepPanel(props: {
                       isBusiness,
                     },
                   },
-                })
-              }
+                })}
             >
               Next
             </button>
@@ -4845,106 +5306,110 @@ function CustomerStepPanel(props: {
         class="wiz__opts"
         style="flex-direction:column;align-items:stretch;gap:8px;margin-top:8px"
       >
-        {boundCustomer ? (
-          <button
-            type="button"
-            class="wiz-opt"
-            onClick={() => onSubmit("use_active")}
-            disabled={sending}
-          >
-            Use {boundCustomer.name} from chat
-            {boundCustomer.email ? (
-              <span class="wiz-opt__sub">{boundCustomer.email}</span>
-            ) : null}
-          </button>
-        ) : null}
-        {loadingList ? (
-          <div class="cust-pick__empty">Loading customers…</div>
-        ) : customers && customers.length === 0 ? (
-          <div class="cust-pick__empty">
-            No saved customers yet — add one below.
-          </div>
-        ) : (
-          <div class={`cust-dd ${pickerOpen ? "cust-dd--open" : ""}`}>
-            {!pickerOpen ? (
-              <button
-                type="button"
-                class="cust-dd__trigger"
-                onClick={() => setPickerOpen(true)}
-                disabled={sending}
-              >
-                <span class="cust-dd__placeholder">
-                  Click Here For Existing Customers
-                </span>
-                <svg
-                  class="cust-dd__chevron"
-                  viewBox="0 0 12 12"
-                  width="12"
-                  height="12"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M2 4l4 4 4-4"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    fill="none"
-                  />
-                </svg>
-              </button>
-            ) : (
-              <div class="cust-dd__panel">
-                <input
-                  type="text"
-                  class="cust-pick__search"
-                  placeholder={
-                    (customers?.length ?? 0) > 5
-                      ? `Search ${customers?.length} customers…`
-                      : "Search customers…"
-                  }
-                  value={search}
-                  onInput={(e) =>
-                    setSearch((e.target as HTMLInputElement).value)
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      setSearch("");
-                      setPickerOpen(false);
-                    }
-                  }}
-                  autoFocus
-                />
-                {filtered.length === 0 ? (
-                  <div class="cust-pick__empty">No matches.</div>
-                ) : (
-                  <div class="cust-pick__list cust-pick__list--scroll">
-                    {filtered.slice(0, 100).map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        class="cust-pick__row"
-                        onClick={() =>
-                          onSubmit("pick_existing", {
-                            customer: { id: c.id },
-                          })
+        {boundCustomer
+          ? (
+            <button
+              type="button"
+              class="wiz-opt"
+              onClick={() => onSubmit("use_active")}
+              disabled={sending}
+            >
+              Use {boundCustomer.name} from chat
+              {boundCustomer.email
+                ? <span class="wiz-opt__sub">{boundCustomer.email}</span>
+                : null}
+            </button>
+          )
+          : null}
+        {loadingList
+          ? <div class="cust-pick__empty">Loading customers…</div>
+          : customers && customers.length === 0
+          ? (
+            <div class="cust-pick__empty">
+              No saved customers yet — add one below.
+            </div>
+          )
+          : (
+            <div class={`cust-dd ${pickerOpen ? "cust-dd--open" : ""}`}>
+              {!pickerOpen
+                ? (
+                  <button
+                    type="button"
+                    class="cust-dd__trigger"
+                    onClick={() => setPickerOpen(true)}
+                    disabled={sending}
+                  >
+                    <span class="cust-dd__placeholder">
+                      Click Here For Existing Customers
+                    </span>
+                    <svg
+                      class="cust-dd__chevron"
+                      viewBox="0 0 12 12"
+                      width="12"
+                      height="12"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M2 4l4 4 4-4"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        fill="none"
+                      />
+                    </svg>
+                  </button>
+                )
+                : (
+                  <div class="cust-dd__panel">
+                    <input
+                      type="text"
+                      class="cust-pick__search"
+                      placeholder={(customers?.length ?? 0) > 5
+                        ? `Search ${customers?.length} customers…`
+                        : "Search customers…"}
+                      value={search}
+                      onInput={(e) =>
+                        setSearch((e.target as HTMLInputElement).value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          setSearch("");
+                          setPickerOpen(false);
                         }
-                        disabled={sending}
-                      >
-                        <span class="cust-pick__name">{c.name}</span>
-                        {c.email || c.phoneNumber ? (
-                          <span class="cust-pick__meta">
-                            {c.email ?? c.phoneNumber}
-                          </span>
-                        ) : null}
-                      </button>
-                    ))}
+                      }}
+                      autoFocus
+                    />
+                    {filtered.length === 0
+                      ? <div class="cust-pick__empty">No matches.</div>
+                      : (
+                        <div class="cust-pick__list cust-pick__list--scroll">
+                          {filtered.slice(0, 100).map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              class="cust-pick__row"
+                              onClick={() =>
+                                onSubmit("pick_existing", {
+                                  customer: { id: c.id },
+                                })}
+                              disabled={sending}
+                            >
+                              <span class="cust-pick__name">{c.name}</span>
+                              {c.email || c.phoneNumber
+                                ? (
+                                  <span class="cust-pick__meta">
+                                    {c.email ?? c.phoneNumber}
+                                  </span>
+                                )
+                                : null}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                   </div>
                 )}
-              </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
         {localErr ? <div class="cust-pick__err">{localErr}</div> : null}
         <button
           type="button"
@@ -4987,8 +5452,9 @@ function WizardFollowUpForm(props: {
 
   const initial: Record<string, string | number> = {};
   for (const f of fields) initial[f.id] = f.default ?? "";
-  const [values, setValues] =
-    useState<Record<string, string | number>>(initial);
+  const [values, setValues] = useState<Record<string, string | number>>(
+    initial,
+  );
 
   function setField(id: string, raw: string, type: WizardFieldType) {
     if (type === "text") {
@@ -5025,16 +5491,17 @@ function WizardFollowUpForm(props: {
   // Submit-disabled rule: every numeric field must be a finite number, and
   // every required field must be non-empty. (Optional support if needed
   // later — for now treat all declared fields as required.)
-  const submitDisabled =
-    sending ||
+  const submitDisabled = sending ||
     fields.some((f) => {
       const v = values[f.id];
       if (v === undefined || v === null || v === "") return true;
       if (f.type !== "text" && !Number.isFinite(Number(v))) return true;
-      if (f.type !== "text" && typeof f.min === "number" && Number(v) < f.min)
+      if (f.type !== "text" && typeof f.min === "number" && Number(v) < f.min) {
         return true;
-      if (f.type !== "text" && typeof f.max === "number" && Number(v) > f.max)
+      }
+      if (f.type !== "text" && typeof f.max === "number" && Number(v) > f.max) {
         return true;
+      }
       return false;
     });
 
@@ -5044,10 +5511,9 @@ function WizardFollowUpForm(props: {
   const depositPctField = fields.find((f) => f.type === "percent");
   const showPreview = quoteTotalCents > 0 && depositPctField;
   const depositPct = depositPctField ? Number(values[depositPctField.id]) : 0;
-  const previewDepositCents =
-    showPreview && Number.isFinite(depositPct)
-      ? Math.round((quoteTotalCents * depositPct) / 100)
-      : 0;
+  const previewDepositCents = showPreview && Number.isFinite(depositPct)
+    ? Math.round((quoteTotalCents * depositPct) / 100)
+    : 0;
   const previewBalanceCents = showPreview
     ? quoteTotalCents - previewDepositCents
     : 0;
@@ -5066,27 +5532,28 @@ function WizardFollowUpForm(props: {
                 min={f.min}
                 max={f.max}
                 onInput={(e) =>
-                  setField(f.id, (e.target as HTMLInputElement).value, f.type)
-                }
+                  setField(f.id, (e.target as HTMLInputElement).value, f.type)}
               />
-              {suffix(f.type) ? (
-                <span class="wiz-field__suffix">{suffix(f.type)}</span>
-              ) : null}
+              {suffix(f.type)
+                ? <span class="wiz-field__suffix">{suffix(f.type)}</span>
+                : null}
             </span>
           </label>
         ))}
       </div>
-      {showPreview ? (
-        <div class="wiz-preview">
-          <span class="wiz-preview__row">
-            Deposit · <strong>{fmtUSD(previewDepositCents)}</strong>
-          </span>
-          <span class="wiz-preview__sep">·</span>
-          <span class="wiz-preview__row">
-            Balance · <strong>{fmtUSD(previewBalanceCents)}</strong>
-          </span>
-        </div>
-      ) : null}
+      {showPreview
+        ? (
+          <div class="wiz-preview">
+            <span class="wiz-preview__row">
+              Deposit · <strong>{fmtUSD(previewDepositCents)}</strong>
+            </span>
+            <span class="wiz-preview__sep">·</span>
+            <span class="wiz-preview__row">
+              Balance · <strong>{fmtUSD(previewBalanceCents)}</strong>
+            </span>
+          </div>
+        )
+        : null}
       <div class="cust-create__actions">
         <button
           type="button"
@@ -5130,9 +5597,13 @@ function CustomDatePickerForm(props: {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate();
   const toIso = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${
+      String(d.getDate()).padStart(2, "0")
+    }`;
   const toUsDate = (d: Date) =>
-    `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
+    `${String(d.getMonth() + 1).padStart(2, "0")}/${
+      String(d.getDate()).padStart(2, "0")
+    }/${d.getFullYear()}`;
 
   const firstOfMonth = new Date(
     viewMonth.getFullYear(),
@@ -5168,8 +5639,7 @@ function CustomDatePickerForm(props: {
     year: "numeric",
   });
   const weekdays = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-  const prevDisabled =
-    viewMonth.getFullYear() === today.getFullYear() &&
+  const prevDisabled = viewMonth.getFullYear() === today.getFullYear() &&
     viewMonth.getMonth() === today.getMonth();
   const stepMonth = (delta: number) =>
     setViewMonth(
@@ -5321,8 +5791,9 @@ function parseDurationGuess(text: string): {
   };
   if (numMatch) {
     n = parseFloat(numMatch[1]);
-    confidence =
-      Number.isInteger(n) && !/half|about|roughly|~/.test(t) ? "ok" : "guess";
+    confidence = Number.isInteger(n) && !/half|about|roughly|~/.test(t)
+      ? "ok"
+      : "guess";
   } else {
     for (const [w, v] of Object.entries(wordNums)) {
       const re = new RegExp(`\\b${w}\\b`);
@@ -5478,28 +5949,34 @@ function CustomDurationPickerForm(props: {
           {confidence === "fail"
             ? "Set the duration"
             : confidence === "guess"
-              ? "Did I hear that right?"
-              : "Got it — confirm and we'll lock it in"}
+            ? "Did I hear that right?"
+            : "Got it — confirm and we'll lock it in"}
         </strong>
-        {heardFrom ? (
-          <span class="dur__sub">
-            You said: <em>"{heardFrom}"</em>
-          </span>
-        ) : (
-          <span class="dur__sub">
-            Pick a number and a unit — I'll write it into the contract.
-          </span>
-        )}
-        {confidence === "guess" ? (
-          <span class="dur__warn">
-            ⚠ Best guess — please double-check before locking in.
-          </span>
-        ) : null}
-        {parseFailed ? (
-          <span class="dur__warn">
-            I couldn't read that as a duration — set it manually.
-          </span>
-        ) : null}
+        {heardFrom
+          ? (
+            <span class="dur__sub">
+              You said: <em>"{heardFrom}"</em>
+            </span>
+          )
+          : (
+            <span class="dur__sub">
+              Pick a number and a unit — I'll write it into the contract.
+            </span>
+          )}
+        {confidence === "guess"
+          ? (
+            <span class="dur__warn">
+              ⚠ Best guess — please double-check before locking in.
+            </span>
+          )
+          : null}
+        {parseFailed
+          ? (
+            <span class="dur__warn">
+              I couldn't read that as a duration — set it manually.
+            </span>
+          )
+          : null}
       </div>
       <div class="dur__row">
         <input
@@ -5524,8 +6001,9 @@ function CustomDurationPickerForm(props: {
           class="cust-pick__search dur__unit"
           value={unit}
           onChange={(e) =>
-            setUnit((e.currentTarget as HTMLSelectElement).value as typeof unit)
-          }
+            setUnit(
+              (e.currentTarget as HTMLSelectElement).value as typeof unit,
+            )}
           aria-label="Unit"
         >
           <option value="days">Days</option>
@@ -5699,17 +6177,16 @@ function CustomWarrantyPickerForm(props: {
   // up to a year in days, 5 years in months, 25 years in years.
   const cap = unit === "days" ? 365 : unit === "months" ? 60 : 25;
   const num = Math.max(1, Math.min(cap, Number(n) || 0));
-  const valid =
-    kind !== "term" || (Number.isFinite(num) && num >= 1 && num <= cap);
+  const valid = kind !== "term" ||
+    (Number.isFinite(num) && num >= 1 && num <= cap);
   const unitLabel = num === 1 ? unit.replace(/s$/, "") : unit;
-  const preview =
-    kind === "lifetime"
-      ? "Lifetime"
-      : kind === "none"
-        ? "No warranty"
-        : valid
-          ? `${num} ${unitLabel}`
-          : "—";
+  const preview = kind === "lifetime"
+    ? "Lifetime"
+    : kind === "none"
+    ? "No warranty"
+    : valid
+    ? `${num} ${unitLabel}`
+    : "—";
 
   const presets: {
     label: string;
@@ -5853,36 +6330,43 @@ function CustomWarrantyPickerForm(props: {
           {confidence === "fail"
             ? "Set the warranty"
             : confidence === "guess"
-              ? "Did I hear that right?"
-              : "Got it — confirm and we'll lock it in"}
+            ? "Did I hear that right?"
+            : "Got it — confirm and we'll lock it in"}
         </strong>
-        {heardFrom ? (
-          <span class="dur__sub">
-            You said: <em>"{heardFrom}"</em>
-          </span>
-        ) : (
-          <span class="dur__sub">
-            Pick a length — I'll write it into the contract.
-          </span>
-        )}
-        {confidence === "guess" ? (
-          <span class="dur__warn">
-            ⚠ Best guess — please double-check before locking in.
-          </span>
-        ) : null}
-        {parseFailed ? (
-          <span class="dur__warn">
-            I couldn't read that as a warranty term — set it manually.
-          </span>
-        ) : null}
+        {heardFrom
+          ? (
+            <span class="dur__sub">
+              You said: <em>"{heardFrom}"</em>
+            </span>
+          )
+          : (
+            <span class="dur__sub">
+              Pick a length — I'll write it into the contract.
+            </span>
+          )}
+        {confidence === "guess"
+          ? (
+            <span class="dur__warn">
+              ⚠ Best guess — please double-check before locking in.
+            </span>
+          )
+          : null}
+        {parseFailed
+          ? (
+            <span class="dur__warn">
+              I couldn't read that as a warranty term — set it manually.
+            </span>
+          )
+          : null}
       </div>
       <div class="dur__row">
         <select
           class="cust-pick__search dur__unit"
           value={kind}
           onChange={(e) =>
-            setKind((e.currentTarget as HTMLSelectElement).value as typeof kind)
-          }
+            setKind(
+              (e.currentTarget as HTMLSelectElement).value as typeof kind,
+            )}
           aria-label="Warranty type"
         >
           <option value="term">Set a term</option>
@@ -5890,45 +6374,50 @@ function CustomWarrantyPickerForm(props: {
           <option value="none">No warranty</option>
         </select>
       </div>
-      {kind === "term" ? (
-        <div class="dur__row">
-          <input
-            type="number"
-            class="cust-pick__search dur__num"
-            inputMode="numeric"
-            min={1}
-            max={cap}
-            value={n}
-            onInput={(e) => {
-              const raw = (e.target as HTMLInputElement).value;
-              if (raw === "") setN("");
-              else setN(String(Math.max(1, Math.min(cap, Number(raw) || 1))));
-            }}
-            onBlur={() => {
-              if (!n || Number(n) < 1) setN("1");
-            }}
-            autoFocus
-            aria-label="Number"
-          />
-          <select
-            class="cust-pick__search dur__unit"
-            value={unit}
-            onChange={(e) => {
-              const next = (e.currentTarget as HTMLSelectElement)
-                .value as typeof unit;
-              const nextCap =
-                next === "days" ? 365 : next === "months" ? 60 : 25;
-              if (Number(n) > nextCap) setN(String(nextCap));
-              setUnit(next);
-            }}
-            aria-label="Unit"
-          >
-            <option value="days">Days</option>
-            <option value="months">Months</option>
-            <option value="years">Years</option>
-          </select>
-        </div>
-      ) : null}
+      {kind === "term"
+        ? (
+          <div class="dur__row">
+            <input
+              type="number"
+              class="cust-pick__search dur__num"
+              inputMode="numeric"
+              min={1}
+              max={cap}
+              value={n}
+              onInput={(e) => {
+                const raw = (e.target as HTMLInputElement).value;
+                if (raw === "") setN("");
+                else setN(String(Math.max(1, Math.min(cap, Number(raw) || 1))));
+              }}
+              onBlur={() => {
+                if (!n || Number(n) < 1) setN("1");
+              }}
+              autoFocus
+              aria-label="Number"
+            />
+            <select
+              class="cust-pick__search dur__unit"
+              value={unit}
+              onChange={(e) => {
+                const next = (e.currentTarget as HTMLSelectElement)
+                  .value as typeof unit;
+                const nextCap = next === "days"
+                  ? 365
+                  : next === "months"
+                  ? 60
+                  : 25;
+                if (Number(n) > nextCap) setN(String(nextCap));
+                setUnit(next);
+              }}
+              aria-label="Unit"
+            >
+              <option value="days">Days</option>
+              <option value="months">Months</option>
+              <option value="years">Years</option>
+            </select>
+          </div>
+        )
+        : null}
       <div class="dur__presets">
         {presets.map((p) => {
           const active = p.label === preview;
@@ -5996,9 +6485,10 @@ function parsePaymentGuess(text: string): {
 
   // "Due on completion / on delivery / when done / same day" → Net 0.
   if (
-    /\b(on (completion|delivery|done|finish)|when (done|finished|complete)|same[\s-]?day|on the day|due on)\b/.test(
-      t,
-    )
+    /\b(on (completion|delivery|done|finish)|when (done|finished|complete)|same[\s-]?day|on the day|due on)\b/
+      .test(
+        t,
+      )
   ) {
     return { mode: "net", netDays: 0, confidence: "guess" };
   }
@@ -6080,19 +6570,16 @@ function CustomPaymentPickerForm(props: {
 
   const days = Math.max(0, Math.min(180, Number(netDays) || 0));
   const splitNums = splits.map((s) =>
-    Math.max(0, Math.min(100, Number(s) || 0)),
+    Math.max(0, Math.min(100, Number(s) || 0))
   );
   const splitSum = splitNums.reduce((a, b) => a + b, 0);
   const splitsValid = splitNums.length >= 2 && splitSum === 100;
 
-  const preview =
-    mode === "net"
-      ? days === 0
-        ? "Net 0 — due on completion"
-        : `Net ${days}`
-      : splitsValid
-        ? splitNums.join(" / ")
-        : "—";
+  const preview = mode === "net"
+    ? days === 0 ? "Net 0 — due on completion" : `Net ${days}`
+    : splitsValid
+    ? splitNums.join(" / ")
+    : "—";
 
   const valid = mode === "net" ? Number.isFinite(days) : splitsValid;
 
@@ -6158,8 +6645,9 @@ function CustomPaymentPickerForm(props: {
 
   function setSplitAt(idx: number, raw: string) {
     const next = splits.slice();
-    next[idx] =
-      raw === "" ? "" : String(Math.max(0, Math.min(100, Number(raw) || 0)));
+    next[idx] = raw === ""
+      ? ""
+      : String(Math.max(0, Math.min(100, Number(raw) || 0)));
     setSplits(next);
   }
 
@@ -6280,28 +6768,35 @@ function CustomPaymentPickerForm(props: {
           {confidence === "fail"
             ? "Set your payment terms"
             : confidence === "guess"
-              ? "Did I hear that right?"
-              : "Got it — confirm and we'll lock it in"}
+            ? "Did I hear that right?"
+            : "Got it — confirm and we'll lock it in"}
         </strong>
-        {heardFrom ? (
-          <span class="dur__sub">
-            You said: <em>"{heardFrom}"</em>
-          </span>
-        ) : (
-          <span class="dur__sub">
-            Pick a mode and enter the numbers — I'll write it into the contract.
-          </span>
-        )}
-        {confidence === "guess" ? (
-          <span class="dur__warn">
-            ⚠ Best guess — please double-check before locking in.
-          </span>
-        ) : null}
-        {parseFailed ? (
-          <span class="dur__warn">
-            I couldn't read that as payment terms — set it manually.
-          </span>
-        ) : null}
+        {heardFrom
+          ? (
+            <span class="dur__sub">
+              You said: <em>"{heardFrom}"</em>
+            </span>
+          )
+          : (
+            <span class="dur__sub">
+              Pick a mode and enter the numbers — I'll write it into the
+              contract.
+            </span>
+          )}
+        {confidence === "guess"
+          ? (
+            <span class="dur__warn">
+              ⚠ Best guess — please double-check before locking in.
+            </span>
+          )
+          : null}
+        {parseFailed
+          ? (
+            <span class="dur__warn">
+              I couldn't read that as payment terms — set it manually.
+            </span>
+          )
+          : null}
       </div>
 
       <div class="pay__modes" role="tablist">
@@ -6327,109 +6822,118 @@ function CustomPaymentPickerForm(props: {
         </button>
       </div>
 
-      {mode === "net" ? (
-        <div class="pay__net">
-          <label class="pay__net-label">
-            Due
-            <input
-              type="number"
-              class="cust-pick__search pay__net-num"
-              inputMode="numeric"
-              min={0}
-              max={180}
-              value={netDays}
-              onInput={(e) => setNetDays((e.target as HTMLInputElement).value)}
-              onBlur={() => {
-                if (!netDays || Number(netDays) < 0) setNetDays("0");
-              }}
-              autoFocus
-              aria-label="Days after invoice"
-            />
-            days after the invoice
-          </label>
-          <span class="pay__net-hint">
-            {days === 0
-              ? "0 = paid same day the work wraps."
-              : `Customer has ${days} day${days === 1 ? "" : "s"} to pay after you send the invoice.`}
-          </span>
-        </div>
-      ) : (
-        <div class="pay__split">
-          <div class="pay__split-rows">
-            {splits.map((val, idx) => {
-              const labelText =
-                splits.length === 2
-                  ? idx === 0
-                    ? "Deposit"
-                    : "On completion"
-                  : idx === 0
-                    ? "Deposit"
-                    : idx === splits.length - 1
-                      ? "On completion"
-                      : `Milestone ${idx}`;
-              return (
-                <div key={idx} class="pay__split-row">
-                  <input
-                    type="number"
-                    class="cust-pick__search pay__split-pct"
-                    inputMode="numeric"
-                    min={0}
-                    max={100}
-                    value={val}
-                    onInput={(e) =>
-                      setSplitAt(idx, (e.target as HTMLInputElement).value)
-                    }
-                    onBlur={() => {
-                      if (val === "") setSplitAt(idx, "0");
-                    }}
-                    aria-label={`${labelText} percentage`}
-                  />
-                  <span class="pay__split-pctsign">%</span>
-                  <span class="pay__split-lbl">{labelText}</span>
-                  {splits.length > 2 ? (
-                    <button
-                      type="button"
-                      class="pay__split-del"
-                      onClick={() => removeMilestone(idx)}
-                      aria-label={`Remove ${labelText}`}
-                      disabled={sending}
-                    >
-                      ×
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-          <div class="pay__split-tools">
-            {splits.length < 4 ? (
-              <button
-                type="button"
-                class="dur__chip dur__chip--ghost"
-                onClick={addMilestone}
-                disabled={sending}
-              >
-                + Add milestone
-              </button>
-            ) : null}
-            {!splitsValid ? (
-              <button
-                type="button"
-                class="dur__chip"
-                onClick={autoBalance}
-                disabled={sending}
-              >
-                Auto-balance to 100%
-              </button>
-            ) : null}
-            <span
-              class={`pay__split-sum ${splitsValid ? "pay__split-sum--ok" : "pay__split-sum--bad"}`}
-            >
-              Total: {splitSum}%
+      {mode === "net"
+        ? (
+          <div class="pay__net">
+            <label class="pay__net-label">
+              Due
+              <input
+                type="number"
+                class="cust-pick__search pay__net-num"
+                inputMode="numeric"
+                min={0}
+                max={180}
+                value={netDays}
+                onInput={(e) =>
+                  setNetDays((e.target as HTMLInputElement).value)}
+                onBlur={() => {
+                  if (!netDays || Number(netDays) < 0) setNetDays("0");
+                }}
+                autoFocus
+                aria-label="Days after invoice"
+              />
+              days after the invoice
+            </label>
+            <span class="pay__net-hint">
+              {days === 0
+                ? "0 = paid same day the work wraps."
+                : `Customer has ${days} day${
+                  days === 1 ? "" : "s"
+                } to pay after you send the invoice.`}
             </span>
           </div>
-        </div>
-      )}
+        )
+        : (
+          <div class="pay__split">
+            <div class="pay__split-rows">
+              {splits.map((val, idx) => {
+                const labelText = splits.length === 2
+                  ? idx === 0 ? "Deposit" : "On completion"
+                  : idx === 0
+                  ? "Deposit"
+                  : idx === splits.length - 1
+                  ? "On completion"
+                  : `Milestone ${idx}`;
+                return (
+                  <div key={idx} class="pay__split-row">
+                    <input
+                      type="number"
+                      class="cust-pick__search pay__split-pct"
+                      inputMode="numeric"
+                      min={0}
+                      max={100}
+                      value={val}
+                      onInput={(e) =>
+                        setSplitAt(idx, (e.target as HTMLInputElement).value)}
+                      onBlur={() => {
+                        if (val === "") setSplitAt(idx, "0");
+                      }}
+                      aria-label={`${labelText} percentage`}
+                    />
+                    <span class="pay__split-pctsign">%</span>
+                    <span class="pay__split-lbl">{labelText}</span>
+                    {splits.length > 2
+                      ? (
+                        <button
+                          type="button"
+                          class="pay__split-del"
+                          onClick={() => removeMilestone(idx)}
+                          aria-label={`Remove ${labelText}`}
+                          disabled={sending}
+                        >
+                          ×
+                        </button>
+                      )
+                      : null}
+                  </div>
+                );
+              })}
+            </div>
+            <div class="pay__split-tools">
+              {splits.length < 4
+                ? (
+                  <button
+                    type="button"
+                    class="dur__chip dur__chip--ghost"
+                    onClick={addMilestone}
+                    disabled={sending}
+                  >
+                    + Add milestone
+                  </button>
+                )
+                : null}
+              {!splitsValid
+                ? (
+                  <button
+                    type="button"
+                    class="dur__chip"
+                    onClick={autoBalance}
+                    disabled={sending}
+                  >
+                    Auto-balance to 100%
+                  </button>
+                )
+                : null}
+              <span
+                class={`pay__split-sum ${
+                  splitsValid ? "pay__split-sum--ok" : "pay__split-sum--bad"
+                }`}
+              >
+                Total: {splitSum}%
+              </span>
+            </div>
+          </div>
+        )}
 
       <div class="dur__presets">
         {presets.map((p) => (
@@ -6484,8 +6988,9 @@ function latestSentQuoteCents(messages: Message[]): number {
     if (m.kind !== "action_card") continue;
     const p = m.payload as ActionCardPayload | undefined;
     if (!p) continue;
-    if (p.status === "sent" && typeof p.totalCents === "number")
+    if (p.status === "sent" && typeof p.totalCents === "number") {
       return p.totalCents;
+    }
   }
   return 0;
 }

@@ -17,7 +17,9 @@ interface ShortLinkResolution {
 export const handler = define.handlers({
   async GET(ctx) {
     const code = ctx.params.code;
-    const r = await ssrBackendGet<ShortLinkResolution>(`/s/${encodeURIComponent(code)}`);
+    const r = await ssrBackendGet<ShortLinkResolution>(
+      `/s/${encodeURIComponent(code)}`,
+    );
     if (!r.ok || !r.data) {
       return new Response("not found", { status: 404 });
     }

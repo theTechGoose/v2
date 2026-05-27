@@ -18,19 +18,27 @@ export const handler = define.handlers({
     try {
       res = await fetch(`${BACKEND_URL}/auth/verify-otp`, {
         method: "POST",
-        headers: { "content-type": "application/json", "accept": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "accept": "application/json",
+        },
         body,
       });
     } catch {
-      return new Response(JSON.stringify({ ok: false, error: "backend_unreachable" }), {
-        status: 502,
-        headers: { "content-type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ ok: false, error: "backend_unreachable" }),
+        {
+          status: 502,
+          headers: { "content-type": "application/json" },
+        },
+      );
     }
 
     const text = await res.text();
     let parsed: Record<string, unknown> = {};
-    try { parsed = text.length > 0 ? JSON.parse(text) : {}; } catch { /* ignore */ }
+    try {
+      parsed = text.length > 0 ? JSON.parse(text) : {};
+    } catch { /* ignore */ }
 
     const headers = new Headers({ "content-type": "application/json" });
     const upstreamCookie = res.headers.get("set-cookie");
@@ -38,14 +46,24 @@ export const handler = define.handlers({
 
     if (res.ok && typeof parsed.sessionId === "string") {
       const isNewUser = parsed.isNewUser === true;
-      const redirectTo = isNewUser ? "/assistant?onboard=1" : "/dashboard?welcome=back";
+      const redirectTo = isNewUser
+        ? "/assistant?onboard=1"
+        : "/dashboard?welcome=back";
       return new Response(
-        JSON.stringify({ ok: true, sessionId: parsed.sessionId, userId: parsed.userId, isNewUser, redirectTo }),
+        JSON.stringify({
+          ok: true,
+          sessionId: parsed.sessionId,
+          userId: parsed.userId,
+          isNewUser,
+          redirectTo,
+        }),
         { status: 200, headers },
       );
     }
 
-    const code = typeof parsed.error === "string" ? parsed.error : "invalid_code";
+    const code = typeof parsed.error === "string"
+      ? parsed.error
+      : "invalid_code";
     return new Response(JSON.stringify({ ok: false, error: code }), {
       status: res.status >= 400 ? res.status : 400,
       headers,

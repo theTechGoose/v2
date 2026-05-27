@@ -1,7 +1,7 @@
 import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import { loadUser } from "../lib/auth.ts";
-import { pickLangFromAcceptLanguage, STRINGS, type Lang } from "../lib/lang.ts";
+import { type Lang, pickLangFromAcceptLanguage, STRINGS } from "../lib/lang.ts";
 import CodeInput from "../islands/CodeInput.tsx";
 
 function formatPhoneDisplay(e164: string): string {
@@ -13,12 +13,21 @@ function formatPhoneDisplay(e164: string): string {
 export default define.page(async function Verify(ctx) {
   const url = new URL(ctx.req.url);
   const phone = url.searchParams.get("phone");
-  if (!phone) return new Response(null, { status: 302, headers: { Location: "/" } });
+  if (!phone) {
+    return new Response(null, { status: 302, headers: { Location: "/" } });
+  }
 
   const user = await loadUser(ctx.req);
-  if (user) return new Response(null, { status: 302, headers: { Location: "/dashboard" } });
+  if (user) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: "/dashboard" },
+    });
+  }
 
-  const lang: Lang = pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
+  const lang: Lang = pickLangFromAcceptLanguage(
+    ctx.req.headers.get("accept-language"),
+  );
   const s = STRINGS[lang];
   const display = formatPhoneDisplay(phone);
 
@@ -31,7 +40,11 @@ export default define.page(async function Verify(ctx) {
       <div class="verify-shell">
         <div class="verify-card">
           <a href="/" class="brand" style="margin:0 auto 4px">
-            <img src="/logo-monster.png" alt="Paperwork Monster" style="width:38px;height:38px;flex-shrink:0" />
+            <img
+              src="/logo-monster.png"
+              alt="Paperwork Monster"
+              style="width:38px;height:38px;flex-shrink:0"
+            />
             <span>Paperwork</span>
             <em style="font-style:normal;color:var(--brand-green)">Monster</em>
           </a>
@@ -40,12 +53,14 @@ export default define.page(async function Verify(ctx) {
               <span class="pm-steps__dot">✓</span>
               <span class="pm-steps__label">{s["cta.steps.phone"]}</span>
             </li>
-            <span class="pm-steps__bar pm-steps__bar--done" aria-hidden="true"></span>
+            <span class="pm-steps__bar pm-steps__bar--done" aria-hidden="true">
+            </span>
             <li class="pm-steps__item pm-steps__item--active" id="pm-step-code">
               <span class="pm-steps__dot">2</span>
               <span class="pm-steps__label">{s["cta.steps.code"]}</span>
             </li>
-            <span class="pm-steps__bar" aria-hidden="true" id="pm-step-bar-2"></span>
+            <span class="pm-steps__bar" aria-hidden="true" id="pm-step-bar-2">
+            </span>
             <li class="pm-steps__item" id="pm-step-in">
               <span class="pm-steps__dot">3</span>
               <span class="pm-steps__label">{s["cta.steps.in"]}</span>
@@ -53,7 +68,8 @@ export default define.page(async function Verify(ctx) {
           </ol>
           <h1 style="font-size:32px;margin-top:6px">{s["verify.h1"]}</h1>
           <p class="muted" style="color:var(--fg-muted);font-size:16px">
-            {s["verify.lede"]} <strong style="color:var(--fg)">{display}</strong>
+            {s["verify.lede"]}{" "}
+            <strong style="color:var(--fg)">{display}</strong>
           </p>
           <CodeInput phoneNumber={phone} initialLang={lang} />
         </div>

@@ -42,18 +42,30 @@ export default function Composer({ conversationId }: Props) {
   return (
     <div class="composer">
       <div class="composer__inner">
-        <button class="btn btn-ghost" type="button" aria-label="Attach"><Icon name="image" /></button>
-        <button class="btn btn-ghost" type="button" aria-label="Voice"><Icon name="mic" /></button>
+        <button class="btn btn-ghost" type="button" aria-label="Attach">
+          <Icon name="image" />
+        </button>
+        <button class="btn btn-ghost" type="button" aria-label="Voice">
+          <Icon name="mic" />
+        </button>
         <textarea
           rows={1}
           placeholder="Tell Bossie what to do…"
           value={draft}
           onInput={(e) => setDraft((e.target as HTMLTextAreaElement).value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
           }}
         />
-        <button class="composer__send" type="button" disabled={sending || draft.trim().length === 0} onClick={send}>
+        <button
+          class="composer__send"
+          type="button"
+          disabled={sending || draft.trim().length === 0}
+          onClick={send}
+        >
           <Icon name="send" /> Send
         </button>
       </div>

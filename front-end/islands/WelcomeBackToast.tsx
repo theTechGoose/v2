@@ -46,13 +46,19 @@ export default function WelcomeBackToast() {
     }, 50);
 
     const t = setTimeout(() => setShow(false), 3000);
-    return () => { cancelled = true; clearTimeout(t); };
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, []);
 
   if (!show) return null;
   const lang = langSignal.value;
   const tpl = STRINGS[lang]["welcome.back"];
-  const message = tpl.replace("{firstName}", name || (lang === "es" ? "amigo" : "friend"));
+  const message = tpl.replace(
+    "{firstName}",
+    name || (lang === "es" ? "amigo" : "friend"),
+  );
 
   return (
     <div
@@ -60,9 +66,15 @@ export default function WelcomeBackToast() {
       aria-live="polite"
       style={`position:fixed;top:18px;right:18px;z-index:9999;padding:10px 16px 10px 14px;display:inline-flex;align-items:center;gap:10px;background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,0.10),0 1px 3px rgba(0,0,0,0.04);font-family:inherit;font-size:14px;font-weight:600;color:${TEAL};animation:pm-toast-in 280ms cubic-bezier(0.34,1.56,0.64,1) both;pointer-events:none`}
     >
-      <span aria-hidden="true" style={`display:inline-flex;width:22px;height:22px;border-radius:50%;background:${PINK};color:#fff;align-items:center;justify-content:center;font-size:13px`}>👋</span>
+      <span
+        aria-hidden="true"
+        style={`display:inline-flex;width:22px;height:22px;border-radius:50%;background:${PINK};color:#fff;align-items:center;justify-content:center;font-size:13px`}
+      >
+        👋
+      </span>
       <span>{message}</span>
-      <style>{`
+      <style>
+        {`
         @keyframes pm-toast-in {
           0%   { opacity: 0; transform: translateY(-6px) scale(0.96); }
           100% { opacity: 1; transform: translateY(0)    scale(1); }
@@ -70,7 +82,8 @@ export default function WelcomeBackToast() {
         @media (prefers-reduced-motion: reduce) {
           [role=status][style*="pm-toast-in"] { animation: none !important; }
         }
-      `}</style>
+      `}
+      </style>
     </div>
   );
 }

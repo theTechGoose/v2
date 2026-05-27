@@ -16,9 +16,14 @@ interface Props {
   initialStatus: string;
 }
 
-interface HeaderEvent { client: string; status: string }
+interface HeaderEvent {
+  client: string;
+  status: string;
+}
 
-export default function ChatHeaderLive({ initialClient, initialStatus }: Props) {
+export default function ChatHeaderLive(
+  { initialClient, initialStatus }: Props,
+) {
   const [client, setClient] = useState(initialClient);
   const [status, setStatus] = useState(initialStatus);
   const [historyDepth, setHistoryDepth] = useState(0);
@@ -50,20 +55,22 @@ export default function ChatHeaderLive({ initialClient, initialStatus }: Props) 
 
   return (
     <div class="chat__head">
-      {historyDepth > 0 ? (
-        <a
-          href="#"
-          class="chat__head-btn"
-          title="Back"
-          style="text-decoration:none"
-          onClick={(e) => {
-            e.preventDefault();
-            globalThis.dispatchEvent(new CustomEvent("pm:asst-back"));
-          }}
-        >
-          <I d={ICN.back} size={15} />
-        </a>
-      ) : null}
+      {historyDepth > 0
+        ? (
+          <a
+            href="#"
+            class="chat__head-btn"
+            title="Back"
+            style="text-decoration:none"
+            onClick={(e) => {
+              e.preventDefault();
+              globalThis.dispatchEvent(new CustomEvent("pm:asst-back"));
+            }}
+          >
+            <I d={ICN.back} size={15} />
+          </a>
+        )
+        : null}
       <div class="chat__head-info">
         <div class="chat__head-title">{client}</div>
         <div class="chat__head-sub">
@@ -72,8 +79,12 @@ export default function ChatHeaderLive({ initialClient, initialStatus }: Props) 
         </div>
       </div>
       <div class="chat__head-tools">
-        <button type="button" class="chat__head-btn" title="Share thread"><I d={ICN.send} size={15} /></button>
-        <button type="button" class="chat__head-btn" title="More"><I d={ICN.more} size={15} /></button>
+        <button type="button" class="chat__head-btn" title="Share thread">
+          <I d={ICN.send} size={15} />
+        </button>
+        <button type="button" class="chat__head-btn" title="More">
+          <I d={ICN.more} size={15} />
+        </button>
       </div>
     </div>
   );

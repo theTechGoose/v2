@@ -9,6 +9,8 @@ interface Props {
   invoiceId: string;
   acceptedMethods: Method[];
   customerName?: string;
+  /** Outgoing-comms language (roadmap p.13). Customer-facing. */
+  lang?: "en" | "es";
 }
 
 const TEAL = "#144852";
@@ -35,7 +37,10 @@ const PINK_DARK = "#d94e4e";
  * If the contractor hasn't configured any methods, we render a fallback
  * "reach out to coordinate payment" message and a tel/mailto pair.
  */
-export default function PublicInvoiceClaim({ invoiceId, acceptedMethods, customerName }: Props) {
+export default function PublicInvoiceClaim(
+  { invoiceId, acceptedMethods, customerName, lang = "en" }: Props,
+) {
+  const es = lang === "es";
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const [reference, setReference] = useState("");
   const [claimedBy, setClaimedBy] = useState(customerName ?? "");
@@ -49,7 +54,9 @@ export default function PublicInvoiceClaim({ invoiceId, acceptedMethods, custome
         data-cy="claim-no-methods"
         style={`margin-top:24px;background:rgba(255,107,107,0.04);border:1px solid rgba(255,107,107,0.20);border-radius:14px;padding:18px 22px;color:${INK};font-size:14px;line-height:1.55`}
       >
-        Reach out to your contractor to coordinate payment. Once they confirm receipt, you'll get a receipt by text + email.
+        {es
+          ? "Contacta a tu contratista para coordinar el pago. Cuando confirme la recepción, recibirás un recibo por mensaje y correo."
+          : "Reach out to your contractor to coordinate payment. Once they confirm receipt, you'll get a receipt by text + email."}
       </section>
     );
   }
@@ -60,9 +67,17 @@ export default function PublicInvoiceClaim({ invoiceId, acceptedMethods, custome
         data-cy="claim-thanks"
         style={`margin-top:24px;background:rgba(81,152,67,0.08);border:1px solid rgba(81,152,67,0.30);border-radius:14px;padding:20px 24px`}
       >
-        <div style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}>Thanks!</div>
-        <p style={`margin:8px 0 0;color:${INK};font-size:15px;line-height:1.55`}>
-          We let your contractor know. They'll confirm when funds land — we'll text you a receipt then.
+        <div
+          style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}
+        >
+          {es ? "¡Gracias!" : "Thanks!"}
+        </div>
+        <p
+          style={`margin:8px 0 0;color:${INK};font-size:15px;line-height:1.55`}
+        >
+          {es
+            ? "Le avisamos a tu contratista. Confirmará cuando llegue el dinero — y te enviaremos un recibo."
+            : "We let your contractor know. They'll confirm when funds land — we'll text you a receipt then."}
         </p>
       </section>
     );
@@ -101,7 +116,11 @@ export default function PublicInvoiceClaim({ invoiceId, acceptedMethods, custome
 
   return (
     <section style="margin-top:28px" data-cy="claim-form">
-      <div style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}>How would you like to pay?</div>
+      <div
+        style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
+      >
+        {es ? "¿Cómo quieres pagar?" : "How would you like to pay?"}
+      </div>
       <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px">
         {acceptedMethods.map((m) => {
           const active = m.method === selected;
@@ -111,9 +130,13 @@ export default function PublicInvoiceClaim({ invoiceId, acceptedMethods, custome
               key={m.method}
               data-cy={`claim-method-${m.method}`}
               onClick={() => setSelected(m.method)}
-              style={`appearance:none;cursor:pointer;background:${active ? PINK : "#fff"};color:${active ? "#fff" : INK};border:1px solid ${active ? PINK_DARK : LINE};border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:700;letter-spacing:.01em`}
+              style={`appearance:none;cursor:pointer;background:${
+                active ? PINK : "#fff"
+              };color:${active ? "#fff" : INK};border:1px solid ${
+                active ? PINK_DARK : LINE
+              };border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:700;letter-spacing:.01em`}
             >
-              {methodLabel(m.method)}
+              {methodLabel(m.method, es)}
             </button>
           );
         })}
@@ -125,43 +148,67 @@ export default function PublicInvoiceClaim({ invoiceId, acceptedMethods, custome
             data-cy="claim-detail"
             style={`margin-top:18px;background:#fff;border:1px solid ${LINE};border-radius:14px;padding:18px 20px`}
           >
-            <div style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${TEAL}`}>{methodLabel(selectedMethod.method)}</div>
-            <div style={`margin-top:8px;color:${INK};font-size:14.5px;line-height:1.55`}>
-              {methodInstructions(selectedMethod)}
+            <div
+              style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${TEAL}`}
+            >
+              {methodLabel(selectedMethod.method, es)}
+            </div>
+            <div
+              style={`margin-top:8px;color:${INK};font-size:14.5px;line-height:1.55`}
+            >
+              {methodInstructions(selectedMethod, es)}
             </div>
             <label style="display:block;margin-top:14px">
-              <span style={`display:block;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${MUTED};margin-bottom:4px`}>Reference (optional)</span>
+              <span
+                style={`display:block;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${MUTED};margin-bottom:4px`}
+              >
+                {es ? "Referencia (opcional)" : "Reference (optional)"}
+              </span>
               <input
                 type="text"
                 value={reference}
                 data-cy="claim-reference"
                 placeholder={referencePlaceholder(selectedMethod.method)}
-                onInput={(e) => setReference((e.currentTarget as HTMLInputElement).value)}
+                onInput={(e) =>
+                  setReference((e.currentTarget as HTMLInputElement).value)}
                 style={`width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid ${LINE};border-radius:10px;font-size:14px;color:${INK}`}
               />
             </label>
             <label style="display:block;margin-top:10px">
-              <span style={`display:block;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${MUTED};margin-bottom:4px`}>Your name (optional)</span>
+              <span
+                style={`display:block;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${MUTED};margin-bottom:4px`}
+              >
+                {es ? "Tu nombre (opcional)" : "Your name (optional)"}
+              </span>
               <input
                 type="text"
                 value={claimedBy}
                 data-cy="claim-name"
-                placeholder="Your name"
-                onInput={(e) => setClaimedBy((e.currentTarget as HTMLInputElement).value)}
+                placeholder={es ? "Tu nombre" : "Your name"}
+                onInput={(e) =>
+                  setClaimedBy((e.currentTarget as HTMLInputElement).value)}
                 style={`width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid ${LINE};border-radius:10px;font-size:14px;color:${INK}`}
               />
             </label>
             {error
-              ? <div style={`margin-top:10px;color:#a83b3b;font-size:13px`}>{error}</div>
+              ? (
+                <div style={`margin-top:10px;color:#a83b3b;font-size:13px`}>
+                  {error}
+                </div>
+              )
               : null}
             <button
               type="button"
               data-cy="claim-submit"
               onClick={submit}
               disabled={submitting}
-              style={`margin-top:14px;width:100%;appearance:none;cursor:${submitting ? "wait" : "pointer"};background:${GREEN};color:#fff;border:0;border-radius:12px;padding:14px 18px;font-size:15px;font-weight:800;letter-spacing:.01em;box-shadow:0 8px 18px -6px rgba(81,152,67,0.45)`}
+              style={`margin-top:14px;width:100%;appearance:none;cursor:${
+                submitting ? "wait" : "pointer"
+              };background:${GREEN};color:#fff;border:0;border-radius:12px;padding:14px 18px;font-size:15px;font-weight:800;letter-spacing:.01em;box-shadow:0 8px 18px -6px rgba(81,152,67,0.45)`}
             >
-              {submitting ? "Sending…" : "I sent it"}
+              {submitting
+                ? (es ? "Enviando…" : "Sending…")
+                : (es ? "Ya lo envié" : "I sent it")}
             </button>
           </div>
         )
@@ -170,41 +217,95 @@ export default function PublicInvoiceClaim({ invoiceId, acceptedMethods, custome
   );
 }
 
-function methodLabel(method: string): string {
+function methodLabel(method: string, es = false): string {
   switch (method) {
-    case "check": return "Check";
-    case "venmo": return "Venmo";
-    case "zelle": return "Zelle";
-    case "cashapp": return "Cash App";
-    case "cash": return "Cash";
-    case "ach": return "Bank transfer";
-    case "other": return "Other";
-    default: return method;
+    case "check":
+      return es ? "Cheque" : "Check";
+    case "venmo":
+      return "Venmo";
+    case "zelle":
+      return "Zelle";
+    case "cashapp":
+      return "Cash App";
+    case "paypal":
+      return "PayPal";
+    case "cash":
+      return es ? "Efectivo" : "Cash";
+    case "ach":
+      return es ? "Transferencia bancaria" : "Bank transfer";
+    case "other":
+      return es ? "Otro" : "Other";
+    default:
+      return method;
   }
 }
 
-function methodInstructions(m: Method): string {
+function methodInstructions(m: Method, es = false): string {
+  const sendTo = (svc: string) =>
+    m.handle
+      ? (es
+        ? `Envía a ${m.handle} por ${svc}.`
+        : `Send to ${m.handle} on ${svc}.`)
+      : (es
+        ? `Envía el pago por ${svc} a tu contratista.`
+        : `Send the payment via ${svc} to your contractor.`);
   switch (m.method) {
-    case "check": return m.handle ? `Make it out and mail to: ${m.handle}` : "Mail the check to your contractor.";
-    case "venmo": return m.handle ? `Send to ${m.handle} on Venmo.` : "Send the payment via Venmo to your contractor.";
-    case "zelle": return m.handle ? `Send to ${m.handle} on Zelle.` : "Send via Zelle to your contractor.";
-    case "cashapp": return m.handle ? `Send to ${m.handle} on Cash App.` : "Send via Cash App to your contractor.";
-    case "cash": return "Hand the cash to your contractor on-site. Reply here once it's done so they have a record.";
-    case "ach": return "Ask your contractor for ACH routing + account details, then submit the transfer from your bank.";
-    case "other": return m.handle ? m.handle : "Coordinate with your contractor directly.";
-    default: return "Coordinate with your contractor.";
+    case "check":
+      return m.handle
+        ? (es
+          ? `Haz el cheque y envíalo a: ${m.handle}`
+          : `Make it out and mail to: ${m.handle}`)
+        : (es
+          ? "Envía el cheque por correo a tu contratista."
+          : "Mail the check to your contractor.");
+    case "venmo":
+      return sendTo("Venmo");
+    case "zelle":
+      return sendTo("Zelle");
+    case "cashapp":
+      return sendTo("Cash App");
+    case "paypal":
+      return sendTo("PayPal");
+    case "cash":
+      return es
+        ? "Entrega el efectivo a tu contratista en el sitio. Avisa aquí cuando lo hagas para que quede registro."
+        : "Hand the cash to your contractor on-site. Reply here once it's done so they have a record.";
+    case "ach":
+      return es
+        ? "Pide a tu contratista los datos de ruta y cuenta ACH, luego haz la transferencia desde tu banco."
+        : "Ask your contractor for ACH routing + account details, then submit the transfer from your bank.";
+    case "other":
+      return m.handle
+        ? m.handle
+        : (es
+          ? "Coordina directamente con tu contratista."
+          : "Coordinate with your contractor directly.");
+    default:
+      return es
+        ? "Coordina con tu contratista."
+        : "Coordinate with your contractor.";
   }
 }
 
 function referencePlaceholder(method: string): string {
   switch (method) {
-    case "check": return "Check #1234";
-    case "venmo": return "Transaction note (e.g. 'paid 5/12')";
-    case "zelle": return "Transaction ID or note";
-    case "cashapp": return "Transaction ID or note";
-    case "cash": return "When you'll bring it (e.g. 'Friday at 3pm')";
-    case "ach": return "Transfer reference";
-    case "other": return "Details";
-    default: return "";
+    case "check":
+      return "Check #1234";
+    case "venmo":
+      return "Transaction note (e.g. 'paid 5/12')";
+    case "zelle":
+      return "Transaction ID or note";
+    case "cashapp":
+      return "Transaction ID or note";
+    case "paypal":
+      return "Transaction ID or note";
+    case "cash":
+      return "When you'll bring it (e.g. 'Friday at 3pm')";
+    case "ach":
+      return "Transfer reference";
+    case "other":
+      return "Details";
+    default:
+      return "";
   }
 }

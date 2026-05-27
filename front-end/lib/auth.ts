@@ -22,9 +22,10 @@ export interface User {
 // Defaults to OFF so a forgotten env var on prod can't accidentally render
 // auth-gated pages with a stub user. Local dev opts in via
 // DEV_BYPASS_AUTH=1 in .env.
-const DEV_BYPASS = (typeof Deno !== "undefined"
-  ? (Deno.env.get("DEV_BYPASS_AUTH") ?? "0")
-  : "0") === "1";
+const DEV_BYPASS =
+  (typeof Deno !== "undefined"
+    ? (Deno.env.get("DEV_BYPASS_AUTH") ?? "0")
+    : "0") === "1";
 
 /**
  * Resolve the current user from the request's pm_session cookie.
@@ -40,7 +41,14 @@ const DEV_BYPASS = (typeof Deno !== "undefined"
  * of the dev `BACKEND_URL=http://localhost:3000` default. Falling back to a
  * non-existent localhost would 500 every SSR'd page.
  */
-const DEV_USER: User = { id: "dev", phoneNumber: "+15125550000", name: "Diego", language: "en", createdAt: 0, updatedAt: 0 };
+const DEV_USER: User = {
+  id: "dev",
+  phoneNumber: "+15125550000",
+  name: "Diego",
+  language: "en",
+  createdAt: 0,
+  updatedAt: 0,
+};
 
 type BackendFetch = (req: Request) => Response | Promise<Response>;
 
@@ -51,7 +59,10 @@ function getInProcessBackend(): BackendFetch | undefined {
   return (globalThis as { __backendFetch?: BackendFetch }).__backendFetch;
 }
 
-async function fetchMeInProcess(handler: BackendFetch, sessionId: string): Promise<User | undefined> {
+async function fetchMeInProcess(
+  handler: BackendFetch,
+  sessionId: string,
+): Promise<User | undefined> {
   const probe = new Request("http://internal/me", {
     method: "GET",
     headers: { "x-session-id": sessionId, "accept": "application/json" },
@@ -77,7 +88,9 @@ export async function loadUser(req: Request): Promise<User | undefined> {
     if (inProcess) return await fetchMeInProcess(inProcess, sessionId);
     return await api.get<User>("/me", { sessionId });
   } catch (err) {
-    if (err instanceof ApiError && (err.status === 401 || err.status === 403)) return undefined;
+    if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+      return undefined;
+    }
     if (DEV_BYPASS) return DEV_USER;
     // Backend unreachable / network error — treat as "no session" so the
     // middleware can redirect to /verify instead of bubbling a 500. Real
@@ -116,7 +129,15 @@ export interface ProfileGate {
 
 export async function loadProfileGate(req: Request): Promise<ProfileGate> {
   const user = await loadUser(req);
-  if (!user) return { user: undefined, businessName: undefined, state: undefined, isComplete: false, missing: [] };
+  if (!user) {
+    return {
+      user: undefined,
+      businessName: undefined,
+      state: undefined,
+      isComplete: false,
+      missing: [],
+    };
+  }
   const sessionId = readSessionCookie(req.headers.get("cookie"));
   let businessName: string | undefined;
   let state: string | undefined;
@@ -132,24 +153,29 @@ export async function loadProfileGate(req: Request): Promise<ProfileGate> {
         if (res.ok) {
           const j = await res.json() as {
             identity?: { businessName?: string; legalName?: string };
-            address?:  { state?: string };
+            address?: { state?: string };
           };
-          businessName = j.identity?.businessName?.trim() || j.identity?.legalName?.trim();
+          businessName = j.identity?.businessName?.trim() ||
+            j.identity?.legalName?.trim();
           state = j.address?.state?.trim();
         }
       } else {
         const j = await api.get<{
           identity?: { businessName?: string; legalName?: string };
-          address?:  { state?: string };
+          address?: { state?: string };
         }>("/profile", { sessionId });
-        businessName = j.identity?.businessName?.trim() || j.identity?.legalName?.trim();
+        businessName = j.identity?.businessName?.trim() ||
+          j.identity?.legalName?.trim();
         state = j.address?.state?.trim();
       }
     } catch (err) {
       // Profile lookup failed — treat as missing so we surface the
       // onboarding chat rather than letting the user land on a
       // dashboard with no brand identity.
-      console.error("[loadProfileGate] profile lookup failed:", (err as Error).message);
+      console.error(
+        "[loadProfileGate] profile lookup failed:",
+        (err as Error).message,
+      );
     }
   }
   const missing: OnboardingMissing[] = [];
@@ -165,5 +191,11 @@ export async function loadProfileGate(req: Request): Promise<ProfileGate> {
   // time. `missing` keeps tracking state so the onboarding progress strip
   // and any post-onboarding nudges can still surface it.
   const blocking = missing.filter((m) => m !== "state");
-  return { user, businessName, state, isComplete: blocking.length === 0, missing };
+  return {
+    user,
+    businessName,
+    state,
+    isComplete: blocking.length === 0,
+    missing,
+  };
 }

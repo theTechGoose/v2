@@ -16,6 +16,8 @@ export class BusinessInsuranceStore {
     const existing = await this.get(userId);
     const now = new Date().toISOString();
     const definedPatch = Object.fromEntries(Object.entries(patch).filter(([_, v]) => v !== undefined));
+    // Stamp the upload time whenever a new proof-of-insurance file is set.
+    if (patch.insuranceFileId !== undefined) definedPatch.insuranceUploadedAt = now;
     const next: BusinessInsurance = existing
       ? { ...existing, ...definedPatch, userId, createdAt: existing.createdAt, updatedAt: now }
       : { userId, ...definedPatch, createdAt: now, updatedAt: now };

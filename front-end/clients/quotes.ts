@@ -9,7 +9,14 @@
  */
 import { api, type ApiOptions } from "../lib/api.ts";
 
-export type QuoteStage = "draft" | "sent" | "opened" | "cooling" | "stale" | "won" | "lost";
+export type QuoteStage =
+  | "draft"
+  | "sent"
+  | "opened"
+  | "cooling"
+  | "stale"
+  | "won"
+  | "lost";
 
 export interface QuoteCard {
   id: string;
@@ -18,7 +25,12 @@ export interface QuoteCard {
   customerName: string | null;
   summary?: string;
   description?: string;
-  lineItems?: { description: string; quantity?: number; unit?: string; price?: number }[];
+  lineItems?: {
+    description: string;
+    quantity?: number;
+    unit?: string;
+    price?: number;
+  }[];
   estimatedTotal?: number;
   status?: string;
   sentAt?: string;
@@ -27,12 +39,12 @@ export interface QuoteCard {
   createdAt: string;
   updatedAt: string;
   // Derived
-  stage:        QuoteStage;
-  daysIn:       number;
-  opens:        number;
-  lastOpenAt:   string | null;
-  sentDays:     number | null;
-  decidedDays:  number | null;
+  stage: QuoteStage;
+  daysIn: number;
+  opens: number;
+  lastOpenAt: string | null;
+  sentDays: number | null;
+  decidedDays: number | null;
   [k: string]: unknown;
 }
 
@@ -46,15 +58,27 @@ export interface WinRate {
 
 export interface Insight {
   text: string;
-  kind: "open_count" | "median_days_to_decide" | "best_day_of_week" | "static_fallback";
+  kind:
+    | "open_count"
+    | "median_days_to_decide"
+    | "best_day_of_week"
+    | "static_fallback";
 }
 
 export const quotesClient = {
-  list:    (status?: string, opts: ApiOptions = {}) => api.get<QuoteCard[]>("/quotes", { ...opts, query: { status } }),
-  get:     (id: string, opts: ApiOptions = {})      => api.get<QuoteCard>(`/quotes/${id}`, opts),
-  update:  (id: string, patch: Record<string, unknown>, opts: ApiOptions = {}) =>
+  list: (status?: string, opts: ApiOptions = {}) =>
+    api.get<QuoteCard[]>("/quotes", { ...opts, query: { status } }),
+  get: (id: string, opts: ApiOptions = {}) =>
+    api.get<QuoteCard>(`/quotes/${id}`, opts),
+  update: (id: string, patch: Record<string, unknown>, opts: ApiOptions = {}) =>
     api.put<QuoteCard>(`/quotes/${id}`, patch, opts),
-  winRate: (days = 90, opts: ApiOptions = {})      => api.get<WinRate>("/analytics/quotes/win-rate", { ...opts, query: { days } }),
-  insight: (opts: ApiOptions = {})                  => api.get<Insight>("/analytics/quotes/insight", opts),
-  delete:  (id: string, opts: ApiOptions = {})      => api.delete<{ ok: true }>(`/quotes/${id}`, opts),
+  winRate: (days = 90, opts: ApiOptions = {}) =>
+    api.get<WinRate>("/analytics/quotes/win-rate", {
+      ...opts,
+      query: { days },
+    }),
+  insight: (opts: ApiOptions = {}) =>
+    api.get<Insight>("/analytics/quotes/insight", opts),
+  delete: (id: string, opts: ApiOptions = {}) =>
+    api.delete<{ ok: true }>(`/quotes/${id}`, opts),
 };

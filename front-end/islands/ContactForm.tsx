@@ -31,7 +31,9 @@ export default function ContactForm() {
     setErr(null);
     const e164 = toE164(phone);
     if (e164.replace(/\D/g, "").length < 10) {
-      setErr(lang === "es" ? "Número incompleto" : "Phone number is incomplete");
+      setErr(
+        lang === "es" ? "Número incompleto" : "Phone number is incomplete",
+      );
       return;
     }
     setSubmitting(true);
@@ -71,7 +73,11 @@ export default function ContactForm() {
           />
         </div>
         {err ? <p class="error" role="alert">{err}</p> : null}
-        <button class="btn btn-primary btn-lg" type="submit" disabled={submitting}>
+        <button
+          class="btn btn-primary btn-lg"
+          type="submit"
+          disabled={submitting}
+        >
           {submitting ? "…" : (s["contact.cta"] as string)}
         </button>
       </div>

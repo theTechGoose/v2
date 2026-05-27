@@ -33,13 +33,18 @@ async function blobToBase64(blob: Blob): Promise<string> {
       const i = result.indexOf(",");
       resolve(i >= 0 ? result.slice(i + 1) : result);
     };
-    reader.onerror = () => reject(reader.error ?? new Error("blob read failed"));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("blob read failed"));
     reader.readAsDataURL(blob);
   });
 }
 
 export const filesClient = {
-  async uploadBlob(blob: Blob, filename: string, opts: ApiOptions = {}): Promise<FileRecord> {
+  async uploadBlob(
+    blob: Blob,
+    filename: string,
+    opts: ApiOptions = {},
+  ): Promise<FileRecord> {
     const base64 = await blobToBase64(blob);
     return await api.post<FileRecord>("/files", {
       filename,

@@ -27,14 +27,17 @@ import {
 // chip set, just lets a filtered view be reloaded / shared / back-buttoned.
 type FilterId = ClientStatus | "all";
 
-interface FilterEntry { id: FilterId; label: string }
+interface FilterEntry {
+  id: FilterId;
+  label: string;
+}
 const FILTER_DEFS: FilterEntry[] = [
-  { id: "all",     label: "All" },
-  { id: "active",  label: "Active jobs" },
-  { id: "lead",    label: "Leads" },
-  { id: "owes",    label: "Owe you" },
+  { id: "all", label: "All" },
+  { id: "active", label: "Active jobs" },
+  { id: "lead", label: "Leads" },
+  { id: "owes", label: "Owe you" },
   { id: "regular", label: "Regulars" },
-  { id: "cold",    label: "Quiet" },
+  { id: "cold", label: "Quiet" },
 ];
 
 const FILTER_IDS: ReadonlyArray<string> = FILTER_DEFS.map((f) => f.id);
@@ -66,22 +69,23 @@ interface CardProps {
 }
 
 function ClientCard({ c, idx, isOpen, onOpen, onClose }: CardProps) {
-  const mood     = moodFor(c);
+  const mood = moodFor(c);
   const initials = initialsOf(c.name);
-  const seg      = segmentLabel(c.segment);
-  const story    = storyLineFor(c);
-  const cta      = ctaFor(c);
-  const balance  = balanceDisplay(c);
-  const address  = addressFor(c);
+  const seg = segmentLabel(c.segment);
+  const story = storyLineFor(c);
+  const cta = ctaFor(c);
+  const balance = balanceDisplay(c);
+  const address = addressFor(c);
 
   function onCardClick(e: Event) {
     const target = e.target as HTMLElement;
-    if (target.closest(".ccard2__foot") || target.closest(".ccard2__panel")) return;
+    if (target.closest(".ccard2__foot") || target.closest(".ccard2__panel")) {
+      return;
+    }
     if (!isOpen) onOpen();
   }
 
-  const styleStr =
-    `--mood-from:${mood.from};` +
+  const styleStr = `--mood-from:${mood.from};` +
     `--mood-to:${mood.to};` +
     `--mood-shadow:${mood.shadow};` +
     `--mood-status:${mood.statusFg};` +
@@ -100,7 +104,9 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose }: CardProps) {
           <span class="ccard2__status-dot" /> {mood.label}
         </div>
         {c.vip && (
-          <div class="ccard2__crown"><I d={ICN.crown} size={13} sw={2.5} /></div>
+          <div class="ccard2__crown">
+            <I d={ICN.crown} size={13} sw={2.5} />
+          </div>
         )}
       </div>
       <div class="ccard2__av">{initials}</div>
@@ -130,43 +136,67 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose }: CardProps) {
             <div class="ccard2__panel-name">{c.name}</div>
             <div class="ccard2__panel-seg">{seg} · {mood.label}</div>
           </div>
-          <button class="ccard2__panel-x" type="button" onClick={onClose} aria-label="Close">
+          <button
+            class="ccard2__panel-x"
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+          >
             <I d={ICN.x} size={14} sw={2.5} />
           </button>
         </div>
         <div class="ccard2__panel-rows">
           {c.phoneNumber && (
             <a class="ccard2__panel-row" href={`tel:${c.phoneNumber}`}>
-              <span class="ccard2__panel-row-icon"><I d={ICN.phone} size={13} sw={2.2} /></span>
+              <span class="ccard2__panel-row-icon">
+                <I d={ICN.phone} size={13} sw={2.2} />
+              </span>
               <span class="ccard2__panel-row-text">
                 <div class="ccard2__panel-row-lbl">Phone</div>
                 <div class="ccard2__panel-row-val">{c.phoneNumber}</div>
               </span>
-              <span class="ccard2__panel-row-arrow"><I d={ICN.arrow} size={12} sw={2.4} /></span>
+              <span class="ccard2__panel-row-arrow">
+                <I d={ICN.arrow} size={12} sw={2.4} />
+              </span>
             </a>
           )}
           {c.email && (
             <a class="ccard2__panel-row" href={`mailto:${c.email}`}>
-              <span class="ccard2__panel-row-icon"><I d={ICN.mail} size={13} sw={2.2} /></span>
+              <span class="ccard2__panel-row-icon">
+                <I d={ICN.mail} size={13} sw={2.2} />
+              </span>
               <span class="ccard2__panel-row-text">
                 <div class="ccard2__panel-row-lbl">Email</div>
                 <div class="ccard2__panel-row-val">{c.email}</div>
               </span>
-              <span class="ccard2__panel-row-arrow"><I d={ICN.arrow} size={12} sw={2.4} /></span>
+              <span class="ccard2__panel-row-arrow">
+                <I d={ICN.arrow} size={12} sw={2.4} />
+              </span>
             </a>
           )}
           <div class="ccard2__panel-row">
-            <span class="ccard2__panel-row-icon"><I d={ICN.pin} size={13} sw={2.2} /></span>
+            <span class="ccard2__panel-row-icon">
+              <I d={ICN.pin} size={13} sw={2.2} />
+            </span>
             <span class="ccard2__panel-row-text">
               <div class="ccard2__panel-row-lbl">Address</div>
               <div class="ccard2__panel-row-val">{address}</div>
             </span>
-            <span class="ccard2__panel-row-arrow"><I d={ICN.arrow} size={12} sw={2.4} /></span>
+            <span class="ccard2__panel-row-arrow">
+              <I d={ICN.arrow} size={12} sw={2.4} />
+            </span>
           </div>
         </div>
         <div class="ccard2__panel-actions">
-          <button class="ccard2__panel-act" type="button"><I d={ICN.msg} size={12} sw={2.4} /> Message</button>
-          <button class="ccard2__panel-act ccard2__panel-act--pink" type="button"><I d={ICN.eye} size={12} sw={2.4} /> Open card</button>
+          <button class="ccard2__panel-act" type="button">
+            <I d={ICN.msg} size={12} sw={2.4} /> Message
+          </button>
+          <button
+            class="ccard2__panel-act ccard2__panel-act--pink"
+            type="button"
+          >
+            <I d={ICN.eye} size={12} sw={2.4} /> Open card
+          </button>
         </div>
       </div>
     </div>
@@ -222,13 +252,18 @@ export default function ClientsBoard({ cards, children }: BoardProps) {
     const url = new URL(globalThis.location.href);
     // "all" is the default — represent it by absence of the param.
     if (next === "all") url.searchParams.delete("segment");
-    else                url.searchParams.set("segment", next);
+    else url.searchParams.set("segment", next);
     globalThis.history.pushState({ segment: next }, "", url.toString());
   }
 
   const filterCounts = useMemo(() => {
     const counts: Record<FilterId, number> = {
-      all: cards.length, active: 0, lead: 0, owes: 0, regular: 0, cold: 0,
+      all: cards.length,
+      active: 0,
+      lead: 0,
+      owes: 0,
+      regular: 0,
+      cold: 0,
     };
     for (const c of cards) counts[c.status]++;
     return counts;
@@ -257,7 +292,8 @@ export default function ClientsBoard({ cards, children }: BoardProps) {
           <input
             placeholder="Search by name, address, phone, or last job…"
             value={query}
-            onInput={(e) => setQuery((e.currentTarget as HTMLInputElement).value)}
+            onInput={(e) =>
+              setQuery((e.currentTarget as HTMLInputElement).value)}
           />
         </div>
         <div class="ctoolbar2__filters">
@@ -268,11 +304,15 @@ export default function ClientsBoard({ cards, children }: BoardProps) {
                 key={f.id}
                 type="button"
                 aria-pressed={active}
-                class={`ctoolbar2__filter ${active ? "ctoolbar2__filter--active" : ""}`}
+                class={`ctoolbar2__filter ${
+                  active ? "ctoolbar2__filter--active" : ""
+                }`}
                 onClick={() => selectFilter(f.id)}
               >
                 {f.label}
-                <span class="ctoolbar2__filter-count">{filterCounts[f.id]}</span>
+                <span class="ctoolbar2__filter-count">
+                  {filterCounts[f.id]}
+                </span>
               </button>
             );
           })}

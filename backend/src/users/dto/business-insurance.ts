@@ -9,6 +9,10 @@ export interface BusinessInsurance {
   coverageCents?: number;
   /** ISO date — drives renewal reminders. */
   expiresAt?: string;
+  /** Pointer to the uploaded COI / proof-of-insurance blob in the files module. */
+  insuranceFileId?: string;
+  /** Stamped server-side when insuranceFileId is (re)set. */
+  insuranceUploadedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -18,6 +22,7 @@ export class UpdateBusinessInsuranceDto {
   @IsOptional() @IsString() policyNumber?: string;
   @IsOptional() @IsInt() @Min(0) coverageCents?: number;
   @IsOptional() @IsString() expiresAt?: string;
+  @IsOptional() @IsString() insuranceFileId?: string;
 }
 
 export function parseUpdateBusinessInsurance(input: unknown): UpdateBusinessInsuranceDto {

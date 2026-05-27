@@ -1,5 +1,5 @@
 import "#reflect-metadata";
-import { assert, assertEquals } from "#std/assert";
+import { assertEquals } from "#std/assert";
 import { Module } from "#danet/core";
 import { bootstrapServer } from "#mrg-keystone/danet";
 import { AnalyticsModule } from "@analytics/mod-root.ts";

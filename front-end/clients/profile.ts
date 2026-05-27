@@ -18,13 +18,34 @@ export interface BusinessIdentity {
   logoUrl?: string;
   tagline?: string;
   websiteUrl?: string;
+  /** Language the contractor's customers receive outbound comms in
+   *  (quotes/SMS/email/docs). Distinct from the contractor's UI language.
+   *  Defaults to "en" when unset. */
+  commsLanguage?: string;
   /** Per-method enable flags + handles (Venmo @, Zelle email, etc.).
    *  Shape mirrors backend AcceptedPaymentMethods but kept permissive so
    *  consumers only need the .enabled flag for gating logic. */
-  acceptedPaymentMethods?: Partial<Record<
-    "check" | "venmo" | "zelle" | "cashapp" | "cash" | "ach" | "other",
-    { enabled?: boolean; handle?: string; cashtag?: string; mailTo?: string; routingNumber?: string; accountNumberMasked?: string; instructions?: string }
-  >>;
+  acceptedPaymentMethods?: Partial<
+    Record<
+      | "check"
+      | "venmo"
+      | "zelle"
+      | "cashapp"
+      | "paypal"
+      | "cash"
+      | "ach"
+      | "other",
+      {
+        enabled?: boolean;
+        handle?: string;
+        cashtag?: string;
+        mailTo?: string;
+        routingNumber?: string;
+        accountNumberMasked?: string;
+        instructions?: string;
+      }
+    >
+  >;
   createdAt: string;
   updatedAt: string;
 }
@@ -47,6 +68,9 @@ export interface BusinessInsurance {
   policyNumber?: string;
   coverageCents?: number;
   expiresAt?: string;
+  /** Pointer to the uploaded proof-of-insurance file (files module). */
+  insuranceFileId?: string;
+  insuranceUploadedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -75,7 +99,7 @@ export interface ProfileSnapshot {
   identity: BusinessIdentity | null;
   address: BusinessAddress | null;
   insurance: BusinessInsurance | null;
-  tax: { tinMasked?: string; w9UploadedAt?: string } | null;
+  tax: { tinMasked?: string; w9FileId?: string; w9UploadedAt?: string } | null;
   contractDefaults: ContractDefaults | null;
   references: unknown[];
   initials: string;
@@ -86,7 +110,23 @@ export const profileClient = {
   /** PATCH the authenticated user (name, email, language). */
   updateUser: (patch: Record<string, unknown>, opts: ApiOptions = {}) =>
     api.put<ProfileUser>("/me", patch, opts),
-  /** PATCH the business identity (businessName, logoFileId, etc.). */
+  /** PATCH the business identity (businessName, logoFileId, acceptedPaymentMethods, …). */
   updateIdentity: (patch: Record<string, unknown>, opts: ApiOptions = {}) =>
     api.put<BusinessIdentity>("/profile/identity", patch, opts),
+  /** PUT the mailing address (street, city, state, postal, country). */
+  updateAddress: (patch: Record<string, unknown>, opts: ApiOptions = {}) =>
+    api.put<BusinessAddress>("/profile/address", patch, opts),
+  /** PUT insurance details (provider, policyNumber, coverageCents, expiresAt, insuranceFileId). */
+  updateInsurance: (patch: Record<string, unknown>, opts: ApiOptions = {}) =>
+    api.put<BusinessInsurance>("/profile/insurance", patch, opts),
+  /** PUT W-9 + TIN (w9FileId, tin). Server hashes/masks the TIN; never stores it raw. */
+  updateTax: (
+    patch: Record<string, unknown>,
+    opts: ApiOptions = {},
+  ) =>
+    api.put<{ tinMasked?: string; w9FileId?: string; w9UploadedAt?: string }>(
+      "/profile/tax",
+      patch,
+      opts,
+    ),
 };

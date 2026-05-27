@@ -4,7 +4,6 @@ import { QuoteStore }    from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore }  from "@paperwork/domain/data/invoice-store/mod.ts";
 import type { Customer } from "@crm/dto/customer.ts";
-import type { Quote }    from "@paperwork/dto/quote.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice }  from "@paperwork/dto/invoice.ts";
 

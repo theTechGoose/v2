@@ -128,7 +128,9 @@ export interface ChatResult {
 }
 
 async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
-  try { return await fn(); } catch (err) {
+  try {
+    return await fn();
+  } catch (err) {
     if (err instanceof ApiError && err.status === 404) return fallback;
     throw err;
   }
@@ -136,16 +138,27 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 
 export const assistantClient = {
   conversations: (limit = 50, opts: ApiOptions = {}) =>
-    safe(() => api.get<Conversation[]>("/agents/conversations", { ...opts, query: { limit } }), []),
+    safe(
+      () =>
+        api.get<Conversation[]>("/agents/conversations", {
+          ...opts,
+          query: { limit },
+        }),
+      [],
+    ),
 
-  conversation:  (id: string, opts: ApiOptions = {}) =>
+  conversation: (id: string, opts: ApiOptions = {}) =>
     api.get<ConversationDetail>(`/agents/conversations/${id}`, opts),
 
   startConversation: (body: Record<string, unknown>, opts: ApiOptions = {}) =>
     api.post<Conversation>("/agents/conversations", body, opts),
 
   transitionToTerms: (id: string, opts: ApiOptions = {}) =>
-    api.post<ConversationDetail>(`/agents/conversations/${id}/transition-to-terms`, undefined, opts),
+    api.post<ConversationDetail>(
+      `/agents/conversations/${id}/transition-to-terms`,
+      undefined,
+      opts,
+    ),
 
   /** Flip the active quote to "sent" via the deterministic /lock-quote
    *  endpoint, bypassing the LLM. Returns the action_card + continue_cta
@@ -162,7 +175,11 @@ export const assistantClient = {
    *  accepted, emits the chat phase_divider + "Continue to invoice"
    *  CTA, and sets hasUnreadEvent so the threads sidebar bubbles +
    *  badges. */
-  acceptContract: (conversationId: string, contractId: string, opts: ApiOptions = {}) =>
+  acceptContract: (
+    conversationId: string,
+    contractId: string,
+    opts: ApiOptions = {},
+  ) =>
     api.post<{ conversation: Conversation; newMessages: Message[] }>(
       `/agents/conversations/${conversationId}/accept-contract`,
       { contractId },
@@ -203,11 +220,17 @@ export const assistantClient = {
     api.get<Quote>(`/quotes/${id}`, opts),
 
   /** Email the quote to the bound customer. POST /quotes/:id/email. */
-  sendQuote: (id: string, body: { to?: string; from?: string } = {}, opts: ApiOptions = {}) =>
-    api.post<{ ok: boolean }>(`/quotes/${id}/email`, body, opts),
+  sendQuote: (
+    id: string,
+    body: { to?: string; from?: string } = {},
+    opts: ApiOptions = {},
+  ) => api.post<{ ok: boolean }>(`/quotes/${id}/email`, body, opts),
 
   listCustomers: (opts: ApiOptions = {}) =>
-    safe(() => api.get<CustomerLite[]>("/customers", opts), [] as CustomerLite[]),
+    safe(
+      () => api.get<CustomerLite[]>("/customers", opts),
+      [] as CustomerLite[],
+    ),
 
   /** Idempotent "see what your customer sees" sample quote. Returns the
    *  per-user quoteId so the onboarding-handoff CTA can link to a
@@ -240,7 +263,15 @@ export const assistantClient = {
       stepId: string;
       optionId: string;
       customValue?: string;
-      customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string; isBusiness?: boolean } };
+      customer?: {
+        id?: string;
+        create?: {
+          name: string;
+          email?: string;
+          phoneNumber?: string;
+          isBusiness?: boolean;
+        };
+      };
       followUpValues?: Record<string, string | number>;
     },
     opts: ApiOptions = {},
@@ -250,6 +281,17 @@ export const assistantClient = {
       wizardState?: unknown;
       newMessages: Message[];
     }>("/agents/wizard/answer", body, opts),
+
+  /** Step one wizard question backwards so it can be re-edited
+   *  (roadmap p.2). Drops the trailing step + pick server-side and
+   *  returns the now-active step id. */
+  rewindWizard: (conversationId: string, opts: ApiOptions = {}) =>
+    api.post<{
+      conversation: Conversation;
+      wizardState?: unknown;
+      activeStepId: string | null;
+      removedMessageIds: string[];
+    }>("/agents/wizard/back", { conversationId }, opts),
 
   /** One-shot LLM pass: turns the user's raw job description into a
    *  polished {summary, jobName, description} triple. Used by the
@@ -266,12 +308,27 @@ export const assistantClient = {
   /** LLM pass that turns the raw job description into three editable
    *  scope-of-work options for the "Job Details" picker screen. The user
    *  edits bullets and picks one option before the quote is built. */
-  generateJobOptions: (raw: string, priceCents?: number, opts: ApiOptions = {}) =>
+  generateJobOptions: (
+    raw: string,
+    priceCents?: number,
+    opts: ApiOptions = {},
+  ) =>
     api.post<{ options: JobOption[] }>(
       "/agents/job-details/options",
       { raw, ...(typeof priceCents === "number" ? { priceCents } : {}) },
       opts,
     ),
+
+  /** Three suggested price tiers for the "I know the job, help me price it"
+   *  flow (roadmap p.10). The 4th "custom" option is the manual entry. */
+  suggestPrices: (raw: string, opts: ApiOptions = {}) =>
+    api.post<
+      {
+        options: Array<
+          { tier: string; label: string; priceCents: number; rationale: string }
+        >;
+      }
+    >("/agents/job-details/prices", { raw }, opts),
 
   /** Single-line cleanup: rewrites one rough bullet into a tidy scope
    *  line. Called when the user edits/adds a bullet and opts in to the

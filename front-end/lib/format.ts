@@ -26,11 +26,19 @@ export const fmtMoneyShort = fmtMoney;
 export const fmtMoneyExact = (cents: number | null | undefined): string => {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "—";
   const sign = cents < 0 ? "-" : "";
-  return `${sign}$${(Math.abs(cents) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${sign}$${
+    (Math.abs(cents) / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }`;
 };
 
-export const pluralize = (count: number, singular: string, plural?: string): string =>
-  `${count} ${count === 1 ? singular : (plural ?? `${singular}s`)}`;
+export const pluralize = (
+  count: number,
+  singular: string,
+  plural?: string,
+): string => `${count} ${count === 1 ? singular : (plural ?? `${singular}s`)}`;
 
 /** Format a US phone number for display.
  *  - "+15125550000" → "(512) 555-0000"
@@ -40,9 +48,13 @@ export function fmtPhone(raw: string | null | undefined): string {
   if (!raw) return "";
   const digits = raw.replace(/\D/g, "");
   // Strip a leading 1 country code if present.
-  const usDigits = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  const usDigits = digits.length === 11 && digits.startsWith("1")
+    ? digits.slice(1)
+    : digits;
   if (usDigits.length === 10) {
-    return `(${usDigits.slice(0, 3)}) ${usDigits.slice(3, 6)}-${usDigits.slice(6)}`;
+    return `(${usDigits.slice(0, 3)}) ${usDigits.slice(3, 6)}-${
+      usDigits.slice(6)
+    }`;
   }
   return raw;
 }
@@ -69,4 +81,3 @@ export function detailLines(description: string | null | undefined): string[] {
     .map((l) => l.replace(/^\s*[••\-*]\s*/, "").trim())
     .filter((l) => l.length > 0);
 }
-

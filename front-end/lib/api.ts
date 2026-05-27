@@ -12,16 +12,17 @@
  * lives behind a method on a per-page client (see clients/*.ts).
  */
 
-const SERVER_BACKEND_URL = (typeof Deno !== "undefined"
-  ? Deno.env.get("BACKEND_URL")
-  : undefined) ?? "http://localhost:3000";
+const SERVER_BACKEND_URL =
+  (typeof Deno !== "undefined" ? Deno.env.get("BACKEND_URL") : undefined) ??
+    "http://localhost:3000";
 
 /** Public backend URL the BROWSER hits directly (cross-origin). Set via
  *  PUBLIC_BACKEND_URL env on the SSR side and inlined into the HTML by
  *  the page layout as `window.__PUBLIC_BACKEND_URL`. Falls back to
  *  same-origin /api so dev still works if the env isn't set. */
 function clientBackendUrl(): string {
-  const fromGlobal = (globalThis as { __PUBLIC_BACKEND_URL?: string }).__PUBLIC_BACKEND_URL;
+  const fromGlobal =
+    (globalThis as { __PUBLIC_BACKEND_URL?: string }).__PUBLIC_BACKEND_URL;
   if (!fromGlobal || fromGlobal.length === 0) return "/api";
   const base = fromGlobal.replace(/\/$/, "");
   // A same-origin absolute base (e.g. the app's own web origin) has no backend
@@ -77,7 +78,10 @@ function buildUrl(path: string, opts: ApiOptions): string {
   // into a same-origin no-prefix request — every API call 404'd if the env
   // var pointed anywhere other than "/api".
   const isAbsolute = /^https?:\/\//i.test(base);
-  const url = new URL(base + p, isServer() || isAbsolute ? undefined : globalThis.location.origin);
+  const url = new URL(
+    base + p,
+    isServer() || isAbsolute ? undefined : globalThis.location.origin,
+  );
   if (opts.query) {
     for (const [k, v] of Object.entries(opts.query)) {
       if (v === undefined) continue;
@@ -88,7 +92,12 @@ function buildUrl(path: string, opts: ApiOptions): string {
   return url.pathname + url.search;
 }
 
-async function request<T>(method: string, path: string, body: unknown, opts: ApiOptions): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body: unknown,
+  opts: ApiOptions,
+): Promise<T> {
   const headers: Record<string, string> = {
     "accept": "application/json",
   };
@@ -106,21 +115,35 @@ async function request<T>(method: string, path: string, body: unknown, opts: Api
   const text = await res.text();
   let parsed: unknown = text;
   if (text.length > 0) {
-    try { parsed = JSON.parse(text); } catch { /* keep raw */ }
+    try {
+      parsed = JSON.parse(text);
+    } catch { /* keep raw */ }
   }
-  if (!res.ok) throw new ApiError(res.status, parsed, `${method} ${path} failed: ${res.status}`);
+  if (!res.ok) {
+    throw new ApiError(
+      res.status,
+      parsed,
+      `${method} ${path} failed: ${res.status}`,
+    );
+  }
   return parsed as T;
 }
 
 export const api = {
-  get:    <T>(path: string, opts: ApiOptions = {}): Promise<T> => request<T>("GET",    path, undefined, opts),
-  post:   <T>(path: string, body?: unknown, opts: ApiOptions = {}): Promise<T> => request<T>("POST",   path, body, opts),
-  put:    <T>(path: string, body?: unknown, opts: ApiOptions = {}): Promise<T> => request<T>("PUT",    path, body, opts),
-  delete: <T>(path: string, opts: ApiOptions = {}): Promise<T> => request<T>("DELETE", path, undefined, opts),
+  get: <T>(path: string, opts: ApiOptions = {}): Promise<T> =>
+    request<T>("GET", path, undefined, opts),
+  post: <T>(path: string, body?: unknown, opts: ApiOptions = {}): Promise<T> =>
+    request<T>("POST", path, body, opts),
+  put: <T>(path: string, body?: unknown, opts: ApiOptions = {}): Promise<T> =>
+    request<T>("PUT", path, body, opts),
+  delete: <T>(path: string, opts: ApiOptions = {}): Promise<T> =>
+    request<T>("DELETE", path, undefined, opts),
 };
 
 /** Read `pm_session` from a Cookie header value. Returns undefined if absent. */
-export function readSessionCookie(cookieHeader: string | null): string | undefined {
+export function readSessionCookie(
+  cookieHeader: string | null,
+): string | undefined {
   if (!cookieHeader) return undefined;
   for (const part of cookieHeader.split(";")) {
     const [k, ...rest] = part.trim().split("=");

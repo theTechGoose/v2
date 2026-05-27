@@ -24,7 +24,8 @@ export default function RedirectToast() {
     if (typeof globalThis.history !== "undefined") {
       params.delete("from");
       const qs = params.toString();
-      const url = globalThis.location.pathname + (qs ? `?${qs}` : "") + globalThis.location.hash;
+      const url = globalThis.location.pathname + (qs ? `?${qs}` : "") +
+        globalThis.location.hash;
       globalThis.history.replaceState(null, "", url);
     }
 

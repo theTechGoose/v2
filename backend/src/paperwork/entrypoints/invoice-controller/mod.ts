@@ -1,10 +1,26 @@
-import { Body, Context, Controller, Delete, Get, Param, Post, Put, Query } from "#danet/core";
+import {
+  Body,
+  Context,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+} from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { parseCreateInvoice, parseUpdateInvoice, type Invoice } from "@paperwork/dto/invoice.ts";
+import {
+  type Invoice,
+  parseCreateInvoice,
+  parseUpdateInvoice,
+} from "@paperwork/dto/invoice.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+import { parseCreateChangeOrder } from "@paperwork/dto/change-order.ts";
 import { deriveUrgency } from "@paperwork/domain/business/invoice-urgency/mod.ts";
 import { ConfirmPayment } from "@paperwork/domain/coordinators/confirm-payment/mod.ts";
 import { ComputeInvoiceForecast } from "@paperwork/domain/coordinators/compute-invoice-forecast/mod.ts";
@@ -27,18 +43,76 @@ export class InvoiceController {
     private confirm: ConfirmPayment,
     private forecast: ComputeInvoiceForecast,
     private recordFromUtterance: RecordPaymentFromUtterance,
+    private changeOrders: ChangeOrderStore,
     private users: UserStore,
     private sessions: SessionStore,
   ) {}
 
+  /** Apply a discount to an invoice in place (roadmap p.12). Reduces the
+   *  net `amount` and records the cumulative `discountCents` for display. */
+  @Post(":id/discount")
+  async discount(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const b = (body ?? {}) as { discountCents?: number; reason?: string };
+    const cents = Math.max(0, Math.round(Number(b.discountCents ?? 0)));
+    if (!cents) throw new Error("discountCents must be a positive integer");
+    const inv = await this.store.getOwned(id, user.id);
+    const newAmount = Math.max(0, (inv.amount ?? 0) - cents);
+    const updated = await this.store.update(id, user.id, {
+      amount: newAmount,
+      discountCents: (inv.discountCents ?? 0) + cents,
+      ...(b.reason ? { discountReason: b.reason } : {}),
+    });
+    return ctx.json(project(updated, new Date()));
+  }
+
+  /** Create a change order against an invoice. Returns the order (pending);
+   *  the customer approves it via /co/:id, which applies the delta. */
+  @Post(":id/change-orders")
+  async createChangeOrder(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const inv = await this.store.getOwned(id, user.id);
+    const dto = parseCreateChangeOrder(body);
+    const co = await this.changeOrders.create(user.id, id, {
+      ...dto,
+      ...(inv.contractId ? { contractId: inv.contractId } : {}),
+      ...(inv.customerId ? { customerId: inv.customerId } : {}),
+    });
+    return ctx.json(co);
+  }
+
+  /** List change orders for an invoice. */
+  @Get(":id/change-orders")
+  async listChangeOrders(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return ctx.json(await this.changeOrders.listByInvoice(user.id, id));
+  }
+
   @Post()
   async create(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return project(await this.store.create(user.id, parseCreateInvoice(body)), new Date());
+    return project(
+      await this.store.create(user.id, parseCreateInvoice(body)),
+      new Date(),
+    );
   }
 
   @Get()
-  async list(@Context() ctx: ExecutionContext, @Query("status") status?: string) {
+  async list(
+    @Context() ctx: ExecutionContext,
+    @Query("status") status?: string,
+  ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const list = status
       ? await this.store.listByUserAndStatus(user.id, status)
@@ -54,9 +128,16 @@ export class InvoiceController {
   }
 
   @Put(":id")
-  async update(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+  async update(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return project(await this.store.update(id, user.id, parseUpdateInvoice(body)), new Date());
+    return project(
+      await this.store.update(id, user.id, parseUpdateInvoice(body)),
+      new Date(),
+    );
   }
 
   @Delete(":id")
@@ -69,7 +150,10 @@ export class InvoiceController {
   /** Contractor confirms a customer's claimed payment. Records a Payment
    *  row, flips the invoice to paid, fires the PDF receipt. */
   @Post(":id/confirm-payment")
-  async confirmPayment(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+  async confirmPayment(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const result = await this.confirm.run(user.id, id);
     return ctx.json(result, result.ok ? 200 : 409);
@@ -104,7 +188,10 @@ export class InvoiceController {
 
   /** Tax-time CSV export. Streams CSV bytes for the given year. */
   @Get("export.csv")
-  async exportCsv(@Context() ctx: ExecutionContext, @Query("year") yearQ?: string) {
+  async exportCsv(
+    @Context() ctx: ExecutionContext,
+    @Query("year") yearQ?: string,
+  ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const year = yearQ ? Number(yearQ) : new Date().getUTCFullYear();
     const all = await this.store.listByUser(user.id);
@@ -116,10 +203,28 @@ export class InvoiceController {
     // Hydrate customer + job context for the export rows. Best-effort.
     const customerCache = new Map<string, string>();
     const contractCache = new Map<string, string>();
-    const rows: string[][] = [["Date", "Customer", "Job", "Amount", "Method", "Reference"]];
+    const rows: string[][] = [[
+      "Date",
+      "Customer",
+      "Job",
+      "Amount",
+      "Method",
+      "Reference",
+    ]];
     for (const inv of paid) {
-      const customerName = await resolveName(this.customers, user.id, inv.customerId, customerCache);
-      const jobName = await resolveJobName(this.contracts, this.quotes, user.id, inv.contractId, contractCache);
+      const customerName = await resolveName(
+        this.customers,
+        user.id,
+        inv.customerId,
+        customerCache,
+      );
+      const jobName = await resolveJobName(
+        this.contracts,
+        this.quotes,
+        user.id,
+        inv.contractId,
+        contractCache,
+      );
       // Payment intent at the moment-of-paid carries the method/reference.
       // After confirm clears the intent, we lose this — for v1 we mirror
       // it into the row at confirm-time (already happens via the Payment
@@ -149,29 +254,44 @@ export class InvoiceController {
    *  invoice → Payment + receipt fired (via ConfirmPayment internally).
    *  Returns either a confirmation or a disambiguation list. */
   @Post("record-payment/voice")
-  async recordFromVoice(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+  async recordFromVoice(
+    @Context() ctx: ExecutionContext,
+    @Body() body: unknown,
+  ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const b = (body ?? {}) as { transcript?: string };
     if (typeof b.transcript !== "string" || !b.transcript.trim()) {
       throw new Error("transcript is required");
     }
-    return ctx.json(await this.recordFromUtterance.run(user.id, { transcript: b.transcript }));
+    return ctx.json(
+      await this.recordFromUtterance.run(user.id, { transcript: b.transcript }),
+    );
   }
 
   /** Photo-driven payment recording: OCR fields parsed client-side
    *  (amount, payer name, check #) → matched invoice → recorded. */
   @Post("record-payment/photo")
-  async recordFromPhoto(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+  async recordFromPhoto(
+    @Context() ctx: ExecutionContext,
+    @Body() body: unknown,
+  ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const b = (body ?? {}) as { amount?: number; payerHint?: string; method?: string; reference?: string };
-    return ctx.json(await this.recordFromUtterance.run(user.id, {
-      ocrFields: {
-        ...(typeof b.amount === "number" ? { amount: b.amount } : {}),
-        ...(b.payerHint ? { payerHint: b.payerHint } : {}),
-        ...(b.method ? { method: b.method } : {}),
-        ...(b.reference ? { reference: b.reference } : {}),
-      },
-    }));
+    const b = (body ?? {}) as {
+      amount?: number;
+      payerHint?: string;
+      method?: string;
+      reference?: string;
+    };
+    return ctx.json(
+      await this.recordFromUtterance.run(user.id, {
+        ocrFields: {
+          ...(typeof b.amount === "number" ? { amount: b.amount } : {}),
+          ...(b.payerHint ? { payerHint: b.payerHint } : {}),
+          ...(b.method ? { method: b.method } : {}),
+          ...(b.reference ? { reference: b.reference } : {}),
+        },
+      }),
+    );
   }
 }
 
@@ -187,7 +307,9 @@ async function resolveName(
     const c = await customers.getOwned(customerId, userId);
     cache.set(customerId, c.name);
     return c.name;
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 }
 
 async function resolveJobName(
@@ -206,7 +328,9 @@ async function resolveJobName(
     const name = q.jobName?.trim() || q.summary?.trim() || undefined;
     if (name) cache.set(contractId, name);
     return name;
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 }
 
 function csvCell(s: string): string {

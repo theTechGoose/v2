@@ -1,5 +1,8 @@
 import { Inject, Injectable } from "#danet/core";
-import { LLM_CLIENT, type LLMClient } from "@agents/domain/business/llm/base/mod.ts";
+import {
+  LLM_CLIENT,
+  type LLMClient,
+} from "@agents/domain/business/llm/base/mod.ts";
 
 export interface GenerateJobOptionsInput {
   userId: string;
@@ -8,6 +11,9 @@ export interface GenerateJobOptionsInput {
   /** Optional price (cents) — scope context so options don't promise
    *  more than the price covers. */
   priceCents?: number;
+  /** Outgoing-comms language (roadmap p.13). The options become the
+   *  customer-facing quote, so generate them in the customer's language. */
+  commsLanguage?: string;
 }
 
 export interface JobOption {
@@ -72,11 +78,20 @@ export class GenerateJobOptions {
         }. Keep each option's scope within that range.`
         : "";
 
+    // Roadmap p.13: the options become the customer-facing quote, so emit
+    // them in the contractor's outgoing-comms language.
+    const langLine = input.commsLanguage === "es"
+      ? "\n\nWrite jobName, summary, and every bullet in neutral Latin-American Spanish."
+      : "";
+
     let text: string;
     try {
       const res = await this.llm.respond({
         systemPrompt: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: `Raw job description:\n${raw}${priceLine}` }],
+        messages: [{
+          role: "user",
+          content: `Raw job description:\n${raw}${priceLine}${langLine}`,
+        }],
         userId: input.userId,
       });
       text = res.text ?? "";
@@ -96,10 +111,16 @@ function normalizeOptions(raw: unknown): JobOption[] {
   if (!Array.isArray(raw)) return [];
   const out: JobOption[] = [];
   for (let i = 0; i < raw.length && out.length < 3; i++) {
-    const o = raw[i] as { jobName?: unknown; summary?: unknown; bullets?: unknown };
+    const o = raw[i] as {
+      jobName?: unknown;
+      summary?: unknown;
+      bullets?: unknown;
+    };
     const bullets = Array.isArray(o?.bullets)
       ? o.bullets
-        .filter((b): b is string => typeof b === "string" && b.trim().length > 0)
+        .filter((b): b is string =>
+          typeof b === "string" && b.trim().length > 0
+        )
         .map((b) => b.trim().replace(/\s+/g, " ").replace(/[.;]+$/, ""))
         .slice(0, 4)
       : [];
@@ -139,7 +160,10 @@ function clampSummary(s: string): string {
 }
 
 function clampJobName(s: string): string {
-  const cleaned = s.trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s+/g, " ");
+  const cleaned = s.trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(
+    /\s+/g,
+    " ",
+  );
   const words = cleaned.split(" ").filter(Boolean).slice(0, 3);
   return words.map(titleCaseWord).join(" ");
 }

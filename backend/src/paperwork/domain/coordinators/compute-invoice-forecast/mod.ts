@@ -182,6 +182,7 @@ function methodLabel(m: PaymentMethod): string {
     case "venmo": return "Venmo";
     case "zelle": return "Zelle";
     case "cashapp": return "Cash App";
+    case "paypal": return "PayPal";
     case "cash": return "cash";
     case "other": return "other";
   }

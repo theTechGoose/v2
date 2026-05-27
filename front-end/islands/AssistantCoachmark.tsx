@@ -3,7 +3,6 @@ import { useEffect, useState } from "preact/hooks";
 const STORAGE_KEY = "pm:assistant-coachmark-shown";
 const PINK = "#FF6B6B";
 const PINK_DARK = "#d94e4e";
-const TEAL = "#144852";
 
 /**
  * One-shot dashboard coachmark — shows on the user's FIRST visit to the
@@ -30,19 +29,25 @@ const TEAL = "#144852";
  */
 export default function AssistantCoachmark() {
   const [visible, setVisible] = useState(false);
-  const [box, setBox] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  const [box, setBox] = useState<
+    { top: number; left: number; width: number; height: number } | null
+  >(null);
   const [fadingOut, setFadingOut] = useState(false);
   const [phase, setPhase] = useState<0 | 1 | 2>(0); // 0 = pre-mount, 1 = entering, 2 = settled
 
   useEffect(() => {
     if (typeof globalThis.window === "undefined") return;
     let alreadyShown = false;
-    try { alreadyShown = globalThis.localStorage.getItem(STORAGE_KEY) === "1"; } catch { /* SSR-safe */ }
+    try {
+      alreadyShown = globalThis.localStorage.getItem(STORAGE_KEY) === "1";
+    } catch { /* SSR-safe */ }
     if (alreadyShown) return;
     let tries = 0;
     const find = () => {
       tries++;
-      const el = document.querySelector('a[href="/assistant"].sb__textus, .sb__textus[href="/assistant"]');
+      const el = document.querySelector(
+        'a[href="/assistant"].sb__textus, .sb__textus[href="/assistant"]',
+      );
       if (el instanceof HTMLElement) {
         measure(el);
         setVisible(true);
@@ -60,7 +65,9 @@ export default function AssistantCoachmark() {
     };
     find();
     const onResize = () => {
-      const el = document.querySelector('a[href="/assistant"].sb__textus, .sb__textus[href="/assistant"]');
+      const el = document.querySelector(
+        'a[href="/assistant"].sb__textus, .sb__textus[href="/assistant"]',
+      );
       if (el instanceof HTMLElement) measure(el);
     };
     globalThis.addEventListener("resize", onResize);
@@ -74,7 +81,9 @@ export default function AssistantCoachmark() {
 
   function dismiss() {
     setFadingOut(true);
-    try { globalThis.localStorage.setItem(STORAGE_KEY, "1"); } catch { /* SSR-safe */ }
+    try {
+      globalThis.localStorage.setItem(STORAGE_KEY, "1");
+    } catch { /* SSR-safe */ }
     globalThis.setTimeout(() => setVisible(false), 320);
   }
 
@@ -100,16 +109,22 @@ export default function AssistantCoachmark() {
   return (
     <div
       onClick={dismiss}
-      style={`position:fixed;inset:0;z-index:9999;cursor:pointer;transition:opacity 320ms ease-out, backdrop-filter 320ms ease-out;opacity:${fadingOut ? 0 : 1};backdrop-filter:${fadingOut ? "blur(0px)" : "blur(2px)"};-webkit-backdrop-filter:${fadingOut ? "blur(0px)" : "blur(2px)"}`}
+      style={`position:fixed;inset:0;z-index:9999;cursor:pointer;transition:opacity 320ms ease-out, backdrop-filter 320ms ease-out;opacity:${
+        fadingOut ? 0 : 1
+      };backdrop-filter:${
+        fadingOut ? "blur(0px)" : "blur(2px)"
+      };-webkit-backdrop-filter:${fadingOut ? "blur(0px)" : "blur(2px)"}`}
       aria-label="Onboarding hint — click anywhere to dismiss"
       role="dialog"
     >
-      {/* SVG mask: dark overlay everywhere EXCEPT a rounded rect
+      {
+        /* SVG mask: dark overlay everywhere EXCEPT a rounded rect
           around the assistant button. Uses evenodd fill rule so the
           inner rectangle becomes a transparent cut-out. The whole SVG
           fades in via the wrapper opacity. The spotlight ring scale
           springs from 0.6 → 1.0 by tying transform-origin to the hole
-          center (set inline below on the ring rect group). */}
+          center (set inline below on the ring rect group). */
+      }
       <svg
         width="100%"
         height="100%"
@@ -136,29 +151,42 @@ export default function AssistantCoachmark() {
           </radialGradient>
         </defs>
 
-        {/* Dark backdrop — fades in over 320ms via wrapper opacity.
-            Mask cuts the hole around the button. */}
+        {
+          /* Dark backdrop — fades in over 320ms via wrapper opacity.
+            Mask cuts the hole around the button. */
+        }
         <rect
-          x="0" y="0" width="100%" height="100%"
+          x="0"
+          y="0"
+          width="100%"
+          height="100%"
           fill="rgba(15,28,33,0.74)"
           mask="url(#coachmark-mask)"
-          style={`transition:opacity 320ms ease-out;opacity:${phase === 0 ? 0 : 1}`}
+          style={`transition:opacity 320ms ease-out;opacity:${
+            phase === 0 ? 0 : 1
+          }`}
         />
 
-        {/* Soft radial bloom under the button — ambient glow that warms
-            up as the spotlight settles. */}
+        {
+          /* Soft radial bloom under the button — ambient glow that warms
+            up as the spotlight settles. */
+        }
         <ellipse
           cx={holeCx}
           cy={holeCy}
           rx={holeW * 1.2}
           ry={holeH * 1.4}
           fill="url(#coachmark-glow)"
-          style={`transition:opacity 480ms ease-out 240ms;opacity:${phase === 0 ? 0 : 1}`}
+          style={`transition:opacity 480ms ease-out 240ms;opacity:${
+            phase === 0 ? 0 : 1
+          }`}
         />
 
-        {/* Sonar ripples — two concentric circles spring outward from
+        {
+          /* Sonar ripples — two concentric circles spring outward from
             the button. Pure CSS @keyframes scale + opacity. Staggered
-            240ms apart. */}
+            240ms apart. */
+        }
         {phase >= 1 && (
           <>
             <circle
@@ -182,10 +210,12 @@ export default function AssistantCoachmark() {
           </>
         )}
 
-        {/* Spotlight ring — the always-visible pink stroke around the
+        {
+          /* Spotlight ring — the always-visible pink stroke around the
             button. Scales from 0.6 → 1 with overshoot on entrance, then
             breathes continuously to keep attention. transform-origin is
-            the button center (set via transform-box on the rect). */}
+            the button center (set via transform-box on the rect). */
+        }
         <rect
           x={holeLeft - 2}
           y={holeTop - 2}
@@ -196,11 +226,19 @@ export default function AssistantCoachmark() {
           fill="none"
           stroke={PINK}
           stroke-width="2.5"
-          style={`filter:drop-shadow(0 0 14px rgba(255,107,107,0.75));transform-origin:${holeCx}px ${holeCy}px;transform-box:view-box;transition:transform 520ms cubic-bezier(0.34, 1.56, 0.64, 1) 120ms, opacity 320ms ease-out 120ms;transform:${phase === 0 ? "scale(0.6)" : "scale(1)"};opacity:${phase === 0 ? 0 : 1};animation:${phase === 2 ? "coach-breathe 2.6s ease-in-out infinite 800ms" : "none"}`}
+          style={`filter:drop-shadow(0 0 14px rgba(255,107,107,0.75));transform-origin:${holeCx}px ${holeCy}px;transform-box:view-box;transition:transform 520ms cubic-bezier(0.34, 1.56, 0.64, 1) 120ms, opacity 320ms ease-out 120ms;transform:${
+            phase === 0 ? "scale(0.6)" : "scale(1)"
+          };opacity:${phase === 0 ? 0 : 1};animation:${
+            phase === 2
+              ? "coach-breathe 2.6s ease-in-out infinite 800ms"
+              : "none"
+          }`}
         />
 
-        {/* Orbital sparkles — 4 tiny pink dots that drift around the
-            button after settle. Subtle, not loud. */}
+        {
+          /* Orbital sparkles — 4 tiny pink dots that drift around the
+            button after settle. Subtle, not loud. */
+        }
         {phase === 2 && (
           <>
             {[0, 1, 2, 3].map((i) => (
@@ -210,39 +248,62 @@ export default function AssistantCoachmark() {
                 cy={holeCy - holeH / 2 - 14}
                 r="2.5"
                 fill={PINK}
-                style={`transform-origin:${holeCx}px ${holeCy}px;animation:coach-orbit 5.2s linear infinite;animation-delay:${i * 1.3}s;opacity:0.85;filter:drop-shadow(0 0 6px rgba(255,107,107,0.7))`}
+                style={`transform-origin:${holeCx}px ${holeCy}px;animation:coach-orbit 5.2s linear infinite;animation-delay:${
+                  i * 1.3
+                }s;opacity:0.85;filter:drop-shadow(0 0 6px rgba(255,107,107,0.7))`}
               />
             ))}
           </>
         )}
       </svg>
 
-      {/* Speech bubble — slides in from the right of the button with a
+      {
+        /* Speech bubble — slides in from the right of the button with a
           subtle scale + tilt. After settle, the arrow nudges as a
-          breathing micro-animation. */}
+          breathing micro-animation. */
+      }
       <div
-        style={`position:absolute;top:${tipTop}px;left:${tipLeft}px;background:linear-gradient(135deg, ${PINK} 0%, ${PINK_DARK} 100%);color:#fff;padding:14px 18px;border-radius:14px;max-width:280px;box-shadow:0 14px 40px rgba(255,107,107,0.45), 0 2px 8px rgba(0,0,0,0.18);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;transition:transform 460ms cubic-bezier(0.34, 1.56, 0.64, 1) 320ms, opacity 320ms ease-out 320ms;transform-origin:left center;transform:${phase === 0 ? "translateX(-24px) scale(0.85) rotate(2deg)" : "translateX(0) scale(1) rotate(0deg)"};opacity:${phase === 0 ? 0 : 1}`}
+        style={`position:absolute;top:${tipTop}px;left:${tipLeft}px;background:linear-gradient(135deg, ${PINK} 0%, ${PINK_DARK} 100%);color:#fff;padding:14px 18px;border-radius:14px;max-width:280px;box-shadow:0 14px 40px rgba(255,107,107,0.45), 0 2px 8px rgba(0,0,0,0.18);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;transition:transform 460ms cubic-bezier(0.34, 1.56, 0.64, 1) 320ms, opacity 320ms ease-out 320ms;transform-origin:left center;transform:${
+          phase === 0
+            ? "translateX(-24px) scale(0.85) rotate(2deg)"
+            : "translateX(0) scale(1) rotate(0deg)"
+        };opacity:${phase === 0 ? 0 : 1}`}
       >
         <div style="font-weight:800;font-size:14px;letter-spacing:.01em;display:flex;align-items:center;gap:6px">
-          <span style="display:inline-block;animation:coach-wave 2.8s ease-in-out infinite;transform-origin:70% 80%">👋</span>
+          <span style="display:inline-block;animation:coach-wave 2.8s ease-in-out infinite;transform-origin:70% 80%">
+            👋
+          </span>
           <span>Click here to talk to your assistant</span>
         </div>
-        <div style="margin-top:6px;font-size:12px;opacity:0.92;line-height:1.4">Bossie drafts quotes, sends contracts, chases invoices. Tap to start.</div>
-        {/* Arrow notch pointing left toward the highlighted button —
-            subtle nudge animation while idle. */}
+        <div style="margin-top:6px;font-size:12px;opacity:0.92;line-height:1.4">
+          Bossie drafts quotes, sends contracts, chases invoices. Tap to start.
+        </div>
+        {
+          /* Arrow notch pointing left toward the highlighted button —
+            subtle nudge animation while idle. */
+        }
         <div
-          style={`position:absolute;left:-8px;top:50%;transform:translateY(-50%);width:0;height:0;border-top:8px solid transparent;border-bottom:8px solid transparent;border-right:8px solid ${PINK};animation:${phase === 2 ? "coach-arrow-nudge 1.6s ease-in-out infinite 800ms" : "none"}`}
+          style={`position:absolute;left:-8px;top:50%;transform:translateY(-50%);width:0;height:0;border-top:8px solid transparent;border-bottom:8px solid transparent;border-right:8px solid ${PINK};animation:${
+            phase === 2
+              ? "coach-arrow-nudge 1.6s ease-in-out infinite 800ms"
+              : "none"
+          }`}
         />
       </div>
 
       {/* Dismiss hint */}
       <div
-        style={`position:absolute;bottom:32px;left:50%;color:#fff;font-size:12px;opacity:${phase === 0 ? 0 : 0.65};letter-spacing:.04em;text-align:center;transition:opacity 320ms ease-out 520ms, transform 460ms cubic-bezier(0.34, 1.56, 0.64, 1) 520ms;transform:translateX(-50%) translateY(${phase === 0 ? "8px" : "0"})`}
+        style={`position:absolute;bottom:32px;left:50%;color:#fff;font-size:12px;opacity:${
+          phase === 0 ? 0 : 0.65
+        };letter-spacing:.04em;text-align:center;transition:opacity 320ms ease-out 520ms, transform 460ms cubic-bezier(0.34, 1.56, 0.64, 1) 520ms;transform:translateX(-50%) translateY(${
+          phase === 0 ? "8px" : "0"
+        })`}
       >
         click anywhere to dismiss
       </div>
 
-      <style>{`
+      <style>
+        {`
         @keyframes coach-ripple {
           0%   { transform: scale(0.7); opacity: 0.55; }
           80%  { opacity: 0; }
@@ -277,7 +338,8 @@ export default function AssistantCoachmark() {
             transition-duration: 80ms !important;
           }
         }
-      `}</style>
+      `}
+      </style>
     </div>
   );
 }

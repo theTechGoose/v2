@@ -97,7 +97,9 @@ export default function PublicSignContract({ contractId }: Props) {
     }
   }
 
-  function pointerXY(e: PointerEvent | MouseEvent | TouchEvent): { x: number; y: number } {
+  function pointerXY(
+    e: PointerEvent | MouseEvent | TouchEvent,
+  ): { x: number; y: number } {
     const canvas = getCanvas();
     const rect = canvas.getBoundingClientRect();
     const native = "touches" in e
@@ -130,7 +132,9 @@ export default function PublicSignContract({ contractId }: Props) {
     if (!drawingRef.current) return;
     e.preventDefault();
     const canvas = getCanvas();
-    try { canvas.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch { /* noop */ }
     if (drawingRef.current.points.length > 1) {
       strokesRef.current.push(drawingRef.current);
       setHasInk(true);
@@ -231,7 +235,9 @@ export default function PublicSignContract({ contractId }: Props) {
       // with the typed name + date, matching the contractor card on the
       // left.
       setTimeout(() => {
-        try { globalThis.location.reload(); } catch { /* SSR-safe */ }
+        try {
+          globalThis.location.reload();
+        } catch { /* SSR-safe */ }
       }, 900);
     } catch (e) {
       setStatus("error");
@@ -245,13 +251,33 @@ export default function PublicSignContract({ contractId }: Props) {
 
   if (status === "ok") {
     return (
-      <div style={`margin-top:24px;background:linear-gradient(135deg,rgba(81,152,67,0.10) 0%,rgba(81,152,67,0.04) 100%);border:1px solid rgba(72,158,95,0.35);border-radius:18px;padding:24px;text-align:center`}>
-        <div style={`width:48px;height:48px;border-radius:50%;background:${GREEN};color:#fff;display:inline-flex;align-items:center;justify-content:center;margin-bottom:10px`}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+      <div
+        style={`margin-top:24px;background:linear-gradient(135deg,rgba(81,152,67,0.10) 0%,rgba(81,152,67,0.04) 100%);border:1px solid rgba(72,158,95,0.35);border-radius:18px;padding:24px;text-align:center`}
+      >
+        <div
+          style={`width:48px;height:48px;border-radius:50%;background:${GREEN};color:#fff;display:inline-flex;align-items:center;justify-content:center;margin-bottom:10px`}
+        >
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
         </div>
-        <div style={`font-weight:800;color:${GREEN};font-size:18px`}>Signed and binding</div>
-        <div style={`margin-top:6px;color:${MUTED};font-size:13px;max-width:320px;margin-left:auto;margin-right:auto`}>
-          Please allow up to 2 minutes before checking your email inbox. Don't forget to check spam.
+        <div style={`font-weight:800;color:${GREEN};font-size:18px`}>
+          Signed and binding
+        </div>
+        <div
+          style={`margin-top:6px;color:${MUTED};font-size:13px;max-width:320px;margin-left:auto;margin-right:auto`}
+        >
+          Please allow up to 2 minutes before checking your email inbox. Don't
+          forget to check spam.
         </div>
       </div>
     );
@@ -260,17 +286,39 @@ export default function PublicSignContract({ contractId }: Props) {
   return (
     <form onSubmit={onSign} style="margin-top:24px;text-align:left">
       {/* Sign header strip */}
-      <div style={`display:flex;justify-content:space-between;align-items:center;margin-bottom:8px`}>
-        <div style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${PINK_DARK}`}>Your signature</div>
+      <div
+        style={`display:flex;justify-content:space-between;align-items:center;margin-bottom:8px`}
+      >
+        <div
+          style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${PINK_DARK}`}
+        >
+          Your signature
+        </div>
         <div style={`display:flex;gap:8px`}>
           <button
             type="button"
             onClick={undoStroke}
             disabled={!hasInk}
             aria-label="Undo last stroke"
-            style={`background:transparent;border:1px solid ${LINE};border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;color:${hasInk ? INK : MUTED};cursor:${hasInk ? "pointer" : "not-allowed"};display:inline-flex;align-items:center;gap:6px`}
+            style={`background:transparent;border:1px solid ${LINE};border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;color:${
+              hasInk ? INK : MUTED
+            };cursor:${
+              hasInk ? "pointer" : "not-allowed"
+            };display:inline-flex;align-items:center;gap:6px`}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M3 7v6h6" />
+              <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
+            </svg>
             Undo
           </button>
           <button
@@ -278,9 +326,26 @@ export default function PublicSignContract({ contractId }: Props) {
             onClick={clearPad}
             disabled={!hasInk}
             aria-label="Clear signature"
-            style={`background:transparent;border:1px solid ${LINE};border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;color:${hasInk ? INK : MUTED};cursor:${hasInk ? "pointer" : "not-allowed"};display:inline-flex;align-items:center;gap:6px`}
+            style={`background:transparent;border:1px solid ${LINE};border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;color:${
+              hasInk ? INK : MUTED
+            };cursor:${
+              hasInk ? "pointer" : "not-allowed"
+            };display:inline-flex;align-items:center;gap:6px`}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M3 6h18" />
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+            </svg>
             Clear
           </button>
         </div>
@@ -319,14 +384,22 @@ export default function PublicSignContract({ contractId }: Props) {
             style={`position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;color:${MUTED};font-size:13px;pointer-events:none;text-align:center;padding:0 16px`}
             aria-hidden="true"
           >
-            <div style={`font-size:14px;font-weight:700;color:${TEAL}`}>Draw your signature here</div>
-            <div style={`margin-top:4px;font-size:12px;color:${MUTED}`}>finger, stylus, or trackpad — whatever's handy</div>
+            <div style={`font-size:14px;font-weight:700;color:${TEAL}`}>
+              Draw your signature here
+            </div>
+            <div style={`margin-top:4px;font-size:12px;color:${MUTED}`}>
+              finger, stylus, or trackpad — whatever's handy
+            </div>
           </div>
         )}
       </div>
 
       {/* Typed legal name */}
-      <label style={`display:block;margin-top:18px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED};margin-bottom:6px`}>Type your full legal name</label>
+      <label
+        style={`display:block;margin-top:18px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED};margin-bottom:6px`}
+      >
+        Type your full legal name
+      </label>
       <input
         type="text"
         value={name}
@@ -337,26 +410,53 @@ export default function PublicSignContract({ contractId }: Props) {
         required
       />
       <div style={`margin-top:8px;font-size:12px;color:${MUTED}`}>
-        By drawing your signature and typing your name, you agree this is your legal e-signature on the contract above.
+        By drawing your signature and typing your name, you agree this is your
+        legal e-signature on the contract above.
       </div>
 
       {err && (
-        <div style={`margin-top:12px;color:#b3261e;font-size:13px`}>Couldn't sign — {err}</div>
+        <div style={`margin-top:12px;color:#b3261e;font-size:13px`}>
+          Couldn't sign — {err}
+        </div>
       )}
 
       <button
         type="submit"
         disabled={submitting || !name.trim() || !hasInk}
-        style={`margin-top:18px;width:100%;background:${submitting || !name.trim() || !hasInk ? "#a8c8a0" : `linear-gradient(135deg,${GREEN} 0%,#71a85f 100%)`};color:#fff;border:0;font-weight:800;font-size:16px;padding:18px 28px;border-radius:14px;box-shadow:${submitting || !name.trim() || !hasInk ? "none" : "0 10px 22px -6px rgba(81,152,67,0.55)"};cursor:${submitting || !name.trim() || !hasInk ? "default" : "pointer"};transition:transform 160ms;display:flex;align-items:center;justify-content:center;gap:10px`}
+        style={`margin-top:18px;width:100%;background:${
+          submitting || !name.trim() || !hasInk
+            ? "#a8c8a0"
+            : `linear-gradient(135deg,${GREEN} 0%,#71a85f 100%)`
+        };color:#fff;border:0;font-weight:800;font-size:16px;padding:18px 28px;border-radius:14px;box-shadow:${
+          submitting || !name.trim() || !hasInk
+            ? "none"
+            : "0 10px 22px -6px rgba(81,152,67,0.55)"
+        };cursor:${
+          submitting || !name.trim() || !hasInk ? "default" : "pointer"
+        };transition:transform 160ms;display:flex;align-items:center;justify-content:center;gap:10px`}
       >
-        {submitting
-          ? "Signing…"
-          : (
-            <>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l9 2-2-9-9-9-7 7z" /><path d="M14 5l5 5" /></svg>
-              <span>{hasInk && name.trim() ? "Looks good — sign the contract →" : "Draw + type your name to enable"}</span>
-            </>
-          )}
+        {submitting ? "Signing…" : (
+          <>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 19l9 2-2-9-9-9-7 7z" />
+              <path d="M14 5l5 5" />
+            </svg>
+            <span>
+              {hasInk && name.trim()
+                ? "Looks good — sign the contract →"
+                : "Draw + type your name to enable"}
+            </span>
+          </>
+        )}
       </button>
     </form>
   );

@@ -16,7 +16,9 @@ async function withServer(fn: (port: number) => Promise<void>) {
   await resetKv();
   const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
   await server.listen();
-  try { await fn(PORT); } finally {
+  try {
+    await fn(PORT);
+  } finally {
     await server.stop();
     await resetKv();
   }
@@ -40,7 +42,11 @@ Deno.test("auth e2e: send-otp persists OTP record and replies { sent: true }", a
   });
 });
 
-async function postJson(url: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> {
+async function postJson(
+  url: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<Response> {
   return await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
@@ -54,21 +60,45 @@ async function drain(res: Response): Promise<void> {
 
 Deno.test("auth e2e: full happy path — send-otp → verify-otp returns sessionId+userId", async () => {
   await withServer(async (port) => {
-    await drain(await postJson(`http://localhost:${port}/auth/send-otp`, { phoneNumber: "+15125551234", language: "en" }));
+    await drain(
+      await postJson(`http://localhost:${port}/auth/send-otp`, {
+        phoneNumber: "+15125551234",
+        language: "en",
+      }),
+    );
     const otps = new OtpStore();
     const otp = await otps.get("+15125551234");
 
-    const body = await postJson(`http://localhost:${port}/auth/verify-otp`, { phoneNumber: "+15125551234", code: otp!.code }).then((r) => r.json());
+    const body = await postJson(`http://localhost:${port}/auth/verify-otp`, {
+      phoneNumber: "+15125551234",
+      code: otp!.code,
+    }).then((r) => r.json());
     assert(typeof body.sessionId === "string", "sessionId should be returned");
-    assert(typeof body.userId    === "string", "userId should be returned");
-    assertEquals(await otps.get("+15125551234"), null, "OTP record should be cleared on success");
+    assert(typeof body.userId === "string", "userId should be returned");
+    assertEquals(
+      await otps.get("+15125551234"),
+      null,
+      "OTP record should be cleared on success",
+    );
   });
 });
 
 Deno.test("auth e2e: verify-otp with wrong code returns invalid_code error body", async () => {
   await withServer(async (port) => {
-    await drain(await postJson(`http://localhost:${port}/auth/send-otp`, { phoneNumber: "+15125551234" }));
-    const body = await postJson(`http://localhost:${port}/auth/verify-otp`, { phoneNumber: "+15125551234", code: "000000" }).then((r) => r.json());
+    await drain(
+      await postJson(`http://localhost:${port}/auth/send-otp`, {
+        phoneNumber: "+15125551234",
+      }),
+    );
+    // Derive a wrong code from the real one — and never "000000", which is the
+    // non-prod DEV_MASTER_CODE that bypasses verification and would log in.
+    const otps = new OtpStore();
+    const real = await otps.get("+15125551234");
+    const wrong = real!.code === "111111" ? "222222" : "111111";
+    const body = await postJson(`http://localhost:${port}/auth/verify-otp`, {
+      phoneNumber: "+15125551234",
+      code: wrong,
+    }).then((r) => r.json());
     assertEquals(body.ok, false);
     assertEquals(body.error, "invalid_code");
   });
@@ -76,7 +106,10 @@ Deno.test("auth e2e: verify-otp with wrong code returns invalid_code error body"
 
 Deno.test("auth e2e: verify-otp with no preceding send-otp returns expired error body", async () => {
   await withServer(async (port) => {
-    const body = await postJson(`http://localhost:${port}/auth/verify-otp`, { phoneNumber: "+15125551234", code: "123456" }).then((r) => r.json());
+    const body = await postJson(`http://localhost:${port}/auth/verify-otp`, {
+      phoneNumber: "+15125551234",
+      code: "123456",
+    }).then((r) => r.json());
     assertEquals(body.ok, false);
     assertEquals(body.error, "expired");
   });
@@ -84,19 +117,35 @@ Deno.test("auth e2e: verify-otp with no preceding send-otp returns expired error
 
 Deno.test("auth e2e: logout with valid session id returns ok and removes the session", async () => {
   await withServer(async (port) => {
-    await drain(await postJson(`http://localhost:${port}/auth/send-otp`, { phoneNumber: "+15125551234" }));
+    await drain(
+      await postJson(`http://localhost:${port}/auth/send-otp`, {
+        phoneNumber: "+15125551234",
+      }),
+    );
     const otps = new OtpStore();
     const otp = await otps.get("+15125551234");
-    const verify = await postJson(`http://localhost:${port}/auth/verify-otp`, { phoneNumber: "+15125551234", code: otp!.code }).then((r) => r.json());
+    const verify = await postJson(`http://localhost:${port}/auth/verify-otp`, {
+      phoneNumber: "+15125551234",
+      code: otp!.code,
+    }).then((r) => r.json());
 
-    const logoutBody = await postJson(`http://localhost:${port}/auth/logout`, {}, { "x-session-id": verify.sessionId }).then((r) => r.json());
+    const logoutBody = await postJson(
+      `http://localhost:${port}/auth/logout`,
+      {},
+      { "x-session-id": verify.sessionId },
+    ).then((r) => r.json());
     assertEquals(logoutBody, { ok: true });
 
     // Subsequent /me with the same session should now reject.
-    const me = await fetch(`http://localhost:${port}/me`, { headers: { "x-session-id": verify.sessionId } });
+    const me = await fetch(`http://localhost:${port}/me`, {
+      headers: { "x-session-id": verify.sessionId },
+    });
     if (me.ok) {
       const body = await me.json();
-      assert(!("phoneNumber" in body), "user payload must not be returned after logout");
+      assert(
+        !("phoneNumber" in body),
+        "user payload must not be returned after logout",
+      );
     } else {
       await drain(me);
     }
@@ -105,20 +154,31 @@ Deno.test("auth e2e: logout with valid session id returns ok and removes the ses
 
 Deno.test("auth e2e: logout without session id is a no-op { ok: true }", async () => {
   await withServer(async (port) => {
-    const body = await postJson(`http://localhost:${port}/auth/logout`, {}).then((r) => r.json());
+    const body = await postJson(`http://localhost:${port}/auth/logout`, {})
+      .then((r) => r.json());
     assertEquals(body, { ok: true });
   });
 });
 
 Deno.test("auth e2e: verify-otp sets pm_session HTTP-only cookie alongside the JSON body", async () => {
   await withServer(async (port) => {
-    await drain(await postJson(`http://localhost:${port}/auth/send-otp`, { phoneNumber: "+15125551234" }));
+    await drain(
+      await postJson(`http://localhost:${port}/auth/send-otp`, {
+        phoneNumber: "+15125551234",
+      }),
+    );
     const otp = await new OtpStore().get("+15125551234");
-    const res = await postJson(`http://localhost:${port}/auth/verify-otp`, { phoneNumber: "+15125551234", code: otp!.code });
+    const res = await postJson(`http://localhost:${port}/auth/verify-otp`, {
+      phoneNumber: "+15125551234",
+      code: otp!.code,
+    });
 
     const setCookie = res.headers.get("set-cookie");
     assert(setCookie, "Set-Cookie header should be present");
-    assert(setCookie.includes("pm_session="), "cookie name should be pm_session");
+    assert(
+      setCookie.includes("pm_session="),
+      "cookie name should be pm_session",
+    );
     assert(setCookie.includes("HttpOnly"), "cookie should be HttpOnly");
     assert(setCookie.includes("SameSite=Lax"), "cookie should be SameSite=Lax");
 
@@ -132,14 +192,21 @@ Deno.test("auth e2e: verify-otp sets pm_session HTTP-only cookie alongside the J
 
 Deno.test("auth e2e: a request authenticated by Cookie alone (no x-session-id) succeeds on a protected endpoint", async () => {
   await withServer(async (port) => {
-    await drain(await postJson(`http://localhost:${port}/auth/send-otp`, { phoneNumber: "+15125551234" }));
+    await drain(
+      await postJson(`http://localhost:${port}/auth/send-otp`, {
+        phoneNumber: "+15125551234",
+      }),
+    );
     const otp = await new OtpStore().get("+15125551234");
-    const verify = await postJson(`http://localhost:${port}/auth/verify-otp`, { phoneNumber: "+15125551234", code: otp!.code });
+    const verify = await postJson(`http://localhost:${port}/auth/verify-otp`, {
+      phoneNumber: "+15125551234",
+      code: otp!.code,
+    });
     const setCookie = verify.headers.get("set-cookie")!;
     await drain(verify);
 
     // Hit /me using ONLY the cookie — no x-session-id.
-    const cookieValue = setCookie.split(";")[0];      // "pm_session=...."
+    const cookieValue = setCookie.split(";")[0]; // "pm_session=...."
     const me = await fetch(`http://localhost:${port}/me`, {
       headers: { cookie: cookieValue },
     }).then((r) => r.json());

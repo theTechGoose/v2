@@ -6,30 +6,33 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
+import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { RenderContractPdf } from "@paperwork/domain/coordinators/render-contract-pdf/mod.ts";
 import type { Contract, ContractTerm } from "@paperwork/dto/contract.ts";
 import type { User } from "@users/dto/user.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 
-const COLOR_TEAL  = "#144852";
+const COLOR_TEAL = "#144852";
 const COLOR_GREEN = "#519843";
-const COLOR_INK   = "#1c2c30";
+const COLOR_INK = "#1c2c30";
 const COLOR_MUTED = "#6b7a7e";
-const COLOR_LINE  = "#e3e8e6";
-const COLOR_BG    = "#f7f6f1";
-const COLOR_PINK  = "#FF6B6B";
+const COLOR_LINE = "#e3e8e6";
+const COLOR_BG = "#f7f6f1";
+const COLOR_PINK = "#FF6B6B";
 const COLOR_PINK_DARK = "#d94e4e";
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
   const force = Deno.env.get("APP_URL_FORCE") === "1";
-  const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod"
-    || !!Deno.env.get("DENO_DEPLOYMENT_ID");
+  const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod" ||
+    !!Deno.env.get("DENO_DEPLOYMENT_ID");
   if (isProd) return explicit ?? "https://paperworkmonster.com";
   // Honor explicit APP_URL in dev when it targets localhost (set by
   // serve.ts to point at the running frontend port). FORCE remains the
   // opt-in for tunnel URLs.
-  if (explicit && /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(explicit)) return explicit;
+  if (explicit && /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(explicit)) {
+    return explicit;
+  }
   if (force && explicit) return explicit;
   return "http://localhost:5280";
 })();
@@ -43,8 +46,10 @@ const APP_URL = (() => {
  *   2. Auto-creates the **first invoice** from the contract's payment
  *      schedule (the deposit, if 30/30/40 or 50/50; otherwise the full
  *      net-15 invoice, etc.).
- *   3. Dispatches a single confirmation email to the customer with the
- *      PDF attached and a payment-link button to the new invoice.
+ *   3. Dispatches a confirmation email to the customer with the PDF
+ *      attached and a payment-link button to the new invoice.
+ *   4. Sends a completion SMS to the customer (roadmap p.2) — best-effort,
+ *      independent of the email.
  *
  * Idempotent: a `signedNotifiedAt` stamp on the contract guards against
  * double-sends if signContract is replayed (Postmark webhooks, retries).
@@ -56,25 +61,34 @@ const APP_URL = (() => {
 export class SendSignedConfirmation {
   constructor(
     private contracts: ContractStore,
-    private quotes:    QuoteStore,
-    private invoices:  InvoiceStore,
+    private quotes: QuoteStore,
+    private invoices: InvoiceStore,
     private customers: CustomerStore,
-    private users:     UserStore,
-    private identity:  BusinessIdentityStore,
+    private users: UserStore,
+    private identity: BusinessIdentityStore,
     private renderPdf: RenderContractPdf,
-    private email:     EmailService,
+    private email: EmailService,
+    private sms: SmsService,
   ) {}
 
-  async run(contractId: string): Promise<{ ok: boolean; reason?: string; messageId?: string; invoiceId?: string }> {
+  async run(
+    contractId: string,
+  ): Promise<
+    { ok: boolean; reason?: string; messageId?: string; invoiceId?: string }
+  > {
     let contract: Contract;
     try {
       contract = await this.contracts.get(contractId);
     } catch (err) {
-      return { ok: false, reason: `contract not found: ${(err as Error).message}` };
+      return {
+        ok: false,
+        reason: `contract not found: ${(err as Error).message}`,
+      };
     }
 
     // Idempotency guard.
-    const signedNotifiedAt = (contract as { signedNotifiedAt?: string }).signedNotifiedAt;
+    const signedNotifiedAt =
+      (contract as { signedNotifiedAt?: string }).signedNotifiedAt;
     if (signedNotifiedAt) {
       return { ok: true, reason: "already_notified" };
     }
@@ -84,7 +98,9 @@ export class SendSignedConfirmation {
       this.users.get(userId).catch(() => undefined as User | undefined),
       this.identity.get(userId).catch(() => null),
       contract.customerId
-        ? this.customers.getOwned(contract.customerId, userId).catch(() => undefined as Customer | undefined)
+        ? this.customers.getOwned(contract.customerId, userId).catch(() =>
+          undefined as Customer | undefined
+        )
         : Promise.resolve(undefined as Customer | undefined),
       contract.quoteId
         ? this.quotes.getOwned(contract.quoteId, userId).catch(() => undefined)
@@ -95,17 +111,24 @@ export class SendSignedConfirmation {
     // without one bound (e.g., older API-created demo contracts).
     let customer = contractCustomer;
     if (!customer && quote?.customerId) {
-      customer = await this.customers.getOwned(quote.customerId, userId).catch(() => undefined);
+      customer = await this.customers.getOwned(quote.customerId, userId).catch(
+        () => undefined,
+      );
     }
 
     const recipient = customer?.email?.trim();
     if (!recipient) {
-      console.warn(`[send-signed-confirmation] contract ${contract.id} has no customer email; skipping dispatch`);
+      console.warn(
+        `[send-signed-confirmation] contract ${contract.id} has no customer email; skipping dispatch`,
+      );
       return { ok: false, reason: "no_customer_email" };
     }
-    console.log(`[send-signed-confirmation] dispatching to ${recipient} for contract ${contract.id}`);
+    console.log(
+      `[send-signed-confirmation] dispatching to ${recipient} for contract ${contract.id}`,
+    );
 
-    const businessName = ident?.businessName?.trim() || ident?.legalName?.trim() || contractor?.name?.trim();
+    const businessName = ident?.businessName?.trim() ||
+      ident?.legalName?.trim() || contractor?.name?.trim();
 
     // ---- 1. Render PDF
     let pdfBytes: Uint8Array;
@@ -116,10 +139,14 @@ export class SendSignedConfirmation {
         customer,
         contractor,
         ...(businessName ? { businessName } : {}),
+        ...(ident?.commsLanguage ? { commsLanguage: ident.commsLanguage } : {}),
       });
     } catch (err) {
       console.error("[send-signed-confirmation] PDF render failed:", err);
-      return { ok: false, reason: `pdf_render_failed: ${(err as Error).message}` };
+      return {
+        ok: false,
+        reason: `pdf_render_failed: ${(err as Error).message}`,
+      };
     }
 
     // ---- 2. Create the full milestone set (first invoice sent now,
@@ -161,16 +188,28 @@ export class SendSignedConfirmation {
           });
           if (isFirst) invoiceId = invoice.id;
         } catch (err) {
-          console.error(`[send-signed-confirmation] milestone ${i + 1}/${installmentTotal} create failed:`, err);
+          console.error(
+            `[send-signed-confirmation] milestone ${
+              i + 1
+            }/${installmentTotal} create failed:`,
+            err,
+          );
         }
       }
     }
 
     // ---- 3. Email customer (PDF attachment + invoice button)
-    const subject = `Signed: ${quote?.summary ?? "your contract"} — countersigned PDF + first invoice`;
+    const subject = `Signed: ${
+      quote?.summary ?? "your contract"
+    } — countersigned PDF + first invoice`;
     const html = renderSignedConfirmationHtml({
-      contract, quote, customer, contractor, businessName,
-      invoiceId, invoiceAmount: milestoneAmounts[0] ?? 0,
+      contract,
+      quote,
+      customer,
+      contractor,
+      businessName,
+      invoiceId,
+      invoiceAmount: milestoneAmounts[0] ?? 0,
     });
     const fileName = `Contract-${contract.id.slice(0, 8).toUpperCase()}.pdf`;
     const sent = await this.email.send({
@@ -185,18 +224,52 @@ export class SendSignedConfirmation {
     });
 
     if (sent.ok) {
-      console.log(`[send-signed-confirmation] sent to ${recipient} messageId=${sent.messageId ?? "(dev-mode)"} invoiceId=${invoiceId ?? "(none)"} pdfBytes=${pdfBytes.byteLength}`);
+      console.log(
+        `[send-signed-confirmation] sent to ${recipient} messageId=${
+          sent.messageId ?? "(dev-mode)"
+        } invoiceId=${invoiceId ?? "(none)"} pdfBytes=${pdfBytes.byteLength}`,
+      );
       try {
         await this.contracts.update(contract.id, userId, {
           // Stamp regardless of attachment delivery; we don't want to
           // re-send if the email goes through but our store write hiccups.
-          ...({ signedNotifiedAt: new Date().toISOString() } as Partial<Contract>),
+          ...({ signedNotifiedAt: new Date().toISOString() } as Partial<
+            Contract
+          >),
         } as Partial<Contract>);
       } catch (err) {
-        console.error("[send-signed-confirmation] failed to stamp signedNotifiedAt:", err);
+        console.error(
+          "[send-signed-confirmation] failed to stamp signedNotifiedAt:",
+          err,
+        );
       }
     } else {
-      console.error(`[send-signed-confirmation] dispatch FAILED to ${recipient} reason=${sent.reason}`);
+      console.error(
+        `[send-signed-confirmation] dispatch FAILED to ${recipient} reason=${sent.reason}`,
+      );
+    }
+
+    // ---- 4. Completion SMS (roadmap p.2: signed quotes get a text too).
+    //      Best-effort and independent of the email; the run-level
+    //      `signedNotifiedAt` guard already prevents double-sends on replay.
+    try {
+      const toSms = normalizeE164(customer?.phoneNumber ?? "");
+      if (toSms) {
+        const first = (customer?.name ?? "").trim().split(/\s+/)[0] || "there";
+        const jobName = quote?.jobName?.trim() ||
+          quote?.summary?.replace(/^\s*quote\s*:\s*/i, "").trim() ||
+          "your project";
+        const fromBiz = businessName ? ` — ${businessName}` : "";
+        // Roadmap p.13: customer-facing → outgoing-comms language (default en).
+        const body = ident?.commsLanguage === "es"
+          ? `Hola ${first}, tu Cotización + Acuerdo para ${jobName} está firmada — ¡todo listo! ` +
+            `Te enviaremos una copia firmada y tu primera factura: ${APP_URL}/c/${contract.id}${fromBiz}`
+          : `Hi ${first}, your Quote + Agreement for ${jobName} is signed — you're all set! ` +
+            `A signed copy + your first invoice are on the way: ${APP_URL}/c/${contract.id}${fromBiz}`;
+        await this.sms.send({ to: toSms, body });
+      }
+    } catch (err) {
+      console.error("[send-signed-confirmation] completion SMS failed:", err);
     }
 
     return {
@@ -210,14 +283,31 @@ export class SendSignedConfirmation {
 
 /* ---------------- helpers ---------------- */
 
+/** Normalize a raw phone to E.164 (US-default). Mirrors the helper in
+ *  send-paperwork-sms; returns undefined when it can't be made valid. */
+function normalizeE164(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  if (/^\+[1-9]\d{6,14}$/.test(trimmed)) return trimmed;
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return undefined;
+}
+
 /** Resolve the contractor's chosen payment terms into one amount per
  *  milestone, in INTEGER CENTS. Mirrors the display logic in
  *  `render-contract-pdf/mod.ts:computeMilestones` but returns just the
  *  amounts (the labels/timing live on the public preview). Sum is always
  *  exactly `total` — the last milestone absorbs rounding. */
-export function computeMilestoneAmounts(total: number, terms: ContractTerm[] | undefined): number[] {
+export function computeMilestoneAmounts(
+  total: number,
+  terms: ContractTerm[] | undefined,
+): number[] {
   if (!total || total <= 0) return [];
-  const v = terms?.find((t) => t.stepId === "payment_terms")?.value?.toLowerCase() ?? "";
+  const v =
+    terms?.find((t) => t.stepId === "payment_terms")?.value?.toLowerCase() ??
+      "";
   if (v.includes("50") && v.includes("/")) {
     const a = Math.round(total / 2);
     return [a, total - a];
@@ -227,7 +317,10 @@ export function computeMilestoneAmounts(total: number, terms: ContractTerm[] | u
     const b = Math.round(total * 0.30);
     return [a, b, total - a - b];
   }
-  if (v.includes("completion") || v.includes("net 15") || v.includes("upon completion")) {
+  if (
+    v.includes("completion") || v.includes("net 15") ||
+    v.includes("upon completion")
+  ) {
     return [total];
   }
   if (v.includes("deposit") && v.includes("balance")) {
@@ -294,22 +387,34 @@ function addDaysIso(d: Date, days: number): string {
 function fmtUSD(cents: number | undefined): string {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "—";
   const dollars = cents / 100;
-  return `$${dollars.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${
+    dollars.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }`;
 }
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => {
     switch (c) {
-      case "&": return "&amp;";
-      case "<": return "&lt;";
-      case ">": return "&gt;";
-      case '"': return "&quot;";
-      default:  return "&#39;";
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      default:
+        return "&#39;";
     }
   });
 }
 
-function escapeAttr(s: string): string { return escapeHtml(s).replace(/`/g, "&#96;"); }
+function escapeAttr(s: string): string {
+  return escapeHtml(s).replace(/`/g, "&#96;");
+}
 
 interface SignedHtmlOpts {
   contract: Contract;
@@ -323,17 +428,31 @@ interface SignedHtmlOpts {
 }
 
 function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
-  const { contract, quote, customer, contractor, businessName, invoiceId, invoiceAmount } = opts;
+  const {
+    contract,
+    quote,
+    customer,
+    contractor,
+    businessName,
+    invoiceId,
+    invoiceAmount,
+  } = opts;
   const customerFirst = customer?.name?.trim().split(/\s+/)[0];
   const contractorFirst = contractor?.name?.trim()?.split(/\s+/)[0];
   const biz = businessName ?? contractor?.name ?? "your contractor";
-  const summary = (quote?.summary ?? "your project").replace(/^\s*quote\s*:\s*/i, "");
+  const summary = (quote?.summary ?? "your project").replace(
+    /^\s*quote\s*:\s*/i,
+    "",
+  );
   const docNumber = `#${contract.id.slice(0, 8).toUpperCase()}`;
-  const total = contract.totalAmount ?? quote?.estimatedTotal ?? 0;
   const invoiceUrl = invoiceId ? `${APP_URL}/i/${invoiceId}` : undefined;
   const contractUrl = `${APP_URL}/c/${contract.id}`;
-  const greeting = customerFirst ? `Hi ${escapeHtml(customerFirst)} —` : "Hi there —";
-  const preheader = `Countersigned PDF attached · first invoice ${invoiceUrl ? "ready to pay" : "coming soon"}`;
+  const greeting = customerFirst
+    ? `Hi ${escapeHtml(customerFirst)} —`
+    : "Hi there —";
+  const preheader = `Countersigned PDF attached · first invoice ${
+    invoiceUrl ? "ready to pay" : "coming soon"
+  }`;
 
   return `<!doctype html>
 <html lang="en">
@@ -344,30 +463,49 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
   <title>Signed ${escapeHtml(docNumber)}</title>
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
-  <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${escapeHtml(preheader)}</span>
+  <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
+    escapeHtml(preheader)
+  }</span>
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
     <tr><td align="center" style="padding:40px 16px;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="640" style="max-width:640px;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
         <tr><td style="height:6px;background:linear-gradient(90deg,${COLOR_GREEN} 0%,#71a85f 100%);font-size:0;line-height:0">&nbsp;</td></tr>
 
         <tr><td style="padding:32px 36px 0">
-          <span style="display:inline-block;background:rgba(81,152,67,0.12);color:${COLOR_GREEN};font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;padding:6px 12px;border-radius:999px">✓ Signed · ${escapeHtml(docNumber)}</span>
+          <span style="display:inline-block;background:rgba(81,152,67,0.12);color:${COLOR_GREEN};font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;padding:6px 12px;border-radius:999px">✓ Signed · ${
+    escapeHtml(docNumber)
+  }</span>
         </td></tr>
 
         <tr><td style="padding:18px 36px 0">
           <h1 style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:32px;letter-spacing:-0.025em;color:${COLOR_TEAL};line-height:1.05">It's official.</h1>
-          <div style="margin-top:8px;color:${COLOR_MUTED};font-size:14px">${escapeHtml(biz)} and ${customerFirst ? escapeHtml(customerFirst) : "you"} are locked in on <strong style="color:${COLOR_INK}">${escapeHtml(summary)}</strong>.</div>
+          <div style="margin-top:8px;color:${COLOR_MUTED};font-size:14px">${
+    escapeHtml(biz)
+  } and ${
+    customerFirst ? escapeHtml(customerFirst) : "you"
+  } are locked in on <strong style="color:${COLOR_INK}">${
+    escapeHtml(summary)
+  }</strong>.</div>
         </td></tr>
 
         <tr><td style="padding:24px 36px 0">
           <p style="margin:0 0 8px;font-size:15px;color:${COLOR_INK}">${greeting}</p>
           <p style="margin:0;font-size:15px;color:${COLOR_INK};line-height:1.55">
-            Thanks for signing. Your countersigned contract is attached as a PDF for your records${invoiceUrl ? ` — and the first invoice (<strong>${fmtUSD(invoiceAmount)}</strong>) is ready below` : ""}. ${contractorFirst ? escapeHtml(contractorFirst) : "Your contractor"} will reach out to lock in a start day.
+            Thanks for signing. Your countersigned contract is attached as a PDF for your records${
+    invoiceUrl
+      ? ` — and the first invoice (<strong>${
+        fmtUSD(invoiceAmount)
+      }</strong>) is ready below`
+      : ""
+  }. ${
+    contractorFirst ? escapeHtml(contractorFirst) : "Your contractor"
+  } will reach out to lock in a start day.
           </p>
         </td></tr>
 
-        ${invoiceUrl
-          ? `<tr><td style="padding:24px 36px 0">
+        ${
+    invoiceUrl
+      ? `<tr><td style="padding:24px 36px 0">
               <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:linear-gradient(135deg,#fff5f0 0%,#ffe9df 100%);border:1px solid rgba(255,107,107,0.30);border-radius:18px">
                 <tr>
                   <td style="padding:22px 24px;vertical-align:middle">
@@ -375,17 +513,22 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
                     <div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">due in 7 days · pay online</div>
                   </td>
                   <td style="padding:22px 24px;text-align:right;vertical-align:middle">
-                    <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:30px;letter-spacing:-0.02em;color:${COLOR_TEAL};line-height:1">${fmtUSD(invoiceAmount)}</div>
+                    <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:30px;letter-spacing:-0.02em;color:${COLOR_TEAL};line-height:1">${
+        fmtUSD(invoiceAmount)
+      }</div>
                   </td>
                 </tr>
                 <tr>
                   <td colspan="2" style="padding:0 24px 22px">
-                    <a href="${escapeAttr(invoiceUrl)}" style="display:inline-block;background:${COLOR_PINK};color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;padding:12px 22px;border-radius:12px;box-shadow:0 8px 18px -6px rgba(255,107,107,0.55)">Pay the first invoice  →</a>
+                    <a href="${
+        escapeAttr(invoiceUrl)
+      }" style="display:inline-block;background:${COLOR_PINK};color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;padding:12px 22px;border-radius:12px;box-shadow:0 8px 18px -6px rgba(255,107,107,0.55)">Pay the first invoice  →</a>
                   </td>
                 </tr>
               </table>
             </td></tr>`
-          : ""}
+      : ""
+  }
 
         <tr><td style="padding:24px 36px 0">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};border-radius:14px;border:1px solid ${COLOR_LINE}">
@@ -394,7 +537,9 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
                 <div style="width:42px;height:42px;border-radius:10px;background:${COLOR_TEAL};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;letter-spacing:.06em">PDF</div>
               </td>
               <td style="padding:16px 20px 16px 0;vertical-align:middle">
-                <div style="color:${COLOR_INK};font-weight:800;font-size:14px">Contract-${escapeHtml(contract.id.slice(0, 8).toUpperCase())}.pdf</div>
+                <div style="color:${COLOR_INK};font-weight:800;font-size:14px">Contract-${
+    escapeHtml(contract.id.slice(0, 8).toUpperCase())
+  }.pdf</div>
                 <div style="margin-top:2px;color:${COLOR_MUTED};font-size:12px">attached · signed by both parties</div>
               </td>
             </tr>
@@ -402,16 +547,32 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
         </td></tr>
 
         <tr><td style="padding:28px 36px 0;text-align:center">
-          <a href="${escapeAttr(contractUrl)}" style="display:inline-block;background:transparent;color:${COLOR_TEAL};text-decoration:none;font-weight:700;font-size:13px;padding:8px 0;border-bottom:1px solid ${COLOR_LINE}">View the contract online →</a>
+          <a href="${
+    escapeAttr(contractUrl)
+  }" style="display:inline-block;background:transparent;color:${COLOR_TEAL};text-decoration:none;font-weight:700;font-size:13px;padding:8px 0;border-bottom:1px solid ${COLOR_LINE}">View the contract online →</a>
         </td></tr>
 
         <tr><td style="padding:32px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
 
         <tr><td style="padding:22px 36px 32px">
           <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED}">From</div>
-          <div style="margin-top:6px;font-weight:800;color:${COLOR_TEAL};font-size:15px">${escapeHtml(contractor?.name ?? biz)}</div>
-          ${contractor?.phoneNumber ? `<div style="margin-top:2px;color:${COLOR_INK};font-size:13px">${escapeHtml(contractor.phoneNumber)}</div>` : ""}
-          ${contractor?.email ? `<div style="margin-top:2px;color:${COLOR_INK};font-size:13px">${escapeHtml(contractor.email)}</div>` : ""}
+          <div style="margin-top:6px;font-weight:800;color:${COLOR_TEAL};font-size:15px">${
+    escapeHtml(contractor?.name ?? biz)
+  }</div>
+          ${
+    contractor?.phoneNumber
+      ? `<div style="margin-top:2px;color:${COLOR_INK};font-size:13px">${
+        escapeHtml(contractor.phoneNumber)
+      }</div>`
+      : ""
+  }
+          ${
+    contractor?.email
+      ? `<div style="margin-top:2px;color:${COLOR_INK};font-size:13px">${
+        escapeHtml(contractor.email)
+      }</div>`
+      : ""
+  }
         </td></tr>
       </table>
     </td></tr>

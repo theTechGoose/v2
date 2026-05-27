@@ -1,4 +1,10 @@
-import { IsBoolean, IsOptional, IsString, validateSync, ValidateNested } from "#class-validator";
+import {
+  IsBoolean,
+  IsOptional,
+  IsString,
+  ValidateNested,
+  validateSync,
+} from "#class-validator";
 import { plainToInstance, Type } from "#class-transformer";
 
 /** A single payment-method handle the contractor is willing to receive
@@ -7,48 +13,78 @@ import { plainToInstance, Type } from "#class-transformer";
  *  routing/account fields are masked on the public projection and only
  *  visible to authenticated requests. */
 export class CheckMethod {
-  @IsBoolean() enabled!: boolean;
+  @IsBoolean()
+  enabled!: boolean;
   /** "1234 Main St, Austin, TX 78701" — full mailing line. */
-  @IsOptional() @IsString() mailTo?: string;
+  @IsOptional() @IsString()
+  mailTo?: string;
 }
 export class VenmoMethod {
-  @IsBoolean() enabled!: boolean;
+  @IsBoolean()
+  enabled!: boolean;
   /** "@hans-hansen". Stored with leading @ for display. */
-  @IsOptional() @IsString() handle?: string;
+  @IsOptional() @IsString()
+  handle?: string;
 }
 export class ZelleMethod {
-  @IsBoolean() enabled!: boolean;
+  @IsBoolean()
+  enabled!: boolean;
   /** Email or phone — whatever the contractor's Zelle is registered to. */
-  @IsOptional() @IsString() handle?: string;
+  @IsOptional() @IsString()
+  handle?: string;
 }
 export class CashAppMethod {
-  @IsBoolean() enabled!: boolean;
+  @IsBoolean()
+  enabled!: boolean;
   /** "$hansgenco". Stored with leading $. */
-  @IsOptional() @IsString() cashtag?: string;
+  @IsOptional() @IsString()
+  cashtag?: string;
+}
+export class PaypalMethod {
+  @IsBoolean()
+  enabled!: boolean;
+  /** PayPal.Me handle or the email the PayPal account is registered to. */
+  @IsOptional() @IsString()
+  handle?: string;
 }
 export class CashMethod {
-  @IsBoolean() enabled!: boolean;
+  @IsBoolean()
+  enabled!: boolean;
 }
 export class AchMethod {
-  @IsBoolean() enabled!: boolean;
+  @IsBoolean()
+  enabled!: boolean;
   /** Public projection masks these — never surface raw on /invoices/:id/public. */
-  @IsOptional() @IsString() routingNumber?: string;
-  @IsOptional() @IsString() accountNumberMasked?: string;
+  @IsOptional() @IsString()
+  routingNumber?: string;
+  @IsOptional() @IsString()
+  accountNumberMasked?: string;
 }
 export class OtherMethod {
-  @IsBoolean() enabled!: boolean;
+  @IsBoolean()
+  enabled!: boolean;
   /** Free-text instructions ("Call me to arrange payment"). */
-  @IsOptional() @IsString() instructions?: string;
+  @IsOptional() @IsString()
+  instructions?: string;
 }
 
 export class AcceptedPaymentMethods {
-  @IsOptional() @ValidateNested() @Type(() => CheckMethod) check?: CheckMethod;
-  @IsOptional() @ValidateNested() @Type(() => VenmoMethod) venmo?: VenmoMethod;
-  @IsOptional() @ValidateNested() @Type(() => ZelleMethod) zelle?: ZelleMethod;
-  @IsOptional() @ValidateNested() @Type(() => CashAppMethod) cashapp?: CashAppMethod;
-  @IsOptional() @ValidateNested() @Type(() => CashMethod) cash?: CashMethod;
-  @IsOptional() @ValidateNested() @Type(() => AchMethod) ach?: AchMethod;
-  @IsOptional() @ValidateNested() @Type(() => OtherMethod) other?: OtherMethod;
+  @IsOptional() @ValidateNested() @Type(() => CheckMethod)
+  check?: CheckMethod;
+  @IsOptional() @ValidateNested() @Type(() => VenmoMethod)
+  venmo?: VenmoMethod;
+  @IsOptional() @ValidateNested() @Type(() => ZelleMethod)
+  zelle?: ZelleMethod;
+  @IsOptional() @ValidateNested() @Type(() => CashAppMethod)
+  cashapp?: CashAppMethod;
+  @IsOptional() @ValidateNested() @Type(() => PaypalMethod)
+  paypal?: PaypalMethod;
+  @IsOptional() @ValidateNested() @Type(() => CashMethod)
+  cash?: CashMethod;
+  @IsOptional() @ValidateNested() @Type(() => AchMethod)
+  ach?: AchMethod;
+  @IsOptional() @ValidateNested() @Type(() => OtherMethod)
+  other?: OtherMethod;
 }
 
 export interface BusinessIdentity {
@@ -65,6 +101,11 @@ export interface BusinessIdentity {
    *  you like to pay?" buttons. Unset → no methods surface and the
    *  customer sees a "Reach out to coordinate payment" fallback. */
   acceptedPaymentMethods?: AcceptedPaymentMethods;
+  /** Language the contractor's CUSTOMERS receive outbound comms in —
+   *  quote/contract SMS + email, public docs, PDF (roadmap p.13). Distinct
+   *  from the contractor's own UI language (user.language). Unset → "en".
+   *  Kept as a free string so we can broaden the set later. */
+  commsLanguage?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -91,14 +132,22 @@ export class UpdateBusinessIdentityDto {
   emailAlias?: string;
 
   @IsOptional()
+  @IsString()
+  commsLanguage?: string;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => AcceptedPaymentMethods)
   acceptedPaymentMethods?: AcceptedPaymentMethods;
 }
 
-export function parseUpdateBusinessIdentity(input: unknown): UpdateBusinessIdentityDto {
+export function parseUpdateBusinessIdentity(
+  input: unknown,
+): UpdateBusinessIdentityDto {
   const dto = plainToInstance(UpdateBusinessIdentityDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid business identity: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid business identity: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }

@@ -5,6 +5,7 @@ import { plainToInstance } from "#class-transformer";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -31,53 +32,72 @@ function notFoundResponse(ctx: ExecutionContext, e: unknown) {
 }
 
 class AcceptQuoteDto {
-  @IsOptional() @IsString() signature?: string;
-  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsString()
+  signature?: string;
+  @IsOptional() @IsString()
+  name?: string;
 }
 
 class DeclineQuoteDto {
-  @IsOptional() @IsString() reason?: string;   // chip — "price" | "timing" | "going_elsewhere" | "other"
-  @IsOptional() @IsString() note?: string;     // free-text explanation
-  @IsOptional() @IsString() name?: string;     // who clicked decline
+  @IsOptional() @IsString()
+  reason?: string; // chip — "price" | "timing" | "going_elsewhere" | "other"
+  @IsOptional() @IsString()
+  note?: string; // free-text explanation
+  @IsOptional() @IsString()
+  name?: string; // who clicked decline
 }
 
 class InquireQuoteDto {
-  @IsString() question!: string;               // the customer's actual question
-  @IsOptional() @IsString() contactBack?: string; // phone or email — how the contractor should follow up
-  @IsOptional() @IsString() name?: string;
+  @IsString()
+  question!: string; // the customer's actual question
+  @IsOptional() @IsString()
+  contactBack?: string; // phone or email — how the contractor should follow up
+  @IsOptional() @IsString()
+  name?: string;
 }
 
 class SignContractDto {
-  @IsString() signature!: string;
-  @IsString() name!: string;
-  @IsOptional() @IsString() tin?: string;
+  @IsString()
+  signature!: string;
+  @IsString()
+  name!: string;
+  @IsOptional() @IsString()
+  tin?: string;
 }
 
 function parseAccept(input: unknown): AcceptQuoteDto {
   const dto = plainToInstance(AcceptQuoteDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid accept body: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid accept body: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }
 
 function parseDecline(input: unknown): DeclineQuoteDto {
   const dto = plainToInstance(DeclineQuoteDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid decline body: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid decline body: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }
 
 function parseInquire(input: unknown): InquireQuoteDto {
   const dto = plainToInstance(InquireQuoteDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid inquiry body: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid inquiry body: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }
 
 function parseSign(input: unknown): SignContractDto {
   const dto = plainToInstance(SignContractDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid sign body: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid sign body: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }
 
@@ -99,14 +119,15 @@ function parseSign(input: unknown): SignContractDto {
 @Controller()
 export class PaperworkPublicController {
   constructor(
-    private quotes:    QuoteStore,
+    private quotes: QuoteStore,
     private contracts: ContractStore,
-    private invoices:  InvoiceStore,
+    private invoices: InvoiceStore,
+    private changeOrders: ChangeOrderStore,
     private customers: CustomerStore,
-    private users:     UserStore,
-    private identity:  BusinessIdentityStore,
+    private users: UserStore,
+    private identity: BusinessIdentityStore,
     private addresses: BusinessAddressStore,
-    private bus:       EventBus,
+    private bus: EventBus,
     private signedConfirmation: SendSignedConfirmation,
     private shortlinks: ShortLinkStore,
   ) {}
@@ -117,19 +138,111 @@ export class PaperworkPublicController {
    * Returns 404 when the code is unknown.
    */
   @Get("s/:code")
-  async resolveShortlink(@Context() ctx: ExecutionContext, @Param("code") code: string) {
+  async resolveShortlink(
+    @Context() ctx: ExecutionContext,
+    @Param("code") code: string,
+  ) {
     try {
       const link = await this.shortlinks.get(code);
       return ctx.json({ kind: link.kind, id: link.id });
-    } catch (e) { return notFoundResponse(ctx, e); }
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+
+  /**
+   * GET /change-orders/:id/public — customer-facing view of a proposed
+   * invoice adjustment (roadmap p.12). Returns the description, signed
+   * delta, and the resulting invoice total so the customer can approve.
+   */
+  @Get("change-orders/:id/public")
+  async getChangeOrderPublic(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
+    try {
+      const co = await this.changeOrders.get(id);
+      let currentAmount: number | undefined;
+      let businessName: string | undefined;
+      try {
+        const inv = await this.invoices.get(co.invoiceId);
+        currentAmount = inv.amount ?? 0;
+        const ident = await this.identity.get(inv.userId).catch(() => null);
+        businessName = ident?.businessName ?? ident?.legalName ?? undefined;
+      } catch { /* invoice may be gone; still show the order */ }
+      return ctx.json({
+        id: co.id,
+        description: co.description,
+        deltaAmountCents: co.deltaAmountCents,
+        status: co.status,
+        currentAmount,
+        newAmount: currentAmount != null
+          ? Math.max(0, currentAmount + co.deltaAmountCents)
+          : undefined,
+        businessName,
+        decidedAt: co.decidedAt,
+      });
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+
+  /** POST /change-orders/:id/approve — customer approves; the delta is
+   *  applied to the linked invoice's total and the order is closed. */
+  @Post("change-orders/:id/approve")
+  async approveChangeOrder(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
+    let co;
+    try {
+      co = await this.changeOrders.get(id);
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+    if (co.status !== "pending") {
+      return ctx.json({ ok: false, reason: `already_${co.status}` }, 409);
+    }
+    // Apply the delta to the invoice (owner write — CO carries the userId).
+    try {
+      const inv = await this.invoices.get(co.invoiceId);
+      const next = Math.max(0, (inv.amount ?? 0) + co.deltaAmountCents);
+      await this.invoices.update(co.invoiceId, co.userId, { amount: next });
+    } catch (err) {
+      console.warn(`[change-orders/${id}/approve] invoice update failed:`, err);
+    }
+    await this.changeOrders.setStatus(id, "approved");
+    return ctx.json({ ok: true });
+  }
+
+  /** POST /change-orders/:id/decline — customer rejects the adjustment. */
+  @Post("change-orders/:id/decline")
+  async declineChangeOrder(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
+    let co;
+    try {
+      co = await this.changeOrders.get(id);
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+    if (co.status !== "pending") {
+      return ctx.json({ ok: false, reason: `already_${co.status}` }, 409);
+    }
+    await this.changeOrders.setStatus(id, "declined");
+    return ctx.json({ ok: true });
   }
 
   // ---------- quotes ----------
 
   @Get("quotes/:id/public")
-  async getQuotePublic(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+  async getQuotePublic(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
     try {
-      const q = await this.quotes.get(id);             // no ownership gate — knowledge of id is the capability
+      const q = await this.quotes.get(id); // no ownership gate — knowledge of id is the capability
       const [contractor, customer] = await Promise.all([
         loadContractor(this.users, this.identity, this.addresses, q.userId),
         lookupCustomerName(this.customers, q.customerId, q.userId),
@@ -139,24 +252,36 @@ export class PaperworkPublicController {
         contractor,
         customer: customer ? { name: customer } : undefined,
       });
-    } catch (e) { return notFoundResponse(ctx, e); }
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
   }
 
   @Post("quotes/:id/accept")
-  async acceptQuote(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+  async acceptQuote(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
     const dto = parseAccept(body);
     const existing = await this.quotes.get(id);
-    if (existing.status === "accepted") return ctx.json({ ok: true, alreadyAccepted: true });
+    if (existing.status === "accepted") {
+      return ctx.json({ ok: true, alreadyAccepted: true });
+    }
     const updated = await this.quotes.update(id, existing.userId, {
       status: "accepted",
       // The accept action augments the quote with signature metadata if provided.
       // Stored on the quote itself so the contractor can see who accepted.
       ...(dto.signature ? { acceptedSignature: dto.signature } : {}),
-      ...(dto.name      ? { acceptedName:      dto.name }      : {}),
+      ...(dto.name ? { acceptedName: dto.name } : {}),
       acceptedAt: new Date().toISOString(),
     });
 
-    const customerName = await lookupCustomerName(this.customers, updated.customerId, existing.userId);
+    const customerName = await lookupCustomerName(
+      this.customers,
+      updated.customerId,
+      existing.userId,
+    );
     await this.bus.emit({
       userId: existing.userId,
       entityType: "quote",
@@ -174,7 +299,11 @@ export class PaperworkPublicController {
    *  separate 'declined' state on the read side) and records who declined +
    *  why on the row, so the contractor can read it from /quotes. */
   @Post("quotes/:id/decline")
-  async declineQuote(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+  async declineQuote(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
     const dto = parseDecline(body);
     const existing = await this.quotes.get(id);
     if (existing.status === "accepted") {
@@ -191,17 +320,25 @@ export class PaperworkPublicController {
       // yet, but the FE will display whatever is there. Mirrors the pattern
       // for customerSignature on contracts.
       ...(dto.reason ? { declineReason: dto.reason } as Partial<Quote> : {}),
-      ...(dto.note   ? { declineNote:   dto.note }   as Partial<Quote> : {}),
-      ...(dto.name   ? { declinedName:  dto.name }   as Partial<Quote> : {}),
+      ...(dto.note ? { declineNote: dto.note } as Partial<Quote> : {}),
+      ...(dto.name ? { declinedName: dto.name } as Partial<Quote> : {}),
     } as Partial<Quote>);
 
-    const customerName = await lookupCustomerName(this.customers, updated.customerId, existing.userId);
+    const customerName = await lookupCustomerName(
+      this.customers,
+      updated.customerId,
+      existing.userId,
+    );
     await this.bus.emit({
       userId: existing.userId,
       entityType: "quote",
       entityId: updated.id,
       action: "declined",
-      data: { ...(customerName ? { customerName } : {}), reason: dto.reason, note: dto.note },
+      data: {
+        ...(customerName ? { customerName } : {}),
+        reason: dto.reason,
+        note: dto.note,
+      },
     });
     return ctx.json({ ok: true, quoteId: updated.id });
   }
@@ -212,10 +349,18 @@ export class PaperworkPublicController {
    *  thread of their own, so it lands as a notification on the contractor's
    *  bell + activity feed. No quote-status change. */
   @Post("quotes/:id/inquiry")
-  async inquireQuote(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+  async inquireQuote(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
     const dto = parseInquire(body);
     const existing = await this.quotes.get(id);
-    const customerName = await lookupCustomerName(this.customers, existing.customerId, existing.userId);
+    const customerName = await lookupCustomerName(
+      this.customers,
+      existing.customerId,
+      existing.userId,
+    );
     await this.bus.emit({
       userId: existing.userId,
       // Emit as a quote-scoped event so the topbar bell can link back to the
@@ -226,10 +371,10 @@ export class PaperworkPublicController {
       action: "inquiry",
       data: {
         ...(customerName ? { customerName } : {}),
-        question:    dto.question,
+        question: dto.question,
         ...(dto.contactBack ? { contactBack: dto.contactBack } : {}),
-        ...(dto.name        ? { askName:     dto.name }        : {}),
-        quoteId:     existing.id,
+        ...(dto.name ? { askName: dto.name } : {}),
+        quoteId: existing.id,
       },
     });
     return ctx.json({ ok: true });
@@ -238,7 +383,10 @@ export class PaperworkPublicController {
   // ---------- contracts ----------
 
   @Get("contracts/:id/public")
-  async getContractPublic(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+  async getContractPublic(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
     try {
       let c = await this.contracts.get(id);
       // First view by the customer flips the status from sent → viewed so
@@ -247,7 +395,11 @@ export class PaperworkPublicController {
       // GETs find a non-"sent" status and skip).
       if (c.status === "sent") {
         try {
-          c = await this.contracts.update(id, c.userId, { status: "viewed" } as Partial<Contract>);
+          c = await this.contracts.update(
+            id,
+            c.userId,
+            { status: "viewed" } as Partial<Contract>,
+          );
           await this.bus.emit({
             userId: c.userId,
             entityType: "contract",
@@ -267,10 +419,17 @@ export class PaperworkPublicController {
         // customer sees what they're agreeing to before signing. The
         // quote read is best-effort; a missing/forbidden quote shouldn't
         // 404 the contract.
-        c.quoteId ? this.quotes.get(c.quoteId).catch(() => undefined) : Promise.resolve(undefined),
+        c.quoteId
+          ? this.quotes.get(c.quoteId).catch(() => undefined)
+          : Promise.resolve(undefined),
       ]);
       const jobDetails = quote
-        ? { summary: quote.summary, jobName: quote.jobName, description: quote.description, lineItems: quote.lineItems }
+        ? {
+          summary: quote.summary,
+          jobName: quote.jobName,
+          description: quote.description,
+          lineItems: quote.lineItems,
+        }
         : undefined;
       return ctx.json({
         ...redactContract(c),
@@ -279,11 +438,16 @@ export class PaperworkPublicController {
         jobDetails,
         terms: c.terms ?? [],
       });
-    } catch (e) { return notFoundResponse(ctx, e); }
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
   }
 
   @Get("contracts/by-quote/:quoteId/public")
-  async getContractByQuote(@Context() ctx: ExecutionContext, @Param("quoteId") quoteId: string) {
+  async getContractByQuote(
+    @Context() ctx: ExecutionContext,
+    @Param("quoteId") quoteId: string,
+  ) {
     try {
       // Cheap scan: the quote's owner is known via quotes.get; we then
       // search that user's contracts for one with matching quoteId.
@@ -291,26 +455,44 @@ export class PaperworkPublicController {
       const all = await this.contracts.listByUser(quote.userId);
       const found = all.find((c) => c.quoteId === quoteId);
       return ctx.json({ contractId: found?.id ?? null });
-    } catch (e) { return notFoundResponse(ctx, e); }
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
   }
 
   @Post("contracts/:id/sign")
-  async signContract(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+  async signContract(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
     const dto = parseSign(body);
     const existing = await this.contracts.get(id);
-    if (existing.status === "signed") return ctx.json({ ok: true, alreadySigned: true });
+    if (existing.status === "signed") {
+      return ctx.json({ ok: true, alreadySigned: true });
+    }
     const updated = await this.contracts.update(id, existing.userId, {
       status: "signed",
       signedAt: new Date().toISOString(),
       // Customer signature data; these fields aren't on the current Contract DTO
       // but will be added when contracts get full payment-terms (see backend.md §7).
       // Storing as loose fields for now via cast — the DTO will catch up.
-      ...(dto.signature ? { customerSignature: dto.signature } as Partial<Contract> : {}),
-      ...(dto.name      ? { customerSignedName: dto.name }     as Partial<Contract> : {}),
-      ...(dto.tin       ? { customerTinMasked: maskTin(dto.tin) } as Partial<Contract> : {}),
+      ...(dto.signature
+        ? { customerSignature: dto.signature } as Partial<Contract>
+        : {}),
+      ...(dto.name
+        ? { customerSignedName: dto.name } as Partial<Contract>
+        : {}),
+      ...(dto.tin
+        ? { customerTinMasked: maskTin(dto.tin) } as Partial<Contract>
+        : {}),
     } as Partial<Contract>);
 
-    const customerName = await lookupCustomerName(this.customers, updated.customerId, existing.userId);
+    const customerName = await lookupCustomerName(
+      this.customers,
+      updated.customerId,
+      existing.userId,
+    );
     await this.bus.emit({
       userId: existing.userId,
       entityType: "contract",
@@ -324,7 +506,10 @@ export class PaperworkPublicController {
     // the new invoice's pay link. Errors here MUST NOT fail the sign
     // request — the contract is signed regardless of email delivery.
     this.signedConfirmation.run(updated.id).catch((err) => {
-      console.error(`[contracts/${updated.id}/sign] signed-confirmation failed:`, err);
+      console.error(
+        `[contracts/${updated.id}/sign] signed-confirmation failed:`,
+        err,
+      );
     });
 
     return ctx.json({ ok: true, contractId: updated.id });
@@ -333,7 +518,10 @@ export class PaperworkPublicController {
   // ---------- invoices ----------
 
   @Get("invoices/:id/public")
-  async getInvoicePublic(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+  async getInvoicePublic(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
     try {
       const i = await this.invoices.get(id);
       const [contractor, customer, contract, siblings] = await Promise.all([
@@ -342,18 +530,32 @@ export class PaperworkPublicController {
         // The public page surfaces job context (the linked contract's
         // quote summary + jobName) so the customer sees what they're
         // paying for. Best-effort — a missing contract shouldn't 404.
-        i.contractId ? this.contracts.get(i.contractId).catch(() => undefined) : Promise.resolve(undefined),
+        i.contractId
+          ? this.contracts.get(i.contractId).catch(() => undefined)
+          : Promise.resolve(undefined),
         // Sibling invoices for the same contract — used to render the
         // "Invoice X of Y" framing and the "What you've paid so far"
         // strip on the public page.
-        i.contractId ? this.invoices.listByUser(i.userId).then((all) => all.filter((row) => row.contractId === i.contractId)).catch(() => []) : Promise.resolve([]),
+        i.contractId
+          ? this.invoices.listByUser(i.userId).then((all) =>
+            all.filter((row) => row.contractId === i.contractId)
+          ).catch(() => [])
+          : Promise.resolve([]),
       ]);
       // Resolve the linked quote for jobName/summary/lineItems projection.
-      let jobDetails: { summary?: string; jobName?: string; description?: string } | undefined;
+      let jobDetails: {
+        summary?: string;
+        jobName?: string;
+        description?: string;
+      } | undefined;
       if (contract?.quoteId) {
         try {
           const q = await this.quotes.get(contract.quoteId);
-          jobDetails = { summary: q.summary, jobName: q.jobName, description: q.description };
+          jobDetails = {
+            summary: q.summary,
+            jobName: q.jobName,
+            description: q.description,
+          };
         } catch { /* fall through */ }
       }
       // Project sibling invoices into a public-safe shape, sorted by
@@ -367,10 +569,10 @@ export class PaperworkPublicController {
           return (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
         })
         .map((row) => ({
-          id:               row.id,
-          amount:           row.amount,
-          status:           row.status,
-          paidAt:           row.paidAt,
+          id: row.id,
+          amount: row.amount,
+          status: row.status,
+          paidAt: row.paidAt,
           installmentIndex: row.installmentIndex,
           installmentTotal: row.installmentTotal,
         }));
@@ -386,7 +588,9 @@ export class PaperworkPublicController {
         siblings: sortedSiblings,
         acceptedMethods,
       });
-    } catch (e) { return notFoundResponse(ctx, e); }
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
   }
 
   /**
@@ -401,7 +605,11 @@ export class PaperworkPublicController {
    * in one step, so there's no audit need beyond that).
    */
   @Post("invoices/:id/claim-payment")
-  async claimInvoicePayment(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+  async claimInvoicePayment(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
     const dto = parseClaim(body);
     try {
       const invoice = await this.invoices.get(id);
@@ -431,23 +639,41 @@ export class PaperworkPublicController {
         data: { method: dto.method, reference: dto.reference ?? "" },
       });
       return ctx.json({ ok: true, invoiceId: updated.id });
-    } catch (e) { return notFoundResponse(ctx, e); }
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
   }
 }
 
 /** Validation DTO for the public claim endpoint. */
 class ClaimPaymentDto {
-  @IsString() method!: string;
-  @IsOptional() @IsString() reference?: string;
-  @IsOptional() @IsString() claimedBy?: string;
+  @IsString()
+  method!: string;
+  @IsOptional() @IsString()
+  reference?: string;
+  @IsOptional() @IsString()
+  claimedBy?: string;
 }
 
 function parseClaim(input: unknown): ClaimPaymentDto {
   const dto = plainToInstance(ClaimPaymentDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid claim body: ${JSON.stringify(errors)}`);
-  const allowed = new Set(["check", "venmo", "zelle", "cashapp", "cash", "ach", "other"]);
-  if (!allowed.has(dto.method)) throw new Error(`invalid method: ${dto.method}`);
+  if (errors.length) {
+    throw new Error(`invalid claim body: ${JSON.stringify(errors)}`);
+  }
+  const allowed = new Set([
+    "check",
+    "venmo",
+    "zelle",
+    "cashapp",
+    "paypal",
+    "cash",
+    "ach",
+    "other",
+  ]);
+  if (!allowed.has(dto.method)) {
+    throw new Error(`invalid method: ${dto.method}`);
+  }
   return dto;
 }
 
@@ -459,17 +685,26 @@ function parseClaim(input: unknown): ClaimPaymentDto {
  *  public page renders a "Ask the contractor for ACH details" stub for
  *  ACH instead, with the real numbers only surfaced via a separate
  *  authenticated request flow (out of v1 scope). */
-function projectAcceptedMethods(contractor: { acceptedPaymentMethods?: AcceptedPaymentMethods } | undefined): Array<{ method: string; handle?: string }> {
+function projectAcceptedMethods(
+  contractor: { acceptedPaymentMethods?: AcceptedPaymentMethods } | undefined,
+): Array<{ method: string; handle?: string }> {
   const m = contractor?.acceptedPaymentMethods;
   if (!m) return [];
   const out: Array<{ method: string; handle?: string }> = [];
   if (m.check?.enabled) out.push({ method: "check", handle: m.check.mailTo });
   if (m.venmo?.enabled) out.push({ method: "venmo", handle: m.venmo.handle });
   if (m.zelle?.enabled) out.push({ method: "zelle", handle: m.zelle.handle });
-  if (m.cashapp?.enabled) out.push({ method: "cashapp", handle: m.cashapp.cashtag });
+  if (m.cashapp?.enabled) {
+    out.push({ method: "cashapp", handle: m.cashapp.cashtag });
+  }
+  if (m.paypal?.enabled) {
+    out.push({ method: "paypal", handle: m.paypal.handle });
+  }
   if (m.cash?.enabled) out.push({ method: "cash" });
   if (m.ach?.enabled) out.push({ method: "ach" });
-  if (m.other?.enabled) out.push({ method: "other", handle: m.other.instructions });
+  if (m.other?.enabled) {
+    out.push({ method: "other", handle: m.other.instructions });
+  }
   return out;
 }
 
@@ -490,6 +725,10 @@ interface PublicContractor {
    *  buttons. ACH routing/account numbers are stripped here — only the
    *  enabled flag survives onto the public surface. */
   acceptedPaymentMethods?: AcceptedPaymentMethods;
+  /** Outgoing-comms language (roadmap p.13) — the public pages render copy
+   *  in this language so the customer reads everything in their language.
+   *  Defaults to "en". */
+  commsLanguage?: string;
 }
 
 /** Public-safe contractor projection — never returns internal IDs or
@@ -508,13 +747,16 @@ async function loadContractor(
     ]);
     if (!user && !ident && !addr) return undefined;
     return {
-      name:                   user?.name,
-      businessName:           ident?.businessName ?? ident?.legalName,
-      phoneNumber:            user?.phoneNumber,
-      email:                  user?.email,
-      addressLine:            composeAddressLine(addr),
-      state:                  addr?.state?.trim() || undefined,
-      acceptedPaymentMethods: redactAcceptedMethods(ident?.acceptedPaymentMethods),
+      name: user?.name,
+      businessName: ident?.businessName ?? ident?.legalName,
+      phoneNumber: user?.phoneNumber,
+      email: user?.email,
+      addressLine: composeAddressLine(addr),
+      state: addr?.state?.trim() || undefined,
+      acceptedPaymentMethods: redactAcceptedMethods(
+        ident?.acceptedPaymentMethods,
+      ),
+      commsLanguage: ident?.commsLanguage === "es" ? "es" : "en",
     };
   } catch {
     return undefined;
@@ -524,27 +766,31 @@ async function loadContractor(
 /** Strip ACH routing/account numbers from the public projection — the
  *  customer page should only know that ACH is *offered*, not how to
  *  reach the bank account. Other methods pass through unchanged. */
-function redactAcceptedMethods(m: AcceptedPaymentMethods | undefined): AcceptedPaymentMethods | undefined {
+function redactAcceptedMethods(
+  m: AcceptedPaymentMethods | undefined,
+): AcceptedPaymentMethods | undefined {
   if (!m) return undefined;
   return {
     ...m,
-    ach: m.ach
-      ? { enabled: m.ach.enabled }
-      : undefined,
+    ach: m.ach ? { enabled: m.ach.enabled } : undefined,
   };
 }
 
 export function composeAddressLine(
-  addr: { street?: string; city?: string; state?: string; postal?: string } | null | undefined,
+  addr:
+    | { street?: string; city?: string; state?: string; postal?: string }
+    | null
+    | undefined,
 ): string | undefined {
   if (!addr) return undefined;
   const street = addr.street?.trim();
-  const city   = addr.city?.trim();
-  const state  = addr.state?.trim();
+  const city = addr.city?.trim();
+  const state = addr.state?.trim();
   const postal = addr.postal?.trim();
   // City + ST [postal] is the canonical second half. Skip the second half
   // entirely if neither city nor state is set so we don't render a stray comma.
-  const cityState = [city, [state, postal].filter(Boolean).join(" ").trim()].filter(Boolean).join(", ");
+  const cityState = [city, [state, postal].filter(Boolean).join(" ").trim()]
+    .filter(Boolean).join(", ");
   const out = [street, cityState].filter(Boolean).join(", ");
   return out.length ? out : undefined;
 }
@@ -558,57 +804,58 @@ export function composeAddressLine(
  */
 function redactQuote(q: Quote) {
   return {
-    id:             q.id,
-    summary:        q.summary,
-    description:    q.description,
-    customerId:     q.customerId,
-    lineItems:      q.lineItems,
+    id: q.id,
+    summary: q.summary,
+    description: q.description,
+    customerId: q.customerId,
+    lineItems: q.lineItems,
     estimatedTotal: q.estimatedTotal,
-    status:         q.status,
-    createdAt:      q.createdAt,
+    status: q.status,
+    createdAt: q.createdAt,
     // omit: userId, updatedAt, internal acceptedSignature/acceptedName
   };
 }
 
 function redactContract(c: Contract) {
   return {
-    id:                       c.id,
-    quoteId:                  c.quoteId,
-    customerId:               c.customerId,
-    status:                   c.status,
-    effectiveDate:            c.effectiveDate,
-    startDate:                c.startDate,
-    estimatedCompletionDate:  c.estimatedCompletionDate,
-    totalAmount:              c.totalAmount,
-    signedAt:                 c.signedAt,
-    createdAt:                c.createdAt,
-    terms:                    c.terms,
+    id: c.id,
+    quoteId: c.quoteId,
+    customerId: c.customerId,
+    status: c.status,
+    effectiveDate: c.effectiveDate,
+    startDate: c.startDate,
+    estimatedCompletionDate: c.estimatedCompletionDate,
+    totalAmount: c.totalAmount,
+    signedAt: c.signedAt,
+    createdAt: c.createdAt,
+    terms: c.terms,
     // The typed legal name is safe to surface so the public page can fill
     // the customer-signature card after signing; the captured PNG and TIN
     // stay omitted.
-    customerSignedName:       (c as { customerSignedName?: string }).customerSignedName,
+    customerSignedName:
+      (c as { customerSignedName?: string }).customerSignedName,
     // omit: userId, updatedAt, customer signature PNG, customerTinMasked
   };
 }
 
 function redactInvoice(i: Invoice) {
   return {
-    id:                i.id,
-    contractId:        i.contractId,
-    customerId:        i.customerId,
-    amount:            i.amount,
-    issuedDate:        i.issuedDate,
-    dueDate:           i.dueDate,
-    status:            i.status,
-    paidAt:            i.paidAt,
-    createdAt:         i.createdAt,
-    installmentIndex:  i.installmentIndex,
-    installmentTotal:  i.installmentTotal,
-    scheduledFor:      i.scheduledFor,
+    id: i.id,
+    contractId: i.contractId,
+    customerId: i.customerId,
+    amount: i.amount,
+    issuedDate: i.issuedDate,
+    dueDate: i.dueDate,
+    status: i.status,
+    paidAt: i.paidAt,
+    createdAt: i.createdAt,
+    installmentIndex: i.installmentIndex,
+    installmentTotal: i.installmentTotal,
+    scheduledFor: i.scheduledFor,
     // The paymentIntent is safe to surface so the public page can render
     // a "you said you paid by X on Y" confirmation strip after the
     // customer submits a claim.
-    paymentIntent:     i.paymentIntent,
+    paymentIntent: i.paymentIntent,
     // omit: userId, updatedAt, remindersMuted, reminderHistory (internal)
   };
 }
@@ -634,7 +881,9 @@ async function lookupCustomerPublic(
   customers: CustomerStore,
   customerId: string | undefined,
   ownerId: string,
-): Promise<{ name?: string; phoneNumber?: string; email?: string } | undefined> {
+): Promise<
+  { name?: string; phoneNumber?: string; email?: string } | undefined
+> {
   if (!customerId) return undefined;
   try {
     const c = await customers.getOwned(customerId, ownerId);

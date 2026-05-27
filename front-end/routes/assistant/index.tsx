@@ -40,22 +40,37 @@ export default define.page(async function AssistantHome(ctx) {
       } catch (err) {
         // Fall through to the regular landing on failure — user can
         // still type something to start a thread manually.
-        console.error("[/assistant?onboard=1] start failed:", (err as Error).message);
+        console.error(
+          "[/assistant?onboard=1] start failed:",
+          (err as Error).message,
+        );
       }
     }
   }
 
   // In-process SSR fetch — see [threadId].tsx note. The standard HTTP
   // path 500s on Deno Deploy when BACKEND_URL isn't set.
-  const threadsRes = await ssrBackendGetAuthed<Conversation[]>(`/agents/conversations?limit=50`, sessionId)
+  const threadsRes = await ssrBackendGetAuthed<Conversation[]>(
+    `/agents/conversations?limit=50`,
+    sessionId,
+  )
     .catch(() => ({ ok: false, status: 0 } as { ok: false; status: number }));
-  const initialThreads = (threadsRes.ok && Array.isArray(threadsRes.data)) ? threadsRes.data : [];
-  const profile = await profileClient.get({ sessionId }).catch(() => null as ProfileSnapshot | null);
+  const initialThreads = (threadsRes.ok && Array.isArray(threadsRes.data))
+    ? threadsRes.data
+    : [];
+  const profile = await profileClient.get({ sessionId }).catch(() =>
+    null as ProfileSnapshot | null
+  );
 
-  const businessName = profile?.identity?.businessName ?? profile?.identity?.displayName;
+  const businessName = profile?.identity?.businessName ??
+    profile?.identity?.displayName;
   const userInitials = profile?.initials && profile.initials !== "?"
     ? profile.initials
-    : deriveUserInitials({ name: user?.name, businessName, phoneNumber: user?.phoneNumber });
+    : deriveUserInitials({
+      name: user?.name,
+      businessName,
+      phoneNumber: user?.phoneNumber,
+    });
 
   return (
     <>

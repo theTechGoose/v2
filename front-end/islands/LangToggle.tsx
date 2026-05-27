@@ -1,5 +1,5 @@
 import { useEffect } from "preact/hooks";
-import { langSignal, type Lang } from "../lib/lang.ts";
+import { type Lang, langSignal } from "../lib/lang.ts";
 
 interface Props {
   initial?: Lang;

@@ -4,9 +4,9 @@ import { define } from "../utils.ts";
 // where to POST. Inline the SSR-side env so islands hit the standalone
 // backend (api.aimonsters.com in prod, ngrok in dev) instead of bouncing
 // through the Fresh /api/* proxy.
-const PUBLIC_BACKEND_URL = (typeof Deno !== "undefined"
+const PUBLIC_BACKEND_URL = typeof Deno !== "undefined"
   ? Deno.env.get("PUBLIC_BACKEND_URL") ?? ""
-  : "");
+  : "";
 
 export default define.page(function App({ Component }) {
   const bootScript = PUBLIC_BACKEND_URL
@@ -20,7 +20,15 @@ export default define.page(function App({ Component }) {
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/logo.png" />
         <title>Paperwork Monster</title>
-        {bootScript ? <script dangerouslySetInnerHTML={{ __html: bootScript }} /> : null}
+        {bootScript
+          ? (
+            <script
+              // Server-built boot script (no user input).
+              // deno-lint-ignore react-no-danger
+              dangerouslySetInnerHTML={{ __html: bootScript }}
+            />
+          )
+          : null}
       </head>
       <body>
         <Component />

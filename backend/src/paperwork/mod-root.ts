@@ -14,6 +14,7 @@ import { CronController } from "@paperwork/entrypoints/cron-controller/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import { PaymentTermsStore } from "@paperwork/domain/data/payment-terms-store/mod.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
@@ -48,6 +49,7 @@ import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/recor
     QuoteStore,
     ContractStore,
     InvoiceStore,
+    ChangeOrderStore,
     ViewStore,
     PaymentTermsStore,
     PaymentStore,

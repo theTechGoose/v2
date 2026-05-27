@@ -36,11 +36,26 @@ interface State {
   customers: Customer[];
 }
 
-const INITIAL: State = { loading: true, error: null, invoices: [], customers: [] };
+const INITIAL: State = {
+  loading: true,
+  error: null,
+  invoices: [],
+  customers: [],
+};
 
 const SHORT_MONTH = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 /** Map an Invoice.paymentIntent.method (lowercase canonical) to the
@@ -49,14 +64,24 @@ const SHORT_MONTH = [
  *  card layout doesn't collapse. */
 function methodLabel(m: string | undefined): string {
   switch (m) {
-    case "check": return "by check";
-    case "venmo": return "via Venmo";
-    case "zelle": return "via Zelle";
-    case "cashapp": return "via Cash App";
-    case "cash": return "in cash";
-    case "ach": return "by bank transfer";
-    case "other": return "via other";
-    default: return "—";
+    case "check":
+      return "by check";
+    case "venmo":
+      return "via Venmo";
+    case "zelle":
+      return "via Zelle";
+    case "cashapp":
+      return "via Cash App";
+    case "paypal":
+      return "via PayPal";
+    case "cash":
+      return "in cash";
+    case "ach":
+      return "by bank transfer";
+    case "other":
+      return "via other";
+    default:
+      return "—";
   }
 }
 
@@ -70,7 +95,11 @@ function shortDay(iso: string): string {
   if (diffDays >= 0 && diffDays < 7) {
     return d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
   }
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function fmtDate(iso: string | undefined, now: Date): string {
@@ -105,7 +134,9 @@ interface EnrichedInvoice extends Invoice {
  *  (i.e. created but not yet sent). */
 function isDraft(inv: Invoice): boolean {
   const status = (inv.status ?? "").toLowerCase();
-  if (status === "draft" || status === "drafting" || status === "drafted") return true;
+  if (status === "draft" || status === "drafting" || status === "drafted") {
+    return true;
+  }
   // No status string AND no issuedDate AND not paid → still being prepped.
   if (!status && !inv.issuedDate && !inv.paidAt) return true;
   // Pending status but never issued → also a draft.
@@ -113,7 +144,11 @@ function isDraft(inv: Invoice): boolean {
   return false;
 }
 
-function enrich(inv: Invoice, customers: Map<string, string>, now: Date): EnrichedInvoice {
+function enrich(
+  inv: Invoice,
+  customers: Map<string, string>,
+  now: Date,
+): EnrichedInvoice {
   const client = (inv.customerId && customers.get(inv.customerId)) || "—";
   const today = now.toISOString().slice(0, 10);
   const due = inv.dueDate ?? "";
@@ -123,29 +158,89 @@ function enrich(inv: Invoice, customers: Map<string, string>, now: Date): Enrich
   const isClaimed = rawStatus === "claimed";
   const isScheduled = rawStatus === "scheduled";
   const draft = !isPaid && !isClaimed && !isScheduled && isDraft(inv);
-  const daysOverdue = (!isPaid && !isClaimed && !isScheduled && !draft && due && due < today)
-    ? Math.floor((now.getTime() - new Date(due + "T00:00:00").getTime()) / (24 * 3600 * 1000))
-    : 0;
+  const daysOverdue =
+    (!isPaid && !isClaimed && !isScheduled && !draft && due && due < today)
+      ? Math.floor(
+        (now.getTime() - new Date(due + "T00:00:00").getTime()) /
+          (24 * 3600 * 1000),
+      )
+      : 0;
   const daysIn = issued
-    ? Math.max(0, Math.floor((now.getTime() - new Date(issued).getTime()) / (24 * 3600 * 1000)))
+    ? Math.max(
+      0,
+      Math.floor(
+        (now.getTime() - new Date(issued).getTime()) / (24 * 3600 * 1000),
+      ),
+    )
     : 0;
-  const stage: EnrichedInvoice["stage"] =
-    isPaid          ? "paid" :
-    isClaimed       ? "claimed" :
-    isScheduled     ? "scheduled" :
-    draft           ? "drafting" :
-    daysOverdue > 0 ? "overdue" :
-                      "out";
-  return { ...inv, client, initials: initialsOf(client), invoiceRef: `INV-${inv.id.slice(0, 6).toUpperCase()}`, daysOverdue, daysIn, stage };
+  const stage: EnrichedInvoice["stage"] = isPaid
+    ? "paid"
+    : isClaimed
+    ? "claimed"
+    : isScheduled
+    ? "scheduled"
+    : draft
+    ? "drafting"
+    : daysOverdue > 0
+    ? "overdue"
+    : "out";
+  return {
+    ...inv,
+    client,
+    initials: initialsOf(client),
+    invoiceRef: `INV-${inv.id.slice(0, 6).toUpperCase()}`,
+    daysOverdue,
+    daysIn,
+    stage,
+  };
 }
 
-const STAGE_MOOD: Record<EnrichedInvoice["stage"], { from: string; to: string; shadow: string; statusFg: string; label: string }> = {
-  overdue:   { from: "#FFD9D9", to: "#FF6B6B", shadow: "rgba(255,107,107,0.30)", statusFg: "#fff",       label: "Overdue" },
-  out:       { from: "#C8DDE0", to: "#56969E", shadow: "rgba(86,150,158,0.28)",  statusFg: "#0F3036",    label: "Out" },
-  claimed:   { from: "#FFE7B5", to: "#E5A331", shadow: "rgba(229,163,49,0.30)",  statusFg: "#5A3D08",    label: "Awaiting confirmation" },
-  scheduled: { from: "#E4E0F7", to: "#8B7DBF", shadow: "rgba(139,125,191,0.28)", statusFg: "#2C254A",    label: "Scheduled" },
-  drafting:  { from: "#E1D7CD", to: "#9C8074", shadow: "rgba(156,128,116,0.32)", statusFg: "#3F2D24",    label: "Draft" },
-  paid:      { from: "#CFE5C8", to: "#5FA34F", shadow: "rgba(81,152,67,0.30)",   statusFg: "#1F3F18",    label: "Paid" },
+const STAGE_MOOD: Record<
+  EnrichedInvoice["stage"],
+  { from: string; to: string; shadow: string; statusFg: string; label: string }
+> = {
+  overdue: {
+    from: "#FFD9D9",
+    to: "#FF6B6B",
+    shadow: "rgba(255,107,107,0.30)",
+    statusFg: "#fff",
+    label: "Overdue",
+  },
+  out: {
+    from: "#C8DDE0",
+    to: "#56969E",
+    shadow: "rgba(86,150,158,0.28)",
+    statusFg: "#0F3036",
+    label: "Out",
+  },
+  claimed: {
+    from: "#FFE7B5",
+    to: "#E5A331",
+    shadow: "rgba(229,163,49,0.30)",
+    statusFg: "#5A3D08",
+    label: "Awaiting confirmation",
+  },
+  scheduled: {
+    from: "#E4E0F7",
+    to: "#8B7DBF",
+    shadow: "rgba(139,125,191,0.28)",
+    statusFg: "#2C254A",
+    label: "Scheduled",
+  },
+  drafting: {
+    from: "#E1D7CD",
+    to: "#9C8074",
+    shadow: "rgba(156,128,116,0.32)",
+    statusFg: "#3F2D24",
+    label: "Draft",
+  },
+  paid: {
+    from: "#CFE5C8",
+    to: "#5FA34F",
+    shadow: "rgba(81,152,67,0.30)",
+    statusFg: "#1F3F18",
+    label: "Paid",
+  },
 };
 
 interface ForecastEntry {
@@ -167,7 +262,9 @@ interface ForecastResult {
 
 export default function InvoicesPage() {
   const [s, setS] = useState<State>(INITIAL);
-  const [forecast, setForecast] = useState<ForecastResult | undefined>(undefined);
+  const [forecast, setForecast] = useState<ForecastResult | undefined>(
+    undefined,
+  );
 
   useEffect(() => {
     let alive = true;
@@ -185,12 +282,24 @@ export default function InvoicesPage() {
     // silently fall back to the legacy "outstanding total" headline.
     fetch("/api/invoices/forecast/this-week", { credentials: "include" })
       .then((r) => r.ok ? r.json() as Promise<ForecastResult> : undefined)
-      .then((f) => { if (alive && f) setForecast(f); })
-      .catch(() => { /* ignore */ });
-    return () => { alive = false; };
+      .then((f) => {
+        if (alive && f) setForecast(f);
+      })
+      .catch(() => {/* ignore */});
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  const customerNames = useMemo(() => new Map((Array.isArray(s.customers) ? s.customers : []).map((c) => [c.id, c.name])), [s.customers]);
+  const customerNames = useMemo(
+    () =>
+      new Map(
+        (Array.isArray(s.customers) ? s.customers : []).map((
+          c,
+        ) => [c.id, c.name]),
+      ),
+    [s.customers],
+  );
 
   if (s.loading) {
     return (
@@ -206,22 +315,41 @@ export default function InvoicesPage() {
   }
 
   const now = new Date();
-  const enriched = (Array.isArray(s.invoices) ? s.invoices : []).map((i) => enrich(i, customerNames, now));
+  const enriched = (Array.isArray(s.invoices) ? s.invoices : []).map((i) =>
+    enrich(i, customerNames, now)
+  );
 
-  const overdue  = enriched.filter((i) => i.stage === "overdue").sort((a, b) => b.daysOverdue - a.daysOverdue);
-  const out      = enriched.filter((i) => i.stage === "out").sort((a, b) => b.daysIn - a.daysIn);
-  const claimed  = enriched.filter((i) => i.stage === "claimed").sort((a, b) => (b.paymentIntent?.claimedAt ?? "").localeCompare(a.paymentIntent?.claimedAt ?? ""));
-  const scheduled = enriched.filter((i) => i.stage === "scheduled").sort((a, b) => (a.scheduledFor ?? "").localeCompare(b.scheduledFor ?? ""));
+  const overdue = enriched.filter((i) => i.stage === "overdue").sort((a, b) =>
+    b.daysOverdue - a.daysOverdue
+  );
+  const out = enriched.filter((i) => i.stage === "out").sort((a, b) =>
+    b.daysIn - a.daysIn
+  );
+  const claimed = enriched.filter((i) => i.stage === "claimed").sort((a, b) =>
+    (b.paymentIntent?.claimedAt ?? "").localeCompare(
+      a.paymentIntent?.claimedAt ?? "",
+    )
+  );
+  const scheduled = enriched.filter((i) => i.stage === "scheduled").sort((
+    a,
+    b,
+  ) => (a.scheduledFor ?? "").localeCompare(b.scheduledFor ?? ""));
   const drafting = enriched.filter((i) => i.stage === "drafting");
   const monthCutoff = new Date(now.getFullYear(), now.getMonth(), 1);
   const paidThisMonth = enriched.filter((i) =>
     i.stage === "paid" && i.paidAt && new Date(i.paidAt) >= monthCutoff
   );
 
-  const outstandingTotal = [...overdue, ...out].reduce((sum, i) => sum + (i.amount ?? 0), 0);
-  const overdueTotal     = overdue.reduce((sum, i) => sum + (i.amount ?? 0), 0);
-  const outTotal         = out.reduce((sum, i) => sum + (i.amount ?? 0), 0);
-  const paidThisMonthTotal = paidThisMonth.reduce((sum, i) => sum + (i.amount ?? 0), 0);
+  const outstandingTotal = [...overdue, ...out].reduce(
+    (sum, i) => sum + (i.amount ?? 0),
+    0,
+  );
+  const overdueTotal = overdue.reduce((sum, i) => sum + (i.amount ?? 0), 0);
+  const outTotal = out.reduce((sum, i) => sum + (i.amount ?? 0), 0);
+  const paidThisMonthTotal = paidThisMonth.reduce(
+    (sum, i) => sum + (i.amount ?? 0),
+    0,
+  );
 
   return (
     <>
@@ -244,40 +372,126 @@ export default function InvoicesPage() {
 
       <div class="qlay">
         <div>
-          <QuoteTrack num="01" title="Overdue · needs a poke" count={overdue.length} unit="invoice" defaultOpen storageKey="invoices:track:01">
+          <QuoteTrack
+            num="01"
+            title="Overdue · needs a poke"
+            count={overdue.length}
+            unit="invoice"
+            defaultOpen
+            storageKey="invoices:track:01"
+          >
             {overdue.length === 0
               ? <EmptyTrack hint="No overdue invoices. Nice work." />
-              : <div class="qcards">{overdue.map((inv, i) => <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />)}</div>}
+              : (
+                <div class="qcards">
+                  {overdue.map((inv, i) => (
+                    <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />
+                  ))}
+                </div>
+              )}
           </QuoteTrack>
 
-          <QuoteTrack num="02" title="Awaiting confirmation" count={claimed.length} unit="invoice" defaultOpen storageKey="invoices:track:awaiting">
+          <QuoteTrack
+            num="02"
+            title="Awaiting confirmation"
+            count={claimed.length}
+            unit="invoice"
+            defaultOpen
+            storageKey="invoices:track:awaiting"
+          >
             {claimed.length === 0
-              ? <EmptyTrack hint="No claimed payments waiting for you to confirm." />
-              : <div class="qcards" data-cy="awaiting-confirmation-track">{claimed.map((inv, i) => <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />)}</div>}
+              ? (
+                <EmptyTrack hint="No claimed payments waiting for you to confirm." />
+              )
+              : (
+                <div class="qcards" data-cy="awaiting-confirmation-track">
+                  {claimed.map((inv, i) => (
+                    <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />
+                  ))}
+                </div>
+              )}
           </QuoteTrack>
 
-          <QuoteTrack num="03" title="Out for payment" count={out.length} unit="invoice" defaultOpen storageKey="invoices:track:02">
+          <QuoteTrack
+            num="03"
+            title="Out for payment"
+            count={out.length}
+            unit="invoice"
+            defaultOpen
+            storageKey="invoices:track:02"
+          >
             {out.length === 0
               ? <EmptyTrack hint="Nothing waiting. Send a quote to get paid." />
-              : <div class="qcards">{out.map((inv, i) => <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />)}</div>}
+              : (
+                <div class="qcards">
+                  {out.map((inv, i) => (
+                    <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />
+                  ))}
+                </div>
+              )}
           </QuoteTrack>
 
-          <QuoteTrack num="04" title="Upcoming" count={scheduled.length} unit="invoice" defaultOpen={false} storageKey="invoices:track:upcoming">
+          <QuoteTrack
+            num="04"
+            title="Upcoming"
+            count={scheduled.length}
+            unit="invoice"
+            defaultOpen={false}
+            storageKey="invoices:track:upcoming"
+          >
             {scheduled.length === 0
-              ? <EmptyTrack hint="No scheduled invoices. Multi-installment contracts will surface here." />
-              : <div class="qcards" data-cy="upcoming-track">{scheduled.map((inv, i) => <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />)}</div>}
+              ? (
+                <EmptyTrack hint="No scheduled invoices. Multi-installment contracts will surface here." />
+              )
+              : (
+                <div class="qcards" data-cy="upcoming-track">
+                  {scheduled.map((inv, i) => (
+                    <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />
+                  ))}
+                </div>
+              )}
           </QuoteTrack>
 
-          <QuoteTrack num="05" title="Drafting" count={drafting.length} unit="invoice" defaultOpen={false} storageKey="invoices:track:03">
+          <QuoteTrack
+            num="05"
+            title="Drafting"
+            count={drafting.length}
+            unit="invoice"
+            defaultOpen={false}
+            storageKey="invoices:track:03"
+          >
             {drafting.length === 0
-              ? <EmptyTrack hint="No drafts in progress. Open the assistant to start one." />
-              : <div class="qcards">{drafting.map((inv, i) => <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />)}</div>}
+              ? (
+                <EmptyTrack hint="No drafts in progress. Open the assistant to start one." />
+              )
+              : (
+                <div class="qcards">
+                  {drafting.map((inv, i) => (
+                    <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />
+                  ))}
+                </div>
+              )}
           </QuoteTrack>
 
-          <QuoteTrack num="06" title="Paid this month" count={paidThisMonth.length} unit="invoice" defaultOpen={false} storageKey="invoices:track:04">
+          <QuoteTrack
+            num="06"
+            title="Paid this month"
+            count={paidThisMonth.length}
+            unit="invoice"
+            defaultOpen={false}
+            storageKey="invoices:track:04"
+          >
             {paidThisMonth.length === 0
-              ? <EmptyTrack hint="Nothing paid yet this month — payments land here once they clear." />
-              : <div class="qcards">{paidThisMonth.map((inv, i) => <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />)}</div>}
+              ? (
+                <EmptyTrack hint="Nothing paid yet this month — payments land here once they clear." />
+              )
+              : (
+                <div class="qcards">
+                  {paidThisMonth.map((inv, i) => (
+                    <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />
+                  ))}
+                </div>
+              )}
           </QuoteTrack>
         </div>
       </div>
@@ -288,7 +502,13 @@ export default function InvoicesPage() {
 /* ---------------- Hero ---------------- */
 
 function InvoicesHero(
-  { outstandingTotal, outstandingCount, overdueCount, totalInvoiceCount, forecast }: {
+  {
+    outstandingTotal,
+    outstandingCount,
+    overdueCount,
+    totalInvoiceCount,
+    forecast,
+  }: {
     outstandingTotal: number;
     outstandingCount: number;
     overdueCount: number;
@@ -298,7 +518,9 @@ function InvoicesHero(
 ) {
   const trulyEmpty = totalInvoiceCount === 0;
   const fresh = !trulyEmpty && outstandingCount === 0;
-  const haveForecast = !!forecast && (forecast.thisWeekCents > 0 || forecast.nextWeekCents > 0 || forecast.atRiskCents > 0);
+  const haveForecast = !!forecast &&
+    (forecast.thisWeekCents > 0 || forecast.nextWeekCents > 0 ||
+      forecast.atRiskCents > 0);
   return (
     <header class="qph">
       <div class="qph__copy">
@@ -307,47 +529,98 @@ function InvoicesHero(
         </div>
         <h1 class="qph__title" data-cy="forecast-hero">
           {trulyEmpty
-            ? <>No invoices yet — <em>let's start the river</em>.</>
+            ? (
+              <>
+                No invoices yet — <em>let's start the river</em>.
+              </>
+            )
             : fresh && !haveForecast
-            ? <>All clear — <em>nothing outstanding</em>.</>
+            ? (
+              <>
+                All clear — <em>nothing outstanding</em>.
+              </>
+            )
             : haveForecast && forecast!.thisWeekCents > 0
-            ? <>
-                <em>{fmtMoney(forecast!.thisWeekCents)}</em> expected this week<br />
-                across {forecast!.thisWeek.length} {forecast!.thisWeek.length === 1 ? "payment" : "payments"}.
+            ? (
+              <>
+                <em>{fmtMoney(forecast!.thisWeekCents)}</em>{" "}
+                expected this week<br />
+                across {forecast!.thisWeek.length}{" "}
+                {forecast!.thisWeek.length === 1 ? "payment" : "payments"}.
               </>
+            )
             : haveForecast && forecast!.nextWeekCents > 0
-            ? <>
-                Quiet week — <em>{fmtMoney(forecast!.nextWeekCents)}</em> coming next week.
+            ? (
+              <>
+                Quiet week — <em>{fmtMoney(forecast!.nextWeekCents)}</em>{" "}
+                coming next week.
               </>
+            )
             : (
               <>
                 <em>{fmtMoney(outstandingTotal)}</em> on the way<br />
-                across {outstandingCount} {outstandingCount === 1 ? "invoice" : "invoices"}.
+                across {outstandingCount}{" "}
+                {outstandingCount === 1 ? "invoice" : "invoices"}.
               </>
             )}
         </h1>
         <p class="qph__sub">
           {trulyEmpty
-            ? <>Once a contract is signed, drop the first invoice in. The monsters track every one — overdue, en route, drafting, paid — so you don't have to remember which is which.</>
+            ? (
+              <>
+                Once a contract is signed, drop the first invoice in. The
+                monsters track every one — overdue, en route, drafting, paid —
+                so you don't have to remember which is which.
+              </>
+            )
             : haveForecast && forecast!.thisWeek.length > 0
-            ? <span data-cy="forecast-breakdown">{forecast!.thisWeek.slice(0, 3).map((e, i) => (
-                <span key={e.invoiceId}>
-                  {i > 0 ? " · " : ""}{shortDay(e.expectedLandDate)}: <strong>{e.label} {fmtMoney(e.amount)}</strong>
-                </span>
-              ))}</span>
+            ? (
+              <span data-cy="forecast-breakdown">
+                {forecast!.thisWeek.slice(0, 3).map((e, i) => (
+                  <span key={e.invoiceId}>
+                    {i > 0 ? " · " : ""}
+                    {shortDay(e.expectedLandDate)}:{" "}
+                    <strong>{e.label} {fmtMoney(e.amount)}</strong>
+                  </span>
+                ))}
+              </span>
+            )
             : overdueCount > 0
-            ? <><strong>{overdueCount}</strong> {overdueCount === 1 ? "is" : "are"} past due — start there. The monsters drafted a friendly nudge for each one.</>
-            : <>Nothing past due. The monsters are watching for the next billing cycle.</>}
+            ? (
+              <>
+                <strong>{overdueCount}</strong>{" "}
+                {overdueCount === 1 ? "is" : "are"}{" "}
+                past due — start there. The monsters drafted a friendly nudge
+                for each one.
+              </>
+            )
+            : (
+              <>
+                Nothing past due. The monsters are watching for the next billing
+                cycle.
+              </>
+            )}
         </p>
         {haveForecast && forecast!.atRiskCents > 0
           ? (
-            <p class="qph__sub" style="color:#a83b3b" data-cy="forecast-at-risk">
-              ⚠ <strong>{fmtMoney(forecast!.atRiskCents)}</strong> at risk across {forecast!.atRisk.length} overdue {forecast!.atRisk.length === 1 ? "invoice" : "invoices"}.
+            <p
+              class="qph__sub"
+              style="color:#a83b3b"
+              data-cy="forecast-at-risk"
+            >
+              ⚠ <strong>{fmtMoney(forecast!.atRiskCents)}</strong>{" "}
+              at risk across {forecast!.atRisk.length} overdue{" "}
+              {forecast!.atRisk.length === 1 ? "invoice" : "invoices"}.
             </p>
           )
           : null}
         <div class="qph__cta-row">
-          <a class="qph__cta" href={`/assistant?seed=${encodeURIComponent("Draft a new invoice for me.")}`}>
+          <a
+            class="qph__cta"
+            href={`/assistant?seed=${
+              encodeURIComponent("Draft a new invoice for me.")
+            }`}
+          >
             <I d={ICN.plus} size={14} sw={2.5} /> New invoice
           </a>
           <a
@@ -367,7 +640,15 @@ function InvoicesHero(
 /* ---------------- KPIs ---------------- */
 
 function InvoicesKpis(
-  { overdueCount, overdueTotal, outCount, outTotal, draftingCount, paidCount, paidTotal }: {
+  {
+    overdueCount,
+    overdueTotal,
+    outCount,
+    outTotal,
+    draftingCount,
+    paidCount,
+    paidTotal,
+  }: {
     overdueCount: number;
     overdueTotal: number;
     outCount: number;
@@ -382,7 +663,9 @@ function InvoicesKpis(
       <div class={`qkpi__cell${overdueCount > 0 ? " qkpi__cell--accent" : ""}`}>
         <div class="qkpi__lbl">Overdue</div>
         <div class="qkpi__val">{fmtMoney(overdueTotal)}</div>
-        <div class="qkpi__sub">{overdueCount} {overdueCount === 1 ? "invoice" : "invoices"}</div>
+        <div class="qkpi__sub">
+          {overdueCount} {overdueCount === 1 ? "invoice" : "invoices"}
+        </div>
       </div>
       <div class="qkpi__cell">
         <div class="qkpi__lbl">Out for payment</div>
@@ -392,7 +675,9 @@ function InvoicesKpis(
       <div class="qkpi__cell">
         <div class="qkpi__lbl">Drafting</div>
         <div class="qkpi__val">{draftingCount}</div>
-        <div class="qkpi__sub">{draftingCount === 0 ? "no drafts open" : "finish + send"}</div>
+        <div class="qkpi__sub">
+          {draftingCount === 0 ? "no drafts open" : "finish + send"}
+        </div>
       </div>
       <div class="qkpi__cell">
         <div class="qkpi__lbl">Paid this month</div>
@@ -415,31 +700,55 @@ function EmptyTrack({ hint }: { hint: string }) {
 
 /* ---------------- Invoice card (flip) ---------------- */
 
-function InvoiceCard({ inv, idx, now }: { inv: EnrichedInvoice; idx: number; now: Date }) {
+function InvoiceCard(
+  { inv, idx, now }: { inv: EnrichedInvoice; idx: number; now: Date },
+) {
   const [flipped, setFlipped] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Roadmap p.12: in-card discount + change-order controls.
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [discountDollars, setDiscountDollars] = useState("");
+  const [coDesc, setCoDesc] = useState("");
+  const [coDollars, setCoDollars] = useState("");
+  const [coLink, setCoLink] = useState<string | null>(null);
+  const [adjErr, setAdjErr] = useState<string | null>(null);
   const mood = STAGE_MOOD[inv.stage];
-  const cta =
-    inv.stage === "claimed"   ? "Confirm received" :
-    inv.stage === "overdue"   ? "Send nudge" :
-    inv.stage === "scheduled" ? "Send now" :
-    inv.stage === "out"       ? "View invoice" :
-    inv.stage === "drafting"  ? "Finish + send" :
-                                "View receipt";
-  const subline =
-    inv.stage === "claimed"   ? `Customer paid ${methodLabel(inv.paymentIntent?.method)}${inv.paymentIntent?.reference ? ` · ref ${inv.paymentIntent.reference}` : ""}` :
-    inv.stage === "overdue"   ? `${inv.daysOverdue}d overdue · due ${fmtDate(inv.dueDate, now)}` :
-    inv.stage === "scheduled" ? `Scheduled to send ${inv.scheduledFor ?? "—"}` :
-    inv.stage === "out"       ? `Out ${inv.daysIn}d · due ${fmtDate(inv.dueDate, now)}` :
-    inv.stage === "drafting"  ? `Draft started ${fmtDate(inv.issuedDate ?? inv.createdAt, now)}` :
-                                `Paid ${fmtDate(inv.paidAt, now)}`;
+  const cta = inv.stage === "claimed"
+    ? "Confirm received"
+    : inv.stage === "overdue"
+    ? "Send nudge"
+    : inv.stage === "scheduled"
+    ? "Send now"
+    : inv.stage === "out"
+    ? "View invoice"
+    : inv.stage === "drafting"
+    ? "Finish + send"
+    : "View receipt";
+  const subline = inv.stage === "claimed"
+    ? `Customer paid ${methodLabel(inv.paymentIntent?.method)}${
+      inv.paymentIntent?.reference
+        ? ` · ref ${inv.paymentIntent.reference}`
+        : ""
+    }`
+    : inv.stage === "overdue"
+    ? `${inv.daysOverdue}d overdue · due ${fmtDate(inv.dueDate, now)}`
+    : inv.stage === "scheduled"
+    ? `Scheduled to send ${inv.scheduledFor ?? "—"}`
+    : inv.stage === "out"
+    ? `Out ${inv.daysIn}d · due ${fmtDate(inv.dueDate, now)}`
+    : inv.stage === "drafting"
+    ? `Draft started ${fmtDate(inv.issuedDate ?? inv.createdAt, now)}`
+    : `Paid ${fmtDate(inv.paidAt, now)}`;
 
   async function doConfirmReceived(e: Event) {
     e.stopPropagation();
     if (busy) return;
     setBusy(true);
     try {
-      const r = await fetch(`/api/invoices/${inv.id}/confirm-payment`, { method: "POST", credentials: "include" });
+      const r = await fetch(`/api/invoices/${inv.id}/confirm-payment`, {
+        method: "POST",
+        credentials: "include",
+      });
       if (r.ok) globalThis.location.reload();
     } finally {
       setBusy(false);
@@ -456,7 +765,10 @@ function InvoiceCard({ inv, idx, now }: { inv: EnrichedInvoice; idx: number; now
     if (busy) return;
     setBusy(true);
     try {
-      const r = await fetch(`/api/invoices/${inv.id}/text`, { method: "POST", credentials: "include" });
+      const r = await fetch(`/api/invoices/${inv.id}/text`, {
+        method: "POST",
+        credentials: "include",
+      });
       if (r.ok) globalThis.location.reload();
     } finally {
       setBusy(false);
@@ -471,8 +783,14 @@ function InvoiceCard({ inv, idx, now }: { inv: EnrichedInvoice; idx: number; now
       // email/phone on file" gracefully and the user gets a fresh state
       // on reload either way.
       await Promise.allSettled([
-        fetch(`/api/invoices/${inv.id}/email`, { method: "POST", credentials: "include" }),
-        fetch(`/api/invoices/${inv.id}/text`, { method: "POST", credentials: "include" }),
+        fetch(`/api/invoices/${inv.id}/email`, {
+          method: "POST",
+          credentials: "include",
+        }),
+        fetch(`/api/invoices/${inv.id}/text`, {
+          method: "POST",
+          credentials: "include",
+        }),
       ]);
       globalThis.location.reload();
     } finally {
@@ -487,10 +805,10 @@ function InvoiceCard({ inv, idx, now }: { inv: EnrichedInvoice; idx: number; now
     globalThis.location.href = "/assistant";
   }
   function ctaAction(e: Event) {
-    if (inv.stage === "claimed")   return doConfirmReceived(e);
-    if (inv.stage === "overdue")   return doSendText(e);
+    if (inv.stage === "claimed") return doConfirmReceived(e);
+    if (inv.stage === "overdue") return doSendText(e);
     if (inv.stage === "scheduled") return doSendNow(e);
-    if (inv.stage === "drafting")  return doFinishDraft(e);
+    if (inv.stage === "drafting") return doFinishDraft(e);
     return doOpenInvoice(e);
   }
   async function doToggleMute(e: Event) {
@@ -509,6 +827,59 @@ function InvoiceCard({ inv, idx, now }: { inv: EnrichedInvoice; idx: number; now
       setBusy(false);
     }
   }
+  async function doApplyDiscount(e: Event) {
+    e.stopPropagation();
+    if (busy) return;
+    const cents = Math.round(Number(discountDollars) * 100);
+    if (!cents || cents <= 0) {
+      setAdjErr("Enter a discount amount.");
+      return;
+    }
+    setBusy(true);
+    setAdjErr(null);
+    try {
+      const r = await fetch(`/api/invoices/${inv.id}/discount`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ discountCents: cents }),
+      });
+      if (r.ok) globalThis.location.reload();
+      else setAdjErr("Couldn't apply discount.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function doCreateChangeOrder(e: Event) {
+    e.stopPropagation();
+    if (busy) return;
+    const cents = Math.round(Number(coDollars) * 100);
+    if (!coDesc.trim() || !cents) {
+      setAdjErr("Add a description and amount.");
+      return;
+    }
+    setBusy(true);
+    setAdjErr(null);
+    try {
+      const r = await fetch(`/api/invoices/${inv.id}/change-orders`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          description: coDesc.trim(),
+          deltaAmountCents: cents,
+        }),
+      });
+      if (!r.ok) {
+        setAdjErr("Couldn't create change order.");
+        return;
+      }
+      const co = await r.json() as { id: string };
+      setCoLink(`${globalThis.location.origin}/co/${co.id}`);
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <article
       class={`qcard ${flipped ? "qcard--flipped" : ""}`}
@@ -522,7 +893,9 @@ function InvoiceCard({ inv, idx, now }: { inv: EnrichedInvoice; idx: number; now
     >
       <div class="qcard__mood">
         <div class="qcard__numeral">{String(idx + 1).padStart(2, "0")}</div>
-        <div class="qcard__status"><span class="qcard__status-dot" /> {mood.label}</div>
+        <div class="qcard__status">
+          <span class="qcard__status-dot" /> {mood.label}
+        </div>
       </div>
       <div class="qcard__av">{inv.initials}</div>
       <div class="qcard__body">
@@ -538,10 +911,13 @@ function InvoiceCard({ inv, idx, now }: { inv: EnrichedInvoice; idx: number; now
           onClick={ctaAction}
           disabled={busy}
         >
-          {busy ? "…" : cta} <span style="display:inline-block;transition:transform 240ms">→</span>
+          {busy ? "…" : cta}{" "}
+          <span style="display:inline-block;transition:transform 240ms">→</span>
         </button>
         <div class="qcard__val-wrap">
-          <div class="qcard__val-lbl">{inv.stage === "paid" ? "Cleared" : "Due"}</div>
+          <div class="qcard__val-lbl">
+            {inv.stage === "paid" ? "Cleared" : "Due"}
+          </div>
           <div class="qcard__val-num" style="font-size:13px">
             {inv.stage === "paid"
               ? fmtDate(inv.paidAt, now)
@@ -555,23 +931,144 @@ function InvoiceCard({ inv, idx, now }: { inv: EnrichedInvoice; idx: number; now
           <button
             type="button"
             class="qcard__back-close"
-            onClick={(e) => { e.stopPropagation(); setFlipped(false); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setFlipped(false);
+            }}
             aria-label="Close"
           >
             <I d={ICN.x} size={14} sw={2.5} />
           </button>
           <div class="qcard__back-eyebrow">Invoice detail</div>
           <p class="qcard__back-big">
-            {fmtMoney(inv.amount)}<small> · {mood.label}</small>
+            {fmtMoney(inv.amount)}
+            <small>· {mood.label}</small>
           </p>
         </div>
         <div class="qcard__back-body">
           <p class="qcard__read">
-            {inv.stage === "overdue" && <>Past due {inv.daysOverdue} {inv.daysOverdue === 1 ? "day" : "days"}. A friendly text usually unsticks it.</>}
-            {inv.stage === "out"      && <>Issued {fmtDate(inv.issuedDate ?? inv.createdAt, now)}. Due {fmtDate(inv.dueDate, now)}.</>}
-            {inv.stage === "drafting" && <>Draft started {fmtDate(inv.issuedDate ?? inv.createdAt, now)}. Open it to finish and send.</>}
-            {inv.stage === "paid"     && <>Cleared {fmtDate(inv.paidAt, now)}. Receipt sent automatically.</>}
+            {inv.stage === "overdue" && (
+              <>
+                Past due {inv.daysOverdue}{" "}
+                {inv.daysOverdue === 1 ? "day" : "days"}. A friendly text
+                usually unsticks it.
+              </>
+            )}
+            {inv.stage === "out" && (
+              <>
+                Issued {fmtDate(inv.issuedDate ?? inv.createdAt, now)}. Due{" "}
+                {fmtDate(inv.dueDate, now)}.
+              </>
+            )}
+            {inv.stage === "drafting" && (
+              <>
+                Draft started{" "}
+                {fmtDate(inv.issuedDate ?? inv.createdAt, now)}. Open it to
+                finish and send.
+              </>
+            )}
+            {inv.stage === "paid" && (
+              <>
+                Cleared {fmtDate(inv.paidAt, now)}. Receipt sent automatically.
+              </>
+            )}
           </p>
+          {inv.stage !== "paid" && (
+            <div
+              style="margin-top:6px"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setAdjustOpen((o) => !o)}
+                style="appearance:none;background:none;border:none;color:var(--brand-teal);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;padding:2px 0"
+              >
+                {adjustOpen ? "Hide adjustments" : "Adjust invoice ▾"}
+              </button>
+              {adjustOpen && (
+                <div style="margin-top:8px;display:flex;flex-direction:column;gap:12px;background:rgba(0,0,0,0.03);border-radius:10px;padding:10px 12px">
+                  <div>
+                    <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-muted);margin-bottom:4px">
+                      Discount
+                    </div>
+                    <div style="display:flex;gap:6px">
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="$ off"
+                        value={discountDollars}
+                        onInput={(e) =>
+                          setDiscountDollars(
+                            (e.target as HTMLInputElement).value,
+                          )}
+                        style="flex:1;min-width:0;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font:inherit;font-size:13px"
+                      />
+                      <button
+                        type="button"
+                        onClick={doApplyDiscount}
+                        disabled={busy}
+                        style="padding:7px 12px;border:0;border-radius:7px;background:var(--brand-green);color:#fff;font:inherit;font-weight:700;cursor:pointer"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-muted);margin-bottom:4px">
+                      Change order (needs customer approval)
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="What changed?"
+                      value={coDesc}
+                      onInput={(e) =>
+                        setCoDesc((e.target as HTMLInputElement).value)}
+                      style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font:inherit;font-size:13px;margin-bottom:6px"
+                    />
+                    <div style="display:flex;gap:6px">
+                      <input
+                        type="number"
+                        step="1"
+                        placeholder="+/- $"
+                        value={coDollars}
+                        onInput={(e) =>
+                          setCoDollars((e.target as HTMLInputElement).value)}
+                        style="flex:1;min-width:0;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font:inherit;font-size:13px"
+                      />
+                      <button
+                        type="button"
+                        onClick={doCreateChangeOrder}
+                        disabled={busy}
+                        style="padding:7px 12px;border:0;border-radius:7px;background:var(--brand-teal);color:#fff;font:inherit;font-weight:700;cursor:pointer"
+                      >
+                        Create link
+                      </button>
+                    </div>
+                  </div>
+                  {coLink && (
+                    <div style="font-size:12px;color:var(--fg)">
+                      Approval link:{" "}
+                      <a
+                        href={coLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style="color:var(--brand-teal);word-break:break-all"
+                      >
+                        {coLink}
+                      </a>
+                      <div style="color:var(--fg-muted);margin-top:2px">
+                        Send this to your customer to approve.
+                      </div>
+                    </div>
+                  )}
+                  {adjErr && (
+                    <div style="color:#a83b3b;font-size:12px">{adjErr}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div class="qcard__back-foot">
           <button
@@ -583,19 +1080,25 @@ function InvoiceCard({ inv, idx, now }: { inv: EnrichedInvoice; idx: number; now
             {busy ? "…" : cta.replace(/ →$/, "")}
           </button>
           <button type="button" onClick={doOpenInvoice}>Open</button>
-          {(inv.stage === "overdue" || inv.stage === "out") ? (
-            <button
-              type="button"
-              data-cy="invoice-mute-toggle"
-              onClick={doToggleMute}
-              disabled={busy}
-              title={inv.remindersMuted ? "Reminders are off for this invoice" : "Mute reminders for this invoice"}
-            >
-              {inv.remindersMuted ? "Muted" : "Mute"}
-            </button>
-          ) : (
-            <button type="button" onClick={doSendText} disabled={busy}>Text client</button>
-          )}
+          {(inv.stage === "overdue" || inv.stage === "out")
+            ? (
+              <button
+                type="button"
+                data-cy="invoice-mute-toggle"
+                onClick={doToggleMute}
+                disabled={busy}
+                title={inv.remindersMuted
+                  ? "Reminders are off for this invoice"
+                  : "Mute reminders for this invoice"}
+              >
+                {inv.remindersMuted ? "Muted" : "Mute"}
+              </button>
+            )
+            : (
+              <button type="button" onClick={doSendText} disabled={busy}>
+                Text client
+              </button>
+            )}
         </div>
       </div>
     </article>

@@ -77,7 +77,11 @@ export default function ContractsPage() {
     return <div class="kpage-error">Couldn't load contracts: {s.error}</div>;
   }
 
-  const { contracts: rawContracts, customers: rawCustomers, quotes: rawQuotes } = s;
+  const {
+    contracts: rawContracts,
+    customers: rawCustomers,
+    quotes: rawQuotes,
+  } = s;
   const contracts = Array.isArray(rawContracts) ? rawContracts : [];
   const customers = Array.isArray(rawCustomers) ? rawCustomers : [];
   const quotes = Array.isArray(rawQuotes) ? rawQuotes : [];

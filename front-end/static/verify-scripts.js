@@ -29,11 +29,12 @@
 
   const params = new URLSearchParams(location.search);
   const phone = params.get("phone");
-  const slots = Array.prototype.slice.call(document.querySelectorAll(".code-input input"));
+  const slots = Array.prototype.slice.call(
+    document.querySelectorAll(".code-input input"),
+  );
   const codeRoot = document.querySelector(".code-input");
   const ctaBtn = document.querySelector("button.btn.btn-primary.btn-lg");
   const errEl = document.querySelector(".verify-card .error");
-  const editLink = document.querySelector(".verify-card .meta a");
   const resendBtn = document.querySelector(".verify-card .meta button");
 
   if (!slots.length || !phone) return;
@@ -58,7 +59,9 @@
   }
   function shake() {
     codeRoot.classList.add("shake");
-    setTimeout(function () { codeRoot.classList.remove("shake"); }, 380);
+    setTimeout(function () {
+      codeRoot.classList.remove("shake");
+    }, 380);
   }
 
   function setSlot(i, val) {
@@ -71,13 +74,17 @@
 
   function refreshCta() {
     if (!ctaBtn) return;
-    const code = slots.map(function (s) { return s.value; }).join("");
+    const code = slots.map(function (s) {
+      return s.value;
+    }).join("");
     ctaBtn.disabled = submitting || code.length !== slots.length;
   }
 
   async function submit() {
     if (submitting) return;
-    const code = slots.map(function (s) { return s.value; }).join("");
+    const code = slots.map(function (s) {
+      return s.value;
+    }).join("");
     if (code.length !== slots.length) return;
     submitting = true;
     refreshCta();
@@ -95,10 +102,16 @@
         location.href = j.redirectTo || "/dashboard";
         return;
       }
-      const map = { invalid_code: s.invalid, expired: s.expired, rate_limited: s.rate };
+      const map = {
+        invalid_code: s.invalid,
+        expired: s.expired,
+        rate_limited: s.rate,
+      };
       setError(map[j.error] || s.invalid);
       shake();
-      slots.forEach(function (sl) { sl.value = ""; });
+      slots.forEach(function (sl) {
+        sl.value = "";
+      });
       slots[0].focus();
     } catch {
       setError(s.invalid);
@@ -110,12 +123,15 @@
   }
 
   slots.forEach(function (inp, i) {
-    inp.addEventListener("input", function (e) { setSlot(i, e.target.value); });
+    inp.addEventListener("input", function (e) {
+      setSlot(i, e.target.value);
+    });
     inp.addEventListener("keydown", function (e) {
       if (e.key === "Backspace" && !inp.value && i > 0) slots[i - 1].focus();
     });
     inp.addEventListener("paste", function (e) {
-      const pasted = (e.clipboardData ? e.clipboardData.getData("text") : "").replace(/\D/g, "").slice(0, slots.length);
+      const pasted = (e.clipboardData ? e.clipboardData.getData("text") : "")
+        .replace(/\D/g, "").slice(0, slots.length);
       if (!pasted) return;
       e.preventDefault();
       for (let j = 0; j < slots.length; j++) slots[j].value = pasted[j] || "";
@@ -127,7 +143,9 @@
 
   if (ctaBtn) {
     ctaBtn.textContent = s.cta;
-    ctaBtn.addEventListener("click", function () { submit(); });
+    ctaBtn.addEventListener("click", function () {
+      submit();
+    });
   }
 
   function tickCooldown() {
@@ -140,7 +158,9 @@
       cooldownTimer = null;
       return;
     }
-    if (resendBtn) resendBtn.textContent = s.resendIn.replace("{n}", String(cooldown));
+    if (resendBtn) {
+      resendBtn.textContent = s.resendIn.replace("{n}", String(cooldown));
+    }
     cooldown -= 1;
   }
 

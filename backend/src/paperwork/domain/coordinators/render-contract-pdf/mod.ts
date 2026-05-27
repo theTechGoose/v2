@@ -6,13 +6,19 @@ import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 
 export interface RenderContractPdfInput {
-  contract:   Contract & { customerSignature?: string; customerSignedName?: string };
-  quote?:     Quote;
-  customer?:  Customer;
+  contract: Contract & {
+    customerSignature?: string;
+    customerSignedName?: string;
+  };
+  quote?: Quote;
+  customer?: Customer;
   contractor: User | undefined;
   /** Optional override for the contractor's display business name (e.g.
    *  "Riley Roofing Co." pulled from BusinessIdentity). */
   businessName?: string;
+  /** Outgoing-comms language (roadmap p.13) — the PDF is the customer's
+   *  copy, so it renders in their language. Defaults to "en". */
+  commsLanguage?: string;
 }
 
 /**
@@ -39,6 +45,8 @@ export interface RenderContractPdfInput {
 export class RenderContractPdf {
   async run(input: RenderContractPdfInput): Promise<Uint8Array> {
     const { contract, quote, customer, contractor, businessName } = input;
+    // Roadmap p.13: the PDF is the customer's copy → outgoing-comms language.
+    const es = input.commsLanguage === "es";
 
     const pdf = await PDFDocument.create();
     pdf.setTitle(`Quote & Agreement #${contract.id.slice(0, 8).toUpperCase()}`);
@@ -48,7 +56,7 @@ export class RenderContractPdf {
     pdf.setCreationDate(new Date(contract.createdAt));
     pdf.setModificationDate(new Date());
 
-    const reg  = await pdf.embedFont(StandardFonts.Helvetica);
+    const reg = await pdf.embedFont(StandardFonts.Helvetica);
     const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
     const ital = await pdf.embedFont(StandardFonts.HelveticaOblique);
 
@@ -80,19 +88,28 @@ export class RenderContractPdf {
     y = H - 8;
 
     // business eyebrow
-    const biz = (businessName ?? contractor?.name ?? "Your Contractor").toUpperCase();
+    const biz = (businessName ?? contractor?.name ?? "Your Contractor")
+      .toUpperCase();
     y -= 32;
     drawCenteredText(page, biz, W, y, bold, 9, PINK_DARK, 0.18);
 
     // doc tag pill (left) + status (right)
     y -= 32;
-    const docNum = `QUOTE & AGREEMENT · #${contract.id.slice(0, 8).toUpperCase()}`;
+    const docNum = `${es ? "COTIZACIÓN Y ACUERDO" : "QUOTE & AGREEMENT"} · #${
+      contract.id.slice(0, 8).toUpperCase()
+    }`;
     page.drawText(docNum, { x: M, y, size: 8.5, font: bold, color: PINK_DARK });
     const statusText = contract.status === "signed"
-      ? `SIGNED ${fmtDateUpper(contract.signedAt)}`
+      ? `${es ? "FIRMADO" : "SIGNED"} ${fmtDateUpper(contract.signedAt)}`
       : (contract.status ?? "DRAFT").toUpperCase();
     const statusW = bold.widthOfTextAtSize(statusText, 8.5);
-    page.drawText(statusText, { x: W - M - statusW, y, size: 8.5, font: bold, color: GREEN });
+    page.drawText(statusText, {
+      x: W - M - statusW,
+      y,
+      size: 8.5,
+      font: bold,
+      color: GREEN,
+    });
 
     // Hero title
     y -= 36;
@@ -104,58 +121,229 @@ export class RenderContractPdf {
 
     // Recital
     const cust = customer?.name?.trim() ?? contract.customerSignedName?.trim();
-    const recital = `Between ${biz.replace(/\.$/, "")} ("Contractor") and ${cust ?? "Client"} ("Client")` +
-      (contract.effectiveDate ? ` · effective ${fmtDate(contract.effectiveDate)}` : "");
+    const recital = es
+      ? `Entre ${biz.replace(/\.$/, "")} ("Contratista") y ${
+        cust ?? "Cliente"
+      } ("Cliente")` +
+        (contract.effectiveDate
+          ? ` · vigente ${fmtDate(contract.effectiveDate)}`
+          : "")
+      : `Between ${biz.replace(/\.$/, "")} ("Contractor") and ${
+        cust ?? "Client"
+      } ("Client")` +
+        (contract.effectiveDate
+          ? ` · effective ${fmtDate(contract.effectiveDate)}`
+          : "");
     drawWrappedText(page, recital, M, y, W - 2 * M, reg, 10, MUTED, 13);
-    y -= 30;
+    y -= 26;
+
+    // TO / FROM contact block (roadmap p.5/p.6). Mirrors the public /c page.
+    {
+      const colGap = 24;
+      const colW2 = (W - 2 * M - colGap) / 2;
+      const fromX = M + colW2 + colGap;
+      page.drawText(es ? "PARA" : "TO", {
+        x: M,
+        y,
+        size: 8,
+        font: bold,
+        color: MUTED,
+      });
+      page.drawText(es ? "DE" : "FROM", {
+        x: fromX,
+        y,
+        size: 8,
+        font: bold,
+        color: MUTED,
+      });
+      y -= 14;
+      const toLines = [cust, customer?.phoneNumber, customer?.email]
+        .filter((v): v is string => !!v && v.trim().length > 0);
+      const fromLines = [
+        contractor?.name,
+        businessName,
+        contractor?.phoneNumber,
+        contractor?.email,
+      ].filter((v): v is string => !!v && v.trim().length > 0);
+      const rows = Math.max(toLines.length, fromLines.length, 1);
+      for (let i = 0; i < rows; i++) {
+        if (toLines[i]) {
+          page.drawText(toLines[i], {
+            x: M,
+            y,
+            size: 9,
+            font: i === 0 ? bold : reg,
+            color: i === 0 ? INK : MUTED,
+          });
+        }
+        if (fromLines[i]) {
+          page.drawText(fromLines[i], {
+            x: fromX,
+            y,
+            size: 9,
+            font: i === 0 ? bold : reg,
+            color: i === 0 ? INK : MUTED,
+          });
+        }
+        y -= 12;
+      }
+      y -= 14;
+    }
 
     // Section: Job details
-    y = drawSectionHeader(page, y, M, "01", "Job details", bold, PINK, TEAL);
+    y = drawSectionHeader(
+      page,
+      y,
+      M,
+      "01",
+      es ? "Detalles del trabajo" : "Job details",
+      bold,
+      PINK,
+      TEAL,
+    );
     y -= 8;
     if (quote?.lineItems?.length) {
       // Table headers
-      page.drawText("DESCRIPTION", { x: M, y, size: 8, font: bold, color: MUTED });
-      page.drawText("AMOUNT", { x: W - M - bold.widthOfTextAtSize("AMOUNT", 8), y, size: 8, font: bold, color: MUTED });
+      page.drawText(es ? "DESCRIPCIÓN" : "DESCRIPTION", {
+        x: M,
+        y,
+        size: 8,
+        font: bold,
+        color: MUTED,
+      });
+      const amountHdr = es ? "MONTO" : "AMOUNT";
+      page.drawText(amountHdr, {
+        x: W - M - bold.widthOfTextAtSize(amountHdr, 8),
+        y,
+        size: 8,
+        font: bold,
+        color: MUTED,
+      });
       y -= 6;
-      page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.5, color: LINE });
+      page.drawLine({
+        start: { x: M, y },
+        end: { x: W - M, y },
+        thickness: 0.5,
+        color: LINE,
+      });
       y -= 14;
       for (const li of quote.lineItems) {
         addPageIfNeeded(28);
         const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
-        page.drawText(li.description, { x: M, y, size: 11, font: reg, color: INK });
+        page.drawText(li.description, {
+          x: M,
+          y,
+          size: 11,
+          font: reg,
+          color: INK,
+        });
         const amt = fmtUSD(lineTotal);
-        page.drawText(amt, { x: W - M - bold.widthOfTextAtSize(amt, 11), y, size: 11, font: bold, color: INK });
+        page.drawText(amt, {
+          x: W - M - bold.widthOfTextAtSize(amt, 11),
+          y,
+          size: 11,
+          font: bold,
+          color: INK,
+        });
         y -= 10;
-        page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.4, color: LINE });
+        page.drawLine({
+          start: { x: M, y },
+          end: { x: W - M, y },
+          thickness: 0.4,
+          color: LINE,
+        });
         y -= 12;
       }
     }
     // Total card
     addPageIfNeeded(70);
     y -= 4;
-    page.drawRectangle({ x: M, y: y - 56, width: W - 2 * M, height: 56, color: GREEN_BG, borderWidth: 0 });
-    page.drawText("AGREEMENT VALUE", { x: M + 16, y: y - 22, size: 9, font: bold, color: GREEN });
-    page.drawText("all in, no surprises", { x: M + 16, y: y - 36, size: 9, font: reg, color: MUTED });
+    page.drawRectangle({
+      x: M,
+      y: y - 56,
+      width: W - 2 * M,
+      height: 56,
+      color: GREEN_BG,
+      borderWidth: 0,
+    });
+    page.drawText(es ? "VALOR DEL ACUERDO" : "AGREEMENT VALUE", {
+      x: M + 16,
+      y: y - 22,
+      size: 9,
+      font: bold,
+      color: GREEN,
+    });
+    page.drawText(
+      es ? "todo incluido, sin sorpresas" : "all in, no surprises",
+      {
+        x: M + 16,
+        y: y - 36,
+        size: 9,
+        font: reg,
+        color: MUTED,
+      },
+    );
     const total = contract.totalAmount ?? quote?.estimatedTotal ?? 0;
     const totalStr = fmtUSD(total);
     const totalW = bold.widthOfTextAtSize(totalStr, 26);
-    page.drawText(totalStr, { x: W - M - 16 - totalW, y: y - 38, size: 26, font: bold, color: TEAL });
+    page.drawText(totalStr, {
+      x: W - M - 16 - totalW,
+      y: y - 38,
+      size: 26,
+      font: bold,
+      color: TEAL,
+    });
     y -= 78;
 
     // Section: Payment schedule (derived from terms.payment_terms)
-    const milestones = computeMilestones(total, contract.terms);
+    const milestones = computeMilestones(total, contract.terms, es);
     if (milestones.length > 0) {
       addPageIfNeeded(110);
-      y = drawSectionHeader(page, y, M, "02", "Payment schedule", bold, PINK, TEAL);
+      y = drawSectionHeader(
+        page,
+        y,
+        M,
+        "02",
+        es ? "Calendario de pagos" : "Payment schedule",
+        bold,
+        PINK,
+        TEAL,
+      );
       y -= 12;
-      const colW = (W - 2 * M - (milestones.length - 1) * 8) / milestones.length;
+      const colW = (W - 2 * M - (milestones.length - 1) * 8) /
+        milestones.length;
       for (let i = 0; i < milestones.length; i++) {
         const m = milestones[i];
         const cx = M + i * (colW + 8);
-        page.drawRectangle({ x: cx, y: y - 56, width: colW, height: 56, borderColor: LINE, borderWidth: 0.6 });
-        page.drawText(m.label.toUpperCase(), { x: cx + 12, y: y - 18, size: 8, font: bold, color: PINK_DARK });
-        page.drawText(fmtUSD(m.amount), { x: cx + 12, y: y - 34, size: 14, font: bold, color: TEAL });
-        page.drawText(m.when, { x: cx + 12, y: y - 48, size: 8, font: reg, color: MUTED });
+        page.drawRectangle({
+          x: cx,
+          y: y - 56,
+          width: colW,
+          height: 56,
+          borderColor: LINE,
+          borderWidth: 0.6,
+        });
+        page.drawText(m.label.toUpperCase(), {
+          x: cx + 12,
+          y: y - 18,
+          size: 8,
+          font: bold,
+          color: PINK_DARK,
+        });
+        page.drawText(fmtUSD(m.amount), {
+          x: cx + 12,
+          y: y - 34,
+          size: 14,
+          font: bold,
+          color: TEAL,
+        });
+        page.drawText(m.when, {
+          x: cx + 12,
+          y: y - 48,
+          size: 8,
+          font: reg,
+          color: MUTED,
+        });
       }
       y -= 72;
     }
@@ -163,19 +351,52 @@ export class RenderContractPdf {
     // Section: Schedule
     if (contract.startDate || contract.estimatedCompletionDate) {
       addPageIfNeeded(60);
-      y = drawSectionHeader(page, y, M, "03", "Schedule", bold, PINK, TEAL);
+      y = drawSectionHeader(
+        page,
+        y,
+        M,
+        "03",
+        es ? "Calendario" : "Schedule",
+        bold,
+        PINK,
+        TEAL,
+      );
       y -= 12;
       if (contract.startDate) {
-        page.drawText("Start", { x: M, y, size: 9, font: bold, color: MUTED });
+        page.drawText(es ? "Inicio" : "Start", {
+          x: M,
+          y,
+          size: 9,
+          font: bold,
+          color: MUTED,
+        });
         page.drawText(fmtDate(contract.startDate), {
-          x: W - M - bold.widthOfTextAtSize(fmtDate(contract.startDate), 11), y, size: 11, font: bold, color: INK,
+          x: W - M - bold.widthOfTextAtSize(fmtDate(contract.startDate), 11),
+          y,
+          size: 11,
+          font: bold,
+          color: INK,
         });
         y -= 16;
       }
       if (contract.estimatedCompletionDate) {
-        page.drawText("Estimated completion", { x: M, y, size: 9, font: bold, color: MUTED });
+        page.drawText(es ? "Finalización estimada" : "Estimated completion", {
+          x: M,
+          y,
+          size: 9,
+          font: bold,
+          color: MUTED,
+        });
         page.drawText(fmtDate(contract.estimatedCompletionDate), {
-          x: W - M - bold.widthOfTextAtSize(fmtDate(contract.estimatedCompletionDate), 11), y, size: 11, font: bold, color: INK,
+          x: W - M -
+            bold.widthOfTextAtSize(
+              fmtDate(contract.estimatedCompletionDate),
+              11,
+            ),
+          y,
+          size: 11,
+          font: bold,
+          color: INK,
         });
         y -= 16;
       }
@@ -185,7 +406,16 @@ export class RenderContractPdf {
     // Section: Terms (wizard-captured, two columns)
     if (contract.terms && contract.terms.length > 0) {
       addPageIfNeeded(120);
-      y = drawSectionHeader(page, y, M, "04", "Terms", bold, PINK, TEAL);
+      y = drawSectionHeader(
+        page,
+        y,
+        M,
+        "04",
+        es ? "Términos" : "Terms",
+        bold,
+        PINK,
+        TEAL,
+      );
       y -= 12;
       const visible = contract.terms.filter((t) => t.stepId !== "customer");
       const colCount = 2;
@@ -198,10 +428,41 @@ export class RenderContractPdf {
           const t = visible[i + c];
           if (!t) break;
           const cx = M + c * (cellW + gap);
-          page.drawRectangle({ x: cx, y: y - rowH, width: cellW, height: rowH, borderColor: LINE, borderWidth: 0.5 });
-          page.drawText(t.label.toUpperCase(), { x: cx + 10, y: y - 14, size: 7.5, font: bold, color: MUTED });
-          const displayValue = t.stepId === "wraps" ? `Estimated ${t.value}` : t.value;
-          page.drawText(displayValue, { x: cx + 10, y: y - 28, size: 10.5, font: bold, color: INK });
+          page.drawRectangle({
+            x: cx,
+            y: y - rowH,
+            width: cellW,
+            height: rowH,
+            borderColor: LINE,
+            borderWidth: 0.5,
+          });
+          const esTermLabels: Record<string, string> = {
+            start_date: "FECHA DE INICIO",
+            wraps: "DURACIÓN",
+            payment_terms: "PLAZO DE PAGO",
+            warranty: "GARANTÍA",
+          };
+          const labelText = es && esTermLabels[t.stepId]
+            ? esTermLabels[t.stepId]
+            : t.label.toUpperCase();
+          page.drawText(labelText, {
+            x: cx + 10,
+            y: y - 14,
+            size: 7.5,
+            font: bold,
+            color: MUTED,
+          });
+          const localized = localizeTermValue(t.value, es);
+          const displayValue = t.stepId === "wraps"
+            ? `${es ? "Estimado" : "Estimated"} ${localized}`
+            : localized;
+          page.drawText(displayValue, {
+            x: cx + 10,
+            y: y - 28,
+            size: 10.5,
+            font: bold,
+            color: INK,
+          });
         }
         y -= rowH + 6;
       }
@@ -209,40 +470,168 @@ export class RenderContractPdf {
 
     // Section: Fine print
     addPageIfNeeded(180);
-    y = drawSectionHeader(page, y, M, "05", "Fine print, in plain English", bold, PINK, TEAL);
+    y = drawSectionHeader(
+      page,
+      y,
+      M,
+      "05",
+      es ? "Letra chica, en lenguaje claro" : "Fine print, in plain English",
+      bold,
+      PINK,
+      TEAL,
+    );
     y -= 12;
-    const clauses = [
-      ["Governing Law.", "This agreement is governed by the laws of the state where the work is performed."],
-      ["Job Details.", "Contractor will perform only the work described in this agreement. Any additional work must be approved by both parties and may result in additional charges."],
-      ["Payment Terms.", "Payment is due as outlined in this agreement. Late payments may be subject to additional fees as allowed by law."],
-      ["Change Orders.", "Any changes to the work must be agreed to in writing and may affect the total price and project timeline."],
-      ["Customer Responsibilities.", "Customer agrees to provide access to the job site and ensure the work area is ready for the Contractor to perform the agreed services."],
-      ["Delays and Unforeseen Conditions.", "Contractor is not responsible for delays caused by weather, material availability, site conditions, or other circumstances outside of their control."],
-      ["Warranty.", "Contractor warrants their workmanship for the period stated in this agreement. This warranty applies to labor only and does not cover materials, normal wear and tear, misuse, or damage caused by others."],
-      ["Limitation of Liability.", "Contractor's liability under this agreement is limited to the total amount paid by the Customer for the work performed."],
-      ["Right to Stop Work.", "Contractor reserves the right to stop work if payments are not made as agreed."],
-      ["Termination.", "Either party may cancel this agreement by providing 7 days' written notice."],
-      ["Dispute Resolution.", "The parties agree to attempt to resolve any disputes in good faith. Any legal action will take place in small claims or local court in the state where the work is performed."],
-      ["Permits and Compliance.", "Contractor is not responsible for obtaining permits unless specifically stated. Customer is responsible for ensuring all necessary approvals are in place unless otherwise agreed."],
-      ["Indemnification.", "Customer agrees to hold Contractor harmless for damages or issues arising from conditions beyond the Contractor's control."],
-      ["Entire Agreement.", "This agreement represents the full understanding between both parties and replaces any prior discussions or agreements."],
-    ];
+    const clauses = es
+      ? [
+        [
+          "Ley Aplicable.",
+          "Este acuerdo se rige por las leyes del estado donde se realiza el trabajo.",
+        ],
+        [
+          "Detalles del Trabajo.",
+          "El contratista realizará únicamente el trabajo descrito en este acuerdo. Cualquier trabajo adicional debe ser aprobado por ambas partes y puede generar cargos adicionales.",
+        ],
+        [
+          "Condiciones de Pago.",
+          "El pago vence según lo indicado en este acuerdo. Los pagos atrasados pueden estar sujetos a cargos adicionales según lo permita la ley.",
+        ],
+        [
+          "Órdenes de Cambio.",
+          "Cualquier cambio al trabajo debe acordarse por escrito y puede afectar el precio total y el plazo del proyecto.",
+        ],
+        [
+          "Responsabilidades del Cliente.",
+          "El cliente se compromete a dar acceso al lugar de trabajo y a asegurar que el área esté lista para que el contratista realice los servicios acordados.",
+        ],
+        [
+          "Retrasos y Condiciones Imprevistas.",
+          "El contratista no es responsable de retrasos por clima, disponibilidad de materiales, condiciones del sitio u otras circunstancias fuera de su control.",
+        ],
+        [
+          "Garantía.",
+          "El contratista garantiza su mano de obra por el período indicado en este acuerdo. Esta garantía cubre solo la mano de obra y no incluye materiales, desgaste normal, mal uso o daños causados por terceros.",
+        ],
+        [
+          "Límite de Responsabilidad.",
+          "La responsabilidad del contratista bajo este acuerdo se limita al monto total pagado por el cliente por el trabajo realizado.",
+        ],
+        [
+          "Derecho a Detener el Trabajo.",
+          "El contratista se reserva el derecho de detener el trabajo si los pagos no se realizan según lo acordado.",
+        ],
+        [
+          "Terminación.",
+          "Cualquiera de las partes puede cancelar este acuerdo con un aviso por escrito de 7 días.",
+        ],
+        [
+          "Resolución de Disputas.",
+          "Las partes acuerdan intentar resolver cualquier disputa de buena fe. Toda acción legal se llevará a cabo en un tribunal local o de menor cuantía en el estado donde se realiza el trabajo.",
+        ],
+        [
+          "Permisos y Cumplimiento.",
+          "El contratista no es responsable de obtener permisos salvo que se indique expresamente. El cliente es responsable de que todas las aprobaciones necesarias estén en orden, salvo acuerdo en contrario.",
+        ],
+        [
+          "Indemnización.",
+          "El cliente se compromete a eximir de responsabilidad al contratista por daños o problemas derivados de condiciones fuera de su control.",
+        ],
+        [
+          "Acuerdo Completo.",
+          "Este acuerdo representa el entendimiento total entre ambas partes y reemplaza cualquier conversación o acuerdo previo.",
+        ],
+      ]
+      : [
+        [
+          "Governing Law.",
+          "This agreement is governed by the laws of the state where the work is performed.",
+        ],
+        [
+          "Job Details.",
+          "Contractor will perform only the work described in this agreement. Any additional work must be approved by both parties and may result in additional charges.",
+        ],
+        [
+          "Payment Terms.",
+          "Payment is due as outlined in this agreement. Late payments may be subject to additional fees as allowed by law.",
+        ],
+        [
+          "Change Orders.",
+          "Any changes to the work must be agreed to in writing and may affect the total price and project timeline.",
+        ],
+        [
+          "Customer Responsibilities.",
+          "Customer agrees to provide access to the job site and ensure the work area is ready for the Contractor to perform the agreed services.",
+        ],
+        [
+          "Delays and Unforeseen Conditions.",
+          "Contractor is not responsible for delays caused by weather, material availability, site conditions, or other circumstances outside of their control.",
+        ],
+        [
+          "Warranty.",
+          "Contractor warrants their workmanship for the period stated in this agreement. This warranty applies to labor only and does not cover materials, normal wear and tear, misuse, or damage caused by others.",
+        ],
+        [
+          "Limitation of Liability.",
+          "Contractor's liability under this agreement is limited to the total amount paid by the Customer for the work performed.",
+        ],
+        [
+          "Right to Stop Work.",
+          "Contractor reserves the right to stop work if payments are not made as agreed.",
+        ],
+        [
+          "Termination.",
+          "Either party may cancel this agreement by providing 7 days' written notice.",
+        ],
+        [
+          "Dispute Resolution.",
+          "The parties agree to attempt to resolve any disputes in good faith. Any legal action will take place in small claims or local court in the state where the work is performed.",
+        ],
+        [
+          "Permits and Compliance.",
+          "Contractor is not responsible for obtaining permits unless specifically stated. Customer is responsible for ensuring all necessary approvals are in place unless otherwise agreed.",
+        ],
+        [
+          "Indemnification.",
+          "Customer agrees to hold Contractor harmless for damages or issues arising from conditions beyond the Contractor's control.",
+        ],
+        [
+          "Entire Agreement.",
+          "This agreement represents the full understanding between both parties and replaces any prior discussions or agreements.",
+        ],
+      ];
     for (let i = 0; i < clauses.length; i++) {
       addPageIfNeeded(34);
       const [head, tail] = clauses[i];
-      page.drawText(`${i + 1}.`, { x: M, y, size: 10, font: bold, color: TEAL });
+      page.drawText(`${i + 1}.`, {
+        x: M,
+        y,
+        size: 10,
+        font: bold,
+        color: TEAL,
+      });
       page.drawText(head, { x: M + 14, y, size: 10, font: bold, color: INK });
       const headW = bold.widthOfTextAtSize(head, 10);
       const wrapped = wrap(tail, reg, 10, W - 2 * M - 14 - headW - 4);
       // First wrapped line sits next to the bold head
       if (wrapped[0]) {
-        page.drawText(" " + wrapped[0], { x: M + 14 + headW, y, size: 10, font: reg, color: INK });
+        page.drawText(" " + wrapped[0], {
+          x: M + 14 + headW,
+          y,
+          size: 10,
+          font: reg,
+          color: INK,
+        });
       }
       y -= 14;
       // Continuation lines indent under the head
       for (let j = 1; j < wrapped.length; j++) {
         addPageIfNeeded(14);
-        page.drawText(wrapped[j], { x: M + 14, y, size: 10, font: reg, color: INK });
+        page.drawText(wrapped[j], {
+          x: M + 14,
+          y,
+          size: 10,
+          font: reg,
+          color: INK,
+        });
         y -= 14;
       }
       y -= 4;
@@ -251,23 +640,90 @@ export class RenderContractPdf {
     // Section: Signatures
     addPageIfNeeded(180);
     y -= 8;
-    y = drawSectionHeader(page, y, M, "06", "Signatures", bold, PINK, TEAL);
+    y = drawSectionHeader(
+      page,
+      y,
+      M,
+      "06",
+      es ? "Firmas" : "Signatures",
+      bold,
+      PINK,
+      TEAL,
+    );
     y -= 16;
     const halfW = (W - 2 * M - 16) / 2;
     const sigBoxH = 90;
 
     // Contractor box
-    page.drawRectangle({ x: M, y: y - sigBoxH, width: halfW, height: sigBoxH, borderColor: LINE, borderWidth: 0.6 });
-    page.drawText("CONTRACTOR SIGNED", { x: M + 12, y: y - 16, size: 8, font: bold, color: MUTED });
-    page.drawText(contractor?.name ?? biz, { x: M + 12, y: y - 44, size: 18, font: ital, color: TEAL });
-    page.drawText(fmtDate(contract.effectiveDate ?? contract.createdAt), {
-      x: M + 12, y: y - 70, size: 9, font: reg, color: MUTED,
+    page.drawRectangle({
+      x: M,
+      y: y - sigBoxH,
+      width: halfW,
+      height: sigBoxH,
+      borderColor: LINE,
+      borderWidth: 0.6,
     });
+    // Roadmap p.8: CONTRACTOR / {business} / cursive signature / By: {name} / Date.
+    page.drawText(es ? "CONTRATISTA" : "CONTRACTOR", {
+      x: M + 12,
+      y: y - 14,
+      size: 8,
+      font: bold,
+      color: MUTED,
+    });
+    page.drawText(biz, {
+      x: M + 12,
+      y: y - 28,
+      size: 11,
+      font: bold,
+      color: INK,
+    });
+    page.drawText(contractor?.name ?? biz, {
+      x: M + 12,
+      y: y - 52,
+      size: 16,
+      font: ital,
+      color: TEAL,
+    });
+    if (contractor?.name) {
+      page.drawText(`${es ? "Por" : "By"}: ${contractor.name}`, {
+        x: M + 12,
+        y: y - 70,
+        size: 8,
+        font: reg,
+        color: MUTED,
+      });
+    }
+    page.drawText(
+      `${es ? "Fecha" : "Date"}: ${
+        fmtDate(contract.effectiveDate ?? contract.createdAt)
+      }`,
+      {
+        x: M + 12,
+        y: y - 82,
+        size: 8,
+        font: reg,
+        color: MUTED,
+      },
+    );
 
     // Customer box
     const cx = M + halfW + 16;
-    page.drawRectangle({ x: cx, y: y - sigBoxH, width: halfW, height: sigBoxH, borderColor: LINE, borderWidth: 0.6 });
-    page.drawText("CLIENT SIGNED", { x: cx + 12, y: y - 16, size: 8, font: bold, color: MUTED });
+    page.drawRectangle({
+      x: cx,
+      y: y - sigBoxH,
+      width: halfW,
+      height: sigBoxH,
+      borderColor: LINE,
+      borderWidth: 0.6,
+    });
+    page.drawText(es ? "CLIENTE FIRMÓ" : "CLIENT SIGNED", {
+      x: cx + 12,
+      y: y - 16,
+      size: 8,
+      font: bold,
+      color: MUTED,
+    });
     // Embed the customer's drawn signature PNG if present
     if (contract.customerSignature) {
       try {
@@ -281,7 +737,7 @@ export class RenderContractPdf {
           page.drawImage(png, {
             x: cx + 12,
             y: y - 24 - png.height * scale,
-            width:  png.width * scale,
+            width: png.width * scale,
             height: png.height * scale,
           });
         }
@@ -290,25 +746,48 @@ export class RenderContractPdf {
       }
     }
     if (contract.customerSignedName) {
-      page.drawText(contract.customerSignedName, { x: cx + 12, y: y - 70, size: 9, font: bold, color: INK });
+      page.drawText(contract.customerSignedName, {
+        x: cx + 12,
+        y: y - 70,
+        size: 9,
+        font: bold,
+        color: INK,
+      });
     }
     if (contract.signedAt) {
       const dateStr = fmtDate(contract.signedAt);
       page.drawText(dateStr, {
         x: cx + halfW - 12 - reg.widthOfTextAtSize(dateStr, 9),
-        y: y - 70, size: 9, font: reg, color: MUTED,
+        y: y - 70,
+        size: 9,
+        font: reg,
+        color: MUTED,
       });
     }
     y -= sigBoxH + 14;
 
     // Footer
     addPageIfNeeded(40);
-    page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.4, color: LINE });
+    page.drawLine({
+      start: { x: M, y },
+      end: { x: W - M, y },
+      thickness: 0.4,
+      color: LINE,
+    });
     y -= 14;
     drawCenteredText(
       page,
-      `Contract #${contract.id.slice(0, 8).toUpperCase()} · Generated ${fmtDate(new Date().toISOString())}`,
-      W, y, reg, 8, MUTED, 0,
+      `${es ? "Contrato" : "Contract"} #${
+        contract.id.slice(0, 8).toUpperCase()
+      } · ${es ? "Generado" : "Generated"} ${
+        fmtDate(new Date().toISOString())
+      }`,
+      W,
+      y,
+      reg,
+      8,
+      MUTED,
+      0,
     );
 
     return await pdf.save();
@@ -324,15 +803,46 @@ type PDFFont = any;
 // deno-lint-ignore no-explicit-any
 type RGB = any;
 
-function drawSectionHeader(page: PDFPage, y: number, m: number, n: string, title: string, bold: PDFFont, pink: RGB, teal: RGB): number {
+function drawSectionHeader(
+  page: PDFPage,
+  y: number,
+  m: number,
+  n: string,
+  title: string,
+  bold: PDFFont,
+  pink: RGB,
+  teal: RGB,
+): number {
   // pink disc with number
   page.drawCircle({ x: m + 11, y: y - 11, size: 11, color: pink });
-  page.drawText(n, { x: m + 7, y: y - 14, size: 9, font: bold, color: rgb(1, 1, 1) });
-  page.drawText(title, { x: m + 30, y: y - 14, size: 14, font: bold, color: teal });
+  page.drawText(n, {
+    x: m + 7,
+    y: y - 14,
+    size: 9,
+    font: bold,
+    color: rgb(1, 1, 1),
+  });
+  page.drawText(title, {
+    x: m + 30,
+    y: y - 14,
+    size: 14,
+    font: bold,
+    color: teal,
+  });
   return y - 26;
 }
 
-function drawWrappedText(page: PDFPage, text: string, x: number, y: number, w: number, font: PDFFont, size: number, color: RGB, line: number): number {
+function drawWrappedText(
+  page: PDFPage,
+  text: string,
+  x: number,
+  y: number,
+  w: number,
+  font: PDFFont,
+  size: number,
+  color: RGB,
+  line: number,
+): number {
   const lines = wrap(text, font, size, w);
   let yy = y;
   for (const ln of lines) {
@@ -342,15 +852,30 @@ function drawWrappedText(page: PDFPage, text: string, x: number, y: number, w: n
   return yy;
 }
 
-function drawCenteredText(page: PDFPage, text: string, w: number, y: number, font: PDFFont, size: number, color: RGB, letterSpacing: number): void {
-  const tw = font.widthOfTextAtSize(text, size) + letterSpacing * (text.length - 1) * size;
+function drawCenteredText(
+  page: PDFPage,
+  text: string,
+  w: number,
+  y: number,
+  font: PDFFont,
+  size: number,
+  color: RGB,
+  letterSpacing: number,
+): void {
+  const tw = font.widthOfTextAtSize(text, size) +
+    letterSpacing * (text.length - 1) * size;
   // pdf-lib Helvetica doesn't support per-character spacing natively; we
   // approximate by widening the character ratio. For our 0.18em eyebrow,
   // letterSpacing-as-padding is close enough.
   page.drawText(text, { x: (w - tw) / 2, y, size, font, color });
 }
 
-function wrap(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+function wrap(
+  text: string,
+  font: PDFFont,
+  size: number,
+  maxWidth: number,
+): string[] {
   const words = text.split(/\s+/);
   const out: string[] = [];
   let line = "";
@@ -370,7 +895,12 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
 function fmtUSD(cents: number | undefined): string {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "—";
   const dollars = cents / 100;
-  return `$${dollars.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${
+    dollars.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }`;
 }
 
 function fmtDate(iso: string | undefined): string {
@@ -378,7 +908,12 @@ function fmtDate(iso: string | undefined): string {
   const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
   const d = new Date(isDateOnly ? `${iso}T12:00:00Z` : iso);
   if (Number.isNaN(+d)) return iso;
-  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return d.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function fmtDateUpper(iso: string | undefined): string {
@@ -398,36 +933,85 @@ function dataUrlToBytes(dataUrl: string): Uint8Array | undefined {
   }
 }
 
-function termValue(terms: ContractTerm[] | undefined, stepId: string): string | undefined {
+function termValue(
+  terms: ContractTerm[] | undefined,
+  stepId: string,
+): string | undefined {
   return terms?.find((t) => t.stepId === stepId)?.value;
 }
 
-function computeMilestones(total: number, terms: ContractTerm[] | undefined): { label: string; amount: number; when: string }[] {
+/** Localize a wizard-captured term value for the customer copy. Maps the
+ *  known preset option labels to Spanish and converts numeric durations
+ *  ("12 months" → "12 meses"); custom free-text and universal ratios
+ *  ("50/50") pass through unchanged. */
+function localizeTermValue(value: string, es: boolean): string {
+  if (!es) return value;
+  const trimmed = (value ?? "").trim();
+  const exact: Record<string, string> = {
+    "Payment upon completion": "Pago al finalizar",
+    "Deposit + balance": "Depósito + saldo",
+    "No warranty": "Sin garantía",
+    "Right away": "De inmediato",
+    "Next week": "La próxima semana",
+    "Next Month": "El próximo mes",
+    "Next month": "El próximo mes",
+  };
+  if (exact[trimmed]) return exact[trimmed];
+  return trimmed
+    .replace(/\bmonths\b/gi, "meses").replace(/\bmonth\b/gi, "mes")
+    .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
+    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");
+}
+
+function computeMilestones(
+  total: number,
+  terms: ContractTerm[] | undefined,
+  es = false,
+): { label: string; amount: number; when: string }[] {
   if (!total || total <= 0) return [];
+  // Localized milestone label/timing strings (PDF is the customer's copy →
+  // outgoing-comms language, roadmap p.13).
+  const L = {
+    deposit: es ? "Depósito" : "Deposit",
+    balance: es ? "Saldo" : "Balance",
+    midpoint: es ? "Intermedio" : "Midpoint",
+    final: es ? "Pago final" : "Final",
+    beforeStart: es ? "Antes de empezar" : "Before work starts",
+    onCompletion: es ? "Al finalizar" : "On completion",
+    atMidpoint: es ? "A mitad del trabajo" : "At rough-in / midpoint",
+  };
   const v = termValue(terms, "payment_terms")?.toLowerCase() ?? "";
   if (v.includes("50") && v.includes("/")) {
     return [
-      { label: "Deposit", amount: Math.round(total / 2), when: "Before work starts" },
-      { label: "Balance", amount: total - Math.round(total / 2), when: "On completion" },
+      {
+        label: L.deposit,
+        amount: Math.round(total / 2),
+        when: L.beforeStart,
+      },
+      {
+        label: L.balance,
+        amount: total - Math.round(total / 2),
+        when: L.onCompletion,
+      },
     ];
   }
   if (v.includes("30") && v.includes("40")) {
     const a = Math.round(total * 0.30);
     const b = Math.round(total * 0.30);
     return [
-      { label: "Deposit", amount: a, when: "Before work starts" },
-      { label: "Midpoint", amount: b, when: "At rough-in / midpoint" },
-      { label: "Final", amount: total - a - b, when: "On completion" },
+      { label: L.deposit, amount: a, when: L.beforeStart },
+      { label: L.midpoint, amount: b, when: L.atMidpoint },
+      { label: L.final, amount: total - a - b, when: L.onCompletion },
     ];
   }
   if (v.includes("completion") || v.includes("net 15")) {
-    return [{ label: "Final", amount: total, when: "On completion" }];
+    return [{ label: L.final, amount: total, when: L.onCompletion }];
   }
   if (v.includes("deposit") && v.includes("balance")) {
     const dep = Math.round(total * 0.20);
     return [
-      { label: "Deposit", amount: dep, when: "Before work starts" },
-      { label: "Balance", amount: total - dep, when: "On completion" },
+      { label: L.deposit, amount: dep, when: L.beforeStart },
+      { label: L.balance, amount: total - dep, when: L.onCompletion },
     ];
   }
   return [];

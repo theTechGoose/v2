@@ -9,8 +9,16 @@ import { define } from "../../utils.ts";
 const BACKEND_URL = Deno.env.get("BACKEND_URL") ?? "http://localhost:3000";
 
 const HOP_BY_HOP = new Set([
-  "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-  "te", "trailers", "transfer-encoding", "upgrade", "host", "content-length",
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailers",
+  "transfer-encoding",
+  "upgrade",
+  "host",
+  "content-length",
 ]);
 
 async function forward(req: Request, path: string): Promise<Response> {
@@ -31,17 +39,23 @@ async function forward(req: Request, path: string): Promise<Response> {
   try {
     upstream = await fetch(target, init);
   } catch {
-    return new Response(JSON.stringify({ ok: false, error: "backend_unreachable" }), {
-      status: 502,
-      headers: { "content-type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ ok: false, error: "backend_unreachable" }),
+      {
+        status: 502,
+        headers: { "content-type": "application/json" },
+      },
+    );
   }
 
   const respHeaders = new Headers();
   for (const [k, v] of upstream.headers.entries()) {
     if (!HOP_BY_HOP.has(k.toLowerCase())) respHeaders.set(k, v);
   }
-  return new Response(upstream.body, { status: upstream.status, headers: respHeaders });
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: respHeaders,
+  });
 }
 
 export const handler = define.handlers({

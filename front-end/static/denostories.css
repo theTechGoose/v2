@@ -6,8 +6,8 @@ body:has(.ds-layout) {
 }
 
 /*
-* Layout
-*/
+ * Layout
+ */
 
 .ds-layout {
   display: flex;
@@ -29,8 +29,8 @@ body:has(.ds-layout) {
 }
 
 /**
-** In-story messages
-*/
+ ** In-story messages
+ */
 
 .ds-message {
   color: red;
@@ -42,8 +42,8 @@ body:has(.ds-layout) {
 }
 
 /**
-** Search
-*/
+ ** Search
+ */
 
 .ds-search {
   position: relative;
@@ -65,8 +65,8 @@ body:has(.ds-layout) {
 }
 
 /**
-** GroupMenu
-*/
+ ** GroupMenu
+ */
 
 .ds-menu,
 .ds-storymenu {
@@ -98,8 +98,8 @@ body:has(.ds-layout) {
 }
 
 /**
-** StoryMenu
-*/
+ ** StoryMenu
+ */
 
 .ds-storymenu {
   margin-left: 1em;

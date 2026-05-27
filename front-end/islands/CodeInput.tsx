@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { langSignal, STRINGS, type Lang } from "../lib/lang.ts";
+import { type Lang, langSignal, STRINGS } from "../lib/lang.ts";
 import { verifyClient } from "../clients/verify.ts";
 
 interface Props {
@@ -10,10 +10,14 @@ interface Props {
 const SLOT_COUNT = 6;
 
 export default function CodeInput({ phoneNumber, initialLang }: Props) {
-  const refs = Array.from({ length: SLOT_COUNT }, () => useRef<HTMLInputElement>(null));
+  // Single ref holding the slot inputs (a callback ref fills the array) —
+  // calling useRef inside a loop would violate the rules of hooks.
+  const refs = useRef<(HTMLInputElement | null)[]>([]);
   const [digits, setDigits] = useState<string[]>(Array(SLOT_COUNT).fill(""));
   const [submitting, setSubmitting] = useState(false);
-  const [errorKey, setErrorKey] = useState<"verify.errInvalid" | "verify.errExpired" | "verify.errRate" | null>(null);
+  const [errorKey, setErrorKey] = useState<
+    "verify.errInvalid" | "verify.errExpired" | "verify.errRate" | null
+  >(null);
   const [shake, setShake] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [, force] = useState(0);
@@ -21,7 +25,7 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
   useEffect(() => {
     const stored = globalThis.localStorage?.getItem("pm:lang") as Lang | null;
     langSignal.value = stored ?? initialLang ?? "en";
-    refs[0].current?.focus();
+    refs.current[0]?.focus();
     const unsub = langSignal.subscribe(() => force((n) => n + 1));
     return () => unsub();
   }, []);
@@ -50,7 +54,7 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
         return next;
       });
       const lastIdx = Math.min(i + digitsOnly.length - 1, SLOT_COUNT - 1);
-      refs[lastIdx].current?.focus();
+      refs.current[lastIdx]?.focus();
       if (i + digitsOnly.length >= SLOT_COUNT) {
         submit(digitsOnly.slice(0, SLOT_COUNT));
       }
@@ -62,22 +66,25 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
       next[i] = v;
       return next;
     });
-    if (v && i < SLOT_COUNT - 1) refs[i + 1].current?.focus();
+    if (v && i < SLOT_COUNT - 1) refs.current[i + 1]?.focus();
     if (v && i === SLOT_COUNT - 1) submit([...digits.slice(0, i), v].join(""));
   }
 
   function onPaste(e: ClipboardEvent) {
-    const pasted = (e.clipboardData?.getData("text") ?? "").replace(/\D/g, "").slice(0, SLOT_COUNT);
+    const pasted = (e.clipboardData?.getData("text") ?? "").replace(/\D/g, "")
+      .slice(0, SLOT_COUNT);
     if (pasted.length === 0) return;
     e.preventDefault();
     const next = pasted.padEnd(SLOT_COUNT, "").split("").slice(0, SLOT_COUNT);
     setDigits(next);
-    refs[Math.min(pasted.length, SLOT_COUNT - 1)].current?.focus();
+    refs.current[Math.min(pasted.length, SLOT_COUNT - 1)]?.focus();
     if (pasted.length === SLOT_COUNT) submit(pasted);
   }
 
   function onKeyDown(i: number, e: KeyboardEvent) {
-    if (e.key === "Backspace" && !digits[i] && i > 0) refs[i - 1].current?.focus();
+    if (e.key === "Backspace" && !digits[i] && i > 0) {
+      refs.current[i - 1]?.focus();
+    }
   }
 
   async function submit(code?: string) {
@@ -86,10 +93,15 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
     setSubmitting(true);
     setErrorKey(null);
     try {
-      const result = await verifyClient.verifyOtp({ phoneNumber, code: finalCode });
+      const result = await verifyClient.verifyOtp({
+        phoneNumber,
+        code: finalCode,
+      });
       if (result.ok) {
         // Persist the verified phone for next-visit one-tap login.
-        try { globalThis.localStorage?.setItem("pm:last-phone", phoneNumber); } catch { /* SSR-safe */ }
+        try {
+          globalThis.localStorage?.setItem("pm:last-phone", phoneNumber);
+        } catch { /* SSR-safe */ }
         // Animate Step 3 ("You're in") fill before navigating — visual
         // continuity with the landing-page progress bar.
         const codeStep = document.getElementById("pm-step-code");
@@ -105,19 +117,21 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
           const inDot = inStep.querySelector(".pm-steps__dot");
           if (inDot) inDot.textContent = "✓";
         }
-        setTimeout(() => { globalThis.location.href = result.redirectTo; }, 400);
+        setTimeout(() => {
+          globalThis.location.href = result.redirectTo;
+        }, 400);
         return;
       }
       const map = {
         invalid_code: "verify.errInvalid",
-        expired:      "verify.errExpired",
+        expired: "verify.errExpired",
         rate_limited: "verify.errRate",
       } as const;
       setErrorKey(map[result.error]);
       setShake(true);
       setTimeout(() => setShake(false), 380);
       setDigits(Array(SLOT_COUNT).fill(""));
-      refs[0].current?.focus();
+      refs.current[0]?.focus();
     } catch {
       setErrorKey("verify.errInvalid");
     } finally {
@@ -140,7 +154,9 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
         {digits.map((d, i) => (
           <input
             key={i}
-            ref={refs[i]}
+            ref={(el) => {
+              refs.current[i] = el;
+            }}
             type="text"
             inputMode="numeric"
             autoComplete="one-time-code"
@@ -151,7 +167,9 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
           />
         ))}
       </div>
-      {errorKey ? <p class="error" role="alert">{s[errorKey] as string}</p> : null}
+      {errorKey
+        ? <p class="error" role="alert">{s[errorKey] as string}</p>
+        : null}
       <button
         class="btn btn-primary btn-lg"
         type="button"

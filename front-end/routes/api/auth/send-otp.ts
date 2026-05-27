@@ -13,7 +13,10 @@ export const handler = define.handlers({
     try {
       const res = await fetch(`${BACKEND_URL}/auth/send-otp`, {
         method: "POST",
-        headers: { "content-type": "application/json", "accept": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "accept": "application/json",
+        },
         body,
       });
       return new Response(await res.text(), {
@@ -21,10 +24,13 @@ export const handler = define.handlers({
         headers: { "content-type": "application/json" },
       });
     } catch {
-      return new Response(JSON.stringify({ ok: false, error: "backend_unreachable" }), {
-        status: 502,
-        headers: { "content-type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ ok: false, error: "backend_unreachable" }),
+        {
+          status: 502,
+          headers: { "content-type": "application/json" },
+        },
+      );
     }
   },
 });

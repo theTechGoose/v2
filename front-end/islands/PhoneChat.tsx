@@ -53,11 +53,26 @@ interface Props {
 function QuoteCard({ q }: { q: QuoteCopy }) {
   return (
     <div class="quote-card">
-      <div class="qc-head"><span>{q.hd}</span><span class="pdf">PDF</span></div>
-      <div class="row"><span>{q.l1}</span><strong>$ 4,200</strong></div>
-      <div class="row"><span>{q.l2}</span><strong>$ 3,990</strong></div>
-      <div class="row"><span>{q.l3}</span><strong>$ 2,800</strong></div>
-      <div class="total"><span>{q.total}</span><span>$ 10,990</span></div>
+      <div class="qc-head">
+        <span>{q.hd}</span>
+        <span class="pdf">PDF</span>
+      </div>
+      <div class="row">
+        <span>{q.l1}</span>
+        <strong>$ 4,200</strong>
+      </div>
+      <div class="row">
+        <span>{q.l2}</span>
+        <strong>$ 3,990</strong>
+      </div>
+      <div class="row">
+        <span>{q.l3}</span>
+        <strong>$ 2,800</strong>
+      </div>
+      <div class="total">
+        <span>{q.total}</span>
+        <span>$ 10,990</span>
+      </div>
     </div>
   );
 }
@@ -226,11 +241,18 @@ export default function PhoneChat(props: Props) {
           <div class="phone-screen">
             <div class="phone-status">
               <span>9:41</span>
-              <div class="icons"><span></span><span></span><span></span><span></span></div>
+              <div class="icons">
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
             </div>
 
             <div class="chat-header">
-              <div class="av-pm"><img src="/logo-monster.png" alt="" /></div>
+              <div class="av-pm">
+                <img src="/logo-monster.png" alt="" />
+              </div>
               <div class="meta">
                 <strong>Paperwork Monster</strong>
                 <span>{lang === "es" ? "En línea" : "Online"}</span>
@@ -238,9 +260,11 @@ export default function PhoneChat(props: Props) {
             </div>
 
             <div class="chat-body" ref={chatBodyRef}>
-              {/* Only render up to `shown`; the chat-body's height grows
+              {
+                /* Only render up to `shown`; the chat-body's height grows
                   with each revealed step, keeping the latest flush with
-                  the input bar via the auto-scroll effect. */}
+                  the input bar via the auto-scroll effect. */
+              }
               {activeScript.slice(0, shown).map((m, i) => {
                 const sideClass = m.side === "right" ? "right" : "left";
                 const isHidden = hidden.has(i);
@@ -248,15 +272,28 @@ export default function PhoneChat(props: Props) {
                   <div
                     key={i}
                     class={`chat-step ${sideClass} in`}
-                    style={`animation: bubble-in 360ms cubic-bezier(0.34, 1.4, 0.64, 1) both;${isHidden ? " display: none;" : ""}`}
+                    style={`animation: bubble-in 360ms cubic-bezier(0.34, 1.4, 0.64, 1) both;${
+                      isHidden ? " display: none;" : ""
+                    }`}
                   >
                     {m.kind === "typing" && (
-                      <div class="typing"><span></span><span></span><span></span></div>
+                      <div class="typing">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                      </div>
                     )}
                     {m.kind === "bubble" && (
-                      <div class={`bubble ${m.cls ?? ""}`.trim()} style={m.style}>{m.text}</div>
+                      <div
+                        class={`bubble ${m.cls ?? ""}`.trim()}
+                        style={m.style}
+                      >
+                        {m.text}
+                      </div>
                     )}
-                    {m.kind === "meta" && <div class="bubble-meta">{m.text}</div>}
+                    {m.kind === "meta" && (
+                      <div class="bubble-meta">{m.text}</div>
+                    )}
                     {m.kind === "quote" && <QuoteCard q={activeQuote} />}
                   </div>
                 );
@@ -266,7 +303,16 @@ export default function PhoneChat(props: Props) {
             <div class="chat-input">
               <div class="field">{activeInputCopy}</div>
               <div class="send">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
                   <line x1="22" y1="2" x2="11" y2="13" />
                   <polygon points="22 2 15 22 11 13 2 9 22 2" />
                 </svg>

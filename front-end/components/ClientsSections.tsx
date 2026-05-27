@@ -17,8 +17,12 @@ interface ClientsHeroProps {
   quietCount: number;
 }
 
-export function ClientsHero({ totalClients, activeJobs, owedTotal, quietCount }: ClientsHeroProps) {
-  const owedFmt = owedTotal.toLocaleString("en-US", { maximumFractionDigits: 0 });
+export function ClientsHero(
+  { totalClients, activeJobs, owedTotal, quietCount }: ClientsHeroProps,
+) {
+  const owedFmt = owedTotal.toLocaleString("en-US", {
+    maximumFractionDigits: 0,
+  });
   const empty = totalClients === 0;
   return (
     <div class="ph2">
@@ -26,21 +30,39 @@ export function ClientsHero({ totalClients, activeJobs, owedTotal, quietCount }:
         <div class="ph2__crumb">
           <span class="ph2__crumb-dot" /> Clients · {totalClients} on the books
         </div>
-        {empty ? (
-          <>
-            <h1 class="ph2__title">Let's add your <em>first client</em>.<br />They'll keep the lights on.</h1>
-            <p class="ph2__sub">Once a quote ships through the assistant, the customer lands here automatically.</p>
-          </>
-        ) : (
-          <>
-            <h1 class="ph2__title">
-              The <em>{numberWord(totalClients)} {totalClients === 1 ? "person" : "people"}</em><br />who keep the lights on.
-            </h1>
-            <p class="ph2__sub">
-              <strong>{activeJobs} {activeJobs === 1 ? "job" : "jobs"} in flight</strong> · <strong>${owedFmt}</strong> currently owed to you · <strong>{quietCount} quiet</strong> {quietCount === 1 ? "client" : "clients"} worth a hello.
-            </p>
-          </>
-        )}
+        {empty
+          ? (
+            <>
+              <h1 class="ph2__title">
+                Let's add your{" "}
+                <em>first client</em>.<br />They'll keep the lights on.
+              </h1>
+              <p class="ph2__sub">
+                Once a quote ships through the assistant, the customer lands
+                here automatically.
+              </p>
+            </>
+          )
+          : (
+            <>
+              <h1 class="ph2__title">
+                The{" "}
+                <em>
+                  {numberWord(totalClients)}{" "}
+                  {totalClients === 1 ? "person" : "people"}
+                </em>
+                <br />who keep the lights on.
+              </h1>
+              <p class="ph2__sub">
+                <strong>
+                  {activeJobs} {activeJobs === 1 ? "job" : "jobs"} in flight
+                </strong>{" "}
+                · <strong>${owedFmt}</strong> currently owed to you ·{" "}
+                <strong>{quietCount} quiet</strong>{" "}
+                {quietCount === 1 ? "client" : "clients"} worth a hello.
+              </p>
+            </>
+          )}
       </div>
       <button class="ph2__cta" type="button">
         <I d={ICN.plus} size={14} /> Add a client
@@ -64,10 +86,17 @@ export function LoopBar({ picks }: LoopBarProps) {
     return (
       <div class="loopbar">
         <div class="loopbar__title">
-          <span class="loopbar__lbl"><span class="loopbar__lbl-dot" /> Today's loop</span>
-          <span class="loopbar__h">No check-ins drafted yet — the assistant will surface them as work piles up.</span>
+          <span class="loopbar__lbl">
+            <span class="loopbar__lbl-dot" /> Today's loop
+          </span>
+          <span class="loopbar__h">
+            No check-ins drafted yet — the assistant will surface them as work
+            piles up.
+          </span>
         </div>
-        <a class="loopbar__cta" href="/assistant"><I d={ICN.send} size={13} /> Open the assistant</a>
+        <a class="loopbar__cta" href="/assistant">
+          <I d={ICN.send} size={13} /> Open the assistant
+        </a>
       </div>
     );
   }
@@ -75,26 +104,41 @@ export function LoopBar({ picks }: LoopBarProps) {
   return (
     <div class="loopbar">
       <div class="loopbar__title">
-        <span class="loopbar__lbl"><span class="loopbar__lbl-dot" /> Today's loop</span>
-        <span class="loopbar__h">{picks.length} friendly check-{picks.length === 1 ? "in" : "ins"}, drafted for you.</span>
+        <span class="loopbar__lbl">
+          <span class="loopbar__lbl-dot" /> Today's loop
+        </span>
+        <span class="loopbar__h">
+          {picks.length}{" "}
+          friendly check-{picks.length === 1 ? "in" : "ins"}, drafted for you.
+        </span>
       </div>
       <div class="loopbar__avs">
         {picks.map((p, i) => (
-          <div key={p.id} class="loopbar__av" style={`background:${LOOP_AV_BG[i % LOOP_AV_BG.length]}`}>
+          <div
+            key={p.id}
+            class="loopbar__av"
+            style={`background:${LOOP_AV_BG[i % LOOP_AV_BG.length]}`}
+          >
             {initialsOf(p.name)}
           </div>
         ))}
         <div class="loopbar__av-meta">
-          {names}<br />
-          <strong>~{picks.length * 30} seconds</strong> to send {picks.length === 1 ? "it" : "all " + numberWord(picks.length)}
+          {names}
+          <br />
+          <strong>~{picks.length * 30} seconds</strong> to send{" "}
+          {picks.length === 1 ? "it" : "all " + numberWord(picks.length)}
         </div>
       </div>
-      <a class="loopbar__cta" href="/assistant"><I d={ICN.send} size={13} /> Open the loop</a>
+      <a class="loopbar__cta" href="/assistant">
+        <I d={ICN.send} size={13} /> Open the loop
+      </a>
     </div>
   );
 }
 
-interface TopClientsProps { rows: TopClient[] }
+interface TopClientsProps {
+  rows: TopClient[];
+}
 
 export function TopClients({ rows }: TopClientsProps) {
   if (rows.length === 0) {
@@ -118,7 +162,9 @@ export function TopClients({ rows }: TopClientsProps) {
         {rows.map((t, i) => (
           <div key={t.customerId}>
             <div class="ctop2__item">
-              <div class={`ctop2__rank ${i === 0 ? "ctop2__rank--1" : ""}`}>{String(t.rank).padStart(2, "0")}</div>
+              <div class={`ctop2__rank ${i === 0 ? "ctop2__rank--1" : ""}`}>
+                {String(t.rank).padStart(2, "0")}
+              </div>
               <div class="ctop2__name">{t.name}</div>
               <div class="ctop2__amt">{dollars(t.revenue12moCents)}</div>
             </div>
@@ -132,14 +178,16 @@ export function TopClients({ rows }: TopClientsProps) {
   );
 }
 
-interface ClientsSegmentsProps { rows: ClientSegmentRow[] }
+interface ClientsSegmentsProps {
+  rows: ClientSegmentRow[];
+}
 
 const SEGMENT_COLOR: Record<string, string> = {
   property_mgmt: "var(--brand-green)",
-  homeowner:     "var(--brand-pink)",
-  small_biz:     "var(--brand-teal)",
-  hoa:           "var(--coffee-500)",
-  unsorted:      "var(--coffee-300)",
+  homeowner: "var(--brand-pink)",
+  small_biz: "var(--brand-teal)",
+  hoa: "var(--coffee-500)",
+  unsorted: "var(--coffee-300)",
 };
 
 export function ClientsSegments({ rows }: ClientsSegmentsProps) {
@@ -154,10 +202,10 @@ export function ClientsSegments({ rows }: ClientsSegmentsProps) {
   // Plural-ize labels for the section
   const PLURAL: Record<string, string> = {
     "Property mgmt": "Property mgmt",
-    "Homeowner":     "Homeowners",
-    "Small biz":     "Small biz",
-    "HOA":           "HOAs",
-    "Unsorted":      "Unsorted",
+    "Homeowner": "Homeowners",
+    "Small biz": "Small biz",
+    "HOA": "HOAs",
+    "Unsorted": "Unsorted",
   };
   return (
     <div class="csegment2">
@@ -165,7 +213,14 @@ export function ClientsSegments({ rows }: ClientsSegmentsProps) {
       {rows.map((s) => (
         <div class="cseg2-row" key={s.key}>
           <div class="cseg2-row__lbl">{PLURAL[s.label] ?? s.label}</div>
-          <div class="cseg2-row__bar"><div class="cseg2-row__fill" style={`width:${s.pct}%; background:${SEGMENT_COLOR[s.key] ?? "var(--coffee-300)"}`} /></div>
+          <div class="cseg2-row__bar">
+            <div
+              class="cseg2-row__fill"
+              style={`width:${s.pct}%; background:${
+                SEGMENT_COLOR[s.key] ?? "var(--coffee-300)"
+              }`}
+            />
+          </div>
           <div class="cseg2-row__num">{s.count}</div>
         </div>
       ))}

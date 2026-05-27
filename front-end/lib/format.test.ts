@@ -1,5 +1,11 @@
 import { assertEquals } from "@std/assert";
-import { fmtMoney, fmtMoneyExact, fmtMoneyShort, fmtPhone, telHref } from "./format.ts";
+import {
+  fmtMoney,
+  fmtMoneyExact,
+  fmtMoneyShort,
+  fmtPhone,
+  telHref,
+} from "./format.ts";
 
 /**
  * Pins the cents-input contract for the money formatters (audit1 #3).
@@ -12,21 +18,21 @@ import { fmtMoney, fmtMoneyExact, fmtMoneyShort, fmtPhone, telHref } from "./for
 Deno.test("fmtMoney: integer cents → no-decimal dollars with $", () => {
   assertEquals(fmtMoney(150_00), "$150");
   assertEquals(fmtMoney(1_000_00), "$1,000");
-  assertEquals(fmtMoney(99_999_99), "$100,000");           // rounds .99 cents → next dollar
+  assertEquals(fmtMoney(99_999_99), "$100,000"); // rounds .99 cents → next dollar
   assertEquals(fmtMoney(0), "$0");
 });
 
 Deno.test("fmtMoney: rounds half cents up to nearest dollar", () => {
-  assertEquals(fmtMoney(150_50), "$151");                  // .50 → up
-  assertEquals(fmtMoney(150_49), "$150");                  // .49 → down
-  assertEquals(fmtMoney(99), "$1");                        // 99¢ → $1
-  assertEquals(fmtMoney(50), "$1");                        // 50¢ → $1 (banker rounding-aware: Math.round picks .5 → +∞)
-  assertEquals(fmtMoney(49), "$0");                        // 49¢ → $0
+  assertEquals(fmtMoney(150_50), "$151"); // .50 → up
+  assertEquals(fmtMoney(150_49), "$150"); // .49 → down
+  assertEquals(fmtMoney(99), "$1"); // 99¢ → $1
+  assertEquals(fmtMoney(50), "$1"); // 50¢ → $1 (banker rounding-aware: Math.round picks .5 → +∞)
+  assertEquals(fmtMoney(49), "$0"); // 49¢ → $0
 });
 
 Deno.test("fmtMoney: handles negative cents (refund / overpayment balances)", () => {
   assertEquals(fmtMoney(-500_00), "-$500");
-  assertEquals(fmtMoney(-50), "-$1");                      // -50¢ → -$1 (Math.round(-0.5) = 0 in JS, but we Math.round(-50/100)=-1; pin actual behavior)
+  assertEquals(fmtMoney(-50), "-$1"); // -50¢ → -$1 (Math.round(-0.5) = 0 in JS, but we Math.round(-50/100)=-1; pin actual behavior)
 });
 
 Deno.test("fmtMoney: bad input falls back to $0 (never crashes the render)", () => {
@@ -47,7 +53,7 @@ Deno.test("fmtMoneyExact: integer cents → 2-decimal dollars with $", () => {
   assertEquals(fmtMoneyExact(150_50), "$150.50");
   assertEquals(fmtMoneyExact(150_49), "$150.49");
   assertEquals(fmtMoneyExact(0), "$0.00");
-  assertEquals(fmtMoneyExact(99), "$0.99");                // sub-dollar amounts render correctly
+  assertEquals(fmtMoneyExact(99), "$0.99"); // sub-dollar amounts render correctly
   assertEquals(fmtMoneyExact(1_234_567_89), "$1,234,567.89");
 });
 
@@ -74,7 +80,7 @@ Deno.test("fmtPhone: non-NANP / unparseable returns input unchanged", () => {
   assertEquals(fmtPhone(""), "");
   assertEquals(fmtPhone(undefined), "");
   assertEquals(fmtPhone(null), "");
-  assertEquals(fmtPhone("+44 20 7946 0958"), "+44 20 7946 0958");  // not NANP, passthrough
+  assertEquals(fmtPhone("+44 20 7946 0958"), "+44 20 7946 0958"); // not NANP, passthrough
 });
 
 Deno.test("telHref: 10-digit US gets +1 prefix; already-+ pass-through", () => {

@@ -38,9 +38,9 @@ export interface Contract {
 }
 
 export const contractsClient = {
-  list:   (status?: string, opts: ApiOptions = {}) =>
+  list: (status?: string, opts: ApiOptions = {}) =>
     api.get<Contract[]>("/contracts", { ...opts, query: { status } }),
-  get:    (id: string, opts: ApiOptions = {}) =>
+  get: (id: string, opts: ApiOptions = {}) =>
     api.get<Contract>(`/contracts/${id}`, opts),
   update: (id: string, patch: Record<string, unknown>, opts: ApiOptions = {}) =>
     api.put<Contract>(`/contracts/${id}`, patch, opts),

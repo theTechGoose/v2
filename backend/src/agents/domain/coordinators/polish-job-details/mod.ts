@@ -1,5 +1,8 @@
 import { Inject, Injectable } from "#danet/core";
-import { LLM_CLIENT, type LLMClient } from "@agents/domain/business/llm/base/mod.ts";
+import {
+  LLM_CLIENT,
+  type LLMClient,
+} from "@agents/domain/business/llm/base/mod.ts";
 
 export interface PolishJobDetailsInput {
   userId: string;
@@ -8,6 +11,9 @@ export interface PolishJobDetailsInput {
   /** Optional price (cents) — gives the LLM scope context so the
    *  polished paragraph doesn't promise more than the price covers. */
   priceCents?: number;
+  /** Outgoing-comms language (roadmap p.13) — the polished copy is
+   *  customer-facing, so write it in the customer's language. */
+  commsLanguage?: string;
 }
 
 export interface PolishJobDetailsResult {
@@ -23,7 +29,8 @@ export interface PolishJobDetailsResult {
   description: string;
 }
 
-const SYSTEM_PROMPT = `You polish a contractor's raw job description into clean, professional copy a customer will read on a quote.
+const SYSTEM_PROMPT =
+  `You polish a contractor's raw job description into clean, professional copy a customer will read on a quote.
 
 OUTPUT — return JSON only, no prose, no code fences:
   { "jobName": "<3 words or less, Title Case>", "summary": "<short title, max 8 words, title case>", "description": "<1-3 sentences, professional, third-person>" }
@@ -54,15 +61,28 @@ export class PolishJobDetails {
     const raw = input.raw.trim();
     if (!raw) throw new Error("raw is required");
 
-    const priceLine = typeof input.priceCents === "number" && input.priceCents > 0
-      ? `\n\nQuoted price for this job: $${(input.priceCents / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}. Scope your description to fit that range.`
+    const priceLine =
+      typeof input.priceCents === "number" && input.priceCents > 0
+        ? `\n\nQuoted price for this job: $${
+          (input.priceCents / 100).toLocaleString("en-US", {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2,
+          })
+        }. Scope your description to fit that range.`
+        : "";
+
+    const langLine = input.commsLanguage === "es"
+      ? "\n\nWrite jobName, summary, and description in neutral Latin-American Spanish."
       : "";
 
     let text: string;
     try {
       const res = await this.llm.respond({
         systemPrompt: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: `Raw job description:\n${raw}${priceLine}` }],
+        messages: [{
+          role: "user",
+          content: `Raw job description:\n${raw}${priceLine}${langLine}`,
+        }],
         userId: input.userId,
       });
       text = res.text ?? "";
@@ -72,11 +92,15 @@ export class PolishJobDetails {
     }
 
     const parsed = tryParseJson(text);
-    if (parsed && typeof parsed.summary === "string" && typeof parsed.description === "string") {
+    if (
+      parsed && typeof parsed.summary === "string" &&
+      typeof parsed.description === "string"
+    ) {
       const summary = clampSummary(parsed.summary);
-      const jobName = typeof parsed.jobName === "string" && parsed.jobName.trim()
-        ? clampJobName(parsed.jobName)
-        : deriveJobName(summary);
+      const jobName =
+        typeof parsed.jobName === "string" && parsed.jobName.trim()
+          ? clampJobName(parsed.jobName)
+          : deriveJobName(summary);
       return {
         summary,
         jobName,
@@ -87,15 +111,21 @@ export class PolishJobDetails {
   }
 }
 
-function tryParseJson(s: string): { summary?: unknown; jobName?: unknown; description?: unknown } | undefined {
+function tryParseJson(
+  s: string,
+): { summary?: unknown; jobName?: unknown; description?: unknown } | undefined {
   if (!s) return undefined;
   const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = (fenced ? fenced[1] : s).trim();
-  try { return JSON.parse(candidate); } catch { /* fall through */ }
+  try {
+    return JSON.parse(candidate);
+  } catch { /* fall through */ }
   const braceStart = candidate.indexOf("{");
   const braceEnd = candidate.lastIndexOf("}");
   if (braceStart >= 0 && braceEnd > braceStart) {
-    try { return JSON.parse(candidate.slice(braceStart, braceEnd + 1)); } catch { /* swallow */ }
+    try {
+      return JSON.parse(candidate.slice(braceStart, braceEnd + 1));
+    } catch { /* swallow */ }
   }
   return undefined;
 }
@@ -107,7 +137,10 @@ function clampSummary(s: string): string {
 }
 
 function clampJobName(s: string): string {
-  const cleaned = s.trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s+/g, " ");
+  const cleaned = s.trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(
+    /\s+/g,
+    " ",
+  );
   const words = cleaned.split(" ").filter(Boolean).slice(0, 3);
   return words.map(titleCaseWord).join(" ");
 }

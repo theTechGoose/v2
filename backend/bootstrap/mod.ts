@@ -1,6 +1,5 @@
 import "#reflect-metadata";
 import { DanetApplication, Module } from "#danet/core";
-import { bootstrapServer } from "#mrg-keystone/danet";
 import { loadConfig } from "./config.ts";
 import { UsersModule } from "@users/mod-root.ts";
 import { AgentsModule } from "@agents/mod-root.ts";

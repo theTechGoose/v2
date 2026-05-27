@@ -391,11 +391,15 @@ export default function DashboardPage() {
   const customerNames = new Map(customers.map((c) => [c.id, c.name] as const));
 
   const safeJobs = Array.isArray(jobs) ? jobs : [];
-  const jobRows: JobRow[] = safeJobs.slice(0, 5).map((j, i) => jobToRow(j, i, now));
+  const jobRows: JobRow[] = safeJobs.slice(0, 5).map((j, i) =>
+    jobToRow(j, i, now)
+  );
 
   const seenQuoteIds = new Set<string>();
   const safeQuoteCards = Array.isArray(quoteCards) ? quoteCards : [];
-  const safePendingInvoices = Array.isArray(pendingInvoices) ? pendingInvoices : [];
+  const safePendingInvoices = Array.isArray(pendingInvoices)
+    ? pendingInvoices
+    : [];
   const quoteRows: QuoteRow[] = safeQuoteCards
     .slice()
     .sort((a, b) => (b.sentAt ?? "").localeCompare(a.sentAt ?? ""))

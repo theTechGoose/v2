@@ -41,8 +41,10 @@ interface Fetchers {
   profile: () => Promise<ProfileSnapshot | null>;
 }
 const DEFAULT_FETCHERS: Fetchers = {
-  stats:   () => dashboardClient.stats().catch(() => null as DashboardStats | null),
-  profile: () => profileClient.get().catch(() => null as ProfileSnapshot | null),
+  stats: () =>
+    dashboardClient.stats().catch(() => null as DashboardStats | null),
+  profile: () =>
+    profileClient.get().catch(() => null as ProfileSnapshot | null),
 };
 let fetchers: Fetchers = DEFAULT_FETCHERS;
 
@@ -61,9 +63,13 @@ export function readCached(): CachedDash | null {
 
 function writeCached(snap: CachedDash) {
   cached = snap;
-  try { globalThis.sessionStorage?.setItem(STORAGE_KEY, JSON.stringify(snap)); } catch { /* SSR / private mode */ }
+  try {
+    globalThis.sessionStorage?.setItem(STORAGE_KEY, JSON.stringify(snap));
+  } catch { /* SSR / private mode */ }
   for (const fn of listeners) {
-    try { fn(snap); } catch { /* listener errors must not poison other listeners */ }
+    try {
+      fn(snap);
+    } catch { /* listener errors must not poison other listeners */ }
   }
 }
 
@@ -77,13 +83,17 @@ export function refreshDash(): Promise<CachedDash> {
     const next: CachedDash = { stats, profile };
     writeCached(next);
     return next;
-  })().finally(() => { inflight = null; });
+  })().finally(() => {
+    inflight = null;
+  });
   return inflight;
 }
 
 export function subscribeDash(fn: Listener): () => void {
   listeners.add(fn);
-  return () => { listeners.delete(fn); };
+  return () => {
+    listeners.delete(fn);
+  };
 }
 
 /** Test-only seam — clears module state and (optionally) replaces the
@@ -93,8 +103,13 @@ export function _resetForTest(stub?: Partial<Fetchers>): void {
   cached = null;
   inflight = null;
   listeners.clear();
-  try { globalThis.sessionStorage?.removeItem(STORAGE_KEY); } catch { /* */ }
+  try {
+    globalThis.sessionStorage?.removeItem(STORAGE_KEY);
+  } catch { /* */ }
   fetchers = stub
-    ? { stats: stub.stats ?? DEFAULT_FETCHERS.stats, profile: stub.profile ?? DEFAULT_FETCHERS.profile }
+    ? {
+      stats: stub.stats ?? DEFAULT_FETCHERS.stats,
+      profile: stub.profile ?? DEFAULT_FETCHERS.profile,
+    }
     : DEFAULT_FETCHERS;
 }

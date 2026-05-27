@@ -7,7 +7,10 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 import AsstThreads from "../../islands/AsstThreads.tsx";
 import AsstChat, { deriveUserInitials } from "../../islands/AsstChat.tsx";
 import ChatHeaderLive from "../../islands/ChatHeaderLive.tsx";
-import { assistantClient, type Conversation, type ConversationDetail } from "../../clients/assistant.ts";
+import {
+  type Conversation,
+  type ConversationDetail,
+} from "../../clients/assistant.ts";
 import { profileClient, type ProfileSnapshot } from "../../clients/profile.ts";
 import OnboardingProgress from "../../islands/OnboardingProgress.tsx";
 
@@ -33,19 +36,31 @@ export default define.page(async function AssistantThread(ctx) {
     sessionId,
   ).catch(() => ({ ok: false, status: 0 } as { ok: false; status: number }));
   const detail = detailRes.ok ? detailRes.data : undefined;
-  const threadsRes = await ssrBackendGetAuthed<Conversation[]>(`/agents/conversations?limit=50`, sessionId)
+  const threadsRes = await ssrBackendGetAuthed<Conversation[]>(
+    `/agents/conversations?limit=50`,
+    sessionId,
+  )
     .catch(() => ({ ok: false, status: 0 } as { ok: false; status: number }));
-  const initialThreads = (threadsRes.ok && Array.isArray(threadsRes.data)) ? threadsRes.data : [];
-  const profile = await profileClient.get({ sessionId }).catch(() => null as ProfileSnapshot | null);
+  const initialThreads = (threadsRes.ok && Array.isArray(threadsRes.data))
+    ? threadsRes.data
+    : [];
+  const profile = await profileClient.get({ sessionId }).catch(() =>
+    null as ProfileSnapshot | null
+  );
 
-  const businessName = profile?.identity?.businessName ?? profile?.identity?.displayName;
+  const businessName = profile?.identity?.businessName ??
+    profile?.identity?.displayName;
   const userInitials = profile?.initials && profile.initials !== "?"
     ? profile.initials
-    : deriveUserInitials({ name: user?.name, businessName, phoneNumber: user?.phoneNumber });
+    : deriveUserInitials({
+      name: user?.name,
+      businessName,
+      phoneNumber: user?.phoneNumber,
+    });
 
-  const headerTitle = detail?.conversation?.customerName
-    ?? detail?.conversation?.title
-    ?? "New conversation";
+  const headerTitle = detail?.conversation?.customerName ??
+    detail?.conversation?.title ??
+    "New conversation";
   const headerStatus = detail?.conversation?.currentPhase
     ? `Phase: ${detail.conversation.currentPhase}`
     : "Tell Bossie about a job — voice or text";
@@ -60,23 +75,36 @@ export default define.page(async function AssistantThread(ctx) {
   // the progress strip never flashes empty on first paint. Backend uses
   // `postal` on the wire; the FE's type definition has a stale name —
   // cast to a permissive shape so the gate works.
-  const addr = (profile?.address as { state?: string; postal?: string; postalCode?: string } | undefined);
+  const addr = profile?.address as {
+    state?: string;
+    postal?: string;
+    postalCode?: string;
+  } | undefined;
   const profileFilled = {
-    name:    !!profile?.user?.name?.trim(),
-    biz:     !!(profile?.identity?.businessName?.trim() ?? profile?.identity?.legalName?.trim()),
-    state:   !!addr?.state?.trim(),
+    name: !!profile?.user?.name?.trim(),
+    biz: !!(profile?.identity?.businessName?.trim() ??
+      profile?.identity?.legalName?.trim()),
+    state: !!addr?.state?.trim(),
     address: !!(addr?.postal?.trim() ?? addr?.postalCode?.trim()),
   };
-  const initialStep = (Number(profileFilled.name) + Number(profileFilled.biz) + Number(profileFilled.state) + Number(profileFilled.address)) as 0 | 1 | 2 | 3 | 4;
+  const initialStep = (Number(profileFilled.name) + Number(profileFilled.biz) +
+    Number(profileFilled.state) + Number(profileFilled.address)) as
+      | 0
+      | 1
+      | 2
+      | 3
+      | 4;
   // Hide the progress strip once the user has any real activity in this
   // thread (quote drafted, customer attached, contract sent). The
   // address question is the only step likely to remain "incomplete"
   // after the user has moved on to real work — showing "One left." on
   // a thread with a sent contract is just confusing (audit2 N8).
   const conversationPhase = detail?.conversation?.currentPhase;
+  // Real activity = a bound customer, a sent contract, or the thread has
+  // advanced to the terms phase. ("quote" and "terms" are the only phases —
+  // see AgentPhase in the backend.)
   const hasActivity = !!detail?.customer || !!detail?.contract ||
-    conversationPhase === "terms" || conversationPhase === "contract" ||
-    conversationPhase === "invoice" || conversationPhase === "complete";
+    conversationPhase === "terms";
   const showOnboardBanner = isOnboard && initialStep < 4 && !hasActivity;
 
   return (
@@ -97,14 +125,25 @@ export default define.page(async function AssistantThread(ctx) {
             <AsstThreads initialThreads={initialThreads} activeId={threadId} />
             <div class="asst__chat-wrap">
               <section class="chat">
-                {showOnboardBanner && <OnboardingProgress initialStep={initialStep} />}
-                <ChatHeaderLive initialClient={headerTitle} initialStatus={headerStatus} />
+                {showOnboardBanner && (
+                  <OnboardingProgress initialStep={initialStep} />
+                )}
+                <ChatHeaderLive
+                  initialClient={headerTitle}
+                  initialStatus={headerStatus}
+                />
                 <AsstChat
                   conversationId={threadId}
                   initialMessages={detail?.messages ?? []}
                   initialCustomer={detail?.customer}
                   initialContract={detail?.contract}
                   userInitials={userInitials}
+                  from={{
+                    business: businessName,
+                    name: user?.name,
+                    phone: user?.phoneNumber,
+                    email: profile?.user?.email,
+                  }}
                 />
               </section>
             </div>

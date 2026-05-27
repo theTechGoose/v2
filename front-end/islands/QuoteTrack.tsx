@@ -21,9 +21,21 @@ interface Props {
   children?: ComponentChildren;
 }
 
-export default function QuoteTrack({ num, title, count, unit = "quote", defaultOpen = true, storageKey, children }: Props) {
+export default function QuoteTrack(
+  {
+    num,
+    title,
+    count,
+    unit = "quote",
+    defaultOpen = true,
+    storageKey,
+    children,
+  }: Props,
+) {
   const [open, setOpen] = useState<boolean>(() => {
-    if (typeof globalThis.localStorage === "undefined" || !storageKey) return defaultOpen;
+    if (typeof globalThis.localStorage === "undefined" || !storageKey) {
+      return defaultOpen;
+    }
     const raw = globalThis.localStorage.getItem(storageKey);
     if (raw === "1") return true;
     if (raw === "0") return false;
@@ -32,16 +44,22 @@ export default function QuoteTrack({ num, title, count, unit = "quote", defaultO
 
   useEffect(() => {
     if (!storageKey) return;
-    try { globalThis.localStorage?.setItem(storageKey, open ? "1" : "0"); } catch { /* ignore */ }
+    try {
+      globalThis.localStorage?.setItem(storageKey, open ? "1" : "0");
+    } catch { /* ignore */ }
   }, [open, storageKey]);
 
   return (
     <section class={`qtrack ${open ? "" : "qtrack--collapsed"}`}>
       <header class="qtrack__head" onClick={() => setOpen((v) => !v)}>
-        <span class="qtrack__chev"><I d={ICN.chev} size={14} sw={2.5} /></span>
+        <span class="qtrack__chev">
+          <I d={ICN.chev} size={14} sw={2.5} />
+        </span>
         <span class="qtrack__num">{num}</span>
         <span class="qtrack__title">{title}</span>
-        <span class="qtrack__count">{count} {count === 1 ? unit : `${unit}s`}</span>
+        <span class="qtrack__count">
+          {count} {count === 1 ? unit : `${unit}s`}
+        </span>
       </header>
       <div class="qtrack__body">
         <div class="qtrack__body-inner">

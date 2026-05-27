@@ -13,11 +13,17 @@ export interface ButtonProps extends Omit<ButtonAttrs, "size" | "class"> {
 }
 
 function classes(variant: Variant, size: "md" | "lg", extra?: string): string {
-  return ["btn", `btn-${variant}`, size === "lg" ? "btn-lg" : "", extra ?? ""].filter(Boolean).join(" ");
+  return ["btn", `btn-${variant}`, size === "lg" ? "btn-lg" : "", extra ?? ""]
+    .filter(Boolean).join(" ");
 }
 
-export function Button({ variant = "primary", size = "md", class: cls, children, ...rest }: ButtonProps) {
-  return <button class={classes(variant, size, cls)} {...rest}>{children}</button>;
+export function Button(
+  { variant = "primary", size = "md", class: cls, children, ...rest }:
+    ButtonProps,
+) {
+  return (
+    <button class={classes(variant, size, cls)} {...rest}>{children}</button>
+  );
 }
 
 export interface AnchorButtonProps extends Omit<AnchorAttrs, "size" | "class"> {
@@ -27,6 +33,9 @@ export interface AnchorButtonProps extends Omit<AnchorAttrs, "size" | "class"> {
   children?: ComponentChildren;
 }
 
-export function AnchorButton({ variant = "primary", size = "md", class: cls, children, ...rest }: AnchorButtonProps) {
+export function AnchorButton(
+  { variant = "primary", size = "md", class: cls, children, ...rest }:
+    AnchorButtonProps,
+) {
   return <a class={classes(variant, size, cls)} {...rest}>{children}</a>;
 }

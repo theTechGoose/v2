@@ -14,6 +14,7 @@ import { StartConversation } from "@agents/domain/coordinators/start-conversatio
 import { HandleChatMessage } from "@agents/domain/coordinators/handle-chat-message/mod.ts";
 import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
 import { HandleWizardAnswer } from "@agents/domain/coordinators/handle-wizard-answer/mod.ts";
+import { RewindWizard } from "@agents/domain/coordinators/rewind-wizard/mod.ts";
 import { LoadConversation } from "@agents/domain/coordinators/load-conversation/mod.ts";
 import { LockQuote } from "@agents/domain/coordinators/lock-quote/mod.ts";
 import { AcceptContract } from "@agents/domain/coordinators/accept-contract/mod.ts";
@@ -24,6 +25,7 @@ import { BindConversationCustomer } from "@agents/domain/coordinators/bind-conve
 import { EnsureSampleQuote } from "@agents/domain/coordinators/ensure-sample-quote/mod.ts";
 import { PolishJobDetails } from "@agents/domain/coordinators/polish-job-details/mod.ts";
 import { GenerateJobOptions } from "@agents/domain/coordinators/generate-job-options/mod.ts";
+import { SuggestPrices } from "@agents/domain/coordinators/suggest-prices/mod.ts";
 import { ProfessionalizeBullet } from "@agents/domain/coordinators/professionalize-bullet/mod.ts";
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
 import type { LLMClient } from "@agents/domain/business/llm/base/mod.ts";
@@ -49,7 +51,9 @@ import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/
  */
 async function selectLLMClass(): Promise<new () => LLMClient> {
   if (Deno.env.get("AGENTS_LLM_CLIENT") === "openai") {
-    const { OpenAILLMClient } = await import("@agents/domain/data/openai/mod.ts");
+    const { OpenAILLMClient } = await import(
+      "@agents/domain/data/openai/mod.ts"
+    );
     return OpenAILLMClient;
   }
   return StubLLMClient;
@@ -68,8 +72,19 @@ const LlmClientClass = await selectLLMClass();
  *   - DELETE /agents/conversations/:id
  */
 @Module({
-  imports: [UsersModule, PaperworkModule, CommunicationModule, FilesModule, CrmModule],
-  controllers: [ConversationsController, ChatController, WizardController, JobDetailsController],
+  imports: [
+    UsersModule,
+    PaperworkModule,
+    CommunicationModule,
+    FilesModule,
+    CrmModule,
+  ],
+  controllers: [
+    ConversationsController,
+    ChatController,
+    WizardController,
+    JobDetailsController,
+  ],
   injectables: [
     AgentConversationStore,
     AgentMessageStore,
@@ -77,6 +92,7 @@ const LlmClientClass = await selectLLMClass();
     HandleChatMessage,
     TransitionToTerms,
     HandleWizardAnswer,
+    RewindWizard,
     LoadConversation,
     LockQuote,
     AcceptContract,
@@ -87,6 +103,7 @@ const LlmClientClass = await selectLLMClass();
     EnsureSampleQuote,
     PolishJobDetails,
     GenerateJobOptions,
+    SuggestPrices,
     ProfessionalizeBullet,
     { token: LLM_CLIENT, useClass: LlmClientClass },
   ],

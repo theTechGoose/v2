@@ -19,7 +19,13 @@ export interface VerifyOtpInput {
 export type VerifyOtpError = "invalid_code" | "expired" | "rate_limited";
 
 export type VerifyOtpResult =
-  | { ok: true; sessionId: string; userId: string; isNewUser: boolean; redirectTo: string }
+  | {
+    ok: true;
+    sessionId: string;
+    userId: string;
+    isNewUser: boolean;
+    redirectTo: string;
+  }
   | { ok: false; error: VerifyOtpError };
 
 export interface ResendOtpInput {
@@ -27,32 +33,56 @@ export interface ResendOtpInput {
   language?: Lang;
 }
 
-const KNOWN_ERRORS: ReadonlySet<string> = new Set(["invalid_code", "expired", "rate_limited"]);
+const KNOWN_ERRORS: ReadonlySet<string> = new Set([
+  "invalid_code",
+  "expired",
+  "rate_limited",
+]);
 
 function asError(raw: unknown): VerifyOtpError {
-  const body = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const body = raw && typeof raw === "object"
+    ? raw as Record<string, unknown>
+    : {};
   const code = typeof body.error === "string" ? body.error : "";
   return KNOWN_ERRORS.has(code) ? code as VerifyOtpError : "invalid_code";
 }
 
 export const verifyClient = {
-  async verifyOtp(input: VerifyOtpInput, opts: ApiOptions = {}): Promise<VerifyOtpResult> {
+  async verifyOtp(
+    input: VerifyOtpInput,
+    opts: ApiOptions = {},
+  ): Promise<VerifyOtpResult> {
     try {
-      const raw = await api.post<{ sessionId?: string; userId?: string; isNewUser?: boolean }>("/auth/verify-otp", input, opts);
+      const raw = await api.post<
+        { sessionId?: string; userId?: string; isNewUser?: boolean }
+      >("/auth/verify-otp", input, opts);
       if (typeof raw.sessionId === "string" && typeof raw.userId === "string") {
         const isNewUser = raw.isNewUser === true;
-        const redirectTo = isNewUser ? "/assistant?onboard=1" : "/dashboard?welcome=back";
-        return { ok: true, sessionId: raw.sessionId, userId: raw.userId, isNewUser, redirectTo };
+        const redirectTo = isNewUser
+          ? "/assistant?onboard=1"
+          : "/dashboard?welcome=back";
+        return {
+          ok: true,
+          sessionId: raw.sessionId,
+          userId: raw.userId,
+          isNewUser,
+          redirectTo,
+        };
       }
       return { ok: false, error: "invalid_code" };
     } catch (err) {
-      if (err instanceof ApiError) return { ok: false, error: asError(err.body) };
+      if (err instanceof ApiError) {
+        return { ok: false, error: asError(err.body) };
+      }
       throw err;
     }
   },
 
   /** POST /api/auth/send-otp — resend the OTP code. */
-  resendOtp(input: ResendOtpInput, opts: ApiOptions = {}): Promise<{ sent: true }> {
+  resendOtp(
+    input: ResendOtpInput,
+    opts: ApiOptions = {},
+  ): Promise<{ sent: true }> {
     return api.post<{ sent: true }>("/auth/send-otp", input, opts);
   },
 };

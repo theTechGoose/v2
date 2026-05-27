@@ -108,7 +108,7 @@ export class HandleWizardAnswer {
     const newMessages: AgentMessage[] = [userPick];
     const progress = computeProgress(CONTRACT_TERMS_WIZARD_V1, next);
 
-    let convPatch: Partial<AgentConversation> = { preview: `${stepDef.label}: ${pickValue}` };
+    const convPatch: Partial<AgentConversation> = { preview: `${stepDef.label}: ${pickValue}` };
     if (input.stepId === "customer" && boundCustomerId && boundCustomerId !== conv.customerId) {
       convPatch.customerId = boundCustomerId;
     }

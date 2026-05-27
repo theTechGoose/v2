@@ -12,16 +12,19 @@
 
 type BackendFetch = (req: Request) => Response | Promise<Response>;
 
-const BACKEND_URL = (typeof Deno !== "undefined"
-  ? Deno.env.get("BACKEND_URL")
-  : undefined) ?? "http://localhost:3000";
+const BACKEND_URL =
+  (typeof Deno !== "undefined" ? Deno.env.get("BACKEND_URL") : undefined) ??
+    "http://localhost:3000";
 
 function getInProcess(): BackendFetch | undefined {
   return (globalThis as { __backendFetch?: BackendFetch }).__backendFetch;
 }
 
 /** GET a backend path on the SSR side. `path` must start with `/`. */
-export async function ssrBackendGet<T = unknown>(path: string, headers: Record<string, string> = {}): Promise<{
+export async function ssrBackendGet<T = unknown>(
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<{
   ok: boolean;
   status: number;
   data?: T;
@@ -32,9 +35,17 @@ export async function ssrBackendGet<T = unknown>(path: string, headers: Record<s
 
   let res: Response;
   if (inProcess) {
-    res = await inProcess(new Request(`http://internal${path}`, { method: "GET", headers: reqHeaders }));
+    res = await inProcess(
+      new Request(`http://internal${path}`, {
+        method: "GET",
+        headers: reqHeaders,
+      }),
+    );
   } else {
-    res = await fetch(`${BACKEND_URL}${path}`, { method: "GET", headers: reqHeaders });
+    res = await fetch(`${BACKEND_URL}${path}`, {
+      method: "GET",
+      headers: reqHeaders,
+    });
   }
 
   if (!res.ok) {
@@ -46,11 +57,13 @@ export async function ssrBackendGet<T = unknown>(path: string, headers: Record<s
 
 /** Same shape as ssrBackendGet but for authed endpoints — forwards the
  *  caller's session via the `x-session-id` header that requireUser() reads. */
-export async function ssrBackendGetAuthed<T = unknown>(
+export function ssrBackendGetAuthed<T = unknown>(
   path: string,
   sessionId: string | undefined,
   headers: Record<string, string> = {},
 ): Promise<{ ok: boolean; status: number; data?: T; errorText?: string }> {
-  const merged = sessionId ? { ...headers, "x-session-id": sessionId } : headers;
+  const merged = sessionId
+    ? { ...headers, "x-session-id": sessionId }
+    : headers;
   return ssrBackendGet<T>(path, merged);
 }

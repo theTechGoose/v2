@@ -2,17 +2,29 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { langSignal } from "../lib/lang.ts";
 
 const SCRIPT_EN: { from: "in" | "out"; text: string }[] = [
-  { from: "in",  text: "Hey Bossie — kitchen remodel for the Riveras. Got pics." },
+  {
+    from: "in",
+    text: "Hey Bossie — kitchen remodel for the Riveras. Got pics.",
+  },
   { from: "out", text: "Got 'em. Want me to draft a quote at $14,200?" },
-  { from: "in",  text: "Yeah send it." },
-  { from: "out", text: "Sent. They opened it. I'll nudge if no reply by Friday." },
+  { from: "in", text: "Yeah send it." },
+  {
+    from: "out",
+    text: "Sent. They opened it. I'll nudge if no reply by Friday.",
+  },
 ];
 
 const SCRIPT_ES: { from: "in" | "out"; text: string }[] = [
-  { from: "in",  text: "Bossie — remodelación de cocina para los Rivera. Tengo fotos." },
+  {
+    from: "in",
+    text: "Bossie — remodelación de cocina para los Rivera. Tengo fotos.",
+  },
   { from: "out", text: "Listo. ¿Cotización a $14,200?" },
-  { from: "in",  text: "Sí, mándalo." },
-  { from: "out", text: "Enviado. Ya lo abrieron. Si no contestan el viernes, los empujo." },
+  { from: "in", text: "Sí, mándalo." },
+  {
+    from: "out",
+    text: "Enviado. Ya lo abrieron. Si no contestan el viernes, los empujo.",
+  },
 ];
 
 export default function DemoPhoneChat() {
@@ -38,7 +50,10 @@ export default function DemoPhoneChat() {
       }
     }, { threshold: 0.4 });
     io.observe(ref.current);
-    return () => { io.disconnect(); unsub(); };
+    return () => {
+      io.disconnect();
+      unsub();
+    };
   }, []);
 
   const script = langSignal.value === "es" ? SCRIPT_ES : SCRIPT_EN;

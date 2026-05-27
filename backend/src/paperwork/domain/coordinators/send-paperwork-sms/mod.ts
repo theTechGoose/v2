@@ -57,7 +57,10 @@ export class SendPaperworkSms {
     private shortlinks: ShortLinkStore,
   ) {}
 
-  async run(userId: string, input: SendPaperworkSmsInput): Promise<SendPaperworkSmsResult> {
+  async run(
+    userId: string,
+    input: SendPaperworkSmsInput,
+  ): Promise<SendPaperworkSmsResult> {
     const sender = await this.tryGetUser(userId);
     const senderBiz = await this.tryGetBusinessIdentity(userId);
 
@@ -71,9 +74,10 @@ export class SendPaperworkSms {
       const boundContract = await this.findContractForQuote(userId, quote.id);
       // Prefer linking customers straight to the contract page when one
       // exists — same behavior as the email renderer.
-      const linkResource: { kind: "quote" | "contract"; id: string } = boundContract
-        ? { kind: "contract", id: boundContract.id }
-        : { kind: "quote", id: quote.id };
+      const linkResource: { kind: "quote" | "contract"; id: string } =
+        boundContract
+          ? { kind: "contract", id: boundContract.id }
+          : { kind: "quote", id: quote.id };
       const shortUrl = await this.mintShortUrl(userId, linkResource);
       body = renderQuoteBody(quote, customer, sender, senderBiz, shortUrl);
     } else if (input.kind === "contract") {
@@ -82,54 +86,96 @@ export class SendPaperworkSms {
       if (!recipient) recipient = customer?.phoneNumber ?? undefined;
       let quoteForBody: Quote | undefined;
       if (contract.quoteId) {
-        try { quoteForBody = await this.quotes.getOwned(contract.quoteId, userId); }
-        catch { /* fall through */ }
+        try {
+          quoteForBody = await this.quotes.getOwned(contract.quoteId, userId);
+        } catch { /* fall through */ }
       }
-      const shortUrl = await this.mintShortUrl(userId, { kind: "contract", id: contract.id });
-      body = renderContractBody(contract, quoteForBody, customer, sender, senderBiz, shortUrl);
+      const shortUrl = await this.mintShortUrl(userId, {
+        kind: "contract",
+        id: contract.id,
+      });
+      body = renderContractBody(
+        contract,
+        quoteForBody,
+        customer,
+        sender,
+        senderBiz,
+        shortUrl,
+      );
     } else {
       const invoice = await this.invoices.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
       if (!recipient) recipient = customer?.phoneNumber ?? undefined;
-      const shortUrl = await this.mintShortUrl(userId, { kind: "invoice", id: invoice.id });
+      const shortUrl = await this.mintShortUrl(userId, {
+        kind: "invoice",
+        id: invoice.id,
+      });
       body = renderInvoiceBody(invoice, customer, sender, shortUrl);
     }
 
     if (!recipient) {
-      return { ok: false, reason: "no recipient: pass `to` or attach a customer with a phone number", to: "" };
+      return {
+        ok: false,
+        reason:
+          "no recipient: pass `to` or attach a customer with a phone number",
+        to: "",
+      };
     }
 
     const e164 = normalizeE164(recipient);
     if (!e164) {
-      return { ok: false, reason: `invalid phone: ${recipient}`, to: recipient };
+      return {
+        ok: false,
+        reason: `invalid phone: ${recipient}`,
+        to: recipient,
+      };
     }
 
     const result = await this.sms.send({ to: e164, body });
     return { ...result, to: e164 };
   }
 
-  private async tryGetCustomer(userId: string, customerId: string | undefined): Promise<Customer | undefined> {
+  private async tryGetCustomer(
+    userId: string,
+    customerId: string | undefined,
+  ): Promise<Customer | undefined> {
     if (!customerId) return undefined;
-    try { return await this.customers.getOwned(customerId, userId); }
-    catch { return undefined; }
+    try {
+      return await this.customers.getOwned(customerId, userId);
+    } catch {
+      return undefined;
+    }
   }
 
   private async tryGetUser(userId: string): Promise<User | undefined> {
-    try { return await this.users.get(userId); }
-    catch { return undefined; }
+    try {
+      return await this.users.get(userId);
+    } catch {
+      return undefined;
+    }
   }
 
-  private async tryGetBusinessIdentity(userId: string): Promise<BusinessIdentity | undefined> {
-    try { return await this.identity.get(userId) ?? undefined; }
-    catch { return undefined; }
+  private async tryGetBusinessIdentity(
+    userId: string,
+  ): Promise<BusinessIdentity | undefined> {
+    try {
+      return await this.identity.get(userId) ?? undefined;
+    } catch {
+      return undefined;
+    }
   }
 
-  private async findContractForQuote(userId: string, quoteId: string): Promise<Contract | undefined> {
+  private async findContractForQuote(
+    userId: string,
+    quoteId: string,
+  ): Promise<Contract | undefined> {
     try {
       const all = await this.contracts.listByUser(userId);
       return all
         .filter((c) => c.quoteId === quoteId)
-        .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))[0];
+        .sort((a, b) =>
+          (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
+        )[0];
     } catch {
       return undefined;
     }
@@ -138,13 +184,23 @@ export class SendPaperworkSms {
   /** Mint (or reuse) a short code for the resource and return the
    *  customer-facing /s/<code> URL. Falls back to the canonical
    *  long URL if the codegen path throws for any reason. */
-  private async mintShortUrl(userId: string, r: { kind: "quote" | "contract" | "invoice"; id: string }): Promise<string> {
+  private async mintShortUrl(
+    userId: string,
+    r: { kind: "quote" | "contract" | "invoice"; id: string },
+  ): Promise<string> {
     try {
       const link = await this.shortlinks.findOrCreate(userId, r.kind, r.id);
       return `${APP_URL}/s/${link.code}`;
     } catch (err) {
-      console.error("[send-paperwork-sms] shortlink mint failed; falling back to long URL:", err);
-      const path = r.kind === "quote" ? `/q/${r.id}` : r.kind === "contract" ? `/c/${r.id}` : `/i/${r.id}`;
+      console.error(
+        "[send-paperwork-sms] shortlink mint failed; falling back to long URL:",
+        err,
+      );
+      const path = r.kind === "quote"
+        ? `/q/${r.id}`
+        : r.kind === "contract"
+        ? `/c/${r.id}`
+        : `/i/${r.id}`;
       return `${APP_URL}${path}`;
     }
   }
@@ -159,8 +215,8 @@ export class SendPaperworkSms {
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
   if (explicit) return explicit;
-  const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod"
-    || !!Deno.env.get("DENO_DEPLOYMENT_ID");
+  const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod" ||
+    !!Deno.env.get("DENO_DEPLOYMENT_ID");
   return isProd ? "https://paperworkmonster.com" : "http://localhost:5280";
 })();
 
@@ -176,7 +232,12 @@ function customerFirst(c: Customer | undefined): string | undefined {
 
 function fmtUSD(cents: number | undefined): string {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "—";
-  return `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  return `$${
+    (cents / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    })
+  }`;
 }
 
 /** Roadmap p.8 template:
@@ -200,10 +261,18 @@ function renderQuoteBody(
   const hi = customerFirst(c);
   const who = senderFirst(sender);
   const biz = businessName(senderBiz);
-  const jobName = (q.jobName?.trim()
-    || q.summary?.replace(/^\s*quote\s*:\s*/i, "").trim()
-    || "your project");
-  return composeSmsBody({ hi, who, biz, jobName, url, kind: "quote" });
+  const jobName = q.jobName?.trim() ||
+    q.summary?.replace(/^\s*quote\s*:\s*/i, "").trim() ||
+    "your project";
+  return composeSmsBody({
+    hi,
+    who,
+    biz,
+    jobName,
+    url,
+    kind: "quote",
+    lang: senderBiz?.commsLanguage === "es" ? "es" : "en",
+  });
 }
 
 function renderContractBody(
@@ -217,10 +286,18 @@ function renderContractBody(
   const hi = customerFirst(cust);
   const who = senderFirst(sender);
   const biz = businessName(senderBiz);
-  const jobName = (q?.jobName?.trim()
-    || q?.summary?.replace(/^\s*quote\s*:\s*/i, "").trim()
-    || "your project");
-  return composeSmsBody({ hi, who, biz, jobName, url, kind: "contract" });
+  const jobName = q?.jobName?.trim() ||
+    q?.summary?.replace(/^\s*quote\s*:\s*/i, "").trim() ||
+    "your project";
+  return composeSmsBody({
+    hi,
+    who,
+    biz,
+    jobName,
+    url,
+    kind: "contract",
+    lang: senderBiz?.commsLanguage === "es" ? "es" : "en",
+  });
 }
 
 function composeSmsBody(p: {
@@ -230,23 +307,49 @@ function composeSmsBody(p: {
   jobName: string;
   url: string;
   kind: "quote" | "contract";
+  /** Roadmap p.13: neutral LatAm Spanish when the contractor's language is es. */
+  lang?: "en" | "es";
 }): string {
-  const intro = p.hi
-    ? p.who && p.biz
-      ? `Hi ${p.hi}, this is ${p.who} from ${p.biz}.`
+  const es = p.lang === "es";
+  const intro = es
+    ? (p.hi
+      ? p.who && p.biz
+        ? `Hola ${p.hi}, soy ${p.who} de ${p.biz}.`
+        : p.who
+        ? `Hola ${p.hi}, soy ${p.who}.`
+        : `Hola ${p.hi}.`
+      : p.who && p.biz
+      ? `Soy ${p.who} de ${p.biz}.`
       : p.who
-      ? `Hi ${p.hi}, this is ${p.who}.`
-      : `Hi ${p.hi}.`
-    : p.who && p.biz
-    ? `This is ${p.who} from ${p.biz}.`
-    : p.who
-    ? `This is ${p.who}.`
-    : null;
-  const noun = p.kind === "quote" ? "quote" : "agreement";
+      ? `Soy ${p.who}.`
+      : null)
+    : (p.hi
+      ? p.who && p.biz
+        ? `Hi ${p.hi}, this is ${p.who} from ${p.biz}.`
+        : p.who
+        ? `Hi ${p.hi}, this is ${p.who}.`
+        : `Hi ${p.hi}.`
+      : p.who && p.biz
+      ? `This is ${p.who} from ${p.biz}.`
+      : p.who
+      ? `This is ${p.who}.`
+      : null);
+  // Roadmap p.9: brand the deliverable as "Quote + Agreement" for both kinds.
   const lines: string[] = [];
   if (intro) lines.push(intro);
-  lines.push(`Your ${noun} for ${p.jobName} is ready: ${p.url}`);
-  lines.push("Please let me know if you have any questions. I look forward to working with you!");
+  if (es) {
+    lines.push(
+      `Tu Cotización + Acuerdo para ${p.jobName} está lista: ${p.url}`,
+    );
+    lines.push(
+      "Avísame si tienes alguna pregunta. ¡Espero poder trabajar contigo!",
+    );
+  } else {
+    lines.push(`Your Quote + Agreement for ${p.jobName} is ready: ${p.url}`);
+    lines.push(
+      "Please let me know if you have any questions. I look forward to working with you!",
+    );
+  }
   return lines.join("\n\n");
 }
 
@@ -255,12 +358,19 @@ function businessName(b: BusinessIdentity | undefined): string | undefined {
   return name || undefined;
 }
 
-function renderInvoiceBody(i: Invoice, cust: Customer | undefined, sender: User | undefined, url: string): string {
+function renderInvoiceBody(
+  i: Invoice,
+  cust: Customer | undefined,
+  sender: User | undefined,
+  url: string,
+): string {
   const hi = customerFirst(cust);
   const who = senderFirst(sender);
   const lead = hi ? `Hi ${hi}, ` : "";
   const tail = who ? ` — ${who}` : "";
-  return `${lead}your invoice is ready (${fmtUSD(i.amount)}). View & pay: ${url}${tail}`;
+  return `${lead}your invoice is ready (${
+    fmtUSD(i.amount)
+  }). View & pay: ${url}${tail}`;
 }
 
 // ---------- phone normalization --------------------------------------------

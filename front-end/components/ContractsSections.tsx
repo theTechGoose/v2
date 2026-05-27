@@ -25,14 +25,16 @@ export function ContractsHero({
   startingSoonCount,
   pendingDeposits,
 }: HeroProps) {
-  const allZero = inFlightCount === 0 && pendingDeposits === 0 && startingSoonCount === 0;
+  const allZero = inFlightCount === 0 && pendingDeposits === 0 &&
+    startingSoonCount === 0;
   return (
     <section class="kph">
       <div class="kph__inner">
         <div>
           <div class="kph__eyebrow">
             <span class="kph__eyebrow-dot" />
-            Work in flight · {contractCount} {contractCount === 1 ? "contract" : "contracts"}
+            Work in flight · {contractCount}{" "}
+            {contractCount === 1 ? "contract" : "contracts"}
           </div>
           <h1 class="kph__title">
             <em>{fmtMoney(totalValue)}</em> of work<br />
@@ -40,23 +42,40 @@ export function ContractsHero({
           </h1>
           <p class="kph__sub">
             {allZero
-              ? <>Nothing in flight yet — when contracts get signed they'll show up here, with the next milestone watched.</>
+              ? (
+                <>
+                  Nothing in flight yet — when contracts get signed they'll show
+                  up here, with the next milestone watched.
+                </>
+              )
               : (
                 <>
-                  {inFlightCount} {inFlightCount === 1 ? "job" : "jobs"} running today ·{" "}
-                  <strong>{fmtMoney(pendingDeposits)} in deposits</strong> still to bill ·{" "}
-                  {startingSoonCount} starting next week. The monsters are watching the next
+                  {inFlightCount} {inFlightCount === 1 ? "job" : "jobs"}{" "}
+                  running today ·{" "}
+                  <strong>{fmtMoney(pendingDeposits)} in deposits</strong>{" "}
+                  still to bill · {startingSoonCount}{" "}
+                  starting next week. The monsters are watching the next
                   milestone on every one of them.
                 </>
               )}
           </p>
           {!allZero && (
-            <p class="kph__sub" style="margin-top:6px;font-size:12.5px;opacity:0.75">
+            <p
+              class="kph__sub"
+              style="margin-top:6px;font-size:12.5px;opacity:0.75"
+            >
               Active value · {fmtMoney(inFlightValue)}
             </p>
           )}
         </div>
-        <a class="kph__cta" href={`/assistant?seed=${encodeURIComponent("Schedule a job — I want to turn an accepted quote into a contract.")}`}>
+        <a
+          class="kph__cta"
+          href={`/assistant?seed=${
+            encodeURIComponent(
+              "Schedule a job — I want to turn an accepted quote into a contract.",
+            )
+          }`}
+        >
           <I d={ICN.plus} size={14} sw={2.5} /> Schedule a job
         </a>
       </div>
@@ -99,7 +118,9 @@ export function ContractsKpis({
         <div class="kkpi__num">
           {startingSoonCount} {startingSoonCount === 1 ? "job" : "jobs"}
         </div>
-        <div class="kkpi__sub">{fmtMoney(startingSoonValue)} · next 14 days</div>
+        <div class="kkpi__sub">
+          {fmtMoney(startingSoonValue)} · next 14 days
+        </div>
       </div>
       <div class="kkpi__card">
         <div class="kkpi__lbl">Wrapping up</div>
@@ -124,11 +145,11 @@ interface StripProps {
 }
 
 const RANGE_FROM = 1;
-const RANGE_TO   = 30;
+const RANGE_TO = 30;
 const TODAY_INDEX = 8;
 const WEEKS = [
-  { label: "WEEK 1", from: 1,  to: 7  },
-  { label: "WEEK 2", from: 8,  to: 14 },
+  { label: "WEEK 1", from: 1, to: 7 },
+  { label: "WEEK 2", from: 8, to: 14 },
   { label: "WEEK 3", from: 15, to: 21 },
   { label: "WEEK 4", from: 22, to: 28 },
   { label: "WEEK 5", from: 29, to: 30 },
@@ -142,7 +163,9 @@ interface PackedBar {
   lane: number;
 }
 
-function packLanes(cards: ContractCard[]): { laneCount: number; placed: PackedBar[] } {
+function packLanes(
+  cards: ContractCard[],
+): { laneCount: number; placed: PackedBar[] } {
   const sorted = [...cards].sort((a, b) => a.scheduleStart - b.scheduleStart);
   const laneEnds: number[] = [];
   const placed: PackedBar[] = [];
@@ -167,7 +190,12 @@ function packLanes(cards: ContractCard[]): { laneCount: number; placed: PackedBa
 function pos(d: number, from: number, to: number): string {
   return `${((d - from) / (to - from + 1)) * 100}%`;
 }
-function widthPct(start: number, end: number, from: number, to: number): string {
+function widthPct(
+  start: number,
+  end: number,
+  from: number,
+  to: number,
+): string {
   return `${((end - start + 1) / (to - from + 1)) * 100}%`;
 }
 
@@ -176,7 +204,8 @@ export function ScheduleStrip({ cards }: StripProps) {
     c.scheduleEnd >= RANGE_FROM && c.scheduleStart <= RANGE_TO
   );
   const { laneCount, placed } = packLanes(visible);
-  const rowH = Math.max(1, laneCount) * LANE_H + Math.max(0, laneCount - 1) * LANE_GAP + 6;
+  const rowH = Math.max(1, laneCount) * LANE_H +
+    Math.max(0, laneCount - 1) * LANE_GAP + 6;
   const lanesH = `${rowH}px`;
 
   return (
@@ -184,11 +213,21 @@ export function ScheduleStrip({ cards }: StripProps) {
       <div class="csched__head">
         <div>
           <div class="csched__eyebrow">The next 30 days</div>
-          <div class="csched__title">Everything you've committed to, on one strip.</div>
+          <div class="csched__title">
+            Everything you've committed to, on one strip.
+          </div>
         </div>
         <div class="csched__legend">
-          <span><span class="csched__legend-dot" style="background:#FF6B6B" />In progress</span>
-          <span><span class="csched__legend-dot" style="background:rgba(255,255,255,0.3);border:1px dashed rgba(255,255,255,0.6)" />Scheduled</span>
+          <span>
+            <span class="csched__legend-dot" style="background:#FF6B6B" />In
+            progress
+          </span>
+          <span>
+            <span
+              class="csched__legend-dot"
+              style="background:rgba(255,255,255,0.3);border:1px dashed rgba(255,255,255,0.6)"
+            />Scheduled
+          </span>
         </div>
       </div>
       <div class="csched__grid">
@@ -202,14 +241,16 @@ export function ScheduleStrip({ cards }: StripProps) {
               <div class="csched__weeklbl">{w.label}</div>
               <div class="csched__weekbar" style={`--lanes-h:${lanesH}`}>
                 {showToday && (
-                  <div class="csched__today" style={`left:${pos(TODAY_INDEX + 0.5, w.from, w.to)}`} />
+                  <div
+                    class="csched__today"
+                    style={`left:${pos(TODAY_INDEX + 0.5, w.from, w.to)}`}
+                  />
                 )}
                 {bars.map(({ card, lane }) => {
                   const s = Math.max(card.scheduleStart, w.from);
-                  const e = Math.min(card.scheduleEnd,   w.to);
+                  const e = Math.min(card.scheduleEnd, w.to);
                   const top = 3 + lane * (LANE_H + LANE_GAP);
-                  const style =
-                    `--bar-from:${card.scheduleColor[0]};` +
+                  const style = `--bar-from:${card.scheduleColor[0]};` +
                     `--bar-to:${card.scheduleColor[1]};` +
                     `left:${pos(s, w.from, w.to)};` +
                     `width:${widthPct(s, e, w.from, w.to)};` +
@@ -217,7 +258,9 @@ export function ScheduleStrip({ cards }: StripProps) {
                   return (
                     <div
                       key={card.id}
-                      class={`csched__bar ${card.scheduleScheduled ? "csched__bar--scheduled" : ""}`}
+                      class={`csched__bar ${
+                        card.scheduleScheduled ? "csched__bar--scheduled" : ""
+                      }`}
                       style={style}
                       title={`${card.client} — ${card.when}`}
                     >
@@ -231,7 +274,8 @@ export function ScheduleStrip({ cards }: StripProps) {
         })}
         {placed.length === 0 && (
           <div class="csched__empty">
-            Nothing on the calendar yet. Sign a contract from the assistant and it'll show up here.
+            Nothing on the calendar yet. Sign a contract from the assistant and
+            it'll show up here.
           </div>
         )}
       </div>

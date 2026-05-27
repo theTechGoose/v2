@@ -57,12 +57,16 @@ export default define.page(function Dashboard(ctx) {
           </div>
         </main>
       </div>
-      {/* One-shot coachmark — self-gates on localStorage so SSR is
+      {
+        /* One-shot coachmark — self-gates on localStorage so SSR is
           unaffected and the overlay only appears on a user's first
-          visit after onboarding. */}
+          visit after onboarding. */
+      }
       <AssistantCoachmark />
-      {/* Welcome-back pill — self-gates on ?welcome=back; renders
-          nothing for fresh users or already-on-page navigation. */}
+      {
+        /* Welcome-back pill — self-gates on ?welcome=back; renders
+          nothing for fresh users or already-on-page navigation. */
+      }
       <WelcomeBackToast />
     </>
   );

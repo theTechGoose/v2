@@ -1,5 +1,5 @@
 import OpenAI from "#openai";
-import { encodeBase64 } from "jsr:@std/encoding/base64";
+import { encodeBase64 } from "#std/encoding/base64";
 import type { LLMClient, LLMRequest, LLMResponse } from "@agents/domain/business/llm/base/mod.ts";
 import { TOOL_DEFS, parseToolCall } from "@agents/domain/business/openai-tools/mod.ts";
 

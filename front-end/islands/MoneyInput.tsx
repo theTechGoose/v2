@@ -132,7 +132,7 @@ export default function MoneyInput(
     const card = cardRef.current;
     if (!card) return;
     const r = card.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width - 0.5;  // -0.5 .. 0.5
+    const x = (e.clientX - r.left) / r.width - 0.5; // -0.5 .. 0.5
     const y = (e.clientY - r.top) / r.height - 0.5;
     card.style.setProperty("--tilt-x", String(-y * 3));
     card.style.setProperty("--tilt-y", String(x * 3));
@@ -159,11 +159,12 @@ export default function MoneyInput(
   // available stage width to get a per-char budget. Clamped 32..88px so
   // tiny numbers stay hero and 11-digit numbers ($99,999,999.99) still
   // clear with a safe gutter.
-  const intDigitCount = ((display.split(".")[0]) || "0").replace(/[^\d]/g, "").length;
-  const totalChars = intDigitCount
-    + Math.max(0, Math.floor((intDigitCount - 1) / 3)) // commas
-    + 3   // ".00"
-    + 2;  // safety gutter
+  const intDigitCount =
+    ((display.split(".")[0]) || "0").replace(/[^\d]/g, "").length;
+  const totalChars = intDigitCount +
+    Math.max(0, Math.floor((intDigitCount - 1) / 3)) + // commas
+    3 + // ".00"
+    2; // safety gutter
   const PX_PER_CH = 0.58;
   const heroSize = Math.max(
     32,
@@ -171,9 +172,10 @@ export default function MoneyInput(
   );
 
   // Magnitude bar fill: log-scaled so $50 reads, $5k still has headroom
-  const magnitude = (cents ?? 0) === 0
-    ? 0
-    : Math.min(1, Math.log10(1 + (cents ?? 0)) / Math.log10(1 + MAGNITUDE_REF_CENTS));
+  const magnitude = (cents ?? 0) === 0 ? 0 : Math.min(
+    1,
+    Math.log10(1 + (cents ?? 0)) / Math.log10(1 + MAGNITUDE_REF_CENTS),
+  );
 
   // Split display into integer / decimal halves so the cents render smaller
   const dotIdx = display.indexOf(".");
@@ -182,10 +184,16 @@ export default function MoneyInput(
 
   return (
     <>
-      <style dangerouslySetInnerHTML={{ __html: STYLES }} />
+      <style
+        // Static component stylesheet (no user input).
+        // deno-lint-ignore react-no-danger
+        dangerouslySetInnerHTML={{ __html: STYLES }}
+      />
       <div
         ref={cardRef}
-        class={`mi ${focused ? "is-focused" : ""} ${hasValue ? "has-value" : ""} ${ready ? "is-ready" : ""}`}
+        class={`mi ${focused ? "is-focused" : ""} ${
+          hasValue ? "has-value" : ""
+        } ${ready ? "is-ready" : ""}`}
         style={`--mi-hero:${heroSize}px`}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
@@ -199,7 +207,11 @@ export default function MoneyInput(
         <div class="mi__stage">
           <span class="mi__glyph" aria-hidden="true">$</span>
           <div class="mi__amount">
-            <Odometer text={intStr || "0"} className="mi__int" empty={!hasValue} />
+            <Odometer
+              text={intStr || "0"}
+              className="mi__int"
+              empty={!hasValue}
+            />
             <Odometer
               text={decStr || "00"}
               className="mi__dec"
@@ -225,17 +237,28 @@ export default function MoneyInput(
             type="button"
             class="mi__clear"
             aria-label="Clear amount"
-            onClick={(e) => { e.stopPropagation(); clear(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              clear();
+            }}
             tabIndex={hasValue ? 0 : -1}
           >
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-              <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+              <path
+                d="M3 3l10 10M13 3L3 13"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+              />
             </svg>
           </button>
         </div>
 
         <div class="mi__bar" aria-hidden="true">
-          <div class="mi__bar-fill" style={`width:${(magnitude * 100).toFixed(2)}%`} />
+          <div
+            class="mi__bar-fill"
+            style={`width:${(magnitude * 100).toFixed(2)}%`}
+          />
         </div>
 
         <div class="mi__words" key={`w-${cents ?? 0}`}>
@@ -250,7 +273,10 @@ export default function MoneyInput(
               key={`chip-${c}`}
               type="button"
               class={`mi__chip ${cents === c ? "is-active" : ""}`}
-              onClick={(e) => { e.stopPropagation(); setValue(c); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setValue(c);
+              }}
             >
               ${shortMoney(c)}
             </button>
@@ -273,9 +299,7 @@ function Odometer(
 ) {
   return (
     <span class={`odo ${className ?? ""} ${empty ? "is-empty" : ""}`}>
-      {Array.from(text).map((ch, i) => (
-        <OdoCell key={`${i}-${ch}`} ch={ch} />
-      ))}
+      {Array.from(text).map((ch, i) => <OdoCell key={`${i}-${ch}`} ch={ch} />)}
     </span>
   );
 }
@@ -289,14 +313,23 @@ function OdoCell({ ch }: { ch: string }) {
           class="odo__col"
           style={`transform: translateY(${-n * 10}%)`}
         >
-          {Array.from({ length: 10 }, (_, i) => (
-            <span key={`d-${i}`} class="odo__digit">{i}</span>
-          ))}
+          {Array.from(
+            { length: 10 },
+            (_, i) => <span key={`d-${i}`} class="odo__digit">{i}</span>,
+          )}
         </span>
       </span>
     );
   }
-  return <span class={`odo__static odo__static--${ch === "," ? "comma" : ch === "." ? "dot" : "other"}`}>{ch}</span>;
+  return (
+    <span
+      class={`odo__static odo__static--${
+        ch === "," ? "comma" : ch === "." ? "dot" : "other"
+      }`}
+    >
+      {ch}
+    </span>
+  );
 }
 
 /* --------------------------------------------------------------------- */
@@ -354,12 +387,38 @@ function centsToWords(cents: number): string {
   return `${dStr} ${dLabel} and ${cStr} ${cLabel}`;
 }
 const ONES = [
-  "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
-  "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
-  "seventeen", "eighteen", "nineteen",
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+  "sixteen",
+  "seventeen",
+  "eighteen",
+  "nineteen",
 ];
 const TENS = [
-  "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
+  "",
+  "",
+  "twenty",
+  "thirty",
+  "forty",
+  "fifty",
+  "sixty",
+  "seventy",
+  "eighty",
+  "ninety",
 ];
 function numToWords(n: number): string {
   if (n < 0 || !Number.isFinite(n)) return "";
@@ -372,7 +431,9 @@ function numToWords(n: number): string {
   if (n < 1000) {
     const h = Math.floor(n / 100);
     const r = n % 100;
-    return r === 0 ? `${ONES[h]} hundred` : `${ONES[h]} hundred ${numToWords(r)}`;
+    return r === 0
+      ? `${ONES[h]} hundred`
+      : `${ONES[h]} hundred ${numToWords(r)}`;
   }
   if (n < 1_000_000) {
     const k = Math.floor(n / 1000);

@@ -26,8 +26,12 @@ export default function SetupChecklist() {
 
   useEffect(() => {
     let alive = true;
-    profileClient.get().then((p) => { if (alive) setSnap(p); }).catch(() => {});
-    return () => { alive = false; };
+    profileClient.get().then((p) => {
+      if (alive) setSnap(p);
+    }).catch(() => {});
+    return () => {
+      alive = false;
+    };
   }, []);
 
   if (!snap || dismissed) return null;
@@ -40,18 +44,55 @@ export default function SetupChecklist() {
     : false;
 
   const items: Item[] = [
-    { key: "name",    label: "Your name",                 done: !!snap.user.name?.trim(),                    href: "/settings" },
-    { key: "biz",     label: "Business name",             done: !!id?.businessName?.trim(),                   href: "/settings" },
-    { key: "email",   label: "Email for notifications",   done: !!snap.user.email?.trim(),                    href: "/settings" },
-    { key: "logo",    label: "Upload your logo",          done: !!id?.logoFileId,                             href: "/settings" },
-    { key: "address", label: "Mailing address",           done: !!(snap.address?.postal?.trim() || snap.address?.street?.trim()), href: "/settings" },
-    { key: "payment", label: "How you accept payment",    done: acceptedAny,                                  href: "/settings" },
-    { key: "insurance", label: "Insurance (optional but helps)", done: !!snap.insurance?.provider?.trim(),    href: "/settings" },
+    {
+      key: "name",
+      label: "Your name",
+      done: !!snap.user.name?.trim(),
+      href: "/settings",
+    },
+    {
+      key: "biz",
+      label: "Business name",
+      done: !!id?.businessName?.trim(),
+      href: "/settings",
+    },
+    {
+      key: "email",
+      label: "Email for notifications",
+      done: !!snap.user.email?.trim(),
+      href: "/settings",
+    },
+    {
+      key: "logo",
+      label: "Upload your logo",
+      done: !!id?.logoFileId,
+      href: "/settings",
+    },
+    {
+      key: "address",
+      label: "Mailing address",
+      done: !!(snap.address?.postal?.trim() || snap.address?.street?.trim()),
+      href: "/settings",
+    },
+    {
+      key: "payment",
+      label: "How you accept payment",
+      done: acceptedAny,
+      href: "/settings",
+    },
+    {
+      key: "insurance",
+      label: "Insurance (optional but helps)",
+      done: !!snap.insurance?.provider?.trim(),
+      href: "/settings",
+    },
   ];
   const remaining = items.filter((i) => !i.done);
   if (remaining.length === 0) return null;
 
-  const pct = Math.round(((items.length - remaining.length) / items.length) * 100);
+  const pct = Math.round(
+    ((items.length - remaining.length) / items.length) * 100,
+  );
 
   return (
     <section
@@ -65,7 +106,8 @@ export default function SetupChecklist() {
             Setup checklist
           </div>
           <h3 style="margin:4px 0 0;font-family:var(--font-heading);font-weight:800;font-size:18px;color:var(--brand-teal)">
-            Finish setting up — {remaining.length} {remaining.length === 1 ? "thing" : "things"} left
+            Finish setting up — {remaining.length}{" "}
+            {remaining.length === 1 ? "thing" : "things"} left
           </h3>
         </div>
         <button
@@ -85,20 +127,29 @@ export default function SetupChecklist() {
         aria-valuenow={pct}
         style="height:4px;border-radius:999px;background:rgba(255,107,107,0.15);overflow:hidden;margin-top:10px"
       >
-        <div style={`height:100%;width:${pct}%;background:linear-gradient(90deg,#FF6B6B,#d94e4e);transition:width 480ms`} />
+        <div
+          style={`height:100%;width:${pct}%;background:linear-gradient(90deg,#FF6B6B,#d94e4e);transition:width 480ms`}
+        />
       </div>
       <ul style="margin:12px 0 0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px">
         {items.map((it) => (
-          <li key={it.key} style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;border:1px solid rgba(20,72,82,0.10);background:#fff">
+          <li
+            key={it.key}
+            style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;border:1px solid rgba(20,72,82,0.10);background:#fff"
+          >
             <span
               aria-hidden="true"
-              style={`display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${it.done ? "#519843" : "rgba(20,72,82,0.10)"};color:#fff;font-size:12px;font-weight:800;flex-shrink:0`}
+              style={`display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${
+                it.done ? "#519843" : "rgba(20,72,82,0.10)"
+              };color:#fff;font-size:12px;font-weight:800;flex-shrink:0`}
             >
               {it.done ? "✓" : ""}
             </span>
             <a
               href={it.href}
-              style={`flex:1;font-size:13px;color:${it.done ? "var(--fg-muted)" : "var(--fg)"};text-decoration:none;font-weight:${it.done ? 400 : 600}`}
+              style={`flex:1;font-size:13px;color:${
+                it.done ? "var(--fg-muted)" : "var(--fg)"
+              };text-decoration:none;font-weight:${it.done ? 400 : 600}`}
             >
               {it.label}
             </a>

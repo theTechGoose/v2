@@ -26,7 +26,9 @@ interface SkelBlockProps {
 export function SkelBlock({ h, w, r = 8, mt = 0 }: SkelBlockProps) {
   return (
     <div
-      style={`height:${h}px;width:${w ?? "100%"};border-radius:${r}px;${SHIMMER};margin-top:${mt}px`}
+      style={`height:${h}px;width:${
+        w ?? "100%"
+      };border-radius:${r}px;${SHIMMER};margin-top:${mt}px`}
     />
   );
 }
@@ -47,11 +49,15 @@ export function CardGridSkeleton({ rows = 4 }: { rows?: number }) {
     <div class="grid">
       <div class="panel">
         <SkelBlock h={20} w="40%" />
-        {Array.from({ length: rows }).map((_, i) => <SkelBlock key={i} h={56} mt={i === 0 ? 18 : 12} />)}
+        {Array.from({ length: rows }).map((_, i) => (
+          <SkelBlock key={i} h={56} mt={i === 0 ? 18 : 12} />
+        ))}
       </div>
       <div class="panel">
         <SkelBlock h={20} w="40%" />
-        {Array.from({ length: rows }).map((_, i) => <SkelBlock key={i} h={56} mt={i === 0 ? 18 : 12} />)}
+        {Array.from({ length: rows }).map((_, i) => (
+          <SkelBlock key={i} h={56} mt={i === 0 ? 18 : 12} />
+        ))}
       </div>
     </div>
   );
@@ -62,7 +68,9 @@ export function ListSkeleton({ rows = 5 }: { rows?: number }) {
   return (
     <div class="panel">
       <SkelBlock h={20} w="30%" />
-      {Array.from({ length: rows }).map((_, i) => <SkelBlock key={i} h={64} mt={i === 0 ? 18 : 12} />)}
+      {Array.from({ length: rows }).map((_, i) => (
+        <SkelBlock key={i} h={64} mt={i === 0 ? 18 : 12} />
+      ))}
     </div>
   );
 }

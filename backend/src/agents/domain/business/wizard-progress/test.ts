@@ -4,6 +4,10 @@ import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms
 
 const spec = CONTRACT_TERMS_WIZARD_V1;
 
+// The terms wizard is the current 5-step spec (customer, start_date, wraps,
+// payment_terms, warranty). The earlier 10-step version's extra steps are now
+// baked into the contract templates — see contract-terms-wizard-spec/mod.ts.
+
 Deno.test("freshState: idx 0, no answers, specId pinned", () => {
   const state = freshState(spec);
   assertEquals(state.activeStepIdx, 0);
@@ -11,37 +15,37 @@ Deno.test("freshState: idx 0, no answers, specId pinned", () => {
   assertEquals(state.specId, spec.id);
 });
 
-Deno.test("computeProgress: fresh state — first step is active, all 9 remain", () => {
+Deno.test("computeProgress: fresh state — first step is active, all 4 remain", () => {
   const p = computeProgress(spec, freshState(spec));
-  assertEquals(p.activeStep?.id, "config");
+  assertEquals(p.activeStep?.id, "customer");
   assertEquals(p.completedSteps.length, 0);
-  assertEquals(p.remainingSteps.length, 9);
+  assertEquals(p.remainingSteps.length, 4);
   assertEquals(p.isComplete, false);
   assertEquals(p.fractionDone, 0);
 });
 
 Deno.test("applyAnswer: advances to the next step and records the answer", () => {
   const next = applyAnswer(spec, freshState(spec), {
-    stepId: "config",
-    optionId: "standard_residential",
+    stepId: "customer",
+    optionId: "use_active",
   });
   assertEquals(next.activeStepIdx, 1);
   assertEquals(next.answers.length, 1);
-  assertEquals(next.answers[0].stepId, "config");
-  assertEquals(next.answers[0].optionId, "standard_residential");
+  assertEquals(next.answers[0].stepId, "customer");
+  assertEquals(next.answers[0].optionId, "use_active");
 });
 
-Deno.test("computeProgress: midway through — 4 completed, 1 active, 5 remaining", () => {
+Deno.test("computeProgress: midway through — 2 completed, 1 active, 2 remaining", () => {
   let state = freshState(spec);
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 2; i++) {
     const step = spec.steps[i];
     const opt = step.options.find((o) => !o.isCustom)!;
     state = applyAnswer(spec, state, { stepId: step.id, optionId: opt.id });
   }
   const p = computeProgress(spec, state);
-  assertEquals(p.activeStep?.id, "payment_terms");      // step 5 (index 4)
-  assertEquals(p.completedSteps.length, 4);
-  assertEquals(p.remainingSteps.length, 5);
+  assertEquals(p.activeStep?.id, "wraps"); // step 3 (index 2)
+  assertEquals(p.completedSteps.length, 2);
+  assertEquals(p.remainingSteps.length, 2);
   assertEquals(p.isComplete, false);
   assertEquals(p.fractionDone, 0.4);
 });
@@ -54,7 +58,7 @@ Deno.test("computeProgress: after final answer — isComplete and fractionDone =
   }
   const p = computeProgress(spec, state);
   assertEquals(p.activeStep, null);
-  assertEquals(p.completedSteps.length, 10);
+  assertEquals(p.completedSteps.length, 5);
   assertEquals(p.remainingSteps.length, 0);
   assertEquals(p.isComplete, true);
   assertEquals(p.fractionDone, 1);
@@ -62,44 +66,54 @@ Deno.test("computeProgress: after final answer — isComplete and fractionDone =
 
 Deno.test("applyAnswer: out-of-order stepId throws", () => {
   assertThrows(
-    () => applyAnswer(spec, freshState(spec), { stepId: "warranty", optionId: "12_months" }),
+    () =>
+      applyAnswer(spec, freshState(spec), {
+        stepId: "warranty",
+        optionId: "12_months",
+      }),
     Error,
-    'expected answer for "config"',
+    'expected answer for "customer"',
   );
 });
 
 Deno.test("applyAnswer: unknown optionId throws", () => {
   assertThrows(
-    () => applyAnswer(spec, freshState(spec), { stepId: "config", optionId: "nope" }),
+    () =>
+      applyAnswer(spec, freshState(spec), {
+        stepId: "customer",
+        optionId: "nope",
+      }),
     Error,
     'unknown option "nope"',
   );
 });
 
 Deno.test("applyAnswer: isCustom option without customValue throws", () => {
-  // step "customer" has create_new isCustom
-  let state = applyAnswer(spec, freshState(spec), { stepId: "config", optionId: "standard_residential" });
+  // step "customer" has create_new (isCustom)
   assertThrows(
-    () => applyAnswer(spec, state, { stepId: "customer", optionId: "create_new" }),
+    () =>
+      applyAnswer(spec, freshState(spec), {
+        stepId: "customer",
+        optionId: "create_new",
+      }),
     Error,
-    'requires a customValue',
+    "requires a customValue",
   );
 });
 
 Deno.test("applyAnswer: isCustom option WITH customValue records customValue", () => {
-  let state = applyAnswer(spec, freshState(spec), { stepId: "config", optionId: "standard_residential" });
-  state = applyAnswer(spec, state, {
+  const state = applyAnswer(spec, freshState(spec), {
     stepId: "customer",
     optionId: "create_new",
     customValue: "Tom & Linda K.",
   });
-  assertEquals(state.answers[1].customValue, "Tom & Linda K.");
+  assertEquals(state.answers[0].customValue, "Tom & Linda K.");
 });
 
 Deno.test("applyAnswer: non-custom option ignores customValue (doesn't get recorded)", () => {
-  let state = applyAnswer(spec, freshState(spec), {
-    stepId: "config",
-    optionId: "standard_residential",
+  const state = applyAnswer(spec, freshState(spec), {
+    stepId: "customer",
+    optionId: "use_active",
     customValue: "should be ignored",
   });
   assertEquals(state.answers[0].customValue, undefined);
@@ -112,7 +126,8 @@ Deno.test("applyAnswer: throws when wizard is already complete", () => {
     state = applyAnswer(spec, state, { stepId: step.id, optionId: opt.id });
   }
   assertThrows(
-    () => applyAnswer(spec, state, { stepId: "config", optionId: "standard_residential" }),
+    () =>
+      applyAnswer(spec, state, { stepId: "customer", optionId: "use_active" }),
     Error,
     "wizard already complete",
   );

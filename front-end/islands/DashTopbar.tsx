@@ -24,20 +24,38 @@ function fmtAgo(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-export default function DashTopbar({ greetingDate, greetingName, greetingOverride, initialUnread = 0, initialNotifications = [] }: Props) {
-  const [unread, setUnread] = useState(initialUnread);
+export default function DashTopbar(
+  {
+    greetingDate,
+    greetingName,
+    greetingOverride,
+    initialUnread = 0,
+    initialNotifications = [],
+  }: Props,
+) {
+  const [, setUnread] = useState(initialUnread);
   const [items, setItems] = useState<Notification[]>(initialNotifications);
   const [tickerIdx, setTickerIdx] = useState(0);
 
   useEffect(() => {
     let stopped = false;
     const idA = setInterval(async () => {
-      try { const { count } = await dashboardClient.unreadCount(); if (!stopped) setUnread(count); } catch { /* ignore */ }
+      try {
+        const { count } = await dashboardClient.unreadCount();
+        if (!stopped) setUnread(count);
+      } catch { /* ignore */ }
     }, 30_000);
     const idB = setInterval(async () => {
-      try { const next = await dashboardClient.notifications(10); if (!stopped) setItems(next); } catch { /* ignore */ }
+      try {
+        const next = await dashboardClient.notifications(10);
+        if (!stopped) setItems(next);
+      } catch { /* ignore */ }
     }, 10_000);
-    return () => { stopped = true; clearInterval(idA); clearInterval(idB); };
+    return () => {
+      stopped = true;
+      clearInterval(idA);
+      clearInterval(idB);
+    };
   }, []);
 
   useEffect(() => {
@@ -47,7 +65,10 @@ export default function DashTopbar({ greetingDate, greetingName, greetingOverrid
 
   const liveItems = items.length > 0 ? items : null;
   const ticker = liveItems
-    ? { html: liveItems[tickerIdx % liveItems.length].title, time: fmtAgo(liveItems[tickerIdx % liveItems.length].createdAt) }
+    ? {
+      html: liveItems[tickerIdx % liveItems.length].title,
+      time: fmtAgo(liveItems[tickerIdx % liveItems.length].createdAt),
+    }
     : null;
 
   return (
@@ -56,31 +77,48 @@ export default function DashTopbar({ greetingDate, greetingName, greetingOverrid
         class="topbar__menu"
         type="button"
         aria-label="Toggle sidebar"
-        onClick={() => globalThis.dispatchEvent(new CustomEvent("pm:sb-toggle"))}
+        onClick={() =>
+          globalThis.dispatchEvent(new CustomEvent("pm:sb-toggle"))}
       >
-        <I d={<><path d="M3 6h18M3 12h18M3 18h18" /></>} size={18} />
+        <I d={<path d="M3 6h18M3 12h18M3 18h18" />} size={18} />
       </button>
       <div class="topbar__greet">
         <div class="topbar__greet-line">{greetingDate}</div>
-        <div class="topbar__greet-name">{greetingOverride ?? `Hey, ${greetingName} 👋`}</div>
+        <div class="topbar__greet-name">
+          {greetingOverride ?? `Hey, ${greetingName} 👋`}
+        </div>
       </div>
-      {/* Search + notifications drawer are not built yet; hide their
+      {
+        /* Search + notifications drawer are not built yet; hide their
           affordances until the underlying features ship rather than
-          advertise dead controls (audit #6, #7). */}
+          advertise dead controls (audit #6, #7). */
+      }
       <div style="flex:1" aria-hidden="true" />
-      {ticker ? (
-        // Anchored to /dashboard#activity so the pill is no longer inert:
-        // on the dashboard it scrolls to the on-page activity panel; from
-        // any other page it routes to the dashboard and lands on the same
-        // anchor (#21 — the click was decorative on day 1).
-        <a href="/dashboard#activity" class="topbar__ticker" aria-label="Live activity — open feed">
-          <span class="topbar__ticker-dot" />
-          <span class="topbar__ticker-track" aria-live="polite">
-            <span class="topbar__ticker-item" key={tickerIdx} dangerouslySetInnerHTML={{ __html: ticker.html }} />
-          </span>
-          <span class="topbar__ticker-time">{ticker.time} ago</span>
-        </a>
-      ) : null}
+      {ticker
+        ? (
+          // Anchored to /dashboard#activity so the pill is no longer inert:
+          // on the dashboard it scrolls to the on-page activity panel; from
+          // any other page it routes to the dashboard and lands on the same
+          // anchor (#21 — the click was decorative on day 1).
+          <a
+            href="/dashboard#activity"
+            class="topbar__ticker"
+            aria-label="Live activity — open feed"
+          >
+            <span class="topbar__ticker-dot" />
+            <span class="topbar__ticker-track" aria-live="polite">
+              <span
+                class="topbar__ticker-item"
+                key={tickerIdx}
+                // Trusted server-derived activity markup (no user input).
+                // deno-lint-ignore react-no-danger
+                dangerouslySetInnerHTML={{ __html: ticker.html }}
+              />
+            </span>
+            <span class="topbar__ticker-time">{ticker.time} ago</span>
+          </a>
+        )
+        : null}
     </header>
   );
 }
