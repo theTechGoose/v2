@@ -373,6 +373,11 @@ body {
 
 .app {
   height: 100vh;
+  /* Mobile Safari's 100vh is the *large* viewport (counts the toolbar area), so the
+     shell ran taller than the screen — the topbar scrolled away and the bottom hid
+     under the browser bar. 100dvh tracks the visible viewport, keeping the header
+     pinned and the content fully on-screen. */
+  height: 100dvh;
   display: flex;
   min-height: 0;
   overflow: hidden;
@@ -2305,6 +2310,23 @@ body {
   .grid {
     grid-template-columns: 1fr;
     gap: 14px;
+  }
+  /* 4 KPI cards squeeze to slivers on phones — labels ("OUTSTANDING") and subs
+     ("$34.9k in flight") get clipped. Two-up gives each card ~2x the width so the
+     text fits and stays readable. */
+  .kpis {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .kpi {
+    padding: 14px 14px 13px;
+  }
+  .kpi__val {
+    font-size: 22px;
+  }
+  /* Keep the last row clear of the home indicator / browser chrome. */
+  .content {
+    padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
   }
 }
 @media (min-width: 641px) {

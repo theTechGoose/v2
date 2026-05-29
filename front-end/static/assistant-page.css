@@ -4433,9 +4433,14 @@ body {
 .asst {
   display: flex;
   justify-content: center;
-  height: calc(100vh - 60px - 32px);
+  height: calc(100dvh - 60px - 32px);
   min-height: 720px;
   padding: 16px 24px 24px;
+}
+@media (max-width: 768px) {
+  .asst {
+    min-height: 0;
+  }
 }
 .asst__chat-wrap {
   width: 100%;
@@ -6919,7 +6924,8 @@ body {
 /* Composer */
 .composer {
   border-top: 1px solid var(--border);
-  padding: 14px 18px 16px;
+  /* Pad past the home indicator / browser bar so the input isn't covered. */
+  padding: 14px 18px calc(16px + env(safe-area-inset-bottom, 0px));
   background: #fff;
 }
 .composer__inner {
@@ -7023,7 +7029,9 @@ body {
   outline: none;
   background: transparent;
   font-family: var(--font-body);
-  font-size: 14px;
+  /* Must be >=16px: iOS Safari auto-zooms when focusing a smaller input, which is
+     what made the page "zoom in" and pushed the text above out of view. */
+  font-size: 16px;
   color: var(--brand-teal);
   resize: none;
   padding: 8px 0;
@@ -7746,11 +7754,16 @@ body {
   grid-template-columns: 280px minmax(0, 1fr) 360px;
   align-items: stretch;
   justify-content: stretch;
-  height: calc(100vh - 60px);
+  height: calc(100dvh - 60px);
   min-height: 720px;
   padding: 0;
   gap: 0;
   overflow: hidden;
+}
+@media (max-width: 768px) {
+  .asst {
+    min-height: 0;
+  }
 }
 /* Collapse the right column when there's no docpane to fill it (most
    threads, until the user is in a quote/contract context). Otherwise
