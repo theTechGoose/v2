@@ -7754,7 +7754,9 @@ body {
   grid-template-columns: 280px minmax(0, 1fr) 360px;
   align-items: stretch;
   justify-content: stretch;
-  height: calc(100dvh - 60px);
+  /* --app-vh mirrors visualViewport.height (MobileViewport island) so the
+     shell tracks the keyboard on iOS; falls back to 100dvh without JS. */
+  height: calc(var(--app-vh, 100dvh) - 60px);
   min-height: 720px;
   padding: 0;
   gap: 0;
@@ -8452,5 +8454,22 @@ body {
     inset: 0;
     background: rgba(28, 44, 48, 0.45);
     z-index: 55;
+  }
+  /* Pin the chat shell to the *visual* viewport so the composer sits
+     directly above the on-screen keyboard. iOS overlays the keyboard
+     without shrinking 100dvh, which floated the composer mid-screen with
+     a dead gap below it (Hans's "new issue"). --app-vh is the live
+     visualViewport height written by the MobileViewport island. */
+  .app {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--app-vh, 100dvh);
+    overflow: hidden;
+  }
+  .asst {
+    height: calc(var(--app-vh, 100dvh) - 60px);
+    min-height: 0;
   }
 }

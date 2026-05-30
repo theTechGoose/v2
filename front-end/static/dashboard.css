@@ -2283,9 +2283,31 @@ body {
       opacity: 1;
     }
   }
+  /* Natural body scroll on phones. The desktop 100dvh + overflow:hidden
+     shell (with .content scrolling inside it) fought iOS Safari: the
+     topbar scrolled away and the page bottom hid under the browser
+     toolbar (Hans's reports). Letting the document scroll and pinning the
+     header with position:sticky is rock-solid on iOS. The sidebar is a
+     fixed overlay on mobile, so dropping the flex shell is safe. */
+  .app {
+    height: auto;
+    min-height: 100dvh;
+    display: block;
+    overflow: visible;
+  }
+  .main {
+    display: block;
+    overflow: visible;
+  }
   .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
     padding: 0 12px;
     gap: 8px;
+    /* More opaque than the desktop 50% so scrolling content stays
+       legible behind the pinned header. */
+    background: rgba(247, 243, 235, 0.92);
   }
   .topbar__greet-name {
     font-size: 14px;
@@ -2324,9 +2346,21 @@ body {
   .kpi__val {
     font-size: 22px;
   }
-  /* Keep the last row clear of the home indicator / browser chrome. */
+  /* Let the label + sub wrap instead of clipping to "OUTSTANDI…" /
+     "$34.9k i…" — readability beats one tidy line on a phone. */
+  .kpi__label {
+    white-space: normal;
+  }
+  .kpi__delta-sub {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+  /* Body scrolls now, so the last card can pass under Safari's bottom
+     toolbar — pad generously to clear the chrome + home indicator. */
   .content {
-    padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+    overflow: visible;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
   }
 }
 @media (min-width: 641px) {
