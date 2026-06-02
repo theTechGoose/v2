@@ -1,11 +1,15 @@
 import { Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
-import { applyAnswer, computeProgress } from "@agents/domain/business/wizard-progress/mod.ts";
+import {
+  applyAnswer,
+  computeProgress,
+} from "@agents/domain/business/wizard-progress/mod.ts";
 import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
@@ -18,7 +22,15 @@ export interface WizardAnswerInput {
   optionId: string;
   customValue?: string;
   /** Customer-step payload (only meaningful when stepId === "customer"). */
-  customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string; isBusiness?: boolean } };
+  customer?: {
+    id?: string;
+    create?: {
+      name: string;
+      email?: string;
+      phoneNumber?: string;
+      isBusiness?: boolean;
+    };
+  };
 }
 
 export interface WizardAnswerResult {
@@ -54,16 +66,23 @@ export class HandleWizardAnswer {
     private quotes: QuoteStore,
     private contracts: ContractStore,
     private customers: CustomerStore,
+    private users: UserStore,
     private bus: EventBus,
   ) {}
 
   async run(input: WizardAnswerInput): Promise<WizardAnswerResult> {
     const conv = await this.conversations.get(input.conversationId);
     if (conv.userId !== input.userId) throw new Error("forbidden");
-    if (conv.currentPhase !== "terms") throw new Error("conversation is not in 'terms' phase");
+    if (conv.currentPhase !== "terms") {
+      throw new Error("conversation is not in 'terms' phase");
+    }
 
-    const current = await this.conversations.getWizardState(input.conversationId);
-    if (!current) throw new Error("wizard state missing — call transition-to-terms first");
+    const current = await this.conversations.getWizardState(
+      input.conversationId,
+    );
+    if (!current) {
+      throw new Error("wizard state missing — call transition-to-terms first");
+    }
 
     // Customer step needs special handling: the wizard option `create_new`
     // is `isCustom: true` but the frontend sends a structured `customer.create`
@@ -88,28 +107,41 @@ export class HandleWizardAnswer {
     });
     await this.conversations.putWizardState(input.conversationId, next);
 
-    const stepDef = CONTRACT_TERMS_WIZARD_V1.steps.find((s) => s.id === input.stepId)!;
+    const stepDef = CONTRACT_TERMS_WIZARD_V1.steps.find((s) =>
+      s.id === input.stepId
+    )!;
     const optionDef = stepDef.options.find((o) => o.id === input.optionId)!;
     // For the customer step, prefer the resolved customer's name so the
     // chat transcript reads "Customer: Jane Doe" rather than "Customer:
     // Create a new customer".
     const pickValue = input.stepId === "customer" && boundCustomerName
       ? boundCustomerName
-      : optionDef.isCustom ? (customerCustomValue ?? "Custom") : optionDef.label;
+      : optionDef.isCustom
+      ? (customerCustomValue ?? "Custom")
+      : optionDef.label;
 
     const userPick = await this.messages.append({
       conversationId: input.conversationId,
       role: "user",
       kind: "text",
       content: `${stepDef.label}: ${pickValue}`,
-      payload: { wizardStepId: input.stepId, optionId: input.optionId, customValue: input.customValue },
+      payload: {
+        wizardStepId: input.stepId,
+        optionId: input.optionId,
+        customValue: input.customValue,
+      },
     });
 
     const newMessages: AgentMessage[] = [userPick];
     const progress = computeProgress(CONTRACT_TERMS_WIZARD_V1, next);
 
-    const convPatch: Partial<AgentConversation> = { preview: `${stepDef.label}: ${pickValue}` };
-    if (input.stepId === "customer" && boundCustomerId && boundCustomerId !== conv.customerId) {
+    const convPatch: Partial<AgentConversation> = {
+      preview: `${stepDef.label}: ${pickValue}`,
+    };
+    if (
+      input.stepId === "customer" && boundCustomerId &&
+      boundCustomerId !== conv.customerId
+    ) {
       convPatch.customerId = boundCustomerId;
     }
 
@@ -140,12 +172,21 @@ export class HandleWizardAnswer {
         role: "assistant",
         kind: "wizard",
         content: step.question,
-        payload: { specId: CONTRACT_TERMS_WIZARD_V1.id, stepIdx: next.activeStepIdx, stepId: step.id, options: step.options, hint: step.hint },
+        payload: {
+          specId: CONTRACT_TERMS_WIZARD_V1.id,
+          stepIdx: next.activeStepIdx,
+          stepId: step.id,
+          options: step.options,
+          hint: step.hint,
+        },
       });
       newMessages.push(wizardMsg);
     }
 
-    const updatedConv = await this.conversations.update(input.conversationId, convPatch);
+    const updatedConv = await this.conversations.update(
+      input.conversationId,
+      convPatch,
+    );
     return { conversation: updatedConv, wizardState: next, newMessages };
   }
 
@@ -163,7 +204,9 @@ export class HandleWizardAnswer {
   private async handleCustomerStep(
     _conversationId: string,
     input: WizardAnswerInput,
-  ): Promise<{ customerId?: string; customerName?: string; customValue?: string }> {
+  ): Promise<
+    { customerId?: string; customerName?: string; customValue?: string }
+  > {
     if (input.optionId === "create_new") {
       // Prefer the structured customer.create payload; fall back to a
       // legacy name-only customValue path so older callers that only
@@ -171,15 +214,50 @@ export class HandleWizardAnswer {
       const create = input.customer?.create;
       const name = (create?.name ?? input.customValue ?? "").trim();
       if (!name) {
-        throw new Error("create_new requires customer.create.name (or customValue)");
+        throw new Error(
+          "create_new requires customer.create.name (or customValue)",
+        );
+      }
+      // Guard against seeding a customer with the contractor's OWN contact —
+      // the root of the bug where every customer carried the contractor's
+      // email/phone and the agreement was delivered back to the contractor.
+      const email = create?.email?.trim();
+      const phone = create?.phoneNumber?.trim();
+      if (email || phone) {
+        const creator = await this.users.get(input.userId).catch(() => null);
+        const normEmail = (e?: string) => (e ?? "").trim().toLowerCase();
+        // Compare the trailing 10 digits so a US country-code prefix doesn't
+        // defeat the match (E.164 "+15403331334" vs "(540) 333-1334").
+        const normPhone = (p?: string) => {
+          const d = (p ?? "").replace(/\D/g, "");
+          return d.length > 10 ? d.slice(-10) : d;
+        };
+        if (
+          (email && creator?.email &&
+            normEmail(email) === normEmail(creator.email)) ||
+          (phone && creator?.phoneNumber &&
+            normPhone(phone) === normPhone(creator.phoneNumber))
+        ) {
+          throw new Error(
+            "customer contact must not match the contractor's own email or phone number",
+          );
+        }
       }
       const created = await this.customers.create(input.userId, {
         name,
         ...(create?.email ? { email: create.email.trim() } : {}),
-        ...(create?.phoneNumber ? { phoneNumber: create.phoneNumber.trim() } : {}),
-        ...(typeof create?.isBusiness === "boolean" ? { isBusiness: create.isBusiness } : {}),
+        ...(create?.phoneNumber
+          ? { phoneNumber: create.phoneNumber.trim() }
+          : {}),
+        ...(typeof create?.isBusiness === "boolean"
+          ? { isBusiness: create.isBusiness }
+          : {}),
       });
-      return { customerId: created.id, customerName: created.name, customValue: created.name };
+      return {
+        customerId: created.id,
+        customerName: created.name,
+        customValue: created.name,
+      };
     }
     if (input.optionId === "pick_existing") {
       const id = input.customer?.id;
@@ -199,7 +277,9 @@ export class HandleWizardAnswer {
    * we couldn't materialize one. Idempotent: if conv.contractId already
    * points at a real contract, reuse it.
    */
-  private async finalizeContract(conv: AgentConversation): Promise<string | undefined> {
+  private async finalizeContract(
+    conv: AgentConversation,
+  ): Promise<string | undefined> {
     // Walk the conversation messages and project the user's wizard picks
     // into a labeled terms array. Each pick lives on a `text` user message
     // with payload.wizardStepId — the chat transcript is the canonical
@@ -209,19 +289,26 @@ export class HandleWizardAnswer {
 
     if (conv.contractId) {
       try {
-        const existing = await this.contracts.getOwned(conv.contractId, conv.userId);
+        const existing = await this.contracts.getOwned(
+          conv.contractId,
+          conv.userId,
+        );
         // If terms aren't already persisted, patch them in. Idempotent on
         // re-runs (same picks → same terms).
         if (!Array.isArray(existing.terms) || existing.terms.length === 0) {
           if (terms.length) {
-            await this.contracts.update(conv.contractId, conv.userId, { terms });
+            await this.contracts.update(conv.contractId, conv.userId, {
+              terms,
+            });
           }
         }
-        return conv.contractId;                  // already finalized — keep it
+        return conv.contractId; // already finalized — keep it
       } catch { /* fall through and try to recreate */ }
     }
     if (!conv.quoteId) {
-      console.error(`[wizard:finalize] conversation ${conv.id} has no quoteId — skipping contract creation`);
+      console.error(
+        `[wizard:finalize] conversation ${conv.id} has no quoteId — skipping contract creation`,
+      );
       return undefined;
     }
     let totalAmount: number | undefined;
@@ -229,7 +316,10 @@ export class HandleWizardAnswer {
       const quote = await this.quotes.getOwned(conv.quoteId, conv.userId);
       totalAmount = quote.estimatedTotal;
     } catch (err) {
-      console.error(`[wizard:finalize] failed to load quote ${conv.quoteId}:`, err);
+      console.error(
+        `[wizard:finalize] failed to load quote ${conv.quoteId}:`,
+        err,
+      );
       return undefined;
     }
     const contract = await this.contracts.create(conv.userId, {
@@ -250,7 +340,9 @@ export class HandleWizardAnswer {
   }
 
   /** Project wizard-answer chat messages into a labeled terms array. */
-  private async captureTerms(conversationId: string): Promise<{ stepId: string; label: string; value: string }[]> {
+  private async captureTerms(
+    conversationId: string,
+  ): Promise<{ stepId: string; label: string; value: string }[]> {
     const msgs = await this.messages.listByConversation(conversationId);
     const picks: { stepId: string; label: string; value: string }[] = [];
     const seen = new Set<string>();

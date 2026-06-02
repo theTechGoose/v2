@@ -6,7 +6,8 @@ import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.t
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
-import { EventBus, type DomainEvent } from "@core/business/events/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
 import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
@@ -17,10 +18,29 @@ function fresh() {
   const quotes = new QuoteStore();
   const contracts = new ContractStore();
   const customers = new CustomerStore();
+  const users = new UserStore();
   const bus = new EventBus();
   const transitionFlow = new TransitionToTerms(conversations, messages);
-  const flow = new HandleWizardAnswer(conversations, messages, quotes, contracts, customers, bus);
-  return { conversations, messages, quotes, contracts, customers, bus, transitionFlow, flow };
+  const flow = new HandleWizardAnswer(
+    conversations,
+    messages,
+    quotes,
+    contracts,
+    customers,
+    users,
+    bus,
+  );
+  return {
+    conversations,
+    messages,
+    quotes,
+    contracts,
+    customers,
+    users,
+    bus,
+    transitionFlow,
+    flow,
+  };
 }
 
 async function setupTermsConversation(userId = "u-1") {
@@ -32,8 +52,17 @@ async function setupTermsConversation(userId = "u-1") {
 
 async function setupTermsConversationWithQuote(userId = "u-1") {
   const ctx = fresh();
-  const quote = await ctx.quotes.create(userId, { summary: "Roof", lineItems: [], estimatedTotal: 12_500, status: "sent" });
-  const conv = await ctx.conversations.create({ userId, quoteId: quote.id, customerId: "cust-1" });
+  const quote = await ctx.quotes.create(userId, {
+    summary: "Roof",
+    lineItems: [],
+    estimatedTotal: 12_500,
+    status: "sent",
+  });
+  const conv = await ctx.conversations.create({
+    userId,
+    quoteId: quote.id,
+    customerId: "cust-1",
+  });
   await ctx.transitionFlow.run({ userId, conversationId: conv.id });
   return { ...ctx, conv, quote };
 }
@@ -53,9 +82,12 @@ Deno.test("handle-wizard-answer integration: advances state and appends [user-pi
   assertEquals(result.wizardState.activeStepIdx, 1);
   assertEquals(result.wizardState.answers.length, 1);
   assertEquals(result.newMessages.length, 2);
-  assertEquals(result.newMessages[0].kind, "text");                // user pick
+  assertEquals(result.newMessages[0].kind, "text"); // user pick
   assertEquals(result.newMessages[1].kind, "wizard");
-  assertEquals((result.newMessages[1].payload as { stepId: string }).stepId, "start_date");
+  assertEquals(
+    (result.newMessages[1].payload as { stepId: string }).stepId,
+    "start_date",
+  );
 
   const refreshed = await conversations.getWizardState(conv.id);
   assertEquals(refreshed?.activeStepIdx, 1);
@@ -71,7 +103,12 @@ Deno.test("handle-wizard-answer integration: completing all steps emits a contin
   let lastMessages: AgentMessage[] = [];
   for (const step of CONTRACT_TERMS_WIZARD_V1.steps) {
     const opt = step.options.find((o) => !o.isCustom)!;
-    const r = await flow.run({ userId: "u-1", conversationId: conv.id, stepId: step.id, optionId: opt.id });
+    const r = await flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
     lastMessages = r.newMessages;
   }
 
@@ -92,8 +129,11 @@ Deno.test("handle-wizard-answer integration: custom option records customValue i
 
   // Step 1: customer create_new (isCustom)
   const r = await flow.run({
-    userId: "u-1", conversationId: conv.id,
-    stepId: "customer", optionId: "create_new", customValue: "Tom & Linda K.",
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customValue: "Tom & Linda K.",
   });
 
   assertEquals(r.newMessages[0].content, "Customer: Tom & Linda K.");
@@ -103,13 +143,108 @@ Deno.test("handle-wizard-answer integration: custom option records customValue i
   await resetKv();
 });
 
+// --- problems.md #1/#19: customer-contact guard -----------------------------
+
+/** Seed a real contractor User (so `users.get(userId)` resolves) and a terms
+ *  conversation owned by them. */
+async function setupTermsForRealUser(
+  contact: { phoneNumber: string; email?: string },
+) {
+  const ctx = fresh();
+  const user = await ctx.users.create({ phoneNumber: contact.phoneNumber });
+  if (contact.email) await ctx.users.update(user.id, { email: contact.email });
+  const conv = await ctx.conversations.create({ userId: user.id });
+  await ctx.transitionFlow.run({ userId: user.id, conversationId: conv.id });
+  return { ...ctx, user, conv };
+}
+
+Deno.test("handle-wizard-answer #1: rejects create_new whose email is the contractor's own (case-insensitive)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, conv } = await setupTermsForRealUser({
+    phoneNumber: "+15403331334",
+    email: "hans@example.com",
+  });
+
+  await assertRejects(
+    () =>
+      flow.run({
+        userId: user.id,
+        conversationId: conv.id,
+        stepId: "customer",
+        optionId: "create_new",
+        customer: {
+          create: { name: "Jane Doe", email: "  HANS@example.com " },
+        },
+      }),
+    Error,
+    "contractor's own",
+  );
+  await resetKv();
+});
+
+Deno.test("handle-wizard-answer #1: rejects create_new whose phone is the contractor's own (formatting-insensitive)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, conv } = await setupTermsForRealUser({
+    phoneNumber: "+15403331334",
+  });
+
+  await assertRejects(
+    () =>
+      flow.run({
+        userId: user.id,
+        conversationId: conv.id,
+        stepId: "customer",
+        optionId: "create_new",
+        customer: {
+          create: { name: "Jane Doe", phoneNumber: "(540) 333-1334" },
+        },
+      }),
+    Error,
+    "contractor's own",
+  );
+  await resetKv();
+});
+
+Deno.test("handle-wizard-answer #1: allows create_new with a distinct customer contact", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, conv } = await setupTermsForRealUser({
+    phoneNumber: "+15403331334",
+    email: "hans@example.com",
+  });
+
+  const r = await flow.run({
+    userId: user.id,
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: {
+      create: {
+        name: "Jane Doe",
+        email: "jane@client.com",
+        phoneNumber: "+15125550000",
+      },
+    },
+  });
+  assertEquals(r.newMessages[0].content, "Customer: Jane Doe");
+  await resetKv();
+});
+
 Deno.test("handle-wizard-answer integration: rejects answer when conversation is in 'quote' phase", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { conversations, flow } = fresh();
-  const conv = await conversations.create({ userId: "u-1" });   // still in 'quote'
+  const conv = await conversations.create({ userId: "u-1" }); // still in 'quote'
   await assertRejects(
-    () => flow.run({ userId: "u-1", conversationId: conv.id, stepId: "customer", optionId: "use_active" }),
+    () =>
+      flow.run({
+        userId: "u-1",
+        conversationId: conv.id,
+        stepId: "customer",
+        optionId: "use_active",
+      }),
     Error,
     "not in 'terms' phase",
   );
@@ -121,7 +256,13 @@ Deno.test("handle-wizard-answer integration: rejects out-of-order step", async (
   await resetKv();
   const { flow, conv } = await setupTermsConversation();
   await assertRejects(
-    () => flow.run({ userId: "u-1", conversationId: conv.id, stepId: "warranty", optionId: "12_months" }),
+    () =>
+      flow.run({
+        userId: "u-1",
+        conversationId: conv.id,
+        stepId: "warranty",
+        optionId: "12_months",
+      }),
     Error,
     'expected answer for "customer"',
   );
@@ -133,7 +274,13 @@ Deno.test("handle-wizard-answer integration: forbidden across users", async () =
   await resetKv();
   const { flow, conv } = await setupTermsConversation("u-1");
   await assertRejects(
-    () => flow.run({ userId: "u-2", conversationId: conv.id, stepId: "customer", optionId: "use_active" }),
+    () =>
+      flow.run({
+        userId: "u-2",
+        conversationId: conv.id,
+        stepId: "customer",
+        optionId: "use_active",
+      }),
     Error,
     "forbidden",
   );
@@ -143,18 +290,27 @@ Deno.test("handle-wizard-answer integration: forbidden across users", async () =
 Deno.test("handle-wizard-answer integration: completing all steps materializes a Contract bound to conv.quoteId", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  const { flow, conv, quote, contracts, conversations } = await setupTermsConversationWithQuote();
+  const { flow, conv, quote, contracts, conversations } =
+    await setupTermsConversationWithQuote();
 
   let lastResult;
   for (const step of CONTRACT_TERMS_WIZARD_V1.steps) {
     const opt = step.options.find((o) => !o.isCustom)!;
-    lastResult = await flow.run({ userId: "u-1", conversationId: conv.id, stepId: step.id, optionId: opt.id });
+    lastResult = await flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
   }
 
   // The continue_cta now carries the new contract id.
   const cta = lastResult!.newMessages[lastResult!.newMessages.length - 1];
   const ctaPayload = cta.payload as { contractId?: string; toPhase: string };
-  assert(typeof ctaPayload.contractId === "string", "continue_cta should carry contractId");
+  assert(
+    typeof ctaPayload.contractId === "string",
+    "continue_cta should carry contractId",
+  );
 
   // Conversation now points at the new contract.
   const updatedConv = await conversations.get(conv.id);
@@ -175,11 +331,18 @@ Deno.test("handle-wizard-answer integration: completing the wizard emits a 'draf
   await resetKv();
   const { flow, conv, bus } = await setupTermsConversationWithQuote();
   const seen: DomainEvent[] = [];
-  bus.subscribe((e) => { if (e.entityType === "contract") seen.push(e); });
+  bus.subscribe((e) => {
+    if (e.entityType === "contract") seen.push(e);
+  });
 
   for (const step of CONTRACT_TERMS_WIZARD_V1.steps) {
     const opt = step.options.find((o) => !o.isCustom)!;
-    await flow.run({ userId: "u-1", conversationId: conv.id, stepId: step.id, optionId: opt.id });
+    await flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
   }
 
   assertEquals(seen.length, 1);
@@ -192,12 +355,18 @@ Deno.test("handle-wizard-answer integration: completing the wizard emits a 'draf
 Deno.test("handle-wizard-answer integration: completing the wizard without a bound quote does NOT throw and skips contract creation", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  const { flow, conv, conversations, contracts } = await setupTermsConversation();   // no quoteId on conv
+  const { flow, conv, conversations, contracts } =
+    await setupTermsConversation(); // no quoteId on conv
 
   let lastResult;
   for (const step of CONTRACT_TERMS_WIZARD_V1.steps) {
     const opt = step.options.find((o) => !o.isCustom)!;
-    lastResult = await flow.run({ userId: "u-1", conversationId: conv.id, stepId: step.id, optionId: opt.id });
+    lastResult = await flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
   }
 
   const cta = lastResult!.newMessages[lastResult!.newMessages.length - 1];
@@ -213,14 +382,22 @@ Deno.test("handle-wizard-answer integration: completing the wizard without a bou
 Deno.test("handle-wizard-answer integration: re-completing an already-finalized conversation reuses the same contract id", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  const { flow, conversations, conv, contracts } = await setupTermsConversationWithQuote();
+  const { flow, conversations, conv, contracts } =
+    await setupTermsConversationWithQuote();
 
   let lastResult;
   for (const step of CONTRACT_TERMS_WIZARD_V1.steps) {
     const opt = step.options.find((o) => !o.isCustom)!;
-    lastResult = await flow.run({ userId: "u-1", conversationId: conv.id, stepId: step.id, optionId: opt.id });
+    lastResult = await flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
   }
-  const firstContractId = (lastResult!.newMessages.at(-1)!.payload as { contractId: string }).contractId;
+  const firstContractId =
+    (lastResult!.newMessages.at(-1)!.payload as { contractId: string })
+      .contractId;
 
   // Roll the wizard back to its last step, then re-answer it. The
   // coordinator should reuse the existing contract rather than creating
@@ -228,12 +405,22 @@ Deno.test("handle-wizard-answer integration: re-completing an already-finalized 
   const rolledBackState = await conversations.getWizardState(conv.id);
   const totalSteps = CONTRACT_TERMS_WIZARD_V1.steps.length;
   const lastIdx = totalSteps - 1;
-  await conversations.putWizardState(conv.id, { ...rolledBackState!, activeStepIdx: lastIdx, answers: rolledBackState!.answers.slice(0, lastIdx) });
+  await conversations.putWizardState(conv.id, {
+    ...rolledBackState!,
+    activeStepIdx: lastIdx,
+    answers: rolledBackState!.answers.slice(0, lastIdx),
+  });
 
   const last = CONTRACT_TERMS_WIZARD_V1.steps[lastIdx];
   const opt = last.options.find((o) => !o.isCustom)!;
-  const r = await flow.run({ userId: "u-1", conversationId: conv.id, stepId: last.id, optionId: opt.id });
-  const secondContractId = (r.newMessages.at(-1)!.payload as { contractId: string }).contractId;
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: last.id,
+    optionId: opt.id,
+  });
+  const secondContractId =
+    (r.newMessages.at(-1)!.payload as { contractId: string }).contractId;
 
   assertEquals(secondContractId, firstContractId);
   assertEquals((await contracts.listByUser("u-1")).length, 1);

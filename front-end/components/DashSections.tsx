@@ -29,7 +29,9 @@ export function Hero(
     }
     : pendingQuotes > 0
     ? {
-      label: `Send the ${pluralize(pendingQuotes, "quote")} pending`,
+      // Navigation intent only — this is an <a href>, not a bulk send. "Send
+      // the N quotes" read as a one-tap blast; "Review" matches what it does.
+      label: `Review the ${pluralize(pendingQuotes, "quote")} pending`,
       href: "/quotes",
     }
     : { label: "My assistant", href: "/assistant" };
@@ -114,8 +116,8 @@ export function Kpis(props: KpisProps) {
   // which looked broken).
   const avgJobVal = props.avgJob > 0
     ? `$${props.avgJob.toLocaleString()}`
-    : "—";
-  const avgJobSub = props.avgJob > 0 ? "trailing year" : "no paid jobs yet";
+    : "No paid jobs yet";
+  const avgJobSub = props.avgJob > 0 ? "trailing year" : "";
   const items: Array<
     {
       icon: IconName;
@@ -214,7 +216,13 @@ export interface JobRow {
   status: { kind: "green" | "warn" | "teal"; txt: string };
 }
 
-export function ActiveJobs({ jobs }: { jobs: JobRow[] }) {
+export function ActiveJobs(
+  { jobs, total }: { jobs: JobRow[]; total?: number },
+) {
+  // `total` is the full active-job count (matches the KPI); `jobs` is only the
+  // top slice rendered below. Show the total so the header count and the
+  // "Active jobs" KPI never contradict each other.
+  const count = total ?? jobs.length;
   return (
     <div class="panel">
       <div class="panel__head">
@@ -224,7 +232,7 @@ export function ActiveJobs({ jobs }: { jobs: JobRow[] }) {
             style="position:static;width:8px;height:8px"
           />
           <h3 class="panel__title">Active jobs</h3>
-          <span class="panel__count">{jobs.length} active</span>
+          <span class="panel__count">{count} active</span>
         </div>
         <a class="panel__action" href="#">See all →</a>
       </div>

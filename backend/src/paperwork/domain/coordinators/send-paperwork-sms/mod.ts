@@ -192,8 +192,11 @@ export class SendPaperworkSms {
       const link = await this.shortlinks.findOrCreate(userId, r.kind, r.id);
       return `${APP_URL}/s/${link.code}`;
     } catch (err) {
-      console.error(
-        "[send-paperwork-sms] shortlink mint failed; falling back to long URL:",
+      // findOrCreate now always yields a code (random, else deterministic), so
+      // this only trips on a catastrophic KV failure where we genuinely can't
+      // persist a code — the long URL is then the only link that still works.
+      console.warn(
+        `[send-paperwork-sms] shortlink mint failed for ${r.kind}:${r.id}; falling back to long URL:`,
         err,
       );
       const path = r.kind === "quote"

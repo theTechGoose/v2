@@ -28,6 +28,7 @@ import {
 } from "../components/DashSections.tsx";
 import { type IconName } from "../lib/dash-icons.tsx";
 import { fmtMoney } from "../lib/format.ts";
+import { readCached, refreshDash } from "../lib/dash-cache.ts";
 import { ShimmerStyle, SkelBlock } from "../components/Skeletons.tsx";
 import SetupChecklist from "./SetupChecklist.tsx";
 
@@ -48,7 +49,7 @@ const SHORT_MONTH = [
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function fmtDue(iso: string | null, now: Date): string {
-  if (!iso) return "—";
+  if (!iso) return "No due date";
   const due = new Date(iso + "T00:00:00");
   if (Number.isNaN(due.getTime())) return iso;
   const startOfToday = new Date(now);
@@ -249,11 +250,16 @@ function pickKpis(stats: DashboardStats | undefined) {
   const ytd = (stats?.revenue.ytdCents ?? 0) / 100;
   const avgJob = paidCount > 0 ? Math.round(ytd / paidCount) : 0;
 
+  // When there are no pending invoices, clamp Outstanding to exactly $0 — the
+  // aging buckets can carry stray sub-dollar cents that otherwise surface as a
+  // nonsense "$0.09 · 0 invoices".
+  const pending = stats?.invoices.pending ?? 0;
+
   return {
     thisMonthBilled,
     activeJobs: 0,
-    outstanding: owed,
-    outstandingCount: stats?.invoices.pending ?? 0,
+    outstanding: pending === 0 ? 0 : owed,
+    outstandingCount: pending,
     outstandingOverdue: stats?.invoices.overdue ?? 0,
     pendingQuotes: stats?.quotes.sent ?? 0,
     pendingTotal: (stats?.quotedValueCents ?? 0) / 100,
@@ -340,10 +346,19 @@ function DashboardSkeleton() {
 }
 
 export default function DashboardPage() {
-  const [s, setS] = useState<State>(INITIAL);
+  // Warm-start from the shared dash cache: if we already have a stats snapshot
+  // (e.g. from the sidebar on a prior page), render the hero + KPIs instantly
+  // and treat the mount fetch as a background refresh instead of flashing the
+  // full skeleton every time the user navigates back here.
+  const [s, setS] = useState<State>(() => {
+    const c = readCached();
+    return c?.stats ? { ...INITIAL, loading: false, stats: c.stats } : INITIAL;
+  });
 
   useEffect(() => {
     let alive = true;
+    // Keep the shared cache fresh for other islands (sidebar badges, etc).
+    refreshDash().catch(() => {});
     Promise.all([
       dashboardClient.stats().catch(() =>
         undefined as DashboardStats | undefined
@@ -459,7 +474,7 @@ export default function DashboardPage() {
         avgJob={kpis.avgJob}
       />
       <div class="grid">
-        <ActiveJobs jobs={jobRows} />
+        <ActiveJobs jobs={jobRows} total={kpis.activeJobs} />
         <QuotesAwaiting quotes={quoteRows} />
       </div>
       <div class="grid">

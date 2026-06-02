@@ -196,8 +196,16 @@ function deriveChip(c: Conversation): { kind: Chip; label: string } {
 }
 
 function tsOf(iso: string): number {
-  const t = Date.parse(iso);
-  return Number.isFinite(t) ? t : 0;
+  if (!iso) return 0;
+  // ISO-8601 string is the normal shape.
+  const parsed = Date.parse(iso);
+  if (Number.isFinite(parsed)) return parsed;
+  // Fallback: a numeric epoch delivered as a string. Disambiguate seconds vs
+  // milliseconds by magnitude (10-digit ≈ seconds, 13-digit ≈ ms) so a
+  // seconds-epoch value doesn't render as 1970 → bogus "Nd ago".
+  const n = Number(iso);
+  if (Number.isFinite(n) && n > 0) return n < 1e12 ? n * 1000 : n;
+  return 0;
 }
 
 const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -206,7 +214,7 @@ function fmtTime(iso: string): string {
   const t = tsOf(iso);
   if (!t) return "";
   const diff = Date.now() - t;
-  if (diff < 60_000) return "now";
+  if (diff < 60_000) return "just now";
   if (diff < HOUR) return `${Math.floor(diff / 60_000)}m`;
   if (diff < DAY) return `${Math.floor(diff / HOUR)}h`;
   if (diff < 7 * DAY) return WEEKDAY_SHORT[new Date(t).getDay()];

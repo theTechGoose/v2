@@ -118,6 +118,9 @@ export default function PublicSignContract({ contractId }: Props) {
     canvas.setPointerCapture(e.pointerId);
     const { x, y } = pointerXY(e);
     drawingRef.current = { points: [{ x, y, t: performance.now() }] };
+    // Clear the helper placeholder as soon as the first stroke begins, not
+    // on pointer-up — otherwise it overlaps the ink through the first stroke.
+    setHasInk(true);
   }
 
   function onPointerMove(e: PointerEvent) {
@@ -137,9 +140,11 @@ export default function PublicSignContract({ contractId }: Props) {
     } catch { /* noop */ }
     if (drawingRef.current.points.length > 1) {
       strokesRef.current.push(drawingRef.current);
-      setHasInk(true);
     }
     drawingRef.current = null;
+    // Re-sync to real ink: a bare tap (no movement) added no stroke, so the
+    // placeholder should come back rather than stay hidden over a blank pad.
+    setHasInk(strokesRef.current.length > 0);
     redraw();
   }
 
@@ -435,28 +440,34 @@ export default function PublicSignContract({ contractId }: Props) {
           submitting || !name.trim() || !hasInk ? "default" : "pointer"
         };transition:transform 160ms;display:flex;align-items:center;justify-content:center;gap:10px`}
       >
-        {submitting ? "Signing…" : (
-          <>
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M12 19l9 2-2-9-9-9-7 7z" />
-              <path d="M14 5l5 5" />
-            </svg>
-            <span>
-              {hasInk && name.trim()
-                ? "Looks good — sign the contract →"
-                : "Draw + type your name to enable"}
-            </span>
-          </>
-        )}
+        {submitting
+          ? (
+            <>
+              <span class="spinner" aria-hidden="true" /> Signing…
+            </>
+          )
+          : (
+            <>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 19l9 2-2-9-9-9-7 7z" />
+                <path d="M14 5l5 5" />
+              </svg>
+              <span>
+                {hasInk && name.trim()
+                  ? "Looks good — sign the contract →"
+                  : "Draw + type your name to enable"}
+              </span>
+            </>
+          )}
       </button>
     </form>
   );

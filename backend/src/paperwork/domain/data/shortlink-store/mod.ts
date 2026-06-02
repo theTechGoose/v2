@@ -17,9 +17,13 @@ export interface ShortLink {
 const PREFIX = "shortlink";
 /** Reverse index: one code per (userId, kind, id) so re-issuing is idempotent. */
 const RESOURCE_INDEX = "shortlink_by_resource";
-const ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const ALPHABET =
+  "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const CODE_LEN = 6;
-const MAX_COLLISION_RETRIES = 4;
+const MAX_COLLISION_RETRIES = 10;
+/** Deterministic fallback codes are a touch longer to make a second-order
+ *  collision (two different resources hashing to the same code) negligible. */
+const DETERMINISTIC_CODE_LEN = 8;
 
 /**
  * ShortLinkStore — 6-char base62 codes mapping to {kind, id, userId}.
@@ -47,12 +51,17 @@ export class ShortLinkStore {
    * Get-or-create a code for the given resource. Idempotent — repeated
    * calls for the same (userId, kind, id) return the existing code.
    */
-  async findOrCreate(userId: string, kind: ShortLinkKind, id: string): Promise<ShortLink> {
+  async findOrCreate(
+    userId: string,
+    kind: ShortLinkKind,
+    id: string,
+  ): Promise<ShortLink> {
     const kv = await getKv();
     const existing = await kv.get<string>([RESOURCE_INDEX, userId, kind, id]);
     if (existing.value) {
-      try { return await this.get(existing.value); }
-      catch { /* fall through and re-mint; orphaned reverse-index entry */ }
+      try {
+        return await this.get(existing.value);
+      } catch { /* fall through and re-mint; orphaned reverse-index entry */ }
     }
 
     for (let attempt = 0; attempt < MAX_COLLISION_RETRIES; attempt++) {
@@ -71,7 +80,37 @@ export class ShortLinkStore {
         .commit();
       if (res.ok) return row;
     }
-    throw new Error("shortlink: exhausted collision retries");
+
+    // Random minting exhausted its retries (astronomically unlikely). Rather
+    // than throw — which forces callers to emit an ugly long UUID URL — fall
+    // back to a DETERMINISTIC code derived from the resource key, so callers
+    // always get a usable /s/<code> link.
+    const code = await deterministicCode(userId, kind, id);
+    const row: ShortLink = {
+      code,
+      kind,
+      id,
+      userId,
+      createdAt: new Date().toISOString(),
+    };
+    const res = await kv.atomic()
+      .check({ key: [PREFIX, code], versionstamp: null })
+      .set([PREFIX, code], row)
+      .set([RESOURCE_INDEX, userId, kind, id], code)
+      .commit();
+    if (res.ok) return row;
+    // The deterministic code already exists. If it maps to THIS resource we're
+    // idempotently done; otherwise it's a genuine (vanishingly rare) hash
+    // collision with another resource — surface it rather than corrupt a link.
+    const taken = await this.get(code).catch(() => null);
+    if (
+      taken && taken.userId === userId && taken.kind === kind && taken.id === id
+    ) {
+      return taken;
+    }
+    throw new Error(
+      "shortlink: deterministic code collided with another resource",
+    );
   }
 }
 
@@ -81,6 +120,22 @@ function randomCode(): string {
   let out = "";
   for (let i = 0; i < CODE_LEN; i++) {
     out += ALPHABET[buf[i] % ALPHABET.length];
+  }
+  return out;
+}
+
+/** Stable base62 code derived from the resource key — same input always
+ *  yields the same code, so it can be re-derived without state. */
+async function deterministicCode(
+  userId: string,
+  kind: ShortLinkKind,
+  id: string,
+): Promise<string> {
+  const data = new TextEncoder().encode(`${userId}:${kind}:${id}`);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
+  let out = "";
+  for (let i = 0; i < DETERMINISTIC_CODE_LEN; i++) {
+    out += ALPHABET[digest[i] % ALPHABET.length];
   }
   return out;
 }

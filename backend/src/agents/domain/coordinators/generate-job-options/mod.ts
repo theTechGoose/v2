@@ -46,6 +46,7 @@ RULES:
 - The three options are different phrasings / groupings of the SAME job, ranging from concise to detailed. They are alternatives the contractor picks between, not three separate jobs.
 - Each bullet is one short scope-of-work line (≈3–7 words): "Interior demolition", "Haul away debris", "Jobsite cleanup". No sentences, no trailing periods.
 - jobName is a noun-phrase label like "Kitchen Remodel" or "Junk Removal" — three words or fewer, Title Case, no punctuation.
+- Each option MUST have a UNIQUE jobName — do not repeat the same jobName across the three options.
 - Use only facts the contractor stated. Do NOT invent materials, scope, square footage, brands, durations, or warranties.
 - No first-person ("I'll", "we'll"). Write as the contractor describing what the job covers.
 - No emojis, no exclamation marks, no marketing hype.
@@ -110,6 +111,7 @@ export class GenerateJobOptions {
 function normalizeOptions(raw: unknown): JobOption[] {
   if (!Array.isArray(raw)) return [];
   const out: JobOption[] = [];
+  const seenNames = new Set<string>();
   for (let i = 0; i < raw.length && out.length < 3; i++) {
     const o = raw[i] as {
       jobName?: unknown;
@@ -131,9 +133,29 @@ function normalizeOptions(raw: unknown): JobOption[] {
     const jobName = typeof o?.jobName === "string" && o.jobName.trim()
       ? clampJobName(o.jobName)
       : deriveJobName(summary);
-    out.push({ id: `opt${out.length + 1}`, jobName, summary, bullets });
+    // Disambiguate duplicate jobNames so the picker never shows three cards
+    // with the same heading (e.g. three "Toilet Replacement"s).
+    out.push({
+      id: `opt${out.length + 1}`,
+      jobName: disambiguate(jobName, seenNames),
+      summary,
+      bullets,
+    });
   }
   return out;
+}
+
+/** Ensure a jobName is unique within the option set; appends " (2)", " (3)"
+ *  … on collision. Tracks seen names case-insensitively. */
+function disambiguate(name: string, seen: Set<string>): string {
+  let unique = name;
+  let n = 2;
+  while (seen.has(unique.toLowerCase())) {
+    unique = `${name} (${n})`;
+    n++;
+  }
+  seen.add(unique.toLowerCase());
+  return unique;
 }
 
 function tryParseJson(s: string): { options?: unknown } | undefined {
@@ -193,12 +215,18 @@ function fallbackOptions(raw: string): JobOption[] {
   const single: JobOption = { id: "opt1", jobName, summary, bullets: base };
   // Three near-identical options so the UI shows the expected count; the
   // contractor edits/picks one. Cleanup line added on the broader variants.
+  // jobNames are disambiguated so the cards don't share one heading.
   return [
     single,
-    { id: "opt2", jobName, summary, bullets: base.slice(0, 3) },
+    {
+      id: "opt2",
+      jobName: `${jobName} (2)`,
+      summary,
+      bullets: base.slice(0, 3),
+    },
     {
       id: "opt3",
-      jobName,
+      jobName: `${jobName} (3)`,
       summary,
       bullets: [...base.slice(0, 3), "Jobsite cleanup"].slice(0, 4),
     },

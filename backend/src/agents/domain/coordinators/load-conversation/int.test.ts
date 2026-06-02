@@ -7,6 +7,7 @@ import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.t
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
@@ -16,11 +17,21 @@ function fresh() {
   const quotes = new QuoteStore();
   const contracts = new ContractStore();
   const customers = new CustomerStore();
+  const users = new UserStore();
   const bus = new EventBus();
   return {
-    conversations, messages,
+    conversations,
+    messages,
     transition: new TransitionToTerms(conversations, messages),
-    wizardAnswer: new HandleWizardAnswer(conversations, messages, quotes, contracts, customers, bus),
+    wizardAnswer: new HandleWizardAnswer(
+      conversations,
+      messages,
+      quotes,
+      contracts,
+      customers,
+      users,
+      bus,
+    ),
     load: new LoadConversation(conversations, messages, contracts, customers),
   };
 }
@@ -43,7 +54,12 @@ Deno.test("load-conversation integration: includes wizard state + progress when 
   const { conversations, transition, wizardAnswer, load } = fresh();
   const conv = await conversations.create({ userId: "u-1" });
   await transition.run({ userId: "u-1", conversationId: conv.id });
-  await wizardAnswer.run({ userId: "u-1", conversationId: conv.id, stepId: "customer", optionId: "use_active" });
+  await wizardAnswer.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "use_active",
+  });
 
   const snap = await load.run({ userId: "u-1", conversationId: conv.id });
   assertEquals(snap.conversation.currentPhase, "terms");
@@ -58,9 +74,19 @@ Deno.test("load-conversation integration: returns messages oldest-first", async 
   await resetKv();
   const { conversations, messages, load } = fresh();
   const conv = await conversations.create({ userId: "u-1" });
-  await messages.append({ conversationId: conv.id, role: "user", kind: "text", content: "first" });
+  await messages.append({
+    conversationId: conv.id,
+    role: "user",
+    kind: "text",
+    content: "first",
+  });
   await new Promise((r) => setTimeout(r, 5));
-  await messages.append({ conversationId: conv.id, role: "assistant", kind: "text", content: "second" });
+  await messages.append({
+    conversationId: conv.id,
+    role: "assistant",
+    kind: "text",
+    content: "second",
+  });
 
   const snap = await load.run({ userId: "u-1", conversationId: conv.id });
   assertEquals(snap.messages[0].content, "first");

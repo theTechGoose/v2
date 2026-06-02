@@ -1099,7 +1099,10 @@ export default function AsstChat({
     const ta = taRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    ta.style.height = Math.min(ta.scrollHeight, 120) + "px";
+    // Floor at ~2 lines so the long example placeholder ("Ex: Customer wants a
+    // 10'x10' slab, what should I charge?") wraps and stays readable on mobile
+    // instead of clipping to a single line (problems.md #5).
+    ta.style.height = Math.min(Math.max(ta.scrollHeight, 56), 120) + "px";
   }
 
   /**
@@ -2791,7 +2794,15 @@ export default function AsstChat({
                             disabled={!selectedOptionId || sending}
                             onClick={applyJobOption}
                           >
-                            {sending ? "Setting up…" : "Continue →"}
+                            {sending
+                              ? (
+                                <>
+                                  <span class="spinner" aria-hidden="true" />
+                                  {" "}
+                                  Setting up…
+                                </>
+                              )
+                              : "Continue →"}
                           </button>
                         </>
                       )}
@@ -2973,7 +2984,14 @@ export default function AsstChat({
                       disabled={(priceCents ?? 0) <= 0 || sending}
                       onClick={() => onPriceContinue(priceCents!)}
                     >
-                      {sending ? "Setting up…" : "Continue →"}
+                      {sending
+                        ? (
+                          <>
+                            <span class="spinner" aria-hidden="true" />{" "}
+                            Setting up…
+                          </>
+                        )
+                        : "Continue →"}
                     </button>
                   </div>
                 )
@@ -3406,10 +3424,13 @@ export default function AsstChat({
                       typeof contract?.totalAmount === "number"
                         ? contract.totalAmount
                         : lineTotalCents;
+                    // Two decimals to match the public agreement's
+                    // fmtMoneyExact() (lib/format.ts) — the "$" is rendered in
+                    // a sibling span, so we format only the numeric portion.
                     const totalStr = (
                       totalCentsForBreakdown / 100
                     ).toLocaleString("en-US", {
-                      minimumFractionDigits: 0,
+                      minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     });
                     // Translate the picked payment terms into a milestone schedule
@@ -3435,7 +3456,7 @@ export default function AsstChat({
                               {contractId
                                 ? (
                                   <div class="quote-review__num">
-                                    #{contractId.slice(0, 8)}
+                                    #{contractId.slice(0, 8).toUpperCase()}
                                   </div>
                                 )
                                 : null}
@@ -4290,17 +4311,13 @@ export default function AsstChat({
                       <div style="flex:1;min-width:0">
                         <div class="wiz">
                           <div class="wiz__step">
-                            {typeof payload.stepIdx === "number"
-                              ? (
-                                // #16 — hide the "of 10" total until step 6. Through
-                                // the first half it reads as a daunting commitment;
-                                // past the halfway hump revealing it is reassuring.
-                                <div class="wiz__step-num">
-                                  Step {payload.stepIdx + 1}
-                                  {payload.stepIdx >= 5 ? " of 10" : ""}
-                                </div>
-                              )
-                              : null}
+                            {
+                              /* No "Step N of 10" label: the flow has an
+                                unnumbered Job Details picker after the wizard,
+                                so numbering only the wizard steps read as
+                                inconsistent. Title-only across every step keeps
+                                it uniform (problems.md #12). */
+                            }
                             {
                               /* Customer step renders its own heading inside the
                             panel because the prompt swaps after picking
@@ -4322,6 +4339,8 @@ export default function AsstChat({
                                     initialKind={precommittedKind ?? undefined}
                                     onKindConsumed={() =>
                                       setPrecommittedKind(null)}
+                                    ownerEmail={from?.email}
+                                    ownerPhone={from?.phone}
                                     sending={sending}
                                     onSubmit={(optionId, body) =>
                                       submitCustomerStep(m, optionId, body)}
@@ -4860,7 +4879,7 @@ export default function AsstChat({
                       ref={taRef}
                       class="composer__input"
                       placeholder={composerPlaceholder(messages)}
-                      rows={1}
+                      rows={2}
                       value={draft}
                       onInput={(e) => {
                         setDraft((e.target as HTMLTextAreaElement).value);
@@ -5125,6 +5144,12 @@ function CustomerStepPanel(props: {
   /** Fired once when the panel consumes `initialKind`, so the parent can
    *  clear the precommitted value and not re-apply it on a back-and-forth. */
   onKindConsumed?: () => void;
+  /** The contractor's OWN contact (from the quote/agreement FROM block).
+   *  Used to block saving a customer with the contractor's own email/phone —
+   *  the bug where every customer carried Hans's contact and the agreement
+   *  sent to the contractor instead of the customer. */
+  ownerEmail?: string;
+  ownerPhone?: string;
   sending: boolean;
   onSubmit: (
     optionId: "use_active" | "pick_existing" | "create_new",
@@ -5141,8 +5166,15 @@ function CustomerStepPanel(props: {
     },
   ) => Promise<void>;
 }) {
-  const { boundCustomer, initialKind, onKindConsumed, sending, onSubmit } =
-    props;
+  const {
+    boundCustomer,
+    initialKind,
+    onKindConsumed,
+    ownerEmail,
+    ownerPhone,
+    sending,
+    onSubmit,
+  } = props;
   // Two views, walked in order:
   //   1. list — Use [bound] from chat / pick existing / create a new
   //             [business|person]. The kind itself is picked on the
@@ -5226,7 +5258,34 @@ function CustomerStepPanel(props: {
   // ---- View: form ----
   if (view === "form") {
     const trimmedName = createName.trim();
-    const submitDisabled = sending || trimmedName.length === 0;
+    const trimmedEmail = createEmail.trim();
+    const trimmedPhone = createPhone.trim();
+    const normEmail = (e: string | undefined) => (e ?? "").trim().toLowerCase();
+    // Trailing 10 digits so a US country-code prefix doesn't defeat the match
+    // (E.164 "+15403331334" vs a typed "(540) 333-1334").
+    const normPhone = (p: string | undefined) => {
+      const d = (p ?? "").replace(/\D/g, "");
+      return d.length > 10 ? d.slice(-10) : d;
+    };
+    // The customer must be reachable on at least one channel — without a
+    // contact the agreement can't be delivered to them.
+    const hasContact = trimmedEmail.length > 0 || trimmedPhone.length > 0;
+    // Guard: the customer's contact must not be the contractor's own. This is
+    // the root of the "every customer carries my email/phone, and the contract
+    // sends to me" bug.
+    const emailIsOwn = !!ownerEmail && trimmedEmail.length > 0 &&
+      normEmail(trimmedEmail) === normEmail(ownerEmail);
+    const phoneIsOwn = !!ownerPhone && trimmedPhone.length > 0 &&
+      normPhone(trimmedPhone) === normPhone(ownerPhone);
+    const contactErr = emailIsOwn
+      ? "That's your own email — enter the customer's so the agreement reaches them."
+      : phoneIsOwn
+      ? "That's your own phone number — enter the customer's so the agreement reaches them."
+      : !hasContact && trimmedName.length > 0
+      ? "Add a phone number or email so the customer can receive the agreement."
+      : undefined;
+    const submitDisabled = sending || trimmedName.length === 0 ||
+      !hasContact || emailIsOwn || phoneIsOwn;
     const formHeading = "Who is this for?";
     const namePlaceholder = "Name";
     return (
@@ -5260,7 +5319,9 @@ function CustomerStepPanel(props: {
                 setCreateEmail((e.target as HTMLInputElement).value)}
             />
           </div>
-          {localErr ? <div class="cust-pick__err">{localErr}</div> : null}
+          {localErr ?? contactErr
+            ? <div class="cust-pick__err">{localErr ?? contactErr}</div>
+            : null}
           <div class="cust-create__actions">
             <button
               type="button"

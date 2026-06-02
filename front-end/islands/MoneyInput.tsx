@@ -42,10 +42,22 @@ export default function MoneyInput(
   const [focused, setFocused] = useState(false);
   const [ready, setReady] = useState(false);
   const [stageWidth, setStageWidth] = useState(380);
+  // Touch-only devices have no arrow keys / Shift, so the keyboard-nudge hint
+  // is noise there — swap it for a touch-appropriate one.
+  const [isTouchOnly, setIsTouchOnly] = useState(false);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setReady(true));
     return () => cancelAnimationFrame(id);
+  }, []);
+
+  useEffect(() => {
+    if (typeof globalThis.matchMedia !== "function") return;
+    const mq = globalThis.matchMedia("(hover: none) and (pointer: coarse)");
+    const apply = () => setIsTouchOnly(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
   }, []);
 
   useEffect(() => {
@@ -264,6 +276,8 @@ export default function MoneyInput(
         <div class="mi__words" key={`w-${cents ?? 0}`}>
           {hasValue
             ? words
+            : isTouchOnly
+            ? "Tap a preset or type an amount"
             : "Type or tap a preset · ↑ ↓ to nudge $10 · Shift = $100"}
         </div>
 
@@ -572,6 +586,9 @@ const STYLES = `
   white-space: nowrap;
   overflow: visible;
   padding-bottom: 4px;
+  /* Reserve room for the clear (✕) button so the cents (.mi__dec) never
+     crowd or overlap it at larger amounts. */
+  margin-right: 12px;
 }
 .mi__int {
   font-size: var(--mi-hero, 88px);
