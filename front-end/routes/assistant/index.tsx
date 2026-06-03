@@ -8,7 +8,6 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 import AsstThreads from "../../islands/AsstThreads.tsx";
 import AsstChat, { deriveUserInitials } from "../../islands/AsstChat.tsx";
 import ChatHeaderLive from "../../islands/ChatHeaderLive.tsx";
-import MobileViewport from "../../islands/MobileViewport.tsx";
 import RedirectToast from "../../islands/RedirectToast.tsx";
 import { type Conversation } from "../../clients/assistant.ts";
 import { profileClient, type ProfileSnapshot } from "../../clients/profile.ts";
@@ -81,7 +80,6 @@ export default define.page(async function AssistantHome(ctx) {
       </Head>
 
       <RedirectToast />
-      <MobileViewport />
       <div class="app">
         <DashSidebar active="messages" />
         <main class="main">

@@ -7,7 +7,6 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 import AsstThreads from "../../islands/AsstThreads.tsx";
 import AsstChat, { deriveUserInitials } from "../../islands/AsstChat.tsx";
 import ChatHeaderLive from "../../islands/ChatHeaderLive.tsx";
-import MobileViewport from "../../islands/MobileViewport.tsx";
 import {
   type Conversation,
   type ConversationDetail,
@@ -114,7 +113,6 @@ export default define.page(async function AssistantThread(ctx) {
         <title>Assistant · Paperwork Monster</title>
         <link rel="stylesheet" href="/assistant-page.css" />
       </Head>
-      <MobileViewport />
       <div class="app">
         <DashSidebar active="messages" />
         <main class="main">

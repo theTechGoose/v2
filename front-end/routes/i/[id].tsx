@@ -71,7 +71,7 @@ export default define.page(async function PublicInvoice(ctx) {
         <link rel="stylesheet" href="/landing.css" />
       </Head>
       <div
-        style={`min-height:100vh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};padding:32px 16px 64px`}
+        style={`min-height:var(--app-vh, 100dvh);background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};padding:32px 16px 64px`}
       >
         <div style="max-width:680px;margin:0 auto">
           {err || !invoice

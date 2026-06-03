@@ -375,9 +375,10 @@ body {
   height: 100vh;
   /* Mobile Safari's 100vh is the *large* viewport (counts the toolbar area), so the
      shell ran taller than the screen — the topbar scrolled away and the bottom hid
-     under the browser bar. 100dvh tracks the visible viewport, keeping the header
-     pinned and the content fully on-screen. */
-  height: 100dvh;
+     under the browser bar. --app-vh tracks the *visual* viewport (mirrors
+     visualViewport.height via MobileViewport), so it also shrinks when the soft
+     keyboard opens; falls back to 100dvh without JS. */
+  height: var(--app-vh, 100dvh);
   display: flex;
   min-height: 0;
   overflow: hidden;
