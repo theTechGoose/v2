@@ -2296,6 +2296,10 @@ body {
     min-height: 100dvh;
     display: block;
     overflow: visible;
+    /* Bottom scroll-room equal to the keyboard height so form fields near the
+       page bottom (e.g. Settings) can scroll above the on-screen keyboard. */
+    padding-bottom: var(--kb-inset, 0px);
+    scroll-padding-bottom: var(--kb-inset, 0px);
   }
   .main {
     display: block;

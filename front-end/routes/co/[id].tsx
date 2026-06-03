@@ -47,7 +47,7 @@ export default define.page(async function PublicChangeOrder(ctx) {
         <link rel="stylesheet" href="/landing.css" />
       </Head>
       <div
-        style={`min-height:var(--app-vh, 100dvh);background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};padding:32px 16px 64px`}
+        style={`min-height:var(--app-vh, 100dvh);background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};padding:32px 16px calc(64px + var(--kb-inset, 0px));scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
         <div style="max-width:560px;margin:0 auto">
           {!co
