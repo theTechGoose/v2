@@ -8479,19 +8479,22 @@ body {
   }
   /* Pin the chat shell to the *visual* viewport so the composer sits
      directly above the on-screen keyboard. iOS overlays the keyboard
-     without shrinking 100dvh, which floated the composer mid-screen with
-     a dead gap below it (Hans's "new issue"). --app-vh is the live
-     visualViewport height written by the MobileViewport island. */
+     without shrinking 100dvh AND scrolls the page down by offsetTop, so
+     pinning to height alone (the old `--app-vh` approach) left the composer
+     floating a gap above the keyboard — Hans's pricing-screen gap. --vvh /
+     --vvt mirror visualViewport.height / .offsetTop (MobileViewport island);
+     the translateY lines the overlay up exactly with the visible band. */
   .app {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
-    height: var(--app-vh, 100dvh);
+    height: var(--vvh, 100dvh);
+    transform: translateY(var(--vvt, 0px));
     overflow: hidden;
   }
   .asst {
-    height: calc(var(--app-vh, 100dvh) - 60px);
+    height: calc(var(--vvh, 100dvh) - 60px);
     min-height: 0;
   }
 }

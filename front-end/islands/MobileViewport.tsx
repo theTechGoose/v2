@@ -30,10 +30,24 @@ export default function MobileViewport() {
     const apply = () => {
       // How much the keyboard overlaps the layout viewport.
       const overlap = globalThis.innerHeight - vv.height;
+      // Visual-viewport overlay vars. Keyboard-sensitive shells (login/verify
+      // card, chat) position themselves as `position:fixed; top:0; left:0;
+      // right:0; height:var(--vvh); transform:translateY(var(--vvt))` so they
+      // overlay EXACTLY the region the user can see above the keyboard.
+      //
+      // Measured on real iOS 18 WebKit: opening the keyboard leaves `100dvh`
+      // unchanged AND scrolls the page down by `visualViewport.offsetTop`
+      // (e.g. height 410, offsetTop 124). A normal-flow shell anchored at
+      // layout y=0 therefore can't line up with the visible band no matter
+      // what height we give it — a centered card ends up jammed high with a
+      // dead gap below (the "weird gap"). Pinning a fixed overlay to
+      // (offsetTop, offsetTop+height) lines it up exactly: centered cards
+      // center in the visible band, bottom-anchored composers hug the keyboard.
+      root.style.setProperty("--vvh", `${vv.height}px`);
+      root.style.setProperty("--vvt", `${vv.offsetTop}px`);
       if (overlap > 2) {
-        // iOS-style overlay: the keyboard covers content WITHOUT shrinking the
-        // layout viewport / 100dvh, so we must pin the shell to the visual
-        // viewport height ourselves.
+        // Back-compat for any remaining `min-height:var(--app-vh)` consumers
+        // (scrollable public doc pages): track the visual viewport height.
         root.style.setProperty("--app-vh", `${vv.height}px`);
       } else {
         // No keyboard, OR Android where interactive-widget=resizes-content has
@@ -69,6 +83,8 @@ export default function MobileViewport() {
       globalThis.removeEventListener("resize", apply);
       root.style.removeProperty("--app-vh");
       root.style.removeProperty("--kb-inset");
+      root.style.removeProperty("--vvh");
+      root.style.removeProperty("--vvt");
     };
   }, []);
   return null;

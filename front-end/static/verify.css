@@ -704,13 +704,23 @@ footer a:hover {
    VERIFY page
    ========================================================================= */
 .verify-shell {
-  /* Track the visual viewport so the soft keyboard (iOS doesn't shrink
-     100dvh) never traps the phone/OTP inputs behind it — the card re-centers
-     in the space above the keyboard. */
-  min-height: var(--app-vh, 100dvh);
+  /* Overlay the shell exactly on the visual viewport so the soft keyboard
+     (iOS leaves 100dvh unchanged AND scrolls the page down by offsetTop)
+     never traps the phone/OTP inputs behind it — the card re-centers in the
+     space above the keyboard. --vvh/--vvt are mirrored from visualViewport by
+     the MobileViewport island; the 100dvh/0 fallbacks make this a normal
+     full-screen centered card on SSR / no-JS / desktop. */
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--vvh, 100dvh);
+  transform: translateY(var(--vvt, 0px));
+  overflow-y: auto;
   display: grid;
   place-items: center;
   padding: 24px;
+  box-sizing: border-box;
 }
 .verify-card {
   width: 100%;
