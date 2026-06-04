@@ -54,6 +54,9 @@ export class InvoiceStore {
 
   async update(id: string, userId: string, patch: UpdateInvoiceDto): Promise<Invoice> {
     const existing = await this.getOwned(id, userId);
+    // `undefined` → leave the field untouched. `null` → explicitly clear it
+    // (e.g. reject-claim wiping paymentIntent so a rejected claim can't later
+    // be confirmed into a bogus payment).
     const definedPatch = Object.fromEntries(
       Object.entries(patch).filter(([_, v]) => v !== undefined),
     );
@@ -65,6 +68,9 @@ export class InvoiceStore {
       createdAt: existing.createdAt,
       updatedAt: new Date().toISOString(),
     };
+    for (const [k, v] of Object.entries(definedPatch)) {
+      if (v === null) delete (updated as unknown as Record<string, unknown>)[k];
+    }
     const kv = await getKv();
     await kv.set([PREFIX, id], updated);
     return updated;

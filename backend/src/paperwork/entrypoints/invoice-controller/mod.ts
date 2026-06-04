@@ -169,12 +169,12 @@ export class InvoiceController {
     if (inv.status !== "claimed") {
       return ctx.json({ ok: false, reason: "not_claimed" }, 409);
     }
-    // We can't clear paymentIntent via the normal patch (undefined is
-    // filtered). Stamp a tombstone-shaped intent the public page treats
-    // as "no active claim".
+    // `null` tells the store to explicitly clear the intent. A plain
+    // `undefined` is filtered out and would leave the stale claim behind —
+    // which confirm-payment would then happily turn into a bogus payment.
     await this.store.update(id, user.id, {
       status: "sent",
-      paymentIntent: undefined,
+      paymentIntent: null,
     });
     return ctx.json({ ok: true });
   }

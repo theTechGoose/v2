@@ -151,8 +151,10 @@ export class UpdateInvoiceDto {
   @ValidateNested({ each: true })
   @Type(() => ReminderHistoryEntryDto)
   reminderHistory?: ReminderHistoryEntryDto[];
+  // `null` is an explicit "clear the claim" signal (used by reject-claim);
+  // `undefined` means "leave it untouched" (the store filters undefined out).
   @IsOptional() @ValidateNested() @Type(() => PaymentIntentDto)
-  paymentIntent?: PaymentIntentDto;
+  paymentIntent?: PaymentIntentDto | null;
 }
 
 export interface Invoice extends CreateInvoiceDto {

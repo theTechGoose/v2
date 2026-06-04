@@ -754,6 +754,22 @@ function InvoiceCard(
       setBusy(false);
     }
   }
+  // "Didn't get it" — reopen a claim the customer reported but you never
+  // actually received. Reverts the invoice to sent so they can re-pay.
+  async function doRejectClaim(e: Event) {
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/invoices/${inv.id}/reject-claim`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (r.ok) globalThis.location.reload();
+    } finally {
+      setBusy(false);
+    }
+  }
   function doOpenInvoice(e: Event) {
     e.stopPropagation();
     // Public invoice page is the canonical detail surface today — opens
@@ -1080,6 +1096,17 @@ function InvoiceCard(
             {busy ? "…" : cta.replace(/ →$/, "")}
           </button>
           <button type="button" onClick={doOpenInvoice}>Open</button>
+          {inv.stage === "claimed" && (
+            <button
+              type="button"
+              onClick={doRejectClaim}
+              disabled={busy}
+              data-cy="invoice-reject-claim"
+              title="Reopen this invoice — you never received this payment"
+            >
+              Didn't get it
+            </button>
+          )}
           {(inv.stage === "overdue" || inv.stage === "out")
             ? (
               <button
