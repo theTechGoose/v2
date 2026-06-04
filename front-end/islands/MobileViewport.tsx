@@ -70,6 +70,37 @@ export default function MobileViewport() {
     apply();
     vv.addEventListener("resize", apply);
     vv.addEventListener("scroll", apply);
+
+    // Keep the focused field clear of the keyboard. iOS's native
+    // scroll-into-view is unreliable inside our nested scroll containers (the
+    // chat thread) and under the fixed/translated shells — it left wizard
+    // inputs (e.g. the customer Phone Number field) and their action buttons
+    // clipped behind the keyboard. After focus + the keyboard settling, we
+    // explicitly center the field in its scroll container, which sits entirely
+    // above the keyboard, so it (and the row/buttons around it) is always
+    // visible. Covers every input on every page from one place.
+    let focusTimer = 0;
+    const onFocusIn = (e: FocusEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (
+        !t ||
+        typeof t.matches !== "function" ||
+        !t.matches("input, textarea, select, [contenteditable='true']")
+      ) {
+        return;
+      }
+      globalThis.clearTimeout(focusTimer);
+      // Wait for the keyboard animation + visualViewport resize to settle so
+      // the scroll lands at the final layout, not mid-animation.
+      focusTimer = globalThis.setTimeout(() => {
+        try {
+          t.scrollIntoView({ block: "center", behavior: "smooth" });
+        } catch {
+          /* older engines: best-effort, native behavior still applies */
+        }
+      }, 300);
+    };
+    document.addEventListener("focusin", onFocusIn);
     // Android (interactive-widget=resizes-content) resizes the *layout*
     // viewport when the keyboard opens, which fires window.resize but NOT
     // always visualViewport.resize — so without this --app-vh went stale and
@@ -81,6 +112,8 @@ export default function MobileViewport() {
       vv.removeEventListener("resize", apply);
       vv.removeEventListener("scroll", apply);
       globalThis.removeEventListener("resize", apply);
+      document.removeEventListener("focusin", onFocusIn);
+      globalThis.clearTimeout(focusTimer);
       root.style.removeProperty("--app-vh");
       root.style.removeProperty("--kb-inset");
       root.style.removeProperty("--vvh");
