@@ -268,6 +268,12 @@ export class PaperworkPublicController {
     if (existing.status === "accepted") {
       return ctx.json({ ok: true, alreadyAccepted: true });
     }
+    // A declined quote is terminal — don't let a stale public link silently
+    // flip "lost" back to "accepted" (mirrors decline's already_accepted
+    // guard). If the customer changed their mind, the contractor re-sends.
+    if (existing.status === "lost") {
+      return ctx.json({ ok: false, reason: "declined" }, 409);
+    }
     const updated = await this.quotes.update(id, existing.userId, {
       status: "accepted",
       // The accept action augments the quote with signature metadata if provided.
@@ -610,7 +616,15 @@ export class PaperworkPublicController {
     @Param("id") id: string,
     @Body() body: unknown,
   ) {
-    const dto = parseClaim(body);
+    // Bad/unknown method is a client error → 400, not a 500. The public UI
+    // only ever sends enabled methods, but a hand-rolled request shouldn't
+    // crash the endpoint.
+    let dto: ClaimPaymentDto;
+    try {
+      dto = parseClaim(body);
+    } catch {
+      return ctx.json({ ok: false, reason: "invalid_method" }, 400);
+    }
     try {
       const invoice = await this.invoices.get(id);
       if (invoice.status === "paid") {
