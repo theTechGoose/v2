@@ -356,16 +356,20 @@ function buildPaymentMilestones(
     ];
   }
 
-  // "Deposit + balance" — small upfront, balance on completion. No
-  // explicit split in the option label; default to 25/75 (matches the
-  // wizard's deposit_bal preset hint).
+  // "Deposit + balance" — small upfront, balance on completion. No explicit
+  // split in the option label; default to 20/80 to MATCH the binding split
+  // the customer actually signs and is billed: the public contract page
+  // (contract-doc.tsx), the contract PDF (render-contract-pdf), and the
+  // generated invoices (send-signed-confirmation) all use 20%. This preview
+  // previously showed 25%, so the contractor saw a larger deposit than the
+  // customer ever agreed to or paid.
   if (v.includes("deposit") && v.includes("balance")) {
-    const deposit = Math.round(totalCents * 0.25);
+    const deposit = Math.round(totalCents * 0.20);
     return [
-      { label: "Deposit", pct: 25, amountCents: deposit },
+      { label: "Deposit", pct: 20, amountCents: deposit },
       {
         label: "Balance on completion",
-        pct: 75,
+        pct: 80,
         amountCents: totalCents - deposit,
       },
     ];
