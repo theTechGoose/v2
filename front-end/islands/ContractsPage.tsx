@@ -105,10 +105,13 @@ export default function ContractsPage() {
 
   const liveCards = [...inProgress, ...startingSoon, ...wrappingUp];
 
-  const dollarsOf = (xs: typeof cards) =>
-    xs.reduce((sum, c) => sum + parseMoney(c.total), 0);
-  const leftOf = (xs: typeof cards) =>
-    xs.reduce((sum, c) => sum + parseMoney(c.left), 0);
+  // The KPI/hero formatter (fmtMoney) takes INTEGER CENTS, but the card
+  // strings are dollars ("$1,000"). Convert so totals don't read 100× low
+  // (the "$10 of work" bug for a $1,000 contract).
+  const centsOf = (xs: typeof cards, key: "total" | "left") =>
+    xs.reduce((sum, c) => sum + Math.round(parseMoney(c[key]) * 100), 0);
+  const dollarsOf = (xs: typeof cards) => centsOf(xs, "total");
+  const leftOf = (xs: typeof cards) => centsOf(xs, "left");
 
   const totalCommitted = dollarsOf(liveCards);
   const inProgressValue = dollarsOf(inProgress);

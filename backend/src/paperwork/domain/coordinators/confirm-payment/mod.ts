@@ -146,19 +146,19 @@ export class ConfirmPayment {
   }
 }
 
-/** The Invoice DTO uses a wider PaymentMethod union than the legacy
- *  Payment DTO (which predates Venmo/Zelle/Cash App). Map until the
- *  Payment DTO catches up — for now everything that isn't cash/check/ach
- *  collapses to "other". */
+/** Map the invoice payment-intent method to the stored Payment method. The
+ *  Payment DTO now carries the peer-to-peer wallets too, so we preserve HOW
+ *  the customer paid (Zelle/Venmo/Cash App/PayPal) instead of flattening to
+ *  "other". Anything unrecognised still falls back to "other". */
 function mapMethod(m: PaymentMethod): PaymentStorageMethod {
   switch (m) {
     case "cash": return "cash";
     case "check": return "check";
     case "ach": return "ach";
-    case "venmo":
-    case "zelle":
-    case "cashapp":
-    case "other":
+    case "venmo": return "venmo";
+    case "zelle": return "zelle";
+    case "cashapp": return "cashapp";
+    case "paypal": return "paypal";
     default:
       return "other";
   }

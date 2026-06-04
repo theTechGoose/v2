@@ -59,6 +59,10 @@ const METHOD_LABEL: Record<PaymentMethod, string> = {
   check: "Check",
   ach: "ACH",
   card: "Card",
+  venmo: "Venmo",
+  zelle: "Zelle",
+  cashapp: "Cash App",
+  paypal: "PayPal",
   other: "Other",
 };
 
@@ -67,8 +71,23 @@ const METHOD_AV_BG: Record<PaymentMethod, string> = {
   card: "linear-gradient(135deg,#2A6F77,#0F3A40)",
   check: "linear-gradient(135deg,#9C8074,#5C4034)",
   cash: "linear-gradient(135deg,#E07A8C,#C04060)",
+  venmo: "linear-gradient(135deg,#3D95CE,#1F6FA8)",
+  zelle: "linear-gradient(135deg,#8E5BD6,#6A2CB8)",
+  cashapp: "linear-gradient(135deg,#4FB35F,#2E8B40)",
+  paypal: "linear-gradient(135deg,#2A6F9E,#143A6B)",
   other: "linear-gradient(135deg,#9C8074,#5C4034)",
 };
+
+/** Shared glyph for the peer-to-peer wallets (Venmo/Zelle/Cash App/PayPal):
+ *  a phone with a $ — returned as bare SVG children to drop into <I d=…>. */
+function P2PIcon() {
+  return (
+    <>
+      <rect x="6" y="3" width="12" height="18" rx="2.5" />
+      <path d="M12 6v1.5M12 16.5V18M10 9.5h3a1.5 1.5 0 0 1 0 3h-2a1.5 1.5 0 0 0 0 3h3" />
+    </>
+  );
+}
 
 /** SVG paths for the inline payment-method icon. Self-contained so the
  *  pph__stub-method line doesn't need a sprite sheet. */
@@ -100,6 +119,11 @@ const METHOD_ICON: Record<PaymentMethod, preact.JSX.Element> = {
       <path d="M5 9.5h.01M19 14.5h.01" />
     </>
   ),
+  // Peer-to-peer wallets share a phone-with-$ glyph; the label disambiguates.
+  venmo: <P2PIcon />,
+  zelle: <P2PIcon />,
+  cashapp: <P2PIcon />,
+  paypal: <P2PIcon />,
   other: (
     <>
       <circle cx="12" cy="12" r="9" />
@@ -131,6 +155,10 @@ const SETTLE_DAYS: Record<PaymentMethod, number> = {
   check: 5, // mailed check + deposit clearing
   card: 0, // captured instantly
   cash: 0, // instant
+  venmo: 0, // peer-to-peer — funds land instantly
+  zelle: 0, // instant
+  cashapp: 0, // instant
+  paypal: 0, // instant
   other: 0, // unknown — treat as instant
 };
 
@@ -854,6 +882,10 @@ function PSideMix({ landed }: { landed: EnrichedPayment[] }) {
     card: 0,
     check: 0,
     cash: 0,
+    venmo: 0,
+    zelle: 0,
+    cashapp: 0,
+    paypal: 0,
     other: 0,
   };
   for (const p of landed) tally[p.method] += p.amount;
@@ -863,6 +895,10 @@ function PSideMix({ landed }: { landed: EnrichedPayment[] }) {
     card: "#2A6F77",
     check: "#9C8074",
     cash: "#E07A8C",
+    venmo: "#3D95CE",
+    zelle: "#8E5BD6",
+    cashapp: "#4FB35F",
+    paypal: "#2A6F9E",
     other: "#6b7560",
   };
   const segments = (Object.keys(tally) as PaymentMethod[])

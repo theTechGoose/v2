@@ -134,7 +134,10 @@ export default function ContractCard({ c, idx }: Props) {
         <button
           class="kcard__cta"
           type="button"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            globalThis.location.assign(c.ctaHref);
+          }}
         >
           {c.cta} <I d={ICN.arrow} size={11} sw={2.5} />
         </button>
@@ -186,10 +189,26 @@ export default function ContractCard({ c, idx }: Props) {
           ))}
         </div>
         <div class="kcard__back-foot">
-          <button type="button" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              globalThis.location.assign("/invoices");
+            }}
+          >
             <I d={ICN.invoice} size={13} /> Invoice
           </button>
-          <button type="button" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              globalThis.location.assign(
+                `/assistant?seed=${
+                  encodeURIComponent(`Text ${c.client} about their ${c.title} job.`)
+                }`,
+              );
+            }}
+          >
             <I d={ICN.send} size={13} /> Text client
           </button>
           <button

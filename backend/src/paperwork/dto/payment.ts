@@ -1,7 +1,20 @@
 import { IsIn, IsNumber, IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
 
-export const PAYMENT_METHODS = ["cash", "check", "ach", "card", "other"] as const;
+// Includes the peer-to-peer wallets so a confirmed payment preserves HOW the
+// customer actually paid (Zelle/Venmo/Cash App/PayPal) instead of collapsing
+// to "other" — the /payments dashboard, receipts, and CSV all read this.
+export const PAYMENT_METHODS = [
+  "cash",
+  "check",
+  "ach",
+  "card",
+  "venmo",
+  "zelle",
+  "cashapp",
+  "paypal",
+  "other",
+] as const;
 export type PaymentMethod = typeof PAYMENT_METHODS[number];
 
 export class CreatePaymentDto {

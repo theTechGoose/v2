@@ -9,7 +9,16 @@
  */
 import { api, type ApiOptions } from "../lib/api.ts";
 
-export type PaymentMethod = "cash" | "check" | "ach" | "card" | "other";
+export type PaymentMethod =
+  | "cash"
+  | "check"
+  | "ach"
+  | "card"
+  | "venmo"
+  | "zelle"
+  | "cashapp"
+  | "paypal"
+  | "other";
 
 export interface Payment {
   id: string;

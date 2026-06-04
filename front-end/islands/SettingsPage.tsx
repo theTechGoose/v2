@@ -124,6 +124,9 @@ function tr(es: boolean) {
       ? "Activa las formas en que tus clientes pueden pagarte. Aparecen como botones en tus facturas."
       : "Turn on the ways customers can pay you. These show up as buttons on your invoices.",
     yourHandle: es ? "Tu usuario" : "Your handle",
+    mailingOptional: es
+      ? "Dirección postal (opcional)"
+      : "Mailing address (optional)",
     retypeConfirm: es ? "Reescribe para confirmar" : "Retype to confirm",
     noMatch: es
       ? "Las dos entradas no coinciden."
@@ -787,6 +790,11 @@ interface PayRow {
   /** Backend field that stores the handle. null → no handle (cash). */
   field: "handle" | "cashtag" | "mailTo" | null;
   placeholder: string;
+  /** Money-routing handles (Venmo/Zelle/etc.) are required when the method is
+   *  enabled and get a retype-to-confirm guard — a typo sends funds to the
+   *  wrong place. A check's mailing address is optional (the contractor's
+   *  address already prints on the invoice) and needs no confirm field. */
+  optional?: boolean;
 }
 
 const PAY_ROWS: PayRow[] = [
@@ -814,6 +822,7 @@ const PAY_ROWS: PayRow[] = [
     label: "Check",
     field: "mailTo",
     placeholder: "Mailing address for checks",
+    optional: true,
   },
   { key: "cash", label: "Cash", field: null, placeholder: "" },
 ];
@@ -870,6 +879,8 @@ function PaymentsEditCard(
     for (const r of PAY_ROWS) {
       const st = rows[r.key];
       if (!st.enabled || r.field === null) continue;
+      // Optional fields (check's mailing address) may be left blank.
+      if (r.optional) continue;
       if (st.value.trim() === "") {
         setErr(t.enterHandle(r.label));
         return;
@@ -952,7 +963,9 @@ function PaymentsEditCard(
               {st.enabled && r.field !== null && (
                 <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
                   <label style="display:block">
-                    <span style={labelStyle}>{t.yourHandle}</span>
+                    <span style={labelStyle}>
+                      {r.optional ? t.mailingOptional : t.yourHandle}
+                    </span>
                     <input
                       type="text"
                       style={inputStyle}
@@ -965,22 +978,24 @@ function PaymentsEditCard(
                         })}
                     />
                   </label>
-                  <label style="display:block">
-                    <span style={labelStyle}>{t.retypeConfirm}</span>
-                    <input
-                      type="text"
-                      style={`${inputStyle}${
-                        bad ? ";border-color:#a83b3b" : ""
-                      }`}
-                      value={st.confirm}
-                      disabled={busy}
-                      placeholder={r.placeholder}
-                      onInput={(e) =>
-                        patchRow(r.key, {
-                          confirm: (e.target as HTMLInputElement).value,
-                        })}
-                    />
-                  </label>
+                  {!r.optional && (
+                    <label style="display:block">
+                      <span style={labelStyle}>{t.retypeConfirm}</span>
+                      <input
+                        type="text"
+                        style={`${inputStyle}${
+                          bad ? ";border-color:#a83b3b" : ""
+                        }`}
+                        value={st.confirm}
+                        disabled={busy}
+                        placeholder={r.placeholder}
+                        onInput={(e) =>
+                          patchRow(r.key, {
+                            confirm: (e.target as HTMLInputElement).value,
+                          })}
+                      />
+                    </label>
+                  )}
                   {bad && (
                     <div style="grid-column:1 / -1;color:#a83b3b;font-size:12px">
                       {t.noMatch}

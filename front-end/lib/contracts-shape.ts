@@ -38,6 +38,8 @@ export interface ContractCard {
   left: string;
   total: string;
   cta: string;
+  /** Destination for the primary CTA button. */
+  ctaHref: string;
   /** Numeric day-of-month coordinates used by the schedule strip
    *  (Apr 1 = 1, May 1 = 31, May 31 = 61). */
   scheduleStart: number;
@@ -255,6 +257,14 @@ export function toContractCard(
     ? "Finish + send"
     : "Re-engage";
 
+  // Where the primary CTA actually goes (the buttons used to be dead stubs).
+  // Invoice-related actions land on /invoices (send the scheduled invoice,
+  // view the receipt); contract-shaping actions open the contract itself.
+  const ctaHref = mood === "active" || mood === "wrapping-up" ||
+      mood === "completed"
+    ? "/invoices"
+    : `/c/${contract.id}`;
+
   const story = mood === "active"
     ? `${name} signed and you're on the job. Next milestone keeps the train moving — send a quick update so they know.`
     : mood === "starting-soon"
@@ -299,6 +309,7 @@ export function toContractCard(
     left: fmtMoney(left),
     total: fmtMoney(totalAmount),
     cta,
+    ctaHref,
     scheduleStart,
     scheduleEnd,
     scheduleScheduled: mood === "starting-soon" || mood === "draft",
