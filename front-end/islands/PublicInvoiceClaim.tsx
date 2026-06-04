@@ -146,6 +146,7 @@ export default function PublicInvoiceClaim(
         ? (
           <div
             data-cy="claim-detail"
+            data-kbd-group
             style={`margin-top:18px;background:#fff;border:1px solid ${LINE};border-radius:14px;padding:18px 20px`}
           >
             <div

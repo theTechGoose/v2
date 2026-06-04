@@ -1,5 +1,23 @@
 import { useEffect } from "preact/hooks";
 
+/** Nearest scrollable ancestor (overflow-y auto/scroll with real overflow),
+ *  e.g. the chat thread's `.chat__scroll`. Returns null for plain body-scroll
+ *  pages so the caller falls back to scrolling the window. */
+function scrollableAncestor(el: HTMLElement | null): HTMLElement | null {
+  let node = el?.parentElement ?? null;
+  while (node) {
+    const oy = getComputedStyle(node).overflowY;
+    if (
+      (oy === "auto" || oy === "scroll") &&
+      node.scrollHeight > node.clientHeight + 1
+    ) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
 /**
  * Mirrors the visual viewport into two CSS custom properties so every page
  * can stay clear of the on-screen keyboard. Mounted once globally (routes/
@@ -94,7 +112,48 @@ export default function MobileViewport() {
       // the scroll lands at the final layout, not mid-animation.
       focusTimer = globalThis.setTimeout(() => {
         try {
-          t.scrollIntoView({ block: "center", behavior: "smooth" });
+          // Reveal the field — and, if a submit/primary button trails it in the
+          // same form (the contract "sign" button, the wizard "Next"), keep the
+          // BUTTON clear of the keyboard too. Centering alone clamps at the page
+          // bottom (the button is the last element) and iOS's layout viewport
+          // doesn't fully exclude the keyboard, so scrollIntoView can't lift it.
+          // Compute the exact overshoot past the visible band (visualViewport)
+          // and scroll precisely that much.
+          const group = t.closest("form, [data-kbd-group]");
+          let target: Element = t;
+          if (group) {
+            // The primary action (sign / "I sent it" / Next) is the last button
+            // that FOLLOWS the field in the group. Revealing it keeps the field
+            // (just above it) visible too. Method-picker buttons precede the
+            // field, so they're correctly ignored.
+            const after = Array.from(group.querySelectorAll("button")).filter(
+              (b) =>
+                (t.compareDocumentPosition(b) &
+                  Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+            );
+            if (after.length) target = after[after.length - 1];
+          }
+          const sc = scrollableAncestor(target as HTMLElement);
+          // Correct for the keyboard. getBoundingClientRect on iOS is relative
+          // to the *visual* viewport, so its bottom edge is `vv.height`; if the
+          // target's bottom sits below that (behind the keyboard) nudge content
+          // up by the exact overshoot. Two passes (instant, then re-measure)
+          // converge even when the first scroll changes layout. No `block:center`
+          // first — it clamps at the page bottom and fights this.
+          const correct = () => {
+            const r = target.getBoundingClientRect();
+            const overshoot = r.bottom - (vv.height - 16);
+            if (overshoot > 1) {
+              if (sc) sc.scrollBy({ top: overshoot, behavior: "auto" });
+              else globalThis.scrollBy({ top: overshoot, behavior: "auto" });
+            } else if (r.top < 8) {
+              // overscrolled past the top — pull back so the field stays visible
+              if (sc) sc.scrollBy({ top: r.top - 8, behavior: "auto" });
+              else globalThis.scrollBy({ top: r.top - 8, behavior: "auto" });
+            }
+          };
+          correct();
+          globalThis.setTimeout(correct, 250);
         } catch {
           /* older engines: best-effort, native behavior still applies */
         }
