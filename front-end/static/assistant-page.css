@@ -7828,10 +7828,19 @@ body {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 48px 32px;
+  padding: 20px 32px;
   max-width: 480px;
   margin: 0 auto;
   gap: 12px;
+  /* Center the empty-state/price content when there's room, but when the
+     content is taller than the scroll area (e.g. the price screen with the
+     keyboard open) grow past 100% and scroll from the TOP instead of
+     centering — otherwise justify-content:center clips the top and pushes the
+     Continue button off the bottom behind the keyboard. min-height (not
+     height) is what makes it grow-and-scroll instead of clip. */
+  min-height: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 .chat__empty-icon {
   width: 72px;
