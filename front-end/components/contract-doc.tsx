@@ -460,9 +460,11 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
             </div>
           )}
 
-          {/* To / From block */}
+          {/* To / From block — auto-fit so the two cards stack on narrow
+              phones instead of squeezing into ~175px columns (which wrapped
+              the contractor's phone number mid-digit). Two-up on wider screens. */}
           <section
-            style="margin-top:24px;display:grid;grid-template-columns:1fr 1fr;gap:14px"
+            style="margin-top:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px"
             class="ctr__tofrom"
           >
             <PartyCard
@@ -817,7 +819,7 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
                       {t.callWord}{" "}
                       <a
                         href={telHref(contractor.phoneNumber)}
-                        style={`color:${TEAL};text-decoration:none;font-weight:700`}
+                        style={`color:${TEAL};text-decoration:none;font-weight:700;white-space:nowrap`}
                       >
                         {fmtPhone(contractor.phoneNumber)}
                       </a>
@@ -947,7 +949,7 @@ function PartyCard(props: {
         <div style={`margin-top:4px;font-size:12.5px;line-height:1.35`}>
           <a
             href={telHref(props.phone)}
-            style={`color:${TEAL};text-decoration:none;font-weight:600`}
+            style={`color:${TEAL};text-decoration:none;font-weight:600;white-space:nowrap`}
           >
             {fmtPhone(props.phone)}
           </a>

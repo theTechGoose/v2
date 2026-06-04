@@ -271,7 +271,7 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
             {contractor?.phoneNumber && (
               <a
                 href={telHref(contractor.phoneNumber)}
-                style="color:#144852;text-decoration:none;font-weight:700"
+                style="color:#144852;text-decoration:none;font-weight:700;white-space:nowrap"
               >
                 {fmtPhone(contractor.phoneNumber)}
               </a>

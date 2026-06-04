@@ -260,7 +260,7 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
                     {es ? "Llama al" : "Call"}{" "}
                     <a
                       href={telHref(invoice.contractor.phoneNumber)}
-                      style={`color:${TEAL};text-decoration:none;font-weight:700`}
+                      style={`color:${TEAL};text-decoration:none;font-weight:700;white-space:nowrap`}
                     >
                       {fmtPhone(invoice.contractor.phoneNumber)}
                     </a>
