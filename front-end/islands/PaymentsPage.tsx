@@ -962,12 +962,11 @@ function PSideTip() {
         Monster tip
       </div>
       <p style="margin:0;font-family:var(--font-body);font-size:13.5px;line-height:1.55;color:rgba(255,255,255,0.88)">
-        ACH costs you{" "}
-        <strong style="color:#fff">$0.40 a transfer</strong>; card costs you
-        {" "}
-        <strong style="color:#fff">2.9% + $0.30</strong>. On a $4,800 invoice
-        that's a <strong style="color:#fff">$140 difference</strong>{" "}
-        — worth nudging clients toward auto-pay.
+        <strong style="color:#fff">Zelle and Cash App</strong>{" "}
+        land instantly with no fees — a check can take{" "}
+        <strong style="color:#fff">up to 5 days</strong>{" "}
+        to clear. For deposits, confirm the money's actually in your account
+        before you start the job.
       </p>
     </div>
   );
