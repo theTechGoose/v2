@@ -28,23 +28,45 @@ export default function MobileViewport() {
     if (!vv) return;
     const root = document.documentElement;
     const apply = () => {
-      root.style.setProperty("--app-vh", `${vv.height}px`);
-      // Keyboard height = layout viewport − (space above keyboard + any
-      // offset the page was pushed up). Clamp at 0 so a closed keyboard /
-      // desktop yields no inset. innerHeight stays at the layout height on
-      // iOS when the keyboard is open, so the difference is the keyboard.
-      const inset = Math.max(
-        0,
-        globalThis.innerHeight - vv.height - vv.offsetTop,
+      // How much the keyboard overlaps the layout viewport.
+      const overlap = globalThis.innerHeight - vv.height;
+      if (overlap > 2) {
+        // iOS-style overlay: the keyboard covers content WITHOUT shrinking the
+        // layout viewport / 100dvh, so we must pin the shell to the visual
+        // viewport height ourselves.
+        root.style.setProperty("--app-vh", `${vv.height}px`);
+      } else {
+        // No keyboard, OR Android where interactive-widget=resizes-content has
+        // already shrunk the layout viewport. Defer to native 100dvh (the CSS
+        // fallback): it tracks the keyboard animation smoothly in lockstep,
+        // whereas writing a JS pixel height only lands at the *end* of the
+        // animation — which made the chat shell jump and briefly stranded the
+        // composer behind the keyboard. Removing the override lets the shell
+        // follow dvh frame-for-frame.
+        root.style.removeProperty("--app-vh");
+      }
+      // Keyboard inset for bottom scroll-room on body-scroll pages: the
+      // keyboard height, minus any offset the page was pushed up. 0 on Android
+      // (layout already resized) and on desktop.
+      root.style.setProperty(
+        "--kb-inset",
+        `${Math.max(0, overlap - vv.offsetTop)}px`,
       );
-      root.style.setProperty("--kb-inset", `${inset}px`);
     };
     apply();
     vv.addEventListener("resize", apply);
     vv.addEventListener("scroll", apply);
+    // Android (interactive-widget=resizes-content) resizes the *layout*
+    // viewport when the keyboard opens, which fires window.resize but NOT
+    // always visualViewport.resize — so without this --app-vh went stale and
+    // the chat shell stayed full-height, dropping the composer behind the
+    // keyboard with a dead gap. iOS only changes the visual viewport, caught
+    // above. Listening to both covers every platform.
+    globalThis.addEventListener("resize", apply);
     return () => {
       vv.removeEventListener("resize", apply);
       vv.removeEventListener("scroll", apply);
+      globalThis.removeEventListener("resize", apply);
       root.style.removeProperty("--app-vh");
       root.style.removeProperty("--kb-inset");
     };
