@@ -35,7 +35,7 @@ export default define.page(function PublicContract(ctx) {
         </style>
       </Head>
       <div
-        style={`min-height:var(--app-vh, 100dvh);background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};padding:32px 16px calc(64px + var(--kb-inset, 0px));scroll-padding-bottom:var(--kb-inset, 0px)`}
+        style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};padding:32px 16px calc(64px + var(--kb-inset, 0px));scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
         <div style="max-width:760px;margin:0 auto">
           <PublicContractView id={id} />

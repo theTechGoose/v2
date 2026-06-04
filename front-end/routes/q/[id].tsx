@@ -70,7 +70,7 @@ function PublicShell(
 ) {
   const headline = brand && brand.trim() ? brand : "Your contractor";
   return (
-    <div style="min-height:var(--app-vh, 100dvh);background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30;padding:32px 16px calc(32px + var(--kb-inset, 0px));scroll-padding-bottom:var(--kb-inset, 0px);">
+    <div style="min-height:100dvh;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30;padding:32px 16px calc(32px + var(--kb-inset, 0px));scroll-padding-bottom:var(--kb-inset, 0px);">
       <div style="max-width:640px;margin:0 auto">
         <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#519843;text-align:center;margin-bottom:6px">
           {headline}
