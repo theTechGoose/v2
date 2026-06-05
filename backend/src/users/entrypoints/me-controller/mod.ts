@@ -3,6 +3,7 @@ import type { ExecutionContext } from "#danet/core";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
+import { WipeAccount } from "@users/domain/coordinators/wipe-account/mod.ts";
 import { parseUpdateUser } from "@users/dto/user.ts";
 import { requireUser, readSessionId, UnauthorizedError } from "@users/domain/coordinators/require-user/mod.ts";
 
@@ -18,6 +19,7 @@ export class MeController {
     private users: UserStore,
     private sessions: SessionStore,
     private logoutCoord: Logout,
+    private wipeCoord: WipeAccount,
   ) {}
 
   @Get()
@@ -40,5 +42,21 @@ export class MeController {
     await this.users.delete(user.id);
     await this.logoutCoord.run(sessionId);
     return { ok: true };
+  }
+
+  /**
+   * GET /me/wipe — irreversibly delete the authenticated user and 100% of
+   * their data (invoices, quotes, customers, paperwork, files, sessions, …).
+   * Scoped entirely by the calling session's user; there is no way to wipe
+   * anyone else. The user's sessions are part of the sweep, so this also logs
+   * them out as a side effect.
+   *
+   * A GET (rather than DELETE) by request — it's hit straight from the
+   * Settings "danger zone" button.
+   */
+  @Get("wipe")
+  async wipe(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return await this.wipeCoord.run(user.id);
   }
 }

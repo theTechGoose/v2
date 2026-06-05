@@ -9,6 +9,7 @@ import { OtpStore }       from "@users/domain/data/otp-store/mod.ts";
 import { SendOtp }        from "@users/domain/coordinators/send-otp/mod.ts";
 import { VerifyOtp }      from "@users/domain/coordinators/verify-otp/mod.ts";
 import { Logout }         from "@users/domain/coordinators/logout/mod.ts";
+import { WipeAccount }    from "@users/domain/coordinators/wipe-account/mod.ts";
 import { SmsService }     from "@users/domain/data/sms/mod.ts";
 
 // --- profile sub-aggregates (folded in from former ProfileModule) ---
@@ -60,7 +61,7 @@ import { LoadProfile }            from "@profile/domain/coordinators/load-profil
   injectables: [
     // identity
     UserStore, SessionStore, OtpStore,
-    SendOtp, VerifyOtp, Logout,
+    SendOtp, VerifyOtp, Logout, WipeAccount,
     SmsService,
     RateLimiter,
     // profile

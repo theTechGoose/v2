@@ -129,4 +129,8 @@ export const profileClient = {
       patch,
       opts,
     ),
+  /** Irreversibly wipe the authenticated account and 100% of its data.
+   *  Hits GET /me/wipe (scoped to the caller's session) and logs them out. */
+  wipeAccount: (opts: ApiOptions = {}) =>
+    api.get<{ ok: true; deleted: number }>("/me/wipe", opts),
 };

@@ -140,6 +140,17 @@ function tr(es: boolean) {
       es
         ? `Las entradas de ${m} no coinciden — reescribe para confirmar.`
         : `${m} entries don't match — retype to confirm.`,
+    // Danger zone
+    dangerZone: es ? "Zona de peligro" : "Danger zone",
+    wipeIntro: es
+      ? "Esto borra tu cuenta y el 100% de tus datos — cotizaciones, facturas, clientes, pagos y archivos. No se puede deshacer."
+      : "This deletes your account and 100% of your data — quotes, invoices, clients, payments, and files. This cannot be undone.",
+    wipeConfirmLabel: es
+      ? 'Escribe "DELETE" para confirmar'
+      : 'Type "DELETE" to confirm',
+    wipeButton: es ? "Borrar cuenta y todos los datos" : "Wipe account & all data",
+    wiping: es ? "Borrando…" : "Wiping…",
+    wipeFailed: es ? "no se pudo borrar" : "wipe failed",
   };
 }
 
@@ -1016,6 +1027,76 @@ function PaymentsEditCard(
   );
 }
 
+/** DangerZoneCard — irreversible account wipe. Type-to-confirm gate, then a
+ *  single destructive button hits GET /me/wipe and bounces to the login page
+ *  (the wipe drops every session, so the app is logged out anyway). */
+function DangerZoneCard({ snapshot }: { snapshot: ProfileSnapshot }) {
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const t = tr(snapshot.user.language === "es");
+  const armed = confirm.trim().toUpperCase() === "DELETE";
+
+  async function wipe() {
+    if (!armed) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await profileClient.wipeAccount();
+      // Account + all sessions are gone — hard-redirect out of the app.
+      globalThis.location.href = "/login";
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : t.wipeFailed);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      class="panel"
+      style="padding:18px 20px;border:1px solid #e3b4b4;background:#fdf6f6"
+    >
+      <div class="panel__head" style="margin-bottom:12px">
+        <h3 class="panel__title" style="color:#a83b3b">{t.dangerZone}</h3>
+      </div>
+      <p style="margin:0 0 14px;font-size:13px;color:var(--fg-muted,#6b7560)">
+        {t.wipeIntro}
+      </p>
+      <label style="display:block;max-width:320px">
+        <span style={labelStyle}>{t.wipeConfirmLabel}</span>
+        <input
+          type="text"
+          style={inputStyle}
+          value={confirm}
+          disabled={busy}
+          placeholder="DELETE"
+          aria-label="Type DELETE to confirm account wipe"
+          onInput={(e) => setConfirm((e.target as HTMLInputElement).value)}
+        />
+      </label>
+      <div style="margin-top:16px">
+        <button
+          type="button"
+          disabled={!armed || busy}
+          onClick={wipe}
+          style={`padding:9px 16px;border-radius:8px;border:0;background:${
+            armed ? "#a83b3b" : "#d8b4b4"
+          };color:#fff;cursor:${
+            armed && !busy ? "pointer" : "not-allowed"
+          };font:inherit;font-weight:700`}
+        >
+          {busy ? t.wiping : t.wipeButton}
+        </button>
+      </div>
+      {err
+        ? (
+          <div style="margin-top:10px;color:#a83b3b;font-size:12.5px">{err}</div>
+        )
+        : null}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [s, setS] = useState<State>(INITIAL);
 
@@ -1133,6 +1214,8 @@ export default function SettingsPage() {
       </div>
 
       <PaymentsEditCard snapshot={p} onSaved={onSaved} />
+
+      <DangerZoneCard snapshot={p} />
     </>
   );
 }
