@@ -38,13 +38,6 @@ const NAV: NavEntry[] = [
     countKey: "quotes",
   },
   {
-    id: "contracts",
-    icon: "contract",
-    label: "Contracts",
-    href: "/contracts",
-    countKey: "contracts",
-  },
-  {
     id: "invoices",
     icon: "invoice",
     label: "Invoices",
