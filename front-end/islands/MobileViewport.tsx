@@ -45,6 +45,10 @@ export default function MobileViewport() {
     const vv = globalThis.visualViewport;
     if (!vv) return;
     const root = document.documentElement;
+    // Set while a field is focused so viewport-resize events (keyboard settling)
+    // re-run the reveal; cleared on blur / after the settle window.
+    let activeCorrect: (() => void) | null = null;
+    let focusUntil = 0;
     const apply = () => {
       // How much the keyboard overlaps the layout viewport.
       const overlap = globalThis.innerHeight - vv.height;
@@ -77,13 +81,23 @@ export default function MobileViewport() {
         // follow dvh frame-for-frame.
         root.style.removeProperty("--app-vh");
       }
-      // Keyboard inset for bottom scroll-room on body-scroll pages: the
-      // keyboard height, minus any offset the page was pushed up. 0 on Android
-      // (layout already resized) and on desktop.
+      // Keyboard inset = bottom scroll-room added to body-scroll pages so the
+      // last screenful of content (the focused field + its submit button) can be
+      // scrolled clear of the keyboard. It must be the FULL keyboard overlap:
+      // iOS often offsets the visual viewport (vv.offsetTop large) so the
+      // previous `overlap - offsetTop` collapsed to a few px, starving the page
+      // of the room needed to lift the trailing button. 0 on Android (layout
+      // already resized) and on desktop.
       root.style.setProperty(
         "--kb-inset",
-        `${Math.max(0, overlap - vv.offsetTop)}px`,
+        `${Math.max(0, overlap)}px`,
       );
+      // While a field is focused and the keyboard is still settling, re-run the
+      // reveal on every viewport change. The keyboard animation can outlast any
+      // fixed timeout (notably in the simulator), so a one-shot scroll measured
+      // mid-animation under-scrolls; reacting to the resize that ACTUALLY lands
+      // the smaller viewport is what makes the trailing submit reliably clear.
+      if (activeCorrect && Date.now() < focusUntil) activeCorrect();
     };
     apply();
     vv.addEventListener("resize", apply);
@@ -108,10 +122,7 @@ export default function MobileViewport() {
         return;
       }
       globalThis.clearTimeout(focusTimer);
-      // Wait for the keyboard animation + visualViewport resize to settle so
-      // the scroll lands at the final layout, not mid-animation.
-      focusTimer = globalThis.setTimeout(() => {
-        try {
+      try {
           // Reveal the field — and, if a submit/primary button trails it in the
           // same form (the contract "sign" button, the wizard "Next"), keep the
           // BUTTON clear of the keyboard too. Centering alone clamps at the page
@@ -134,32 +145,68 @@ export default function MobileViewport() {
             if (after.length) target = after[after.length - 1];
           }
           const sc = scrollableAncestor(target as HTMLElement);
-          // Correct for the keyboard. getBoundingClientRect on iOS is relative
-          // to the *visual* viewport, so its bottom edge is `vv.height`; if the
-          // target's bottom sits below that (behind the keyboard) nudge content
-          // up by the exact overshoot. Two passes (instant, then re-measure)
-          // converge even when the first scroll changes layout. No `block:center`
-          // first — it clamps at the page bottom and fights this.
+          // Lift the target clear of the keyboard. Runs repeatedly while the
+          // keyboard settles (see the resize-driven re-run in `apply()`), so each
+          // pass just measures the current layout and nudges toward the goal.
           const correct = () => {
             const r = target.getBoundingClientRect();
-            const overshoot = r.bottom - (vv.height - 16);
-            if (overshoot > 1) {
-              if (sc) sc.scrollBy({ top: overshoot, behavior: "auto" });
-              else globalThis.scrollBy({ top: overshoot, behavior: "auto" });
-            } else if (r.top < 8) {
-              // overscrolled past the top — pull back so the field stays visible
-              if (sc) sc.scrollBy({ top: r.top - 8, behavior: "auto" });
-              else globalThis.scrollBy({ top: r.top - 8, behavior: "auto" });
+            if (sc) {
+              // Nested scroll container (the chat thread): coords are relative
+              // to the container, so the overshoot nudge applies as-is.
+              const overshoot = r.bottom - (vv.height - 16);
+              if (overshoot > 1) sc.scrollBy({ top: overshoot, behavior: "auto" });
+              else if (r.top < 8) sc.scrollBy({ top: r.top - 8, behavior: "auto" });
+              return;
+            }
+            // Body-scroll page (public quote/contract/invoice). getBoundingClient-
+            // Rect is relative to the LAYOUT viewport (top = 0), but the band the
+            // user can actually see is [vv.offsetTop, vv.offsetTop + vv.height] —
+            // iOS offsets (and sometimes shrinks) the visual viewport when the
+            // keyboard opens. Convert into band coordinates by subtracting
+            // vv.offsetTop; the old code omitted this and so mis-measured every
+            // keyboard-open by exactly vv.offsetTop, leaving the field clipped
+            // off the top and the submit button stranded.
+            const topBand = vv.offsetTop;
+            const fieldTop = t.getBoundingClientRect().top - topBand;
+            const btnBot = r.bottom - topBand;
+            let delta = 0;
+            // 1) Lift the trailing submit if it sits below the visible band
+            //    (behind the keyboard).
+            if (btnBot > vv.height - 24) delta = btnBot - (vv.height - 24);
+            // 2) But never at the cost of clipping the focused field off the top —
+            //    if that scroll (or the current position) pushes the field above
+            //    the band, pull back so the field stays in view. This also lowers
+            //    content when iOS has over-scrolled the field above the fold.
+            if (fieldTop - delta < 8) delta = fieldTop - 8;
+            if (Math.abs(delta) > 1) {
+              globalThis.scrollBy({ top: delta, behavior: "auto" });
             }
           };
-          correct();
-          globalThis.setTimeout(correct, 250);
-        } catch {
-          /* older engines: best-effort, native behavior still applies */
-        }
-      }, 300);
+          // Register so `apply()` re-runs the reveal on every viewport change
+          // until the keyboard has settled, and add fixed fallbacks in case the
+          // resize event doesn't fire (desktop, or engines that don't shrink the
+          // visual viewport).
+          activeCorrect = correct;
+          // Long enough to catch the keyboard settling in stages — the predictive-
+          // text bar appears a beat after the keyboard, shrinking the viewport a
+          // second time; a short window would close before that lands.
+          focusUntil = Date.now() + 2600;
+          for (const ms of [60, 250, 500, 800, 1200, 1800, 2400]) {
+            globalThis.setTimeout(() => {
+              if (activeCorrect === correct) correct();
+            }, ms);
+          }
+      } catch {
+        /* older engines: best-effort, native behavior still applies */
+      }
+    };
+    const onFocusOut = () => {
+      // Stop re-correcting once the field is blurred (keyboard closing).
+      activeCorrect = null;
+      focusUntil = 0;
     };
     document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
     // Android (interactive-widget=resizes-content) resizes the *layout*
     // viewport when the keyboard opens, which fires window.resize but NOT
     // always visualViewport.resize — so without this --app-vh went stale and
@@ -172,6 +219,7 @@ export default function MobileViewport() {
       vv.removeEventListener("scroll", apply);
       globalThis.removeEventListener("resize", apply);
       document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
       globalThis.clearTimeout(focusTimer);
       root.style.removeProperty("--app-vh");
       root.style.removeProperty("--kb-inset");
