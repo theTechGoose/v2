@@ -34,13 +34,14 @@ Deno.test("computeMilestoneAmounts: 'deposit + balance' → 20/80", () => {
   assertEquals(out[1], 800_00);
 });
 
-Deno.test("computeMilestoneAmounts: unknown terms → 30/70 default split", () => {
-  // No "50/50" / "30/30/40" / "completion" / "deposit" → falls through to
-  // the conservative default. Sum still equals total.
+Deno.test("computeMilestoneAmounts: unknown terms → single full payment", () => {
+  // No "50/50" / "30/30/40" / "completion" / "deposit" → bill the full amount
+  // once. (Previously this invented a 30/70 deposit split that the contract and
+  // PDF never showed — they render no schedule for unparseable terms — so the
+  // customer was invoiced a deposit they never agreed to. One payment is the
+  // only safe read when the terms can't be parsed.)
   const out = computeMilestoneAmounts(1000_00, pterms("haggle in person"));
-  assertEquals(out.length, 2);
-  assertEquals(out[0], 300_00);
-  assertEquals(out[1], 700_00);
+  assertEquals(out, [1000_00]);
 });
 
 Deno.test("computeMilestoneAmounts: zero/negative total → empty", () => {

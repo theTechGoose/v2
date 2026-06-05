@@ -1,6 +1,7 @@
 import { Injectable } from "#danet/core";
 import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
 import type { Contract, ContractTerm } from "@paperwork/dto/contract.ts";
+import { computePaymentSplit, type MilestoneRole } from "#payment-split";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
@@ -980,39 +981,14 @@ function computeMilestones(
     onCompletion: es ? "Al finalizar" : "On completion",
     atMidpoint: es ? "A mitad del trabajo" : "At rough-in / midpoint",
   };
-  const v = termValue(terms, "payment_terms")?.toLowerCase() ?? "";
-  if (v.includes("50") && v.includes("/")) {
-    return [
-      {
-        label: L.deposit,
-        amount: Math.round(total / 2),
-        when: L.beforeStart,
-      },
-      {
-        label: L.balance,
-        amount: total - Math.round(total / 2),
-        when: L.onCompletion,
-      },
-    ];
-  }
-  if (v.includes("30") && v.includes("40")) {
-    const a = Math.round(total * 0.30);
-    const b = Math.round(total * 0.30);
-    return [
-      { label: L.deposit, amount: a, when: L.beforeStart },
-      { label: L.midpoint, amount: b, when: L.atMidpoint },
-      { label: L.final, amount: total - a - b, when: L.onCompletion },
-    ];
-  }
-  if (v.includes("completion") || v.includes("net 15")) {
-    return [{ label: L.final, amount: total, when: L.onCompletion }];
-  }
-  if (v.includes("deposit") && v.includes("balance")) {
-    const dep = Math.round(total * 0.20);
-    return [
-      { label: L.deposit, amount: dep, when: L.beforeStart },
-      { label: L.balance, amount: total - dep, when: L.onCompletion },
-    ];
-  }
-  return [];
+  const roleLabel: Record<MilestoneRole, { label: string; when: string }> = {
+    deposit: { label: L.deposit, when: L.beforeStart },
+    midpoint: { label: L.midpoint, when: L.atMidpoint },
+    milestone: { label: L.midpoint, when: L.atMidpoint },
+    completion: { label: L.balance, when: L.onCompletion },
+    full: { label: L.final, when: L.onCompletion },
+  };
+  return computePaymentSplit(termValue(terms, "payment_terms"), total).map((
+    p,
+  ) => ({ ...roleLabel[p.role], amount: p.amountCents }));
 }

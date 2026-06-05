@@ -9,6 +9,7 @@ import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { RenderContractPdf } from "@paperwork/domain/coordinators/render-contract-pdf/mod.ts";
 import type { Contract, ContractTerm } from "@paperwork/dto/contract.ts";
+import { computePaymentSplit } from "#payment-split";
 import type { User } from "@users/dto/user.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 
@@ -296,40 +297,15 @@ function normalizeE164(raw: string): string | undefined {
 }
 
 /** Resolve the contractor's chosen payment terms into one amount per
- *  milestone, in INTEGER CENTS. Mirrors the display logic in
- *  `render-contract-pdf/mod.ts:computeMilestones` but returns just the
- *  amounts (the labels/timing live on the public preview). Sum is always
- *  exactly `total` — the last milestone absorbs rounding. */
+ *  milestone, in INTEGER CENTS, via the shared #payment-split source of truth
+ *  so the invoices match the preview, the signed contract, and the PDF. Sum is
+ *  always exactly `total` — the last milestone absorbs rounding. */
 export function computeMilestoneAmounts(
   total: number,
   terms: ContractTerm[] | undefined,
 ): number[] {
-  if (!total || total <= 0) return [];
-  const v =
-    terms?.find((t) => t.stepId === "payment_terms")?.value?.toLowerCase() ??
-      "";
-  if (v.includes("50") && v.includes("/")) {
-    const a = Math.round(total / 2);
-    return [a, total - a];
-  }
-  if (v.includes("30") && v.includes("40")) {
-    const a = Math.round(total * 0.30);
-    const b = Math.round(total * 0.30);
-    return [a, b, total - a - b];
-  }
-  if (
-    v.includes("completion") || v.includes("net 15") ||
-    v.includes("upon completion")
-  ) {
-    return [total];
-  }
-  if (v.includes("deposit") && v.includes("balance")) {
-    const dep = Math.round(total * 0.20);
-    return [dep, total - dep];
-  }
-  // Default: 30% deposit + balance.
-  const dep = Math.round(total * 0.30);
-  return [dep, total - dep];
+  const v = terms?.find((t) => t.stepId === "payment_terms")?.value;
+  return computePaymentSplit(v, total).map((p) => p.amountCents);
 }
 
 /** Equal-spaced scheduledFor dates for milestones 2..N. The first

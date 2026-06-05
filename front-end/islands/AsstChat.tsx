@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { detailLines } from "../lib/format.ts";
+import { computePaymentSplit, type MilestoneRole } from "../lib/payment-split.ts";
 import { api } from "../lib/api.ts";
 import {
   assistantClient,
@@ -314,69 +315,27 @@ function buildPaymentMilestones(
   value: string,
   totalCents: number,
 ): PaymentMilestone[] | null {
-  const v = value.trim().toLowerCase();
-  if (!v || totalCents <= 0) return null;
-
-  // Slash- or comma-separated percentages: "30 / 30 / 40", "50/50", "25, 25, 50".
-  const parts = v
-    .split(/[\/,]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const numbers = parts
-    .map((p) => parseFloat(p))
-    .filter((n) => Number.isFinite(n));
-  const sum = numbers.reduce((a, b) => a + b, 0);
-  if (numbers.length >= 2 && Math.abs(sum - 100) <= 1) {
-    const labels = numbers.length === 2
-      ? ["Deposit", "On completion"]
-      : numbers.length === 3
-      ? ["Deposit", "Midpoint", "On completion"]
-      : numbers.map((_, i) =>
-        i === 0
-          ? "Deposit"
-          : i === numbers.length - 1
-          ? "On completion"
-          : `Milestone ${i}`
-      );
-    const out: PaymentMilestone[] = numbers.map((pct, i) => ({
-      label: labels[i],
-      pct,
-      amountCents: Math.round((totalCents * pct) / 100),
-    }));
-    const drift = totalCents - out.reduce((s, m) => s + m.amountCents, 0);
-    if (drift !== 0) out[out.length - 1].amountCents += drift;
-    return out;
+  // All money comes from the shared #payment-split source of truth so this
+  // preview matches the signed contract, the PDF, and the actual invoices.
+  // Only the display labels live here.
+  const parts = computePaymentSplit(value, totalCents);
+  // A single full payment → return null so the caller shows the plain
+  // Total Due (unchanged behavior for "net X" / unrecognized terms).
+  if (parts.length === 0 || (parts.length === 1 && parts[0].role === "full")) {
+    return null;
   }
-
-  // Net X — single payment due X days after wrap.
-  const netMatch = v.match(/net\s*(\d+)/);
-  if (netMatch) {
-    return [
-      { label: `Due in full · net ${netMatch[1]}`, amountCents: totalCents },
-    ];
-  }
-
-  // "Deposit + balance" — small upfront, balance on completion. No explicit
-  // split in the option label; default to 20/80 to MATCH the binding split
-  // the customer actually signs and is billed: the public contract page
-  // (contract-doc.tsx), the contract PDF (render-contract-pdf), and the
-  // generated invoices (send-signed-confirmation) all use 20%. This preview
-  // previously showed 25%, so the contractor saw a larger deposit than the
-  // customer ever agreed to or paid.
-  if (v.includes("deposit") && v.includes("balance")) {
-    const deposit = Math.round(totalCents * 0.20);
-    return [
-      { label: "Deposit", pct: 20, amountCents: deposit },
-      {
-        label: "Balance on completion",
-        pct: 80,
-        amountCents: totalCents - deposit,
-      },
-    ];
-  }
-
-  // Custom / unrecognized — let the caller fall back to the single total.
-  return null;
+  const labelFor: Record<MilestoneRole, string> = {
+    deposit: "Deposit",
+    midpoint: "Midpoint",
+    milestone: "Milestone",
+    completion: "Balance on completion",
+    full: "Due in full",
+  };
+  return parts.map((p) => ({
+    label: labelFor[p.role],
+    pct: p.pct,
+    amountCents: p.amountCents,
+  }));
 }
 
 export default function AsstChat({
