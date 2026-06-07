@@ -83,6 +83,17 @@ export function mapEventToNotification(event: DomainEvent): NotificationMapping 
   if (event.entityType === "contract" && event.action === "signed") {
     return { type: "contract_signed", title: `${customerName} signed the contract` };
   }
+  if (event.entityType === "invoice" && event.action === "claimed") {
+    const method = (event.data?.method as string | undefined);
+    const reference = (event.data?.reference as string | undefined);
+    const via = method ? ` by ${method}` : "";
+    const ref = reference ? ` · ref ${reference}` : "";
+    return {
+      type: "invoice_claimed",
+      title: `${customerName} says they paid${via} — confirm you got it`,
+      body: ref ? ref.replace(/^ · /, "") : undefined,
+    };
+  }
   if (event.entityType === "invoice" && event.action === "paid") {
     return { type: "invoice_paid", title: `${customerName} paid${amount ? ` ${amount}` : ""}` };
   }

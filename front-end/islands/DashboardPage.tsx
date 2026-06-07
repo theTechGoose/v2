@@ -194,6 +194,11 @@ const NOTIF_ICON: Record<
     bg: "var(--teal-50)",
     fg: "var(--teal-600)",
   },
+  invoice_claimed: {
+    icon: "card",
+    bg: "var(--pink-50)",
+    fg: "var(--pink-700)",
+  },
   invoice_paid: { icon: "card", bg: "var(--green-50)", fg: "var(--green-600)" },
   invoice_overdue: {
     icon: "invoice",

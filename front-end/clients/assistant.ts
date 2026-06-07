@@ -193,11 +193,12 @@ export const assistantClient = {
     conversationId: string,
     contractId: string,
     channel: "email" | "sms" | "both" = "email",
+    language?: "en" | "es",
     opts: ApiOptions = {},
   ) =>
     api.post<{ conversation: Conversation; newMessages: Message[] }>(
       `/agents/conversations/${conversationId}/send-contract`,
-      { contractId, channel },
+      { contractId, channel, ...(language ? { language } : {}) },
       opts,
     ),
 

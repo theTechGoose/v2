@@ -144,6 +144,10 @@ export default define.page(async function AssistantThread(ctx) {
                     phone: user?.phoneNumber,
                     email: profile?.user?.email,
                   }}
+                  sendLanguages={profile?.identity?.commsLanguages ??
+                    (profile?.identity?.commsLanguage
+                      ? [profile.identity.commsLanguage]
+                      : ["en"])}
                 />
               </section>
             </div>

@@ -248,6 +248,9 @@ interface Props {
     phone?: string;
     email?: string;
   };
+  /** Languages the contractor can send in (from Settings checkboxes). Drives
+   *  the quote-review "Preview in" language toggle. Defaults to ["en"]. */
+  sendLanguages?: string[];
 }
 
 /** Derive a stable 1-2 letter avatar string. Mirrors the backend
@@ -338,6 +341,33 @@ function buildPaymentMilestones(
   }));
 }
 
+/** Labels for the quote-review PREVIEW language toggle, and Spanish copy for
+ *  the card chrome. Mirrors the customer-facing public quote/contract pages
+ *  (routes/q/[id].tsx, contract-doc) so the contractor's preview matches what
+ *  the customer actually receives. Free-text the contractor typed (term
+ *  values, line-item names) stays verbatim — exactly like the public pages. */
+const SEND_LANG_LABELS: Record<string, string> = {
+  en: "English",
+  es: "Español",
+};
+/** Term-row labels (keyed by wizard stepId) in Spanish. */
+const TERM_LABEL_ES: Record<string, string> = {
+  config: "Configuración",
+  start_date: "Inicio",
+  wraps: "Tiempo de entrega",
+  time_to_complete: "Tiempo de entrega",
+  payment_terms: "Pago",
+  warranty: "Garantía",
+};
+/** Payment-milestone labels (from buildPaymentMilestones) in Spanish. */
+const MILESTONE_LABEL_ES: Record<string, string> = {
+  "Deposit": "Depósito",
+  "Midpoint": "Pago intermedio",
+  "Milestone": "Hito",
+  "Balance on completion": "Saldo al finalizar",
+  "Due in full": "Pago completo",
+};
+
 export default function AsstChat({
   conversationId,
   initialMessages,
@@ -345,7 +375,14 @@ export default function AsstChat({
   initialContract,
   userInitials = "?",
   from,
+  sendLanguages,
 }: Props) {
+  // Languages the contractor enabled in Settings → the quote-review preview
+  // toggle. Falls back to English so the card always renders.
+  const previewLangOptions = (sendLanguages && sendLanguages.length
+    ? sendLanguages
+    : ["en"]).filter((l) => l in SEND_LANG_LABELS);
+  const sendLangs = previewLangOptions.length ? previewLangOptions : ["en"];
   const [convoId, setConvoId] = useState<string | undefined>(conversationId);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [customer, setCustomer] = useState<CustomerLite | undefined>(
@@ -486,6 +523,12 @@ export default function AsstChat({
     "both",
   );
   const [channelMenuOpen, setChannelMenuOpen] = useState(false);
+  /** Language the quote-review card is PREVIEWED in (and sent in). The
+   *  contractor flips it with the "Preview in" toggle; defaults to their
+   *  first enabled send language. */
+  const [previewLang, setPreviewLang] = useState<"en" | "es">(
+    (sendLangs[0] as "en" | "es") ?? "en",
+  );
   /**
    * Tracks `continue_cta` messages whose Review button has been clicked.
    * Drives the inline "Drafted ✓" confirmation state — replaces the
@@ -1826,6 +1869,7 @@ export default function AsstChat({
   async function confirmSendContract(
     message: Message,
     channel: "email" | "sms" | "both" = "email",
+    language?: "en" | "es",
   ) {
     if (sending || !convoId) return;
     const payload = (message.payload ?? {}) as { contractId?: string };
@@ -1841,7 +1885,7 @@ export default function AsstChat({
         if (detail.contract) setContract(detail.contract);
       }
       if (!id) throw new Error("no contract bound to this conversation");
-      const res = await assistantClient.sendContract(convoId, id, channel);
+      const res = await assistantClient.sendContract(convoId, id, channel, language);
       setReviewedCtas((prev) => {
         const next = new Set(prev);
         next.add(message.id);
@@ -3263,6 +3307,10 @@ export default function AsstChat({
                     previewCtaId === m.id;
                   if (previewing) {
                     const contractId = payload.contractId ?? contract?.id ?? "";
+                    // Preview language — flips the card chrome to Spanish to
+                    // match what the customer receives, and is the language the
+                    // send goes out in. Toggled via "Preview in" below the head.
+                    const es = previewLang === "es";
                     // Pull line items from the most recent locked/sent action_card
                     // (status="sent" is the locked quote; fall back to "draft").
                     const lockedCard = [...messages]
@@ -3414,7 +3462,7 @@ export default function AsstChat({
                           <header class="quote-review__head">
                             <div class="quote-review__head-left">
                               <div class="quote-review__kind">
-                                Quote + Agreement
+                                {es ? "Cotización + Acuerdo" : "Quote + Agreement"}
                               </div>
                               {contractId
                                 ? (
@@ -3442,6 +3490,40 @@ export default function AsstChat({
                             </div>
                           </header>
 
+                          {/* Preview-language toggle — re-renders the card (and
+                              sets the send language) in each language the
+                              contractor enabled in Settings. Hidden when only
+                              one language is configured. */}
+                          {sendLangs.length > 1
+                            ? (
+                              <div
+                                class="quote-review__langtoggle"
+                                role="group"
+                                aria-label="Preview language"
+                              >
+                                <span class="quote-review__langtoggle-label">
+                                  {es ? "Vista previa en" : "Preview in"}
+                                </span>
+                                {sendLangs.map((lng) => (
+                                  <button
+                                    key={`pl-${lng}`}
+                                    type="button"
+                                    class={`quote-review__langpill${
+                                      previewLang === lng ? " is-active" : ""
+                                    }`}
+                                    aria-pressed={previewLang === lng
+                                      ? "true"
+                                      : "false"}
+                                    onClick={() =>
+                                      setPreviewLang(lng as "en" | "es")}
+                                  >
+                                    {SEND_LANG_LABELS[lng] ?? lng}
+                                  </button>
+                                ))}
+                              </div>
+                            )
+                            : null}
+
                           {
                             /* Roadmap p.5 (Preview.docx): FROM = the contractor.
                               Read-only; the editable TO (customer) follows. */
@@ -3452,7 +3534,9 @@ export default function AsstChat({
                                 class="quote-review__hero"
                                 style="opacity:.92"
                               >
-                                <div class="quote-review__hero-label">From</div>
+                                <div class="quote-review__hero-label">
+                                  {es ? "De" : "From"}
+                                </div>
                                 <div class="quote-review__hero-name">
                                   {from.business || from.name}
                                 </div>
@@ -3484,7 +3568,9 @@ export default function AsstChat({
                           {customer?.name
                             ? (
                               <section class="quote-review__hero">
-                                <div class="quote-review__hero-label">For</div>
+                                <div class="quote-review__hero-label">
+                                  {es ? "Para" : "For"}
+                                </div>
                                 <button
                                   type="button"
                                   class="quote-review__swap"
@@ -3675,7 +3761,7 @@ export default function AsstChat({
                             return (
                               <section class="quote-review__section">
                                 <div class="quote-review__section-label">
-                                  Job details
+                                  {es ? "Detalles del trabajo" : "Job details"}
                                 </div>
                                 {lines.length > 1
                                   ? (
@@ -3698,7 +3784,7 @@ export default function AsstChat({
                             ? (
                               <section class="quote-review__section">
                                 <div class="quote-review__section-label">
-                                  Terms
+                                  {es ? "Términos" : "Terms"}
                                 </div>
                                 <dl class="quote-review__terms">
                                   {termAnswers.map((t, i) => {
@@ -3749,7 +3835,12 @@ export default function AsstChat({
                                           ? "grid-column:1 / -1"
                                           : undefined}
                                       >
-                                        <dt>{t.label}</dt>
+                                        <dt>
+                                          {es
+                                            ? (TERM_LABEL_ES[t.stepId] ??
+                                              t.label)
+                                            : t.label}
+                                        </dt>
                                         {isEditing
                                           ? (
                                             <dd style="margin-top:4px">
@@ -3919,7 +4010,9 @@ export default function AsstChat({
                                                 title="Edit"
                                               >
                                                 {t.stepId === "wraps"
-                                                  ? `Estimated ${t.value}`
+                                                  ? `${
+                                                    es ? "Estimado" : "Estimated"
+                                                  } ${t.value}`
                                                   : t.value}
                                               </button>
                                             </dd>
@@ -3934,7 +4027,7 @@ export default function AsstChat({
 
                           <section class="quote-review__total">
                             <div class="quote-review__total-label">
-                              Total due
+                              {es ? "Total a pagar" : "Total due"}
                             </div>
                             <div class="quote-review__total-amt">
                               <span class="quote-review__total-currency">
@@ -3980,7 +4073,10 @@ export default function AsstChat({
                                       class="quote-review__milestone"
                                     >
                                       <span class="quote-review__milestone-label">
-                                        {ms.label}
+                                        {es
+                                          ? (MILESTONE_LABEL_ES[ms.label] ??
+                                            ms.label)
+                                          : ms.label}
                                         {typeof ms.pct === "number"
                                           ? (
                                             <span class="quote-review__milestone-pct">
@@ -4006,17 +4102,19 @@ export default function AsstChat({
                                 type="button"
                                 class="quote-review__send-main"
                                 onClick={() =>
-                                  confirmSendContract(m, sendChannel)}
+                                  confirmSendContract(m, sendChannel, previewLang)}
                                 disabled={sending}
                               >
                                 <I d={ICN.send} size={14} sw={2.4} />
                                 {sending
-                                  ? "Sending…"
+                                  ? (es ? "Enviando…" : "Sending…")
                                   : sendChannel === "both"
-                                  ? "Click here to send by Text + Email"
+                                  ? (es
+                                    ? "Enviar por texto + correo"
+                                    : "Click here to send by Text + Email")
                                   : sendChannel === "sms"
-                                  ? "Click here to send by Text"
-                                  : "Click here to send by Email"}
+                                  ? (es ? "Enviar por texto" : "Click here to send by Text")
+                                  : (es ? "Enviar por correo" : "Click here to send by Email")}
                               </button>
                               <button
                                 type="button"
@@ -4812,8 +4910,11 @@ export default function AsstChat({
           const sid = (m.payload as { stepId?: string } | undefined)?.stepId;
           return !sid || !answeredStepIds.has(sid);
         });
+        // Also hide it while the final quote-review card is open (previewCtaId
+        // set): that screen is tap-only — the user sends via the card's button,
+        // so a text box underneath just invites stray typing.
         const composerHidden = priceCaptureOpen || jobOptionsOpen ||
-          hasUnansweredWizard;
+          hasUnansweredWizard || previewCtaId !== null;
         if (composerHidden) return null;
         return (
           <div

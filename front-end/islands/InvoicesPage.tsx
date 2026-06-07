@@ -714,7 +714,7 @@ function InvoiceCard(
   const [adjErr, setAdjErr] = useState<string | null>(null);
   const mood = STAGE_MOOD[inv.stage];
   const cta = inv.stage === "claimed"
-    ? "Confirm received"
+    ? "Okay, I got it"
     : inv.stage === "overdue"
     ? "Send nudge"
     : inv.stage === "scheduled"

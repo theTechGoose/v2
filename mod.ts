@@ -43,7 +43,13 @@ function matchesBackend(pathname: string): boolean {
 // Path prefixes that the FRONTEND owns even though they overlap a backend
 // route. The backend is still reachable via /api/<path>; we just block
 // direct (non-/api) access so the Fresh page renders for the human.
-const FRONTEND_OVERRIDES = ["/quotes", "/clients"];
+const FRONTEND_OVERRIDES = [
+  "/quotes",
+  "/clients",
+  "/invoices",
+  "/contracts",
+  "/messages",
+];
 
 function isFrontendOverride(pathname: string): boolean {
   return FRONTEND_OVERRIDES.some((p) =>

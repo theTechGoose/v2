@@ -86,13 +86,13 @@ function tr(es: boolean) {
     appLangHint: es
       ? "El idioma en que Paperwork Monster te muestra la app y el asistente."
       : "The language Paperwork Monster shows you — the app and assistant.",
-    // Outgoing-comms language (what the contractor's CUSTOMERS receive).
+    // Outgoing-comms languages (what the contractor can SEND quotes in).
     commsLang: es
-      ? "Idioma de los mensajes a clientes"
-      : "Outgoing message language",
+      ? "Idiomas para enviar"
+      : "Languages you send in",
     commsLangHint: es
-      ? "El idioma en que tus clientes reciben cotizaciones, mensajes y documentos."
-      : "The language your customers get quotes, messages, and documents in.",
+      ? "Marca los idiomas en que puedes enviar. En cada cotización podrás previsualizar y enviar en cualquiera de ellos."
+      : "Check the languages you can send in. On each quote you can preview and send in any of them.",
     // Insurance
     provider: es ? "Aseguradora" : "Provider",
     policyNumber: es ? "Número de póliza" : "Policy number",
@@ -402,24 +402,54 @@ function EditCard(
             {t.appLangHint}
           </span>
         </label>
-        <label style="display:block;grid-column:1 / -1">
+        <div style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.commsLang}</span>
-          <select
-            style={inputStyle}
-            disabled={busy === "identity"}
-            value={snapshot.identity?.commsLanguage ?? "en"}
-            onChange={(e) =>
-              saveIdentity({
-                commsLanguage: (e.target as HTMLSelectElement).value,
+          <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:2px">
+            {[{ code: "en", label: t.english }, { code: "es", label: t.spanish }]
+              .map((lng) => {
+                // Selected set: the explicit list, else fall back to the legacy
+                // single commsLanguage (so existing accounts show their language
+                // pre-checked), else English.
+                const selected = snapshot.identity?.commsLanguages?.length
+                  ? snapshot.identity.commsLanguages
+                  : [snapshot.identity?.commsLanguage ?? "en"];
+                const on = selected.includes(lng.code);
+                return (
+                  <label
+                    key={lng.code}
+                    style={`display:flex;align-items:center;gap:8px;cursor:pointer;border:1px solid ${
+                      on ? "var(--brand-green,#519843)" : "var(--border,#d8dcd5)"
+                    };border-radius:8px;padding:8px 12px;background:#fff`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      disabled={busy === "identity"}
+                      onChange={(e) => {
+                        const want = (e.target as HTMLInputElement).checked;
+                        const set = new Set(selected);
+                        if (want) set.add(lng.code);
+                        else set.delete(lng.code);
+                        // Always keep at least one language enabled.
+                        if (set.size === 0) return;
+                        const list = ["en", "es"].filter((c) => set.has(c));
+                        saveIdentity({
+                          commsLanguages: list,
+                          commsLanguage: list[0],
+                        });
+                      }}
+                    />
+                    <span style="font-weight:700;font-size:13.5px;color:var(--fg)">
+                      {lng.label}
+                    </span>
+                  </label>
+                );
               })}
-          >
-            <option value="en">{t.english}</option>
-            <option value="es">{t.spanish}</option>
-          </select>
+          </div>
           <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted)">
             {t.commsLangHint}
           </span>
-        </label>
+        </div>
       </div>
     </EditPanel>
   );

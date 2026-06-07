@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsOptional,
   IsString,
@@ -106,6 +107,12 @@ export interface BusinessIdentity {
    *  from the contractor's own UI language (user.language). Unset → "en".
    *  Kept as a free string so we can broaden the set later. */
   commsLanguage?: string;
+  /** The set of languages the contractor can SEND paperwork in — surfaces
+   *  as the "Send in" buttons on the quote-review screen and is configured
+   *  via checkboxes in Settings. `commsLanguage` above stays the default
+   *  (first enabled) so every existing read keeps working. Unset → derive
+   *  from `commsLanguage` (or ["en"]). */
+  commsLanguages?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -134,6 +141,11 @@ export class UpdateBusinessIdentityDto {
   @IsOptional()
   @IsString()
   commsLanguage?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  commsLanguages?: string[];
 
   @IsOptional()
   @ValidateNested()

@@ -96,7 +96,14 @@ export default define.page(async function AssistantHome(ctx) {
                   initialClient="New Conversation"
                   initialStatus="Your PM Assistant is here to help!"
                 />
-                <AsstChat initialMessages={[]} userInitials={userInitials} />
+                <AsstChat
+                initialMessages={[]}
+                userInitials={userInitials}
+                sendLanguages={profile?.identity?.commsLanguages ??
+                  (profile?.identity?.commsLanguage
+                    ? [profile.identity.commsLanguage]
+                    : ["en"])}
+              />
               </section>
             </div>
           </div>

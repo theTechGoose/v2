@@ -644,13 +644,24 @@ export class PaperworkPublicController {
         },
       });
       // Fire a domain event so the contractor's bell + activity feed
-      // surface the claim.
+      // surface the claim ("you got a payment — confirm it"). customerName
+      // mirrors the sign/accept handlers so the notification title reads well.
+      const customerName = await lookupCustomerName(
+        this.customers,
+        updated.customerId,
+        invoice.userId,
+      );
       await this.bus.emit({
         userId: invoice.userId,
         entityType: "invoice",
         entityId: updated.id,
         action: "claimed",
-        data: { method: dto.method, reference: dto.reference ?? "" },
+        data: {
+          method: dto.method,
+          reference: dto.reference ?? "",
+          ...(customerName ? { customerName } : {}),
+          ...(dto.claimedBy ? { claimedBy: dto.claimedBy } : {}),
+        },
       });
       return ctx.json({ ok: true, invoiceId: updated.id });
     } catch (e) {

@@ -21,6 +21,9 @@ export interface SendPaperworkSmsInput {
   resourceId: string;
   /** Optional override; otherwise resolved from the linked customer's phoneNumber. */
   to?: string;
+  /** Per-send language override (the "Send in <lang>" button). When set it
+   *  wins over the contractor's stored `commsLanguage` default. */
+  language?: "en" | "es";
 }
 
 export interface SendPaperworkSmsResult {
@@ -62,7 +65,13 @@ export class SendPaperworkSms {
     input: SendPaperworkSmsInput,
   ): Promise<SendPaperworkSmsResult> {
     const sender = await this.tryGetUser(userId);
-    const senderBiz = await this.tryGetBusinessIdentity(userId);
+    const rawBiz = await this.tryGetBusinessIdentity(userId);
+    // Per-send language override (the "Send in <lang>" button) beats the
+    // stored default. Overriding commsLanguage on the resolved identity lets
+    // every downstream body/subject helper honor it without new params.
+    const senderBiz = input.language && rawBiz
+      ? { ...rawBiz, commsLanguage: input.language }
+      : rawBiz;
 
     let recipient: string | undefined = input.to;
     let body: string;

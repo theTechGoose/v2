@@ -6671,6 +6671,48 @@ body {
      Caret half : popover menu to pick Text only / Email only / Both
    Cancel is the top-right X on the card header — no second button
    here, keeping the action surface a single decisive control. */
+/* Preview-language toggle (EN/ES pills) under the quote-review header —
+   flips the card preview + the send language. */
+.quote-review__langtoggle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 10px;
+}
+.quote-review__langtoggle-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted, #6b7560);
+  margin-right: 2px;
+}
+.quote-review__langpill {
+  appearance: none;
+  border: 1px solid rgba(20, 72, 82, 0.18);
+  background: #fff;
+  color: var(--brand-teal);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+.quote-review__langpill:hover {
+  border-color: var(--brand-teal);
+}
+.quote-review__langpill.is-active {
+  background: var(--brand-teal);
+  border-color: var(--brand-teal);
+  color: #fff;
+}
+
 .quote-review__cta {
   margin-top: 4px;
 }

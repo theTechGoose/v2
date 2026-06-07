@@ -89,6 +89,7 @@ export interface Notification {
     | "quote_sent"
     | "quote_accepted"
     | "contract_signed"
+    | "invoice_claimed"
     | "invoice_paid"
     | "invoice_overdue"
     | "customer_replied"

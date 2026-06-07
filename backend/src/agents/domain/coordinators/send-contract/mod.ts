@@ -20,6 +20,9 @@ export interface SendContractInput {
   /** Which channel to dispatch on. Defaults to 'email' for tests and
    *  any caller that hasn't been updated yet. */
   channel?: SendChannel;
+  /** Which language to send the paperwork in (the "Send in <lang>" button).
+   *  Overrides the contractor's stored default for THIS dispatch only. */
+  language?: "en" | "es";
 }
 
 export interface SendContractResult {
@@ -83,7 +86,7 @@ export class SendContract {
 
     if (wantEmail) {
       try {
-        const result = await this.emailer.run(input.userId, { kind: "contract", resourceId: contract.id });
+        const result = await this.emailer.run(input.userId, { kind: "contract", resourceId: contract.id, language: input.language });
         if (result.ok) emailedTo = result.to;
         else emailFailureReason = result.reason;
         console.log(`[send-contract] contract=${contract.id} email ok=${result.ok} to=${result.to ?? "<none>"} reason=${result.reason ?? "ok"}`);
@@ -95,7 +98,7 @@ export class SendContract {
 
     if (wantSms) {
       try {
-        const result = await this.smser.run(input.userId, { kind: "contract", resourceId: contract.id });
+        const result = await this.smser.run(input.userId, { kind: "contract", resourceId: contract.id, language: input.language });
         if (result.ok) textedTo = result.to;
         else smsFailureReason = result.reason;
         console.log(`[send-contract] contract=${contract.id} sms ok=${result.ok} to=${result.to ?? "<none>"} reason=${result.reason ?? "ok"}`);
@@ -117,7 +120,7 @@ export class SendContract {
           if (!quote.customerId && conv.customerId) {
             await this.quotes.update(quote.id, input.userId, { customerId: conv.customerId });
           }
-          const r = await this.emailer.run(input.userId, { kind: "quote", resourceId: quote.id });
+          const r = await this.emailer.run(input.userId, { kind: "quote", resourceId: quote.id, language: input.language });
           console.log(`[send-contract] quote-backfill quote=${quote.id} email ok=${r.ok} to=${r.to ?? "<none>"} reason=${r.reason ?? "ok"}`);
         }
       } catch (err) {

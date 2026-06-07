@@ -25,6 +25,9 @@ export interface SendPaperworkEmailInput {
   to?: string;
   /** Optional sender override (else falls back to POSTMARK_FROM env). */
   from?: string;
+  /** Per-send language override (the "Send in <lang>" button). When set it
+   *  wins over the contractor's stored `commsLanguage` default. */
+  language?: "en" | "es";
 }
 
 export interface SendPaperworkEmailResult extends SendEmailResult {
@@ -61,7 +64,13 @@ export class SendPaperworkEmail {
     input: SendPaperworkEmailInput,
   ): Promise<SendPaperworkEmailResult> {
     const sender = await this.tryGetUser(userId);
-    const senderBiz = await this.tryGetBusinessIdentity(userId);
+    const rawBiz = await this.tryGetBusinessIdentity(userId);
+    // Per-send language override (the "Send in <lang>" button) beats the
+    // stored default. Overriding commsLanguage on the resolved identity lets
+    // every downstream subject/body helper honor it without new params.
+    const senderBiz = input.language && rawBiz
+      ? { ...rawBiz, commsLanguage: input.language }
+      : rawBiz;
 
     let subject: string;
     let htmlBody: string;
