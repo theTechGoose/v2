@@ -62,15 +62,20 @@ export default {
     const url = new URL(req.url);
     let pathname = url.pathname;
 
-    // Frontend islands call `/api/<backend-path>`; strip the `/api` prefix
-    // and let the backend match it via its existing controller routes.
+    // Frontend islands call `/api/<backend-path>`; the `/api` prefix IS the
+    // "dispatch to the backend" signal, so strip it and hand EVERY such
+    // request to the in-process backend handler. This used to be gated on
+    // `matchesBackend(stripped)`, which meant any backend namespace missing
+    // from BACKEND_PREFIXES (e.g. /clients, /payments) fell through to the
+    // Fresh dev proxy in routes/api/[...path].ts → fetch(BACKEND_URL) →
+    // http://localhost:3000, which is dead in the composed prod server and
+    // 502s with `backend_unreachable`. Routing all /api/* in-process kills
+    // that footgun; an unknown path simply 404s from the backend router,
+    // which is the correct answer anyway.
     if (pathname.startsWith("/api/")) {
-      const stripped = pathname.slice(4);
-      if (matchesBackend(stripped)) {
-        const rewritten = new URL(req.url);
-        rewritten.pathname = stripped;
-        return backend.fetch(new Request(rewritten, req));
-      }
+      const rewritten = new URL(req.url);
+      rewritten.pathname = pathname.slice(4);
+      return backend.fetch(new Request(rewritten, req));
     }
 
     if (matchesBackend(pathname) && !isFrontendOverride(pathname)) {
