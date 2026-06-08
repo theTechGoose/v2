@@ -68,21 +68,47 @@ async function fetchMeInProcess(
     headers: { "x-session-id": sessionId, "accept": "application/json" },
   });
   const res = await handler(probe);
-  if (res.status === 401 || res.status === 403) return undefined;
-  if (!res.ok) throw new Error(`/me failed: ${res.status}`);
-  return await res.json() as User;
+  if (res.ok) return await res.json() as User;
+  // The backend currently serializes UnauthorizedError as 500 (it's a plain
+  // Error with no status), so we can't rely on 401/403 alone — detect the
+  // error by name in the body and treat it as "no session" instead of
+  // throwing (which would log-spam and look like a transport failure).
+  let bodyName = "";
+  try {
+    bodyName = ((await res.clone().json()) as { name?: string })?.name ?? "";
+  } catch { /* non-JSON body */ }
+  console.error(
+    `[auth-diag] in-process /me not ok status=${res.status} name=${bodyName}`,
+  );
+  if (
+    res.status === 401 || res.status === 403 ||
+    bodyName === "UnauthorizedError"
+  ) {
+    return undefined;
+  }
+  throw new Error(`/me failed: ${res.status} ${bodyName}`);
 }
 
 export async function loadUser(req: Request): Promise<User | undefined> {
   const sessionId = readSessionCookie(req.headers.get("cookie"));
-  if (!sessionId) {
-    if (DEV_BYPASS) return DEV_USER;
-    return undefined;
-  }
 
   // Same-process dispatch on Deno Deploy. Falls back to api.get (over the
   // dev proxy / BACKEND_URL) when running outside the composed mod.ts.
   const inProcess = getInProcessBackend();
+
+  // [auth-diag] Temporary: pinpoint why an authed page bounces to "/" on
+  // prod. Logs whether the session cookie arrived and whether the in-process
+  // backend is wired. Remove once the login→landing regression is resolved.
+  console.error(
+    `[auth-diag] loadUser hasCookie=${!!sessionId} hasInProcess=${!!inProcess} path=${
+      new URL(req.url).pathname
+    }`,
+  );
+
+  if (!sessionId) {
+    if (DEV_BYPASS) return DEV_USER;
+    return undefined;
+  }
 
   try {
     if (inProcess) return await fetchMeInProcess(inProcess, sessionId);
