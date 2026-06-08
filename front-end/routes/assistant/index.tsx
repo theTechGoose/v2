@@ -1,8 +1,10 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { getSessionId } from "../../lib/auth.ts";
-import { api } from "../../lib/api.ts";
-import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
+import {
+  ssrBackendGetAuthed,
+  ssrBackendPostAuthed,
+} from "../../lib/backend-fetch.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import AsstThreads from "../../islands/AsstThreads.tsx";
@@ -22,30 +24,38 @@ export default define.page(async function AssistantHome(ctx) {
   // Bossie's first ask and bounce the user into it. The first ask is
   // already SSR-rendered (because it lives in the message store) so
   // the user lands on a chat that already has a question waiting.
+  //
+  // This MUST go through the in-process backend: on Deno Deploy the HTTP
+  // api client 500s/508s SSR-side, which used to silently drop the user on
+  // an empty /assistant?onboard=1 chat ("0 messages" limbo). On any failure
+  // we send them to the dashboard — now reachable without onboarding and
+  // carrying the SetupChecklist nudge — rather than stranding them here.
   const url = new URL(ctx.req.url);
   if (url.searchParams.has("onboard")) {
     if (sessionId) {
-      try {
-        const r = await api.post<{ conversationId: string; seeded: boolean }>(
-          "/agents/conversations/onboarding-start",
-          {},
-          { sessionId },
-        );
-        if (r?.conversationId) {
-          return new Response(null, {
-            status: 302,
-            headers: { Location: `/assistant/${r.conversationId}?onboard=1` },
-          });
-        }
-      } catch (err) {
-        // Fall through to the regular landing on failure — user can
-        // still type something to start a thread manually.
-        console.error(
-          "[/assistant?onboard=1] start failed:",
-          (err as Error).message,
-        );
+      const r = await ssrBackendPostAuthed<
+        { conversationId: string; seeded: boolean }
+      >("/agents/conversations/onboarding-start", {}, sessionId)
+        .catch((err) => {
+          console.error(
+            "[/assistant?onboard=1] start failed:",
+            (err as Error).message,
+          );
+          return { ok: false as const, status: 0 };
+        });
+      if (r.ok && r.data?.conversationId) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `/assistant/${r.data.conversationId}?onboard=1` },
+        });
       }
     }
+    // Couldn't seed the onboarding thread — don't leave them in an empty
+    // chat. The dashboard is reachable without onboarding and nudges setup.
+    return new Response(null, {
+      status: 302,
+      headers: { Location: "/dashboard" },
+    });
   }
 
   // In-process SSR fetch — see [threadId].tsx note. The standard HTTP

@@ -67,3 +67,58 @@ export function ssrBackendGetAuthed<T = unknown>(
     : headers;
   return ssrBackendGet<T>(path, merged);
 }
+
+/** POST a backend path on the SSR side. `path` must start with `/`.
+ *  Uses the in-process backend handler on Deno Deploy (the public-URL
+ *  self-fetch 508s and the BACKEND_URL=localhost:3000 dev default 500s in
+ *  prod), falling back to HTTP only in local dev. */
+export async function ssrBackendPost<T = unknown>(
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<{ ok: boolean; status: number; data?: T; errorText?: string }> {
+  const reqHeaders = new Headers({
+    "accept": "application/json",
+    "content-type": "application/json",
+    ...headers,
+  });
+  const payload = JSON.stringify(body ?? {});
+  const inProcess = getInProcess();
+
+  let res: Response;
+  if (inProcess) {
+    res = await inProcess(
+      new Request(`http://internal${path}`, {
+        method: "POST",
+        headers: reqHeaders,
+        body: payload,
+      }),
+    );
+  } else {
+    res = await fetch(`${BACKEND_URL}${path}`, {
+      method: "POST",
+      headers: reqHeaders,
+      body: payload,
+    });
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return { ok: false, status: res.status, errorText: text };
+  }
+  return { ok: true, status: res.status, data: await res.json() as T };
+}
+
+/** Authed variant of ssrBackendPost — forwards the session via the
+ *  `x-session-id` header that requireUser() reads. */
+export function ssrBackendPostAuthed<T = unknown>(
+  path: string,
+  body: unknown,
+  sessionId: string | undefined,
+  headers: Record<string, string> = {},
+): Promise<{ ok: boolean; status: number; data?: T; errorText?: string }> {
+  const merged = sessionId
+    ? { ...headers, "x-session-id": sessionId }
+    : headers;
+  return ssrBackendPost<T>(path, body, merged);
+}
