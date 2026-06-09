@@ -41,7 +41,10 @@ export function langFromCookie(
   cookieHeader: string | null | undefined,
 ): Lang | null {
   if (!cookieHeader) return null;
-  const m = cookieHeader.match(/(?:^|;\s*)pm_lang=(en|es)(?:;|$)/);
+  // Accept "," as a separator too: over HTTP/2 a navigation arrives with each
+  // cookie in its own header field, which Deno re-joins with ", " — so a
+  // ";"-only match misses pm_lang whenever pm_session is also present.
+  const m = cookieHeader.match(/(?:^|[;,]\s*)pm_lang=(en|es)(?:[;,]|$)/);
   return m ? (m[1] as Lang) : null;
 }
 

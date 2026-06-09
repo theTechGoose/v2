@@ -145,7 +145,13 @@ export function readSessionCookie(
   cookieHeader: string | null,
 ): string | undefined {
   if (!cookieHeader) return undefined;
-  for (const part of cookieHeader.split(";")) {
+  // Split on BOTH ";" and ",". A standard Cookie header is "; "-separated, but
+  // over HTTP/2 a browser navigation sends each cookie as its own `Cookie`
+  // header field, and Deno's `Headers.get("cookie")` re-joins those with ", ".
+  // Splitting only on ";" then mis-reads (or misses) pm_session when a second
+  // cookie (e.g. pm_lang) is present — which silently logged users out on every
+  // SSR'd page. Cookie values can't contain a bare "," so this stays correct.
+  for (const part of cookieHeader.split(/[;,]/)) {
     const [k, ...rest] = part.trim().split("=");
     if (k === "pm_session") return decodeURIComponent(rest.join("="));
   }

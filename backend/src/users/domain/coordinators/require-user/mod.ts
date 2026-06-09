@@ -22,7 +22,12 @@ export function readSessionId(ctx: ExecutionContext): string | null {
   if (header) return header;
   const cookieHeader = ctx.req.header("cookie");
   if (!cookieHeader) return null;
-  const found = cookieHeader.split(";").map((c) => c.trim()).find((c) => c.startsWith("pm_session="));
+  // Split on ";" AND ",": over HTTP/2 a navigation sends each cookie as its own
+  // `Cookie` header field, which Deno re-joins with ", "; a ";"-only split then
+  // misses pm_session when another cookie (e.g. pm_lang) is present.
+  const found = cookieHeader.split(/[;,]/).map((c) => c.trim()).find((c) =>
+    c.startsWith("pm_session=")
+  );
   if (!found) return null;
   return decodeURIComponent(found.slice("pm_session=".length));
 }
