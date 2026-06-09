@@ -17,10 +17,13 @@ interface ClientsHeroProps {
   owedTotal: number;
   quietCount: number;
   lang?: Lang;
+  /** Open the add-client modal. Rendered inside the ClientsPage island, so
+   *  this closure hydrates with it (not a cross-island prop). */
+  onAdd?: () => void;
 }
 
 export function ClientsHero(
-  { totalClients, activeJobs, owedTotal, quietCount, lang = "en" }:
+  { totalClients, activeJobs, owedTotal, quietCount, lang = "en", onAdd }:
     ClientsHeroProps,
 ) {
   const owedFmt = owedTotal.toLocaleString("en-US", {
@@ -86,7 +89,7 @@ export function ClientsHero(
             </>
           )}
       </div>
-      <button class="ph2__cta" type="button">
+      <button class="ph2__cta" type="button" onClick={onAdd}>
         <I d={ICN.plus} size={14} /> {tFor(lang, "clientsHero.addClient")}
       </button>
     </div>
