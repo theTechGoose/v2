@@ -12,6 +12,7 @@
       "nav.how": "How It Works",
       "nav.pricing": "Pricing",
       "nav.cta": "Get Started",
+      "nav.login": "Log in",
       "hero.kickerPill": "For pros",
       "hero.kicker": "Built for contractors who work with their hands",
       "hero.h1a": "You do the work.",
@@ -144,6 +145,7 @@
       "nav.how": "Cómo funciona",
       "nav.pricing": "Precios",
       "nav.cta": "Empezar",
+      "nav.login": "Entrar",
       "hero.kickerPill": "Para pros",
       "hero.kicker": "Hecho para contratistas que trabajan con las manos",
       "hero.h1a": "Tú haces el trabajo.",
@@ -588,6 +590,12 @@
   try {
     localStorage.setItem("pm:lang", curLang);
   } catch { /* storage unavailable */ }
+  // Mirror into a cookie too so the SSR routes (/login, /verify) render in the
+  // chosen language instead of falling back to the browser's Accept-Language.
+  try {
+    document.cookie = "pm_lang=" + curLang +
+      ";path=/;max-age=31536000;samesite=lax";
+  } catch { /* noop */ }
   let activeDoc = "quote";
 
   /* ===== i18n ===== */
@@ -627,6 +635,10 @@
     try {
       localStorage.setItem("pm:lang", lang);
     } catch { /* storage unavailable */ }
+    try {
+      document.cookie = "pm_lang=" + lang +
+        ";path=/;max-age=31536000;samesite=lax";
+    } catch { /* noop */ }
     document.querySelectorAll(".lang-toggle button").forEach(function (b) {
       if (b.dataset.lang === lang) b.classList.add("on");
       else b.classList.remove("on");
