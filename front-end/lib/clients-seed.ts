@@ -5,6 +5,8 @@
  * `/analytics/clients/segments`) come online.
  */
 
+import { tFor } from "./i18n.ts";
+
 export type ClientStatus = "active" | "lead" | "owes" | "regular" | "cold";
 export type LastTone = "hot" | "warm" | "cold";
 export type Segment = "HOA" | "Property mgmt" | "Small biz" | "Homeowner";
@@ -40,13 +42,13 @@ export const CLIENTS: Client[] = [
     shadow: "rgba(81,152,67,0.5)",
     contact: "board@greenleaf-hoa.org",
     phone: "(415) 555-0145",
-    last: "Common area paint",
-    lastWhen: "quote viewed Tue",
+    last: tFor("en", "clientsSeed.greenleafHoa.last"),
+    lastWhen: tFor("en", "clientsSeed.greenleafHoa.lastWhen"),
     lastTone: "warm",
     balance: 0,
-    balanceSub: "settled · quote out $5,800",
+    balanceSub: tFor("en", "clientsSeed.greenleafHoa.balanceSub"),
     jobs: "—",
-    jobsSub: "quote out · $5,800",
+    jobsSub: tFor("en", "clientsSeed.greenleafHoa.jobsSub"),
     status: "regular",
     temp: 78,
     vip: true,
@@ -59,13 +61,13 @@ export const CLIENTS: Client[] = [
     shadow: "rgba(81,152,67,0.45)",
     contact: "janet@maplegrove.co",
     phone: "(415) 555-0124",
-    last: "Re-roof — building C",
-    lastWhen: "in progress · today",
+    last: tFor("en", "clientsSeed.mapleGrove.last"),
+    lastWhen: tFor("en", "clientsSeed.mapleGrove.lastWhen"),
     lastTone: "hot",
     balance: 4200,
-    balanceSub: "progress invoice · due May 5",
+    balanceSub: tFor("en", "clientsSeed.mapleGrove.balanceSub"),
     jobs: "2",
-    jobsSub: "active",
+    jobsSub: tFor("en", "clientsSeed.mapleGrove.jobsSub"),
     status: "active",
     temp: 92,
     vip: true,
@@ -78,13 +80,13 @@ export const CLIENTS: Client[] = [
     shadow: "rgba(81,152,67,0.4)",
     contact: "hello@cobblestone.cafe",
     phone: "(415) 555-0117",
-    last: "Patio re-tile",
-    lastWhen: "on track · Apr 30",
+    last: tFor("en", "clientsSeed.cobblestone.last"),
+    lastWhen: tFor("en", "clientsSeed.cobblestone.lastWhen"),
     lastTone: "hot",
     balance: 0,
-    balanceSub: "settled · deposit on file",
+    balanceSub: tFor("en", "clientsSeed.cobblestone.balanceSub"),
     jobs: "1",
-    jobsSub: "active",
+    jobsSub: tFor("en", "clientsSeed.cobblestone.jobsSub"),
     status: "regular",
     temp: 71,
     vip: false,
@@ -97,13 +99,13 @@ export const CLIENTS: Client[] = [
     shadow: "rgba(100,69,54,0.4)",
     contact: "mike@marshall-sons.com",
     phone: "(415) 555-0166",
-    last: "Driveway repour",
-    lastWhen: "awaiting permit",
+    last: tFor("en", "clientsSeed.marshallSons.last"),
+    lastWhen: tFor("en", "clientsSeed.marshallSons.lastWhen"),
     lastTone: "warm",
     balance: -500,
-    balanceSub: "$500 deposit on file",
+    balanceSub: tFor("en", "clientsSeed.marshallSons.balanceSub"),
     jobs: "1",
-    jobsSub: "active",
+    jobsSub: tFor("en", "clientsSeed.marshallSons.jobsSub"),
     status: "active",
     temp: 64,
     vip: false,
@@ -116,13 +118,13 @@ export const CLIENTS: Client[] = [
     shadow: "rgba(224,49,49,0.4)",
     contact: "sarah.chen@gmail.com",
     phone: "(415) 555-0188",
-    last: "Bathroom remodel",
-    lastWhen: "in progress · Wed",
+    last: tFor("en", "clientsSeed.sarahChen.last"),
+    lastWhen: tFor("en", "clientsSeed.sarahChen.lastWhen"),
     lastTone: "hot",
     balance: 1920,
-    balanceSub: "INV-208 · due in 3 days",
+    balanceSub: tFor("en", "clientsSeed.sarahChen.balanceSub"),
     jobs: "1",
-    jobsSub: "active",
+    jobsSub: tFor("en", "clientsSeed.sarahChen.jobsSub"),
     status: "owes",
     temp: 58,
     vip: false,
@@ -135,13 +137,13 @@ export const CLIENTS: Client[] = [
     shadow: "rgba(100,69,54,0.4)",
     contact: "manager@hilltopdiner.com",
     phone: "(415) 555-0102",
-    last: "Bar refinish · INV-204",
-    lastWhen: "invoice 11 days late",
+    last: tFor("en", "clientsSeed.hilltopDiner.last"),
+    lastWhen: tFor("en", "clientsSeed.hilltopDiner.lastWhen"),
     lastTone: "cold",
     balance: 1160,
-    balanceSub: "INV-204 · 11 days late",
+    balanceSub: tFor("en", "clientsSeed.hilltopDiner.balanceSub"),
     jobs: "—",
-    jobsSub: "overdue",
+    jobsSub: tFor("en", "clientsSeed.hilltopDiner.jobsSub"),
     status: "owes",
     temp: 22,
     vip: false,
@@ -154,13 +156,13 @@ export const CLIENTS: Client[] = [
     shadow: "rgba(120,85,68,0.4)",
     contact: "linda.k@outlook.com",
     phone: "(415) 555-0193",
-    last: "Garage epoxy floor",
-    lastWhen: "quote opened 2× today",
+    last: tFor("en", "clientsSeed.kowalski.last"),
+    lastWhen: tFor("en", "clientsSeed.kowalski.lastWhen"),
     lastTone: "hot",
     balance: 0,
-    balanceSub: "no invoices yet",
+    balanceSub: tFor("en", "clientsSeed.kowalski.balanceSub"),
     jobs: "—",
-    jobsSub: "no active jobs",
+    jobsSub: tFor("en", "clientsSeed.kowalski.jobsSub"),
     status: "lead",
     temp: 86,
     vip: false,
@@ -173,13 +175,13 @@ export const CLIENTS: Client[] = [
     shadow: "rgba(255,107,107,0.4)",
     contact: "jana.patel@hey.com",
     phone: "(415) 555-0142",
-    last: "Interior paint · 2BR",
-    lastWhen: "scheduled Mon Apr 29",
+    last: tFor("en", "clientsSeed.janaPatel.last"),
+    lastWhen: tFor("en", "clientsSeed.janaPatel.lastWhen"),
     lastTone: "warm",
     balance: -825,
-    balanceSub: "50% deposit on file",
+    balanceSub: tFor("en", "clientsSeed.janaPatel.balanceSub"),
     jobs: "1",
-    jobsSub: "scheduled",
+    jobsSub: tFor("en", "clientsSeed.janaPatel.jobsSub"),
     status: "active",
     temp: 68,
     vip: false,
@@ -192,13 +194,13 @@ export const CLIENTS: Client[] = [
     shadow: "rgba(255,107,107,0.4)",
     contact: "marcus.lin@gmail.com",
     phone: "(415) 555-0151",
-    last: "Kitchen backsplash",
-    lastWhen: "quote sent today",
+    last: tFor("en", "clientsSeed.marcusLin.last"),
+    lastWhen: tFor("en", "clientsSeed.marcusLin.lastWhen"),
     lastTone: "warm",
     balance: 0,
-    balanceSub: "no invoices yet",
+    balanceSub: tFor("en", "clientsSeed.marcusLin.balanceSub"),
     jobs: "—",
-    jobsSub: "awaiting reply",
+    jobsSub: tFor("en", "clientsSeed.marcusLin.jobsSub"),
     status: "lead",
     temp: 52,
     vip: false,
@@ -211,13 +213,13 @@ export const CLIENTS: Client[] = [
     shadow: "rgba(81,152,67,0.4)",
     contact: "ops@bayside-pm.com",
     phone: "(415) 555-0179",
-    last: "4-unit gutter cleaning",
-    lastWhen: "quote sent 4 days ago",
+    last: tFor("en", "clientsSeed.bayside.last"),
+    lastWhen: tFor("en", "clientsSeed.bayside.lastWhen"),
     lastTone: "cold",
     balance: 0,
-    balanceSub: "settled · quote out $1,240",
+    balanceSub: tFor("en", "clientsSeed.bayside.balanceSub"),
     jobs: "—",
-    jobsSub: "cooling off",
+    jobsSub: tFor("en", "clientsSeed.bayside.jobsSub"),
     status: "cold",
     temp: 28,
     vip: false,
@@ -230,13 +232,13 @@ export const CLIENTS: Client[] = [
     shadow: "rgba(255,107,107,0.35)",
     contact: "studio@riversideyoga.com",
     phone: "(415) 555-0188",
-    last: "Studio floor seal",
-    lastWhen: "completed Mar 14",
+    last: tFor("en", "clientsSeed.riversideYoga.last"),
+    lastWhen: tFor("en", "clientsSeed.riversideYoga.lastWhen"),
     lastTone: "cold",
     balance: 0,
-    balanceSub: "paid in full · Mar 16",
+    balanceSub: tFor("en", "clientsSeed.riversideYoga.balanceSub"),
     jobs: "—",
-    jobsSub: "last job 6 wks ago",
+    jobsSub: tFor("en", "clientsSeed.riversideYoga.jobsSub"),
     status: "cold",
     temp: 24,
     vip: false,
@@ -249,13 +251,13 @@ export const CLIENTS: Client[] = [
     shadow: "rgba(100,69,54,0.4)",
     contact: "mateo@ortegarentals.com",
     phone: "(415) 555-0163",
-    last: "Unit 4B paint",
-    lastWhen: "completed Feb 22",
+    last: tFor("en", "clientsSeed.ortega.last"),
+    lastWhen: tFor("en", "clientsSeed.ortega.lastWhen"),
     lastTone: "cold",
     balance: 0,
-    balanceSub: "paid in full · Feb 28",
+    balanceSub: tFor("en", "clientsSeed.ortega.balanceSub"),
     jobs: "—",
-    jobsSub: "no active jobs",
+    jobsSub: tFor("en", "clientsSeed.ortega.jobsSub"),
     status: "cold",
     temp: 18,
     vip: false,
@@ -263,11 +265,11 @@ export const CLIENTS: Client[] = [
 ];
 
 export const STATUS_LABELS: Record<ClientStatus, string> = {
-  active: "Active job",
-  lead: "Lead",
-  owes: "Owes you",
-  regular: "Regular",
-  cold: "Quiet",
+  active: tFor("en", "clientsSeed.statusLabel.active"),
+  lead: tFor("en", "clientsSeed.statusLabel.lead"),
+  owes: tFor("en", "clientsSeed.statusLabel.owes"),
+  regular: tFor("en", "clientsSeed.statusLabel.regular"),
+  cold: tFor("en", "clientsSeed.statusLabel.cold"),
 };
 
 export interface Story {
@@ -277,64 +279,52 @@ export interface Story {
 
 export const STORIES: Record<string, Story> = {
   "Greenleaf HOA": {
-    line:
-      "Eleven jobs since 2022. Margaret peeked at the new paint quote Tuesday — nudge gently, they always say yes by Thursday.",
-    cta: "Send a friendly nudge",
+    line: tFor("en", "clientsSeed.greenleafHoa.story.line"),
+    cta: tFor("en", "clientsSeed.greenleafHoa.story.cta"),
   },
   "Maple Grove Apartments": {
-    line:
-      "Diego is on building C right now. Janet pays progress invoices the day she gets them — send the next one tonight.",
-    cta: "Draft progress invoice",
+    line: tFor("en", "clientsSeed.mapleGrove.story.line"),
+    cta: tFor("en", "clientsSeed.mapleGrove.story.cta"),
   },
   "Cobblestone Cafe": {
-    line:
-      "Patio re-tile lands April 30. Aisha tipped the crew last visit; they’re not just a customer, they’re fans.",
-    cta: "Confirm Wednesday",
+    line: tFor("en", "clientsSeed.cobblestone.story.line"),
+    cta: tFor("en", "clientsSeed.cobblestone.story.cta"),
   },
   "Marshall & Sons": {
-    line:
-      "Driveway is waiting on a city permit — that’s on the inspector, not on you. Worth a heads-up text so Mike doesn’t worry.",
-    cta: "Send permit update",
+    line: tFor("en", "clientsSeed.marshallSons.story.line"),
+    cta: tFor("en", "clientsSeed.marshallSons.story.cta"),
   },
   "Sarah Chen": {
-    line:
-      "Bathroom is on track but $1,920 is due Friday and Sarah hasn’t opened INV-208 yet. Friendly reminder, not a chase.",
-    cta: "Send a kind reminder",
+    line: tFor("en", "clientsSeed.sarahChen.story.line"),
+    cta: tFor("en", "clientsSeed.sarahChen.story.cta"),
   },
   "Hilltop Diner": {
-    line:
-      "Eleven days late on a $1,160 invoice and quiet since. Lead with empathy — offer to split it in two payments.",
-    cta: "Offer the split-pay",
+    line: tFor("en", "clientsSeed.hilltopDiner.story.line"),
+    cta: tFor("en", "clientsSeed.hilltopDiner.story.cta"),
   },
   "Tom & Linda Kowalski": {
-    line:
-      "They opened the garage epoxy quote twice today. Hot lead. Knock $150 off if they book this week and you’ll close it.",
-    cta: "Send the warm offer",
+    line: tFor("en", "clientsSeed.kowalski.story.line"),
+    cta: tFor("en", "clientsSeed.kowalski.story.cta"),
   },
   "Jana Patel": {
-    line:
-      "Paint job Monday, deposit already in. Easy week. Drop a confirmation text Sunday night and call it good.",
-    cta: "Schedule Sunday text",
+    line: tFor("en", "clientsSeed.janaPatel.story.line"),
+    cta: tFor("en", "clientsSeed.janaPatel.story.cta"),
   },
   "Marcus Lin": {
-    line:
-      "New lead — kitchen backsplash quote went out this morning. Give it a day, then check in if quiet.",
-    cta: "Set 48-hour follow-up",
+    line: tFor("en", "clientsSeed.marcusLin.story.line"),
+    cta: tFor("en", "clientsSeed.marcusLin.story.cta"),
   },
   "Bayside Properties": {
-    line:
-      "Quote’s been sitting four days. Property managers ghost when budget tightens; ask if job details need trimming.",
-    cta: "Ask if job details are right",
+    line: tFor("en", "clientsSeed.bayside.story.line"),
+    cta: tFor("en", "clientsSeed.bayside.story.cta"),
   },
   "Riverside Yoga": {
-    line:
-      "Used to book monthly, quiet six weeks. Patio season starts next week — perfect excuse to reconnect.",
-    cta: "Pitch the spring re-seal",
+    line: tFor("en", "clientsSeed.riversideYoga.story.line"),
+    cta: tFor("en", "clientsSeed.riversideYoga.story.cta"),
   },
   "Ortega Rentals": {
-    line:
-      "Two months silent. Mateo manages eight units across town — when he goes quiet, he’s usually deciding between you and someone cheaper.",
-    cta: "Win him back",
+    line: tFor("en", "clientsSeed.ortega.story.line"),
+    cta: tFor("en", "clientsSeed.ortega.story.cta"),
   },
 };
 
@@ -362,30 +352,30 @@ export interface FilterEntry {
 }
 
 export const FILTERS: FilterEntry[] = [
-  { id: "all", label: "All", count: CLIENTS.length },
+  { id: "all", label: tFor("en", "clientsSeed.filter.all"), count: CLIENTS.length },
   {
     id: "active",
-    label: "Active jobs",
+    label: tFor("en", "clientsSeed.filter.activeJobs"),
     count: CLIENTS.filter((c) => c.status === "active").length,
   },
   {
     id: "lead",
-    label: "Leads",
+    label: tFor("en", "clientsSeed.filter.leads"),
     count: CLIENTS.filter((c) => c.status === "lead").length,
   },
   {
     id: "owes",
-    label: "Owe you",
+    label: tFor("en", "clientsSeed.filter.oweYou"),
     count: CLIENTS.filter((c) => c.status === "owes").length,
   },
   {
     id: "regular",
-    label: "Regulars",
+    label: tFor("en", "clientsSeed.filter.regulars"),
     count: CLIENTS.filter((c) => c.status === "regular").length,
   },
   {
     id: "cold",
-    label: "Quiet",
+    label: tFor("en", "clientsSeed.filter.quiet"),
     count: CLIENTS.filter((c) => c.status === "cold").length,
   },
 ];
@@ -412,10 +402,10 @@ export interface SegmentRow {
 }
 
 export const SEGMENTS: SegmentRow[] = [
-  { lbl: "Property mgmt", pct: 80, num: 4, color: "var(--brand-green)" },
-  { lbl: "Homeowners", pct: 60, num: 5, color: "var(--brand-pink)" },
-  { lbl: "Small biz", pct: 40, num: 2, color: "var(--brand-teal)" },
-  { lbl: "HOAs", pct: 18, num: 1, color: "var(--coffee-500)" },
+  { lbl: tFor("en", "clientsSeed.segment.propertyMgmt"), pct: 80, num: 4, color: "var(--brand-green)" },
+  { lbl: tFor("en", "clientsSeed.segment.homeowners"), pct: 60, num: 5, color: "var(--brand-pink)" },
+  { lbl: tFor("en", "clientsSeed.segment.smallBiz"), pct: 40, num: 2, color: "var(--brand-teal)" },
+  { lbl: tFor("en", "clientsSeed.segment.hoas"), pct: 18, num: 1, color: "var(--coffee-500)" },
 ];
 
 export interface MoodPalette {
@@ -433,7 +423,7 @@ export const moodFor = (c: Client): MoodPalette => {
       to: "#0F3A40",
       shadow: "rgba(26,83,92,0.35)",
       statusFg: "#1A535C",
-      label: "On the books",
+      label: tFor("en", "clientsSeed.mood.onTheBooks"),
     };
   }
   if (c.balance > 0) {
@@ -442,7 +432,7 @@ export const moodFor = (c: Client): MoodPalette => {
       to: "#D63F3F",
       shadow: "rgba(255,107,107,0.35)",
       statusFg: "#B23030",
-      label: "Owes you",
+      label: tFor("en", "clientsSeed.mood.owesYou"),
     };
   }
   if (c.status === "active") {
@@ -451,7 +441,7 @@ export const moodFor = (c: Client): MoodPalette => {
       to: "#3F7A33",
       shadow: "rgba(81,152,67,0.35)",
       statusFg: "#3F7A33",
-      label: "Active job",
+      label: tFor("en", "clientsSeed.mood.activeJob"),
     };
   }
   if (c.status === "lead") {
@@ -460,7 +450,7 @@ export const moodFor = (c: Client): MoodPalette => {
       to: "#E8704F",
       shadow: "rgba(232,112,79,0.35)",
       statusFg: "#A8431F",
-      label: "New lead",
+      label: tFor("en", "clientsSeed.mood.newLead"),
     };
   }
   if (c.status === "cold") {
@@ -469,7 +459,7 @@ export const moodFor = (c: Client): MoodPalette => {
       to: "#5C4034",
       shadow: "rgba(92,64,52,0.35)",
       statusFg: "#5C4034",
-      label: "Quiet",
+      label: tFor("en", "clientsSeed.mood.quiet"),
     };
   }
   return {
@@ -477,6 +467,6 @@ export const moodFor = (c: Client): MoodPalette => {
     to: "#4A7039",
     shadow: "rgba(74,112,57,0.32)",
     statusFg: "#3F7A33",
-    label: "Regular",
+    label: tFor("en", "clientsSeed.mood.regular"),
   };
 };

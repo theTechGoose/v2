@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "#danet/core";
+import { t } from "@core/i18n/mod.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import type {
@@ -179,6 +180,7 @@ export class HandleChatMessage {
       typeof input.content === "string";
     if (inputIsText) {
       const me = await this.users.get(input.userId).catch(() => null);
+      const lang = me?.language === "es" ? "es" : "en";
       const ident = await this.identity.get(input.userId).catch(() => null);
       const addr = await this.addresses.get(input.userId).catch(() => null);
       const needsName = !me?.name || me.name.trim().length === 0;
@@ -293,8 +295,7 @@ export class HandleChatMessage {
               conversationId: conv.id,
               role: "assistant",
               kind: "text",
-              content:
-                "Sorry, didn't quite catch that — what should I call you? (just your first name is fine)",
+              content: t(lang, "onboardingChat.name.reprompt"),
             });
             const updated = await this.conversations.update(conv.id, {
               preview: derivePreview(ask.content),
@@ -346,8 +347,7 @@ export class HandleChatMessage {
               conversationId: conv.id,
               role: "assistant",
               kind: "text",
-              content:
-                'What\'s the business called? (e.g. "Riley Roofing Co." — solo is fine too)',
+              content: t(lang, "onboardingChat.business.reprompt"),
             });
             const updated = await this.conversations.update(conv.id, {
               preview: derivePreview(ask.content),
@@ -415,8 +415,7 @@ export class HandleChatMessage {
               conversationId: conv.id,
               role: "assistant",
               kind: "text",
-              content:
-                "Hmm, didn't recognize that — try the 2-letter code (CA, TX, NY) or the full state name.",
+              content: t(lang, "onboardingChat.state.reprompt"),
             });
             const updated = await this.conversations.update(conv.id, {
               preview: derivePreview(ask.content),
@@ -505,8 +504,7 @@ export class HandleChatMessage {
               conversationId: conv.id,
               role: "assistant",
               kind: "text",
-              content:
-                'Hmm, couldn\'t quite parse that. Try "123 Main St, Austin, TX 78701" — or just say "skip".',
+              content: t(lang, "onboardingChat.address.reprompt"),
             });
             const updated = await this.conversations.update(conv.id, {
               preview: derivePreview(ask.content),
@@ -597,6 +595,13 @@ export class HandleChatMessage {
     const _legacyAsk = ONBOARDING_ASK_TEXT;
     void _legacyAsk;
 
+    // Roadmap p.13: the assistant talks to the CONTRACTOR, so all of its
+    // server-authored replies/cards follow their UI language (user.language).
+    const contractor = await this.users.get(input.userId).catch(() =>
+      undefined
+    );
+    const replyLang = contractor?.language === "es" ? "es" : "en";
+
     // ---- N5 fast-path: confirmation → fire lock_quote without the LLM ----
     // The model is unreliable at calling lock_quote on short confirmations
     // ("send it", "looks good", "yep") even with example-rich prompting on
@@ -614,7 +619,7 @@ export class HandleChatMessage {
         const active = await this.quotes.getOwned(conv.quoteId, input.userId);
         if (active.status === "draft") {
           llmResponse = {
-            text: "Locking the quote.",
+            text: t(replyLang, "chatCoordinator.lockingQuote"),
             action: { type: "lock_quote", payload: { quoteId: conv.quoteId } },
           };
         }
@@ -691,9 +696,8 @@ export class HandleChatMessage {
       // Roadmap p.13: the assistant talks to the CONTRACTOR, so it follows
       // their UI language (user.language) — it would be odd for the app to
       // be in Spanish while the assistant replies in English.
-      const me = await this.users.get(input.userId).catch(() => undefined);
-      const systemPrompt = me?.language === "es"
-        ? `${base}\n\nIMPORTANT: The contractor's language is Spanish. Write ALL of your replies to them in neutral Latin-American Spanish.`
+      const systemPrompt = replyLang === "es"
+        ? `${base}\n\n${t("en", "prompts.contractorLanguageEsOverride")}`
         : base;
       llmResponse = await this.llm.respond({
         systemPrompt,
@@ -736,9 +740,9 @@ export class HandleChatMessage {
       replyText = "";
       suppressTextBubble = true;
     } else if (llmResponse.action) {
-      replyText = "On it.";
+      replyText = t(replyLang, "chatCoordinator.onIt");
     } else {
-      replyText = "Got it — what would you like me to do with that?";
+      replyText = t(replyLang, "chatCoordinator.noActionFallback");
     }
 
     const newMessages: AgentMessage[] = [userMsg];
@@ -882,7 +886,7 @@ export class HandleChatMessage {
             conversationId: conv.id,
             role: "assistant",
             kind: "action_card",
-            content: locked.summary ?? "Quote sent",
+            content: locked.summary ?? t(replyLang, "chatCoordinator.quoteSent"),
             payload: {
               actionType: "quote",
               status: "sent",
@@ -896,8 +900,7 @@ export class HandleChatMessage {
             conversationId: conv.id,
             role: "assistant",
             kind: "continue_cta",
-            content:
-              "We've locked the quote down! Is this for a business or a person?",
+            content: t(replyLang, "chatCoordinator.lockedToTermsCta"),
             payload: {
               toPhase: "terms",
               quoteId,
@@ -926,8 +929,7 @@ export class HandleChatMessage {
           conversationId: conv.id,
           role: "assistant",
           kind: "continue_cta",
-          content:
-            "We've locked the quote down! Is this for a business or a person?",
+          content: t(replyLang, "chatCoordinator.lockedToTermsCta"),
           payload: {
             toPhase: "terms",
             quoteId,

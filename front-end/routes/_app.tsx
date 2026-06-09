@@ -1,5 +1,7 @@
 import { define } from "../utils.ts";
 import MobileViewport from "../islands/MobileViewport.tsx";
+import ImpersonationBanner from "../islands/ImpersonationBanner.tsx";
+import { tFor } from "../lib/i18n.ts";
 
 // Browser-side `lib/api.ts` reads window.__PUBLIC_BACKEND_URL to decide
 // where to POST. Inline the SSR-side env so islands hit the standalone
@@ -23,7 +25,7 @@ export default define.page(function App({ Component }) {
         />
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/logo.png" />
-        <title>Paperwork Monster</title>
+        <title>{tFor("en", "brand.name")}</title>
         {bootScript
           ? (
             <script
@@ -44,6 +46,11 @@ export default define.page(function App({ Component }) {
             above; this makes iOS behave the same. Renders nothing. */
         }
         <MobileViewport />
+        {
+          /* Global super-admin impersonation banner. Self-gates on
+            /admin/whoami — renders nothing for ordinary sessions. */
+        }
+        <ImpersonationBanner />
         <Component />
       </body>
     </html>

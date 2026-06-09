@@ -1,6 +1,7 @@
 import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import { loadUser } from "../lib/auth.ts";
+import { tFor } from "../lib/i18n.ts";
 import PhoneChat, {
   type Bubble,
   type QuoteCopy,
@@ -139,12 +140,10 @@ export default define.page(async function Landing(ctx) {
   return (
     <>
       <Head>
-        <title>
-          Paperwork Monster — You do the work. We handle the paperwork.
-        </title>
+        <title>{tFor("en", "landing.head.title")}</title>
         <meta
           name="description"
-          content="Quotes, contracts, and invoices done right — built for contractors. No app to install. Just text us."
+          content={tFor("en", "landing.head.metaDescription")}
         />
         <link rel="stylesheet" href="/landing.css" />
         <script src="/landing-scripts.js" defer></script>

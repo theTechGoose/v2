@@ -1,12 +1,14 @@
 import { useEffect, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { assistantClient } from "../clients/assistant.ts";
+import { tFor } from "../lib/i18n.ts";
 
 interface Props {
   conversationId?: string;
+  lang?: "en" | "es";
 }
 
-export default function AsstComposer({ conversationId }: Props) {
+export default function AsstComposer({ conversationId, lang = "en" }: Props) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const storageKey = `pm:composer:${conversationId ?? "new"}`;
@@ -43,7 +45,7 @@ export default function AsstComposer({ conversationId }: Props) {
       <div class="composer__inner">
         <textarea
           class="composer__input"
-          placeholder="EX: My client wants a 10x10 concrete slab. Please help me figure out how to price"
+          placeholder={tFor(lang, "asstComposer.placeholder")}
           rows={3}
           value={draft}
           onInput={(e) => setDraft((e.target as HTMLTextAreaElement).value)}
@@ -55,19 +57,31 @@ export default function AsstComposer({ conversationId }: Props) {
           }}
         />
         <div class="composer__tools">
-          <button type="button" class="composer__btn" title="Attach photo">
+          <button
+            type="button"
+            class="composer__btn"
+            title={tFor(lang, "asstComposer.attachPhoto")}
+          >
             <I d={ICN.img} size={17} />
           </button>
-          <button type="button" class="composer__btn" title="Attach file">
+          <button
+            type="button"
+            class="composer__btn"
+            title={tFor(lang, "asstComposer.attachFile")}
+          >
             <I d={ICN.clip} size={17} />
           </button>
-          <button type="button" class="composer__btn" title="Voice memo">
+          <button
+            type="button"
+            class="composer__btn"
+            title={tFor(lang, "asstComposer.voiceMemo")}
+          >
             <I d={ICN.mic} size={17} />
           </button>
           <button
             type="button"
             class="composer__send"
-            title="Send"
+            title={tFor(lang, "common.send")}
             onClick={send}
             disabled={sending || !draft.trim()}
           >
@@ -76,7 +90,9 @@ export default function AsstComposer({ conversationId }: Props) {
         </div>
       </div>
       <div class="composer__hint">
-        <kbd>⏎</kbd> send · <kbd>⇧⏎</kbd> new line · <kbd>⌘K</kbd> commands
+        <kbd>⏎</kbd> {tFor(lang, "asstComposer.hintSend")} <kbd>⇧⏎</kbd>{" "}
+        {tFor(lang, "asstComposer.hintNewLine")} <kbd>⌘K</kbd>{" "}
+        {tFor(lang, "asstComposer.hintCommands")}
       </div>
     </div>
   );

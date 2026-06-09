@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { type Lang, tFor } from "../lib/i18n.ts";
 
 interface Props {
   quoteId: string;
@@ -20,13 +21,9 @@ interface Props {
  * type-your-name field gives us a record of who clicked accept without
  * forcing the customer to draw a signature on a phone.
  */
-function friendlyError(raw: string, es = false): string {
-  const acc = es
-    ? "Esta cotización ya fue aceptada."
-    : "This quote has already been accepted.";
-  const dec = es
-    ? "Esta cotización ya fue rechazada."
-    : "This quote has already been declined.";
+function friendlyError(raw: string, lang: Lang = "en"): string {
+  const acc = tFor(lang, "publicAcceptQuote.error.alreadyAccepted");
+  const dec = tFor(lang, "publicAcceptQuote.error.alreadyDeclined");
   try {
     const parsed = JSON.parse(raw) as { reason?: string; message?: string };
     const reason = parsed?.reason;
@@ -38,16 +35,13 @@ function friendlyError(raw: string, es = false): string {
   } catch { /* not JSON, fall through */ }
   if (/already_accepted/.test(raw)) return acc;
   if (/already_declined/.test(raw)) return dec;
-  return es
-    ? "Algo salió mal — inténtalo de nuevo."
-    : "Something went wrong — please try again.";
+  return tFor(lang, "publicAcceptQuote.error.generic");
 }
 
 export default function PublicAcceptQuote(
   { quoteId, contractorFirstName, onAccepted, initialAccepted, lang = "en" }:
     Props,
 ) {
-  const es = lang === "es";
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<"idle" | "ok" | "error">(
@@ -83,7 +77,7 @@ export default function PublicAcceptQuote(
       onAccepted?.();
     } catch (e) {
       setStatus("error");
-      setErr(friendlyError((e as Error).message, es));
+      setErr(friendlyError((e as Error).message, lang));
     } finally {
       setSubmitting(false);
     }
@@ -94,16 +88,13 @@ export default function PublicAcceptQuote(
     return (
       <div style="margin-top:24px;background:rgba(81,152,67,0.10);border:1px solid rgba(72,158,95,0.30);border-radius:14px;padding:18px 20px;text-align:center">
         <div style="font-weight:800;color:#519843;font-size:16px">
-          {es ? "✓ Cotización aceptada" : "✓ Quote accepted"}
+          {"✓ "}
+          {tFor(lang, "publicAcceptQuote.success.title")}
         </div>
         <div style="margin-top:6px;color:#6b7a7e;font-size:13px">
           {who
-            ? (es
-              ? `${who} se pondrá en contacto para agendar.`
-              : `${who} will be in touch to schedule.`)
-            : (es
-              ? "Tu contratista se pondrá en contacto para agendar."
-              : "Your contractor will be in touch to schedule.")}
+            ? tFor(lang, "publicAcceptQuote.success.subNamed", { name: who })
+            : tFor(lang, "publicAcceptQuote.success.sub")}
         </div>
       </div>
     );
@@ -116,15 +107,13 @@ export default function PublicAcceptQuote(
   return (
     <form onSubmit={onAccept} style="margin-top:24px;text-align:left;">
       <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin-bottom:6px;">
-        {es
-          ? "Escribe tu nombre completo para firmar"
-          : "Type your full name to sign"}
+        {tFor(lang, "publicAcceptQuote.nameLabel")}
       </label>
       <input
         type="text"
         value={name}
         onInput={(e) => setName((e.target as HTMLInputElement).value)}
-        placeholder="Jane Doe"
+        placeholder={tFor(lang, "publicAcceptQuote.namePlaceholder")}
         autoComplete="name"
         style="width:100%;padding:12px 14px;border:1px solid #e3e8e6;border-radius:10px;font-size:15px;color:#1c2c30;font-family:inherit;background:#fff;"
         required
@@ -135,15 +124,13 @@ export default function PublicAcceptQuote(
           id="accept-hint"
           style="margin-top:8px;color:#6b7a7e;font-size:12px"
         >
-          {es
-            ? "Escribe tu nombre arriba para activar el botón de aceptar."
-            : "Type your name above to enable the Accept button."}
+          {tFor(lang, "publicAcceptQuote.hint")}
         </div>
       )}
       {err
         ? (
           <div style="margin-top:10px;color:#b3261e;font-size:13px">
-            {es ? "No se pudo aceptar — " : "Couldn't accept — "}
+            {tFor(lang, "publicAcceptQuote.errorPrefix")}
             {err}
           </div>
         )
@@ -157,8 +144,8 @@ export default function PublicAcceptQuote(
         };`}
       >
         {submitting
-          ? (es ? "Aceptando…" : "Accepting…")
-          : (es ? "Aceptar esta cotización →" : "Accept this quote →")}
+          ? tFor(lang, "publicAcceptQuote.submitting")
+          : `${tFor(lang, "publicAcceptQuote.submit")} →`}
       </button>
     </form>
   );

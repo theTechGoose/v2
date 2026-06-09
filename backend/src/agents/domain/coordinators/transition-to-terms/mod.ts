@@ -3,7 +3,8 @@ import { AgentConversationStore } from "@agents/domain/data/agent-conversation-s
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { transitionPhase } from "@agents/domain/business/derive-phase/mod.ts";
 import { freshState } from "@agents/domain/business/wizard-progress/mod.ts";
-import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
+import { CONTRACT_TERMS_WIZARD_V1, localizeOptions } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
+import { t } from "@core/i18n/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -35,7 +36,9 @@ export class TransitionToTerms {
     private messages: AgentMessageStore,
   ) {}
 
-  async run(input: { userId: string; conversationId: string }): Promise<TransitionToTermsResult> {
+  async run(input: { userId: string; conversationId: string; lang?: "en" | "es" }): Promise<TransitionToTermsResult> {
+    // Chat copy is rendered to the contractor in their own UI language; default to "en".
+    const lang = input.lang === "es" ? "es" : "en";
     const conv = await this.conversations.get(input.conversationId);
     if (conv.userId !== input.userId) throw new Error("forbidden");
     if (conv.currentPhase === "terms") {
@@ -47,8 +50,10 @@ export class TransitionToTerms {
         conversationId: conv.id,
         role: "assistant",
         kind: "wizard",
-        content: step?.question ?? "All terms answered.",
-        payload: { specId: CONTRACT_TERMS_WIZARD_V1.id, stepIdx, stepId: step?.id, options: step?.options },
+        content: step
+          ? t(lang, step.question)
+          : t(lang, "transitionToTerms.allTermsAnswered"),
+        payload: { specId: CONTRACT_TERMS_WIZARD_V1.id, stepIdx, stepId: step?.id, options: step ? localizeOptions(step.options, lang) : undefined },
       });
       return { conversation: conv, newMessages: [wizardMsg] };
     }
@@ -65,8 +70,8 @@ export class TransitionToTerms {
       conversationId: conv.id,
       role: "system",
       kind: "phase_divider",
-      content: "A little more info",
-      payload: { phase: 2, label: "A little more info" },
+      content: t(lang, "transitionToTerms.phaseDivider"),
+      payload: { phase: 2, label: t(lang, "transitionToTerms.phaseDivider") },
     });
 
     const firstStep = CONTRACT_TERMS_WIZARD_V1.steps[0];
@@ -74,8 +79,8 @@ export class TransitionToTerms {
       conversationId: conv.id,
       role: "assistant",
       kind: "wizard",
-      content: firstStep.question,
-      payload: { specId: CONTRACT_TERMS_WIZARD_V1.id, stepIdx: 0, stepId: firstStep.id, options: firstStep.options, hint: firstStep.hint },
+      content: t(lang, firstStep.question),
+      payload: { specId: CONTRACT_TERMS_WIZARD_V1.id, stepIdx: 0, stepId: firstStep.id, options: localizeOptions(firstStep.options, lang), hint: firstStep.hint },
     });
 
     newMessages.push(divider, wizardMsg);

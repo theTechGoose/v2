@@ -6,7 +6,13 @@
  */
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoney } from "../lib/format.ts";
+import { type Lang, tFor } from "../lib/i18n.ts";
 import type { ContractCard } from "../lib/contracts-shape.ts";
+
+/** Plural helper bound to an explicit SSR language. */
+function tnFor(lang: Lang, key: string, n: number, vars?: Record<string, string | number>): string {
+  return tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });
+}
 
 interface HeroProps {
   totalValue: number;
@@ -15,6 +21,7 @@ interface HeroProps {
   inFlightValue: number;
   startingSoonCount: number;
   pendingDeposits: number;
+  lang?: Lang;
 }
 
 export function ContractsHero({
@@ -24,6 +31,7 @@ export function ContractsHero({
   inFlightValue,
   startingSoonCount,
   pendingDeposits,
+  lang = "en",
 }: HeroProps) {
   const allZero = inFlightCount === 0 && pendingDeposits === 0 &&
     startingSoonCount === 0;
@@ -33,29 +41,27 @@ export function ContractsHero({
         <div>
           <div class="kph__eyebrow">
             <span class="kph__eyebrow-dot" />
-            Work in flight · {contractCount}{" "}
-            {contractCount === 1 ? "contract" : "contracts"}
+            {tFor(lang, "contractsHero.eyebrow")} ·{" "}
+            {tnFor(lang, "contractsHero.contracts", contractCount)}
           </div>
           <h1 class="kph__title">
-            <em>{fmtMoney(totalValue)}</em> of work<br />
-            you've already promised.
+            <em>{fmtMoney(totalValue)}</em> {tFor(lang, "contractsHero.titlePre")}<br />
+            {tFor(lang, "contractsHero.titlePost")}
           </h1>
           <p class="kph__sub">
             {allZero
-              ? (
-                <>
-                  Nothing in flight yet — when contracts get signed they'll show
-                  up here, with the next milestone watched.
-                </>
-              )
+              ? <>{tFor(lang, "contractsHero.empty")}</>
               : (
                 <>
-                  {inFlightCount} {inFlightCount === 1 ? "job" : "jobs"}{" "}
-                  running today ·{" "}
-                  <strong>{fmtMoney(pendingDeposits)} in deposits</strong>{" "}
-                  still to bill · {startingSoonCount}{" "}
-                  starting next week. The monsters are watching the next
-                  milestone on every one of them.
+                  {tnFor(lang, "contractsHero.jobsRunning", inFlightCount)} ·{" "}
+                  <strong>
+                    {tFor(lang, "contractsHero.depositsAmount", {
+                      money: fmtMoney(pendingDeposits),
+                    })}
+                  </strong>{" "}
+                  {tFor(lang, "contractsHero.subMid", {
+                    n: startingSoonCount,
+                  })}
                 </>
               )}
           </p>
@@ -64,19 +70,19 @@ export function ContractsHero({
               class="kph__sub"
               style="margin-top:6px;font-size:12.5px;opacity:0.75"
             >
-              Active value · {fmtMoney(inFlightValue)}
+              {tFor(lang, "contractsHero.activeValue", {
+                money: fmtMoney(inFlightValue),
+              })}
             </p>
           )}
         </div>
         <a
           class="kph__cta"
           href={`/assistant?seed=${
-            encodeURIComponent(
-              "Schedule a job — I want to turn an accepted quote into a contract.",
-            )
+            encodeURIComponent(tFor(lang, "contractsHero.seed"))
           }`}
         >
-          <I d={ICN.plus} size={14} sw={2.5} /> Schedule a job
+          <I d={ICN.plus} size={14} sw={2.5} /> {tFor(lang, "contractsHero.cta")}
         </a>
       </div>
     </section>
@@ -92,6 +98,7 @@ interface KpisProps {
   wrappingUpLeft: number;
   closedCount: number;
   closedValue: number;
+  lang?: Lang;
 }
 
 export function ContractsKpis({
@@ -103,38 +110,49 @@ export function ContractsKpis({
   wrappingUpLeft,
   closedCount,
   closedValue,
+  lang = "en",
 }: KpisProps) {
   return (
     <div class="kkpi">
       <div class="kkpi__card kkpi__card--accent">
-        <div class="kkpi__lbl">In progress</div>
+        <div class="kkpi__lbl">{tFor(lang, "contractsKpi.inProgress")}</div>
         <div class="kkpi__num kkpi__num--pink">
-          {inProgressCount} {inProgressCount === 1 ? "job" : "jobs"}
-        </div>
-        <div class="kkpi__sub">{fmtMoney(inProgressValue)} active</div>
-      </div>
-      <div class="kkpi__card">
-        <div class="kkpi__lbl">Starting soon</div>
-        <div class="kkpi__num">
-          {startingSoonCount} {startingSoonCount === 1 ? "job" : "jobs"}
+          {tnFor(lang, "contractsKpi.jobs", inProgressCount)}
         </div>
         <div class="kkpi__sub">
-          {fmtMoney(startingSoonValue)} · next 14 days
+          {tFor(lang, "contractsKpi.active", { money: fmtMoney(inProgressValue) })}
         </div>
       </div>
       <div class="kkpi__card">
-        <div class="kkpi__lbl">Wrapping up</div>
+        <div class="kkpi__lbl">{tFor(lang, "contractsKpi.startingSoon")}</div>
         <div class="kkpi__num">
-          {wrappingUpCount} {wrappingUpCount === 1 ? "job" : "jobs"}
+          {tnFor(lang, "contractsKpi.jobs", startingSoonCount)}
         </div>
-        <div class="kkpi__sub">{fmtMoney(wrappingUpLeft)} left to bill</div>
+        <div class="kkpi__sub">
+          {tFor(lang, "contractsKpi.next14Days", {
+            money: fmtMoney(startingSoonValue),
+          })}
+        </div>
       </div>
       <div class="kkpi__card">
-        <div class="kkpi__lbl">Closed this month</div>
+        <div class="kkpi__lbl">{tFor(lang, "contractsKpi.wrappingUp")}</div>
         <div class="kkpi__num">
-          {closedCount} {closedCount === 1 ? "job" : "jobs"}
+          {tnFor(lang, "contractsKpi.jobs", wrappingUpCount)}
         </div>
-        <div class="kkpi__sub">{fmtMoney(closedValue)} · all paid</div>
+        <div class="kkpi__sub">
+          {tFor(lang, "contractsKpi.leftToBill", {
+            money: fmtMoney(wrappingUpLeft),
+          })}
+        </div>
+      </div>
+      <div class="kkpi__card">
+        <div class="kkpi__lbl">{tFor(lang, "contractsKpi.closedThisMonth")}</div>
+        <div class="kkpi__num">
+          {tnFor(lang, "contractsKpi.jobs", closedCount)}
+        </div>
+        <div class="kkpi__sub">
+          {tFor(lang, "contractsKpi.allPaid", { money: fmtMoney(closedValue) })}
+        </div>
       </div>
     </div>
   );
@@ -142,17 +160,18 @@ export function ContractsKpis({
 
 interface StripProps {
   cards: ContractCard[];
+  lang?: Lang;
 }
 
 const RANGE_FROM = 1;
 const RANGE_TO = 30;
 const TODAY_INDEX = 8;
 const WEEKS = [
-  { label: "WEEK 1", from: 1, to: 7 },
-  { label: "WEEK 2", from: 8, to: 14 },
-  { label: "WEEK 3", from: 15, to: 21 },
-  { label: "WEEK 4", from: 22, to: 28 },
-  { label: "WEEK 5", from: 29, to: 30 },
+  { labelKey: "schedule.week1", from: 1, to: 7 },
+  { labelKey: "schedule.week2", from: 8, to: 14 },
+  { labelKey: "schedule.week3", from: 15, to: 21 },
+  { labelKey: "schedule.week4", from: 22, to: 28 },
+  { labelKey: "schedule.week5", from: 29, to: 30 },
 ];
 
 const LANE_H = 22;
@@ -199,7 +218,7 @@ function widthPct(
   return `${((end - start + 1) / (to - from + 1)) * 100}%`;
 }
 
-export function ScheduleStrip({ cards }: StripProps) {
+export function ScheduleStrip({ cards, lang = "en" }: StripProps) {
   const visible = cards.filter((c) =>
     c.scheduleEnd >= RANGE_FROM && c.scheduleStart <= RANGE_TO
   );
@@ -212,21 +231,22 @@ export function ScheduleStrip({ cards }: StripProps) {
     <section class="csched">
       <div class="csched__head">
         <div>
-          <div class="csched__eyebrow">The next 30 days</div>
+          <div class="csched__eyebrow">{tFor(lang, "schedule.eyebrow")}</div>
           <div class="csched__title">
-            Everything you've committed to, on one strip.
+            {tFor(lang, "schedule.title")}
           </div>
         </div>
         <div class="csched__legend">
           <span>
-            <span class="csched__legend-dot" style="background:#FF6B6B" />In
-            progress
+            <span class="csched__legend-dot" style="background:#FF6B6B" />
+            {tFor(lang, "schedule.legendInProgress")}
           </span>
           <span>
             <span
               class="csched__legend-dot"
               style="background:rgba(255,255,255,0.3);border:1px dashed rgba(255,255,255,0.6)"
-            />Scheduled
+            />
+            {tFor(lang, "schedule.legendScheduled")}
           </span>
         </div>
       </div>
@@ -238,7 +258,7 @@ export function ScheduleStrip({ cards }: StripProps) {
           const showToday = TODAY_INDEX >= w.from && TODAY_INDEX <= w.to;
           return (
             <div key={wi} class="csched__weekrow">
-              <div class="csched__weeklbl">{w.label}</div>
+              <div class="csched__weeklbl">{tFor(lang, w.labelKey)}</div>
               <div class="csched__weekbar" style={`--lanes-h:${lanesH}`}>
                 {showToday && (
                   <div
@@ -274,8 +294,7 @@ export function ScheduleStrip({ cards }: StripProps) {
         })}
         {placed.length === 0 && (
           <div class="csched__empty">
-            Nothing on the calendar yet. Sign a contract from the assistant and
-            it'll show up here.
+            {tFor(lang, "schedule.empty")}
           </div>
         )}
       </div>

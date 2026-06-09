@@ -6,12 +6,14 @@
  * single-line, so the threads sidebar layout doesn't jump.
  */
 
+import { type Lang, t } from "@core/i18n/mod.ts";
+
 const TITLE_MAX = 60;
 const PREVIEW_MAX = 90;
 
-export function deriveTitleFromFirstUserMessage(text: string): string {
+export function deriveTitleFromFirstUserMessage(text: string, lang: Lang = "en"): string {
   const cleaned = singleLine(text).trim();
-  if (cleaned.length === 0) return "New conversation";
+  if (cleaned.length === 0) return t(lang, "conversationTitle.newConversation");
   return cleaned.length > TITLE_MAX ? cleaned.slice(0, TITLE_MAX - 1) + "…" : cleaned;
 }
 

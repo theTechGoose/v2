@@ -1,4 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
+import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 
 const STORAGE_KEY = "pm:assistant-coachmark-shown";
 const PINK = "#FF6B6B";
@@ -27,7 +28,13 @@ const PINK_DARK = "#d94e4e";
  * Click anywhere → fade out + persist to localStorage. The coachmark never
  * re-appears.
  */
-export default function AssistantCoachmark() {
+export default function AssistantCoachmark(
+  _props: { lang?: Lang } = {},
+) {
+  // Self-source the reactive UI language; reading langSignal.value during
+  // render makes this island re-render live when the language flips. The
+  // optional `lang` prop is kept as an ignored SSR seed only.
+  const lang = langSignal.value;
   const [visible, setVisible] = useState(false);
   const [box, setBox] = useState<
     { top: number; left: number; width: number; height: number } | null
@@ -114,7 +121,7 @@ export default function AssistantCoachmark() {
       };backdrop-filter:${
         fadingOut ? "blur(0px)" : "blur(2px)"
       };-webkit-backdrop-filter:${fadingOut ? "blur(0px)" : "blur(2px)"}`}
-      aria-label="Onboarding hint — click anywhere to dismiss"
+      aria-label={tFor(lang, "assistantCoachmark.ariaLabel")}
       role="dialog"
     >
       {
@@ -273,10 +280,10 @@ export default function AssistantCoachmark() {
           <span style="display:inline-block;animation:coach-wave 2.8s ease-in-out infinite;transform-origin:70% 80%">
             👋
           </span>
-          <span>Click here to talk to your assistant</span>
+          <span>{tFor(lang, "assistantCoachmark.heading")}</span>
         </div>
         <div style="margin-top:6px;font-size:12px;opacity:0.92;line-height:1.4">
-          Bossie drafts quotes, sends contracts, chases invoices. Tap to start.
+          {tFor(lang, "assistantCoachmark.body")}
         </div>
         {
           /* Arrow notch pointing left toward the highlighted button —
@@ -299,7 +306,7 @@ export default function AssistantCoachmark() {
           phase === 0 ? "8px" : "0"
         })`}
       >
-        click anywhere to dismiss
+        {tFor(lang, "assistantCoachmark.dismissHint")}
       </div>
 
       <style>

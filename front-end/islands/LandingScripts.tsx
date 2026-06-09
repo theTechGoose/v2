@@ -16,295 +16,143 @@
  * inside useEffect, mirroring how the prototype's <script> tag worked.
  */
 import { useEffect } from "preact/hooks";
-import { langSignal } from "../lib/lang.ts";
+import { langSignal, writeLangToUrl } from "../lib/lang.ts";
 import { landingClient } from "../clients/landing.ts";
 import { fmtPhone } from "../lib/format.ts";
+import { tFor } from "../lib/i18n.ts";
 
 type Lang = "en" | "es";
 
-const I18N: Record<Lang, Record<string, string>> = {
-  en: {
-    "nav.features": "What We Do",
-    "nav.how": "How It Works",
-    "nav.pricing": "Pricing",
-    "nav.cta": "Get Started",
-    "nav.login": "Log in",
-    "hero.kickerPill": "For pros",
-    "hero.kicker": "Built for contractors who work with their hands",
-    "hero.h1a": "You do the work.",
-    "hero.h1b": "We handle the",
-    "hero.lead":
-      "Quotes, contracts, and invoices done right — so you get paid what your work is worth. No apps to learn. Just text us.",
-    "hero.cta1": "Get Started →",
-    "hero.cta2": "See How It Works",
-    "hero.trustStrong": "1,200+ contractors",
-    "hero.trustRest": "getting paid faster",
-    "hero.chip1": "Quote sent",
-    "hero.chip2": "Contract signed",
-    "hero.chip3": "Paid in full",
-    "doc.q.tag": "Quote",
-    "doc.q.title": "Kitchen remodel",
-    "doc.q.l1": "Cabinets",
-    "doc.q.l2": "Counters",
-    "doc.q.l3": "Labor (3 days)",
-    "doc.total": "Total",
-    "doc.c.tag": "Contract",
-    "doc.c.title": "Service Agreement",
-    "doc.c.l1": "Client",
-    "doc.c.l2": "Job ID",
-    "doc.c.l3": "Start",
-    "doc.c.l4": "Status",
-    "doc.c.status": "Signed ✓",
-    "doc.i.tag": "Invoice",
-    "doc.i.title": "Final billing",
-    "doc.i.l1": "Subtotal",
-    "doc.i.l2": "Deposit paid",
-    "doc.i.due": "Due",
-    "problem.eyebrow": "The problem",
-    "problem.h2html": "Good work deserves <em>good paperwork</em>",
-    "problem.lead":
-      "You know your trade. But chasing down quotes on scrap paper and guessing at prices is costing you real money.",
-    "problem.c1.h": "Leaving money on the table",
-    "problem.c1.p":
-      "Without solid pricing info, most contractors bid too low. That means less money in your pocket for the same hard work.",
-    "problem.c2.h": "Paperwork that doesn't look right",
-    "problem.c2.p":
-      "Handwritten quotes on notebook paper don't build trust. Clients pick the contractor who looks like they have it together.",
-    "problem.c3.h": "Hours you're not getting paid for",
-    "problem.c3.p":
-      "Every hour figuring out paperwork is an hour you could be on a job site earning real money.",
-    "docs.eyebrow": "One text. Three documents.",
-    "docs.h2html": "Quote, contract, invoice — <em>handled</em>.",
-    "docs.lead":
-      "Send us a message. We send back a real document with real numbers — not a sketch on the back of an envelope.",
-    "docs.tab.quote": "Quote",
-    "docs.tab.contract": "Contract",
-    "docs.tab.invoice": "Invoice",
-    "docs.counter.label": "Documents sent so far",
-    "docs.counter.t1": "Quotes",
-    "docs.counter.t2": "Contracts",
-    "docs.counter.t3": "Invoices",
-    "docs.counter.t4": "Change orders",
-    "feat.eyebrow": "What we do",
-    "feat.h2html": "We take care of the <em>business side</em>",
-    "feat.lead":
-      "From the first quote to the final invoice — we handle it so you can stay on the job.",
-    "feat.f1.h": "Fair prices, not guesses",
-    "feat.f1.p":
-      "Real construction pricing data, adjusted for today's costs. Get a low, middle, and high range so you know exactly where you stand.",
-    "feat.f2.h": "Contracts that protect you",
-    "feat.f2.p":
-      "One tap turns your quote into a real contract. Protect your work and look professional to your clients.",
-    "feat.f3.h": "Simple invoicing",
-    "feat.f3.p":
-      "Job done? We turn it into an invoice. Keep track of who's paid and who hasn't — without a spreadsheet.",
-    "feat.f4.h": "Just text us",
-    "feat.f4.p":
-      "No fancy apps. No complicated software. Text us the job details and we do the rest. Simple as that.",
-    "how.eyebrow": "Straight to the point",
-    "how.h2": "How it works",
-    "how.lead":
-      "Three steps. No forms. No software. We meet you where you already are — your phone.",
-    "how.s1.h": "Tell us about the job",
-    "how.s1.p":
-      "Send us a text with the job details. We'll ask you one question at a time — no long forms, no hassle.",
-    "how.s2.h": "Check your quote",
-    "how.s2.p":
-      "We put together a professional quote with fair pricing. Look it over, change what you need, and give us the thumbs up.",
-    "how.s3.h": "Send it and get paid",
-    "how.s3.p":
-      "Send the quote to your client. When the job's done, we turn it into a contract and invoice. Everything's in one place.",
-    "demo.eyebrow": "See it in action",
-    "demo.h2": "Just text us. We handle the rest.",
-    "demo.lead":
-      "Quotes, contracts, invoices — sent from your phone in seconds. No app to download. No software to learn.",
-    "demo.quote":
-      "I used to spend my Sundays writing quotes on notebook paper. Now I text these guys the job details from my truck and get a professional quote back in minutes. My close rate went through the roof.",
-    "demo.role": "General Contractor · 12 years",
-    "demo.online": "Online",
-    "demo.message": "Message",
-    "price.eyebrow": "Pricing",
-    "price.h2html": "Pay us from <em>what we make you</em>",
-    "price.lead":
-      "Quotes, contracts, invoices, pricing, follow-ups — we run your back office so you can stay on the job site. And it pays for itself.",
-    "price.without": "Without us",
-    "price.with": "With us",
-    "price.keep": "You keep",
-    "price.keep2": "You keep",
-    "price.w1": "Your guess at price",
-    "price.w2": "Hours doing paperwork",
-    "price.w2v": "~6 hrs",
-    "price.w3": "Trust from clients",
-    "price.w3v": "So-so",
-    "price.u1": "Real-data pricing",
-    "price.u2": "Our 10% fee",
-    "price.u3": "Hours doing paperwork",
-    "price.callout": "$850 more in your pocket.",
-    "price.calloutSub":
-      "A back office that pays for itself. Only charged when your client pays.",
-    "price.cta": "Start Making More →",
-    "cta.eyebrow": "Let's go",
-    "cta.h2": "Ready to get the paperwork off your plate?",
-    "cta.lead":
-      "Drop your number — we'll text you a 6-digit code. Login or sign up, same form.",
-    "cta.b1": "No setup fees, no contracts",
-    "cta.b2": "First quote on us — for new pros",
-    "cta.b3": "English & Spanish, every step",
-    "cta.label": "Your phone number",
-    "cta.btn": "Send my code",
-    "cta.fine": "By submitting, you agree to receive a friendly text from us.",
-    "cta.smsPreview":
-      "Paperwork Monster: Your code is 482-913. Don't share it.",
-    "cta.steps.phone": "Phone",
-    "cta.steps.code": "Code",
-    "cta.steps.in": "You're in",
-    "cta.useSaved": "Use",
-    "cta.notYou": "Not you?",
-    "footer.contact": "Contact",
-    "footer.copy": "© 2026 Paperwork Monster. All rights reserved.",
-  },
-  es: {
-    "nav.features": "Qué hacemos",
-    "nav.how": "Cómo funciona",
-    "nav.pricing": "Precios",
-    "nav.cta": "Empezar",
-    "nav.login": "Entrar",
-    "hero.kickerPill": "Para pros",
-    "hero.kicker": "Hecho para contratistas que trabajan con las manos",
-    "hero.h1a": "Tú haces el trabajo.",
-    "hero.h1b": "Nosotros manejamos las",
-    "hero.lead":
-      "Cotizaciones, contratos y facturas bien hechos — para que cobres lo que tu trabajo vale. Sin apps que aprender. Solo escríbenos.",
-    "hero.cta1": "Empezar →",
-    "hero.cta2": "Ver cómo funciona",
-    "hero.trustStrong": "+1.200 contratistas",
-    "hero.trustRest": "cobrando más rápido",
-    "hero.chip1": "Cotización enviada",
-    "hero.chip2": "Contrato firmado",
-    "hero.chip3": "Pagado completo",
-    "doc.q.tag": "Cotización",
-    "doc.q.title": "Remodelación cocina",
-    "doc.q.l1": "Gabinetes",
-    "doc.q.l2": "Cubiertas",
-    "doc.q.l3": "Mano de obra (3 días)",
-    "doc.total": "Total",
-    "doc.c.tag": "Contrato",
-    "doc.c.title": "Acuerdo de servicio",
-    "doc.c.l1": "Cliente",
-    "doc.c.l2": "ID Trabajo",
-    "doc.c.l3": "Inicio",
-    "doc.c.l4": "Estado",
-    "doc.c.status": "Firmado ✓",
-    "doc.i.tag": "Factura",
-    "doc.i.title": "Cobro final",
-    "doc.i.l1": "Subtotal",
-    "doc.i.l2": "Anticipo pagado",
-    "doc.i.due": "Por pagar",
-    "problem.eyebrow": "El problema",
-    "problem.h2html": "Buen trabajo merece <em>buen papeleo</em>",
-    "problem.lead":
-      "Tú conoces tu oficio. Pero hacer cotizaciones en papel y adivinar precios te está costando dinero de verdad.",
-    "problem.c1.h": "Dejas dinero en la mesa",
-    "problem.c1.p":
-      "Sin info real de precios, la mayoría de contratistas cotizan bajo. Menos dinero en tu bolsillo por el mismo trabajo duro.",
-    "problem.c2.h": "Papeles que no se ven bien",
-    "problem.c2.p":
-      "Cotizaciones a mano en papel rayado no inspiran confianza. El cliente elige al que se ve organizado.",
-    "problem.c3.h": "Horas que no te pagan",
-    "problem.c3.p":
-      "Cada hora batallando con papeles es una hora que podrías estar en obra ganando dinero.",
-    "docs.eyebrow": "Un mensaje. Tres documentos.",
-    "docs.h2html": "Cotización, contrato, factura — <em>listo</em>.",
-    "docs.lead":
-      "Mándanos un mensaje. Te regresamos un documento real con números reales — no un garabato en una servilleta.",
-    "docs.tab.quote": "Cotización",
-    "docs.tab.contract": "Contrato",
-    "docs.tab.invoice": "Factura",
-    "docs.counter.label": "Documentos enviados hasta hoy",
-    "docs.counter.t1": "Cotizaciones",
-    "docs.counter.t2": "Contratos",
-    "docs.counter.t3": "Facturas",
-    "docs.counter.t4": "Órdenes de cambio",
-    "feat.eyebrow": "Qué hacemos",
-    "feat.h2html": "Nos encargamos del <em>lado del negocio</em>",
-    "feat.lead":
-      "Desde la primera cotización hasta la factura final — nosotros lo manejamos para que tú sigas en la obra.",
-    "feat.f1.h": "Precios justos, no adivinanzas",
-    "feat.f1.p":
-      "Datos reales de construcción ajustados a costos de hoy. Rango bajo, medio y alto para que sepas exactamente dónde estás parado.",
-    "feat.f2.h": "Contratos que te protegen",
-    "feat.f2.p":
-      "Un toque convierte tu cotización en un contrato real. Protege tu trabajo y luce profesional con tus clientes.",
-    "feat.f3.h": "Facturación sencilla",
-    "feat.f3.p":
-      "¿Trabajo terminado? Lo convertimos en factura. Lleva el control de quién pagó y quién no — sin hojas de cálculo.",
-    "feat.f4.h": "Solo escríbenos",
-    "feat.f4.p":
-      "Sin apps complicadas. Sin software. Mándanos los detalles del trabajo por mensaje y nosotros hacemos el resto. Así de fácil.",
-    "how.eyebrow": "Directo al grano",
-    "how.h2": "Cómo funciona",
-    "how.lead":
-      "Tres pasos. Sin formularios. Sin software. Te encontramos donde ya estás — en tu celular.",
-    "how.s1.h": "Cuéntanos del trabajo",
-    "how.s1.p":
-      "Mándanos un mensaje con los detalles. Te preguntamos una cosa a la vez — sin formularios largos.",
-    "how.s2.h": "Revisa tu cotización",
-    "how.s2.p":
-      "Armamos una cotización profesional con precios justos. Revísala, cambia lo que necesites, y dale el visto bueno.",
-    "how.s3.h": "Envía y cobra",
-    "how.s3.p":
-      "Mándale la cotización a tu cliente. Cuando termines el trabajo, lo convertimos en contrato y factura. Todo en un solo lugar.",
-    "demo.eyebrow": "Mira cómo funciona",
-    "demo.h2": "Solo escríbenos. Nosotros nos encargamos.",
-    "demo.lead":
-      "Cotizaciones, contratos, facturas — enviados desde tu celular en segundos. Sin app que descargar. Sin software que aprender.",
-    "demo.quote":
-      "Antes pasaba los domingos haciendo cotizaciones en papel rayado. Ahora les escribo desde la troca y me regresan una cotización pro en minutos. Mi cierre de ventas se disparó.",
-    "demo.role": "Contratista General · 12 años",
-    "demo.online": "En línea",
-    "demo.message": "Mensaje",
-    "price.eyebrow": "Precios",
-    "price.h2html": "Páganos de <em>lo que te hacemos ganar</em>",
-    "price.lead":
-      "Cotizaciones, contratos, facturas, precios, seguimientos — corremos tu oficina para que tú sigas en la obra. Y se paga sola.",
-    "price.without": "Sin nosotros",
-    "price.with": "Con nosotros",
-    "price.keep": "Te quedas con",
-    "price.keep2": "Te quedas con",
-    "price.w1": "Tu adivinanza de precio",
-    "price.w2": "Horas en papeleo",
-    "price.w2v": "~6 hrs",
-    "price.w3": "Confianza del cliente",
-    "price.w3v": "Más o menos",
-    "price.u1": "Precios con datos reales",
-    "price.u2": "Nuestra comisión 10%",
-    "price.u3": "Horas en papeleo",
-    "price.callout": "$850 más en tu bolsillo.",
-    "price.calloutSub":
-      "Una oficina que se paga sola. Solo cobramos cuando tu cliente paga.",
-    "price.cta": "Empieza a ganar más →",
-    "cta.eyebrow": "Vamos",
-    "cta.h2": "¿Listo para quitarte el papeleo de encima?",
-    "cta.lead":
-      "Pon tu número — te enviamos un código de 6 dígitos. Entrar o registrarse, mismo formulario.",
-    "cta.b1": "Sin cuotas iniciales, sin contratos",
-    "cta.b2": "Primera cotización gratis — para nuevos pros",
-    "cta.b3": "Inglés y español, en cada paso",
-    "cta.label": "Tu número de teléfono",
-    "cta.btn": "Enviar mi código",
-    "cta.fine":
-      "Al enviar, aceptas recibir un mensaje amigable de nuestra parte.",
-    "cta.smsPreview":
-      "Paperwork Monster: Tu código es 482-913. No lo compartas.",
-    "cta.steps.phone": "Teléfono",
-    "cta.steps.code": "Código",
-    "cta.steps.in": "Listo",
-    "cta.useSaved": "Usar",
-    "cta.notYou": "¿No eres tú?",
-    "footer.contact": "Contacto",
-    "footer.copy": "© 2026 Paperwork Monster. Todos los derechos reservados.",
-  },
-};
+/** The [data-i18n] attribute keys present in the landing markup. Their copy
+ *  now lives in /lang under the "landing.*" namespace; this list drives the
+ *  per-language substitution dict built in `i18nDict`. */
+const I18N_KEYS = [
+  "nav.features",
+  "nav.how",
+  "nav.pricing",
+  "nav.cta",
+  "nav.login",
+  "hero.kickerPill",
+  "hero.kicker",
+  "hero.h1a",
+  "hero.h1b",
+  "hero.lead",
+  "hero.cta1",
+  "hero.cta2",
+  "hero.trustStrong",
+  "hero.trustRest",
+  "hero.chip1",
+  "hero.chip2",
+  "hero.chip3",
+  "doc.q.tag",
+  "doc.q.title",
+  "doc.q.l1",
+  "doc.q.l2",
+  "doc.q.l3",
+  "doc.total",
+  "doc.c.tag",
+  "doc.c.title",
+  "doc.c.l1",
+  "doc.c.l2",
+  "doc.c.l3",
+  "doc.c.l4",
+  "doc.c.status",
+  "doc.i.tag",
+  "doc.i.title",
+  "doc.i.l1",
+  "doc.i.l2",
+  "doc.i.due",
+  "problem.eyebrow",
+  "problem.h2html",
+  "problem.lead",
+  "problem.c1.h",
+  "problem.c1.p",
+  "problem.c2.h",
+  "problem.c2.p",
+  "problem.c3.h",
+  "problem.c3.p",
+  "docs.eyebrow",
+  "docs.h2html",
+  "docs.lead",
+  "docs.tab.quote",
+  "docs.tab.contract",
+  "docs.tab.invoice",
+  "docs.counter.label",
+  "docs.counter.t1",
+  "docs.counter.t2",
+  "docs.counter.t3",
+  "docs.counter.t4",
+  "feat.eyebrow",
+  "feat.h2html",
+  "feat.lead",
+  "feat.f1.h",
+  "feat.f1.p",
+  "feat.f2.h",
+  "feat.f2.p",
+  "feat.f3.h",
+  "feat.f3.p",
+  "feat.f4.h",
+  "feat.f4.p",
+  "how.eyebrow",
+  "how.h2",
+  "how.lead",
+  "how.s1.h",
+  "how.s1.p",
+  "how.s2.h",
+  "how.s2.p",
+  "how.s3.h",
+  "how.s3.p",
+  "demo.eyebrow",
+  "demo.h2",
+  "demo.lead",
+  "demo.quote",
+  "demo.role",
+  "demo.online",
+  "demo.message",
+  "price.eyebrow",
+  "price.h2html",
+  "price.lead",
+  "price.without",
+  "price.with",
+  "price.keep",
+  "price.keep2",
+  "price.w1",
+  "price.w2",
+  "price.w2v",
+  "price.w3",
+  "price.w3v",
+  "price.u1",
+  "price.u2",
+  "price.u3",
+  "price.callout",
+  "price.calloutSub",
+  "price.cta",
+  "cta.eyebrow",
+  "cta.h2",
+  "cta.lead",
+  "cta.b1",
+  "cta.b2",
+  "cta.b3",
+  "cta.label",
+  "cta.btn",
+  "cta.fine",
+  "cta.smsPreview",
+  "cta.steps.phone",
+  "cta.steps.code",
+  "cta.steps.in",
+  "cta.useSaved",
+  "cta.notYou",
+  "footer.contact",
+  "footer.copy",
+];
+
+/** Build the [data-i18n] substitution dict for `lang`. Keys match the
+ *  data-i18n attributes in the markup; values resolve from "landing.*". */
+function i18nDict(lang: Lang): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const k of I18N_KEYS) out[k] = tFor(lang, "landing." + k);
+  return out;
+}
 
 interface DocCopy {
   title: string;
@@ -494,7 +342,7 @@ export default function LandingScripts() {
     /* ================== i18n + lang toggle ================== */
     function applyLang(lang: Lang): void {
       curLang = lang;
-      const dict = I18N[lang];
+      const dict = i18nDict(lang);
       document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((el) => {
         const k = el.getAttribute("data-i18n");
         if (!k || dict[k] === undefined) return;
@@ -536,7 +384,9 @@ export default function LandingScripts() {
           document.querySelectorAll<HTMLButtonElement>(".lang-toggle button")
             .forEach((b) => b.classList.remove("on"));
           btn.classList.add("on");
-          applyLang((btn.dataset.lang as Lang) ?? "en");
+          const next = (btn.dataset.lang as Lang) ?? "en";
+          applyLang(next);
+          writeLangToUrl(next); // mirror choice into ?lang= (no reload)
         };
         btn.addEventListener("click", onClick);
         cleanups.push(() => btn.removeEventListener("click", onClick));
@@ -788,9 +638,7 @@ export default function LandingScripts() {
         const original = cta?.innerHTML ?? "";
         if (cta) {
           cta.disabled = true;
-          cta.innerHTML = curLang === "es"
-            ? "<span>Enviando…</span>"
-            : "<span>Sending…</span>";
+          cta.innerHTML = `<span>${tFor(curLang, "landing.cta.sending")}</span>`;
         }
         try {
           await landingClient.sendOtp({ phoneNumber: e164, language: curLang });
@@ -803,16 +651,17 @@ export default function LandingScripts() {
           } catch { /* SSR-safe */ }
           globalThis.location.href = `/verify?phone=${
             encodeURIComponent(e164)
-          }`;
+          }&lang=${curLang}`;
         } catch {
           if (cta) {
             cta.disabled = false;
             cta.innerHTML = original;
           }
           if (meta) {
-            (meta as HTMLElement).innerHTML = curLang === "es"
-              ? '<span class="cf-meta__check">!</span><span style="color:var(--danger)">No pudimos enviar. Intenta otra vez.</span>'
-              : '<span class="cf-meta__check">!</span><span style="color:var(--danger)">Couldn\'t send. Try again.</span>';
+            (meta as HTMLElement).innerHTML =
+              `<span class="cf-meta__check">!</span><span style="color:var(--danger)">${
+                tFor(curLang, "landing.cta.sendError")
+              }</span>`;
           }
         }
       };

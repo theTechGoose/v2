@@ -1,9 +1,10 @@
 import { Brand } from "./ui/Brand.tsx";
 import { Icon } from "./ui/Icon.tsx";
+import { type Lang, tFor } from "../lib/i18n.ts";
 
 export interface NavItem {
   href: string;
-  label: string;
+  labelKey: string;
   icon:
     | "home"
     | "doc"
@@ -16,13 +17,13 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", label: "Home", icon: "home" },
-  { href: "/assistant", label: "Assistant", icon: "chat" },
-  { href: "/quotes", label: "Quotes", icon: "doc" },
-  { href: "/contracts", label: "Contracts", icon: "file-text" },
-  { href: "/invoices", label: "Invoices", icon: "receipt" },
-  { href: "/customers", label: "Customers", icon: "users" },
-  { href: "/settings", label: "Settings", icon: "settings" },
+  { href: "/dashboard", labelKey: "appNav.home", icon: "home" },
+  { href: "/assistant", labelKey: "appNav.assistant", icon: "chat" },
+  { href: "/quotes", labelKey: "nav.quotes", icon: "doc" },
+  { href: "/contracts", labelKey: "nav.contracts", icon: "file-text" },
+  { href: "/invoices", labelKey: "nav.invoices", icon: "receipt" },
+  { href: "/customers", labelKey: "appNav.customers", icon: "users" },
+  { href: "/settings", labelKey: "appNav.settings", icon: "settings" },
 ];
 
 interface Props {
@@ -30,13 +31,16 @@ interface Props {
   badges?: Partial<Record<string, number>>;
   user?: { name?: string; phoneNumber: string };
   business?: string;
+  lang?: Lang;
 }
 
-export function AppSidebar({ active, badges = {}, user, business }: Props) {
+export function AppSidebar(
+  { active, badges = {}, user, business, lang = "en" }: Props,
+) {
   const initials = (user?.name ?? user?.phoneNumber ?? "?").trim().slice(0, 1)
     .toUpperCase();
   return (
-    <aside class="sidebar" aria-label="Primary">
+    <aside class="sidebar" aria-label={tFor(lang, "appNav.ariaPrimary")}>
       <div class="sidebar__brand">
         <Brand size="sm" />
       </div>
@@ -50,7 +54,7 @@ export function AppSidebar({ active, badges = {}, user, business }: Props) {
           >
             <span class="row gap-3">
               <Icon name={item.icon} />
-              <span>{item.label}</span>
+              <span>{tFor(lang, item.labelKey)}</span>
             </span>
             {badges[item.href]
               ? <span class="sidebar__badge">{badges[item.href]}</span>
@@ -61,7 +65,9 @@ export function AppSidebar({ active, badges = {}, user, business }: Props) {
       <div class="sidebar__profile">
         <div class="avatar">{initials}</div>
         <div class="col" style="line-height:1.2">
-          <strong style="font-size:14px">{user?.name ?? "Account"}</strong>
+          <strong style="font-size:14px">
+            {user?.name ?? tFor(lang, "common.account")}
+          </strong>
           {business ? <span class="micro">{business}</span> : null}
         </div>
       </div>

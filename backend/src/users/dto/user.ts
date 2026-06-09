@@ -9,6 +9,13 @@ export interface User {
   name?: string;
   email?: string;
   language?: Language;
+  /**
+   * Platform super-admin flag. Gates the /admin surface (user search,
+   * grant/revoke, impersonation). NEVER part of UpdateUserDto — it can only
+   * be flipped through the guarded grant/revoke endpoints or the bootstrap,
+   * so it can never be set from an arbitrary PUT /me body.
+   */
+  superAdmin?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -30,6 +37,8 @@ export class UpdateUserDto {
 export function parseUpdateUser(input: unknown): UpdateUserDto {
   const dto = plainToInstance(UpdateUserDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid user patch: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid user patch: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }

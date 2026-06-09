@@ -3,6 +3,7 @@ import { AcceptContract } from "./mod.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
@@ -10,8 +11,9 @@ function fresh() {
   const conversations = new AgentConversationStore();
   const messages = new AgentMessageStore();
   const contracts = new ContractStore();
+  const users = new UserStore();
   const bus = new EventBus();
-  return { conversations, messages, contracts, bus, flow: new AcceptContract(conversations, messages, contracts, bus) };
+  return { conversations, messages, contracts, users, bus, flow: new AcceptContract(conversations, messages, contracts, users, bus) };
 }
 
 async function withKv<T>(fn: () => Promise<T>): Promise<T> {

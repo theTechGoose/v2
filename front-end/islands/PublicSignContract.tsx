@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { tFor } from "../lib/i18n.ts";
 
 interface Props {
   contractId: string;
+  /** Customer-facing copy language (defaults to en; non-breaking). */
+  lang?: "en" | "es";
 }
 
 interface Stroke {
@@ -33,7 +36,7 @@ const LINE = "#e3e8e6";
  *   - Resize-aware redraw (so the signature doesn't disappear if the
  *     viewport changes mid-flow).
  */
-export default function PublicSignContract({ contractId }: Props) {
+export default function PublicSignContract({ contractId, lang = "en" }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const strokesRef = useRef<Stroke[]>([]);
   const drawingRef = useRef<Stroke | null>(null);
@@ -276,13 +279,12 @@ export default function PublicSignContract({ contractId }: Props) {
           </svg>
         </div>
         <div style={`font-weight:800;color:${GREEN};font-size:18px`}>
-          Signed and binding
+          {tFor(lang, "publicSign.success.title")}
         </div>
         <div
           style={`margin-top:6px;color:${MUTED};font-size:13px;max-width:320px;margin-left:auto;margin-right:auto`}
         >
-          Please allow up to 2 minutes before checking your email inbox. Don't
-          forget to check spam.
+          {tFor(lang, "publicSign.success.body")}
         </div>
       </div>
     );
@@ -297,14 +299,14 @@ export default function PublicSignContract({ contractId }: Props) {
         <div
           style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${PINK_DARK}`}
         >
-          Your signature
+          {tFor(lang, "publicSign.eyebrow")}
         </div>
         <div style={`display:flex;gap:8px`}>
           <button
             type="button"
             onClick={undoStroke}
             disabled={!hasInk}
-            aria-label="Undo last stroke"
+            aria-label={tFor(lang, "publicSign.undoAria")}
             style={`background:transparent;border:1px solid ${LINE};border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;color:${
               hasInk ? INK : MUTED
             };cursor:${
@@ -324,13 +326,13 @@ export default function PublicSignContract({ contractId }: Props) {
               <path d="M3 7v6h6" />
               <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
             </svg>
-            Undo
+            {tFor(lang, "publicSign.undo")}
           </button>
           <button
             type="button"
             onClick={clearPad}
             disabled={!hasInk}
-            aria-label="Clear signature"
+            aria-label={tFor(lang, "publicSign.clearAria")}
             style={`background:transparent;border:1px solid ${LINE};border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;color:${
               hasInk ? INK : MUTED
             };cursor:${
@@ -351,7 +353,7 @@ export default function PublicSignContract({ contractId }: Props) {
               <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
             </svg>
-            Clear
+            {tFor(lang, "publicSign.clear")}
           </button>
         </div>
       </div>
@@ -390,10 +392,10 @@ export default function PublicSignContract({ contractId }: Props) {
             aria-hidden="true"
           >
             <div style={`font-size:14px;font-weight:700;color:${TEAL}`}>
-              Draw your signature here
+              {tFor(lang, "publicSign.pad.heading")}
             </div>
             <div style={`margin-top:4px;font-size:12px;color:${MUTED}`}>
-              finger, stylus, or trackpad — whatever's handy
+              {tFor(lang, "publicSign.pad.sub")}
             </div>
           </div>
         )}
@@ -403,25 +405,24 @@ export default function PublicSignContract({ contractId }: Props) {
       <label
         style={`display:block;margin-top:18px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED};margin-bottom:6px`}
       >
-        Type your full legal name
+        {tFor(lang, "publicSign.nameLabel")}
       </label>
       <input
         type="text"
         value={name}
         onInput={(e) => setName((e.target as HTMLInputElement).value)}
-        placeholder="Jane Doe"
+        placeholder={tFor(lang, "publicSign.namePlaceholder")}
         autoComplete="name"
         style={`width:100%;padding:14px 16px;border:1px solid ${LINE};border-radius:12px;font-size:16px;color:${INK};font-family:inherit;background:#fff;box-sizing:border-box`}
         required
       />
       <div style={`margin-top:8px;font-size:12px;color:${MUTED}`}>
-        By drawing your signature and typing your name, you agree this is your
-        legal e-signature on the contract above.
+        {tFor(lang, "publicSign.disclaimer")}
       </div>
 
       {err && (
         <div style={`margin-top:12px;color:#b3261e;font-size:13px`}>
-          Couldn't sign — {err}
+          {tFor(lang, "publicSign.error", { err })}
         </div>
       )}
 
@@ -443,7 +444,8 @@ export default function PublicSignContract({ contractId }: Props) {
         {submitting
           ? (
             <>
-              <span class="spinner" aria-hidden="true" /> Signing…
+              <span class="spinner" aria-hidden="true" />{" "}
+              {tFor(lang, "publicSign.submitting")}
             </>
           )
           : (
@@ -463,8 +465,8 @@ export default function PublicSignContract({ contractId }: Props) {
               </svg>
               <span>
                 {hasInk && name.trim()
-                  ? "Looks good — sign the contract →"
-                  : "Draw + type your name to enable"}
+                  ? tFor(lang, "publicSign.submitEnabled")
+                  : tFor(lang, "publicSign.submitDisabled")}
               </span>
             </>
           )}

@@ -31,25 +31,17 @@ import { fmtMoney } from "../lib/format.ts";
 import { readCached, refreshDash } from "../lib/dash-cache.ts";
 import { ShimmerStyle, SkelBlock } from "../components/Skeletons.tsx";
 import SetupChecklist from "./SetupChecklist.tsx";
+import { langSignal, type Lang, tFor } from "../lib/i18n.ts";
 
-const SHORT_MONTH = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function shortMonth(lang: Lang, monthIdx: number): string {
+  return tFor(lang, `common.monthShort.${monthIdx}`);
+}
+function shortDay(lang: Lang, dayIdx: number): string {
+  return tFor(lang, `common.dayShort.${dayIdx}`);
+}
 
-function fmtDue(iso: string | null, now: Date): string {
-  if (!iso) return "No due date";
+function fmtDue(iso: string | null, now: Date, lang: Lang): string {
+  if (!iso) return tFor(lang, "dashboardPage.due.none");
   const due = new Date(iso + "T00:00:00");
   if (Number.isNaN(due.getTime())) return iso;
   const startOfToday = new Date(now);
@@ -57,24 +49,26 @@ function fmtDue(iso: string | null, now: Date): string {
   const diffDays = Math.round(
     (due.getTime() - startOfToday.getTime()) / 86_400_000,
   );
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Tomorrow";
-  if (diffDays === -1) return "Yesterday";
-  if (diffDays > 1 && diffDays < 7) return SHORT_DAY[due.getDay()];
-  return `${SHORT_MONTH[due.getMonth()]} ${due.getDate()}`;
+  if (diffDays === 0) return tFor(lang, "dashboardPage.due.today");
+  if (diffDays === 1) return tFor(lang, "dashboardPage.due.tomorrow");
+  if (diffDays === -1) return tFor(lang, "dashboardPage.due.yesterday");
+  if (diffDays > 1 && diffDays < 7) return shortDay(lang, due.getDay());
+  return `${shortMonth(lang, due.getMonth())} ${due.getDate()}`;
 }
 
-function fmtRel(iso: string, now: Date): string {
+function fmtRel(iso: string, now: Date, lang: Lang): string {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return "";
   const m = Math.max(1, Math.floor((now.getTime() - t) / 60_000));
-  if (m < 60) return `${m} min ago`;
+  if (m < 60) return tFor(lang, "dashboardPage.rel.minAgo", { n: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} hr ago`;
+  if (h < 24) return tFor(lang, "dashboardPage.rel.hrAgo", { n: h });
   const d = Math.floor(h / 24);
-  if (d === 1) return "Yesterday";
-  if (d < 7) return `${d} days ago`;
-  return `${SHORT_MONTH[new Date(iso).getMonth()]} ${new Date(iso).getDate()}`;
+  if (d === 1) return tFor(lang, "dashboardPage.rel.yesterday");
+  if (d < 7) return tFor(lang, "dashboardPage.rel.daysAgo", { n: d });
+  return `${shortMonth(lang, new Date(iso).getMonth())} ${
+    new Date(iso).getDate()
+  }`;
 }
 
 const JOB_ROTATION: { icon: IconName; color: string }[] = [
@@ -85,13 +79,17 @@ const JOB_ROTATION: { icon: IconName; color: string }[] = [
   { icon: "ruler", color: "var(--green-600)" },
 ];
 
-function jobToRow(j: Job, idx: number, now: Date): JobRow {
+function jobToRow(j: Job, idx: number, now: Date, lang: Lang): JobRow {
   const rot = JOB_ROTATION[idx % JOB_ROTATION.length];
   const total = j.totalCents / 100;
   const paid = j.paidCents / 100;
   const paidLabel = paid > 0
-    ? `$${Math.round(paid).toLocaleString()} paid`
-    : (j.contract?.status === "signed" ? "Deposit" : "Quoted");
+    ? tFor(lang, "dashboardPage.job.amountPaid", {
+      amount: `$${Math.round(paid).toLocaleString()}`,
+    })
+    : (j.contract?.status === "signed"
+      ? tFor(lang, "dashboardPage.job.deposit")
+      : tFor(lang, "dashboardPage.job.quoted"));
   const statusKind: JobRow["status"]["kind"] = j.status === "overdue"
     ? "warn"
     : j.status === "awaiting" || j.status === "awaiting_permit"
@@ -105,7 +103,7 @@ function jobToRow(j: Job, idx: number, now: Date): JobRow {
     amount: `$${Math.round(total).toLocaleString()}`,
     paid: paidLabel,
     pct: j.pctPaid,
-    due: fmtDue(j.nextDueDate, now),
+    due: fmtDue(j.nextDueDate, now, lang),
     icon: rot.icon,
     color: rot.color,
     status: { kind: statusKind, txt: j.statusLabel },
@@ -118,12 +116,18 @@ function clientFromSummary(summary: string | null | undefined): string {
   return m ? m[1].trim() : "—";
 }
 
-function quoteToRow(q: QuoteCard, now: Date): QuoteRow {
+function quoteToRow(q: QuoteCard, now: Date, lang: Lang): QuoteRow {
   const sentLabel = q.sentAt
-    ? `Sent ${fmtRel(q.sentAt, now)}${
-      q.opens > 0 ? ` · Viewed${q.opens > 1 ? ` ${q.opens}×` : ""}` : ""
+    ? `${tFor(lang, "dashboardPage.quote.sent", {
+      rel: fmtRel(q.sentAt, now, lang),
+    })}${
+      q.opens > 0
+        ? ` · ${tFor(lang, "dashboardPage.quote.viewed")}${
+          q.opens > 1 ? ` ${q.opens}×` : ""
+        }`
+        : ""
     }`
-    : "Drafted";
+    : tFor(lang, "dashboardPage.quote.drafted");
   return {
     client: q.customerName ?? clientFromSummary(q.summary),
     desc: q.summary ?? "",
@@ -144,29 +148,37 @@ function invoiceToRow(
   customerNames: Map<string, string>,
   now: Date,
   idx: number,
+  lang: Lang,
 ): OutstandingRow {
   const due = new Date(inv.dueDate + "T00:00:00");
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
   const days = Math.round((due.getTime() - today.getTime()) / 86_400_000);
+  const num = shortInv(inv.id, idx);
   let meta: string;
   let metaColor: string;
   let metaWeight = 600;
   if (days < 0) {
-    meta = `${-days} day${-days === 1 ? "" : "s"} overdue · #INV-${
-      shortInv(inv.id, idx)
-    }`;
+    const overdueDays = -days;
+    meta = tFor(
+      lang,
+      `dashboardPage.invoice.overdue.${overdueDays === 1 ? "one" : "other"}`,
+      { n: overdueDays, num },
+    );
     metaColor = "var(--pink-700)";
     metaWeight = 700;
   } else if (days <= 5) {
-    meta = `Due in ${days} day${days === 1 ? "" : "s"} · #INV-${
-      shortInv(inv.id, idx)
-    }`;
+    meta = tFor(
+      lang,
+      `dashboardPage.invoice.dueIn.${days === 1 ? "one" : "other"}`,
+      { n: days, num },
+    );
     metaColor = "var(--coffee-500)";
   } else {
-    meta = `Due ${SHORT_MONTH[due.getMonth()]} ${due.getDate()} · #INV-${
-      shortInv(inv.id, idx)
-    }`;
+    meta = tFor(lang, "dashboardPage.invoice.dueOn", {
+      date: `${shortMonth(lang, due.getMonth())} ${due.getDate()}`,
+      num,
+    });
     metaColor = "var(--green-600)";
   }
   const name = (inv.customerId && customerNames.get(inv.customerId)) || "—";
@@ -213,14 +225,14 @@ const NOTIF_ICON: Record<
   generic: { icon: "sparkle", bg: "var(--teal-50)", fg: "var(--teal-600)" },
 };
 
-function notifToActivity(n: Notification, now: Date): ActivityEntry {
+function notifToActivity(n: Notification, now: Date, lang: Lang): ActivityEntry {
   const skin = NOTIF_ICON[n.type] ?? NOTIF_ICON.generic;
   return {
     icon: skin.icon,
     bg: skin.bg,
     fg: skin.fg,
     html: escapeHtml(n.title),
-    time: fmtRel(n.createdAt, now),
+    time: fmtRel(n.createdAt, now, lang),
   };
 }
 
@@ -350,7 +362,10 @@ function DashboardSkeleton() {
   );
 }
 
-export default function DashboardPage() {
+export default function DashboardPage(_props: { lang?: Lang } = {}) {
+  // Reactive UI language — seeded from the profile cache, flipped live by
+  // Settings. (The old `lang` prop is superseded by this shared signal.)
+  const lang = langSignal.value;
   // Warm-start from the shared dash cache: if we already have a stats snapshot
   // (e.g. from the sidebar on a prior page), render the hero + KPIs instantly
   // and treat the mount fetch as a background refresh instead of flashing the
@@ -400,7 +415,11 @@ export default function DashboardPage() {
 
   if (s.loading) return <DashboardSkeleton />;
   if (s.error) {
-    return <div class="dashpage-error">Couldn't load dashboard: {s.error}</div>;
+    return (
+      <div class="dashpage-error">
+        {tFor(lang, "dashboardPage.loadError")}: {s.error}
+      </div>
+    );
   }
 
   const { stats, jobs, quoteCards, pendingInvoices, customers, notifications } =
@@ -412,7 +431,7 @@ export default function DashboardPage() {
 
   const safeJobs = Array.isArray(jobs) ? jobs : [];
   const jobRows: JobRow[] = safeJobs.slice(0, 5).map((j, i) =>
-    jobToRow(j, i, now)
+    jobToRow(j, i, now, lang)
   );
 
   const seenQuoteIds = new Set<string>();
@@ -429,13 +448,13 @@ export default function DashboardPage() {
       return true;
     })
     .slice(0, 4)
-    .map((q) => quoteToRow(q, now));
+    .map((q) => quoteToRow(q, now, lang));
 
   const outstandingRows: OutstandingRow[] = safePendingInvoices
     .slice()
     .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
     .slice(0, 5)
-    .map((inv, i) => invoiceToRow(inv, customerNames, now, i));
+    .map((inv, i) => invoiceToRow(inv, customerNames, now, i, lang));
 
   const grouped: Notification[] = [];
   for (const n of notifications) {
@@ -451,7 +470,7 @@ export default function DashboardPage() {
   }
   const activityRows: ActivityEntry[] = grouped.slice(0, 4).map((n) => {
     const dupes = (n as Notification & { _dupes?: number })._dupes ?? 1;
-    const entry = notifToActivity(n, now);
+    const entry = notifToActivity(n, now, lang);
     return dupes > 1
       ? {
         ...entry,
@@ -467,6 +486,7 @@ export default function DashboardPage() {
         thisMonthBilled={kpis.thisMonthBilled}
         pendingQuotes={kpis.pendingQuotes}
         outstandingOverdue={kpis.outstandingOverdue}
+        lang={lang}
       />
       <SetupChecklist />
       <Kpis
@@ -477,19 +497,21 @@ export default function DashboardPage() {
         pendingQuotes={kpis.pendingQuotes}
         pendingTotal={kpis.pendingTotal}
         avgJob={kpis.avgJob}
+        lang={lang}
       />
       <div class="grid">
-        <ActiveJobs jobs={jobRows} total={kpis.activeJobs} />
-        <QuotesAwaiting quotes={quoteRows} />
+        <ActiveJobs jobs={jobRows} total={kpis.activeJobs} lang={lang} />
+        <QuotesAwaiting quotes={quoteRows} lang={lang} />
       </div>
       <div class="grid">
-        <Activity items={activityRows} />
+        <Activity items={activityRows} lang={lang} />
         <Outstanding
           owed={kpis.owed}
           current={kpis.current}
           mid={kpis.mid}
           overdue={kpis.overdue}
           items={outstandingRows}
+          lang={lang}
         />
       </div>
     </>

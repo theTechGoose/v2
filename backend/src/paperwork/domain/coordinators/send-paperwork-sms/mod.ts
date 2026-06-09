@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -119,7 +120,13 @@ export class SendPaperworkSms {
         kind: "invoice",
         id: invoice.id,
       });
-      body = renderInvoiceBody(invoice, customer, sender, shortUrl);
+      body = renderInvoiceBody(
+        invoice,
+        customer,
+        sender,
+        shortUrl,
+        senderBiz?.commsLanguage === "es" ? "es" : "en",
+      );
     }
 
     if (!recipient) {
@@ -270,12 +277,13 @@ function renderQuoteBody(
   senderBiz: BusinessIdentity | undefined,
   url: string,
 ): string {
+  const lang = senderBiz?.commsLanguage === "es" ? "es" : "en";
   const hi = customerFirst(c);
   const who = senderFirst(sender);
   const biz = businessName(senderBiz);
   const jobName = q.jobName?.trim() ||
     q.summary?.replace(/^\s*quote\s*:\s*/i, "").trim() ||
-    "your project";
+    t(lang, "paperworkSms.body.jobNameFallback");
   return composeSmsBody({
     hi,
     who,
@@ -283,7 +291,7 @@ function renderQuoteBody(
     jobName,
     url,
     kind: "quote",
-    lang: senderBiz?.commsLanguage === "es" ? "es" : "en",
+    lang,
   });
 }
 
@@ -295,12 +303,13 @@ function renderContractBody(
   senderBiz: BusinessIdentity | undefined,
   url: string,
 ): string {
+  const lang = senderBiz?.commsLanguage === "es" ? "es" : "en";
   const hi = customerFirst(cust);
   const who = senderFirst(sender);
   const biz = businessName(senderBiz);
   const jobName = q?.jobName?.trim() ||
     q?.summary?.replace(/^\s*quote\s*:\s*/i, "").trim() ||
-    "your project";
+    t(lang, "paperworkSms.body.jobNameFallback");
   return composeSmsBody({
     hi,
     who,
@@ -308,7 +317,7 @@ function renderContractBody(
     jobName,
     url,
     kind: "contract",
-    lang: senderBiz?.commsLanguage === "es" ? "es" : "en",
+    lang,
   });
 }
 
@@ -322,46 +331,29 @@ function composeSmsBody(p: {
   /** Roadmap p.13: neutral LatAm Spanish when the contractor's language is es. */
   lang?: "en" | "es";
 }): string {
-  const es = p.lang === "es";
-  const intro = es
-    ? (p.hi
-      ? p.who && p.biz
-        ? `Hola ${p.hi}, soy ${p.who} de ${p.biz}.`
-        : p.who
-        ? `Hola ${p.hi}, soy ${p.who}.`
-        : `Hola ${p.hi}.`
-      : p.who && p.biz
-      ? `Soy ${p.who} de ${p.biz}.`
+  const lang = p.lang === "es" ? "es" : "en";
+  const intro = p.hi
+    ? p.who && p.biz
+      ? t(lang, "paperworkSms.intro.hiWhoBiz", {
+        hi: p.hi,
+        who: p.who,
+        biz: p.biz,
+      })
       : p.who
-      ? `Soy ${p.who}.`
-      : null)
-    : (p.hi
-      ? p.who && p.biz
-        ? `Hi ${p.hi}, this is ${p.who} from ${p.biz}.`
-        : p.who
-        ? `Hi ${p.hi}, this is ${p.who}.`
-        : `Hi ${p.hi}.`
-      : p.who && p.biz
-      ? `This is ${p.who} from ${p.biz}.`
-      : p.who
-      ? `This is ${p.who}.`
-      : null);
+      ? t(lang, "paperworkSms.intro.hiWho", { hi: p.hi, who: p.who })
+      : t(lang, "paperworkSms.intro.hi", { hi: p.hi })
+    : p.who && p.biz
+    ? t(lang, "paperworkSms.intro.whoBiz", { who: p.who, biz: p.biz })
+    : p.who
+    ? t(lang, "paperworkSms.intro.who", { who: p.who })
+    : null;
   // Roadmap p.9: brand the deliverable as "Quote + Agreement" for both kinds.
   const lines: string[] = [];
   if (intro) lines.push(intro);
-  if (es) {
-    lines.push(
-      `Tu Cotización + Acuerdo para ${p.jobName} está lista: ${p.url}`,
-    );
-    lines.push(
-      "Avísame si tienes alguna pregunta. ¡Espero poder trabajar contigo!",
-    );
-  } else {
-    lines.push(`Your Quote + Agreement for ${p.jobName} is ready: ${p.url}`);
-    lines.push(
-      "Please let me know if you have any questions. I look forward to working with you!",
-    );
-  }
+  lines.push(
+    t(lang, "paperworkSms.body.ready", { jobName: p.jobName, url: p.url }),
+  );
+  lines.push(t(lang, "paperworkSms.body.closing"));
   return lines.join("\n\n");
 }
 
@@ -375,14 +367,18 @@ function renderInvoiceBody(
   cust: Customer | undefined,
   sender: User | undefined,
   url: string,
+  lang: "en" | "es" = "en",
 ): string {
   const hi = customerFirst(cust);
   const who = senderFirst(sender);
-  const lead = hi ? `Hi ${hi}, ` : "";
-  const tail = who ? ` — ${who}` : "";
-  return `${lead}your invoice is ready (${
-    fmtUSD(i.amount)
-  }). View & pay: ${url}${tail}`;
+  const lead = hi ? t(lang, "paperworkSms.invoice.lead", { hi }) : "";
+  const tail = who ? t(lang, "paperworkSms.invoice.tail", { who }) : "";
+  return t(lang, "paperworkSms.invoice.body", {
+    lead,
+    amount: fmtUSD(i.amount),
+    url,
+    tail,
+  });
 }
 
 // ---------- phone normalization --------------------------------------------

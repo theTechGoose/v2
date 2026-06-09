@@ -26,6 +26,9 @@ export default defineConfig({
     port: FRONTEND_PORT,
     strictPort: true,
     allowedHosts: [".ngrok.app", ".ngrok-free.app", ".trycloudflare.com"],
+    // Allow importing the shared string catalog from the repo root
+    // (/lang/*.json), which sits one level above the front-end project root.
+    fs: { allow: [".."] },
     // WebSocket proxy: AssemblyAI streaming runs through the backend
     // (Deno's `Deno.upgradeWebSocket` works there; Vite's Node http
     // server can't). Browser hits `/api/voice/stream` on Vite → Vite

@@ -94,6 +94,8 @@ export interface ProfileUser {
   name?: string;
   email?: string;
   language?: "en" | "es";
+  /** Super-admin flag — drives the sidebar Admin tab. Server-enforced. */
+  superAdmin?: boolean;
   createdAt: number;
   updatedAt: number;
 }

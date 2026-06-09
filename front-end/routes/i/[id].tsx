@@ -2,6 +2,7 @@ import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
+import { tFor } from "../../lib/i18n.ts";
 import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
 
 interface Contractor {
@@ -35,7 +36,14 @@ interface InvoicePublic {
   };
   contractor?: Contractor;
   customer?: { name?: string; email?: string; phoneNumber?: string };
-  jobDetails?: { summary?: string; jobName?: string; description?: string };
+  jobDetails?: {
+    summary?: string;
+    jobName?: string;
+    description?: string;
+    jobNameByLang?: Record<string, string>;
+    summaryByLang?: Record<string, string>;
+    descriptionByLang?: Record<string, string>;
+  };
   siblings?: Array<{
     id: string;
     amount?: number;
@@ -62,12 +70,12 @@ export default define.page(async function PublicInvoice(ctx) {
   let err: string | undefined;
   const r = await ssrBackendGet<InvoicePublic>(`/invoices/${id}/public`);
   if (r.ok) invoice = r.data;
-  else err = "This invoice link expired or was revoked.";
+  else err = tFor("en", "publicInvoice.error.expired");
 
   return (
     <>
       <Head>
-        <title>Invoice · Paperwork Monster</title>
+        <title>{tFor("en", "publicInvoice.docTitle")}</title>
         <link rel="stylesheet" href="/landing.css" />
       </Head>
       <div
@@ -75,7 +83,11 @@ export default define.page(async function PublicInvoice(ctx) {
       >
         <div style="max-width:680px;margin:0 auto">
           {err || !invoice
-            ? <ErrorCard message={err ?? "Invoice not available."} />
+            ? (
+              <ErrorCard
+                message={err ?? tFor("en", "publicInvoice.error.notAvailable")}
+              />
+            )
             : <InvoiceDoc invoice={invoice} />}
         </div>
       </div>
@@ -89,13 +101,13 @@ function ErrorCard({ message }: { message: string }) {
       <div
         style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN};text-align:center;margin-bottom:18px`}
       >
-        Paperwork Monster
+        {tFor("en", "brand.name")}
       </div>
       <div
         style={`background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center`}
       >
         <div style={`font-weight:800;color:${TEAL};font-size:18px`}>
-          Hmm, can't open this
+          {tFor("en", "publicInvoice.error.heading")}
         </div>
         <p style={`margin:8px 0 0;color:${MUTED};font-size:14px`}>{message}</p>
       </div>
@@ -108,12 +120,16 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
   const claimed = invoice.status === "claimed" && !!invoice.paymentIntent;
   const pastDue = !paid && !claimed && isPastDue(invoice.dueDate);
   const es = invoice.contractor?.commsLanguage === "es";
+  const lang = es ? "es" : "en";
   const businessLabel = invoice.contractor?.businessName?.trim() ||
     invoice.contractor?.name?.trim() ||
-    "Paperwork Monster";
-  const jobName = invoice.jobDetails?.jobName?.trim() ||
-    invoice.jobDetails?.summary?.trim() ||
-    "Project";
+    tFor(lang, "brand.name");
+  const jobName =
+    (invoice.jobDetails?.jobNameByLang?.[lang] ?? invoice.jobDetails?.jobName)
+      ?.trim() ||
+    (invoice.jobDetails?.summaryByLang?.[lang] ?? invoice.jobDetails?.summary)
+      ?.trim() ||
+    tFor(lang, "publicInvoice.jobNameFallback");
   const idx = invoice.installmentIndex;
   const total = invoice.installmentTotal;
   const milestoneLabel = idx && total
@@ -176,15 +192,19 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
               style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}
             >
               {paid
-                ? (es ? "Pagado" : "Paid")
-                : (es ? "Monto a pagar" : "Amount due")}
+                ? tFor(lang, "status.paid")
+                : tFor(lang, "publicInvoice.amountDue")}
             </div>
             {invoice.dueDate
               ? (
                 <div style={`margin-top:4px;color:${MUTED};font-size:12px`}>
                   {paid
-                    ? `${es ? "Pagado" : "Paid"} ${invoice.paidAt ?? ""}`
-                    : `${es ? "Vence" : "Due"} ${invoice.dueDate}`}
+                    ? tFor(lang, "publicInvoice.paidOn", {
+                      date: invoice.paidAt ?? "",
+                    })
+                    : tFor(lang, "publicInvoice.dueOn", {
+                      date: invoice.dueDate,
+                    })}
                 </div>
               )
               : null}
@@ -203,7 +223,7 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
               <div
                 style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
               >
-                {es ? "Pagado hasta ahora" : "Paid so far"}
+                {tFor(lang, "publicInvoice.paidSoFar")}
               </div>
               <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">
                 {paidSoFar.map((p, i) => (
@@ -252,12 +272,12 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
             <footer
               style={`margin-top:30px;padding-top:22px;border-top:1px solid ${LINE};color:${INK};font-size:14px;line-height:1.5`}
             >
-              {es ? "¿Preguntas antes de pagar?" : "Questions before paying?"}
+              {tFor(lang, "publicInvoice.footer.questions")}
               {" "}
               {invoice.contractor.phoneNumber
                 ? (
                   <>
-                    {es ? "Llama al" : "Call"}{" "}
+                    {tFor(lang, "publicInvoice.footer.call")}{" "}
                     <a
                       href={telHref(invoice.contractor.phoneNumber)}
                       style={`color:${TEAL};text-decoration:none;font-weight:700;white-space:nowrap`}
@@ -268,12 +288,12 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
                 )
                 : null}
               {invoice.contractor.phoneNumber && invoice.contractor.email
-                ? (es ? " o " : " or ")
+                ? tFor(lang, "publicInvoice.footer.or")
                 : ""}
               {invoice.contractor.email
                 ? (
                   <>
-                    {es ? "escribe a" : "email"}{" "}
+                    {tFor(lang, "publicInvoice.footer.email")}{" "}
                     <a
                       href={`mailto:${invoice.contractor.email}`}
                       style={`color:${TEAL};text-decoration:none;font-weight:700`}
@@ -283,9 +303,7 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
                   </>
                 )
                 : null}
-              {es
-                ? "! Espero poder trabajar contigo."
-                : "! I look forward to working with you."}
+              {tFor(lang, "publicInvoice.footer.closing")}
             </footer>
           )
           : null}
@@ -299,8 +317,9 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
           height="16"
           style="height:16px;width:auto;opacity:0.7;display:block"
         />
-        Powered by Paperwork Monster · Invoice #{invoice.id.slice(0, 8)
-          .toUpperCase()}
+        {tFor(lang, "publicInvoice.poweredBy", {
+          id: invoice.id.slice(0, 8).toUpperCase(),
+        })}
       </div>
     </article>
   );
@@ -314,12 +333,13 @@ function StatusPill(
     es: boolean;
   },
 ) {
+  const lang = es ? "es" : "en";
   if (paid) {
     return (
       <Pill
         bg={`rgba(81,152,67,0.15)`}
         color={GREEN}
-        label={es ? "Pagado" : "Paid"}
+        label={tFor(lang, "status.paid")}
       />
     );
   }
@@ -328,7 +348,7 @@ function StatusPill(
       <Pill
         bg={`rgba(255,170,40,0.15)`}
         color="#a06800"
-        label={es ? "En confirmación" : "Awaiting confirmation"}
+        label={tFor(lang, "publicInvoice.status.awaitingConfirmation")}
       />
     );
   }
@@ -337,7 +357,7 @@ function StatusPill(
       <Pill
         bg={`rgba(168,59,59,0.10)`}
         color="#a83b3b"
-        label={es ? "Vencida" : "Past due"}
+        label={tFor(lang, "publicInvoice.status.pastDue")}
       />
     );
   }
@@ -345,7 +365,7 @@ function StatusPill(
     <Pill
       bg={`rgba(255,107,107,0.10)`}
       color={PINK_DARK}
-      label={es ? "Pendiente" : "Due"}
+      label={tFor(lang, "publicInvoice.status.due")}
     />
   );
 }
@@ -369,8 +389,10 @@ function ClaimedNote(
     es: boolean;
   },
 ) {
-  const friendly = methodFriendly(intent.method);
-  const who = contractorFirst ?? (es ? "tu contratista" : "your contractor");
+  const lang = es ? "es" : "en";
+  const friendly = methodFriendly(intent.method, lang);
+  const who = contractorFirst ??
+    tFor(lang, "publicInvoice.contractorFallback.lower");
   return (
     <section
       style={`margin-top:24px;background:rgba(255,170,40,0.06);border:1px solid rgba(255,170,40,0.30);border-radius:14px;padding:18px 22px`}
@@ -378,24 +400,23 @@ function ClaimedNote(
       <div
         style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#a06800`}
       >
-        {es ? `Le avisaste a ${who} que pagaste` : `You told ${who} you paid`}
+        {tFor(lang, "publicInvoice.claimed.heading", { who })}
       </div>
       <p
         style={`margin:8px 0 0;color:${INK};font-size:14.5px;line-height:1.55`}
       >
-        {es ? "Método" : "Method"}: <strong>{friendly}</strong>
+        {tFor(lang, "publicInvoice.claimed.method")}:{" "}
+        <strong>{friendly}</strong>
         {intent.reference
           ? (
             <>
-              · {es ? "Referencia" : "Reference"}:{" "}
+              · {tFor(lang, "publicInvoice.claimed.reference")}:{" "}
               <strong>{intent.reference}</strong>
             </>
           )
           : null}
         <br />
-        {es
-          ? `Te enviaremos un recibo cuando ${who} confirme que el dinero llegó.`
-          : `We'll text you a receipt once ${who} confirms funds landed.`}
+        {tFor(lang, "publicInvoice.claimed.body", { who })}
       </p>
     </section>
   );
@@ -408,7 +429,12 @@ function ReceivedNote(
     es: boolean;
   },
 ) {
-  const who = contractorFirst ?? (es ? "Tu contratista" : "Your contractor");
+  const lang = es ? "es" : "en";
+  const who = contractorFirst ??
+    tFor(lang, "publicInvoice.contractorFallback.capital");
+  const when = paidAt
+    ? tFor(lang, "publicInvoice.received.onDate", { date: paidAt })
+    : "";
   return (
     <section
       style={`margin-top:24px;background:rgba(81,152,67,0.08);border:1px solid rgba(81,152,67,0.30);border-radius:14px;padding:18px 22px`}
@@ -416,49 +442,48 @@ function ReceivedNote(
       <div
         style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}
       >
-        {es ? "Pago recibido" : "Payment received"}
+        {tFor(lang, "publicInvoice.received.heading")}
       </div>
       <p
         style={`margin:8px 0 0;color:${INK};font-size:14.5px;line-height:1.55`}
       >
-        {es
-          ? `¡Gracias! ${who} confirmó tu pago${
-            paidAt ? ` el ${paidAt}` : ""
-          }. Un recibo en PDF está en tu correo.`
-          : `Thanks! ${who} confirmed your payment${
-            paidAt ? ` on ${paidAt}` : ""
-          }. A PDF receipt is in your inbox.`}
+        {tFor(lang, "publicInvoice.received.body", { who, when })}
       </p>
     </section>
   );
 }
 
 function milestoneTitle(idx: number, total: number, es = false): string {
-  if (total === 1) return es ? "Factura 1 de 1" : "Invoice 1 of 1";
-  const head = es ? `Factura ${idx} de ${total}` : `Invoice ${idx} of ${total}`;
-  if (idx === 1) return `${head} — ${es ? "Anticipo" : "Deposit"}`;
-  if (idx === total) return `${head} — ${es ? "Pago final" : "Final payment"}`;
-  return `${head} — ${es ? "Pago parcial" : "Progress payment"}`;
+  const lang = es ? "es" : "en";
+  if (total === 1) return tFor(lang, "publicInvoice.milestone.oneOfOne");
+  const head = tFor(lang, "publicInvoice.milestone.head", { idx, total });
+  if (idx === 1) {
+    return `${head} — ${tFor(lang, "publicInvoice.milestone.deposit")}`;
+  }
+  if (idx === total) {
+    return `${head} — ${tFor(lang, "publicInvoice.milestone.finalPayment")}`;
+  }
+  return `${head} — ${tFor(lang, "publicInvoice.milestone.progressPayment")}`;
 }
 
-function methodFriendly(method: string): string {
+function methodFriendly(method: string, lang: "en" | "es"): string {
   switch (method) {
     case "check":
-      return "Check";
+      return tFor(lang, "paymentMethod.check");
     case "venmo":
-      return "Venmo";
+      return tFor(lang, "paymentMethod.venmo");
     case "zelle":
-      return "Zelle";
+      return tFor(lang, "paymentMethod.zelle");
     case "cashapp":
-      return "Cash App";
+      return tFor(lang, "paymentMethod.cashApp");
     case "paypal":
-      return "PayPal";
+      return tFor(lang, "paymentMethod.paypal");
     case "cash":
-      return "Cash";
+      return tFor(lang, "paymentMethod.cash");
     case "ach":
-      return "ACH / bank transfer";
+      return tFor(lang, "paymentMethod.ach");
     case "other":
-      return "Other";
+      return tFor(lang, "paymentMethod.other");
     default:
       return method;
   }

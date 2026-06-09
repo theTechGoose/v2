@@ -10,6 +10,7 @@ import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { RenderContractPdf } from "@paperwork/domain/coordinators/render-contract-pdf/mod.ts";
 import type { Contract, ContractTerm } from "@paperwork/dto/contract.ts";
 import { computePaymentSplit } from "#payment-split";
+import { type Lang, t } from "@core/i18n/mod.ts";
 import type { User } from "@users/dto/user.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 
@@ -131,6 +132,10 @@ export class SendSignedConfirmation {
     const businessName = ident?.businessName?.trim() ||
       ident?.legalName?.trim() || contractor?.name?.trim();
 
+    // Roadmap p.13: customer-facing comms resolve to the contractor's
+    // outgoing-comms language (default en), not their UI language.
+    const lang: Lang = ident?.commsLanguage === "es" ? "es" : "en";
+
     // ---- 1. Render PDF
     let pdfBytes: Uint8Array;
     try {
@@ -200,9 +205,9 @@ export class SendSignedConfirmation {
     }
 
     // ---- 3. Email customer (PDF attachment + invoice button)
-    const subject = `Signed: ${
-      quote?.summary ?? "your contract"
-    } — countersigned PDF + first invoice`;
+    const subject = t(lang, "signedConfirm.email.subject", {
+      summary: quote?.summary ?? t(lang, "signedConfirm.fallback.contract"),
+    });
     const html = renderSignedConfirmationHtml({
       contract,
       quote,
@@ -211,6 +216,7 @@ export class SendSignedConfirmation {
       businessName,
       invoiceId,
       invoiceAmount: milestoneAmounts[0] ?? 0,
+      lang,
     });
     const fileName = `Contract-${contract.id.slice(0, 8).toUpperCase()}.pdf`;
     const sent = await this.email.send({
@@ -256,17 +262,18 @@ export class SendSignedConfirmation {
     try {
       const toSms = normalizeE164(customer?.phoneNumber ?? "");
       if (toSms) {
-        const first = (customer?.name ?? "").trim().split(/\s+/)[0] || "there";
+        const first = (customer?.name ?? "").trim().split(/\s+/)[0] ||
+          t(lang, "signedConfirm.sms.nameFallback");
         const jobName = quote?.jobName?.trim() ||
           quote?.summary?.replace(/^\s*quote\s*:\s*/i, "").trim() ||
-          "your project";
+          t(lang, "signedConfirm.fallback.project");
         const fromBiz = businessName ? ` — ${businessName}` : "";
-        // Roadmap p.13: customer-facing → outgoing-comms language (default en).
-        const body = ident?.commsLanguage === "es"
-          ? `Hola ${first}, tu Cotización + Acuerdo para ${jobName} está firmada — ¡todo listo! ` +
-            `Te enviaremos una copia firmada y tu primera factura: ${APP_URL}/c/${contract.id}${fromBiz}`
-          : `Hi ${first}, your Quote + Agreement for ${jobName} is signed — you're all set! ` +
-            `A signed copy + your first invoice are on the way: ${APP_URL}/c/${contract.id}${fromBiz}`;
+        const body = t(lang, "signedConfirm.sms.body", {
+          first,
+          jobName,
+          url: `${APP_URL}/c/${contract.id}`,
+          fromBiz,
+        });
         await this.sms.send({ to: toSms, body });
       }
     } catch (err) {
@@ -401,6 +408,7 @@ interface SignedHtmlOpts {
   businessName: string | undefined;
   invoiceId: string | undefined;
   invoiceAmount: number;
+  lang: Lang;
 }
 
 function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
@@ -412,31 +420,57 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
     businessName,
     invoiceId,
     invoiceAmount,
+    lang,
   } = opts;
   const customerFirst = customer?.name?.trim().split(/\s+/)[0];
   const contractorFirst = contractor?.name?.trim()?.split(/\s+/)[0];
-  const biz = businessName ?? contractor?.name ?? "your contractor";
-  const summary = (quote?.summary ?? "your project").replace(
-    /^\s*quote\s*:\s*/i,
-    "",
-  );
+  const biz = businessName ?? contractor?.name ??
+    t(lang, "signedConfirm.email.bizFallback");
+  const summary = (quote?.summary ?? t(lang, "signedConfirm.fallback.project"))
+    .replace(
+      /^\s*quote\s*:\s*/i,
+      "",
+    );
   const docNumber = `#${contract.id.slice(0, 8).toUpperCase()}`;
   const invoiceUrl = invoiceId ? `${APP_URL}/i/${invoiceId}` : undefined;
   const contractUrl = `${APP_URL}/c/${contract.id}`;
   const greeting = customerFirst
-    ? `Hi ${escapeHtml(customerFirst)} —`
-    : "Hi there —";
-  const preheader = `Countersigned PDF attached · first invoice ${
-    invoiceUrl ? "ready to pay" : "coming soon"
-  }`;
+    ? t(lang, "signedConfirm.email.greeting", {
+      name: escapeHtml(customerFirst),
+    })
+    : t(lang, "signedConfirm.email.greetingFallback");
+  const preheader = t(lang, "signedConfirm.email.preheader", {
+    state: invoiceUrl
+      ? t(lang, "signedConfirm.email.preheaderReady")
+      : t(lang, "signedConfirm.email.preheaderSoon"),
+  });
+  const subhead = t(lang, "signedConfirm.email.subhead", {
+    biz: escapeHtml(biz),
+    who: customerFirst
+      ? escapeHtml(customerFirst)
+      : t(lang, "signedConfirm.email.subheadYou"),
+    summary: escapeHtml(summary),
+  });
+  const bodyParagraph = t(lang, "signedConfirm.email.bodyBase", {
+    invoiceClause: invoiceUrl
+      ? t(lang, "signedConfirm.email.bodyInvoiceClause", {
+        amount: fmtUSD(invoiceAmount),
+      })
+      : "",
+    who: contractorFirst
+      ? escapeHtml(contractorFirst)
+      : t(lang, "signedConfirm.email.bodyContractorFallback"),
+  });
 
   return `<!doctype html>
-<html lang="en">
+<html lang="${lang}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light only">
-  <title>Signed ${escapeHtml(docNumber)}</title>
+  <title>${
+    t(lang, "signedConfirm.email.title", { docNumber: escapeHtml(docNumber) })
+  }</title>
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
   <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
@@ -448,34 +482,22 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
         <tr><td style="height:6px;background:linear-gradient(90deg,${COLOR_GREEN} 0%,#71a85f 100%);font-size:0;line-height:0">&nbsp;</td></tr>
 
         <tr><td style="padding:32px 36px 0">
-          <span style="display:inline-block;background:rgba(81,152,67,0.12);color:${COLOR_GREEN};font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;padding:6px 12px;border-radius:999px">✓ Signed · ${
-    escapeHtml(docNumber)
+          <span style="display:inline-block;background:rgba(81,152,67,0.12);color:${COLOR_GREEN};font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;padding:6px 12px;border-radius:999px">✓ ${
+    t(lang, "signedConfirm.email.pill", { docNumber: escapeHtml(docNumber) })
   }</span>
         </td></tr>
 
         <tr><td style="padding:18px 36px 0">
-          <h1 style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:32px;letter-spacing:-0.025em;color:${COLOR_TEAL};line-height:1.05">It's official.</h1>
-          <div style="margin-top:8px;color:${COLOR_MUTED};font-size:14px">${
-    escapeHtml(biz)
-  } and ${
-    customerFirst ? escapeHtml(customerFirst) : "you"
-  } are locked in on <strong style="color:${COLOR_INK}">${
-    escapeHtml(summary)
-  }</strong>.</div>
+          <h1 style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:32px;letter-spacing:-0.025em;color:${COLOR_TEAL};line-height:1.05">${
+    t(lang, "signedConfirm.email.hero")
+  }</h1>
+          <div style="margin-top:8px;color:${COLOR_MUTED};font-size:14px">${subhead}</div>
         </td></tr>
 
         <tr><td style="padding:24px 36px 0">
           <p style="margin:0 0 8px;font-size:15px;color:${COLOR_INK}">${greeting}</p>
           <p style="margin:0;font-size:15px;color:${COLOR_INK};line-height:1.55">
-            Thanks for signing. Your countersigned contract is attached as a PDF for your records${
-    invoiceUrl
-      ? ` — and the first invoice (<strong>${
-        fmtUSD(invoiceAmount)
-      }</strong>) is ready below`
-      : ""
-  }. ${
-    contractorFirst ? escapeHtml(contractorFirst) : "Your contractor"
-  } will reach out to lock in a start day.
+            ${bodyParagraph}
           </p>
         </td></tr>
 
@@ -485,8 +507,12 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
               <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:linear-gradient(135deg,#fff5f0 0%,#ffe9df 100%);border:1px solid rgba(255,107,107,0.30);border-radius:18px">
                 <tr>
                   <td style="padding:22px 24px;vertical-align:middle">
-                    <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_PINK_DARK}">First invoice</div>
-                    <div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">due in 7 days · pay online</div>
+                    <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_PINK_DARK}">${
+        t(lang, "signedConfirm.email.invoiceEyebrow")
+      }</div>
+                    <div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">${
+        t(lang, "signedConfirm.email.invoiceDue")
+      }</div>
                   </td>
                   <td style="padding:22px 24px;text-align:right;vertical-align:middle">
                     <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:30px;letter-spacing:-0.02em;color:${COLOR_TEAL};line-height:1">${
@@ -498,7 +524,9 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
                   <td colspan="2" style="padding:0 24px 22px">
                     <a href="${
         escapeAttr(invoiceUrl)
-      }" style="display:inline-block;background:${COLOR_PINK};color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;padding:12px 22px;border-radius:12px;box-shadow:0 8px 18px -6px rgba(255,107,107,0.55)">Pay the first invoice  →</a>
+      }" style="display:inline-block;background:${COLOR_PINK};color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;padding:12px 22px;border-radius:12px;box-shadow:0 8px 18px -6px rgba(255,107,107,0.55)">${
+        t(lang, "signedConfirm.email.invoiceCta")
+      }  →</a>
                   </td>
                 </tr>
               </table>
@@ -510,13 +538,17 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};border-radius:14px;border:1px solid ${COLOR_LINE}">
             <tr>
               <td style="padding:16px 20px;vertical-align:middle;width:60px">
-                <div style="width:42px;height:42px;border-radius:10px;background:${COLOR_TEAL};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;letter-spacing:.06em">PDF</div>
+                <div style="width:42px;height:42px;border-radius:10px;background:${COLOR_TEAL};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;letter-spacing:.06em">${
+    t(lang, "signedConfirm.email.pdfLabel")
+  }</div>
               </td>
               <td style="padding:16px 20px 16px 0;vertical-align:middle">
                 <div style="color:${COLOR_INK};font-weight:800;font-size:14px">Contract-${
     escapeHtml(contract.id.slice(0, 8).toUpperCase())
   }.pdf</div>
-                <div style="margin-top:2px;color:${COLOR_MUTED};font-size:12px">attached · signed by both parties</div>
+                <div style="margin-top:2px;color:${COLOR_MUTED};font-size:12px">${
+    t(lang, "signedConfirm.email.attachmentSub")
+  }</div>
               </td>
             </tr>
           </table>
@@ -525,13 +557,17 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
         <tr><td style="padding:28px 36px 0;text-align:center">
           <a href="${
     escapeAttr(contractUrl)
-  }" style="display:inline-block;background:transparent;color:${COLOR_TEAL};text-decoration:none;font-weight:700;font-size:13px;padding:8px 0;border-bottom:1px solid ${COLOR_LINE}">View the contract online →</a>
+  }" style="display:inline-block;background:transparent;color:${COLOR_TEAL};text-decoration:none;font-weight:700;font-size:13px;padding:8px 0;border-bottom:1px solid ${COLOR_LINE}">${
+    t(lang, "signedConfirm.email.viewOnline")
+  } →</a>
         </td></tr>
 
         <tr><td style="padding:32px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
 
         <tr><td style="padding:22px 36px 32px">
-          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED}">From</div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED}">${
+    t(lang, "signedConfirm.email.fromLabel")
+  }</div>
           <div style="margin-top:6px;font-weight:800;color:${COLOR_TEAL};font-size:15px">${
     escapeHtml(contractor?.name ?? biz)
   }</div>

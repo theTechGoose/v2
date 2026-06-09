@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { type Lang, tFor } from "../lib/i18n.ts";
 
 interface Method {
   method: string;
@@ -40,7 +41,6 @@ const PINK_DARK = "#d94e4e";
 export default function PublicInvoiceClaim(
   { invoiceId, acceptedMethods, customerName, lang = "en" }: Props,
 ) {
-  const es = lang === "es";
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const [reference, setReference] = useState("");
   const [claimedBy, setClaimedBy] = useState(customerName ?? "");
@@ -54,9 +54,7 @@ export default function PublicInvoiceClaim(
         data-cy="claim-no-methods"
         style={`margin-top:24px;background:rgba(255,107,107,0.04);border:1px solid rgba(255,107,107,0.20);border-radius:14px;padding:18px 22px;color:${INK};font-size:14px;line-height:1.55`}
       >
-        {es
-          ? "Contacta a tu contratista para coordinar el pago. Cuando confirme la recepción, recibirás un recibo por mensaje y correo."
-          : "Reach out to your contractor to coordinate payment. Once they confirm receipt, you'll get a receipt by text + email."}
+        {tFor(lang, "publicInvoiceClaim.noMethods")}
       </section>
     );
   }
@@ -70,14 +68,12 @@ export default function PublicInvoiceClaim(
         <div
           style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}
         >
-          {es ? "¡Gracias!" : "Thanks!"}
+          {tFor(lang, "publicInvoiceClaim.thanksHeading")}
         </div>
         <p
           style={`margin:8px 0 0;color:${INK};font-size:15px;line-height:1.55`}
         >
-          {es
-            ? "Le avisamos a tu contratista. Confirmará cuando llegue el dinero — y te enviaremos un recibo."
-            : "We let your contractor know. They'll confirm when funds land — we'll text you a receipt then."}
+          {tFor(lang, "publicInvoiceClaim.thanksBody")}
         </p>
       </section>
     );
@@ -104,7 +100,10 @@ export default function PublicInvoiceClaim(
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.reason ?? `Couldn't submit (${res.status})`);
+        throw new Error(
+          body.reason ??
+            tFor(lang, "publicInvoiceClaim.submitError", { status: res.status }),
+        );
       }
       setDone(true);
     } catch (err) {
@@ -119,7 +118,7 @@ export default function PublicInvoiceClaim(
       <div
         style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
       >
-        {es ? "¿Cómo quieres pagar?" : "How would you like to pay?"}
+        {tFor(lang, "publicInvoiceClaim.howToPay")}
       </div>
       <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px">
         {acceptedMethods.map((m) => {
@@ -136,7 +135,7 @@ export default function PublicInvoiceClaim(
                 active ? PINK_DARK : LINE
               };border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:700;letter-spacing:.01em`}
             >
-              {methodLabel(m.method, es)}
+              {methodLabel(m.method, lang)}
             </button>
           );
         })}
@@ -152,24 +151,24 @@ export default function PublicInvoiceClaim(
             <div
               style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${TEAL}`}
             >
-              {methodLabel(selectedMethod.method, es)}
+              {methodLabel(selectedMethod.method, lang)}
             </div>
             <div
               style={`margin-top:8px;color:${INK};font-size:14.5px;line-height:1.55`}
             >
-              {methodInstructions(selectedMethod, es)}
+              {methodInstructions(selectedMethod, lang)}
             </div>
             <label style="display:block;margin-top:14px">
               <span
                 style={`display:block;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${MUTED};margin-bottom:4px`}
               >
-                {es ? "Referencia (opcional)" : "Reference (optional)"}
+                {tFor(lang, "publicInvoiceClaim.referenceLabel")}
               </span>
               <input
                 type="text"
                 value={reference}
                 data-cy="claim-reference"
-                placeholder={referencePlaceholder(selectedMethod.method)}
+                placeholder={referencePlaceholder(selectedMethod.method, lang)}
                 onInput={(e) =>
                   setReference((e.currentTarget as HTMLInputElement).value)}
                 style={`width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid ${LINE};border-radius:10px;font-size:14px;color:${INK}`}
@@ -179,13 +178,13 @@ export default function PublicInvoiceClaim(
               <span
                 style={`display:block;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${MUTED};margin-bottom:4px`}
               >
-                {es ? "Tu nombre (opcional)" : "Your name (optional)"}
+                {tFor(lang, "publicInvoiceClaim.nameLabel")}
               </span>
               <input
                 type="text"
                 value={claimedBy}
                 data-cy="claim-name"
-                placeholder={es ? "Tu nombre" : "Your name"}
+                placeholder={tFor(lang, "publicInvoiceClaim.namePlaceholder")}
                 onInput={(e) =>
                   setClaimedBy((e.currentTarget as HTMLInputElement).value)}
                 style={`width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid ${LINE};border-radius:10px;font-size:14px;color:${INK}`}
@@ -208,8 +207,8 @@ export default function PublicInvoiceClaim(
               };background:${GREEN};color:#fff;border:0;border-radius:12px;padding:14px 18px;font-size:15px;font-weight:800;letter-spacing:.01em;box-shadow:0 8px 18px -6px rgba(81,152,67,0.45)`}
             >
               {submitting
-                ? (es ? "Enviando…" : "Sending…")
-                : (es ? "Ya lo envié" : "I sent it")}
+                ? tFor(lang, "publicInvoiceClaim.sending")
+                : tFor(lang, "publicInvoiceClaim.iSentIt")}
             </button>
           </div>
         )
@@ -218,47 +217,44 @@ export default function PublicInvoiceClaim(
   );
 }
 
-function methodLabel(method: string, es = false): string {
+function methodLabel(method: string, lang: Lang = "en"): string {
   switch (method) {
     case "check":
-      return es ? "Cheque" : "Check";
+      return tFor(lang, "paymentMethod.check");
     case "venmo":
-      return "Venmo";
+      return tFor(lang, "paymentMethod.venmo");
     case "zelle":
-      return "Zelle";
+      return tFor(lang, "paymentMethod.zelle");
     case "cashapp":
-      return "Cash App";
+      return tFor(lang, "paymentMethod.cashApp");
     case "paypal":
-      return "PayPal";
+      return tFor(lang, "paymentMethod.paypal");
     case "cash":
-      return es ? "Efectivo" : "Cash";
+      return tFor(lang, "paymentMethod.cash");
     case "ach":
-      return es ? "Transferencia bancaria" : "Bank transfer";
+      return tFor(lang, "paymentMethod.ach");
     case "other":
-      return es ? "Otro" : "Other";
+      return tFor(lang, "paymentMethod.other");
     default:
       return method;
   }
 }
 
-function methodInstructions(m: Method, es = false): string {
+function methodInstructions(m: Method, lang: Lang = "en"): string {
   const sendTo = (svc: string) =>
     m.handle
-      ? (es
-        ? `Envía a ${m.handle} por ${svc}.`
-        : `Send to ${m.handle} on ${svc}.`)
-      : (es
-        ? `Envía el pago por ${svc} a tu contratista.`
-        : `Send the payment via ${svc} to your contractor.`);
+      ? tFor(lang, "publicInvoiceClaim.instructions.sendToHandle", {
+        handle: m.handle,
+        svc,
+      })
+      : tFor(lang, "publicInvoiceClaim.instructions.sendVia", { svc });
   switch (m.method) {
     case "check":
       return m.handle
-        ? (es
-          ? `Haz el cheque y envíalo a: ${m.handle}`
-          : `Make it out and mail to: ${m.handle}`)
-        : (es
-          ? "Envía el cheque por correo a tu contratista."
-          : "Mail the check to your contractor.");
+        ? tFor(lang, "publicInvoiceClaim.instructions.checkHandle", {
+          handle: m.handle,
+        })
+        : tFor(lang, "publicInvoiceClaim.instructions.check");
     case "venmo":
       return sendTo("Venmo");
     case "zelle":
@@ -268,44 +264,36 @@ function methodInstructions(m: Method, es = false): string {
     case "paypal":
       return sendTo("PayPal");
     case "cash":
-      return es
-        ? "Entrega el efectivo a tu contratista en el sitio. Avisa aquí cuando lo hagas para que quede registro."
-        : "Hand the cash to your contractor on-site. Reply here once it's done so they have a record.";
+      return tFor(lang, "publicInvoiceClaim.instructions.cash");
     case "ach":
-      return es
-        ? "Pide a tu contratista los datos de ruta y cuenta ACH, luego haz la transferencia desde tu banco."
-        : "Ask your contractor for ACH routing + account details, then submit the transfer from your bank.";
+      return tFor(lang, "publicInvoiceClaim.instructions.ach");
     case "other":
       return m.handle
         ? m.handle
-        : (es
-          ? "Coordina directamente con tu contratista."
-          : "Coordinate with your contractor directly.");
+        : tFor(lang, "publicInvoiceClaim.instructions.other");
     default:
-      return es
-        ? "Coordina con tu contratista."
-        : "Coordinate with your contractor.";
+      return tFor(lang, "publicInvoiceClaim.instructions.default");
   }
 }
 
-function referencePlaceholder(method: string): string {
+function referencePlaceholder(method: string, lang: Lang = "en"): string {
   switch (method) {
     case "check":
-      return "Check #1234";
+      return tFor(lang, "publicInvoiceClaim.refPlaceholder.check");
     case "venmo":
-      return "Transaction note (e.g. 'paid 5/12')";
+      return tFor(lang, "publicInvoiceClaim.refPlaceholder.venmo");
     case "zelle":
-      return "Transaction ID or note";
+      return tFor(lang, "publicInvoiceClaim.refPlaceholder.zelle");
     case "cashapp":
-      return "Transaction ID or note";
+      return tFor(lang, "publicInvoiceClaim.refPlaceholder.cashapp");
     case "paypal":
-      return "Transaction ID or note";
+      return tFor(lang, "publicInvoiceClaim.refPlaceholder.paypal");
     case "cash":
-      return "When you'll bring it (e.g. 'Friday at 3pm')";
+      return tFor(lang, "publicInvoiceClaim.refPlaceholder.cash");
     case "ach":
-      return "Transfer reference";
+      return tFor(lang, "publicInvoiceClaim.refPlaceholder.ach");
     case "other":
-      return "Details";
+      return tFor(lang, "publicInvoiceClaim.refPlaceholder.other");
     default:
       return "";
   }

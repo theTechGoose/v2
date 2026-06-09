@@ -47,9 +47,13 @@ Deno.test("profile composite e2e: GET /profile returns user + null aggregates fo
       headers: { "x-session-id": session.sessionId },
     }).then((r) => r.json());
     assertEquals(snap.user.id, session.userId);
+    // Fresh signups get a neutral placeholder name ("New user") so the
+    // sidebar's identity block — the only entry point to Settings — renders
+    // immediately. Initials follow from it.
+    assertEquals(snap.user.name, "New user");
     assertEquals(snap.identity, null);
     assertEquals(snap.contractDefaults, null);
-    assertEquals(snap.initials, "?");
+    assertEquals(snap.initials, "NU");
   });
 });
 

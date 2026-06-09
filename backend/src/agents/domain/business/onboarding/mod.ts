@@ -18,6 +18,8 @@
  * also contains a capitalised word.
  */
 
+import { type Lang, t } from "@core/i18n/mod.ts";
+
 const PREFIX_RE = /^(?:i'?m|i\s+am|it'?s|name'?s|name\s+is|this\s+is|call\s+me|hi[, ]+i'?m|hey[, ]+i'?m)\s+/i;
 const SEPARATOR_RE = /(?:,|\s+(?:from|at|of|with|—|-|–))\s+/i;
 const QUOTE_SIGNAL_RE = /(\$\s*\d|\b\d+\s*(?:sqft|sq\.?\s*ft|sq|hours?|hrs?|days?|gal|panels?|pieces?|units?|ft)\b|\bquote\b|\binvoice\b|\bnudge\b|\bfollow\s*up\b|\bdraft\b|\bestimate\b|\bbid\b)/i;
@@ -132,28 +134,26 @@ export function extractNameAndBusiness(input: string): OnboardingExtraction | un
 }
 
 /** First-message Bossie ask. Kept short on purpose — phone-friendly. */
-export const ONBOARDING_ASK_TEXT =
-  "Hey 👋 quick one before we start — what should I call you? (And what's your business name, if it's different?)";
+export const ONBOARDING_ASK_TEXT = t("en", "onboarding.askNameAndBusiness");
 
 /** Single-question onboarding asks — used when we know exactly which
  *  field is missing and want to keep the conversation feeling like a
  *  one-thing-at-a-time chat instead of a form. */
-export const ONBOARD_ASK_NAME =
-  "Hey there 👋 I'm Bossie — your assistant. What should I call you?";
-export const ONBOARD_ASK_BUSINESS = (firstName: string): string =>
-  `Nice to meet you, ${firstName}! And what's your business called?`;
-export const ONBOARD_ASK_STATE = (firstName: string): string =>
-  `Almost there. Which state are you in, ${firstName}? (e.g. CA, TX, NY — used on your contracts)`;
-export const ONBOARD_ASK_ADDRESS = (firstName: string): string =>
-  `Last one, ${firstName} — what's your business address? Paste it on one line: street, city, state zip (e.g. "123 Main St, Austin, TX 78701"). Solo / no office? Just say "skip".`;
-export const ONBOARD_HANDOFF = (firstName: string): string =>
-  `Awesome — we're set, ${firstName}. Okay, can we start with your first quote? Tell me anything — for example: "I have a full bathroom remodel down to the studs, I would like to rebuild the bathroom."`;
+export const ONBOARD_ASK_NAME = t("en", "onboarding.askName");
+export const ONBOARD_ASK_BUSINESS = (firstName: string, lang: Lang = "en"): string =>
+  t(lang, "onboarding.askBusiness", { firstName });
+export const ONBOARD_ASK_STATE = (firstName: string, lang: Lang = "en"): string =>
+  t(lang, "onboarding.askState", { firstName });
+export const ONBOARD_ASK_ADDRESS = (firstName: string, lang: Lang = "en"): string =>
+  t(lang, "onboarding.askAddress", { firstName });
+export const ONBOARD_HANDOFF = (firstName: string, lang: Lang = "en"): string =>
+  t(lang, "onboarding.handoff", { firstName });
 /** Combined email + payment-method ask. Single question on purpose so
  *  the user types one quick line and we extract whichever pieces they
  *  give us (email regex; payment handle keyword-match). Both are nice
  *  to have but not blocking — "skip" jumps to the handoff. */
-export const ONBOARD_ASK_PAYOUT = (firstName: string): string =>
-  `One more thing, ${firstName} — what's your email, and how would you like to get paid? (Venmo, Zelle, Cash App, ACH, or check. Just type something like "venmo @rafa, rafa@x.com" — or "skip".)`;
+export const ONBOARD_ASK_PAYOUT = (firstName: string, lang: Lang = "en"): string =>
+  t(lang, "onboarding.askPayout", { firstName });
 
 /** Pull a single email out of a free-text reply. */
 export function extractEmail(raw: string): string | undefined {
@@ -363,12 +363,16 @@ export function isAffirmativeReply(text: string): boolean {
 }
 
 /** Compose the state-ask, optionally with a phone-derived guess. */
-export function onboardAskStateWithGuess(firstName: string, phone: string | undefined): string {
+export function onboardAskStateWithGuess(
+  firstName: string,
+  phone: string | undefined,
+  lang: Lang = "en",
+): string {
   const guess = stateFromPhone(phone);
-  if (!guess) return ONBOARD_ASK_STATE(firstName);
+  if (!guess) return ONBOARD_ASK_STATE(firstName, lang);
   const stateName = US_STATES[guess];
-  const code = areaCodeFromPhone(phone);
-  return `Almost there. Looks like you're in ${stateName} (${code} area code) — sound right, ${firstName}? Or tell me the right state.`;
+  const code = areaCodeFromPhone(phone) ?? "";
+  return t(lang, "onboarding.askStateGuess", { stateName, code, firstName });
 }
 
 export interface ParsedAddress {
@@ -457,16 +461,7 @@ export interface AddressLLMClient {
   }): Promise<{ text: string }>;
 }
 
-const ADDRESS_LLM_PROMPT = `You parse US business addresses from free-form text.
-Reply with EXACTLY one JSON object on a single line, no markdown, no prose, no code fences.
-Schema: {"street":"...","city":"...","state":"XX","postal":"..."}
-Rules:
-- "state" must be a 2-letter US state code (UPPERCASE) — or empty string if unknown.
-- "postal" is a 5-digit zip — or empty string if not present in the text. NEVER invent a zip.
-- "street" includes the house number plus street name (e.g. "219 Delano Way"). Empty if not present.
-- "city" is the city/town name only (e.g. "Myrtle Beach"). Empty if not present.
-- Title-case street and city; uppercase state.
-- If the text is clearly NOT an address, reply: {"street":"","city":"","state":"","postal":""}`;
+const ADDRESS_LLM_PROMPT = t("en", "prompts.onboardingAddress");
 
 export async function extractAddressViaLLM(
   llm: AddressLLMClient,

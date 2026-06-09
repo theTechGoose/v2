@@ -1,14 +1,18 @@
 import { useEffect, useState } from "preact/hooks";
 import { I } from "../lib/dash-icons.tsx";
 import { dashboardClient, type Notification } from "../clients/dashboard.ts";
+import { langSignal, tFor } from "../lib/i18n.ts";
 
 interface Props {
-  greetingDate: string;
+  /** @deprecated Ignored — the date is now computed reactively in-component
+   *  so it re-localizes live on a language change instead of arriving frozen. */
+  greetingDate?: string;
   greetingName: string;
   /** When set, replaces the default "Hey, {name} 👋" line verbatim. Used by the Assistant route. */
   greetingOverride?: string;
   initialUnread?: number;
   initialNotifications?: Notification[];
+  lang?: "en" | "es";
 }
 
 // No fallback ticker — when the user has zero real notifications we hide
@@ -24,15 +28,47 @@ function fmtAgo(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
+// Full weekday / month name keys (same set the dashboard route uses). The
+// greeting date is built here so it re-localizes live when langSignal flips,
+// rather than arriving as a frozen pre-formatted string from the route.
+const WEEKDAY_KEYS = [
+  "dashboardPage.weekday.sunday",
+  "dashboardPage.weekday.monday",
+  "dashboardPage.weekday.tuesday",
+  "dashboardPage.weekday.wednesday",
+  "dashboardPage.weekday.thursday",
+  "dashboardPage.weekday.friday",
+  "dashboardPage.weekday.saturday",
+];
+const MONTH_KEYS = [
+  "dashboardPage.month.january",
+  "dashboardPage.month.february",
+  "dashboardPage.month.march",
+  "dashboardPage.month.april",
+  "dashboardPage.month.may",
+  "dashboardPage.month.june",
+  "dashboardPage.month.july",
+  "dashboardPage.month.august",
+  "dashboardPage.month.september",
+  "dashboardPage.month.october",
+  "dashboardPage.month.november",
+  "dashboardPage.month.december",
+];
+
 export default function DashTopbar(
   {
-    greetingDate,
     greetingName,
     greetingOverride,
     initialUnread = 0,
     initialNotifications = [],
   }: Props,
 ) {
+  // Reactive app language (seeded from user.language, flipped live by Settings).
+  const lang = langSignal.value;
+  const now = new Date();
+  const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
+    tFor(lang, MONTH_KEYS[now.getMonth()])
+  } ${now.getDate()}`;
   const [, setUnread] = useState(initialUnread);
   const [items, setItems] = useState<Notification[]>(initialNotifications);
   const [tickerIdx, setTickerIdx] = useState(0);
@@ -76,7 +112,7 @@ export default function DashTopbar(
       <button
         class="topbar__menu"
         type="button"
-        aria-label="Toggle sidebar"
+        aria-label={tFor(lang, "dashTopbar.toggleSidebar")}
         onClick={() =>
           globalThis.dispatchEvent(new CustomEvent("pm:sb-toggle"))}
       >
@@ -85,7 +121,7 @@ export default function DashTopbar(
       <div class="topbar__greet">
         <div class="topbar__greet-line">{greetingDate}</div>
         <div class="topbar__greet-name">
-          {greetingOverride ?? `Hey, ${greetingName} 👋`}
+          {greetingOverride ?? tFor(lang, "dashTopbar.greeting", { name: greetingName })}
         </div>
       </div>
       {
@@ -103,7 +139,7 @@ export default function DashTopbar(
           <a
             href="/dashboard#activity"
             class="topbar__ticker"
-            aria-label="Live activity — open feed"
+            aria-label={tFor(lang, "dashTopbar.liveActivity")}
           >
             <span class="topbar__ticker-dot" />
             <span class="topbar__ticker-track" aria-live="polite">
@@ -115,7 +151,9 @@ export default function DashTopbar(
                 dangerouslySetInnerHTML={{ __html: ticker.html }}
               />
             </span>
-            <span class="topbar__ticker-time">{ticker.time} ago</span>
+            <span class="topbar__ticker-time">
+              {tFor(lang, "dashTopbar.timeAgo", { time: ticker.time })}
+            </span>
           </a>
         )
         : null}

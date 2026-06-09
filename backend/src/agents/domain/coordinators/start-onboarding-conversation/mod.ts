@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { t } from "@core/i18n/mod.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -62,7 +63,10 @@ export class StartOnboardingConversation {
       await this.messages.append({
         conversationId: conv.id, role: "assistant", kind: "text", content: ask,
       });
-      await this.conversations.update(conv.id, { preview: ask, title: "Welcome" });
+      await this.conversations.update(conv.id, {
+        preview: ask,
+        title: t(me?.language ?? "en", "onboardingConversation.title"),
+      });
       return { conversationId: conv.id, seeded: true };
     }
     return { conversationId: conv.id, seeded: false };

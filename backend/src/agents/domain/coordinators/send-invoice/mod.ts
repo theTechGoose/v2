@@ -5,12 +5,16 @@ import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { t } from "@core/i18n/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
 export interface SendInvoiceInput {
   userId: string;
   conversationId: string;
+  /** Which language to render the contractor-facing chat copy in.
+   *  Defaults to 'en' for callers that haven't been updated yet. */
+  language?: "en" | "es";
 }
 
 export interface SendInvoiceResult {
@@ -51,6 +55,7 @@ export class SendInvoice {
   ) {}
 
   async run(input: SendInvoiceInput): Promise<SendInvoiceResult> {
+    const lang = input.language ?? "en";
     const conv = await this.conversations.get(input.conversationId);
     if (conv.userId !== input.userId) throw new Error("forbidden");
     if (!conv.contractId) {
@@ -112,8 +117,8 @@ export class SendInvoice {
       role: "assistant",
       kind: "action_card",
       content: emailedTo
-        ? `Invoice · due ${fresh.dueDate} · sent to ${emailedTo}`
-        : `Invoice · due ${fresh.dueDate} · no email on file`,
+        ? t(lang, "sendInvoice.card.sentTo", { dueDate: fresh.dueDate, email: emailedTo })
+        : t(lang, "sendInvoice.card.noEmail", { dueDate: fresh.dueDate }),
       payload: {
         actionType: "invoice",
         status: "sent",
@@ -121,7 +126,7 @@ export class SendInvoice {
         contractId: contract.id,
         ...(fresh.customerId ? { customerId: fresh.customerId } : {}),
         lineItems: [{
-          description: `Job total (contract ${contract.id.slice(0, 8)})`,
+          description: t(lang, "sendInvoice.lineItem.jobTotal", { ref: contract.id.slice(0, 8) }),
           amountCents: totalCents,
         }],
         totalCents,
@@ -134,7 +139,7 @@ export class SendInvoice {
     const updatedConv = await this.conversations.update(conv.id, {
       invoiceId: fresh.id,
       invoiceStatus: "sent",
-      preview: `Invoice sent · due ${fresh.dueDate}`,
+      preview: t(lang, "sendInvoice.preview.sent", { dueDate: fresh.dueDate }),
     });
 
     return { conversation: updatedConv, newMessages: [card] };

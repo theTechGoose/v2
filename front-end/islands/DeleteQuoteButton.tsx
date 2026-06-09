@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import { quotesClient } from "../clients/quotes.ts";
+import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 
 interface Props {
   id: string;
@@ -7,27 +8,32 @@ interface Props {
   variant?: "btn" | "icon";
   label?: string;
   confirmText?: string;
+  /** Optional SSR seed only; the live language is read from langSignal. */
+  lang?: Lang;
 }
 
 export default function DeleteQuoteButton({
   id,
   variant = "btn",
-  label = "Delete",
-  confirmText = "Delete this quote? This cannot be undone.",
+  label,
+  confirmText,
 }: Props) {
+  const lang = langSignal.value;
   const [busy, setBusy] = useState(false);
+  const resolvedLabel = label ?? tFor(lang, "deleteQuoteButton.label");
+  const resolvedConfirm = confirmText ?? tFor(lang, "deleteQuoteButton.confirm");
 
   async function onClick(e: MouseEvent) {
     e.stopPropagation();
     if (busy) return;
-    if (!globalThis.confirm(confirmText)) return;
+    if (!globalThis.confirm(resolvedConfirm)) return;
     setBusy(true);
     try {
       await quotesClient.delete(id);
       globalThis.location.reload();
     } catch (err) {
       setBusy(false);
-      globalThis.alert(`Couldn't delete quote: ${(err as Error).message}`);
+      globalThis.alert(tFor(lang, "deleteQuoteButton.error", { message: (err as Error).message }));
     }
   }
 
@@ -38,8 +44,8 @@ export default function DeleteQuoteButton({
         class="qdone__del"
         onClick={onClick}
         disabled={busy}
-        aria-label="Delete quote"
-        title="Delete quote"
+        aria-label={tFor(lang, "deleteQuoteButton.ariaLabel")}
+        title={tFor(lang, "deleteQuoteButton.ariaLabel")}
       >
         ×
       </button>
@@ -48,7 +54,7 @@ export default function DeleteQuoteButton({
 
   return (
     <button type="button" onClick={onClick} disabled={busy}>
-      {busy ? "Deleting…" : label}
+      {busy ? tFor(lang, "deleteQuoteButton.deleting") : resolvedLabel}
     </button>
   );
 }

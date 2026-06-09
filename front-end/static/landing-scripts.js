@@ -575,8 +575,19 @@
   }
 
   /* ===== state ===== */
-  let curLang = localStorage.getItem("pm:lang") || "en";
-  if (curLang !== "en" && curLang !== "es") curLang = "en";
+  // Resolve the active language once: ?lang= (URL) > localStorage > "en".
+  // Mirror the result back to localStorage so it survives a query-less nav.
+  let curLang = (function () {
+    try {
+      const q = new URLSearchParams(location.search).get("lang");
+      if (q === "en" || q === "es") return q;
+    } catch (_e) { /* ignore malformed URL */ }
+    const s = localStorage.getItem("pm:lang");
+    return s === "en" || s === "es" ? s : "en";
+  })();
+  try {
+    localStorage.setItem("pm:lang", curLang);
+  } catch { /* storage unavailable */ }
   let activeDoc = "quote";
 
   /* ===== i18n ===== */
@@ -622,9 +633,21 @@
     });
   }
 
+  // Reflect the chosen language into the URL's ?lang= param (no reload) so it
+  // stays shareable and re-seeds correctly on the next load.
+  function writeLangToUrl(lang) {
+    try {
+      const url = new URL(location.href);
+      if (url.searchParams.get("lang") === lang) return;
+      url.searchParams.set("lang", lang);
+      history.replaceState(null, "", url.href);
+    } catch (_e) { /* ignore */ }
+  }
+
   document.querySelectorAll(".lang-toggle button").forEach(function (btn) {
     btn.addEventListener("click", function () {
       applyLang(btn.dataset.lang);
+      writeLangToUrl(btn.dataset.lang);
     });
   });
 
@@ -941,7 +964,8 @@
         try {
           localStorage.setItem("pm:last-phone", e164);
         } catch { /* ignore */ }
-        location.href = "/verify?phone=" + encodeURIComponent(e164);
+        location.href = "/verify?phone=" + encodeURIComponent(e164) +
+          "&lang=" + curLang;
       } catch {
         if (cta) {
           cta.disabled = false;

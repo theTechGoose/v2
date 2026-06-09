@@ -25,6 +25,12 @@ export interface QuoteCard {
   customerName: string | null;
   summary?: string;
   description?: string;
+  /** Per-language cache of the description (keyed by lang code), populated
+   *  lazily when the quote is previewed/sent in a language. */
+  descriptionByLang?: Record<string, string>;
+  /** Per-language job title + summary, populated from the picked job option. */
+  jobNameByLang?: Record<string, string>;
+  summaryByLang?: Record<string, string>;
   lineItems?: {
     description: string;
     quantity?: number;

@@ -4,21 +4,27 @@
  * /assistant redirect (P6.14) so the silent jump is no longer confusing.
  */
 import { useEffect, useState } from "preact/hooks";
+import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 
-const MESSAGES: Record<string, string> = {
-  messages: "We've consolidated messaging into the assistant.",
+const MESSAGE_KEYS: Record<string, string> = {
+  messages: "redirectToast.messagesConsolidated",
 };
 
-export default function RedirectToast() {
-  const [text, setText] = useState<string | null>(null);
+// `lang` prop kept as an optional SSR seed but ignored; the island
+// self-sources the live UI language from `langSignal`.
+export default function RedirectToast(_props: { lang?: Lang }) {
+  // Read langSignal.value during render so the toast resolves in (and
+  // re-renders on) the live UI language.
+  const lang = langSignal.value;
+  const [key, setKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof globalThis.location === "undefined") return;
     const params = new URLSearchParams(globalThis.location.search);
     const from = params.get("from");
-    const msg = from ? MESSAGES[from] : undefined;
-    if (!msg) return;
-    setText(msg);
+    const k = from ? MESSAGE_KEYS[from] : undefined;
+    if (!k) return;
+    setKey(k);
 
     // Strip the param so reloads don't keep firing the toast.
     if (typeof globalThis.history !== "undefined") {
@@ -29,11 +35,14 @@ export default function RedirectToast() {
       globalThis.history.replaceState(null, "", url);
     }
 
-    const timer = setTimeout(() => setText(null), 6000);
+    const timer = setTimeout(() => setKey(null), 6000);
     return () => clearTimeout(timer);
   }, []);
 
-  if (!text) return null;
+  if (!key) return null;
+  // Resolve against the reactive `lang` so a live language flip while the
+  // toast is visible re-localizes the line.
+  const text = tFor(lang, key);
 
   return (
     <div

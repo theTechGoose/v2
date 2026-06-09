@@ -13,11 +13,11 @@ import {
 } from "../../clients/assistant.ts";
 import { profileClient, type ProfileSnapshot } from "../../clients/profile.ts";
 import OnboardingProgress from "../../islands/OnboardingProgress.tsx";
+import { tFor } from "../../lib/i18n.ts";
 
 export default define.page(async function AssistantThread(ctx) {
   const threadId = ctx.params.threadId;
   const user = ctx.state.user;
-  const greetingName = (user?.name?.trim() || "there").split(" ")[0];
 
   const sessionId = getSessionId(ctx.req);
 
@@ -48,6 +48,11 @@ export default define.page(async function AssistantThread(ctx) {
     null as ProfileSnapshot | null
   );
 
+  const lang = profile?.user?.language ?? "en";
+  const greetingName =
+    (user?.name?.trim() || tFor(lang, "assistantThread.greetingFallback"))
+      .split(" ")[0];
+
   const businessName = profile?.identity?.businessName ??
     profile?.identity?.displayName;
   const userInitials = profile?.initials && profile.initials !== "?"
@@ -60,10 +65,12 @@ export default define.page(async function AssistantThread(ctx) {
 
   const headerTitle = detail?.conversation?.customerName ??
     detail?.conversation?.title ??
-    "New conversation";
+    tFor(lang, "assistantThread.newConversation");
   const headerStatus = detail?.conversation?.currentPhase
-    ? `Phase: ${detail.conversation.currentPhase}`
-    : "Tell Bossie about a job — voice or text";
+    ? tFor(lang, "assistantThread.phasePrefix", {
+      phase: detail.conversation.currentPhase,
+    })
+    : tFor(lang, "assistantThread.statusFallback");
 
   // Surface a soft "we're getting you set up" banner when the user
   // arrived via /assistant?onboard=1. Shown only while the conversation
@@ -110,16 +117,16 @@ export default define.page(async function AssistantThread(ctx) {
   return (
     <>
       <Head>
-        <title>Assistant · Paperwork Monster</title>
+        <title>{tFor(lang, "assistantThread.pageTitle")}</title>
         <link rel="stylesheet" href="/assistant-page.css" />
       </Head>
       <div class="app">
         <DashSidebar active="messages" />
         <main class="main">
           <DashTopbar
-            greetingDate="My assistant · always on"
+            greetingDate={tFor(lang, "assistantThread.greetingDate")}
             greetingName={greetingName}
-            greetingOverride="What can I take off your plate?"
+            greetingOverride={tFor(lang, "assistantThread.greetingOverride")}
           />
           <div class="asst">
             <AsstThreads initialThreads={initialThreads} activeId={threadId} />

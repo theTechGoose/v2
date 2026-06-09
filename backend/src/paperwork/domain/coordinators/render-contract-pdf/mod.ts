@@ -1,5 +1,6 @@
 import { Injectable } from "#danet/core";
 import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
+import { t } from "@core/i18n/mod.ts";
 import type { Contract, ContractTerm } from "@paperwork/dto/contract.ts";
 import { computePaymentSplit, type MilestoneRole } from "#payment-split";
 import type { Quote } from "@paperwork/dto/quote.ts";
@@ -48,6 +49,7 @@ export class RenderContractPdf {
     const { contract, quote, customer, contractor, businessName } = input;
     // Roadmap p.13: the PDF is the customer's copy → outgoing-comms language.
     const es = input.commsLanguage === "es";
+    const lang: "en" | "es" = es ? "es" : "en";
 
     const pdf = await PDFDocument.create();
     pdf.setTitle(`Quote & Agreement #${contract.id.slice(0, 8).toUpperCase()}`);
@@ -89,19 +91,22 @@ export class RenderContractPdf {
     y = H - 8;
 
     // business eyebrow
-    const biz = (businessName ?? contractor?.name ?? "Your Contractor")
-      .toUpperCase();
+    const biz =
+      (businessName ?? contractor?.name ?? t(lang, "renderContractPdf.businessFallback"))
+        .toUpperCase();
     y -= 32;
     drawCenteredText(page, biz, W, y, bold, 9, PINK_DARK, 0.18);
 
     // doc tag pill (left) + status (right)
     y -= 32;
-    const docNum = `${es ? "COTIZACIÓN Y ACUERDO" : "QUOTE & AGREEMENT"} · #${
+    const docNum = `${t(lang, "renderContractPdf.docTag")} · #${
       contract.id.slice(0, 8).toUpperCase()
     }`;
     page.drawText(docNum, { x: M, y, size: 8.5, font: bold, color: PINK_DARK });
     const statusText = contract.status === "signed"
-      ? `${es ? "FIRMADO" : "SIGNED"} ${fmtDateUpper(contract.signedAt)}`
+      ? t(lang, "renderContractPdf.status.signed", {
+        date: fmtDateUpper(contract.signedAt),
+      })
       : (contract.status ?? "DRAFT").toUpperCase();
     const statusW = bold.widthOfTextAtSize(statusText, 8.5);
     page.drawText(statusText, {
@@ -114,27 +119,25 @@ export class RenderContractPdf {
 
     // Hero title
     y -= 36;
-    const heroTitle = (quote?.summary ?? "Service Agreement")
-      .replace(/^\s*quote\s*:\s*/i, "")
+    const heroTitle =
+      (quote?.summaryByLang?.[lang] ?? quote?.summary ??
+        t(lang, "renderContractPdf.heroFallback"))
+        .replace(/^\s*quote\s*:\s*/i, "")
       .replace(/\b\w/g, (c) => c.toUpperCase());
     page.drawText(heroTitle, { x: M, y, size: 24, font: bold, color: TEAL });
     y -= 22;
 
     // Recital
     const cust = customer?.name?.trim() ?? contract.customerSignedName?.trim();
-    const recital = es
-      ? `Entre ${biz.replace(/\.$/, "")} ("Contratista") y ${
-        cust ?? "Cliente"
-      } ("Cliente")` +
-        (contract.effectiveDate
-          ? ` · vigente ${fmtDate(contract.effectiveDate)}`
-          : "")
-      : `Between ${biz.replace(/\.$/, "")} ("Contractor") and ${
-        cust ?? "Client"
-      } ("Client")` +
-        (contract.effectiveDate
-          ? ` · effective ${fmtDate(contract.effectiveDate)}`
-          : "");
+    const recital = t(lang, "renderContractPdf.recital.main", {
+      biz: biz.replace(/\.$/, ""),
+      cust: cust ?? t(lang, "renderContractPdf.recital.clientFallback"),
+    }) +
+      (contract.effectiveDate
+        ? t(lang, "renderContractPdf.recital.effective", {
+          date: fmtDate(contract.effectiveDate),
+        })
+        : "");
     drawWrappedText(page, recital, M, y, W - 2 * M, reg, 10, MUTED, 13);
     y -= 26;
 
@@ -143,14 +146,14 @@ export class RenderContractPdf {
       const colGap = 24;
       const colW2 = (W - 2 * M - colGap) / 2;
       const fromX = M + colW2 + colGap;
-      page.drawText(es ? "PARA" : "TO", {
+      page.drawText(t(lang, "renderContractPdf.contact.to"), {
         x: M,
         y,
         size: 8,
         font: bold,
         color: MUTED,
       });
-      page.drawText(es ? "DE" : "FROM", {
+      page.drawText(t(lang, "renderContractPdf.contact.from"), {
         x: fromX,
         y,
         size: 8,
@@ -197,7 +200,7 @@ export class RenderContractPdf {
       y,
       M,
       "01",
-      es ? "Detalles del trabajo" : "Job details",
+      t(lang, "renderContractPdf.section.jobDetails"),
       bold,
       PINK,
       TEAL,
@@ -205,14 +208,14 @@ export class RenderContractPdf {
     y -= 8;
     if (quote?.lineItems?.length) {
       // Table headers
-      page.drawText(es ? "DESCRIPCIÓN" : "DESCRIPTION", {
+      page.drawText(t(lang, "renderContractPdf.table.description"), {
         x: M,
         y,
         size: 8,
         font: bold,
         color: MUTED,
       });
-      const amountHdr = es ? "MONTO" : "AMOUNT";
+      const amountHdr = t(lang, "renderContractPdf.table.amount");
       page.drawText(amountHdr, {
         x: W - M - bold.widthOfTextAtSize(amountHdr, 8),
         y,
@@ -267,7 +270,7 @@ export class RenderContractPdf {
       color: GREEN_BG,
       borderWidth: 0,
     });
-    page.drawText(es ? "VALOR DEL ACUERDO" : "AGREEMENT VALUE", {
+    page.drawText(t(lang, "renderContractPdf.total.label"), {
       x: M + 16,
       y: y - 22,
       size: 9,
@@ -275,7 +278,7 @@ export class RenderContractPdf {
       color: GREEN,
     });
     page.drawText(
-      es ? "todo incluido, sin sorpresas" : "all in, no surprises",
+      t(lang, "renderContractPdf.total.subtext"),
       {
         x: M + 16,
         y: y - 36,
@@ -297,7 +300,7 @@ export class RenderContractPdf {
     y -= 78;
 
     // Section: Payment schedule (derived from terms.payment_terms)
-    const milestones = computeMilestones(total, contract.terms, es);
+    const milestones = computeMilestones(total, contract.terms, lang);
     if (milestones.length > 0) {
       addPageIfNeeded(110);
       y = drawSectionHeader(
@@ -305,7 +308,7 @@ export class RenderContractPdf {
         y,
         M,
         "02",
-        es ? "Calendario de pagos" : "Payment schedule",
+        t(lang, "renderContractPdf.section.paymentSchedule"),
         bold,
         PINK,
         TEAL,
@@ -357,14 +360,14 @@ export class RenderContractPdf {
         y,
         M,
         "03",
-        es ? "Calendario" : "Schedule",
+        t(lang, "renderContractPdf.section.schedule"),
         bold,
         PINK,
         TEAL,
       );
       y -= 12;
       if (contract.startDate) {
-        page.drawText(es ? "Inicio" : "Start", {
+        page.drawText(t(lang, "renderContractPdf.schedule.start"), {
           x: M,
           y,
           size: 9,
@@ -381,7 +384,7 @@ export class RenderContractPdf {
         y -= 16;
       }
       if (contract.estimatedCompletionDate) {
-        page.drawText(es ? "Finalización estimada" : "Estimated completion", {
+        page.drawText(t(lang, "renderContractPdf.schedule.estimatedCompletion"), {
           x: M,
           y,
           size: 9,
@@ -412,13 +415,15 @@ export class RenderContractPdf {
         y,
         M,
         "04",
-        es ? "Términos" : "Terms",
+        t(lang, "renderContractPdf.section.terms"),
         bold,
         PINK,
         TEAL,
       );
       y -= 12;
-      const visible = contract.terms.filter((t) => t.stepId !== "customer");
+      const visible = contract.terms.filter((term) =>
+        term.stepId !== "customer"
+      );
       const colCount = 2;
       const gap = 10;
       const cellW = (W - 2 * M - (colCount - 1) * gap) / colCount;
@@ -426,8 +431,8 @@ export class RenderContractPdf {
       for (let i = 0; i < visible.length; i += colCount) {
         addPageIfNeeded(rowH + 6);
         for (let c = 0; c < colCount; c++) {
-          const t = visible[i + c];
-          if (!t) break;
+          const term = visible[i + c];
+          if (!term) break;
           const cx = M + c * (cellW + gap);
           page.drawRectangle({
             x: cx,
@@ -437,15 +442,15 @@ export class RenderContractPdf {
             borderColor: LINE,
             borderWidth: 0.5,
           });
-          const esTermLabels: Record<string, string> = {
-            start_date: "FECHA DE INICIO",
-            wraps: "DURACIÓN",
-            payment_terms: "PLAZO DE PAGO",
-            warranty: "GARANTÍA",
+          const termLabelKey: Record<string, string> = {
+            start_date: "renderContractPdf.termLabel.startDate",
+            wraps: "renderContractPdf.termLabel.duration",
+            payment_terms: "renderContractPdf.termLabel.paymentTerms",
+            warranty: "renderContractPdf.termLabel.warranty",
           };
-          const labelText = es && esTermLabels[t.stepId]
-            ? esTermLabels[t.stepId]
-            : t.label.toUpperCase();
+          const labelText = es && termLabelKey[term.stepId]
+            ? t(lang, termLabelKey[term.stepId])
+            : term.label.toUpperCase();
           page.drawText(labelText, {
             x: cx + 10,
             y: y - 14,
@@ -453,9 +458,11 @@ export class RenderContractPdf {
             font: bold,
             color: MUTED,
           });
-          const localized = localizeTermValue(t.value, es);
-          const displayValue = t.stepId === "wraps"
-            ? `${es ? "Estimado" : "Estimated"} ${localized}`
+          const localized = localizeTermValue(term.value, lang);
+          const displayValue = term.stepId === "wraps"
+            ? t(lang, "renderContractPdf.term.estimatedPrefix", {
+              value: localized,
+            })
             : localized;
           page.drawText(displayValue, {
             x: cx + 10,
@@ -476,129 +483,32 @@ export class RenderContractPdf {
       y,
       M,
       "05",
-      es ? "Letra chica, en lenguaje claro" : "Fine print, in plain English",
+      t(lang, "renderContractPdf.section.finePrint"),
       bold,
       PINK,
       TEAL,
     );
     y -= 12;
-    const clauses = es
-      ? [
-        [
-          "Ley Aplicable.",
-          "Este acuerdo se rige por las leyes del estado donde se realiza el trabajo.",
-        ],
-        [
-          "Detalles del Trabajo.",
-          "El contratista realizará únicamente el trabajo descrito en este acuerdo. Cualquier trabajo adicional debe ser aprobado por ambas partes y puede generar cargos adicionales.",
-        ],
-        [
-          "Condiciones de Pago.",
-          "El pago vence según lo indicado en este acuerdo. Los pagos atrasados pueden estar sujetos a cargos adicionales según lo permita la ley.",
-        ],
-        [
-          "Órdenes de Cambio.",
-          "Cualquier cambio al trabajo debe acordarse por escrito y puede afectar el precio total y el plazo del proyecto.",
-        ],
-        [
-          "Responsabilidades del Cliente.",
-          "El cliente se compromete a dar acceso al lugar de trabajo y a asegurar que el área esté lista para que el contratista realice los servicios acordados.",
-        ],
-        [
-          "Retrasos y Condiciones Imprevistas.",
-          "El contratista no es responsable de retrasos por clima, disponibilidad de materiales, condiciones del sitio u otras circunstancias fuera de su control.",
-        ],
-        [
-          "Garantía.",
-          "El contratista garantiza su mano de obra por el período indicado en este acuerdo. Esta garantía cubre solo la mano de obra y no incluye materiales, desgaste normal, mal uso o daños causados por terceros.",
-        ],
-        [
-          "Límite de Responsabilidad.",
-          "La responsabilidad del contratista bajo este acuerdo se limita al monto total pagado por el cliente por el trabajo realizado.",
-        ],
-        [
-          "Derecho a Detener el Trabajo.",
-          "El contratista se reserva el derecho de detener el trabajo si los pagos no se realizan según lo acordado.",
-        ],
-        [
-          "Terminación.",
-          "Cualquiera de las partes puede cancelar este acuerdo con un aviso por escrito de 7 días.",
-        ],
-        [
-          "Resolución de Disputas.",
-          "Las partes acuerdan intentar resolver cualquier disputa de buena fe. Toda acción legal se llevará a cabo en un tribunal local o de menor cuantía en el estado donde se realiza el trabajo.",
-        ],
-        [
-          "Permisos y Cumplimiento.",
-          "El contratista no es responsable de obtener permisos salvo que se indique expresamente. El cliente es responsable de que todas las aprobaciones necesarias estén en orden, salvo acuerdo en contrario.",
-        ],
-        [
-          "Indemnización.",
-          "El cliente se compromete a eximir de responsabilidad al contratista por daños o problemas derivados de condiciones fuera de su control.",
-        ],
-        [
-          "Acuerdo Completo.",
-          "Este acuerdo representa el entendimiento total entre ambas partes y reemplaza cualquier conversación o acuerdo previo.",
-        ],
-      ]
-      : [
-        [
-          "Governing Law.",
-          "This agreement is governed by the laws of the state where the work is performed.",
-        ],
-        [
-          "Job Details.",
-          "Contractor will perform only the work described in this agreement. Any additional work must be approved by both parties and may result in additional charges.",
-        ],
-        [
-          "Payment Terms.",
-          "Payment is due as outlined in this agreement. Late payments may be subject to additional fees as allowed by law.",
-        ],
-        [
-          "Change Orders.",
-          "Any changes to the work must be agreed to in writing and may affect the total price and project timeline.",
-        ],
-        [
-          "Customer Responsibilities.",
-          "Customer agrees to provide access to the job site and ensure the work area is ready for the Contractor to perform the agreed services.",
-        ],
-        [
-          "Delays and Unforeseen Conditions.",
-          "Contractor is not responsible for delays caused by weather, material availability, site conditions, or other circumstances outside of their control.",
-        ],
-        [
-          "Warranty.",
-          "Contractor warrants their workmanship for the period stated in this agreement. This warranty applies to labor only and does not cover materials, normal wear and tear, misuse, or damage caused by others.",
-        ],
-        [
-          "Limitation of Liability.",
-          "Contractor's liability under this agreement is limited to the total amount paid by the Customer for the work performed.",
-        ],
-        [
-          "Right to Stop Work.",
-          "Contractor reserves the right to stop work if payments are not made as agreed.",
-        ],
-        [
-          "Termination.",
-          "Either party may cancel this agreement by providing 7 days' written notice.",
-        ],
-        [
-          "Dispute Resolution.",
-          "The parties agree to attempt to resolve any disputes in good faith. Any legal action will take place in small claims or local court in the state where the work is performed.",
-        ],
-        [
-          "Permits and Compliance.",
-          "Contractor is not responsible for obtaining permits unless specifically stated. Customer is responsible for ensuring all necessary approvals are in place unless otherwise agreed.",
-        ],
-        [
-          "Indemnification.",
-          "Customer agrees to hold Contractor harmless for damages or issues arising from conditions beyond the Contractor's control.",
-        ],
-        [
-          "Entire Agreement.",
-          "This agreement represents the full understanding between both parties and replaces any prior discussions or agreements.",
-        ],
-      ];
+    const clauseKeys = [
+      "governingLaw",
+      "jobDetails",
+      "paymentTerms",
+      "changeOrders",
+      "customerResponsibilities",
+      "delays",
+      "warranty",
+      "limitationOfLiability",
+      "rightToStopWork",
+      "termination",
+      "disputeResolution",
+      "permits",
+      "indemnification",
+      "entireAgreement",
+    ];
+    const clauses = clauseKeys.map((k) => [
+      t(lang, `renderContractPdf.clause.${k}.title`),
+      t(lang, `renderContractPdf.clause.${k}.body`),
+    ]);
     for (let i = 0; i < clauses.length; i++) {
       addPageIfNeeded(34);
       const [head, tail] = clauses[i];
@@ -646,7 +556,7 @@ export class RenderContractPdf {
       y,
       M,
       "06",
-      es ? "Firmas" : "Signatures",
+      t(lang, "renderContractPdf.section.signatures"),
       bold,
       PINK,
       TEAL,
@@ -665,7 +575,7 @@ export class RenderContractPdf {
       borderWidth: 0.6,
     });
     // Roadmap p.8: CONTRACTOR / {business} / cursive signature / By: {name} / Date.
-    page.drawText(es ? "CONTRATISTA" : "CONTRACTOR", {
+    page.drawText(t(lang, "renderContractPdf.sig.contractor"), {
       x: M + 12,
       y: y - 14,
       size: 8,
@@ -687,7 +597,7 @@ export class RenderContractPdf {
       color: TEAL,
     });
     if (contractor?.name) {
-      page.drawText(`${es ? "Por" : "By"}: ${contractor.name}`, {
+      page.drawText(t(lang, "renderContractPdf.sig.by", { name: contractor.name }), {
         x: M + 12,
         y: y - 70,
         size: 8,
@@ -696,9 +606,9 @@ export class RenderContractPdf {
       });
     }
     page.drawText(
-      `${es ? "Fecha" : "Date"}: ${
-        fmtDate(contract.effectiveDate ?? contract.createdAt)
-      }`,
+      t(lang, "renderContractPdf.sig.date", {
+        date: fmtDate(contract.effectiveDate ?? contract.createdAt),
+      }),
       {
         x: M + 12,
         y: y - 82,
@@ -718,7 +628,7 @@ export class RenderContractPdf {
       borderColor: LINE,
       borderWidth: 0.6,
     });
-    page.drawText(es ? "CLIENTE FIRMÓ" : "CLIENT SIGNED", {
+    page.drawText(t(lang, "renderContractPdf.sig.clientSigned"), {
       x: cx + 12,
       y: y - 16,
       size: 8,
@@ -778,11 +688,10 @@ export class RenderContractPdf {
     y -= 14;
     drawCenteredText(
       page,
-      `${es ? "Contrato" : "Contract"} #${
-        contract.id.slice(0, 8).toUpperCase()
-      } · ${es ? "Generado" : "Generated"} ${
-        fmtDate(new Date().toISOString())
-      }`,
+      t(lang, "renderContractPdf.footer", {
+        id: contract.id.slice(0, 8).toUpperCase(),
+        date: fmtDate(new Date().toISOString()),
+      }),
       W,
       y,
       reg,
@@ -945,19 +854,20 @@ function termValue(
  *  known preset option labels to Spanish and converts numeric durations
  *  ("12 months" → "12 meses"); custom free-text and universal ratios
  *  ("50/50") pass through unchanged. */
-function localizeTermValue(value: string, es: boolean): string {
-  if (!es) return value;
+function localizeTermValue(value: string, lang: "en" | "es"): string {
+  if (lang === "en") return value;
   const trimmed = (value ?? "").trim();
-  const exact: Record<string, string> = {
-    "Payment upon completion": "Pago al finalizar",
-    "Deposit + balance": "Depósito + saldo",
-    "No warranty": "Sin garantía",
-    "Right away": "De inmediato",
-    "Next week": "La próxima semana",
-    "Next Month": "El próximo mes",
-    "Next month": "El próximo mes",
+  // Map known wizard preset labels to localized i18n keys.
+  const exactKey: Record<string, string> = {
+    "Payment upon completion": "renderContractPdf.termValue.paymentUponCompletion",
+    "Deposit + balance": "renderContractPdf.termValue.depositPlusBalance",
+    "No warranty": "renderContractPdf.termValue.noWarranty",
+    "Right away": "renderContractPdf.termValue.rightAway",
+    "Next week": "renderContractPdf.termValue.nextWeek",
+    "Next Month": "renderContractPdf.termValue.nextMonth",
+    "Next month": "renderContractPdf.termValue.nextMonth",
   };
-  if (exact[trimmed]) return exact[trimmed];
+  if (exactKey[trimmed]) return t(lang, exactKey[trimmed]);
   return trimmed
     .replace(/\bmonths\b/gi, "meses").replace(/\bmonth\b/gi, "mes")
     .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
@@ -967,19 +877,19 @@ function localizeTermValue(value: string, es: boolean): string {
 function computeMilestones(
   total: number,
   terms: ContractTerm[] | undefined,
-  es = false,
+  lang: "en" | "es" = "en",
 ): { label: string; amount: number; when: string }[] {
   if (!total || total <= 0) return [];
   // Localized milestone label/timing strings (PDF is the customer's copy →
   // outgoing-comms language, roadmap p.13).
   const L = {
-    deposit: es ? "Depósito" : "Deposit",
-    balance: es ? "Saldo" : "Balance",
-    midpoint: es ? "Intermedio" : "Midpoint",
-    final: es ? "Pago final" : "Final",
-    beforeStart: es ? "Antes de empezar" : "Before work starts",
-    onCompletion: es ? "Al finalizar" : "On completion",
-    atMidpoint: es ? "A mitad del trabajo" : "At rough-in / midpoint",
+    deposit: t(lang, "renderContractPdf.milestone.deposit"),
+    balance: t(lang, "renderContractPdf.milestone.balance"),
+    midpoint: t(lang, "renderContractPdf.milestone.midpoint"),
+    final: t(lang, "renderContractPdf.milestone.final"),
+    beforeStart: t(lang, "renderContractPdf.milestone.beforeStart"),
+    onCompletion: t(lang, "renderContractPdf.milestone.onCompletion"),
+    atMidpoint: t(lang, "renderContractPdf.milestone.atMidpoint"),
   };
   const roleLabel: Record<MilestoneRole, { label: string; when: string }> = {
     deposit: { label: L.deposit, when: L.beforeStart },

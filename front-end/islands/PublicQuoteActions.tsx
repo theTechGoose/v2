@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import PublicAcceptQuote from "./PublicAcceptQuote.tsx";
+import { tFor } from "../lib/i18n.ts";
 
 interface Props {
   quoteId: string;
@@ -17,14 +18,15 @@ type Status = "idle" | "submitting" | "ok" | "error";
 type Resolved = "accepted" | "declined" | null;
 
 function reasonChips(es: boolean): { id: string; label: string }[] {
+  const lang = es ? "es" : "en";
   return [
-    { id: "price", label: es ? "Precio" : "Price" },
-    { id: "timing", label: es ? "Tiempos" : "Timing" },
+    { id: "price", label: tFor(lang, "publicQuoteActions.reason.price") },
+    { id: "timing", label: tFor(lang, "publicQuoteActions.reason.timing") },
     {
       id: "going_elsewhere",
-      label: es ? "Elegí otra opción" : "Going elsewhere",
+      label: tFor(lang, "publicQuoteActions.reason.goingElsewhere"),
     },
-    { id: "other", label: es ? "Otro" : "Other" },
+    { id: "other", label: tFor(lang, "publicQuoteActions.reason.other") },
   ];
 }
 
@@ -32,12 +34,9 @@ function friendlyError(raw: string, es = false): string {
   // Backend returns JSON like {"ok":false,"reason":"already_accepted"}
   // when the customer attempts a second mutation on a settled quote.
   // Surfacing the raw payload to a homeowner is the worst kind of leak.
-  const acc = es
-    ? "Esta cotización ya fue aceptada."
-    : "This quote has already been accepted.";
-  const dec = es
-    ? "Esta cotización ya fue rechazada."
-    : "This quote has already been declined.";
+  const lang = es ? "es" : "en";
+  const acc = tFor(lang, "publicQuoteActions.error.alreadyAccepted");
+  const dec = tFor(lang, "publicQuoteActions.error.alreadyDeclined");
   try {
     const parsed = JSON.parse(raw) as { reason?: string; message?: string };
     const reason = parsed?.reason;
@@ -49,9 +48,7 @@ function friendlyError(raw: string, es = false): string {
   } catch { /* not JSON, fall through */ }
   if (/already_accepted/.test(raw)) return acc;
   if (/already_declined/.test(raw)) return dec;
-  return es
-    ? "Algo salió mal — inténtalo de nuevo."
-    : "Something went wrong — please try again.";
+  return tFor(lang, "publicQuoteActions.error.generic");
 }
 
 /**
@@ -101,14 +98,14 @@ export default function PublicQuoteActions(
             onClick={() => setMode("ask")}
             style="background:#fff;border:1px solid #d8e0db;color:#144852;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;cursor:pointer"
           >
-            {es ? "Hacer una pregunta" : "Ask a question"}
+            {tFor(lang, "publicQuoteActions.askButton")}
           </button>
           <button
             type="button"
             onClick={() => setMode("decline")}
             style="background:#fff;border:1px solid #d8e0db;color:#6b7a7e;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;cursor:pointer"
           >
-            {es ? "Rechazar" : "Decline"}
+            {tFor(lang, "publicQuoteActions.declineButton")}
           </button>
         </div>
       )}
@@ -135,17 +132,14 @@ export default function PublicQuoteActions(
 }
 
 function DeclinedCard({ es }: { es: boolean }) {
+  const lang = es ? "es" : "en";
   return (
     <div style="margin-top:18px;background:#fdf2f2;border:1px solid #f3d4d4;border-radius:14px;padding:18px 20px;text-align:center">
       <div style="font-weight:800;color:#a83b3b;font-size:16px">
-        {es
-          ? "Entendido — gracias por avisar"
-          : "Got it — thanks for letting them know"}
+        {tFor(lang, "publicQuoteActions.declinedCard.title")}
       </div>
       <div style="margin-top:6px;color:#6b7a7e;font-size:13px">
-        {es
-          ? "Tu contratista fue notificado."
-          : "Your contractor has been notified."}
+        {tFor(lang, "publicQuoteActions.declinedCard.body")}
       </div>
     </div>
   );
@@ -160,6 +154,7 @@ function DeclineForm(
     onDeclined: () => void;
   },
 ) {
+  const lang = es ? "es" : "en";
   const [reason, setReason] = useState<string | undefined>(undefined);
   const [note, setNote] = useState("");
   const [name, setName] = useState(customerName?.trim() ?? "");
@@ -209,19 +204,19 @@ function DeclineForm(
     >
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div style="font-weight:800;color:#144852;font-size:15px">
-          {es ? "Rechazar esta cotización" : "Decline this quote"}
+          {tFor(lang, "publicQuoteActions.declineForm.title")}
         </div>
         <button
           type="button"
           onClick={onCancel}
-          aria-label="Close decline form"
+          aria-label={tFor(lang, "publicQuoteActions.declineForm.closeAria")}
           style="background:transparent;border:0;color:#6b7a7e;font-size:18px;cursor:pointer;padding:0 4px"
         >
           ×
         </button>
       </div>
       <div style="font-size:12px;color:#6b7a7e;margin-bottom:8px">
-        {es ? "Motivo rápido (opcional):" : "Quick reason (optional):"}
+        {tFor(lang, "publicQuoteActions.declineForm.reasonPrompt")}
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
         {reasonChips(es).map((r) => {
@@ -245,33 +240,29 @@ function DeclineForm(
         })}
       </div>
       <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin-bottom:6px">
-        {es
-          ? "¿Algo que quieras compartir? (opcional)"
-          : "Anything to share? (optional)"}
+        {tFor(lang, "publicQuoteActions.declineForm.noteLabel")}
       </label>
       <textarea
         value={note}
         onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)}
         rows={3}
-        placeholder={es
-          ? "Estoy viendo varias opciones, el presupuesto fue menor de lo esperado, etc."
-          : "Looking at a few options, the budget came in lower than expected, etc."}
+        placeholder={tFor(lang, "publicQuoteActions.declineForm.notePlaceholder")}
         style="width:100%;padding:10px 12px;border:1px solid #e3e8e6;border-radius:10px;font-size:14px;color:#1c2c30;font-family:inherit;background:#fff;resize:vertical"
       />
       <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin:12px 0 6px">
-        {es ? "Tu nombre (opcional)" : "Your name (optional)"}
+        {tFor(lang, "publicQuoteActions.nameLabel")}
       </label>
       <input
         type="text"
         value={name}
         onInput={(e) => setName((e.target as HTMLInputElement).value)}
-        placeholder="Jane Doe"
+        placeholder={tFor(lang, "publicQuoteActions.namePlaceholder")}
         autoComplete="name"
         style="width:100%;padding:10px 12px;border:1px solid #e3e8e6;border-radius:10px;font-size:14px;color:#1c2c30;font-family:inherit;background:#fff"
       />
       {err && (
         <div style="margin-top:10px;color:#b3261e;font-size:13px">
-          {es ? "No se pudo enviar — " : "Couldn't send — "}
+          {tFor(lang, "publicQuoteActions.sendError")}
           {err}
         </div>
       )}
@@ -283,8 +274,8 @@ function DeclineForm(
         };opacity:${status === "submitting" ? 0.7 : 1}`}
       >
         {status === "submitting"
-          ? (es ? "Enviando…" : "Sending…")
-          : (es ? "Enviar rechazo" : "Send decline")}
+          ? tFor(lang, "publicQuoteActions.sending")
+          : tFor(lang, "publicQuoteActions.declineForm.submit")}
       </button>
     </form>
   );
@@ -298,6 +289,7 @@ function AskForm(
     onCancel: () => void;
   },
 ) {
+  const lang = es ? "es" : "en";
   const [question, setQuestion] = useState("");
   const [contactBack, setContactBack] = useState("");
   const [name, setName] = useState(customerName?.trim() ?? "");
@@ -334,12 +326,10 @@ function AskForm(
     return (
       <div style="margin-top:18px;background:rgba(20,72,82,0.06);border:1px solid rgba(20,72,82,0.18);border-radius:14px;padding:18px 20px;text-align:center">
         <div style="font-weight:800;color:#144852;font-size:16px">
-          {es ? "✓ Pregunta enviada" : "✓ Question sent"}
+          {tFor(lang, "publicQuoteActions.askForm.sentTitle")}
         </div>
         <div style="margin-top:6px;color:#6b7a7e;font-size:13px">
-          {es
-            ? "Tu contratista te responderá directamente."
-            : "Your contractor will follow up directly."}
+          {tFor(lang, "publicQuoteActions.askForm.sentBody")}
         </div>
       </div>
     );
@@ -352,56 +342,52 @@ function AskForm(
     >
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div style="font-weight:800;color:#144852;font-size:15px">
-          {es ? "Hacer una pregunta" : "Ask a question"}
+          {tFor(lang, "publicQuoteActions.askButton")}
         </div>
         <button
           type="button"
           onClick={onCancel}
-          aria-label="Close question form"
+          aria-label={tFor(lang, "publicQuoteActions.askForm.closeAria")}
           style="background:transparent;border:0;color:#6b7a7e;font-size:18px;cursor:pointer;padding:0 4px"
         >
           ×
         </button>
       </div>
       <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin-bottom:6px">
-        {es ? "Tu pregunta" : "Your question"}
+        {tFor(lang, "publicQuoteActions.askForm.questionLabel")}
       </label>
       <textarea
         value={question}
         onInput={(e) => setQuestion((e.target as HTMLTextAreaElement).value)}
         rows={3}
-        placeholder={es
-          ? "¿Cuál es el plazo si firmo el viernes?"
-          : "What's the timeline if I sign by Friday?"}
+        placeholder={tFor(lang, "publicQuoteActions.askForm.questionPlaceholder")}
         required
         style="width:100%;padding:10px 12px;border:1px solid #e3e8e6;border-radius:10px;font-size:14px;color:#1c2c30;font-family:inherit;background:#fff;resize:vertical"
       />
       <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin:12px 0 6px">
-        {es
-          ? "¿Cómo te contactan? (opcional)"
-          : "How can they reach you? (optional)"}
+        {tFor(lang, "publicQuoteActions.askForm.contactLabel")}
       </label>
       <input
         type="text"
         value={contactBack}
         onInput={(e) => setContactBack((e.target as HTMLInputElement).value)}
-        placeholder={es ? "Teléfono o correo" : "Phone or email"}
+        placeholder={tFor(lang, "publicQuoteActions.askForm.contactPlaceholder")}
         style="width:100%;padding:10px 12px;border:1px solid #e3e8e6;border-radius:10px;font-size:14px;color:#1c2c30;font-family:inherit;background:#fff"
       />
       <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin:12px 0 6px">
-        {es ? "Tu nombre (opcional)" : "Your name (optional)"}
+        {tFor(lang, "publicQuoteActions.nameLabel")}
       </label>
       <input
         type="text"
         value={name}
         onInput={(e) => setName((e.target as HTMLInputElement).value)}
-        placeholder="Jane Doe"
+        placeholder={tFor(lang, "publicQuoteActions.namePlaceholder")}
         autoComplete="name"
         style="width:100%;padding:10px 12px;border:1px solid #e3e8e6;border-radius:10px;font-size:14px;color:#1c2c30;font-family:inherit;background:#fff"
       />
       {err && (
         <div style="margin-top:10px;color:#b3261e;font-size:13px">
-          {es ? "No se pudo enviar — " : "Couldn't send — "}
+          {tFor(lang, "publicQuoteActions.sendError")}
           {err}
         </div>
       )}
@@ -415,8 +401,8 @@ function AskForm(
         };opacity:${status === "submitting" || !question.trim() ? 0.7 : 1}`}
       >
         {status === "submitting"
-          ? (es ? "Enviando…" : "Sending…")
-          : (es ? "Enviar pregunta" : "Send question")}
+          ? tFor(lang, "publicQuoteActions.sending")
+          : tFor(lang, "publicQuoteActions.askForm.submit")}
       </button>
     </form>
   );

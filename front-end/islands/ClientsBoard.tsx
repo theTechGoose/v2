@@ -9,6 +9,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
+import { tFor } from "../lib/i18n.ts";
 import type { ClientStatus, CustomerCard } from "../clients/clients.ts";
 import {
   addressFor,
@@ -29,15 +30,15 @@ type FilterId = ClientStatus | "all";
 
 interface FilterEntry {
   id: FilterId;
-  label: string;
+  labelKey: string;
 }
 const FILTER_DEFS: FilterEntry[] = [
-  { id: "all", label: "All" },
-  { id: "active", label: "Active jobs" },
-  { id: "lead", label: "Leads" },
-  { id: "owes", label: "Owe you" },
-  { id: "regular", label: "Regulars" },
-  { id: "cold", label: "Quiet" },
+  { id: "all", labelKey: "clientsBoard.filter.all" },
+  { id: "active", labelKey: "clientsBoard.filter.activeJobs" },
+  { id: "lead", labelKey: "clientsBoard.filter.leads" },
+  { id: "owes", labelKey: "clientsBoard.filter.oweYou" },
+  { id: "regular", labelKey: "clientsBoard.filter.regulars" },
+  { id: "cold", labelKey: "clientsBoard.filter.quiet" },
 ];
 
 const FILTER_IDS: ReadonlyArray<string> = FILTER_DEFS.map((f) => f.id);
@@ -50,8 +51,8 @@ function filterFromSearch(search: string | null | undefined): FilterId {
   return isFilterId(raw) ? raw : "all";
 }
 
-function SinceBadge({ days }: { days: number }) {
-  const { tier, num, unit } = sinceBadge(days);
+function SinceBadge({ days, lang }: { days: number; lang: "en" | "es" }) {
+  const { tier, num, unit } = sinceBadge(days, lang);
   return (
     <div class={`ccard2__since ccard2__since--${tier}`}>
       <span class="ccard2__since-num">{num}</span>
@@ -66,16 +67,17 @@ interface CardProps {
   isOpen: boolean;
   onOpen: () => void;
   onClose: () => void;
+  lang: "en" | "es";
 }
 
-function ClientCard({ c, idx, isOpen, onOpen, onClose }: CardProps) {
-  const mood = moodFor(c);
+function ClientCard({ c, idx, isOpen, onOpen, onClose, lang }: CardProps) {
+  const mood = moodFor(c, lang);
   const initials = initialsOf(c.name);
-  const seg = segmentLabel(c.segment);
-  const story = storyLineFor(c);
-  const cta = ctaFor(c);
-  const balance = balanceDisplay(c);
-  const address = addressFor(c);
+  const seg = segmentLabel(c.segment, lang);
+  const story = storyLineFor(c, lang);
+  const cta = ctaFor(c, lang);
+  const balance = balanceDisplay(c, lang);
+  const address = addressFor(c, lang);
 
   function onCardClick(e: Event) {
     const target = e.target as HTMLElement;
@@ -99,7 +101,7 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose }: CardProps) {
     >
       <div class="ccard2__mood">
         <div class="ccard2__mood-tex" />
-        <SinceBadge days={c.daysSinceContact} />
+        <SinceBadge days={c.daysSinceContact} lang={lang} />
         <div class="ccard2__status">
           <span class="ccard2__status-dot" /> {mood.label}
         </div>
@@ -124,7 +126,7 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose }: CardProps) {
           {cta} <span class="ccard2__nudge-arrow">→</span>
         </button>
         <div class="ccard2__bal-wrap">
-          <div class="ccard2__bal-lbl">Balance</div>
+          <div class="ccard2__bal-lbl">{tFor(lang, "clientsBoard.balance")}</div>
           <div class={`ccard2__bal-val ${balance.cls}`}>{balance.text}</div>
         </div>
       </div>
@@ -140,7 +142,7 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose }: CardProps) {
             class="ccard2__panel-x"
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={tFor(lang, "common.close")}
           >
             <I d={ICN.x} size={14} sw={2.5} />
           </button>
@@ -152,7 +154,9 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose }: CardProps) {
                 <I d={ICN.phone} size={13} sw={2.2} />
               </span>
               <span class="ccard2__panel-row-text">
-                <div class="ccard2__panel-row-lbl">Phone</div>
+                <div class="ccard2__panel-row-lbl">
+                  {tFor(lang, "clientsBoard.panel.phone")}
+                </div>
                 <div class="ccard2__panel-row-val">{c.phoneNumber}</div>
               </span>
               <span class="ccard2__panel-row-arrow">
@@ -166,7 +170,9 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose }: CardProps) {
                 <I d={ICN.mail} size={13} sw={2.2} />
               </span>
               <span class="ccard2__panel-row-text">
-                <div class="ccard2__panel-row-lbl">Email</div>
+                <div class="ccard2__panel-row-lbl">
+                  {tFor(lang, "clientsBoard.panel.email")}
+                </div>
                 <div class="ccard2__panel-row-val">{c.email}</div>
               </span>
               <span class="ccard2__panel-row-arrow">
@@ -179,7 +185,9 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose }: CardProps) {
               <I d={ICN.pin} size={13} sw={2.2} />
             </span>
             <span class="ccard2__panel-row-text">
-              <div class="ccard2__panel-row-lbl">Address</div>
+              <div class="ccard2__panel-row-lbl">
+                {tFor(lang, "clientsBoard.panel.address")}
+              </div>
               <div class="ccard2__panel-row-val">{address}</div>
             </span>
             <span class="ccard2__panel-row-arrow">
@@ -189,13 +197,15 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose }: CardProps) {
         </div>
         <div class="ccard2__panel-actions">
           <button class="ccard2__panel-act" type="button">
-            <I d={ICN.msg} size={12} sw={2.4} /> Message
+            <I d={ICN.msg} size={12} sw={2.4} />{" "}
+            {tFor(lang, "clientsBoard.panel.message")}
           </button>
           <button
             class="ccard2__panel-act ccard2__panel-act--pink"
             type="button"
           >
-            <I d={ICN.eye} size={12} sw={2.4} /> Open card
+            <I d={ICN.eye} size={12} sw={2.4} />{" "}
+            {tFor(lang, "clientsBoard.panel.openCard")}
           </button>
         </div>
       </div>
@@ -206,9 +216,12 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose }: CardProps) {
 interface BoardProps {
   cards: CustomerCard[];
   children?: ComponentChildren;
+  lang?: "en" | "es";
 }
 
-export default function ClientsBoard({ cards, children }: BoardProps) {
+export default function ClientsBoard(
+  { cards, children, lang = "en" }: BoardProps,
+) {
   // Filter id ("all" | ClientStatus). Seeded from URL ?segment= so a
   // reload / shared link / back-button navigates to the same filtered
   // view. Defaults to "all" (the leftmost chip) when the param is absent
@@ -290,7 +303,7 @@ export default function ClientsBoard({ cards, children }: BoardProps) {
         <div class="ctoolbar2__search">
           <I d={ICN.search} size={14} />
           <input
-            placeholder="Search by name, address, phone, or last job…"
+            placeholder={tFor(lang, "clientsBoard.searchPlaceholder")}
             value={query}
             onInput={(e) =>
               setQuery((e.currentTarget as HTMLInputElement).value)}
@@ -309,7 +322,7 @@ export default function ClientsBoard({ cards, children }: BoardProps) {
                 }`}
                 onClick={() => selectFilter(f.id)}
               >
-                {f.label}
+                {tFor(lang, f.labelKey)}
                 <span class="ctoolbar2__filter-count">
                   {filterCounts[f.id]}
                 </span>
@@ -318,7 +331,8 @@ export default function ClientsBoard({ cards, children }: BoardProps) {
           })}
         </div>
         <button class="ctoolbar2__sort" type="button">
-          Warmth <I d={<path d="m6 9 6 6 6-6" />} size={12} sw={2.5} />
+          {tFor(lang, "clientsBoard.sort.warmth")}{" "}
+          <I d={<path d="m6 9 6 6 6-6" />} size={12} sw={2.5} />
         </button>
       </div>
 
@@ -332,13 +346,14 @@ export default function ClientsBoard({ cards, children }: BoardProps) {
               isOpen={openId === c.id}
               onOpen={() => setOpenId(c.id)}
               onClose={() => setOpenId(null)}
+              lang={lang}
             />
           ))}
           {rows.length === 0 && (
             <div class="ccards2__empty">
               {cards.length === 0
-                ? "No clients yet — add your first one to start the roster."
-                : "No clients match this filter."}
+                ? tFor(lang, "clientsBoard.empty.noClients")
+                : tFor(lang, "clientsBoard.empty.noMatches")}
             </div>
           )}
         </div>

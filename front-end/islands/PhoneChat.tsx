@@ -17,6 +17,7 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { langSignal } from "../lib/lang.ts";
+import { tFor } from "../lib/i18n.ts";
 
 export interface Bubble {
   side: "left" | "right";
@@ -50,28 +51,28 @@ interface Props {
   autoPlayOnView?: boolean;
 }
 
-function QuoteCard({ q }: { q: QuoteCopy }) {
+function QuoteCard({ q, lang }: { q: QuoteCopy; lang: "en" | "es" }) {
   return (
     <div class="quote-card">
       <div class="qc-head">
         <span>{q.hd}</span>
-        <span class="pdf">PDF</span>
+        <span class="pdf">{tFor(lang, "phoneChat.quote.pdfBadge")}</span>
       </div>
       <div class="row">
         <span>{q.l1}</span>
-        <strong>$ 4,200</strong>
+        <strong>{tFor(lang, "phoneChat.quote.amount1")}</strong>
       </div>
       <div class="row">
         <span>{q.l2}</span>
-        <strong>$ 3,990</strong>
+        <strong>{tFor(lang, "phoneChat.quote.amount2")}</strong>
       </div>
       <div class="row">
         <span>{q.l3}</span>
-        <strong>$ 2,800</strong>
+        <strong>{tFor(lang, "phoneChat.quote.amount3")}</strong>
       </div>
       <div class="total">
         <span>{q.total}</span>
-        <span>$ 10,990</span>
+        <span>{tFor(lang, "phoneChat.quote.amountTotal")}</span>
       </div>
     </div>
   );
@@ -83,8 +84,8 @@ export default function PhoneChat(props: Props) {
     scriptEs,
     quote,
     quoteEs,
-    messageCopy = "Message",
-    messageCopyEs = "Mensaje",
+    messageCopy = tFor("en", "phoneChat.input.message"),
+    messageCopyEs = tFor("es", "phoneChat.input.message"),
     lang: langProp = "en",
     controls = false,
     autoPlayOnView = false,
@@ -216,21 +217,21 @@ export default function PhoneChat(props: Props) {
             onClick={play}
             style="padding: 8px 16px; border-radius: 999px; border: none; background: var(--brand-pink, #FF6B6B); color: #fff; font-weight: 700; cursor: pointer;"
           >
-            ▶ Play
+            ▶ {tFor(lang, "phoneChat.controls.play")}
           </button>
           <button
             type="button"
             onClick={reset}
             style="padding: 8px 16px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.15); background: #fff; color: var(--brand-teal, #1A535C); font-weight: 600; cursor: pointer;"
           >
-            ⟲ Reset
+            ⟲ {tFor(lang, "phoneChat.controls.reset")}
           </button>
           <button
             type="button"
             onClick={showAll}
             style="padding: 8px 16px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.15); background: #fff; color: var(--brand-teal, #1A535C); font-weight: 600; cursor: pointer;"
           >
-            ⏭ End state
+            ⏭ {tFor(lang, "phoneChat.controls.endState")}
           </button>
         </div>
       )}
@@ -240,7 +241,7 @@ export default function PhoneChat(props: Props) {
         <div class="phone" ref={phoneRef}>
           <div class="phone-screen">
             <div class="phone-status">
-              <span>9:41</span>
+              <span>{tFor(lang, "phoneChat.statusBar.time")}</span>
               <div class="icons">
                 <span></span>
                 <span></span>
@@ -254,8 +255,8 @@ export default function PhoneChat(props: Props) {
                 <img src="/logo-monster.png" alt="" />
               </div>
               <div class="meta">
-                <strong>Paperwork Monster</strong>
-                <span>{lang === "es" ? "En línea" : "Online"}</span>
+                <strong>{tFor(lang, "brand.name")}</strong>
+                <span>{tFor(lang, "phoneChat.header.online")}</span>
               </div>
             </div>
 
@@ -294,7 +295,9 @@ export default function PhoneChat(props: Props) {
                     {m.kind === "meta" && (
                       <div class="bubble-meta">{m.text}</div>
                     )}
-                    {m.kind === "quote" && <QuoteCard q={activeQuote} />}
+                    {m.kind === "quote" && (
+                      <QuoteCard q={activeQuote} lang={lang} />
+                    )}
                   </div>
                 );
               })}

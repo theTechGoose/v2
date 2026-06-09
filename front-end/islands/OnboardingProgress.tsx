@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 
 const PINK = "#FF6B6B";
 const PINK_DARK = "#d94e4e";
@@ -12,6 +13,9 @@ const TOTAL_STEPS: Step = 4;
 interface Props {
   /** Server-rendered initial step so the dots don't flash empty. */
   initialStep?: Step;
+  /** Optional SSR seed for the UI language. Ignored at runtime — the island
+   * self-sources the reactive language from `langSignal`. */
+  lang?: Lang;
 }
 
 /**
@@ -29,7 +33,12 @@ interface Props {
  * the initial step from the server-resolved profile and the island
  * just keeps it in sync as the chat progresses.
  */
-export default function OnboardingProgress({ initialStep = 0 }: Props) {
+export default function OnboardingProgress(
+  { initialStep = 0 }: Props,
+) {
+  // Self-source the reactive UI language so the island re-renders live when
+  // the language flips (e.g. via SettingsPage). Ignores any `lang` prop seed.
+  const lang = langSignal.value;
   const [step, setStep] = useState<Step>(initialStep);
   const [done, setDone] = useState(initialStep >= TOTAL_STEPS);
   const [hidden, setHidden] = useState(false);
@@ -159,16 +168,16 @@ export default function OnboardingProgress({ initialStep = 0 }: Props) {
 
   const pct = (step / TOTAL_STEPS) * 100;
   const message = done
-    ? "🎉 You're set — let's draft your first quote!"
+    ? tFor(lang, "onboardingProgress.message.done")
     : step === 0
-    ? "Quick setup — 4 fast questions and you're in."
+    ? tFor(lang, "onboardingProgress.message.step0")
     : step === 1
-    ? "Nice. Just a few more."
+    ? tFor(lang, "onboardingProgress.message.step1")
     : step === 2
-    ? "Halfway."
+    ? tFor(lang, "onboardingProgress.message.step2")
     : step === 3
-    ? "One left."
-    : "Last bit.";
+    ? tFor(lang, "onboardingProgress.message.step3")
+    : tFor(lang, "onboardingProgress.message.last");
 
   return (
     <div
@@ -199,7 +208,9 @@ export default function OnboardingProgress({ initialStep = 0 }: Props) {
                 done ? GREEN : PINK_DARK
               };letter-spacing:.04em;text-transform:uppercase;font-size:11px;font-weight:800;margin-right:6px`}
             >
-              {done ? "Setup complete" : "Quick setup"}
+              {done
+                ? tFor(lang, "onboardingProgress.label.done")
+                : tFor(lang, "onboardingProgress.label.quickSetup")}
             </strong>
             {message}
           </div>
@@ -223,7 +234,7 @@ export default function OnboardingProgress({ initialStep = 0 }: Props) {
             })}
             <div
               role="progressbar"
-              aria-label="Onboarding progress"
+              aria-label={tFor(lang, "onboardingProgress.ariaLabel")}
               aria-valuemin={0}
               aria-valuemax={TOTAL_STEPS}
               aria-valuenow={step}
@@ -259,14 +270,14 @@ export default function OnboardingProgress({ initialStep = 0 }: Props) {
                     onClick={() => quickReply("Yes")}
                     style={`appearance:none;font:inherit;font-weight:700;font-size:11.5px;padding:5px 11px;border-radius:999px;border:1px solid ${GREEN};background:#fff;color:${GREEN};cursor:pointer`}
                   >
-                    Yes — sounds right
+                    {tFor(lang, "onboardingProgress.reply.yes")}
                   </button>
                   <button
                     type="button"
                     onClick={() => quickReply("different state")}
                     style={`appearance:none;font:inherit;font-weight:700;font-size:11.5px;padding:5px 11px;border-radius:999px;border:1px solid rgba(20,72,82,0.20);background:#fff;color:${TEAL};cursor:pointer`}
                   >
-                    Different state
+                    {tFor(lang, "onboardingProgress.reply.differentState")}
                   </button>
                 </>
               )}
@@ -276,7 +287,7 @@ export default function OnboardingProgress({ initialStep = 0 }: Props) {
                   onClick={() => quickReply("skip")}
                   style={`appearance:none;font:inherit;font-weight:700;font-size:11.5px;padding:5px 11px;border-radius:999px;border:1px solid rgba(20,72,82,0.20);background:#fff;color:${TEAL};cursor:pointer`}
                 >
-                  Skip
+                  {tFor(lang, "onboardingProgress.reply.skip")}
                 </button>
               )}
               <button
@@ -284,7 +295,7 @@ export default function OnboardingProgress({ initialStep = 0 }: Props) {
                 onClick={skipSetup}
                 style={`appearance:none;font:inherit;font-weight:600;font-size:11.5px;padding:5px 11px;border-radius:999px;border:1px dashed rgba(20,72,82,0.20);background:transparent;color:${INK};opacity:0.7;cursor:pointer;margin-left:auto`}
               >
-                Skip setup · do this later
+                {tFor(lang, "onboardingProgress.skipSetup")}
               </button>
             </div>
           )}

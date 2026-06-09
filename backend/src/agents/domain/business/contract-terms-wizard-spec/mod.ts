@@ -1,4 +1,5 @@
-import type { WizardSpec } from "@agents/dto/wizard.ts";
+import type { WizardOption, WizardSpec } from "@agents/dto/wizard.ts";
+import { t } from "@core/i18n/mod.ts";
 
 /**
  * 5-step contract-terms wizard. Surfaced by the agent in phase 2 (terms).
@@ -20,77 +21,84 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
   steps: [
     {
       id: "customer",
-      label: "Customer",
-      question:
-        "We've locked the quote down! Is this for a business or a person?",
+      label: "contractTermsWizard.customer.label",
+      question: "contractTermsWizard.customer.question",
       options: [
-        { id: "use_active", label: "Use the customer from chat" },
-        { id: "pick_existing", label: "Pick an existing customer" },
+        { id: "use_active", label: "contractTermsWizard.customer.useActive" },
+        { id: "pick_existing", label: "contractTermsWizard.customer.pickExisting" },
         {
           id: "create_new",
-          label: "Add a new business or person",
+          label: "contractTermsWizard.customer.createNew",
           isCustom: true,
         },
       ],
     },
     {
       id: "start_date",
-      label: "Start",
-      question: "When does the job start?",
+      label: "contractTermsWizard.startDate.label",
+      question: "contractTermsWizard.startDate.question",
       options: [
-        { id: "asap", label: "Right away" },
-        { id: "next_week", label: "Next week" },
-        { id: "next_month", label: "Next Month" },
-        { id: "custom", label: "Pick a date", isCustom: true },
+        { id: "asap", label: "contractTermsWizard.startDate.asap" },
+        { id: "next_week", label: "contractTermsWizard.startDate.nextWeek" },
+        { id: "next_month", label: "contractTermsWizard.startDate.nextMonth" },
+        { id: "custom", label: "contractTermsWizard.startDate.custom", isCustom: true },
       ],
     },
     {
       id: "wraps",
-      label: "Time to complete",
-      question: "How long will the job take?",
+      label: "contractTermsWizard.wraps.label",
+      question: "contractTermsWizard.wraps.question",
       options: [
-        { id: "1_day", label: "1 day" },
-        { id: "2_3_days", label: "2–3 days" },
-        { id: "1_week", label: "1 week" },
-        { id: "2_weeks", label: "2 weeks" },
-        { id: "custom", label: "Custom", isCustom: true },
+        { id: "1_day", label: "contractTermsWizard.wraps.oneDay" },
+        { id: "2_3_days", label: "contractTermsWizard.wraps.twoThreeDays" },
+        { id: "1_week", label: "contractTermsWizard.wraps.oneWeek" },
+        { id: "2_weeks", label: "contractTermsWizard.wraps.twoWeeks" },
+        { id: "custom", label: "contractTermsWizard.wraps.custom", isCustom: true },
       ],
     },
     {
       id: "payment_terms",
-      label: "Payment",
-      question: "When do you want to get paid?",
+      label: "contractTermsWizard.paymentTerms.label",
+      question: "contractTermsWizard.paymentTerms.question",
       options: [
         {
           id: "net_15",
-          label: "Payment upon completion",
-          sub: "Same-day payment",
+          label: "contractTermsWizard.paymentTerms.net15.label",
+          sub: "contractTermsWizard.paymentTerms.net15.sub",
         },
-        { id: "50_50", label: "50/50", sub: "Half upfront, half when done" },
-        { id: "30_30_40", label: "30/30/40", sub: "Start, halfway, done" },
+        {
+          id: "50_50",
+          label: "contractTermsWizard.paymentTerms.fiftyFifty.label",
+          sub: "contractTermsWizard.paymentTerms.fiftyFifty.sub",
+        },
+        {
+          id: "30_30_40",
+          label: "contractTermsWizard.paymentTerms.thirtyThirtyForty.label",
+          sub: "contractTermsWizard.paymentTerms.thirtyThirtyForty.sub",
+        },
         {
           id: "deposit_bal",
-          label: "Deposit + balance",
-          sub: "Small upfront, rest when done",
+          label: "contractTermsWizard.paymentTerms.depositBalance.label",
+          sub: "contractTermsWizard.paymentTerms.depositBalance.sub",
         },
         {
           id: "custom",
-          label: "Custom",
-          sub: "Set your own terms",
+          label: "contractTermsWizard.paymentTerms.custom.label",
+          sub: "contractTermsWizard.paymentTerms.custom.sub",
           isCustom: true,
         },
       ],
     },
     {
       id: "warranty",
-      label: "warranty",
-      question: "How long do you stand behind your work?",
+      label: "contractTermsWizard.warranty.label",
+      question: "contractTermsWizard.warranty.question",
       options: [
-        { id: "none", label: "No warranty" },
-        { id: "6_months", label: "6 months" },
-        { id: "12_months", label: "12 months" },
-        { id: "24_months", label: "24 months" },
-        { id: "custom_months", label: "Custom", isCustom: true },
+        { id: "none", label: "contractTermsWizard.warranty.none" },
+        { id: "6_months", label: "contractTermsWizard.warranty.sixMonths" },
+        { id: "12_months", label: "contractTermsWizard.warranty.twelveMonths" },
+        { id: "24_months", label: "contractTermsWizard.warranty.twentyFourMonths" },
+        { id: "custom_months", label: "contractTermsWizard.warranty.custom", isCustom: true },
       ],
     },
   ],
@@ -100,4 +108,21 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
 export function getWizardSpec(specId: string): WizardSpec {
   if (specId === CONTRACT_TERMS_WIZARD_V1.id) return CONTRACT_TERMS_WIZARD_V1;
   throw new Error(`unknown wizard spec: ${specId}`);
+}
+
+/**
+ * The spec stores i18n KEYS for every `label` / `question` / `sub` so the
+ * wizard can be emitted in the contractor's language. Resolve a step's option
+ * labels (+ sublabels) into `lang` at emission time. The step `question` and
+ * `label` resolve with a plain `t(lang, step.question)` / `t(lang, step.label)`.
+ */
+export function localizeOptions(
+  options: WizardOption[],
+  lang: "en" | "es",
+): WizardOption[] {
+  return options.map((o) => ({
+    ...o,
+    label: t(lang, o.label),
+    ...(o.sub ? { sub: t(lang, o.sub) } : {}),
+  }));
 }

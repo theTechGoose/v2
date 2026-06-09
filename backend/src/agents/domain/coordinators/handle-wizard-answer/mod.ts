@@ -5,12 +5,13 @@ import {
   applyAnswer,
   computeProgress,
 } from "@agents/domain/business/wizard-progress/mod.ts";
-import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
+import { CONTRACT_TERMS_WIZARD_V1, localizeOptions } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { t } from "@core/i18n/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { WizardState } from "@agents/dto/wizard.ts";
@@ -77,6 +78,10 @@ export class HandleWizardAnswer {
       throw new Error("conversation is not in 'terms' phase");
     }
 
+    // Chat copy is rendered to the contractor in their own UI language.
+    const me = await this.users.get(input.userId).catch(() => null);
+    const lang = me?.language === "es" ? "es" : "en";
+
     const current = await this.conversations.getWizardState(
       input.conversationId,
     );
@@ -117,14 +122,17 @@ export class HandleWizardAnswer {
     const pickValue = input.stepId === "customer" && boundCustomerName
       ? boundCustomerName
       : optionDef.isCustom
-      ? (customerCustomValue ?? "Custom")
-      : optionDef.label;
+      ? (customerCustomValue ?? t(lang, "wizardAnswer.pick.customFallback"))
+      : t(lang, optionDef.label);
 
     const userPick = await this.messages.append({
       conversationId: input.conversationId,
       role: "user",
       kind: "text",
-      content: `${stepDef.label}: ${pickValue}`,
+      content: t(lang, "wizardAnswer.pick.transcript", {
+        label: t(lang, stepDef.label),
+        value: pickValue,
+      }),
       payload: {
         wizardStepId: input.stepId,
         optionId: input.optionId,
@@ -136,7 +144,10 @@ export class HandleWizardAnswer {
     const progress = computeProgress(CONTRACT_TERMS_WIZARD_V1, next);
 
     const convPatch: Partial<AgentConversation> = {
-      preview: `${stepDef.label}: ${pickValue}`,
+      preview: t(lang, "wizardAnswer.pick.transcript", {
+        label: t(lang, stepDef.label),
+        value: pickValue,
+      }),
     };
     if (
       input.stepId === "customer" && boundCustomerId &&
@@ -157,10 +168,10 @@ export class HandleWizardAnswer {
         conversationId: input.conversationId,
         role: "assistant",
         kind: "continue_cta",
-        content: "Ready to send",
+        content: t(lang, "wizardAnswer.cta.readyToSend"),
         payload: {
           toPhase: "send",
-          summary: "All terms answered. Review and send to your client.",
+          summary: t(lang, "wizardAnswer.cta.readyToSendSummary"),
           ...(contractId ? { contractId } : {}),
         },
       });
@@ -171,12 +182,12 @@ export class HandleWizardAnswer {
         conversationId: input.conversationId,
         role: "assistant",
         kind: "wizard",
-        content: step.question,
+        content: t(lang, step.question),
         payload: {
           specId: CONTRACT_TERMS_WIZARD_V1.id,
           stepIdx: next.activeStepIdx,
           stepId: step.id,
-          options: step.options,
+          options: localizeOptions(step.options, lang),
           hint: step.hint,
         },
       });
@@ -348,16 +359,25 @@ export class HandleWizardAnswer {
     const seen = new Set<string>();
     for (const m of msgs) {
       if (m.role !== "user" || m.kind !== "text") continue;
-      const p = m.payload as { wizardStepId?: string } | undefined;
+      const p = m.payload as
+        | { wizardStepId?: string; optionId?: string; customValue?: string }
+        | undefined;
       const stepId = p?.wizardStepId;
-      if (!stepId || seen.has(stepId)) continue;
+      if (!stepId || stepId === "customer" || seen.has(stepId)) continue;
       seen.add(stepId);
-      // The user-pick message content reads "Label: Value" — split on the
-      // first colon to peel them apart safely.
-      const raw = m.content ?? "";
-      const idx = raw.indexOf(":");
-      const label = idx >= 0 ? raw.slice(0, idx).trim() : stepId;
-      const value = idx >= 0 ? raw.slice(idx + 1).trim() : raw.trim();
+      // Store terms in ENGLISH — the neutral base. Every reader (the in-app
+      // preview, the public agreement, and the PDF) localizes them to its own
+      // target language via termLabels[stepId] + localizeTermValue(). Resolve
+      // from the step/option ids on the payload, NOT the transcript text (which
+      // is now rendered in the contractor's UI language and would poison the
+      // base — see contract-doc's localizeTermValue, which assumes EN input).
+      const stepDef = CONTRACT_TERMS_WIZARD_V1.steps.find((s) => s.id === stepId);
+      if (!stepDef) continue;
+      const optionDef = stepDef.options.find((o) => o.id === p?.optionId);
+      const label = t("en", stepDef.label);
+      const value = (!optionDef || optionDef.isCustom)
+        ? (p?.customValue ?? "").trim()
+        : t("en", optionDef.label);
       if (!value) continue;
       picks.push({ stepId, label, value });
     }

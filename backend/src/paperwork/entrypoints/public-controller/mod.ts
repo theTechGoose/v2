@@ -164,11 +164,15 @@ export class PaperworkPublicController {
       const co = await this.changeOrders.get(id);
       let currentAmount: number | undefined;
       let businessName: string | undefined;
+      // Language the customer document should render in (the contractor's
+      // outgoing-comms language). Defaults EN if the identity can't be read.
+      let commsLanguage: "en" | "es" = "en";
       try {
         const inv = await this.invoices.get(co.invoiceId);
         currentAmount = inv.amount ?? 0;
         const ident = await this.identity.get(inv.userId).catch(() => null);
         businessName = ident?.businessName ?? ident?.legalName ?? undefined;
+        commsLanguage = ident?.commsLanguage === "es" ? "es" : "en";
       } catch { /* invoice may be gone; still show the order */ }
       return ctx.json({
         id: co.id,
@@ -180,6 +184,7 @@ export class PaperworkPublicController {
           ? Math.max(0, currentAmount + co.deltaAmountCents)
           : undefined,
         businessName,
+        commsLanguage,
         decidedAt: co.decidedAt,
       });
     } catch (e) {
@@ -434,6 +439,9 @@ export class PaperworkPublicController {
           summary: quote.summary,
           jobName: quote.jobName,
           description: quote.description,
+          descriptionByLang: quote.descriptionByLang,
+          jobNameByLang: quote.jobNameByLang,
+          summaryByLang: quote.summaryByLang,
           lineItems: quote.lineItems,
         }
         : undefined;
@@ -553,6 +561,9 @@ export class PaperworkPublicController {
         summary?: string;
         jobName?: string;
         description?: string;
+        descriptionByLang?: Record<string, string>;
+        jobNameByLang?: Record<string, string>;
+        summaryByLang?: Record<string, string>;
       } | undefined;
       if (contract?.quoteId) {
         try {
@@ -561,6 +572,9 @@ export class PaperworkPublicController {
             summary: q.summary,
             jobName: q.jobName,
             description: q.description,
+            descriptionByLang: q.descriptionByLang,
+            jobNameByLang: q.jobNameByLang,
+            summaryByLang: q.summaryByLang,
           };
         } catch { /* fall through */ }
       }
@@ -832,6 +846,10 @@ function redactQuote(q: Quote) {
     id: q.id,
     summary: q.summary,
     description: q.description,
+    descriptionByLang: q.descriptionByLang,
+    jobName: q.jobName,
+    jobNameByLang: q.jobNameByLang,
+    summaryByLang: q.summaryByLang,
     customerId: q.customerId,
     lineItems: q.lineItems,
     estimatedTotal: q.estimatedTotal,

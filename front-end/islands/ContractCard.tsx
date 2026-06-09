@@ -8,11 +8,13 @@
  */
 import { useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
+import { type Lang, tFor } from "../lib/i18n.ts";
 import type { ContractCard as Card } from "../lib/contracts-shape.ts";
 
 interface Props {
   c: Card;
   idx: number;
+  lang?: Lang;
 }
 
 interface Milestone {
@@ -29,20 +31,24 @@ function fmtDate(iso: string | undefined): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function buildMilestones(c: Card, now = new Date()): Milestone[] {
+function buildMilestones(c: Card, lang: Lang, now = new Date()): Milestone[] {
   const start = c.startDate ? new Date(c.startDate) : undefined;
   const end = c.completionDate ? new Date(c.completionDate) : undefined;
   if (!start && !end) {
     return [
-      { name: "Contract signed", date: "—", done: c.mood !== "draft" },
       {
-        name: "Work in progress",
+        name: tFor(lang, "contractCard.milestone.contractSigned"),
+        date: "—",
+        done: c.mood !== "draft",
+      },
+      {
+        name: tFor(lang, "contractCard.milestone.workInProgress"),
         date: "—",
         done: c.mood === "completed" || c.mood === "wrapping-up",
         current: c.mood === "active",
       },
       {
-        name: "Final invoice + close-out",
+        name: tFor(lang, "contractCard.milestone.finalInvoice"),
         date: "—",
         done: c.mood === "completed",
         current: c.mood === "wrapping-up",
@@ -56,11 +62,11 @@ function buildMilestones(c: Card, now = new Date()): Milestone[] {
     Math.round((e.getTime() - s.getTime()) / 86_400_000),
   );
   const stops = [
-    { offset: 0, name: "Site walk + start" },
-    { offset: 0.25, name: "First milestone" },
-    { offset: 0.55, name: "Mid-point check-in" },
-    { offset: 0.85, name: "Punch-list" },
-    { offset: 1, name: "Final walk + close" },
+    { offset: 0, name: tFor(lang, "contractCard.milestone.siteWalk") },
+    { offset: 0.25, name: tFor(lang, "contractCard.milestone.first") },
+    { offset: 0.55, name: tFor(lang, "contractCard.milestone.midPoint") },
+    { offset: 0.85, name: tFor(lang, "contractCard.milestone.punchList") },
+    { offset: 1, name: tFor(lang, "contractCard.milestone.finalWalk") },
   ];
   return stops.map((stop) => {
     const dt = new Date(s.getTime() + span * stop.offset * 86_400_000);
@@ -77,9 +83,9 @@ function buildMilestones(c: Card, now = new Date()): Milestone[] {
   });
 }
 
-export default function ContractCard({ c, idx }: Props) {
+export default function ContractCard({ c, idx, lang = "en" }: Props) {
   const [flipped, setFlipped] = useState(false);
-  const milestones = buildMilestones(c);
+  const milestones = buildMilestones(c, lang);
 
   const styleStr = `--mood-from:${c.moodFrom};` +
     `--mood-to:${c.moodTo};` +
@@ -117,15 +123,15 @@ export default function ContractCard({ c, idx }: Props) {
 
         <div class="kcard__prog">
           <div class="kcard__prog-row">
-            <span class="kcard__prog-lbl">Progress</span>
+            <span class="kcard__prog-lbl">{tFor(lang, "contractCard.progress")}</span>
             <span class="kcard__prog-pct">{c.pct}%</span>
           </div>
           <div class="kcard__prog-bar">
             <div class="kcard__prog-fill" style={`width:${c.pct}%`} />
           </div>
           <div class="kcard__prog-meta">
-            <span>{c.paid} paid</span>
-            <span>{c.left} left</span>
+            <span>{tFor(lang, "contractCard.paid", { amount: c.paid })}</span>
+            <span>{tFor(lang, "contractCard.left", { amount: c.left })}</span>
           </div>
         </div>
       </div>
@@ -142,7 +148,7 @@ export default function ContractCard({ c, idx }: Props) {
           {c.cta} <I d={ICN.arrow} size={11} sw={2.5} />
         </button>
         <div class="kcard__val-wrap">
-          <div class="kcard__val-lbl">Contract</div>
+          <div class="kcard__val-lbl">{tFor(lang, "contractCard.contractLabel")}</div>
           <div class="kcard__val-num">{c.total}</div>
         </div>
       </div>
@@ -160,7 +166,7 @@ export default function ContractCard({ c, idx }: Props) {
               e.stopPropagation();
               setFlipped(false);
             }}
-            aria-label="Close"
+            aria-label={tFor(lang, "common.close")}
           >
             <I d={ICN.x} size={14} sw={2.5} />
           </button>
@@ -196,7 +202,7 @@ export default function ContractCard({ c, idx }: Props) {
               globalThis.location.assign("/invoices");
             }}
           >
-            <I d={ICN.invoice} size={13} /> Invoice
+            <I d={ICN.invoice} size={13} /> {tFor(lang, "contractCard.action.invoice")}
           </button>
           <button
             type="button"
@@ -204,12 +210,17 @@ export default function ContractCard({ c, idx }: Props) {
               e.stopPropagation();
               globalThis.location.assign(
                 `/assistant?seed=${
-                  encodeURIComponent(`Text ${c.client} about their ${c.title} job.`)
+                  encodeURIComponent(
+                    tFor(lang, "contractCard.assistantSeed", {
+                      client: c.client,
+                      title: c.title,
+                    }),
+                  )
                 }`,
               );
             }}
           >
-            <I d={ICN.send} size={13} /> Text client
+            <I d={ICN.send} size={13} /> {tFor(lang, "contractCard.action.textClient")}
           </button>
           <button
             type="button"
@@ -218,7 +229,7 @@ export default function ContractCard({ c, idx }: Props) {
               globalThis.location.assign(`/c/${c.id}`);
             }}
           >
-            <I d={ICN.contract} size={13} /> View contract
+            <I d={ICN.contract} size={13} /> {tFor(lang, "contractCard.action.viewContract")}
           </button>
         </div>
       </div>

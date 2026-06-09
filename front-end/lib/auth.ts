@@ -15,6 +15,10 @@ export interface User {
   name?: string;
   email?: string;
   language?: "en" | "es";
+  /** Platform super-admin flag (projected from the backend User). Gates the
+   *  /admin surface + the sidebar Admin tab. Server-enforced — the client
+   *  only uses it to show/hide UI, never as the authority. */
+  superAdmin?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -77,9 +81,6 @@ async function fetchMeInProcess(
   try {
     bodyName = ((await res.clone().json()) as { name?: string })?.name ?? "";
   } catch { /* non-JSON body */ }
-  console.error(
-    `[auth-diag] in-process /me not ok status=${res.status} name=${bodyName}`,
-  );
   if (
     res.status === 401 || res.status === 403 ||
     bodyName === "UnauthorizedError"
@@ -95,15 +96,6 @@ export async function loadUser(req: Request): Promise<User | undefined> {
   // Same-process dispatch on Deno Deploy. Falls back to api.get (over the
   // dev proxy / BACKEND_URL) when running outside the composed mod.ts.
   const inProcess = getInProcessBackend();
-
-  // [auth-diag] Temporary: pinpoint why an authed page bounces to "/" on
-  // prod. Logs whether the session cookie arrived and whether the in-process
-  // backend is wired. Remove once the login→landing regression is resolved.
-  console.error(
-    `[auth-diag] loadUser hasCookie=${!!sessionId} hasInProcess=${!!inProcess} path=${
-      new URL(req.url).pathname
-    }`,
-  );
 
   if (!sessionId) {
     if (DEV_BYPASS) return DEV_USER;

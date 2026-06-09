@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, STRINGS } from "../lib/lang.ts";
+import { t } from "../lib/i18n.ts";
 import { verifyClient } from "../clients/verify.ts";
 
 interface Props {
@@ -163,7 +164,7 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
             value={d}
             onInput={(e) => setSlot(i, (e.target as HTMLInputElement).value)}
             onKeyDown={(e) => onKeyDown(i, e)}
-            aria-label={`Digit ${i + 1}`}
+            aria-label={t("verify.digitLabel", { n: i + 1 })}
           />
         ))}
       </div>
@@ -176,7 +177,7 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
         disabled={submitting || digits.join("").length !== SLOT_COUNT}
         onClick={() => submit()}
       >
-        {submitting ? "…" : s["verify.cta"]}
+        {submitting ? t("verify.busy") : s["verify.cta"]}
       </button>
       <div class="meta">
         <a href="/">{s["verify.editPhone"]}</a>

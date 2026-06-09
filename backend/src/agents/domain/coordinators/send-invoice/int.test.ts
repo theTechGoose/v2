@@ -8,6 +8,7 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
@@ -21,7 +22,7 @@ function fresh() {
   const customers = new CustomerStore();
   const email = new EmailService();
   const bus = new EventBus();
-  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, new UserStore(), email);
+  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, new UserStore(), new BusinessIdentityStore(), email);
   return {
     conversations, messages, contracts, invoices, customers, bus, emailer,
     flow: new SendInvoice(conversations, messages, contracts, invoices, bus, emailer),

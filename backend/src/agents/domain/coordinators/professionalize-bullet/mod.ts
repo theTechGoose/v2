@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "#danet/core";
 import { LLM_CLIENT, type LLMClient } from "@agents/domain/business/llm/base/mod.ts";
+import { t } from "@core/i18n/mod.ts";
 
 export interface ProfessionalizeBulletInput {
   userId: string;
@@ -12,19 +13,7 @@ export interface ProfessionalizeBulletResult {
   text: string;
 }
 
-const SYSTEM_PROMPT =
-  `You rewrite a contractor's rough scope-of-work bullet into ONE clean, professional line a customer reads on a quote.
-
-OUTPUT — return JSON only, no prose, no code fences:
-  { "text": "<one clean scope line>" }
-
-RULES:
-- One short line, roughly 3–8 words. No sentences, no trailing period.
-- Third-person scope language ("Remove flooring, drywall & cabinets"), never first-person ("I'll rip out…").
-- Use only what the contractor wrote. Do NOT invent materials, scope, square footage, or warranties.
-- Fix typos and expand unambiguous shorthand. No emojis, no hype, no marketing language.
-- If the input is already clean, return it essentially unchanged.
-`;
+const SYSTEM_PROMPT = t("en", "prompts.professionalizeBullet");
 
 /**
  * ProfessionalizeBullet — single-line LLM pass for the "Job Details"

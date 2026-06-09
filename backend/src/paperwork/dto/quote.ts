@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   validateSync,
@@ -46,6 +47,25 @@ export class CreateQuoteDto {
   @IsString()
   description?: string;
 
+  /** Per-language cache of the job-details description, keyed by lang code
+   *  (e.g. { en, es }). Populated lazily — a language is translated the first
+   *  time the quote is previewed/sent in it. Readers render
+   *  descriptionByLang[lang] ?? description. */
+  @IsOptional()
+  @IsObject()
+  descriptionByLang?: Record<string, string>;
+
+  /** Per-language job title + summary (keyed by lang code), so the customer's
+   *  agreement renders the heading in their language too. Populated from the
+   *  picked job option's translations. */
+  @IsOptional()
+  @IsObject()
+  jobNameByLang?: Record<string, string>;
+
+  @IsOptional()
+  @IsObject()
+  summaryByLang?: Record<string, string>;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => LineItemDto)
@@ -73,6 +93,9 @@ export class UpdateQuoteDto {
   @IsOptional() @IsString() summary?: string;
   @IsOptional() @IsString() jobName?: string;
   @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsObject() descriptionByLang?: Record<string, string>;
+  @IsOptional() @IsObject() jobNameByLang?: Record<string, string>;
+  @IsOptional() @IsObject() summaryByLang?: Record<string, string>;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => LineItemDto) lineItems?: LineItemDto[];
   /** INTEGER CENTS. */
   @IsOptional() @IsNumber() estimatedTotal?: number;

@@ -9,6 +9,7 @@ import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { type Lang, t } from "@core/i18n/mod.ts";
 import type { PaymentMethod } from "@paperwork/dto/invoice.ts";
 import type { PaymentMethod as PaymentStorageMethod } from "@paperwork/dto/payment.ts";
 
@@ -83,6 +84,7 @@ export class ConfirmPayment {
         this.identity.get(userId).catch(() => null),
       ]);
       const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || contractor?.name?.trim();
+      const lang: Lang = biz?.commsLanguage === "es" ? "es" : "en";
       const pdfBytes = await this.receiptPdf.run({
         invoice: updated,
         customer,
@@ -94,16 +96,20 @@ export class ConfirmPayment {
       });
 
       if (customer?.email) {
-        const subject = `Receipt for invoice #${invoice.id.slice(0, 8).toUpperCase()}`;
+        const subject = t(lang, "confirmPayment.email.subject", {
+          id: invoice.id.slice(0, 8).toUpperCase(),
+        });
         await this.email.send({
           to: customer.email,
           subject,
           htmlBody: renderReceiptHtml({
-            customer, contractor, businessName, intent, amount: intent.amount,
+            customer, contractor, businessName, intent, amount: intent.amount, lang,
           }),
           ...(contractor?.email ? { cc: [contractor.email] } : {}),
           attachments: [{
-            name: `Receipt-${invoice.id.slice(0, 8).toUpperCase()}.pdf`,
+            name: t(lang, "confirmPayment.email.attachmentName", {
+              id: invoice.id.slice(0, 8).toUpperCase(),
+            }),
             content: pdfBytes,
             contentType: "application/pdf",
           }],
@@ -120,9 +126,14 @@ export class ConfirmPayment {
         } catch { /* fall through to no-url body */ }
         const customerFirst = customer.name?.trim().split(/\s+/)[0];
         const senderFirst = contractor?.name?.trim().split(/\s+/)[0];
-        const lead = customerFirst ? `Hi ${customerFirst}, ` : "";
-        const tail = senderFirst ? ` — ${senderFirst}` : "";
-        const body = `${lead}got your payment of ${fmtUSD(intent.amount)}. Receipt: ${shortUrl}${tail}`;
+        const lead = customerFirst ? t(lang, "confirmPayment.sms.lead", { name: customerFirst }) : "";
+        const tail = senderFirst ? t(lang, "confirmPayment.sms.tail", { name: senderFirst }) : "";
+        const body = t(lang, "confirmPayment.sms.body", {
+          lead,
+          amount: fmtUSD(intent.amount),
+          url: shortUrl,
+          tail,
+        });
         await this.sms.send({ to: customer.phoneNumber, body });
       }
     } catch (err) {
@@ -174,17 +185,24 @@ function renderReceiptHtml(opts: {
   businessName?: string;
   intent: { method: PaymentMethod; reference?: string };
   amount: number;
+  lang: Lang;
 }): string {
-  const businessLabel = opts.businessName ?? opts.contractor?.name ?? "Paperwork Monster";
+  const { lang } = opts;
+  const businessLabel = opts.businessName ?? opts.contractor?.name ?? t(lang, "brand.name");
   const customerFirst = opts.customer?.name?.trim().split(/\s+/)[0];
+  const headline = customerFirst
+    ? t(lang, "confirmPayment.email.headline", { name: escapeHtml(customerFirst) })
+    : t(lang, "confirmPayment.email.headlineNoName");
+  const ref = opts.intent.reference
+    ? t(lang, "confirmPayment.email.refSuffix", { reference: escapeHtml(opts.intent.reference) })
+    : "";
   return `<!doctype html>
 <html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
     <div style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#d94e4e">${escapeHtml(businessLabel)}</div>
-    <div style="margin-top:18px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:24px;letter-spacing:-0.02em;color:#144852">Thanks${customerFirst ? ", " + escapeHtml(customerFirst) : ""} — we got it!</div>
+    <div style="margin-top:18px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:24px;letter-spacing:-0.02em;color:#144852">${headline}</div>
     <p style="margin:14px 0 0;color:#1c2c30;font-size:15px;line-height:1.55">
-      We've recorded your payment of <strong>${fmtUSD(opts.amount)}</strong>${opts.intent.reference ? ` (ref ${escapeHtml(opts.intent.reference)})` : ""}.
-      A PDF receipt is attached for your records.
+      ${t(lang, "confirmPayment.email.body", { amount: fmtUSD(opts.amount), ref })}
     </p>
   </div>
 </body></html>`;

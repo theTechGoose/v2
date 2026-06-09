@@ -1,8 +1,10 @@
 import { useState } from "preact/hooks";
+import { tFor } from "../lib/i18n.ts";
 
 interface Props {
   changeOrderId: string;
   initialStatus: "pending" | "approved" | "declined";
+  lang?: "en" | "es";
 }
 
 const GREEN = "#519843";
@@ -16,7 +18,7 @@ const LINE = "#e3e8e6";
  * linked invoice server-side (roadmap p.12).
  */
 export default function PublicChangeOrderActions(
-  { changeOrderId, initialStatus }: Props,
+  { changeOrderId, initialStatus, lang = "en" }: Props,
 ) {
   const [status, setStatus] = useState(initialStatus);
   const [busy, setBusy] = useState<"approve" | "decline" | null>(null);
@@ -34,7 +36,12 @@ export default function PublicChangeOrderActions(
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.reason ?? `Couldn't submit (${res.status})`);
+        throw new Error(
+          body.reason ??
+            tFor(lang, "publicChangeOrderActions.submitError", {
+              status: res.status,
+            }),
+        );
       }
       setStatus(action === "approve" ? "approved" : "declined");
     } catch (err) {
@@ -58,14 +65,16 @@ export default function PublicChangeOrderActions(
             status === "approved" ? GREEN : "#a83b3b"
           }`}
         >
-          {status === "approved" ? "Approved" : "Declined"}
+          {status === "approved"
+            ? tFor(lang, "publicChangeOrderActions.approvedLabel")
+            : tFor(lang, "status.declined")}
         </div>
         <p
           style={`margin:8px 0 0;color:${INK};font-size:15px;line-height:1.55`}
         >
           {status === "approved"
-            ? "Thanks! Your updated invoice total reflects this change."
-            : "No problem — we've let your contractor know."}
+            ? tFor(lang, "publicChangeOrderActions.approvedMessage")
+            : tFor(lang, "publicChangeOrderActions.declinedMessage")}
         </p>
       </div>
     );
@@ -79,7 +88,9 @@ export default function PublicChangeOrderActions(
         onClick={() => decide("approve")}
         style={`appearance:none;border:0;border-radius:12px;padding:15px 18px;background:${GREEN};color:#fff;font:inherit;font-weight:800;font-size:16px;cursor:pointer`}
       >
-        {busy === "approve" ? "Approving…" : "Approve this change"}
+        {busy === "approve"
+          ? tFor(lang, "publicChangeOrderActions.approving")
+          : tFor(lang, "publicChangeOrderActions.approve")}
       </button>
       <button
         type="button"
@@ -87,7 +98,7 @@ export default function PublicChangeOrderActions(
         onClick={() => decide("decline")}
         style={`appearance:none;border:1px solid ${LINE};border-radius:12px;padding:13px 18px;background:#fff;color:${MUTED};font:inherit;font-weight:700;font-size:15px;cursor:pointer`}
       >
-        {busy === "decline" ? "…" : "Decline"}
+        {busy === "decline" ? "…" : tFor(lang, "publicChangeOrderActions.decline")}
       </button>
       {error
         ? (

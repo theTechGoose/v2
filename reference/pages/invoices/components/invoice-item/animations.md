@@ -1,3 +1,0 @@
-# Animations — invoice-item
-
-None.

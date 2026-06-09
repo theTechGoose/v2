@@ -26,6 +26,7 @@ import {
   PageHeaderSkeleton,
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
+import { langSignal, tFor } from "../lib/i18n.ts";
 
 // Inner sort order for the "Out for response" track — most engaged
 // (opened) at top, then sent, cooling, stale. Mirrors the reference's
@@ -46,12 +47,12 @@ function clientFromSummary(summary: string | null | undefined): string {
   return m ? m[1].trim() : "—";
 }
 
-function mapCard(c: BackendQuoteCard): Quote {
+function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
   const fallbackClient = clientFromSummary(c.summary);
   const client = c.customerName ?? fallbackClient;
   return {
     id: c.id,
-    title: c.summary ?? "Untitled quote",
+    title: c.summary ?? tFor(lang, "quotesPage.untitledQuote"),
     client,
     customerId: c.customerId,
     initials: initialsFromName(c.customerName ?? fallbackClient),
@@ -82,7 +83,11 @@ const INITIAL: State = {
   insight: null,
 };
 
-export default function QuotesPage() {
+export default function QuotesPage(_props: { lang?: "en" | "es" }) {
+  // Self-source the live UI language: reading langSignal.value during render
+  // makes this island re-render when SettingsPage flips the language. The
+  // optional `lang` prop is an ignored SSR seed.
+  const lang = langSignal.value;
   const [s, setS] = useState<State>(INITIAL);
 
   useEffect(() => {
@@ -97,7 +102,7 @@ export default function QuotesPage() {
       setS({
         loading: false,
         error: null,
-        quotes: safeCards.map(mapCard),
+        quotes: safeCards.map((c) => mapCard(c, lang)),
         winRate,
         insight,
       });
@@ -108,7 +113,7 @@ export default function QuotesPage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [lang]);
 
   if (s.loading) {
     return (
@@ -120,7 +125,11 @@ export default function QuotesPage() {
     );
   }
   if (s.error) {
-    return <div class="qpage-error">Couldn't load quotes: {s.error}</div>;
+    return (
+      <div class="qpage-error">
+        {tFor(lang, "quotesPage.loadError", { error: s.error })}
+      </div>
+    );
   }
 
   const { quotes, winRate, insight } = s;
@@ -156,6 +165,7 @@ export default function QuotesPage() {
   return (
     <>
       <QuotesHero
+        lang={lang}
         openCount={open.length}
         openTotal={openTotal}
         staleCount={stale.length}
@@ -168,6 +178,7 @@ export default function QuotesPage() {
         ).size}
       />
       <QuotesKpis
+        lang={lang}
         outValue={outVal}
         outCount={out.length}
         draftCount={drafts.length}
@@ -179,46 +190,53 @@ export default function QuotesPage() {
       <div class="qlay">
         <div>
           <QuoteTrack
+            lang={lang}
             num="01"
-            title="Out for response"
+            title={tFor(lang, "quotesPage.track.outForResponse")}
             count={out.length}
             defaultOpen
             storageKey="quotes:track:01"
           >
             <div class="qcards">
-              {outSorted.map((q, i) => <QuoteCard key={q.id} q={q} idx={i} />)}
+              {outSorted.map((q, i) => (
+                <QuoteCard key={q.id} q={q} idx={i} lang={lang} />
+              ))}
             </div>
           </QuoteTrack>
 
           <QuoteTrack
+            lang={lang}
             num="02"
-            title="Drafting"
+            title={tFor(lang, "quotesPage.track.drafting")}
             count={drafts.length}
             defaultOpen={false}
             storageKey="quotes:track:02"
           >
             <div class="qcards">
-              {drafts.map((q, i) => <QuoteCard key={q.id} q={q} idx={i} />)}
+              {drafts.map((q, i) => (
+                <QuoteCard key={q.id} q={q} idx={i} lang={lang} />
+              ))}
             </div>
           </QuoteTrack>
 
           <QuoteTrack
+            lang={lang}
             num="03"
-            title="Decided this month"
+            title={tFor(lang, "quotesPage.track.decidedThisMonth")}
             count={decided.length}
             defaultOpen={false}
             storageKey="quotes:track:03"
           >
             <div class="qdone">
-              {decided.map((q) => <DecidedRow key={q.id} q={q} />)}
+              {decided.map((q) => <DecidedRow key={q.id} q={q} lang={lang} />)}
             </div>
           </QuoteTrack>
         </div>
 
         <aside class="qside">
-          <QSideBig open={out} />
-          <QSideRate won={won} lost={lost} />
-          <QSideTip text={insight?.text} />
+          <QSideBig open={out} lang={lang} />
+          <QSideRate won={won} lost={lost} lang={lang} />
+          <QSideTip text={insight?.text} lang={lang} />
         </aside>
       </div>
     </>

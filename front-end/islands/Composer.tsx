@@ -1,12 +1,14 @@
 import { useEffect, useState } from "preact/hooks";
 import { Icon } from "../components/ui/Icon.tsx";
 import { assistantClient } from "../clients/assistant.ts";
+import { tFor } from "../lib/i18n.ts";
 
 interface Props {
   conversationId?: string;
+  lang?: "en" | "es";
 }
 
-export default function Composer({ conversationId }: Props) {
+export default function Composer({ conversationId, lang = "en" }: Props) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -42,15 +44,23 @@ export default function Composer({ conversationId }: Props) {
   return (
     <div class="composer">
       <div class="composer__inner">
-        <button class="btn btn-ghost" type="button" aria-label="Attach">
+        <button
+          class="btn btn-ghost"
+          type="button"
+          aria-label={tFor(lang, "composer.attach")}
+        >
           <Icon name="image" />
         </button>
-        <button class="btn btn-ghost" type="button" aria-label="Voice">
+        <button
+          class="btn btn-ghost"
+          type="button"
+          aria-label={tFor(lang, "composer.voice")}
+        >
           <Icon name="mic" />
         </button>
         <textarea
           rows={1}
-          placeholder="Tell Bossie what to do…"
+          placeholder={tFor(lang, "composer.placeholder")}
           value={draft}
           onInput={(e) => setDraft((e.target as HTMLTextAreaElement).value)}
           onKeyDown={(e) => {
@@ -66,7 +76,7 @@ export default function Composer({ conversationId }: Props) {
           disabled={sending || draft.trim().length === 0}
           onClick={send}
         >
-          <Icon name="send" /> Send
+          <Icon name="send" /> {tFor(lang, "common.send")}
         </button>
       </div>
     </div>

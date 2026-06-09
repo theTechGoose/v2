@@ -5,7 +5,12 @@
  */
 import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
 import Ticker from "../islands/Ticker.tsx";
-import { pluralize } from "../lib/format.ts";
+import { type Lang, tFor } from "../lib/i18n.ts";
+
+/** Plural resolver for SSR call sites (frontend `tn` is langSignal-reactive
+ *  only, so it can't honor an explicit lang). */
+const plural = (lang: Lang, key: string, n: number) =>
+  tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n });
 
 /* ---------- Hero ---------- */
 
@@ -13,10 +18,12 @@ interface HeroProps {
   thisMonthBilled: number;
   pendingQuotes: number;
   outstandingOverdue?: number;
+  lang?: Lang;
 }
 
 export function Hero(
-  { thisMonthBilled, pendingQuotes, outstandingOverdue = 0 }: HeroProps,
+  { thisMonthBilled, pendingQuotes, outstandingOverdue = 0, lang = "en" }:
+    HeroProps,
 ) {
   const fresh = thisMonthBilled === 0;
   // CTA priority: overdue invoices > pending quotes > assistant fallback. The
@@ -24,53 +31,44 @@ export function Hero(
   // pick the most actionable next step instead.
   const cta = outstandingOverdue > 0
     ? {
-      label: `Nudge ${pluralize(outstandingOverdue, "overdue invoice")}`,
+      label: plural(lang, "dashHero.cta.nudgeOverdue", outstandingOverdue),
       href: "/invoices",
     }
     : pendingQuotes > 0
     ? {
       // Navigation intent only — this is an <a href>, not a bulk send. "Send
       // the N quotes" read as a one-tap blast; "Review" matches what it does.
-      label: `Review the ${pluralize(pendingQuotes, "quote")} pending`,
+      label: plural(lang, "dashHero.cta.reviewPending", pendingQuotes),
       href: "/quotes",
     }
-    : { label: "My assistant", href: "/assistant" };
+    : { label: tFor(lang, "dashHero.cta.assistant"), href: "/assistant" };
   return (
     <section class="hero">
       <div class="hero__copy">
         <h1 class="hero__title">
-          {fresh ? <>Let's get those quotes out the door.</> : (
+          {fresh ? <>{tFor(lang, "dashHero.title.getQuotesOut")}</> : (
             <>
-              You've billed{" "}
+              {tFor(lang, "dashHero.title.billedLead")}{" "}
               <em>
                 $<Ticker value={thisMonthBilled} />
               </em>{" "}
-              this month.<br />Let's get those quotes out the door.
+              {tFor(lang, "dashHero.title.billedTrail")}<br />
+              {tFor(lang, "dashHero.title.getQuotesOut")}
             </>
           )}
         </h1>
         <p class="hero__sub">
           {pendingQuotes > 0
-            ? (
-              <>
-                {pluralize(pendingQuotes, "quote")}{" "}
-                {pendingQuotes === 1 ? "is" : "are"}{" "}
-                sitting with clients. Send a nudge, or fire off a fresh one
-                straight from a text.
-              </>
-            )
-            : (
-              <>
-                No quotes out yet. Tell the assistant about a job and we'll
-                draft one.
-              </>
-            )}
+            ? plural(lang, "dashHero.sub.pending", pendingQuotes)
+            : tFor(lang, "dashHero.sub.empty")}
         </p>
         {pendingQuotes > 0 && (
           <div class="hero__stats">
             <span class="hero__stat hero__stat--pink">
-              <strong>{pluralize(pendingQuotes, "quote")}</strong>{" "}
-              awaiting signature
+              <strong>
+                {plural(lang, "dashHero.stat.quotes", pendingQuotes)}
+              </strong>{" "}
+              {tFor(lang, "dashHero.stat.awaiting")}
             </span>
           </div>
         )}
@@ -108,16 +106,18 @@ interface KpisProps {
   pendingQuotes: number;
   pendingTotal: number;
   avgJob: number;
+  lang?: Lang;
 }
 
 export function Kpis(props: KpisProps) {
+  const lang = props.lang ?? "en";
   // "Avg. paid job" — only counts paid invoices. Reads as "—" with an
   // honest sub when there's no paid history yet (was "$0 / last 30 days",
   // which looked broken).
   const avgJobVal = props.avgJob > 0
     ? `$${props.avgJob.toLocaleString()}`
-    : "No paid jobs yet";
-  const avgJobSub = props.avgJob > 0 ? "trailing year" : "";
+    : tFor(lang, "kpis.avgJob.none");
+  const avgJobSub = props.avgJob > 0 ? tFor(lang, "kpis.avgJob.trailingYear") : "";
   const items: Array<
     {
       icon: IconName;
@@ -133,30 +133,37 @@ export function Kpis(props: KpisProps) {
       icon: "hardhat",
       ic_bg: "var(--green-50)",
       ic_fg: "var(--green-600)",
-      label: "Active jobs",
+      label: tFor(lang, "kpis.activeJobs.label"),
       val: String(props.activeJobs),
-      sub: "on the books",
+      sub: tFor(lang, "kpis.activeJobs.sub"),
       delta: null,
     },
     {
       icon: "invoice",
       ic_bg: "var(--pink-50)",
       ic_fg: "var(--pink-700)",
-      label: "Outstanding",
+      label: tFor(lang, "kpis.outstanding.label"),
       val: `$${props.outstanding.toLocaleString()}`,
-      sub: pluralize(props.outstandingCount, "invoice"),
+      sub: plural(lang, "kpis.outstanding.invoices", props.outstandingCount),
       delta: props.outstandingOverdue > 0
-        ? { kind: "warn", txt: `${props.outstandingOverdue} overdue` }
+        ? {
+          kind: "warn",
+          txt: tFor(lang, "kpis.outstanding.overdue", {
+            n: props.outstandingOverdue,
+          }),
+        }
         : null,
     },
     {
       icon: "quote",
       ic_bg: "var(--coffee-50)",
       ic_fg: "var(--coffee-600)",
-      label: "Quotes pending",
+      label: tFor(lang, "kpis.quotesPending.label"),
       val: String(props.pendingQuotes),
       sub: props.pendingTotal > 0
-        ? `$${(props.pendingTotal / 1000).toFixed(1)}k in flight`
+        ? tFor(lang, "kpis.quotesPending.inFlight", {
+          amt: (props.pendingTotal / 1000).toFixed(1),
+        })
         : "—",
       delta: null,
     },
@@ -164,7 +171,7 @@ export function Kpis(props: KpisProps) {
       icon: "trend",
       ic_bg: "var(--teal-50)",
       ic_fg: "var(--teal-600)",
-      label: "Avg. paid job",
+      label: tFor(lang, "kpis.avgJob.label"),
       val: avgJobVal,
       sub: avgJobSub,
       delta: null,
@@ -217,7 +224,11 @@ export interface JobRow {
 }
 
 export function ActiveJobs(
-  { jobs, total }: { jobs: JobRow[]; total?: number },
+  { jobs, total, lang = "en" }: {
+    jobs: JobRow[];
+    total?: number;
+    lang?: Lang;
+  },
 ) {
   // `total` is the full active-job count (matches the KPI); `jobs` is only the
   // top slice rendered below. Show the total so the header count and the
@@ -231,24 +242,25 @@ export function ActiveJobs(
             class="hero__pill-dot"
             style="position:static;width:8px;height:8px"
           />
-          <h3 class="panel__title">Active jobs</h3>
-          <span class="panel__count">{count} active</span>
+          <h3 class="panel__title">{tFor(lang, "kpis.activeJobs.label")}</h3>
+          <span class="panel__count">
+            {tFor(lang, "activeJobs.count", { n: count })}
+          </span>
         </div>
-        <a class="panel__action" href="#">See all →</a>
+        <a class="panel__action" href="#">{tFor(lang, "dashPanel.seeAll")}</a>
       </div>
       {jobs.length === 0
         ? (
           <div style="padding:18px 4px;display:flex;flex-direction:column;gap:10px;align-items:flex-start">
             <p style="font-size:13.5px;color:var(--fg-muted, #6b7560);margin:0;line-height:1.5">
-              No jobs in flight yet. As soon as a customer signs a quote, the
-              job lands here.
+              {tFor(lang, "activeJobs.empty.text")}
             </p>
             <a
               class="panel__action"
               href="/quotes"
               style="background:var(--pink-50);color:var(--pink-700);padding:6px 12px;border-radius:8px;text-decoration:none"
             >
-              See pipeline →
+              {tFor(lang, "activeJobs.empty.action")}
             </a>
           </div>
         )
@@ -263,7 +275,8 @@ export function ActiveJobs(
                   <h4 class="job__title">{j.client}</h4>
                 </div>
                 <div class="job__meta">
-                  {j.task} <span class="job__meta-dot" /> Due {j.due}
+                  {j.task} <span class="job__meta-dot" />{" "}
+                  {tFor(lang, "activeJobs.due", { due: j.due })}
                 </div>
                 <div class="job__progress">
                   <div
@@ -294,7 +307,9 @@ export interface QuoteRow {
   cold?: boolean;
 }
 
-export function QuotesAwaiting({ quotes }: { quotes: QuoteRow[] }) {
+export function QuotesAwaiting(
+  { quotes, lang = "en" }: { quotes: QuoteRow[]; lang?: Lang },
+) {
   const total = quotes.reduce(
     (s, q) => s + Number(q.amt.replace(/[^0-9.]/g, "")),
     0,
@@ -303,22 +318,25 @@ export function QuotesAwaiting({ quotes }: { quotes: QuoteRow[] }) {
   return (
     <div class="panel">
       <div class="panel__head">
-        <h3 class="panel__title">Quotes awaiting signature</h3>
+        <h3 class="panel__title">{tFor(lang, "quotesAwaiting.title")}</h3>
         {!empty && (
           <span
             class="panel__count"
             style="background:var(--coffee-50);color:var(--coffee-600)"
           >
-            {quotes.length} out · ${total.toLocaleString()}
+            {tFor(lang, "quotesAwaiting.count", {
+              n: quotes.length,
+              total: total.toLocaleString(),
+            })}
           </span>
         )}
         <a class="panel__action" href="/quotes" style="margin-left:auto">
-          See all →
+          {tFor(lang, "dashPanel.seeAll")}
         </a>
       </div>
       {empty && (
         <div style="font-size:13px;color:var(--fg-muted);padding:8px 0 14px">
-          No quotes out yet. Draft one in the assistant.
+          {tFor(lang, "quotesAwaiting.empty")}
         </div>
       )}
       {quotes.map((q, i) => (
@@ -342,15 +360,16 @@ export function QuotesAwaiting({ quotes }: { quotes: QuoteRow[] }) {
                   : "var(--fg-muted)"
               };font-weight:${q.hot || q.cold ? 700 : 500}`}
             >
-              {q.sent} {q.hot ? "🔥" : ""} {q.cold ? "· cold" : ""}
+              {q.sent} {q.hot ? "🔥" : ""}{" "}
+              {q.cold ? tFor(lang, "quotesAwaiting.cold") : ""}
             </span>
           </div>
           <div class="quote-item__cta">
             <button type="button" class="qbtn qbtn--nudge">
-              <I d={ICN.send} size={11} /> Nudge by text
+              <I d={ICN.send} size={11} /> {tFor(lang, "quotesAwaiting.nudgeByText")}
             </button>
             <button type="button" class="qbtn qbtn--view">
-              <I d={ICN.eye} size={11} /> View quote
+              <I d={ICN.eye} size={11} /> {tFor(lang, "quotesAwaiting.viewQuote")}
             </button>
           </div>
         </div>
@@ -370,12 +389,13 @@ export interface OutstandingRow {
 }
 
 export function Outstanding(
-  { owed, current, mid, overdue, items }: {
+  { owed, current, mid, overdue, items, lang = "en" }: {
     owed: number;
     current: number;
     mid: number;
     overdue: number;
     items: OutstandingRow[];
+    lang?: Lang;
   },
 ) {
   const realTotal = current + mid + overdue;
@@ -385,7 +405,7 @@ export function Outstanding(
     <div class="money">
       <div class="money__head">
         <div>
-          <div class="money__label">Money owed to you</div>
+          <div class="money__label">{tFor(lang, "outstanding.label")}</div>
           <div class="money__amt">
             $<Ticker value={owed} />
           </div>
@@ -396,7 +416,7 @@ export function Outstanding(
             class="qbtn qbtn--nudge"
             style="padding:8px 14px;font-size:12px"
           >
-            <I d={ICN.send} size={12} /> Nudge all
+            <I d={ICN.send} size={12} /> {tFor(lang, "outstanding.nudgeAll")}
           </button>
         )}
       </div>
@@ -404,8 +424,8 @@ export function Outstanding(
         ? (
           <div style="font-size:13px;color:var(--fg-muted);padding:6px 0 14px">
             {items.length === 0
-              ? "No invoices yet — once you bill a job, it'll show up here."
-              : "All paid up — nothing outstanding."}
+              ? tFor(lang, "outstanding.empty.noInvoices")
+              : tFor(lang, "outstanding.empty.allPaid")}
           </div>
         )
         : (
@@ -436,21 +456,27 @@ export function Outstanding(
                   class="money__legend-dot"
                   style="background:var(--brand-green)"
                 />{" "}
-                Current ${current.toLocaleString()}
+                {tFor(lang, "outstanding.legend.current", {
+                  amt: current.toLocaleString(),
+                })}
               </div>
               <div class="money__legend-item">
                 <span
                   class="money__legend-dot"
                   style="background:var(--coffee-400)"
                 />{" "}
-                1–14 days ${mid.toLocaleString()}
+                {tFor(lang, "outstanding.legend.mid", {
+                  amt: mid.toLocaleString(),
+                })}
               </div>
               <div class="money__legend-item">
                 <span
                   class="money__legend-dot"
                   style="background:var(--brand-pink)"
                 />{" "}
-                Overdue ${overdue.toLocaleString()}
+                {tFor(lang, "outstanding.legend.overdue", {
+                  amt: overdue.toLocaleString(),
+                })}
               </div>
             </div>
           </>
@@ -494,19 +520,21 @@ export interface ActivityEntry {
   time: string;
 }
 
-export function Activity({ items }: { items: ActivityEntry[] }) {
+export function Activity(
+  { items, lang = "en" }: { items: ActivityEntry[]; lang?: Lang },
+) {
   const empty = items.length === 0;
   return (
     <div class="panel" id="activity">
       <div class="panel__head">
-        <h3 class="panel__title">What we handled today</h3>
+        <h3 class="panel__title">{tFor(lang, "activity.title")}</h3>
         <span style="font-size:11px;color:var(--fg-muted);margin-left:4px">
           {empty
-            ? "Nothing yet — your activity will land here."
-            : "The monsters have been busy"}
+            ? tFor(lang, "activity.emptySub")
+            : tFor(lang, "activity.busySub")}
         </span>
         <a class="panel__action" href="/activity" style="margin-left:auto">
-          Full log →
+          {tFor(lang, "activity.fullLog")}
         </a>
       </div>
       {items.map((a, i) => (

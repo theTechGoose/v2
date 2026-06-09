@@ -4,6 +4,9 @@
  * backend hasn't yet returned real data — once the user has actual jobs,
  * quotes, and activity, the route swaps in the live values and the
  * structure stays identical.
+ *
+ * The seed builders take a `lang` (default "en") so the placeholder copy
+ * renders in the contractor's language; numeric KPIs are language-agnostic.
  */
 import type {
   ActivityEntry,
@@ -11,152 +14,150 @@ import type {
   OutstandingRow,
   QuoteRow,
 } from "../components/DashSections.tsx";
+import { type Lang, tFor } from "./i18n.ts";
 
-export const SEED_JOBS: JobRow[] = [
+export const SEED_JOBS = (lang: Lang = "en"): JobRow[] => [
   {
-    client: "Maple Grove Apartments",
-    task: "Re-roof — building C",
+    client: tFor(lang, "dashSeed.client.mapleGroveApartments"),
+    task: tFor(lang, "dashSeed.jobs.reRoofBuildingC"),
     amount: "$4,800",
-    paid: "$2,400 paid",
+    paid: tFor(lang, "dashSeed.jobs.amountPaid", { amt: "$2,400" }),
     pct: 50,
-    due: "Today",
+    due: tFor(lang, "dashSeed.due.today"),
     icon: "hardhat",
     color: "var(--brand-green)",
-    status: { kind: "green", txt: "On track" },
+    status: { kind: "green", txt: tFor(lang, "dashSeed.jobs.status.onTrack") },
   },
   {
-    client: "Sarah Chen",
-    task: "Bathroom remodel",
+    client: tFor(lang, "dashSeed.client.sarahChen"),
+    task: tFor(lang, "dashSeed.jobs.bathroomRemodel"),
     amount: "$8,200",
-    paid: "$3,000 paid",
+    paid: tFor(lang, "dashSeed.jobs.amountPaid", { amt: "$3,000" }),
     pct: 36,
-    due: "Wed",
+    due: tFor(lang, "dashSeed.due.wed"),
     icon: "wrench",
     color: "var(--brand-pink)",
-    status: { kind: "green", txt: "Crew onsite" },
+    status: { kind: "green", txt: tFor(lang, "dashSeed.jobs.status.crewOnsite") },
   },
   {
-    client: "Marshall & Sons",
-    task: "Driveway repour",
+    client: tFor(lang, "dashSeed.client.marshallAndSons"),
+    task: tFor(lang, "dashSeed.jobs.drivewayRepour"),
     amount: "$2,950",
-    paid: "Deposit",
+    paid: tFor(lang, "dashSeed.jobs.deposit"),
     pct: 18,
-    due: "Fri",
+    due: tFor(lang, "dashSeed.due.fri"),
     icon: "truck",
     color: "var(--coffee-500)",
-    status: { kind: "warn", txt: "Awaiting permit" },
+    status: { kind: "warn", txt: tFor(lang, "dashSeed.jobs.status.awaitingPermit") },
   },
   {
-    client: "Jana Patel",
-    task: "Interior paint · 2BR",
+    client: tFor(lang, "dashSeed.client.janaPatel"),
+    task: tFor(lang, "dashSeed.jobs.interiorPaint2br"),
     amount: "$1,650",
-    paid: "Quoted",
+    paid: tFor(lang, "dashSeed.jobs.quoted"),
     pct: 0,
-    due: "Mon Apr 29",
+    due: tFor(lang, "dashSeed.due.monApr29"),
     icon: "paint",
     color: "var(--brand-pink)",
-    status: { kind: "teal", txt: "Scheduled" },
+    status: { kind: "teal", txt: tFor(lang, "dashSeed.jobs.status.scheduled") },
   },
   {
-    client: "Cobblestone Cafe",
-    task: "Patio re-tile",
+    client: tFor(lang, "dashSeed.client.cobblestoneCafe"),
+    task: tFor(lang, "dashSeed.jobs.patioReTile"),
     amount: "$3,400",
-    paid: "$1,000 paid",
+    paid: tFor(lang, "dashSeed.jobs.amountPaid", { amt: "$1,000" }),
     pct: 30,
-    due: "Apr 30",
+    due: tFor(lang, "dashSeed.due.apr30"),
     icon: "ruler",
     color: "var(--brand-green)",
-    status: { kind: "green", txt: "On track" },
+    status: { kind: "green", txt: tFor(lang, "dashSeed.jobs.status.onTrack") },
   },
 ];
 
-export const SEED_QUOTES: QuoteRow[] = [
+export const SEED_QUOTES = (lang: Lang = "en"): QuoteRow[] => [
   {
-    client: "Tom & Linda K.",
-    desc: "Garage epoxy floor",
+    client: tFor(lang, "dashSeed.client.tomLindaK"),
+    desc: tFor(lang, "dashSeed.quotes.garageEpoxyFloor"),
     amt: "$3,400",
-    sent: "Sent Mon · Viewed twice",
+    sent: tFor(lang, "dashSeed.quotes.sentMonViewedTwice"),
     hot: true,
   },
   {
-    client: "Greenleaf HOA",
-    desc: "Common area paint",
+    client: tFor(lang, "dashSeed.client.greenleafHoa"),
+    desc: tFor(lang, "dashSeed.quotes.commonAreaPaint"),
     amt: "$5,800",
-    sent: "Sent Tue · Viewed",
+    sent: tFor(lang, "dashSeed.quotes.sentTueViewed"),
     hot: false,
   },
   {
-    client: "Marcus Lin",
-    desc: "Kitchen backsplash",
+    client: tFor(lang, "dashSeed.client.marcusLin"),
+    desc: tFor(lang, "dashSeed.quotes.kitchenBacksplash"),
     amt: "$1,920",
-    sent: "Sent today",
+    sent: tFor(lang, "dashSeed.quotes.sentToday"),
     hot: false,
   },
   {
-    client: "Bayside Properties",
-    desc: "4-unit gutter cleaning",
+    client: tFor(lang, "dashSeed.client.baysideProperties"),
+    desc: tFor(lang, "dashSeed.quotes.gutterCleaning4Unit"),
     amt: "$1,680",
-    sent: "Sent 4 days ago",
+    sent: tFor(lang, "dashSeed.quotes.sent4DaysAgo"),
     hot: false,
     cold: true,
   },
 ];
 
-export const SEED_OUTSTANDING: OutstandingRow[] = [
+export const SEED_OUTSTANDING = (lang: Lang = "en"): OutstandingRow[] => [
   {
-    client: "Hilltop Diner",
-    meta: "11 days overdue · #INV-204",
+    client: tFor(lang, "dashSeed.client.hilltopDiner"),
+    meta: tFor(lang, "dashSeed.outstanding.daysOverdue", { inv: "#INV-204" }),
     metaColor: "var(--pink-700)",
     metaWeight: 700,
     amount: "$1,160",
   },
   {
-    client: "Sarah Chen",
-    meta: "Due in 3 days · #INV-208",
+    client: tFor(lang, "dashSeed.client.sarahChen"),
+    meta: tFor(lang, "dashSeed.outstanding.dueIn3Days", { inv: "#INV-208" }),
     metaColor: "var(--coffee-500)",
     metaWeight: 600,
     amount: "$1,920",
   },
   {
-    client: "Maple Grove Apts.",
-    meta: "Due Apr 30 · #INV-210",
+    client: tFor(lang, "dashSeed.client.mapleGroveApts"),
+    meta: tFor(lang, "dashSeed.outstanding.dueApr30", { inv: "#INV-210" }),
     metaColor: "var(--green-600)",
     metaWeight: 600,
     amount: "$3,340",
   },
 ];
 
-export const SEED_ACTIVITY: ActivityEntry[] = [
+export const SEED_ACTIVITY = (lang: Lang = "en"): ActivityEntry[] => [
   {
     icon: "check",
     bg: "var(--green-50)",
     fg: "var(--green-600)",
-    html:
-      "<strong>Tom &amp; Linda K.</strong> opened your quote for the second time",
-    time: "2 min ago",
+    html: tFor(lang, "dashSeed.activity.quoteOpenedSecondTime"),
+    time: tFor(lang, "dashSeed.time.2MinAgo"),
   },
   {
     icon: "send",
     bg: "var(--pink-50)",
     fg: "var(--pink-700)",
-    html:
-      "You texted us &quot;new job — paint kitchen for Marcus Lin&quot;. <strong>Quote drafted.</strong>",
-    time: "1 hr ago",
+    html: tFor(lang, "dashSeed.activity.textedQuoteDrafted"),
+    time: tFor(lang, "dashSeed.time.1HrAgo"),
   },
   {
     icon: "card",
     bg: "var(--green-50)",
     fg: "var(--green-600)",
-    html:
-      "<strong>Cobblestone Cafe</strong> paid invoice #INV-198 — $1,000 deposit",
-    time: "3 hr ago",
+    html: tFor(lang, "dashSeed.activity.paidInvoiceDeposit"),
+    time: tFor(lang, "dashSeed.time.3HrAgo"),
   },
   {
     icon: "contract",
     bg: "var(--teal-50)",
     fg: "var(--teal-600)",
-    html: "<strong>Sarah Chen</strong> e-signed the bathroom remodel contract",
-    time: "Yesterday",
+    html: tFor(lang, "dashSeed.activity.eSignedContract"),
+    time: tFor(lang, "dashSeed.time.yesterday"),
   },
 ];
 

@@ -7,6 +7,7 @@ import {
   refreshDash,
   subscribeDash,
 } from "../lib/dash-cache.ts";
+import { langSignal, tFor } from "../lib/i18n.ts";
 
 interface NavEntry {
   id: string;
@@ -56,18 +57,16 @@ interface SbState {
   identity: { display: string; biz?: string; initials: string } | null;
   /** Contractor UI language (roadmap p.13). */
   lang: "en" | "es";
+  /** Super-admin flag — gates the Admin tab. Server-enforced; this only
+   *  controls visibility. */
+  superAdmin: boolean;
 }
 
-const INITIAL_STATE: SbState = { counts: {}, identity: null, lang: "en" };
-
-// Neutral Latin-American Spanish for the nav rail (roadmap p.13).
-const NAV_ES: Record<string, string> = {
-  home: "Inicio",
-  clients: "Clientes",
-  quotes: "Cotizaciones",
-  contracts: "Contratos",
-  invoices: "Facturas",
-  payments: "Pagos",
+const INITIAL_STATE: SbState = {
+  counts: {},
+  identity: null,
+  lang: "en",
+  superAdmin: false,
 };
 
 function deriveInitials(
@@ -101,13 +100,16 @@ function projectSidebar(snap: CachedDash | null): SbState {
     (profile?.identity?.businessName ?? profile?.identity?.displayName)?.trim();
   const counts = stats ? pickCounts(stats) : {};
   const lang = profile?.user.language === "es" ? "es" : "en";
-  if (!userName && !bizName) return { counts, identity: null, lang };
-  const display = userName || bizName || "Account";
+  const superAdmin = profile?.user.superAdmin === true;
+  if (!userName && !bizName) {
+    return { counts, identity: null, lang, superAdmin };
+  }
+  const display = userName || bizName || tFor(lang, "common.account");
   const biz = userName && bizName ? bizName : undefined;
   const fallback = profile?.initials?.trim();
   const initials = (fallback && fallback !== "?" ? fallback : null) ??
     deriveInitials(userName, bizName);
-  return { counts, identity: { display, biz, initials }, lang };
+  return { counts, identity: { display, biz, initials }, lang, superAdmin };
 }
 
 export default function DashSidebar({ active = "home" }: Props) {
@@ -177,6 +179,10 @@ export default function DashSidebar({ active = "home" }: Props) {
     globalThis.location.href = "/";
   }
 
+  // Reactive UI language: seeded from the profile cache, flipped instantly
+  // when Settings changes it. Reading langSignal here re-renders the rail.
+  const lang = langSignal.value;
+
   return (
     <>
       {mobileOpen && (
@@ -195,7 +201,7 @@ export default function DashSidebar({ active = "home" }: Props) {
           <a
             class="sb__brand"
             href="/dashboard"
-            title="Go to Dashboard"
+            title={tFor(lang, "nav.brandTitle")}
             style="text-decoration:none;color:inherit"
           >
             <div class="sb__brand-logo">
@@ -206,20 +212,20 @@ export default function DashSidebar({ active = "home" }: Props) {
               />
             </div>
             <div class="sb__brand-text">
-              <div class="sb__brand-name">Paperwork Monster</div>
+              <div class="sb__brand-name">{tFor(lang, "brand.name")}</div>
             </div>
           </a>
 
           <a
             class="sb__textus"
             href="/assistant"
-            title="My Assistant — AI quote builder"
+            title={tFor(lang, "nav.assistantTitle")}
           >
             <div class="sb__textus-icon">
               <I d={ICN.crown} size={18} />
             </div>
             <div class="sb__textus-text">
-              <span>{s.lang === "es" ? "Mi Asistente" : "My Assistant"}</span>
+              <span>{tFor(lang, "nav.assistant")}</span>
             </div>
           </a>
 
@@ -240,9 +246,7 @@ export default function DashSidebar({ active = "home" }: Props) {
                     <I d={ICN[item.icon]} size={18} />
                   </span>
                   <span class="nav-item__label">
-                    {s.lang === "es"
-                      ? (NAV_ES[item.id] ?? item.label)
-                      : item.label}
+                    {tFor(lang, `nav.${item.id}`)}
                   </span>
                   {count != null && count > 0
                     ? <span class="nav-item__count">{count}</span>
@@ -250,6 +254,25 @@ export default function DashSidebar({ active = "home" }: Props) {
                 </a>
               );
             })}
+            {
+              /* Admin tab — super-admins only. Server enforces the /admin
+                gate too (route middleware + every endpoint); this just hides
+                the entry for everyone else. Label is intentionally not i18n'd
+                (internal operator tool). */
+            }
+            {s.superAdmin && (
+              <a
+                href="/admin"
+                class={`nav-item ${
+                  active === "admin" ? "nav-item--active" : ""
+                }`}
+              >
+                <span class="nav-item__icon">
+                  <I d={ICN.shield} size={18} />
+                </span>
+                <span class="nav-item__label">Admin</span>
+              </a>
+            )}
           </nav>
 
           <div class="sb__bottom">
@@ -297,8 +320,12 @@ export default function DashSidebar({ active = "home" }: Props) {
                 type="button"
                 class="sb__toggle"
                 onClick={toggle}
-                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-                title={collapsed ? "Expand" : "Collapse"}
+                aria-label={collapsed
+                  ? tFor(lang, "sidebar.expand")
+                  : tFor(lang, "sidebar.collapse")}
+                title={collapsed
+                  ? tFor(lang, "sidebar.expandTitle")
+                  : tFor(lang, "sidebar.collapseTitle")}
                 style="width:28px;height:28px;border-radius:9px;background:rgba(255,255,255,0.08);border:none;color:rgba(255,255,255,0.65);cursor:pointer;display:grid;place-items:center;flex-shrink:0"
               >
                 <I
@@ -328,7 +355,7 @@ export default function DashSidebar({ active = "home" }: Props) {
                 <I d={ICN.logout} size={18} />
               </span>
               <span class="nav-item__label">
-                {s.lang === "es" ? "Cerrar sesión" : "Log out"}
+                {tFor(lang, "nav.logout")}
               </span>
             </button>
           </div>

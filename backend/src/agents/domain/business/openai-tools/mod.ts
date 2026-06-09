@@ -1,4 +1,5 @@
 import type { LLMAction } from "@agents/domain/business/llm/base/mod.ts";
+import { t } from "@core/i18n/mod.ts";
 
 /**
  * OpenAI function-tool schemas. The names + parameter shapes are pinned
@@ -15,22 +16,22 @@ export const TOOL_DEFS = [
     type: "function" as const,
     function: {
       name: "create_quote",
-      description: "Draft a quote for the user to review. Fire immediately when work is described — don't ask for confirmation, sizes, materials, or anything else first.",
+      description: t("en", "prompts.tools.createQuote.description"),
       parameters: {
         type: "object",
         properties: {
-          summary:    { type: "string", description: "One-line headline like 'Quote: 2-Car Garage Epoxy Floor'." },
+          summary:    { type: "string", description: t("en", "prompts.tools.createQuote.summary") },
           lineItems: {
             type: "array",
-            description: "Quote line items. CRITICAL: amountCents is in CENTS — always multiply your dollar estimate by 100. A $1,200 job is amountCents: 120000, NOT 1200. A $16 job is 1600. If the line item should look like $X.YZ in the UI, send X*100 + YZ.",
+            description: t("en", "prompts.tools.createQuote.lineItems"),
             items: {
               type: "object",
               properties: {
-                description: { type: "string", description: "Plain-English line, e.g. 'Bathroom tile install (80 sqft, porcelain)'." },
+                description: { type: "string", description: t("en", "prompts.tools.createQuote.lineItemDescription") },
                 amountCents: {
                   type: "integer",
                   minimum: 0,
-                  description: "Total dollars × 100. $1,200 → 120000. $850 → 85000. NEVER pass dollars directly.",
+                  description: t("en", "prompts.tools.createQuote.lineItemAmountCents"),
                 },
               },
               required: ["description", "amountCents"],
@@ -47,11 +48,11 @@ export const TOOL_DEFS = [
     type: "function" as const,
     function: {
       name: "lock_quote",
-      description: "Lock the active quote so it can't be edited. Fire when the user confirms (e.g. 'lock it in', 'send it', 'yes').",
+      description: t("en", "prompts.tools.lockQuote.description"),
       parameters: {
         type: "object",
         properties: {
-          quoteId: { type: "string", description: "The id of the quote to lock — typically the most recently drafted quote in this conversation." },
+          quoteId: { type: "string", description: t("en", "prompts.tools.lockQuote.quoteId") },
         },
         required: ["quoteId"],
         additionalProperties: false,
@@ -62,11 +63,11 @@ export const TOOL_DEFS = [
     type: "function" as const,
     function: {
       name: "request_terms_transition",
-      description: "Offer to advance from phase 1 (quote) to phase 2 (contract terms wizard). Fire AFTER lock_quote in the same response.",
+      description: t("en", "prompts.tools.requestTermsTransition.description"),
       parameters: {
         type: "object",
         properties: {
-          quoteId: { type: "string", description: "The locked quote that the contract will be drafted against." },
+          quoteId: { type: "string", description: t("en", "prompts.tools.requestTermsTransition.quoteId") },
         },
         required: ["quoteId"],
         additionalProperties: false,

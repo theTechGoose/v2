@@ -1,5 +1,6 @@
 import { useEffect } from "preact/hooks";
-import { type Lang, langSignal } from "../lib/lang.ts";
+import { type Lang, langSignal, writeLangToUrl } from "../lib/lang.ts";
+import { t } from "../lib/i18n.ts";
 
 interface Props {
   initial?: Lang;
@@ -7,17 +8,25 @@ interface Props {
 
 export default function LangToggle({ initial }: Props) {
   useEffect(() => {
+    // lib/lang.ts already seeds langSignal at module load (query > storage).
+    // Re-resolve here so a server-provided `initial` can act as the lowest
+    // fallback. Priority: ?lang= > localStorage > initial > "en".
+    const qp = new URLSearchParams(globalThis.location?.search ?? "").get(
+      "lang",
+    );
+    const fromQuery: Lang | null = qp === "en" || qp === "es" ? qp : null;
     const stored = globalThis.localStorage?.getItem("pm:lang") as Lang | null;
-    langSignal.value = stored ?? initial ?? "en";
+    langSignal.value = fromQuery ?? stored ?? initial ?? "en";
   }, []);
 
   function set(lang: Lang) {
     langSignal.value = lang;
     globalThis.localStorage?.setItem("pm:lang", lang);
+    writeLangToUrl(lang);
   }
 
   return (
-    <div class="lang-toggle" role="group" aria-label="Language">
+    <div class="lang-toggle" role="group" aria-label={t("langToggle.ariaLabel")}>
       <button
         type="button"
         class={langSignal.value === "en" ? "active" : ""}

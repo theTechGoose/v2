@@ -12,6 +12,7 @@ import {
   type ContractPublic,
   ErrorCard,
 } from "../components/contract-doc.tsx";
+import { tFor } from "../lib/i18n.ts";
 
 interface State {
   phase: "loading" | "error" | "ok";
@@ -19,9 +20,10 @@ interface State {
   message?: string;
 }
 
-const LINK_GONE = "This contract link expired or was revoked.";
-
-export default function PublicContractView({ id }: { id: string }) {
+export default function PublicContractView(
+  { id, lang = "en" }: { id: string; lang?: "en" | "es" },
+) {
+  const LINK_GONE = tFor(lang, "publicContract.linkGone");
   const [s, setS] = useState<State>({ phase: "loading" });
 
   useEffect(() => {
@@ -49,7 +51,11 @@ export default function PublicContractView({ id }: { id: string }) {
     return <ContractDoc contract={s.contract} />;
   }
   if (s.phase === "error") {
-    return <ErrorCard message={s.message ?? "Contract not available."} />;
+    return (
+      <ErrorCard
+        message={s.message ?? tFor(lang, "publicContract.notAvailable")}
+      />
+    );
   }
   return <LoadingSkeleton />;
 }

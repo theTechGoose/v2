@@ -5,8 +5,27 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import { deriveLanguageOnVerify } from "@users/domain/business/derive-language/mod.ts";
+import type { Language } from "@users/dto/user.ts";
 
 const MAX_ATTEMPTS = 5;
+
+/** Brand-new users have no name. We seed a neutral, language-appropriate
+ *  placeholder at creation so the app's identity-dependent UI is reachable
+ *  immediately — most importantly the sidebar's user block, which is the only
+ *  entry point to /settings and only renders once a name (or business name)
+ *  exists. Without a name a fresh user literally cannot open Settings. The
+ *  placeholder is freely overwritable in Settings or via the assistant. */
+const PLACEHOLDER_NAMES = { en: "New user", es: "Nuevo usuario" } as const;
+function placeholderNameFor(language: Language | undefined): string {
+  return language === "es" ? PLACEHOLDER_NAMES.es : PLACEHOLDER_NAMES.en;
+}
+/** True when `name` is empty or still the seeded placeholder — i.e. the user
+ *  hasn't set a real name yet. Lets the legacy dev seeder overwrite the
+ *  placeholder without clobbering a genuinely-onboarded user's name. */
+function isPlaceholderName(name: string | undefined): boolean {
+  const n = name?.trim() ?? "";
+  return n.length === 0 || n === PLACEHOLDER_NAMES.en || n === PLACEHOLDER_NAMES.es;
+}
 
 /** Universal dev/CI bypass. When NOT running on Deno Deploy, any phone
  *  number paired with this code logs in (find-or-create user + mint
@@ -57,14 +76,25 @@ export class VerifyOtp {
 
     if (!IS_PROD && input.code === DEV_MASTER_CODE) {
       const existing = await this.users.findByPhone(phone);
+      // Honor the language the landing toggle sent via send-otp, even on the
+      // master-OTP bypass: a brand-new user inherits the OTP record's language
+      // (so dev signups with 000000 still respect the EN/ES toggle).
+      const otpLang = existing
+        ? undefined
+        : (await this.otps.get(phone).catch(() => null))?.language;
+      const newLang = deriveLanguageOnVerify(null, otpLang) ?? "en";
       let user = existing
-        ?? await this.users.create({ phoneNumber: phone, language: "en" });
+        ?? await this.users.create({
+          phoneNumber: phone,
+          language: newLang,
+          name: placeholderNameFor(newLang),
+        });
       if (SEED_DEV_DEFAULTS) {
         // Legacy opt-in only. Seeds the onboarding-gate requirements
         // (user.name + identity.businessName) so callers that expect a
         // fully-onboarded user via master-OTP keep working. New specs
         // should NOT depend on this — use cy.startFreshOnboarding().
-        if (!user.name || user.name.trim().length === 0) {
+        if (isPlaceholderName(user.name)) {
           user = await this.users.update(user.id, { name: "Dev User" });
         }
         const identity = await this.businessIdentities.get(user.id);
@@ -98,7 +128,11 @@ export class VerifyOtp {
       ? (language && language !== existing.language
           ? await this.users.update(existing.id, { language })
           : existing)
-      : await this.users.create({ phoneNumber: phone, language });
+      : await this.users.create({
+          phoneNumber: phone,
+          language,
+          name: placeholderNameFor(language),
+        });
 
     const session = await this.sessions.create(user.id);
     return { sessionId: session.id, userId: user.id, isNewUser: !existing };

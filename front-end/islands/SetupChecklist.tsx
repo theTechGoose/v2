@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
+import { langSignal, tFor } from "../lib/i18n.ts";
 
 /**
  * SetupChecklist — post-onboarding "finish setting up" card on the
@@ -36,6 +37,9 @@ export default function SetupChecklist() {
 
   if (!snap || dismissed) return null;
 
+  // Reactive app language (flips live on a Settings change); the profile fetch
+  // above is only for the checklist item-completeness data, not the language.
+  const lang = langSignal.value;
   const id = snap.identity ?? null;
   const acceptedAny = id?.acceptedPaymentMethods
     ? Object.values(id.acceptedPaymentMethods).some(
@@ -46,43 +50,43 @@ export default function SetupChecklist() {
   const items: Item[] = [
     {
       key: "name",
-      label: "Your name",
+      label: tFor(lang, "setupChecklist.item.name"),
       done: !!snap.user.name?.trim(),
       href: "/settings",
     },
     {
       key: "biz",
-      label: "Business name",
+      label: tFor(lang, "setupChecklist.item.businessName"),
       done: !!id?.businessName?.trim(),
       href: "/settings",
     },
     {
       key: "email",
-      label: "Email for notifications",
+      label: tFor(lang, "setupChecklist.item.email"),
       done: !!snap.user.email?.trim(),
       href: "/settings",
     },
     {
       key: "logo",
-      label: "Upload your logo",
+      label: tFor(lang, "setupChecklist.item.logo"),
       done: !!id?.logoFileId,
       href: "/settings",
     },
     {
       key: "address",
-      label: "Mailing address",
+      label: tFor(lang, "setupChecklist.item.address"),
       done: !!(snap.address?.postal?.trim() || snap.address?.street?.trim()),
       href: "/settings",
     },
     {
       key: "payment",
-      label: "How you accept payment",
+      label: tFor(lang, "setupChecklist.item.payment"),
       done: acceptedAny,
       href: "/settings",
     },
     {
       key: "insurance",
-      label: "Insurance (optional but helps)",
+      label: tFor(lang, "setupChecklist.item.insurance"),
       done: !!snap.insurance?.provider?.trim(),
       href: "/settings",
     },
@@ -97,31 +101,36 @@ export default function SetupChecklist() {
   return (
     <section
       class="panel"
-      aria-label="Finish setting up"
+      aria-label={tFor(lang, "setupChecklist.aria.section")}
       style="padding:18px 22px;margin-bottom:18px;background:linear-gradient(135deg,rgba(255,107,107,0.08) 0%,rgba(255,107,107,0.02) 100%);border:1px solid rgba(255,107,107,0.25)"
     >
       <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
         <div>
           <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#d94e4e">
-            Setup checklist
+            {tFor(lang, "setupChecklist.eyebrow")}
           </div>
           <h3 style="margin:4px 0 0;font-family:var(--font-heading);font-weight:800;font-size:18px;color:var(--brand-teal)">
-            Finish setting up — {remaining.length}{" "}
-            {remaining.length === 1 ? "thing" : "things"} left
+            {tFor(
+              lang,
+              `setupChecklist.heading.${
+                remaining.length === 1 ? "one" : "other"
+              }`,
+              { n: remaining.length },
+            )}
           </h3>
         </div>
         <button
           type="button"
-          aria-label="Hide checklist"
+          aria-label={tFor(lang, "setupChecklist.aria.hide")}
           onClick={() => setDismissed(true)}
           style="appearance:none;background:transparent;border:0;font:inherit;font-size:12px;color:var(--fg-muted);cursor:pointer;opacity:0.7"
         >
-          Hide
+          {tFor(lang, "setupChecklist.hide")}
         </button>
       </div>
       <div
         role="progressbar"
-        aria-label="Setup completeness"
+        aria-label={tFor(lang, "setupChecklist.aria.progress")}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={pct}

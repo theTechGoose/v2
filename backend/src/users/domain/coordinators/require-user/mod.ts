@@ -40,26 +40,12 @@ export async function requireUser(
   users: UserStore,
 ): Promise<User> {
   const sessionId = readSessionId(ctx);
-  // [auth-diag] Temporary: trace which unauthorized branch fires so the
-  // login→landing regression can be pinned down from prod logs. Remove once
-  // resolved. (Logs presence/length only — never the raw session id.)
-  if (!sessionId) {
-    console.error("[auth-diag] requireUser: no sessionId on request");
-    throw new UnauthorizedError();
-  }
+  if (!sessionId) throw new UnauthorizedError();
   const session = await sessions.get(sessionId);
-  if (!session) {
-    console.error(
-      `[auth-diag] requireUser: session NOT FOUND (sidLen=${sessionId.length})`,
-    );
-    throw new UnauthorizedError();
-  }
+  if (!session) throw new UnauthorizedError();
   try {
     return await users.get(session.userId);
   } catch {
-    console.error(
-      `[auth-diag] requireUser: user NOT FOUND for session (userId=${session.userId})`,
-    );
     throw new UnauthorizedError();
   }
 }

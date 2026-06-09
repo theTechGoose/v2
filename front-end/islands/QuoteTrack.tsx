@@ -7,6 +7,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
+import { tFor } from "../lib/i18n.ts";
 
 interface Props {
   num: string;
@@ -14,10 +15,11 @@ interface Props {
   count: number;
   /** Singular word used in the count label ("0 quotes" / "1 quote"). The
    *  component is reused by /invoices and /payments which want different
-   *  wording. */
+   *  wording. When omitted, falls back to the localized "quote" unit. */
   unit?: string;
   defaultOpen?: boolean;
   storageKey?: string;
+  lang?: "en" | "es";
   children?: ComponentChildren;
 }
 
@@ -26,9 +28,10 @@ export default function QuoteTrack(
     num,
     title,
     count,
-    unit = "quote",
+    unit,
     defaultOpen = true,
     storageKey,
+    lang = "en",
     children,
   }: Props,
 ) {
@@ -58,7 +61,13 @@ export default function QuoteTrack(
         <span class="qtrack__num">{num}</span>
         <span class="qtrack__title">{title}</span>
         <span class="qtrack__count">
-          {count} {count === 1 ? unit : `${unit}s`}
+          {unit
+            ? `${count} ${count === 1 ? unit : `${unit}s`}`
+            : tFor(
+              lang,
+              `quoteTrack.count.${count === 1 ? "one" : "other"}`,
+              { n: count },
+            )}
         </span>
       </header>
       <div class="qtrack__body">

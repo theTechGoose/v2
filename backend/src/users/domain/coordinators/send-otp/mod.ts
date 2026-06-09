@@ -4,6 +4,7 @@ import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import { generateOtpCode } from "@users/domain/business/generate-otp-code/mod.ts";
 import type { Language } from "@users/dto/user.ts";
+import { t } from "@core/i18n/mod.ts";
 
 export interface SendOtpInput {
   phoneNumber: string;
@@ -59,6 +60,5 @@ export class SendOtp {
 
 /** Localized SMS body. Kept short so it fits in a single SMS segment. */
 function renderSmsBody(code: string, language: Language): string {
-  if (language === "es") return `Tu código de Paperwork Monster: ${code}`;
-  return `Your Paperwork Monster code: ${code}`;
+  return t(language, "sms.otpCode", { code });
 }

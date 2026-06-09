@@ -22,6 +22,7 @@ import {
   PageHeaderSkeleton,
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
+import { langSignal, tFor } from "../lib/i18n.ts";
 
 interface State {
   loading: boolean;
@@ -47,7 +48,8 @@ function pickLoop(cards: CustomerCard[]): CustomerCard[] {
   return candidates.slice(0, 3);
 }
 
-export default function ClientsPage() {
+export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
+  const lang = langSignal.value;
   const [s, setS] = useState<State>(INITIAL);
 
   useEffect(() => {
@@ -80,7 +82,11 @@ export default function ClientsPage() {
     );
   }
   if (s.error) {
-    return <div class="cpage-error">Couldn't load clients: {s.error}</div>;
+    return (
+      <div class="cpage-error">
+        {tFor(lang, "clientsPage.loadError", { error: s.error })}
+      </div>
+    );
   }
 
   const { cards: rawCards, top, segments } = s;
@@ -100,11 +106,12 @@ export default function ClientsPage() {
         activeJobs={activeJobs}
         owedTotal={owedTotal}
         quietCount={quietCount}
+        lang={lang}
       />
-      <LoopBar picks={loopPicks} />
-      <ClientsBoard cards={cards}>
-        <TopClients rows={top.results} />
-        <ClientsSegments rows={segments.segments} />
+      <LoopBar picks={loopPicks} lang={lang} />
+      <ClientsBoard cards={cards} lang={lang}>
+        <TopClients rows={top.results} lang={lang} />
+        <ClientsSegments rows={segments.segments} lang={lang} />
       </ClientsBoard>
     </>
   );

@@ -3,6 +3,7 @@ import {
   LLM_CLIENT,
   type LLMClient,
 } from "@agents/domain/business/llm/base/mod.ts";
+import { t } from "@core/i18n/mod.ts";
 
 export interface SuggestPricesInput {
   userId: string;
@@ -28,24 +29,7 @@ export interface SuggestPricesResult {
   options: PriceOption[];
 }
 
-const SYSTEM_PROMPT =
-  `You are a pricing assistant for a contractor. Given a raw job description,
-propose THREE price options the contractor can choose between.
-
-OUTPUT — JSON only, no prose, no code fences:
-  { "options": [
-    { "tier": "basic",    "label": "Basic",    "priceCents": <int>, "rationale": "<≤10 words>" },
-    { "tier": "standard", "label": "Standard", "priceCents": <int>, "rationale": "<≤10 words>" },
-    { "tier": "premium",  "label": "Premium",  "priceCents": <int>, "rationale": "<≤10 words>" }
-  ] }
-
-RULES:
-- Exactly 3 options, ascending price: basic < standard < premium.
-- priceCents is an integer number of cents (e.g. $850.00 → 85000).
-- Base the numbers on typical US small-contractor pricing for the described
-  work. If the description is vague, give a reasonable mid-market range.
-- rationale is ≤10 words, plain, no hype, no emojis.
-- Return JSON only.`;
+const SYSTEM_PROMPT = t("en", "prompts.suggestPrices");
 
 /**
  * SuggestPrices — one-shot LLM pass behind the "I know the job, help me
@@ -62,8 +46,9 @@ export class SuggestPrices {
     const raw = input.raw.trim();
     if (!raw) throw new Error("raw is required");
 
+    const lang: "en" | "es" = input.lang === "es" ? "es" : "en";
     const langLine = input.lang === "es"
-      ? "\n\nWrite each label and rationale in neutral Latin-American Spanish."
+      ? t("en", "prompts.suggestPricesSpanishDirective")
       : "";
 
     let text: string;
@@ -79,19 +64,23 @@ export class SuggestPrices {
       text = res.text ?? "";
     } catch (err) {
       console.error("[suggest-prices] llm call failed:", err);
-      return { options: fallbackTiers() };
+      return { options: fallbackTiers(lang) };
     }
 
     const parsed = tryParseJson(text);
-    const options = normalize(parsed?.options);
-    return { options: options.length === 3 ? options : fallbackTiers() };
+    const options = normalize(parsed?.options, lang);
+    return { options: options.length === 3 ? options : fallbackTiers(lang) };
   }
 }
 
-function normalize(raw: unknown): PriceOption[] {
+function normalize(raw: unknown, lang: "en" | "es"): PriceOption[] {
   if (!Array.isArray(raw)) return [];
   const tiers: PriceOption["tier"][] = ["basic", "standard", "premium"];
-  const labels = ["Basic", "Standard", "Premium"];
+  const labels = [
+    t(lang, "suggestPrices.tier.basic"),
+    t(lang, "suggestPrices.tier.standard"),
+    t(lang, "suggestPrices.tier.premium"),
+  ];
   const out: PriceOption[] = [];
   for (let i = 0; i < raw.length && out.length < 3; i++) {
     const o = raw[i] as {
@@ -134,25 +123,25 @@ function tryParseJson(s: string): { options?: unknown } | undefined {
 }
 
 /** Generic mid-market tiers for dev/stub or when the model returns garbage. */
-function fallbackTiers(): PriceOption[] {
+function fallbackTiers(lang: "en" | "es"): PriceOption[] {
   return [
     {
       tier: "basic",
-      label: "Basic",
+      label: t(lang, "suggestPrices.tier.basic"),
       priceCents: 50000,
-      rationale: "Core scope, essentials only",
+      rationale: t(lang, "suggestPrices.fallback.basicRationale"),
     },
     {
       tier: "standard",
-      label: "Standard",
+      label: t(lang, "suggestPrices.tier.standard"),
       priceCents: 85000,
-      rationale: "Full scope, typical materials",
+      rationale: t(lang, "suggestPrices.fallback.standardRationale"),
     },
     {
       tier: "premium",
-      label: "Premium",
+      label: t(lang, "suggestPrices.tier.premium"),
       priceCents: 120000,
-      rationale: "Premium materials, extra finish",
+      rationale: t(lang, "suggestPrices.fallback.premiumRationale"),
     },
   ];
 }

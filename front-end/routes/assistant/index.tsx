@@ -13,10 +13,10 @@ import ChatHeaderLive from "../../islands/ChatHeaderLive.tsx";
 import RedirectToast from "../../islands/RedirectToast.tsx";
 import { type Conversation } from "../../clients/assistant.ts";
 import { profileClient, type ProfileSnapshot } from "../../clients/profile.ts";
+import { tFor } from "../../lib/i18n.ts";
 
 export default define.page(async function AssistantHome(ctx) {
   const user = ctx.state.user;
-  const greetingName = (user?.name?.trim() || "there").split(" ")[0];
 
   const sessionId = getSessionId(ctx.req);
 
@@ -71,6 +71,11 @@ export default define.page(async function AssistantHome(ctx) {
   const profile = await profileClient.get({ sessionId }).catch(() =>
     null as ProfileSnapshot | null
   );
+  const lang = profile?.user?.language === "es" ? "es" : "en";
+
+  const greetingName = user?.name?.trim()
+    ? user.name.trim().split(" ")[0]
+    : tFor(lang, "common.thereFallback");
 
   const businessName = profile?.identity?.businessName ??
     profile?.identity?.displayName;
@@ -85,7 +90,7 @@ export default define.page(async function AssistantHome(ctx) {
   return (
     <>
       <Head>
-        <title>Assistant · Paperwork Monster</title>
+        <title>{tFor(lang, "assistantPage.docTitle")}</title>
         <link rel="stylesheet" href="/assistant-page.css" />
       </Head>
 
@@ -94,17 +99,17 @@ export default define.page(async function AssistantHome(ctx) {
         <DashSidebar active="messages" />
         <main class="main">
           <DashTopbar
-            greetingDate="My assistant · always on"
+            greetingDate={tFor(lang, "assistantPage.greetingDate")}
             greetingName={greetingName}
-            greetingOverride="What can I take off your plate?"
+            greetingOverride={tFor(lang, "assistantPage.greetingOverride")}
           />
           <div class="asst">
             <AsstThreads initialThreads={initialThreads} />
             <div class="asst__chat-wrap">
               <section class="chat">
                 <ChatHeaderLive
-                  initialClient="New Conversation"
-                  initialStatus="Your PM Assistant is here to help!"
+                  initialClient={tFor(lang, "assistantPage.newConversation")}
+                  initialStatus={tFor(lang, "assistantPage.assistantHelp")}
                 />
                 <AsstChat
                 initialMessages={[]}

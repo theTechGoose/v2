@@ -1,10 +1,19 @@
 import { Body, Context, Controller, Post } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import { SendOtp } from "@users/domain/coordinators/send-otp/mod.ts";
-import { VerifyOtp, InvalidCodeError, ExpiredCodeError, RateLimitedError } from "@users/domain/coordinators/verify-otp/mod.ts";
+import {
+  ExpiredCodeError,
+  InvalidCodeError,
+  RateLimitedError,
+  VerifyOtp,
+} from "@users/domain/coordinators/verify-otp/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
 import { parseSendOtp, parseVerifyOtp } from "@users/dto/auth.ts";
 import { readSessionId } from "@users/domain/coordinators/require-user/mod.ts";
+import {
+  buildSessionCookie,
+  clearSessionCookie,
+} from "@users/domain/business/session-cookie/mod.ts";
 
 @Controller("auth")
 export class AuthController {
@@ -27,7 +36,10 @@ export class AuthController {
   @Post("send-otp")
   async send(@Body() body: unknown) {
     const dto = parseSendOtp(body);
-    await this.sendOtp.run({ phoneNumber: dto.phoneNumber, language: dto.language });
+    await this.sendOtp.run({
+      phoneNumber: dto.phoneNumber,
+      language: dto.language,
+    });
     return { sent: true };
   }
 
@@ -49,13 +61,24 @@ export class AuthController {
   async verify(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const dto = parseVerifyOtp(body);
     try {
-      const result = await this.verifyOtp.run({ phoneNumber: dto.phoneNumber, code: dto.code });
+      const result = await this.verifyOtp.run({
+        phoneNumber: dto.phoneNumber,
+        code: dto.code,
+      });
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
-      return { sessionId: result.sessionId, userId: result.userId, isNewUser: result.isNewUser };
+      return {
+        sessionId: result.sessionId,
+        userId: result.userId,
+        isNewUser: result.isNewUser,
+      };
     } catch (err) {
-      if (err instanceof InvalidCodeError) return errorBody("invalid_code", 401);
+      if (err instanceof InvalidCodeError) {
+        return errorBody("invalid_code", 401);
+      }
       if (err instanceof ExpiredCodeError) return errorBody("expired", 410);
-      if (err instanceof RateLimitedError) return errorBody("rate_limited", 429);
+      if (err instanceof RateLimitedError) {
+        return errorBody("rate_limited", 429);
+      }
       throw err;
     }
   }
@@ -72,41 +95,6 @@ export class AuthController {
     ctx.header("Set-Cookie", clearSessionCookie());
     return { ok: true };
   }
-}
-
-const SESSION_COOKIE_NAME = "pm_session";
-const SESSION_COOKIE_MAX_AGE_S = 60 * 60 * 24 * 30;     // 30 days
-
-/** True on Deno Deploy (production). False locally. We use this to flip
- *  cookie attrs: prod gets `Secure; SameSite=None` for cross-origin
- *  api.* ↔ app.* sharing; local dev gets `SameSite=Lax` with no Secure
- *  flag because Safari silently drops Secure cookies on http://localhost
- *  (Chromium tolerates it as a secure context, Safari does not). */
-const IS_PROD = typeof Deno !== "undefined" && Deno.env.get("DENO_DEPLOYMENT_ID") !== undefined;
-
-function cookieAttrs(): string[] {
-  if (IS_PROD) return ["HttpOnly", "Secure", "SameSite=None"];
-  return ["HttpOnly", "SameSite=Lax"];
-}
-
-function buildSessionCookie(sessionId: string): string {
-  // HttpOnly stops JS from reading it. SameSite/Secure pair flips with
-  // env (see cookieAttrs comment).
-  return [
-    `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}`,
-    "Path=/",
-    `Max-Age=${SESSION_COOKIE_MAX_AGE_S}`,
-    ...cookieAttrs(),
-  ].join("; ");
-}
-
-function clearSessionCookie(): string {
-  return [
-    `${SESSION_COOKIE_NAME}=`,
-    "Path=/",
-    "Max-Age=0",
-    ...cookieAttrs(),
-  ].join("; ");
 }
 
 function errorBody(code: string, _status: number) {

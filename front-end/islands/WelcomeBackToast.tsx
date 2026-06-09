@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { langSignal, STRINGS } from "../lib/lang.ts";
+import { t } from "../lib/i18n.ts";
 
 const PINK = "#FF6B6B";
 const TEAL = "#144852";
@@ -57,7 +58,7 @@ export default function WelcomeBackToast() {
   const tpl = STRINGS[lang]["welcome.back"];
   const message = tpl.replace(
     "{firstName}",
-    name || (lang === "es" ? "amigo" : "friend"),
+    name || t("welcomeBackToast.nameFallback"),
   );
 
   return (

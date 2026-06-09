@@ -36,6 +36,12 @@ import {
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
 import { fmtMoney } from "../lib/format.ts";
+import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
+
+/** Plural helper bound to an explicit language (the reactive `tn` reads the
+ *  global lang signal; the logged-in app threads `lang` explicitly). */
+const tnFor = (lang: Lang, key: string, n: number, vars?: Record<string, string | number>): string =>
+  tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });
 import QuoteTrack from "./QuoteTrack.tsx";
 
 interface State {
@@ -54,17 +60,22 @@ const INITIAL: State = {
   customers: [],
 };
 
-const METHOD_LABEL: Record<PaymentMethod, string> = {
-  cash: "Cash",
-  check: "Check",
-  ach: "ACH",
-  card: "Card",
-  venmo: "Venmo",
-  zelle: "Zelle",
-  cashapp: "Cash App",
-  paypal: "PayPal",
-  other: "Other",
+/** i18n key per method. Reuses the seeded shared paymentMethod.* keys where
+ *  the wording matches exactly; ACH/Card carry this page's own short labels. */
+const METHOD_KEY: Record<PaymentMethod, string> = {
+  cash: "paymentMethod.cash",
+  check: "paymentMethod.check",
+  ach: "paymentsPage.method.ach",
+  card: "paymentsPage.method.card",
+  venmo: "paymentMethod.venmo",
+  zelle: "paymentMethod.zelle",
+  cashapp: "paymentMethod.cashApp",
+  paypal: "paymentMethod.paypal",
+  other: "paymentMethod.other",
 };
+
+const methodLabel = (lang: Lang, m: PaymentMethod): string =>
+  tFor(lang, METHOD_KEY[m]);
 
 const METHOD_AV_BG: Record<PaymentMethod, string> = {
   ach: "linear-gradient(135deg,#4F8C6B,#2F6448)",
@@ -180,44 +191,46 @@ function initialsOf(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function whenLabel(daysAgo: number): string {
-  if (daysAgo <= 0) return "Today";
-  if (daysAgo === 1) return "Yesterday";
-  return `${daysAgo}d ago`;
+function whenLabel(lang: Lang, daysAgo: number): string {
+  if (daysAgo <= 0) return tFor(lang, "paymentsPage.when.today");
+  if (daysAgo === 1) return tFor(lang, "paymentsPage.when.yesterday");
+  return tFor(lang, "paymentsPage.when.daysAgo", { n: daysAgo });
 }
 
 function noteFor(
+  lang: Lang,
   method: PaymentMethod,
   daysAgo: number,
   client: string,
   status: PaymentStatus = "landed",
 ): string {
-  const first = client.split(/\s+/)[0];
+  const name = client.split(/\s+/)[0];
   if (status === "transit") {
     if (method === "ach") {
-      return `${first}'s ACH transfer is in flight. Standard 2-day settlement.`;
+      return tFor(lang, "paymentsPage.note.transitAch", { name });
     }
     if (method === "check") {
-      return `Check from ${first} is in the mail / clearing. Most clear within a week.`;
+      return tFor(lang, "paymentsPage.note.transitCheck", { name });
     }
   }
   switch (method) {
     case "ach":
-      return `${first}'s auto-pay cleared cleanly. Already in the account.`;
+      return tFor(lang, "paymentsPage.note.ach", { name });
     case "card":
-      return `Captured on ${first}'s card — funds settle in 2 days.`;
+      return tFor(lang, "paymentsPage.note.card", { name });
     case "check":
-      return `Check from ${first}, deposited via mobile.`;
+      return tFor(lang, "paymentsPage.note.check", { name });
     case "cash":
       return daysAgo === 0
-        ? `Cash from ${first}, logged from the truck.`
-        : `Cash from ${first} — logged.`;
+        ? tFor(lang, "paymentsPage.note.cashToday", { name })
+        : tFor(lang, "paymentsPage.note.cash", { name });
     default:
-      return `Payment from ${first}.`;
+      return tFor(lang, "paymentsPage.note.default", { name });
   }
 }
 
 function enrich(
+  lang: Lang,
   p: Payment,
   invoices: Map<string, Invoice>,
   customers: Map<string, string>,
@@ -239,14 +252,18 @@ function enrich(
     initials: initialsOf(client),
     invoiceRef: `INV-${p.invoiceId.slice(0, 6).toUpperCase()}`,
     daysAgo,
-    whenLabel: whenLabel(daysAgo),
-    note: noteFor(p.method, daysAgo, client, status),
+    whenLabel: whenLabel(lang, daysAgo),
+    note: noteFor(lang, p.method, daysAgo, client, status),
     status,
     etaDays,
   };
 }
 
-export default function PaymentsPage() {
+export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
+  // Self-source the reactive UI language; reading langSignal.value here makes
+  // this island re-render live when the language flips (Settings change). The
+  // optional `lang` prop is retained only as an ignored SSR seed.
+  const lang = langSignal.value;
   const [s, setS] = useState<State>(INITIAL);
 
   useEffect(() => {
@@ -294,12 +311,16 @@ export default function PaymentsPage() {
     );
   }
   if (s.error) {
-    return <div class="qpage-error">Couldn't load payments: {s.error}</div>;
+    return (
+      <div class="qpage-error">
+        {tFor(lang, "paymentsPage.loadError", { error: s.error })}
+      </div>
+    );
   }
 
   const now = new Date();
   const enriched = s.payments
-    .map((p) => enrich(p, invoiceById, customerNames, now))
+    .map((p) => enrich(lang, p, invoiceById, customerNames, now))
     .sort((a, b) => a.daysAgo - b.daysAgo);
 
   const monthCutoff = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -338,12 +359,14 @@ export default function PaymentsPage() {
   return (
     <>
       <PaymentsHero
+        lang={lang}
         monthTotal={monthTotal}
         transitTotal={transitTotal}
         attentionCount={attention.length}
         stubs={stubs}
       />
       <PaymentsKpis
+        lang={lang}
         landedCount={landed.length}
         monthTotal={monthTotal}
         transitCount={transit.length}
@@ -358,15 +381,15 @@ export default function PaymentsPage() {
           {attention.length > 0 && (
             <QuoteTrack
               num="01"
-              title="Needs attention"
+              title={tFor(lang, "paymentsPage.track.attention")}
               count={attention.length}
-              unit="payment"
+              unit={tFor(lang, "paymentsPage.unit.payment")}
               defaultOpen
               storageKey="payments:track:attention"
             >
               <div class="qcards">
                 {attention.map((p, i) => (
-                  <PaymentCard key={p.id} p={p} idx={i} />
+                  <PaymentCard key={p.id} lang={lang} p={p} idx={i} />
                 ))}
               </div>
             </QuoteTrack>
@@ -374,17 +397,16 @@ export default function PaymentsPage() {
 
           <QuoteTrack
             num={attention.length > 0 ? "02" : "01"}
-            title="Just landed"
+            title={tFor(lang, "paymentsPage.track.landed")}
             count={landed.length}
-            unit="payment"
+            unit={tFor(lang, "paymentsPage.unit.payment")}
             defaultOpen
             storageKey="payments:track:landed"
           >
             {recentLanded.length === 0 && olderLanded.length === 0
               ? (
                 <div style="padding:14px 4px;color:var(--fg-muted, #6b7560);font-size:13.5px;line-height:1.5">
-                  No payments logged yet — once a customer pays an invoice it
-                  lands here automatically.
+                  {tFor(lang, "paymentsPage.track.landedEmpty")}
                 </div>
               )
               : (
@@ -392,13 +414,15 @@ export default function PaymentsPage() {
                   {recentLanded.length > 0 && (
                     <div class="qcards">
                       {recentLanded.map((p, i) => (
-                        <PaymentCard key={p.id} p={p} idx={i} />
+                        <PaymentCard key={p.id} lang={lang} p={p} idx={i} />
                       ))}
                     </div>
                   )}
                   {olderLanded.length > 0 && (
                     <div class="qdone" style="margin-top:14px">
-                      {olderLanded.map((p) => <LandedRow key={p.id} p={p} />)}
+                      {olderLanded.map((p) => (
+                        <LandedRow key={p.id} lang={lang} p={p} />
+                      ))}
                     </div>
                   )}
                 </>
@@ -408,15 +432,15 @@ export default function PaymentsPage() {
           {transit.length > 0 && (
             <QuoteTrack
               num={attention.length > 0 ? "03" : "02"}
-              unit="payment"
-              title="In transit"
+              unit={tFor(lang, "paymentsPage.unit.payment")}
+              title={tFor(lang, "paymentsPage.track.transit")}
               count={transit.length}
               defaultOpen={false}
               storageKey="payments:track:transit"
             >
               <div class="qcards">
                 {transit.map((p, i) => (
-                  <PaymentCard key={p.id} p={p} idx={i} />
+                  <PaymentCard key={p.id} lang={lang} p={p} idx={i} />
                 ))}
               </div>
             </QuoteTrack>
@@ -424,10 +448,10 @@ export default function PaymentsPage() {
         </div>
 
         <aside class="qside">
-          <PSideFlow landedAmounts={landed.map((p) => p.amount)} />
-          <PSideTopPayors landed={landed} />
-          <PSideMix landed={landed} />
-          <PSideTip />
+          <PSideFlow lang={lang} landedAmounts={landed.map((p) => p.amount)} />
+          <PSideTopPayors lang={lang} landed={landed} />
+          <PSideMix lang={lang} landed={landed} />
+          <PSideTip lang={lang} />
         </aside>
       </div>
     </>
@@ -437,7 +461,8 @@ export default function PaymentsPage() {
 /* ---------------- Hero ---------------- */
 
 function PaymentsHero(
-  { monthTotal, transitTotal, attentionCount, stubs }: {
+  { lang, monthTotal, transitTotal, attentionCount, stubs }: {
+    lang: Lang;
     monthTotal: number;
     transitTotal: number;
     attentionCount: number;
@@ -450,7 +475,8 @@ function PaymentsHero(
     <header class="pph">
       <div class="pph__main">
         <div class="pph__eyebrow">
-          <I d={ICN.check} size={11} sw={3} /> Payments · {monthName}
+          <I d={ICN.check} size={11} sw={3} />{" "}
+          {tFor(lang, "paymentsPage.hero.eyebrow", { month: monthName })}
         </div>
         <h1
           class="pph__title"
@@ -461,9 +487,9 @@ function PaymentsHero(
           {fresh
             ? (
               <>
-                Nothing's landed yet —{" "}
+                {tFor(lang, "paymentsPage.hero.freshTitlePre")}{" "}
                 <em style="color:var(--brand-pink);font-style:normal">
-                  let's change that
+                  {tFor(lang, "paymentsPage.hero.freshTitleEm")}
                 </em>.
               </>
             )
@@ -473,38 +499,38 @@ function PaymentsHero(
                   <sup>$</sup>
                   {fmtMoney(monthTotal).replace(/^\$/, "")}
                 </span>
-                <span class="pph__title-tail">showed up this month.</span>
+                <span class="pph__title-tail">
+                  {tFor(lang, "paymentsPage.hero.titleTail")}
+                </span>
               </>
             )}
         </h1>
         <p class="pph__sub">
           {fresh
-            ? (
-              <>
-                Once a customer pays an invoice, it lands here. Each method gets
-                its own clearing window — ACH in two days, checks in a week,
-                cards and cash instantly.
-              </>
-            )
+            ? <>{tFor(lang, "paymentsPage.hero.freshSub")}</>
             : (
               <>
                 {transitTotal > 0
                   ? (
                     <>
-                      Plus <strong>{fmtMoney(transitTotal)}</strong> on the way
+                      {tFor(lang, "paymentsPage.hero.subPlus")}{" "}
+                      <strong>{fmtMoney(transitTotal)}</strong>{" "}
+                      {tFor(lang, "paymentsPage.hero.subOnTheWay")}
                     </>
                   )
-                  : <>Every dollar logged.</>}
+                  : <>{tFor(lang, "paymentsPage.hero.everyDollar")}</>}
                 {attentionCount > 0
                   ? (
                     <>
-                      and <strong>{attentionCount}</strong>{" "}
-                      that need a quick text to unstick
+                      {" "}
+                      {tFor(lang, "paymentsPage.hero.subAnd")}{" "}
+                      <strong>{attentionCount}</strong>{" "}
+                      {tFor(lang, "paymentsPage.hero.subUnstick")}
                     </>
                   )
                   : null}
                 {transitTotal > 0
-                  ? <>. The monsters logged every dollar.</>
+                  ? <>{tFor(lang, "paymentsPage.hero.subMonsters")}</>
                   : null}
               </>
             )}
@@ -513,18 +539,20 @@ function PaymentsHero(
           <a
             class="pph__cta"
             href={`/assistant?seed=${
-              encodeURIComponent("Record a payment I just received.")
+              encodeURIComponent(tFor(lang, "paymentsPage.hero.recordSeed"))
             }`}
           >
-            <I d={ICN.plus} size={14} sw={2.5} /> Record a payment
+            <I d={ICN.plus} size={14} sw={2.5} />{" "}
+            {tFor(lang, "paymentsPage.hero.recordCta")}
           </a>
           <a
             class="pph__ghost"
             href={`/assistant?seed=${
-              encodeURIComponent("Export this month's payments as a CSV.")
+              encodeURIComponent(tFor(lang, "paymentsPage.hero.exportSeed"))
             }`}
           >
-            <I d={ICN.arrow} size={13} sw={2.5} /> Export this month
+            <I d={ICN.arrow} size={13} sw={2.5} />{" "}
+            {tFor(lang, "paymentsPage.hero.exportCta")}
           </a>
         </div>
       </div>
@@ -547,9 +575,11 @@ function PaymentsHero(
             <div class="pph__stub-foot">
               <span class="pph__stub-method">
                 <I d={METHOD_ICON[p.method]} size={11} sw={2} />{" "}
-                {METHOD_LABEL[p.method]}
+                {methodLabel(lang, p.method)}
               </span>
-              <span class="pph__stub-tag">Landed</span>
+              <span class="pph__stub-tag">
+                {tFor(lang, "paymentsPage.stub.landed")}
+              </span>
             </div>
           </div>
         ))}
@@ -562,6 +592,7 @@ function PaymentsHero(
 
 function PaymentsKpis(
   {
+    lang,
     landedCount,
     monthTotal,
     transitCount,
@@ -570,6 +601,7 @@ function PaymentsKpis(
     attentionTotal,
     avgDays,
   }: {
+    lang: Lang;
     landedCount: number;
     monthTotal: number;
     transitCount: number;
@@ -582,27 +614,39 @@ function PaymentsKpis(
   return (
     <div class="qkpi">
       <div class="qkpi__cell">
-        <div class="qkpi__lbl">Landed this month</div>
+        <div class="qkpi__lbl">{tFor(lang, "paymentsPage.kpi.landedLabel")}</div>
         <div class="qkpi__val">{fmtMoney(monthTotal)}</div>
         <div class="qkpi__sub">
-          {landedCount} {landedCount === 1 ? "payment" : "payments"}
+          {tnFor(lang, "paymentsPage.kpi.payments", landedCount)}
         </div>
       </div>
       <div class="qkpi__cell qkpi__cell--accent">
-        <div class="qkpi__lbl">In transit</div>
+        <div class="qkpi__lbl">{tFor(lang, "paymentsPage.kpi.transitLabel")}</div>
         <div class="qkpi__val">{fmtMoney(transitTotal)}</div>
-        <div class="qkpi__sub">{transitCount} on the way</div>
-      </div>
-      <div class="qkpi__cell">
-        <div class="qkpi__lbl">Needs attention</div>
-        <div class="qkpi__val">{attentionCount}</div>
-        <div class="qkpi__sub">{fmtMoney(attentionTotal)} held up</div>
-      </div>
-      <div class="qkpi__cell">
-        <div class="qkpi__lbl">Avg days to pay</div>
-        <div class="qkpi__val">{avgDays > 0 ? `${avgDays}d` : "—"}</div>
         <div class="qkpi__sub">
-          {avgDays > 0 ? "across landed payments" : "no paid history yet"}
+          {tFor(lang, "paymentsPage.kpi.onTheWay", { n: transitCount })}
+        </div>
+      </div>
+      <div class="qkpi__cell">
+        <div class="qkpi__lbl">
+          {tFor(lang, "paymentsPage.kpi.attentionLabel")}
+        </div>
+        <div class="qkpi__val">{attentionCount}</div>
+        <div class="qkpi__sub">
+          {tFor(lang, "paymentsPage.kpi.heldUp", {
+            amount: fmtMoney(attentionTotal),
+          })}
+        </div>
+      </div>
+      <div class="qkpi__cell">
+        <div class="qkpi__lbl">{tFor(lang, "paymentsPage.kpi.avgLabel")}</div>
+        <div class="qkpi__val">
+          {avgDays > 0 ? tFor(lang, "paymentsPage.value.days", { n: avgDays }) : "—"}
+        </div>
+        <div class="qkpi__sub">
+          {avgDays > 0
+            ? tFor(lang, "paymentsPage.kpi.acrossLanded")
+            : tFor(lang, "paymentsPage.kpi.noHistory")}
         </div>
       </div>
     </div>
@@ -618,8 +662,6 @@ const STATUS_MOOD: Record<
     to: string;
     shadow: string;
     statusFg: string;
-    label: string;
-    cta: string;
   }
 > = {
   landed: {
@@ -627,30 +669,28 @@ const STATUS_MOOD: Record<
     to: "#5FA34F",
     shadow: "rgba(81,152,67,0.28)",
     statusFg: "#1F3F18",
-    label: "Landed",
-    cta: "View receipt",
   },
   transit: {
     from: "#C8DDE0",
     to: "#56969E",
     shadow: "rgba(86,150,158,0.28)",
     statusFg: "#0F3036",
-    label: "In transit",
-    cta: "View timeline",
   },
   attention: {
     from: "#FFD9D9",
     to: "#FF6B6B",
     shadow: "rgba(255,107,107,0.30)",
     statusFg: "#fff",
-    label: "Attention",
-    cta: "Text client",
   },
 };
 
-function PaymentCard({ p, idx }: { p: EnrichedPayment; idx: number }) {
+function PaymentCard(
+  { lang, p, idx }: { lang: Lang; p: EnrichedPayment; idx: number },
+) {
   const [flipped, setFlipped] = useState(false);
   const mood = STATUS_MOOD[p.status];
+  const moodLabel = tFor(lang, `paymentsPage.mood.${p.status}.label`);
+  const moodCta = tFor(lang, `paymentsPage.mood.${p.status}.cta`);
   return (
     <article
       class={`qcard ${flipped ? "qcard--flipped" : ""}`}
@@ -665,11 +705,11 @@ function PaymentCard({ p, idx }: { p: EnrichedPayment; idx: number }) {
       <div class="qcard__mood">
         <div class="qcard__numeral">{String(idx + 1).padStart(2, "0")}</div>
         <div class="qcard__status">
-          <span class="qcard__status-dot" /> {mood.label}
+          <span class="qcard__status-dot" /> {moodLabel}
         </div>
         <div class="qcard__opens" style="text-transform:uppercase">
           <I d={METHOD_ICON[p.method]} size={12} sw={2} />{" "}
-          {METHOD_LABEL[p.method]}
+          {methodLabel(lang, p.method)}
         </div>
       </div>
       <div class="qcard__av">{p.initials}</div>
@@ -684,17 +724,19 @@ function PaymentCard({ p, idx }: { p: EnrichedPayment; idx: number }) {
           class="qcard__cta"
           onClick={(e) => e.stopPropagation()}
         >
-          {mood.cta}{" "}
+          {moodCta}{" "}
           <span style="display:inline-block;transition:transform 240ms">→</span>
         </button>
         <div class="qcard__val-wrap">
           <div class="qcard__val-lbl">
-            {p.status === "transit" ? "Expected" : "Method"}
+            {p.status === "transit"
+              ? tFor(lang, "paymentsPage.card.expected")
+              : tFor(lang, "paymentsPage.card.method")}
           </div>
           <div class="qcard__val-num" style="font-size:13px">
             {p.status === "transit" && p.etaDays
-              ? `~${p.etaDays}d`
-              : METHOD_LABEL[p.method]}
+              ? tFor(lang, "paymentsPage.card.eta", { n: p.etaDays })
+              : methodLabel(lang, p.method)}
           </div>
         </div>
       </div>
@@ -708,14 +750,16 @@ function PaymentCard({ p, idx }: { p: EnrichedPayment; idx: number }) {
               e.stopPropagation();
               setFlipped(false);
             }}
-            aria-label="Close"
+            aria-label={tFor(lang, "common.close")}
           >
             <I d={ICN.x} size={14} sw={2.5} />
           </button>
-          <div class="qcard__back-eyebrow">Payment trail</div>
+          <div class="qcard__back-eyebrow">
+            {tFor(lang, "paymentsPage.card.trail")}
+          </div>
           <p class="qcard__back-big">
             {fmtMoney(p.amount)}
-            <small>· {METHOD_LABEL[p.method]}</small>
+            <small>· {methodLabel(lang, p.method)}</small>
           </p>
         </div>
         <div class="qcard__back-body">
@@ -723,13 +767,13 @@ function PaymentCard({ p, idx }: { p: EnrichedPayment; idx: number }) {
         </div>
         <div class="qcard__back-foot">
           <button type="button" onClick={(e) => e.stopPropagation()}>
-            Receipt
+            {tFor(lang, "paymentsPage.card.receipt")}
           </button>
           <button type="button" onClick={(e) => e.stopPropagation()}>
-            Match invoice
+            {tFor(lang, "paymentsPage.card.matchInvoice")}
           </button>
           <button type="button" onClick={(e) => e.stopPropagation()}>
-            Text client
+            {tFor(lang, "paymentsPage.card.textClient")}
           </button>
         </div>
       </div>
@@ -739,7 +783,7 @@ function PaymentCard({ p, idx }: { p: EnrichedPayment; idx: number }) {
 
 /* ---------------- Landed row (compact tail of month) ---------------- */
 
-function LandedRow({ p }: { p: EnrichedPayment }) {
+function LandedRow({ lang, p }: { lang: Lang; p: EnrichedPayment }) {
   return (
     <div class="qdone__row">
       <div class="qdone__badge qdone__badge--won">
@@ -748,7 +792,7 @@ function LandedRow({ p }: { p: EnrichedPayment }) {
       <div class="qdone__body">
         <div class="qdone__title">{p.client}</div>
         <div class="qdone__sub">
-          {METHOD_LABEL[p.method]} · {p.whenLabel} · {p.invoiceRef}
+          {methodLabel(lang, p.method)} · {p.whenLabel} · {p.invoiceRef}
         </div>
       </div>
       <div class="qdone__amt">{fmtMoney(p.amount)}</div>
@@ -758,7 +802,9 @@ function LandedRow({ p }: { p: EnrichedPayment }) {
 
 /* ---------------- Side rail components ---------------- */
 
-function PSideFlow({ landedAmounts }: { landedAmounts: number[] }) {
+function PSideFlow(
+  { lang, landedAmounts }: { lang: Lang; landedAmounts: number[] },
+) {
   // Split landed into 12 weekly buckets. Real history would key off
   // receivedAt; for now we just slot in the rolling totals.
   const weeks = new Array(12).fill(0);
@@ -769,12 +815,12 @@ function PSideFlow({ landedAmounts }: { landedAmounts: number[] }) {
   if (!hasData) {
     return (
       <div class="qside__card">
-        <div class="qside__title">Cash-flow shape</div>
+        <div class="qside__title">{tFor(lang, "paymentsPage.flow.title")}</div>
         <div class="qside__sub" style="margin:2px 0 12px">
-          Last 12 weeks · nothing yet
+          {tFor(lang, "paymentsPage.flow.subEmpty")}
         </div>
         <div style="font-size:13px;color:var(--fg-muted);line-height:1.45">
-          Nothing's landed yet — once payments roll in, the shape lights up.
+          {tFor(lang, "paymentsPage.flow.empty")}
         </div>
       </div>
     );
@@ -793,9 +839,11 @@ function PSideFlow({ landedAmounts }: { landedAmounts: number[] }) {
   const area = `${path} L${pts[pts.length - 1][0]},${h} L${pts[0][0]},${h} Z`;
   return (
     <div class="qside__card">
-      <div class="qside__title">Cash-flow shape</div>
+      <div class="qside__title">{tFor(lang, "paymentsPage.flow.title")}</div>
       <div class="qside__sub" style="margin:2px 0 12px">
-        Last 12 weeks · {fmtMoney(weeks[weeks.length - 1])} this week
+        {tFor(lang, "paymentsPage.flow.subThisWeek", {
+          amount: fmtMoney(weeks[weeks.length - 1]),
+        })}
       </div>
       <svg width={w} height={h} style="display:block;width:100%;height:auto">
         <defs>
@@ -824,15 +872,17 @@ function PSideFlow({ landedAmounts }: { landedAmounts: number[] }) {
         ))}
       </svg>
       <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--fg-muted);margin-top:8px;font-family:var(--font-body)">
-        <span>Feb</span>
-        <span>Mar</span>
-        <span>Apr</span>
+        <span>{tFor(lang, "paymentsPage.flow.feb")}</span>
+        <span>{tFor(lang, "paymentsPage.flow.mar")}</span>
+        <span>{tFor(lang, "paymentsPage.flow.apr")}</span>
       </div>
     </div>
   );
 }
 
-function PSideTopPayors({ landed }: { landed: EnrichedPayment[] }) {
+function PSideTopPayors(
+  { lang, landed }: { lang: Lang; landed: EnrichedPayment[] },
+) {
   const tally = new Map<string, number>();
   for (const p of landed) {
     tally.set(p.client, (tally.get(p.client) ?? 0) + p.amount);
@@ -841,14 +891,14 @@ function PSideTopPayors({ landed }: { landed: EnrichedPayment[] }) {
   const max = top[0]?.[1] ?? 1;
   return (
     <div class="qside__card">
-      <div class="qside__title">Top payors this month</div>
+      <div class="qside__title">{tFor(lang, "paymentsPage.payors.title")}</div>
       <div class="qside__sub" style="margin:2px 0 14px">
-        Who actually showed up with money
+        {tFor(lang, "paymentsPage.payors.sub")}
       </div>
       {top.length === 0
         ? (
           <div style="font-size:13px;color:var(--fg-muted)">
-            No paid history yet.
+            {tFor(lang, "paymentsPage.payors.empty")}
           </div>
         )
         : (
@@ -876,7 +926,7 @@ function PSideTopPayors({ landed }: { landed: EnrichedPayment[] }) {
   );
 }
 
-function PSideMix({ landed }: { landed: EnrichedPayment[] }) {
+function PSideMix({ lang, landed }: { lang: Lang; landed: EnrichedPayment[] }) {
   const tally: Record<PaymentMethod, number> = {
     ach: 0,
     card: 0,
@@ -906,14 +956,14 @@ function PSideMix({ landed }: { landed: EnrichedPayment[] }) {
     .filter((s) => s.pct > 0);
   return (
     <div class="qside__card">
-      <div class="qside__title">How they paid</div>
+      <div class="qside__title">{tFor(lang, "paymentsPage.mix.title")}</div>
       <div class="qside__sub" style="margin:2px 0 14px">
-        Method mix this month
+        {tFor(lang, "paymentsPage.mix.sub")}
       </div>
       {segments.length === 0
         ? (
           <div style="font-size:13px;color:var(--fg-muted)">
-            Nothing landed yet this month.
+            {tFor(lang, "paymentsPage.mix.empty")}
           </div>
         )
         : (
@@ -938,10 +988,12 @@ function PSideMix({ landed }: { landed: EnrichedPayment[] }) {
                     };flex-shrink:0`}
                   />
                   <span style="color:var(--brand-teal);font-weight:700">
-                    {METHOD_LABEL[s.method]}
+                    {methodLabel(lang, s.method)}
                   </span>
                   <span style="color:var(--fg-muted);margin-left:auto">
-                    {Math.round(s.pct)}%
+                    {tFor(lang, "paymentsPage.mix.pct", {
+                      n: Math.round(s.pct),
+                    })}
                   </span>
                 </div>
               ))}
@@ -952,21 +1004,24 @@ function PSideMix({ landed }: { landed: EnrichedPayment[] }) {
   );
 }
 
-function PSideTip() {
+function PSideTip({ lang }: { lang: Lang }) {
   return (
     <div
       class="qside__card"
       style="background:linear-gradient(135deg,#1A535C,#0F3A40);color:#fff;border:none"
     >
       <div class="qside__title" style="color:#fff;margin-bottom:8px">
-        Monster tip
+        {tFor(lang, "paymentsPage.tip.title")}
       </div>
       <p style="margin:0;font-family:var(--font-body);font-size:13.5px;line-height:1.55;color:rgba(255,255,255,0.88)">
-        <strong style="color:#fff">Zelle and Cash App</strong>{" "}
-        land instantly with no fees — a check can take{" "}
-        <strong style="color:#fff">up to 5 days</strong>{" "}
-        to clear. For deposits, confirm the money's actually in your account
-        before you start the job.
+        <strong style="color:#fff">
+          {tFor(lang, "paymentsPage.tip.zelleCashApp")}
+        </strong>{" "}
+        {tFor(lang, "paymentsPage.tip.mid")}{" "}
+        <strong style="color:#fff">
+          {tFor(lang, "paymentsPage.tip.upTo5")}
+        </strong>{" "}
+        {tFor(lang, "paymentsPage.tip.end")}
       </p>
     </div>
   );

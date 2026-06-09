@@ -15,6 +15,8 @@ import { quotesClient } from "../clients/quotes.ts";
 import { clientsClient } from "../clients/clients.ts";
 import { contractsClient } from "../clients/contracts.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
+import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
+import { localizeTermValue } from "../lib/term-i18n.ts";
 import MoneyInput from "./MoneyInput.tsx";
 
 type WizardFieldType = "percent" | "number" | "currency" | "days" | "text";
@@ -45,56 +47,97 @@ interface WizardOption {
  * grows new steps. The `customer` step is intentionally excluded since
  * its picker has its own dedicated panel.
  */
-const TERM_OPTIONS_FALLBACK: Record<string, { label: string; sub?: string }[]> =
-  {
-    config: [
-      { label: "Standard residential", sub: "Most homes, simple jobs" },
-      { label: "Standard commercial", sub: "Businesses, HOAs" },
-      { label: "Start blank", sub: "I'll choose every option" },
-    ],
-    start_date: [
-      { label: "Right away" },
-      { label: "Next week" },
-      { label: "Next Month" },
-    ],
-    wraps: [
-      { label: "1 day" },
-      { label: "2–3 days" },
-      { label: "1 week" },
-      { label: "2 weeks" },
-    ],
-    payment_terms: [
-      { label: "Payment upon completion", sub: "Same-day payment" },
-      { label: "50/50", sub: "Half upfront, half when done" },
-      { label: "30/30/40", sub: "Start, halfway, done" },
-      { label: "Deposit + balance", sub: "Small upfront, rest when done" },
-    ],
-    warranty: [
-      { label: "No warranty" },
-      { label: "6 months" },
-      { label: "12 months" },
-      { label: "24 months" },
-    ],
-    termination: [
-      { label: "7 days" },
-      { label: "14 days" },
-      { label: "30 days" },
-    ],
-    dispute: [
-      { label: "Mediation", sub: "Try to settle informally first" },
-      { label: "Arbitration", sub: "Binding decision, no court" },
-      { label: "Court", sub: "Standard small-claims path" },
-    ],
-    governing_state: [
-      { label: "Use my business state" },
-      { label: "Use the job site state" },
-    ],
-    state_notices: [
-      { label: "Yes", sub: "Recommended" },
-      { label: "No", sub: "I'll add my own" },
-      { label: "Review first", sub: "Show me what's included" },
-    ],
-  };
+const TERM_OPTIONS_FALLBACK: Record<
+  string,
+  { labelKey: string; subKey?: string }[]
+> = {
+  config: [
+    {
+      labelKey: "asstChat.terms.config.residential",
+      subKey: "asstChat.terms.config.residentialSub",
+    },
+    {
+      labelKey: "asstChat.terms.config.commercial",
+      subKey: "asstChat.terms.config.commercialSub",
+    },
+    {
+      labelKey: "asstChat.terms.config.blank",
+      subKey: "asstChat.terms.config.blankSub",
+    },
+  ],
+  start_date: [
+    { labelKey: "asstChat.terms.startDate.rightAway" },
+    { labelKey: "asstChat.terms.startDate.nextWeek" },
+    { labelKey: "asstChat.terms.startDate.nextMonth" },
+  ],
+  wraps: [
+    { labelKey: "asstChat.duration.preset.oneDay" },
+    { labelKey: "asstChat.duration.preset.twoThreeDays" },
+    { labelKey: "asstChat.duration.preset.oneWeek" },
+    { labelKey: "asstChat.duration.preset.twoWeeks" },
+  ],
+  payment_terms: [
+    {
+      labelKey: "asstChat.payment.preset.onCompletion",
+      subKey: "asstChat.terms.payment.onCompletionSub",
+    },
+    {
+      labelKey: "asstChat.payment.preset.fiftyFifty",
+      subKey: "asstChat.terms.payment.fiftyFiftySub",
+    },
+    {
+      labelKey: "asstChat.payment.preset.threeThreeForty",
+      subKey: "asstChat.terms.payment.threeThreeFortySub",
+    },
+    {
+      labelKey: "asstChat.payment.preset.depositBalance",
+      subKey: "asstChat.terms.payment.depositBalanceSub",
+    },
+  ],
+  warranty: [
+    { labelKey: "asstChat.warranty.preset.none" },
+    { labelKey: "asstChat.warranty.preset.sixMonths" },
+    { labelKey: "asstChat.warranty.preset.twelveMonths" },
+    { labelKey: "asstChat.warranty.preset.twentyFourMonths" },
+  ],
+  termination: [
+    { labelKey: "asstChat.terms.termination.sevenDays" },
+    { labelKey: "asstChat.terms.termination.fourteenDays" },
+    { labelKey: "asstChat.terms.termination.thirtyDays" },
+  ],
+  dispute: [
+    {
+      labelKey: "asstChat.terms.dispute.mediation",
+      subKey: "asstChat.terms.dispute.mediationSub",
+    },
+    {
+      labelKey: "asstChat.terms.dispute.arbitration",
+      subKey: "asstChat.terms.dispute.arbitrationSub",
+    },
+    {
+      labelKey: "asstChat.terms.dispute.court",
+      subKey: "asstChat.terms.dispute.courtSub",
+    },
+  ],
+  governing_state: [
+    { labelKey: "asstChat.terms.governingState.business" },
+    { labelKey: "asstChat.terms.governingState.jobSite" },
+  ],
+  state_notices: [
+    {
+      labelKey: "asstChat.terms.stateNotices.yes",
+      subKey: "asstChat.terms.stateNotices.yesSub",
+    },
+    {
+      labelKey: "asstChat.terms.stateNotices.no",
+      subKey: "asstChat.terms.stateNotices.noSub",
+    },
+    {
+      labelKey: "asstChat.terms.stateNotices.review",
+      subKey: "asstChat.terms.stateNotices.reviewSub",
+    },
+  ],
+};
 
 /** One editable bullet on the "Job Details" picker screen. `deleted`
  *  is a soft toggle (the "x"/restore affordance) so the row can be
@@ -112,6 +155,9 @@ interface JobOptionDraft {
   jobName: string;
   summary: string;
   bullets: BulletDraft[];
+  /** Per-language content of the ORIGINAL (pre-edit) option, used to fill the
+   *  quote's descriptionByLang on pick without re-translating unedited bullets. */
+  byLang?: Record<string, { jobName: string; summary: string; bullets: string[] }>;
 }
 
 let bulletSeq = 0;
@@ -125,6 +171,7 @@ function toOptionDrafts(options: JobOption[]): JobOptionDraft[] {
       text,
       deleted: false,
     })),
+    byLang: o.byLang,
   }));
 }
 
@@ -132,13 +179,14 @@ function toOptionDrafts(options: JobOption[]): JobOptionDraft[] {
  *  / 4xx). The backend already returns a heuristic fallback on LLM failure,
  *  so this only fires when the request never completed. Mirrors that
  *  heuristic so the picker still renders three usable options. */
-function localFallbackOptions(raw: string): JobOption[] {
+function localFallbackOptions(raw: string, lang: Lang): JobOption[] {
   const lines = raw
     .split(/[\n.;]+/)
     .map((l) => l.trim().replace(/\s+/g, " "))
     .filter(Boolean);
   const base = (lines.length > 0 ? lines : [raw.trim()]).slice(0, 4);
-  const summary = base[0]?.split(/\s+/).slice(0, 8).join(" ") || "New job";
+  const summary = base[0]?.split(/\s+/).slice(0, 8).join(" ") ||
+    tFor(lang, "asstChat.newJob");
   const jobName = summary.split(/\s+/).slice(0, 3).join(" ");
   return [
     { id: "opt1", jobName, summary, bullets: base },
@@ -147,7 +195,8 @@ function localFallbackOptions(raw: string): JobOption[] {
       id: "opt3",
       jobName,
       summary,
-      bullets: [...base.slice(0, 3), "Jobsite cleanup"].slice(0, 4),
+      bullets: [...base.slice(0, 3), tFor(lang, "asstChat.jobsiteCleanup")]
+        .slice(0, 4),
     },
   ];
 }
@@ -172,51 +221,51 @@ interface ActionCardPayload {
  *  echo the question Bossie is asking rather than the generic job-mode
  *  slab example, otherwise new users wonder if they're in the right
  *  surface. After onboarding hands off, revert to the job example. */
-function composerPlaceholder(msgs: Message[]): string {
+function composerPlaceholder(msgs: Message[], lang: Lang): string {
   const lastAssistant = [...msgs].reverse().find((m) =>
     m.role === "assistant" && m.kind === "text"
   );
   const text = (lastAssistant?.content ?? "").toLowerCase();
   if (/what should i call you|what.s your (first )?name/.test(text)) {
-    return "Your first name";
+    return tFor(lang, "asstChat.composer.firstName");
   }
   if (/what.s your business called|business name/.test(text)) {
-    return "Your business name";
+    return tFor(lang, "asstChat.composer.businessName");
   }
   if (/looks like you.re in|which state|right state/.test(text)) {
-    return "2-letter state code (SC, TX, NY)";
+    return tFor(lang, "asstChat.composer.stateCode");
   }
   if (/business address|paste it on one line/.test(text)) {
-    return "Street, city, state ZIP — or 'skip'";
+    return tFor(lang, "asstChat.composer.address");
   }
-  if (/email/.test(text)) return "name@yourbusiness.com — or 'skip'";
+  if (/email/.test(text)) return tFor(lang, "asstChat.composer.email");
   if (/payment|venmo|zelle|cash app|how.*get paid/.test(text)) {
-    return "Venmo @handle, Zelle email, etc.";
+    return tFor(lang, "asstChat.composer.payment");
   }
-  return "Ex: Customer wants a 10'x10' slab, what should I charge?";
+  return tFor(lang, "asstChat.composer.default");
 }
 
 /** Map a Quote/Contract status to the human-facing chip label on the
  *  in-chat Quote+Agreement card. Keeps the chip in sync with the doc's
  *  lifecycle: Draft → Sent → Viewed → Approved. */
-function statusChipLabel(status: string | undefined): string {
+function statusChipLabel(status: string | undefined, lang: Lang): string {
   switch ((status ?? "draft").toLowerCase()) {
     case "sent":
-      return "Sent";
+      return tFor(lang, "status.sent");
     case "opened":
     case "viewed":
-      return "Viewed";
+      return tFor(lang, "status.viewed");
     case "won":
     case "accepted":
     case "approved":
     case "signed":
-      return "Approved";
+      return tFor(lang, "asstChat.statusChip.approved");
     case "void":
     case "declined":
     case "lost":
-      return "Declined";
+      return tFor(lang, "status.declined");
     default:
-      return "Draft";
+      return tFor(lang, "status.draft");
   }
 }
 
@@ -251,6 +300,10 @@ interface Props {
   /** Languages the contractor can send in (from Settings checkboxes). Drives
    *  the quote-review "Preview in" language toggle. Defaults to ["en"]. */
   sendLanguages?: string[];
+  /** The contractor's own UI language — drives all contractor-facing chrome.
+   *  Defaults to "en". (The customer-facing quote preview uses its own
+   *  `previewLang` toggle, sourced from `sendLanguages`.) */
+  lang?: Lang;
 }
 
 /** Derive a stable 1-2 letter avatar string. Mirrors the backend
@@ -317,6 +370,7 @@ interface PaymentMilestone {
 function buildPaymentMilestones(
   value: string,
   totalCents: number,
+  lang: Lang,
 ): PaymentMilestone[] | null {
   // All money comes from the shared #payment-split source of truth so this
   // preview matches the signed contract, the PDF, and the actual invoices.
@@ -328,11 +382,11 @@ function buildPaymentMilestones(
     return null;
   }
   const labelFor: Record<MilestoneRole, string> = {
-    deposit: "Deposit",
-    midpoint: "Midpoint",
-    milestone: "Milestone",
-    completion: "Balance on completion",
-    full: "Due in full",
+    deposit: tFor(lang, "asstChat.milestone.deposit"),
+    midpoint: tFor(lang, "asstChat.milestone.midpoint"),
+    milestone: tFor(lang, "asstChat.milestone.milestone"),
+    completion: tFor(lang, "asstChat.milestone.completion"),
+    full: tFor(lang, "asstChat.milestone.full"),
   };
   return parts.map((p) => ({
     label: labelFor[p.role],
@@ -346,26 +400,23 @@ function buildPaymentMilestones(
  *  (routes/q/[id].tsx, contract-doc) so the contractor's preview matches what
  *  the customer actually receives. Free-text the contractor typed (term
  *  values, line-item names) stays verbatim — exactly like the public pages. */
-const SEND_LANG_LABELS: Record<string, string> = {
-  en: "English",
-  es: "Español",
+/** Language endonym labels for the preview toggle. Keyed by send-language
+ *  code; the value (endonym) is identical across UI languages, so the
+ *  i18n key resolves to the same string regardless of `previewLang`. */
+const SEND_LANG_LABEL_KEYS: Record<string, string> = {
+  en: "asstChat.previewLang.en",
+  es: "asstChat.previewLang.es",
 };
-/** Term-row labels (keyed by wizard stepId) in Spanish. */
-const TERM_LABEL_ES: Record<string, string> = {
-  config: "Configuración",
-  start_date: "Inicio",
-  wraps: "Tiempo de entrega",
-  time_to_complete: "Tiempo de entrega",
-  payment_terms: "Pago",
-  warranty: "Garantía",
-};
-/** Payment-milestone labels (from buildPaymentMilestones) in Spanish. */
-const MILESTONE_LABEL_ES: Record<string, string> = {
-  "Deposit": "Depósito",
-  "Midpoint": "Pago intermedio",
-  "Milestone": "Hito",
-  "Balance on completion": "Saldo al finalizar",
-  "Due in full": "Pago completo",
+/** Term-row label keys by wizard stepId. The preview resolves these in the
+ *  selected preview language (so the row label matches the agreement the
+ *  customer receives), falling back to the stored label for unknown steps. */
+const TERM_LABEL_KEYS: Record<string, string> = {
+  config: "asstChat.preview.termLabel.config",
+  start_date: "asstChat.preview.termLabel.startDate",
+  wraps: "asstChat.preview.termLabel.wraps",
+  time_to_complete: "asstChat.preview.termLabel.timeToComplete",
+  payment_terms: "asstChat.preview.termLabel.payment",
+  warranty: "asstChat.preview.termLabel.warranty",
 };
 
 export default function AsstChat({
@@ -377,11 +428,15 @@ export default function AsstChat({
   from,
   sendLanguages,
 }: Props) {
+  // Self-source the reactive UI language so this island re-renders live when
+  // the contractor flips the language in Settings. `lang?: Lang` remains on
+  // Props as an optional SSR seed but is intentionally ignored here.
+  const lang = langSignal.value;
   // Languages the contractor enabled in Settings → the quote-review preview
   // toggle. Falls back to English so the card always renders.
   const previewLangOptions = (sendLanguages && sendLanguages.length
     ? sendLanguages
-    : ["en"]).filter((l) => l in SEND_LANG_LABELS);
+    : ["en"]).filter((l) => l in SEND_LANG_LABEL_KEYS);
   const sendLangs = previewLangOptions.length ? previewLangOptions : ["en"];
   const [convoId, setConvoId] = useState<string | undefined>(conversationId);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -416,6 +471,7 @@ export default function AsstChat({
       id: string;
       summary?: string;
       description?: string;
+      descriptionByLang?: Record<string, string>;
       lineItems?: {
         description: string;
         quantity?: number;
@@ -570,6 +626,42 @@ export default function AsstChat({
    * actually look the contract over before clicking "Send to client".
    */
   const [previewCtaId, setPreviewCtaId] = useState<string | null>(null);
+
+  // Lazily fill quote.descriptionByLang[lang] so the preview (and the sent
+  // agreement, which reads the same field) render the job-details description
+  // in the reader's language. Translates once per language, cached on the
+  // quote, and only when a language is actually previewed/sent.
+  const descLangInFlight = useRef<Set<string>>(new Set<string>());
+  async function ensureDescriptionLang(targetLang: "en" | "es") {
+    const id = quoteId ?? quote?.id;
+    const base = (quote?.description ?? "").trim();
+    if (!id || !base) return;
+    if (quote?.descriptionByLang?.[targetLang]?.trim()) return;
+    if (descLangInFlight.current.has(targetLang)) return;
+    descLangInFlight.current.add(targetLang);
+    try {
+      const lines = base.split("\n").map((l) => l.trim()).filter(Boolean);
+      const res = await assistantClient.translate(lines, targetLang);
+      const translated =
+        (res?.texts && res.texts.length === lines.length ? res.texts : lines)
+          .join("\n");
+      const merged = {
+        ...(quote?.descriptionByLang ?? {}),
+        [targetLang]: translated,
+      };
+      setQuote((q) => q ? { ...q, descriptionByLang: merged } : q);
+      quotesClient.update(id, { descriptionByLang: merged }).catch(() => {});
+    } catch { /* keep the base description */ } finally {
+      descLangInFlight.current.delete(targetLang);
+    }
+  }
+
+  // When the preview is open, make sure the current preview language has a
+  // translated description (keyed on description, not descriptionByLang, so
+  // filling the cache doesn't re-trigger this effect).
+  useEffect(() => {
+    if (previewCtaId) ensureDescriptionLang(previewLang);
+  }, [previewCtaId, previewLang, quote?.id, quote?.description]);
   /**
    * When the user picks a wizard option that carries a `followUp`, we stash
    * the (messageId, optionId) here and render the inline form instead of
@@ -898,20 +990,31 @@ export default function AsstChat({
     const dividerPhase = (
       lastDivider?.payload as { phase?: number } | undefined
     )?.phase;
-    let status = "Your PM Assistant is here to help!";
-    if (contractStatus === "signed") status = "Contract signed";
-    else if (contractStatus === "sent") status = "Contract out for signature";
-    else if (contract) status = "Contract drafting";
-    else if (dividerPhase === 4) status = "Contract accepted";
-    else if (dividerPhase === 3) status = "Contract sent";
-    else if (dividerPhase === 2) status = "Gathering a little more info";
-    else if (quoteStatus === "accepted") status = "Quote accepted";
-    else if (quoteStatus === "sent") status = "Quote sent";
-    else if (lastQuoteCard) status = "Quote drafted · review";
+    let status = tFor(lang, "asstChat.header.default");
+    if (contractStatus === "signed") {
+      status = tFor(lang, "asstChat.header.contractSigned");
+    } else if (contractStatus === "sent") {
+      status = tFor(lang, "asstChat.header.contractOutForSignature");
+    } else if (contract) status = tFor(lang, "asstChat.header.contractDrafting");
+    else if (dividerPhase === 4) {
+      status = tFor(lang, "asstChat.header.contractAccepted");
+    } else if (dividerPhase === 3) {
+      status = tFor(lang, "asstChat.header.contractSent");
+    } else if (dividerPhase === 2) {
+      status = tFor(lang, "asstChat.header.gatheringInfo");
+    } else if (quoteStatus === "accepted") {
+      status = tFor(lang, "asstChat.header.quoteAccepted");
+    } else if (quoteStatus === "sent") {
+      status = tFor(lang, "asstChat.header.quoteSent");
+    } else if (lastQuoteCard) {
+      status = tFor(lang, "asstChat.header.quoteDrafted");
+    }
     // No status chip at all on a brand-new thread — "Drafting…" before
     // anything has been drafted reads as broken state.
     const headerClient = client ??
-      (lastQuoteCard ? "Conversation" : "New conversation");
+      (lastQuoteCard
+        ? tFor(lang, "asstChat.header.conversation")
+        : tFor(lang, "asstChat.header.newConversation"));
     globalThis.window.dispatchEvent(
       new CustomEvent("pm:asst-header", {
         detail: { client: headerClient, status },
@@ -923,6 +1026,7 @@ export default function AsstChat({
     contract?.status,
     convoId,
     messages.length,
+    lang,
   ]);
 
   // Keep the composer focused: on first mount (so users can just start typing)
@@ -1272,7 +1376,12 @@ export default function AsstChat({
   ) {
     const optimisticContent = liveTranscript && liveTranscript.length > 0
       ? liveTranscript
-      : `🎙️ Voice memo · ${elapsedSec}s · ${fmtKB(blob.size)} — transcribing…`;
+      : `🎙️ ${
+        tFor(lang, "asstChat.voiceMemo.optimistic", {
+          sec: elapsedSec,
+          size: fmtKB(blob.size),
+        })
+      }`;
     await submitTurn(
       {
         role: "user",
@@ -1356,7 +1465,9 @@ export default function AsstChat({
     optionsTouchedRef.current = false;
     setJobOptionsOpen(true);
     setOptionsLoading(false);
-    const heuristic = toOptionDrafts(localFallbackOptions(raw || "New job"));
+    const heuristic = toOptionDrafts(
+      localFallbackOptions(raw || tFor(lang, "asstChat.newJob"), lang),
+    );
     setJobOptions(heuristic);
     setSelectedOptionId(heuristic[0]?.id ?? null);
 
@@ -1494,7 +1605,8 @@ export default function AsstChat({
     setSending(true);
     try {
       const firstLine = raw.split("\n")[0].trim();
-      const summary = firstLine.split(/\s+/).slice(0, 8).join(" ") || "New job";
+      const summary = firstLine.split(/\s+/).slice(0, 8).join(" ") ||
+        tFor(lang, "asstChat.newJob");
       const jobName = summary.split(/\s+/).slice(0, 3).join(" ");
       // Use the api helper (same base as quotesClient/assistantClient) — NOT
       // a raw /api/* fetch. In prod the api helper hits the standalone backend
@@ -1548,18 +1660,66 @@ export default function AsstChat({
     if (sending) return;
     const opt = jobOptions?.find((o) => o.id === selectedOptionId);
     if (!opt) {
-      setError("pick an option first");
+      setError(tFor(lang, "asstChat.error.pickOption"));
       return;
     }
     const live = opt.bullets.filter((b) =>
       !b.deleted && b.text.trim().length > 0
     );
-    const description = live.map((b) => b.text.trim()).join("\n");
-    const summary = (opt.summary || opt.jobName || "New job").trim();
+    const liveTexts = live.map((b) => b.text.trim());
+    const description = liveTexts.join("\n");
+    const summary = (opt.summary || opt.jobName || tFor(lang, "asstChat.newJob"))
+      .trim();
     const jobName = (opt.jobName || summary).trim();
     setError(undefined);
     setSending(true);
     try {
+      // Store the picked job details in EVERY language the option was generated
+      // in, so the quote/agreement renders in the customer's language. Reuse the
+      // pre-generated translation for unedited bullets; translate edited ones.
+      const appLang = lang;
+      const descByLang: Record<string, string> = {};
+      if (liveTexts.length > 0) {
+        descByLang[appLang] = description;
+        const origApp = (opt.byLang?.[appLang]?.bullets ?? []).map((b) =>
+          b.trim()
+        );
+        const unedited = liveTexts.length === origApp.length &&
+          liveTexts.every((t, i) => t === origApp[i]);
+        for (const ol of Object.keys(opt.byLang ?? {})) {
+          if (ol === appLang) continue;
+          const pre = opt.byLang?.[ol]?.bullets;
+          if (unedited && pre && pre.length) {
+            descByLang[ol] = pre.map((b) => b.trim()).join("\n");
+          } else {
+            try {
+              const res = await assistantClient.translate(
+                liveTexts,
+                ol as "en" | "es",
+              );
+              descByLang[ol] = (res?.texts &&
+                  res.texts.length === liveTexts.length
+                ? res.texts
+                : liveTexts).join("\n");
+            } catch {
+              descByLang[ol] = description;
+            }
+          }
+        }
+      }
+      const hasByLang = Object.keys(descByLang).length > 0;
+      // Per-language title + summary (not editable in the picker, so always the
+      // option's pre-generated translations) so the customer's agreement
+      // heading renders in their language too.
+      const nameByLang: Record<string, string> = {};
+      const summByLang: Record<string, string> = {};
+      for (const ol of Object.keys(opt.byLang ?? {})) {
+        const b = opt.byLang?.[ol];
+        if (b?.jobName?.trim()) nameByLang[ol] = b.jobName.trim();
+        if (b?.summary?.trim()) summByLang[ol] = b.summary.trim();
+      }
+      const hasName = Object.keys(nameByLang).length > 0;
+      const hasSumm = Object.keys(summByLang).length > 0;
       if (quoteId) {
         const items = quote?.lineItems && quote.lineItems.length > 0
           ? quote.lineItems.map((
@@ -1569,6 +1729,9 @@ export default function AsstChat({
           : undefined;
         await quotesClient.update(quoteId, {
           description: description || summary,
+          ...(hasByLang ? { descriptionByLang: descByLang } : {}),
+          ...(hasName ? { jobNameByLang: nameByLang } : {}),
+          ...(hasSumm ? { summaryByLang: summByLang } : {}),
           summary,
           jobName,
           ...(items ? { lineItems: items } : {}),
@@ -1579,6 +1742,7 @@ export default function AsstChat({
               ...q,
               summary,
               description: description || summary,
+              ...(hasByLang ? { descriptionByLang: descByLang } : {}),
               lineItems: items ?? q.lineItems,
             }
             : q
@@ -1996,7 +2160,11 @@ export default function AsstChat({
       .listCustomers()
       .then((list) => setCustomerPickerList(list))
       .catch((err) =>
-        setError(err instanceof Error ? err.message : "couldn't load customers")
+        setError(
+          err instanceof Error
+            ? err.message
+            : tFor(lang, "asstChat.error.loadCustomers"),
+        )
       );
   }
 
@@ -2386,7 +2554,7 @@ export default function AsstChat({
               setError(
                 typeof msg.error === "string"
                   ? msg.error
-                  : "voice stream error",
+                  : tFor(lang, "asstChat.error.voiceStream"),
               );
             }
           } catch {
@@ -2399,7 +2567,7 @@ export default function AsstChat({
             // caller can fall back to backend-only transcription.
             resolve(null);
           } else {
-            setError("voice stream interrupted");
+            setError(tFor(lang, "asstChat.error.voiceInterrupted"));
           }
         };
         ws.onclose = () => {
@@ -2479,7 +2647,7 @@ export default function AsstChat({
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
-      setError("microphone not available in this browser");
+      setError(tFor(lang, "asstChat.error.micUnavailable"));
       return;
     }
     try {
@@ -2589,7 +2757,7 @@ export default function AsstChat({
         setRecElapsed(Math.round((Date.now() - recStartRef.current) / 1000));
       }, 250) as unknown as number;
     } catch {
-      setError("microphone permission denied");
+      setError(tFor(lang, "asstChat.error.micDenied"));
       teardownRecording();
     }
   }
@@ -2608,7 +2776,7 @@ export default function AsstChat({
                     <img src="/logo-monster.png" alt="" />
                   </div>
                   <h3 class="chat__empty-title">
-                    Click on a box or the text field below to get started!
+                    {tFor(lang, "asstChat.empty.title")}
                   </h3>
                 </>
               )}
@@ -2616,10 +2784,11 @@ export default function AsstChat({
                 ? (
                   <div class="chat__jobopts">
                     <div class="chat__jobopts-head">
-                      <h4 class="chat__jobopts-title">Job Details</h4>
+                      <h4 class="chat__jobopts-title">
+                        {tFor(lang, "asstChat.jobOpts.heading")}
+                      </h4>
                       <p class="chat__jobopts-sub">
-                        Pick the closest job description below and make any
-                        changes you want.
+                        {tFor(lang, "asstChat.jobOpts.sub")}
                       </p>
                     </div>
                     {optionsLoading || !jobOptions
@@ -2630,7 +2799,7 @@ export default function AsstChat({
                             <span></span>
                             <span></span>
                           </span>
-                          Writing up your options…
+                          {tFor(lang, "asstChat.jobOpts.writing")}
                         </div>
                       )
                       : (
@@ -2655,7 +2824,10 @@ export default function AsstChat({
                                     >
                                     </span>
                                     <span class="chat__jobopt-name">
-                                      {opt.jobName || `Option ${i + 1}`}
+                                      {opt.jobName ||
+                                        tFor(lang, "asstChat.jobOpts.optionN", {
+                                          n: i + 1,
+                                        })}
                                     </span>
                                   </div>
                                   <ul class="chat__jobopt-bullets">
@@ -2732,11 +2904,17 @@ export default function AsstChat({
                                             type="button"
                                             class="chat__jobopt-x"
                                             aria-label={b.deleted
-                                              ? "Restore bullet"
-                                              : "Delete bullet"}
+                                              ? tFor(
+                                                lang,
+                                                "asstChat.jobOpts.restoreBullet",
+                                              )
+                                              : tFor(
+                                                lang,
+                                                "asstChat.jobOpts.deleteBullet",
+                                              )}
                                             title={b.deleted
-                                              ? "Restore"
-                                              : "Delete"}
+                                              ? tFor(lang, "common.restore")
+                                              : tFor(lang, "common.delete")}
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               toggleBulletDeleted(opt.id, b.id);
@@ -2754,7 +2932,10 @@ export default function AsstChat({
                                             ref={addInputRef}
                                             type="text"
                                             class="chat__jobopt-add-input"
-                                            placeholder="Add your own…"
+                                            placeholder={tFor(
+                                              lang,
+                                              "asstChat.jobOpts.addOwn",
+                                            )}
                                             onClick={(e) => e.stopPropagation()}
                                             onKeyDown={(e) => {
                                               if (e.key === "Enter") {
@@ -2772,7 +2953,10 @@ export default function AsstChat({
                                           <button
                                             type="button"
                                             class="chat__jobopt-add-btn"
-                                            aria-label="Add bullet"
+                                            aria-label={tFor(
+                                              lang,
+                                              "asstChat.jobOpts.addBullet",
+                                            )}
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               const el = addInputRef.current;
@@ -2806,10 +2990,10 @@ export default function AsstChat({
                                 <>
                                   <span class="spinner" aria-hidden="true" />
                                   {" "}
-                                  Setting up…
+                                  {tFor(lang, "asstChat.settingUp")}
                                 </>
                               )
-                              : "Continue →"}
+                              : tFor(lang, "asstChat.continue")}
                           </button>
                         </>
                       )}
@@ -2824,7 +3008,7 @@ export default function AsstChat({
                             onClick={(e) => e.stopPropagation()}
                           >
                             <p class="chat__pro-pop-msg">
-                              Want me to professionalize that?
+                              {tFor(lang, "asstChat.proPopup.msg")}
                             </p>
                             <div class="chat__pro-pop-actions">
                               <button
@@ -2833,7 +3017,7 @@ export default function AsstChat({
                                 disabled={proBusy}
                                 onClick={dismissProfessionalize}
                               >
-                                No
+                                {tFor(lang, "asstChat.proPopup.no")}
                               </button>
                               <button
                                 type="button"
@@ -2841,7 +3025,9 @@ export default function AsstChat({
                                 disabled={proBusy}
                                 onClick={confirmProfessionalize}
                               >
-                                {proBusy ? "Polishing…" : "Yes"}
+                                {proBusy
+                                  ? tFor(lang, "asstChat.proPopup.polishing")
+                                  : tFor(lang, "asstChat.proPopup.yes")}
                               </button>
                             </div>
                           </div>
@@ -2858,10 +3044,11 @@ export default function AsstChat({
                         <img src="/logo-monster.png" alt="" />
                       </div>
                       <div class="chat__details-prompt-bubble">
-                        <strong>Okay great</strong> — tell me the job details.
+                        <strong>{tFor(lang, "asstChat.details.promptBold")}</strong>
+                        {" "}
+                        {tFor(lang, "asstChat.details.promptRest")}
                         <span class="chat__details-prompt-hint">
-                          Type below. I'll clean it up so it reads sharp on the
-                          quote.
+                          {tFor(lang, "asstChat.details.hint")}
                         </span>
                       </div>
                     </div>
@@ -2886,7 +3073,7 @@ export default function AsstChat({
                                 <span></span>
                                 <span></span>
                               </span>
-                              Polishing your job details…
+                              {tFor(lang, "asstChat.details.polishing")}
                             </div>
                           </div>
                         </>
@@ -2907,7 +3094,7 @@ export default function AsstChat({
                           setSuggestPricing(false);
                           setPriceSuggestions(null);
                         }}
-                        aria-label="Back to prompts"
+                        aria-label={tFor(lang, "asstChat.price.backToPrompts")}
                       >
                         <svg
                           viewBox="0 0 16 16"
@@ -2924,15 +3111,17 @@ export default function AsstChat({
                             fill="none"
                           />
                         </svg>
-                        Back
+                        {tFor(lang, "common.back")}
                       </button>
                       <h4 class="chat__price-title">
-                        {suggestPricing ? "Pick a price" : "What's the price?"}
+                        {suggestPricing
+                          ? tFor(lang, "asstChat.price.pickTitle")
+                          : tFor(lang, "asstChat.price.whatTitle")}
                       </h4>
                       <p class="chat__price-sub">
                         {suggestPricing
-                          ? "Tap a suggestion, or enter your own below."
-                          : "I'll build the job details around it."}
+                          ? tFor(lang, "asstChat.price.tapSub")
+                          : tFor(lang, "asstChat.price.buildSub")}
                       </p>
                     </div>
                     {/* Roadmap p.10: three suggested tiers (+ custom input). */}
@@ -2944,7 +3133,7 @@ export default function AsstChat({
                         {priceSuggestions === null
                           ? (
                             <div style="font-size:13px;color:var(--fg-muted,#6b7560);padding:6px 2px">
-                              Pricing this job…
+                              {tFor(lang, "asstChat.price.pricing")}
                             </div>
                           )
                           : priceSuggestions.map((t) => (
@@ -2973,7 +3162,7 @@ export default function AsstChat({
                             </button>
                           ))}
                         <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-muted,#6b7560);margin-top:4px">
-                          Or enter a custom price
+                          {tFor(lang, "asstChat.price.orCustom")}
                         </div>
                       </div>
                     )}
@@ -2995,10 +3184,10 @@ export default function AsstChat({
                         ? (
                           <>
                             <span class="spinner" aria-hidden="true" />{" "}
-                            Setting up…
+                            {tFor(lang, "asstChat.settingUp")}
                           </>
                         )
-                        : "Continue →"}
+                        : tFor(lang, "asstChat.continue")}
                     </button>
                   </div>
                 )
@@ -3009,21 +3198,21 @@ export default function AsstChat({
                       class="chat__empty-prompt"
                       onClick={startKnownPriceFlow}
                     >
-                      I know my price, write it up.
+                      {tFor(lang, "asstChat.prompt.knownPrice")}
                     </button>
                     <button
                       type="button"
                       class="chat__empty-prompt"
                       onClick={startHelpMePriceFlow}
                     >
-                      I know the job, help me price it.
+                      {tFor(lang, "asstChat.prompt.helpPrice")}
                     </button>
                     <button
                       type="button"
                       class="chat__empty-prompt"
                       onClick={startKnownPriceFlow}
                     >
-                      Just give me a quick quote.
+                      {tFor(lang, "asstChat.prompt.quickQuote")}
                     </button>
                   </div>
                 )}
@@ -3187,15 +3376,16 @@ export default function AsstChat({
                             <div class="recovery-card__head">
                               <strong>
                                 {askEmail && askPhone
-                                  ? "Add their email & phone to deliver"
+                                  ? tFor(lang, "asstChat.recovery.addBoth")
                                   : askEmail
-                                  ? "Add their email to deliver"
-                                  : "Add their phone to deliver"}
+                                  ? tFor(lang, "asstChat.recovery.addEmail")
+                                  : tFor(lang, "asstChat.recovery.addPhone")}
                               </strong>
                               <span class="recovery-card__hint">
-                                Saved to {customer?.name ?? "this customer"}
-                                {" "}
-                                for next time.
+                                {tFor(lang, "asstChat.recovery.savedHint", {
+                                  name: customer?.name ??
+                                    tFor(lang, "asstChat.thisCustomer"),
+                                })}
                               </span>
                             </div>
                             <div class="recovery-card__fields">
@@ -3204,7 +3394,10 @@ export default function AsstChat({
                                   <input
                                     type="email"
                                     class="recovery-card__input"
-                                    placeholder="customer@email.com"
+                                    placeholder={tFor(
+                                      lang,
+                                      "asstChat.recovery.emailPlaceholder",
+                                    )}
                                     value={draft.email ?? ""}
                                     disabled={saving}
                                     onInput={(e) => {
@@ -3223,7 +3416,10 @@ export default function AsstChat({
                                   <input
                                     type="tel"
                                     class="recovery-card__input"
-                                    placeholder="(555) 555-5555"
+                                    placeholder={tFor(
+                                      lang,
+                                      "asstChat.recovery.phonePlaceholder",
+                                    )}
                                     value={draft.phone ?? ""}
                                     disabled={saving}
                                     onInput={(e) => {
@@ -3253,7 +3449,9 @@ export default function AsstChat({
                                     channel: inferredChannel ?? "email",
                                   })}
                               >
-                                {saving ? "Saving…" : "Save & resend"}
+                                {saving
+                                  ? tFor(lang, "asstChat.recovery.saving")
+                                  : tFor(lang, "asstChat.recovery.saveResend")}
                               </button>
                             </div>
                           </div>
@@ -3345,8 +3543,12 @@ export default function AsstChat({
                         (sum, li) => sum + (li.amountCents ?? 0),
                         0,
                       );
-                    const polishedDescription = lockedPayload.description ??
-                      quote?.description;
+                    // Job-details description in the preview language. Falls
+                    // back to the stored single-language description until the
+                    // lazy translate (ensureDescriptionLang) fills it in.
+                    const polishedDescription =
+                      quote?.descriptionByLang?.[previewLang] ??
+                        lockedPayload.description ?? quote?.description;
                     // Wizard terms — every text msg with a wizardStepId is one
                     // answered step ("Start: ASAP", "Wraps: 1 week", ...). Skip
                     // the customer step since we render the customer block below.
@@ -3420,17 +3622,37 @@ export default function AsstChat({
                         return !(v === "" || v === "no warranty" ||
                           v === "none" || v === "n/a" || v === "no");
                       })
-                      .map(({ stepId, label, value }) => ({
-                        stepId,
-                        label,
+                      .map(({ stepId, label, value }) => {
+                        // Stored terms are English (the neutral base) — localize
+                        // the value into the preview language so the card matches
+                        // the agreement the customer actually receives (the public
+                        // doc uses the same helper).
+                        const v = localizeTermValue(value, previewLang);
                         // Time-to-complete reads as an estimate, not a hard
                         // promise — surface that on the card to match the
-                        // customer-facing wording.
-                        value: stepId === "time_to_complete" && value &&
-                            !/^estimated\s*:/i.test(value)
-                          ? `Estimated: ${value}`
-                          : value,
-                      }));
+                        // customer-facing wording. Strip any existing
+                        // "Estimated/Estimado" prefix(es) first so the wrapper is
+                        // idempotent (legacy rows sometimes stored it pre-wrapped).
+                        const isDuration = stepId === "time_to_complete" ||
+                          stepId === "wraps";
+                        const bare = isDuration
+                          ? v.replace(
+                            /^(?:\s*estima(?:ted|d[oa])\b\s*:?\s*)+/i,
+                            "",
+                          ).trim()
+                          : v;
+                        return {
+                          stepId,
+                          label,
+                          value: isDuration && bare
+                            ? tFor(
+                              previewLang,
+                              "asstChat.preview.estimatedValue",
+                              { value: bare },
+                            )
+                            : v,
+                        };
+                      });
                     const totalCentsForBreakdown =
                       typeof contract?.totalAmount === "number"
                         ? contract.totalAmount
@@ -3454,6 +3676,7 @@ export default function AsstChat({
                       ? buildPaymentMilestones(
                         paymentTerm.value,
                         totalCentsForBreakdown,
+                        previewLang,
                       )
                       : null;
                     return (
@@ -3462,7 +3685,7 @@ export default function AsstChat({
                           <header class="quote-review__head">
                             <div class="quote-review__head-left">
                               <div class="quote-review__kind">
-                                {es ? "Cotización + Acuerdo" : "Quote + Agreement"}
+                                {tFor(previewLang, "asstChat.preview.kind")}
                               </div>
                               {contractId
                                 ? (
@@ -3476,12 +3699,16 @@ export default function AsstChat({
                               <span class="quote-review__chip">
                                 {statusChipLabel(
                                   contract?.status ?? lockedPayload.status,
+                                  previewLang,
                                 )}
                               </span>
                               <button
                                 type="button"
                                 class="quote-review__close"
-                                aria-label="Close preview"
+                                aria-label={tFor(
+                                  previewLang,
+                                  "asstChat.preview.closePreview",
+                                )}
                                 onClick={() => setPreviewCtaId(null)}
                                 disabled={sending}
                               >
@@ -3499,10 +3726,13 @@ export default function AsstChat({
                               <div
                                 class="quote-review__langtoggle"
                                 role="group"
-                                aria-label="Preview language"
+                                aria-label={tFor(
+                                  previewLang,
+                                  "asstChat.preview.languageGroup",
+                                )}
                               >
                                 <span class="quote-review__langtoggle-label">
-                                  {es ? "Vista previa en" : "Preview in"}
+                                  {tFor(previewLang, "asstChat.preview.previewIn")}
                                 </span>
                                 {sendLangs.map((lng) => (
                                   <button
@@ -3517,7 +3747,9 @@ export default function AsstChat({
                                     onClick={() =>
                                       setPreviewLang(lng as "en" | "es")}
                                   >
-                                    {SEND_LANG_LABELS[lng] ?? lng}
+                                    {SEND_LANG_LABEL_KEYS[lng]
+                                      ? tFor(previewLang, SEND_LANG_LABEL_KEYS[lng])
+                                      : lng}
                                   </button>
                                 ))}
                               </div>
@@ -3535,7 +3767,7 @@ export default function AsstChat({
                                 style="opacity:.92"
                               >
                                 <div class="quote-review__hero-label">
-                                  {es ? "De" : "From"}
+                                  {tFor(previewLang, "asstChat.preview.from")}
                                 </div>
                                 <div class="quote-review__hero-name">
                                   {from.business || from.name}
@@ -3569,13 +3801,19 @@ export default function AsstChat({
                             ? (
                               <section class="quote-review__hero">
                                 <div class="quote-review__hero-label">
-                                  {es ? "Para" : "For"}
+                                  {tFor(previewLang, "asstChat.preview.for")}
                                 </div>
                                 <button
                                   type="button"
                                   class="quote-review__swap"
-                                  aria-label="Switch customer"
-                                  title="Switch customer"
+                                  aria-label={tFor(
+                                    previewLang,
+                                    "asstChat.preview.switchCustomer",
+                                  )}
+                                  title={tFor(
+                                    previewLang,
+                                    "asstChat.preview.switchCustomer",
+                                  )}
                                   onClick={openCustomerPicker}
                                   disabled={customerPickerBusy}
                                 >
@@ -3618,7 +3856,10 @@ export default function AsstChat({
                                     }`}
                                     contentEditable
                                     spellcheck={false}
-                                    data-placeholder="add email"
+                                    data-placeholder={tFor(
+                                      previewLang,
+                                      "asstChat.preview.addEmail",
+                                    )}
                                     onBlur={(e) =>
                                       onEditCustomerField(
                                         "email",
@@ -3638,7 +3879,10 @@ export default function AsstChat({
                                     }`}
                                     contentEditable
                                     spellcheck={false}
-                                    data-placeholder="add phone"
+                                    data-placeholder={tFor(
+                                      previewLang,
+                                      "asstChat.preview.addPhone",
+                                    )}
                                     onBlur={(e) =>
                                       onEditCustomerField(
                                         "phoneNumber",
@@ -3658,8 +3902,15 @@ export default function AsstChat({
                                         class="cust-pick__search"
                                         placeholder={customerPickerList &&
                                             customerPickerList.length > 5
-                                          ? `Search ${customerPickerList.length} customers…`
-                                          : "Search customers…"}
+                                          ? tFor(
+                                            previewLang,
+                                            "asstChat.searchNCustomers",
+                                            { n: customerPickerList.length },
+                                          )
+                                          : tFor(
+                                            previewLang,
+                                            "common.searchCustomers",
+                                          )}
                                         value={customerPickerSearch}
                                         autoFocus
                                         onInput={(e) =>
@@ -3676,7 +3927,10 @@ export default function AsstChat({
                                       {customerPickerList === null
                                         ? (
                                           <div class="cust-pick__empty">
-                                            Loading customers…
+                                            {tFor(
+                                              previewLang,
+                                              "common.loadingCustomers",
+                                            )}
                                           </div>
                                         )
                                         : (() => {
@@ -3704,8 +3958,14 @@ export default function AsstChat({
                                             return (
                                               <div class="cust-pick__empty">
                                                 {q
-                                                  ? "No matches."
-                                                  : "No other customers saved yet."}
+                                                  ? tFor(
+                                                    previewLang,
+                                                    "common.noMatches",
+                                                  )
+                                                  : tFor(
+                                                    previewLang,
+                                                    "asstChat.noOtherCustomers",
+                                                  )}
                                               </div>
                                             );
                                           }
@@ -3746,7 +4006,7 @@ export default function AsstChat({
                                         disabled={customerPickerBusy}
                                         style="margin-top:8px"
                                       >
-                                        Cancel
+                                        {tFor(previewLang, "common.cancel")}
                                       </button>
                                     </div>
                                   )
@@ -3761,7 +4021,7 @@ export default function AsstChat({
                             return (
                               <section class="quote-review__section">
                                 <div class="quote-review__section-label">
-                                  {es ? "Detalles del trabajo" : "Job details"}
+                                  {tFor(previewLang, "asstChat.preview.jobDetails")}
                                 </div>
                                 {lines.length > 1
                                   ? (
@@ -3784,7 +4044,7 @@ export default function AsstChat({
                             ? (
                               <section class="quote-review__section">
                                 <div class="quote-review__section-label">
-                                  {es ? "Términos" : "Terms"}
+                                  {tFor(previewLang, "asstChat.preview.terms")}
                                 </div>
                                 <dl class="quote-review__terms">
                                   {termAnswers.map((t, i) => {
@@ -3824,8 +4084,10 @@ export default function AsstChat({
                                         TERM_OPTIONS_FALLBACK[t.stepId] ?? []
                                       ).map((o, i) => ({
                                         id: `fallback-${i}`,
-                                        label: o.label,
-                                        sub: o.sub,
+                                        label: tFor(previewLang, o.labelKey),
+                                        sub: o.subKey
+                                          ? tFor(previewLang, o.subKey)
+                                          : undefined,
                                       }));
                                     return (
                                       <div
@@ -3836,9 +4098,17 @@ export default function AsstChat({
                                           : undefined}
                                       >
                                         <dt>
-                                          {es
-                                            ? (TERM_LABEL_ES[t.stepId] ??
-                                              t.label)
+                                          {/* Resolve the term label in the
+                                              preview language from its stepId so
+                                              it matches the sent agreement,
+                                              regardless of the stored label's
+                                              language. Falls back to the stored
+                                              label for unknown steps. */}
+                                          {TERM_LABEL_KEYS[t.stepId]
+                                            ? tFor(
+                                              previewLang,
+                                              TERM_LABEL_KEYS[t.stepId],
+                                            )
                                             : t.label}
                                         </dt>
                                         {isEditing
@@ -3852,7 +4122,14 @@ export default function AsstChat({
                                                     <input
                                                       type="text"
                                                       class="cust-pick__search"
-                                                      placeholder={`Type a custom ${t.label.toLowerCase()}…`}
+                                                      placeholder={tFor(
+                                                        previewLang,
+                                                        "asstChat.preview.typeCustom",
+                                                        {
+                                                          label: t.label
+                                                            .toLowerCase(),
+                                                        },
+                                                      )}
                                                       value={customTermDraft
                                                         .value}
                                                       onInput={(e) =>
@@ -3912,7 +4189,10 @@ export default function AsstChat({
                                                           );
                                                         }}
                                                       >
-                                                        Save
+                                                        {tFor(
+                                                          previewLang,
+                                                          "common.save",
+                                                        )}
                                                       </button>
                                                       <button
                                                         type="button"
@@ -3923,7 +4203,10 @@ export default function AsstChat({
                                                           )}
                                                         disabled={sending}
                                                       >
-                                                        Back
+                                                        {tFor(
+                                                          previewLang,
+                                                          "common.back",
+                                                        )}
                                                       </button>
                                                     </div>
                                                   </div>
@@ -3976,7 +4259,10 @@ export default function AsstChat({
                                                         })}
                                                       disabled={sending}
                                                     >
-                                                      + Custom · type your own
+                                                      {tFor(
+                                                        previewLang,
+                                                        "asstChat.preview.customOption",
+                                                      )}
                                                     </button>
                                                     <button
                                                       type="button"
@@ -3991,7 +4277,10 @@ export default function AsstChat({
                                                       }}
                                                       disabled={sending}
                                                     >
-                                                      Cancel
+                                                      {tFor(
+                                                        previewLang,
+                                                        "common.cancel",
+                                                      )}
                                                     </button>
                                                   </div>
                                                 )}
@@ -4007,13 +4296,17 @@ export default function AsstChat({
                                                     t.stepId,
                                                   )}
                                                 disabled={!cid || !t.stepId}
-                                                title="Edit"
+                                                title={tFor(
+                                                  previewLang,
+                                                  "common.edit",
+                                                )}
                                               >
-                                                {t.stepId === "wraps"
-                                                  ? `${
-                                                    es ? "Estimado" : "Estimated"
-                                                  } ${t.value}`
-                                                  : t.value}
+                                                {/* Value is already localized +
+                                                    "Estimated"-wrapped (for
+                                                    durations) by the termAnswers
+                                                    map above — render as-is to
+                                                    avoid double-wrapping. */}
+                                                {t.value}
                                               </button>
                                             </dd>
                                           )}
@@ -4027,7 +4320,7 @@ export default function AsstChat({
 
                           <section class="quote-review__total">
                             <div class="quote-review__total-label">
-                              {es ? "Total a pagar" : "Total due"}
+                              {tFor(previewLang, "asstChat.preview.totalDue")}
                             </div>
                             <div class="quote-review__total-amt">
                               <span class="quote-review__total-currency">
@@ -4073,10 +4366,7 @@ export default function AsstChat({
                                       class="quote-review__milestone"
                                     >
                                       <span class="quote-review__milestone-label">
-                                        {es
-                                          ? (MILESTONE_LABEL_ES[ms.label] ??
-                                            ms.label)
-                                          : ms.label}
+                                        {ms.label}
                                         {typeof ms.pct === "number"
                                           ? (
                                             <span class="quote-review__milestone-pct">
@@ -4107,19 +4397,23 @@ export default function AsstChat({
                               >
                                 <I d={ICN.send} size={14} sw={2.4} />
                                 {sending
-                                  ? (es ? "Enviando…" : "Sending…")
+                                  ? tFor(previewLang, "asstChat.preview.sending")
                                   : sendChannel === "both"
-                                  ? (es
-                                    ? "Enviar por texto + correo"
-                                    : "Click here to send by Text + Email")
+                                  ? tFor(previewLang, "asstChat.preview.sendBoth")
                                   : sendChannel === "sms"
-                                  ? (es ? "Enviar por texto" : "Click here to send by Text")
-                                  : (es ? "Enviar por correo" : "Click here to send by Email")}
+                                  ? tFor(previewLang, "asstChat.preview.sendSms")
+                                  : tFor(
+                                    previewLang,
+                                    "asstChat.preview.sendEmail",
+                                  )}
                               </button>
                               <button
                                 type="button"
                                 class="quote-review__send-caret"
-                                aria-label="Choose how to send"
+                                aria-label={tFor(
+                                  previewLang,
+                                  "asstChat.preview.chooseSend",
+                                )}
                                 aria-expanded={channelMenuOpen
                                   ? "true"
                                   : "false"}
@@ -4149,10 +4443,16 @@ export default function AsstChat({
                                     >
                                       <I d={ICN.send} size={13} sw={2.4} />
                                       <span class="quote-review__send-menu-label">
-                                        Text + Email
+                                        {tFor(
+                                          previewLang,
+                                          "asstChat.preview.menuBoth",
+                                        )}
                                       </span>
                                       <span class="quote-review__send-menu-tag">
-                                        Recommended
+                                        {tFor(
+                                          previewLang,
+                                          "asstChat.preview.recommended",
+                                        )}
                                       </span>
                                     </button>
                                     <button
@@ -4170,7 +4470,10 @@ export default function AsstChat({
                                     >
                                       <I d={ICN.phone} size={13} sw={2.4} />
                                       <span class="quote-review__send-menu-label">
-                                        Text only
+                                        {tFor(
+                                          previewLang,
+                                          "asstChat.preview.menuSms",
+                                        )}
                                       </span>
                                     </button>
                                     <button
@@ -4188,7 +4491,10 @@ export default function AsstChat({
                                     >
                                       <I d={ICN.mail} size={13} sw={2.4} />
                                       <span class="quote-review__send-menu-label">
-                                        Email only
+                                        {tFor(
+                                          previewLang,
+                                          "asstChat.preview.menuEmail",
+                                        )}
                                       </span>
                                     </button>
                                   </div>
@@ -4214,11 +4520,11 @@ export default function AsstChat({
                   // transition; once it lands, the chat shows both.
                   const phaseEyebrow = !reviewed
                     ? payload.toPhase === "terms"
-                      ? "We need a little more info"
+                      ? tFor(lang, "asstChat.cta.eyebrowTerms")
                       : payload.toPhase === "send"
-                      ? "Up next · Send to client"
+                      ? tFor(lang, "asstChat.cta.eyebrowSend")
                       : payload.toPhase === "invoice"
-                      ? "Up next · Send invoice"
+                      ? tFor(lang, "asstChat.cta.eyebrowInvoice")
                       : null
                     : null;
                   return (
@@ -4247,8 +4553,8 @@ export default function AsstChat({
                             <div class="continue-cta__title">
                               {reviewed
                                 ? payload.toPhase === "invoice"
-                                  ? "Invoice sent"
-                                  : "Contract sent"
+                                  ? tFor(lang, "asstChat.cta.invoiceSent")
+                                  : tFor(lang, "asstChat.cta.contractSent")
                                 : m.content}
                             </div>
                             {reviewed
@@ -4257,18 +4563,28 @@ export default function AsstChat({
                                   {sentRecipient
                                     ? (
                                       <>
-                                        emailed to <code>{sentRecipient}</code>
+                                        {tFor(lang, "asstChat.cta.emailedTo")}
+                                        {" "}
+                                        <code>{sentRecipient}</code>
                                       </>
                                     )
                                     : dispatchFailReason
-                                    ? <>not delivered — {dispatchFailReason}</>
+                                    ? (
+                                      <>
+                                        {tFor(lang, "asstChat.cta.notDelivered")}
+                                        {" "}
+                                        {dispatchFailReason}
+                                      </>
+                                    )
                                     : (
                                       <>
-                                        no email on file — add one to{" "}
+                                        {tFor(lang, "asstChat.cta.noEmailPre")}
+                                        {" "}
                                         <code>
-                                          {customer?.name ?? "the customer"}
+                                          {customer?.name ??
+                                            tFor(lang, "asstChat.theCustomer")}
                                         </code>{" "}
-                                        to deliver
+                                        {tFor(lang, "asstChat.cta.toDeliver")}
                                       </>
                                     )}
                                 </div>
@@ -4293,7 +4609,7 @@ export default function AsstChat({
                                     submitContinueCta(m, "business")}
                                   disabled={sending}
                                 >
-                                  Business
+                                  {tFor(lang, "asstChat.cta.business")}
                                 </button>
                                 <button
                                   type="button"
@@ -4301,7 +4617,7 @@ export default function AsstChat({
                                   onClick={() => submitContinueCta(m, "person")}
                                   disabled={sending}
                                 >
-                                  Person
+                                  {tFor(lang, "asstChat.cta.person")}
                                 </button>
                               </div>
                             )
@@ -4313,10 +4629,10 @@ export default function AsstChat({
                                 disabled={sending}
                               >
                                 {payload.toPhase === "send"
-                                  ? "Review"
+                                  ? tFor(lang, "asstChat.cta.review")
                                   : payload.toPhase === "invoice"
-                                  ? "Send invoice"
-                                  : "Start"}{" "}
+                                  ? tFor(lang, "asstChat.cta.sendInvoice")
+                                  : tFor(lang, "asstChat.cta.start")}{" "}
                                 <I d={ICN.arrow} size={11} sw={2.5} />
                               </button>
                             )}
@@ -4403,6 +4719,7 @@ export default function AsstChat({
                                     ownerEmail={from?.email}
                                     ownerPhone={from?.phone}
                                     sending={sending}
+                                    lang={lang}
                                     onSubmit={(optionId, body) =>
                                       submitCustomerStep(m, optionId, body)}
                                   />
@@ -4422,6 +4739,7 @@ export default function AsstChat({
                                       messages,
                                     )}
                                     sending={sending}
+                                    lang={lang}
                                     onSubmit={(values) => {
                                       setFollowUpPick(null);
                                       postWizardAnswer(m, {
@@ -4441,6 +4759,7 @@ export default function AsstChat({
                                 return (
                                   <CustomDatePickerForm
                                     sending={sending}
+                                    lang={lang}
                                     onSubmit={(dateStr) => {
                                       setCustomDatePick(null);
                                       postWizardAnswer(m, {
@@ -4460,6 +4779,7 @@ export default function AsstChat({
                                 return (
                                   <CustomDurationPickerForm
                                     sending={sending}
+                                    lang={lang}
                                     onSubmit={(durationStr) => {
                                       setCustomDurationPick(null);
                                       postWizardAnswer(m, {
@@ -4479,6 +4799,7 @@ export default function AsstChat({
                                 return (
                                   <CustomWarrantyPickerForm
                                     sending={sending}
+                                    lang={lang}
                                     onSubmit={(warrantyStr) => {
                                       setCustomWarrantyPick(null);
                                       postWizardAnswer(m, {
@@ -4498,6 +4819,7 @@ export default function AsstChat({
                                 return (
                                   <CustomPaymentPickerForm
                                     sending={sending}
+                                    lang={lang}
                                     onSubmit={(paymentStr) => {
                                       setCustomPaymentPick(null);
                                       postWizardAnswer(m, {
@@ -4598,7 +4920,7 @@ export default function AsstChat({
                                   onClick={goBackWizard}
                                   style="margin-top:12px;background:none;border:none;color:var(--fg-muted,#6b7560);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:4px 2px"
                                 >
-                                  ← Back
+                                  ← {tFor(lang, "common.back")}
                                 </button>
                               )
                               : null}
@@ -4626,7 +4948,7 @@ export default function AsstChat({
                   // Roadmap p.5: progress the badge Draft → Sent → Viewed →
                   // Approved via the shared label map (backend flips the
                   // underlying status as the customer opens/signs).
-                  const statusLabel = statusChipLabel(payload.status);
+                  const statusLabel = statusChipLabel(payload.status, lang);
                   // Detect a later action_card for the same quote that has
                   // already advanced past draft. The earlier DRAFT card stays
                   // visible in chat history (audit #18) but its action buttons
@@ -4664,7 +4986,9 @@ export default function AsstChat({
                               <div class="action-card__title">{m.content}</div>
                             </div>
                             <span class="action-card__chip">
-                              {isSuperseded ? "Superseded" : statusLabel}
+                              {isSuperseded
+                                ? tFor(lang, "asstChat.actionCard.superseded")
+                                : statusLabel}
                             </span>
                           </div>
                           <div class="action-card__body">
@@ -4674,7 +4998,7 @@ export default function AsstChat({
                               return (
                                 <div class="action-card__details">
                                   <div class="action-card__details-label">
-                                    Job details
+                                    {tFor(lang, "asstChat.actionCard.jobDetails")}
                                   </div>
                                   {lines.length > 1
                                     ? (
@@ -4705,7 +5029,7 @@ export default function AsstChat({
                                   style="border-top:1px solid rgba(20,72,82,0.08);margin-top:6px;padding-top:8px"
                                 >
                                   <span style="font-weight:700;color:var(--brand-teal)">
-                                    Total
+                                    {tFor(lang, "asstChat.actionCard.total")}
                                   </span>
                                   <strong style="font-size:15px">
                                     {fmtUSD(totalCents)}
@@ -4723,7 +5047,8 @@ export default function AsstChat({
                                   onClick={() => lockActionCard(m, payload)}
                                   disabled={sending || !payload.quoteId}
                                 >
-                                  <I d={ICN.bolt} size={11} /> Lock it in
+                                  <I d={ICN.bolt} size={11} />{" "}
+                                  {tFor(lang, "asstChat.actionCard.lockIn")}
                                 </button>
                                 <button
                                   type="button"
@@ -4731,7 +5056,7 @@ export default function AsstChat({
                                   onClick={() => setDraft("")}
                                   disabled={sending}
                                 >
-                                  Edit
+                                  {tFor(lang, "common.edit")}
                                 </button>
                               </div>
                             )
@@ -4745,7 +5070,8 @@ export default function AsstChat({
                                   onClick={() => sendText("Re-open the quote.")}
                                   disabled={sending}
                                 >
-                                  <I d={ICN.refresh} size={11} /> Re-open
+                                  <I d={ICN.refresh} size={11} />{" "}
+                                  {tFor(lang, "asstChat.actionCard.reopen")}
                                 </button>
                               </div>
                             )
@@ -4802,14 +5128,13 @@ export default function AsstChat({
                           </span>
                           <span style="flex:1;min-width:0">
                             <span style="display:block;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#d94e4e">
-                              Try it · 5 seconds
+                              {tFor(lang, "asstChat.demo.eyebrow")}
                             </span>
                             <span style="display:block;margin-top:2px;font-weight:800;color:#144852;font-size:14.5px">
-                              See what your customer sees
+                              {tFor(lang, "asstChat.demo.title")}
                             </span>
                             <span style="display:block;margin-top:2px;font-size:12px;color:#6b7a7e">
-                              A live sample quote — branded with everything you
-                              just shared. Opens in a new tab.
+                              {tFor(lang, "asstChat.demo.body")}
                             </span>
                           </span>
                           <span
@@ -4860,7 +5185,7 @@ export default function AsstChat({
                           >
                             <img
                               src={`/api/files/${fileId}`}
-                              alt={filename ?? "attached image"}
+                              alt={filename ?? tFor(lang, "asstChat.attachedImage")}
                             />
                           </a>
                         )
@@ -4880,7 +5205,11 @@ export default function AsstChat({
             messages.length > 0 &&
             messages[messages.length - 1].role === "user"
           ? (
-            <div class="msg" aria-live="polite" aria-label="Bossie is thinking">
+            <div
+              class="msg"
+              aria-live="polite"
+              aria-label={tFor(lang, "asstChat.bossieThinking")}
+            >
               <div class="msg__avatar">
                 <img src="/logo-monster.png" alt="" />
               </div>
@@ -4934,6 +5263,7 @@ export default function AsstChat({
                   interimText={liveInterim}
                   onStop={toggleRecord}
                   onCancel={cancelRecord}
+                  lang={lang}
                 />
               )
               : (
@@ -4942,7 +5272,7 @@ export default function AsstChat({
                     <textarea
                       ref={taRef}
                       class="composer__input"
-                      placeholder={composerPlaceholder(messages)}
+                      placeholder={composerPlaceholder(messages, lang)}
                       rows={2}
                       value={draft}
                       onInput={(e) => {
@@ -4955,8 +5285,8 @@ export default function AsstChat({
                       <button
                         type="button"
                         class="composer__mic"
-                        aria-label="Voice memo"
-                        title="Tap to talk"
+                        aria-label={tFor(lang, "asstChat.composer.voiceMemo")}
+                        title={tFor(lang, "asstChat.composer.tapToTalk")}
                         onClick={toggleRecord}
                         disabled={sending}
                       >
@@ -4965,7 +5295,7 @@ export default function AsstChat({
                       <button
                         type="button"
                         class="composer__send"
-                        title="Send"
+                        title={tFor(lang, "common.send")}
                         onClick={onSendClick}
                         disabled={sending || !draft.trim()}
                       >
@@ -4974,7 +5304,7 @@ export default function AsstChat({
                     </div>
                   </div>
                   <div class="composer__hint">
-                    Not sure? Just tell me about the job.
+                    {tFor(lang, "asstChat.composer.hint")}
                   </div>
                 </>
               )}
@@ -5006,7 +5336,9 @@ function RecordingPanel({
   interimText,
   onStop,
   onCancel,
+  lang = "en",
 }: {
+  lang?: Lang;
   elapsed: number;
   level: number;
   finalText: string;
@@ -5037,7 +5369,11 @@ function RecordingPanel({
   }, [finalText]);
 
   return (
-    <div class="rec-panel" role="region" aria-label="Voice memo recording">
+    <div
+      class="rec-panel"
+      role="region"
+      aria-label={tFor(lang, "asstChat.rec.region")}
+    >
       <div class="rec-panel__bg" aria-hidden="true" />
       <div class="rec-panel__row">
         <div class="rec-panel__orb-wrap" aria-hidden="true">
@@ -5111,7 +5447,7 @@ function RecordingPanel({
           <div class="rec-panel__head">
             <span class="rec-panel__live">
               <span class="rec-panel__live-dot" />
-              Live
+              {tFor(lang, "asstChat.rec.live")}
             </span>
             <span class="rec-panel__elapsed">{elapsedLabel}</span>
           </div>
@@ -5136,7 +5472,7 @@ function RecordingPanel({
               )
               : (
                 <p class="rec-panel__placeholder">
-                  Start talking — I'll write it out as you speak.
+                  {tFor(lang, "asstChat.rec.placeholder")}
                 </p>
               )}
           </div>
@@ -5147,8 +5483,8 @@ function RecordingPanel({
             type="button"
             class="rec-panel__cancel"
             onClick={onCancel}
-            aria-label="Cancel recording"
-            title="Cancel"
+            aria-label={tFor(lang, "asstChat.rec.cancelRecording")}
+            title={tFor(lang, "common.cancel")}
           >
             <svg
               width="16"
@@ -5167,8 +5503,8 @@ function RecordingPanel({
             type="button"
             class="rec-panel__stop"
             onClick={onStop}
-            aria-label="Stop and send"
-            title="Stop & send"
+            aria-label={tFor(lang, "asstChat.rec.stopAndSend")}
+            title={tFor(lang, "asstChat.rec.stopSend")}
           >
             <span class="rec-panel__stop-icon" aria-hidden="true">
               <span class="rec-panel__stop-square" />
@@ -5215,6 +5551,7 @@ function CustomerStepPanel(props: {
   ownerEmail?: string;
   ownerPhone?: string;
   sending: boolean;
+  lang?: Lang;
   onSubmit: (
     optionId: "use_active" | "pick_existing" | "create_new",
     body?: {
@@ -5237,6 +5574,7 @@ function CustomerStepPanel(props: {
     ownerEmail,
     ownerPhone,
     sending,
+    lang = "en",
     onSubmit,
   } = props;
   // Two views, walked in order:
@@ -5276,7 +5614,9 @@ function CustomerStepPanel(props: {
       .catch((err) => {
         if (!cancelled) {
           setLocalErr(
-            err instanceof Error ? err.message : "couldn't load customers",
+            err instanceof Error
+              ? err.message
+              : tFor(lang, "asstChat.error.loadCustomers"),
           );
         }
       })
@@ -5342,16 +5682,16 @@ function CustomerStepPanel(props: {
     const phoneIsOwn = !!ownerPhone && trimmedPhone.length > 0 &&
       normPhone(trimmedPhone) === normPhone(ownerPhone);
     const contactErr = emailIsOwn
-      ? "That's your own email — enter the customer's so the agreement reaches them."
+      ? tFor(lang, "asstChat.customerStep.ownEmail")
       : phoneIsOwn
-      ? "That's your own phone number — enter the customer's so the agreement reaches them."
+      ? tFor(lang, "asstChat.customerStep.ownPhone")
       : !hasContact && trimmedName.length > 0
-      ? "Add a phone number or email so the customer can receive the agreement."
+      ? tFor(lang, "asstChat.customerStep.needContact")
       : undefined;
     const submitDisabled = sending || trimmedName.length === 0 ||
       !hasContact || emailIsOwn || phoneIsOwn;
-    const formHeading = "Who is this for?";
-    const namePlaceholder = "Name";
+    const formHeading = tFor(lang, "asstChat.customerStep.whoFor");
+    const namePlaceholder = tFor(lang, "asstChat.customerStep.name");
     return (
       <div ref={rootRef}>
         <h3 class="wiz__step-q">{formHeading}</h3>
@@ -5369,7 +5709,7 @@ function CustomerStepPanel(props: {
             <input
               type="tel"
               class="cust-pick__search"
-              placeholder="Phone Number"
+              placeholder={tFor(lang, "asstChat.customerStep.phonePlaceholder")}
               value={createPhone}
               onInput={(e) =>
                 setCreatePhone((e.target as HTMLInputElement).value)}
@@ -5377,7 +5717,7 @@ function CustomerStepPanel(props: {
             <input
               type="email"
               class="cust-pick__search"
-              placeholder="Email (optional)"
+              placeholder={tFor(lang, "asstChat.customerStep.emailPlaceholder")}
               value={createEmail}
               onInput={(e) =>
                 setCreateEmail((e.target as HTMLInputElement).value)}
@@ -5407,7 +5747,7 @@ function CustomerStepPanel(props: {
                   },
                 })}
             >
-              Next
+              {tFor(lang, "common.next")}
             </button>
             <button
               type="button"
@@ -5415,7 +5755,7 @@ function CustomerStepPanel(props: {
               onClick={backToList}
               disabled={sending}
             >
-              Back
+              {tFor(lang, "common.back")}
             </button>
           </div>
         </div>
@@ -5426,7 +5766,7 @@ function CustomerStepPanel(props: {
   // ---- View: default — dropdown (kind already picked on the lock-quote CTA) ----
   return (
     <div ref={rootRef}>
-      <h3 class="wiz__step-q">Pick a Customer</h3>
+      <h3 class="wiz__step-q">{tFor(lang, "asstChat.customerStep.pickTitle")}</h3>
       <div
         class="wiz__opts"
         style="flex-direction:column;align-items:stretch;gap:8px;margin-top:8px"
@@ -5439,7 +5779,9 @@ function CustomerStepPanel(props: {
               onClick={() => onSubmit("use_active")}
               disabled={sending}
             >
-              Use {boundCustomer.name} from chat
+              {tFor(lang, "asstChat.customerStep.useFromChat", {
+                name: boundCustomer.name,
+              })}
               {boundCustomer.email
                 ? <span class="wiz-opt__sub">{boundCustomer.email}</span>
                 : null}
@@ -5447,11 +5789,15 @@ function CustomerStepPanel(props: {
           )
           : null}
         {loadingList
-          ? <div class="cust-pick__empty">Loading customers…</div>
+          ? (
+            <div class="cust-pick__empty">
+              {tFor(lang, "common.loadingCustomers")}
+            </div>
+          )
           : customers && customers.length === 0
           ? (
             <div class="cust-pick__empty">
-              No saved customers yet — add one below.
+              {tFor(lang, "asstChat.customerStep.noSaved")}
             </div>
           )
           : (
@@ -5465,7 +5811,7 @@ function CustomerStepPanel(props: {
                     disabled={sending}
                   >
                     <span class="cust-dd__placeholder">
-                      Click Here For Existing Customers
+                      {tFor(lang, "asstChat.customerStep.existingTrigger")}
                     </span>
                     <svg
                       class="cust-dd__chevron"
@@ -5491,8 +5837,10 @@ function CustomerStepPanel(props: {
                       type="text"
                       class="cust-pick__search"
                       placeholder={(customers?.length ?? 0) > 5
-                        ? `Search ${customers?.length} customers…`
-                        : "Search customers…"}
+                        ? tFor(lang, "asstChat.searchNCustomers", {
+                          n: customers?.length ?? 0,
+                        })
+                        : tFor(lang, "common.searchCustomers")}
                       value={search}
                       onInput={(e) =>
                         setSearch((e.target as HTMLInputElement).value)}
@@ -5505,7 +5853,11 @@ function CustomerStepPanel(props: {
                       autoFocus
                     />
                     {filtered.length === 0
-                      ? <div class="cust-pick__empty">No matches.</div>
+                      ? (
+                        <div class="cust-pick__empty">
+                          {tFor(lang, "common.noMatches")}
+                        </div>
+                      )
                       : (
                         <div class="cust-pick__list cust-pick__list--scroll">
                           {filtered.slice(0, 100).map((c) => (
@@ -5542,7 +5894,7 @@ function CustomerStepPanel(props: {
           onClick={openCreate}
           disabled={sending}
         >
-          + New Customer
+          {tFor(lang, "asstChat.customerStep.newCustomer")}
         </button>
       </div>
     </div>
@@ -5569,10 +5921,12 @@ function WizardFollowUpForm(props: {
   option: WizardOption;
   quoteTotalCents: number;
   sending: boolean;
+  lang?: Lang;
   onSubmit: (values: Record<string, string | number>) => void;
   onCancel: () => void;
 }) {
-  const { option, quoteTotalCents, sending, onSubmit, onCancel } = props;
+  const { option, quoteTotalCents, sending, lang = "en", onSubmit, onCancel } =
+    props;
   const fields = option.followUp?.fields ?? [];
 
   const initial: Record<string, string | number> = {};
@@ -5605,7 +5959,7 @@ function WizardFollowUpForm(props: {
       case "percent":
         return "%";
       case "days":
-        return "days";
+        return tFor(lang, "asstChat.followUp.daysSuffix");
       case "currency":
         return "$";
       default:
@@ -5670,11 +6024,13 @@ function WizardFollowUpForm(props: {
         ? (
           <div class="wiz-preview">
             <span class="wiz-preview__row">
-              Deposit · <strong>{fmtUSD(previewDepositCents)}</strong>
+              {tFor(lang, "asstChat.followUp.depositLabel")}{" "}
+              <strong>{fmtUSD(previewDepositCents)}</strong>
             </span>
             <span class="wiz-preview__sep">·</span>
             <span class="wiz-preview__row">
-              Balance · <strong>{fmtUSD(previewBalanceCents)}</strong>
+              {tFor(lang, "asstChat.followUp.balanceLabel")}{" "}
+              <strong>{fmtUSD(previewBalanceCents)}</strong>
             </span>
           </div>
         )
@@ -5686,7 +6042,7 @@ function WizardFollowUpForm(props: {
           onClick={() => onSubmit(values)}
           disabled={submitDisabled}
         >
-          Use {option.label}
+          {tFor(lang, "asstChat.followUp.useOption", { label: option.label })}
         </button>
         <button
           type="button"
@@ -5694,7 +6050,7 @@ function WizardFollowUpForm(props: {
           onClick={onCancel}
           disabled={sending}
         >
-          Back
+          {tFor(lang, "common.back")}
         </button>
       </div>
     </div>
@@ -5706,10 +6062,11 @@ function WizardFollowUpForm(props: {
  *  disabled (job can't start in the past). */
 function CustomDatePickerForm(props: {
   sending: boolean;
+  lang?: Lang;
   onSubmit: (dateStr: string) => void;
   onCancel: () => void;
 }) {
-  const { sending, onSubmit, onCancel } = props;
+  const { sending, lang = "en", onSubmit, onCancel } = props;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const [picked, setPicked] = useState<Date>(today);
@@ -5763,7 +6120,15 @@ function CustomDatePickerForm(props: {
     month: "long",
     year: "numeric",
   });
-  const weekdays = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+  const weekdays = [
+    tFor(lang, "asstChat.cal.su"),
+    tFor(lang, "asstChat.cal.mo"),
+    tFor(lang, "asstChat.cal.tu"),
+    tFor(lang, "asstChat.cal.we"),
+    tFor(lang, "asstChat.cal.th"),
+    tFor(lang, "asstChat.cal.fr"),
+    tFor(lang, "asstChat.cal.sa"),
+  ];
   const prevDisabled = viewMonth.getFullYear() === today.getFullYear() &&
     viewMonth.getMonth() === today.getMonth();
   const stepMonth = (delta: number) =>
@@ -5787,7 +6152,7 @@ function CustomDatePickerForm(props: {
           class="cal__nav"
           onClick={() => stepMonth(-1)}
           disabled={prevDisabled || sending}
-          aria-label="Previous month"
+          aria-label={tFor(lang, "asstChat.cal.prevMonth")}
         >
           <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
             <path
@@ -5806,7 +6171,7 @@ function CustomDatePickerForm(props: {
           class="cal__nav"
           onClick={() => stepMonth(1)}
           disabled={sending}
-          aria-label="Next month"
+          aria-label={tFor(lang, "asstChat.cal.nextMonth")}
         >
           <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
             <path
@@ -5863,7 +6228,7 @@ function CustomDatePickerForm(props: {
           onClick={() => onSubmit(toUsDate(picked))}
           disabled={submitDisabled}
         >
-          Use this date
+          {tFor(lang, "asstChat.cal.useDate")}
         </button>
         <button
           type="button"
@@ -5871,7 +6236,7 @@ function CustomDatePickerForm(props: {
           onClick={onCancel}
           disabled={sending}
         >
-          Back
+          {tFor(lang, "common.back")}
         </button>
       </div>
     </div>
@@ -5941,10 +6306,11 @@ function parseDurationGuess(text: string): {
  *  never propagates — the user has the final word. */
 function CustomDurationPickerForm(props: {
   sending: boolean;
+  lang?: Lang;
   onSubmit: (durationStr: string) => void;
   onCancel: () => void;
 }) {
-  const { sending, onSubmit, onCancel } = props;
+  const { sending, lang = "en", onSubmit, onCancel } = props;
   const [phase, setPhase] = useState<"ask" | "verify">("ask");
   const [freeText, setFreeText] = useState("");
   const [parseFailed, setParseFailed] = useState(false);
@@ -5964,10 +6330,30 @@ function CustomDurationPickerForm(props: {
     unit: typeof unit;
     confidence: "ok" | "guess";
   }[] = [
-    { label: "1 day", n: "1", unit: "days", confidence: "ok" },
-    { label: "2–3 days", n: "3", unit: "days", confidence: "guess" },
-    { label: "1 week", n: "1", unit: "weeks", confidence: "ok" },
-    { label: "2 weeks", n: "2", unit: "weeks", confidence: "ok" },
+    {
+      label: tFor(lang, "asstChat.duration.preset.oneDay"),
+      n: "1",
+      unit: "days",
+      confidence: "ok",
+    },
+    {
+      label: tFor(lang, "asstChat.duration.preset.twoThreeDays"),
+      n: "3",
+      unit: "days",
+      confidence: "guess",
+    },
+    {
+      label: tFor(lang, "asstChat.duration.preset.oneWeek"),
+      n: "1",
+      unit: "weeks",
+      confidence: "ok",
+    },
+    {
+      label: tFor(lang, "asstChat.duration.preset.twoWeeks"),
+      n: "2",
+      unit: "weeks",
+      confidence: "ok",
+    },
   ];
 
   function tryParseAndAdvance() {
@@ -5991,16 +6377,14 @@ function CustomDurationPickerForm(props: {
     return (
       <div class="dur dur--ask" style="margin-top:8px">
         <div class="dur__bossie">
-          <span class="dur__bossie-tag">Bossie</span>
+          <span class="dur__bossie-tag">{tFor(lang, "asstChat.bossie")}</span>
           <span class="dur__bossie-msg">
-            How long will it take? Tell me however you want — "3 weeks", "about
-            a month", "10 business days". I'll show you what I heard before
-            locking it in.
+            {tFor(lang, "asstChat.duration.bossieMsg")}
           </span>
         </div>
         <textarea
           class="cust-pick__search dur__textarea"
-          placeholder="e.g. about 3 weeks, a month and a half, 10 days…"
+          placeholder={tFor(lang, "asstChat.duration.placeholder")}
           value={freeText}
           onInput={(e) => setFreeText((e.target as HTMLTextAreaElement).value)}
           onKeyDown={(e) => {
@@ -6042,7 +6426,7 @@ function CustomDurationPickerForm(props: {
             }}
             disabled={sending}
           >
-            Or set it manually
+            {tFor(lang, "asstChat.setManually")}
           </button>
         </div>
         <div class="cust-create__actions">
@@ -6052,7 +6436,7 @@ function CustomDurationPickerForm(props: {
             onClick={tryParseAndAdvance}
             disabled={sending || !freeText.trim()}
           >
-            Continue →
+            {tFor(lang, "asstChat.continue")}
           </button>
           <button
             type="button"
@@ -6060,7 +6444,7 @@ function CustomDurationPickerForm(props: {
             onClick={onCancel}
             disabled={sending}
           >
-            Back
+            {tFor(lang, "common.back")}
           </button>
         </div>
       </div>
@@ -6072,33 +6456,33 @@ function CustomDurationPickerForm(props: {
       <div class="dur__head">
         <strong class="dur__title">
           {confidence === "fail"
-            ? "Set the duration"
+            ? tFor(lang, "asstChat.duration.titleFail")
             : confidence === "guess"
-            ? "Did I hear that right?"
-            : "Got it — confirm and we'll lock it in"}
+            ? tFor(lang, "asstChat.verify.titleGuess")
+            : tFor(lang, "asstChat.verify.titleOk")}
         </strong>
         {heardFrom
           ? (
             <span class="dur__sub">
-              You said: <em>"{heardFrom}"</em>
+              {tFor(lang, "asstChat.verify.youSaid")} <em>"{heardFrom}"</em>
             </span>
           )
           : (
             <span class="dur__sub">
-              Pick a number and a unit — I'll write it into the contract.
+              {tFor(lang, "asstChat.duration.subPick")}
             </span>
           )}
         {confidence === "guess"
           ? (
             <span class="dur__warn">
-              ⚠ Best guess — please double-check before locking in.
+              {tFor(lang, "asstChat.verify.bestGuess")}
             </span>
           )
           : null}
         {parseFailed
           ? (
             <span class="dur__warn">
-              I couldn't read that as a duration — set it manually.
+              {tFor(lang, "asstChat.duration.warnFail")}
             </span>
           )
           : null}
@@ -6120,7 +6504,7 @@ function CustomDurationPickerForm(props: {
             if (!n || Number(n) < 1) setN("1");
           }}
           autoFocus
-          aria-label="Number"
+          aria-label={tFor(lang, "asstChat.verify.number")}
         />
         <select
           class="cust-pick__search dur__unit"
@@ -6129,11 +6513,11 @@ function CustomDurationPickerForm(props: {
             setUnit(
               (e.currentTarget as HTMLSelectElement).value as typeof unit,
             )}
-          aria-label="Unit"
+          aria-label={tFor(lang, "asstChat.verify.unit")}
         >
-          <option value="days">Days</option>
-          <option value="weeks">Weeks</option>
-          <option value="months">Months</option>
+          <option value="days">{tFor(lang, "asstChat.unit.days")}</option>
+          <option value="weeks">{tFor(lang, "asstChat.unit.weeks")}</option>
+          <option value="months">{tFor(lang, "asstChat.unit.months")}</option>
         </select>
       </div>
       <div class="dur__presets">
@@ -6156,7 +6540,9 @@ function CustomDurationPickerForm(props: {
         })}
       </div>
       <div class="dur__preview">
-        <span class="dur__preview-label">Contract reads:</span>
+        <span class="dur__preview-label">
+          {tFor(lang, "asstChat.verify.contractReads")}
+        </span>
         <span class="dur__preview-val">{preview}</span>
       </div>
       <div class="cust-create__actions">
@@ -6166,7 +6552,7 @@ function CustomDurationPickerForm(props: {
           onClick={() => onSubmit(preview)}
           disabled={!valid || sending}
         >
-          Lock it in
+          {tFor(lang, "asstChat.lockIn")}
         </button>
         <button
           type="button"
@@ -6177,7 +6563,7 @@ function CustomDurationPickerForm(props: {
           }}
           disabled={sending}
         >
-          Try a different way
+          {tFor(lang, "asstChat.tryDifferent")}
         </button>
       </div>
     </div>
@@ -6285,10 +6671,11 @@ function parseWarrantyGuess(text: string): {
  *  extremes (Lifetime, No warranty) that contractors actually use. */
 function CustomWarrantyPickerForm(props: {
   sending: boolean;
+  lang?: Lang;
   onSubmit: (warrantyStr: string) => void;
   onCancel: () => void;
 }) {
-  const { sending, onSubmit, onCancel } = props;
+  const { sending, lang = "en", onSubmit, onCancel } = props;
   const [phase, setPhase] = useState<"ask" | "verify">("ask");
   const [freeText, setFreeText] = useState("");
   const [parseFailed, setParseFailed] = useState(false);
@@ -6318,13 +6705,13 @@ function CustomWarrantyPickerForm(props: {
     apply: () => void;
   }[] = [
     {
-      label: "No warranty",
+      label: tFor(lang, "asstChat.warranty.preset.none"),
       apply: () => {
         setKind("none");
       },
     },
     {
-      label: "6 months",
+      label: tFor(lang, "asstChat.warranty.preset.sixMonths"),
       apply: () => {
         setKind("term");
         setN("6");
@@ -6332,7 +6719,7 @@ function CustomWarrantyPickerForm(props: {
       },
     },
     {
-      label: "12 months",
+      label: tFor(lang, "asstChat.warranty.preset.twelveMonths"),
       apply: () => {
         setKind("term");
         setN("12");
@@ -6340,7 +6727,7 @@ function CustomWarrantyPickerForm(props: {
       },
     },
     {
-      label: "24 months",
+      label: tFor(lang, "asstChat.warranty.preset.twentyFourMonths"),
       apply: () => {
         setKind("term");
         setN("24");
@@ -6373,16 +6760,14 @@ function CustomWarrantyPickerForm(props: {
     return (
       <div class="dur dur--ask" style="margin-top:8px">
         <div class="dur__bossie">
-          <span class="dur__bossie-tag">Bossie</span>
+          <span class="dur__bossie-tag">{tFor(lang, "asstChat.bossie")}</span>
           <span class="dur__bossie-msg">
-            How long do you stand behind your work? Tell me however you want —
-            "12 months", "1 year", "90 days", "lifetime". I'll show you what I
-            heard before locking it in.
+            {tFor(lang, "asstChat.warranty.bossieMsg")}
           </span>
         </div>
         <textarea
           class="cust-pick__search dur__textarea"
-          placeholder="e.g. 1 year, 18 months, 90 days, lifetime…"
+          placeholder={tFor(lang, "asstChat.warranty.placeholder")}
           value={freeText}
           onInput={(e) => setFreeText((e.target as HTMLTextAreaElement).value)}
           onKeyDown={(e) => {
@@ -6423,7 +6808,7 @@ function CustomWarrantyPickerForm(props: {
             }}
             disabled={sending}
           >
-            Or set it manually
+            {tFor(lang, "asstChat.setManually")}
           </button>
         </div>
         <div class="cust-create__actions">
@@ -6433,7 +6818,7 @@ function CustomWarrantyPickerForm(props: {
             onClick={tryParseAndAdvance}
             disabled={sending || !freeText.trim()}
           >
-            Continue →
+            {tFor(lang, "asstChat.continue")}
           </button>
           <button
             type="button"
@@ -6441,7 +6826,7 @@ function CustomWarrantyPickerForm(props: {
             onClick={onCancel}
             disabled={sending}
           >
-            Back
+            {tFor(lang, "common.back")}
           </button>
         </div>
       </div>
@@ -6453,33 +6838,33 @@ function CustomWarrantyPickerForm(props: {
       <div class="dur__head">
         <strong class="dur__title">
           {confidence === "fail"
-            ? "Set the warranty"
+            ? tFor(lang, "asstChat.warranty.titleFail")
             : confidence === "guess"
-            ? "Did I hear that right?"
-            : "Got it — confirm and we'll lock it in"}
+            ? tFor(lang, "asstChat.verify.titleGuess")
+            : tFor(lang, "asstChat.verify.titleOk")}
         </strong>
         {heardFrom
           ? (
             <span class="dur__sub">
-              You said: <em>"{heardFrom}"</em>
+              {tFor(lang, "asstChat.verify.youSaid")} <em>"{heardFrom}"</em>
             </span>
           )
           : (
             <span class="dur__sub">
-              Pick a length — I'll write it into the contract.
+              {tFor(lang, "asstChat.warranty.subPick")}
             </span>
           )}
         {confidence === "guess"
           ? (
             <span class="dur__warn">
-              ⚠ Best guess — please double-check before locking in.
+              {tFor(lang, "asstChat.verify.bestGuess")}
             </span>
           )
           : null}
         {parseFailed
           ? (
             <span class="dur__warn">
-              I couldn't read that as a warranty term — set it manually.
+              {tFor(lang, "asstChat.warranty.warnFail")}
             </span>
           )
           : null}
@@ -6492,11 +6877,17 @@ function CustomWarrantyPickerForm(props: {
             setKind(
               (e.currentTarget as HTMLSelectElement).value as typeof kind,
             )}
-          aria-label="Warranty type"
+          aria-label={tFor(lang, "asstChat.warranty.typeLabel")}
         >
-          <option value="term">Set a term</option>
-          <option value="lifetime">Lifetime</option>
-          <option value="none">No warranty</option>
+          <option value="term">
+            {tFor(lang, "asstChat.warranty.setTerm")}
+          </option>
+          <option value="lifetime">
+            {tFor(lang, "asstChat.warranty.lifetime")}
+          </option>
+          <option value="none">
+            {tFor(lang, "asstChat.warranty.none")}
+          </option>
         </select>
       </div>
       {kind === "term"
@@ -6518,7 +6909,7 @@ function CustomWarrantyPickerForm(props: {
                 if (!n || Number(n) < 1) setN("1");
               }}
               autoFocus
-              aria-label="Number"
+              aria-label={tFor(lang, "asstChat.verify.number")}
             />
             <select
               class="cust-pick__search dur__unit"
@@ -6534,11 +6925,13 @@ function CustomWarrantyPickerForm(props: {
                 if (Number(n) > nextCap) setN(String(nextCap));
                 setUnit(next);
               }}
-              aria-label="Unit"
+              aria-label={tFor(lang, "asstChat.verify.unit")}
             >
-              <option value="days">Days</option>
-              <option value="months">Months</option>
-              <option value="years">Years</option>
+              <option value="days">{tFor(lang, "asstChat.unit.days")}</option>
+              <option value="months">
+                {tFor(lang, "asstChat.unit.months")}
+              </option>
+              <option value="years">{tFor(lang, "asstChat.unit.years")}</option>
             </select>
           </div>
         )
@@ -6560,7 +6953,9 @@ function CustomWarrantyPickerForm(props: {
         })}
       </div>
       <div class="dur__preview">
-        <span class="dur__preview-label">Contract reads:</span>
+        <span class="dur__preview-label">
+          {tFor(lang, "asstChat.verify.contractReads")}
+        </span>
         <span class="dur__preview-val">{preview}</span>
       </div>
       <div class="cust-create__actions">
@@ -6570,7 +6965,7 @@ function CustomWarrantyPickerForm(props: {
           onClick={() => onSubmit(preview)}
           disabled={!valid || sending}
         >
-          Lock it in
+          {tFor(lang, "asstChat.lockIn")}
         </button>
         <button
           type="button"
@@ -6581,7 +6976,7 @@ function CustomWarrantyPickerForm(props: {
           }}
           disabled={sending}
         >
-          Try a different way
+          {tFor(lang, "asstChat.tryDifferent")}
         </button>
       </div>
     </div>
@@ -6680,10 +7075,11 @@ function parsePaymentGuess(text: string): {
  *  string so a parser miss never propagates downstream. */
 function CustomPaymentPickerForm(props: {
   sending: boolean;
+  lang?: Lang;
   onSubmit: (paymentStr: string) => void;
   onCancel: () => void;
 }) {
-  const { sending, onSubmit, onCancel } = props;
+  const { sending, lang = "en", onSubmit, onCancel } = props;
   const [phase, setPhase] = useState<"ask" | "verify">("ask");
   const [freeText, setFreeText] = useState("");
   const [parseFailed, setParseFailed] = useState(false);
@@ -6710,28 +7106,28 @@ function CustomPaymentPickerForm(props: {
 
   const presets: { label: string; apply: () => void }[] = [
     {
-      label: "Payment upon completion",
+      label: tFor(lang, "asstChat.payment.preset.onCompletion"),
       apply: () => {
         setMode("net");
         setNetDays("0");
       },
     },
     {
-      label: "50 / 50",
+      label: tFor(lang, "asstChat.payment.preset.fiftyFifty"),
       apply: () => {
         setMode("split");
         setSplits(["50", "50"]);
       },
     },
     {
-      label: "30 / 30 / 40",
+      label: tFor(lang, "asstChat.payment.preset.threeThreeForty"),
       apply: () => {
         setMode("split");
         setSplits(["30", "30", "40"]);
       },
     },
     {
-      label: "Deposit + balance",
+      label: tFor(lang, "asstChat.payment.preset.depositBalance"),
       apply: () => {
         setMode("split");
         setSplits(["25", "75"]);
@@ -6811,16 +7207,14 @@ function CustomPaymentPickerForm(props: {
     return (
       <div class="dur dur--ask" style="margin-top:8px">
         <div class="dur__bossie">
-          <span class="dur__bossie-tag">Bossie</span>
+          <span class="dur__bossie-tag">{tFor(lang, "asstChat.bossie")}</span>
           <span class="dur__bossie-msg">
-            How do you want to get paid? Tell me however you want — "on
-            completion", "50/50", "30/30/40", "deposit + balance". I'll show you
-            what I heard before locking it in.
+            {tFor(lang, "asstChat.payment.bossieMsg")}
           </span>
         </div>
         <textarea
           class="cust-pick__search dur__textarea"
-          placeholder="e.g. on completion, 50/50 split, deposit + balance…"
+          placeholder={tFor(lang, "asstChat.payment.placeholder")}
           value={freeText}
           onInput={(e) => setFreeText((e.target as HTMLTextAreaElement).value)}
           onKeyDown={(e) => {
@@ -6861,7 +7255,7 @@ function CustomPaymentPickerForm(props: {
             }}
             disabled={sending}
           >
-            Or set it manually
+            {tFor(lang, "asstChat.setManually")}
           </button>
         </div>
         <div class="cust-create__actions">
@@ -6871,7 +7265,7 @@ function CustomPaymentPickerForm(props: {
             onClick={tryParseAndAdvance}
             disabled={sending || !freeText.trim()}
           >
-            Continue →
+            {tFor(lang, "asstChat.continue")}
           </button>
           <button
             type="button"
@@ -6879,7 +7273,7 @@ function CustomPaymentPickerForm(props: {
             onClick={onCancel}
             disabled={sending}
           >
-            Back
+            {tFor(lang, "common.back")}
           </button>
         </div>
       </div>
@@ -6891,34 +7285,33 @@ function CustomPaymentPickerForm(props: {
       <div class="dur__head">
         <strong class="dur__title">
           {confidence === "fail"
-            ? "Set your payment terms"
+            ? tFor(lang, "asstChat.payment.titleFail")
             : confidence === "guess"
-            ? "Did I hear that right?"
-            : "Got it — confirm and we'll lock it in"}
+            ? tFor(lang, "asstChat.verify.titleGuess")
+            : tFor(lang, "asstChat.verify.titleOk")}
         </strong>
         {heardFrom
           ? (
             <span class="dur__sub">
-              You said: <em>"{heardFrom}"</em>
+              {tFor(lang, "asstChat.verify.youSaid")} <em>"{heardFrom}"</em>
             </span>
           )
           : (
             <span class="dur__sub">
-              Pick a mode and enter the numbers — I'll write it into the
-              contract.
+              {tFor(lang, "asstChat.payment.subPick")}
             </span>
           )}
         {confidence === "guess"
           ? (
             <span class="dur__warn">
-              ⚠ Best guess — please double-check before locking in.
+              {tFor(lang, "asstChat.verify.bestGuess")}
             </span>
           )
           : null}
         {parseFailed
           ? (
             <span class="dur__warn">
-              I couldn't read that as payment terms — set it manually.
+              {tFor(lang, "asstChat.payment.warnFail")}
             </span>
           )
           : null}
@@ -6933,7 +7326,7 @@ function CustomPaymentPickerForm(props: {
           onClick={() => setMode("net")}
           disabled={sending}
         >
-          One payment
+          {tFor(lang, "asstChat.payment.onePayment")}
         </button>
         <button
           type="button"
@@ -6943,7 +7336,7 @@ function CustomPaymentPickerForm(props: {
           onClick={() => setMode("split")}
           disabled={sending}
         >
-          Split payments
+          {tFor(lang, "asstChat.payment.splitPayments")}
         </button>
       </div>
 
@@ -6951,7 +7344,7 @@ function CustomPaymentPickerForm(props: {
         ? (
           <div class="pay__net">
             <label class="pay__net-label">
-              Due
+              {tFor(lang, "asstChat.payment.due")}
               <input
                 type="number"
                 class="cust-pick__search pay__net-num"
@@ -6965,16 +7358,18 @@ function CustomPaymentPickerForm(props: {
                   if (!netDays || Number(netDays) < 0) setNetDays("0");
                 }}
                 autoFocus
-                aria-label="Days after invoice"
+                aria-label={tFor(lang, "asstChat.payment.daysAfterInvoiceAria")}
               />
-              days after the invoice
+              {tFor(lang, "asstChat.payment.daysAfterInvoice")}
             </label>
             <span class="pay__net-hint">
               {days === 0
-                ? "0 = paid same day the work wraps."
-                : `Customer has ${days} day${
-                  days === 1 ? "" : "s"
-                } to pay after you send the invoice.`}
+                ? tFor(lang, "asstChat.payment.hintSameDay")
+                : tFor(
+                  lang,
+                  `asstChat.payment.hintDays.${days === 1 ? "one" : "other"}`,
+                  { days },
+                )}
             </span>
           </div>
         )
@@ -6983,12 +7378,14 @@ function CustomPaymentPickerForm(props: {
             <div class="pay__split-rows">
               {splits.map((val, idx) => {
                 const labelText = splits.length === 2
-                  ? idx === 0 ? "Deposit" : "On completion"
+                  ? idx === 0
+                    ? tFor(lang, "asstChat.payment.deposit")
+                    : tFor(lang, "asstChat.payment.onCompletion")
                   : idx === 0
-                  ? "Deposit"
+                  ? tFor(lang, "asstChat.payment.deposit")
                   : idx === splits.length - 1
-                  ? "On completion"
-                  : `Milestone ${idx}`;
+                  ? tFor(lang, "asstChat.payment.onCompletion")
+                  : tFor(lang, "asstChat.payment.milestoneN", { n: idx });
                 return (
                   <div key={idx} class="pay__split-row">
                     <input
@@ -7003,7 +7400,9 @@ function CustomPaymentPickerForm(props: {
                       onBlur={() => {
                         if (val === "") setSplitAt(idx, "0");
                       }}
-                      aria-label={`${labelText} percentage`}
+                      aria-label={tFor(lang, "asstChat.payment.pctAria", {
+                        label: labelText,
+                      })}
                     />
                     <span class="pay__split-pctsign">%</span>
                     <span class="pay__split-lbl">{labelText}</span>
@@ -7013,7 +7412,9 @@ function CustomPaymentPickerForm(props: {
                           type="button"
                           class="pay__split-del"
                           onClick={() => removeMilestone(idx)}
-                          aria-label={`Remove ${labelText}`}
+                          aria-label={tFor(lang, "asstChat.payment.removeAria", {
+                            label: labelText,
+                          })}
                           disabled={sending}
                         >
                           ×
@@ -7033,7 +7434,7 @@ function CustomPaymentPickerForm(props: {
                     onClick={addMilestone}
                     disabled={sending}
                   >
-                    + Add milestone
+                    {tFor(lang, "asstChat.payment.addMilestone")}
                   </button>
                 )
                 : null}
@@ -7045,7 +7446,7 @@ function CustomPaymentPickerForm(props: {
                     onClick={autoBalance}
                     disabled={sending}
                   >
-                    Auto-balance to 100%
+                    {tFor(lang, "asstChat.payment.autoBalance")}
                   </button>
                 )
                 : null}
@@ -7054,7 +7455,7 @@ function CustomPaymentPickerForm(props: {
                   splitsValid ? "pay__split-sum--ok" : "pay__split-sum--bad"
                 }`}
               >
-                Total: {splitSum}%
+                {tFor(lang, "asstChat.payment.total", { sum: splitSum })}
               </span>
             </div>
           </div>
@@ -7075,7 +7476,9 @@ function CustomPaymentPickerForm(props: {
       </div>
 
       <div class="dur__preview">
-        <span class="dur__preview-label">Contract reads:</span>
+        <span class="dur__preview-label">
+          {tFor(lang, "asstChat.verify.contractReads")}
+        </span>
         <span class="dur__preview-val">{preview}</span>
       </div>
 
@@ -7086,7 +7489,7 @@ function CustomPaymentPickerForm(props: {
           onClick={() => onSubmit(preview)}
           disabled={!valid || sending}
         >
-          Lock it in
+          {tFor(lang, "asstChat.lockIn")}
         </button>
         <button
           type="button"
@@ -7097,7 +7500,7 @@ function CustomPaymentPickerForm(props: {
           }}
           disabled={sending}
         >
-          Try a different way
+          {tFor(lang, "asstChat.tryDifferent")}
         </button>
       </div>
     </div>

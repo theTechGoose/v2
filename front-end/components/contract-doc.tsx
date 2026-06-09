@@ -14,6 +14,8 @@ import {
   fmtPhone,
   telHref,
 } from "../lib/format.ts";
+import { type Lang, tFor } from "../lib/i18n.ts";
+import { localizeTermValue } from "../lib/term-i18n.ts";
 
 interface Contractor {
   name?: string;
@@ -119,6 +121,12 @@ export interface ContractPublic {
     summary?: string;
     jobName?: string;
     description?: string;
+    /** Per-language title/summary/description (keyed by lang code). When
+     *  present, the doc renders these in its own language instead of the
+     *  single-language fields above. */
+    descriptionByLang?: Record<string, string>;
+    jobNameByLang?: Record<string, string>;
+    summaryByLang?: Record<string, string>;
     lineItems?: LineItem[];
   };
   terms?: Term[];
@@ -138,197 +146,97 @@ export const BG = "#f7f6f1";
 /** Roadmap p.13: the public contract is customer-facing, so it renders in
  *  the contractor's OUTGOING-COMMS language (default en). One table so the
  *  whole document flips together. */
-function cstr(es: boolean) {
+function cstr(lang: Lang) {
+  const clauseKeys = [
+    "governingLaw",
+    "jobDetails",
+    "paymentTerms",
+    "changeOrders",
+    "customerResponsibilities",
+    "delays",
+    "warranty",
+    "limitationOfLiability",
+    "rightToStopWork",
+    "termination",
+    "disputeResolution",
+    "permits",
+    "indemnification",
+    "entireAgreement",
+  ];
   return {
-    docTag: es ? "Cotización y Acuerdo" : "Quote & Agreement",
-    signed: (d: string) => es ? `Firmado ${d}` : `Signed ${d}`,
-    declined: es ? "Rechazado" : "Declined",
-    awaiting: es ? "Esperando tu firma" : "Awaiting your signature",
-    between: es ? "Entre" : "Between",
-    and: es ? "y" : "and",
-    effective: es ? "vigente" : "effective",
-    to: es ? "Para" : "To",
-    from: es ? "De" : "From",
-    jobDetails: es ? "Detalles del trabajo" : "Job details",
-    agreementValue: es ? "Valor del acuerdo" : "Agreement value",
-    allIn: es ? "todo incluido, sin sorpresas" : "all in, no surprises",
-    paymentSchedule: es ? "Calendario de pagos" : "Payment schedule",
-    terms: es ? "Términos" : "Terms",
-    start: es ? "Inicio" : "Start",
-    estCompletion: es ? "Finalización estimada" : "Estimated completion",
-    estimated: (v: string) => es ? `Estimado ${v}` : `Estimated ${v}`,
-    signHere: es ? "Firma aquí" : "Sign here",
-    bothCaptured: es ? "Ambas firmas capturadas." : "Both signatures captured.",
+    docTag: tFor(lang, "contractDoc.docTag"),
+    signed: (d: string) => tFor(lang, "contractDoc.signed", { date: d }),
+    declined: tFor(lang, "status.declined"),
+    awaiting: tFor(lang, "contractDoc.awaiting"),
+    between: tFor(lang, "contractDoc.between"),
+    and: tFor(lang, "contractDoc.and"),
+    effective: tFor(lang, "contractDoc.effective"),
+    to: tFor(lang, "contractDoc.to"),
+    from: tFor(lang, "contractDoc.from"),
+    jobDetails: tFor(lang, "contractDoc.jobDetails"),
+    tableDescription: tFor(lang, "contractDoc.tableDescription"),
+    tableQty: tFor(lang, "contractDoc.tableQty"),
+    tableAmount: tFor(lang, "contractDoc.tableAmount"),
+    unitEach: tFor(lang, "contractDoc.unitEach"),
+    agreementValue: tFor(lang, "contractDoc.agreementValue"),
+    allIn: tFor(lang, "contractDoc.allIn"),
+    paymentSchedule: tFor(lang, "contractDoc.paymentSchedule"),
+    terms: tFor(lang, "contractDoc.terms"),
+    start: tFor(lang, "contractDoc.start"),
+    estCompletion: tFor(lang, "contractDoc.estCompletion"),
+    estimated: (v: string) => tFor(lang, "contractDoc.estimated", { value: v }),
+    signHere: tFor(lang, "contractDoc.signHere"),
+    bothCaptured: tFor(lang, "contractDoc.bothCaptured"),
     bySigning: (first?: string) =>
-      es
-        ? `Al firmar abajo, ${first ?? "tú"} ${
-          first ? "acepta" : "aceptas"
-        } todo lo anterior.`
-        : `By signing below, ${
-          first ? `${first} agrees` : "you agree"
-        } to everything above.`,
-    contractor: es ? "Contratista" : "Contractor",
-    by: es ? "Por:" : "By:",
-    date: es ? "Fecha:" : "Date:",
-    today: es ? "hoy" : "today",
-    yourSignature: es ? "Tu firma" : "Your signature",
-    signTypeBelow: es
-      ? "Firma y escribe tu nombre abajo ↓"
-      : "Sign & type name below ↓",
-    clientSignature: es ? "Firma del cliente" : "Client Signature",
-    signatureOf: (n: string) => es ? `Firma de ${n}` : `${n} Signature`,
-    signedBinding: es ? "Firmado y vinculante" : "Signed and binding",
-    signedNote: es
-      ? "Espera hasta 2 minutos antes de revisar tu correo. No olvides revisar el spam."
-      : "Please allow up to 2 minutes before checking your email inbox. Don't forget to check spam.",
-    qBefore: es ? "¿Preguntas antes de firmar?" : "Questions before signing?",
-    callWord: es ? "Llama al" : "Call",
-    orWord: es ? " o " : " or ",
-    emailWord: es ? "escribe a" : "email",
-    lookForward: es
-      ? "! Espero poder trabajar contigo."
-      : "! I look forward to working with you.",
-    poweredBy: es
-      ? "Hecho con Paperwork Monster · Acuerdo"
-      : "Powered by Paperwork Monster · Agreement",
+      first
+        ? tFor(lang, "contractDoc.bySigningNamed", { name: first })
+        : tFor(lang, "contractDoc.bySigning"),
+    contractor: tFor(lang, "contractDoc.contractor"),
+    by: tFor(lang, "contractDoc.by"),
+    date: tFor(lang, "contractDoc.date"),
+    today: tFor(lang, "contractDoc.today"),
+    yourSignature: tFor(lang, "contractDoc.yourSignature"),
+    signTypeBelow: tFor(lang, "contractDoc.signTypeBelow"),
+    clientSignature: tFor(lang, "contractDoc.clientSignature"),
+    signatureOf: (n: string) =>
+      tFor(lang, "contractDoc.signatureOf", { name: n }),
+    signedBinding: tFor(lang, "contractDoc.signedBinding"),
+    signedNote: tFor(lang, "contractDoc.signedNote"),
+    qBefore: tFor(lang, "contractDoc.qBefore"),
+    callWord: tFor(lang, "contractDoc.callWord"),
+    orWord: tFor(lang, "contractDoc.orWord"),
+    emailWord: tFor(lang, "contractDoc.emailWord"),
+    lookForward: tFor(lang, "contractDoc.lookForward"),
+    poweredBy: tFor(lang, "contractDoc.poweredBy"),
     termLabels: {
-      customer: es ? "Cliente" : "Customer",
-      start_date: es ? "Fecha de inicio" : "Start date",
-      wraps: es ? "Duración" : "Time to complete",
-      payment_terms: es ? "Plazo de pago" : "Payment terms",
-      warranty: es ? "Garantía" : "Warranty",
+      customer: tFor(lang, "contractDoc.termLabel.customer"),
+      start_date: tFor(lang, "contractDoc.termLabel.startDate"),
+      wraps: tFor(lang, "contractDoc.termLabel.wraps"),
+      payment_terms: tFor(lang, "contractDoc.termLabel.paymentTerms"),
+      warranty: tFor(lang, "contractDoc.termLabel.warranty"),
     } as Record<string, string>,
-    clauses: (es
-      ? [
-        [
-          "Ley Aplicable",
-          "Este acuerdo se rige por las leyes del estado donde se realiza el trabajo.",
-        ],
-        [
-          "Detalles del Trabajo",
-          "El contratista realizará únicamente el trabajo descrito en este acuerdo. Cualquier trabajo adicional debe ser aprobado por ambas partes y puede generar cargos adicionales.",
-        ],
-        [
-          "Condiciones de Pago",
-          "El pago vence según lo indicado en este acuerdo. Los pagos atrasados pueden estar sujetos a cargos adicionales según lo permita la ley.",
-        ],
-        [
-          "Órdenes de Cambio",
-          "Cualquier cambio al trabajo debe acordarse por escrito y puede afectar el precio total y el plazo del proyecto.",
-        ],
-        [
-          "Responsabilidades del Cliente",
-          "El cliente se compromete a dar acceso al lugar de trabajo y a asegurar que el área esté lista para que el contratista realice los servicios acordados.",
-        ],
-        [
-          "Retrasos y Condiciones Imprevistas",
-          "El contratista no es responsable de retrasos por clima, disponibilidad de materiales, condiciones del sitio u otras circunstancias fuera de su control.",
-        ],
-        [
-          "Garantía",
-          "El contratista garantiza su mano de obra por el período indicado en este acuerdo. Esta garantía cubre solo la mano de obra y no incluye materiales, desgaste normal, mal uso o daños causados por terceros.",
-        ],
-        [
-          "Límite de Responsabilidad",
-          "La responsabilidad del contratista bajo este acuerdo se limita al monto total pagado por el cliente por el trabajo realizado.",
-        ],
-        [
-          "Derecho a Detener el Trabajo",
-          "El contratista se reserva el derecho de detener el trabajo si los pagos no se realizan según lo acordado.",
-        ],
-        [
-          "Terminación",
-          "Cualquiera de las partes puede cancelar este acuerdo con un aviso por escrito de 7 días.",
-        ],
-        [
-          "Resolución de Disputas",
-          "Las partes acuerdan intentar resolver cualquier disputa de buena fe. Toda acción legal se llevará a cabo en un tribunal local o de menor cuantía en el estado donde se realiza el trabajo.",
-        ],
-        [
-          "Permisos y Cumplimiento",
-          "El contratista no es responsable de obtener permisos salvo que se indique expresamente. El cliente es responsable de que todas las aprobaciones necesarias estén en orden, salvo acuerdo en contrario.",
-        ],
-        [
-          "Indemnización",
-          "El cliente se compromete a eximir de responsabilidad al contratista por daños o problemas derivados de condiciones fuera de su control.",
-        ],
-        [
-          "Acuerdo Completo",
-          "Este acuerdo representa el entendimiento total entre ambas partes y reemplaza cualquier conversación o acuerdo previo.",
-        ],
-      ]
-      : [
-        [
-          "Governing Law",
-          "This agreement is governed by the laws of the state where the work is performed.",
-        ],
-        [
-          "Job Details",
-          "Contractor will perform only the work described in this agreement. Any additional work must be approved by both parties and may result in additional charges.",
-        ],
-        [
-          "Payment Terms",
-          "Payment is due as outlined in this agreement. Late payments may be subject to additional fees as allowed by law.",
-        ],
-        [
-          "Change Orders",
-          "Any changes to the work must be agreed to in writing and may affect the total price and project timeline.",
-        ],
-        [
-          "Customer Responsibilities",
-          "Customer agrees to provide access to the job site and ensure the work area is ready for the Contractor to perform the agreed services.",
-        ],
-        [
-          "Delays and Unforeseen Conditions",
-          "Contractor is not responsible for delays caused by weather, material availability, site conditions, or other circumstances outside of their control.",
-        ],
-        [
-          "Warranty",
-          "Contractor warrants their workmanship for the period stated in this agreement. This warranty applies to labor only and does not cover materials, normal wear and tear, misuse, or damage caused by others.",
-        ],
-        [
-          "Limitation of Liability",
-          "Contractor's liability under this agreement is limited to the total amount paid by the Customer for the work performed.",
-        ],
-        [
-          "Right to Stop Work",
-          "Contractor reserves the right to stop work if payments are not made as agreed.",
-        ],
-        [
-          "Termination",
-          "Either party may cancel this agreement by providing 7 days' written notice.",
-        ],
-        [
-          "Dispute Resolution",
-          "The parties agree to attempt to resolve any disputes in good faith. Any legal action will take place in small claims or local court in the state where the work is performed.",
-        ],
-        [
-          "Permits and Compliance",
-          "Contractor is not responsible for obtaining permits unless specifically stated. Customer is responsible for ensuring all necessary approvals are in place unless otherwise agreed.",
-        ],
-        [
-          "Indemnification",
-          "Customer agrees to hold Contractor harmless for damages or issues arising from conditions beyond the Contractor's control.",
-        ],
-        [
-          "Entire Agreement",
-          "This agreement represents the full understanding between both parties and replaces any prior discussions or agreements.",
-        ],
-      ]) as Array<[string, string]>,
+    clauses: clauseKeys.map((k) =>
+      [
+        tFor(lang, `contractDoc.clause.${k}.title`),
+        tFor(lang, `contractDoc.clause.${k}.body`),
+      ] as [string, string]
+    ),
   };
 }
 
-export function ErrorCard({ message }: { message: string }) {
+export function ErrorCard(
+  { message, lang = "en" }: { message: string; lang?: Lang },
+) {
   return (
     <>
       <div
         style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN};text-align:center;margin-bottom:18px`}
       >
-        Paperwork Monster
+        {tFor(lang, "brand.name")}
       </div>
       <div style="background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center">
         <div style={`font-weight:800;color:${TEAL};font-size:18px`}>
-          Hmm, can't open this
+          {tFor(lang, "contractDoc.cantOpen")}
         </div>
         <p style={`margin:8px 0 0;color:${MUTED};font-size:14px`}>{message}</p>
       </div>
@@ -345,25 +253,33 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
   const customerFirst = customerName?.split(/\s+/)[0];
   const contractor = contract.contractor;
   const es = contractor?.commsLanguage === "es";
-  const t = cstr(es);
+  const lang: Lang = es ? "es" : "en";
+  const t = cstr(lang);
   const businessLabel = contractor?.businessName?.trim() ||
-    contractor?.name?.trim() || "Paperwork Monster";
+    contractor?.name?.trim() || tFor(lang, "brand.name");
   const contractorName = contractor?.name?.trim();
   const senderInitials = initialsFromName(contractorName ?? businessLabel);
 
   const items = contract.jobDetails?.lineItems ?? [];
   const showQty = items.some((li) => (li.quantity ?? 1) > 1);
-  const summary = (contract.jobDetails?.summary ?? "Service Agreement").replace(
-    /^\s*quote\s*:\s*/i,
-    "",
-  ).trim();
-  const jobNameRaw = contract.jobDetails?.jobName?.trim();
+  // Title/summary in the document's language when the per-language fields are
+  // present (populated from the picked job option); else the single value.
+  const summary =
+    (contract.jobDetails?.summaryByLang?.[lang] ??
+      contract.jobDetails?.summary ?? tFor(lang, "contractDoc.serviceAgreement"))
+      .replace(
+        /^\s*quote\s*:\s*/i,
+        "",
+      ).trim();
+  const jobNameRaw =
+    (contract.jobDetails?.jobNameByLang?.[lang] ?? contract.jobDetails?.jobName)
+      ?.trim();
   const heroTitle = (jobNameRaw && jobNameRaw.length > 0)
     ? jobNameRaw
     : summary.replace(/\b\w/g, (c) => c.toUpperCase());
 
   const effective = contract.effectiveDate ?? contract.createdAt;
-  const milestones = computeMilestones(total, contract.terms, es);
+  const milestones = computeMilestones(total, contract.terms, lang);
 
   // Sequential section numbers. Sections are conditionally rendered, so
   // hardcoding 01/02/03 leaves gaps (01,03,…) when one is absent — which
@@ -489,7 +405,10 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
             <section style="margin-top:36px">
               <SectionHeader n={num()} title={t.jobDetails} />
               {(() => {
-                const lines = detailLines(contract.jobDetails?.description);
+                const lines = detailLines(
+                  contract.jobDetails?.descriptionByLang?.[lang] ??
+                    contract.jobDetails?.description,
+                );
                 if (lines.length === 0) return null;
                 return lines.length > 1
                   ? (
@@ -530,19 +449,19 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
                       <th
                         style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:left`}
                       >
-                        Description
+                        {t.tableDescription}
                       </th>
                       {showQty && (
                         <th
                           style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:right`}
                         >
-                          Qty
+                          {t.tableQty}
                         </th>
                       )}
                       <th
                         style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:right`}
                       >
-                        Amount
+                        {t.tableAmount}
                       </th>
                     </tr>
                   </thead>
@@ -560,7 +479,7 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
                             <td
                               style={`padding:14px 0;border-bottom:1px solid ${LINE};color:${MUTED};font-size:13px;text-align:right`}
                             >
-                              {li.quantity ?? 1} {li.unit ?? "ea"}
+                              {li.quantity ?? 1} {li.unit ?? t.unitEach}
                             </td>
                           )}
                           <td
@@ -667,7 +586,7 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
                         <KV
                           key={term.stepId}
                           k={t.termLabels[term.stepId] ?? term.label}
-                          v={expandTermValue(term, contractor?.state, es)}
+                          v={expandTermValue(term, contractor?.state, lang)}
                         />
                       ))}
                   </div>
@@ -767,7 +686,9 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
                      label and looked like two signature boxes. */
                   : null}
               </div>
-              {!signed && <PublicSignContract contractId={contract.id} />}
+              {!signed && (
+                <PublicSignContract contractId={contract.id} lang={lang} />
+              )}
               {signed && (
                 <div
                   style={`margin-top:22px;padding:18px 22px;background:linear-gradient(135deg,rgba(81,152,67,0.12) 0%,rgba(81,152,67,0.04) 100%);border:1px solid rgba(72,158,95,0.35);border-radius:16px;display:flex;align-items:center;gap:14px`}
@@ -1017,44 +938,23 @@ function termValue(
  *  known preset option labels to Spanish and converts numeric durations
  *  ("12 months" → "12 meses"); custom free-text and universal ratios
  *  ("50/50") pass through unchanged. Mirrors the backend PDF renderer. */
-function localizeTermValue(value: string, es: boolean): string {
-  if (!es) return value;
-  const trimmed = (value ?? "").trim();
-  const exact: Record<string, string> = {
-    "Payment upon completion": "Pago al finalizar",
-    "Deposit + balance": "Depósito + saldo",
-    "No warranty": "Sin garantía",
-    "Right away": "De inmediato",
-    "Next week": "La próxima semana",
-    "Next Month": "El próximo mes",
-    "Next month": "El próximo mes",
-  };
-  if (exact[trimmed]) return exact[trimmed];
-  return trimmed
-    .replace(/\bmonths\b/gi, "meses").replace(/\bmonth\b/gi, "mes")
-    .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
-    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");
-}
-
 function expandTermValue(
   term: Term,
   contractorState: string | undefined,
-  es = false,
+  lang: Lang = "en",
 ): string {
   const stateName = expandStateName(contractorState);
   if (term.stepId === "wraps") {
-    const v = localizeTermValue(term.value, es);
-    return es ? `Estimado ${v}` : `Estimated ${v}`;
+    const v = localizeTermValue(term.value, lang);
+    return tFor(lang, "contractDoc.estimated", { value: v });
   }
   if (term.stepId === "governing_state") {
     if (/use my business|business state/i.test(term.value)) {
       if (!stateName) return term.value;
-      return es ? `Leyes de ${stateName}` : `${stateName} law`;
+      return tFor(lang, "contractDoc.termValue.stateLaw", { state: stateName });
     }
     if (/job\s*site|use the job/i.test(term.value)) {
-      return es
-        ? "El estado donde se realice el trabajo"
-        : "Whatever state the work is performed in";
+      return tFor(lang, "contractDoc.termValue.jobSiteState");
     }
     // User picked a specific state ("Pick a different state — TX")
     return expandStateName(term.value) ?? term.value;
@@ -1062,27 +962,21 @@ function expandTermValue(
   if (term.stepId === "state_notices") {
     const v = term.value.trim().toLowerCase();
     if (v === "yes") {
-      return es
-        ? `Avisos estándar de contrato de construcción${
-          stateName ? ` de ${stateName}` : ""
-        } incluidos`
-        : stateName
-        ? `Standard ${stateName} construction-contract notices included`
-        : "Standard state construction-contract notices included";
+      return stateName
+        ? tFor(lang, "contractDoc.termValue.stateNoticesYesState", {
+          state: stateName,
+        })
+        : tFor(lang, "contractDoc.termValue.stateNoticesYes");
     }
     if (v === "no") {
-      return es
-        ? "Sin avisos específicos del estado"
-        : "No state-specific notices included";
+      return tFor(lang, "contractDoc.termValue.stateNoticesNo");
     }
     if (v.startsWith("review")) {
-      return es
-        ? "Avisos a revisar antes de firmar"
-        : "Notices to be reviewed before signing";
+      return tFor(lang, "contractDoc.termValue.stateNoticesReview");
     }
     return term.value;
   }
-  return localizeTermValue(term.value, es);
+  return localizeTermValue(term.value, lang);
 }
 
 /** Hide warranty term row when the contractor selected "No warranty" — the
@@ -1098,17 +992,17 @@ function isEmptyWarranty(term: Term): boolean {
 function computeMilestones(
   total: number,
   terms: Term[] | undefined,
-  es = false,
+  lang: Lang = "en",
 ): { label: string; amount: number; when: string }[] {
   if (!total || total <= 0) return [];
   const L = {
-    deposit: es ? "Depósito" : "Deposit",
-    balance: es ? "Saldo" : "Balance",
-    midpoint: es ? "Intermedio" : "Midpoint",
-    final: es ? "Pago final" : "Final",
-    beforeStart: es ? "Antes de empezar" : "Before work starts",
-    onCompletion: es ? "Al finalizar" : "On completion",
-    atMidpoint: es ? "A mitad del trabajo" : "At rough-in / midpoint",
+    deposit: tFor(lang, "contractDoc.milestone.deposit"),
+    balance: tFor(lang, "contractDoc.milestone.balance"),
+    midpoint: tFor(lang, "contractDoc.milestone.midpoint"),
+    final: tFor(lang, "contractDoc.milestone.final"),
+    beforeStart: tFor(lang, "contractDoc.milestone.beforeStart"),
+    onCompletion: tFor(lang, "contractDoc.milestone.onCompletion"),
+    atMidpoint: tFor(lang, "contractDoc.milestone.atMidpoint"),
   };
   const roleLabel: Record<MilestoneRole, { label: string; when: string }> = {
     deposit: { label: L.deposit, when: L.beforeStart },

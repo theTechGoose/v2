@@ -1,7 +1,9 @@
 import { Injectable } from "#danet/core";
+import { t } from "@core/i18n/mod.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
@@ -41,6 +43,7 @@ export class AcceptContract {
     private conversations: AgentConversationStore,
     private messages: AgentMessageStore,
     private contracts: ContractStore,
+    private users: UserStore,
     private bus: EventBus,
   ) {}
 
@@ -50,6 +53,11 @@ export class AcceptContract {
     if (conv.contractId !== input.contractId) {
       throw new Error("contractId does not match this conversation's contract");
     }
+
+    // Resolve the contractor's UI language so the chat divider / CTA copy
+    // reads in their language (matches handle-chat-message's resolution).
+    const me = await this.users.get(input.userId).catch(() => null);
+    const lang = me?.language === "es" ? "es" : "en";
 
     const contract = await this.contracts.getOwned(input.contractId, input.userId);
     const wasAlreadyAccepted = contract.status === "accepted";
@@ -68,10 +76,10 @@ export class AcceptContract {
       conversationId: conv.id,
       role: "system",
       kind: "phase_divider",
-      content: "Contract accepted by client",
+      content: t(lang, "acceptContract.dividerLabel"),
       payload: {
         phase: 4,
-        label: "Contract accepted by client",
+        label: t(lang, "acceptContract.dividerLabel"),
         contractId: contract.id,
       },
     });
@@ -82,18 +90,18 @@ export class AcceptContract {
       conversationId: conv.id,
       role: "assistant",
       kind: "continue_cta",
-      content: "Continue to invoice",
+      content: t(lang, "acceptContract.cta.label"),
       payload: {
         toPhase: "invoice",
         contractId: contract.id,
-        summary: "Customer signed — bill the job and send the invoice.",
+        summary: t(lang, "acceptContract.cta.summary"),
       },
     });
 
     const updatedConv = await this.conversations.update(conv.id, {
       hasUnreadEvent: true,
       contractStatus: "accepted",
-      preview: "✓ Contract accepted by client",
+      preview: `✓ ${t(lang, "acceptContract.dividerLabel")}`,
     });
 
     return { conversation: updatedConv, newMessages: [note, cta] };

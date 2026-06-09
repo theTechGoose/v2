@@ -4,6 +4,7 @@
  * (`/quotes` derived `stage`/`opens`/`daysIn`, `/quotes/:id/opens`,
  * `/analytics/quotes/win-rate`, `/analytics/quotes/insight`) come online.
  */
+import { tFor } from "./i18n.ts";
 
 export type Stage =
   | "draft"
@@ -37,8 +38,8 @@ export const QPIPELINE: Quote[] = [
   // Drafting
   {
     id: "Q-1109",
-    title: "Storefront awning replacement",
-    client: "Cobblestone Cafe",
+    title: tFor("en", "quotesSeed.q1109.title"),
+    client: tFor("en", "quotesSeed.client.cobblestoneCafe"),
     initials: "CC",
     stage: "draft",
     value: 4250,
@@ -50,8 +51,8 @@ export const QPIPELINE: Quote[] = [
   },
   {
     id: "Q-1110",
-    title: "Lobby refresh — paint + trim",
-    client: "Bayside Properties",
+    title: tFor("en", "quotesSeed.q1110.title"),
+    client: tFor("en", "quotesSeed.client.baysideProperties"),
     initials: "BP",
     stage: "draft",
     value: 6800,
@@ -65,8 +66,8 @@ export const QPIPELINE: Quote[] = [
   // Out for response — sent
   {
     id: "Q-1107",
-    title: "Garage epoxy floor — 2-car",
-    client: "Tom & Linda Kowalski",
+    title: tFor("en", "quotesSeed.q1107.title"),
+    client: tFor("en", "quotesSeed.client.tomLindaKowalski"),
     initials: "TK",
     stage: "opened",
     value: 3850,
@@ -78,8 +79,8 @@ export const QPIPELINE: Quote[] = [
   },
   {
     id: "Q-1106",
-    title: "Common-area paint — buildings A & B",
-    client: "Greenleaf HOA",
+    title: tFor("en", "quotesSeed.q1106.title"),
+    client: tFor("en", "quotesSeed.client.greenleafHoa"),
     initials: "GH",
     stage: "opened",
     value: 5800,
@@ -91,8 +92,8 @@ export const QPIPELINE: Quote[] = [
   },
   {
     id: "Q-1108",
-    title: "Kitchen backsplash — subway tile",
-    client: "Marcus Lin",
+    title: tFor("en", "quotesSeed.q1108.title"),
+    client: tFor("en", "quotesSeed.client.marcusLin"),
     initials: "ML",
     stage: "sent",
     value: 2400,
@@ -104,8 +105,8 @@ export const QPIPELINE: Quote[] = [
   },
   {
     id: "Q-1104",
-    title: "4-unit gutter cleaning",
-    client: "Bayside Properties",
+    title: tFor("en", "quotesSeed.q1104.title"),
+    client: tFor("en", "quotesSeed.client.baysideProperties"),
     initials: "BP",
     stage: "cooling",
     value: 1240,
@@ -117,8 +118,8 @@ export const QPIPELINE: Quote[] = [
   },
   {
     id: "Q-1103",
-    title: "Driveway repour — concrete",
-    client: "Marshall & Sons",
+    title: tFor("en", "quotesSeed.q1103.title"),
+    client: tFor("en", "quotesSeed.client.marshallSons"),
     initials: "MS",
     stage: "opened",
     value: 8200,
@@ -130,8 +131,8 @@ export const QPIPELINE: Quote[] = [
   },
   {
     id: "Q-1101",
-    title: "Deck stain & seal",
-    client: "Hilltop Diner",
+    title: tFor("en", "quotesSeed.q1101.title"),
+    client: tFor("en", "quotesSeed.client.hilltopDiner"),
     initials: "HD",
     stage: "stale",
     value: 1850,
@@ -143,8 +144,8 @@ export const QPIPELINE: Quote[] = [
   },
   {
     id: "Q-1102",
-    title: "Studio floor seal",
-    client: "Riverside Yoga",
+    title: tFor("en", "quotesSeed.q1102.title"),
+    client: tFor("en", "quotesSeed.client.riversideYoga"),
     initials: "RY",
     stage: "stale",
     value: 2100,
@@ -158,8 +159,8 @@ export const QPIPELINE: Quote[] = [
   // Decided
   {
     id: "Q-1099",
-    title: "Building C re-roof",
-    client: "Maple Grove Apartments",
+    title: tFor("en", "quotesSeed.q1099.title"),
+    client: tFor("en", "quotesSeed.client.mapleGroveApartments"),
     initials: "MG",
     stage: "won",
     value: 14200,
@@ -172,8 +173,8 @@ export const QPIPELINE: Quote[] = [
   },
   {
     id: "Q-1098",
-    title: "Patio re-tile",
-    client: "Cobblestone Cafe",
+    title: tFor("en", "quotesSeed.q1098.title"),
+    client: tFor("en", "quotesSeed.client.cobblestoneCafe"),
     initials: "CC",
     stage: "won",
     value: 3400,
@@ -186,8 +187,8 @@ export const QPIPELINE: Quote[] = [
   },
   {
     id: "Q-1097",
-    title: "Bathroom remodel",
-    client: "Sarah Chen",
+    title: tFor("en", "quotesSeed.q1097.title"),
+    client: tFor("en", "quotesSeed.client.sarahChen"),
     initials: "SC",
     stage: "won",
     value: 6800,
@@ -200,8 +201,8 @@ export const QPIPELINE: Quote[] = [
   },
   {
     id: "Q-1096",
-    title: "Interior paint — 2BR",
-    client: "Jana Patel",
+    title: tFor("en", "quotesSeed.q1096.title"),
+    client: tFor("en", "quotesSeed.client.janaPatel"),
     initials: "JP",
     stage: "won",
     value: 1650,
@@ -214,8 +215,8 @@ export const QPIPELINE: Quote[] = [
   },
   {
     id: "Q-1094",
-    title: "Window trim repaint",
-    client: "Ortega Rentals",
+    title: tFor("en", "quotesSeed.q1094.title"),
+    client: tFor("en", "quotesSeed.client.ortegaRentals"),
     initials: "OR",
     stage: "lost",
     value: 1900,
@@ -228,8 +229,8 @@ export const QPIPELINE: Quote[] = [
   },
   {
     id: "Q-1093",
-    title: "Office foyer refresh",
-    client: "Westgate Dental",
+    title: tFor("en", "quotesSeed.q1093.title"),
+    client: tFor("en", "quotesSeed.client.westgateDental"),
     initials: "WD",
     stage: "lost",
     value: 2750,
@@ -243,34 +244,25 @@ export const QPIPELINE: Quote[] = [
 ];
 
 export const QSTORIES: Record<string, string> = {
-  "Q-1109":
-    "Cobblestone’s spring sign refresh — you’re still pricing material. Wrap it up tonight; Aisha asked for it Monday.",
-  "Q-1110":
-    "Bayside is ready to spend; this is the third quote they’ve asked for this quarter. Don’t make them wait.",
-  "Q-1107":
-    "Tom & Linda opened this three times today — they’re shopping. Knock $150 off if they book this week and you close it.",
-  "Q-1106":
-    "Margaret peeked Tuesday, again Wednesday morning. Greenleaf says yes by Thursday — send a friendly nudge tomorrow.",
-  "Q-1108":
-    "Just sent; give it 24 hours before you tap on the door. New leads need a beat.",
-  "Q-1104":
-    "Four days of silence on a 4-unit gutter quote. Property managers ghost when budget tightens — ask if job details need trimming.",
-  "Q-1103":
-    "Mike opened it twice but the city permit is the holdup. Send him a status note so he knows you’re tracking it.",
-  "Q-1101":
-    "Twelve days, one open, no reply. Hilltop is broke this month — offer to split the deck job into two payments and close it.",
-  "Q-1102":
-    "Riverside hasn’t opened it. Re-send with the subject line “spring patio season” and a fresh deadline.",
+  "Q-1109": tFor("en", "quotesSeed.story.q1109"),
+  "Q-1110": tFor("en", "quotesSeed.story.q1110"),
+  "Q-1107": tFor("en", "quotesSeed.story.q1107"),
+  "Q-1106": tFor("en", "quotesSeed.story.q1106"),
+  "Q-1108": tFor("en", "quotesSeed.story.q1108"),
+  "Q-1104": tFor("en", "quotesSeed.story.q1104"),
+  "Q-1103": tFor("en", "quotesSeed.story.q1103"),
+  "Q-1101": tFor("en", "quotesSeed.story.q1101"),
+  "Q-1102": tFor("en", "quotesSeed.story.q1102"),
 };
 
 export const stageLabel: Record<Stage, string> = {
-  draft: "Drafting",
-  sent: "Just sent",
-  opened: "Opened",
-  cooling: "Cooling",
-  stale: "Stale",
-  won: "Won",
-  lost: "Lost",
+  draft: tFor("en", "quotesSeed.stage.draft"),
+  sent: tFor("en", "quotesSeed.stage.sent"),
+  opened: tFor("en", "quotesSeed.stage.opened"),
+  cooling: tFor("en", "quotesSeed.stage.cooling"),
+  stale: tFor("en", "quotesSeed.stage.stale"),
+  won: tFor("en", "quotesSeed.stage.won"),
+  lost: tFor("en", "quotesSeed.stage.lost"),
 };
 
 export interface MoodPalette {
@@ -333,13 +325,13 @@ export interface OpenEvent {
 export const buildOpens = (q: Quote): OpenEvent[] => {
   if (q.opens === 0) return [];
   const seeds: OpenEvent[] = [
-    { when: "Today", time: "9:42am", device: "iPhone" },
-    { when: "Today", time: "2:18pm", device: "Mac" },
-    { when: "Yesterday", time: "4:12pm", device: "iPhone" },
-    { when: "Tue", time: "11:30am", device: "iPhone" },
-    { when: "Mon", time: "7:54pm", device: "iPad" },
-    { when: "Sun", time: "10:08am", device: "Mac" },
-    { when: "Sat", time: "8:21pm", device: "iPhone" },
+    { when: tFor("en", "quotesSeed.when.today"), time: "9:42am", device: "iPhone" },
+    { when: tFor("en", "quotesSeed.when.today"), time: "2:18pm", device: "Mac" },
+    { when: tFor("en", "quotesSeed.when.yesterday"), time: "4:12pm", device: "iPhone" },
+    { when: tFor("en", "quotesSeed.when.tue"), time: "11:30am", device: "iPhone" },
+    { when: tFor("en", "quotesSeed.when.mon"), time: "7:54pm", device: "iPad" },
+    { when: tFor("en", "quotesSeed.when.sun"), time: "10:08am", device: "Mac" },
+    { when: tFor("en", "quotesSeed.when.sat"), time: "8:21pm", device: "iPhone" },
   ];
   const offset = q.stage === "cooling"
     ? 2
@@ -356,60 +348,58 @@ export type ReadingChunk = { text: string; em?: string; tail?: string };
 export const readingFor = (q: Quote, opens: OpenEvent[]): ReadingChunk => {
   if (q.stage === "draft") {
     return {
-      text: "Not sent yet — ",
-      em: "finish writing",
-      tail: ", then ship it.",
+      text: tFor("en", "quotesSeed.reading.draft.text"),
+      em: tFor("en", "quotesSeed.reading.draft.em"),
+      tail: tFor("en", "quotesSeed.reading.draft.tail"),
     };
   }
   if (opens.length === 0) {
     return {
-      text:
-        "Sent, but no opens yet. Could be in spam, or they haven't checked email today.",
+      text: tFor("en", "quotesSeed.reading.noOpens.text"),
     };
   }
   const devices = new Set(opens.map((o) => o.device));
   if (q.stage === "opened" && q.opens >= 3 && devices.size >= 2) {
     return {
-      text: "They're ",
-      em: "shopping",
-      tail:
-        " — opened on multiple devices. Probably comparing. Time to send the offer.",
+      text: tFor("en", "quotesSeed.reading.shopping.text"),
+      em: tFor("en", "quotesSeed.reading.shopping.em"),
+      tail: tFor("en", "quotesSeed.reading.shopping.tail"),
     };
   }
   if (q.stage === "opened" && q.opens >= 3) {
     return {
-      text: "Three opens means real interest. ",
-      em: "Send the offer",
-      tail: " while it's hot.",
+      text: tFor("en", "quotesSeed.reading.hot.text"),
+      em: tFor("en", "quotesSeed.reading.hot.em"),
+      tail: tFor("en", "quotesSeed.reading.hot.tail"),
     };
   }
   if (q.stage === "opened") {
     return {
-      text: "One peek and a pause. A ",
-      em: "friendly nudge",
-      tail: " usually breaks the silence.",
+      text: tFor("en", "quotesSeed.reading.peek.text"),
+      em: tFor("en", "quotesSeed.reading.peek.em"),
+      tail: tFor("en", "quotesSeed.reading.peek.tail"),
     };
   }
   if (q.stage === "cooling") {
     return {
-      text: "Opened a few times early, then went quiet. Worth a ",
-      em: "job-details trim",
-      tail: " and a re-send.",
+      text: tFor("en", "quotesSeed.reading.cooling.text"),
+      em: tFor("en", "quotesSeed.reading.cooling.em"),
+      tail: tFor("en", "quotesSeed.reading.cooling.tail"),
     };
   }
   if (q.stage === "stale") {
     return {
-      text: "Lots of attention, then gone cold. Last shot: ",
-      em: "win it back",
-      tail: " with a sharper offer.",
+      text: tFor("en", "quotesSeed.reading.stale.text"),
+      em: tFor("en", "quotesSeed.reading.stale.em"),
+      tail: tFor("en", "quotesSeed.reading.stale.tail"),
     };
   }
   if (q.stage === "sent") {
     return {
-      text: "Just landed in their inbox. ",
-      em: "Give it 24 hours",
-      tail: " before you tap on the door.",
+      text: tFor("en", "quotesSeed.reading.sent.text"),
+      em: tFor("en", "quotesSeed.reading.sent.em"),
+      tail: tFor("en", "quotesSeed.reading.sent.tail"),
     };
   }
-  return { text: "Quiet — try a nudge." };
+  return { text: tFor("en", "quotesSeed.reading.quiet.text") };
 };

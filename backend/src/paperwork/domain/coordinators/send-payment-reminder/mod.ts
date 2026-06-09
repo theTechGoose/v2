@@ -7,6 +7,7 @@ import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { t } from "@core/i18n/mod.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 
 /** The cadence steps fired by the overdue-reminder cron. */
@@ -112,10 +113,11 @@ export class SendPaymentReminder {
       this.users.get(userId).catch(() => undefined),
       this.identity.get(userId).catch(() => null),
     ]);
-    const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || sender?.name?.trim() || "Paperwork Monster";
+    const lang: "en" | "es" = biz?.commsLanguage === "es" ? "es" : "en";
+    const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || sender?.name?.trim() || t(lang, "brand.name");
     const customerFirst = customer?.name?.trim().split(/\s+/)[0];
     const senderFirst = sender?.name?.trim().split(/\s+/)[0];
-    const copy = composeReminderCopy({ day, customerFirst, senderFirst, businessName, invoice });
+    const copy = composeReminderCopy({ day, customerFirst, senderFirst, businessName, invoice, lang });
 
     // Mint a shortlink to the public invoice page for the SMS + email CTA.
     let url = "";
@@ -207,33 +209,36 @@ export function composeReminderCopy(opts: {
   senderFirst: string | undefined;
   businessName: string;
   invoice: Invoice;
+  lang?: "en" | "es";
 }): {
   emailSubject: string;
   emailHtml: (url: string) => string;
   smsBody: (url: string) => string;
 } {
   const { day, customerFirst, senderFirst, businessName, invoice } = opts;
-  const hi = customerFirst ? `Hi ${customerFirst}, ` : "";
-  const sender = senderFirst ?? "your contractor";
+  const lang = opts.lang === "es" ? "es" : "en";
+  const hi = customerFirst ? t(lang, "paymentReminder.greeting", { name: customerFirst }) : "";
+  const sender = senderFirst ?? t(lang, "paymentReminder.senderFallback");
   const amount = `$${((invoice.amount ?? 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
   const tone = day === 3
-    ? `quick check-in — your invoice from ${businessName} is still open.`
+    ? t(lang, "paymentReminder.tone.day3", { businessName })
     : day === 7
-    ? `following up on your invoice from ${businessName} — let me know if there's anything I can help with.`
-    : `wanted to follow up personally on your invoice from ${businessName}. Best way to wrap this up?`;
+    ? t(lang, "paymentReminder.tone.day7", { businessName })
+    : t(lang, "paymentReminder.tone.day14", { businessName });
+  const dueLine = invoice.dueDate ? t(lang, "paymentReminder.dueSuffix", { dueDate: invoice.dueDate }) : "";
   return {
     emailSubject:
       day === 3
-        ? `Quick check-in: invoice from ${businessName}`
+        ? t(lang, "paymentReminder.subject.day3", { businessName })
         : day === 7
-        ? `Following up: invoice from ${businessName}`
-        : `Personal note from ${sender}`,
+        ? t(lang, "paymentReminder.subject.day7", { businessName })
+        : t(lang, "paymentReminder.subject.day14", { sender }),
     emailHtml: (url: string) => `<!doctype html>
 <html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px">
     <p style="margin:0;font-size:15px;line-height:1.55">${hi}${tone}</p>
-    <p style="margin:14px 0 0;font-size:15px"><strong>Amount due:</strong> ${amount}${invoice.dueDate ? ` · Due ${invoice.dueDate}` : ""}</p>
-    ${url ? `<p style="margin:18px 0 0"><a href="${url}" style="display:inline-block;background:#519843;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:10px">Open invoice</a></p>` : ""}
+    <p style="margin:14px 0 0;font-size:15px"><strong>${t(lang, "paymentReminder.amountDueLabel")}</strong> ${amount}${dueLine}</p>
+    ${url ? `<p style="margin:18px 0 0"><a href="${url}" style="display:inline-block;background:#519843;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:10px">${t(lang, "paymentReminder.openInvoiceCta")}</a></p>` : ""}
     <p style="margin:18px 0 0;font-size:13px;color:#6b7a7e">${sender}</p>
   </div>
 </body></html>`,

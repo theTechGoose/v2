@@ -34,11 +34,21 @@ export interface Quote {
  *  The "Job Details" picker screen renders these as editable bullet
  *  lists; the picked option's surviving bullets become the quote's
  *  description, and its jobName/summary seed the quote. */
+export interface JobOptionLang {
+  jobName: string;
+  summary: string;
+  bullets: string[];
+}
+
 export interface JobOption {
   id: string;
   jobName: string;
   summary: string;
   bullets: string[];
+  /** Per-language content of this option (the contractor's app language +
+   *  every selected send language), generated up front so the picked option's
+   *  description can be stored — and shown to the customer — in each language. */
+  byLang?: Record<string, JobOptionLang>;
 }
 
 /** Mirrors backend AgentPhase. */
@@ -338,6 +348,16 @@ export const assistantClient = {
     api.post<{ text: string }>(
       "/agents/job-details/professionalize",
       { text },
+      opts,
+    ),
+
+  /** Translate job-detail lines into `to`. Used to localize a quote's
+   *  description for the preview / sent agreement when no pre-translation
+   *  exists (returns the same count + order). */
+  translate: (texts: string[], to: "en" | "es", opts: ApiOptions = {}) =>
+    api.post<{ texts: string[] }>(
+      "/agents/job-details/translate",
+      { texts, to },
       opts,
     ),
 };

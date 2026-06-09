@@ -4,6 +4,8 @@ import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.t
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { t } from "@core/i18n/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -54,11 +56,16 @@ export class LockQuote {
     private quotes: QuoteStore,
     private bus: EventBus,
     private emailer: SendPaperworkEmail,
+    private users: UserStore,
   ) {}
 
   async run(input: LockQuoteInput): Promise<LockQuoteResult> {
     const conv = await this.conversations.get(input.conversationId);
     if (conv.userId !== input.userId) throw new Error("forbidden");
+
+    // Chat copy is rendered to the contractor in their own UI language.
+    const me = await this.users.get(input.userId).catch(() => null);
+    const lang = me?.language === "es" ? "es" : "en";
 
     const quote = await this.quotes.getOwned(input.quoteId, input.userId);
 
@@ -101,7 +108,7 @@ export class LockQuote {
       conversationId: conv.id,
       role: "assistant",
       kind: "action_card",
-      content: fresh.summary ?? "Quote locked",
+      content: fresh.summary ?? t(lang, "lockQuote.card.lockedFallback"),
       payload: {
         actionType: "quote",
         status: "sent",
@@ -117,7 +124,7 @@ export class LockQuote {
       conversationId: conv.id,
       role: "assistant",
       kind: "continue_cta",
-      content: "We've locked the quote down! Is this for a business or a person?",
+      content: t(lang, "lockQuote.cta.lockedPrompt"),
       payload: {
         toPhase: "terms",
         quoteId: fresh.id,
@@ -127,7 +134,7 @@ export class LockQuote {
     const updated = await this.conversations.update(conv.id, {
       quoteId: fresh.id,
       quoteStatus: "sent",
-      preview: `Quote sent: ${fresh.summary ?? fresh.id}`,
+      preview: t(lang, "lockQuote.preview.sent", { summary: fresh.summary ?? fresh.id }),
     });
 
     return { conversation: updated, newMessages: [card, cta] };

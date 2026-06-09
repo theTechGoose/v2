@@ -2,6 +2,7 @@ import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import { loadUser } from "../lib/auth.ts";
 import { type Lang, pickLangFromAcceptLanguage } from "../lib/lang.ts";
+import { tFor } from "../lib/i18n.ts";
 import LoginForm from "../islands/LoginForm.tsx";
 
 /**
@@ -21,12 +22,12 @@ export default define.page(async function Login(ctx) {
   const lang: Lang = pickLangFromAcceptLanguage(
     ctx.req.headers.get("accept-language"),
   );
-  const es = lang === "es";
-
   return (
     <>
       <Head>
-        <title>{es ? "Iniciar sesión" : "Log in"} · Paperwork Monster</title>
+        <title>
+          {tFor(lang, "loginPage.title")} · {tFor(lang, "brand.name")}
+        </title>
         <link rel="stylesheet" href="/verify.css" />
       </Head>
       <div class="verify-shell">
@@ -34,22 +35,22 @@ export default define.page(async function Login(ctx) {
           <a href="/" class="brand" style="margin:0 auto 8px">
             <img
               src="/logo-monster.png"
-              alt="Paperwork Monster"
+              alt={tFor(lang, "brand.name")}
               style="width:38px;height:38px;flex-shrink:0"
             />
-            <span>Paperwork</span>
-            <em style="font-style:normal;color:var(--brand-green)">Monster</em>
+            <span>{tFor(lang, "brand.namePrefix")}</span>
+            <em style="font-style:normal;color:var(--brand-green)">
+              {tFor(lang, "brand.nameSuffix")}
+            </em>
           </a>
           <h1 style="font-size:32px;margin-top:6px">
-            {es ? "Iniciar sesión" : "Welcome back"}
+            {tFor(lang, "loginPage.heading")}
           </h1>
           <p
             class="muted"
             style="color:var(--fg-muted);font-size:16px;margin-bottom:20px"
           >
-            {es
-              ? "Entra con tu número de celular."
-              : "Sign in with your phone number."}
+            {tFor(lang, "loginPage.subtitle")}
           </p>
           <LoginForm />
         </div>

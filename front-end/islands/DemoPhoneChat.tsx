@@ -1,30 +1,12 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { langSignal } from "../lib/lang.ts";
+import { t } from "../lib/i18n.ts";
 
-const SCRIPT_EN: { from: "in" | "out"; text: string }[] = [
-  {
-    from: "in",
-    text: "Hey Bossie — kitchen remodel for the Riveras. Got pics.",
-  },
-  { from: "out", text: "Got 'em. Want me to draft a quote at $14,200?" },
-  { from: "in", text: "Yeah send it." },
-  {
-    from: "out",
-    text: "Sent. They opened it. I'll nudge if no reply by Friday.",
-  },
-];
-
-const SCRIPT_ES: { from: "in" | "out"; text: string }[] = [
-  {
-    from: "in",
-    text: "Bossie — remodelación de cocina para los Rivera. Tengo fotos.",
-  },
-  { from: "out", text: "Listo. ¿Cotización a $14,200?" },
-  { from: "in", text: "Sí, mándalo." },
-  {
-    from: "out",
-    text: "Enviado. Ya lo abrieron. Si no contestan el viernes, los empujo.",
-  },
+const SCRIPT: { from: "in" | "out"; key: string }[] = [
+  { from: "in", key: "demoChat.bubble1" },
+  { from: "out", key: "demoChat.bubble2" },
+  { from: "in", key: "demoChat.bubble3" },
+  { from: "out", key: "demoChat.bubble4" },
 ];
 
 export default function DemoPhoneChat() {
@@ -56,13 +38,11 @@ export default function DemoPhoneChat() {
     };
   }, []);
 
-  const script = langSignal.value === "es" ? SCRIPT_ES : SCRIPT_EN;
-
   return (
     <div ref={ref} class="phone">
       <div class="phone__screen">
-        {script.slice(0, shown).map((m, i) => (
-          <div class={`bubble bubble--${m.from}`} key={i}>{m.text}</div>
+        {SCRIPT.slice(0, shown).map((m, i) => (
+          <div class={`bubble bubble--${m.from}`} key={i}>{t(m.key)}</div>
         ))}
       </div>
     </div>

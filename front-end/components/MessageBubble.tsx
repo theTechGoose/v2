@@ -1,4 +1,5 @@
 import type { Message } from "../clients/assistant.ts";
+import { tFor } from "../lib/i18n.ts";
 
 function fmtTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], {
@@ -7,9 +8,13 @@ function fmtTime(ts: number): string {
   });
 }
 
-export function MessageBubble({ msg }: { msg: Message }) {
+export function MessageBubble(
+  { msg, lang = "en" }: { msg: Message; lang?: "en" | "es" },
+) {
   const mine = msg.role === "user";
-  const initial = mine ? "You" : "B";
+  const initial = mine
+    ? tFor(lang, "messageBubble.youInitial")
+    : tFor(lang, "messageBubble.assistantInitial");
   return (
     <div class={`msg ${mine ? "msg--user" : ""}`}>
       <div class="msg__avatar">{initial.slice(0, 1)}</div>

@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import { langSignal, STRINGS } from "../lib/lang.ts";
+import { t } from "../lib/i18n.ts";
 import { landingClient } from "../clients/landing.ts";
 import { ApiError } from "../lib/api.ts";
 
@@ -31,9 +32,7 @@ export default function ContactForm() {
     setErr(null);
     const e164 = toE164(phone);
     if (e164.replace(/\D/g, "").length < 10) {
-      setErr(
-        lang === "es" ? "Número incompleto" : "Phone number is incomplete",
-      );
+      setErr(t("contactForm.error.incompletePhone"));
       return;
     }
     setSubmitting(true);
@@ -43,8 +42,8 @@ export default function ContactForm() {
     } catch (error) {
       const msg = error instanceof ApiError
         ? `${error.status}`
-        : (lang === "es" ? "No se pudo enviar." : "Couldn't send.");
-      setErr(lang === "es" ? `Error: ${msg}` : `Error: ${msg}`);
+        : t("contactForm.error.sendFailed");
+      setErr(t("contactForm.error.generic", { msg }));
     } finally {
       setSubmitting(false);
     }

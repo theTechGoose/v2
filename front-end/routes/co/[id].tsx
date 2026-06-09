@@ -1,6 +1,7 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
+import { type Lang, tFor } from "../../lib/i18n.ts";
 import PublicChangeOrderActions from "../../islands/PublicChangeOrderActions.tsx";
 
 interface ChangeOrderPublic {
@@ -11,6 +12,7 @@ interface ChangeOrderPublic {
   currentAmount?: number;
   newAmount?: number;
   businessName?: string;
+  commsLanguage?: "en" | "es";
   decidedAt?: string;
 }
 
@@ -39,11 +41,14 @@ export default define.page(async function PublicChangeOrder(ctx) {
     `/change-orders/${id}/public`,
   );
   const co = r.ok ? r.data : undefined;
+  // Render in the document's language (the contractor's outgoing-comms
+  // language), supplied by the backend payload; default EN.
+  const lang: Lang = co?.commsLanguage === "es" ? "es" : "en";
 
   return (
     <>
       <Head>
-        <title>Change order · Paperwork Monster</title>
+        <title>{tFor(lang, "changeOrderPublic.docTitle")}</title>
         <link rel="stylesheet" href="/landing.css" />
       </Head>
       <div
@@ -54,10 +59,10 @@ export default define.page(async function PublicChangeOrder(ctx) {
             ? (
               <div style="background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center">
                 <div style={`font-weight:800;color:${TEAL};font-size:18px`}>
-                  Hmm, can't open this
+                  {tFor(lang, "changeOrderPublic.error.title")}
                 </div>
                 <p style={`margin:8px 0 0;color:${MUTED};font-size:14px`}>
-                  This change-order link expired or was revoked.
+                  {tFor(lang, "changeOrderPublic.error.message")}
                 </p>
               </div>
             )
@@ -72,16 +77,16 @@ export default define.page(async function PublicChangeOrder(ctx) {
                   <div
                     style={`font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:${PINK_DARK}`}
                   >
-                    {co.businessName ?? "Your contractor"}
+                    {co.businessName ??
+                      tFor(lang, "changeOrderPublic.contractorFallback")}
                   </div>
                   <h1
                     style={`margin:12px 0 0;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:${TEAL};line-height:1.1`}
                   >
-                    Change order
+                    {tFor(lang, "changeOrderPublic.heading")}
                   </h1>
                   <p style={`margin:10px 0 0;color:${MUTED};font-size:14px`}>
-                    Your contractor proposed an adjustment to your invoice.
-                    Review it below and approve to update your total.
+                    {tFor(lang, "changeOrderPublic.intro")}
                   </p>
 
                   <section
@@ -90,7 +95,7 @@ export default define.page(async function PublicChangeOrder(ctx) {
                     <div
                       style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
                     >
-                      What's changing
+                      {tFor(lang, "changeOrderPublic.whatsChanging")}
                     </div>
                     <p
                       style={`margin:8px 0 0;color:${INK};font-size:15px;line-height:1.55`}
@@ -103,14 +108,18 @@ export default define.page(async function PublicChangeOrder(ctx) {
                       {co.currentAmount != null
                         ? (
                           <div style="display:flex;justify-content:space-between">
-                            <span style={`color:${MUTED}`}>Current total</span>
+                            <span style={`color:${MUTED}`}>
+                              {tFor(lang, "changeOrderPublic.currentTotal")}
+                            </span>
                             <span>{money(co.currentAmount)}</span>
                           </div>
                         )
                         : null}
                       <div style="display:flex;justify-content:space-between">
                         <span style={`color:${MUTED}`}>
-                          {co.deltaAmountCents >= 0 ? "Added" : "Credit"}
+                          {co.deltaAmountCents >= 0
+                            ? tFor(lang, "changeOrderPublic.added")
+                            : tFor(lang, "changeOrderPublic.credit")}
                         </span>
                         <span
                           style={`color:${
@@ -124,7 +133,7 @@ export default define.page(async function PublicChangeOrder(ctx) {
                       {co.newAmount != null
                         ? (
                           <div style="display:flex;justify-content:space-between;font-weight:800;color:#1c2c30;font-size:16px;margin-top:4px">
-                            <span>New total</span>
+                            <span>{tFor(lang, "changeOrderPublic.newTotal")}</span>
                             <span style={`color:${GREEN}`}>
                               {money(co.newAmount)}
                             </span>
@@ -137,6 +146,7 @@ export default define.page(async function PublicChangeOrder(ctx) {
                   <PublicChangeOrderActions
                     changeOrderId={co.id}
                     initialStatus={co.status}
+                    lang={lang}
                   />
                 </div>
               </article>

@@ -21,6 +21,7 @@ import {
   PageHeaderSkeleton,
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
+import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 
 interface State {
   loading: boolean;
@@ -43,8 +44,11 @@ function parseMoney(s: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-export default function ContractsPage() {
+export default function ContractsPage(_props: { lang?: Lang } = {}) {
+  const lang = langSignal.value;
   const [s, setS] = useState<State>(INITIAL);
+  const plural = (key: string, n: number) =>
+    tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n });
 
   useEffect(() => {
     let alive = true;
@@ -74,7 +78,11 @@ export default function ContractsPage() {
     );
   }
   if (s.error) {
-    return <div class="kpage-error">Couldn't load contracts: {s.error}</div>;
+    return (
+      <div class="kpage-error">
+        {tFor(lang, "contractsPage.loadError")}: {s.error}
+      </div>
+    );
   }
 
   const {
@@ -123,6 +131,7 @@ export default function ContractsPage() {
   return (
     <>
       <ContractsHero
+        lang={lang}
         totalValue={totalCommitted}
         contractCount={liveCards.length}
         inFlightCount={inProgress.length}
@@ -131,6 +140,7 @@ export default function ContractsPage() {
         pendingDeposits={pendingDeposits}
       />
       <ContractsKpis
+        lang={lang}
         inProgressCount={inProgress.length}
         inProgressValue={inProgressValue}
         startingSoonCount={startingSoon.length}
@@ -141,14 +151,12 @@ export default function ContractsPage() {
         closedValue={closedValue}
       />
 
-      <ScheduleStrip cards={liveCards} />
+      <ScheduleStrip lang={lang} cards={liveCards} />
 
       <ContractTrack
         num="01"
-        title="In progress"
-        count={`${inProgress.length} ${
-          inProgress.length === 1 ? "job" : "jobs"
-        } · crew on site`}
+        title={tFor(lang, "contractsPage.inProgress.title")}
+        count={plural("contractsPage.inProgress.count", inProgress.length)}
         defaultOpen
         storageKey="contracts:track:01"
       >
@@ -156,24 +164,21 @@ export default function ContractsPage() {
           ? (
             <div class="kcards">
               {inProgress.map((c, i) => (
-                <ContractCard key={c.id} c={c} idx={i} />
+                <ContractCard key={c.id} c={c} idx={i} lang={lang} />
               ))}
             </div>
           )
           : (
             <div class="kempty">
-              Nothing in flight today. As soon as a customer signs a contract
-              from the assistant, it lands here.
+              {tFor(lang, "contractsPage.inProgress.empty")}
             </div>
           )}
       </ContractTrack>
 
       <ContractTrack
         num="02"
-        title="Starting soon"
-        count={`${startingSoon.length} ${
-          startingSoon.length === 1 ? "job" : "jobs"
-        } · next 14 days`}
+        title={tFor(lang, "contractsPage.startingSoon.title")}
+        count={plural("contractsPage.startingSoon.count", startingSoon.length)}
         defaultOpen={false}
         storageKey="contracts:track:02"
       >
@@ -181,19 +186,21 @@ export default function ContractsPage() {
           ? (
             <div class="kcards">
               {startingSoon.map((c, i) => (
-                <ContractCard key={c.id} c={c} idx={i} />
+                <ContractCard key={c.id} c={c} idx={i} lang={lang} />
               ))}
             </div>
           )
-          : <div class="kempty">No jobs scheduled in the next 14 days.</div>}
+          : (
+            <div class="kempty">
+              {tFor(lang, "contractsPage.startingSoon.empty")}
+            </div>
+          )}
       </ContractTrack>
 
       <ContractTrack
         num="03"
-        title="Wrapping up"
-        count={`${wrappingUp.length} ${
-          wrappingUp.length === 1 ? "job" : "jobs"
-        } · final invoice next`}
+        title={tFor(lang, "contractsPage.wrappingUp.title")}
+        count={plural("contractsPage.wrappingUp.count", wrappingUp.length)}
         defaultOpen={false}
         storageKey="contracts:track:03"
       >
@@ -201,13 +208,13 @@ export default function ContractsPage() {
           ? (
             <div class="kcards">
               {wrappingUp.map((c, i) => (
-                <ContractCard key={c.id} c={c} idx={i} />
+                <ContractCard key={c.id} c={c} idx={i} lang={lang} />
               ))}
             </div>
           )
           : (
             <div class="kempty">
-              Nothing within a week of completion right now.
+              {tFor(lang, "contractsPage.wrappingUp.empty")}
             </div>
           )}
       </ContractTrack>
@@ -215,13 +222,15 @@ export default function ContractsPage() {
       {drafts.length > 0 && (
         <ContractTrack
           num="04"
-          title="Drafts"
-          count={`${drafts.length} ${drafts.length === 1 ? "draft" : "drafts"}`}
+          title={tFor(lang, "contractsPage.drafts.title")}
+          count={plural("contractsPage.drafts.count", drafts.length)}
           defaultOpen={false}
           storageKey="contracts:track:04"
         >
           <div class="kcards">
-            {drafts.map((c, i) => <ContractCard key={c.id} c={c} idx={i} />)}
+            {drafts.map((c, i) => (
+              <ContractCard key={c.id} c={c} idx={i} lang={lang} />
+            ))}
           </div>
         </ContractTrack>
       )}

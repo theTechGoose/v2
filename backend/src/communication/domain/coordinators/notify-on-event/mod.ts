@@ -2,6 +2,7 @@ import { Injectable } from "#danet/core";
 import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
 import { NotificationStore } from "@communication/domain/data/notification-store/mod.ts";
 import type { NotificationType } from "@communication/dto/notification.ts";
+import { type Lang, t } from "@core/i18n/mod.ts";
 
 /**
  * NotifyOnEvent — subscribes to the EventBus on construction and writes a
@@ -62,52 +63,59 @@ interface NotificationMapping {
  * (e.g. internal wizard steps).
  */
 export function mapEventToNotification(event: DomainEvent): NotificationMapping | null {
-  const customerName = (event.data?.customerName as string | undefined) ?? "your client";
+  const lang         = (event.data?.language as Lang | undefined) ?? "en";
+  const customerName = (event.data?.customerName as string | undefined) ?? t(lang, "notify.fallbackClient");
   const amount       = (event.data?.amount as string | undefined);
 
   if (event.entityType === "quote" && event.action === "sent") {
-    return { type: "quote_sent", title: `Quote sent to ${customerName}` };
+    return { type: "quote_sent", title: t(lang, "notify.quote.sent", { name: customerName }) };
   }
   if (event.entityType === "quote" && event.action === "accepted") {
-    return { type: "quote_accepted", title: `${customerName} accepted your quote` };
+    return { type: "quote_accepted", title: t(lang, "notify.quote.accepted", { name: customerName }) };
   }
   if (event.entityType === "quote" && event.action === "declined") {
     const reason = (event.data?.reason as string | undefined);
-    const reasonLabel = reason ? ` · ${reason.replace(/_/g, " ")}` : "";
     return {
       type: "generic",
-      title: `${customerName} declined your quote${reasonLabel}`,
+      title: reason
+        ? t(lang, "notify.quote.declinedWithReason", { name: customerName, reason: reason.replace(/_/g, " ") })
+        : t(lang, "notify.quote.declined", { name: customerName }),
       body:  (event.data?.note as string | undefined) || undefined,
     };
   }
   if (event.entityType === "contract" && event.action === "signed") {
-    return { type: "contract_signed", title: `${customerName} signed the contract` };
+    return { type: "contract_signed", title: t(lang, "notify.contract.signed", { name: customerName }) };
   }
   if (event.entityType === "invoice" && event.action === "claimed") {
     const method = (event.data?.method as string | undefined);
     const reference = (event.data?.reference as string | undefined);
-    const via = method ? ` by ${method}` : "";
-    const ref = reference ? ` · ref ${reference}` : "";
     return {
       type: "invoice_claimed",
-      title: `${customerName} says they paid${via} — confirm you got it`,
-      body: ref ? ref.replace(/^ · /, "") : undefined,
+      title: method
+        ? t(lang, "notify.invoice.claimedVia", { name: customerName, method })
+        : t(lang, "notify.invoice.claimed", { name: customerName }),
+      body: reference ? t(lang, "notify.invoice.refLabel", { reference }) : undefined,
     };
   }
   if (event.entityType === "invoice" && event.action === "paid") {
-    return { type: "invoice_paid", title: `${customerName} paid${amount ? ` ${amount}` : ""}` };
+    return {
+      type: "invoice_paid",
+      title: amount
+        ? t(lang, "notify.invoice.paidAmount", { name: customerName, amount })
+        : t(lang, "notify.invoice.paid", { name: customerName }),
+    };
   }
   if (event.entityType === "invoice" && event.action === "overdue") {
-    return { type: "invoice_overdue", title: `Invoice for ${customerName} is overdue` };
+    return { type: "invoice_overdue", title: t(lang, "notify.invoice.overdue", { name: customerName }) };
   }
   if (event.entityType === "message" && event.action === "received") {
-    return { type: "customer_replied", title: `${customerName} replied` };
+    return { type: "customer_replied", title: t(lang, "notify.message.replied", { name: customerName }) };
   }
   if (event.entityType === "quote" && event.action === "inquiry") {
     const question = (event.data?.question as string | undefined);
     return {
       type: "customer_replied",
-      title: `${customerName} asked a question`,
+      title: t(lang, "notify.quote.inquiry", { name: customerName }),
       body: question
         ? (question.length > 140 ? `${question.slice(0, 139)}…` : question)
         : undefined,

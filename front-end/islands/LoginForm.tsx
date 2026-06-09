@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import { langSignal } from "../lib/lang.ts";
+import { t } from "../lib/i18n.ts";
 import { landingClient } from "../clients/landing.ts";
 import { ApiError } from "../lib/api.ts";
 
@@ -29,24 +30,25 @@ export default function LoginForm() {
   const [err, setErr] = useState<string | null>(null);
 
   const lang = langSignal.value;
-  const es = lang === "es";
 
   async function onSubmit(e: Event) {
     e.preventDefault();
     setErr(null);
     const e164 = toE164(phone);
     if (e164.replace(/\D/g, "").length < 10) {
-      setErr(es ? "Número incompleto" : "Phone number is incomplete");
+      setErr(t("loginForm.phoneIncomplete"));
       return;
     }
     setSubmitting(true);
     try {
       await landingClient.sendOtp({ phoneNumber: e164, language: lang });
-      globalThis.location.href = `/verify?phone=${encodeURIComponent(e164)}`;
+      globalThis.location.href = `/verify?phone=${
+        encodeURIComponent(e164)
+      }&lang=${lang}`;
     } catch (error) {
       const msg = error instanceof ApiError
         ? `${error.status}`
-        : (es ? "No se pudo enviar." : "Couldn't send.");
+        : t("loginForm.sendFailed");
       setErr(`Error: ${msg}`);
     } finally {
       setSubmitting(false);
@@ -63,7 +65,7 @@ export default function LoginForm() {
     >
       <label style="display:block">
         <span style="display:block;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560);margin-bottom:6px">
-          {es ? "Tu celular" : "Your phone number"}
+          {t("loginForm.phoneLabel")}
         </span>
         <input
           type="tel"
@@ -72,7 +74,7 @@ export default function LoginForm() {
           autoFocus
           value={formatPhoneDisplay(phone)}
           onInput={(e) => setPhone((e.target as HTMLInputElement).value)}
-          placeholder="(555) 123-4567"
+          placeholder={t("loginForm.phonePlaceholder")}
           required
           style={inputStyle}
         />
@@ -89,12 +91,10 @@ export default function LoginForm() {
         disabled={submitting}
         style="appearance:none;border:0;border-radius:12px;padding:14px 18px;background:var(--brand-green,#519843);color:#fff;font:inherit;font-weight:800;font-size:16px;cursor:pointer"
       >
-        {submitting ? "…" : (es ? "Enviar código" : "Text me a code")}
+        {submitting ? "…" : t("loginForm.submit")}
       </button>
       <p style="color:var(--fg-muted,#6b7560);font-size:13px;margin:2px 0 0;text-align:center">
-        {es
-          ? "Te enviaremos un código de 6 dígitos por mensaje."
-          : "We'll text you a 6-digit code to sign in."}
+        {t("loginForm.helper")}
       </p>
     </form>
   );

@@ -8,6 +8,7 @@
  */
 import type { Contract, ContractMood } from "../clients/contracts.ts";
 import { fmtMoney } from "./format.ts";
+import { type Lang, tFor } from "./i18n.ts";
 
 export type ContractStatus =
   | "IN PROGRESS"
@@ -182,18 +183,20 @@ interface BuildArgs {
   quoteSummaries?: Map<string, string>;
   now: Date;
   index: number;
+  /** Contractor language for the human-facing labels (when/cta/story). */
+  lang?: Lang;
 }
 
 export function toContractCard(
-  { contract, customerNames, quoteSummaries, now }: BuildArgs,
+  { contract, customerNames, quoteSummaries, now, lang = "en" }: BuildArgs,
 ): ContractCard {
   const name =
     (contract.customerId
       ? customerNames.get(contract.customerId)
-      : undefined) ?? "Untitled customer";
+      : undefined) ?? tFor(lang, "contractsShape.untitledCustomer");
   const summary =
     (contract.quoteId ? quoteSummaries?.get(contract.quoteId) : undefined) ??
-      "Signed contract";
+      tFor(lang, "contractsShape.signedContract");
   const mood: ContractMood = contract.mood ?? "active";
   const palette = moodFor(mood, contract.id);
   const start = contract.startDate ? new Date(contract.startDate) : undefined;
@@ -218,44 +221,50 @@ export function toContractCard(
   const paid = totalAmount * (pct / 100);
   const left = totalAmount - paid;
 
+  const plural = (key: string, n: number) =>
+    tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n });
+
   let when = "—";
   if (mood === "starting-soon" && start) {
     const dd = daysBetween(now, start);
     when = dd <= 0
-      ? "Starts today"
+      ? tFor(lang, "contractsShape.when.startsToday")
       : dd === 1
-      ? "Starts tomorrow"
-      : `Starts in ${dd} days`;
+      ? tFor(lang, "contractsShape.when.startsTomorrow")
+      : plural("contractsShape.when.startsInDays", dd);
   } else if (mood === "active" && start && end) {
     const total = Math.max(1, daysBetween(start, end));
     const elapsed = Math.max(0, Math.min(total, daysBetween(start, now)));
-    when = `Day ${elapsed + 1} of ${total + 1}`;
+    when = tFor(lang, "contractsShape.when.dayOf", {
+      day: elapsed + 1,
+      total: total + 1,
+    });
   } else if (mood === "wrapping-up" && end) {
     const dd = Math.max(0, daysBetween(now, end));
     when = dd === 0
-      ? "Wraps today"
+      ? tFor(lang, "contractsShape.when.wrapsToday")
       : dd === 1
-      ? "Wraps tomorrow"
-      : `Wraps in ${dd} days`;
+      ? tFor(lang, "contractsShape.when.wrapsTomorrow")
+      : plural("contractsShape.when.wrapsInDays", dd);
   } else if (mood === "completed") {
-    when = "Closed";
+    when = tFor(lang, "contractsShape.when.closed");
   } else if (mood === "draft") {
-    when = "Draft";
+    when = tFor(lang, "contractsShape.when.draft");
   } else if (mood === "stale") {
-    when = "Stale draft";
+    when = tFor(lang, "contractsShape.when.staleDraft");
   }
 
   const cta = mood === "active"
-    ? "Send progress invoice"
+    ? tFor(lang, "contractsShape.cta.sendProgressInvoice")
     : mood === "starting-soon"
-    ? "Confirm start time"
+    ? tFor(lang, "contractsShape.cta.confirmStartTime")
     : mood === "wrapping-up"
-    ? "Draft final invoice"
+    ? tFor(lang, "contractsShape.cta.draftFinalInvoice")
     : mood === "completed"
-    ? "View receipt"
+    ? tFor(lang, "contractsShape.cta.viewReceipt")
     : mood === "draft"
-    ? "Finish + send"
-    : "Re-engage";
+    ? tFor(lang, "contractsShape.cta.finishAndSend")
+    : tFor(lang, "contractsShape.cta.reEngage");
 
   // Where the primary CTA actually goes (the buttons used to be dead stubs).
   // Invoice-related actions land on /invoices (send the scheduled invoice,
@@ -266,16 +275,16 @@ export function toContractCard(
     : `/c/${contract.id}`;
 
   const story = mood === "active"
-    ? `${name} signed and you're on the job. Next milestone keeps the train moving — send a quick update so they know.`
+    ? tFor(lang, "contractsShape.story.active", { name })
     : mood === "starting-soon"
-    ? `${name} signed — block calendar and confirm the start window. Deposit clears the day work begins.`
+    ? tFor(lang, "contractsShape.story.startingSoon", { name })
     : mood === "wrapping-up"
-    ? `Final pass and the punch-list. Loop the last invoice with anything still owed so it's one tidy ask.`
+    ? tFor(lang, "contractsShape.story.wrappingUp")
     : mood === "completed"
-    ? `Closed and paid. Receipt sent automatically — kept here for the record.`
+    ? tFor(lang, "contractsShape.story.completed")
     : mood === "stale"
-    ? `Idle for over a month. A friendly check-in costs nothing and sometimes wins it back.`
-    : `Draft contract — finish terms and send for signature.`;
+    ? tFor(lang, "contractsShape.story.stale")
+    : tFor(lang, "contractsShape.story.draft");
 
   // Schedule-strip anchor: day 8 = today, days 1..30 = -7 .. +22 days from now.
   const scheduleAnchor = new Date(now.getTime() - 7 * MS_PER_DAY);

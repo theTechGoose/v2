@@ -8,11 +8,17 @@ import {
   fmtPhone,
   telHref,
 } from "../../lib/format.ts";
+import { type Lang, tFor } from "../../lib/i18n.ts";
 
 interface QuotePublic {
   id: string;
   summary: string;
   description?: string;
+  /** Per-language title/summary/description (keyed by lang code), rendered in
+   *  the doc's language when present. */
+  descriptionByLang?: Record<string, string>;
+  jobNameByLang?: Record<string, string>;
+  summaryByLang?: Record<string, string>;
   customerId?: string;
   estimatedTotal?: number;
   lineItems: {
@@ -38,23 +44,29 @@ interface QuotePublic {
 export default define.page(async function PublicQuote(ctx) {
   const id = ctx.params.id;
   let quote: QuotePublic | undefined;
-  let err: string | undefined;
   const r = await ssrBackendGet<QuotePublic>(`/quotes/${id}/public`);
   if (r.ok) quote = r.data;
-  else err = "This quote link expired or was revoked.";
+  // Roadmap p.13: customer-facing → outgoing-comms language (default en).
+  const lang: Lang = quote?.contractor?.commsLanguage === "es" ? "es" : "en";
+  const err = r.ok ? undefined : tFor(lang, "publicQuote.linkExpired");
 
   return (
     <>
       <Head>
-        <title>{quote?.summary ?? "Quote"} · Paperwork Monster</title>
+        <title>
+          {quote?.summaryByLang?.[lang] ?? quote?.summary ??
+            tFor(lang, "publicQuote.quote")} ·{" "}
+          {tFor(lang, "brand.name")}
+        </title>
         <link rel="stylesheet" href="/landing.css" />
       </Head>
       <PublicShell
         brand={quote?.contractor?.businessName ?? quote?.contractor?.name}
         address={quote?.contractor?.addressLine}
+        lang={lang}
       >
         {err || !quote
-          ? <ErrorCard message={err ?? "Quote not available."} />
+          ? <ErrorCard message={err ?? tFor(lang, "publicQuote.unavailable")} lang={lang} />
           : <QuoteCard quote={quote} />}
       </PublicShell>
     </>
@@ -62,13 +74,16 @@ export default define.page(async function PublicQuote(ctx) {
 });
 
 function PublicShell(
-  { children, brand, address }: {
+  { children, brand, address, lang }: {
     children: preact.ComponentChildren;
     brand?: string;
     address?: string;
+    lang: Lang;
   },
 ) {
-  const headline = brand && brand.trim() ? brand : "Your contractor";
+  const headline = brand && brand.trim()
+    ? brand
+    : tFor(lang, "publicQuote.contractorFallback");
   return (
     <div style="min-height:100dvh;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30;padding:32px 16px calc(32px + var(--kb-inset, 0px));scroll-padding-bottom:var(--kb-inset, 0px);">
       <div style="max-width:640px;margin:0 auto">
@@ -83,18 +98,18 @@ function PublicShell(
         {!address && <div style="height:12px"></div>}
         {children}
         <div style="margin-top:18px;text-align:center;color:#b9c1bf;font-size:10px;letter-spacing:.08em">
-          powered by Paperwork Monster
+          {tFor(lang, "publicQuote.poweredBy", { brand: tFor(lang, "brand.name") })}
         </div>
       </div>
     </div>
   );
 }
 
-function ErrorCard({ message }: { message: string }) {
+function ErrorCard({ message, lang }: { message: string; lang: Lang }) {
   return (
     <div style="background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center">
       <div style="font-weight:800;color:#144852;font-size:18px">
-        Hmm, can't open this
+        {tFor(lang, "publicQuote.errorHeading")}
       </div>
       <p style="margin:8px 0 0;color:#6b7a7e;font-size:14px">{message}</p>
     </div>
@@ -116,16 +131,20 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
   const contractorFirst = quote.contractor?.name?.trim()?.split(/\s+/)[0];
   const contractor = quote.contractor;
   // Roadmap p.13: customer-facing → outgoing-comms language (default en).
-  const es = contractor?.commsLanguage === "es";
+  const lang: Lang = contractor?.commsLanguage === "es" ? "es" : "en";
+  // Title + bullets in the document's language when the per-language fields
+  // are present (populated from the picked job option).
+  const qSummary = quote.summaryByLang?.[lang] ?? quote.summary;
+  const qDesc = quote.descriptionByLang?.[lang] ?? quote.description;
   return (
     <article style="background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
       <header style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
           <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#519843">
-            {es ? "Cotización" : "Quote"}
+            {tFor(lang, "publicQuote.quote")}
           </div>
           <h1 style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:24px;letter-spacing:-0.02em;color:#144852;margin:6px 0 0">
-            {quote.summary}
+            {qSummary}
           </h1>
           <div style="margin-top:4px;color:#6b7a7e;font-size:13px">
             #{quote.id.slice(0, 8)}
@@ -134,26 +153,26 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
         {accepted
           ? (
             <span style="background:rgba(81,152,67,0.12);color:#519843;font-weight:800;font-size:11px;letter-spacing:.10em;text-transform:uppercase;padding:6px 12px;border-radius:999px">
-              {es ? "Aceptada" : "Accepted"}
+              {tFor(lang, "status.accepted")}
             </span>
           )
           : declined
           ? (
             <span style="background:rgba(168,59,59,0.10);color:#a83b3b;font-weight:800;font-size:11px;letter-spacing:.10em;text-transform:uppercase;padding:6px 12px;border-radius:999px">
-              {es ? "Rechazada" : "Declined"}
+              {tFor(lang, "status.declined")}
             </span>
           )
           : null}
       </header>
       {customerName && (
         <div style="margin-top:14px;color:#1c2c30;font-size:14px">
-          {es
-            ? `Hola ${customerName.split(/\s+/)[0]} — aquí está tu cotización.`
-            : `Hi ${customerName.split(/\s+/)[0]} — here's your quote.`}
+          {tFor(lang, "publicQuote.greeting", {
+            name: customerName.split(/\s+/)[0],
+          })}
         </div>
       )}
       {(() => {
-        const lines = detailLines(quote.description);
+        const lines = detailLines(qDesc);
         if (lines.length > 1) {
           return (
             <ul style="margin:10px 0 0;padding:0;list-style:none;color:#1c2c30;font-size:14.5px;line-height:1.6">
@@ -177,23 +196,21 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
         // #26 — derived job-details framing when there's no description. The
         // line items table is still the canonical job details; this sentence
         // just orients the customer before they read it.
-        return quote.summary
-          ? (
-            <p style="margin:10px 0 0;color:#4a5a5e;font-size:13.5px;line-height:1.55">
-              {es
-                ? `Este estimado cubre ${jobDetailsBlurb(quote.summary)} — ${
-                  quote.lineItems.length === 1
-                    ? "una sola línea de trabajo"
-                    : `${quote.lineItems.length} líneas de trabajo`
-                } desglosadas abajo.`
-                : `This estimate covers ${jobDetailsBlurb(quote.summary)} — ${
-                  quote.lineItems.length === 1
-                    ? "a single line of work"
-                    : `${quote.lineItems.length} lines of work`
-                } broken down below.`}
-            </p>
-          )
-          : null;
+        if (!qSummary) return null;
+        const n = quote.lineItems.length;
+        const linesPhrase = tFor(
+          lang,
+          `publicQuote.linesOfWork.${n === 1 ? "one" : "other"}`,
+          { n },
+        );
+        return (
+          <p style="margin:10px 0 0;color:#4a5a5e;font-size:13.5px;line-height:1.55">
+            {tFor(lang, "publicQuote.jobDetails", {
+              details: jobDetailsBlurb(qSummary),
+              lines: linesPhrase,
+            })}
+          </p>
+        );
       })()}
       {
         /* Line-item breakdown only for multi-line quotes — a single line just
@@ -204,21 +221,21 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
         <>
           <div style="height:1px;background:#e3e8e6;margin:20px 0"></div>
           <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#6b7a7e">
-            {es ? "Partidas" : "Line items"}
+            {tFor(lang, "publicQuote.lineItems")}
           </div>
           <table style="width:100%;border-collapse:collapse;margin-top:8px">
             <thead>
               <tr>
                 <th style="padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:left">
-                  {es ? "Descripción" : "Description"}
+                  {tFor(lang, "publicQuote.colDescription")}
                 </th>
                 {showQty && (
                   <th style="padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:right">
-                    {es ? "Cant." : "Qty"}
+                    {tFor(lang, "publicQuote.colQty")}
                   </th>
                 )}
                 <th style="padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:right">
-                  {es ? "Monto" : "Amount"}
+                  {tFor(lang, "publicQuote.colAmount")}
                 </th>
               </tr>
             </thead>
@@ -247,7 +264,7 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
       )}
       <div style="margin-top:18px;background:linear-gradient(135deg,rgba(81,152,67,0.10),rgba(72,158,95,0.04));border:1px solid rgba(72,158,95,0.20);border-radius:14px;padding:18px 20px;display:flex;justify-content:space-between;align-items:center">
         <div style="font-size:11px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:#519843">
-          {es ? "Total estimado" : "Estimated total"}
+          {tFor(lang, "publicQuote.estimatedTotal")}
         </div>
         <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:#144852">
           {fmtMoneyExact(total)}
@@ -258,14 +275,14 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
           quoteId={quote.id}
           contractorFirstName={contractorFirst}
           customerName={customerName}
-          lang={es ? "es" : "en"}
+          lang={lang}
         />
       )}
       {(contractor?.phoneNumber || contractor?.email) && (
         <div style="margin-top:22px;padding-top:16px;border-top:1px dashed #e3e8e6;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:13px;color:#6b7a7e">
           <div>
-            {es ? "¿Preguntas? Contacta a" : "Questions? Reach"}{" "}
-            {contractor?.name || (es ? "tu contratista" : "your contractor")}:
+            {tFor(lang, "publicQuote.contactPrompt")}{" "}
+            {contractor?.name || tFor(lang, "publicQuote.contractorNameFallback")}:
           </div>
           <div style="display:flex;gap:14px">
             {contractor?.phoneNumber && (

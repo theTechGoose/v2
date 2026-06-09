@@ -5,6 +5,7 @@
 import { useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoney } from "../lib/format.ts";
+import { tFor } from "../lib/i18n.ts";
 import {
   buildOpens,
   moodForQuote,
@@ -18,6 +19,7 @@ import DeleteQuoteButton from "./DeleteQuoteButton.tsx";
 interface Props {
   q: Quote;
   idx: number;
+  lang?: "en" | "es";
 }
 
 function OpenDots({ count, max = 5 }: { count: number; max?: number }) {
@@ -33,23 +35,23 @@ function OpenDots({ count, max = 5 }: { count: number; max?: number }) {
   );
 }
 
-export default function QuoteCard({ q, idx }: Props) {
+export default function QuoteCard({ q, idx, lang = "en" }: Props) {
   const [flipped, setFlipped] = useState(false);
   const mood = moodForQuote(q);
-  const story = QSTORIES[q.id] ?? "No notes yet — open the quote to leave one.";
+  const story = QSTORIES[q.id] ?? tFor(lang, "quoteCard.storyFallback");
   const cta = q.stage === "draft"
-    ? "Finish + send"
+    ? tFor(lang, "quoteCard.cta.finishSend")
     : q.stage === "opened" && q.opens >= 3
-    ? "Send the offer"
+    ? tFor(lang, "quoteCard.cta.sendOffer")
     : q.stage === "opened"
-    ? "Friendly nudge"
+    ? tFor(lang, "quoteCard.cta.friendlyNudge")
     : q.stage === "cooling"
-    ? "Trim & re-send"
+    ? tFor(lang, "quoteCard.cta.trimResend")
     : q.stage === "stale"
-    ? "Win it back"
+    ? tFor(lang, "quoteCard.cta.winItBack")
     : q.stage === "sent"
-    ? "Set a reminder"
-    : "Open quote";
+    ? tFor(lang, "quoteCard.cta.setReminder")
+    : tFor(lang, "quoteCard.cta.openQuote");
   const showOpens = q.stage !== "draft" && q.opens > 0;
   const opens = buildOpens(q);
   const reading = readingFor(q, opens);
@@ -103,7 +105,7 @@ export default function QuoteCard({ q, idx }: Props) {
           <span style="display:inline-block;transition:transform 240ms">→</span>
         </button>
         <div class="qcard__val-wrap">
-          <div class="qcard__val-lbl">Quote</div>
+          <div class="qcard__val-lbl">{tFor(lang, "quoteCard.valueLabel")}</div>
           <div class="qcard__val-num">{fmtMoney(q.value)}</div>
         </div>
       </div>
@@ -117,15 +119,21 @@ export default function QuoteCard({ q, idx }: Props) {
               e.stopPropagation();
               setFlipped(false);
             }}
-            aria-label="Close"
+            aria-label={tFor(lang, "common.close")}
           >
             <I d={ICN.x} size={14} sw={2.5} />
           </button>
-          <div class="qcard__back-eyebrow">The open story</div>
+          <div class="qcard__back-eyebrow">
+            {tFor(lang, "quoteCard.back.eyebrow")}
+          </div>
           <p class="qcard__back-big">
             {q.opens}
             <small>
-              {q.opens === 1 ? "open" : "opens"} · {q.client.split(/\s+/)[0]}
+              {tFor(
+                lang,
+                `quoteCard.back.opens.${q.opens === 1 ? "one" : "other"}`,
+                { n: q.opens },
+              )} · {q.client.split(/\s+/)[0]}
             </small>
           </p>
         </div>
@@ -148,7 +156,7 @@ export default function QuoteCard({ q, idx }: Props) {
             )
             : (
               <div class="qcard__topen-meta" style="padding:8px 0">
-                No opens recorded yet.
+                {tFor(lang, "quoteCard.back.noOpens")}
               </div>
             )}
           <p class="qcard__read">
@@ -159,13 +167,13 @@ export default function QuoteCard({ q, idx }: Props) {
         </div>
         <div class="qcard__back-foot">
           <button type="button" onClick={(e) => e.stopPropagation()}>
-            Resend
+            {tFor(lang, "quoteCard.back.resend")}
           </button>
           <button type="button" onClick={(e) => e.stopPropagation()}>
-            Copy link
+            {tFor(lang, "quoteCard.back.copyLink")}
           </button>
           <button type="button" onClick={(e) => e.stopPropagation()}>
-            View as client
+            {tFor(lang, "quoteCard.back.viewAsClient")}
           </button>
           <DeleteQuoteButton id={q.id} />
         </div>

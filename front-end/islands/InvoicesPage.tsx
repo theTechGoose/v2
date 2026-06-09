@@ -27,6 +27,7 @@ import {
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
 import { fmtMoney } from "../lib/format.ts";
+import { langSignal, type Lang, tFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 
 interface State {
@@ -62,24 +63,24 @@ const SHORT_MONTH = [
  *  customer-facing word used in the "customer paid X" subline. Returns
  *  "—" for missing/unknown values rather than an empty string so the
  *  card layout doesn't collapse. */
-function methodLabel(m: string | undefined): string {
+function methodLabel(m: string | undefined, lang: Lang): string {
   switch (m) {
     case "check":
-      return "by check";
+      return tFor(lang, "invoicesPage.method.check");
     case "venmo":
-      return "via Venmo";
+      return tFor(lang, "invoicesPage.method.venmo");
     case "zelle":
-      return "via Zelle";
+      return tFor(lang, "invoicesPage.method.zelle");
     case "cashapp":
-      return "via Cash App";
+      return tFor(lang, "invoicesPage.method.cashApp");
     case "paypal":
-      return "via PayPal";
+      return tFor(lang, "invoicesPage.method.paypal");
     case "cash":
-      return "in cash";
+      return tFor(lang, "invoicesPage.method.cash");
     case "ach":
-      return "by bank transfer";
+      return tFor(lang, "invoicesPage.method.ach");
     case "other":
-      return "via other";
+      return tFor(lang, "invoicesPage.method.other");
     default:
       return "—";
   }
@@ -102,14 +103,18 @@ function shortDay(iso: string): string {
   });
 }
 
-function fmtDate(iso: string | undefined, now: Date): string {
+function monthLabel(idx: number, lang: Lang): string {
+  return tFor(lang, `invoicesPage.month.${SHORT_MONTH[idx].toLowerCase()}`);
+}
+
+function fmtDate(iso: string | undefined, now: Date, lang: Lang): string {
   if (!iso) return "—";
   const d = new Date(iso + (iso.length === 10 ? "T00:00:00" : ""));
   if (Number.isNaN(d.getTime())) return iso;
   const sameYear = d.getFullYear() === now.getFullYear();
   return sameYear
-    ? `${SHORT_MONTH[d.getMonth()]} ${d.getDate()}`
-    : `${SHORT_MONTH[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+    ? `${monthLabel(d.getMonth(), lang)} ${d.getDate()}`
+    : `${monthLabel(d.getMonth(), lang)} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
 function initialsOf(name: string): string {
@@ -197,49 +202,56 @@ function enrich(
 
 const STAGE_MOOD: Record<
   EnrichedInvoice["stage"],
-  { from: string; to: string; shadow: string; statusFg: string; label: string }
+  {
+    from: string;
+    to: string;
+    shadow: string;
+    statusFg: string;
+    /** i18n key resolved at render via `tFor(lang, labelKey)`. */
+    labelKey: string;
+  }
 > = {
   overdue: {
     from: "#FFD9D9",
     to: "#FF6B6B",
     shadow: "rgba(255,107,107,0.30)",
     statusFg: "#fff",
-    label: "Overdue",
+    labelKey: "status.overdue",
   },
   out: {
     from: "#C8DDE0",
     to: "#56969E",
     shadow: "rgba(86,150,158,0.28)",
     statusFg: "#0F3036",
-    label: "Out",
+    labelKey: "invoicesPage.stage.out",
   },
   claimed: {
     from: "#FFE7B5",
     to: "#E5A331",
     shadow: "rgba(229,163,49,0.30)",
     statusFg: "#5A3D08",
-    label: "Awaiting confirmation",
+    labelKey: "invoicesPage.stage.awaitingConfirmation",
   },
   scheduled: {
     from: "#E4E0F7",
     to: "#8B7DBF",
     shadow: "rgba(139,125,191,0.28)",
     statusFg: "#2C254A",
-    label: "Scheduled",
+    labelKey: "invoicesPage.stage.scheduled",
   },
   drafting: {
     from: "#E1D7CD",
     to: "#9C8074",
     shadow: "rgba(156,128,116,0.32)",
     statusFg: "#3F2D24",
-    label: "Draft",
+    labelKey: "status.draft",
   },
   paid: {
     from: "#CFE5C8",
     to: "#5FA34F",
     shadow: "rgba(81,152,67,0.30)",
     statusFg: "#1F3F18",
-    label: "Paid",
+    labelKey: "status.paid",
   },
 };
 
@@ -260,7 +272,11 @@ interface ForecastResult {
   asOf: string;
 }
 
-export default function InvoicesPage() {
+export default function InvoicesPage(_props: { lang?: Lang }) {
+  // Self-source the reactive UI language. Reading langSignal.value during
+  // render makes this island re-render live when SettingsPage flips the
+  // language. The optional `lang` prop is an ignored SSR seed.
+  const lang = langSignal.value;
   const [s, setS] = useState<State>(INITIAL);
   const [forecast, setForecast] = useState<ForecastResult | undefined>(
     undefined,
@@ -311,7 +327,11 @@ export default function InvoicesPage() {
     );
   }
   if (s.error) {
-    return <div class="qpage-error">Couldn't load invoices: {s.error}</div>;
+    return (
+      <div class="qpage-error">
+        {tFor(lang, "invoicesPage.loadError")} {s.error}
+      </div>
+    );
   }
 
   const now = new Date();
@@ -359,6 +379,7 @@ export default function InvoicesPage() {
         overdueCount={overdue.length}
         totalInvoiceCount={enriched.length}
         forecast={forecast}
+        lang={lang}
       />
       <InvoicesKpis
         overdueCount={overdue.length}
@@ -368,24 +389,31 @@ export default function InvoicesPage() {
         draftingCount={drafting.length}
         paidCount={paidThisMonth.length}
         paidTotal={paidThisMonthTotal}
+        lang={lang}
       />
 
       <div class="qlay">
         <div>
           <QuoteTrack
             num="01"
-            title="Overdue · needs a poke"
+            title={tFor(lang, "invoicesPage.track.overdueTitle")}
             count={overdue.length}
-            unit="invoice"
+            unit={tFor(lang, "invoicesPage.unit.invoice")}
             defaultOpen
             storageKey="invoices:track:01"
           >
             {overdue.length === 0
-              ? <EmptyTrack hint="No overdue invoices. Nice work." />
+              ? <EmptyTrack hint={tFor(lang, "invoicesPage.empty.overdue")} />
               : (
                 <div class="qcards">
                   {overdue.map((inv, i) => (
-                    <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />
+                    <InvoiceCard
+                      key={inv.id}
+                      inv={inv}
+                      idx={i}
+                      now={now}
+                      lang={lang}
+                    />
                   ))}
                 </div>
               )}
@@ -393,20 +421,26 @@ export default function InvoicesPage() {
 
           <QuoteTrack
             num="02"
-            title="Awaiting confirmation"
+            title={tFor(lang, "invoicesPage.track.awaitingTitle")}
             count={claimed.length}
-            unit="invoice"
+            unit={tFor(lang, "invoicesPage.unit.invoice")}
             defaultOpen
             storageKey="invoices:track:awaiting"
           >
             {claimed.length === 0
               ? (
-                <EmptyTrack hint="No claimed payments waiting for you to confirm." />
+                <EmptyTrack hint={tFor(lang, "invoicesPage.empty.awaiting")} />
               )
               : (
                 <div class="qcards" data-cy="awaiting-confirmation-track">
                   {claimed.map((inv, i) => (
-                    <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />
+                    <InvoiceCard
+                      key={inv.id}
+                      inv={inv}
+                      idx={i}
+                      now={now}
+                      lang={lang}
+                    />
                   ))}
                 </div>
               )}
@@ -414,18 +448,24 @@ export default function InvoicesPage() {
 
           <QuoteTrack
             num="03"
-            title="Out for payment"
+            title={tFor(lang, "invoicesPage.track.outTitle")}
             count={out.length}
-            unit="invoice"
+            unit={tFor(lang, "invoicesPage.unit.invoice")}
             defaultOpen
             storageKey="invoices:track:02"
           >
             {out.length === 0
-              ? <EmptyTrack hint="Nothing waiting. Send a quote to get paid." />
+              ? <EmptyTrack hint={tFor(lang, "invoicesPage.empty.out")} />
               : (
                 <div class="qcards">
                   {out.map((inv, i) => (
-                    <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />
+                    <InvoiceCard
+                      key={inv.id}
+                      inv={inv}
+                      idx={i}
+                      now={now}
+                      lang={lang}
+                    />
                   ))}
                 </div>
               )}
@@ -433,20 +473,26 @@ export default function InvoicesPage() {
 
           <QuoteTrack
             num="04"
-            title="Upcoming"
+            title={tFor(lang, "invoicesPage.track.upcomingTitle")}
             count={scheduled.length}
-            unit="invoice"
+            unit={tFor(lang, "invoicesPage.unit.invoice")}
             defaultOpen={false}
             storageKey="invoices:track:upcoming"
           >
             {scheduled.length === 0
               ? (
-                <EmptyTrack hint="No scheduled invoices. Multi-installment contracts will surface here." />
+                <EmptyTrack hint={tFor(lang, "invoicesPage.empty.scheduled")} />
               )
               : (
                 <div class="qcards" data-cy="upcoming-track">
                   {scheduled.map((inv, i) => (
-                    <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />
+                    <InvoiceCard
+                      key={inv.id}
+                      inv={inv}
+                      idx={i}
+                      now={now}
+                      lang={lang}
+                    />
                   ))}
                 </div>
               )}
@@ -454,20 +500,26 @@ export default function InvoicesPage() {
 
           <QuoteTrack
             num="05"
-            title="Drafting"
+            title={tFor(lang, "invoicesPage.track.draftingTitle")}
             count={drafting.length}
-            unit="invoice"
+            unit={tFor(lang, "invoicesPage.unit.invoice")}
             defaultOpen={false}
             storageKey="invoices:track:03"
           >
             {drafting.length === 0
               ? (
-                <EmptyTrack hint="No drafts in progress. Open the assistant to start one." />
+                <EmptyTrack hint={tFor(lang, "invoicesPage.empty.drafting")} />
               )
               : (
                 <div class="qcards">
                   {drafting.map((inv, i) => (
-                    <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />
+                    <InvoiceCard
+                      key={inv.id}
+                      inv={inv}
+                      idx={i}
+                      now={now}
+                      lang={lang}
+                    />
                   ))}
                 </div>
               )}
@@ -475,20 +527,26 @@ export default function InvoicesPage() {
 
           <QuoteTrack
             num="06"
-            title="Paid this month"
+            title={tFor(lang, "invoicesPage.track.paidTitle")}
             count={paidThisMonth.length}
-            unit="invoice"
+            unit={tFor(lang, "invoicesPage.unit.invoice")}
             defaultOpen={false}
             storageKey="invoices:track:04"
           >
             {paidThisMonth.length === 0
               ? (
-                <EmptyTrack hint="Nothing paid yet this month — payments land here once they clear." />
+                <EmptyTrack hint={tFor(lang, "invoicesPage.empty.paid")} />
               )
               : (
                 <div class="qcards">
                   {paidThisMonth.map((inv, i) => (
-                    <InvoiceCard key={inv.id} inv={inv} idx={i} now={now} />
+                    <InvoiceCard
+                      key={inv.id}
+                      inv={inv}
+                      idx={i}
+                      now={now}
+                      lang={lang}
+                    />
                   ))}
                 </div>
               )}
@@ -508,12 +566,14 @@ function InvoicesHero(
     overdueCount,
     totalInvoiceCount,
     forecast,
+    lang,
   }: {
     outstandingTotal: number;
     outstandingCount: number;
     overdueCount: number;
     totalInvoiceCount: number;
     forecast?: ForecastResult;
+    lang: Lang;
   },
 ) {
   const trulyEmpty = totalInvoiceCount === 0;
@@ -525,54 +585,67 @@ function InvoicesHero(
     <header class="qph">
       <div class="qph__copy">
         <div class="qph__eyebrow">
-          <span class="qph__eyebrow-dot" /> Receivables · this week
+          <span class="qph__eyebrow-dot" /> {tFor(lang, "invoicesPage.eyebrow")}
         </div>
         <h1 class="qph__title" data-cy="forecast-hero">
           {trulyEmpty
             ? (
               <>
-                No invoices yet — <em>let's start the river</em>.
+                {tFor(lang, "invoicesPage.hero.emptyPre")}{" "}
+                <em>{tFor(lang, "invoicesPage.hero.emptyEm")}</em>.
               </>
             )
             : fresh && !haveForecast
             ? (
               <>
-                All clear — <em>nothing outstanding</em>.
+                {tFor(lang, "invoicesPage.hero.clearPre")}{" "}
+                <em>{tFor(lang, "invoicesPage.hero.clearEm")}</em>.
               </>
             )
             : haveForecast && forecast!.thisWeekCents > 0
             ? (
               <>
                 <em>{fmtMoney(forecast!.thisWeekCents)}</em>{" "}
-                expected this week<br />
-                across {forecast!.thisWeek.length}{" "}
-                {forecast!.thisWeek.length === 1 ? "payment" : "payments"}.
+                {tFor(lang, "invoicesPage.hero.expectedThisWeek")}
+                <br />
+                {tFor(lang, "invoicesPage.hero.across")} {forecast!.thisWeek
+                  .length}{" "}
+                {tFor(
+                  lang,
+                  forecast!.thisWeek.length === 1
+                    ? "invoicesPage.unitPayment.one"
+                    : "invoicesPage.unitPayment.other",
+                  { n: forecast!.thisWeek.length },
+                )}.
               </>
             )
             : haveForecast && forecast!.nextWeekCents > 0
             ? (
               <>
-                Quiet week — <em>{fmtMoney(forecast!.nextWeekCents)}</em>{" "}
-                coming next week.
+                {tFor(lang, "invoicesPage.hero.quietPre")}{" "}
+                <em>{fmtMoney(forecast!.nextWeekCents)}</em>{" "}
+                {tFor(lang, "invoicesPage.hero.comingNextWeek")}
               </>
             )
             : (
               <>
-                <em>{fmtMoney(outstandingTotal)}</em> on the way<br />
-                across {outstandingCount}{" "}
-                {outstandingCount === 1 ? "invoice" : "invoices"}.
+                <em>{fmtMoney(outstandingTotal)}</em>{" "}
+                {tFor(lang, "invoicesPage.hero.onTheWay")}
+                <br />
+                {tFor(lang, "invoicesPage.hero.across")} {outstandingCount}{" "}
+                {tFor(
+                  lang,
+                  outstandingCount === 1
+                    ? "invoicesPage.unitInvoice.one"
+                    : "invoicesPage.unitInvoice.other",
+                  { n: outstandingCount },
+                )}.
               </>
             )}
         </h1>
         <p class="qph__sub">
           {trulyEmpty
-            ? (
-              <>
-                Once a contract is signed, drop the first invoice in. The
-                monsters track every one — overdue, en route, drafting, paid —
-                so you don't have to remember which is which.
-              </>
-            )
+            ? <>{tFor(lang, "invoicesPage.sub.empty")}</>
             : haveForecast && forecast!.thisWeek.length > 0
             ? (
               <span data-cy="forecast-breakdown">
@@ -589,17 +662,17 @@ function InvoicesHero(
             ? (
               <>
                 <strong>{overdueCount}</strong>{" "}
-                {overdueCount === 1 ? "is" : "are"}{" "}
-                past due — start there. The monsters drafted a friendly nudge
-                for each one.
+                {tFor(
+                  lang,
+                  overdueCount === 1
+                    ? "invoicesPage.sub.pastDueVerb.one"
+                    : "invoicesPage.sub.pastDueVerb.other",
+                  { n: overdueCount },
+                )}{" "}
+                {tFor(lang, "invoicesPage.sub.pastDue")}
               </>
             )
-            : (
-              <>
-                Nothing past due. The monsters are watching for the next billing
-                cycle.
-              </>
-            )}
+            : <>{tFor(lang, "invoicesPage.sub.nothingPastDue")}</>}
         </p>
         {haveForecast && forecast!.atRiskCents > 0
           ? (
@@ -609,8 +682,15 @@ function InvoicesHero(
               data-cy="forecast-at-risk"
             >
               ⚠ <strong>{fmtMoney(forecast!.atRiskCents)}</strong>{" "}
-              at risk across {forecast!.atRisk.length} overdue{" "}
-              {forecast!.atRisk.length === 1 ? "invoice" : "invoices"}.
+              {tFor(lang, "invoicesPage.atRisk.across")} {forecast!.atRisk
+                .length} {tFor(lang, "invoicesPage.atRisk.overdue")}{" "}
+              {tFor(
+                lang,
+                forecast!.atRisk.length === 1
+                  ? "invoicesPage.unitInvoice.one"
+                  : "invoicesPage.unitInvoice.other",
+                { n: forecast!.atRisk.length },
+              )}.
             </p>
           )
           : null}
@@ -618,10 +698,11 @@ function InvoicesHero(
           <a
             class="qph__cta"
             href={`/assistant?seed=${
-              encodeURIComponent("Draft a new invoice for me.")
+              encodeURIComponent(tFor(lang, "invoicesPage.seedNewInvoice"))
             }`}
           >
-            <I d={ICN.plus} size={14} sw={2.5} /> New invoice
+            <I d={ICN.plus} size={14} sw={2.5} />{" "}
+            {tFor(lang, "invoicesPage.newInvoice")}
           </a>
           <a
             class="qph__cta qph__cta--ghost"
@@ -629,7 +710,9 @@ function InvoicesHero(
             href={`/api/invoices/export.csv?year=${new Date().getFullYear()}`}
             style="margin-left:10px;background:transparent;border:1px solid currentColor"
           >
-            Export {new Date().getFullYear()} CSV
+            {tFor(lang, "invoicesPage.exportCsv", {
+              year: new Date().getFullYear(),
+            })}
           </a>
         </div>
       </div>
@@ -648,6 +731,7 @@ function InvoicesKpis(
     draftingCount,
     paidCount,
     paidTotal,
+    lang,
   }: {
     overdueCount: number;
     overdueTotal: number;
@@ -656,33 +740,50 @@ function InvoicesKpis(
     draftingCount: number;
     paidCount: number;
     paidTotal: number;
+    lang: Lang;
   },
 ) {
   return (
     <div class="qkpi">
       <div class={`qkpi__cell${overdueCount > 0 ? " qkpi__cell--accent" : ""}`}>
-        <div class="qkpi__lbl">Overdue</div>
+        <div class="qkpi__lbl">{tFor(lang, "status.overdue")}</div>
         <div class="qkpi__val">{fmtMoney(overdueTotal)}</div>
         <div class="qkpi__sub">
-          {overdueCount} {overdueCount === 1 ? "invoice" : "invoices"}
+          {overdueCount}{" "}
+          {tFor(
+            lang,
+            overdueCount === 1
+              ? "invoicesPage.unitInvoice.one"
+              : "invoicesPage.unitInvoice.other",
+            { n: overdueCount },
+          )}
         </div>
       </div>
       <div class="qkpi__cell">
-        <div class="qkpi__lbl">Out for payment</div>
+        <div class="qkpi__lbl">{tFor(lang, "invoicesPage.kpi.out")}</div>
         <div class="qkpi__val">{fmtMoney(outTotal)}</div>
-        <div class="qkpi__sub">{outCount} on the way</div>
+        <div class="qkpi__sub">
+          {tFor(lang, "invoicesPage.kpi.outSub", { n: outCount })}
+        </div>
       </div>
       <div class="qkpi__cell">
-        <div class="qkpi__lbl">Drafting</div>
+        <div class="qkpi__lbl">{tFor(lang, "invoicesPage.kpi.drafting")}</div>
         <div class="qkpi__val">{draftingCount}</div>
         <div class="qkpi__sub">
-          {draftingCount === 0 ? "no drafts open" : "finish + send"}
+          {tFor(
+            lang,
+            draftingCount === 0
+              ? "invoicesPage.kpi.draftingSubEmpty"
+              : "invoicesPage.kpi.draftingSub",
+          )}
         </div>
       </div>
       <div class="qkpi__cell">
-        <div class="qkpi__lbl">Paid this month</div>
+        <div class="qkpi__lbl">{tFor(lang, "invoicesPage.kpi.paid")}</div>
         <div class="qkpi__val">{fmtMoney(paidTotal)}</div>
-        <div class="qkpi__sub">{paidCount} cleared</div>
+        <div class="qkpi__sub">
+          {tFor(lang, "invoicesPage.kpi.paidSub", { n: paidCount })}
+        </div>
       </div>
     </div>
   );
@@ -701,7 +802,12 @@ function EmptyTrack({ hint }: { hint: string }) {
 /* ---------------- Invoice card (flip) ---------------- */
 
 function InvoiceCard(
-  { inv, idx, now }: { inv: EnrichedInvoice; idx: number; now: Date },
+  { inv, idx, now, lang }: {
+    inv: EnrichedInvoice;
+    idx: number;
+    now: Date;
+    lang: Lang;
+  },
 ) {
   const [flipped, setFlipped] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -713,32 +819,51 @@ function InvoiceCard(
   const [coLink, setCoLink] = useState<string | null>(null);
   const [adjErr, setAdjErr] = useState<string | null>(null);
   const mood = STAGE_MOOD[inv.stage];
+  const moodLabel = tFor(lang, mood.labelKey);
   const cta = inv.stage === "claimed"
-    ? "Okay, I got it"
+    ? tFor(lang, "invoicesPage.cta.claimed")
     : inv.stage === "overdue"
-    ? "Send nudge"
+    ? tFor(lang, "invoicesPage.cta.overdue")
     : inv.stage === "scheduled"
-    ? "Send now"
+    ? tFor(lang, "invoicesPage.cta.scheduled")
     : inv.stage === "out"
-    ? "View invoice"
+    ? tFor(lang, "invoicesPage.cta.out")
     : inv.stage === "drafting"
-    ? "Finish + send"
-    : "View receipt";
+    ? tFor(lang, "invoicesPage.cta.drafting")
+    : tFor(lang, "invoicesPage.cta.paid");
   const subline = inv.stage === "claimed"
-    ? `Customer paid ${methodLabel(inv.paymentIntent?.method)}${
+    ? `${
+      tFor(lang, "invoicesPage.subline.claimed", {
+        method: methodLabel(inv.paymentIntent?.method, lang),
+      })
+    }${
       inv.paymentIntent?.reference
-        ? ` · ref ${inv.paymentIntent.reference}`
+        ? tFor(lang, "invoicesPage.subline.ref", {
+          ref: inv.paymentIntent.reference,
+        })
         : ""
     }`
     : inv.stage === "overdue"
-    ? `${inv.daysOverdue}d overdue · due ${fmtDate(inv.dueDate, now)}`
+    ? tFor(lang, "invoicesPage.subline.overdue", {
+      n: inv.daysOverdue,
+      date: fmtDate(inv.dueDate, now, lang),
+    })
     : inv.stage === "scheduled"
-    ? `Scheduled to send ${inv.scheduledFor ?? "—"}`
+    ? tFor(lang, "invoicesPage.subline.scheduled", {
+      date: inv.scheduledFor ?? "—",
+    })
     : inv.stage === "out"
-    ? `Out ${inv.daysIn}d · due ${fmtDate(inv.dueDate, now)}`
+    ? tFor(lang, "invoicesPage.subline.out", {
+      n: inv.daysIn,
+      date: fmtDate(inv.dueDate, now, lang),
+    })
     : inv.stage === "drafting"
-    ? `Draft started ${fmtDate(inv.issuedDate ?? inv.createdAt, now)}`
-    : `Paid ${fmtDate(inv.paidAt, now)}`;
+    ? tFor(lang, "invoicesPage.subline.drafting", {
+      date: fmtDate(inv.issuedDate ?? inv.createdAt, now, lang),
+    })
+    : tFor(lang, "invoicesPage.subline.paid", {
+      date: fmtDate(inv.paidAt, now, lang),
+    });
 
   async function doConfirmReceived(e: Event) {
     e.stopPropagation();
@@ -848,7 +973,7 @@ function InvoiceCard(
     if (busy) return;
     const cents = Math.round(Number(discountDollars) * 100);
     if (!cents || cents <= 0) {
-      setAdjErr("Enter a discount amount.");
+      setAdjErr(tFor(lang, "invoicesPage.adjust.errDiscountAmount"));
       return;
     }
     setBusy(true);
@@ -861,7 +986,7 @@ function InvoiceCard(
         body: JSON.stringify({ discountCents: cents }),
       });
       if (r.ok) globalThis.location.reload();
-      else setAdjErr("Couldn't apply discount.");
+      else setAdjErr(tFor(lang, "invoicesPage.adjust.errDiscountApply"));
     } finally {
       setBusy(false);
     }
@@ -871,7 +996,7 @@ function InvoiceCard(
     if (busy) return;
     const cents = Math.round(Number(coDollars) * 100);
     if (!coDesc.trim() || !cents) {
-      setAdjErr("Add a description and amount.");
+      setAdjErr(tFor(lang, "invoicesPage.adjust.errCoFields"));
       return;
     }
     setBusy(true);
@@ -887,7 +1012,7 @@ function InvoiceCard(
         }),
       });
       if (!r.ok) {
-        setAdjErr("Couldn't create change order.");
+        setAdjErr(tFor(lang, "invoicesPage.adjust.errCoCreate"));
         return;
       }
       const co = await r.json() as { id: string };
@@ -910,7 +1035,7 @@ function InvoiceCard(
       <div class="qcard__mood">
         <div class="qcard__numeral">{String(idx + 1).padStart(2, "0")}</div>
         <div class="qcard__status">
-          <span class="qcard__status-dot" /> {mood.label}
+          <span class="qcard__status-dot" /> {moodLabel}
         </div>
       </div>
       <div class="qcard__av">{inv.initials}</div>
@@ -932,12 +1057,17 @@ function InvoiceCard(
         </button>
         <div class="qcard__val-wrap">
           <div class="qcard__val-lbl">
-            {inv.stage === "paid" ? "Cleared" : "Due"}
+            {tFor(
+              lang,
+              inv.stage === "paid"
+                ? "invoicesPage.valLbl.cleared"
+                : "invoicesPage.valLbl.due",
+            )}
           </div>
           <div class="qcard__val-num" style="font-size:13px">
             {inv.stage === "paid"
-              ? fmtDate(inv.paidAt, now)
-              : fmtDate(inv.dueDate, now)}
+              ? fmtDate(inv.paidAt, now, lang)
+              : fmtDate(inv.dueDate, now, lang)}
           </div>
         </div>
       </div>
@@ -951,41 +1081,51 @@ function InvoiceCard(
               e.stopPropagation();
               setFlipped(false);
             }}
-            aria-label="Close"
+            aria-label={tFor(lang, "common.close")}
           >
             <I d={ICN.x} size={14} sw={2.5} />
           </button>
-          <div class="qcard__back-eyebrow">Invoice detail</div>
+          <div class="qcard__back-eyebrow">
+            {tFor(lang, "invoicesPage.back.eyebrow")}
+          </div>
           <p class="qcard__back-big">
             {fmtMoney(inv.amount)}
-            <small>· {mood.label}</small>
+            <small>· {moodLabel}</small>
           </p>
         </div>
         <div class="qcard__back-body">
           <p class="qcard__read">
             {inv.stage === "overdue" && (
               <>
-                Past due {inv.daysOverdue}{" "}
-                {inv.daysOverdue === 1 ? "day" : "days"}. A friendly text
-                usually unsticks it.
+                {tFor(
+                  lang,
+                  inv.daysOverdue === 1
+                    ? "invoicesPage.read.overdue.one"
+                    : "invoicesPage.read.overdue.other",
+                  { n: inv.daysOverdue },
+                )}
               </>
             )}
             {inv.stage === "out" && (
               <>
-                Issued {fmtDate(inv.issuedDate ?? inv.createdAt, now)}. Due{" "}
-                {fmtDate(inv.dueDate, now)}.
+                {tFor(lang, "invoicesPage.read.out", {
+                  issued: fmtDate(inv.issuedDate ?? inv.createdAt, now, lang),
+                  due: fmtDate(inv.dueDate, now, lang),
+                })}
               </>
             )}
             {inv.stage === "drafting" && (
               <>
-                Draft started{" "}
-                {fmtDate(inv.issuedDate ?? inv.createdAt, now)}. Open it to
-                finish and send.
+                {tFor(lang, "invoicesPage.read.drafting", {
+                  date: fmtDate(inv.issuedDate ?? inv.createdAt, now, lang),
+                })}
               </>
             )}
             {inv.stage === "paid" && (
               <>
-                Cleared {fmtDate(inv.paidAt, now)}. Receipt sent automatically.
+                {tFor(lang, "invoicesPage.read.paid", {
+                  date: fmtDate(inv.paidAt, now, lang),
+                })}
               </>
             )}
           </p>
@@ -999,20 +1139,25 @@ function InvoiceCard(
                 onClick={() => setAdjustOpen((o) => !o)}
                 style="appearance:none;background:none;border:none;color:var(--brand-teal);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;padding:2px 0"
               >
-                {adjustOpen ? "Hide adjustments" : "Adjust invoice ▾"}
+                {adjustOpen
+                  ? tFor(lang, "invoicesPage.adjust.hide")
+                  : `${tFor(lang, "invoicesPage.adjust.open")} ▾`}
               </button>
               {adjustOpen && (
                 <div style="margin-top:8px;display:flex;flex-direction:column;gap:12px;background:rgba(0,0,0,0.03);border-radius:10px;padding:10px 12px">
                   <div>
                     <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-muted);margin-bottom:4px">
-                      Discount
+                      {tFor(lang, "invoicesPage.adjust.discountLabel")}
                     </div>
                     <div style="display:flex;gap:6px">
                       <input
                         type="number"
                         min="0"
                         step="1"
-                        placeholder="$ off"
+                        placeholder={tFor(
+                          lang,
+                          "invoicesPage.adjust.discountPlaceholder",
+                        )}
                         value={discountDollars}
                         onInput={(e) =>
                           setDiscountDollars(
@@ -1026,17 +1171,17 @@ function InvoiceCard(
                         disabled={busy}
                         style="padding:7px 12px;border:0;border-radius:7px;background:var(--brand-green);color:#fff;font:inherit;font-weight:700;cursor:pointer"
                       >
-                        Apply
+                        {tFor(lang, "invoicesPage.adjust.apply")}
                       </button>
                     </div>
                   </div>
                   <div>
                     <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-muted);margin-bottom:4px">
-                      Change order (needs customer approval)
+                      {tFor(lang, "invoicesPage.adjust.coLabel")}
                     </div>
                     <input
                       type="text"
-                      placeholder="What changed?"
+                      placeholder={tFor(lang, "invoicesPage.adjust.coDescPlaceholder")}
                       value={coDesc}
                       onInput={(e) =>
                         setCoDesc((e.target as HTMLInputElement).value)}
@@ -1046,7 +1191,10 @@ function InvoiceCard(
                       <input
                         type="number"
                         step="1"
-                        placeholder="+/- $"
+                        placeholder={tFor(
+                          lang,
+                          "invoicesPage.adjust.coAmountPlaceholder",
+                        )}
                         value={coDollars}
                         onInput={(e) =>
                           setCoDollars((e.target as HTMLInputElement).value)}
@@ -1058,13 +1206,13 @@ function InvoiceCard(
                         disabled={busy}
                         style="padding:7px 12px;border:0;border-radius:7px;background:var(--brand-teal);color:#fff;font:inherit;font-weight:700;cursor:pointer"
                       >
-                        Create link
+                        {tFor(lang, "invoicesPage.adjust.createLink")}
                       </button>
                     </div>
                   </div>
                   {coLink && (
                     <div style="font-size:12px;color:var(--fg)">
-                      Approval link:{" "}
+                      {tFor(lang, "invoicesPage.adjust.approvalLink")}{" "}
                       <a
                         href={coLink}
                         target="_blank"
@@ -1074,7 +1222,7 @@ function InvoiceCard(
                         {coLink}
                       </a>
                       <div style="color:var(--fg-muted);margin-top:2px">
-                        Send this to your customer to approve.
+                        {tFor(lang, "invoicesPage.adjust.approvalHelp")}
                       </div>
                     </div>
                   )}
@@ -1095,16 +1243,18 @@ function InvoiceCard(
           >
             {busy ? "…" : cta.replace(/ →$/, "")}
           </button>
-          <button type="button" onClick={doOpenInvoice}>Open</button>
+          <button type="button" onClick={doOpenInvoice}>
+            {tFor(lang, "invoicesPage.back.open")}
+          </button>
           {inv.stage === "claimed" && (
             <button
               type="button"
               onClick={doRejectClaim}
               disabled={busy}
               data-cy="invoice-reject-claim"
-              title="Reopen this invoice — you never received this payment"
+              title={tFor(lang, "invoicesPage.back.rejectTitle")}
             >
-              Didn't get it
+              {tFor(lang, "invoicesPage.back.reject")}
             </button>
           )}
           {(inv.stage === "overdue" || inv.stage === "out")
@@ -1115,15 +1265,17 @@ function InvoiceCard(
                 onClick={doToggleMute}
                 disabled={busy}
                 title={inv.remindersMuted
-                  ? "Reminders are off for this invoice"
-                  : "Mute reminders for this invoice"}
+                  ? tFor(lang, "invoicesPage.back.muteTitleOff")
+                  : tFor(lang, "invoicesPage.back.muteTitleOn")}
               >
-                {inv.remindersMuted ? "Muted" : "Mute"}
+                {inv.remindersMuted
+                  ? tFor(lang, "invoicesPage.back.muted")
+                  : tFor(lang, "invoicesPage.back.mute")}
               </button>
             )
             : (
               <button type="button" onClick={doSendText} disabled={busy}>
-                Text client
+                {tFor(lang, "invoicesPage.back.textClient")}
               </button>
             )}
         </div>

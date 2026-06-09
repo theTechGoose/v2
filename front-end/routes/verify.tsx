@@ -2,6 +2,7 @@ import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import { loadUser } from "../lib/auth.ts";
 import { type Lang, pickLangFromAcceptLanguage, STRINGS } from "../lib/lang.ts";
+import { tFor } from "../lib/i18n.ts";
 import CodeInput from "../islands/CodeInput.tsx";
 
 function formatPhoneDisplay(e164: string): string {
@@ -34,7 +35,7 @@ export default define.page(async function Verify(ctx) {
   return (
     <>
       <Head>
-        <title>{s["verify.h1"]} · Paperwork Monster</title>
+        <title>{s["verify.h1"]} · {tFor(lang, "brand.name")}</title>
         <link rel="stylesheet" href="/verify.css" />
       </Head>
       <div class="verify-shell">
@@ -42,13 +43,15 @@ export default define.page(async function Verify(ctx) {
           <a href="/" class="brand" style="margin:0 auto 4px">
             <img
               src="/logo-monster.png"
-              alt="Paperwork Monster"
+              alt={tFor(lang, "brand.name")}
               style="width:38px;height:38px;flex-shrink:0"
             />
-            <span>Paperwork</span>
-            <em style="font-style:normal;color:var(--brand-green)">Monster</em>
+            <span>{tFor(lang, "brand.namePrefix")}</span>
+            <em style="font-style:normal;color:var(--brand-green)">
+              {tFor(lang, "brand.nameSuffix")}
+            </em>
           </a>
-          <ol class="pm-steps" aria-label="Sign-in steps">
+          <ol class="pm-steps" aria-label={tFor(lang, "verify.steps.aria")}>
             <li class="pm-steps__item pm-steps__item--done">
               <span class="pm-steps__dot">✓</span>
               <span class="pm-steps__label">{s["cta.steps.phone"]}</span>

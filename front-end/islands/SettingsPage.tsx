@@ -13,6 +13,7 @@ import type { ComponentChildren } from "preact";
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
 import { filesClient } from "../clients/files.ts";
 import { fmtPhone } from "../lib/format.ts";
+import { langSignal, type Lang, setLang, tFor } from "../lib/i18n.ts";
 import {
   CardGridSkeleton,
   PageHeaderSkeleton,
@@ -40,122 +41,111 @@ const btnPrimary =
  *  off the contractor's `user.language`. One dictionary so the whole screen
  *  flips together (no mixed-language state). */
 function tr(es: boolean) {
+  const lang: Lang = es ? "es" : "en";
   return {
-    heroSub: es
-      ? "Actualiza los datos de tu negocio abajo — se guardan al instante."
-      : "Update your business details below — changes save as you go.",
-    saving: es ? "Guardando…" : "Saving…",
-    saved: es ? "Guardado ✓" : "Saved ✓",
-    saveFailed: es ? "no se pudo guardar" : "save failed",
-    nothingSet: es ? "Aún no hay nada." : "Nothing set yet.",
+    heroSub: tFor(lang, "settings.heroSub"),
+    saving: tFor(lang, "settings.saving"),
+    saved: tFor(lang, "settings.saved"),
+    saveFailed: tFor(lang, "settings.saveFailed"),
+    logoUploadFailed: tFor(lang, "settings.logoUploadFailed"),
+    uploadFailed: tFor(lang, "settings.uploadFailed"),
+    nothingSet: tFor(lang, "settings.nothingSet"),
     // Card titles
-    account: es ? "Cuenta" : "Account",
-    businessIdentity: es ? "Identidad del negocio" : "Business identity",
-    mailingAddress: es ? "Dirección postal" : "Mailing address",
-    insurance: es ? "Seguro" : "Insurance",
-    tax: es ? "Impuestos (W-9)" : "Tax (W-9)",
-    contractDefaults: es ? "Valores del contrato" : "Contract defaults",
-    payments: es ? "Cómo aceptas pagos" : "How you accept payment",
-    editDetails: es ? "Edita tus datos" : "Edit your details",
+    account: tFor(lang, "common.account"),
+    businessIdentity: tFor(lang, "settings.businessIdentity"),
+    mailingAddress: tFor(lang, "settings.mailingAddress"),
+    insurance: tFor(lang, "settings.insurance"),
+    tax: tFor(lang, "settings.tax"),
+    contractDefaults: tFor(lang, "settings.contractDefaults"),
+    payments: tFor(lang, "settings.payments"),
+    editDetails: tFor(lang, "settings.editDetails"),
     // Account / identity rows + fields
-    name: es ? "Nombre" : "Name",
-    phone: es ? "Teléfono" : "Phone",
-    email: es ? "Correo" : "Email",
-    language: es ? "Idioma" : "Language",
-    spanish: es ? "Español" : "Spanish",
-    english: es ? "Inglés" : "English",
-    legalName: es ? "Razón social" : "Legal name",
-    license: es ? "Licencia" : "License",
-    businessName: es ? "Nombre del negocio" : "Business name",
+    name: tFor(lang, "settings.name"),
+    phone: tFor(lang, "settings.phone"),
+    email: tFor(lang, "settings.email"),
+    language: tFor(lang, "settings.language"),
+    spanish: tFor(lang, "settings.spanish"),
+    english: tFor(lang, "settings.english"),
+    legalName: tFor(lang, "settings.legalName"),
+    license: tFor(lang, "settings.license"),
+    businessName: tFor(lang, "settings.businessName"),
     // Address
-    street: es ? "Calle" : "Street",
-    city: es ? "Ciudad" : "City",
-    state: es ? "Estado" : "State",
-    zip: es ? "Código postal" : "ZIP / Postal",
-    country: es ? "País" : "Country",
+    street: tFor(lang, "settings.street"),
+    city: tFor(lang, "settings.city"),
+    state: tFor(lang, "settings.state"),
+    zip: tFor(lang, "settings.zip"),
+    country: tFor(lang, "settings.country"),
     // Logo
-    uploadLogo: es ? "Subir logo" : "Upload logo",
-    replaceLogo: es ? "Reemplazar logo" : "Replace logo",
-    uploading: es ? "Subiendo…" : "Uploading…",
-    logoSet: es ? "Logo cargado" : "Logo set",
-    logoHint: es
-      ? "PNG o JPG · aparece en cotizaciones y facturas"
-      : "PNG or JPG · shows on quotes & invoices",
+    uploadLogo: tFor(lang, "settings.uploadLogo"),
+    replaceLogo: tFor(lang, "settings.replaceLogo"),
+    uploading: tFor(lang, "settings.uploading"),
+    logoSet: tFor(lang, "settings.logoSet"),
+    logoHint: tFor(lang, "settings.logoHint"),
     // Contractor's own UI language (the app + assistant they see).
-    appLang: es ? "Idioma de la app" : "App language",
-    appLangHint: es
-      ? "El idioma en que Paperwork Monster te muestra la app y el asistente."
-      : "The language Paperwork Monster shows you — the app and assistant.",
+    appLang: tFor(lang, "settings.appLang"),
+    appLangHint: tFor(lang, "settings.appLangHint"),
     // Outgoing-comms languages (what the contractor can SEND quotes in).
-    commsLang: es
-      ? "Idiomas para enviar"
-      : "Languages you send in",
-    commsLangHint: es
-      ? "Marca los idiomas en que puedes enviar. En cada cotización podrás previsualizar y enviar en cualquiera de ellos."
-      : "Check the languages you can send in. On each quote you can preview and send in any of them.",
+    commsLang: tFor(lang, "settings.commsLang"),
+    commsLangHint: tFor(lang, "settings.commsLangHint"),
     // Insurance
-    provider: es ? "Aseguradora" : "Provider",
-    policyNumber: es ? "Número de póliza" : "Policy number",
-    coverage: es ? "Cobertura (USD)" : "Coverage (USD)",
-    expires: es ? "Vence" : "Expires",
-    uploadCert: es ? "Subir certificado" : "Upload certificate",
-    replaceCert: es ? "Reemplazar certificado" : "Replace certificate",
-    certOnFile: es ? "Certificado en archivo" : "Certificate on file",
-    certHint: es
-      ? "PDF o imagen · prueba de seguro / COI"
-      : "PDF or image · proof of insurance / COI",
+    provider: tFor(lang, "settings.provider"),
+    policyNumber: tFor(lang, "settings.policyNumber"),
+    coverage: tFor(lang, "settings.coverage"),
+    expires: tFor(lang, "settings.expires"),
+    uploadCert: tFor(lang, "settings.uploadCert"),
+    replaceCert: tFor(lang, "settings.replaceCert"),
+    certOnFile: tFor(lang, "settings.certOnFile"),
+    certHint: tFor(lang, "settings.certHint"),
     // Tax
-    tinLabel: es ? "TIN / EIN" : "TIN / EIN",
-    onFile: es ? "en archivo" : "on file",
-    enterToReplace: es ? "Escribe para reemplazar" : "Enter to replace",
-    uploadW9: es ? "Subir W-9" : "Upload W-9",
-    replaceW9: es ? "Reemplazar W-9" : "Replace W-9",
-    uploaded: es ? "Subido" : "Uploaded",
-    w9Hint: es
-      ? "PDF o imagen · Formulario W-9 firmado"
-      : "PDF or image · signed IRS Form W-9",
+    tinLabel: tFor(lang, "settings.tinLabel"),
+    onFile: tFor(lang, "settings.onFile"),
+    enterToReplace: tFor(lang, "settings.enterToReplace"),
+    uploadW9: tFor(lang, "settings.uploadW9"),
+    replaceW9: tFor(lang, "settings.replaceW9"),
+    uploaded: tFor(lang, "settings.uploaded"),
+    w9Hint: tFor(lang, "settings.w9Hint"),
     // Contract defaults
-    paymentTerms: es ? "Plazo de pago" : "Payment terms",
-    deposit: es ? "Anticipo" : "Deposit",
-    warranty: es ? "Garantía" : "Warranty",
-    days: es ? "días" : "days",
+    paymentTerms: tFor(lang, "settings.paymentTerms"),
+    deposit: tFor(lang, "settings.deposit"),
+    warranty: tFor(lang, "settings.warranty"),
+    days: tFor(lang, "settings.days"),
     // Payments
-    paymentsIntro: es
-      ? "Activa las formas en que tus clientes pueden pagarte. Aparecen como botones en tus facturas."
-      : "Turn on the ways customers can pay you. These show up as buttons on your invoices.",
-    yourHandle: es ? "Tu usuario" : "Your handle",
-    mailingOptional: es
-      ? "Dirección postal (opcional)"
-      : "Mailing address (optional)",
-    retypeConfirm: es ? "Reescribe para confirmar" : "Retype to confirm",
-    noMatch: es
-      ? "Las dos entradas no coinciden."
-      : "The two entries don't match.",
-    savePayments: es ? "Guardar formas de pago" : "Save payment methods",
+    paymentsIntro: tFor(lang, "settings.paymentsIntro"),
+    yourHandle: tFor(lang, "settings.yourHandle"),
+    mailingOptional: tFor(lang, "settings.mailingOptional"),
+    retypeConfirm: tFor(lang, "settings.retypeConfirm"),
+    noMatch: tFor(lang, "settings.noMatch"),
+    savePayments: tFor(lang, "settings.savePayments"),
     enterHandle: (m: string) =>
-      es
-        ? `Ingresa tu usuario de ${m} (o desactívalo).`
-        : `Enter your ${m} handle (or turn it off).`,
+      tFor(lang, "settings.payments.enterHandle", { m }),
     handleMismatch: (m: string) =>
-      es
-        ? `Las entradas de ${m} no coinciden — reescribe para confirmar.`
-        : `${m} entries don't match — retype to confirm.`,
+      tFor(lang, "settings.payments.handleMismatch", { m }),
     // Danger zone
-    dangerZone: es ? "Zona de peligro" : "Danger zone",
-    wipeIntro: es
-      ? "Esto borra tu cuenta y el 100% de tus datos — cotizaciones, facturas, clientes, pagos y archivos. No se puede deshacer."
-      : "This deletes your account and 100% of your data — quotes, invoices, clients, payments, and files. This cannot be undone.",
-    wipeConfirmLabel: es
-      ? 'Escribe "DELETE" para confirmar'
-      : 'Type "DELETE" to confirm',
-    wipeButton: es ? "Borrar cuenta y todos los datos" : "Wipe account & all data",
-    wiping: es ? "Borrando…" : "Wiping…",
-    wipeFailed: es ? "no se pudo borrar" : "wipe failed",
+    dangerZone: tFor(lang, "settings.dangerZone"),
+    wipeIntro: tFor(lang, "settings.wipeIntro"),
+    wipeConfirmLabel: tFor(lang, "settings.wipeConfirmLabel"),
+    wipeButton: tFor(lang, "settings.wipeButton"),
+    wiping: tFor(lang, "settings.wiping"),
+    wipeFailed: tFor(lang, "settings.wipeFailed"),
+    // Aria labels
+    ariaEditName: tFor(lang, "settings.aria.editName"),
+    ariaEditEmail: tFor(lang, "settings.aria.editEmail"),
+    ariaEditBusinessName: tFor(lang, "settings.aria.editBusinessName"),
+    ariaUploadLogo: tFor(lang, "settings.aria.uploadLogo"),
+    ariaLogoFile: tFor(lang, "settings.aria.logoFile"),
+    ariaInsuranceCertFile: tFor(lang, "settings.aria.insuranceCertFile"),
+    ariaW9File: tFor(lang, "settings.aria.w9File"),
+    ariaWipeConfirm: tFor(lang, "settings.aria.wipeConfirm"),
+    // Placeholders
+    phStreet: tFor(lang, "settings.ph.street"),
+    phState: tFor(lang, "settings.ph.state"),
+    phCoverage: tFor(lang, "settings.ph.coverage"),
+    phTin: tFor(lang, "settings.ph.tin"),
   };
 }
 
 function Card(
-  { title, rows, empty = "Nothing set yet." }: {
+  { title, rows, empty = tFor("en", "settings.nothingSet") }: {
     title: string;
     rows: Array<[string, string | undefined | null]>;
     empty?: string;
@@ -199,8 +189,8 @@ function EditPanel(
     busy,
     err,
     saved,
-    saving = "Saving…",
-    savedLabel = "Saved ✓",
+    saving = tFor("en", "settings.saving"),
+    savedLabel = tFor("en", "settings.saved"),
   }: {
     title: string;
     children: ComponentChildren;
@@ -253,7 +243,7 @@ function EditCard(
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
-  const t = tr(snapshot.user.language === "es");
+  const t = tr(langSignal.value === "es");
 
   async function saveUser(patch: Record<string, unknown>) {
     setBusy("user");
@@ -262,7 +252,7 @@ function EditCard(
       const u = await profileClient.updateUser(patch);
       onSaved({ user: { ...snapshot.user, ...u } as typeof snapshot.user });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "save failed");
+      setErr(e instanceof Error ? e.message : t.saveFailed);
     } finally {
       setBusy(null);
     }
@@ -279,7 +269,7 @@ function EditCard(
         } as typeof snapshot.identity,
       });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "save failed");
+      setErr(e instanceof Error ? e.message : t.saveFailed);
     } finally {
       setBusy(null);
     }
@@ -293,7 +283,7 @@ function EditCard(
       const rec = await filesClient.uploadBlob(file, file.name);
       await saveIdentity({ logoFileId: rec.id });
     } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : "logo upload failed");
+      setErr(ex instanceof Error ? ex.message : t.logoUploadFailed);
     } finally {
       setBusy(null);
     }
@@ -320,7 +310,7 @@ function EditCard(
             onBlur={() =>
               name.trim() !== (snapshot.user.name ?? "") &&
               saveUser({ name: name.trim() })}
-            aria-label="Edit name"
+            aria-label={t.ariaEditName}
           />
         </label>
         <label style="display:block">
@@ -335,7 +325,7 @@ function EditCard(
             onBlur={() =>
               email.trim() !== (snapshot.user.email ?? "") &&
               saveUser({ email: email.trim() })}
-            aria-label="Edit email"
+            aria-label={t.ariaEditEmail}
           />
         </label>
         <label style="display:block;grid-column:1 / -1">
@@ -350,14 +340,14 @@ function EditCard(
             onBlur={() =>
               biz.trim() !== (snapshot.identity?.businessName ?? "") &&
               saveIdentity({ businessName: biz.trim() })}
-            aria-label="Edit business name"
+            aria-label={t.ariaEditBusinessName}
           />
         </label>
         <div style="grid-column:1 / -1;display:flex;align-items:center;gap:12px">
           <button
             type="button"
             class="btn btn-secondary"
-            aria-label="Upload logo"
+            aria-label={t.ariaUploadLogo}
             disabled={busy === "logo"}
             onClick={() => logoInputRef.current?.click()}
             style={btnSecondary}
@@ -370,7 +360,7 @@ function EditCard(
             ref={logoInputRef}
             type="file"
             accept="image/*"
-            aria-label="Logo file"
+            aria-label={t.ariaLogoFile}
             style="display:none"
             onChange={onLogoPick}
           />
@@ -391,9 +381,12 @@ function EditCard(
           <select
             style={inputStyle}
             disabled={busy === "user"}
-            value={snapshot.user.language === "es" ? "es" : "en"}
-            onChange={(e) =>
-              saveUser({ language: (e.target as HTMLSelectElement).value })}
+            value={langSignal.value === "es" ? "es" : "en"}
+            onChange={(e) => {
+              const v = (e.target as HTMLSelectElement).value as Lang;
+              setLang(v); // flip the whole app instantly
+              saveUser({ language: v }); // …and persist
+            }}
           >
             <option value="en">{t.english}</option>
             <option value="es">{t.spanish}</option>
@@ -471,6 +464,7 @@ function AddressEditCard(
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const t = tr(langSignal.value === "es");
 
   async function save(patch: Record<string, string>) {
     setBusy(true);
@@ -481,7 +475,7 @@ function AddressEditCard(
       onSaved({ address: next });
       setSaved(true);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "save failed");
+      setErr(e instanceof Error ? e.message : t.saveFailed);
     } finally {
       setBusy(false);
     }
@@ -489,7 +483,6 @@ function AddressEditCard(
   const blur = (field: string, val: string, was: string) => {
     if (val.trim() !== (was ?? "")) save({ [field]: val.trim() });
   };
-  const t = tr(snapshot.user.language === "es");
 
   return (
     <EditPanel
@@ -508,7 +501,7 @@ function AddressEditCard(
             style={inputStyle}
             value={street}
             disabled={busy}
-            placeholder="1234 Main St"
+            placeholder={t.phStreet}
             onInput={(e) => setStreet((e.target as HTMLInputElement).value)}
             onBlur={() => blur("street", street, a?.street ?? "")}
           />
@@ -532,7 +525,7 @@ function AddressEditCard(
             value={stateV}
             disabled={busy}
             maxLength={2}
-            placeholder="TX"
+            placeholder={t.phState}
             onInput={(e) =>
               setStateV((e.target as HTMLInputElement).value.toUpperCase())}
             onBlur={() => blur("state", stateV, a?.state ?? "")}
@@ -583,7 +576,7 @@ function InsuranceEditCard(
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const t = tr(snapshot.user.language === "es");
+  const t = tr(langSignal.value === "es");
 
   async function save(patch: Record<string, unknown>) {
     setBusy("fields");
@@ -594,7 +587,7 @@ function InsuranceEditCard(
       onSaved({ insurance: next });
       setSaved(true);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "save failed");
+      setErr(e instanceof Error ? e.message : t.saveFailed);
     } finally {
       setBusy(null);
     }
@@ -608,7 +601,7 @@ function InsuranceEditCard(
       const rec = await filesClient.uploadBlob(file, file.name);
       await save({ insuranceFileId: rec.id });
     } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : "upload failed");
+      setErr(ex instanceof Error ? ex.message : t.uploadFailed);
     } finally {
       setBusy(null);
     }
@@ -659,7 +652,7 @@ function InsuranceEditCard(
             style={inputStyle}
             value={coverage}
             disabled={!!busy}
-            placeholder="1000000"
+            placeholder={t.phCoverage}
             onInput={(e) => setCoverage((e.target as HTMLInputElement).value)}
             onBlur={() => {
               const cents = coverage.trim() === ""
@@ -704,7 +697,7 @@ function InsuranceEditCard(
           ref={fileRef}
           type="file"
           accept="application/pdf,image/*"
-          aria-label="Insurance certificate file"
+          aria-label={t.ariaInsuranceCertFile}
           style="display:none"
           onChange={onFilePick}
         />
@@ -736,7 +729,7 @@ function TaxEditCard(
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const t = tr(snapshot.user.language === "es");
+  const t = tr(langSignal.value === "es");
 
   async function save(patch: Record<string, unknown>) {
     setBusy("save");
@@ -748,7 +741,7 @@ function TaxEditCard(
       setSaved(true);
       setTin("");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "save failed");
+      setErr(e instanceof Error ? e.message : t.saveFailed);
     } finally {
       setBusy(null);
     }
@@ -762,7 +755,7 @@ function TaxEditCard(
       const rec = await filesClient.uploadBlob(file, file.name);
       await save({ w9FileId: rec.id });
     } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : "upload failed");
+      setErr(ex instanceof Error ? ex.message : t.uploadFailed);
     } finally {
       setBusy(null);
     }
@@ -788,7 +781,7 @@ function TaxEditCard(
             style={inputStyle}
             value={tin}
             disabled={!!busy}
-            placeholder={tax?.tinMasked ? t.enterToReplace : "12-3456789"}
+            placeholder={tax?.tinMasked ? t.enterToReplace : t.phTin}
             onInput={(e) => setTin((e.target as HTMLInputElement).value)}
             onBlur={() => tin.trim() && save({ tin: tin.trim() })}
           />
@@ -811,7 +804,7 @@ function TaxEditCard(
           ref={fileRef}
           type="file"
           accept="application/pdf,image/*"
-          aria-label="W-9 file"
+          aria-label={t.ariaW9File}
           style="display:none"
           onChange={onFilePick}
         />
@@ -838,34 +831,40 @@ interface PayRow {
   optional?: boolean;
 }
 
+// `label` and `placeholder` hold i18n KEYS (resolved per-language at render).
 const PAY_ROWS: PayRow[] = [
-  { key: "venmo", label: "Venmo", field: "handle", placeholder: "@your-venmo" },
+  {
+    key: "venmo",
+    label: "paymentMethod.venmo",
+    field: "handle",
+    placeholder: "settings.pay.venmoPh",
+  },
   {
     key: "cashapp",
-    label: "Cash App",
+    label: "paymentMethod.cashApp",
     field: "cashtag",
-    placeholder: "$yourcashtag",
+    placeholder: "settings.pay.cashappPh",
   },
   {
     key: "zelle",
-    label: "Zelle",
+    label: "paymentMethod.zelle",
     field: "handle",
-    placeholder: "email or phone",
+    placeholder: "settings.pay.zellePh",
   },
   {
     key: "paypal",
-    label: "PayPal",
+    label: "paymentMethod.paypal",
     field: "handle",
-    placeholder: "paypal.me/you or email",
+    placeholder: "settings.pay.paypalPh",
   },
   {
     key: "check",
-    label: "Check",
+    label: "paymentMethod.check",
     field: "mailTo",
-    placeholder: "Mailing address for checks",
+    placeholder: "settings.pay.checkPh",
     optional: true,
   },
-  { key: "cash", label: "Cash", field: null, placeholder: "" },
+  { key: "cash", label: "paymentMethod.cash", field: null, placeholder: "" },
 ];
 
 interface PayState {
@@ -902,7 +901,8 @@ function PaymentsEditCard(
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const t = tr(snapshot.user.language === "es");
+  const lang: Lang = langSignal.value === "es" ? "es" : "en";
+  const t = tr(langSignal.value === "es");
 
   function patchRow(key: string, next: Partial<PayState>) {
     setSaved(false);
@@ -922,12 +922,13 @@ function PaymentsEditCard(
       if (!st.enabled || r.field === null) continue;
       // Optional fields (check's mailing address) may be left blank.
       if (r.optional) continue;
+      const label = tFor(lang, r.label);
       if (st.value.trim() === "") {
-        setErr(t.enterHandle(r.label));
+        setErr(t.enterHandle(label));
         return;
       }
       if (st.value.trim() !== st.confirm.trim()) {
-        setErr(t.handleMismatch(r.label));
+        setErr(t.handleMismatch(label));
         return;
       }
     }
@@ -956,7 +957,7 @@ function PaymentsEditCard(
       });
       setSaved(true);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "save failed");
+      setErr(e instanceof Error ? e.message : t.saveFailed);
     } finally {
       setBusy(false);
     }
@@ -978,6 +979,8 @@ function PaymentsEditCard(
         {PAY_ROWS.map((r) => {
           const st = rows[r.key];
           const bad = mismatch(r);
+          const label = tFor(lang, r.label);
+          const placeholder = r.placeholder ? tFor(lang, r.placeholder) : "";
           return (
             <div
               key={r.key}
@@ -998,7 +1001,7 @@ function PaymentsEditCard(
                     })}
                 />
                 <span style="font-weight:700;font-size:14px;color:var(--fg)">
-                  {r.label}
+                  {label}
                 </span>
               </label>
               {st.enabled && r.field !== null && (
@@ -1012,7 +1015,7 @@ function PaymentsEditCard(
                       style={inputStyle}
                       value={st.value}
                       disabled={busy}
-                      placeholder={r.placeholder}
+                      placeholder={placeholder}
                       onInput={(e) =>
                         patchRow(r.key, {
                           value: (e.target as HTMLInputElement).value,
@@ -1029,7 +1032,7 @@ function PaymentsEditCard(
                         }`}
                         value={st.confirm}
                         disabled={busy}
-                        placeholder={r.placeholder}
+                        placeholder={placeholder}
                         onInput={(e) =>
                           patchRow(r.key, {
                             confirm: (e.target as HTMLInputElement).value,
@@ -1064,7 +1067,7 @@ function DangerZoneCard({ snapshot }: { snapshot: ProfileSnapshot }) {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const t = tr(snapshot.user.language === "es");
+  const t = tr(langSignal.value === "es");
   const armed = confirm.trim().toUpperCase() === "DELETE";
 
   async function wipe() {
@@ -1100,7 +1103,7 @@ function DangerZoneCard({ snapshot }: { snapshot: ProfileSnapshot }) {
           value={confirm}
           disabled={busy}
           placeholder="DELETE"
-          aria-label="Type DELETE to confirm account wipe"
+          aria-label={t.ariaWipeConfirm}
           onInput={(e) => setConfirm((e.target as HTMLInputElement).value)}
         />
       </label>
@@ -1156,12 +1159,15 @@ export default function SettingsPage() {
   if (s.error || !s.profile) {
     return (
       <div class="dashpage-error">
-        Couldn't load profile: {s.error ?? "unknown error"}
+        {tFor("en", "settings.loadError", {
+          error: s.error ?? tFor("en", "settings.unknownError"),
+        })}
       </div>
     );
   }
 
   const p = s.profile;
+  const lang: Lang = p.user.language === "es" ? "es" : "en";
   const t = tr(p.user.language === "es");
   const onSaved = (next: Partial<ProfileSnapshot>) =>
     setS((cur) =>
@@ -1174,7 +1180,7 @@ export default function SettingsPage() {
         <div class="hero__copy">
           <h1 class="hero__title">
             {p.identity?.businessName ?? p.identity?.displayName ??
-              p.user.name ?? "Your business"}
+              p.user.name ?? tFor(lang, "settings.yourBusiness")}
           </h1>
           <p class="hero__sub">{t.heroSub}</p>
         </div>
@@ -1224,7 +1230,9 @@ export default function SettingsPage() {
             [
               t.paymentTerms,
               p.contractDefaults?.paymentTermsDays != null
-                ? `Net ${p.contractDefaults.paymentTermsDays}`
+                ? tFor(lang, "settings.contractDefaults.net", {
+                  n: p.contractDefaults.paymentTermsDays,
+                })
                 : null,
             ],
             [

@@ -22,6 +22,7 @@
 
 import { dashboardClient, type DashboardStats } from "../clients/dashboard.ts";
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
+import { setLang } from "./i18n.ts";
 
 export interface CachedDash {
   stats: DashboardStats | null;
@@ -63,6 +64,10 @@ export function readCached(): CachedDash | null {
 
 function writeCached(snap: CachedDash) {
   cached = snap;
+  // Seed the app's UI language from the server's source of truth so every
+  // island reading langSignal renders in the contractor's chosen language.
+  const plang = snap.profile?.user?.language;
+  if (plang === "en" || plang === "es") setLang(plang);
   try {
     globalThis.sessionStorage?.setItem(STORAGE_KEY, JSON.stringify(snap));
   } catch { /* SSR / private mode */ }

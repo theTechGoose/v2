@@ -6,6 +6,7 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { t } from "@core/i18n/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -128,7 +129,7 @@ export class SendContract {
       }
     }
 
-    const dividerContent = buildDivider({ channel, emailedTo, emailFailureReason, textedTo, smsFailureReason });
+    const dividerContent = buildDivider({ channel, emailedTo, emailFailureReason, textedTo, smsFailureReason, lang: input.language ?? "en" });
     const note = await this.messages.append({
       conversationId: conv.id,
       role: "system",
@@ -160,26 +161,27 @@ function buildDivider(o: {
   emailFailureReason?: string;
   textedTo?: string;
   smsFailureReason?: string;
+  lang: "en" | "es";
 }): string {
-  const { channel, emailedTo, emailFailureReason, textedTo, smsFailureReason } = o;
+  const { channel, emailedTo, emailFailureReason, textedTo, smsFailureReason, lang } = o;
   const emailOk = !!emailedTo;
   const smsOk = !!textedTo;
 
   if (channel === "email") {
-    if (emailOk) return `Contract emailed to ${emailedTo}`;
-    if (emailFailureReason) return `Contract email failed — ${emailFailureReason}`;
-    return "Contract drafted — no email on file for this customer. Add one to deliver.";
+    if (emailOk) return t(lang, "sendContract.divider.emailed", { emailedTo: emailedTo! });
+    if (emailFailureReason) return t(lang, "sendContract.divider.emailFailed", { reason: emailFailureReason });
+    return t(lang, "sendContract.divider.noEmail");
   }
 
   if (channel === "sms") {
-    if (smsOk) return `Contract texted to ${textedTo}`;
-    if (smsFailureReason) return `Contract text failed — ${smsFailureReason}`;
-    return "Contract drafted — no phone on file for this customer. Add one to deliver.";
+    if (smsOk) return t(lang, "sendContract.divider.texted", { textedTo: textedTo! });
+    if (smsFailureReason) return t(lang, "sendContract.divider.textFailed", { reason: smsFailureReason });
+    return t(lang, "sendContract.divider.noPhone");
   }
 
   // both
-  if (emailOk && smsOk) return `Contract emailed to ${emailedTo} and texted to ${textedTo}`;
-  if (emailOk) return `Contract emailed to ${emailedTo} — text failed (${smsFailureReason ?? "no recipient"})`;
-  if (smsOk) return `Contract texted to ${textedTo} — email failed (${emailFailureReason ?? "no recipient"})`;
-  return `Contract not delivered — email: ${emailFailureReason ?? "no recipient"}; text: ${smsFailureReason ?? "no recipient"}`;
+  if (emailOk && smsOk) return t(lang, "sendContract.divider.emailedAndTexted", { emailedTo: emailedTo!, textedTo: textedTo! });
+  if (emailOk) return t(lang, "sendContract.divider.emailedTextFailed", { emailedTo: emailedTo!, reason: smsFailureReason ?? t(lang, "sendContract.divider.noRecipient") });
+  if (smsOk) return t(lang, "sendContract.divider.textedEmailFailed", { textedTo: textedTo!, reason: emailFailureReason ?? t(lang, "sendContract.divider.noRecipient") });
+  return t(lang, "sendContract.divider.notDelivered", { emailReason: emailFailureReason ?? t(lang, "sendContract.divider.noRecipient"), smsReason: smsFailureReason ?? t(lang, "sendContract.divider.noRecipient") });
 }

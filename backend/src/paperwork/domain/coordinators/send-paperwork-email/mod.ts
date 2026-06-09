@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { type Lang, t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -116,7 +117,10 @@ export class SendPaperworkEmail {
       // confused customers (audit2 N9) since the body and CTA copy
       // present this as a quote review. Reuse the quote subject builder
       // with the resolved quote (or a synthesized one when missing).
-      const quoteForSubject = quoteForBody ?? quoteFromContract(contract);
+      // The email goes to the customer, so it follows the contractor's
+      // outgoing-comms language (default en), not their UI language.
+      const lang: Lang = senderBiz?.commsLanguage === "es" ? "es" : "en";
+      const quoteForSubject = quoteForBody ?? quoteFromContract(contract, lang);
       subject = renderQuoteSubject(
         quoteForSubject,
         sender,
@@ -124,7 +128,7 @@ export class SendPaperworkEmail {
         customer,
       );
       htmlBody = renderQuoteHtml(
-        quoteForBody ?? quoteFromContract(contract),
+        quoteForBody ?? quoteFromContract(contract, lang),
         customer,
         sender,
         senderBiz,
@@ -134,8 +138,11 @@ export class SendPaperworkEmail {
       const invoice = await this.invoices.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
       if (!recipient) recipient = customer?.email ?? undefined;
-      subject = renderInvoiceSubject(invoice, sender);
-      htmlBody = renderInvoiceHtml(invoice, customer, sender);
+      // The email goes to the customer, so it follows the contractor's
+      // outgoing-comms language (default en), not their UI language.
+      const lang: Lang = senderBiz?.commsLanguage === "es" ? "es" : "en";
+      subject = renderInvoiceSubject(invoice, sender, lang);
+      htmlBody = renderInvoiceHtml(invoice, customer, sender, lang);
     }
 
     if (!recipient) {
@@ -292,13 +299,15 @@ const COLOR_LINE = "#e3e8e6";
 const COLOR_BG = "#f7f6f1";
 const COLOR_CARD = "#ffffff";
 
-function senderName(u: User | undefined): string {
-  return u?.name?.trim() || "your contractor";
+function senderName(u: User | undefined, lang: Lang): string {
+  return u?.name?.trim() || t(lang, "paperworkEmail.senderFallback");
 }
 
-function customerGreeting(c: Customer | undefined): string {
+function customerGreeting(c: Customer | undefined, lang: Lang): string {
   const name = c?.name?.trim();
-  return name ? `Hi ${escapeHtml(name)},` : "Hi there,";
+  return name
+    ? t(lang, "paperworkEmail.shell.greeting", { name: escapeHtml(name) })
+    : t(lang, "paperworkEmail.shell.greetingFallback");
 }
 
 function fmtUSD(cents: number | undefined): string {
@@ -334,7 +343,8 @@ function fmtDate(iso: string | undefined): string {
  *  CTA button row, footer). All inline-styled — Gmail/Outlook strip <style>. */
 function shell(opts: {
   preheader: string;
-  kind: "Quote" | "Agreement" | "Invoice";
+  /** Localized document-kind label shown in the eyebrow + <title>. */
+  kindLabel: string;
   docNumber: string;
   drafted: string;
   greeting: string;
@@ -343,10 +353,11 @@ function shell(opts: {
   ctaLabel: string;
   ctaUrl: string;
   sender: User | undefined;
+  lang: Lang;
 }): string {
   const {
     preheader,
-    kind,
+    kindLabel,
     docNumber,
     drafted,
     greeting,
@@ -355,6 +366,7 @@ function shell(opts: {
     ctaLabel,
     ctaUrl,
     sender,
+    lang,
   } = opts;
   const senderEmailLine = sender?.email
     ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px"><a href="mailto:${
@@ -376,7 +388,7 @@ function shell(opts: {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light only">
   <meta name="supported-color-schemes" content="light only">
-  <title>${escapeHtml(kind)} ${escapeHtml(docNumber)}</title>
+  <title>${escapeHtml(kindLabel)} ${escapeHtml(docNumber)}</title>
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
   <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
@@ -393,14 +405,16 @@ function shell(opts: {
             <tr>
               <td style="vertical-align:top">
                 <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_GREEN};">${
-    escapeHtml(kind)
+    escapeHtml(kindLabel)
   }</div>
                 <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:${COLOR_TEAL};margin-top:4px;">${
     escapeHtml(docNumber)
   }</div>
               </td>
               <td style="vertical-align:top;text-align:right;">
-                <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED};">Drafted</div>
+                <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED};">${
+    escapeHtml(t(lang, "paperworkEmail.shell.draftedLabel"))
+  }</div>
                 <div style="color:${COLOR_INK};font-weight:700;margin-top:4px;">${
     escapeHtml(drafted)
   }</div>
@@ -420,15 +434,19 @@ function shell(opts: {
   }" style="display:inline-block;background:${COLOR_GREEN};color:#ffffff;text-decoration:none;font-weight:800;font-size:15px;padding:14px 28px;border-radius:12px;box-shadow:0 6px 14px rgba(81,152,67,0.35);">${
     escapeHtml(ctaLabel)
   } →</a>
-          <div style="margin-top:10px;font-size:12px;color:${COLOR_MUTED};">or paste this link into your browser:<br><a href="${
+          <div style="margin-top:10px;font-size:12px;color:${COLOR_MUTED};">${
+    escapeHtml(t(lang, "paperworkEmail.pasteLink"))
+  }<br><a href="${
     escapeAttr(ctaUrl)
   }" style="color:${COLOR_MUTED};">${escapeHtml(ctaUrl)}</a></div>
         </td></tr>
         <tr><td style="padding:32px 32px 0;"><div style="height:1px;background:${COLOR_LINE};"></div></td></tr>
         <tr><td style="padding:20px 32px 28px;">
-          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED};">From</div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED};">${
+    escapeHtml(t(lang, "paperworkEmail.shell.fromLabel"))
+  }</div>
           <div style="margin-top:6px;font-weight:800;color:${COLOR_TEAL};font-size:15px;">${
-    escapeHtml(senderName(sender))
+    escapeHtml(senderName(sender, lang))
   }</div>
           ${senderEmailLine}
           ${senderPhoneLine}
@@ -451,20 +469,25 @@ function renderQuoteSubject(
   senderBiz: BusinessIdentity | undefined,
   customer: Customer | undefined,
 ): string {
+  // Roadmap p.13: the SUBJECT goes to the customer, so it follows the
+  // contractor's outgoing-comms language (default en), not their UI language.
+  const lang: Lang = senderBiz?.commsLanguage === "es" ? "es" : "en";
   // Roadmap p.7: drop the literal quote marks → {Business} Quote for {Customer}, {Job Name}
   const businessName = senderBiz?.businessName?.trim() ||
     senderBiz?.legalName?.trim() ||
     sender?.name?.trim() ||
-    "Paperwork Monster";
-  const customerName = customer?.name?.trim() || "Customer";
-  const jobName = q.jobName?.trim() ||
-    q.summary?.replace(/^\s*quote\s*:\s*/i, "").trim() ||
-    "Project";
-  // Roadmap p.13: the SUBJECT goes to the customer, so it follows the
-  // contractor's outgoing-comms language (default en), not their UI language.
-  return senderBiz?.commsLanguage === "es"
-    ? `${businessName} Cotización para ${customerName}, ${jobName}`
-    : `${businessName} Quote for ${customerName}, ${jobName}`;
+    t(lang, "brand.name");
+  const customerName = customer?.name?.trim() ||
+    t(lang, "paperworkEmail.subject.customerFallback");
+  const jobName = (q.jobNameByLang?.[lang] ?? q.jobName)?.trim() ||
+    (q.summaryByLang?.[lang] ?? q.summary)?.replace(/^\s*quote\s*:\s*/i, "")
+      .trim() ||
+    t(lang, "paperworkEmail.subject.jobFallback");
+  return t(lang, "paperworkEmail.quote.subject", {
+    businessName,
+    customerName,
+    jobName,
+  });
 }
 
 /**
@@ -499,39 +522,45 @@ function renderQuoteHtml(
   // Roadmap p.13: the email goes to the customer, so it follows the
   // contractor's outgoing-comms language (default en), not their UI language.
   const es = senderBiz?.commsLanguage === "es";
+  const lang: Lang = es ? "es" : "en";
   const L = {
-    docLang: es ? "es" : "en",
-    titleWord: es ? "Cotización" : "Quote",
-    quoteTag: es ? "Cotización" : "Quote",
-    drafted: es ? "Creada" : "Drafted",
-    preparedFor: es ? "Preparada para" : "Prepared for",
-    by: es ? "por" : "by",
-    introTail: es
-      ? "Lectura rápida — las partidas abajo, el total en verde, y un botón cuando estés listo."
-      : "Quick read — line items below, the total in green, and a button when you're ready.",
-    jobDetails: es ? "Detalles del trabajo" : "Job details",
-    whatWeHandle: es ? "Esto es lo que haremos" : "Here's what we'll handle",
-    estimatedTotal: es ? "Total estimado" : "Estimated total",
-    allIn: es ? "todo incluido, sin sorpresas" : "all in, no surprises",
-    pasteLink: es
-      ? "o pega este enlace en tu navegador:"
-      : "or paste this link into your browser:",
-    whatNext: es ? "Qué sigue" : "What happens next",
-    questions: es ? "¿Preguntas? Escríbeme" : "Questions? Reach out",
-    yourContractor: es ? "Tu contratista" : "Your contractor",
-    steps: es
-      ? [
-        ["1", "Aceptas", "Toca el botón de arriba"],
-        ["2", "Firmas el acuerdo", "Firma electrónica, toma un minuto"],
-        ["3", "Eliges fecha de inicio", "Te escribimos para confirmar"],
-        ["4", "Listo", "Recibo + garantía en tu correo"],
-      ]
-      : [
-        ["1", "You accept", "Tap the button above"],
-        ["2", "Sign the agreement", "Quick e-sign, takes a minute"],
-        ["3", "Pick a start day", "We'll text to confirm"],
-        ["4", "Done & dusted", "Receipt + warranty in your inbox"],
+    docLang: lang,
+    titleWord: t(lang, "paperworkEmail.quote.titleWord"),
+    quoteTag: t(lang, "paperworkEmail.quote.titleWord"),
+    drafted: t(lang, "paperworkEmail.shell.draftedLabel"),
+    preparedFor: t(lang, "paperworkEmail.quote.preparedFor"),
+    by: t(lang, "paperworkEmail.quote.by"),
+    introTail: t(lang, "paperworkEmail.quote.introTail"),
+    jobDetails: t(lang, "paperworkEmail.quote.jobDetails"),
+    whatWeHandle: t(lang, "paperworkEmail.quote.whatWeHandle"),
+    estimatedTotal: t(lang, "paperworkEmail.quote.estimatedTotal"),
+    allIn: t(lang, "paperworkEmail.quote.allIn"),
+    pasteLink: t(lang, "paperworkEmail.pasteLink"),
+    whatNext: t(lang, "paperworkEmail.quote.whatNext"),
+    questions: t(lang, "paperworkEmail.quote.questions"),
+    yourContractor: t(lang, "paperworkEmail.quote.yourContractor"),
+    steps: [
+      [
+        "1",
+        t(lang, "paperworkEmail.quote.step1Title"),
+        t(lang, "paperworkEmail.quote.step1Sub"),
       ],
+      [
+        "2",
+        t(lang, "paperworkEmail.quote.step2Title"),
+        t(lang, "paperworkEmail.quote.step2Sub"),
+      ],
+      [
+        "3",
+        t(lang, "paperworkEmail.quote.step3Title"),
+        t(lang, "paperworkEmail.quote.step3Sub"),
+      ],
+      [
+        "4",
+        t(lang, "paperworkEmail.quote.step4Title"),
+        t(lang, "paperworkEmail.quote.step4Sub"),
+      ],
+    ],
   };
   // CTA points at the contract page when a contract has been finalized;
   // otherwise the legacy quote-public page (still cents-correct, still
@@ -540,10 +569,8 @@ function renderQuoteHtml(
     ? `${APP_URL}/c/${contract.id}`
     : `${APP_URL}/q/${q.id}`;
   const ctaLabel = contract
-    ? (es ? "¿Todo bien? Firma el acuerdo" : "Sound good? Sign the agreement")
-    : (es
-      ? "¿Todo bien? Acepta esta cotización"
-      : "Sound good? Accept this quote");
+    ? t(lang, "paperworkEmail.quote.ctaSign")
+    : t(lang, "paperworkEmail.quote.ctaAccept");
 
   const customerFirst = customer?.name?.trim().split(/\s+/)[0];
   const senderFirst = sender?.name?.trim()?.split(/\s+/)[0];
@@ -557,14 +584,16 @@ function renderQuoteHtml(
     return parts[0].slice(0, 2).toUpperCase();
   })();
 
-  const summaryClean = (q.summary ?? (es ? "Tu proyecto" : "Your project"))
+  const summaryClean = (q.summary ?? t(lang, "paperworkEmail.quote.summaryFallback"))
     .replace(/^\s*quote\s*:\s*/i, "")
     .trim();
   // Title case for visual weight in the hero.
   const heroTitle = summaryClean.replace(/\b\w/g, (c) => c.toUpperCase());
 
   const preheader = `${
-    customerFirst ? `${es ? "Para" : "For"} ${customerFirst} — ` : ""
+    customerFirst
+      ? `${t(lang, "paperworkEmail.quote.preheaderFor")} ${customerFirst} — `
+      : ""
   }${summaryClean} · ${fmtUSD(total)}`;
 
   // Line items rendered as visual rows (not a generic header-table) — each
@@ -575,7 +604,9 @@ function renderQuoteHtml(
     const qty = li.quantity ?? 1;
     const subBits = [
       qty > 1 ? `${qty} ${escapeHtml(li.unit ?? "ea")}` : null,
-      qty > 1 ? `${fmtUSD(li.price ?? 0)} each` : null,
+      qty > 1
+        ? t(lang, "paperworkEmail.quote.lineEach", { price: fmtUSD(li.price ?? 0) })
+        : null,
     ].filter(Boolean).join(" · ");
     const sub = subBits
       ? `<div style="margin-top:2px;color:${COLOR_MUTED};font-size:12px">${subBits}</div>`
@@ -626,17 +657,17 @@ function renderQuoteHtml(
     }</p>`;
 
   const greeting = customerFirst
-    ? `${es ? "Hola" : "Hi"} ${escapeHtml(customerFirst)} 👋`
-    : (es ? `Hola 👋` : `Hi there 👋`);
+    ? t(lang, "paperworkEmail.quote.greeting", { name: escapeHtml(customerFirst) })
+    : t(lang, "paperworkEmail.quote.greetingFallback");
   const senderBizName = senderBiz?.businessName?.trim() ||
     (senderBiz as { legalName?: string } | undefined)?.legalName?.trim();
   const introLine = senderFirst
     ? `${escapeHtml(senderFirst)}${
-      senderBizName ? ` ${es ? "de" : "from"} ${escapeHtml(senderBizName)}` : ""
-    } ${es ? "preparó esto para ti." : "put this together for you."}`
-    : (es
-      ? `Tu contratista preparó esto para ti.`
-      : `Your contractor put this together for you.`);
+      senderBizName
+        ? ` ${t(lang, "paperworkEmail.quote.introFrom")} ${escapeHtml(senderBizName)}`
+        : ""
+    } ${t(lang, "paperworkEmail.quote.introTailLine")}`
+    : t(lang, "paperworkEmail.quote.introFallback");
   const senderRoleLine = sender?.name?.trim()
     ? `${escapeHtml(sender.name.trim())}`
     : L.yourContractor;
@@ -827,9 +858,13 @@ function renderQuoteHtml(
         </td></tr>
 
       </table>
-      <div style="margin-top:18px;font-size:11px;color:#a8b2b3;letter-spacing:.04em">Sent because ${
-    escapeHtml(senderFirst ?? "your contractor")
-  } drafted this for you</div>
+      <div style="margin-top:18px;font-size:11px;color:#a8b2b3;letter-spacing:.04em">${
+    escapeHtml(
+      t(lang, "paperworkEmail.quote.sentBecause", {
+        name: senderFirst ?? t(lang, "paperworkEmail.senderFallback"),
+      }),
+    )
+  }</div>
     </td></tr>
   </table>
 </body>
@@ -844,13 +879,14 @@ function renderQuoteHtml(
  * email body — even contracts that lost their linked quote get a
  * dignified-looking email with the contract value as the total.
  */
-function quoteFromContract(c: Contract): Quote {
+function quoteFromContract(c: Contract, lang: Lang): Quote {
+  const serviceAgreement = t(lang, "paperworkEmail.contract.serviceAgreement");
   return {
     id: c.id,
     userId: c.userId,
-    summary: "Service Agreement",
+    summary: serviceAgreement,
     lineItems: [{
-      description: "Service Agreement",
+      description: serviceAgreement,
       quantity: 1,
       unit: "ea",
       price: c.totalAmount ?? 0,
@@ -864,38 +900,58 @@ function quoteFromContract(c: Contract): Quote {
 
 // ---------- invoice -----------------------------------------------------------
 
-function renderInvoiceSubject(i: Invoice, sender: User | undefined): string {
+function renderInvoiceSubject(
+  i: Invoice,
+  sender: User | undefined,
+  lang: Lang,
+): string {
   const who = sender?.name?.trim();
-  const tail = `Invoice #${i.id.slice(0, 8)} — due ${fmtDate(i.dueDate)}`;
-  return who ? `${tail} from ${who}` : tail;
+  const tail = t(lang, "paperworkEmail.invoice.subjectTail", {
+    docNumber: i.id.slice(0, 8),
+    dueDate: fmtDate(i.dueDate),
+  });
+  return who
+    ? t(lang, "paperworkEmail.invoice.subjectFrom", { tail, who })
+    : tail;
 }
 
 function renderInvoiceHtml(
   i: Invoice,
   customer: Customer | undefined,
   sender: User | undefined,
+  lang: Lang,
 ): string {
   const docNumber = `#${i.id.slice(0, 8)}`;
   const drafted = fmtDate(i.issuedDate ?? new Date().toISOString());
   const amount = i.amount;
 
   const body = `
-    <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED};">Invoice details</div>
+    <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED};">${
+    escapeHtml(t(lang, "paperworkEmail.invoice.detailsLabel"))
+  }</div>
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:8px;border-collapse:collapse;">
-      <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">Issued</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;">${
+      <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">${
+    escapeHtml(t(lang, "paperworkEmail.invoice.issuedLabel"))
+  }</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;">${
     escapeHtml(fmtDate(i.issuedDate))
   }</td></tr>
-      <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">Due</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;">${
+      <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">${
+    escapeHtml(t(lang, "paperworkEmail.invoice.dueLabel"))
+  }</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;">${
     escapeHtml(fmtDate(i.dueDate))
   }</td></tr>
-      <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">Status</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;text-transform:capitalize;">${
-    escapeHtml(i.status ?? "pending")
+      <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">${
+    escapeHtml(t(lang, "paperworkEmail.invoice.statusLabel"))
+  }</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;text-transform:capitalize;">${
+    escapeHtml(i.status ?? t(lang, "paperworkEmail.invoice.statusFallback"))
   }</td></tr>
     </table>
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:18px;background:linear-gradient(135deg,rgba(81,152,67,0.10),rgba(72,158,95,0.04));border:1px solid rgba(72,158,95,0.20);border-radius:14px;">
       <tr>
         <td style="padding:18px 20px;">
-          <div style="font-size:11px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:${COLOR_GREEN};">Amount due</div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:${COLOR_GREEN};">${
+    escapeHtml(t(lang, "paperworkEmail.invoice.amountDueLabel"))
+  }</div>
         </td>
         <td style="padding:18px 20px;text-align:right;">
           <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:${COLOR_TEAL};">${
@@ -906,19 +962,21 @@ function renderInvoiceHtml(
     </table>`;
 
   return shell({
-    preheader: `Invoice ${docNumber} — ${fmtUSD(amount)} due ${
-      fmtDate(i.dueDate)
-    }`,
-    kind: "Invoice",
+    preheader: t(lang, "paperworkEmail.invoice.preheader", {
+      docNumber,
+      amount: fmtUSD(amount),
+      dueDate: fmtDate(i.dueDate),
+    }),
+    kindLabel: t(lang, "paperworkEmail.invoice.kindLabel"),
     docNumber,
     drafted,
-    greeting: customerGreeting(customer),
-    intro:
-      `Thanks for the work — here's the invoice. Tap below to view and pay.`,
+    greeting: customerGreeting(customer, lang),
+    intro: t(lang, "paperworkEmail.invoice.intro"),
     body,
-    ctaLabel: "View & pay invoice",
+    ctaLabel: t(lang, "paperworkEmail.invoice.cta"),
     ctaUrl: `${APP_URL}/i/${i.id}`,
     sender,
+    lang,
   });
 }
 

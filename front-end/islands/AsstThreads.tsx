@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { assistantClient, type Conversation } from "../clients/assistant.ts";
+import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 
 interface Props {
   initialThreads: Conversation[];
   activeId?: string;
+  lang?: Lang;
 }
 
 type Chip = "sent" | "draft" | "needs" | "paid";
@@ -13,7 +15,12 @@ const POLL_MS = 8_000;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
-export default function AsstThreads({ initialThreads, activeId }: Props) {
+export default function AsstThreads(
+  { initialThreads, activeId }: Props,
+) {
+  // Self-source the live UI language so this island re-renders when the
+  // language flips (SettingsPage), rather than freezing on the SSR seed.
+  const lang = langSignal.value;
   const [threads, setThreads] = useState<Conversation[]>(initialThreads);
   // Roadmap p.4: QuickBooks-style minimize for the conversation list. We
   // toggle a class on the parent .asst grid so its first column narrows to a
@@ -74,7 +81,7 @@ export default function AsstThreads({ initialThreads, activeId }: Props) {
   const sorted = [...threads].sort((a, b) =>
     tsOf(b.updatedAt) - tsOf(a.updatedAt)
   );
-  const groups = groupByRecency(sorted);
+  const groups = groupByRecency(sorted, lang);
   const total = threads.length;
 
   return (
@@ -88,9 +95,11 @@ export default function AsstThreads({ initialThreads, activeId }: Props) {
           class="threads__toggle"
           onClick={toggleCollapsed}
           aria-label={collapsed
-            ? "Expand conversations"
-            : "Collapse conversations"}
-          title={collapsed ? "Expand" : "Collapse"}
+            ? tFor(lang, "asstThreads.expandConversations")
+            : tFor(lang, "asstThreads.collapseConversations")}
+          title={collapsed
+            ? tFor(lang, "asstThreads.expand")
+            : tFor(lang, "asstThreads.collapse")}
         >
           <I
             d={collapsed
@@ -107,31 +116,33 @@ export default function AsstThreads({ initialThreads, activeId }: Props) {
             size={16}
           />
         </button>
-        <h3 class="threads__title">Conversations</h3>
+        <h3 class="threads__title">{tFor(lang, "asstThreads.conversations")}</h3>
         <span class="threads__count">{total}</span>
       </div>
       <a
         href="/assistant"
         class="threads__new"
         style="text-decoration:none"
-        title="New conversation"
+        title={tFor(lang, "asstThreads.newConversation")}
       >
         <I d={ICN.plus} size={14} sw={2.5} />
-        <span class="threads__new-label">New conversation</span>
-        <span class="threads__new-kbd">⌘N</span>
+        <span class="threads__new-label">
+          {tFor(lang, "asstThreads.newConversation")}
+        </span>
+        <span class="threads__new-kbd">{tFor(lang, "asstThreads.newKbd")}</span>
       </a>
       <div class="threads__list">
         {groups.length === 0
           ? (
             <div class="threads__empty">
-              No conversations yet — start one below.
+              {tFor(lang, "asstThreads.empty")}
             </div>
           )
           : groups.map((group) => (
             <div key={group.label}>
               <div class="threads__group-label">{group.label}</div>
               {group.items.map((c) => {
-                const chip = deriveChip(c);
+                const chip = deriveChip(c, lang);
                 return (
                   <a
                     key={c.id}
@@ -146,12 +157,14 @@ export default function AsstThreads({ initialThreads, activeId }: Props) {
                         ? (
                           <span
                             class="thread__unread-dot"
-                            aria-label="new event"
+                            aria-label={tFor(lang, "asstThreads.newEvent")}
                           />
                         )
                         : null}
-                      <span class="thread__client">{titleFor(c)}</span>
-                      <span class="thread__time">{fmtTime(c.updatedAt)}</span>
+                      <span class="thread__client">{titleFor(c, lang)}</span>
+                      <span class="thread__time">
+                        {fmtTime(c.updatedAt, lang)}
+                      </span>
                     </div>
                     <div class="thread__preview">{c.preview ?? "—"}</div>
                     <div class="thread__chips">
@@ -169,8 +182,9 @@ export default function AsstThreads({ initialThreads, activeId }: Props) {
   );
 }
 
-function titleFor(c: Conversation): string {
-  return c.customerName?.trim() || c.title?.trim() || "New conversation";
+function titleFor(c: Conversation, lang: Lang): string {
+  return c.customerName?.trim() || c.title?.trim() ||
+    tFor(lang, "asstThreads.newConversation");
 }
 
 /**
@@ -179,20 +193,35 @@ function titleFor(c: Conversation): string {
  * invoice → contract → quote — so the chip reflects the latest stage
  * the conversation has reached, not the earliest.
  */
-function deriveChip(c: Conversation): { kind: Chip; label: string } {
+function deriveChip(
+  c: Conversation,
+  lang: Lang,
+): { kind: Chip; label: string } {
   // Walk the chain backwards (latest stage wins). Customer acceptance
   // is a single event on the contract — quoteStatus only ever reaches
   // "sent" in this flow, so no quote-accepted branch is needed.
-  if (c.invoiceStatus === "paid") return { kind: "paid", label: "Paid" };
-  if (c.invoiceStatus === "sent") return { kind: "sent", label: "Invoiced" };
-  if (c.contractStatus === "accepted") return { kind: "paid", label: "Signed" };
-  if (c.contractStatus === "sent") {
-    return { kind: "sent", label: "Contract sent" };
+  if (c.invoiceStatus === "paid") {
+    return { kind: "paid", label: tFor(lang, "status.paid") };
   }
-  if (c.contractStatus === "draft") return { kind: "needs", label: "Contract" };
-  if (c.quoteStatus === "sent") return { kind: "sent", label: "Quote sent" };
-  if (c.currentPhase === "terms") return { kind: "needs", label: "Terms" };
-  return { kind: "draft", label: "Drafting" };
+  if (c.invoiceStatus === "sent") {
+    return { kind: "sent", label: tFor(lang, "asstThreads.chip.invoiced") };
+  }
+  if (c.contractStatus === "accepted") {
+    return { kind: "paid", label: tFor(lang, "status.signed") };
+  }
+  if (c.contractStatus === "sent") {
+    return { kind: "sent", label: tFor(lang, "asstThreads.chip.contractSent") };
+  }
+  if (c.contractStatus === "draft") {
+    return { kind: "needs", label: tFor(lang, "asstThreads.chip.contract") };
+  }
+  if (c.quoteStatus === "sent") {
+    return { kind: "sent", label: tFor(lang, "asstThreads.chip.quoteSent") };
+  }
+  if (c.currentPhase === "terms") {
+    return { kind: "needs", label: tFor(lang, "asstThreads.chip.terms") };
+  }
+  return { kind: "draft", label: tFor(lang, "asstThreads.chip.drafting") };
 }
 
 function tsOf(iso: string): number {
@@ -208,22 +237,31 @@ function tsOf(iso: string): number {
   return 0;
 }
 
-const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAY_KEYS = [
+  "asstThreads.weekday.sun",
+  "asstThreads.weekday.mon",
+  "asstThreads.weekday.tue",
+  "asstThreads.weekday.wed",
+  "asstThreads.weekday.thu",
+  "asstThreads.weekday.fri",
+  "asstThreads.weekday.sat",
+];
 
-function fmtTime(iso: string): string {
+function fmtTime(iso: string, lang: Lang): string {
   const t = tsOf(iso);
   if (!t) return "";
   const diff = Date.now() - t;
-  if (diff < 60_000) return "just now";
+  if (diff < 60_000) return tFor(lang, "asstThreads.justNow");
   if (diff < HOUR) return `${Math.floor(diff / 60_000)}m`;
   if (diff < DAY) return `${Math.floor(diff / HOUR)}h`;
-  if (diff < 7 * DAY) return WEEKDAY_SHORT[new Date(t).getDay()];
+  if (diff < 7 * DAY) return tFor(lang, WEEKDAY_KEYS[new Date(t).getDay()]);
   const d = new Date(t);
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 function groupByRecency(
   convs: Conversation[],
+  lang: Lang,
 ): { label: string; items: Conversation[] }[] {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -243,9 +281,9 @@ function groupByRecency(
   }
 
   return [
-    { label: "Today", items: today },
-    { label: "Yesterday", items: yesterday },
-    { label: "This week", items: week },
-    { label: "Earlier", items: older },
+    { label: tFor(lang, "asstThreads.group.today"), items: today },
+    { label: tFor(lang, "asstThreads.group.yesterday"), items: yesterday },
+    { label: tFor(lang, "asstThreads.group.thisWeek"), items: week },
+    { label: tFor(lang, "asstThreads.group.earlier"), items: older },
   ].filter((g) => g.items.length > 0);
 }

@@ -10,6 +10,46 @@ export type Lang = "en" | "es";
 
 export const langSignal = signal<Lang>("en");
 
+/** Narrow an arbitrary string to a valid Lang, else null. */
+function asLang(v: string | null | undefined): Lang | null {
+  return v === "en" || v === "es" ? v : null;
+}
+
+/**
+ * Reflect the active language into the current URL's `?lang=` query param via
+ * history.replaceState — no reload, no new history entry. Call this from the
+ * language toggle so the URL stays shareable/seedable. SSR-guarded.
+ */
+export function writeLangToUrl(lang: Lang): void {
+  if (typeof document === "undefined" || !globalThis.location) return;
+  try {
+    const url = new URL(globalThis.location.href);
+    if (url.searchParams.get("lang") === lang) return;
+    url.searchParams.set("lang", lang);
+    globalThis.history?.replaceState(null, "", url.href);
+  } catch {
+    /* noop — URL stays as-is */
+  }
+}
+
+// Client-only seed: resolve the initial language exactly once at module load.
+// Priority: ?lang= (URL) > localStorage["pm:lang"] > default "en". The resolved
+// value is mirrored back into localStorage so it survives a later navigation
+// that drops the query param. Guarded because this module is imported in SSR.
+if (typeof document !== "undefined" && globalThis.location) {
+  try {
+    const fromQuery = asLang(
+      new URLSearchParams(globalThis.location.search).get("lang"),
+    );
+    const fromStorage = asLang(globalThis.localStorage?.getItem("pm:lang"));
+    const resolved: Lang = fromQuery ?? fromStorage ?? "en";
+    langSignal.value = resolved;
+    globalThis.localStorage?.setItem("pm:lang", resolved);
+  } catch {
+    /* keep the default "en" */
+  }
+}
+
 interface Card {
   t: string;
   d: string;

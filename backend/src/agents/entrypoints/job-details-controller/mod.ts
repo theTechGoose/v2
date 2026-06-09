@@ -4,6 +4,7 @@ import { PolishJobDetails } from "@agents/domain/coordinators/polish-job-details
 import { GenerateJobOptions } from "@agents/domain/coordinators/generate-job-options/mod.ts";
 import { SuggestPrices } from "@agents/domain/coordinators/suggest-prices/mod.ts";
 import { ProfessionalizeBullet } from "@agents/domain/coordinators/professionalize-bullet/mod.ts";
+import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -27,6 +28,28 @@ async function commsLang(
 }
 
 /**
+ * Every language the job options should be generated in: the contractor's app
+ * language (primary — they review in it) ∪ their selected outgoing-comms
+ * languages (the customer's quote renders in one of these). Deduped, app-first.
+ */
+async function targetLangs(
+  identity: BusinessIdentityStore,
+  userId: string,
+  appLang: string,
+): Promise<string[]> {
+  const ident = await identity.get(userId).catch(() => null);
+  const comms = ident?.commsLanguages && ident.commsLanguages.length
+    ? ident.commsLanguages
+    : [ident?.commsLanguage ?? "en"];
+  const langs: string[] = [];
+  for (const l of [appLang, ...comms]) {
+    const v = l === "es" ? "es" : "en";
+    if (!langs.includes(v)) langs.push(v);
+  }
+  return langs;
+}
+
+/**
  * POST /agents/job-details/polish
  * Body: { raw: string, priceCents?: number }
  * Returns: { summary, description }
@@ -45,6 +68,7 @@ export class JobDetailsController {
     private options: GenerateJobOptions,
     private prices: SuggestPrices,
     private professionalize: ProfessionalizeBullet,
+    private translate: TranslateBullets,
     private users: UserStore,
     private sessions: SessionStore,
     private identity: BusinessIdentityStore,
@@ -122,7 +146,11 @@ export class JobDetailsController {
         userId: user.id,
         raw: b.raw,
         priceCents,
-        commsLanguage: await commsLang(this.identity, user.id),
+        langs: await targetLangs(
+          this.identity,
+          user.id,
+          user.language === "es" ? "es" : "en",
+        ),
       }),
     );
   }
@@ -148,5 +176,28 @@ export class JobDetailsController {
     return ctx.json(
       await this.professionalize.run({ userId: user.id, text: b.text }),
     );
+  }
+
+  /**
+   * POST /agents/job-details/translate
+   * Body: { texts: string[], to: "en" | "es" }
+   * Returns: { texts: string[] }
+   *
+   * Translates the contractor's (possibly edited) job-detail bullets into the
+   * customer's language when the quote is built, so the picker can stay in the
+   * contractor's app language while the agreement renders in the comms language.
+   */
+  @Post("translate")
+  async translateBullets(
+    @Context() ctx: ExecutionContext,
+    @Body() body: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const b = (body ?? {}) as { texts?: unknown; to?: unknown };
+    const texts = Array.isArray(b.texts)
+      ? b.texts.filter((x): x is string => typeof x === "string")
+      : [];
+    const to = b.to === "es" ? "es" : "en";
+    return ctx.json(await this.translate.run({ userId: user.id, texts, to }));
   }
 }

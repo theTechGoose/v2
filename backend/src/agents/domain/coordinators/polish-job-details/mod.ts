@@ -3,6 +3,7 @@ import {
   LLM_CLIENT,
   type LLMClient,
 } from "@agents/domain/business/llm/base/mod.ts";
+import { t } from "@core/i18n/mod.ts";
 
 export interface PolishJobDetailsInput {
   userId: string;
@@ -29,21 +30,7 @@ export interface PolishJobDetailsResult {
   description: string;
 }
 
-const SYSTEM_PROMPT =
-  `You polish a contractor's raw job description into clean, professional copy a customer will read on a quote.
-
-OUTPUT — return JSON only, no prose, no code fences:
-  { "jobName": "<3 words or less, Title Case>", "summary": "<short title, max 8 words, title case>", "description": "<1-3 sentences, professional, third-person>" }
-
-RULES:
-- jobName is a noun-phrase label like "Backyard Junk Removal" or "Kitchen Remodel" — three words or fewer, Title Case, no punctuation.
-- Use only facts the contractor stated. Do NOT invent materials, scope, square footage, brands, durations, or warranties.
-- No filler hype ("we'll do an amazing job"). Keep it concrete and calm.
-- No first-person ("I'll …"). Write as the contractor describing what the job covers.
-- No emojis, no exclamation marks, no marketing language.
-- Fix obvious typos and grammar. Expand shorthand (e.g. "BR" → "bathroom") only when the meaning is unambiguous.
-- If the raw text is too vague to polish meaningfully, mirror it back cleaned-up rather than padding with assumptions.
-`;
+const SYSTEM_PROMPT = t("en", "prompts.polishJobDetails.system");
 
 /**
  * PolishJobDetails — one-shot LLM pass that turns a contractor's
@@ -61,18 +48,22 @@ export class PolishJobDetails {
     const raw = input.raw.trim();
     if (!raw) throw new Error("raw is required");
 
+    const lang: "en" | "es" = input.commsLanguage === "es" ? "es" : "en";
+
     const priceLine =
       typeof input.priceCents === "number" && input.priceCents > 0
-        ? `\n\nQuoted price for this job: $${
-          (input.priceCents / 100).toLocaleString("en-US", {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 2,
-          })
-        }. Scope your description to fit that range.`
+        ? "\n\n" + t("en", "prompts.polishJobDetails.priceLine", {
+          amount: `$${
+            (input.priceCents / 100).toLocaleString("en-US", {
+              minimumFractionDigits: 0,
+              maximumFractionDigits: 2,
+            })
+          }`,
+        })
         : "";
 
     const langLine = input.commsLanguage === "es"
-      ? "\n\nWrite jobName, summary, and description in neutral Latin-American Spanish."
+      ? "\n\n" + t("en", "prompts.polishJobDetails.spanishInstruction")
       : "";
 
     let text: string;
@@ -81,14 +72,16 @@ export class PolishJobDetails {
         systemPrompt: SYSTEM_PROMPT,
         messages: [{
           role: "user",
-          content: `Raw job description:\n${raw}${priceLine}${langLine}`,
+          content: `${
+            t("en", "prompts.polishJobDetails.rawLabel")
+          }\n${raw}${priceLine}${langLine}`,
         }],
         userId: input.userId,
       });
       text = res.text ?? "";
     } catch (err) {
       console.error("[polish-job-details] llm call failed:", err);
-      return fallback(raw);
+      return fallback(raw, lang);
     }
 
     const parsed = tryParseJson(text);
@@ -107,7 +100,7 @@ export class PolishJobDetails {
         description: parsed.description.trim(),
       };
     }
-    return fallback(raw);
+    return fallback(raw, lang);
   }
 }
 
@@ -154,10 +147,10 @@ function titleCaseWord(w: string): string {
   return w[0].toUpperCase() + w.slice(1).toLowerCase();
 }
 
-function fallback(raw: string): PolishJobDetailsResult {
+function fallback(raw: string, lang: "en" | "es"): PolishJobDetailsResult {
   const firstLine = raw.split(/\n/)[0].trim();
   const summaryWords = firstLine.split(/\s+/).slice(0, 8).join(" ");
-  const summary = summaryWords || "New job";
+  const summary = summaryWords || t(lang, "polishJobDetails.fallbackSummary");
   return {
     summary,
     jobName: deriveJobName(summary),

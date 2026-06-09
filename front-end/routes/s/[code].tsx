@@ -8,6 +8,7 @@
  */
 import { define } from "../../utils.ts";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
+import { tFor } from "../../lib/i18n.ts";
 
 interface ShortLinkResolution {
   kind: "quote" | "contract" | "invoice";
@@ -21,7 +22,7 @@ export const handler = define.handlers({
       `/s/${encodeURIComponent(code)}`,
     );
     if (!r.ok || !r.data) {
-      return new Response("not found", { status: 404 });
+      return new Response(tFor("en", "shortlink.notFound"), { status: 404 });
     }
     const path = r.data.kind === "quote"
       ? `/q/${r.data.id}`

@@ -10,10 +10,12 @@
  */
 import { useEffect, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
+import { langSignal, tFor } from "../lib/i18n.ts";
 
 interface Props {
   initialClient: string;
   initialStatus: string;
+  lang?: "en" | "es";
 }
 
 interface HeaderEvent {
@@ -24,6 +26,9 @@ interface HeaderEvent {
 export default function ChatHeaderLive(
   { initialClient, initialStatus }: Props,
 ) {
+  // Self-source the UI language so the header re-renders live when the
+  // language flips (Settings). The optional `lang` prop is an ignored SSR seed.
+  const lang = langSignal.value;
   const [client, setClient] = useState(initialClient);
   const [status, setStatus] = useState(initialStatus);
   const [historyDepth, setHistoryDepth] = useState(0);
@@ -60,7 +65,7 @@ export default function ChatHeaderLive(
           <a
             href="#"
             class="chat__head-btn"
-            title="Back"
+            title={tFor(lang, "common.back")}
             style="text-decoration:none"
             onClick={(e) => {
               e.preventDefault();
@@ -79,10 +84,18 @@ export default function ChatHeaderLive(
         </div>
       </div>
       <div class="chat__head-tools">
-        <button type="button" class="chat__head-btn" title="Share thread">
+        <button
+          type="button"
+          class="chat__head-btn"
+          title={tFor(lang, "chatHeader.shareThread")}
+        >
           <I d={ICN.send} size={15} />
         </button>
-        <button type="button" class="chat__head-btn" title="More">
+        <button
+          type="button"
+          class="chat__head-btn"
+          title={tFor(lang, "chatHeader.more")}
+        >
           <I d={ICN.more} size={15} />
         </button>
       </div>

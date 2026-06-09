@@ -3,6 +3,7 @@ import {
   LLM_CLIENT,
   type LLMClient,
 } from "@agents/domain/business/llm/base/mod.ts";
+import { type Lang, t } from "@core/i18n/mod.ts";
 
 export interface GenerateJobOptionsInput {
   userId: string;
@@ -11,55 +12,59 @@ export interface GenerateJobOptionsInput {
   /** Optional price (cents) — scope context so options don't promise
    *  more than the price covers. */
   priceCents?: number;
-  /** Outgoing-comms language (roadmap p.13). The options become the
-   *  customer-facing quote, so generate them in the customer's language. */
-  commsLanguage?: string;
+  /**
+   * Target languages the options are generated in. The contractor reviews
+   * them in their app language and the customer's quote renders in the comms
+   * language, so we generate ALL relevant languages up front (= the selected
+   * send languages ∪ the app language). Order matters: index 0 is the primary
+   * (used as the fallback when a translation is missing). Defaults to ["en"].
+   */
+  langs?: string[];
 }
 
-export interface JobOption {
+/** Per-language content for one option. */
+export interface JobOptionLang {
+  jobName: string;
+  summary: string;
+  bullets: string[];
+}
+
+export interface JobOption extends JobOptionLang {
   /** Stable id ("opt1" | "opt2" | "opt3") used by the picker. */
   id: string;
-  /** ≤3-word Title Case label for the option. */
-  jobName: string;
-  /** ≤8-word title used as the quote summary if this option is picked. */
-  summary: string;
-  /** 3–4 scope-of-work bullets, third-person, professional. */
-  bullets: string[];
+  // Flat jobName/summary/bullets (inherited from JobOptionLang) carry the
+  // PRIMARY language — the contractor's app language — so the picker renders
+  // in the contractor's language with no client change.
+  /** Option content keyed by language code. Always carries every requested
+   *  language (a missing translation falls back to the primary language).
+   *  Used to render the customer's quote/agreement in the comms language. */
+  byLang: Record<string, JobOptionLang>;
 }
 
 export interface GenerateJobOptionsResult {
   options: JobOption[];
+  /** The languages each option carries, primary first. */
+  langs: string[];
 }
 
-const SYSTEM_PROMPT =
-  `You turn a contractor's raw job description into THREE distinct, customer-ready scope-of-work options.
+const SYSTEM_PROMPT = t("en", "prompts.generateJobOptions");
 
-OUTPUT — return JSON only, no prose, no code fences:
-  { "options": [
-    { "jobName": "<3 words or less, Title Case>", "summary": "<short title, max 8 words, title case>", "bullets": ["<scope line>", "<scope line>", "<scope line>"] },
-    { ... },
-    { ... }
-  ] }
-
-RULES:
-- Return exactly 3 options. Each option has 3 or 4 bullets — no more, no fewer.
-- The three options are different phrasings / groupings of the SAME job, ranging from concise to detailed. They are alternatives the contractor picks between, not three separate jobs.
-- Each bullet is one short scope-of-work line (≈3–7 words): "Interior demolition", "Haul away debris", "Jobsite cleanup". No sentences, no trailing periods.
-- jobName is a noun-phrase label like "Kitchen Remodel" or "Junk Removal" — three words or fewer, Title Case, no punctuation.
-- Each option MUST have a UNIQUE jobName — do not repeat the same jobName across the three options.
-- Use only facts the contractor stated. Do NOT invent materials, scope, square footage, brands, durations, or warranties.
-- No first-person ("I'll", "we'll"). Write as the contractor describing what the job covers.
-- No emojis, no exclamation marks, no marketing hype.
-- Fix obvious typos and expand unambiguous shorthand (e.g. "BR" → "bathroom").
-- If the raw text is vague, keep the bullets general rather than padding with assumptions.
-`;
+function normalizeLangs(input?: string[]): Lang[] {
+  const out: Lang[] = [];
+  for (const l of input ?? []) {
+    const v: Lang | null = l === "es" ? "es" : l === "en" ? "en" : null;
+    if (v && !out.includes(v)) out.push(v);
+  }
+  return out.length ? out : ["en"];
+}
 
 /**
  * GenerateJobOptions — one-shot LLM pass that turns the contractor's raw
- * chat-box input into three editable scope-of-work options. Used by the
- * assistant's "Job Details" polishing screen (after price capture, before
- * the quote is created): the user edits bullets and picks one option,
- * whose surviving bullets become the quote description.
+ * chat-box input into three editable scope-of-work options, each provided in
+ * every requested language. The assistant's "Job Details" screen shows the
+ * contractor's app-language copy; the customer's quote uses the comms-language
+ * copy. The user edits bullets and picks one option, whose surviving bullets
+ * become the quote description.
  */
 @Injectable()
 export class GenerateJobOptions {
@@ -69,21 +74,30 @@ export class GenerateJobOptions {
     const raw = input.raw.trim();
     if (!raw) throw new Error("raw is required");
 
+    const langs = normalizeLangs(input.langs);
+    const primary = langs[0];
+
     const priceLine =
       typeof input.priceCents === "number" && input.priceCents > 0
-        ? `\n\nQuoted price for this job: $${
-          (input.priceCents / 100).toLocaleString("en-US", {
+        ? t("en", "prompts.generateJobOptions.priceLine", {
+          amount: (input.priceCents / 100).toLocaleString("en-US", {
             minimumFractionDigits: 0,
             maximumFractionDigits: 2,
-          })
-        }. Keep each option's scope within that range.`
+          }),
+        })
         : "";
 
-    // Roadmap p.13: the options become the customer-facing quote, so emit
-    // them in the contractor's outgoing-comms language.
-    const langLine = input.commsLanguage === "es"
-      ? "\n\nWrite jobName, summary, and every bullet in neutral Latin-American Spanish."
-      : "";
+    // Ask for every requested language in a single pass so the three options
+    // stay aligned (same scope, just translated) across languages.
+    const langNames: Record<string, string> = {
+      en: "English",
+      es: "neutral Latin-American Spanish",
+    };
+    const langList = langs.map((l) => `"${l}" (${langNames[l]})`).join(", ");
+    const multiLangLine =
+      `\n\nOUTPUT STRUCTURE OVERRIDE: return JSON { "options": [ { "byLang": { ${
+        langs.map((l) => `"${l}": { "jobName": "...", "summary": "...", "bullets": ["...", "..."] }`).join(", ")
+      } } }, ... ] } — exactly these language keys: ${langList}. Within an option, the bullets in each language MUST be 1:1 translations of the same scope (same count and order). jobName/summary/bullets follow all the rules above, in each language.`;
 
     let text: string;
     try {
@@ -91,56 +105,72 @@ export class GenerateJobOptions {
         systemPrompt: SYSTEM_PROMPT,
         messages: [{
           role: "user",
-          content: `Raw job description:\n${raw}${priceLine}${langLine}`,
+          content: `${
+            t("en", "prompts.generateJobOptions.userPrefix", { raw })
+          }${priceLine}${multiLangLine}`,
         }],
         userId: input.userId,
       });
       text = res.text ?? "";
     } catch (err) {
       console.error("[generate-job-options] llm call failed:", err);
-      return { options: fallbackOptions(raw) };
+      return { options: fallbackOptions(raw, langs), langs };
     }
 
     const parsed = tryParseJson(text);
-    const options = normalizeOptions(parsed?.options);
-    if (options.length > 0) return { options };
-    return { options: fallbackOptions(raw) };
+    const options = normalizeOptions(parsed?.options, langs, primary);
+    if (options.length > 0) return { options, langs };
+    return { options: fallbackOptions(raw, langs), langs };
   }
 }
 
-function normalizeOptions(raw: unknown): JobOption[] {
+function normalizeOneLang(o: unknown): JobOptionLang | null {
+  const obj = o as { jobName?: unknown; summary?: unknown; bullets?: unknown };
+  const bullets = Array.isArray(obj?.bullets)
+    ? obj.bullets
+      .filter((b): b is string => typeof b === "string" && b.trim().length > 0)
+      .map((b) => b.trim().replace(/\s+/g, " ").replace(/[.;]+$/, ""))
+      .slice(0, 4)
+    : [];
+  if (bullets.length === 0) return null;
+  const summary = typeof obj?.summary === "string" && obj.summary.trim()
+    ? clampSummary(obj.summary)
+    : clampSummary(bullets[0]);
+  const jobName = typeof obj?.jobName === "string" && obj.jobName.trim()
+    ? clampJobName(obj.jobName)
+    : deriveJobName(summary);
+  return { jobName, summary, bullets };
+}
+
+function normalizeOptions(
+  raw: unknown,
+  langs: Lang[],
+  primary: Lang,
+): JobOption[] {
   if (!Array.isArray(raw)) return [];
   const out: JobOption[] = [];
   const seenNames = new Set<string>();
   for (let i = 0; i < raw.length && out.length < 3; i++) {
-    const o = raw[i] as {
-      jobName?: unknown;
-      summary?: unknown;
-      bullets?: unknown;
-    };
-    const bullets = Array.isArray(o?.bullets)
-      ? o.bullets
-        .filter((b): b is string =>
-          typeof b === "string" && b.trim().length > 0
-        )
-        .map((b) => b.trim().replace(/\s+/g, " ").replace(/[.;]+$/, ""))
-        .slice(0, 4)
-      : [];
-    if (bullets.length === 0) continue;
-    const summary = typeof o?.summary === "string" && o.summary.trim()
-      ? clampSummary(o.summary)
-      : clampSummary(bullets[0]);
-    const jobName = typeof o?.jobName === "string" && o.jobName.trim()
-      ? clampJobName(o.jobName)
-      : deriveJobName(summary);
-    // Disambiguate duplicate jobNames so the picker never shows three cards
-    // with the same heading (e.g. three "Toilet Replacement"s).
-    out.push({
-      id: `opt${out.length + 1}`,
-      jobName: disambiguate(jobName, seenNames),
-      summary,
-      bullets,
-    });
+    const o = raw[i] as { byLang?: Record<string, unknown> };
+    const src = o?.byLang && typeof o.byLang === "object" ? o.byLang : o;
+    const byLang: Record<string, JobOptionLang> = {};
+    // Primary language first — it anchors the option and backfills any
+    // language the model skipped.
+    const primaryLang = normalizeOneLang(
+      (src as Record<string, unknown>)?.[primary],
+    );
+    if (!primaryLang) continue;
+    for (const l of langs) {
+      byLang[l] = normalizeOneLang((src as Record<string, unknown>)?.[l]) ??
+        primaryLang;
+    }
+    // Disambiguate duplicate primary jobNames across the option set.
+    const unique = disambiguate(byLang[primary].jobName, seenNames);
+    if (unique !== byLang[primary].jobName) {
+      byLang[primary] = { ...byLang[primary], jobName: unique };
+    }
+    // Flat fields = primary language (back-compat for the picker).
+    out.push({ id: `opt${out.length + 1}`, ...byLang[primary], byLang });
   }
   return out;
 }
@@ -202,33 +232,35 @@ function titleCaseWord(w: string): string {
 /**
  * Heuristic fallback when the LLM is unavailable or returns garbage.
  * Splits the raw text into bullet-ish lines and produces three light
- * variations so the picker screen still functions.
+ * variations (in each requested language) so the picker still functions.
  */
-function fallbackOptions(raw: string): JobOption[] {
+function fallbackOptions(raw: string, langs: Lang[]): JobOption[] {
   const lines = raw
     .split(/[\n.;]+/)
     .map((l) => l.trim().replace(/\s+/g, " "))
     .filter((l) => l.length > 0);
   const base = (lines.length > 0 ? lines : [raw.trim()]).slice(0, 4);
-  const summary = clampSummary(base[0] || "New job");
-  const jobName = deriveJobName(summary);
-  const single: JobOption = { id: "opt1", jobName, summary, bullets: base };
-  // Three near-identical options so the UI shows the expected count; the
-  // contractor edits/picks one. Cleanup line added on the broader variants.
-  // jobNames are disambiguated so the cards don't share one heading.
-  return [
-    single,
-    {
-      id: "opt2",
-      jobName: `${jobName} (2)`,
+
+  const perLang = (lang: Lang, variant: 0 | 1 | 2): JobOptionLang => {
+    const summary = clampSummary(base[0] || t(lang, "generateJobOptions.newJob"));
+    const jobName = deriveJobName(summary);
+    const bullets = variant === 0
+      ? base
+      : variant === 1
+      ? base.slice(0, 3)
+      : [...base.slice(0, 3), t(lang, "generateJobOptions.jobsiteCleanup")]
+        .slice(0, 4);
+    return {
+      jobName: variant === 0 ? jobName : `${jobName} (${variant + 1})`,
       summary,
-      bullets: base.slice(0, 3),
-    },
-    {
-      id: "opt3",
-      jobName: `${jobName} (3)`,
-      summary,
-      bullets: [...base.slice(0, 3), "Jobsite cleanup"].slice(0, 4),
-    },
-  ];
+      bullets,
+    };
+  };
+
+  const primary = langs[0];
+  return ([0, 1, 2] as const).map((variant) => {
+    const byLang: Record<string, JobOptionLang> = {};
+    for (const l of langs) byLang[l] = perLang(l, variant);
+    return { id: `opt${variant + 1}`, ...byLang[primary], byLang };
+  });
 }

@@ -27,6 +27,7 @@ import { PolishJobDetails } from "@agents/domain/coordinators/polish-job-details
 import { GenerateJobOptions } from "@agents/domain/coordinators/generate-job-options/mod.ts";
 import { SuggestPrices } from "@agents/domain/coordinators/suggest-prices/mod.ts";
 import { ProfessionalizeBullet } from "@agents/domain/coordinators/professionalize-bullet/mod.ts";
+import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
 import type { LLMClient } from "@agents/domain/business/llm/base/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
@@ -105,6 +106,7 @@ const LlmClientClass = await selectLLMClass();
     GenerateJobOptions,
     SuggestPrices,
     ProfessionalizeBullet,
+    TranslateBullets,
     { token: LLM_CLIENT, useClass: LlmClientClass },
   ],
 })

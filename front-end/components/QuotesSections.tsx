@@ -4,40 +4,49 @@
  * The interactive Track collapse + QuoteCard flip live in islands/.
  */
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtMoney, pluralize } from "../lib/format.ts";
+import { fmtMoney } from "../lib/format.ts";
+import { type Lang, tFor } from "../lib/i18n.ts";
 import { type Quote } from "../lib/quotes-seed.ts";
 import DeleteQuoteButton from "../islands/DeleteQuoteButton.tsx";
+
+/** Explicit-language plural picker for SSR components (mirrors tn() but
+ *  honors the resolved `lang` prop instead of the reactive langSignal). */
+function tnFor(lang: Lang, key: string, n: number, vars?: Record<string, string | number>): string {
+  return tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });
+}
 
 interface HeroProps {
   openCount: number;
   openTotal: number;
   staleCount: number;
   clientCount: number;
+  lang?: Lang;
 }
 
 export function QuotesHero(
-  { openCount, openTotal, staleCount, clientCount }: HeroProps,
+  { openCount, openTotal, staleCount, clientCount, lang = "en" }: HeroProps,
 ) {
   const empty = openCount === 0;
   const allWarm = !empty && staleCount === 0;
+  const openQuotes = tnFor(lang, "quotesHero.openQuotes", openCount);
+  const clients = tnFor(lang, "quotesHero.clients", clientCount);
   return (
     <div class="qph">
       <div>
         <div class="qph__eyebrow">
           <span class="qph__eyebrow-dot" />
-          The pipeline this week
+          {tFor(lang, "quotesHero.eyebrow")}
         </div>
         {empty
           ? (
             <>
               <h1 class="qph__title">
-                <em>Nothing in the pipeline yet.</em>
+                <em>{tFor(lang, "quotesHero.emptyTitleLine1")}</em>
                 <br />
-                Draft your first quote in the assistant.
+                {tFor(lang, "quotesHero.emptyTitleLine2")}
               </h1>
               <p class="qph__sub">
-                Quotes you send land here automatically — opens, replies, and
-                stale flags are tracked for you.
+                {tFor(lang, "quotesHero.emptySub")}
               </p>
             </>
           )
@@ -46,13 +55,10 @@ export function QuotesHero(
             <>
               <h1 class="qph__title">
                 <em>{fmtMoney(openTotal)}</em>{" "}
-                of work sitting with clients —<br />
-                all of it warm.
+                {tFor(lang, "quotesHero.warmTitle")}
               </h1>
               <p class="qph__sub">
-                {pluralize(openCount, "open quote")} across{" "}
-                {pluralize(clientCount, "client")}. Nothing's gone cold yet —
-                the monsters will flag it the moment something does.
+                {tFor(lang, "quotesHero.warmSub", { openQuotes, clients })}
               </p>
             </>
           )
@@ -60,22 +66,27 @@ export function QuotesHero(
             <>
               <h1 class="qph__title">
                 <em>{fmtMoney(openTotal)}</em>{" "}
-                of work sitting with clients,<br />
-                {pluralize(staleCount, "quote")} that{" "}
-                {staleCount === 1 ? "needs" : "need"} a nudge.
+                {tFor(lang, "quotesHero.staleTitle", {
+                  quotes: tnFor(lang, "quotesHero.staleQuotes", staleCount),
+                  verb: tFor(
+                    lang,
+                    staleCount === 1
+                      ? "quotesHero.needsSingular"
+                      : "quotesHero.needsPlural",
+                  ),
+                })}
               </h1>
               <p class="qph__sub">
-                {pluralize(openCount, "open quote")} across{" "}
-                {pluralize(clientCount, "client")}. The monsters flagged{" "}
+                {tFor(lang, "quotesHero.staleSubPre", { openQuotes, clients })}
+                {" "}
                 <strong>{staleCount}</strong>{" "}
-                as cooling off — start there, then hit the hot ones while
-                they're still warm.
+                {tFor(lang, "quotesHero.staleSubPost")}
               </p>
             </>
           )}
       </div>
       <button class="qph__cta" type="button">
-        <I d={ICN.plus} size={14} sw={2.5} /> New quote
+        <I d={ICN.plus} size={14} sw={2.5} /> {tFor(lang, "quotesHero.cta")}
       </button>
     </div>
   );
@@ -89,6 +100,7 @@ interface KpisProps {
   wonCount: number;
   lostCount: number;
   winRate: number;
+  lang?: Lang;
 }
 
 /** Below this threshold the win-rate percentage is mathematically true but
@@ -105,48 +117,59 @@ export function QuotesKpis(
     wonCount,
     lostCount,
     winRate,
+    lang = "en",
   }: KpisProps,
 ) {
   const winRateConfident = decidedCount >= WIN_RATE_MIN_N;
   return (
     <div class="qkpi">
       <div class="qkpi__cell qkpi__cell--accent">
-        <div class="qkpi__lbl">Out for response</div>
+        <div class="qkpi__lbl">{tFor(lang, "quotesKpi.outLbl")}</div>
         <div class="qkpi__val">{fmtMoney(outValue)}</div>
-        <div class="qkpi__sub">{outCount} quotes waiting</div>
+        <div class="qkpi__sub">
+          {tnFor(lang, "quotesKpi.outWaiting", outCount)}
+        </div>
       </div>
       <div class="qkpi__cell">
-        <div class="qkpi__lbl">Drafting</div>
+        <div class="qkpi__lbl">{tFor(lang, "quotesKpi.draftingLbl")}</div>
         <div class="qkpi__val">{draftCount}</div>
-        <div class="qkpi__sub">finish + send</div>
+        <div class="qkpi__sub">{tFor(lang, "quotesKpi.draftingSub")}</div>
       </div>
       <div class="qkpi__cell">
-        <div class="qkpi__lbl">Decided this month</div>
+        <div class="qkpi__lbl">{tFor(lang, "quotesKpi.decidedLbl")}</div>
         <div class="qkpi__val">{decidedCount}</div>
-        <div class="qkpi__sub">{wonCount} won · {lostCount} lost</div>
+        <div class="qkpi__sub">
+          {tFor(lang, "quotesKpi.wonLost", { won: wonCount, lost: lostCount })}
+        </div>
       </div>
       <div class="qkpi__cell">
-        <div class="qkpi__lbl">Win rate (90d)</div>
+        <div class="qkpi__lbl">{tFor(lang, "quotesKpi.winRateLbl")}</div>
         <div class="qkpi__val">
-          {winRateConfident ? `${winRate}%` : "—"}
+          {winRateConfident
+            ? tFor(lang, "quotesKpi.winRateValue", { pct: winRate })
+            : "—"}
         </div>
         <div class="qkpi__sub">
           {decidedCount === 0
-            ? "Not enough data yet"
+            ? tFor(lang, "quotesKpi.notEnough")
             : winRateConfident
-            ? `${decidedCount} decided`
-            : `${wonCount} won · ${lostCount} lost · need ${
-              WIN_RATE_MIN_N - decidedCount
-            } more`}
+            ? tFor(lang, "quotesKpi.decidedN", { n: decidedCount })
+            : tFor(lang, "quotesKpi.needMore", {
+              won: wonCount,
+              lost: lostCount,
+              n: WIN_RATE_MIN_N - decidedCount,
+            })}
         </div>
       </div>
     </div>
   );
 }
 
-export function DecidedRow({ q }: { q: Quote }) {
+export function DecidedRow({ q, lang = "en" }: { q: Quote; lang?: Lang }) {
   const decidedDays = q.decidedDays ?? 0;
-  const when = decidedDays === 1 ? "yesterday" : `${decidedDays}d ago`;
+  const when = decidedDays === 1
+    ? tFor(lang, "quotesDecided.yesterday")
+    : tFor(lang, "quotesDecided.daysAgo", { n: decidedDays });
   return (
     <div class="qdone__row">
       <div class={`qdone__badge qdone__badge--${q.stage}`}>
@@ -167,17 +190,18 @@ export function DecidedRow({ q }: { q: Quote }) {
 
 interface QSideBigProps {
   open: Quote[];
+  lang?: Lang;
 }
 
-export function QSideBig({ open }: QSideBigProps) {
+export function QSideBig({ open, lang = "en" }: QSideBigProps) {
   const top4 = [...open].sort((a, b) => b.value - a.value).slice(0, 4);
   const max = top4[0]?.value ?? 1;
   return (
     <div class="qside__card">
       <div class="qside__head">
         <div>
-          <div class="qside__title">Top of the pipeline</div>
-          <div class="qside__sub">biggest open quotes</div>
+          <div class="qside__title">{tFor(lang, "quotesSide.topTitle")}</div>
+          <div class="qside__sub">{tFor(lang, "quotesSide.topSub")}</div>
         </div>
       </div>
       <div class="qbig">
@@ -207,9 +231,10 @@ export function QSideBig({ open }: QSideBigProps) {
 interface QSideRateProps {
   won: number;
   lost: number;
+  lang?: Lang;
 }
 
-export function QSideRate({ won, lost }: QSideRateProps) {
+export function QSideRate({ won, lost, lang = "en" }: QSideRateProps) {
   const decided = won + lost;
   const confident = decided >= WIN_RATE_MIN_N;
   const pct = decided > 0 ? Math.round((won / decided) * 100) : 0;
@@ -219,8 +244,8 @@ export function QSideRate({ won, lost }: QSideRateProps) {
     <div class="qside__card">
       <div class="qside__head">
         <div>
-          <div class="qside__title">Win rate</div>
-          <div class="qside__sub">last 90 days</div>
+          <div class="qside__title">{tFor(lang, "quotesSide.rateTitle")}</div>
+          <div class="qside__sub">{tFor(lang, "quotesSide.rateSub")}</div>
         </div>
       </div>
       <div class="qrate">
@@ -258,7 +283,9 @@ export function QSideRate({ won, lost }: QSideRateProps) {
                   <span class="qrate__num-pct">%</span>
                 </div>
                 <div class="qrate__lbl">
-                  {won} won · {lost} lost<br />of {decided} decided
+                  {tFor(lang, "quotesRate.wonLost", { won, lost })}
+                  <br />
+                  {tFor(lang, "quotesRate.ofDecided", { decided })}
                 </div>
               </>
             )
@@ -271,12 +298,17 @@ export function QSideRate({ won, lost }: QSideRateProps) {
                   —
                 </div>
                 <div class="qrate__lbl">
-                  {decided === 0 ? <>No quotes decided yet</> : (
-                    <>
-                      {won} won · {lost} lost<br />need{" "}
-                      {WIN_RATE_MIN_N - decided} more to call it
-                    </>
-                  )}
+                  {decided === 0
+                    ? <>{tFor(lang, "quotesRate.noneDecided")}</>
+                    : (
+                      <>
+                        {tFor(lang, "quotesRate.wonLost", { won, lost })}
+                        <br />
+                        {tFor(lang, "quotesRate.needMore", {
+                          n: WIN_RATE_MIN_N - decided,
+                        })}
+                      </>
+                    )}
                 </div>
               </>
             )}
@@ -286,20 +318,19 @@ export function QSideRate({ won, lost }: QSideRateProps) {
   );
 }
 
-const DEFAULT_TIP =
-  "Quotes opened 3+ times within 24 hours close 78% of the time when followed up the same day.";
-
-export function QSideTip({ text }: { text?: string } = {}) {
+export function QSideTip(
+  { text, lang = "en" }: { text?: string; lang?: Lang } = {},
+) {
   return (
     <div
       class="qside__card"
       style="background:linear-gradient(135deg,#1A535C,#0F3A40);color:#fff;border:none"
     >
       <div class="qside__title" style="color:#fff;margin-bottom:8px">
-        Monster tip
+        {tFor(lang, "quotesTip.title")}
       </div>
       <p style="font:400 13.5px/1.5 var(--font-body);color:rgba(255,255,255,0.85);margin:0;text-wrap:pretty">
-        {text ?? DEFAULT_TIP}
+        {text ?? tFor(lang, "quotesTip.default")}
       </p>
     </div>
   );
