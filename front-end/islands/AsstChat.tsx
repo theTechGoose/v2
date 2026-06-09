@@ -432,12 +432,15 @@ export default function AsstChat({
   // the contractor flips the language in Settings. `lang?: Lang` remains on
   // Props as an optional SSR seed but is intentionally ignored here.
   const lang = langSignal.value;
-  // Languages the contractor enabled in Settings → the quote-review preview
-  // toggle. Falls back to English so the card always renders.
+  // Languages offered in the quote-review "Preview in" toggle. Start from the
+  // contractor's configured send languages, but ALWAYS include their app
+  // language (first → the default) so e.g. a Spanish-app contractor can always
+  // preview/send in Spanish even when their send languages are English-only.
   const previewLangOptions = (sendLanguages && sendLanguages.length
     ? sendLanguages
     : ["en"]).filter((l) => l in SEND_LANG_LABEL_KEYS);
-  const sendLangs = previewLangOptions.length ? previewLangOptions : ["en"];
+  const sendLangs = Array.from(new Set([lang, ...previewLangOptions]))
+    .filter((l) => l in SEND_LANG_LABEL_KEYS);
   const [convoId, setConvoId] = useState<string | undefined>(conversationId);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [customer, setCustomer] = useState<CustomerLite | undefined>(
@@ -580,11 +583,21 @@ export default function AsstChat({
   );
   const [channelMenuOpen, setChannelMenuOpen] = useState(false);
   /** Language the quote-review card is PREVIEWED in (and sent in). The
-   *  contractor flips it with the "Preview in" toggle; defaults to their
-   *  first enabled send language. */
+   *  contractor flips it with the "Preview in" toggle; defaults to their app
+   *  language until they explicitly pick one. */
   const [previewLang, setPreviewLang] = useState<"en" | "es">(
     (sendLangs[0] as "en" | "es") ?? "en",
   );
+  // Until the contractor explicitly taps a "Preview in" pill, keep the preview
+  // following their app language — so a Spanish-app contractor sees the quote
+  // in Spanish even if the app language only resolved after first render
+  // (e.g. profile/impersonation loaded late).
+  const previewLangPickedRef = useRef(false);
+  useEffect(() => {
+    if (!previewLangPickedRef.current) {
+      setPreviewLang(lang === "es" ? "es" : "en");
+    }
+  }, [lang]);
   /**
    * Tracks `continue_cta` messages whose Review button has been clicked.
    * Drives the inline "Drafted ✓" confirmation state — replaces the
@@ -3744,8 +3757,10 @@ export default function AsstChat({
                                     aria-pressed={previewLang === lng
                                       ? "true"
                                       : "false"}
-                                    onClick={() =>
-                                      setPreviewLang(lng as "en" | "es")}
+                                    onClick={() => {
+                                      previewLangPickedRef.current = true;
+                                      setPreviewLang(lng as "en" | "es");
+                                    }}
                                   >
                                     {SEND_LANG_LABEL_KEYS[lng]
                                       ? tFor(previewLang, SEND_LANG_LABEL_KEYS[lng])
