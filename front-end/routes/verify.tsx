@@ -1,7 +1,12 @@
 import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import { loadUser } from "../lib/auth.ts";
-import { type Lang, pickLangFromAcceptLanguage, STRINGS } from "../lib/lang.ts";
+import {
+  type Lang,
+  langFromCookie,
+  pickLangFromAcceptLanguage,
+  STRINGS,
+} from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
 import CodeInput from "../islands/CodeInput.tsx";
 
@@ -26,9 +31,12 @@ export default define.page(async function Verify(ctx) {
     });
   }
 
-  const lang: Lang = pickLangFromAcceptLanguage(
-    ctx.req.headers.get("accept-language"),
-  );
+  // Honor the user's saved choice (cookie) first — the browser's
+  // Accept-Language is only the first-visit fallback. Without this the static
+  // SSR copy renders in the browser locale while the island re-renders from
+  // localStorage, leaving the screen half-English / half-Spanish.
+  const lang: Lang = langFromCookie(ctx.req.headers.get("cookie")) ??
+    pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
   const s = STRINGS[lang];
   const display = formatPhoneDisplay(phone);
 

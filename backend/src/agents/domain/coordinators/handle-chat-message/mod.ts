@@ -18,6 +18,7 @@ import {
   deriveTitleFromFirstUserMessage,
 } from "@agents/domain/business/conversation-title/mod.ts";
 import {
+  classifyLastAsk,
   extractAddressOnly,
   extractAddressViaLLM,
   extractBusinessOnly,
@@ -31,7 +32,6 @@ import {
   looksLikeJobRequest,
   ONBOARD_ASK_ADDRESS,
   ONBOARD_ASK_BUSINESS,
-  ONBOARD_ASK_NAME,
   ONBOARD_ASK_PAYOUT,
   ONBOARD_HANDOFF,
   onboardAskStateWithGuess,
@@ -204,8 +204,8 @@ export class HandleChatMessage {
         needPay: boolean,
       ): string =>
         needEmail || needPay
-          ? ONBOARD_ASK_PAYOUT(firstName)
-          : ONBOARD_HANDOFF(firstName);
+          ? ONBOARD_ASK_PAYOUT(firstName, lang)
+          : ONBOARD_HANDOFF(firstName, lang);
       if (
         needsName || needsBiz || needsState || needsAddress || needsEmail ||
         needsPayout
@@ -216,19 +216,17 @@ export class HandleChatMessage {
           m.role === "assistant" && m.kind === "text"
         );
         const lastAsk = lastAssistant?.content ?? "";
-        const justAskedName = lastAsk === ONBOARD_ASK_NAME ||
-          lastAsk.startsWith("Hey 👋 quick one") ||
-          lastAsk.startsWith("Hey there 👋");
-        const justAskedBiz = lastAsk.startsWith("Nice to meet you,");
-        const justAskedState =
-          lastAsk.startsWith("Almost there. Which state") ||
-          lastAsk.startsWith("Almost there. Looks like you're in");
-        // Treat the parse-error retry as another address ask so the user's
-        // next reply still routes through the address branch instead of
-        // falling into the LLM (which would hallucinate a quote from
-        // address-shaped text — see audit2 N7).
-        const justAskedAddress = lastAsk.startsWith("Last one,") ||
-          lastAsk.startsWith("Hmm, couldn't quite parse");
+        // Which onboarding question did we just ask? Detected from the prior
+        // assistant text in a language-robust way (EN or ES) — see
+        // classifyLastAsk. The address ask's parse-error reprompt is treated
+        // as "just asked address" too, so the user's retry still routes
+        // through the address branch instead of falling into the LLM (which
+        // would hallucinate a quote from address-shaped text — see audit2 N7).
+        const lastAskInfo = classifyLastAsk(lastAsk);
+        const justAskedName = lastAskInfo.name;
+        const justAskedBiz = lastAskInfo.business;
+        const justAskedState = lastAskInfo.state;
+        const justAskedAddress = lastAskInfo.address;
         const userVolunteered = isFirstTurn && extractNameAndBusiness(text);
         const firstNameOf = (n: string | undefined): string =>
           n?.trim().split(/\s+/)[0] ?? "there";
@@ -247,9 +245,9 @@ export class HandleChatMessage {
             const stillNeedsBiz = !userVolunteered.businessName && needsBiz;
             const firstName = firstNameOf(userVolunteered.name);
             const nextAsk = stillNeedsBiz
-              ? ONBOARD_ASK_BUSINESS(firstName)
+              ? ONBOARD_ASK_BUSINESS(firstName, lang)
               : (needsState
-                ? onboardAskStateWithGuess(firstName, me?.phoneNumber)
+                ? onboardAskStateWithGuess(firstName, me?.phoneNumber, lang)
                 : postAddressAsk(firstName, needsEmail, needsPayout));
             const ack = await this.messages.append({
               conversationId: conv.id,
@@ -273,9 +271,9 @@ export class HandleChatMessage {
               await this.users.update(input.userId, { name: parsed });
               const firstName = firstNameOf(parsed);
               const nextAsk = needsBiz
-                ? ONBOARD_ASK_BUSINESS(firstName)
+                ? ONBOARD_ASK_BUSINESS(firstName, lang)
                 : (needsState
-                  ? onboardAskStateWithGuess(firstName, me?.phoneNumber)
+                  ? onboardAskStateWithGuess(firstName, me?.phoneNumber, lang)
                   : postAddressAsk(firstName, needsEmail, needsPayout));
               const ack = await this.messages.append({
                 conversationId: conv.id,
@@ -310,7 +308,7 @@ export class HandleChatMessage {
               conversationId: conv.id,
               role: "assistant",
               kind: "text",
-              content: ONBOARD_ASK_NAME,
+              content: t(lang, "onboarding.askName"),
             });
             const updated = await this.conversations.update(conv.id, {
               ...(history.length === 1
@@ -330,7 +328,7 @@ export class HandleChatMessage {
                 businessName: parsed,
               });
               const nextAsk = needsState
-                ? onboardAskStateWithGuess(firstName, me?.phoneNumber)
+                ? onboardAskStateWithGuess(firstName, me?.phoneNumber, lang)
                 : postAddressAsk(firstName, needsEmail, needsPayout);
               const ack = await this.messages.append({
                 conversationId: conv.id,
@@ -359,7 +357,7 @@ export class HandleChatMessage {
               conversationId: conv.id,
               role: "assistant",
               kind: "text",
-              content: ONBOARD_ASK_BUSINESS(firstName),
+              content: ONBOARD_ASK_BUSINESS(firstName, lang),
             });
             const updated = await this.conversations.update(conv.id, {
               ...(history.length === 1
@@ -374,9 +372,7 @@ export class HandleChatMessage {
           //    user can confirm with a one-tap "yes" instead of typing.
           const firstName = firstNameOf(me?.name);
           const phoneGuess = stateFromPhone(me?.phoneNumber);
-          const askedWithGuess = lastAsk.startsWith(
-            "Almost there. Looks like you're in",
-          );
+          const askedWithGuess = lastAskInfo.stateGuess;
 
           if (justAskedState && !isSkipReply(text)) {
             // Affirmative reply to a guess → save the guessed state.
@@ -387,7 +383,7 @@ export class HandleChatMessage {
                 role: "assistant",
                 kind: "text",
                 content: needsAddress
-                  ? ONBOARD_ASK_ADDRESS(firstName)
+                  ? ONBOARD_ASK_ADDRESS(firstName, lang)
                   : postAddressAsk(firstName, needsEmail, needsPayout),
               });
               const updated = await this.conversations.update(conv.id, {
@@ -403,7 +399,7 @@ export class HandleChatMessage {
                 role: "assistant",
                 kind: "text",
                 content: needsAddress
-                  ? ONBOARD_ASK_ADDRESS(firstName)
+                  ? ONBOARD_ASK_ADDRESS(firstName, lang)
                   : postAddressAsk(firstName, needsEmail, needsPayout),
               });
               const updated = await this.conversations.update(conv.id, {
@@ -427,7 +423,7 @@ export class HandleChatMessage {
               conversationId: conv.id,
               role: "assistant",
               kind: "text",
-              content: onboardAskStateWithGuess(firstName, me?.phoneNumber),
+              content: onboardAskStateWithGuess(firstName, me?.phoneNumber, lang),
             });
             const updated = await this.conversations.update(conv.id, {
               ...(history.length === 1
@@ -516,7 +512,7 @@ export class HandleChatMessage {
               conversationId: conv.id,
               role: "assistant",
               kind: "text",
-              content: ONBOARD_ASK_ADDRESS(firstName),
+              content: ONBOARD_ASK_ADDRESS(firstName, lang),
             });
             const updated = await this.conversations.update(conv.id, {
               ...(history.length === 1
@@ -532,7 +528,7 @@ export class HandleChatMessage {
           //    provided), persist them, and hand off. "skip" jumps
           //    straight to handoff so nothing here is blocking.
           const firstName = firstNameOf(me?.name);
-          const justAskedPayout = lastAsk.startsWith("One more thing,");
+          const justAskedPayout = lastAskInfo.payout;
           if (justAskedPayout) {
             if (!isSkipReply(text)) {
               const email = extractEmail(text);
@@ -567,7 +563,7 @@ export class HandleChatMessage {
               conversationId: conv.id,
               role: "assistant",
               kind: "text",
-              content: ONBOARD_HANDOFF(firstName),
+              content: ONBOARD_HANDOFF(firstName, lang),
             });
             const updated = await this.conversations.update(conv.id, {
               preview: derivePreview(ack.content),
@@ -579,7 +575,7 @@ export class HandleChatMessage {
               conversationId: conv.id,
               role: "assistant",
               kind: "text",
-              content: ONBOARD_ASK_PAYOUT(firstName),
+              content: ONBOARD_ASK_PAYOUT(firstName, lang),
             });
             const updated = await this.conversations.update(conv.id, {
               preview: derivePreview(ask.content),

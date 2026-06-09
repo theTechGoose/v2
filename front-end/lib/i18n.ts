@@ -12,7 +12,7 @@
  */
 import en from "../../lang/en.json" with { type: "json" };
 import es from "../../lang/es.json" with { type: "json" };
-import { type Lang, langSignal } from "./lang.ts";
+import { type Lang, langSignal, persistLang } from "./lang.ts";
 
 export { type Lang, langSignal };
 
@@ -23,7 +23,10 @@ export type Vars = Record<string, string | number>;
 
 function interpolate(s: string, vars?: Vars): string {
   if (!vars) return s;
-  return s.replace(/\{(\w+)\}/g, (_, k) => (k in vars ? String(vars[k]) : `{${k}}`));
+  return s.replace(
+    /\{(\w+)\}/g,
+    (_, k) => (k in vars ? String(vars[k]) : `{${k}}`),
+  );
 }
 
 /** Resolve a key in an explicit language (SSR / known-lang call sites). */
@@ -45,6 +48,10 @@ export function t(key: string, vars?: Vars): string {
  */
 export function setLang(lang: Lang): void {
   if (langSignal.value !== lang) langSignal.value = lang;
+  // Keep localStorage + the SSR cookie in sync (Settings change, or the
+  // dashboard seeding from the server's user.language) so a later SSR route
+  // render (verify/login) matches the app language.
+  persistLang(lang);
 }
 
 /** Plural helper: picks `<key>.one` / `<key>.other` by count. */

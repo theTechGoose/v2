@@ -1,5 +1,10 @@
 import { useEffect } from "preact/hooks";
-import { type Lang, langSignal, writeLangToUrl } from "../lib/lang.ts";
+import {
+  type Lang,
+  langSignal,
+  persistLang,
+  writeLangToUrl,
+} from "../lib/lang.ts";
 import { t } from "../lib/i18n.ts";
 
 interface Props {
@@ -21,12 +26,16 @@ export default function LangToggle({ initial }: Props) {
 
   function set(lang: Lang) {
     langSignal.value = lang;
-    globalThis.localStorage?.setItem("pm:lang", lang);
+    persistLang(lang);
     writeLangToUrl(lang);
   }
 
   return (
-    <div class="lang-toggle" role="group" aria-label={t("langToggle.ariaLabel")}>
+    <div
+      class="lang-toggle"
+      role="group"
+      aria-label={t("langToggle.ariaLabel")}
+    >
       <button
         type="button"
         class={langSignal.value === "en" ? "active" : ""}

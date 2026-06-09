@@ -1,7 +1,11 @@
 import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import { loadUser } from "../lib/auth.ts";
-import { type Lang, pickLangFromAcceptLanguage } from "../lib/lang.ts";
+import {
+  type Lang,
+  langFromCookie,
+  pickLangFromAcceptLanguage,
+} from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
 import LoginForm from "../islands/LoginForm.tsx";
 
@@ -19,9 +23,10 @@ export default define.page(async function Login(ctx) {
     });
   }
 
-  const lang: Lang = pickLangFromAcceptLanguage(
-    ctx.req.headers.get("accept-language"),
-  );
+  // Saved choice (cookie) wins over the browser's Accept-Language so the
+  // login screen matches the language the user picked on the landing page.
+  const lang: Lang = langFromCookie(ctx.req.headers.get("cookie")) ??
+    pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
   return (
     <>
       <Head>

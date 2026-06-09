@@ -16,7 +16,7 @@
  * inside useEffect, mirroring how the prototype's <script> tag worked.
  */
 import { useEffect } from "preact/hooks";
-import { langSignal, writeLangToUrl } from "../lib/lang.ts";
+import { langSignal, persistLang, writeLangToUrl } from "../lib/lang.ts";
 import { landingClient } from "../clients/landing.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { tFor } from "../lib/i18n.ts";
@@ -373,9 +373,7 @@ export default function LandingScripts() {
       renderDoc(activeDoc);
       langSignal.value = lang; // PhoneChat (and any future lang-aware island) react via this signal.
       fitRotor();
-      try {
-        globalThis.localStorage?.setItem("pm:lang", lang);
-      } catch { /* SSR-safe */ }
+      persistLang(lang); // localStorage + cookie, so SSR /verify + /login agree
     }
 
     document.querySelectorAll<HTMLButtonElement>(".lang-toggle button").forEach(

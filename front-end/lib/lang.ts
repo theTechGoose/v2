@@ -15,6 +15,36 @@ function asLang(v: string | null | undefined): Lang | null {
   return v === "en" || v === "es" ? v : null;
 }
 
+/** Cookie the SSR routes read to honor the user's choice on first paint.
+ *  (`pm:lang` localStorage is client-only; SSR can't see it.) Mirrors the
+ *  same value so server-render and island-hydration agree — no flash. */
+const LANG_COOKIE = "pm_lang";
+
+/** Persist the chosen language to BOTH localStorage (client reads) and a
+ *  cookie (SSR reads). The single write path for every place that changes
+ *  the language. SSR-guarded — a no-op on the server. */
+export function persistLang(lang: Lang): void {
+  if (typeof document === "undefined") return;
+  try {
+    globalThis.localStorage?.setItem("pm:lang", lang);
+  } catch { /* private mode / disabled storage */ }
+  try {
+    // 1-year, root-path, Lax — readable by SSR on same-site navigations.
+    document.cookie =
+      `${LANG_COOKIE}=${lang};path=/;max-age=31536000;samesite=lax`;
+  } catch { /* noop */ }
+}
+
+/** Read the persisted language from a request Cookie header (SSR). Returns
+ *  null when absent/invalid so callers can fall back to Accept-Language. */
+export function langFromCookie(
+  cookieHeader: string | null | undefined,
+): Lang | null {
+  if (!cookieHeader) return null;
+  const m = cookieHeader.match(/(?:^|;\s*)pm_lang=(en|es)(?:;|$)/);
+  return m ? (m[1] as Lang) : null;
+}
+
 /**
  * Reflect the active language into the current URL's `?lang=` query param via
  * history.replaceState — no reload, no new history entry. Call this from the
@@ -44,7 +74,9 @@ if (typeof document !== "undefined" && globalThis.location) {
     const fromStorage = asLang(globalThis.localStorage?.getItem("pm:lang"));
     const resolved: Lang = fromQuery ?? fromStorage ?? "en";
     langSignal.value = resolved;
-    globalThis.localStorage?.setItem("pm:lang", resolved);
+    // Mirror into localStorage + cookie so SSR routes (verify/login) render
+    // the same language the islands will hydrate to.
+    persistLang(resolved);
   } catch {
     /* keep the default "en" */
   }

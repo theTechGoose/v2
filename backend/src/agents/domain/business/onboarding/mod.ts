@@ -155,6 +155,81 @@ export const ONBOARD_HANDOFF = (firstName: string, lang: Lang = "en"): string =>
 export const ONBOARD_ASK_PAYOUT = (firstName: string, lang: Lang = "en"): string =>
   t(lang, "onboarding.askPayout", { firstName });
 
+/**
+ * Language-robust detection of which onboarding question a prior assistant
+ * message was. The single-question flow needs to know "did I just ask for
+ * the business name?" to decide whether the user's next reply is an answer
+ * to parse or a fresh prompt to (re)issue.
+ *
+ * The detection used to string-match English prose ("Nice to meet you,"),
+ * which silently misrouted replies the moment the asks were localized — a
+ * Spanish "¡Mucho gusto," matches none of those. Instead we match the prior
+ * text against the stable leading literal of each ask template (the part
+ * before the first `{placeholder}`) in BOTH languages, derived from the
+ * shared lang files so it can't drift out of sync.
+ */
+type AskCategory =
+  | "name"
+  | "business"
+  | "state"
+  | "stateGuess"
+  | "address"
+  | "payout";
+
+// Inclusion sets mirror the original (English-only) detection exactly, just
+// computed for en+es: name → askName + legacy askNameAndBusiness; address →
+// the ask AND its parse-error reprompt (the only reprompt the old code
+// treated as "just asked").
+const ASK_CATEGORY_KEYS: Record<AskCategory, string[]> = {
+  name: ["onboarding.askName", "onboarding.askNameAndBusiness"],
+  business: ["onboarding.askBusiness"],
+  state: ["onboarding.askState", "onboarding.askStateGuess"],
+  stateGuess: ["onboarding.askStateGuess"],
+  address: ["onboarding.askAddress", "onboardingChat.address.reprompt"],
+  payout: ["onboarding.askPayout"],
+};
+
+/** Leading literal of an ask template (everything before the first
+ *  `{placeholder}`), trimmed. `t()` with no vars leaves placeholders intact. */
+function askPrefix(lang: Lang, key: string): string {
+  return t(lang, key).split("{")[0].trim();
+}
+
+const ASK_PREFIXES: Record<AskCategory, string[]> = Object.fromEntries(
+  (Object.entries(ASK_CATEGORY_KEYS) as [AskCategory, string[]][]).map((
+    [cat, keys],
+  ) => [
+    cat,
+    keys
+      .flatMap((k) => (["en", "es"] as Lang[]).map((l) => askPrefix(l, k)))
+      .filter((p) => p.length > 0),
+  ]),
+) as Record<AskCategory, string[]>;
+
+export interface LastAskInfo {
+  name: boolean;
+  business: boolean;
+  state: boolean;
+  stateGuess: boolean;
+  address: boolean;
+  payout: boolean;
+}
+
+/** Classify the previous assistant text as an onboarding ask (EN or ES). */
+export function classifyLastAsk(content: string): LastAskInfo {
+  const c = (content ?? "").trim();
+  const hit = (cat: AskCategory): boolean =>
+    c.length > 0 && ASK_PREFIXES[cat].some((p) => c.startsWith(p));
+  return {
+    name: hit("name"),
+    business: hit("business"),
+    state: hit("state"),
+    stateGuess: hit("stateGuess"),
+    address: hit("address"),
+    payout: hit("payout"),
+  };
+}
+
 /** Pull a single email out of a free-text reply. */
 export function extractEmail(raw: string): string | undefined {
   const m = raw.match(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/);

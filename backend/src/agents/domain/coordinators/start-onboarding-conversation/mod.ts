@@ -8,7 +8,6 @@ import { BusinessAddressStore } from "@profile/domain/data/business-address-stor
 import {
   ONBOARD_ASK_ADDRESS,
   ONBOARD_ASK_BUSINESS,
-  ONBOARD_ASK_NAME,
   onboardAskStateWithGuess,
 } from "@agents/domain/business/onboarding/mod.ts";
 
@@ -52,12 +51,16 @@ export class StartOnboardingConversation {
       currentPhase: "quote",
     });
 
+    // The assistant talks to the contractor, so the seeded ask follows their
+    // UI language (user.language) — otherwise the app is Spanish but Bossie's
+    // very first message is English.
+    const lang = me?.language === "es" ? "es" : "en";
     const firstName = me?.name?.trim().split(/\s+/)[0] ?? "there";
     let ask: string | undefined;
-    if (needsName) ask = ONBOARD_ASK_NAME;
-    else if (needsBiz) ask = ONBOARD_ASK_BUSINESS(firstName);
-    else if (needsState) ask = onboardAskStateWithGuess(firstName, me?.phoneNumber);
-    else if (needsAddress) ask = ONBOARD_ASK_ADDRESS(firstName);
+    if (needsName) ask = t(lang, "onboarding.askName");
+    else if (needsBiz) ask = ONBOARD_ASK_BUSINESS(firstName, lang);
+    else if (needsState) ask = onboardAskStateWithGuess(firstName, me?.phoneNumber, lang);
+    else if (needsAddress) ask = ONBOARD_ASK_ADDRESS(firstName, lang);
 
     if (ask) {
       await this.messages.append({
@@ -65,7 +68,7 @@ export class StartOnboardingConversation {
       });
       await this.conversations.update(conv.id, {
         preview: ask,
-        title: t(me?.language ?? "en", "onboardingConversation.title"),
+        title: t(lang, "onboardingConversation.title"),
       });
       return { conversationId: conv.id, seeded: true };
     }
