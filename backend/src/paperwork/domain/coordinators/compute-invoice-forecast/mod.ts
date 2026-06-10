@@ -81,8 +81,19 @@ export class ComputeInvoiceForecast {
     for (const inv of all) {
       if (inv.status === "void" || inv.status === "draft") continue;
 
-      const customer = await resolveCustomerName(this.customers, userId, inv.customerId, customerCache);
-      const job = await resolveJobName(this.contracts, this.quotes, userId, inv.contractId, contractCache);
+      const customer = await resolveCustomerName(
+        this.customers,
+        userId,
+        inv.customerId,
+        customerCache,
+      );
+      const job = await resolveJobName(
+        this.contracts,
+        this.quotes,
+        userId,
+        inv.contractId,
+        contractCache,
+      );
       const labelBase = customer ?? job ?? "Invoice";
 
       // At-risk pass: sent/viewed + past-due + no intent.
@@ -113,8 +124,12 @@ export class ComputeInvoiceForecast {
       }
     }
 
-    thisWeek.sort((a, b) => a.expectedLandDate.localeCompare(b.expectedLandDate));
-    nextWeek.sort((a, b) => a.expectedLandDate.localeCompare(b.expectedLandDate));
+    thisWeek.sort((a, b) =>
+      a.expectedLandDate.localeCompare(b.expectedLandDate)
+    );
+    nextWeek.sort((a, b) =>
+      a.expectedLandDate.localeCompare(b.expectedLandDate)
+    );
     atRisk.sort((a, b) => b.amount - a.amount);
 
     return {
@@ -130,18 +145,25 @@ export class ComputeInvoiceForecast {
 
 export function settlementOffsetDays(method: PaymentMethod): number {
   switch (method) {
-    case "ach": return 2;
-    case "check": return 5;
+    case "ach":
+      return 2;
+    case "check":
+      return 5;
     case "venmo":
     case "zelle":
     case "cashapp":
-    case "cash": return 0;
+    case "cash":
+      return 0;
     case "other":
-    default: return 3;
+    default:
+      return 3;
   }
 }
 
-export function forecastEntryFor(inv: Invoice, labelBase: string): ForecastEntry | undefined {
+export function forecastEntryFor(
+  inv: Invoice,
+  labelBase: string,
+): ForecastEntry | undefined {
   if (inv.status === "paid") {
     return {
       expectedLandDate: (inv.paidAt ?? "").slice(0, 10),
@@ -153,7 +175,10 @@ export function forecastEntryFor(inv: Invoice, labelBase: string): ForecastEntry
   }
   if (inv.status === "claimed" && inv.paymentIntent) {
     const claimedAt = new Date(inv.paymentIntent.claimedAt);
-    const expected = addDays(claimedAt, settlementOffsetDays(inv.paymentIntent.method));
+    const expected = addDays(
+      claimedAt,
+      settlementOffsetDays(inv.paymentIntent.method),
+    );
     return {
       expectedLandDate: expected.toISOString().slice(0, 10),
       amount: inv.amount ?? 0,
@@ -177,14 +202,24 @@ export function forecastEntryFor(inv: Invoice, labelBase: string): ForecastEntry
 
 function methodLabel(m: PaymentMethod): string {
   switch (m) {
-    case "ach": return "ACH";
-    case "check": return "check";
-    case "venmo": return "Venmo";
-    case "zelle": return "Zelle";
-    case "cashapp": return "Cash App";
-    case "paypal": return "PayPal";
-    case "cash": return "cash";
-    case "other": return "other";
+    case "ach":
+      return "ACH";
+    case "check":
+      return "check";
+    case "venmo":
+      return "Venmo";
+    case "zelle":
+      return "Zelle";
+    case "cashapp":
+      return "Cash App";
+    case "paypal":
+      return "PayPal";
+    case "cash":
+      return "cash";
+    case "card":
+      return "card";
+    case "other":
+      return "other";
   }
 }
 
@@ -204,7 +239,9 @@ async function resolveCustomerName(
     const c = await customers.getOwned(customerId, userId);
     cache.set(customerId, c.name);
     return c.name;
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 }
 
 async function resolveJobName(
@@ -223,5 +260,7 @@ async function resolveJobName(
     const name = q.jobName?.trim() || q.summary?.trim() || undefined;
     if (name) cache.set(contractId, name);
     return name;
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 }

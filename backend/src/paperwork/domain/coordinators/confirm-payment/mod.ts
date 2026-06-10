@@ -45,7 +45,10 @@ export class ConfirmPayment {
     private bus: EventBus,
   ) {}
 
-  async run(userId: string, invoiceId: string): Promise<{ ok: boolean; reason?: string; paymentId?: string }> {
+  async run(
+    userId: string,
+    invoiceId: string,
+  ): Promise<{ ok: boolean; reason?: string; paymentId?: string }> {
     const invoice = await this.invoices.getOwned(invoiceId, userId);
     if (invoice.status === "paid") {
       return { ok: true, reason: "already_paid" };
@@ -78,12 +81,15 @@ export class ConfirmPayment {
     try {
       const [customer, contractor, biz] = await Promise.all([
         invoice.customerId
-          ? this.customers.getOwned(invoice.customerId, userId).catch(() => undefined)
+          ? this.customers.getOwned(invoice.customerId, userId).catch(() =>
+            undefined
+          )
           : Promise.resolve(undefined),
         this.users.get(userId).catch(() => undefined),
         this.identity.get(userId).catch(() => null),
       ]);
-      const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || contractor?.name?.trim();
+      const businessName = biz?.businessName?.trim() ||
+        biz?.legalName?.trim() || contractor?.name?.trim();
       const lang: Lang = biz?.commsLanguage === "es" ? "es" : "en";
       const pdfBytes = await this.receiptPdf.run({
         invoice: updated,
@@ -103,7 +109,12 @@ export class ConfirmPayment {
           to: customer.email,
           subject,
           htmlBody: renderReceiptHtml({
-            customer, contractor, businessName, intent, amount: intent.amount, lang,
+            customer,
+            contractor,
+            businessName,
+            intent,
+            amount: intent.amount,
+            lang,
           }),
           ...(contractor?.email ? { cc: [contractor.email] } : {}),
           attachments: [{
@@ -120,14 +131,23 @@ export class ConfirmPayment {
         // receipt is a single short line.
         let shortUrl = "";
         try {
-          const link = await this.shortlinks.findOrCreate(userId, "invoice", invoice.id);
-          const appUrl = Deno.env.get("APP_URL") ?? "https://paperworkmonster.com";
+          const link = await this.shortlinks.findOrCreate(
+            userId,
+            "invoice",
+            invoice.id,
+          );
+          const appUrl = Deno.env.get("APP_URL") ??
+            "https://paperworkmonster.com";
           shortUrl = `${appUrl}/s/${link.code}`;
         } catch { /* fall through to no-url body */ }
         const customerFirst = customer.name?.trim().split(/\s+/)[0];
         const senderFirst = contractor?.name?.trim().split(/\s+/)[0];
-        const lead = customerFirst ? t(lang, "confirmPayment.sms.lead", { name: customerFirst }) : "";
-        const tail = senderFirst ? t(lang, "confirmPayment.sms.tail", { name: senderFirst }) : "";
+        const lead = customerFirst
+          ? t(lang, "confirmPayment.sms.lead", { name: customerFirst })
+          : "";
+        const tail = senderFirst
+          ? t(lang, "confirmPayment.sms.tail", { name: senderFirst })
+          : "";
         const body = t(lang, "confirmPayment.sms.body", {
           lead,
           amount: fmtUSD(intent.amount),
@@ -147,7 +167,11 @@ export class ConfirmPayment {
         entityType: "invoice",
         entityId: invoice.id,
         action: "paid",
-        data: { amount: intent.amount, method: intent.method, ...(intent.reference ? { reference: intent.reference } : {}) },
+        data: {
+          amount: intent.amount,
+          method: intent.method,
+          ...(intent.reference ? { reference: intent.reference } : {}),
+        },
       });
     } catch (err) {
       console.error("[confirm-payment] event emit failed:", err);
@@ -163,20 +187,34 @@ export class ConfirmPayment {
  *  "other". Anything unrecognised still falls back to "other". */
 function mapMethod(m: PaymentMethod): PaymentStorageMethod {
   switch (m) {
-    case "cash": return "cash";
-    case "check": return "check";
-    case "ach": return "ach";
-    case "venmo": return "venmo";
-    case "zelle": return "zelle";
-    case "cashapp": return "cashapp";
-    case "paypal": return "paypal";
+    case "cash":
+      return "cash";
+    case "check":
+      return "check";
+    case "ach":
+      return "ach";
+    case "venmo":
+      return "venmo";
+    case "zelle":
+      return "zelle";
+    case "cashapp":
+      return "cashapp";
+    case "paypal":
+      return "paypal";
+    case "card":
+      return "card";
     default:
       return "other";
   }
 }
 
 function fmtUSD(cents: number): string {
-  return `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  return `$${
+    (cents / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    })
+  }`;
 }
 
 function renderReceiptHtml(opts: {
@@ -188,21 +226,30 @@ function renderReceiptHtml(opts: {
   lang: Lang;
 }): string {
   const { lang } = opts;
-  const businessLabel = opts.businessName ?? opts.contractor?.name ?? t(lang, "brand.name");
+  const businessLabel = opts.businessName ?? opts.contractor?.name ??
+    t(lang, "brand.name");
   const customerFirst = opts.customer?.name?.trim().split(/\s+/)[0];
   const headline = customerFirst
-    ? t(lang, "confirmPayment.email.headline", { name: escapeHtml(customerFirst) })
+    ? t(lang, "confirmPayment.email.headline", {
+      name: escapeHtml(customerFirst),
+    })
     : t(lang, "confirmPayment.email.headlineNoName");
   const ref = opts.intent.reference
-    ? t(lang, "confirmPayment.email.refSuffix", { reference: escapeHtml(opts.intent.reference) })
+    ? t(lang, "confirmPayment.email.refSuffix", {
+      reference: escapeHtml(opts.intent.reference),
+    })
     : "";
   return `<!doctype html>
 <html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
-    <div style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#d94e4e">${escapeHtml(businessLabel)}</div>
+    <div style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#d94e4e">${
+    escapeHtml(businessLabel)
+  }</div>
     <div style="margin-top:18px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:24px;letter-spacing:-0.02em;color:#144852">${headline}</div>
     <p style="margin:14px 0 0;color:#1c2c30;font-size:15px;line-height:1.55">
-      ${t(lang, "confirmPayment.email.body", { amount: fmtUSD(opts.amount), ref })}
+      ${
+    t(lang, "confirmPayment.email.body", { amount: fmtUSD(opts.amount), ref })
+  }
     </p>
   </div>
 </body></html>`;
@@ -211,11 +258,16 @@ function renderReceiptHtml(opts: {
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => {
     switch (c) {
-      case "&": return "&amp;";
-      case "<": return "&lt;";
-      case ">": return "&gt;";
-      case "\"": return "&quot;";
-      default: return "&#39;";
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      default:
+        return "&#39;";
     }
   });
 }

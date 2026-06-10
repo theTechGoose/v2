@@ -13,7 +13,7 @@ import type { ComponentChildren } from "preact";
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
 import { filesClient } from "../clients/files.ts";
 import { fmtPhone } from "../lib/format.ts";
-import { langSignal, type Lang, setLang, tFor } from "../lib/i18n.ts";
+import { type Lang, langSignal, setLang, tFor } from "../lib/i18n.ts";
 import {
   CardGridSkeleton,
   PageHeaderSkeleton,
@@ -113,6 +113,7 @@ function tr(es: boolean) {
     paymentsIntro: tFor(lang, "settings.paymentsIntro"),
     yourHandle: tFor(lang, "settings.yourHandle"),
     mailingOptional: tFor(lang, "settings.mailingOptional"),
+    instructionsOptional: tFor(lang, "settings.instructionsOptional"),
     retypeConfirm: tFor(lang, "settings.retypeConfirm"),
     noMatch: tFor(lang, "settings.noMatch"),
     savePayments: tFor(lang, "settings.savePayments"),
@@ -398,7 +399,10 @@ function EditCard(
         <div style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.commsLang}</span>
           <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:2px">
-            {[{ code: "en", label: t.english }, { code: "es", label: t.spanish }]
+            {[{ code: "en", label: t.english }, {
+              code: "es",
+              label: t.spanish,
+            }]
               .map((lng) => {
                 // Selected set: the explicit list, else fall back to the legacy
                 // single commsLanguage (so existing accounts show their language
@@ -411,7 +415,9 @@ function EditCard(
                   <label
                     key={lng.code}
                     style={`display:flex;align-items:center;gap:8px;cursor:pointer;border:1px solid ${
-                      on ? "var(--brand-green,#519843)" : "var(--border,#d8dcd5)"
+                      on
+                        ? "var(--brand-green,#519843)"
+                        : "var(--border,#d8dcd5)"
                     };border-radius:8px;padding:8px 12px;background:#fff`}
                   >
                     <input
@@ -819,10 +825,18 @@ function TaxEditCard(
 }
 
 interface PayRow {
-  key: "venmo" | "cashapp" | "zelle" | "paypal" | "check" | "cash";
+  key:
+    | "venmo"
+    | "cashapp"
+    | "zelle"
+    | "paypal"
+    | "check"
+    | "cash"
+    | "ach"
+    | "card";
   label: string;
   /** Backend field that stores the handle. null → no handle (cash). */
-  field: "handle" | "cashtag" | "mailTo" | null;
+  field: "handle" | "cashtag" | "mailTo" | "instructions" | null;
   placeholder: string;
   /** Money-routing handles (Venmo/Zelle/etc.) are required when the method is
    *  enabled and get a retype-to-confirm guard — a typo sends funds to the
@@ -864,6 +878,20 @@ const PAY_ROWS: PayRow[] = [
     placeholder: "settings.pay.checkPh",
     optional: true,
   },
+  {
+    key: "ach",
+    label: "paymentMethod.ach",
+    field: "instructions",
+    placeholder: "settings.pay.achPh",
+    optional: true,
+  },
+  {
+    key: "card",
+    label: "paymentMethod.card",
+    field: "instructions",
+    placeholder: "settings.pay.cardPh",
+    optional: true,
+  },
   { key: "cash", label: "paymentMethod.cash", field: null, placeholder: "" },
 ];
 
@@ -892,6 +920,7 @@ function PaymentsEditCard(
         handle?: string;
         cashtag?: string;
         mailTo?: string;
+        instructions?: string;
       }
     >)[r.key];
     const val = r.field ? (cur?.[r.field] ?? "") : "";
@@ -935,7 +964,7 @@ function PaymentsEditCard(
     setBusy(true);
     setErr(null);
     setSaved(false);
-    // Preserve any methods we don't render here (ach/other) via shallow spread.
+    // Preserve any methods we don't render here (e.g. `other`) via shallow spread.
     const apmPatch: Record<string, Record<string, unknown>> = {
       ...(apm as Record<string, Record<string, unknown>>),
     };
@@ -1008,7 +1037,11 @@ function PaymentsEditCard(
                 <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
                   <label style="display:block">
                     <span style={labelStyle}>
-                      {r.optional ? t.mailingOptional : t.yourHandle}
+                      {r.field === "instructions"
+                        ? t.instructionsOptional
+                        : r.optional
+                        ? t.mailingOptional
+                        : t.yourHandle}
                     </span>
                     <input
                       type="text"
@@ -1063,7 +1096,7 @@ function PaymentsEditCard(
 /** DangerZoneCard — irreversible account wipe. Type-to-confirm gate, then a
  *  single destructive button hits GET /me/wipe and bounces to the login page
  *  (the wipe drops every session, so the app is logged out anyway). */
-function DangerZoneCard({ snapshot }: { snapshot: ProfileSnapshot }) {
+function DangerZoneCard(_props: { snapshot: ProfileSnapshot }) {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1123,7 +1156,9 @@ function DangerZoneCard({ snapshot }: { snapshot: ProfileSnapshot }) {
       </div>
       {err
         ? (
-          <div style="margin-top:10px;color:#a83b3b;font-size:12.5px">{err}</div>
+          <div style="margin-top:10px;color:#a83b3b;font-size:12.5px">
+            {err}
+          </div>
         )
         : null}
     </div>

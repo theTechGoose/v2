@@ -708,6 +708,7 @@ function parseClaim(input: unknown): ClaimPaymentDto {
     "paypal",
     "cash",
     "ach",
+    "card",
     "other",
   ]);
   if (!allowed.has(dto.method)) {
@@ -740,7 +741,10 @@ function projectAcceptedMethods(
     out.push({ method: "paypal", handle: m.paypal.handle });
   }
   if (m.cash?.enabled) out.push({ method: "cash" });
-  if (m.ach?.enabled) out.push({ method: "ach" });
+  if (m.ach?.enabled) out.push({ method: "ach", handle: m.ach.instructions });
+  if (m.card?.enabled) {
+    out.push({ method: "card", handle: m.card.instructions });
+  }
   if (m.other?.enabled) {
     out.push({ method: "other", handle: m.other.instructions });
   }
@@ -811,7 +815,11 @@ function redactAcceptedMethods(
   if (!m) return undefined;
   return {
     ...m,
-    ach: m.ach ? { enabled: m.ach.enabled } : undefined,
+    // Drop raw routing/account, but keep the contractor-authored direct-deposit
+    // instructions — those are written to be shown to the customer.
+    ach: m.ach
+      ? { enabled: m.ach.enabled, instructions: m.ach.instructions }
+      : undefined,
   };
 }
 

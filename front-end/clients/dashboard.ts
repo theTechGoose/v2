@@ -106,7 +106,9 @@ export interface Notification {
 export interface Invoice {
   id: string;
   userId: string;
-  contractId: string;
+  /** Optional — standalone invoices created from the receivables dashboard
+   *  have no contract behind them. */
+  contractId?: string;
   customerId?: string;
   amount?: number;
   issuedDate?: string;
@@ -191,4 +193,15 @@ export const dashboardClient = {
   invoices: (status?: string, opts: ApiOptions = {}) =>
     api.get<Invoice[]>("/invoices", { ...opts, query: { status } }),
   customers: (opts: ApiOptions = {}) => api.get<Customer[]>("/customers", opts),
+  /** Create a standalone invoice (no contract). `amount` is INTEGER CENTS. */
+  createInvoice: (
+    body: {
+      customerId?: string;
+      amount?: number;
+      dueDate: string;
+      issuedDate?: string;
+      status?: string;
+    },
+    opts: ApiOptions = {},
+  ) => api.post<Invoice>("/invoices", body, opts),
 };

@@ -38,6 +38,7 @@ export interface BusinessIdentity {
       | "paypal"
       | "cash"
       | "ach"
+      | "card"
       | "other",
       {
         enabled?: boolean;

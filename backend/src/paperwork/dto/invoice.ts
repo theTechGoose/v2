@@ -31,6 +31,7 @@ export type PaymentMethod =
   | "paypal"
   | "cash"
   | "ach"
+  | "card"
   | "other";
 
 /** A customer's "I paid" claim recorded from the public invoice page.
@@ -69,8 +70,11 @@ export class ReminderHistoryEntryDto {
 }
 
 export class CreateInvoiceDto {
-  @IsString()
-  contractId!: string;
+  /** The signed contract this invoice bills against. Optional — standalone
+   *  invoices (one-off bills with no quote/contract behind them) are created
+   *  straight from the receivables dashboard and carry only a customer. */
+  @IsOptional() @IsString()
+  contractId?: string;
 
   @IsString()
   dueDate!: string;

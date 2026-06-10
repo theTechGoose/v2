@@ -102,7 +102,9 @@ export default function PublicInvoiceClaim(
         const body = await res.json().catch(() => ({}));
         throw new Error(
           body.reason ??
-            tFor(lang, "publicInvoiceClaim.submitError", { status: res.status }),
+            tFor(lang, "publicInvoiceClaim.submitError", {
+              status: res.status,
+            }),
         );
       }
       setDone(true);
@@ -233,6 +235,8 @@ function methodLabel(method: string, lang: Lang = "en"): string {
       return tFor(lang, "paymentMethod.cash");
     case "ach":
       return tFor(lang, "paymentMethod.ach");
+    case "card":
+      return tFor(lang, "paymentMethod.card");
     case "other":
       return tFor(lang, "paymentMethod.other");
     default:
@@ -266,7 +270,13 @@ function methodInstructions(m: Method, lang: Lang = "en"): string {
     case "cash":
       return tFor(lang, "publicInvoiceClaim.instructions.cash");
     case "ach":
-      return tFor(lang, "publicInvoiceClaim.instructions.ach");
+      return m.handle
+        ? m.handle
+        : tFor(lang, "publicInvoiceClaim.instructions.ach");
+    case "card":
+      return m.handle
+        ? m.handle
+        : tFor(lang, "publicInvoiceClaim.instructions.card");
     case "other":
       return m.handle
         ? m.handle
@@ -292,6 +302,8 @@ function referencePlaceholder(method: string, lang: Lang = "en"): string {
       return tFor(lang, "publicInvoiceClaim.refPlaceholder.cash");
     case "ach":
       return tFor(lang, "publicInvoiceClaim.refPlaceholder.ach");
+    case "card":
+      return tFor(lang, "publicInvoiceClaim.refPlaceholder.card");
     case "other":
       return tFor(lang, "publicInvoiceClaim.refPlaceholder.other");
     default:

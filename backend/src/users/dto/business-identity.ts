@@ -60,6 +60,21 @@ export class AchMethod {
   routingNumber?: string;
   @IsOptional() @IsString()
   accountNumberMasked?: string;
+  /** Contractor-authored direct-deposit instructions the customer SHOULD see
+   *  ("Email me for routing + account", "Bank of America, Acct ••••1234").
+   *  Surfaced verbatim on the public page — the masked routing/account fields
+   *  above are still stripped, so the contractor controls what goes public. */
+  @IsOptional() @IsString()
+  instructions?: string;
+}
+export class CardMethod {
+  @IsBoolean()
+  enabled!: boolean;
+  /** Free-text card instructions ("I'll text a secure payment link",
+   *  "Call me with your card number"). Payments stay manual — there is no
+   *  processor; this just tells the customer how to hand over the card. */
+  @IsOptional() @IsString()
+  instructions?: string;
 }
 export class OtherMethod {
   @IsBoolean()
@@ -84,6 +99,8 @@ export class AcceptedPaymentMethods {
   cash?: CashMethod;
   @IsOptional() @ValidateNested() @Type(() => AchMethod)
   ach?: AchMethod;
+  @IsOptional() @ValidateNested() @Type(() => CardMethod)
+  card?: CardMethod;
   @IsOptional() @ValidateNested() @Type(() => OtherMethod)
   other?: OtherMethod;
 }

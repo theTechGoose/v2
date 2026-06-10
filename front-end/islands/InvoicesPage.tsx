@@ -20,6 +20,7 @@ import {
   dashboardClient,
   type Invoice,
 } from "../clients/dashboard.ts";
+import { clientsClient } from "../clients/clients.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   CardGridSkeleton,
@@ -27,7 +28,7 @@ import {
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
 import { fmtMoney } from "../lib/format.ts";
-import { langSignal, type Lang, tFor } from "../lib/i18n.ts";
+import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 
 interface State {
@@ -79,6 +80,8 @@ function methodLabel(m: string | undefined, lang: Lang): string {
       return tFor(lang, "invoicesPage.method.cash");
     case "ach":
       return tFor(lang, "invoicesPage.method.ach");
+    case "card":
+      return tFor(lang, "invoicesPage.method.card");
     case "other":
       return tFor(lang, "invoicesPage.method.other");
     default:
@@ -281,6 +284,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   const [forecast, setForecast] = useState<ForecastResult | undefined>(
     undefined,
   );
+  const [newOpen, setNewOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -380,7 +384,15 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
         totalInvoiceCount={enriched.length}
         forecast={forecast}
         lang={lang}
+        onNew={() => setNewOpen(true)}
       />
+      {newOpen && (
+        <NewInvoiceModal
+          customers={Array.isArray(s.customers) ? s.customers : []}
+          lang={lang}
+          onClose={() => setNewOpen(false)}
+        />
+      )}
       <InvoicesKpis
         overdueCount={overdue.length}
         overdueTotal={overdueTotal}
@@ -428,9 +440,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             storageKey="invoices:track:awaiting"
           >
             {claimed.length === 0
-              ? (
-                <EmptyTrack hint={tFor(lang, "invoicesPage.empty.awaiting")} />
-              )
+              ? <EmptyTrack hint={tFor(lang, "invoicesPage.empty.awaiting")} />
               : (
                 <div class="qcards" data-cy="awaiting-confirmation-track">
                   {claimed.map((inv, i) => (
@@ -480,9 +490,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             storageKey="invoices:track:upcoming"
           >
             {scheduled.length === 0
-              ? (
-                <EmptyTrack hint={tFor(lang, "invoicesPage.empty.scheduled")} />
-              )
+              ? <EmptyTrack hint={tFor(lang, "invoicesPage.empty.scheduled")} />
               : (
                 <div class="qcards" data-cy="upcoming-track">
                   {scheduled.map((inv, i) => (
@@ -507,9 +515,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             storageKey="invoices:track:03"
           >
             {drafting.length === 0
-              ? (
-                <EmptyTrack hint={tFor(lang, "invoicesPage.empty.drafting")} />
-              )
+              ? <EmptyTrack hint={tFor(lang, "invoicesPage.empty.drafting")} />
               : (
                 <div class="qcards">
                   {drafting.map((inv, i) => (
@@ -534,9 +540,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             storageKey="invoices:track:04"
           >
             {paidThisMonth.length === 0
-              ? (
-                <EmptyTrack hint={tFor(lang, "invoicesPage.empty.paid")} />
-              )
+              ? <EmptyTrack hint={tFor(lang, "invoicesPage.empty.paid")} />
               : (
                 <div class="qcards">
                   {paidThisMonth.map((inv, i) => (
@@ -567,6 +571,7 @@ function InvoicesHero(
     totalInvoiceCount,
     forecast,
     lang,
+    onNew,
   }: {
     outstandingTotal: number;
     outstandingCount: number;
@@ -574,6 +579,7 @@ function InvoicesHero(
     totalInvoiceCount: number;
     forecast?: ForecastResult;
     lang: Lang;
+    onNew: () => void;
   },
 ) {
   const trulyEmpty = totalInvoiceCount === 0;
@@ -609,14 +615,13 @@ function InvoicesHero(
                 {tFor(lang, "invoicesPage.hero.expectedThisWeek")}
                 <br />
                 {tFor(lang, "invoicesPage.hero.across")} {forecast!.thisWeek
-                  .length}{" "}
-                {tFor(
-                  lang,
-                  forecast!.thisWeek.length === 1
-                    ? "invoicesPage.unitPayment.one"
-                    : "invoicesPage.unitPayment.other",
-                  { n: forecast!.thisWeek.length },
-                )}.
+                  .length} {tFor(
+                    lang,
+                    forecast!.thisWeek.length === 1
+                      ? "invoicesPage.unitPayment.one"
+                      : "invoicesPage.unitPayment.other",
+                    { n: forecast!.thisWeek.length },
+                  )}.
               </>
             )
             : haveForecast && forecast!.nextWeekCents > 0
@@ -661,15 +666,13 @@ function InvoicesHero(
             : overdueCount > 0
             ? (
               <>
-                <strong>{overdueCount}</strong>{" "}
-                {tFor(
+                <strong>{overdueCount}</strong> {tFor(
                   lang,
                   overdueCount === 1
                     ? "invoicesPage.sub.pastDueVerb.one"
                     : "invoicesPage.sub.pastDueVerb.other",
                   { n: overdueCount },
-                )}{" "}
-                {tFor(lang, "invoicesPage.sub.pastDue")}
+                )} {tFor(lang, "invoicesPage.sub.pastDue")}
               </>
             )
             : <>{tFor(lang, "invoicesPage.sub.nothingPastDue")}</>}
@@ -683,27 +686,27 @@ function InvoicesHero(
             >
               ⚠ <strong>{fmtMoney(forecast!.atRiskCents)}</strong>{" "}
               {tFor(lang, "invoicesPage.atRisk.across")} {forecast!.atRisk
-                .length} {tFor(lang, "invoicesPage.atRisk.overdue")}{" "}
-              {tFor(
-                lang,
-                forecast!.atRisk.length === 1
-                  ? "invoicesPage.unitInvoice.one"
-                  : "invoicesPage.unitInvoice.other",
-                { n: forecast!.atRisk.length },
-              )}.
+                .length} {tFor(lang, "invoicesPage.atRisk.overdue")} {tFor(
+                  lang,
+                  forecast!.atRisk.length === 1
+                    ? "invoicesPage.unitInvoice.one"
+                    : "invoicesPage.unitInvoice.other",
+                  { n: forecast!.atRisk.length },
+                )}.
             </p>
           )
           : null}
         <div class="qph__cta-row">
-          <a
+          <button
+            type="button"
             class="qph__cta"
-            href={`/assistant?seed=${
-              encodeURIComponent(tFor(lang, "invoicesPage.seedNewInvoice"))
-            }`}
+            data-cy="invoice-new"
+            onClick={onNew}
+            style="appearance:none;cursor:pointer;font:inherit"
           >
             <I d={ICN.plus} size={14} sw={2.5} />{" "}
             {tFor(lang, "invoicesPage.newInvoice")}
-          </a>
+          </button>
           <a
             class="qph__cta qph__cta--ghost"
             data-cy="invoice-export"
@@ -749,8 +752,7 @@ function InvoicesKpis(
         <div class="qkpi__lbl">{tFor(lang, "status.overdue")}</div>
         <div class="qkpi__val">{fmtMoney(overdueTotal)}</div>
         <div class="qkpi__sub">
-          {overdueCount}{" "}
-          {tFor(
+          {overdueCount} {tFor(
             lang,
             overdueCount === 1
               ? "invoicesPage.unitInvoice.one"
@@ -938,12 +940,44 @@ function InvoiceCard(
       setBusy(false);
     }
   }
-  function doFinishDraft(e: Event) {
+  // "Finish + send" on a draft: a fully deterministic dashboard action — no
+  // assistant round-trip. Finalize the invoice (draft → sent, stamp issuedDate
+  // if missing), then dispatch to the customer over both channels. The backend
+  // send coordinators only stamp quotes as "sent", so we flip the invoice
+  // status ourselves up front; that also moves the card to "Out for payment"
+  // even when there's no email/phone on file to deliver to.
+  async function doFinishDraft(e: Event) {
     e.stopPropagation();
-    // Drafts are continued from the assistant — no per-invoice
-    // conversation lookup yet, so we drop the user on the assistant home
-    // where they can pick up the draft thread.
-    globalThis.location.href = "/assistant";
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fetch(`/api/invoices/${inv.id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          status: "sent",
+          ...(inv.issuedDate
+            ? {}
+            : { issuedDate: new Date().toISOString().slice(0, 10) }),
+        }),
+      });
+      // Deliver over both channels — the backend handles "no email/phone on
+      // file" gracefully; the invoice still lands in "Out for payment".
+      await Promise.allSettled([
+        fetch(`/api/invoices/${inv.id}/email`, {
+          method: "POST",
+          credentials: "include",
+        }),
+        fetch(`/api/invoices/${inv.id}/text`, {
+          method: "POST",
+          credentials: "include",
+        }),
+      ]);
+      globalThis.location.reload();
+    } finally {
+      setBusy(false);
+    }
   }
   function ctaAction(e: Event) {
     if (inv.stage === "claimed") return doConfirmReceived(e);
@@ -1181,7 +1215,10 @@ function InvoiceCard(
                     </div>
                     <input
                       type="text"
-                      placeholder={tFor(lang, "invoicesPage.adjust.coDescPlaceholder")}
+                      placeholder={tFor(
+                        lang,
+                        "invoicesPage.adjust.coDescPlaceholder",
+                      )}
                       value={coDesc}
                       onInput={(e) =>
                         setCoDesc((e.target as HTMLInputElement).value)}
@@ -1281,5 +1318,228 @@ function InvoiceCard(
         </div>
       </div>
     </article>
+  );
+}
+
+/* ---------------- New invoice modal ---------------- */
+
+const NEW_SENTINEL = "__new__";
+
+/** Create a standalone invoice — no quote/contract behind it. Pick (or add)
+ *  a client, set an amount + due date, and it lands as a draft in the
+ *  Drafting track. Mirrors the add-client modal pattern on /clients. */
+function NewInvoiceModal(
+  { customers, lang, onClose }: {
+    customers: Customer[];
+    lang: Lang;
+    onClose: () => void;
+  },
+) {
+  const [clientSel, setClientSel] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [amount, setAmount] = useState("");
+  const [dueDate, setDueDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const labelStyle =
+    "display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)";
+  const inputStyle =
+    "padding:11px 13px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)";
+
+  async function submit(e: Event) {
+    e.preventDefault();
+    if (busy) return;
+    const cents = Math.round(Number(amount) * 100);
+    if (!cents || cents <= 0) {
+      setError(tFor(lang, "invoicesPage.new.errAmount"));
+      return;
+    }
+    if (!dueDate) {
+      setError(tFor(lang, "invoicesPage.new.errDueDate"));
+      return;
+    }
+    if (clientSel === NEW_SENTINEL && !newName.trim()) {
+      setError(tFor(lang, "invoicesPage.new.errClientName"));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      let customerId: string | undefined;
+      if (clientSel === NEW_SENTINEL) {
+        const created = await clientsClient.create({
+          name: newName.trim(),
+          ...(newPhone.trim() ? { phoneNumber: newPhone.trim() } : {}),
+          ...(newEmail.trim() ? { email: newEmail.trim() } : {}),
+        });
+        customerId = created.id;
+      } else if (clientSel) {
+        customerId = clientSel;
+      }
+      await dashboardClient.createInvoice({
+        ...(customerId ? { customerId } : {}),
+        amount: cents,
+        dueDate,
+        issuedDate: new Date().toISOString().slice(0, 10),
+        status: "draft",
+      });
+      // Reload so the new draft enriches into the Drafting track — matches how
+      // the in-card actions refresh the page.
+      globalThis.location.reload();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : tFor(lang, "invoicesPage.new.errCreate"),
+      );
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      onClick={() => !busy && onClose()}
+      style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px"
+    >
+      <form
+        data-cy="new-invoice-modal"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={submit}
+        style="background:#fff;border-radius:16px;padding:24px 26px;max-width:460px;width:100%;box-shadow:0 24px 64px rgba(20,72,82,0.22);display:flex;flex-direction:column;gap:14px"
+      >
+        <h2 style="margin:0;font-size:20px;font-weight:800;color:var(--fg,#144852)">
+          {tFor(lang, "invoicesPage.new.title")}
+        </h2>
+        <p style="margin:0;font-size:13px;color:var(--fg-muted,#6b7560)">
+          {tFor(lang, "invoicesPage.new.intro")}
+        </p>
+
+        <label style={labelStyle}>
+          {tFor(lang, "invoicesPage.new.client")}
+          <select
+            data-cy="new-invoice-client"
+            value={clientSel}
+            disabled={busy}
+            onInput={(e) => setClientSel((e.target as HTMLSelectElement).value)}
+            style={inputStyle}
+          >
+            <option value="">
+              {tFor(lang, "invoicesPage.new.clientNone")}
+            </option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+            <option value={NEW_SENTINEL}>
+              {tFor(lang, "invoicesPage.new.newClient")}
+            </option>
+          </select>
+        </label>
+
+        {clientSel === NEW_SENTINEL && (
+          <div style="display:flex;flex-direction:column;gap:12px;background:rgba(0,0,0,0.03);border-radius:10px;padding:12px 14px">
+            <label style={labelStyle}>
+              {tFor(lang, "settings.name")}
+              <input
+                type="text"
+                autoFocus
+                required
+                value={newName}
+                disabled={busy}
+                onInput={(e) =>
+                  setNewName((e.target as HTMLInputElement).value)}
+                style={inputStyle}
+              />
+            </label>
+            <label style={labelStyle}>
+              {tFor(lang, "settings.phone")}
+              <input
+                type="tel"
+                value={newPhone}
+                disabled={busy}
+                onInput={(e) =>
+                  setNewPhone((e.target as HTMLInputElement).value)}
+                style={inputStyle}
+              />
+            </label>
+            <label style={labelStyle}>
+              {tFor(lang, "settings.email")}
+              <input
+                type="email"
+                value={newEmail}
+                disabled={busy}
+                onInput={(e) =>
+                  setNewEmail((e.target as HTMLInputElement).value)}
+                style={inputStyle}
+              />
+            </label>
+          </div>
+        )}
+
+        <label style={labelStyle}>
+          {tFor(lang, "invoicesPage.new.amount")}
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            inputMode="decimal"
+            data-cy="new-invoice-amount"
+            placeholder="0.00"
+            value={amount}
+            disabled={busy}
+            onInput={(e) => setAmount((e.target as HTMLInputElement).value)}
+            style={inputStyle}
+          />
+        </label>
+
+        <label style={labelStyle}>
+          {tFor(lang, "invoicesPage.new.dueDate")}
+          <input
+            type="date"
+            data-cy="new-invoice-due"
+            value={dueDate}
+            disabled={busy}
+            onInput={(e) => setDueDate((e.target as HTMLInputElement).value)}
+            style={inputStyle}
+          />
+        </label>
+
+        {error && (
+          <p
+            role="alert"
+            style="margin:0;color:#a83b3b;font-size:13.5px;font-weight:600"
+          >
+            {error}
+          </p>
+        )}
+
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+            style="padding:10px 16px;border:0;background:transparent;color:var(--fg-muted,#6b7560);font:inherit;font-weight:700;cursor:pointer;border-radius:10px"
+          >
+            {tFor(lang, "common.cancel")}
+          </button>
+          <button
+            type="submit"
+            data-cy="new-invoice-submit"
+            disabled={busy}
+            style="padding:10px 20px;border:0;border-radius:10px;background:var(--brand-green,#519843);color:#fff;font:inherit;font-weight:800;cursor:pointer"
+          >
+            {busy
+              ? tFor(lang, "invoicesPage.new.creating")
+              : tFor(lang, "invoicesPage.new.create")}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

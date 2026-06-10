@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { detailLines } from "../lib/format.ts";
-import { computePaymentSplit, type MilestoneRole } from "../lib/payment-split.ts";
+import {
+  computePaymentSplit,
+  type MilestoneRole,
+} from "../lib/payment-split.ts";
 import { api } from "../lib/api.ts";
 import {
   assistantClient,
@@ -157,8 +160,15 @@ interface JobOptionDraft {
   bullets: BulletDraft[];
   /** Per-language content of the ORIGINAL (pre-edit) option, used to fill the
    *  quote's descriptionByLang on pick without re-translating unedited bullets. */
-  byLang?: Record<string, { jobName: string; summary: string; bullets: string[] }>;
+  byLang?: Record<
+    string,
+    { jobName: string; summary: string; bullets: string[] }
+  >;
 }
+
+/** Sentinel id for the "write it myself" card — a free-text job description
+ *  the contractor types verbatim instead of picking a generated option. */
+const CUSTOM_OPTION_ID = "__custom__";
 
 let bulletSeq = 0;
 function toOptionDrafts(options: JobOption[]): JobOptionDraft[] {
@@ -436,9 +446,10 @@ export default function AsstChat({
   // contractor's configured send languages, but ALWAYS include their app
   // language (first → the default) so e.g. a Spanish-app contractor can always
   // preview/send in Spanish even when their send languages are English-only.
-  const previewLangOptions = (sendLanguages && sendLanguages.length
-    ? sendLanguages
-    : ["en"]).filter((l) => l in SEND_LANG_LABEL_KEYS);
+  const previewLangOptions =
+    (sendLanguages && sendLanguages.length ? sendLanguages : ["en"]).filter((
+      l,
+    ) => l in SEND_LANG_LABEL_KEYS);
   const sendLangs = Array.from(new Set([lang, ...previewLangOptions]))
     .filter((l) => l in SEND_LANG_LABEL_KEYS);
   const [convoId, setConvoId] = useState<string | undefined>(conversationId);
@@ -533,6 +544,8 @@ export default function AsstChat({
   const [editingBullet, setEditingBullet] = useState<
     { optionId: string; bulletId: string } | null
   >(null);
+  /** Which option's TITLE is open for inline edit (null = none). */
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   /** When set, renders the "Want me to professionalize that?" popup for
    *  the bullet that was just edited or added. */
   const [proPopup, setProPopup] = useState<
@@ -547,6 +560,12 @@ export default function AsstChat({
   /** Snapshot of a bullet's text at edit-start, so commit can tell whether
    *  it actually changed (and only then offer to professionalize). */
   const editOriginalRef = useRef<string>("");
+  /** Title text at edit-start, so commit can skip no-op renames. */
+  const titleOriginalRef = useRef<string>("");
+  /** Uncontrolled "write it myself" textarea value — kept in a ref (not state)
+   *  so typing doesn't re-render this whole island, and persists across the
+   *  card unmount/remount when the contractor toggles the selection. */
+  const customDraftRef = useRef<string>("");
   /** Set once the user starts editing the picker (delete/edit/add). Blocks
    *  the silent heuristic→LLM upgrade so we never clobber their changes. */
   const optionsTouchedRef = useRef(false);
@@ -664,7 +683,9 @@ export default function AsstChat({
       };
       setQuote((q) => q ? { ...q, descriptionByLang: merged } : q);
       quotesClient.update(id, { descriptionByLang: merged }).catch(() => {});
-    } catch { /* keep the base description */ } finally {
+    } catch {
+      /* keep the base description */
+    } finally {
       descLangInFlight.current.delete(targetLang);
     }
   }
@@ -1008,8 +1029,9 @@ export default function AsstChat({
       status = tFor(lang, "asstChat.header.contractSigned");
     } else if (contractStatus === "sent") {
       status = tFor(lang, "asstChat.header.contractOutForSignature");
-    } else if (contract) status = tFor(lang, "asstChat.header.contractDrafting");
-    else if (dividerPhase === 4) {
+    } else if (contract) {
+      status = tFor(lang, "asstChat.header.contractDrafting");
+    } else if (dividerPhase === 4) {
       status = tFor(lang, "asstChat.header.contractAccepted");
     } else if (dividerPhase === 3) {
       status = tFor(lang, "asstChat.header.contractSent");
@@ -1548,6 +1570,29 @@ export default function AsstChat({
     setEditingBullet({ optionId, bulletId });
   }
 
+  function setOptionName(optionId: string, name: string) {
+    setJobOptions((prev) =>
+      prev?.map((o) => (o.id === optionId ? { ...o, jobName: name } : o)) ??
+        prev
+    );
+  }
+
+  function startTitleEdit(optionId: string, current: string) {
+    optionsTouchedRef.current = true;
+    titleOriginalRef.current = current;
+    setEditingTitleId(optionId);
+  }
+
+  /** Commit an inline title edit (uncontrolled input → value read on blur).
+   *  Empty or unchanged input is a no-op so a stray click never blanks a
+   *  heading. */
+  function commitTitleEdit(optionId: string, value: string) {
+    setEditingTitleId(null);
+    const next = value.trim();
+    if (!next || next === titleOriginalRef.current.trim()) return;
+    setOptionName(optionId, next);
+  }
+
   /** Commit an inline bullet edit (uncontrolled input → value read on blur).
    *  Updates state once; offers to professionalize only when the text
    *  actually changed. Empty input reverts to the original (no blank rows). */
@@ -1671,7 +1716,30 @@ export default function AsstChat({
    */
   async function applyJobOption() {
     if (sending) return;
-    const opt = jobOptions?.find((o) => o.id === selectedOptionId);
+    let opt = jobOptions?.find((o) => o.id === selectedOptionId);
+    // "Write it myself" — synthesize a draft from the free-text box: each
+    // non-empty line becomes a bullet, the first line seeds the title/summary.
+    // No byLang, so the customer-language copy is filled lazily on preview.
+    if (selectedOptionId === CUSTOM_OPTION_ID) {
+      const lines = customDraftRef.current
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
+      if (lines.length === 0) {
+        setError(tFor(lang, "asstChat.jobOpts.customEmpty"));
+        return;
+      }
+      opt = {
+        id: CUSTOM_OPTION_ID,
+        jobName: lines[0].split(/\s+/).slice(0, 5).join(" "),
+        summary: lines[0],
+        bullets: lines.map((text, i) => ({
+          id: `c${i}`,
+          text,
+          deleted: false,
+        })),
+      };
+    }
     if (!opt) {
       setError(tFor(lang, "asstChat.error.pickOption"));
       return;
@@ -1681,8 +1749,9 @@ export default function AsstChat({
     );
     const liveTexts = live.map((b) => b.text.trim());
     const description = liveTexts.join("\n");
-    const summary = (opt.summary || opt.jobName || tFor(lang, "asstChat.newJob"))
-      .trim();
+    const summary =
+      (opt.summary || opt.jobName || tFor(lang, "asstChat.newJob"))
+        .trim();
     const jobName = (opt.jobName || summary).trim();
     setError(undefined);
     setSending(true);
@@ -1721,15 +1790,34 @@ export default function AsstChat({
         }
       }
       const hasByLang = Object.keys(descByLang).length > 0;
-      // Per-language title + summary (not editable in the picker, so always the
-      // option's pre-generated translations) so the customer's agreement
-      // heading renders in their language too.
+      // Per-language title + summary so the customer's agreement heading renders
+      // in their language. The summary isn't editable, so it always reuses the
+      // pre-generated translation. The TITLE is now editable — when the
+      // contractor renames it, the pre-generated translations are stale, so we
+      // re-translate the new title (and the app-lang entry always reflects the
+      // edit so it shows for the contractor too).
       const nameByLang: Record<string, string> = {};
       const summByLang: Record<string, string> = {};
+      const origAppName = opt.byLang?.[appLang]?.jobName?.trim() ?? "";
+      const nameEdited = jobName !== origAppName;
+      if (jobName) nameByLang[appLang] = jobName;
       for (const ol of Object.keys(opt.byLang ?? {})) {
         const b = opt.byLang?.[ol];
-        if (b?.jobName?.trim()) nameByLang[ol] = b.jobName.trim();
         if (b?.summary?.trim()) summByLang[ol] = b.summary.trim();
+        if (ol === appLang) continue;
+        if (!nameEdited && b?.jobName?.trim()) {
+          nameByLang[ol] = b.jobName.trim();
+        } else if (jobName) {
+          try {
+            const res = await assistantClient.translate(
+              [jobName],
+              ol as "en" | "es",
+            );
+            nameByLang[ol] = (res?.texts?.[0] ?? jobName).trim();
+          } catch {
+            nameByLang[ol] = jobName;
+          }
+        }
       }
       const hasName = Object.keys(nameByLang).length > 0;
       const hasSumm = Object.keys(summByLang).length > 0;
@@ -2062,7 +2150,12 @@ export default function AsstChat({
         if (detail.contract) setContract(detail.contract);
       }
       if (!id) throw new Error("no contract bound to this conversation");
-      const res = await assistantClient.sendContract(convoId, id, channel, language);
+      const res = await assistantClient.sendContract(
+        convoId,
+        id,
+        channel,
+        language,
+      );
       setReviewedCtas((prev) => {
         const next = new Set(prev);
         next.add(message.id);
@@ -2836,12 +2929,68 @@ export default function AsstChat({
                                       aria-hidden="true"
                                     >
                                     </span>
-                                    <span class="chat__jobopt-name">
-                                      {opt.jobName ||
-                                        tFor(lang, "asstChat.jobOpts.optionN", {
-                                          n: i + 1,
-                                        })}
-                                    </span>
+                                    {editingTitleId === opt.id
+                                      ? (
+                                        <input
+                                          type="text"
+                                          class="chat__jobopt-name-edit"
+                                          defaultValue={opt.jobName}
+                                          autoFocus
+                                          onClick={(e) => e.stopPropagation()}
+                                          onKeyDown={(e) => {
+                                            const el = e
+                                              .currentTarget as HTMLInputElement;
+                                            if (e.key === "Enter") {
+                                              e.preventDefault();
+                                              el.blur();
+                                            } else if (e.key === "Escape") {
+                                              editEscapedRef.current = true;
+                                              el.blur();
+                                            }
+                                          }}
+                                          onBlur={(e) => {
+                                            if (editEscapedRef.current) {
+                                              editEscapedRef.current = false;
+                                              setEditingTitleId(null);
+                                              return;
+                                            }
+                                            commitTitleEdit(
+                                              opt.id,
+                                              (e.currentTarget as HTMLInputElement)
+                                                .value,
+                                            );
+                                          }}
+                                        />
+                                      )
+                                      : (
+                                        <button
+                                          type="button"
+                                          class="chat__jobopt-name-btn"
+                                          title={tFor(
+                                            lang,
+                                            "asstChat.jobOpts.editTitle",
+                                          )}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            startTitleEdit(opt.id, opt.jobName);
+                                          }}
+                                        >
+                                          <span>
+                                            {opt.jobName ||
+                                              tFor(
+                                                lang,
+                                                "asstChat.jobOpts.optionN",
+                                                { n: i + 1 },
+                                              )}
+                                          </span>
+                                          <span
+                                            class="chat__jobopt-name-pencil"
+                                            aria-hidden="true"
+                                          >
+                                            ✎
+                                          </span>
+                                        </button>
+                                      )}
                                   </div>
                                   <ul class="chat__jobopt-bullets">
                                     {opt.bullets.map((b) => {
@@ -2991,6 +3140,51 @@ export default function AsstChat({
                                 </div>
                               );
                             })}
+                            <div
+                              class={`chat__jobopt chat__jobopt-custom${
+                                selectedOptionId === CUSTOM_OPTION_ID
+                                  ? " is-selected"
+                                  : ""
+                              }`}
+                              onClick={() =>
+                                setSelectedOptionId(CUSTOM_OPTION_ID)}
+                              role="button"
+                              tabIndex={0}
+                            >
+                              <div class="chat__jobopt-head">
+                                <span
+                                  class="chat__jobopt-radio"
+                                  aria-hidden="true"
+                                >
+                                </span>
+                                <span class="chat__jobopt-name">
+                                  {tFor(lang, "asstChat.jobOpts.customTitle")}
+                                </span>
+                              </div>
+                              {selectedOptionId === CUSTOM_OPTION_ID
+                                ? (
+                                  <textarea
+                                    class="chat__jobopt-custom-area"
+                                    placeholder={tFor(
+                                      lang,
+                                      "asstChat.jobOpts.customPlaceholder",
+                                    )}
+                                    autoFocus
+                                    defaultValue={customDraftRef.current}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onInput={(e) => {
+                                      customDraftRef.current =
+                                        (e.currentTarget as HTMLTextAreaElement)
+                                          .value;
+                                    }}
+                                  />
+                                )
+                                : (
+                                  <p class="chat__jobopt-custom-hint">
+                                    {tFor(lang, "asstChat.jobOpts.customHint")}
+                                  </p>
+                                )}
+                            </div>
                           </div>
                           <button
                             type="button"
@@ -3057,8 +3251,9 @@ export default function AsstChat({
                         <img src="/logo-monster.png" alt="" />
                       </div>
                       <div class="chat__details-prompt-bubble">
-                        <strong>{tFor(lang, "asstChat.details.promptBold")}</strong>
-                        {" "}
+                        <strong>
+                          {tFor(lang, "asstChat.details.promptBold")}
+                        </strong>{" "}
                         {tFor(lang, "asstChat.details.promptRest")}
                         <span class="chat__details-prompt-hint">
                           {tFor(lang, "asstChat.details.hint")}
@@ -3518,10 +3713,6 @@ export default function AsstChat({
                     previewCtaId === m.id;
                   if (previewing) {
                     const contractId = payload.contractId ?? contract?.id ?? "";
-                    // Preview language — flips the card chrome to Spanish to
-                    // match what the customer receives, and is the language the
-                    // send goes out in. Toggled via "Preview in" below the head.
-                    const es = previewLang === "es";
                     // Pull line items from the most recent locked/sent action_card
                     // (status="sent" is the locked quote; fall back to "draft").
                     const lockedCard = [...messages]
@@ -3730,10 +3921,12 @@ export default function AsstChat({
                             </div>
                           </header>
 
-                          {/* Preview-language toggle — re-renders the card (and
+                          {
+                            /* Preview-language toggle — re-renders the card (and
                               sets the send language) in each language the
                               contractor enabled in Settings. Hidden when only
-                              one language is configured. */}
+                              one language is configured. */
+                          }
                           {sendLangs.length > 1
                             ? (
                               <div
@@ -3745,7 +3938,10 @@ export default function AsstChat({
                                 )}
                               >
                                 <span class="quote-review__langtoggle-label">
-                                  {tFor(previewLang, "asstChat.preview.previewIn")}
+                                  {tFor(
+                                    previewLang,
+                                    "asstChat.preview.previewIn",
+                                  )}
                                 </span>
                                 {sendLangs.map((lng) => (
                                   <button
@@ -3763,7 +3959,10 @@ export default function AsstChat({
                                     }}
                                   >
                                     {SEND_LANG_LABEL_KEYS[lng]
-                                      ? tFor(previewLang, SEND_LANG_LABEL_KEYS[lng])
+                                      ? tFor(
+                                        previewLang,
+                                        SEND_LANG_LABEL_KEYS[lng],
+                                      )
                                       : lng}
                                   </button>
                                 ))}
@@ -4036,7 +4235,10 @@ export default function AsstChat({
                             return (
                               <section class="quote-review__section">
                                 <div class="quote-review__section-label">
-                                  {tFor(previewLang, "asstChat.preview.jobDetails")}
+                                  {tFor(
+                                    previewLang,
+                                    "asstChat.preview.jobDetails",
+                                  )}
                                 </div>
                                 {lines.length > 1
                                   ? (
@@ -4113,12 +4315,14 @@ export default function AsstChat({
                                           : undefined}
                                       >
                                         <dt>
-                                          {/* Resolve the term label in the
+                                          {
+                                            /* Resolve the term label in the
                                               preview language from its stepId so
                                               it matches the sent agreement,
                                               regardless of the stored label's
                                               language. Falls back to the stored
-                                              label for unknown steps. */}
+                                              label for unknown steps. */
+                                          }
                                           {TERM_LABEL_KEYS[t.stepId]
                                             ? tFor(
                                               previewLang,
@@ -4316,11 +4520,13 @@ export default function AsstChat({
                                                   "common.edit",
                                                 )}
                                               >
-                                                {/* Value is already localized +
+                                                {
+                                                  /* Value is already localized +
                                                     "Estimated"-wrapped (for
                                                     durations) by the termAnswers
                                                     map above — render as-is to
-                                                    avoid double-wrapping. */}
+                                                    avoid double-wrapping. */
+                                                }
                                                 {t.value}
                                               </button>
                                             </dd>
@@ -4407,16 +4613,29 @@ export default function AsstChat({
                                 type="button"
                                 class="quote-review__send-main"
                                 onClick={() =>
-                                  confirmSendContract(m, sendChannel, previewLang)}
+                                  confirmSendContract(
+                                    m,
+                                    sendChannel,
+                                    previewLang,
+                                  )}
                                 disabled={sending}
                               >
                                 <I d={ICN.send} size={14} sw={2.4} />
                                 {sending
-                                  ? tFor(previewLang, "asstChat.preview.sending")
+                                  ? tFor(
+                                    previewLang,
+                                    "asstChat.preview.sending",
+                                  )
                                   : sendChannel === "both"
-                                  ? tFor(previewLang, "asstChat.preview.sendBoth")
+                                  ? tFor(
+                                    previewLang,
+                                    "asstChat.preview.sendBoth",
+                                  )
                                   : sendChannel === "sms"
-                                  ? tFor(previewLang, "asstChat.preview.sendSms")
+                                  ? tFor(
+                                    previewLang,
+                                    "asstChat.preview.sendSms",
+                                  )
                                   : tFor(
                                     previewLang,
                                     "asstChat.preview.sendEmail",
@@ -4586,9 +4805,10 @@ export default function AsstChat({
                                     : dispatchFailReason
                                     ? (
                                       <>
-                                        {tFor(lang, "asstChat.cta.notDelivered")}
-                                        {" "}
-                                        {dispatchFailReason}
+                                        {tFor(
+                                          lang,
+                                          "asstChat.cta.notDelivered",
+                                        )} {dispatchFailReason}
                                       </>
                                     )
                                     : (
@@ -5013,7 +5233,10 @@ export default function AsstChat({
                               return (
                                 <div class="action-card__details">
                                   <div class="action-card__details-label">
-                                    {tFor(lang, "asstChat.actionCard.jobDetails")}
+                                    {tFor(
+                                      lang,
+                                      "asstChat.actionCard.jobDetails",
+                                    )}
                                   </div>
                                   {lines.length > 1
                                     ? (
@@ -5200,7 +5423,8 @@ export default function AsstChat({
                           >
                             <img
                               src={`/api/files/${fileId}`}
-                              alt={filename ?? tFor(lang, "asstChat.attachedImage")}
+                              alt={filename ??
+                                tFor(lang, "asstChat.attachedImage")}
                             />
                           </a>
                         )
@@ -5781,7 +6005,9 @@ function CustomerStepPanel(props: {
   // ---- View: default — dropdown (kind already picked on the lock-quote CTA) ----
   return (
     <div ref={rootRef}>
-      <h3 class="wiz__step-q">{tFor(lang, "asstChat.customerStep.pickTitle")}</h3>
+      <h3 class="wiz__step-q">
+        {tFor(lang, "asstChat.customerStep.pickTitle")}
+      </h3>
       <div
         class="wiz__opts"
         style="flex-direction:column;align-items:stretch;gap:8px;margin-top:8px"
@@ -7378,13 +7604,11 @@ function CustomPaymentPickerForm(props: {
               {tFor(lang, "asstChat.payment.daysAfterInvoice")}
             </label>
             <span class="pay__net-hint">
-              {days === 0
-                ? tFor(lang, "asstChat.payment.hintSameDay")
-                : tFor(
-                  lang,
-                  `asstChat.payment.hintDays.${days === 1 ? "one" : "other"}`,
-                  { days },
-                )}
+              {days === 0 ? tFor(lang, "asstChat.payment.hintSameDay") : tFor(
+                lang,
+                `asstChat.payment.hintDays.${days === 1 ? "one" : "other"}`,
+                { days },
+              )}
             </span>
           </div>
         )
@@ -7427,9 +7651,13 @@ function CustomPaymentPickerForm(props: {
                           type="button"
                           class="pay__split-del"
                           onClick={() => removeMilestone(idx)}
-                          aria-label={tFor(lang, "asstChat.payment.removeAria", {
-                            label: labelText,
-                          })}
+                          aria-label={tFor(
+                            lang,
+                            "asstChat.payment.removeAria",
+                            {
+                              label: labelText,
+                            },
+                          )}
                           disabled={sending}
                         >
                           ×
