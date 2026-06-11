@@ -302,6 +302,13 @@ export const assistantClient = {
       wizardState?: unknown;
       activeStepId: string | null;
       removedMessageIds: string[];
+      /** The popped pick for the re-asked step, so the UI can highlight
+       *  the prior selection (roadmap p.8). */
+      previousAnswer?: {
+        stepId: string;
+        optionId: string;
+        customValue?: string;
+      };
     }>("/agents/wizard/back", { conversationId }, opts),
 
   /** One-shot LLM pass: turns the user's raw job description into a

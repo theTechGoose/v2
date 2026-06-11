@@ -39,6 +39,13 @@ const NAV: NavEntry[] = [
     countKey: "quotes",
   },
   {
+    id: "contracts",
+    icon: "contract",
+    label: "Contracts",
+    href: "/contracts",
+    countKey: "contracts",
+  },
+  {
     id: "invoices",
     icon: "invoice",
     label: "Invoices",
@@ -332,10 +339,12 @@ export default function DashSidebar({ active = "home" }: Props) {
                   d={
                     <>
                       {
-                        /* Minimize arrow — CSS rotates it 180° to point right
-                          when the rail is collapsed (roadmap p.4). */
+                        /* QuickBooks-style hamburger + arrow — CSS rotates it
+                          180° so the chevron points right when the rail is
+                          collapsed (roadmap p.4). */
                       }
-                      <path d="M15 18l-6-6 6-6" />
+                      <path d="M3 6h13M3 12h13M3 18h13" />
+                      <path d="M21 9l-3 3 3 3" />
                     </>
                   }
                   size={14}

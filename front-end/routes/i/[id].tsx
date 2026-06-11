@@ -14,6 +14,8 @@ interface Contractor {
   acceptedPaymentMethods?: Record<string, { enabled?: boolean }>;
   /** Outgoing-comms language (roadmap p.13) — drives this page's copy. */
   commsLanguage?: string;
+  /** True when the contractor uploaded a business logo (roadmap p.2). */
+  hasLogo?: boolean;
 }
 
 interface InvoicePublic {
@@ -153,6 +155,15 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
         {/* Eyebrow */}
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
           <div>
+            {invoice.contractor?.hasLogo
+              ? (
+                <img
+                  src={`/api/public-logo/invoice/${invoice.id}`}
+                  alt=""
+                  style="max-height:44px;max-width:150px;object-fit:contain;display:block;margin-bottom:8px;border-radius:8px"
+                />
+              )
+              : null}
             <div
               style={`font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:${PINK_DARK}`}
             >

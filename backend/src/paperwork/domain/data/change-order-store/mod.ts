@@ -18,7 +18,11 @@ export class ChangeOrderStore {
   async create(
     userId: string,
     invoiceId: string,
-    input: CreateChangeOrderDto & { contractId?: string; customerId?: string },
+    input: CreateChangeOrderDto & {
+      contractId?: string;
+      customerId?: string;
+      originalAmountCents?: number;
+    },
   ): Promise<ChangeOrder> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -30,6 +34,11 @@ export class ChangeOrderStore {
       ...(input.customerId ? { customerId: input.customerId } : {}),
       description: input.description.trim(),
       deltaAmountCents: Math.round(input.deltaAmountCents),
+      // Snapshot the pre-change invoice total so the public projection
+      // doesn't double-apply the delta after approval mutates the invoice.
+      ...(input.originalAmountCents != null
+        ? { originalAmountCents: Math.round(input.originalAmountCents) }
+        : {}),
       status: "pending",
       createdAt: now,
       updatedAt: now,

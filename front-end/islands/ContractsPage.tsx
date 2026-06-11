@@ -94,10 +94,15 @@ export default function ContractsPage(_props: { lang?: Lang } = {}) {
   const customers = Array.isArray(rawCustomers) ? rawCustomers : [];
   const quotes = Array.isArray(rawQuotes) ? rawQuotes : [];
   const customerNames = new Map(customers.map((c) => [c.id, c.name]));
+  // Card titles prefer the ≤3-word Job Name (roadmap p.10) so contracts read
+  // the same as the quote/invoice headings; summary is the fallback.
   const quoteSummaries = new Map(
     quotes
-      .filter((q) => typeof q.summary === "string" && q.summary)
-      .map((q) => [q.id, q.summary as string]),
+      .filter((q) =>
+        (typeof q.jobName === "string" && q.jobName) ||
+        (typeof q.summary === "string" && q.summary)
+      )
+      .map((q) => [q.id, (q.jobName as string) || (q.summary as string)]),
   );
 
   const now = new Date();

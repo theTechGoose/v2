@@ -30,6 +30,7 @@ export interface WizardAnswerInput {
       email?: string;
       phoneNumber?: string;
       isBusiness?: boolean;
+      businessName?: string;
     };
   };
 }
@@ -262,6 +263,9 @@ export class HandleWizardAnswer {
           : {}),
         ...(typeof create?.isBusiness === "boolean"
           ? { isBusiness: create.isBusiness }
+          : {}),
+        ...(create?.businessName?.trim()
+          ? { businessName: create.businessName.trim() }
           : {}),
       });
       return {

@@ -27,7 +27,7 @@ import {
   PageHeaderSkeleton,
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
-import { fmtMoney } from "../lib/format.ts";
+import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 
@@ -803,6 +803,21 @@ function EmptyTrack({ hint }: { hint: string }) {
 
 /* ---------------- Invoice card (flip) ---------------- */
 
+/** Change-order row as returned by GET /invoices/:id/change-orders. */
+interface ChangeOrderRow {
+  id: string;
+  description: string;
+  deltaAmountCents: number;
+  status: "pending" | "approved" | "declined";
+  createdAt: string;
+}
+
+const CO_CHIP_COLOR: Record<ChangeOrderRow["status"], string> = {
+  pending: "#b07d2a",
+  approved: "var(--brand-green)",
+  declined: "#a83b3b",
+};
+
 function InvoiceCard(
   { inv, idx, now, lang }: {
     inv: EnrichedInvoice;
@@ -820,6 +835,12 @@ function InvoiceCard(
   const [coDollars, setCoDollars] = useState("");
   const [coLink, setCoLink] = useState<string | null>(null);
   const [adjErr, setAdjErr] = useState<string | null>(null);
+  // Existing change orders for this invoice — loaded when the panel opens
+  // so pending approval links stay recoverable (audit: "unrecoverable links").
+  const [changeOrders, setChangeOrders] = useState<ChangeOrderRow[] | null>(
+    null,
+  );
+  const [copiedCoId, setCopiedCoId] = useState<string | null>(null);
   const mood = STAGE_MOOD[inv.stage];
   const moodLabel = tFor(lang, mood.labelKey);
   const cta = inv.stage === "claimed"
@@ -1025,6 +1046,26 @@ function InvoiceCard(
       setBusy(false);
     }
   }
+  async function loadChangeOrders() {
+    try {
+      const r = await fetch(`/api/invoices/${inv.id}/change-orders`, {
+        credentials: "include",
+      });
+      if (r.ok) setChangeOrders(await r.json() as ChangeOrderRow[]);
+    } catch { /* best-effort — the panel still works without the list */ }
+  }
+  useEffect(() => {
+    if (adjustOpen && changeOrders === null) loadChangeOrders();
+  }, [adjustOpen]);
+  async function doCopyCoLink(id: string) {
+    try {
+      await navigator.clipboard.writeText(
+        `${globalThis.location.origin}/co/${id}`,
+      );
+      setCopiedCoId(id);
+      setTimeout(() => setCopiedCoId((cur) => (cur === id ? null : cur)), 1500);
+    } catch { /* clipboard denied — nothing to surface */ }
+  }
   async function doCreateChangeOrder(e: Event) {
     e.stopPropagation();
     if (busy) return;
@@ -1051,6 +1092,8 @@ function InvoiceCard(
       }
       const co = await r.json() as { id: string };
       setCoLink(`${globalThis.location.origin}/co/${co.id}`);
+      // Refresh the list so the new pending order shows up immediately.
+      loadChangeOrders();
     } finally {
       setBusy(false);
     }
@@ -1260,6 +1303,50 @@ function InvoiceCard(
                       </a>
                       <div style="color:var(--fg-muted);margin-top:2px">
                         {tFor(lang, "invoicesPage.adjust.approvalHelp")}
+                      </div>
+                    </div>
+                  )}
+                  {changeOrders && changeOrders.length > 0 && (
+                    <div>
+                      <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-muted);margin-bottom:4px">
+                        {tFor(lang, "invoicesPage.adjust.coListLabel")}
+                      </div>
+                      <div style="display:flex;flex-direction:column;gap:6px">
+                        {changeOrders.map((co) => (
+                          <div
+                            key={co.id}
+                            style="display:flex;align-items:center;gap:8px;font-size:12.5px"
+                          >
+                            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                              {co.description}
+                            </span>
+                            <span style="font-weight:700;white-space:nowrap">
+                              {co.deltaAmountCents >= 0 ? "+" : "−"}
+                              {fmtMoneyExact(Math.abs(co.deltaAmountCents))}
+                            </span>
+                            <span
+                              style={`font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid currentColor;color:${
+                                CO_CHIP_COLOR[co.status]
+                              }`}
+                            >
+                              {tFor(
+                                lang,
+                                `invoicesPage.adjust.coStatus.${co.status}`,
+                              )}
+                            </span>
+                            {co.status === "pending" && (
+                              <button
+                                type="button"
+                                onClick={() => doCopyCoLink(co.id)}
+                                style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:var(--brand-teal);cursor:pointer;white-space:nowrap"
+                              >
+                                {copiedCoId === co.id
+                                  ? tFor(lang, "invoicesPage.adjust.coCopied")
+                                  : tFor(lang, "invoicesPage.adjust.coCopyLink")}
+                              </button>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}

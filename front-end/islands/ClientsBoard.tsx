@@ -114,6 +114,7 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose, lang }: CardProps) {
       <div class="ccard2__av">{initials}</div>
       <div class="ccard2__body">
         <h3 class="ccard2__name">{c.name}</h3>
+        {c.businessName && <div class="ccard2__biz">{c.businessName}</div>}
         <div class="ccard2__seg">
           <span>{seg}</span>
           <span class="ccard2__seg-dot" />
@@ -136,6 +137,9 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose, lang }: CardProps) {
           <div class="ccard2__panel-av">{initials}</div>
           <div style="min-width:0;flex:1">
             <div class="ccard2__panel-name">{c.name}</div>
+            {c.businessName && (
+              <div class="ccard2__panel-biz">{c.businessName}</div>
+            )}
             <div class="ccard2__panel-seg">{seg} · {mood.label}</div>
           </div>
           <button
@@ -288,6 +292,7 @@ export default function ClientsBoard(
       const q = query.toLowerCase();
       return (
         c.name.toLowerCase().includes(q) ||
+        (c.businessName ?? "").toLowerCase().includes(q) ||
         (c.email ?? "").toLowerCase().includes(q) ||
         (c.phoneNumber ?? "").includes(q) ||
         (c.address ?? "").toLowerCase().includes(q) ||

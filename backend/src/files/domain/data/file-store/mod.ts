@@ -9,11 +9,22 @@ const PAGE_PREFIX  = "file_page";          // [PAGE_PREFIX, id, pageIndex]     �
 const INDEX_PREFIX = "file_by_user";       // [INDEX_PREFIX, userId, id]       → id
 
 /**
+ * How many 60KiB pages to write per atomic commit. Deno KV caps a single
+ * atomic mutation at 819,200 bytes total; 10 pages ≈ 600KiB leaves ample
+ * headroom for the per-key envelope. Committing everything in one op (the
+ * old behaviour) returned a 500 once an upload crossed ~768KB.
+ */
+const PAGES_PER_COMMIT = 10;
+
+/**
  * FileStore — chunked binary storage backed by Deno KV.
  *
- * Bytes are split into 60KiB pages (Deno KV's value cap is ~64KiB). The
- * meta record + every page write happens in one atomic op so a failed
- * mid-upload never leaves dangling pages.
+ * Bytes are split into 60KiB pages (Deno KV's value cap is ~64KiB). Pages
+ * are written in batched atomic commits (see PAGES_PER_COMMIT) that stay
+ * under KV's atomic-mutation byte cap, with the meta record + per-user
+ * index committed LAST. The read path keys off the meta record, so a
+ * half-written upload is simply invisible — a torn file can never be read
+ * or listed. An aborted upload leaves only unreachable orphan pages.
  *
  * Per-user index keeps `listByUser` cheap. Cross-user access is gated
  * via `getOwned` (mirrors the rest of the codebase's pattern).
@@ -35,11 +46,22 @@ export class FileStore {
       createdAt,
     };
     const kv = await getKv();
-    const op = kv.atomic()
+    // Write the binary pages first, in batches small enough to stay under
+    // KV's per-atomic-mutation byte cap. Meta + index land in the final
+    // commit so the file only becomes readable/listable once every page is
+    // durably stored.
+    for (let i = 0; i < pages.length; i += PAGES_PER_COMMIT) {
+      const batch = kv.atomic();
+      for (let j = i; j < Math.min(i + PAGES_PER_COMMIT, pages.length); j++) {
+        batch.set([PAGE_PREFIX, id, j], pages[j]);
+      }
+      const res = await batch.commit();
+      if (!res.ok) throw new Error("file create: page commit failed");
+    }
+    const result = await kv.atomic()
       .set([META_PREFIX, id], meta)
-      .set([INDEX_PREFIX, input.userId, id], id);
-    pages.forEach((page, i) => op.set([PAGE_PREFIX, id, i], page));
-    const result = await op.commit();
+      .set([INDEX_PREFIX, input.userId, id], id)
+      .commit();
     if (!result.ok) throw new Error("file create commit failed");
     return meta;
   }
@@ -107,10 +129,20 @@ export class FileStore {
   async delete(id: string, userId: string): Promise<void> {
     const meta = await this.getOwnedMeta(id, userId);
     const kv = await getKv();
-    const op = kv.atomic()
+    // Drop meta + index first so the file is immediately unreadable and
+    // unlisted, then remove its pages in batches (a multi-batch file can
+    // exceed KV's per-atomic-mutation limits). Any page that survives an
+    // aborted delete is just unreachable garbage.
+    await kv.atomic()
       .delete([META_PREFIX, id])
-      .delete([INDEX_PREFIX, userId, id]);
-    for (let i = 0; i < meta.pageCount; i++) op.delete([PAGE_PREFIX, id, i]);
-    await op.commit();
+      .delete([INDEX_PREFIX, userId, id])
+      .commit();
+    for (let i = 0; i < meta.pageCount; i += PAGES_PER_COMMIT) {
+      const batch = kv.atomic();
+      for (let j = i; j < Math.min(i + PAGES_PER_COMMIT, meta.pageCount); j++) {
+        batch.delete([PAGE_PREFIX, id, j]);
+      }
+      await batch.commit();
+    }
   }
 }

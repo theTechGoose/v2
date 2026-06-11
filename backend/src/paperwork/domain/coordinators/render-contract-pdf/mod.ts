@@ -866,6 +866,8 @@ function localizeTermValue(value: string, lang: "en" | "es"): string {
     "Next week": "renderContractPdf.termValue.nextWeek",
     "Next Month": "renderContractPdf.termValue.nextMonth",
     "Next month": "renderContractPdf.termValue.nextMonth",
+    "Job Completed": "renderContractPdf.termValue.jobCompleted",
+    "Due Now": "renderContractPdf.termValue.dueNow",
   };
   if (exactKey[trimmed]) return t(lang, exactKey[trimmed]);
   return trimmed
@@ -890,6 +892,7 @@ function computeMilestones(
     beforeStart: t(lang, "renderContractPdf.milestone.beforeStart"),
     onCompletion: t(lang, "renderContractPdf.milestone.onCompletion"),
     atMidpoint: t(lang, "renderContractPdf.milestone.atMidpoint"),
+    onSigning: t(lang, "renderContractPdf.milestone.onSigning"),
   };
   const roleLabel: Record<MilestoneRole, { label: string; when: string }> = {
     deposit: { label: L.deposit, when: L.beforeStart },
@@ -898,7 +901,15 @@ function computeMilestones(
     completion: { label: L.balance, when: L.onCompletion },
     full: { label: L.final, when: L.onCompletion },
   };
-  return computePaymentSplit(termValue(terms, "payment_terms"), total).map((
+  const term = termValue(terms, "payment_terms");
+  // "Due Now" terms collapse to a single full payment — but it's owed at
+  // signing, not "on completion".
+  const dueNow = /\bdue now\b/i.test(term ?? "");
+  return computePaymentSplit(term, total).map((
     p,
-  ) => ({ ...roleLabel[p.role], amount: p.amountCents }));
+  ) => ({
+    ...roleLabel[p.role],
+    ...(dueNow && p.role === "full" ? { when: L.onSigning } : {}),
+    amount: p.amountCents,
+  }));
 }

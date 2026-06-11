@@ -19,6 +19,11 @@ export interface ChangeOrder {
   description: string;
   /** Signed delta to the invoice total, INTEGER CENTS. + adds, − credits. */
   deltaAmountCents: number;
+  /** Snapshot of the invoice's amount (cents) at create time. The public
+   *  projection renders original / delta / original+delta from this so the
+   *  math stays stable after approval mutates the live invoice. Optional —
+   *  rows created before the snapshot existed fall back to deriving it. */
+  originalAmountCents?: number;
   status: ChangeOrderStatus;
   createdAt: string;
   updatedAt: string;

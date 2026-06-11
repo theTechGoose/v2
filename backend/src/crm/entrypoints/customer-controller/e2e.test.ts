@@ -137,6 +137,29 @@ Deno.test("customer e2e: PUT /customers/:id updates segment + vip", async () => 
   });
 });
 
+Deno.test("customer e2e: POST then PUT round-trips businessName", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const created = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({
+        name: "Jane Doe",
+        isBusiness: true,
+        businessName: "Riley Roofing Co.",
+      }),
+    }).then((r) => r.json());
+    assertEquals(created.businessName, "Riley Roofing Co.");
+
+    const updated = await fetch(`http://localhost:${port}/customers/${created.id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ businessName: "Riley Roofing LLC" }),
+    }).then((r) => r.json());
+    assertEquals(updated.businessName, "Riley Roofing LLC");
+  });
+});
+
 Deno.test("customer e2e: POST /customers rejects invalid segment", async () => {
   await withServer(async (port) => {
     const sid = await login(port);

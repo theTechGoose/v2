@@ -23,6 +23,8 @@ export function localizeTermValue(value: string, lang: Lang): string {
     "Next week": "contractDoc.termValue.nextWeek",
     "Next Month": "contractDoc.termValue.nextMonth",
     "Next month": "contractDoc.termValue.nextMonth",
+    "Job Completed": "contractDoc.termValue.jobCompleted",
+    "Due Now": "contractDoc.termValue.dueNow",
   };
   if (exact[trimmed]) return tFor(lang, exact[trimmed]);
   return trimmed

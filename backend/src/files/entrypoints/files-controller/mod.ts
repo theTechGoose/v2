@@ -9,6 +9,14 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 
+/**
+ * Hard cap on a single upload's decoded byte size. Kept generous enough for
+ * logos / insurance certs / W-9 scans but small enough to bound KV usage.
+ * Crossing it returns a 413 with a structured JSON body instead of letting
+ * a giant payload through (the FE maps the code to a friendly message).
+ */
+export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MiB
+
 class CreateFileDto {
   @IsString() filename!: string;
   @IsString() mimeType!: string;
@@ -48,6 +56,19 @@ export class FilesController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const dto = parseCreate(body);
     const bytes = decodeBase64(dto.base64);
+    if (bytes.length > MAX_UPLOAD_BYTES) {
+      // Reject oversized uploads with a clear 413 instead of letting the
+      // store fail. `code` lets the FE show a specific localized message.
+      return ctx.json(
+        {
+          code: "file_too_large",
+          message: "file too large",
+          maxBytes: MAX_UPLOAD_BYTES,
+          sizeBytes: bytes.length,
+        },
+        413,
+      );
+    }
     let meta = await this.store.create({
       userId: user.id,
       filename: dto.filename,

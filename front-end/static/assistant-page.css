@@ -5524,6 +5524,14 @@ body {
   color: var(--brand-teal);
 }
 
+/* Roadmap p.8: after a wizard rewind, the user's previous pick on the
+   re-asked step is highlighted so Back "restores the prior selection". */
+.wiz-opt--prev {
+  border-color: var(--brand-green);
+  background: var(--green-50, #eef6ea);
+  box-shadow: inset 0 0 0 1px var(--brand-green);
+}
+
 /* Customer step — clickable list + create form */
 .cust-pick__list {
   display: flex;

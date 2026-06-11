@@ -2,7 +2,8 @@
  * Language signal — single source of truth for EN/ES.
  *
  * Server: read from Accept-Language / cookie / query.
- * Client: subscribed to by islands; toggled by <LangToggle />, persisted to localStorage.
+ * Client: subscribed to by islands; toggled from Settings (and the landing
+ * page's server-rendered switch), persisted to localStorage.
  */
 import { signal } from "@preact/signals";
 

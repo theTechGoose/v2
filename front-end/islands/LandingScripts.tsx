@@ -110,28 +110,33 @@ const I18N_KEYS = [
   "demo.online",
   "demo.message",
   "price.eyebrow",
-  "price.h2html",
-  "price.lead",
-  "price.without",
-  "price.with",
-  "price.keep",
-  "price.keep2",
-  "price.w1",
-  "price.w2",
-  "price.w2v",
-  "price.w3",
-  "price.w3v",
-  "price.u1",
-  "price.u2",
-  "price.u3",
-  "price.callout",
-  "price.calloutSub",
-  "price.cta",
+  "price.plans.h2html",
+  "price.plans.lead",
+  "price.plans.cta",
+  "price.permo",
+  "price.t1.name",
+  "price.t1.blurb",
+  "price.t1.f1",
+  "price.t1.f2",
+  "price.t1.f3",
+  "price.t1.f4",
+  "price.t2.name",
+  "price.t2.badge",
+  "price.t2.blurb",
+  "price.t2.f1",
+  "price.t2.f2",
+  "price.t2.f3",
+  "price.t2.f4",
+  "price.t3.name",
+  "price.t3.blurb",
+  "price.t3.f1",
+  "price.t3.f2",
+  "price.t3.f3",
   "cta.eyebrow",
   "cta.h2",
   "cta.lead",
   "cta.b1",
-  "cta.b2",
+  "cta.fromPrice",
   "cta.b3",
   "cta.label",
   "cta.btn",
@@ -150,7 +155,12 @@ const I18N_KEYS = [
  *  data-i18n attributes in the markup; values resolve from "landing.*". */
 function i18nDict(lang: Lang): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const k of I18N_KEYS) out[k] = tFor(lang, "landing." + k);
+  for (const k of I18N_KEYS) {
+    const v = tFor(lang, "landing." + k);
+    // Skip keys missing from /lang so the SSR'd English copy survives
+    // instead of being replaced by the raw key string.
+    if (v !== "landing." + k) out[k] = v;
+  }
   return out;
 }
 

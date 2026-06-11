@@ -36,11 +36,15 @@ export default function PublicChangeOrderActions(
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
+        // The backend refuses to mark the order approved if the invoice
+        // write fails — translate that reason instead of echoing it raw.
         throw new Error(
-          body.reason ??
-            tFor(lang, "publicChangeOrderActions.submitError", {
-              status: res.status,
-            }),
+          body.reason === "invoice_update_failed"
+            ? tFor(lang, "publicChangeOrderActions.applyError")
+            : body.reason ??
+              tFor(lang, "publicChangeOrderActions.submitError", {
+                status: res.status,
+              }),
         );
       }
       setStatus(action === "approve" ? "approved" : "declined");

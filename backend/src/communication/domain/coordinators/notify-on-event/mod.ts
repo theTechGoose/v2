@@ -108,6 +108,25 @@ export function mapEventToNotification(event: DomainEvent): NotificationMapping 
   if (event.entityType === "invoice" && event.action === "overdue") {
     return { type: "invoice_overdue", title: t(lang, "notify.invoice.overdue", { name: customerName }) };
   }
+  if (
+    event.entityType === "invoice" &&
+    (event.action === "change_order_approved" || event.action === "change_order_declined")
+  ) {
+    // Customer decided on a change order via the public /co/:id link. The
+    // delta arrives pre-formatted ("+$250.00") from the public controller.
+    const approved    = event.action === "change_order_approved";
+    const delta       = (event.data?.delta as string | undefined);
+    const description = (event.data?.description as string | undefined);
+    return {
+      type: "generic",
+      title: delta
+        ? t(lang, approved ? "notify.invoice.changeOrderApprovedAmount" : "notify.invoice.changeOrderDeclinedAmount", { name: customerName, delta })
+        : t(lang, approved ? "notify.invoice.changeOrderApproved" : "notify.invoice.changeOrderDeclined", { name: customerName }),
+      body: description
+        ? (description.length > 140 ? `${description.slice(0, 139)}…` : description)
+        : undefined,
+    };
+  }
   if (event.entityType === "message" && event.action === "received") {
     return { type: "customer_replied", title: t(lang, "notify.message.replied", { name: customerName }) };
   }

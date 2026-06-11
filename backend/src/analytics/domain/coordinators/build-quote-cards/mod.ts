@@ -131,8 +131,10 @@ function deriveStage(args: {
     const lastOpenMs = lastOpenAt ? new Date(lastOpenAt).getTime() : 0;
     const sinceLastOpen = now.getTime() - lastOpenMs;
     if (sinceSent > 4 * MS_PER_DAY && sinceLastOpen > 2 * MS_PER_DAY) return "cooling";
-    if (sinceSent >= 24 * 3600 * 1000) return "opened";
-    return "sent";
+    // Any open counts as "Viewed" immediately (roadmap p.13: the badge must
+    // tick Sent → Viewed the moment the customer opens the link — it used to
+    // sit on "sent" for the first 24h even with opens recorded).
+    return "opened";
   }
 
   // Default: still in-flight, no opens, < 7d → sent

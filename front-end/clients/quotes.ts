@@ -24,6 +24,8 @@ export interface QuoteCard {
   customerId?: string;
   customerName: string | null;
   summary?: string;
+  /** ≤3-word job title — the platform-wide identifier (roadmap p.10). */
+  jobName?: string;
   description?: string;
   /** Per-language cache of the description (keyed by lang code), populated
    *  lazily when the quote is previewed/sent in a language. */

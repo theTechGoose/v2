@@ -52,7 +52,10 @@ function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
   const client = c.customerName ?? fallbackClient;
   return {
     id: c.id,
-    title: c.summary ?? tFor(lang, "quotesPage.untitledQuote"),
+    // Prefer the ≤3-word Job Name (roadmap p.10) so cards read the same as
+    // the quote, agreement, and invoice headings; summary is the fallback.
+    title: c.jobName?.trim() || c.summary ||
+      tFor(lang, "quotesPage.untitledQuote"),
     client,
     customerId: c.customerId,
     initials: initialsFromName(c.customerName ?? fallbackClient),

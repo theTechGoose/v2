@@ -55,6 +55,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
   const [adding, setAdding] = useState(false);
   const [addErr, setAddErr] = useState<string | null>(null);
   const [addName, setAddName] = useState("");
+  const [addBusiness, setAddBusiness] = useState("");
   const [addPhone, setAddPhone] = useState("");
   const [addEmail, setAddEmail] = useState("");
 
@@ -71,10 +72,12 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
     try {
       await clientsClient.create({
         name: addName.trim(),
+        ...(addBusiness.trim() ? { businessName: addBusiness.trim() } : {}),
         ...(addPhone.trim() ? { phoneNumber: addPhone.trim() } : {}),
         ...(addEmail.trim() ? { email: addEmail.trim() } : {}),
       });
       setAddName("");
+      setAddBusiness("");
       setAddPhone("");
       setAddEmail("");
       setAddOpen(false);
@@ -173,6 +176,16 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
                 required
                 value={addName}
                 onInput={(e) => setAddName((e.target as HTMLInputElement).value)}
+                style="padding:11px 13px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)"
+              />
+            </label>
+            <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)">
+              {tFor(lang, "clientsPage.businessName")}
+              <input
+                type="text"
+                value={addBusiness}
+                onInput={(e) =>
+                  setAddBusiness((e.target as HTMLInputElement).value)}
                 style="padding:11px 13px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)"
               />
             </label>

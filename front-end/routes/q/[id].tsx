@@ -14,6 +14,9 @@ interface QuotePublic {
   id: string;
   summary: string;
   description?: string;
+  /** ≤3-word job title — the platform-wide identifier (roadmap p.10).
+   *  Renders as this page's hero when present. */
+  jobName?: string;
   /** Per-language title/summary/description (keyed by lang code), rendered in
    *  the doc's language when present. */
   descriptionByLang?: Record<string, string>;
@@ -37,6 +40,8 @@ interface QuotePublic {
     email?: string;
     addressLine?: string;
     commsLanguage?: string;
+    /** True when the contractor uploaded a business logo (roadmap p.2). */
+    hasLogo?: boolean;
   };
   customer?: { name?: string };
 }
@@ -54,7 +59,8 @@ export default define.page(async function PublicQuote(ctx) {
     <>
       <Head>
         <title>
-          {quote?.summaryByLang?.[lang] ?? quote?.summary ??
+          {quote?.jobNameByLang?.[lang] ?? quote?.jobName ??
+            quote?.summaryByLang?.[lang] ?? quote?.summary ??
             tFor(lang, "publicQuote.quote")} ·{" "}
           {tFor(lang, "brand.name")}
         </title>
@@ -63,6 +69,9 @@ export default define.page(async function PublicQuote(ctx) {
       <PublicShell
         brand={quote?.contractor?.businessName ?? quote?.contractor?.name}
         address={quote?.contractor?.addressLine}
+        logoUrl={quote?.contractor?.hasLogo
+          ? `/api/public-logo/quote/${id}`
+          : undefined}
         lang={lang}
       >
         {err || !quote
@@ -74,10 +83,12 @@ export default define.page(async function PublicQuote(ctx) {
 });
 
 function PublicShell(
-  { children, brand, address, lang }: {
+  { children, brand, address, logoUrl, lang }: {
     children: preact.ComponentChildren;
     brand?: string;
     address?: string;
+    /** Contractor's uploaded business logo (roadmap p.2). */
+    logoUrl?: string;
     lang: Lang;
   },
 ) {
@@ -87,6 +98,13 @@ function PublicShell(
   return (
     <div style="min-height:100dvh;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30;padding:32px 16px calc(32px + var(--kb-inset, 0px));scroll-padding-bottom:var(--kb-inset, 0px);">
       <div style="max-width:640px;margin:0 auto">
+        {logoUrl && (
+          <img
+            src={logoUrl}
+            alt=""
+            style="max-height:48px;max-width:160px;object-fit:contain;display:block;margin:0 auto 8px;border-radius:8px"
+          />
+        )}
         <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#519843;text-align:center;margin-bottom:6px">
           {headline}
         </div>
@@ -136,6 +154,10 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
   // are present (populated from the picked job option).
   const qSummary = quote.summaryByLang?.[lang] ?? quote.summary;
   const qDesc = quote.descriptionByLang?.[lang] ?? quote.description;
+  // Hero = the platform-wide Job Name (roadmap p.10) when present, so the
+  // quote heading matches the agreement, the invoice, and the SMS/email.
+  const qName = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim();
+  const heroTitle = qName || qSummary;
   return (
     <article style="background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
       <header style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -144,8 +166,15 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
             {tFor(lang, "publicQuote.quote")}
           </div>
           <h1 style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:24px;letter-spacing:-0.02em;color:#144852;margin:6px 0 0">
-            {qSummary}
+            {heroTitle}
           </h1>
+          {qName && qSummary && qName !== qSummary
+            ? (
+              <div style="margin-top:4px;color:#4a5a5e;font-size:13.5px">
+                {qSummary}
+              </div>
+            )
+            : null}
           <div style="margin-top:4px;color:#6b7a7e;font-size:13px">
             #{quote.id.slice(0, 8)}
           </div>

@@ -109,7 +109,15 @@ export default define.page(async function PublicChangeOrder(ctx) {
                         ? (
                           <div style="display:flex;justify-content:space-between">
                             <span style={`color:${MUTED}`}>
-                              {tFor(lang, "changeOrderPublic.currentTotal")}
+                              {/* After approval the live invoice already
+                                  includes the delta, so the snapshot reads
+                                  as the *previous* total. */}
+                              {tFor(
+                                lang,
+                                co.status === "approved"
+                                  ? "changeOrderPublic.previousTotal"
+                                  : "changeOrderPublic.currentTotal",
+                              )}
                             </span>
                             <span>{money(co.currentAmount)}</span>
                           </div>
@@ -133,8 +141,21 @@ export default define.page(async function PublicChangeOrder(ctx) {
                       {co.newAmount != null
                         ? (
                           <div style="display:flex;justify-content:space-between;font-weight:800;color:#1c2c30;font-size:16px;margin-top:4px">
-                            <span>{tFor(lang, "changeOrderPublic.newTotal")}</span>
-                            <span style={`color:${GREEN}`}>
+                            <span>
+                              {/* A declined order's "new total" never took
+                                  effect — frame it as a proposal. */}
+                              {tFor(
+                                lang,
+                                co.status === "declined"
+                                  ? "changeOrderPublic.proposedTotal"
+                                  : "changeOrderPublic.newTotal",
+                              )}
+                            </span>
+                            <span
+                              style={`color:${
+                                co.status === "declined" ? MUTED : GREEN
+                              }`}
+                            >
                               {money(co.newAmount)}
                             </span>
                           </div>

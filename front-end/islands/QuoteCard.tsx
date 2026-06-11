@@ -37,6 +37,18 @@ function OpenDots({ count, max = 5 }: { count: number; max?: number }) {
 
 export default function QuoteCard({ q, idx, lang = "en" }: Props) {
   const [flipped, setFlipped] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function copyPublicLink(e: MouseEvent) {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(
+        `${globalThis.location.origin}/q/${q.id}`,
+      );
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable — leave the label as-is */ }
+  }
   const mood = moodForQuote(q);
   const story = QSTORIES[q.id] ?? tFor(lang, "quoteCard.storyFallback");
   const cta = q.stage === "draft"
@@ -169,10 +181,18 @@ export default function QuoteCard({ q, idx, lang = "en" }: Props) {
           <button type="button" onClick={(e) => e.stopPropagation()}>
             {tFor(lang, "quoteCard.back.resend")}
           </button>
-          <button type="button" onClick={(e) => e.stopPropagation()}>
-            {tFor(lang, "quoteCard.back.copyLink")}
+          <button type="button" onClick={copyPublicLink}>
+            {copied
+              ? tFor(lang, "quoteCard.back.linkCopied")
+              : tFor(lang, "quoteCard.back.copyLink")}
           </button>
-          <button type="button" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              globalThis.open(`/q/${q.id}`, "_blank", "noopener");
+            }}
+          >
             {tFor(lang, "quoteCard.back.viewAsClient")}
           </button>
           <DeleteQuoteButton id={q.id} />

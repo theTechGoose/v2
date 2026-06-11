@@ -484,6 +484,8 @@ export default function AsstChat({
     | {
       id: string;
       summary?: string;
+      /** ≤3-word job title — the platform-wide identifier (roadmap p.10). */
+      jobName?: string;
       description?: string;
       descriptionByLang?: Record<string, string>;
       lineItems?: {
@@ -601,6 +603,46 @@ export default function AsstChat({
     "both",
   );
   const [channelMenuOpen, setChannelMenuOpen] = useState(false);
+  /** Transient "Link copied!" feedback for the send menu's copy-link action
+   *  (roadmap: copy link alongside email / text / text+email). */
+  const [linkCopied, setLinkCopied] = useState(false);
+  /** The pick popped by the last wizard rewind — highlighted on the
+   *  re-asked step's matching option so Back restores the prior selection
+   *  (roadmap p.8). Cleared on the next answer. */
+  const [rewindAnswer, setRewindAnswer] = useState<
+    { stepId: string; optionId: string; customValue?: string } | null
+  >(null);
+  /** Job-details picker mode. "polish" = the classic end-of-phase-2 pass
+   *  that patches the existing quote. "confirm" = the roadmap p.18 order for
+   *  "I know the job, help me price it.": details → CONFIRM → pricing →
+   *  wizard — the picker runs pre-quote and its pick feeds quote creation. */
+  const [pickerMode, setPickerMode] = useState<"polish" | "confirm">("polish");
+  /** The option confirmed in "confirm" mode — consumed by startQuoteFromRaw
+   *  so the quote is created with the confirmed title/summary/bullets (and
+   *  the end-of-flow picker is skipped). */
+  const confirmedOptionRef = useRef<JobOptionDraft | null>(null);
+  /** Doc type for the finished-flow review (roadmap: "swap between quote and
+   *  invoice"). "invoice" sends a standalone invoice — no signature, no
+   *  terms — instead of the Quote + Agreement. */
+  const [reviewDocType, setReviewDocType] = useState<"quote" | "invoice">(
+    "quote",
+  );
+  /** Set once the swapped invoice is created+sent: drives the success panel
+   *  with the public /i/:id link. The ref keeps the create idempotent if
+   *  dispatch fails and the user retries. */
+  const [swapInvoiceSent, setSwapInvoiceSent] = useState<string | null>(null);
+  const swapInvoiceIdRef = useRef<string | null>(null);
+  const [swapLinkCopied, setSwapLinkCopied] = useState(false);
+  /** "Job done, need to invoice." starter (roadmap p.3): marks the pre-quote
+   *  details→price capture as invoice-bound, then collects the customer
+   *  through the standard wizard CustomerStepPanel and creates a standalone
+   *  invoice. */
+  const [invoiceFlow, setInvoiceFlow] = useState(false);
+  const [invoiceCustomerOpen, setInvoiceCustomerOpen] = useState(false);
+  const [invoiceResult, setInvoiceResult] = useState<
+    { id: string; customerEmail?: string; customerPhone?: string } | null
+  >(null);
+  const [invLinkCopied, setInvLinkCopied] = useState(false);
   /** Language the quote-review card is PREVIEWED in (and sent in). The
    *  contractor flips it with the "Preview in" toggle; defaults to their app
    *  language until they explicitly pick one. */
@@ -921,6 +963,7 @@ export default function AsstChat({
           setQuote({
             id: q.id,
             summary: q.summary,
+            jobName: q.jobName,
             description: q.description,
             lineItems: q.lineItems,
             estimatedTotal: q.estimatedTotal,
@@ -1473,6 +1516,13 @@ export default function AsstChat({
     if (sending || cents <= 0) return;
     setError(undefined);
     setPendingPriceCents(cents);
+    if (invoiceFlow) {
+      // "Job done, need to invoice." — no quote/wizard: go pick the customer
+      // and mint the standalone invoice (roadmap p.3).
+      pushHistory();
+      openInvoiceCustomerStep();
+      return;
+    }
     if (pendingJobDetailsRaw && pendingJobDetailsRaw.trim().length > 0) {
       // Price + details in hand → create the quote now and hand off into the
       // terms wizard. The Job Details picker is deferred to the END of phase
@@ -1517,6 +1567,40 @@ export default function AsstChat({
       });
     optionsInFlightRef.current = null;
     const res = await inflight;
+    if (res?.options && res.options.length > 0 && !optionsTouchedRef.current) {
+      const drafts = toOptionDrafts(res.options);
+      setJobOptions(drafts);
+      setSelectedOptionId((prev) =>
+        prev && drafts.some((d) => d.id === prev)
+          ? prev
+          : (drafts[0]?.id ?? null)
+      );
+    }
+  }
+
+  /**
+   * Opens the Job Details picker as the CONFIRM step of the "help me price
+   * it" flow (roadmap p.18: details → confirm → pricing → wizard). Runs
+   * pre-quote: the pick is stashed on confirmedOptionRef and consumed by
+   * startQuoteFromRaw, so the end-of-phase-2 polish pass is skipped.
+   */
+  async function openJobPickerForConfirm(raw: string) {
+    setPickerMode("confirm");
+    optionsTouchedRef.current = false;
+    setJobOptionsOpen(true);
+    setOptionsLoading(false);
+    const heuristic = toOptionDrafts(
+      localFallbackOptions(raw || tFor(lang, "asstChat.newJob"), lang),
+    );
+    setJobOptions(heuristic);
+    setSelectedOptionId(heuristic[0]?.id ?? null);
+    const res = await assistantClient.generateJobOptions(raw).catch((err) => {
+      console.warn(
+        "[asst] confirm-step option generation failed, keeping heuristic:",
+        err,
+      );
+      return null;
+    });
     if (res?.options && res.options.length > 0 && !optionsTouchedRef.current) {
       const drafts = toOptionDrafts(res.options);
       setJobOptions(drafts);
@@ -1662,10 +1746,37 @@ export default function AsstChat({
     setSubmittedJobDetails(raw.trim());
     setSending(true);
     try {
+      // Roadmap p.18: when the details were CONFIRMED via the pre-quote
+      // picker ("help me price it" flow), seed the quote from the confirmed
+      // option — title, summary, bullets, and any pre-generated translations
+      // — and skip the end-of-phase-2 polish pass entirely.
+      const confirmed = confirmedOptionRef.current;
       const firstLine = raw.split("\n")[0].trim();
-      const summary = firstLine.split(/\s+/).slice(0, 8).join(" ") ||
+      const summary = confirmed?.summary ||
+        firstLine.split(/\s+/).slice(0, 8).join(" ") ||
         tFor(lang, "asstChat.newJob");
-      const jobName = summary.split(/\s+/).slice(0, 3).join(" ");
+      const jobName = confirmed?.jobName ||
+        summary.split(/\s+/).slice(0, 3).join(" ");
+      const byLang = confirmed?.byLang;
+      const byLangFields = byLang
+        ? {
+          jobNameByLang: Object.fromEntries(
+            Object.entries(byLang).map((
+              [l, v],
+            ) => [l, l === lang ? jobName : v.jobName]),
+          ),
+          summaryByLang: Object.fromEntries(
+            Object.entries(byLang).map((
+              [l, v],
+            ) => [l, l === lang ? summary : v.summary]),
+          ),
+          descriptionByLang: Object.fromEntries(
+            Object.entries(byLang).map((
+              [l, v],
+            ) => [l, l === lang ? raw.trim() : v.bullets.join("\n")]),
+          ),
+        }
+        : {};
       // Use the api helper (same base as quotesClient/assistantClient) — NOT
       // a raw /api/* fetch. In prod the api helper hits the standalone backend
       // directly while /api/* bounces through the Fresh proxy; mixing the two
@@ -1675,6 +1786,7 @@ export default function AsstChat({
         summary,
         jobName,
         description: raw.trim(),
+        ...byLangFields,
         lineItems: [{
           description: summary,
           quantity: 1,
@@ -1693,12 +1805,14 @@ export default function AsstChat({
 
       await api.post(`/agents/conversations/${conv.id}/transition-to-terms`);
 
-      try {
-        globalThis.sessionStorage?.setItem(
-          `pm:jobpolish:${conv.id}`,
-          raw.trim(),
-        );
-      } catch { /* sessionStorage unavailable — picker just won't auto-open */ }
+      if (!confirmed) {
+        try {
+          globalThis.sessionStorage?.setItem(
+            `pm:jobpolish:${conv.id}`,
+            raw.trim(),
+          );
+        } catch { /* sessionStorage unavailable — picker just won't auto-open */ }
+      }
 
       globalThis.location.href = `/assistant/${conv.id}`;
     } catch (err) {
@@ -1731,7 +1845,9 @@ export default function AsstChat({
       }
       opt = {
         id: CUSTOM_OPTION_ID,
-        jobName: lines[0].split(/\s+/).slice(0, 5).join(" "),
+        // Job Names are ≤3 words platform-wide (roadmap p.10) — match the
+        // LLM-side clampJobName instead of the old 5-word slice.
+        jobName: lines[0].split(/\s+/).slice(0, 3).join(" "),
         summary: lines[0],
         bullets: lines.map((text, i) => ({
           id: `c${i}`,
@@ -1753,6 +1869,24 @@ export default function AsstChat({
       (opt.summary || opt.jobName || tFor(lang, "asstChat.newJob"))
         .trim();
     const jobName = (opt.jobName || summary).trim();
+    // CONFIRM mode (roadmap p.18): no quote exists yet — stash the confirmed
+    // option and advance to the pricing screen. Suggestions are computed on
+    // the CONFIRMED scope, so the three tiers price what was actually agreed.
+    if (pickerMode === "confirm") {
+      confirmedOptionRef.current = {
+        ...opt,
+        jobName,
+        summary,
+        bullets: live,
+      };
+      setPendingJobDetailsRaw(description || summary);
+      setJobOptionsOpen(false);
+      setPickerMode("polish");
+      setPriceCaptureOpen(true);
+      setPriceSuggestions(null);
+      void fetchPriceSuggestions(description || summary);
+      return;
+    }
     setError(undefined);
     setSending(true);
     try {
@@ -1881,10 +2015,14 @@ export default function AsstChat({
     setPendingJobDetailsRaw(trimmed);
     setSubmittedJobDetails(trimmed);
     setAwaitingJobDetails(false);
-    setPriceCaptureOpen(true);
-    // "Help me price it" path: kick off the LLM price suggestions so they're
-    // ready on the price-capture screen.
-    if (suggestPricing) void fetchPriceSuggestions(trimmed);
+    if (suggestPricing) {
+      // "Help me price it" (roadmap p.18): confirm the job details FIRST,
+      // then price the confirmed scope. The picker's Continue advances to
+      // the pricing screen via applyJobOption's confirm branch.
+      void openJobPickerForConfirm(trimmed);
+    } else {
+      setPriceCaptureOpen(true);
+    }
   }
 
   async function seedPhase2() {
@@ -2467,6 +2605,7 @@ export default function AsstChat({
     if (sending || !convoId) return;
     setError(undefined);
     setSending(true);
+    setRewindAnswer(null);
     setMessages((m) => m.filter((x) => x.id !== message.id));
     try {
       const res = await assistantClient.answerWizard({
@@ -2518,7 +2657,10 @@ export default function AsstChat({
     setError(undefined);
     setSending(true);
     try {
-      await assistantClient.rewindWizard(convoId);
+      const res = await assistantClient.rewindWizard(convoId);
+      // Highlight the user's previous pick on the re-asked step so Back
+      // "restores the prior step's selections" (roadmap p.8).
+      setRewindAnswer(res.previousAnswer ?? null);
       const snap = await assistantClient.conversation(convoId);
       if (snap && Array.isArray(snap.messages)) setMessages(snap.messages);
     } catch (err) {
@@ -2558,6 +2700,160 @@ export default function AsstChat({
     setPendingJobDetailsRaw(null);
     setAwaitingJobDetails(true);
     taRef.current?.focus();
+  }
+
+  /**
+   * "Job done, need to invoice." (roadmap p.3): the work already happened —
+   * same easy details-first capture as the first starter, then the amount,
+   * then a quick customer pick, and out comes a standalone invoice (no
+   * signature, no terms).
+   */
+  function startInvoiceFlow() {
+    pushHistory();
+    setInvoiceFlow(true);
+    setSuggestPricing(false);
+    setPriceSuggestions(null);
+    setPendingJobDetailsRaw(null);
+    setAwaitingJobDetails(true);
+    taRef.current?.focus();
+  }
+
+  /** Open the invoice flow's customer step (the standard wizard
+   *  CustomerStepPanel — it loads the client list itself). */
+  function openInvoiceCustomerStep() {
+    setPriceCaptureOpen(false);
+    setInvoiceCustomerOpen(true);
+  }
+
+  /**
+   * Final step of the "Job done, need to invoice." flow — fired by the
+   * wizard CustomerStepPanel's pick/create. Resolves the customer (creating
+   * the client when needed), then mints a standalone invoice for the
+   * captured amount, due on receipt. Lands on a success card with the
+   * public /i/:id link + send actions.
+   */
+  async function createInvoiceFromFlow(
+    optionId: "use_active" | "pick_existing" | "create_new",
+    body?: {
+      customer?: {
+        id?: string;
+        create?: {
+          name: string;
+          email?: string;
+          phoneNumber?: string;
+          isBusiness?: boolean;
+        };
+      };
+    },
+  ) {
+    if (sending) return;
+    const cents = pendingPriceCents ?? 0;
+    if (cents <= 0) {
+      setError(tFor(lang, "asstChat.invoiceFlow.noAmount"));
+      return;
+    }
+    setError(undefined);
+    setSending(true);
+    try {
+      let customerId: string | undefined;
+      let custEmail: string | undefined;
+      let custPhone: string | undefined;
+      if (optionId === "create_new" && body?.customer?.create) {
+        const c = body.customer.create;
+        const created = await clientsClient.create({
+          name: c.name,
+          ...(c.phoneNumber ? { phoneNumber: c.phoneNumber } : {}),
+          ...(c.email ? { email: c.email } : {}),
+        });
+        customerId = created.id;
+        custEmail = created.email;
+        custPhone = created.phoneNumber;
+      } else if (optionId === "pick_existing" && body?.customer?.id) {
+        customerId = body.customer.id;
+        const picked = await clientsClient.list().then((cs) =>
+          cs.find((c) => c.id === customerId)
+        ).catch(() => undefined);
+        custEmail = picked?.email;
+        custPhone = picked?.phoneNumber;
+      } else {
+        setError(tFor(lang, "asstChat.invoiceFlow.needCustomer"));
+        return;
+      }
+      const raw = (pendingJobDetailsRaw ?? "").trim();
+      const firstLine = raw.split("\n")[0]?.trim() ?? "";
+      const jobName = firstLine.split(/\s+/).slice(0, 3).join(" ") ||
+        tFor(lang, "asstChat.newJob");
+      const today = new Date().toISOString().slice(0, 10);
+      const inv = await api.post<{ id?: string }>("/invoices", {
+        customerId,
+        amount: cents,
+        dueDate: today, // job's done — due on receipt
+        issuedDate: today,
+        status: "sent",
+        jobName,
+        ...(raw ? { description: raw } : {}),
+      });
+      if (!inv?.id) throw new Error("failed to create invoice");
+      setInvoiceCustomerOpen(false);
+      setInvoiceResult({
+        id: inv.id,
+        ...(custEmail ? { customerEmail: custEmail } : {}),
+        ...(custPhone ? { customerPhone: custPhone } : {}),
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "couldn't create the invoice",
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /**
+   * Quote ⇄ Invoice swap on the finished-flow review (roadmap: "swap between
+   * quote and invoice"). Mints ONE standalone invoice from the reviewed
+   * quote's customer + total (idempotent across retries via the ref), then
+   * dispatches it on the chosen channel through the invoice email/text
+   * endpoints.
+   */
+  async function confirmSendInvoiceSwap(
+    channel: "email" | "sms" | "both",
+    totalCents: number,
+  ) {
+    if (sending) return;
+    setError(undefined);
+    setSending(true);
+    try {
+      let invId = swapInvoiceIdRef.current;
+      if (!invId) {
+        const today = new Date().toISOString().slice(0, 10);
+        const inv = await api.post<{ id?: string }>("/invoices", {
+          ...(customer?.id ? { customerId: customer.id } : {}),
+          amount: totalCents,
+          dueDate: today,
+          issuedDate: today,
+          status: "sent",
+          ...(quote?.jobName ? { jobName: quote.jobName } : {}),
+          ...(quote?.description ? { description: quote.description } : {}),
+        });
+        if (!inv?.id) throw new Error("couldn't create the invoice");
+        invId = inv.id;
+        swapInvoiceIdRef.current = invId;
+      }
+      if (channel === "email" || channel === "both") {
+        await api.post(`/invoices/${invId}/email`, {});
+      }
+      if (channel === "sms" || channel === "both") {
+        await api.post(`/invoices/${invId}/text`, {});
+      }
+      setSwapInvoiceSent(invId);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "couldn't send the invoice",
+      );
+    } finally {
+      setSending(false);
+    }
   }
 
   async function fetchPriceSuggestions(raw: string) {
@@ -2876,7 +3172,8 @@ export default function AsstChat({
         {(empty || jobOptionsOpen)
           ? (
             <div class="chat__empty">
-              {!priceCaptureOpen && !awaitingJobDetails && !jobOptionsOpen && (
+              {!priceCaptureOpen && !awaitingJobDetails && !jobOptionsOpen &&
+                !invoiceCustomerOpen && !invoiceResult && (
                 <>
                   <div class="chat__empty-icon">
                     <img src="/logo-monster.png" alt="" />
@@ -2890,11 +3187,57 @@ export default function AsstChat({
                 ? (
                   <div class="chat__jobopts">
                     <div class="chat__jobopts-head">
+                      {
+                        /* Roadmap p.8: every step needs a working Back. In
+                          confirm mode (pre-quote) Back returns to the details
+                          entry with the typed text restored; in polish mode
+                          the picker is re-openable from the review CTA, so
+                          backing out just returns to the chat without losing
+                          answers. */
+                      }
+                      <button
+                        type="button"
+                        class="chat__price-back"
+                        onClick={() => {
+                          if (pickerMode === "confirm") {
+                            setJobOptionsOpen(false);
+                            setPickerMode("polish");
+                            setSubmittedJobDetails(null);
+                            setAwaitingJobDetails(true);
+                            setDraft(pendingJobDetailsRaw ?? "");
+                            return;
+                          }
+                          pendingReviewCtaRef.current = null;
+                          setJobOptionsOpen(false);
+                        }}
+                        aria-label={tFor(lang, "common.back")}
+                      >
+                        <svg
+                          viewBox="0 0 16 16"
+                          width="14"
+                          height="14"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M10 3L5 8l5 5"
+                            stroke="currentColor"
+                            stroke-width="2.2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            fill="none"
+                          />
+                        </svg>
+                        {tFor(lang, "common.back")}
+                      </button>
                       <h4 class="chat__jobopts-title">
-                        {tFor(lang, "asstChat.jobOpts.heading")}
+                        {pickerMode === "confirm"
+                          ? tFor(lang, "asstChat.jobOpts.confirmHeading")
+                          : tFor(lang, "asstChat.jobOpts.heading")}
                       </h4>
                       <p class="chat__jobopts-sub">
-                        {tFor(lang, "asstChat.jobOpts.sub")}
+                        {pickerMode === "confirm"
+                          ? tFor(lang, "asstChat.jobOpts.confirmSub")
+                          : tFor(lang, "asstChat.jobOpts.sub")}
                       </p>
                     </div>
                     {optionsLoading || !jobOptions
@@ -3289,6 +3632,149 @@ export default function AsstChat({
                       : null}
                   </div>
                 )
+                : invoiceResult
+                ? (
+                  // "Job done, need to invoice." success card (roadmap p.3):
+                  // the standalone invoice exists — hand over the link + send
+                  // actions. It also shows up under /invoices.
+                  <div class="chat__price-capture">
+                    <div class="chat__price-capture-head">
+                      <h4 class="chat__price-title">
+                        {tFor(lang, "asstChat.invoiceFlow.readyTitle")}
+                      </h4>
+                      <p class="chat__price-sub">
+                        {tFor(lang, "asstChat.invoiceFlow.readySub")}
+                      </p>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                      <button
+                        type="button"
+                        class="chat__price-continue"
+                        disabled={sending}
+                        onClick={async () => {
+                          setError(undefined);
+                          setSending(true);
+                          try {
+                            if (invoiceResult.customerEmail) {
+                              await api.post(
+                                `/invoices/${invoiceResult.id}/email`,
+                                {},
+                              );
+                            }
+                            if (invoiceResult.customerPhone) {
+                              await api.post(
+                                `/invoices/${invoiceResult.id}/text`,
+                                {},
+                              );
+                            }
+                            if (
+                              !invoiceResult.customerEmail &&
+                              !invoiceResult.customerPhone
+                            ) {
+                              setError(
+                                tFor(lang, "asstChat.invoiceFlow.noContact"),
+                              );
+                              return;
+                            }
+                            globalThis.location.href = "/invoices";
+                          } catch (err) {
+                            setError(
+                              err instanceof Error
+                                ? err.message
+                                : "couldn't send the invoice",
+                            );
+                          } finally {
+                            setSending(false);
+                          }
+                        }}
+                      >
+                        {sending
+                          ? tFor(lang, "asstChat.preview.sending")
+                          : tFor(lang, "asstChat.invoiceFlow.sendNow")}
+                      </button>
+                      <div style="display:flex;gap:8px">
+                        <button
+                          type="button"
+                          class="chat__price-back"
+                          style="flex:1;justify-content:center;border:1px solid var(--border,#d8dcd5);border-radius:10px;padding:10px"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(
+                                `${globalThis.location.origin}/i/${invoiceResult.id}`,
+                              );
+                              setInvLinkCopied(true);
+                              setTimeout(() => setInvLinkCopied(false), 1500);
+                            } catch { /* clipboard unavailable */ }
+                          }}
+                        >
+                          {invLinkCopied
+                            ? tFor(lang, "asstChat.preview.linkCopied")
+                            : tFor(lang, "asstChat.preview.menuCopyLink")}
+                        </button>
+                        <a
+                          class="chat__price-back"
+                          style="flex:1;justify-content:center;border:1px solid var(--border,#d8dcd5);border-radius:10px;padding:10px;text-decoration:none"
+                          href={`/i/${invoiceResult.id}`}
+                          target="_blank"
+                          rel="noopener"
+                        >
+                          {tFor(lang, "asstChat.invoiceFlow.viewInvoice")}
+                        </a>
+                      </div>
+                      <a
+                        class="chat__price-back"
+                        style="justify-content:center;padding:8px;text-decoration:none"
+                        href="/invoices"
+                      >
+                        {tFor(lang, "asstChat.invoiceFlow.goToInvoices")}
+                      </a>
+                    </div>
+                  </div>
+                )
+                : invoiceCustomerOpen
+                ? (
+                  // Customer step of the invoice flow — the SAME wizard
+                  // customer panel used in phase 2 (existing-customers
+                  // dropdown + "+ New Customer" form), so the assistant has
+                  // one customer-pick interaction everywhere.
+                  <div class="chat__price-capture">
+                    <div class="chat__price-capture-head">
+                      <button
+                        type="button"
+                        class="chat__price-back"
+                        onClick={() => {
+                          setInvoiceCustomerOpen(false);
+                          setPriceCaptureOpen(true);
+                        }}
+                        aria-label={tFor(lang, "common.back")}
+                      >
+                        <svg
+                          viewBox="0 0 16 16"
+                          width="14"
+                          height="14"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M10 3L5 8l5 5"
+                            stroke="currentColor"
+                            stroke-width="2.2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            fill="none"
+                          />
+                        </svg>
+                        {tFor(lang, "common.back")}
+                      </button>
+                    </div>
+                    <CustomerStepPanel
+                      ownerEmail={from?.email}
+                      ownerPhone={from?.phone}
+                      sending={sending}
+                      lang={lang}
+                      onSubmit={createInvoiceFromFlow}
+                    />
+                  </div>
+                )
                 : priceCaptureOpen
                 ? (
                   <div class="chat__price-capture">
@@ -3297,6 +3783,17 @@ export default function AsstChat({
                         type="button"
                         class="chat__price-back"
                         onClick={() => {
+                          // "Help me price it": pricing came AFTER the confirm
+                          // step (roadmap p.18) — Back reopens the confirm
+                          // picker instead of dumping to the start screen.
+                          if (suggestPricing && confirmedOptionRef.current) {
+                            setPriceCaptureOpen(false);
+                            setPriceCents(null);
+                            setPriceSuggestions(null);
+                            setPickerMode("confirm");
+                            setJobOptionsOpen(true);
+                            return;
+                          }
                           setPriceCaptureOpen(false);
                           setPriceCents(null);
                           setSuggestPricing(false);
@@ -3421,6 +3918,13 @@ export default function AsstChat({
                       onClick={startKnownPriceFlow}
                     >
                       {tFor(lang, "asstChat.prompt.quickQuote")}
+                    </button>
+                    <button
+                      type="button"
+                      class="chat__empty-prompt"
+                      onClick={startInvoiceFlow}
+                    >
+                      {tFor(lang, "asstChat.prompt.invoiceDone")}
                     </button>
                   </div>
                 )}
@@ -3971,6 +4475,64 @@ export default function AsstChat({
                             : null}
 
                           {
+                            /* Roadmap: swap the finished doc between Quote +
+                              Agreement and a standalone Invoice. Invoice mode
+                              drops signature/terms and sends a payable bill
+                              for the same total. */
+                          }
+                          <div
+                            class="quote-review__langtoggle"
+                            role="group"
+                            aria-label={tFor(
+                              previewLang,
+                              "asstChat.preview.docTypeGroup",
+                            )}
+                          >
+                            <span class="quote-review__langtoggle-label">
+                              {tFor(previewLang, "asstChat.preview.sendAs")}
+                            </span>
+                            <button
+                              type="button"
+                              class={`quote-review__langpill${
+                                reviewDocType === "quote" ? " is-active" : ""
+                              }`}
+                              aria-pressed={reviewDocType === "quote"
+                                ? "true"
+                                : "false"}
+                              onClick={() => setReviewDocType("quote")}
+                              disabled={sending}
+                            >
+                              {tFor(previewLang, "asstChat.preview.kind")}
+                            </button>
+                            <button
+                              type="button"
+                              class={`quote-review__langpill${
+                                reviewDocType === "invoice" ? " is-active" : ""
+                              }`}
+                              aria-pressed={reviewDocType === "invoice"
+                                ? "true"
+                                : "false"}
+                              onClick={() => setReviewDocType("invoice")}
+                              disabled={sending}
+                            >
+                              {tFor(
+                                previewLang,
+                                "asstChat.preview.docTypeInvoice",
+                              )}
+                            </button>
+                          </div>
+                          {reviewDocType === "invoice"
+                            ? (
+                              <div style="margin:10px 14px 0;padding:10px 14px;background:var(--coffee-50,#f5f0e8);border:1px dashed var(--border,#d8dcd5);border-radius:10px;font-size:12.5px;color:var(--fg-muted,#6b7560)">
+                                {tFor(
+                                  previewLang,
+                                  "asstChat.preview.invoiceModeNote",
+                                )}
+                              </div>
+                            )
+                            : null}
+
+                          {
                             /* Roadmap p.5 (Preview.docx): FROM = the contractor.
                               Read-only; the editable TO (customer) follows. */
                           }
@@ -4257,7 +4819,7 @@ export default function AsstChat({
                             );
                           })()}
 
-                          {termAnswers.length > 0
+                          {reviewDocType === "quote" && termAnswers.length > 0
                             ? (
                               <section class="quote-review__section">
                                 <div class="quote-review__section-label">
@@ -4578,7 +5140,8 @@ export default function AsstChat({
                                 {totalStr}
                               </span>
                             </div>
-                            {milestones && milestones.length > 1
+                            {reviewDocType === "quote" && milestones &&
+                                milestones.length > 1
                               ? (
                                 <ul class="quote-review__milestones">
                                   {milestones.map((ms, i) => (
@@ -4608,39 +5171,103 @@ export default function AsstChat({
                           </section>
 
                           <footer class="quote-review__cta">
-                            <div class="quote-review__send-split">
-                              <button
-                                type="button"
-                                class="quote-review__send-main"
-                                onClick={() =>
-                                  confirmSendContract(
-                                    m,
-                                    sendChannel,
-                                    previewLang,
-                                  )}
-                                disabled={sending}
-                              >
-                                <I d={ICN.send} size={14} sw={2.4} />
-                                {sending
-                                  ? tFor(
-                                    previewLang,
-                                    "asstChat.preview.sending",
-                                  )
-                                  : sendChannel === "both"
-                                  ? tFor(
-                                    previewLang,
-                                    "asstChat.preview.sendBoth",
-                                  )
-                                  : sendChannel === "sms"
-                                  ? tFor(
-                                    previewLang,
-                                    "asstChat.preview.sendSms",
-                                  )
-                                  : tFor(
-                                    previewLang,
-                                    "asstChat.preview.sendEmail",
-                                  )}
-                              </button>
+                            {swapInvoiceSent
+                              ? (
+                                <div style="display:flex;flex-direction:column;gap:8px;width:100%">
+                                  <div style="padding:12px 14px;background:var(--green-50,#eef6ea);border:1px solid var(--brand-green,#519843);border-radius:12px;font-weight:700;font-size:13.5px;color:var(--brand-teal,#144852)">
+                                    {tFor(
+                                      previewLang,
+                                      "asstChat.preview.invoiceSent",
+                                    )}
+                                  </div>
+                                  <div style="display:flex;gap:8px">
+                                    <button
+                                      type="button"
+                                      class="quote-review__send-caret"
+                                      style="flex:1;border-radius:10px;padding:10px"
+                                      onClick={async () => {
+                                        try {
+                                          await navigator.clipboard
+                                            .writeText(
+                                              `${globalThis.location.origin}/i/${swapInvoiceSent}`,
+                                            );
+                                          setSwapLinkCopied(true);
+                                          setTimeout(
+                                            () => setSwapLinkCopied(false),
+                                            1500,
+                                          );
+                                        } catch { /* ignore */ }
+                                      }}
+                                    >
+                                      {swapLinkCopied
+                                        ? tFor(
+                                          previewLang,
+                                          "asstChat.preview.linkCopied",
+                                        )
+                                        : tFor(
+                                          previewLang,
+                                          "asstChat.preview.menuCopyLink",
+                                        )}
+                                    </button>
+                                    <a
+                                      class="quote-review__send-caret"
+                                      style="flex:1;border-radius:10px;padding:10px;text-decoration:none;display:flex;align-items:center;justify-content:center"
+                                      href={`/i/${swapInvoiceSent}`}
+                                      target="_blank"
+                                      rel="noopener"
+                                    >
+                                      {tFor(
+                                        previewLang,
+                                        "asstChat.invoiceFlow.viewInvoice",
+                                      )}
+                                    </a>
+                                  </div>
+                                </div>
+                              )
+                              : (
+                                <div class="quote-review__send-split">
+                                  <button
+                                    type="button"
+                                    class="quote-review__send-main"
+                                    onClick={() =>
+                                      reviewDocType === "invoice"
+                                        ? confirmSendInvoiceSwap(
+                                          sendChannel,
+                                          totalCentsForBreakdown,
+                                        )
+                                        : confirmSendContract(
+                                          m,
+                                          sendChannel,
+                                          previewLang,
+                                        )}
+                                    disabled={sending}
+                                  >
+                                    <I d={ICN.send} size={14} sw={2.4} />
+                                    {sending
+                                      ? tFor(
+                                        previewLang,
+                                        "asstChat.preview.sending",
+                                      )
+                                      : reviewDocType === "invoice"
+                                      ? tFor(
+                                        previewLang,
+                                        "asstChat.preview.sendInvoice",
+                                      )
+                                      : sendChannel === "both"
+                                      ? tFor(
+                                        previewLang,
+                                        "asstChat.preview.sendBoth",
+                                      )
+                                      : sendChannel === "sms"
+                                      ? tFor(
+                                        previewLang,
+                                        "asstChat.preview.sendSms",
+                                      )
+                                      : tFor(
+                                        previewLang,
+                                        "asstChat.preview.sendEmail",
+                                      )}
+                                  </button>
                               <button
                                 type="button"
                                 class="quote-review__send-caret"
@@ -4731,10 +5358,52 @@ export default function AsstChat({
                                         )}
                                       </span>
                                     </button>
+                                    {
+                                      /* Copy link — an immediate action, not a
+                                        channel pick: copies the public
+                                        agreement URL so the contractor can
+                                        paste it anywhere (WhatsApp, DMs). */
+                                    }
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      class="quote-review__send-menu-item"
+                                      onClick={async () => {
+                                        const cid = contractId ||
+                                          contract?.id;
+                                        if (!cid) return;
+                                        try {
+                                          await navigator.clipboard.writeText(
+                                            `${globalThis.location.origin}/c/${cid}`,
+                                          );
+                                          setLinkCopied(true);
+                                          setTimeout(() => {
+                                            setLinkCopied(false);
+                                            setChannelMenuOpen(false);
+                                          }, 1200);
+                                        } catch {
+                                          setChannelMenuOpen(false);
+                                        }
+                                      }}
+                                    >
+                                      <I d={ICN.clip} size={13} sw={2.4} />
+                                      <span class="quote-review__send-menu-label">
+                                        {linkCopied
+                                          ? tFor(
+                                            previewLang,
+                                            "asstChat.preview.linkCopied",
+                                          )
+                                          : tFor(
+                                            previewLang,
+                                            "asstChat.preview.menuCopyLink",
+                                          )}
+                                      </span>
+                                    </button>
                                   </div>
                                 )
                                 : null}
-                            </div>
+                                </div>
+                              )}
                           </footer>
                         </article>
                       </div>
@@ -5075,7 +5744,20 @@ export default function AsstChat({
                                       type="button"
                                       class={`wiz-opt ${
                                         opt.isCustom ? "wiz-opt--custom" : ""
+                                      } ${
+                                        rewindAnswer &&
+                                          rewindAnswer.stepId ===
+                                            payload.stepId &&
+                                          rewindAnswer.optionId === opt.id
+                                          ? "wiz-opt--prev"
+                                          : ""
                                       }`}
+                                      title={rewindAnswer &&
+                                          rewindAnswer.stepId ===
+                                            payload.stepId &&
+                                          rewindAnswer.optionId === opt.id
+                                        ? tFor(lang, "asstChat.wiz.prevChoice")
+                                        : undefined}
                                       onClick={() => {
                                         if (opt.followUp) {
                                           setFollowUpPick({
@@ -5482,6 +6164,7 @@ export default function AsstChat({
         // set): that screen is tap-only — the user sends via the card's button,
         // so a text box underneath just invites stray typing.
         const composerHidden = priceCaptureOpen || jobOptionsOpen ||
+          invoiceCustomerOpen || invoiceResult !== null ||
           hasUnansweredWizard || previewCtaId !== null;
         if (composerHidden) return null;
         return (

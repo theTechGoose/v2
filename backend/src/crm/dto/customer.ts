@@ -35,6 +35,10 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsBoolean()
   isBusiness?: boolean;
+
+  @IsOptional()
+  @IsString()
+  businessName?: string;
 }
 
 export class UpdateCustomerDto {
@@ -69,6 +73,10 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsBoolean()
   isBusiness?: boolean;
+
+  @IsOptional()
+  @IsString()
+  businessName?: string;
 }
 
 export interface Customer extends CreateCustomerDto {

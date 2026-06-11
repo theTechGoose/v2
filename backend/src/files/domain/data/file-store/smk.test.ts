@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects } from "#std/assert";
 import { FileStore } from "./mod.ts";
-import { resetKv } from "@core/data/kv/mod.ts";
+import { getKv, resetKv } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import { PAGE_SIZE } from "@files/domain/business/chunk/mod.ts";
 
@@ -82,6 +82,38 @@ Deno.test("file-store smoke: cross-user delete is forbidden", async () => {
   const store = new FileStore();
   const meta = await store.create({ userId: "u-1", filename: "x", mimeType: "x/x", bytes: new TextEncoder().encode("x") });
   await assertRejects(() => store.delete(meta.id, "u-2"), ForbiddenError);
+  await resetKv();
+});
+
+Deno.test("file-store smoke: >1MB file spanning many commit batches round-trips byte-perfect", async () => {
+  // ~1.5MB across 25 pages → 3 page-commit batches. The old single-atomic
+  // create returned a 500 once an upload crossed KV's ~819,200-byte cap.
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const store = new FileStore();
+  const bytes = new Uint8Array(PAGE_SIZE * 25 + 123);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 7) & 0xff;
+  const meta = await store.create({ userId: "u-1", filename: "big.bin", mimeType: "application/octet-stream", bytes });
+  assertEquals(meta.pageCount, 26);
+  assertEquals(meta.sizeBytes, bytes.length);
+  const back = await store.readBytes(meta.id);
+  assertEquals(back, bytes);
+  await resetKv();
+});
+
+Deno.test("file-store smoke: delete removes every page of a multi-batch file", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const store = new FileStore();
+  const bytes = new Uint8Array(PAGE_SIZE * 25);
+  const meta = await store.create({ userId: "u-1", filename: "big.bin", mimeType: "application/octet-stream", bytes });
+  await store.delete(meta.id, "u-1");
+  await assertRejects(() => store.getMeta(meta.id), NotFoundError);
+  // No orphan pages left behind ("file_page" is the store's internal page prefix).
+  const kv = await getKv();
+  let remaining = 0;
+  for await (const _ of kv.list({ prefix: ["file_page", meta.id] })) remaining++;
+  assertEquals(remaining, 0);
   await resetKv();
 });
 

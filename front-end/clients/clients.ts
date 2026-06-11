@@ -26,6 +26,7 @@ export interface CustomerCard {
   phoneNumber?: string;
   address?: string;
   notes?: string;
+  businessName?: string;
   segment?: Exclude<ClientSegmentKey, "unsorted">;
   vip?: boolean;
   createdAt: string;
@@ -79,7 +80,12 @@ export const clientsClient = {
   update: (id: string, patch: Record<string, unknown>, opts: ApiOptions = {}) =>
     api.put<CustomerCard>(`/customers/${id}`, patch, opts),
   create: (
-    patch: { name: string; phoneNumber?: string; email?: string },
+    patch: {
+      name: string;
+      phoneNumber?: string;
+      email?: string;
+      businessName?: string;
+    },
     opts: ApiOptions = {},
   ) => api.post<CustomerCard>("/customers", patch, opts),
 };

@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
 import { filesClient } from "../clients/files.ts";
+import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { type Lang, langSignal, setLang, tFor } from "../lib/i18n.ts";
 import {
@@ -37,6 +38,24 @@ const btnSecondary =
 const btnPrimary =
   "padding:9px 16px;border-radius:8px;border:0;background:var(--brand-green,#519843);color:#fff;cursor:pointer;font:inherit;font-weight:700";
 
+/**
+ * Map a file-upload failure to a friendly, localized message. The raw error
+ * is always logged for debugging, so users never see "POST /files failed:
+ * 500". A structured "file_too_large" signal from the backend (413) surfaces
+ * the specific too-large copy; everything else falls back to the generic
+ * per-card message.
+ */
+function uploadErrorMessage(ex: unknown, tooLarge: string, fallback: string): string {
+  console.error("file upload failed", ex);
+  if (ex instanceof ApiError) {
+    const body = ex.body as { code?: unknown } | null;
+    if (body && typeof body === "object" && body.code === "file_too_large") {
+      return tooLarge;
+    }
+  }
+  return fallback;
+}
+
 /** Roadmap p.13: neutral Latin-American Spanish for the Settings UI, keyed
  *  off the contractor's `user.language`. One dictionary so the whole screen
  *  flips together (no mixed-language state). */
@@ -49,6 +68,7 @@ function tr(es: boolean) {
     saveFailed: tFor(lang, "settings.saveFailed"),
     logoUploadFailed: tFor(lang, "settings.logoUploadFailed"),
     uploadFailed: tFor(lang, "settings.uploadFailed"),
+    uploadTooLarge: tFor(lang, "settings.uploadTooLarge"),
     nothingSet: tFor(lang, "settings.nothingSet"),
     // Card titles
     account: tFor(lang, "common.account"),
@@ -284,7 +304,7 @@ function EditCard(
       const rec = await filesClient.uploadBlob(file, file.name);
       await saveIdentity({ logoFileId: rec.id });
     } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : t.logoUploadFailed);
+      setErr(uploadErrorMessage(ex, t.uploadTooLarge, t.logoUploadFailed));
     } finally {
       setBusy(null);
     }
@@ -607,7 +627,7 @@ function InsuranceEditCard(
       const rec = await filesClient.uploadBlob(file, file.name);
       await save({ insuranceFileId: rec.id });
     } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : t.uploadFailed);
+      setErr(uploadErrorMessage(ex, t.uploadTooLarge, t.uploadFailed));
     } finally {
       setBusy(null);
     }
@@ -761,7 +781,7 @@ function TaxEditCard(
       const rec = await filesClient.uploadBlob(file, file.name);
       await save({ w9FileId: rec.id });
     } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : t.uploadFailed);
+      setErr(uploadErrorMessage(ex, t.uploadTooLarge, t.uploadFailed));
     } finally {
       setBusy(null);
     }

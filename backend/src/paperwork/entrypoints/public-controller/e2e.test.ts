@@ -165,8 +165,12 @@ Deno.test("public e2e: POST /quotes/:id/inquiry returns 200 and does NOT change 
     }).then((r) => r.json());
     assertEquals(out.ok, true);
 
+    // The inquiry itself must not decide the quote (no accepted/lost flip).
+    // The public GET used to refetch DOES record an open and flips
+    // sent → viewed (roadmap p.13 view tracking), so "viewed" is the
+    // expected post-refetch status — not a decision.
     const refetched = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
-    assertEquals(refetched.status, "sent");
+    assertEquals(refetched.status, "viewed");
   } finally {
     await server.stop();
     await resetKv();

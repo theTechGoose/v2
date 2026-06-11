@@ -13,7 +13,10 @@ import { BusinessAddressStore } from "@profile/domain/data/business-address-stor
 import { EventBus } from "@core/business/events/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
+import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
+import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
+import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
@@ -129,8 +132,51 @@ export class PaperworkPublicController {
     private addresses: BusinessAddressStore,
     private bus: EventBus,
     private signedConfirmation: SendSignedConfirmation,
+    private acceptedAlert: SendAcceptedAlert,
+    private views: ViewStore,
     private shortlinks: ShortLinkStore,
+    private files: FileStore,
   ) {}
+
+  /**
+   * GET /public-logo/:kind/:id — the contractor's business logo for a public
+   * document page. Capability model matches the docs themselves: knowing the
+   * unguessable quote/contract/invoice id grants read of THAT contractor's
+   * logo (an image they already brand their documents with). The file id
+   * itself never leaks.
+   */
+  @Get("public-logo/:kind/:id")
+  async publicLogo(
+    @Context() ctx: ExecutionContext,
+    @Param("kind") kind: string,
+    @Param("id") id: string,
+  ) {
+    try {
+      let ownerId: string;
+      if (kind === "quote") ownerId = (await this.quotes.get(id)).userId;
+      else if (kind === "contract") {
+        ownerId = (await this.contracts.get(id)).userId;
+      } else if (kind === "invoice") {
+        ownerId = (await this.invoices.get(id)).userId;
+      } else return ctx.json({ error: "bad_kind" }, 400);
+      const ident = await this.identity.get(ownerId).catch(() => null);
+      const fileId = ident?.logoFileId;
+      if (!fileId) return ctx.json({ error: "no_logo" }, 404);
+      const meta = await this.files.getOwnedMeta(fileId, ownerId);
+      const bytes = await this.files.readBytes(fileId);
+      return new Response(bytes as BodyInit, {
+        status: 200,
+        headers: {
+          "content-type": meta.mimeType,
+          "content-length": String(bytes.length),
+          // Short-lived cache: replacing the logo shows up within minutes.
+          "cache-control": "public, max-age=300",
+        },
+      });
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
 
   /**
    * GET /s/:code — resolve a shortlink code to its kind + id so the
@@ -154,6 +200,12 @@ export class PaperworkPublicController {
    * GET /change-orders/:id/public — customer-facing view of a proposed
    * invoice adjustment (roadmap p.12). Returns the description, signed
    * delta, and the resulting invoice total so the customer can approve.
+   *
+   * Math comes from the `originalAmountCents` snapshot taken at create
+   * time, so revisiting the link after approval never double-applies the
+   * delta (audit: "double-delta"). Legacy rows without the snapshot derive
+   * it: an approved order's live invoice total already includes the delta,
+   * so original = current − delta; otherwise original = current.
    */
   @Get("change-orders/:id/public")
   async getChangeOrderPublic(
@@ -162,26 +214,32 @@ export class PaperworkPublicController {
   ) {
     try {
       const co = await this.changeOrders.get(id);
-      let currentAmount: number | undefined;
+      let invoiceAmount: number | undefined;
       let businessName: string | undefined;
       // Language the customer document should render in (the contractor's
       // outgoing-comms language). Defaults EN if the identity can't be read.
       let commsLanguage: "en" | "es" = "en";
       try {
         const inv = await this.invoices.get(co.invoiceId);
-        currentAmount = inv.amount ?? 0;
+        invoiceAmount = inv.amount ?? 0;
         const ident = await this.identity.get(inv.userId).catch(() => null);
         businessName = ident?.businessName ?? ident?.legalName ?? undefined;
         commsLanguage = ident?.commsLanguage === "es" ? "es" : "en";
       } catch { /* invoice may be gone; still show the order */ }
+      const originalAmount = co.originalAmountCents ??
+        (invoiceAmount != null
+          ? (co.status === "approved"
+            ? Math.max(0, invoiceAmount - co.deltaAmountCents)
+            : invoiceAmount)
+          : undefined);
       return ctx.json({
         id: co.id,
         description: co.description,
         deltaAmountCents: co.deltaAmountCents,
         status: co.status,
-        currentAmount,
-        newAmount: currentAmount != null
-          ? Math.max(0, currentAmount + co.deltaAmountCents)
+        currentAmount: originalAmount,
+        newAmount: originalAmount != null
+          ? Math.max(0, originalAmount + co.deltaAmountCents)
           : undefined,
         businessName,
         commsLanguage,
@@ -193,7 +251,12 @@ export class PaperworkPublicController {
   }
 
   /** POST /change-orders/:id/approve — customer approves; the delta is
-   *  applied to the linked invoice's total and the order is closed. */
+   *  applied to the linked invoice's total and the order is closed.
+   *
+   *  Ordering matters: the invoice write happens FIRST, and the CO only
+   *  flips to approved after it succeeds. A failed invoice update leaves
+   *  the order pending and returns a 5xx the public island can surface —
+   *  the customer must never see "approved" while the total didn't move. */
   @Post("change-orders/:id/approve")
   async approveChangeOrder(
     @Context() ctx: ExecutionContext,
@@ -209,14 +272,29 @@ export class PaperworkPublicController {
       return ctx.json({ ok: false, reason: `already_${co.status}` }, 409);
     }
     // Apply the delta to the invoice (owner write — CO carries the userId).
+    let newAmount: number;
     try {
       const inv = await this.invoices.get(co.invoiceId);
-      const next = Math.max(0, (inv.amount ?? 0) + co.deltaAmountCents);
-      await this.invoices.update(co.invoiceId, co.userId, { amount: next });
+      newAmount = Math.max(0, (inv.amount ?? 0) + co.deltaAmountCents);
+      await this.invoices.update(co.invoiceId, co.userId, {
+        amount: newAmount,
+      });
     } catch (err) {
-      console.warn(`[change-orders/${id}/approve] invoice update failed:`, err);
+      console.error(
+        `[change-orders/${id}/approve] invoice update failed:`,
+        err,
+      );
+      return ctx.json({ ok: false, reason: "invoice_update_failed" }, 500);
     }
     await this.changeOrders.setStatus(id, "approved");
+    await emitChangeOrderDecision(
+      this.bus,
+      this.customers,
+      this.users,
+      co,
+      "change_order_approved",
+      { newAmountCents: newAmount },
+    );
     return ctx.json({ ok: true });
   }
 
@@ -236,6 +314,14 @@ export class PaperworkPublicController {
       return ctx.json({ ok: false, reason: `already_${co.status}` }, 409);
     }
     await this.changeOrders.setStatus(id, "declined");
+    await emitChangeOrderDecision(
+      this.bus,
+      this.customers,
+      this.users,
+      co,
+      "change_order_declined",
+      {},
+    );
     return ctx.json({ ok: true });
   }
 
@@ -247,7 +333,34 @@ export class PaperworkPublicController {
     @Param("id") id: string,
   ) {
     try {
-      const q = await this.quotes.get(id); // no ownership gate — knowledge of id is the capability
+      let q = await this.quotes.get(id); // no ownership gate — knowledge of id is the capability
+      // Record the open so the /quotes pipeline card can derive the
+      // "Viewed" stage + opens count (roadmap p.13). BuildQuoteCards
+      // dedupes to ≤1 open per hour, so SSR double-fetches don't inflate.
+      try {
+        await this.views.create({
+          paperworkType: "quote",
+          paperworkId: q.id,
+          viewedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn(`[quotes/${id}/public] view record failed:`, err);
+      }
+      // First open flips sent → viewed (mirrors the contract path below).
+      // Idempotent: subsequent GETs find a non-"sent" status and skip.
+      if (q.status === "sent") {
+        try {
+          q = await this.quotes.update(id, q.userId, { status: "viewed" });
+          await this.bus.emit({
+            userId: q.userId,
+            entityType: "quote",
+            entityId: q.id,
+            action: "viewed",
+          });
+        } catch (err) {
+          console.warn(`[quotes/${id}/public] mark-viewed failed:`, err);
+        }
+      }
       const [contractor, customer] = await Promise.all([
         loadContractor(this.users, this.identity, this.addresses, q.userId),
         lookupCustomerName(this.customers, q.customerId, q.userId),
@@ -299,6 +412,12 @@ export class PaperworkPublicController {
       entityId: updated.id,
       action: "accepted",
       data: { ...(customerName ? { customerName } : {}) },
+    });
+    // Completion Text + Email to the contractor (roadmap p.10). Best-effort —
+    // never fails the customer's accept; the bell notification above already
+    // landed via the bus event.
+    this.acceptedAlert.run(updated.id).catch((err) => {
+      console.error(`[quotes/${updated.id}/accept] accepted-alert failed:`, err);
     });
     return ctx.json({ ok: true, quoteId: updated.id });
   }
@@ -578,6 +697,15 @@ export class PaperworkPublicController {
           };
         } catch { /* fall through */ }
       }
+      // Standalone invoices (no contract/quote) carry their own jobName +
+      // description — the assistant's "Job done, need to invoice." flow and
+      // the /invoices "New invoice" modal write them directly (roadmap p.3).
+      if (!jobDetails && (i.jobName || i.description)) {
+        jobDetails = {
+          ...(i.jobName ? { jobName: i.jobName } : {}),
+          ...(i.description ? { description: i.description } : {}),
+        };
+      }
       // Project sibling invoices into a public-safe shape, sorted by
       // installmentIndex (or createdAt as fallback).
       const sortedSiblings = siblings
@@ -772,6 +900,10 @@ interface PublicContractor {
    *  in this language so the customer reads everything in their language.
    *  Defaults to "en". */
   commsLanguage?: string;
+  /** True when the contractor uploaded a business logo. Public doc pages
+   *  use it to render GET /public-logo/:kind/:id (roadmap p.2 — the logo
+   *  shows on quotes & invoices). */
+  hasLogo?: boolean;
 }
 
 /** Public-safe contractor projection — never returns internal IDs or
@@ -800,6 +932,7 @@ async function loadContractor(
         ident?.acceptedPaymentMethods,
       ),
       commsLanguage: ident?.commsLanguage === "es" ? "es" : "en",
+      hasLogo: !!ident?.logoFileId,
     };
   } catch {
     return undefined;
@@ -942,6 +1075,53 @@ async function lookupCustomerPublic(
   } catch {
     return undefined;
   }
+}
+
+/** Signed money string for notification copy: 25050 → "+$250.50". */
+function fmtDelta(cents: number): string {
+  return `${cents >= 0 ? "+" : "−"}$${(Math.abs(cents) / 100).toFixed(2)}`;
+}
+
+/** Fire the contractor-facing bus event for a CO decision so the bell
+ *  picks it up (the decline copy promises "we've let your contractor
+ *  know" — this is what makes that true). Best-effort lookups mirror the
+ *  sign/accept handlers: customerName for readable copy, the contractor's
+ *  UI language so the notification renders in their language.
+ *
+ *  Module-level on purpose: Danet registers EVERY prototype method of a
+ *  controller as a route, so an undecorated private method crashes boot. */
+async function emitChangeOrderDecision(
+  bus: EventBus,
+  customers: CustomerStore,
+  users: UserStore,
+  co: {
+    userId: string;
+    invoiceId: string;
+    customerId?: string;
+    description: string;
+    deltaAmountCents: number;
+  },
+  action: "change_order_approved" | "change_order_declined",
+  extra: Record<string, unknown>,
+) {
+  const [customerName, contractor] = await Promise.all([
+    lookupCustomerName(customers, co.customerId, co.userId),
+    users.get(co.userId).catch(() => undefined),
+  ]);
+  await bus.emit({
+    userId: co.userId,
+    entityType: "invoice",
+    entityId: co.invoiceId,
+    action,
+    data: {
+      ...(customerName ? { customerName } : {}),
+      ...(contractor?.language ? { language: contractor.language } : {}),
+      description: co.description,
+      deltaAmountCents: co.deltaAmountCents,
+      delta: fmtDelta(co.deltaAmountCents),
+      ...extra,
+    },
+  });
 }
 
 /** Mask TIN to last-4 (e.g. "123-45-6789" → "***-**-6789"). */

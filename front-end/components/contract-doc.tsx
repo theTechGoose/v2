@@ -26,6 +26,9 @@ interface Contractor {
   state?: string;
   /** Outgoing-comms language (roadmap p.13) — drives this page's copy. */
   commsLanguage?: string;
+  /** True when the contractor uploaded a business logo — rendered via the
+   *  public-logo endpoint above the brand strip (roadmap p.2). */
+  hasLogo?: boolean;
 }
 
 /** Two-letter US state abbreviations → full names. Used to expand the
@@ -293,6 +296,15 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
     <>
       {/* Sticky brand strip */}
       <div class="ctr__no-print" style={`text-align:center;margin-bottom:18px`}>
+        {contractor?.hasLogo
+          ? (
+            <img
+              src={`/api/public-logo/contract/${contract.id}`}
+              alt=""
+              style="max-height:48px;max-width:160px;object-fit:contain;display:block;margin:0 auto 8px;border-radius:8px"
+            />
+          )
+          : null}
         <div
           style={`font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:${TEAL}`}
         >
@@ -680,11 +692,39 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
                       </div>
                     </div>
                   )
-                  /* Unsigned: no preview slot here — the actual signature pad
-                     (PublicSignContract) below is the single target. Showing a
-                     dashed "YOUR SIGNATURE" placeholder here duplicated the
-                     label and looked like two signature boxes. */
-                  : null}
+                  /* Unsigned: "YOUR Signature" card (roadmap slide 16) —
+                     mirrors the contractor card and points the customer at
+                     the actual sign pad (PublicSignContract) right below.
+                     It deliberately has no dashed pad styling so it doesn't
+                     read as a second signature box. */
+                  : (
+                    <div
+                      style={`padding:14px 16px;background:#fff;border:1px solid ${LINE};border-radius:12px;min-height:96px;display:flex;flex-direction:column;justify-content:flex-end`}
+                    >
+                      <div
+                        style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
+                      >
+                        {t.yourSignature}
+                      </div>
+                      <div
+                        style={`margin-top:2px;font-size:14px;font-weight:800;color:${INK}`}
+                      >
+                        {customerName ?? t.clientSignature}
+                      </div>
+                      <div
+                        style={`margin-top:6px;flex:1;display:flex;align-items:flex-end`}
+                      >
+                        <div
+                          style={`width:100%;border-bottom:1.5px dashed ${LINE}`}
+                        />
+                      </div>
+                      <div
+                        style={`margin-top:8px;font-size:12px;font-weight:700;color:${TEAL}`}
+                      >
+                        {t.signTypeBelow}
+                      </div>
+                    </div>
+                  )}
               </div>
               {!signed && (
                 <PublicSignContract contractId={contract.id} lang={lang} />
@@ -1003,6 +1043,7 @@ function computeMilestones(
     beforeStart: tFor(lang, "contractDoc.milestone.beforeStart"),
     onCompletion: tFor(lang, "contractDoc.milestone.onCompletion"),
     atMidpoint: tFor(lang, "contractDoc.milestone.atMidpoint"),
+    onSigning: tFor(lang, "contractDoc.milestone.onSigning"),
   };
   const roleLabel: Record<MilestoneRole, { label: string; when: string }> = {
     deposit: { label: L.deposit, when: L.beforeStart },
@@ -1011,7 +1052,15 @@ function computeMilestones(
     completion: { label: L.balance, when: L.onCompletion },
     full: { label: L.final, when: L.onCompletion },
   };
-  return computePaymentSplit(termValue(terms, "payment_terms"), total).map((
+  const term = termValue(terms, "payment_terms");
+  // "Due Now" terms collapse to a single full payment — but it's owed at
+  // signing, not "on completion".
+  const dueNow = /\bdue now\b/i.test(term ?? "");
+  return computePaymentSplit(term, total).map((
     p,
-  ) => ({ ...roleLabel[p.role], amount: p.amountCents }));
+  ) => ({
+    ...roleLabel[p.role],
+    ...(dueNow && p.role === "full" ? { when: L.onSigning } : {}),
+    amount: p.amountCents,
+  }));
 }

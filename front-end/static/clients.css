@@ -199,6 +199,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ccard2__biz {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  line-height: 1.2;
+  margin: 0 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ccard2__seg {
   display: flex;
   align-items: center;
@@ -338,6 +349,15 @@
   font-size: 15px;
   color: var(--brand-teal);
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ccard2__panel-biz {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

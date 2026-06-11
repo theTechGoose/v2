@@ -41,6 +41,11 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
         { id: "asap", label: "contractTermsWizard.startDate.asap" },
         { id: "next_week", label: "contractTermsWizard.startDate.nextWeek" },
         { id: "next_month", label: "contractTermsWizard.startDate.nextMonth" },
+        {
+          // Roadmap p.4/5: paperwork written AFTER the work happened.
+          id: "job_completed",
+          label: "contractTermsWizard.startDate.jobCompleted",
+        },
         { id: "custom", label: "contractTermsWizard.startDate.custom", isCustom: true },
       ],
     },
@@ -53,6 +58,10 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
         { id: "2_3_days", label: "contractTermsWizard.wraps.twoThreeDays" },
         { id: "1_week", label: "contractTermsWizard.wraps.oneWeek" },
         { id: "2_weeks", label: "contractTermsWizard.wraps.twoWeeks" },
+        {
+          id: "job_completed",
+          label: "contractTermsWizard.wraps.jobCompleted",
+        },
         { id: "custom", label: "contractTermsWizard.wraps.custom", isCustom: true },
       ],
     },
@@ -61,6 +70,13 @@ export const CONTRACT_TERMS_WIZARD_V1: WizardSpec = {
       label: "contractTermsWizard.paymentTerms.label",
       question: "contractTermsWizard.paymentTerms.question",
       options: [
+        {
+          // Roadmap p.6: invoice-style terms — the full amount is due the
+          // moment the customer signs (pairs with "Job Completed" above).
+          id: "due_now",
+          label: "contractTermsWizard.paymentTerms.dueNow.label",
+          sub: "contractTermsWizard.paymentTerms.dueNow.sub",
+        },
         {
           id: "net_15",
           label: "contractTermsWizard.paymentTerms.net15.label",

@@ -2,6 +2,7 @@ import { Module } from "#danet/core";
 import { UsersModule } from "@users/mod-root.ts";
 import { CrmModule } from "@crm/mod-root.ts";
 import { CommunicationModule } from "@communication/mod-root.ts";
+import { FilesModule } from "@files/mod-root.ts";
 import { QuoteController } from "@paperwork/entrypoints/quote-controller/mod.ts";
 import { ContractController } from "@paperwork/entrypoints/contract-controller/mod.ts";
 import { InvoiceController } from "@paperwork/entrypoints/invoice-controller/mod.ts";
@@ -26,6 +27,7 @@ import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-in
 import { RenderContractPdf } from "@paperwork/domain/coordinators/render-contract-pdf/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
+import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
 import { ConfirmPayment } from "@paperwork/domain/coordinators/confirm-payment/mod.ts";
 import { SendPaymentReminder } from "@paperwork/domain/coordinators/send-payment-reminder/mod.ts";
 import { ScheduleInvoiceNudges } from "@paperwork/domain/coordinators/schedule-invoice-nudges/mod.ts";
@@ -33,7 +35,7 @@ import { ComputeInvoiceForecast } from "@paperwork/domain/coordinators/compute-i
 import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/record-payment-from-utterance/mod.ts";
 
 @Module({
-  imports: [UsersModule, CrmModule, CommunicationModule],
+  imports: [UsersModule, CrmModule, CommunicationModule, FilesModule],
   controllers: [
     QuoteController,
     ContractController,
@@ -61,6 +63,7 @@ import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/recor
     RenderContractPdf,
     RenderReceiptPdf,
     SendSignedConfirmation,
+    SendAcceptedAlert,
     ConfirmPayment,
     SendPaymentReminder,
     ScheduleInvoiceNudges,

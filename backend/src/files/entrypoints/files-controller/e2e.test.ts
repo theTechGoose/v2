@@ -3,6 +3,7 @@ import { assertEquals } from "#std/assert";
 import { Module } from "#danet/core";
 import { bootstrapServer } from "#mrg-keystone/danet";
 import { FilesModule } from "@files/mod-root.ts";
+import { MAX_UPLOAD_BYTES } from "./mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
@@ -32,6 +33,16 @@ function b64(s: string): string {
   const bytes = new TextEncoder().encode(s);
   let bin = "";
   for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+/** Base64-encode raw bytes in chunks (btoa chokes on huge binary strings). */
+function b64Bytes(bytes: Uint8Array): string {
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
   return btoa(bin);
 }
 
@@ -126,6 +137,54 @@ Deno.test("files e2e: DELETE removes the file", async () => {
 
     const list = await fetch(`http://localhost:${PORT}/files`, { headers: { "x-session-id": sid } }).then((r) => r.json());
     assertEquals(list, []);
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+Deno.test("files e2e: >1MB upload round-trips through POST then GET", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const bytes = new Uint8Array(1_500_000); // ~1.5MB → multiple commit batches
+    for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 13) & 0xff;
+    const meta = await fetch(`http://localhost:${PORT}/files`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ filename: "big.bin", mimeType: "application/octet-stream", base64: b64Bytes(bytes) }),
+    }).then((r) => r.json());
+    assertEquals(meta.sizeBytes, bytes.length);
+
+    const dl = await fetch(`http://localhost:${PORT}/files/${meta.id}`, { headers: { "x-session-id": sid } });
+    const back = new Uint8Array(await dl.arrayBuffer());
+    assertEquals(back, bytes);
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+Deno.test("files e2e: oversized upload is rejected with 413, not a 500", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const bytes = new Uint8Array(MAX_UPLOAD_BYTES + 1024); // just over the cap
+    const res = await fetch(`http://localhost:${PORT}/files`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ filename: "huge.bin", mimeType: "application/octet-stream", base64: b64Bytes(bytes) }),
+    });
+    assertEquals(res.status, 413);
+    const body = await res.json();
+    assertEquals(body.code, "file_too_large");
+    assertEquals(body.maxBytes, MAX_UPLOAD_BYTES);
   } finally {
     await server.stop();
     await resetKv();

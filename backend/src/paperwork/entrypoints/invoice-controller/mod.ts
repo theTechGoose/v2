@@ -85,6 +85,9 @@ export class InvoiceController {
       ...dto,
       ...(inv.contractId ? { contractId: inv.contractId } : {}),
       ...(inv.customerId ? { customerId: inv.customerId } : {}),
+      // Freeze the pre-change total — the public page renders its math from
+      // this snapshot so revisiting the link after approval stays correct.
+      originalAmountCents: inv.amount ?? 0,
     });
     return ctx.json(co);
   }

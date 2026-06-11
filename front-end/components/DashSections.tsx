@@ -83,6 +83,21 @@ export function Hero(
             </span>
             {cta.label}
           </a>
+          {
+            /* Roadmap p.10: the assistant must stay reachable above the fold
+              on phones (the sidebar is an off-canvas drawer there), so when
+              the primary CTA is something else, keep a secondary entry. */
+          }
+          {cta.href !== "/assistant" && (
+            <a
+              class="btn btn--ghost"
+              href="/assistant"
+              style="text-decoration:none"
+            >
+              <I d={ICN.crown} size={14} />
+              {tFor(lang, "dashHero.cta.assistant")}
+            </a>
+          )}
         </div>
       </div>
       <div class="hero__art">

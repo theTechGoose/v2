@@ -171,6 +171,11 @@ export class SendSignedConfirmation {
         today,
       );
       const installmentTotal = milestoneAmounts.length;
+      // "Due Now" payment terms (roadmap p.6): the single invoice is due the
+      // day of signing, not the usual net-7 grace window.
+      const dueNow = /\bdue now\b/i.test(
+        contract.terms?.find((t) => t.stepId === "payment_terms")?.value ?? "",
+      );
       for (let i = 0; i < milestoneAmounts.length; i++) {
         const amount = milestoneAmounts[i];
         const isFirst = i === 0;
@@ -179,7 +184,7 @@ export class SendSignedConfirmation {
           // the rest are scheduled placeholders the contractor nudge cron
           // will surface on their scheduledFor date.
           const dueDate = isFirst
-            ? addDaysIso(today, 7)
+            ? (dueNow ? todayIso : addDaysIso(today, 7))
             : addDaysIso(parseIsoDate(scheduledDates[i]), 7);
           const invoice = await this.invoices.create(userId, {
             contractId: contract.id,

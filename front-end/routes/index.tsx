@@ -765,97 +765,85 @@ export default define.page(async function Landing(ctx) {
         <div class="container">
           <div class="section-head">
             <span class="eyebrow-pill" data-i18n="price.eyebrow">Pricing</span>
-            <h2 data-i18n="price.h2html" data-html="1">
-              Pay us from <em>what we make you</em>
+            <h2 data-i18n="price.plans.h2html" data-html="1">
+              Flat monthly pricing. <em>No surprises.</em>
             </h2>
-            <p data-i18n="price.lead">
-              Quotes, contracts, invoices, pricing, follow-ups — we run your
-              back office so you can stay on the job site. And it pays for
-              itself.
+            <p data-i18n="price.plans.lead">
+              Your whole back office — quotes, contracts, invoices, follow-ups
+              — for one flat monthly price. No setup fees, cancel anytime.
             </p>
           </div>
 
-          <div class="pricing-card">
-            <div class="pricing-math">
-              <div class="math-col">
-                <div class="label" data-i18n="price.without">Without us</div>
-                <div class="price">$5,000</div>
-                <div class="breakdown">
-                  <div class="line">
-                    <span data-i18n="price.w1">Your guess at price</span>
-                    <span>$5,000</span>
-                  </div>
-                  <div class="line">
-                    <span data-i18n="price.w2">Hours doing paperwork</span>
-                    <span data-i18n="price.w2v">~6 hrs</span>
-                  </div>
-                  <div class="line">
-                    <span data-i18n="price.w3">Trust from clients</span>
-                    <span data-i18n="price.w3v">So-so</span>
-                  </div>
-                  <div class="keep">
-                    <span data-i18n="price.keep">You keep</span>
-                    <span style="float:right">$5,000</span>
-                  </div>
-                </div>
+          <div class="pricing-tiers">
+            <div class="tier">
+              <div class="tier-name" data-i18n="price.t1.name">Starter</div>
+              <div class="tier-price">
+                $15<span class="permo" data-i18n="price.permo">/month</span>
               </div>
-
-              <div class="math-arrow">
-                <svg
-                  width="40"
-                  height="40"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                  <polyline points="12 5 19 12 12 19" />
-                </svg>
-              </div>
-
-              <div class="math-col us">
-                <div class="label" data-i18n="price.with">With us</div>
-                <div class="price" style="color:var(--brand-green)">$6,500</div>
-                <div class="breakdown">
-                  <div class="line">
-                    <span data-i18n="price.u1">Real-data pricing</span>
-                    <span>$6,500</span>
-                  </div>
-                  <div class="line fee">
-                    <span data-i18n="price.u2">Our 10% fee</span>
-                    <span>− $650</span>
-                  </div>
-                  <div class="line">
-                    <span data-i18n="price.u3">Hours doing paperwork</span>
-                    <span>0</span>
-                  </div>
-                  <div class="keep">
-                    <span data-i18n="price.keep2">You keep</span>
-                    <span style="float:right">$5,850</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="pricing-callout">
-              <div>
-                <div class="ptext" data-i18n="price.callout">
-                  $850 more in your pocket.
-                </div>
-                <div class="psub" data-i18n="price.calloutSub">
-                  A back office that pays for itself. Only charged when your
-                  client pays.
-                </div>
-              </div>
+              <p class="tier-blurb" data-i18n="price.t1.blurb">
+                Legitimize your business for less than an ad-free Netflix
+                subscription.
+              </p>
+              <ul class="tier-list">
+                <li data-i18n="price.t1.f1">Unlimited quotes & agreements</li>
+                <li data-i18n="price.t1.f2">E-signatures</li>
+                <li data-i18n="price.t1.f3">Invoices</li>
+                <li data-i18n="price.t1.f4">The PM Assistant</li>
+              </ul>
               <a
                 href="#contact"
-                class="btn-white cta-scroll"
-                data-i18n="price.cta"
+                class="btn btn-outline tier-cta cta-scroll"
+                data-i18n="price.plans.cta"
               >
-                Start Making More →
+                Get started
+              </a>
+            </div>
+
+            <div class="tier featured">
+              <span class="tier-badge" data-i18n="price.t2.badge">
+                Most popular
+              </span>
+              <div class="tier-name" data-i18n="price.t2.name">Pro</div>
+              <div class="tier-price">
+                $99<span class="permo" data-i18n="price.permo">/month</span>
+              </div>
+              <p class="tier-blurb" data-i18n="price.t2.blurb">
+                Win more jobs and get paid faster — without the chasing.
+              </p>
+              <ul class="tier-list">
+                <li data-i18n="price.t2.f1">Everything in Starter</li>
+                <li data-i18n="price.t2.f2">SMS & email sending</li>
+                <li data-i18n="price.t2.f3">Payment tracking + nudges</li>
+                <li data-i18n="price.t2.f4">Change orders</li>
+              </ul>
+              <a
+                href="#contact"
+                class="btn btn-primary tier-cta cta-scroll"
+                data-i18n="price.plans.cta"
+              >
+                Get started
+              </a>
+            </div>
+
+            <div class="tier">
+              <div class="tier-name" data-i18n="price.t3.name">Crew</div>
+              <div class="tier-price">
+                $199<span class="permo" data-i18n="price.permo">/month</span>
+              </div>
+              <p class="tier-blurb" data-i18n="price.t3.blurb">
+                For crews that run several jobs a week.
+              </p>
+              <ul class="tier-list">
+                <li data-i18n="price.t3.f1">Everything in Pro</li>
+                <li data-i18n="price.t3.f2">Priority support</li>
+                <li data-i18n="price.t3.f3">Multi-trade & team features</li>
+              </ul>
+              <a
+                href="#contact"
+                class="btn btn-outline tier-cta cta-scroll"
+                data-i18n="price.plans.cta"
+              >
+                Get started
               </a>
             </div>
           </div>
@@ -926,8 +914,8 @@ export default define.page(async function Landing(ctx) {
                   >
                     <polyline points="20 6 9 17 4 12" />
                   </svg>{" "}
-                  <span data-i18n="cta.b2">
-                    First quote on us — for new pros
+                  <span data-i18n="cta.fromPrice">
+                    Plans from $15/month
                   </span>
                 </li>
                 <li>

@@ -76,6 +76,15 @@ export class CreateInvoiceDto {
   @IsOptional() @IsString()
   contractId?: string;
 
+  /** ≤3-word job title for STANDALONE invoices (roadmap p.10) — contract-
+   *  linked invoices resolve theirs from the quote instead. */
+  @IsOptional() @IsString()
+  jobName?: string;
+  /** What the bill covers, one line per item — rendered on the public
+   *  invoice when no quote/contract supplies job details. */
+  @IsOptional() @IsString()
+  description?: string;
+
   @IsString()
   dueDate!: string;
 
@@ -124,6 +133,10 @@ export class CreateInvoiceDto {
 export class UpdateInvoiceDto {
   @IsOptional() @IsString()
   contractId?: string;
+  @IsOptional() @IsString()
+  jobName?: string;
+  @IsOptional() @IsString()
+  description?: string;
   @IsOptional() @IsString()
   customerId?: string;
   /** Invoice amount in INTEGER CENTS. Audit1 #3. */

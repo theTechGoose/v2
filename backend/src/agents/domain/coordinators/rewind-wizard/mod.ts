@@ -17,6 +17,10 @@ export interface RewindWizardResult {
   activeStepId: string | null;
   /** Messages dropped from the transcript so the previous step is active. */
   removedMessageIds: string[];
+  /** The answer that was popped — the user's previous pick for the step now
+   *  being re-asked, so the UI can pre-highlight it (roadmap p.8: "Back
+   *  restores the prior step's selections"). */
+  previousAnswer?: { stepId: string; optionId: string; customValue?: string };
 }
 
 /**
@@ -61,6 +65,7 @@ export class RewindWizard {
     }
 
     const prevIdx = state.activeStepIdx - 1;
+    const popped = state.answers[state.answers.length - 1];
     const nextState: WizardState = {
       specId: state.specId,
       activeStepIdx: prevIdx,
@@ -92,6 +97,15 @@ export class RewindWizard {
       wizardState: nextState,
       activeStepId: CONTRACT_TERMS_WIZARD_V1.steps[prevIdx]?.id ?? null,
       removedMessageIds: removed,
+      ...(popped
+        ? {
+          previousAnswer: {
+            stepId: popped.stepId,
+            optionId: popped.optionId,
+            ...(popped.customValue ? { customValue: popped.customValue } : {}),
+          },
+        }
+        : {}),
     };
   }
 }

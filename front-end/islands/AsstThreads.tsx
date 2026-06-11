@@ -110,7 +110,9 @@ export default function AsstThreads(
               )
               : (
                 <>
-                  <path d="M15 18l-6-6 6-6" />
+                  {/* QuickBooks-style hamburger + collapse arrow */}
+                  <path d="M3 6h13M3 12h13M3 18h13" />
+                  <path d="M21 9l-3 3 3 3" />
                 </>
               )}
             size={16}
