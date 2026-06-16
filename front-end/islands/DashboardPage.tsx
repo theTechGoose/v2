@@ -18,7 +18,6 @@ import {
   ActiveJobs,
   Activity,
   type ActivityEntry,
-  Hero,
   type JobRow,
   Kpis,
   Outstanding,
@@ -26,12 +25,18 @@ import {
   type QuoteRow,
   QuotesAwaiting,
 } from "../components/DashSections.tsx";
-import { type IconName } from "../lib/dash-icons.tsx";
+import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
 import { fmtMoney } from "../lib/format.ts";
 import { readCached, refreshDash } from "../lib/dash-cache.ts";
 import { ShimmerStyle, SkelBlock } from "../components/Skeletons.tsx";
 import SetupChecklist from "./SetupChecklist.tsx";
 import { langSignal, type Lang, tFor } from "../lib/i18n.ts";
+
+// Toll-free support line (TWILIO_SUPPORT_NUMBER). Public number, safe to ship.
+// A call here hits the Twilio Studio Flow that texts a heads-up, plays a brief
+// hold, then forwards to the support cell.
+const SUPPORT_PHONE = "+18667678399";
+const SUPPORT_PHONE_DISPLAY = "(866) 767-8399";
 
 function shortMonth(lang: Lang, monthIdx: number): string {
   return tFor(lang, `common.monthShort.${monthIdx}`);
@@ -482,12 +487,42 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
 
   return (
     <>
-      <Hero
-        thisMonthBilled={kpis.thisMonthBilled}
-        pendingQuotes={kpis.pendingQuotes}
-        outstandingOverdue={kpis.outstandingOverdue}
-        lang={lang}
-      />
+      <div class="assistant-cta">
+        <div class="assistant-cta__body">
+          <span class="assistant-cta__eyebrow">
+            {tFor(lang, "dashHero.cta.assistant")}
+          </span>
+          <span class="assistant-cta__title">
+            {tFor(lang, "dashAssistantCta.title")}
+          </span>
+          <span class="assistant-cta__sub">
+            {tFor(lang, "dashAssistantCta.sub")}
+          </span>
+          <div class="assistant-cta__actions">
+            <a class="assistant-cta__btn" href="/assistant">
+              <span class="assistant-cta__crown">
+                <I d={ICN.crown} size={16} />
+              </span>
+              {tFor(lang, "dashHero.cta.assistant")}
+              <I d={ICN.arrow} size={16} />
+            </a>
+            <a class="assistant-cta__call" href={`tel:${SUPPORT_PHONE}`}>
+              <I d={ICN.phone} size={15} />
+              <span class="assistant-cta__call-label">
+                {tFor(lang, "dashAssistantCta.callSupport")}
+              </span>
+              <span class="assistant-cta__call-num">{SUPPORT_PHONE_DISPLAY}</span>
+            </a>
+          </div>
+        </div>
+        <div class="assistant-cta__art">
+          <span class="assistant-cta__confetti assistant-cta__confetti--1" />
+          <span class="assistant-cta__confetti assistant-cta__confetti--2" />
+          <span class="assistant-cta__confetti assistant-cta__confetti--3" />
+          <span class="assistant-cta__blob" />
+          <img src="/logo-monster.png" alt="" class="assistant-cta__monster" />
+        </div>
+      </div>
       <SetupChecklist />
       <Kpis
         activeJobs={kpis.activeJobs}

@@ -85,19 +85,10 @@ export function Hero(
           </a>
           {
             /* Roadmap p.10: the assistant must stay reachable above the fold
-              on phones (the sidebar is an off-canvas drawer there), so when
-              the primary CTA is something else, keep a secondary entry. */
+              on phones. That entry now lives in the dominant .assistant-cta
+              banner above the hero, so the old secondary ghost link here is
+              redundant and was removed. */
           }
-          {cta.href !== "/assistant" && (
-            <a
-              class="btn btn--ghost"
-              href="/assistant"
-              style="text-decoration:none"
-            >
-              <I d={ICN.crown} size={14} />
-              {tFor(lang, "dashHero.cta.assistant")}
-            </a>
-          )}
         </div>
       </div>
       <div class="hero__art">
