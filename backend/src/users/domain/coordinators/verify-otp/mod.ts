@@ -5,9 +5,24 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import { deriveLanguageOnVerify } from "@users/domain/business/derive-language/mod.ts";
-import type { Language } from "@users/dto/user.ts";
+import type { Language, User } from "@users/dto/user.ts";
+import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 
 const MAX_ATTEMPTS = 5;
+
+/** Internal ops alert: who gets emailed when a brand-new user signs up.
+ *  Overridable via SIGNUP_NOTIFY_EMAILS (comma-separated); falls back to the
+ *  default team list. This fires ONLY on first-time signup, never on login. */
+const DEFAULT_SIGNUP_NOTIFY = [
+  "hp@hans.work",
+  "amcgill@monsterrg.com",
+  "raphael@rcincorporated.net",
+];
+function signupNotifyRecipients(): string[] {
+  const raw = (typeof Deno !== "undefined" && Deno.env.get("SIGNUP_NOTIFY_EMAILS")) || "";
+  const parsed = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  return parsed.length ? parsed : DEFAULT_SIGNUP_NOTIFY;
+}
 
 /** Brand-new users have no name. We seed a neutral, language-appropriate
  *  placeholder at creation so the app's identity-dependent UI is reachable
@@ -71,6 +86,44 @@ export class VerifyOtp {
     private businessIdentities: BusinessIdentityStore,
   ) {}
 
+  /** EmailService is stateless (no injected deps) and UsersModule can't
+   *  resolve it from DI (it lives in CommunicationModule, which imports
+   *  UsersModule, not vice-versa), so we instantiate it directly. Kept off
+   *  the constructor so existing `new VerifyOtp(...)` test call sites and
+   *  Danet DI both keep working untouched. */
+  private readonly email = new EmailService();
+
+  /** Best-effort internal alert when a brand-new user is created. Never
+   *  throws — a notification hiccup must not break signup/login. Awaited by
+   *  callers so the dispatch completes before the request returns (fire-and-
+   *  forget is unreliable on Deno Deploy, which can cut work after response). */
+  private async notifyNewSignup(user: User): Promise<void> {
+    try {
+      const recipients = signupNotifyRecipients();
+      if (recipients.length === 0) return;
+      const [to, ...cc] = recipients;
+      const when = new Date().toISOString();
+      const htmlBody =
+        `<h2>New Paperwork Monster signup 🎉</h2>` +
+        `<p>A new contractor just created an account.</p>` +
+        `<ul>` +
+        `<li><strong>Phone:</strong> ${user.phoneNumber}</li>` +
+        `<li><strong>Language:</strong> ${user.language ?? "en"}</li>` +
+        `<li><strong>User ID:</strong> ${user.id}</li>` +
+        `<li><strong>Signed up:</strong> ${when}</li>` +
+        `</ul>`;
+      await this.email.send({
+        to,
+        cc: cc.length ? cc : undefined,
+        subject: "🎉 New Paperwork Monster signup",
+        htmlBody,
+      });
+    } catch (err) {
+      // Swallow — best-effort only.
+      console.error("[verify-otp] new-signup notification failed:", (err as Error).message);
+    }
+  }
+
   async run(input: VerifyOtpInput): Promise<VerifyOtpResult> {
     const phone = normalizePhone(input.phoneNumber);
 
@@ -102,6 +155,7 @@ export class VerifyOtp {
           await this.businessIdentities.upsert(user.id, { businessName: "Dev Business" });
         }
       }
+      if (!existing) await this.notifyNewSignup(user);
       const session = await this.sessions.create(user.id);
       // Report the real new-user state so the verify proxy can route
       // fresh phones into onboarding the same way the production OTP
@@ -134,6 +188,7 @@ export class VerifyOtp {
           name: placeholderNameFor(language),
         });
 
+    if (!existing) await this.notifyNewSignup(user);
     const session = await this.sessions.create(user.id);
     return { sessionId: session.id, userId: user.id, isNewUser: !existing };
   }
