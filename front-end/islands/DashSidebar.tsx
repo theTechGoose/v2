@@ -57,6 +57,11 @@ const NAV: NavEntry[] = [
 
 interface Props {
   active?: string;
+  /** When false, the nav-tab list (Dashboard/Clients/…/Admin) is omitted and
+   *  only the sidebar chrome — brand, Assistant CTA, user footer, collapse,
+   *  logout — renders. Used by the accounts-manager view, which wants the
+   *  regular shell with no tabs yet. */
+  showNav?: boolean;
 }
 
 interface SbState {
@@ -119,7 +124,7 @@ function projectSidebar(snap: CachedDash | null): SbState {
   return { counts, identity: { display, biz, initials }, lang, superAdmin };
 }
 
-export default function DashSidebar({ active = "home" }: Props) {
+export default function DashSidebar({ active = "home", showNav = true }: Props) {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof globalThis.localStorage === "undefined") return false;
     return globalThis.localStorage.getItem("pm:sb-collapsed") === "1";
@@ -238,6 +243,7 @@ export default function DashSidebar({ active = "home" }: Props) {
 
           <div class="sb__divider" />
 
+          {showNav && (
           <nav class="sb__nav">
             {NAV.map((item) => {
               const count = item.countKey ? s.counts[item.countKey] : undefined;
@@ -281,6 +287,7 @@ export default function DashSidebar({ active = "home" }: Props) {
               </a>
             )}
           </nav>
+          )}
 
           <div class="sb__bottom">
             {s.identity && (
