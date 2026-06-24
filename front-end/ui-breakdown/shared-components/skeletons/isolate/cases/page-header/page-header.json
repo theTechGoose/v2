@@ -1,0 +1,5 @@
+{
+  "_name": "PageHeaderSkeleton — title + subtitle",
+  "_variant": "page-header",
+  "_mocks": { "ShimmerStyle": "stub" }
+}

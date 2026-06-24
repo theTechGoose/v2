@@ -1,0 +1,30 @@
+{
+  "_name": "Single line item — description bullets render but the line-item TABLE is suppressed (items.length<=1); only the green total card shows the money. 'Due Now' payment terms collapse milestones to a single full payment owed on signing.",
+  "contract": {
+    "id": "ctr_one1one1one1one1",
+    "quoteId": "qt_one1",
+    "status": "draft",
+    "totalAmount": 320000,
+    "startDate": "2026-06-30",
+    "contractor": {
+      "name": "Hans Hansen",
+      "businessName": "Hansen Decks & Patios",
+      "phoneNumber": "+15125550148",
+      "email": "hans@hansendecks.com",
+      "commsLanguage": "en"
+    },
+    "customer": { "name": "Maria Delgado", "phoneNumber": "+15125550199" },
+    "jobDetails": {
+      "jobName": "Pressure Wash & Seal",
+      "summary": "pressure wash and seal the driveway",
+      "description": "Pressure wash the full driveway and apply two coats of sealer.",
+      "lineItems": [
+        { "description": "Pressure wash + 2-coat seal — driveway", "price": 320000, "quantity": 1 }
+      ]
+    },
+    "terms": [
+      { "stepId": "payment_terms", "label": "Payment terms", "value": "Due Now" }
+    ],
+    "createdAt": "2026-06-16T09:30:00Z"
+  }
+}

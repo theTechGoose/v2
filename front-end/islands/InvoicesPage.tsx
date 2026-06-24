@@ -818,6 +818,17 @@ const CO_CHIP_COLOR: Record<ChangeOrderRow["status"], string> = {
   declined: "#a83b3b",
 };
 
+/** Dispatch an invoice to the customer over both channels (best-effort — the
+ *  backend handles "no email/phone on file" gracefully). Single source for the
+ *  card "Send now"/"Finish + send" actions and the New Invoice "Create & send"
+ *  so the channel set + request shape can't drift across the three call sites. */
+function dispatchInvoice(id: string): Promise<PromiseSettledResult<Response>[]> {
+  return Promise.allSettled([
+    fetch(`/api/invoices/${id}/email`, { method: "POST", credentials: "include" }),
+    fetch(`/api/invoices/${id}/text`, { method: "POST", credentials: "include" }),
+  ]);
+}
+
 function InvoiceCard(
   { inv, idx, now, lang }: {
     inv: EnrichedInvoice;
@@ -841,6 +852,14 @@ function InvoiceCard(
     null,
   );
   const [copiedCoId, setCopiedCoId] = useState<string | null>(null);
+  // Inline change-order editing. Editing re-opens approval: the server resets
+  // the order to pending, reverts any already-applied amount, and re-alerts
+  // the contractor with the fresh link to share.
+  const [editingCoId, setEditingCoId] = useState<string | null>(null);
+  const [editCoDesc, setEditCoDesc] = useState("");
+  const [editCoDollars, setEditCoDollars] = useState("");
+  const [coReapprovedId, setCoReapprovedId] = useState<string | null>(null);
+  const [confirmDelCoId, setConfirmDelCoId] = useState<string | null>(null);
   const mood = STAGE_MOOD[inv.stage];
   const moodLabel = tFor(lang, mood.labelKey);
   const cta = inv.stage === "claimed"
@@ -946,16 +965,7 @@ function InvoiceCard(
       // Fire both channels — the backend coordinator handles "no
       // email/phone on file" gracefully and the user gets a fresh state
       // on reload either way.
-      await Promise.allSettled([
-        fetch(`/api/invoices/${inv.id}/email`, {
-          method: "POST",
-          credentials: "include",
-        }),
-        fetch(`/api/invoices/${inv.id}/text`, {
-          method: "POST",
-          credentials: "include",
-        }),
-      ]);
+      await dispatchInvoice(inv.id);
       globalThis.location.reload();
     } finally {
       setBusy(false);
@@ -985,16 +995,7 @@ function InvoiceCard(
       });
       // Deliver over both channels — the backend handles "no email/phone on
       // file" gracefully; the invoice still lands in "Out for payment".
-      await Promise.allSettled([
-        fetch(`/api/invoices/${inv.id}/email`, {
-          method: "POST",
-          credentials: "include",
-        }),
-        fetch(`/api/invoices/${inv.id}/text`, {
-          method: "POST",
-          credentials: "include",
-        }),
-      ]);
+      await dispatchInvoice(inv.id);
       globalThis.location.reload();
     } finally {
       setBusy(false);
@@ -1093,6 +1094,74 @@ function InvoiceCard(
       const co = await r.json() as { id: string };
       setCoLink(`${globalThis.location.origin}/co/${co.id}`);
       // Refresh the list so the new pending order shows up immediately.
+      loadChangeOrders();
+    } finally {
+      setBusy(false);
+    }
+  }
+  function startEditCo(co: ChangeOrderRow) {
+    setEditingCoId(co.id);
+    setEditCoDesc(co.description);
+    // Credits are negative — surface the signed dollar value so the contractor
+    // can edit it directly.
+    setEditCoDollars(String(co.deltaAmountCents / 100));
+    setCoReapprovedId(null);
+    setAdjErr(null);
+  }
+  function cancelEditCo() {
+    setEditingCoId(null);
+    setAdjErr(null);
+  }
+  async function doSaveChangeOrder(coId: string) {
+    if (busy) return;
+    const cents = Math.round(Number(editCoDollars) * 100);
+    if (!editCoDesc.trim() || !cents) {
+      setAdjErr(tFor(lang, "invoicesPage.adjust.errCoFields"));
+      return;
+    }
+    setBusy(true);
+    setAdjErr(null);
+    try {
+      const r = await fetch(`/api/invoices/${inv.id}/change-orders/${coId}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          description: editCoDesc.trim(),
+          deltaAmountCents: cents,
+        }),
+      });
+      if (!r.ok) {
+        setAdjErr(tFor(lang, "invoicesPage.adjust.errCoEdit"));
+        return;
+      }
+      setEditingCoId(null);
+      // Editing re-opens approval — flag the row so the contractor sees it's
+      // back to pending and a fresh link was sent to them.
+      setCoReapprovedId(coId);
+      setTimeout(
+        () => setCoReapprovedId((cur) => (cur === coId ? null : cur)),
+        5000,
+      );
+      loadChangeOrders();
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function doDeleteChangeOrder(coId: string) {
+    if (busy) return;
+    setBusy(true);
+    setAdjErr(null);
+    try {
+      const r = await fetch(`/api/invoices/${inv.id}/change-orders/${coId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!r.ok) {
+        setAdjErr(tFor(lang, "invoicesPage.adjust.errCoDelete"));
+        return;
+      }
+      setConfirmDelCoId(null);
       loadChangeOrders();
     } finally {
       setBusy(false);
@@ -1312,41 +1381,153 @@ function InvoiceCard(
                         {tFor(lang, "invoicesPage.adjust.coListLabel")}
                       </div>
                       <div style="display:flex;flex-direction:column;gap:6px">
-                        {changeOrders.map((co) => (
-                          <div
-                            key={co.id}
-                            style="display:flex;align-items:center;gap:8px;font-size:12.5px"
-                          >
-                            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                              {co.description}
-                            </span>
-                            <span style="font-weight:700;white-space:nowrap">
-                              {co.deltaAmountCents >= 0 ? "+" : "−"}
-                              {fmtMoneyExact(Math.abs(co.deltaAmountCents))}
-                            </span>
-                            <span
-                              style={`font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid currentColor;color:${
-                                CO_CHIP_COLOR[co.status]
-                              }`}
-                            >
-                              {tFor(
-                                lang,
-                                `invoicesPage.adjust.coStatus.${co.status}`,
-                              )}
-                            </span>
-                            {co.status === "pending" && (
-                              <button
-                                type="button"
-                                onClick={() => doCopyCoLink(co.id)}
-                                style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:var(--brand-teal);cursor:pointer;white-space:nowrap"
+                        {changeOrders.map((co) =>
+                          editingCoId === co.id
+                            ? (
+                              <div
+                                key={co.id}
+                                style="display:flex;flex-direction:column;gap:6px;background:rgba(20,72,82,0.05);border-radius:8px;padding:8px"
                               >
-                                {copiedCoId === co.id
-                                  ? tFor(lang, "invoicesPage.adjust.coCopied")
-                                  : tFor(lang, "invoicesPage.adjust.coCopyLink")}
-                              </button>
-                            )}
-                          </div>
-                        ))}
+                                <input
+                                  type="text"
+                                  value={editCoDesc}
+                                  onInput={(e) =>
+                                    setEditCoDesc(
+                                      (e.target as HTMLInputElement).value,
+                                    )}
+                                  style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font:inherit;font-size:13px"
+                                />
+                                <div style="display:flex;gap:6px">
+                                  <input
+                                    type="number"
+                                    step="1"
+                                    value={editCoDollars}
+                                    onInput={(e) =>
+                                      setEditCoDollars(
+                                        (e.target as HTMLInputElement).value,
+                                      )}
+                                    style="flex:1;min-width:0;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font:inherit;font-size:13px"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => doSaveChangeOrder(co.id)}
+                                    disabled={busy}
+                                    style="padding:7px 12px;border:0;border-radius:7px;background:var(--brand-teal);color:#fff;font:inherit;font-weight:700;cursor:pointer;white-space:nowrap"
+                                  >
+                                    {tFor(lang, "invoicesPage.adjust.coSave")}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditCo}
+                                    disabled={busy}
+                                    style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:7px 10px;font:inherit;font-size:12px;font-weight:700;color:var(--fg-muted);cursor:pointer"
+                                  >
+                                    {tFor(lang, "common.cancel")}
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                            : (
+                              <div
+                                key={co.id}
+                                style="display:flex;flex-direction:column;gap:3px"
+                              >
+                                <div style="display:flex;align-items:center;gap:8px;font-size:12.5px">
+                                  <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                                    {co.description}
+                                  </span>
+                                  <span style="font-weight:700;white-space:nowrap">
+                                    {co.deltaAmountCents >= 0 ? "+" : "−"}
+                                    {fmtMoneyExact(Math.abs(co.deltaAmountCents))}
+                                  </span>
+                                  <span
+                                    style={`font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid currentColor;color:${
+                                      CO_CHIP_COLOR[co.status]
+                                    }`}
+                                  >
+                                    {tFor(
+                                      lang,
+                                      `invoicesPage.adjust.coStatus.${co.status}`,
+                                    )}
+                                  </span>
+                                  {confirmDelCoId === co.id
+                                    ? (
+                                      <>
+                                        <span style="font-size:11.5px;color:#a83b3b;font-weight:700;white-space:nowrap">
+                                          {tFor(
+                                            lang,
+                                            "invoicesPage.adjust.coConfirmDel",
+                                          )}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            doDeleteChangeOrder(co.id)}
+                                          disabled={busy}
+                                          style="appearance:none;background:#a83b3b;border:0;border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:#fff;cursor:pointer;white-space:nowrap"
+                                        >
+                                          {tFor(
+                                            lang,
+                                            "invoicesPage.adjust.coDelete",
+                                          )}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setConfirmDelCoId(null)}
+                                          disabled={busy}
+                                          style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:var(--fg-muted);cursor:pointer"
+                                        >
+                                          {tFor(lang, "common.cancel")}
+                                        </button>
+                                      </>
+                                    )
+                                    : (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => startEditCo(co)}
+                                          disabled={busy}
+                                          style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:var(--brand-teal);cursor:pointer;white-space:nowrap"
+                                        >
+                                          {tFor(lang, "invoicesPage.adjust.coEdit")}
+                                        </button>
+                                        {co.status === "pending" && (
+                                          <button
+                                            type="button"
+                                            onClick={() => doCopyCoLink(co.id)}
+                                            style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:var(--brand-teal);cursor:pointer;white-space:nowrap"
+                                          >
+                                            {copiedCoId === co.id
+                                              ? tFor(
+                                                lang,
+                                                "invoicesPage.adjust.coCopied",
+                                              )
+                                              : tFor(
+                                                lang,
+                                                "invoicesPage.adjust.coCopyLink",
+                                              )}
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setConfirmDelCoId(co.id)}
+                                          disabled={busy}
+                                          style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:#a83b3b;cursor:pointer;white-space:nowrap"
+                                        >
+                                          {tFor(lang, "invoicesPage.adjust.coDelete")}
+                                        </button>
+                                      </>
+                                    )}
+                                </div>
+                                {coReapprovedId === co.id && (
+                                  <div style="font-size:11.5px;color:var(--brand-green);font-weight:600">
+                                    {tFor(lang, "invoicesPage.adjust.coReapproved")}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                        )}
                       </div>
                     </div>
                   )}
@@ -1432,16 +1613,26 @@ function NewInvoiceModal(
     d.setDate(d.getDate() + 30);
     return d.toISOString().slice(0, 10);
   });
+  const [jobName, setJobName] = useState("");
+  const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Whether the chosen client is reachable — gates the "Create & send" button
+  // (a send with no email/phone on file would just no-op).
+  const selectedCustomer = clientSel && clientSel !== NEW_SENTINEL
+    ? customers.find((c) => c.id === clientSel)
+    : undefined;
+  const canSend = clientSel === NEW_SENTINEL
+    ? !!(newEmail.trim() || newPhone.trim())
+    : !!(selectedCustomer?.email || selectedCustomer?.phoneNumber);
 
   const labelStyle =
     "display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)";
   const inputStyle =
     "padding:11px 13px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)";
 
-  async function submit(e: Event) {
-    e.preventDefault();
+  async function submit(send: boolean) {
     if (busy) return;
     const cents = Math.round(Number(amount) * 100);
     if (!cents || cents <= 0) {
@@ -1470,15 +1661,23 @@ function NewInvoiceModal(
       } else if (clientSel) {
         customerId = clientSel;
       }
-      await dashboardClient.createInvoice({
+      const invoice = await dashboardClient.createInvoice({
         ...(customerId ? { customerId } : {}),
         amount: cents,
         dueDate,
         issuedDate: new Date().toISOString().slice(0, 10),
-        status: "draft",
+        // Send → mark it sent up front (the send coordinators don't stamp
+        // invoice status); draft → lands in the Drafting track to send later.
+        status: send ? "sent" : "draft",
+        ...(jobName.trim() ? { jobName: jobName.trim() } : {}),
+        ...(description.trim() ? { description: description.trim() } : {}),
       });
-      // Reload so the new draft enriches into the Drafting track — matches how
-      // the in-card actions refresh the page.
+      // One-step send: dispatch the pay link over both channels. The backend
+      // handles "no email/phone on file" gracefully.
+      if (send && invoice?.id) {
+        await dispatchInvoice(invoice.id);
+      }
+      // Reload so the new invoice enriches into the right track.
       globalThis.location.reload();
     } catch (err) {
       setError(
@@ -1489,6 +1688,10 @@ function NewInvoiceModal(
       setBusy(false);
     }
   }
+  function onFormSubmit(e: Event) {
+    e.preventDefault();
+    submit(canSend);
+  }
 
   return (
     <div
@@ -1498,7 +1701,7 @@ function NewInvoiceModal(
       <form
         data-cy="new-invoice-modal"
         onClick={(e) => e.stopPropagation()}
-        onSubmit={submit}
+        onSubmit={onFormSubmit}
         style="background:#fff;border-radius:16px;padding:24px 26px;max-width:460px;width:100%;box-shadow:0 24px 64px rgba(20,72,82,0.22);display:flex;flex-direction:column;gap:14px"
       >
         <h2 style="margin:0;font-size:20px;font-weight:800;color:var(--fg,#144852)">
@@ -1570,6 +1773,33 @@ function NewInvoiceModal(
         )}
 
         <label style={labelStyle}>
+          {tFor(lang, "invoicesPage.new.jobName")}
+          <input
+            type="text"
+            data-cy="new-invoice-jobname"
+            placeholder={tFor(lang, "invoicesPage.new.jobNamePlaceholder")}
+            value={jobName}
+            disabled={busy}
+            onInput={(e) => setJobName((e.target as HTMLInputElement).value)}
+            style={inputStyle}
+          />
+        </label>
+
+        <label style={labelStyle}>
+          {tFor(lang, "invoicesPage.new.description")}
+          <textarea
+            rows={2}
+            data-cy="new-invoice-description"
+            placeholder={tFor(lang, "invoicesPage.new.descriptionPlaceholder")}
+            value={description}
+            disabled={busy}
+            onInput={(e) =>
+              setDescription((e.target as HTMLTextAreaElement).value)}
+            style={`${inputStyle};resize:vertical`}
+          />
+        </label>
+
+        <label style={labelStyle}>
           {tFor(lang, "invoicesPage.new.amount")}
           <input
             type="number"
@@ -1606,26 +1836,45 @@ function NewInvoiceModal(
           </p>
         )}
 
-        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
+        <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:6px;flex-wrap:wrap">
           <button
             type="button"
             disabled={busy}
             onClick={onClose}
-            style="padding:10px 16px;border:0;background:transparent;color:var(--fg-muted,#6b7560);font:inherit;font-weight:700;cursor:pointer;border-radius:10px"
+            style="padding:10px 14px;border:0;background:transparent;color:var(--fg-muted,#6b7560);font:inherit;font-weight:700;cursor:pointer;border-radius:10px"
           >
             {tFor(lang, "common.cancel")}
           </button>
           <button
+            type="button"
+            data-cy="new-invoice-draft"
+            disabled={busy}
+            onClick={() => submit(false)}
+            style="padding:10px 16px;border:1px solid var(--brand-green,#519843);border-radius:10px;background:#fff;color:var(--brand-green,#519843);font:inherit;font-weight:800;cursor:pointer"
+          >
+            {tFor(lang, "invoicesPage.new.saveDraft")}
+          </button>
+          <button
             type="submit"
             data-cy="new-invoice-submit"
-            disabled={busy}
-            style="padding:10px 20px;border:0;border-radius:10px;background:var(--brand-green,#519843);color:#fff;font:inherit;font-weight:800;cursor:pointer"
+            disabled={busy || !canSend}
+            title={!canSend
+              ? tFor(lang, "invoicesPage.new.needContact")
+              : undefined}
+            style={`padding:10px 20px;border:0;border-radius:10px;background:var(--brand-green,#519843);color:#fff;font:inherit;font-weight:800;cursor:${
+              canSend ? "pointer" : "not-allowed"
+            };opacity:${canSend ? "1" : "0.55"}`}
           >
             {busy
-              ? tFor(lang, "invoicesPage.new.creating")
-              : tFor(lang, "invoicesPage.new.create")}
+              ? tFor(lang, "invoicesPage.new.sending")
+              : tFor(lang, "invoicesPage.new.createSend")}
           </button>
         </div>
+        {!canSend && (
+          <p style="margin:0;font-size:12px;color:var(--fg-muted,#6b7560);text-align:right">
+            {tFor(lang, "invoicesPage.new.needContact")}
+          </p>
+        )}
       </form>
     </div>
   );

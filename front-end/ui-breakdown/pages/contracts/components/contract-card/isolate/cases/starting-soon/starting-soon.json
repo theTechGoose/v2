@@ -1,0 +1,31 @@
+{
+  "_name": "Starting soon — scheduled, 0% progress",
+  "idx": 1,
+  "lang": "en",
+  "c": {
+    "id": "ctr_b21c77aa401de9f0",
+    "client": "Northgate Property Mgmt",
+    "initials": "NP",
+    "title": "Unit 4B Bathroom Reno",
+    "story": "Northgate Property Mgmt is locked in — confirm the start time and you're set.",
+    "status": "SCHEDULED",
+    "mood": "starting-soon",
+    "moodFrom": "#9DBDC6",
+    "moodTo": "#4F7A88",
+    "moodShadow": "rgba(157,189,198,0.5)",
+    "statusColor": "#3A5C68",
+    "when": "Starts in 5 days",
+    "pct": 0,
+    "paid": "$0",
+    "left": "$8,900",
+    "total": "$8,900",
+    "cta": "Confirm start time",
+    "ctaHref": "/c/ctr_b21c77aa401de9f0",
+    "scheduleStart": 13,
+    "scheduleEnd": 22,
+    "scheduleScheduled": true,
+    "scheduleColor": ["#9DBDC6", "#4F7A88"],
+    "startDate": "2026-06-23",
+    "completionDate": "2026-07-02"
+  }
+}

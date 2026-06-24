@@ -1,0 +1,9 @@
+{
+  "category": "dashboard",
+  "folder": "ticker",
+  "controls": {
+    "value": { "type": "number", "value": 6420 },
+    "prefix": { "type": "text", "value": "" },
+    "duration": { "type": "number", "value": 1400 }
+  }
+}

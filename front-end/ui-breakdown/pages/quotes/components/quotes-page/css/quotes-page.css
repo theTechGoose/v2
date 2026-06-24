@@ -1,0 +1,37 @@
+/* ============================================================
+   QuotesPage — the island owns only LAYOUT + LOADING/ERROR shells.
+   The visible chrome (hero/kpi/cards/sidebar) is styled by its children
+   (QuotesSections, QuoteCard, QuoteTrack[shared]). Extracted from
+   static/quotes.css (.qlay) + Skeletons[shared].
+   Tokens: --font-body, --ease-out.
+   ============================================================ */
+
+/* Two-column body: pipeline tracks (1fr) + sticky sidebar (320px). */
+.qlay {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 22px;
+  align-items: flex-start;
+}
+
+@media (max-width: 1200px) {
+  .qlay { grid-template-columns: 1fr; }
+  /* .qside drops its sticky positioning at this breakpoint (see
+     quotes-sections.css). */
+}
+
+/* ERROR STATE — the island renders <div class="qpage-error">…</div>.
+   HAZARD: this class has NO rule in static/quotes.css OR static/dashboard.css,
+   so the error message renders as unstyled body text (default font/size/color).
+   Rebuild should add a real error-card style; reproduced minimal here so the
+   isolate error case is at least legible. */
+.qpage-error {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--fg, #1a535c);
+  padding: 24px 0;
+}
+
+/* LOADING STATE — rendered via the shared Skeletons:
+   <ShimmerStyle/> + <PageHeaderSkeleton/> + <CardGridSkeleton rows={3}/>.
+   Those styles are owned by shared-components/skeletons — see there. */

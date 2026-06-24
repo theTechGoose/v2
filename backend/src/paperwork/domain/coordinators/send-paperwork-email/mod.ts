@@ -141,8 +141,34 @@ export class SendPaperworkEmail {
       // The email goes to the customer, so it follows the contractor's
       // outgoing-comms language (default en), not their UI language.
       const lang: Lang = senderBiz?.commsLanguage === "es" ? "es" : "en";
+      // Resolve the linked agreement + quote so the email mirrors the signed
+      // agreement (itemized job, totals, signed-agreement link) — minus the
+      // legal clauses + signature. Both are best-effort; a standalone invoice
+      // falls back to the lightweight amount-only email.
+      let invContract: Contract | undefined;
+      let invQuote: Quote | undefined;
+      if (invoice.contractId) {
+        try {
+          invContract = await this.contracts.getOwned(
+            invoice.contractId,
+            userId,
+          );
+        } catch { /* standalone or missing */ }
+      }
+      if (invContract?.quoteId) {
+        try {
+          invQuote = await this.quotes.getOwned(invContract.quoteId, userId);
+        } catch { /* fall through */ }
+      }
       subject = renderInvoiceSubject(invoice, sender, lang);
-      htmlBody = renderInvoiceHtml(invoice, customer, sender, lang);
+      htmlBody = renderInvoiceHtml(
+        invoice,
+        customer,
+        sender,
+        senderBiz,
+        invQuote,
+        invContract,
+      );
     }
 
     if (!recipient) {
@@ -915,7 +941,370 @@ function renderInvoiceSubject(
     : tail;
 }
 
+/**
+ * Rich invoice email — mirrors the WOW quote email (renderQuoteHtml): pink
+ * ribbon, hero, job-details, line items, a prominent amount-due card, and a
+ * personal contact card. Drops the agreement's legal clauses + signature
+ * block (an invoice is a bill, not the contract). Adds a "View signed
+ * agreement" link when the linked contract is signed.
+ *
+ * Quote-linked invoices only — a standalone invoice (no linked quote/contract)
+ * has no itemized job to show and falls back to renderInvoiceBasicHtml.
+ */
 function renderInvoiceHtml(
+  i: Invoice,
+  customer: Customer | undefined,
+  sender: User | undefined,
+  senderBiz: BusinessIdentity | undefined,
+  quote?: Quote,
+  contract?: Contract,
+): string {
+  const es = senderBiz?.commsLanguage === "es";
+  const lang: Lang = es ? "es" : "en";
+  const items = quote?.lineItems ?? [];
+  const agreementTotal = contract?.totalAmount ?? quote?.estimatedTotal ??
+    (items.length
+      ? items.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0)
+      : undefined);
+  // Standalone invoice → lightweight amount-only email (unchanged behavior).
+  if (items.length === 0 && agreementTotal == null) {
+    return renderInvoiceBasicHtml(i, customer, sender, lang);
+  }
+
+  const docNumber = `#${i.id.slice(0, 8).toUpperCase()}`;
+  const issued = fmtDate(i.issuedDate ?? i.createdAt);
+  const amount = i.amount;
+  const isMilestone = (i.installmentTotal ?? 1) > 1;
+  const showAgreementContext = agreementTotal != null &&
+    (isMilestone || agreementTotal !== amount);
+
+  const L = {
+    docLang: lang,
+    kindLabel: t(lang, "paperworkEmail.invoice.kindLabel"),
+    issuedLabel: t(lang, "paperworkEmail.invoice.issuedLabel"),
+    preparedFor: t(lang, "paperworkEmail.quote.preparedFor"),
+    by: t(lang, "paperworkEmail.quote.by"),
+    jobDetails: t(lang, "paperworkEmail.quote.jobDetails"),
+    whatWeHandle: t(lang, "paperworkEmail.quote.whatWeHandle"),
+    agreementValue: t(lang, "contractDoc.agreementValue"),
+    amountDue: t(lang, "paperworkEmail.invoice.amountDueLabel"),
+    dueLabel: t(lang, "paperworkEmail.invoice.dueLabel"),
+    pasteLink: t(lang, "paperworkEmail.pasteLink"),
+    cta: t(lang, "paperworkEmail.invoice.cta"),
+    viewSigned: t(lang, "publicInvoice.viewSignedAgreement"),
+    downloadPdf: t(lang, "publicInvoice.downloadPdf"),
+    questions: t(lang, "paperworkEmail.quote.questions"),
+    yourContractor: t(lang, "paperworkEmail.quote.yourContractor"),
+  };
+
+  const jobName = (quote?.jobNameByLang?.[lang] ?? quote?.jobName)?.trim();
+  const summaryClean = ((quote?.summaryByLang?.[lang] ?? quote?.summary) ?? "")
+    .replace(/^\s*quote\s*:\s*/i, "").trim();
+  const heroRaw = jobName || summaryClean ||
+    t(lang, "publicInvoice.jobNameFallback");
+  const heroTitle = heroRaw.replace(/\b\w/g, (c) => c.toUpperCase());
+  const description = quote?.descriptionByLang?.[lang] ?? quote?.description;
+
+  const ctaUrl = `${APP_URL}/i/${i.id}`;
+  const signedUrl = contract && contract.status === "signed"
+    ? `${APP_URL}/c/${contract.id}`
+    : undefined;
+  const pdfUrl = `${APP_URL}/api/invoices/${i.id}/pdf`;
+
+  const customerFirst = customer?.name?.trim().split(/\s+/)[0];
+  const senderFirst = sender?.name?.trim()?.split(/\s+/)[0];
+  const senderInitials = (() => {
+    const n = sender?.name?.trim();
+    if (!n) return "PM";
+    const parts = n.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return parts[0].slice(0, 2).toUpperCase();
+  })();
+  const senderRoleLine = sender?.name?.trim()
+    ? escapeHtml(sender.name.trim())
+    : L.yourContractor;
+
+  const preheader = `${
+    customerFirst
+      ? `${t(lang, "paperworkEmail.quote.preheaderFor")} ${customerFirst} — `
+      : ""
+  }${heroRaw} · ${fmtUSD(amount)}`;
+
+  const lineRows = items.map((li, idx) => {
+    const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
+    const qty = li.quantity ?? 1;
+    const subBits = [
+      qty > 1 ? `${qty} ${escapeHtml(li.unit ?? "ea")}` : null,
+      qty > 1
+        ? t(lang, "paperworkEmail.quote.lineEach", {
+          price: fmtUSD(li.price ?? 0),
+        })
+        : null,
+    ].filter(Boolean).join(" · ");
+    const sub = subBits
+      ? `<div style="margin-top:2px;color:${COLOR_MUTED};font-size:12px">${subBits}</div>`
+      : "";
+    const last = idx === items.length - 1;
+    const border = last ? "" : `border-bottom:1px solid ${COLOR_LINE};`;
+    return `<tr>
+      <td style="padding:14px 0;${border}vertical-align:middle">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+          <tr>
+            <td style="vertical-align:middle;width:18px">
+              <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${COLOR_PINK};vertical-align:middle"></span>
+            </td>
+            <td style="vertical-align:middle;color:${COLOR_INK};font-size:15px;font-weight:600">
+              ${escapeHtml(li.description)}
+              ${sub}
+            </td>
+            <td style="vertical-align:middle;text-align:right;color:${COLOR_INK};font-weight:800;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:14px">
+              ${fmtUSD(lineTotal)}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`;
+  }).join("");
+
+  const descLines = (description ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\s*[••\-*]\s*/, "").trim())
+    .filter(Boolean);
+  const descBlock = descLines.length > 1
+    ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:8px;border-collapse:collapse"><tbody>${
+      descLines.map((l) =>
+        `<tr>
+            <td style="vertical-align:top;width:18px;padding:8px 0 0"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${COLOR_PINK}"></span></td>
+            <td style="vertical-align:top;padding:3px 0;font-size:15px;line-height:1.5;color:${COLOR_INK}">${
+          escapeHtml(l)
+        }</td>
+          </tr>`
+      ).join("")
+    }</tbody></table>`
+    : `<p style="margin:8px 0 0;font-size:15px;line-height:1.55;color:${COLOR_INK};white-space:pre-wrap">${
+      escapeHtml(descLines[0] ?? "")
+    }</p>`;
+
+  const greeting = customerGreeting(customer, lang);
+  const dueSub = i.dueDate
+    ? `<div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">${
+      escapeHtml(t(lang, "publicInvoice.dueOn", { date: fmtDate(i.dueDate) }))
+    }</div>`
+    : "";
+  const milestoneSub = (isMilestone && i.installmentIndex && i.installmentTotal)
+    ? `<div style="margin-top:2px;color:${COLOR_MUTED};font-size:12px">${
+      escapeHtml(
+        t(lang, "publicInvoice.milestone.head", {
+          idx: i.installmentIndex,
+          total: i.installmentTotal,
+        }),
+      )
+    }${
+      showAgreementContext
+        ? ` · ${escapeHtml(L.agreementValue)} ${fmtUSD(agreementTotal)}`
+        : ""
+    }</div>`
+    : (showAgreementContext
+      ? `<div style="margin-top:2px;color:${COLOR_MUTED};font-size:12px">${
+        escapeHtml(L.agreementValue)
+      } ${fmtUSD(agreementTotal)}</div>`
+      : "");
+
+  return `<!doctype html>
+<html lang="${L.docLang}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <title>${escapeHtml(L.kindLabel)} ${escapeHtml(docNumber)}</title>
+</head>
+<body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
+  <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
+    escapeHtml(preheader)
+  }</span>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
+    <tr><td align="center" style="padding:40px 16px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="640" style="max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
+
+        <!-- pink ribbon header -->
+        <tr><td style="height:6px;background:linear-gradient(90deg,${COLOR_PINK} 0%,${COLOR_PINK_DARK} 100%);font-size:0;line-height:0">&nbsp;</td></tr>
+
+        <!-- doc tag + issued date -->
+        <tr><td style="padding:32px 36px 0;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+            <tr>
+              <td style="vertical-align:top">
+                <span style="display:inline-block;background:rgba(255,107,107,0.10);color:${COLOR_PINK_DARK};font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;padding:6px 12px;border-radius:999px">${
+    escapeHtml(L.kindLabel)
+  } · ${escapeHtml(docNumber)}</span>
+              </td>
+              <td style="vertical-align:top;text-align:right;color:${COLOR_MUTED};font-size:12px;font-weight:600">
+                ${escapeHtml(L.issuedLabel)} ${escapeHtml(issued)}
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <!-- hero title -->
+        <tr><td style="padding:18px 36px 0;">
+          <h1 style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:36px;letter-spacing:-0.025em;color:${COLOR_TEAL};line-height:1.05">${
+    escapeHtml(heroTitle)
+  }</h1>
+          ${
+    customerFirst
+      ? `<div style="margin-top:10px;color:${COLOR_MUTED};font-size:14px">${L.preparedFor} <strong style="color:${COLOR_INK}">${
+        escapeHtml(customerFirst)
+      }</strong>${
+        senderFirst
+          ? ` ${L.by} <strong style="color:${COLOR_INK}">${
+            escapeHtml(senderFirst)
+          }</strong>`
+          : ""
+      }</div>`
+      : ""
+  }
+        </td></tr>
+
+        <!-- greeting + intro -->
+        <tr><td style="padding:28px 36px 0;">
+          <p style="margin:0 0 8px;font-size:16px;font-weight:700;color:${COLOR_INK}">${greeting}</p>
+          <p style="margin:0;font-size:15px;color:${COLOR_INK};line-height:1.55">${
+    escapeHtml(t(lang, "paperworkEmail.invoice.intro"))
+  }</p>
+        </td></tr>
+
+        <!-- divider -->
+        <tr><td style="padding:24px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
+
+        ${
+    description
+      ? `
+        <tr><td style="padding:18px 36px 0">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">${L.jobDetails}</div>
+          ${descBlock}
+        </td></tr>
+        <tr><td style="padding:18px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
+        `
+      : ""
+  }
+
+        ${
+    items.length > 1
+      ? `
+        <tr><td style="padding:18px 36px 0">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">${L.whatWeHandle}</div>
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:6px;border-collapse:collapse">
+            <tbody>${lineRows}</tbody>
+          </table>
+        </td></tr>
+        `
+      : ""
+  }
+
+        <!-- amount due card (the money moment) -->
+        <tr><td style="padding:24px 36px 0">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:18px">
+            <tr>
+              <td style="padding:22px 24px">
+                <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_GREEN}">${
+    escapeHtml(L.amountDue)
+  }</div>
+                ${dueSub}
+                ${milestoneSub}
+              </td>
+              <td style="padding:22px 24px;text-align:right;vertical-align:middle">
+                <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
+    fmtUSD(amount)
+  }</div>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <!-- big CTA -->
+        <tr><td style="padding:28px 36px 0;text-align:center">
+          <a href="${
+    escapeAttr(ctaUrl)
+  }" style="display:inline-block;background:${COLOR_GREEN};color:#ffffff;text-decoration:none;font-weight:800;font-size:16px;padding:18px 32px;border-radius:14px;box-shadow:0 10px 22px -6px rgba(81,152,67,0.55);letter-spacing:.005em">${
+    escapeHtml(L.cta)
+  } &nbsp;→</a>
+          <div style="margin-top:14px;font-size:11px;color:${COLOR_MUTED}">${
+    escapeHtml(L.pasteLink)
+  }<br><a href="${escapeAttr(ctaUrl)}" style="color:${COLOR_MUTED};word-break:break-all">${
+    escapeHtml(ctaUrl)
+  }</a></div>
+        </td></tr>
+
+        <!-- secondary actions: download PDF + (when signed) view agreement -->
+        <tr><td style="padding:18px 36px 0;text-align:center">
+          <a href="${
+    escapeAttr(pdfUrl)
+  }" style="display:inline-block;color:${COLOR_TEAL};text-decoration:none;font-weight:700;font-size:13px;border:1px solid ${COLOR_LINE};border-radius:12px;padding:11px 18px;margin:0 4px">⬇ ${
+    escapeHtml(L.downloadPdf)
+  }</a>${
+    signedUrl
+      ? `<a href="${
+        escapeAttr(signedUrl)
+      }" style="display:inline-block;color:${COLOR_TEAL};text-decoration:none;font-weight:700;font-size:13px;border:1px solid ${COLOR_LINE};border-radius:12px;padding:11px 18px;margin:0 4px">📄 ${
+        escapeHtml(L.viewSigned)
+      }</a>`
+      : ""
+  }
+        </td></tr>
+
+        <!-- divider -->
+        <tr><td style="padding:32px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
+
+        <!-- contact card -->
+        <tr><td style="padding:22px 36px 32px">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+            <tr>
+              <td valign="middle" style="width:48px">
+                <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,${COLOR_GREEN} 0%,#71a85f 100%);color:#fff;font-weight:800;font-size:14px;line-height:44px;text-align:center;letter-spacing:.04em">${
+    escapeHtml(senderInitials)
+  }</div>
+              </td>
+              <td valign="middle" style="padding-left:14px">
+                <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED}">${
+    escapeHtml(L.questions)
+  }</div>
+                <div style="margin-top:3px;font-weight:800;color:${COLOR_TEAL};font-size:15px">${senderRoleLine}</div>
+                ${
+    sender?.phoneNumber
+      ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="tel:${
+        escapeAttr(sender.phoneNumber)
+      }" style="color:${COLOR_INK};text-decoration:none">${
+        escapeHtml(sender.phoneNumber)
+      }</a></div>`
+      : ""
+  }
+                ${
+    sender?.email
+      ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="mailto:${
+        escapeAttr(sender.email)
+      }" style="color:${COLOR_INK};text-decoration:none">${
+        escapeHtml(sender.email)
+      }</a></div>`
+      : ""
+  }
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+/** Lightweight amount-only invoice email (the original) — used for standalone
+ *  invoices with no linked quote/contract to itemize. */
+function renderInvoiceBasicHtml(
   i: Invoice,
   customer: Customer | undefined,
   sender: User | undefined,
@@ -924,8 +1313,27 @@ function renderInvoiceHtml(
   const docNumber = `#${i.id.slice(0, 8)}`;
   const drafted = fmtDate(i.issuedDate ?? new Date().toISOString());
   const amount = i.amount;
+  // Standalone invoices carry their own job title + note (no quote behind
+  // them). Surface them so a quote-less invoice email isn't just a bare figure.
+  const jobName = (i as { jobName?: string }).jobName?.trim();
+  const description = (i as { description?: string }).description?.trim();
+  const jobBlock = (jobName || description)
+    ? `${
+      jobName
+        ? `<div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:22px;letter-spacing:-0.02em;color:${COLOR_TEAL};margin-bottom:${
+          description ? "6" : "16"
+        }px">${escapeHtml(jobName)}</div>`
+        : ""
+    }${
+      description
+        ? `<p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:${COLOR_INK};white-space:pre-wrap">${
+          escapeHtml(description)
+        }</p>`
+        : ""
+    }`
+    : "";
 
-  const body = `
+  const body = `${jobBlock}
     <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED};">${
     escapeHtml(t(lang, "paperworkEmail.invoice.detailsLabel"))
   }</div>

@@ -1,0 +1,11 @@
+{
+  "_name": "Returning — request in flight (disabled)",
+  "_signals": {
+    "who": {
+      "impersonating": true,
+      "user": { "name": "Maria Lopez", "businessName": "Lopez Landscaping", "phoneNumber": "+15125550143" },
+      "impersonator": { "name": "Raphael Castro" }
+    },
+    "busy": true
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "_name": "Stale — Q-1101, 12 days out, 1 open (red mood, \"Win it back\")",
+  "idx": 3,
+  "lang": "en",
+  "q": {
+    "id": "Q-1101",
+    "title": "Deck stain & seal",
+    "client": "Hilltop Diner",
+    "initials": "HD",
+    "customerId": "cust-hd",
+    "stage": "stale",
+    "value": 185000,
+    "daysIn": 12,
+    "opens": 1,
+    "sentDays": 12,
+    "band": ["#FF6B6B", "#D63F3F"],
+    "shadow": "rgba(255,107,107,0.4)"
+  }
+}

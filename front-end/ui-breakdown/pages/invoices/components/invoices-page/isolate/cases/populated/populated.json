@@ -1,0 +1,28 @@
+{
+  "_name": "Populated — full pipeline across overdue/claimed/out/scheduled/drafting/paid",
+  "lang": "en",
+  "_signals": { "loading": false, "error": null },
+  "_mocks": {
+    "dashboardClient.customers": [
+      { "id": "cust-mg", "userId": "u1", "name": "Maple Grove Apartments", "email": "janet@maplegrove.co", "phoneNumber": "+14155550124" },
+      { "id": "cust-hd", "userId": "u1", "name": "Hilltop Diner", "email": "ray@hilltop.co", "phoneNumber": "+14155550150" },
+      { "id": "cust-ml", "userId": "u1", "name": "Marcus Lin", "email": "marcus.lin@gmail.com", "phoneNumber": "+14155550188" },
+      { "id": "cust-gh", "userId": "u1", "name": "Greenleaf HOA", "phoneNumber": "+14155550190" },
+      { "id": "cust-cc", "userId": "u1", "name": "Cobblestone Cafe", "email": "hi@cobblestone.cafe" },
+      { "id": "cust-or", "userId": "u1", "name": "Ortega Rentals", "phoneNumber": "+14155550133" }
+    ],
+    "dashboardClient.invoices": [
+      { "id": "inv0a1b2c", "userId": "u1", "contractId": "ct-301", "customerId": "cust-mg", "amount": 420000, "issuedDate": "2026-05-04", "dueDate": "2026-05-18", "status": "sent", "installmentIndex": 2, "installmentTotal": 3, "createdAt": "2026-05-04T09:00:00.000Z", "updatedAt": "2026-05-04T09:00:00.000Z" },
+      { "id": "inv7d8e9f", "userId": "u1", "contractId": "ct-288", "customerId": "cust-hd", "amount": 185000, "issuedDate": "2026-05-20", "dueDate": "2026-06-03", "status": "viewed", "createdAt": "2026-05-20T09:00:00.000Z", "updatedAt": "2026-06-01T11:00:00.000Z" },
+      { "id": "inv1122aa", "userId": "u1", "contractId": "ct-310", "customerId": "cust-ml", "amount": 96000, "issuedDate": "2026-06-12", "dueDate": "2026-06-26", "status": "claimed", "createdAt": "2026-06-12T09:00:00.000Z", "updatedAt": "2026-06-17T15:30:00.000Z", "paymentIntent": { "method": "zelle", "amount": 96000, "reference": "ZL-88421", "claimedAt": "2026-06-17T15:30:00.000Z", "claimedBy": "Marcus Lin" } },
+      { "id": "inv3344bb", "userId": "u1", "contractId": "ct-309", "customerId": "cust-gh", "amount": 580000, "issuedDate": "2026-06-15", "dueDate": "2026-07-15", "status": "sent", "createdAt": "2026-06-15T09:00:00.000Z", "updatedAt": "2026-06-15T09:00:00.000Z" },
+      { "id": "inv5566cc", "userId": "u1", "contractId": "ct-301", "customerId": "cust-mg", "amount": 420000, "dueDate": "2026-07-30", "status": "scheduled", "scheduledFor": "2026-07-23", "installmentIndex": 3, "installmentTotal": 3, "createdAt": "2026-05-04T09:00:00.000Z", "updatedAt": "2026-05-04T09:00:00.000Z" },
+      { "id": "inv7788dd", "userId": "u1", "customerId": "cust-cc", "amount": 142500, "dueDate": "2026-07-18", "status": "draft", "createdAt": "2026-06-18T10:00:00.000Z", "updatedAt": "2026-06-18T10:00:00.000Z" },
+      { "id": "inv99aaee", "userId": "u1", "amount": 64000, "dueDate": "2026-07-05", "status": "pending", "createdAt": "2026-06-17T08:00:00.000Z", "updatedAt": "2026-06-17T08:00:00.000Z" },
+      { "id": "invbbccff", "userId": "u1", "contractId": "ct-275", "customerId": "cust-or", "amount": 190000, "issuedDate": "2026-06-01", "dueDate": "2026-06-15", "status": "paid", "paidAt": "2026-06-14T13:00:00.000Z", "createdAt": "2026-06-01T09:00:00.000Z", "updatedAt": "2026-06-14T13:00:00.000Z" },
+      { "id": "invddee00", "userId": "u1", "contractId": "ct-260", "customerId": "cust-hd", "amount": 38000, "issuedDate": "2026-04-01", "dueDate": "2026-04-15", "status": "void", "createdAt": "2026-04-01T09:00:00.000Z", "updatedAt": "2026-04-20T09:00:00.000Z" }
+    ],
+    "fetch:/api/invoices/forecast/this-week": "__reject:404__"
+  },
+  "_note": "Statuses chosen to exercise every Invoice union value (scheduled|draft|pending|sent|viewed|claimed|paid|void) and the island's 6 derived buckets. With forecast 404'd the hero falls back to the legacy 'on the way' headline. inv0a1b2c (sent, due 2026-05-18 < today 2026-06-18) enriches to OVERDUE; inv7d8e9f (viewed, due 2026-06-03 < today) → OVERDUE; inv3344bb (sent, due in future) → OUT; inv1122aa → CLAIMED; inv5566cc → SCHEDULED; inv7788dd (draft) + inv99aaee (pending, no issuedDate) → DRAFTING; invbbccff → PAID-this-month; invddee00 (void, due 2026-04-15 < today, not paid/claimed/scheduled/draft) → daysOverdue>0 → lands in the OVERDUE bucket (no void handling — a real gap: void invoices are NOT filtered out and surface as overdue receivables)."
+}

@@ -1,0 +1,74 @@
+{
+  "_name": "Loaded — full ProfileSnapshot, all cards idle",
+  "_signals": {
+    "s": {
+      "loading": false,
+      "error": null,
+      "profile": {
+        "user": {
+          "id": "usr_8f2a",
+          "phoneNumber": "+15125550143",
+          "name": "Maria Lopez",
+          "email": "maria@lopezlandscaping.com",
+          "language": "en",
+          "createdAt": 1718000000000,
+          "updatedAt": 1718500000000
+        },
+        "identity": {
+          "userId": "usr_8f2a",
+          "businessName": "Lopez Landscaping",
+          "displayName": "Lopez Landscaping",
+          "legalName": "Lopez Landscaping LLC",
+          "businessLicense": "TX-LSC-44821",
+          "logoFileId": "file_3c9d12ab",
+          "commsLanguage": "en",
+          "commsLanguages": ["en", "es"],
+          "acceptedPaymentMethods": {
+            "venmo": { "enabled": true, "handle": "@lopez-landscaping" },
+            "zelle": { "enabled": true, "handle": "maria@lopezlandscaping.com" },
+            "check": { "enabled": true, "mailTo": "PO Box 144, Austin TX 78701" },
+            "cash": { "enabled": true }
+          },
+          "createdAt": "2024-06-10T00:00:00.000Z",
+          "updatedAt": "2025-01-12T00:00:00.000Z"
+        },
+        "address": {
+          "userId": "usr_8f2a",
+          "street": "1408 Maple Ave",
+          "city": "Austin",
+          "state": "TX",
+          "postal": "78704",
+          "country": "US",
+          "createdAt": "2024-06-10T00:00:00.000Z",
+          "updatedAt": "2025-01-12T00:00:00.000Z"
+        },
+        "insurance": {
+          "userId": "usr_8f2a",
+          "provider": "Hartford",
+          "policyNumber": "HF-9920043",
+          "coverageCents": 100000000,
+          "expiresAt": "2026-03-31",
+          "insuranceFileId": "file_ins_77a1",
+          "insuranceUploadedAt": "2025-01-04T00:00:00.000Z",
+          "createdAt": "2024-06-10T00:00:00.000Z",
+          "updatedAt": "2025-01-12T00:00:00.000Z"
+        },
+        "tax": {
+          "tinMasked": "**-***4821",
+          "w9FileId": "file_w9_22c0",
+          "w9UploadedAt": "2025-01-04T00:00:00.000Z"
+        },
+        "contractDefaults": {
+          "userId": "usr_8f2a",
+          "paymentTermsDays": 15,
+          "depositPct": 30,
+          "warrantyDays": 365,
+          "createdAt": "2024-06-10T00:00:00.000Z",
+          "updatedAt": "2025-01-12T00:00:00.000Z"
+        },
+        "references": [],
+        "initials": "ML"
+      }
+    }
+  }
+}

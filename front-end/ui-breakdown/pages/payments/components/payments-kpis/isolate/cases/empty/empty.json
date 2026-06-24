@@ -1,0 +1,12 @@
+{
+  "_name": "Empty — fresh account, all 0 → \"$0\" cells, Avg shows \"—\" + \"no paid history yet\"",
+  "lang": "en",
+  "landedCount": 0,
+  "monthTotal": 0,
+  "transitCount": 0,
+  "transitTotal": 0,
+  "attentionCount": 0,
+  "attentionTotal": 0,
+  "avgDays": 0,
+  "_note": "avgDays=0 → Avg cell renders \"—\" and the noHistory sub. Landed sub uses the plural \"0 payments\". In-transit accent cell still renders (always accent) with \"$0\" / \"0 on the way\"."
+}

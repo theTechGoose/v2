@@ -1,0 +1,14 @@
+{
+  "category": "invoices",
+  "folder": "invoices-kpis",
+  "controls": {
+    "overdueCount": { "type": "number", "value": 2 },
+    "overdueTotal": { "type": "number", "value": 605000 },
+    "outCount": { "type": "number", "value": 1 },
+    "outTotal": { "type": "number", "value": 580000 },
+    "draftingCount": { "type": "number", "value": 2 },
+    "paidCount": { "type": "number", "value": 1 },
+    "paidTotal": { "type": "number", "value": 190000 },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

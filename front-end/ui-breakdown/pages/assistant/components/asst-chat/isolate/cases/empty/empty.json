@@ -1,0 +1,8 @@
+{
+  "_name": "Empty — first-screen logo + 4 start prompts",
+  "_note": "messages.length===0 → .chat__empty. Composer is visible (no tap-only flow open).",
+  "conversationId": "new",
+  "initialMessages": [],
+  "userInitials": "ML",
+  "sendLanguages": ["en"]
+}

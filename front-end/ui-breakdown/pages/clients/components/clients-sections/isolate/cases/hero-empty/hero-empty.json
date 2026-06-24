@@ -1,0 +1,9 @@
+{
+  "_name": "ClientsHero — empty ('Let's add your first client')",
+  "_component": "ClientsHero",
+  "lang": "en",
+  "totalClients": 0,
+  "activeJobs": 0,
+  "owedTotal": 0,
+  "quietCount": 0
+}

@@ -1,0 +1,52 @@
+{
+  "category": "shared-components",
+  "folder": "contract-doc",
+  "components": {
+    "ContractDoc": {
+      "_note": "Renders <ContractDoc contract={ContractPublic} />. The single `contract` prop is a public projection (GET /contracts/:id/public). commsLanguage on contractor flips the whole doc en/es. status gates: 'signed' | 'declined' | (anything else = awaiting). Mounts the PublicSignContract island in the unsigned, non-declined state. Money is INTEGER CENTS.",
+      "contract": {
+        "id": "ctr_9f3a2b71c0d4e5f6",
+        "quoteId": "qt_5521aa",
+        "customerId": "cus_77a1",
+        "status": "draft",
+        "totalAmount": 1450000,
+        "effectiveDate": "2026-06-10",
+        "startDate": "2026-06-24",
+        "estimatedCompletionDate": "2026-07-18",
+        "contractor": {
+          "name": "Hans Hansen",
+          "businessName": "Hansen Decks & Patios",
+          "phoneNumber": "+15125550148",
+          "email": "hans@hansendecks.com",
+          "addressLine": "812 Cedar Ln, Austin, TX 78704",
+          "state": "TX",
+          "commsLanguage": "en",
+          "hasLogo": false
+        },
+        "customer": {
+          "name": "Maria Delgado",
+          "phoneNumber": "+15125550199",
+          "email": "maria.delgado@example.com"
+        },
+        "jobDetails": {
+          "jobName": "Backyard Deck Build",
+          "summary": "Quote: build a 16x20 cedar deck",
+          "description": "Demo and haul the old deck.\nFrame and build a 16x20 pressure-treated deck with cedar surface boards.\nInstall two sets of stairs and a 36in railing.\nSeal and stain the finished surface.",
+          "lineItems": [
+            { "description": "Demo & haul existing deck", "price": 180000, "quantity": 1, "unit": "job" },
+            { "description": "Framing & decking — cedar 16x20", "price": 920000, "quantity": 1 },
+            { "description": "Stairs & railing", "price": 250000, "quantity": 1 },
+            { "description": "Seal & stain", "price": 100000, "quantity": 1 }
+          ]
+        },
+        "terms": [
+          { "stepId": "customer", "label": "Customer", "value": "Maria Delgado" },
+          { "stepId": "payment_terms", "label": "Payment terms", "value": "50% deposit, 50% on completion" },
+          { "stepId": "warranty", "label": "Warranty", "value": "12 months" },
+          { "stepId": "governing_state", "label": "Governing law", "value": "Use my business state" }
+        ],
+        "createdAt": "2026-06-10T15:04:00Z"
+      }
+    }
+  }
+}

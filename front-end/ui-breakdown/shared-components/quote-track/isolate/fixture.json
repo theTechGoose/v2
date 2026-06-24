@@ -1,0 +1,13 @@
+{
+  "category": "shared-components",
+  "folder": "quote-track",
+  "controls": {
+    "num": { "type": "text", "value": "01" },
+    "title": { "type": "text", "value": "Out for response" },
+    "count": { "type": "number", "value": 3 },
+    "unit": { "type": "text", "value": "" },
+    "defaultOpen": { "type": "boolean", "value": true },
+    "storageKey": { "type": "text", "value": "pm:qtrack:1" },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

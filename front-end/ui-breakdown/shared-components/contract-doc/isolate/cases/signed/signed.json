@@ -1,0 +1,42 @@
+{
+  "_name": "Signed — green status pill, filled customer signature, 'Signed and binding' band (no sign island)",
+  "contract": {
+    "id": "ctr_9f3a2b71c0d4e5f6",
+    "quoteId": "qt_5521aa",
+    "customerId": "cus_77a1",
+    "status": "signed",
+    "totalAmount": 1450000,
+    "effectiveDate": "2026-06-10",
+    "startDate": "2026-06-24",
+    "estimatedCompletionDate": "2026-07-18",
+    "signedAt": "2026-06-12T18:22:00Z",
+    "customerSignedName": "Maria Delgado",
+    "contractor": {
+      "name": "Hans Hansen",
+      "businessName": "Hansen Decks & Patios",
+      "phoneNumber": "+15125550148",
+      "email": "hans@hansendecks.com",
+      "addressLine": "812 Cedar Ln, Austin, TX 78704",
+      "state": "TX",
+      "commsLanguage": "en"
+    },
+    "customer": { "name": "Maria Delgado", "email": "maria.delgado@example.com", "phoneNumber": "+15125550199" },
+    "jobDetails": {
+      "jobName": "Backyard Deck Build",
+      "summary": "build a 16x20 cedar deck",
+      "description": "Demo and haul the old deck.\nFrame and build a 16x20 cedar deck.\nInstall stairs and railing.\nSeal and stain.",
+      "lineItems": [
+        { "description": "Demo & haul existing deck", "price": 180000, "quantity": 1 },
+        { "description": "Framing & decking — cedar 16x20", "price": 920000, "quantity": 1 },
+        { "description": "Stairs & railing", "price": 250000, "quantity": 1 },
+        { "description": "Seal & stain", "price": 100000, "quantity": 1 }
+      ]
+    },
+    "terms": [
+      { "stepId": "customer", "label": "Customer", "value": "Maria Delgado" },
+      { "stepId": "payment_terms", "label": "Payment terms", "value": "50% deposit, 50% on completion" },
+      { "stepId": "warranty", "label": "Warranty", "value": "12 months" }
+    ],
+    "createdAt": "2026-06-10T15:04:00Z"
+  }
+}

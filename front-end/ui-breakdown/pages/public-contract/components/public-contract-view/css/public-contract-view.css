@@ -1,0 +1,23 @@
+/* public-contract-view.css — EXTRACTED real CSS.
+ *
+ * The island is entirely inline-styled. The ONLY CSS rule it emits is the
+ * skeleton shimmer keyframe, declared inline via a <style> tag inside the
+ * LoadingSkeleton render (so it ships with the island even before the doc
+ * loads). Reproduced verbatim. Surface: PUBLIC palette.
+ */
+
+/* Pulsing opacity on the skeleton placeholder bars (loading phase only). */
+@keyframes ctr-skel {
+  0%, 100% { opacity: .55; }
+  50%      { opacity: .85; }
+}
+
+/* Each placeholder bar applies inline:
+ *   animation: ctr-skel 1.2s ease-in-out infinite;
+ *   animation-delay: <i*0.08>s   (staggered across the 5 title/line bars)
+ * Bar fills: #e3e8e6 (eyebrow), #e9edeb (text bars), #eef2f0 (block).
+ * Card: background #fffdf7; border-radius 24px; ribbon #144852→#0e333b. */
+
+/* NOTE: no component-local prefers-reduced-motion guard — relies on the global
+ * tokens clamp (NOT loaded on the public surface). Flag: on /landing.css the
+ * pulse keeps running under reduced-motion. */

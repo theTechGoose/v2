@@ -1,0 +1,9 @@
+{
+  "_name": "Collapsed — rail (localStorage pm:threads-collapsed=1)",
+  "activeId": "t1",
+  "_localStorage": { "pm:threads-collapsed": "1" },
+  "_note": "Island seeds `collapsed` from localStorage on mount. The rail also relies on the parent .asst grid getting `asst--threads-collapsed`; in isolate the aside has no .asst parent, so the column-narrow won't show — only the in-aside `.threads--collapsed` hiding (title/count/list hidden, centered head/new) is visible.",
+  "initialThreads": [
+    { "id": "t1", "userId": "u_dev", "customerName": "Maria Gonzalez", "preview": "Estimate sent.", "currentPhase": "terms", "contractStatus": "sent", "updatedAt": "2026-06-18T12:30:00.000Z", "createdAt": "2026-06-18T11:00:00.000Z" }
+  ]
+}

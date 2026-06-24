@@ -1,0 +1,125 @@
+/* ============================================================================
+   NewInvoiceModal — EXTRACTED, not ported. The live component
+   (islands/InvoicesPage.tsx, NewInvoiceModal lines 1418–1632) carries NO
+   classes: every style is an inline `style="…"` string. There is no rule for
+   this modal in static/quotes.css or static/dashboard.css. The rules below are
+   transcribed verbatim from those inline strings so the rebuild can lift them
+   into real classes (recommended) instead of re-inlining.
+
+   Hardcoded hex fallbacks in the source are preserved here next to their token
+   so the token mapping is obvious:
+     scrim  rgba(20,40,45,.45)   (no token; ~coffee/teal 45% — use --bg-overlay)
+     card shadow rgba(20,72,82,.22) (public-surface teal; map to --shadow-xl)
+     --fg-muted fb #6b7560 · --border fb #d8dcd5 · --fg fb #144852
+     --brand-green fb #519843 · error #a83b3b (public danger text)
+   ============================================================================ */
+
+/* Full-viewport scrim + centering. z-index 1000 sits above the app shell. */
+.new-invoice-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 40, 45, 0.45); /* → var(--bg-overlay) on rebuild */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px; /* keeps the card off the edges on small screens */
+}
+
+/* The modal card. max-width 460 + width 100% = fluid, no @media needed. */
+.new-invoice-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px 26px;
+  max-width: 460px;
+  width: 100%;
+  box-shadow: 0 24px 64px rgba(20, 72, 82, 0.22); /* → var(--shadow-xl) */
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.new-invoice-card h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--fg, #144852);
+}
+
+.new-invoice-card p.intro {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-muted, #6b7560);
+}
+
+/* labelStyle — every <label> in the form */
+.new-invoice-label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg-muted, #6b7560);
+}
+
+/* inputStyle — shared by <select> and every <input> */
+.new-invoice-input {
+  padding: 11px 13px;
+  border: 1px solid var(--border, #d8dcd5);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--fg);
+}
+
+/* The new-client sub-panel (revealed when "+ New client" is picked) */
+.new-invoice-newclient {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+/* role="alert" validation/network error line */
+.new-invoice-error {
+  margin: 0;
+  color: #a83b3b; /* public-surface danger text; → var(--danger) on rebuild */
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+/* Action row — right-aligned: ghost Cancel + solid green submit */
+.new-invoice-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.new-invoice-actions .cancel {
+  padding: 10px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted, #6b7560);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 10px;
+}
+.new-invoice-actions .submit {
+  padding: 10px 20px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--brand-green, #519843);
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.new-invoice-actions button:disabled {
+  /* source only sets disabled attr (no style); add a visible busy cue on rebuild */
+  cursor: default;
+  opacity: 0.7;
+}

@@ -1,0 +1,11 @@
+{
+  "_name": "ClientsSegments — 4 segment bars (seed SEGMENTS)",
+  "_component": "ClientsSegments",
+  "lang": "en",
+  "rows": [
+    { "key": "property_mgmt", "label": "Property mgmt", "count": 4, "pct": 80 },
+    { "key": "homeowner", "label": "Homeowners", "count": 5, "pct": 60 },
+    { "key": "small_biz", "label": "Small biz", "count": 2, "pct": 40 },
+    { "key": "hoa", "label": "HOAs", "count": 1, "pct": 18 }
+  ]
+}

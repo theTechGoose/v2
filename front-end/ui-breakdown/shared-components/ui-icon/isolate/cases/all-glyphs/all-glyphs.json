@@ -1,0 +1,6 @@
+{
+  "_name": "Full set sheet (render every name)",
+  "_note": "harness should map the 16-name union into a grid, each at size 24",
+  "_names": ["home", "doc", "file-text", "receipt", "chat", "users", "settings", "bell", "search", "send", "mic", "image", "check", "chevron-right", "menu", "logo"],
+  "size": 24
+}

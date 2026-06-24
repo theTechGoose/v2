@@ -1,0 +1,24 @@
+{
+  "_name": "Landed (front) — green mood, \"Landed\" status, \"View receipt\" CTA, Method value cell",
+  "lang": "en",
+  "idx": 0,
+  "p": {
+    "id": "pay_8a1f20c4",
+    "userId": "usr_01",
+    "invoiceId": "inv_3c91ab77e201",
+    "amount": 482000,
+    "method": "zelle",
+    "receivedAt": "2026-06-18T14:20:00Z",
+    "createdAt": "2026-06-18T14:21:00Z",
+    "updatedAt": "2026-06-18T14:21:00Z",
+    "client": "Maria Delgado",
+    "initials": "MD",
+    "invoiceRef": "INV-3C91AB",
+    "daysAgo": 0,
+    "whenLabel": "Today",
+    "note": "Payment from Maria.",
+    "status": "landed"
+  },
+  "_signals": { "flipped": false },
+  "_note": "STATUS_MOOD.landed gradient (#CFE5C8→#5FA34F). mood.landed.label=\"Landed\", cta=\"View receipt\". Value cell: lbl \"Method\" / num \"Zelle\". Numeral \"01\" (idx+1). pcard__amount \"$4,820\"."
+}

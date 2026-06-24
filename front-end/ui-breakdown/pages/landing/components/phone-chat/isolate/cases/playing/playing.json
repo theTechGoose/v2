@@ -1,0 +1,7 @@
+{
+  "_name": "Mid-play — typing indicator visible (step 3 of 12)",
+  "messageCopy": "Message",
+  "controls": false,
+  "autoPlayOnView": true,
+  "_signals": { "lang": "en", "shown": 3, "hidden": [] }
+}

@@ -1,0 +1,13 @@
+{
+  "_name": "Spanish — decline form (Rechazar esta cotización)",
+  "quoteId": "a1b2c3d4-1111-2222-3333-444455556666",
+  "customerName": "Juan Pérez",
+  "lang": "es",
+  "_signals": {
+    "mode": "decline",
+    "resolved": null,
+    "reason": "price",
+    "name": "Juan Pérez",
+    "status": "idle"
+  }
+}

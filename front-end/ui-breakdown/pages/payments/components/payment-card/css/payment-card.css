@@ -1,0 +1,22 @@
+/* PaymentCard reuses the full `.qcard` flip-card block (static/quotes.css) —
+   the verbatim extraction lives in
+   ../../../../invoices/components/invoice-card/css/invoice-card.css
+   (.qcard / .qcard__mood / __numeral / __status / __status-dot / __opens /
+   __av / __body / __client-name / __story / __foot / __cta / __val-* / __back*
+   + @keyframes q-pulse-dot). Tokens from dashboard.css.
+
+   ADDITIONS specific to /payments (from static/payments.css, also in
+   ../../payments-hero/css/payments-hero.css):
+     .pcard__amount — the dominant amount line under the client name on the
+                      card front (Nunito 800, 22px, tabular-nums, teal).
+   .qcard__opens is reused as the method pill in the mood block (top-right). */
+
+.pcard__amount {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.018em;
+  color: var(--brand-teal);
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0 6px;
+}

@@ -1,0 +1,17 @@
+{
+  "_name": "Populated — full seed pipeline (mirrors lib/quotes-seed.ts)",
+  "lang": "en",
+  "_mocks": {
+    "quotesClient.list": [
+      { "id": "Q-1107", "customerId": "cust-tk", "customerName": "Tom & Linda Kowalski", "jobName": "Garage epoxy floor — 2-car", "estimatedTotal": 385000, "stage": "opened", "daysIn": 1, "opens": 3, "sentDays": 1, "lastOpenAt": "2026-06-18T14:18:00Z", "decidedDays": null, "createdAt": "2026-06-17T09:00:00Z", "updatedAt": "2026-06-18T14:18:00Z" },
+      { "id": "Q-1106", "customerId": "cust-gh", "customerName": "Greenleaf HOA", "jobName": "Common-area paint — buildings A & B", "estimatedTotal": 580000, "stage": "opened", "daysIn": 3, "opens": 2, "sentDays": 3, "lastOpenAt": "2026-06-17T11:00:00Z", "decidedDays": null, "createdAt": "2026-06-15T09:00:00Z", "updatedAt": "2026-06-17T11:00:00Z" },
+      { "id": "Q-1108", "customerId": "cust-ml", "customerName": "Marcus Lin", "jobName": "Fence stain — back run", "estimatedTotal": 240000, "stage": "sent", "daysIn": 0, "opens": 0, "sentDays": 0, "lastOpenAt": null, "decidedDays": null, "createdAt": "2026-06-18T08:00:00Z", "updatedAt": "2026-06-18T08:00:00Z" },
+      { "id": "Q-1101", "customerId": "cust-hd", "customerName": "Hilltop Diner", "jobName": "Deck stain & seal", "estimatedTotal": 185000, "stage": "stale", "daysIn": 12, "opens": 1, "sentDays": 12, "lastOpenAt": "2026-06-08T16:00:00Z", "decidedDays": null, "createdAt": "2026-06-06T09:00:00Z", "updatedAt": "2026-06-08T16:00:00Z" },
+      { "id": "Q-1109", "customerId": "cust-cc", "customerName": "Cobblestone Cafe", "jobName": "Storefront awning replacement", "estimatedTotal": 425000, "stage": "draft", "daysIn": 1, "opens": 0, "sentDays": null, "lastOpenAt": null, "decidedDays": null, "createdAt": "2026-06-17T09:00:00Z", "updatedAt": "2026-06-17T09:00:00Z" },
+      { "id": "Q-1099", "customerId": "cust-mg", "customerName": "Maple Grove Apartments", "jobName": "Building C re-roof", "estimatedTotal": 1420000, "stage": "won", "daysIn": 0, "opens": 4, "sentDays": 6, "lastOpenAt": "2026-06-16T10:00:00Z", "decidedDays": 1, "createdAt": "2026-06-10T09:00:00Z", "updatedAt": "2026-06-17T09:00:00Z" },
+      { "id": "Q-1094", "customerId": "cust-or", "customerName": "Ortega Rentals", "jobName": "Window trim repaint", "estimatedTotal": 190000, "stage": "lost", "daysIn": 0, "opens": 2, "sentDays": 8, "lastOpenAt": "2026-06-12T10:00:00Z", "decidedDays": 4, "createdAt": "2026-06-06T09:00:00Z", "updatedAt": "2026-06-14T09:00:00Z" }
+    ],
+    "quotesClient.winRate": { "windowDays": 90, "decided": 8, "won": 6, "lost": 2, "winRate": 75 },
+    "quotesClient.insight": { "text": "Quotes you send before noon get opened 2× faster. Try sending Marcus Lin's today.", "kind": "best_day_of_week" }
+  }
+}

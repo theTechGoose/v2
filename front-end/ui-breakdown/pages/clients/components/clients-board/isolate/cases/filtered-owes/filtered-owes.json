@@ -1,0 +1,9 @@
+{
+  "_name": "Filter: Owe you — only status=owes (Sarah Chen, Hilltop Diner)",
+  "lang": "en",
+  "_signals": { "filter": "owes" },
+  "cards": [
+    { "id": "c5", "userId": "u1", "name": "Sarah Chen", "email": "sarah.chen@gmail.com", "phoneNumber": "(415) 555-0188", "segment": "homeowner", "vip": false, "createdAt": "2025-04-02T10:00:00.000Z", "updatedAt": "2026-06-15T10:00:00.000Z", "lastWhen": "2026-06-15T10:00:00.000Z", "lastWhenRel": "3 days ago", "lastTone": "hot", "balanceCents": 192000, "balanceSub": "Deck stain bal.", "activeJobs": 1, "jobsSub": "Deck", "status": "owes", "temp": 58, "daysSinceContact": 3, "revenue12moCents": 480000 },
+    { "id": "c6", "userId": "u1", "name": "Hilltop Diner", "email": "manager@hilltopdiner.com", "phoneNumber": "(415) 555-0102", "segment": "small_biz", "vip": false, "createdAt": "2025-04-20T10:00:00.000Z", "updatedAt": "2026-06-07T10:00:00.000Z", "lastWhen": "2026-06-07T10:00:00.000Z", "lastWhenRel": "11 days ago", "lastTone": "cold", "balanceCents": 116000, "balanceSub": "Past due 14d", "activeJobs": 0, "jobsSub": "No open jobs", "status": "owes", "temp": 22, "daysSinceContact": 11, "revenue12moCents": 320000 }
+  ]
+}

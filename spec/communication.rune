@@ -1,0 +1,286 @@
+[MOD] communication
+
+[REQ] contact.submit(ContactDto): ContactResultDto
+    db:rateLimit.take(RateLimitKeyDto): RateLimitDecisionDto
+      rate-limited
+    ex:postmark.send(SendEmailDto): SendEmailResultDto
+      timeout
+    [NEW] contactResult
+    contactResult.toDto(): ContactResultDto
+
+[REQ] email.send(SendEmailDto): SendEmailResultDto
+    ex:postmark.send(SendEmailDto): SendEmailResultDto
+      unauthorized
+      rate-limited
+      timeout
+
+[REQ] conversation.create(CreateConversationDto): ConversationDto
+    db:conversation.save(CreateConversationDto): ConversationDto
+
+[REQ] conversation.list({}): ConversationListDto
+    db:conversation.listByUser(OwnerDto): ConversationListDto
+
+[REQ] conversation.get(GetByIdDto): ConversationDto
+    db:conversation.getOwned(GetByIdDto): ConversationDto
+      not-found
+      forbidden
+
+[REQ] conversation.update(UpdateConversationDto): ConversationDto
+    db:conversation.getOwned(GetByIdDto): ConversationDto
+      not-found
+      forbidden
+    db:conversation.patch(UpdateConversationDto): ConversationDto
+
+[REQ] conversation.remove(GetByIdDto): OkDto
+    db:conversation.getOwned(GetByIdDto): ConversationDto
+      not-found
+      forbidden
+    db:conversation.purge(GetByIdDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] message.create(CreateMessageDto): MessageDto
+    db:conversation.getOwned(ConvRefDto): ConversationDto
+      not-found
+      forbidden
+    db:message.save(CreateMessageDto): MessageDto
+
+[REQ] message.list(MessageListQueryDto): MessageListDto
+    db:conversation.getOwned(ConvRefDto): ConversationDto
+      not-found
+      forbidden
+    db:message.listByConversation(ConvRefDto): MessageListDto
+
+[REQ] message.get(GetByIdDto): MessageDto
+    db:message.get(GetByIdDto): MessageDto
+      not-found
+    db:conversation.getOwned(ConvRefDto): ConversationDto
+      forbidden
+    message.toDto(): MessageDto
+
+[REQ] message.update(UpdateMessageDto): MessageDto
+    db:message.get(GetByIdDto): MessageDto
+      not-found
+    db:conversation.getOwned(ConvRefDto): ConversationDto
+      forbidden
+    db:message.patch(UpdateMessageDto): MessageDto
+
+[REQ] message.remove(GetByIdDto): OkDto
+    db:message.get(GetByIdDto): MessageDto
+      not-found
+    db:conversation.getOwned(ConvRefDto): ConversationDto
+      forbidden
+    db:message.purge(GetByIdDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] notification.list(NotificationQueryDto): NotificationListDto
+    db:notification.listByUser(NotificationQueryDto): NotificationListDto
+
+[REQ] notification.unreadCount({}): UnreadCountDto
+    db:notification.unreadCount(OwnerDto): UnreadCountDto
+
+[REQ] notification.markRead(GetByIdDto): NotificationDto
+    db:notification.markRead(GetByIdDto): NotificationDto
+      not-found
+      forbidden
+
+[REQ] notification.markAllRead({}): MarkAllReadDto
+    db:notification.markAllRead(OwnerDto): MarkAllReadDto
+
+[REQ] notification.remove(GetByIdDto): OkDto
+    db:notification.getOwned(GetByIdDto): NotificationDto
+      not-found
+      forbidden
+    db:notification.purge(GetByIdDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] notifier.handle(DomainEventDto): NotificationDto
+    [NEW] notifier
+    notifier.map(DomainEventDto): NotificationMappingDto
+    db:notification.save(CreateNotificationDto): NotificationDto
+
+[REQ] voice.stream(VoiceStreamQueryDto): TranscriptDto
+    ex:assemblyai.transcribe(VoiceStreamQueryDto): TranscriptDto
+      unauthorized
+      timeout
+
+[ENT] contact.submit(ContactDto): ContactResultDto
+[ENT] email.send(SendEmailDto): SendEmailResultDto
+[ENT] conversations.create(CreateConversationDto): ConversationDto
+[ENT] conversations.list({}): ConversationListDto
+[ENT] conversations.get(GetByIdDto): ConversationDto
+[ENT] conversations.update(UpdateConversationDto): ConversationDto
+[ENT] conversations.remove(GetByIdDto): OkDto
+    [REQ] conversation.remove(GetByIdDto): OkDto
+[ENT] messages.create(CreateMessageDto): MessageDto
+[ENT] messages.list(MessageListQueryDto): MessageListDto
+[ENT] messages.get(GetByIdDto): MessageDto
+[ENT] messages.update(UpdateMessageDto): MessageDto
+[ENT] messages.remove(GetByIdDto): OkDto
+    [REQ] message.remove(GetByIdDto): OkDto
+[ENT] notifications.list(NotificationQueryDto): NotificationListDto
+[ENT] notifications.unreadCount({}): UnreadCountDto
+[ENT] notifications.markRead(GetByIdDto): NotificationDto
+[ENT] notifications.markAllRead({}): MarkAllReadDto
+[ENT] notifications.remove(GetByIdDto): OkDto
+    [REQ] notification.remove(GetByIdDto): OkDto
+[ENT] voice.stream(VoiceStreamQueryDto): TranscriptDto
+
+[TYP:uuid] id: string
+    a unique record identifier
+[TYP:ext] userId: string
+    the authenticated owner id, minted from the session
+[TYP:nonempty] name: string
+    the sender display name on a contact submission
+[TYP:email] email: string
+    a contact email address
+[TYP] subject: string
+    an email or message subject line
+[TYP] content: string
+    freeform message body text
+[TYP] ok: boolean
+    a success flag
+[TYP] reason: string
+    a human-readable failure or status reason
+[TYP:int] retryAfterMs: number
+    milliseconds until the rate-limit window resets
+[TYP] bucket: string
+    the named rate-limit bucket
+[TYP] identifier: string
+    the per-caller key within a rate-limit bucket
+[TYP:int] limit: number
+    a maximum count (per-window cap or list page size)
+[TYP:int] windowMs: number
+    the rate-limit window length in milliseconds
+[TYP] allowed: boolean
+    whether the rate-limiter permitted this attempt
+[TYP:int] resetMs: number
+    milliseconds until the limiter resets
+[TYP] to: string
+    the recipient email address
+[TYP] htmlBody: string
+    the rendered HTML email body
+[TYP] from: string
+    an optional From override address
+[TYP] messageId: string
+    the provider message id for a dispatched email
+[TYP] title: string
+    a conversation or notification title
+[TYP] customerId: string
+    a reference to a CRM customer record
+[TYP] createdAt: string
+    an ISO creation timestamp
+[TYP] updatedAt: string
+    an ISO last-updated timestamp
+[TYP] conversationId: string
+    a reference to the owning conversation
+[TYP] role: string
+    message author role: user, assistant, system
+[TYP] channel: string
+    message channel: text, email, web, phone, in_person
+[TYP] fromAddress: string
+    the originating address for a channel message
+[TYP] toAddress: string
+    the destination address for a channel message
+[TYP] type: string
+    the notification type discriminator
+[TYP] body: string
+    optional notification body text
+[TYP] entityType: string
+    the linked entity kind for deep-linking a notification
+[TYP] entityId: string
+    the linked entity id for deep-linking a notification
+[TYP] read: boolean
+    whether the notification has been read
+[TYP] readAt: string
+    an ISO timestamp of when the notification was read
+[TYP:int] count: number
+    a computed count of notifications
+[TYP] unreadOnly: boolean
+    whether to filter the feed to unread items
+[TYP:int] sampleRate: number
+    the inbound PCM audio sample rate in hertz
+[TYP] transcript: string
+    a streamed transcription text fragment
+[TYP] endOfTurn: boolean
+    whether the transcription turn is finalized
+[TYP] action: string
+    the domain-event action verb
+[TYP] conversation: ConversationDto
+    a nested conversation record
+[TYP] message: MessageDto
+    a nested channel message record
+[TYP] notification: NotificationDto
+    a nested notification record
+
+[DTO] ContactDto: name, email, subject, content
+    a public contact-form submission
+[DTO] ContactResultDto: ok, reason?, retryAfterMs?
+    the result of a contact-form submission
+[DTO] RateLimitKeyDto: bucket, identifier, limit, windowMs
+    a rate-limit lookup key with its window policy
+[DTO] RateLimitDecisionDto: allowed, resetMs
+    the limiter's allow/deny decision
+[DTO] SendEmailDto: to, subject, htmlBody, from?
+    an outbound transactional email request
+[DTO] SendEmailResultDto: ok, messageId?, reason?
+    the result of an email dispatch
+[DTO] CreateConversationDto: title?, customerId?
+    input to open a conversation thread
+[DTO] UpdateConversationDto: id, title?, customerId?
+    a partial conversation patch keyed by id
+[DTO] ConversationDto: id, userId, title?, customerId?, createdAt, updatedAt
+    a persisted conversation thread
+[DTO] ConversationListDto: conversation(s)
+    a list of conversations owned by the user
+[DTO] ConvRefDto: conversationId
+    a conversation ownership-gate reference
+[DTO] CreateMessageDto: conversationId, role, channel, content, subject?, fromAddress?, toAddress?
+    input to append a message to a conversation
+[DTO] UpdateMessageDto: id, role?, channel?, content?, subject?, fromAddress?, toAddress?
+    a partial message patch keyed by id
+[DTO] MessageDto: id, conversationId, role, channel, content, subject?, fromAddress?, toAddress?, createdAt, updatedAt
+    a persisted channel message
+[DTO] MessageListDto: message(s)
+    a list of messages in a conversation
+[DTO] MessageListQueryDto: conversationId
+    a required conversation filter for listing messages
+[DTO] CreateNotificationDto: type, title, body?, entityType?, entityId?
+    input to write a notification record
+[DTO] UpdateNotificationDto: read?, readAt?
+    a partial notification read-state patch
+[DTO] NotificationDto: id, userId, type, title, body?, entityType?, entityId?, read, readAt?, createdAt
+    a persisted per-user notification
+[DTO] NotificationListDto: notification(s)
+    a newest-first page of notifications
+[DTO] NotificationQueryDto: limit?, unreadOnly?
+    paging + unread filter for the notification feed
+[DTO] UnreadCountDto: count
+    the unread notification count for the bell badge
+[DTO] MarkAllReadDto: count
+    how many notifications were marked read
+[DTO] DomainEventDto: userId, entityType, action, entityId?
+    an inbound domain event from the EventBus
+[DTO] NotificationMappingDto: type, title, body?
+    the mapped notification shape for an event
+[DTO] VoiceStreamQueryDto: sampleRate?
+    the voice-stream upgrade query parameters
+[DTO] TranscriptDto: type, transcript?, endOfTurn?
+    a streamed transcription frame
+[DTO] OwnerDto: userId
+    the owning user id wrapper
+[DTO] GetByIdDto: id
+    an id lookup wrapper
+[DTO] OkDto: ok
+    a success acknowledgement body
+
+[NON] contactResult
+    a contact-form submission outcome
+[NON] message
+    a single channel message
+[NON] notifier
+    the event-to-notification mapper
+[NON] ok
+    a success marker

@@ -1,0 +1,5 @@
+{
+  "_name": "Empty — no value: dimmed 0/00, hint, no clear, no active chip",
+  "_note": "initialCents=0 → display empty, cents=null. Shows is-empty (dimmed 0 . 00), the keyboard/touch hint on the words line, no clear button, no active chip. onChange/onSubmit are callbacks → assert in Events.",
+  "initialCents": 0
+}

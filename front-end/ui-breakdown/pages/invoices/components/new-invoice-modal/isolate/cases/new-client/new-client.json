@@ -1,0 +1,15 @@
+{
+  "_name": "New client — clientSel='__new__' reveals inline name/phone/email block (name autoFocus)",
+  "lang": "en",
+  "customers": [
+    { "id": "cust-mg", "userId": "u1", "name": "Maple Grove Apartments" },
+    { "id": "cust-hd", "userId": "u1", "name": "Hilltop Diner" }
+  ],
+  "_signals": {
+    "clientSel": "__new__",
+    "newName": "Rosa Delgado",
+    "newPhone": "(415) 555-0177",
+    "newEmail": "rosa.delgado@gmail.com",
+    "amount": "1450.00"
+  }
+}

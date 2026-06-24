@@ -119,15 +119,6 @@ export class SendSignedConfirmation {
     }
 
     const recipient = customer?.email?.trim();
-    if (!recipient) {
-      console.warn(
-        `[send-signed-confirmation] contract ${contract.id} has no customer email; skipping dispatch`,
-      );
-      return { ok: false, reason: "no_customer_email" };
-    }
-    console.log(
-      `[send-signed-confirmation] dispatching to ${recipient} for contract ${contract.id}`,
-    );
 
     const businessName = ident?.businessName?.trim() ||
       ident?.legalName?.trim() || contractor?.name?.trim();
@@ -136,26 +127,7 @@ export class SendSignedConfirmation {
     // outgoing-comms language (default en), not their UI language.
     const lang: Lang = ident?.commsLanguage === "es" ? "es" : "en";
 
-    // ---- 1. Render PDF
-    let pdfBytes: Uint8Array;
-    try {
-      pdfBytes = await this.renderPdf.run({
-        contract,
-        quote,
-        customer,
-        contractor,
-        ...(businessName ? { businessName } : {}),
-        ...(ident?.commsLanguage ? { commsLanguage: ident.commsLanguage } : {}),
-      });
-    } catch (err) {
-      console.error("[send-signed-confirmation] PDF render failed:", err);
-      return {
-        ok: false,
-        reason: `pdf_render_failed: ${(err as Error).message}`,
-      };
-    }
-
-    // ---- 2. Create the full milestone set (first invoice sent now,
+    // ---- 1. Create the full milestone set (first invoice sent now,
     // remaining ones scheduled for equal-spaced dates over the contract's
     // completion window).
     const total = contract.totalAmount ?? 0;
@@ -209,55 +181,92 @@ export class SendSignedConfirmation {
       }
     }
 
-    // ---- 3. Email customer (PDF attachment + invoice button)
-    const subject = t(lang, "signedConfirm.email.subject", {
-      summary: quote?.summary ?? t(lang, "signedConfirm.fallback.contract"),
-    });
-    const html = renderSignedConfirmationHtml({
-      contract,
-      quote,
-      customer,
-      contractor,
-      businessName,
-      invoiceId,
-      invoiceAmount: milestoneAmounts[0] ?? 0,
-      lang,
-    });
-    const fileName = `Contract-${contract.id.slice(0, 8).toUpperCase()}.pdf`;
-    const sent = await this.email.send({
-      to: recipient,
-      subject,
-      htmlBody: html,
-      attachments: [{
-        name: fileName,
-        content: pdfBytes,
-        contentType: "application/pdf",
-      }],
-    });
-
-    if (sent.ok) {
-      console.log(
-        `[send-signed-confirmation] sent to ${recipient} messageId=${
-          sent.messageId ?? "(dev-mode)"
-        } invoiceId=${invoiceId ?? "(none)"} pdfBytes=${pdfBytes.byteLength}`,
-      );
-      try {
-        await this.contracts.update(contract.id, userId, {
-          // Stamp regardless of attachment delivery; we don't want to
-          // re-send if the email goes through but our store write hiccups.
-          ...({ signedNotifiedAt: new Date().toISOString() } as Partial<
-            Contract
-          >),
-        } as Partial<Contract>);
-      } catch (err) {
-        console.error(
-          "[send-signed-confirmation] failed to stamp signedNotifiedAt:",
-          err,
-        );
-      }
-    } else {
+    // Stamp signedNotifiedAt immediately after creating the invoices — BEFORE
+    // the slower PDF/email/SMS steps — so the top-of-run idempotency guard
+    // closes the duplicate-invoice window as tightly as possible. signContract
+    // flips status and fires run() non-atomically, so a double-tap / retry can
+    // launch two run()s; stamping here means the second sees the stamp and
+    // returns before creating a second milestone set. Best-effort: a failed
+    // stamp only risks a (rare) duplicate on replay, never a missed invoice.
+    try {
+      await this.contracts.update(contract.id, userId, {
+        ...({ signedNotifiedAt: new Date().toISOString() } as Partial<
+          Contract
+        >),
+      } as Partial<Contract>);
+    } catch (err) {
       console.error(
-        `[send-signed-confirmation] dispatch FAILED to ${recipient} reason=${sent.reason}`,
+        "[send-signed-confirmation] failed to stamp signedNotifiedAt:",
+        err,
+      );
+    }
+
+    // ---- 2. Email the customer (PDF attached) — only when there's an email
+    // on file. No email is NOT an error: the invoices above still exist and
+    // the completion SMS below still fires. The PDF is only needed for the
+    // attachment, so render it here (and tolerate a render failure rather than
+    // dropping the whole confirmation).
+    let sent: { ok: boolean; reason?: string; messageId?: string } = {
+      ok: false,
+      reason: "no_customer_email",
+    };
+    if (recipient) {
+      console.log(
+        `[send-signed-confirmation] dispatching to ${recipient} for contract ${contract.id}`,
+      );
+      let pdfBytes: Uint8Array | undefined;
+      try {
+        pdfBytes = await this.renderPdf.run({
+          contract,
+          quote,
+          customer,
+          contractor,
+          ...(businessName ? { businessName } : {}),
+          ...(ident?.commsLanguage
+            ? { commsLanguage: ident.commsLanguage }
+            : {}),
+        });
+      } catch (err) {
+        console.error("[send-signed-confirmation] PDF render failed:", err);
+      }
+      const subject = t(lang, "signedConfirm.email.subject", {
+        summary: quote?.summary ?? t(lang, "signedConfirm.fallback.contract"),
+      });
+      const html = renderSignedConfirmationHtml({
+        contract,
+        quote,
+        customer,
+        contractor,
+        businessName,
+        invoiceId,
+        invoiceAmount: milestoneAmounts[0] ?? 0,
+        lang,
+      });
+      const fileName = `Contract-${contract.id.slice(0, 8).toUpperCase()}.pdf`;
+      sent = await this.email.send({
+        to: recipient,
+        subject,
+        htmlBody: html,
+        ...(pdfBytes
+          ? {
+            attachments: [{
+              name: fileName,
+              content: pdfBytes,
+              contentType: "application/pdf",
+            }],
+          }
+          : {}),
+      });
+      console.log(
+        sent.ok
+          ? `[send-signed-confirmation] sent to ${recipient} messageId=${
+            sent.messageId ?? "(dev-mode)"
+          } invoiceId=${invoiceId ?? "(none)"}`
+          : `[send-signed-confirmation] dispatch FAILED to ${recipient} reason=${sent.reason}`,
+      );
+    } else {
+      console.warn(
+        `[send-signed-confirmation] contract ${contract.id} has no customer email; created ${milestoneAmounts.length} invoice(s), skipping email`,
       );
     }
 
@@ -286,7 +295,7 @@ export class SendSignedConfirmation {
     }
 
     return {
-      ok: sent.ok,
+      ok: sent.ok || !!invoiceId,
       ...(sent.reason ? { reason: sent.reason } : {}),
       ...(sent.messageId ? { messageId: sent.messageId } : {}),
       ...(invoiceId ? { invoiceId } : {}),

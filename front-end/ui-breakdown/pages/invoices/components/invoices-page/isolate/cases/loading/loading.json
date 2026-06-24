@@ -1,0 +1,11 @@
+{
+  "_name": "Loading — skeletons while /invoices + /customers in flight",
+  "lang": "en",
+  "_signals": { "loading": true },
+  "_mocks": {
+    "dashboardClient.invoices": "__never_resolves__",
+    "dashboardClient.customers": "__never_resolves__",
+    "fetch:/api/invoices/forecast/this-week": "__never_resolves__"
+  },
+  "_note": "Renders <ShimmerStyle/> + <PageHeaderSkeleton/> + <CardGridSkeleton rows={2}/> (all SHARED). On-mount Promise.all is pending → loading=true."
+}

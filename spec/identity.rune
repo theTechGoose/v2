@@ -1,0 +1,267 @@
+[MOD] identity
+
+[REQ] auth.send(SendOtpDto): SentDto
+    db:otp.put(SendOtpDto): OtpRecordDto
+    ex:sms.send(SmsSendDto): SmsResultDto
+      timeout
+    [NEW] sent
+    sent.toDto(): SentDto
+
+[REQ] auth.verify(VerifyOtpDto): VerifyResultDto
+    db:otp.get(PhoneLookupDto): OtpRecordDto
+      not-found
+      rate-limited
+      invalid-code
+    db:otp.clear(PhoneLookupDto): void
+    db:user.findByPhone(PhoneLookupDto): UserDto
+    db:user.create(CreateUserDto): UserDto
+    ex:email.send(SignupEmailDto): EmailResultDto
+    db:session.create(OwnerDto): SessionDto
+    [NEW] verified
+    verified.toDto(): VerifyResultDto
+
+[REQ] auth.logout({}): OkDto
+    db:session.purge(SessionRefDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] me.me({}): UserDto
+    db:session.get(SessionRefDto): SessionDto
+      unauthorized
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+
+[REQ] me.update(UpdateUserDto): UserDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:user.patch(UpdateUserDto): UserDto
+
+[REQ] me.closeAccount({}): OkDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:user.purge(OwnerDto): void
+    db:session.purge(SessionRefDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] me.wipe({}): WipeResultDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:kv.sweep(OwnerDto): WipeResultDto
+
+[REQ] admin.search(AdminSearchDto): AdminUserListDto
+    db:user.requireSuperAdmin(SessionRefDto): UserDto
+      unauthorized
+      forbidden
+    db:user.searchByPhone(AdminSearchDto): AdminUserListDto
+
+[REQ] admin.grant(GetByIdDto): AdminUserViewDto
+    db:user.requireSuperAdmin(SessionRefDto): UserDto
+      unauthorized
+      forbidden
+    db:user.setSuperAdmin(GetByIdDto): AdminUserViewDto
+      not-found
+
+[REQ] admin.revoke(GetByIdDto): AdminUserViewDto
+    db:user.requireSuperAdmin(SessionRefDto): UserDto
+      unauthorized
+      forbidden
+    db:user.clearSuperAdmin(GetByIdDto): AdminUserViewDto
+      not-found
+
+[REQ] admin.startImpersonating(GetByIdDto): ImpersonateResultDto
+    db:user.requireSuperAdmin(SessionRefDto): UserDto
+      unauthorized
+      forbidden
+    db:user.get(GetByIdDto): UserDto
+      not-found
+    db:session.createImpersonation(ImpersonationInputDto): SessionDto
+    [NEW] impersonation
+    impersonation.toDto(): ImpersonateResultDto
+
+[REQ] admin.stopImpersonating({}): ImpersonateResultDto
+    db:session.get(SessionRefDto): SessionDto
+      unauthorized
+      not-impersonating
+    db:session.create(OwnerDto): SessionDto
+    db:session.purge(SessionRefDto): void
+    [NEW] impersonation
+    impersonation.toDto(): ImpersonateResultDto
+
+[REQ] admin.whoami({}): WhoamiDto
+    db:session.get(SessionRefDto): SessionDto
+    db:user.get(OwnerDto): UserDto
+    [NEW] whoami
+    whoami.toDto(): WhoamiDto
+
+[REQ] admin.bootstrapSuperAdmin(BootstrapDto): BootstrapResultDto
+    db:user.findByPhone(PhoneLookupDto): UserDto
+      not-found
+      forbidden
+    db:user.setSuperAdmin(GetByIdDto): AdminUserViewDto
+    [NEW] bootstrap
+    bootstrap.toDto(): BootstrapResultDto
+
+[ENT] auth.send(SendOtpDto): SentDto
+[ENT] auth.verify(VerifyOtpDto): VerifyResultDto
+[ENT] auth.logout({}): OkDto
+    [REQ] auth.logout({}): OkDto
+[ENT] me.me({}): UserDto
+[ENT] me.update(UpdateUserDto): UserDto
+[ENT] me.closeAccount({}): OkDto
+    [REQ] me.closeAccount({}): OkDto
+[ENT] me.wipe({}): WipeResultDto
+[ENT] admin.search(AdminSearchDto): AdminUserListDto
+[ENT] admin.grant(GetByIdDto): AdminUserViewDto
+    [REQ] admin.grant(GetByIdDto): AdminUserViewDto
+[ENT] admin.revoke(GetByIdDto): AdminUserViewDto
+    [REQ] admin.revoke(GetByIdDto): AdminUserViewDto
+[ENT] admin.startImpersonating(GetByIdDto): ImpersonateResultDto
+[ENT] admin.stopImpersonating({}): ImpersonateResultDto
+[ENT] admin.whoami({}): WhoamiDto
+[ENT] admin.bootstrapSuperAdmin(BootstrapDto): BootstrapResultDto
+
+[TYP:uuid] id: string
+    a unique record identifier
+[TYP:ext] userId: string
+    the authenticated owner id, resolved from the session
+[TYP:ext] sessionId: string
+    an opaque session token id
+[TYP] phoneNumber: string
+    a phone number in E.164 or loose form
+[TYP] name: string
+    a person or display name
+[TYP:email] email: string
+    a contact email address
+[TYP] language: string
+    UI language code: en or es
+[TYP] superAdmin: boolean
+    whether the user holds the platform super-admin flag
+[TYP] createdAt: string
+    an ISO creation timestamp
+[TYP] updatedAt: string
+    an ISO last-updated timestamp
+[TYP] code: string
+    a 6-digit one-time passcode
+[TYP:int] attempts: number
+    the number of verification attempts on an OTP record
+[TYP] sent: boolean
+    whether the OTP SMS dispatch was accepted
+[TYP] isNewUser: boolean
+    whether verification created a brand-new user
+[TYP] to: string
+    a destination phone number or email
+[TYP] body: string
+    an SMS message body
+[TYP] sid: string
+    a Twilio message SID
+[TYP] reason: string
+    a failure reason string
+[TYP] subject: string
+    an email subject line
+[TYP] htmlBody: string
+    an HTML email body
+[TYP] ok: boolean
+    a success flag
+[TYP:int] deleted: number
+    the count of KV entries deleted by a wipe
+[TYP] q: string
+    a partial phone-number search query
+[TYP] businessName: string
+    the contractor's business name
+[TYP] adminUser: AdminUserViewDto
+    a nested admin-facing user projection
+[TYP] impersonator: AdminUserViewDto
+    the real super-admin behind an impersonation session
+[TYP] targetUserId: string
+    the user id being impersonated
+[TYP] impersonatorId: string
+    the real super-admin user id behind an impersonation
+[TYP] returnSessionId: string
+    the super-admin session to return to on stop
+[TYP] token: string
+    the bootstrap gate token
+[TYP] authenticated: boolean
+    whether the current session resolves to a user
+[TYP] impersonating: boolean
+    whether the current session is an impersonation session
+
+[DTO] SendOtpDto: phoneNumber, language?
+    input to request an OTP SMS
+[DTO] VerifyOtpDto: phoneNumber, code
+    input to verify an OTP code
+[DTO] SentDto: sent
+    the fire-and-respond OTP send acknowledgement
+[DTO] VerifyResultDto: sessionId, userId, isNewUser
+    the result of a successful OTP verification
+[DTO] OkDto: ok
+    a generic success body
+[DTO] WipeResultDto: ok, deleted
+    the result of an account wipe sweep
+[DTO] OtpRecordDto: phoneNumber, code, language?, attempts
+    a persisted short-lived OTP record
+[DTO] SmsSendDto: to, body
+    input to the Twilio SMS dispatch boundary
+[DTO] SmsResultDto: ok, sid?, reason?
+    the result of an SMS dispatch
+[DTO] SignupEmailDto: to, subject, htmlBody
+    input to the new-signup notification email
+[DTO] EmailResultDto: ok, reason?
+    the result of an email dispatch
+[DTO] PhoneLookupDto: phoneNumber
+    a phone-number lookup wrapper
+[DTO] CreateUserDto: phoneNumber, language?, name?
+    input to find-or-create a user on verify
+[DTO] UserDto: id, phoneNumber, name?, email?, language?, superAdmin?, createdAt, updatedAt
+    a persisted user record
+[DTO] UpdateUserDto: name?, email?, language?
+    a partial user patch from PUT /me
+[DTO] OwnerDto: userId
+    the owning user id wrapper
+[DTO] SessionRefDto: sessionId
+    a session id wrapper read from cookie or header
+[DTO] GetByIdDto: id
+    an id lookup wrapper
+[DTO] SessionDto: id, userId, impersonatorId?, returnSessionId?, createdAt
+    a persisted session record
+[DTO] AdminSearchDto: q?
+    a partial-phone admin search query
+[DTO] AdminUserViewDto: id, name?, phoneNumber, businessName?, superAdmin
+    the admin-facing user table projection
+[DTO] AdminUserListDto: adminUser(s)
+    a list of admin user projections
+[DTO] ImpersonationInputDto: targetUserId, impersonatorId, returnSessionId
+    input to mint an impersonation session
+[DTO] ImpersonateResultDto: ok, sessionId, adminUser
+    the result of starting or stopping impersonation
+[DTO] WhoamiDto: authenticated, adminUser?, superAdmin?, impersonating?, impersonator?
+    the current session context for the browser
+[DTO] BootstrapDto: phoneNumber, token?
+    input to the cold-start super-admin bootstrap
+[DTO] BootstrapResultDto: ok, adminUser
+    the result of a super-admin bootstrap
+
+[NON] otp
+    short-lived OTP records keyed by phone
+[NON] sms
+    the Twilio SMS dispatch adapter
+[NON] email
+    the new-signup notification email adapter
+[NON] user
+    the canonical user record store
+[NON] session
+    the opaque session token store
+[NON] kv
+    the whole-keyspace wipe sweeper
+[NON] ok
+    a success marker
+[NON] sent
+    an OTP send acknowledgement
+[NON] verified
+    a verified-session marker
+[NON] impersonation
+    an impersonation start/stop result
+[NON] whoami
+    a session-context result
+[NON] bootstrap
+    a super-admin bootstrap result

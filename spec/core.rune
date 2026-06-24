@@ -1,0 +1,178 @@
+[MOD] core
+
+[REQ] relativeTime.format(RelativeTimeRequestDto): RelativeTimeDto
+    [NEW] relativeTime
+    relativeTime.bucketAge(iso): relativeTime
+    relativeTime.toDto(): RelativeTimeDto
+
+[REQ] sparkline.build(SparklineRequestDto): SparklineDto
+    [NEW] sparkline
+    sparkline.bucketBy12Months(revenueRow): sparkline
+    sparkline.rollup(now): sparkline
+    sparkline.toDto(): SparklineDto
+
+[REQ] i18n.translate(TranslateRequestDto): TranslatedDto
+    [NEW] i18n
+    i18n.resolve(key): i18n
+    i18n.interpolate(vars): i18n
+    i18n.toDto(): TranslatedDto
+
+[REQ] events.emit(DomainEventDto): EventAckDto
+    [NEW] event
+    event.stamp(timestamp): event
+    mq:events.publish(DomainEventDto): EventAckDto
+
+[REQ] rateLimit.take(RateLimitTakeDto): RateLimitDecisionDto
+    db:rate.read(RateLimitKeyDto): RateLimitDecisionDto
+    db:rate.bump(RateLimitTakeDto): RateLimitDecisionDto
+      rate-limited
+
+[REQ] record.get(GetByIdDto): StoredEntityDto
+    db:record.get(GetByIdDto): StoredEntityDto
+      not-found
+      forbidden
+
+[REQ] transcription.transcribe(TranscriptionRequestDto): TranscriptionResponseDto
+    [PLY] transcription.run(TranscriptionRequestDto): TranscriptionResponseDto
+        [CSE] openai
+            ex:openai.transcribe(TranscriptionRequestDto): TranscriptionResponseDto
+              timeout
+        [CSE] stub
+            stub.echo(text): TranscriptionResponseDto
+
+[TYP:uuid] id: string
+    a unique record identifier
+[TYP:ext] userId: string
+    the authenticated owner id, minted from the session
+[TYP] createdAt: string
+    an ISO creation timestamp
+[TYP] updatedAt: string
+    an ISO last-updated timestamp
+[TYP] iso: string
+    an ISO timestamp to render relative to now
+[TYP] now: string
+    a reference clock ISO timestamp
+[TYP] label: string
+    a humanized relative-time label, e.g. "3 days ago"
+[TYP] paidAt: string
+    the ISO date an invoice was paid
+[TYP:int] amountCents: number
+    a non-negative invoice amount in cents
+[TYP] revenueRow: RevenueRowDto
+    a single paid-invoice revenue row
+[TYP:int] bucket: number
+    one month's revenue total in cents
+[TYP:int] ytd: number
+    year-to-date revenue in cents
+[TYP:int] lastMonth: number
+    the previous calendar month's revenue in cents
+[TYP:int] momPct: number
+    month-over-month percentage change
+[TYP] lang: string
+    a BCP-47 language code: en or es
+[TYP] key: string
+    a dotted i18n string key
+[TYP] vars: string
+    a JSON map of placeholder values to interpolate
+[TYP] text: string
+    a plain-text string
+[TYP] entityType: string
+    the changed entity kind: quote, invoice, customer, payment, etc.
+[TYP] entityId: string
+    the id of the changed record
+[TYP] action: string
+    the event verb, e.g. sent, accepted, paid
+[TYP] data: string
+    a JSON structured payload for richer notifications
+[TYP] timestamp: string
+    an ISO timestamp set by emit when absent
+[TYP] ok: boolean
+    a success flag
+[TYP:int] delivered: number
+    the count of listeners the event reached
+[TYP] scope: string
+    a rate-limit bucket scope prefix
+[TYP:int] max: number
+    the maximum takes allowed in the window
+[TYP:int] windowMs: number
+    the window length in milliseconds
+[TYP] allowed: boolean
+    whether this take was permitted
+[TYP:int] remaining: number
+    takes remaining in the current window
+[TYP:int] resetMs: number
+    milliseconds until the window resets
+[TYP] audio: Uint8Array
+    raw audio bytes to transcribe
+[TYP:url] audioUrl: string
+    a public URL the vendor can fetch the audio from
+[TYP] mimeType: string
+    the audio MIME type hint
+[TYP] language: string
+    the detected or echoed BCP-47 language code
+[TYP] durationSec: number
+    audio duration in seconds when reported
+[TYP] word: TranscriptionWordDto
+    a per-word timing entry
+[TYP:int] startMs: number
+    the word start offset in milliseconds
+[TYP:int] endMs: number
+    the word end offset in milliseconds
+[TYP] confidence: number
+    the per-word confidence score
+
+[DTO] RelativeTimeRequestDto: iso?, now?
+    input to format an ISO timestamp relative to now
+[DTO] RelativeTimeDto: label
+    a rendered relative-time label
+[DTO] RevenueRowDto: paidAt, amountCents
+    a paid-invoice row consumed by the sparkline builder
+[DTO] SparklineRequestDto: revenueRow(s), now?
+    a series of paid-invoice rows to bucket
+[DTO] SparklineDto: bucket(s), ytd, lastMonth, momPct
+    a 12-month revenue series plus rollups
+[DTO] TranslateRequestDto: lang, key, vars?
+    input to resolve and interpolate an i18n string
+[DTO] TranslatedDto: text
+    a resolved, interpolated translation
+[DTO] DomainEventDto: userId, entityType, entityId, action, data?, timestamp?
+    a domain event carried by the in-process event bus
+[DTO] EventAckDto: ok, delivered
+    an acknowledgement of a fanned-out event
+[DTO] RateLimitTakeDto: scope, key, max, windowMs
+    input to consume one token from a rate-limit bucket
+[DTO] RateLimitKeyDto: scope, key
+    a rate-limit bucket lookup key
+[DTO] RateLimitDecisionDto: allowed, remaining, resetMs
+    the outcome of a rate-limit take
+[DTO] GetByIdDto: id
+    an id lookup wrapper
+[DTO] StoredEntityDto: id, createdAt, updatedAt
+    a persisted KV record base shape
+[DTO] TranscriptionRequestDto: userId, audio?, audioUrl?, mimeType?, language?
+    input to transcribe audio to text
+[DTO] TranscriptionWordDto: text, startMs, endMs, confidence?
+    a single timed word in a transcript
+[DTO] TranscriptionResponseDto: text, language?, durationSec?, word(s)?
+    a transcript plus optional language, duration, and word timings
+
+[NON] relativeTime
+    a relative-time formatter
+[NON] sparkline
+    a monthly revenue series builder
+[NON] i18n
+    a translation resolver
+[NON] event
+    a single domain event
+[NON] events
+    the in-process event bus
+[NON] rate
+    a rate-limit counter bucket
+[NON] record
+    a persisted KV entity
+[NON] transcription
+    a speech-to-text client
+[NON] openai
+    the OpenAI Whisper transcription vendor
+[NON] stub
+    a deterministic stub transcription vendor

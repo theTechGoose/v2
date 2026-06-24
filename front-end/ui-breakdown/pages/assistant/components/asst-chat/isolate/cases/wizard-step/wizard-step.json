@@ -1,0 +1,28 @@
+{
+  "_name": "Wizard step — config question + option buttons",
+  "_note": "kind=wizard, payload.stepId='config' (NOT 'customer', which renders its own panel) → .wiz with the question and clickable option buttons. Composer HIDDEN (unanswered wizard).",
+  "conversationId": "t2",
+  "userInitials": "ML",
+  "initialContract": { "id": "ct_2", "status": "draft" },
+  "initialMessages": [
+    {
+      "id": "w1",
+      "conversationId": "t2",
+      "role": "assistant",
+      "kind": "wizard",
+      "content": "What kind of job is this?",
+      "createdAt": 1750247900000,
+      "payload": {
+        "stepId": "config",
+        "stepIdx": 0,
+        "hint": "This sets the default contract language.",
+        "options": [
+          { "id": "residential", "label": "Residential", "sub": "Homeowner project" },
+          { "id": "commercial", "label": "Commercial", "sub": "Business / property mgmt" },
+          { "id": "blank", "label": "Start blank", "sub": "No preset terms" }
+        ]
+      }
+    }
+  ],
+  "sendLanguages": ["en"]
+}

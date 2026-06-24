@@ -1,0 +1,5 @@
+{
+  "_name": "Value — a typed amount ($1,250.00)",
+  "_note": "initialCents=125000 → display '1,250.00', cents=125000. has-value: odometer shows the number, clear button (✕) visible, words line reads 'one thousand two hundred fifty dollars', magnitude bar filled to the log-scale position. No preset chip matches 125000, so no chip is active.",
+  "initialCents": 125000
+}

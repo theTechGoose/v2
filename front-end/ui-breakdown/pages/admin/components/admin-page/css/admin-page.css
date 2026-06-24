@@ -1,0 +1,171 @@
+/* ============================================================
+   AdminPage — extracted INLINE-style literals.
+   The island uses ZERO stylesheet classes; every wrapper, card, input, button,
+   table and badge is an inline `style="…"` string (a handful hoisted to module
+   consts: wrap, card, inputStyle, btnPrimary, btnSecondary, btnDanger).
+   Reproduced here as ready-to-use rules so the console can be rebuilt without
+   re-deriving the literals. Off the Sabor semantic class system on purpose —
+   internal operator tool — but it DOES read the tokens (--border, --fg,
+   --fg-muted, --brand-green) with hard-coded hex fallbacks.
+   ============================================================ */
+
+/* ---- wrap const (page container) ---- */
+.admin-wrap {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 8px 4px 48px;
+}
+
+/* ---- card const (search card + table card) ---- */
+.admin-card {
+  background: #fff;
+  border: 1px solid var(--border, #e2e6dd);
+  border-radius: 14px;
+  padding: 18px;
+  margin-bottom: 18px;
+}
+
+/* ---- page heading block ---- */
+.admin-head { margin: 6px 4px 18px; }
+.admin-head__title {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--fg);
+}
+.admin-head__sub {
+  margin: 0;
+  color: var(--fg-muted, #6b7560);
+  font-size: 13.5px;
+}
+
+/* ---- inputStyle const (search box) ---- */
+.admin-input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--border, #d8dcd5);
+  border-radius: 9px;
+  font: inherit;
+  font-size: 14px;
+  background: #fff;
+  color: var(--fg);
+}
+
+/* ---- buttons ---- */
+.admin-btn-primary {
+  padding: 9px 16px;
+  border-radius: 9px;
+  border: 0;
+  background: var(--brand-green, #519843);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.admin-btn-secondary {
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #d8dcd5);
+  background: #fff;
+  color: var(--fg);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.admin-btn-danger {                /* Revoke (super-admin → off) */
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid #e3b7b7;
+  background: #fff;
+  color: #a83b3b;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---- error alert (role="alert") ---- */
+.admin-alert {
+  background: #fdecec;
+  border: 1px solid #e3b7b7;
+  color: #a83b3b;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 13.5px;
+}
+
+/* ---- impersonate quick-select row ---- */
+.admin-impersonate-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border, #eef1ea);
+}
+.admin-impersonate-row__label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-muted, #6b7560);
+}
+.admin-impersonate-row__select {
+  flex: 1;
+  min-width: 180px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #d8dcd5);
+  border-radius: 9px;
+  font: inherit;
+  font-size: 13.5px;
+  background: #fff;
+  color: var(--fg);
+}
+
+/* ---- users table ---- */
+.admin-table-scroll { overflow-x: auto; }
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.admin-table thead tr {
+  text-align: left;
+  color: var(--fg-muted, #6b7560);
+  font-size: 11.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.admin-table th { padding: 8px 10px; }
+.admin-table tbody tr { border-top: 1px solid var(--border, #eef1ea); }
+.admin-table td { padding: 10px; }
+.admin-table td--name { font-weight: 600; }
+.admin-table td--phone { font-variant-numeric: tabular-nums; }
+.admin-table td--biz { color: var(--fg-muted, #6b7560); }
+.admin-table td--actions { text-align: right; white-space: nowrap; }
+
+/* ---- super-admin badge ---- */
+.admin-badge-yes {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e7f3e3;
+  color: #2f6d29;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.admin-badge-no { color: var(--fg-muted, #9aa394); }
+
+/* ---- loading / empty states ---- */
+.admin-state {
+  text-align: center;
+  color: var(--fg-muted, #9aa394);
+  font-size: 13.5px;
+  padding: 24px;
+}

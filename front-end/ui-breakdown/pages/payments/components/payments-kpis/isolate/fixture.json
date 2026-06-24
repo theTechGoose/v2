@@ -1,0 +1,15 @@
+{
+  "category": "payments",
+  "folder": "payments-kpis",
+  "controls": {
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] },
+    "landedCount": { "type": "number", "value": 4 },
+    "monthTotal": { "type": "number", "value": 1591000 },
+    "transitCount": { "type": "number", "value": 2 },
+    "transitTotal": { "type": "number", "value": 525000 },
+    "attentionCount": { "type": "number", "value": 0 },
+    "attentionTotal": { "type": "number", "value": 0 },
+    "avgDays": { "type": "number", "value": 6 }
+  },
+  "_note": "Money INTEGER CENTS (monthTotal 1591000 → \"$15,910\", transitTotal 525000 → \"$5,250\"). attentionCount/attentionTotal default 0 because the page never produces the attention status. avgDays is days (not cents)."
+}

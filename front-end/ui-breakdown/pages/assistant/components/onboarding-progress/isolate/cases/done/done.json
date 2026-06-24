@@ -1,0 +1,5 @@
+{
+  "_name": "Done — 4/4 green check + confetti (then fades out ~4.5s)",
+  "initialStep": 4,
+  "_note": "On mount, done=true fires confetti (suppressed under reduced-motion) and schedules setHidden(true) after ~4.5s → component unmounts. Capture immediately."
+}

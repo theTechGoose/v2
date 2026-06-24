@@ -1,0 +1,15 @@
+{
+  "category": "invoices",
+  "folder": "new-invoice-modal",
+  "controls": {
+    "customers": {
+      "type": "json",
+      "value": [
+        { "id": "cust-mg", "userId": "u1", "name": "Maple Grove Apartments" },
+        { "id": "cust-hd", "userId": "u1", "name": "Hilltop Diner" },
+        { "id": "cust-ml", "userId": "u1", "name": "Marcus Lin" }
+      ]
+    },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

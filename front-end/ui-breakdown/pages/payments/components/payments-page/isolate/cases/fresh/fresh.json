@@ -1,0 +1,13 @@
+{
+  "_name": "Fresh — 0 payments → fresh hero (\"Nothing's landed yet — let's change that.\") + empty side widgets + Landed-track hint",
+  "lang": "en",
+  "_signals": {
+    "langSignal": "en"
+  },
+  "_mocks": {
+    "paymentsClient.list": { "value": [] },
+    "dashboardClient.invoices": { "value": [] },
+    "dashboardClient.customers": { "value": [] }
+  },
+  "_note": "monthTotal=transitTotal=attentionCount=0 ⇒ PaymentsHero `fresh` branch (smaller clamped title, pink <em>, freshSub copy, both CTAs still link to /assistant?seed=…). KPIs all read $0 / — (avgDays=0 → \"—\" + noHistory). Only the Just-landed track renders (attention/transit hidden), showing `paymentsPage.track.landedEmpty`. Side rail: PSideFlow.subEmpty + flow.empty, PSideTopPayors.empty, PSideMix.empty, PSideTip (static)."
+}

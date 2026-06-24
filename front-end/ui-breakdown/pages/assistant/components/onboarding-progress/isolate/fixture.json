@@ -1,0 +1,7 @@
+{
+  "category": "assistant",
+  "folder": "onboarding-progress",
+  "controls": {
+    "initialStep": { "type": "select", "value": 2, "options": [0, 1, 2, 3, 4] }
+  }
+}

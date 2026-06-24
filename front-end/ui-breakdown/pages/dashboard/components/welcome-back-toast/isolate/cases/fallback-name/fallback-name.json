@@ -1,0 +1,8 @@
+{
+  "_name": "Fallback name — ?welcome=back + nameless /api/me → \"Welcome back, friend.\"",
+  "_signals": { "lang": "en", "show": true, "name": "" },
+  "_mocks": {
+    "_url": "/dashboard?welcome=back",
+    "GET /api/me": { "name": "" }
+  }
+}

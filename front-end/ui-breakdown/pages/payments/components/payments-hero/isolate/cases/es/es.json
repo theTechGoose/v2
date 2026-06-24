@@ -1,0 +1,12 @@
+{
+  "_name": "Spanish — lang=es flips eyebrow/title-tail/sub/CTAs to ES strings",
+  "lang": "es",
+  "monthTotal": 1591000,
+  "transitTotal": 525000,
+  "attentionCount": 0,
+  "stubs": [
+    { "id": "pay_8a1f20c4", "method": "zelle", "initials": "MD", "client": "Maria Delgado", "whenLabel": "Hoy", "invoiceRef": "INV-3C91AB", "amount": 482000 },
+    { "id": "pay_2bb1043f", "method": "check", "initials": "TB", "client": "Tom Becker", "whenLabel": "hace 8d", "invoiceRef": "INV-AA19FF", "amount": 920000 }
+  ],
+  "_note": "All paymentsPage.* keys resolve via es.json (tFor(lang,…)). The amount number formatting (fmtMoney) stays en-US locale — only the surrounding copy localizes. whenLabel here is pre-localized by the parent (whenLabel() uses tFor(lang,…))."
+}

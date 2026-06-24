@@ -1,0 +1,18 @@
+{
+  "category": "payments",
+  "folder": "payment-side-rail",
+  "controls": {
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] },
+    "landedAmounts": { "type": "object", "value": [482000, 125000, 920000, 64000] },
+    "landed": {
+      "type": "object",
+      "value": [
+        { "id": "pay_8a1f20c4", "client": "Maria Delgado", "method": "zelle", "amount": 482000 },
+        { "id": "pay_5d77e9b2", "client": "Greenfield HOA", "method": "cash", "amount": 125000 },
+        { "id": "pay_2bb1043f", "client": "Tom Becker", "method": "check", "amount": 920000 },
+        { "id": "pay_9f3c7d10", "client": "Lopez Property Mgmt", "method": "card", "amount": 64000 }
+      ]
+    }
+  },
+  "_note": "Renders all four widgets. landedAmounts (CENTS) feeds PSideFlow (bucketed by index, NOT receivedAt). `landed` (EnrichedPayment subset: client/method/amount) feeds PSideTopPayors (tally by client) + PSideMix (tally by method). PSideTip reads lang only. Sum 1591000 → \"$15,910\". HAZARD: PSideTopPayors inner classes are undefined in CSS → renders unstyled."
+}

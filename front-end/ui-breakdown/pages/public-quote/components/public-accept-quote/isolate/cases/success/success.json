@@ -1,0 +1,8 @@
+{
+  "_name": "Success — ✓ Quote accepted, named follow-up",
+  "quoteId": "a1b2c3d4-1111-2222-3333-444455556666",
+  "contractorFirstName": "Marcus",
+  "initialAccepted": true,
+  "lang": "en",
+  "_signals": { "name": "Jane Doe", "submitting": false, "status": "ok" }
+}

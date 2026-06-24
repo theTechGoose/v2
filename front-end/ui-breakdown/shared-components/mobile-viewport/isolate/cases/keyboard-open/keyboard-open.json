@@ -1,0 +1,13 @@
+{
+  "_name": "iOS keyboard open — overlap drives vars",
+  "_mocks": {
+    "visualViewport": { "height": 410, "offsetTop": 124 },
+    "innerHeight": 844
+  },
+  "_expect": {
+    "--app-vh": "410px",
+    "--kb-inset": "434px",
+    "--vvh": "410px",
+    "--vvt": "124px"
+  }
+}

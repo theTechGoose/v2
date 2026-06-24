@@ -1,0 +1,68 @@
+/* ============================================================================
+   InvoicesPage — the page-island's OWN layout chrome. The hero/KPI/card/track
+   visuals live in their sub-component CSS files (invoices-hero.css,
+   invoices-kpis.css, invoice-card.css) and in QuoteTrack[shared]; what belongs
+   to the page wrapper itself is the `.qlay` grid + the `.qpage-error` branch.
+
+   Ported verbatim from static/quotes.css (the invoices route loads
+   /dashboard.css + /quotes.css — there is NO invoices.css). Tokens come from
+   /dashboard.css.
+   ============================================================================ */
+
+/* The single-column layout the island wraps its 6 tracks in.
+   Source markup: <div class="qlay"><div> …tracks… </div></div>.
+   NOTE the right rail (320px) is defined in the base rule but the invoices
+   island never renders a `.qside`, so on wide screens the second column is an
+   empty 320px gutter — a real layout quirk to flag (Quotes uses the rail; the
+   Invoices page copied the grid but dropped the rail). */
+.qlay {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 22px;
+  align-items: flex-start;
+}
+
+@media (max-width: 1200px) {
+  .qlay {
+    grid-template-columns: 1fr;
+  }
+  .qph {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .qkpi {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .qcards {
+    grid-template-columns: 1fr;
+  }
+  .qkpi {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   .qpage-error — the error branch ( {tFor("invoicesPage.loadError")} {msg} ).
+   HAZARD: there is NO CSS rule for `.qpage-error` anywhere in quotes.css or
+   dashboard.css. The class is dead — the error renders as an unstyled default
+   <div> of body text, with no color/spacing/role="alert". This is the same
+   gap flagged on quotes-page (.qpage-error) and clients-page (.cpage-error).
+
+   The block below is the REBUILD PROPOSAL (not present in source) so the error
+   state is styled + announced. Delete the "proposal" note when adopting.
+   ---------------------------------------------------------------------------- */
+.qpage-error {
+  /* PROPOSAL — source ships nothing; this makes the failure visible + a11y-ok */
+  margin: 22px 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--danger-bg, #fff1f1);
+  border: 1px solid rgba(224, 49, 49, 0.24);
+  color: var(--danger, #e03131);
+  font-family: var(--font-body);
+  font-size: 14px;
+  /* pair with role="alert" in the markup on rebuild */
+}

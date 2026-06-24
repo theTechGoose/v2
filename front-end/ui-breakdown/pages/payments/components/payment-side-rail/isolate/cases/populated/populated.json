@@ -1,0 +1,12 @@
+{
+  "_name": "Populated — sparkline (this week $X), 4 payor bars (UNSTYLED), method-mix bar+legend, tip",
+  "lang": "en",
+  "landedAmounts": [482000, 125000, 920000, 64000],
+  "landed": [
+    { "id": "pay_8a1f20c4", "client": "Maria Delgado", "method": "zelle", "amount": 482000 },
+    { "id": "pay_5d77e9b2", "client": "Greenfield HOA", "method": "cash", "amount": 125000 },
+    { "id": "pay_2bb1043f", "client": "Tom Becker", "method": "check", "amount": 920000 },
+    { "id": "pay_9f3c7d10", "client": "Lopez Property Mgmt", "method": "card", "amount": 64000 }
+  ],
+  "_note": "PSideFlow: weeks bucketed by index → \"this week\" = weeks[11] (the i=0 amount, 482000). PSideTopPayors: Tom Becker top ($9,200) → bars scale to him; renders UNSTYLED (undefined .qside__* classes). PSideMix: 4 methods (zelle/cash/check/card) → stacked bar + 2-col legend. PSideTip: static teal card."
+}

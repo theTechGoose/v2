@@ -1,0 +1,7 @@
+{
+  "_name": "Idle — empty name, button disabled (#7a9a73) + hint",
+  "quoteId": "a1b2c3d4-1111-2222-3333-444455556666",
+  "contractorFirstName": "Marcus",
+  "lang": "en",
+  "_signals": { "name": "", "submitting": false, "status": "idle" }
+}

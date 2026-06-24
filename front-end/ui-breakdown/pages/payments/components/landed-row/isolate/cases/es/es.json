@@ -1,0 +1,22 @@
+{
+  "_name": "Spanish — method label + relative when label localize via es.json",
+  "lang": "es",
+  "p": {
+    "id": "pay_2bb1043f",
+    "userId": "usr_01",
+    "invoiceId": "inv_aa19ff2c8e30",
+    "amount": 920000,
+    "method": "check",
+    "receivedAt": "2026-06-10T09:30:00Z",
+    "createdAt": "2026-06-10T09:31:00Z",
+    "updatedAt": "2026-06-10T09:31:00Z",
+    "client": "Tom Becker",
+    "initials": "TB",
+    "invoiceRef": "INV-AA19FF",
+    "daysAgo": 8,
+    "whenLabel": "hace 8d",
+    "note": "Cheque de Tom, depositado por móvil.",
+    "status": "landed"
+  },
+  "_note": "lang=es → methodLabel(es,'check') resolves the ES paymentMethod.check; whenLabel is pre-localized by the parent (paymentsPage.when.daysAgo es). invoiceRef + fmtMoney unchanged."
+}

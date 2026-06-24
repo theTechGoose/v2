@@ -1,0 +1,6 @@
+/* PaymentsKpis reuses the `.qkpi` strip block (static/quotes.css) — verbatim
+   in ../../../../invoices/css/invoices.css / quotes.css: .qkpi / .qkpi__cell /
+   .qkpi__cell--accent / .qkpi__lbl / .qkpi__val / .qkpi__sub. Here the accent
+   (pink-gradient) cell is the *In transit* cell (always accent, unlike
+   InvoicesKpis where accent is conditional on overdueCount). No component-local
+   CSS. Tokens from dashboard.css. */

@@ -1,0 +1,10 @@
+{
+  "category": "shared-components",
+  "folder": "dash-topbar",
+  "controls": {
+    "greetingName": { "type": "text", "value": "Raphael" },
+    "greetingOverride": { "type": "text", "value": "" },
+    "initialUnread": { "type": "number", "value": 0 },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

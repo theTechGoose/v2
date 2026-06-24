@@ -1,0 +1,214 @@
+[MOD] crm
+
+[REQ] customer.create(CreateCustomerDto): CustomerDto
+    db:customer.save(CreateCustomerDto): CustomerDto
+
+[REQ] customer.list({}): CustomerListDto
+    db:customer.listByUser(OwnerDto): CustomerListDto
+
+[REQ] customer.get(GetByIdDto): CustomerDto
+    db:customer.getOwned(GetByIdDto): CustomerDto
+      not-found
+      forbidden
+
+[REQ] customer.update(UpdateCustomerDto): CustomerDto
+    db:customer.getOwned(GetByIdDto): CustomerDto
+      not-found
+      forbidden
+    db:customer.patch(UpdateCustomerDto): CustomerDto
+
+[REQ] customer.remove(GetByIdDto): OkDto
+    db:customer.getOwned(GetByIdDto): CustomerDto
+      not-found
+      forbidden
+    db:customer.purge(GetByIdDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] account.create(CreateAccountDto): AccountDto
+    db:account.save(CreateAccountDto): AccountDto
+
+[REQ] account.list({}): AccountListDto
+    db:account.listByUser(OwnerDto): AccountListDto
+
+[REQ] account.get(GetByIdDto): AccountDto
+    db:account.getOwned(GetByIdDto): AccountDto
+      not-found
+      forbidden
+
+[REQ] account.standing(GetByIdDto): AccountStandingDto
+    db:account.getOwned(GetByIdDto): AccountDto
+      not-found
+      forbidden
+    db:entry.listByAccount(AccountRefDto): EntryListDto
+    [NEW] standing
+    standing.fromEntries(account): AccountStandingDto
+
+[REQ] account.update(UpdateAccountDto): AccountDto
+    db:account.getOwned(GetByIdDto): AccountDto
+      not-found
+      forbidden
+    db:account.patch(UpdateAccountDto): AccountDto
+
+[REQ] account.remove(GetByIdDto): OkDto
+    db:account.getOwned(GetByIdDto): AccountDto
+      not-found
+      forbidden
+    db:account.purge(GetByIdDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] entry.create(CreateEntryDto): EntryDto
+    [NEW] entry
+    entry.validate(amount): entry
+      invalid-amount
+    db:entry.save(CreateEntryDto): EntryDto
+
+[REQ] entry.list({}): EntryListDto
+    db:entry.listByUser(OwnerDto): EntryListDto
+
+[REQ] entry.get(GetByIdDto): EntryDto
+    db:entry.getOwned(GetByIdDto): EntryDto
+      not-found
+      forbidden
+
+[REQ] entry.update(UpdateEntryDto): EntryDto
+    db:entry.getOwned(GetByIdDto): EntryDto
+      not-found
+      forbidden
+    db:entry.patch(UpdateEntryDto): EntryDto
+
+[REQ] entry.remove(GetByIdDto): OkDto
+    db:entry.getOwned(GetByIdDto): EntryDto
+      not-found
+      forbidden
+    db:entry.purge(GetByIdDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[ENT] customers.create(CreateCustomerDto): CustomerDto
+[ENT] customers.list({}): CustomerListDto
+[ENT] customers.get(GetByIdDto): CustomerDto
+[ENT] customers.update(UpdateCustomerDto): CustomerDto
+[ENT] customers.remove(GetByIdDto): OkDto
+    [REQ] customer.remove(GetByIdDto): OkDto
+[ENT] accounts.create(CreateAccountDto): AccountDto
+[ENT] accounts.list({}): AccountListDto
+[ENT] accounts.get(GetByIdDto): AccountDto
+[ENT] accounts.standing(GetByIdDto): AccountStandingDto
+[ENT] accounts.update(UpdateAccountDto): AccountDto
+[ENT] accounts.remove(GetByIdDto): OkDto
+    [REQ] account.remove(GetByIdDto): OkDto
+[ENT] entries.create(CreateEntryDto): EntryDto
+[ENT] entries.list({}): EntryListDto
+[ENT] entries.get(GetByIdDto): EntryDto
+[ENT] entries.update(UpdateEntryDto): EntryDto
+[ENT] entries.remove(GetByIdDto): OkDto
+    [REQ] entry.remove(GetByIdDto): OkDto
+
+[TYP:uuid] id: string
+    a unique record identifier
+[TYP:ext] userId: string
+    the authenticated owner id, minted from the session
+[TYP:nonempty] name: string
+    a display name
+[TYP:email] email: string
+    a contact email address
+[TYP] phoneNumber: string
+    a contact phone number
+[TYP] address: string
+    a postal or service address
+[TYP] notes: string
+    freeform notes
+[TYP] segment: string
+    client segment: property_mgmt, homeowner, small_biz, hoa
+[TYP] vip: boolean
+    whether the customer is flagged VIP
+[TYP] isBusiness: boolean
+    whether the customer is a business entity
+[TYP] businessName: string
+    the legal business name
+[TYP] customerId: string
+    a reference to a customer record
+[TYP] currency: string
+    an ISO currency code
+[TYP] description: string
+    freeform description
+[TYP] accountId: string
+    a reference to a ledger account
+[TYP] amount: number
+    a signed ledger amount in cents
+[TYP] occurredAt: string
+    an ISO timestamp of when the entry occurred
+[TYP] transactionId: string
+    a reference grouping related entries
+[TYP] reference: string
+    an external reference string
+[TYP] createdAt: string
+    an ISO creation timestamp
+[TYP] updatedAt: string
+    an ISO last-updated timestamp
+[TYP] ok: boolean
+    a success flag
+[TYP] balance: number
+    the net account balance in cents
+[TYP] charges: number
+    total charges in cents
+[TYP] payments: number
+    total payments in cents
+[TYP:int] entryCount: number
+    the number of ledger entries
+[TYP] customer: CustomerDto
+    a nested customer record
+[TYP] account: AccountDto
+    a nested account record
+[TYP] entry: EntryDto
+    a nested ledger entry
+[TYP] standing: AccountBalanceDto
+    a nested computed balance
+
+[DTO] CreateCustomerDto: name, email?, phoneNumber?, address?, notes?, segment?, vip?, isBusiness?, businessName?
+    input to create a customer
+[DTO] UpdateCustomerDto: id, name?, email?, phoneNumber?, address?, notes?, segment?, vip?, isBusiness?, businessName?
+    a partial customer patch keyed by id
+[DTO] CustomerDto: id, userId, name, email?, phoneNumber?, address?, notes?, segment?, vip?, isBusiness?, businessName?, createdAt, updatedAt
+    a persisted customer record
+[DTO] CustomerListDto: customer(s)
+    a list of customers owned by the user
+[DTO] CreateAccountDto: name, customerId?, currency?, description?
+    input to create a ledger account
+[DTO] UpdateAccountDto: id, name?, customerId?, currency?, description?
+    a partial account patch keyed by id
+[DTO] AccountDto: id, userId, name, customerId?, currency?, description?, createdAt, updatedAt
+    a persisted ledger account
+[DTO] AccountListDto: account(s)
+    a list of accounts owned by the user
+[DTO] AccountBalanceDto: balance, charges, payments, entryCount
+    a computed account balance rollup
+[DTO] AccountStandingDto: account, standing
+    an account paired with its computed balance
+[DTO] CreateEntryDto: accountId, amount, occurredAt, transactionId?, description?, reference?
+    input to record a ledger entry
+[DTO] UpdateEntryDto: id, accountId?, amount?, occurredAt?, transactionId?, description?, reference?
+    a partial entry patch keyed by id
+[DTO] EntryDto: id, userId, accountId, amount, occurredAt, transactionId?, description?, reference?, createdAt, updatedAt
+    a persisted ledger entry
+[DTO] EntryListDto: entry(s)
+    a list of ledger entries
+[DTO] OwnerDto: userId
+    the owning user id wrapper
+[DTO] GetByIdDto: id
+    an id lookup wrapper
+[DTO] AccountRefDto: userId, accountId
+    an account reference scoped to its owner
+
+[NON] customer
+    a single CRM customer
+[NON] account
+    a single ledger account
+[NON] entry
+    a single ledger entry
+[NON] standing
+    a computed account balance
+[NON] ok
+    a success marker

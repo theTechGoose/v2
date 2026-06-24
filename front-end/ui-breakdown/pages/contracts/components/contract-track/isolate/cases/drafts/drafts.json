@@ -1,0 +1,10 @@
+{
+  "_name": "Drafts — Track 04 (only rendered when drafts > 0)",
+  "num": "04",
+  "title": "Drafts",
+  "count": "1 contract",
+  "defaultOpen": false,
+  "storageKey": "contracts:track:04",
+  "_signals": { "open": false },
+  "_innerHtml": "<div class=\"kcards\" style=\"opacity:.4\">[ draft ContractCard ]</div>"
+}

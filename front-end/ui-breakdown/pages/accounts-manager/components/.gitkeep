@@ -1,0 +1,4 @@
+# Intentionally empty — /accounts-manager has NO local components.
+# The route renders the shared app-shell with a blank content area (stub).
+# See ../accounts-manager.md (HONEST-EMPTY). Build components here when the
+# accounts-manager surface gets real pages.

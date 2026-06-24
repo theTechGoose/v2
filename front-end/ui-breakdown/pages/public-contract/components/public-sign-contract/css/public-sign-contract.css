@@ -1,0 +1,35 @@
+/* public-sign-contract.css — EXTRACTED real CSS.
+ *
+ * The signature-pad island is 100% inline-styled. It emits NO <style> of its
+ * own. Its single CSS dependency is the `.spinner` class (+ `spin` keyframe),
+ * which lives in /landing.css — loaded by the host route /c/:id, NOT by this
+ * island. Reproduced here so the island's submitting state renders without
+ * landing.css. Surface: PUBLIC palette.
+ *
+ * Canvas/pad inline structure (see js/PublicSignContract.tsx):
+ *   pad wrapper: background #fff; border:2px dashed #FF6B6B (PINK);
+ *                border-radius:18px; overflow:hidden;
+ *                box-shadow:0 8px 24px -10px rgba(255,107,107,0.30)
+ *   faint grid : linear-gradient 20px×20px @ rgba(255,107,107,0.05)
+ *   baseline   : border-bottom 1.5px solid rgba(255,107,107,0.35), 36px from bottom
+ *   "✕" guide  : Helvetica Neue 900, rgba(255,107,107,0.45), 18px, bottom-left
+ *   <canvas>   : display:block; width:100%; height:200px;
+ *                touch-action:none; cursor:crosshair   <- touch-action:none is
+ *                load-bearing: lets pointer drawing work on touch w/o scroll.
+ *   submit btn : enabled  → linear-gradient(135deg,#519843,#71a85f)
+ *                disabled → flat #a8c8a0
+ *                transition: transform 160ms   (the only declared transition)
+ */
+
+/* Inline button spinner — borrowed from /landing.css. */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }

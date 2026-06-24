@@ -1,0 +1,9 @@
+{
+  "_name": "Spanish — localized title/intro/labels/buttons",
+  "lang": "es",
+  "customers": [
+    { "id": "cust-mg", "userId": "u1", "name": "Maple Grove Apartments" },
+    { "id": "cust-ml", "userId": "u1", "name": "Marcus Lin" }
+  ],
+  "_signals": { "amount": "980.00" }
+}

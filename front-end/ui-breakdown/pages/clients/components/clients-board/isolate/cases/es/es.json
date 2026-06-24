@@ -1,0 +1,8 @@
+{
+  "_name": "Spanish — toolbar chips + card chrome localized",
+  "lang": "es",
+  "cards": [
+    { "id": "c2", "userId": "u1", "name": "Maple Grove Apartments", "businessName": "Maple Grove PM", "email": "janet@maplegrove.co", "phoneNumber": "(415) 555-0124", "segment": "property_mgmt", "vip": true, "createdAt": "2025-02-10T10:00:00.000Z", "updatedAt": "2026-06-18T10:00:00.000Z", "lastWhen": "2026-06-18T10:00:00.000Z", "lastWhenRel": "hoy", "lastTone": "hot", "balanceCents": 420000, "balanceSub": "Factura #204", "activeJobs": 2, "jobsSub": "Techo + canaletas", "status": "active", "temp": 92, "daysSinceContact": 0, "revenue12moCents": 2480000 },
+    { "id": "c6", "userId": "u1", "name": "Hilltop Diner", "email": "manager@hilltopdiner.com", "phoneNumber": "(415) 555-0102", "segment": "small_biz", "vip": false, "createdAt": "2025-04-20T10:00:00.000Z", "updatedAt": "2026-06-07T10:00:00.000Z", "lastWhen": "2026-06-07T10:00:00.000Z", "lastWhenRel": "hace 11 días", "lastTone": "cold", "balanceCents": 116000, "balanceSub": "Vencida 14d", "activeJobs": 0, "jobsSub": "Sin trabajos", "status": "owes", "temp": 22, "daysSinceContact": 11, "revenue12moCents": 320000 }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "_name": "Drafting (front) — brown mood, 'Finish + send', 'Draft started Jun 18'",
+  "idx": 0,
+  "now": "2026-06-18T12:00:00.000Z",
+  "lang": "en",
+  "inv": {
+    "id": "inv7788dd",
+    "userId": "u1",
+    "customerId": "cust-cc",
+    "amount": 142500,
+    "dueDate": "2026-07-18",
+    "status": "draft",
+    "createdAt": "2026-06-18T10:00:00.000Z",
+    "updatedAt": "2026-06-18T10:00:00.000Z",
+    "client": "Cobblestone Cafe",
+    "initials": "CC",
+    "invoiceRef": "INV-INV778",
+    "daysOverdue": 0,
+    "daysIn": 0,
+    "stage": "drafting"
+  }
+}

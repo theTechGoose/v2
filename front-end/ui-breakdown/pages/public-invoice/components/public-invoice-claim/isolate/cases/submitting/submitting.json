@@ -1,0 +1,11 @@
+{
+  "_name": "Submitting — POST /claim-payment in flight; button reads 'Sending…', cursor:wait, disabled",
+  "invoiceId": "inv_3b8c1d2e",
+  "acceptedMethods": [
+    { "method": "cashapp", "handle": "$hansendecks" },
+    { "method": "cash" }
+  ],
+  "customerName": "Maria Delgado",
+  "lang": "en",
+  "_signals": { "selected": "cashapp", "submitting": true, "claimedBy": "Maria Delgado", "reference": "Apr rent" }
+}

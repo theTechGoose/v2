@@ -1,0 +1,12 @@
+{
+  "_name": "Recording — voice panel takes over the composer (mocked)",
+  "_note": "recording=true → RecordingPanel replaces the composer's text row. The real panel needs a live AudioContext/level + transcript; stub it via _mocks so the still renders the panel shell with a sample transcript.",
+  "conversationId": "t2",
+  "userInitials": "ML",
+  "_signals": { "recording": true, "recElapsed": 4, "audioLevel": 0.42, "liveFinal": "Need a quote for a kitchen backsplash,", "liveInterim": "about thirty square feet" },
+  "_mocks": { "RecordingPanel": { "stub": "<div class='rec-panel'><div class='rec-panel__transcript-text'>Need a quote for a kitchen backsplash, <span class='interim'>about thirty square feet</span></div><button class='rec-panel__cancel'>✕</button><button class='rec-panel__stop'><span class='rec-panel__stop-square'></span></button></div>" } },
+  "initialMessages": [
+    { "id": "m1", "conversationId": "t2", "role": "assistant", "kind": "text", "content": "Tap the mic and tell me about the job.", "createdAt": 1750247400000 }
+  ],
+  "sendLanguages": ["en"]
+}

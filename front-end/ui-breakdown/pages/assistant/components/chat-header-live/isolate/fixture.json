@@ -1,0 +1,8 @@
+{
+  "category": "assistant",
+  "folder": "chat-header-live",
+  "controls": {
+    "initialClient": { "type": "text", "value": "New conversation" },
+    "initialStatus": { "type": "text", "value": "Bossie is ready to help" }
+  }
+}

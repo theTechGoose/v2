@@ -1,0 +1,8 @@
+{
+  "category": "public-contract",
+  "folder": "public-sign-contract",
+  "controls": {
+    "contractId": { "type": "text", "value": "ctr_9f3a2b71c0d4e5f6" },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

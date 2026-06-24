@@ -1,0 +1,21 @@
+{
+  "_name": "Danger Zone — armed (\"DELETE\" typed, wipe button enabled & red)",
+  "_note": "Drives DangerZoneCard's local useState `confirm` to the armed value. The page must be in the loaded state for the card to render; `s` carries a minimal valid ProfileSnapshot. `confirm` lives in the sub-card, not the island root — in isolate, prime the input value to \"DELETE\" so `armed` (confirm.trim().toUpperCase() === \"DELETE\") flips true.",
+  "_signals": {
+    "s": {
+      "loading": false,
+      "error": null,
+      "profile": {
+        "user": { "id": "usr_8f2a", "phoneNumber": "+15125550143", "name": "Maria Lopez", "email": "maria@lopezlandscaping.com", "language": "en", "createdAt": 1718000000000, "updatedAt": 1718500000000 },
+        "identity": { "userId": "usr_8f2a", "businessName": "Lopez Landscaping", "createdAt": "2024-06-10T00:00:00.000Z", "updatedAt": "2025-01-12T00:00:00.000Z" },
+        "address": null,
+        "insurance": null,
+        "tax": null,
+        "contractDefaults": null,
+        "references": [],
+        "initials": "ML"
+      }
+    },
+    "dangerZone": { "confirm": "DELETE", "busy": false, "err": null }
+  }
+}

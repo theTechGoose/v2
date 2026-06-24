@@ -1,0 +1,19 @@
+{
+  "_name": "DecidedRow — won (green badge, amount, embeds DeleteQuoteButton icon)",
+  "section": "DecidedRow",
+  "lang": "en",
+  "q": {
+    "id": "Q-1099",
+    "title": "Building C re-roof",
+    "client": "Maple Grove Apartments",
+    "initials": "MG",
+    "stage": "won",
+    "value": 1420000,
+    "daysIn": 0,
+    "opens": 4,
+    "sentDays": 6,
+    "decidedDays": 1,
+    "band": ["#5FA34F", "#3F7A33"],
+    "shadow": "rgba(81,152,67,0.35)"
+  }
+}

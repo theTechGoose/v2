@@ -1,0 +1,124 @@
+[MOD] files
+
+[REQ] file.upload(CreateFileDto): FileDto
+    [NEW] file
+    file.decode(base64): file
+      too-large
+    db:file.create(CreateFileDto): FileDto
+
+[REQ] file.list({}): FileListDto
+    db:file.listByUser(OwnerDto): FileListDto
+
+[REQ] file.meta(GetByIdDto): FileDto
+    db:file.getOwnedMeta(GetByIdDto): FileDto
+      not-found
+      forbidden
+
+[REQ] file.download(GetByIdDto): FileBytesDto
+    db:file.getOwnedMeta(GetByIdDto): FileDto
+      not-found
+      forbidden
+    db:file.readBytes(GetByIdDto): FileBytesDto
+
+[REQ] file.remove(GetByIdDto): OkDto
+    db:file.getOwnedMeta(GetByIdDto): FileDto
+      not-found
+      forbidden
+    db:file.purge(GetByIdDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] file.processVoiceMemo(VoiceMemoJobDto): FileDto
+    db:file.getOwnedMeta(VoiceMemoJobDto): FileDto
+      not-found
+      forbidden
+    db:file.readBytes(VoiceMemoJobDto): FileBytesDto
+    [PLY] transcription.transcribe(TranscriptionRequestDto): TranscriptionResponseDto
+        [CSE] openai
+            ex:openai.transcribe(TranscriptionRequestDto): TranscriptionResponseDto
+              timeout
+              rate-limited
+        [CSE] stub
+            stub.transcribe(TranscriptionRequestDto): TranscriptionResponseDto
+    db:file.updateMeta(UpdateMetaDto): FileDto
+
+[ENT] files.upload(CreateFileDto): FileDto
+[ENT] files.list({}): FileListDto
+[ENT] files.meta(GetByIdDto): FileDto
+[ENT] files.download(GetByIdDto): FileBytesDto
+[ENT] files.remove(GetByIdDto): OkDto
+
+[TYP:uuid] id: string
+    a unique file record identifier
+[TYP:ext] userId: string
+    the authenticated owner id, minted from the session
+[TYP] fileId: string
+    a reference to a stored file record
+[TYP:nonempty] filename: string
+    the original upload filename
+[TYP] mimeType: string
+    the file's MIME type (e.g. audio/webm, image/png)
+[TYP] base64: string
+    base64-encoded upload bytes (data-uri prefix stripped)
+[TYP:int] sizeBytes: number
+    the decoded byte size of the file
+[TYP:int] pageCount: number
+    the number of 60KiB KV pages the bytes were split across
+[TYP] sha256: string
+    the SHA-256 of the original bytes, hex-encoded
+[TYP] createdAt: string
+    an ISO creation timestamp
+[TYP] transcriptStatus: string
+    audio transcription lifecycle: pending, ready, failed
+[TYP] transcript: string
+    plain-text transcript when transcriptStatus is ready
+[TYP] transcriptError: string
+    failure reason when transcriptStatus is failed
+[TYP] bytes: Uint8Array
+    raw file bytes for binary download
+[TYP] audio: Uint8Array
+    raw audio bytes sent to the transcription engine
+[TYP:url] audioUrl: string
+    a public URL the vendor can fetch audio from
+[TYP] language: string
+    BCP-47 language code of the audio
+[TYP] durationSec: number
+    audio duration in seconds reported by the vendor
+[TYP] text: string
+    the plain-text transcription result
+[TYP] ok: boolean
+    a success flag
+[TYP] file: FileDto
+    a nested file record
+
+[DTO] CreateFileDto: filename, mimeType, base64
+    a JSON-friendly file upload payload
+[DTO] FileDto: id, userId, filename, mimeType, sizeBytes, pageCount, sha256, createdAt, transcriptStatus?, transcript?, transcriptError?
+    a persisted file metadata record
+[DTO] FileListDto: file(s)
+    a list of files owned by the user
+[DTO] FileBytesDto: bytes, mimeType, filename
+    raw file bytes paired with their mime type and name
+[DTO] UpdateMetaDto: id, userId, transcriptStatus?, transcript?, transcriptError?
+    a partial metadata patch for transcription results
+[DTO] VoiceMemoJobDto: fileId, userId
+    a fire-and-forget transcription job reference
+[DTO] TranscriptionRequestDto: userId, audio?, audioUrl?, mimeType?, language?
+    audio plus hints sent to the transcription engine
+[DTO] TranscriptionResponseDto: text, language?, durationSec?
+    the transcription engine's result
+[DTO] OwnerDto: userId
+    the owning user id wrapper
+[DTO] GetByIdDto: id
+    an id lookup wrapper
+
+[NON] file
+    a single stored file
+[NON] ok
+    a success marker
+[NON] transcription
+    the wired speech-to-text engine
+[NON] openai
+    the OpenAI Whisper transcription client
+[NON] stub
+    the deterministic stub transcription client

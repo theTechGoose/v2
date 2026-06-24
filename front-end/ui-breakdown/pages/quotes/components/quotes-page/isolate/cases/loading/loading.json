@@ -1,0 +1,9 @@
+{
+  "_name": "Loading — skeletons while fetch in flight",
+  "lang": "en",
+  "_mocks": {
+    "quotesClient.list": "__never_resolves__",
+    "quotesClient.winRate": "__never_resolves__",
+    "quotesClient.insight": "__never_resolves__"
+  }
+}

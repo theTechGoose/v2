@@ -1,0 +1,247 @@
+/* ============================================================
+   AsstThreads — extracted from static/assistant-page.css (column +
+   thread rows + thread-pulse keyframe) AND static/assistant.css
+   (the collapse/rail rules, which live in assistant.css only).
+   Tokens: --border, --brand-teal, --brand-green, --fg-muted, --fg-subtle,
+   --coffee-50/600, --green-50/600, --pink-50/700, --mint-100,
+   --font-heading, --font-mono.
+   NOTE: the live route layout for `.asst` is the 3-column GRID defined
+   LATER in assistant-page.css (line ~7806): `280px minmax(0,1fr) 360px`,
+   collapsing to 2 cols via `.asst:not(:has(.docpane))`. The earlier flex
+   `.asst` (line ~4433) is overridden by cascade. See assistant.md §7.
+   ============================================================ */
+
+/* ----- Threads column (assistant-page.css ~4454) ----- */
+.threads {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.threads__head {
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.threads__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--brand-teal);
+  margin: 0;
+  flex: 1;
+}
+.threads__count {
+  font-size: 11px;
+  color: var(--fg-muted);
+  background: var(--coffee-50);
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+.threads__new {
+  padding: 12px 14px;
+  margin: 12px;
+  background: var(--brand-green);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(81, 152, 67, 0.35);
+  transition: transform 180ms;
+}
+.threads__new:hover {
+  transform: translateY(-1px);
+}
+.threads__new-kbd {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+.threads__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+.threads__list::-webkit-scrollbar {
+  width: 0;
+}
+.threads__group-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+  padding: 12px 10px 6px;
+}
+
+/* ----- Thread row ----- */
+.thread {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 10px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  margin-bottom: 2px;
+  transition: background 140ms;
+}
+.thread:hover {
+  background: rgba(255, 255, 255, 0.6);
+}
+.thread--active {
+  background: #fff;
+  box-shadow:
+    0 4px 14px rgba(20, 72, 82, 0.06),
+    0 0 0 1px rgba(20, 72, 82, 0.06);
+}
+.thread__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.thread__client {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--brand-teal);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread__time {
+  font-size: 10.5px;
+  color: var(--fg-subtle);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.thread__preview {
+  font-size: 12px;
+  color: var(--fg-muted);
+  margin-top: 2px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.thread__chips {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.thread__chip {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+.thread__chip--draft {
+  background: var(--coffee-50);
+  color: var(--coffee-600);
+}
+.thread__chip--sent {
+  background: var(--green-50);
+  color: var(--green-600);
+}
+.thread__chip--paid {
+  background: var(--green-50);
+  color: var(--green-600);
+}
+.thread__chip--needs {
+  background: var(--pink-50);
+  color: var(--pink-700);
+}
+
+/* Unread pulse dot (set by hasUnreadEvent; cleared on next load) */
+.thread__unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--green-600, #2f7d3a);
+  box-shadow: 0 0 0 0 rgba(47, 125, 58, 0.55);
+  animation: thread-pulse 1.6s ease-out infinite;
+  flex-shrink: 0;
+}
+.thread--unread .thread__client {
+  color: var(--brand-teal);
+  font-weight: 900;
+}
+@keyframes thread-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(47, 125, 58, 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 6px rgba(47, 125, 58, 0);
+  }
+}
+.threads__empty {
+  padding: 14px 10px;
+  color: var(--fg-subtle);
+  font-size: 12px;
+}
+
+/* ----- Conversation-list collapse (roadmap p.4) -----
+   These rules live in static/assistant.css ONLY (~3733), not in
+   assistant-page.css. QuickBooks-style minimize: a hamburger/arrow narrows
+   the rail to an icon strip; the grid override is gated to >1200px (the
+   width where the threads column is actually shown). */
+.threads__toggle {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: var(--coffee-50);
+  color: var(--brand-teal);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: background 160ms;
+}
+.threads__toggle:hover {
+  background: var(--mint-100);
+}
+.threads__toggle svg {
+  display: block;
+}
+.threads--collapsed .threads__title,
+.threads--collapsed .threads__count,
+.threads--collapsed .threads__new-label,
+.threads--collapsed .threads__new-kbd,
+.threads--collapsed .threads__list {
+  display: none;
+}
+.threads--collapsed .threads__head {
+  justify-content: center;
+}
+.threads--collapsed .threads__new {
+  margin: 12px auto;
+  padding: 12px;
+  justify-content: center;
+}
+@media (min-width: 1201px) {
+  .asst.asst--threads-collapsed {
+    grid-template-columns: 64px minmax(0, 1fr) 360px;
+  }
+}

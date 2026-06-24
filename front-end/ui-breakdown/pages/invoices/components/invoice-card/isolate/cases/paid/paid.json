@@ -1,0 +1,25 @@
+{
+  "_name": "Paid (front) — green mood, 'View receipt', 'Paid Jun 14', Cleared date in foot",
+  "idx": 0,
+  "now": "2026-06-18T12:00:00.000Z",
+  "lang": "en",
+  "inv": {
+    "id": "invbbccff",
+    "userId": "u1",
+    "contractId": "ct-275",
+    "customerId": "cust-or",
+    "amount": 190000,
+    "issuedDate": "2026-06-01",
+    "dueDate": "2026-06-15",
+    "status": "paid",
+    "paidAt": "2026-06-14T13:00:00.000Z",
+    "createdAt": "2026-06-01T09:00:00.000Z",
+    "updatedAt": "2026-06-14T13:00:00.000Z",
+    "client": "Ortega Rentals",
+    "initials": "OR",
+    "invoiceRef": "INV-INVBBC",
+    "daysOverdue": 0,
+    "daysIn": 17,
+    "stage": "paid"
+  }
+}

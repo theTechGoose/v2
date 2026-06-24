@@ -1,0 +1,11 @@
+{
+  "category": "quotes",
+  "folder": "delete-quote-button",
+  "controls": {
+    "id": { "type": "text", "value": "Q-1099" },
+    "variant": { "type": "select", "value": "btn", "options": ["btn", "icon"] },
+    "label": { "type": "text", "value": "" },
+    "confirmText": { "type": "text", "value": "" },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

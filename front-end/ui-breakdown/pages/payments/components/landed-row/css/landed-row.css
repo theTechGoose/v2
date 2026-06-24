@@ -1,0 +1,88 @@
+/* ============================================================================
+   LandedRow — the `.qdone` grid + `.qdone__row` block. Copied verbatim from
+   static/quotes.css (lines 662–777). Tokens from dashboard.css.
+
+   HAZARD: the island markup uses `.qdone__body` and `.qdone__sub` (see
+   ../js/LandedRow.tsx), but quotes.css only defines `.qdone__title` /
+   `.qdone__client` / `.qdone__when`. So `.qdone__body` (the middle cell
+   wrapper) and `.qdone__sub` (the method·when·invoiceRef line) are UNSTYLED —
+   the sub-line falls back to inherited body text instead of the small muted
+   `.qdone__client` treatment. Flagged in landed-row.md §6.
+   ============================================================================ */
+
+.qdone {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 1100px) {
+  .qdone { grid-template-columns: 1fr; }
+}
+.qdone__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 18px;
+  background: #fff;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(26, 83, 92, 0.07);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+@media (max-width: 560px) {
+  .qdone__row { gap: 8px; padding: 12px 12px; }
+  .qdone__when { display: none; }
+}
+.qdone__row:hover {
+  border-color: var(--mint-300);
+  transform: translateX(2px);
+}
+.qdone__badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+.qdone__badge--won { background: linear-gradient(135deg, #5fa34f, #3f7a33); }
+.qdone__badge--lost { background: linear-gradient(135deg, #b89d90, #785544); }
+.qdone__title {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--brand-teal);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qdone__client {
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qdone__amt {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--brand-teal);
+  letter-spacing: -0.01em;
+}
+.qdone__when {
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-family: var(--font-body);
+  text-align: right;
+}
+
+/* === UNSTYLED (markup uses these; quotes.css does NOT define them) ===
+   .qdone__body  — middle cell wrapper (renders as default block)
+   .qdone__sub   — method·when·invoiceRef line (renders as inherited body text;
+                   intended to look like .qdone__client). */

@@ -1,0 +1,19 @@
+{
+  "_name": "Continue CTA (send) — Review button",
+  "_note": "kind=continue_cta, payload.toPhase='send' → .continue-cta with the Review CTA (transitions the card into a 'Drafted/Sent ✓' state when clicked).",
+  "conversationId": "t1",
+  "userInitials": "TK",
+  "initialContract": { "id": "ct_1", "status": "draft", "totalAmount": 125000 },
+  "initialMessages": [
+    {
+      "id": "cta1",
+      "conversationId": "t1",
+      "role": "assistant",
+      "kind": "continue_cta",
+      "content": "Your contract is drafted. Review and send it to Tom & Linda K.",
+      "createdAt": 1750247800000,
+      "payload": { "toPhase": "send", "summary": "Garage epoxy floor — $1,250", "contractId": "ct_1" }
+    }
+  ],
+  "sendLanguages": ["en"]
+}

@@ -1,0 +1,6 @@
+{
+  "_name": "Default — empty slots, slot 0 focused",
+  "phoneNumber": "+15125550142",
+  "initialLang": "en",
+  "_signals": { "digits": ["", "", "", "", "", ""], "submitting": false, "errorKey": null, "shake": false, "cooldown": 0, "_langSignal": "en" }
+}

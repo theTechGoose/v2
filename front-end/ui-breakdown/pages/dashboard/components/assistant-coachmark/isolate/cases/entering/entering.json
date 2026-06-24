@@ -1,0 +1,14 @@
+{
+  "_name": "Entering — mid-entrance (phase 1): ring springing, ripples emitting, bubble sliding in",
+  "_signals": {
+    "lang": "en",
+    "visible": true,
+    "fadingOut": false,
+    "phase": 1,
+    "box": { "top": 132, "left": 20, "width": 176, "height": 48 }
+  },
+  "_mocks": {
+    "localStorage": { "pm:assistant-coachmark-shown": null },
+    "_anchor": { "selector": "a.sb__textus[href='/assistant']", "rect": { "top": 132, "left": 20, "width": 176, "height": 48 } }
+  }
+}

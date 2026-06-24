@@ -1,0 +1,67 @@
+/* ============================================================
+   DeleteQuoteButton — has NO dedicated CSS of its own.
+   It renders into styling owned by its host:
+   - variant="icon"  → class "qdone__del" (decided-row × button,
+                        styled in static/quotes.css; mirrored in
+                        ../../quotes-sections/css/quotes-sections.css)
+   - variant="btn"   → an UNCLASSED <button> that inherits the
+                        .qcard__back-foot button rules when rendered inside
+                        QuoteCard's back face (static/quotes.css; mirrored in
+                        ../../quote-card/css/quote-card.css)
+   The icon-variant rules are reproduced here so the button can be isolated
+   without its host page CSS loaded.
+   Tokens: --brand-pink, --fg-muted, --dur-fast, --ease-out.
+   ============================================================ */
+
+/* icon variant (qdone__del) */
+.qdone__del {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(26, 83, 92, 0.12);
+  background: #fff;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+.qdone__del:hover {
+  border-color: var(--brand-pink);
+  color: var(--brand-pink);
+  background: rgba(255, 107, 107, 0.06);
+}
+.qdone__del:disabled { opacity: 0.5; cursor: wait; }
+
+/* btn variant — inherits from host (.qcard__back-foot button). Reproduced
+   here for isolation so the "Delete"/"Deleting…" button renders as designed. */
+.qcard__back-foot button {
+  background: #fff;
+  border: 1px solid rgba(26, 83, 92, 0.12);
+  border-radius: 10px;
+  padding: 9px 6px;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--brand-teal);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.qcard__back-foot button:hover {
+  border-color: var(--brand-pink);
+  color: var(--brand-pink);
+  transform: translateY(-1px);
+}
+.qcard__back-foot button:disabled { opacity: 0.5; cursor: wait; }

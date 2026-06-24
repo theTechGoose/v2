@@ -1,0 +1,30 @@
+/* ============================================================
+   ui/Icon — has NO stylesheet rules. It is a presentational <svg> whose
+   appearance is set entirely by SVG attributes in components/ui/Icon.tsx.
+   This file documents the rendering contract so it can be reproduced.
+
+   Per-icon rendered attributes (hard-coded in the component, NOT overridable):
+     width  = {size}            (default 18)
+     height = {size}            (default 18)
+     viewBox = "0 0 24 24"      (24x24 grid)
+     fill   = "none"            (stroke-only)
+     stroke = "currentColor"    (inherits text color of the parent)
+     stroke-width = 1.7
+     stroke-linecap = "round"
+     stroke-linejoin = "round"
+     class  = {cls} (from `class` prop; default "")
+     ...rest spreads remaining SVG attrs (e.g. aria-hidden)
+
+   So to recolor an icon, set `color` on the parent; to resize, pass `size`.
+   ============================================================ */
+
+/* Example consumer pattern (no rules required for the component itself):
+   .composer__icon-btn { color: var(--brand-teal); }   // icon inherits this
+   .composer__icon-btn:hover { color: var(--brand-green); }
+*/
+
+/* NOTE: this is a DIFFERENT, smaller icon set than lib/dash-icons.tsx (the `I`
+   renderer + `ICN` map used by the dashboard rail/topbar/quote-track). ui/Icon
+   has 16 names + a single `name` union; dash-icons has ~50 glyphs. They are not
+   interchangeable. ui/Icon also uses stroke-width 1.7 (thinner) vs dash-icons'
+   default sw=2. */

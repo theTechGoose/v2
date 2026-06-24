@@ -1,0 +1,11 @@
+{
+  "_name": "Empty — 0 invoices → empty hero + $0 KPIs + every track EmptyTrack hint",
+  "lang": "en",
+  "_signals": { "loading": false, "error": null },
+  "_mocks": {
+    "dashboardClient.invoices": [],
+    "dashboardClient.customers": [],
+    "fetch:/api/invoices/forecast/this-week": "__reject:404__"
+  },
+  "_note": "totalInvoiceCount===0 → hero shows 'No invoices yet — let's start the river.' + sub.empty; KPIs all $0/0, Drafting sub 'no drafts open'; all 6 QuoteTracks render their EmptyTrack hint."
+}

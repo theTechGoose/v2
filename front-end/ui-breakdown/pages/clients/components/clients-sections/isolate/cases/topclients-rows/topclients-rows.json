@@ -1,0 +1,12 @@
+{
+  "_name": "TopClients — 5 leaderboard rows (seed TOP_CLIENTS; rank 1 gold)",
+  "_component": "TopClients",
+  "lang": "en",
+  "rows": [
+    { "customerId": "c1", "name": "Greenleaf HOA", "revenue12moCents": 3240000, "rank": 1, "barPct": 100 },
+    { "customerId": "c2", "name": "Maple Grove Apartments", "revenue12moCents": 2480000, "rank": 2, "barPct": 76 },
+    { "customerId": "c12", "name": "Ortega Rentals", "revenue12moCents": 1872000, "rank": 3, "barPct": 58 },
+    { "customerId": "c3", "name": "Cobblestone Cafe", "revenue12moCents": 1592000, "rank": 4, "barPct": 49 },
+    { "customerId": "c4", "name": "Marshall & Sons", "revenue12moCents": 1145000, "rank": 5, "barPct": 35 }
+  ]
+}

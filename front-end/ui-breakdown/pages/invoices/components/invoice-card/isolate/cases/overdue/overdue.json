@@ -1,0 +1,26 @@
+{
+  "_name": "Overdue (front) — red mood, 'Send nudge', '14d overdue · due May 18'",
+  "idx": 0,
+  "now": "2026-06-18T12:00:00.000Z",
+  "lang": "en",
+  "inv": {
+    "id": "inv0a1b2c",
+    "userId": "u1",
+    "contractId": "ct-301",
+    "customerId": "cust-mg",
+    "amount": 420000,
+    "issuedDate": "2026-05-04",
+    "dueDate": "2026-05-18",
+    "status": "sent",
+    "installmentIndex": 2,
+    "installmentTotal": 3,
+    "createdAt": "2026-05-04T09:00:00.000Z",
+    "updatedAt": "2026-05-04T09:00:00.000Z",
+    "client": "Maple Grove Apartments",
+    "initials": "MA",
+    "invoiceRef": "INV-INV0A1",
+    "daysOverdue": 31,
+    "daysIn": 45,
+    "stage": "overdue"
+  }
+}

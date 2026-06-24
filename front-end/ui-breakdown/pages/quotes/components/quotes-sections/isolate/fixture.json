@@ -1,0 +1,15 @@
+{
+  "category": "quotes",
+  "folder": "quotes-sections",
+  "controls": {
+    "section": {
+      "type": "select",
+      "value": "QuotesHero",
+      "options": ["QuotesHero", "QuotesKpis", "DecidedRow", "QSideBig", "QSideRate", "QSideTip"]
+    },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  },
+  "components": {
+    "delete-quote-button": "embedded by DecidedRow (variant=\"icon\")"
+  }
+}

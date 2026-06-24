@@ -1,0 +1,16 @@
+{
+  "_name": "Mobile drawer open (<=640px) + backdrop",
+  "active": "home",
+  "showNav": true,
+  "_viewport": { "width": 390, "height": 844 },
+  "_signals": {
+    "collapsed": false,
+    "mobileOpen": true,
+    "s": {
+      "counts": { "clients": 8, "quotes": 3, "contracts": 2, "invoices": 4 },
+      "identity": { "display": "Raphael Castro", "biz": "RC Incorporated", "initials": "RC" },
+      "lang": "en",
+      "superAdmin": false
+    }
+  }
+}

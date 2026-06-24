@@ -1,0 +1,12 @@
+{
+  "_name": "Typing — last msg is user + sending → 3 typing-dots",
+  "_note": "The typing indicator shows when `sending` and the last message is from the user. Drive `sending` via _signals; isolate can't trigger a real send, so seed it.",
+  "conversationId": "t2",
+  "userInitials": "ML",
+  "_signals": { "sending": true },
+  "initialMessages": [
+    { "id": "m1", "conversationId": "t2", "role": "assistant", "kind": "text", "content": "Do you already have a price in mind, or should I help you price it?", "createdAt": 1750247430000 },
+    { "id": "m2", "conversationId": "t2", "role": "user", "kind": "text", "content": "Help me price it.", "createdAt": 1750247490000 }
+  ],
+  "sendLanguages": ["en"]
+}

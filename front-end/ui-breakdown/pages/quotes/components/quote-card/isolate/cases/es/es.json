@@ -1,0 +1,19 @@
+{
+  "_name": "Spanish — localized CTA / value label / story (Q-1107 opened-hot)",
+  "idx": 0,
+  "lang": "es",
+  "q": {
+    "id": "Q-1107",
+    "title": "Garage epoxy floor — 2-car",
+    "client": "Tom & Linda Kowalski",
+    "initials": "TK",
+    "customerId": "cust-tk",
+    "stage": "opened",
+    "value": 385000,
+    "daysIn": 1,
+    "opens": 3,
+    "sentDays": 1,
+    "band": ["#F7A893", "#E8704F"],
+    "shadow": "rgba(232,112,79,0.4)"
+  }
+}

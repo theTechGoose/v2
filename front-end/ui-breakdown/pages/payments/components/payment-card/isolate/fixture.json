@@ -1,0 +1,30 @@
+{
+  "category": "payments",
+  "folder": "payment-card",
+  "controls": {
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] },
+    "idx": { "type": "number", "value": 0 },
+    "p": {
+      "type": "object",
+      "value": {
+        "id": "pay_8a1f20c4",
+        "userId": "usr_01",
+        "invoiceId": "inv_3c91ab77e201",
+        "amount": 482000,
+        "method": "zelle",
+        "receivedAt": "2026-06-18T14:20:00Z",
+        "createdAt": "2026-06-18T14:21:00Z",
+        "updatedAt": "2026-06-18T14:21:00Z",
+        "client": "Maria Delgado",
+        "initials": "MD",
+        "invoiceRef": "INV-3C91AB",
+        "daysAgo": 0,
+        "whenLabel": "Today",
+        "note": "Payment from Maria.",
+        "status": "landed"
+      }
+    }
+  },
+  "_signals": { "flipped": false },
+  "_note": "p is an EnrichedPayment = the stored Payment (id/userId/invoiceId/amount[CENTS]/method/receivedAt/createdAt/updatedAt) PLUS the parent-derived client/initials/invoiceRef/daysAgo/whenLabel/note/status/etaDays?. amount 482000 → \"$4,820\". status drives the mood gradient + CTA label + value cell; `flipped` is the only client state."
+}

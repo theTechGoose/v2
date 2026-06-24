@@ -1,0 +1,21 @@
+{
+  "_name": "Price suggest — three LLM price tiers + custom MoneyInput",
+  "_note": "priceCaptureOpen + suggestPricing=true → renders the .chat__price-tiers list above the (mocked) MoneyInput. Composer HIDDEN.",
+  "conversationId": "t2",
+  "userInitials": "ML",
+  "_signals": {
+    "priceCaptureOpen": true,
+    "suggestPricing": true,
+    "priceCents": null,
+    "priceSuggestions": [
+      { "tier": "low", "label": "Budget", "rationale": "Materials-only markup", "priceCents": 95000 },
+      { "tier": "mid", "label": "Standard", "rationale": "Typical for this scope in your area", "priceCents": 125000 },
+      { "tier": "high", "label": "Premium", "rationale": "Includes trim + waterproofing", "priceCents": 165000 }
+    ]
+  },
+  "_mocks": { "MoneyInput": { "stub": "<div class='mi-stub' style='border:1px dashed #cfd6cb;border-radius:28px;padding:26px;text-align:center;font:700 28px Inter,sans-serif;color:#6E8689'>$0.00</div>" } },
+  "initialMessages": [
+    { "id": "m1", "conversationId": "t2", "role": "user", "kind": "text", "content": "Help me price it.", "createdAt": 1750247400000 }
+  ],
+  "sendLanguages": ["en"]
+}

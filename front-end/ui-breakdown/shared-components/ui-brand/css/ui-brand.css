@@ -1,0 +1,42 @@
+/* ============================================================
+   ui/Brand — wordmark. Emits `.brand` (link) + `.brand__mark` (the "P" tile).
+   Canonical CSS: static/verify.css (the ONLY definition with `.brand__mark`,
+   which is the exact structure this component renders). landing.css also has a
+   `.brand` but a DIFFERENT structure (img logo + `span em`), not this component.
+   Tokens: --brand-pink, --fg, --font-heading.
+   ============================================================ */
+
+/* ---------- CANONICAL: static/verify.css ---------- */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--fg);            /* overridden inline to #fff when inverse */
+}
+.brand__mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--brand-pink);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 800;
+}
+
+/* Inline prop-driven overrides applied by Brand.tsx (NOT in CSS):
+     inverse -> style="color:#fff"  on the <a>
+     size="sm" -> style="font-size:16px" on the wordmark <span>
+   (size="md" leaves the 18px .brand default; the mark stays 32x32 either way) */
+
+/* ---------- DIVERGENT (landing.css `.brand`, different markup — for reference)
+.brand { display:flex; align-items:center; gap:10px; font-family:var(--font-heading);
+         font-weight:800; font-size:19px; color:var(--brand-teal);
+         letter-spacing:-0.02em; flex-shrink:0; }
+.brand img { width:38px; height:38px; display:block; }     // uses an <img>, not .brand__mark
+.brand span em { font-style:normal; color:var(--brand-green); }
+   -- ui/Brand does NOT render an <img> or an <em>; it renders <span class="brand__mark">P</span>,
+      so it only looks correct on a surface that loads verify.css. */

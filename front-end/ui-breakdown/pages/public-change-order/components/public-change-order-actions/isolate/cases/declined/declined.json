@@ -1,0 +1,7 @@
+{
+  "_name": "Declined — terminal pink-tinted panel (rgba(168,59,59,0.06) bg): eyebrow 'Declined' (#a83b3b) + 'No problem — we've let your contractor know.' No buttons.",
+  "changeOrderId": "co_7d2f1a9b3c4e5f60",
+  "initialStatus": "declined",
+  "lang": "en",
+  "_signals": { "status": "declined", "busy": null }
+}

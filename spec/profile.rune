@@ -1,0 +1,348 @@
+[MOD] profile
+
+[REQ] identity.get({}): BusinessIdentityDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:identity.get(OwnerDto): BusinessIdentityDto
+
+[REQ] identity.upsert(UpdateBusinessIdentityDto): BusinessIdentityDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:identity.upsert(UpdateBusinessIdentityDto): BusinessIdentityDto
+
+[REQ] address.get({}): BusinessAddressDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:address.get(OwnerDto): BusinessAddressDto
+
+[REQ] address.upsert(UpdateBusinessAddressDto): BusinessAddressDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:address.upsert(UpdateBusinessAddressDto): BusinessAddressDto
+
+[REQ] insurance.get({}): BusinessInsuranceDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:insurance.get(OwnerDto): BusinessInsuranceDto
+
+[REQ] insurance.upsert(UpdateBusinessInsuranceDto): BusinessInsuranceDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:insurance.upsert(UpdateBusinessInsuranceDto): BusinessInsuranceDto
+
+[REQ] contractDefaults.get({}): ContractDefaultsDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:contractDefaults.get(OwnerDto): ContractDefaultsDto
+
+[REQ] contractDefaults.upsert(UpdateContractDefaultsDto): ContractDefaultsDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:contractDefaults.upsert(UpdateContractDefaultsDto): ContractDefaultsDto
+
+[REQ] reference.list({}): ReferenceListDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:reference.listByUser(OwnerDto): ReferenceListDto
+
+[REQ] reference.create(CreateReferenceDto): ReferenceDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:reference.save(CreateReferenceDto): ReferenceDto
+
+[REQ] reference.update(UpdateReferenceDto): ReferenceDto
+    db:reference.getOwned(GetByIdDto): ReferenceDto
+      not-found
+      forbidden
+    db:reference.patch(UpdateReferenceDto): ReferenceDto
+
+[REQ] reference.remove(GetByIdDto): OkDto
+    db:reference.getOwned(GetByIdDto): ReferenceDto
+      not-found
+      forbidden
+    db:reference.purge(GetByIdDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] tax.get({}): TaxIdentityDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:tax.get(OwnerDto): TaxIdentityDto
+
+[REQ] tax.update(UpdateTaxIdentityDto): TaxIdentityDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:tax.update(UpdateTaxIdentityDto): TaxIdentityDto
+
+[REQ] tax.deleteW9({}): TaxIdentityDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:tax.deleteW9(OwnerDto): TaxIdentityDto
+
+[REQ] tax.verify(VerifyTinDto): TinVerifyDto
+    db:tax.verifyTin(VerifyTinDto): TinVerifyDto
+      rate-limited
+
+[REQ] profile.getMine({}): ProfileSnapshotDto
+    db:user.get(OwnerDto): UserDto
+      unauthorized
+    db:identity.get(OwnerDto): BusinessIdentityDto
+    db:address.get(OwnerDto): BusinessAddressDto
+    db:insurance.get(OwnerDto): BusinessInsuranceDto
+    db:tax.get(OwnerDto): TaxIdentityDto
+    db:contractDefaults.get(OwnerDto): ContractDefaultsDto
+    db:reference.listByUser(OwnerDto): ReferenceListDto
+    [NEW] profileSnapshot
+    profileSnapshot.toDto(): ProfileSnapshotDto
+
+[REQ] profile.getPublic(GetPublicDto): PublicProfileSnapshotDto
+    db:identity.get(OwnerDto): BusinessIdentityDto
+    db:address.get(OwnerDto): BusinessAddressDto
+    db:insurance.get(OwnerDto): BusinessInsuranceDto
+    db:tax.get(OwnerDto): TaxIdentityDto
+    [NEW] publicProfile
+    publicProfile.toDto(): PublicProfileSnapshotDto
+
+[ENT] profile.identityGet({}): BusinessIdentityDto
+[ENT] profile.identityPut(UpdateBusinessIdentityDto): BusinessIdentityDto
+[ENT] profile.addressGet({}): BusinessAddressDto
+[ENT] profile.addressPut(UpdateBusinessAddressDto): BusinessAddressDto
+[ENT] profile.insuranceGet({}): BusinessInsuranceDto
+[ENT] profile.insurancePut(UpdateBusinessInsuranceDto): BusinessInsuranceDto
+[ENT] profile.contractDefaultsGet({}): ContractDefaultsDto
+[ENT] profile.contractDefaultsPut(UpdateContractDefaultsDto): ContractDefaultsDto
+[ENT] profile.referencesList({}): ReferenceListDto
+[ENT] profile.referencesCreate(CreateReferenceDto): ReferenceDto
+[ENT] profile.referencesUpdate(UpdateReferenceDto): ReferenceDto
+[ENT] profile.referencesRemove(GetByIdDto): OkDto
+[ENT] profile.taxGet({}): TaxIdentityDto
+    [REQ] tax.get({}): TaxIdentityDto
+[ENT] profile.taxUpdate(UpdateTaxIdentityDto): TaxIdentityDto
+[ENT] profile.taxRemoveW9({}): TaxIdentityDto
+    [REQ] tax.deleteW9({}): TaxIdentityDto
+[ENT] profile.taxVerify(VerifyTinDto): TinVerifyDto
+[ENT] profile.getMine({}): ProfileSnapshotDto
+[ENT] profile.getPublic(GetPublicDto): PublicProfileSnapshotDto
+
+[TYP:uuid] id: string
+    a unique record identifier
+[TYP:ext] userId: string
+    the authenticated owner id, resolved from the session
+[TYP] phoneNumber: string
+    a phone number in E.164 or loose form
+[TYP] name: string
+    a person or display name
+[TYP:email] email: string
+    a contact email address
+[TYP] language: string
+    UI language code: en or es
+[TYP] superAdmin: boolean
+    whether the user holds the platform super-admin flag
+[TYP] createdAt: string
+    an ISO creation timestamp
+[TYP] updatedAt: string
+    an ISO last-updated timestamp
+[TYP] ok: boolean
+    a success flag
+[TYP] tin: string
+    a raw TIN, hashed server-side and never stored plain
+[TYP] street: string
+    a street address line
+[TYP] city: string
+    a city name
+[TYP] state: string
+    a 2-letter US state code
+[TYP] postal: string
+    a postal code
+[TYP] country: string
+    a country code, default US
+[TYP] businessName: string
+    the contractor's business name
+[TYP] legalName: string
+    the registered legal business name
+[TYP] businessLicense: string
+    a business license number
+[TYP] logoFileId: string
+    a pointer to the uploaded logo blob
+[TYP] emailAlias: string
+    the kebab localpart for outbound email
+[TYP] commsLanguage: string
+    the default language for customer-facing comms
+[TYP] acceptedPaymentMethods: AcceptedPaymentMethodsDto
+    a nested accepted-payment-methods config
+[TYP] check: CheckMethodDto
+    a nested check payment method
+[TYP] venmo: VenmoMethodDto
+    a nested Venmo payment method
+[TYP] zelle: ZelleMethodDto
+    a nested Zelle payment method
+[TYP] cashapp: CashAppMethodDto
+    a nested Cash App payment method
+[TYP] paypal: PaypalMethodDto
+    a nested PayPal payment method
+[TYP] cash: CashMethodDto
+    a nested cash payment method
+[TYP] ach: AchMethodDto
+    a nested ACH payment method
+[TYP] card: CardMethodDto
+    a nested card payment method
+[TYP] other: OtherMethodDto
+    a nested freeform payment method
+[TYP] enabled: boolean
+    whether a payment method is enabled
+[TYP] mailTo: string
+    a full mailing line for checks
+[TYP] handle: string
+    a payment handle for the method
+[TYP] cashtag: string
+    a Cash App cashtag
+[TYP] routingNumber: string
+    a bank routing number (masked on public)
+[TYP] accountNumberMasked: string
+    a masked bank account number
+[TYP] instructions: string
+    freeform payment instructions
+[TYP] provider: string
+    an insurance provider name
+[TYP] policyNumber: string
+    an insurance policy number
+[TYP:int] coverageCents: number
+    insurance coverage in cents
+[TYP] expiresAt: string
+    an ISO insurance expiry date
+[TYP] insuranceFileId: string
+    a pointer to the COI proof-of-insurance blob
+[TYP] insuranceUploadedAt: string
+    an ISO stamp when insuranceFileId was set
+[TYP] defaultTerms: string
+    default contract terms text
+[TYP] paymentInstructions: string
+    default contract payment instructions
+[TYP] paymentTermsTemplateId: string
+    a reference to a payment-terms template
+[TYP:int] warrantyMonths: number
+    the default warranty length in months
+[TYP:int] terminationNoticeDays: number
+    the default termination notice in days
+[TYP] disputeResolution: string
+    dispute method: mediation, arbitration, or court
+[TYP] governingState: string
+    the governing-law state code
+[TYP] contactName: string
+    a reference contact name
+[TYP] jobDescription: string
+    a reference job description
+[TYP:int] position: number
+    display ordering for a reference
+[TYP] w9FileId: string
+    a pointer to the uploaded W-9 blob
+[TYP] w9UploadedAt: string
+    an ISO stamp when the W-9 was uploaded
+[TYP] tinMasked: string
+    a masked TIN for owner display
+[TYP] hasW9: boolean
+    whether a W-9 file exists for the user
+[TYP] initials: string
+    derived sidebar avatar initials
+[TYP] user: UserDto
+    a nested persisted user record
+[TYP] identity: BusinessIdentityDto
+    a nested business identity record
+[TYP] address: BusinessAddressDto
+    a nested business address record
+[TYP] insurance: BusinessInsuranceDto
+    a nested business insurance record
+[TYP] tax: TaxIdentityDto
+    a nested owner-redacted tax identity record
+[TYP] contractDefaults: ContractDefaultsDto
+    a nested contract-defaults record
+[TYP] reference: ReferenceDto
+    a nested reference record
+
+[DTO] OwnerDto: userId
+    the owning user id wrapper
+[DTO] GetByIdDto: id
+    an id lookup wrapper
+[DTO] OkDto: ok
+    a generic success body
+[DTO] UserDto: id, phoneNumber, name?, email?, language?, superAdmin?, createdAt, updatedAt
+    a persisted user record
+[DTO] GetPublicDto: userId
+    a public-profile lookup wrapper keyed by user id
+[DTO] VerifyTinDto: userId, tin
+    input to the public TIN verification gate
+[DTO] TinVerifyDto: ok
+    the TIN verification decision
+[DTO] UpdateBusinessAddressDto: street?, city?, state?, postal?, country?
+    a partial business address patch
+[DTO] BusinessAddressDto: userId, street?, city?, state?, postal?, country?, createdAt, updatedAt
+    a persisted business address record
+[DTO] CheckMethodDto: enabled, mailTo?
+    a check payment method config
+[DTO] VenmoMethodDto: enabled, handle?
+    a Venmo payment method config
+[DTO] ZelleMethodDto: enabled, handle?
+    a Zelle payment method config
+[DTO] CashAppMethodDto: enabled, cashtag?
+    a Cash App payment method config
+[DTO] PaypalMethodDto: enabled, handle?
+    a PayPal payment method config
+[DTO] CashMethodDto: enabled
+    a cash payment method config
+[DTO] AchMethodDto: enabled, routingNumber?, accountNumberMasked?, instructions?
+    an ACH payment method config
+[DTO] CardMethodDto: enabled, instructions?
+    a card payment method config
+[DTO] OtherMethodDto: enabled, instructions?
+    a freeform payment method config
+[DTO] AcceptedPaymentMethodsDto: check?, venmo?, zelle?, cashapp?, paypal?, cash?, ach?, card?, other?
+    the per-method accepted-payment config
+[DTO] UpdateBusinessIdentityDto: businessName?, legalName?, businessLicense?, logoFileId?, emailAlias?, commsLanguage?, commsLanguage(s)?, acceptedPaymentMethods?
+    a partial business identity patch
+[DTO] BusinessIdentityDto: userId, businessName?, legalName?, businessLicense?, logoFileId?, emailAlias?, acceptedPaymentMethods?, commsLanguage?, commsLanguage(s)?, createdAt, updatedAt
+    a persisted business identity record
+[DTO] UpdateBusinessInsuranceDto: provider?, policyNumber?, coverageCents?, expiresAt?, insuranceFileId?
+    a partial business insurance patch
+[DTO] BusinessInsuranceDto: userId, provider?, policyNumber?, coverageCents?, expiresAt?, insuranceFileId?, insuranceUploadedAt?, createdAt, updatedAt
+    a persisted business insurance record
+[DTO] UpdateContractDefaultsDto: defaultTerms?, paymentInstructions?, paymentTermsTemplateId?, warrantyMonths?, terminationNoticeDays?, disputeResolution?, governingState?
+    a partial contract-defaults patch
+[DTO] ContractDefaultsDto: userId, defaultTerms?, paymentInstructions?, paymentTermsTemplateId?, warrantyMonths?, terminationNoticeDays?, disputeResolution?, governingState?, createdAt, updatedAt
+    a persisted contract-defaults record
+[DTO] CreateReferenceDto: contactName, phoneNumber?, email?, jobDescription?, position?
+    input to create a reference
+[DTO] UpdateReferenceDto: id, contactName?, phoneNumber?, email?, jobDescription?, position?
+    a partial reference patch keyed by id
+[DTO] ReferenceDto: id, userId, contactName, phoneNumber?, email?, jobDescription?, position?, createdAt, updatedAt
+    a persisted reference record
+[DTO] ReferenceListDto: reference(s)
+    a list of references owned by the user
+[DTO] UpdateTaxIdentityDto: w9FileId?, tin?
+    a partial tax identity patch
+[DTO] TaxIdentityDto: userId, w9FileId?, w9UploadedAt?, tinMasked?, createdAt, updatedAt
+    an owner-redacted persisted tax identity record
+[DTO] ProfileSnapshotDto: user, identity?, address?, insurance?, tax?, contractDefaults?, reference(s), initials
+    the full composite profile snapshot for settings
+[DTO] PublicProfileSnapshotDto: identity?, address?, insurance?, hasW9
+    the customer-facing public profile subset
+
+[NON] user
+    the canonical user record store
+[NON] identity
+    the business identity store
+[NON] address
+    the business address store
+[NON] insurance
+    the business insurance store
+[NON] tax
+    the tax identity store
+[NON] contractDefaults
+    the contract-defaults store
+[NON] reference
+    the references store
+[NON] ok
+    a success marker
+[NON] profileSnapshot
+    a composite profile snapshot
+[NON] publicProfile
+    a public profile snapshot

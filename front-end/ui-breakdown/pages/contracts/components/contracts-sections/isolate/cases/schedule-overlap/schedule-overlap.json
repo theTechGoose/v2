@@ -1,0 +1,16 @@
+{
+  "_name": "Schedule overlap — overlapping bars pack into 3 lanes + TODAY marker",
+  "_note": "Five live contracts whose day-windows overlap heavily so packLanes() is forced into multiple lanes; --lanes-h grows each week row. day 8 = today → the pink TODAY line + chip lands in week2 (days 8–14).",
+  "components": {
+    "ScheduleStrip": {
+      "cards": [
+        { "id": "ctr_o1", "client": "Maria Delgado", "initials": "MD", "when": "Day 6 of 14", "scheduleStart": 2, "scheduleEnd": 16, "scheduleScheduled": false, "scheduleColor": ["#FF6B6B", "#C84A4A"] },
+        { "id": "ctr_o2", "client": "Hans Hansen", "initials": "HH", "when": "Wraps in 2 days", "scheduleStart": 1, "scheduleEnd": 11, "scheduleScheduled": false, "scheduleColor": ["#D9886F", "#A85A3A"] },
+        { "id": "ctr_o3", "client": "Northgate Property Mgmt", "initials": "NP", "when": "Starts in 1 day", "scheduleStart": 9, "scheduleEnd": 24, "scheduleScheduled": true, "scheduleColor": ["#9DBDC6", "#4F7A88"] },
+        { "id": "ctr_o4", "client": "Sam Rivera", "initials": "SR", "when": "Starts in 6 days", "scheduleStart": 14, "scheduleEnd": 27, "scheduleScheduled": true, "scheduleColor": ["#5FA34F", "#335D2A"] },
+        { "id": "ctr_o5", "client": "Greenwood HOA", "initials": "GH", "when": "Day 2 of 9", "scheduleStart": 6, "scheduleEnd": 20, "scheduleScheduled": false, "scheduleColor": ["#E6A85C", "#B97A2E"] }
+      ],
+      "lang": "en"
+    }
+  }
+}

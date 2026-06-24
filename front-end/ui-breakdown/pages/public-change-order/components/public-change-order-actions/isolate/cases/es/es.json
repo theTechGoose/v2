@@ -1,0 +1,8 @@
+{
+  "_name": "Spanish — lang='es' (resolved from co.commsLanguage='es'); buttons 'Aprobar este cambio' / 'Rechazar'. Approving label 'Aprobando…'.",
+  "changeOrderId": "co_7d2f1a9b3c4e5f60",
+  "initialStatus": "pending",
+  "lang": "es",
+  "_signals": { "status": "pending", "busy": null },
+  "_note": "Terminal panels in es: approvedLabel 'Aprobado' + '¡Gracias! El total actualizado de tu factura refleja este cambio.'; declined reuses status.declined 'Rechazado' + 'No hay problema. Ya le avisamos a tu contratista.'"
+}

@@ -1,0 +1,29 @@
+{
+  "_name": "Draft — not sent, no dates, finish & send",
+  "idx": 0,
+  "lang": "en",
+  "c": {
+    "id": "ctr_0a5512deccb73f81",
+    "client": "Sam Rivera",
+    "initials": "SR",
+    "title": "Garage Epoxy Floor",
+    "story": "This contract is still a draft — finish it up and send it for signature.",
+    "status": "DRAFT",
+    "mood": "draft",
+    "moodFrom": "#C8B89A",
+    "moodTo": "#7E5A3F",
+    "moodShadow": "rgba(126,90,63,0.4)",
+    "statusColor": "#4A2F1E",
+    "when": "Draft — not sent",
+    "pct": 0,
+    "paid": "$0",
+    "left": "$3,200",
+    "total": "$3,200",
+    "cta": "Finish & send",
+    "ctaHref": "/c/ctr_0a5512deccb73f81",
+    "scheduleStart": 8,
+    "scheduleEnd": 12,
+    "scheduleScheduled": true,
+    "scheduleColor": ["#C8B89A", "#7E5A3F"]
+  }
+}

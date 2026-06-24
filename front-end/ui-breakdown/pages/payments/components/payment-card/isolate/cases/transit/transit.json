@@ -1,0 +1,25 @@
+{
+  "_name": "Transit (front) — teal mood, \"In transit\" status, \"View timeline\" CTA, \"Expected ~2d\" value cell",
+  "lang": "en",
+  "idx": 0,
+  "p": {
+    "id": "pay_ac77001e",
+    "userId": "usr_01",
+    "invoiceId": "inv_77b0c1aa4410",
+    "amount": 310000,
+    "method": "ach",
+    "receivedAt": "2026-06-17T08:00:00Z",
+    "createdAt": "2026-06-17T08:00:00Z",
+    "updatedAt": "2026-06-17T08:00:00Z",
+    "client": "Greenfield HOA",
+    "initials": "GH",
+    "invoiceRef": "INV-77B0C1",
+    "daysAgo": 1,
+    "whenLabel": "Yesterday",
+    "note": "Greenfield's ACH transfer is in flight. Standard 2-day settlement.",
+    "status": "transit",
+    "etaDays": 1
+  },
+  "_signals": { "flipped": false },
+  "_note": "ACH 1d ago (<2d window) → status transit, etaDays 1. STATUS_MOOD.transit gradient (#C8DDE0→#56969E). mood.transit.label=\"In transit\", cta=\"View timeline\". Value cell flips to lbl \"Expected\" / num \"~1d\" (paymentsPage.card.eta). note uses transitAch. amount 310000 → \"$3,100\"."
+}

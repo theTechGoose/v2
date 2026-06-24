@@ -1,0 +1,12 @@
+{
+  "_name": "No-transit — landed only, transitTotal=0 → sub reads \"Every dollar logged.\"",
+  "lang": "en",
+  "monthTotal": 607000,
+  "transitTotal": 0,
+  "attentionCount": 0,
+  "stubs": [
+    { "id": "pay_8a1f20c4", "method": "zelle", "initials": "MD", "client": "Maria Delgado", "whenLabel": "Today", "invoiceRef": "INV-3C91AB", "amount": 482000 },
+    { "id": "pay_5d77e9b2", "method": "cash", "initials": "GH", "client": "Greenfield HOA", "whenLabel": "Yesterday", "invoiceRef": "INV-77B0C1", "amount": 125000 }
+  ],
+  "_note": "transit=0 → the sub collapses to the single `everyDollar` clause (no \"Plus $X on the way\", no trailing \"The monsters logged every dollar.\"). monthTotal 607000 → \"$6,070\". Two stubs."
+}

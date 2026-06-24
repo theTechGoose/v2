@@ -1,0 +1,9 @@
+{
+  "_name": "Spanish localized count",
+  "num": "01",
+  "title": "En espera de respuesta",
+  "count": 2,
+  "defaultOpen": true,
+  "lang": "es",
+  "_signals": { "open": true }
+}

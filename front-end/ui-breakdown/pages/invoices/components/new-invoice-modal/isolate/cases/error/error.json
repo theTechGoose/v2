@@ -1,0 +1,13 @@
+{
+  "_name": "Error — validation failed, role=alert line ('Enter an amount greater than zero.')",
+  "lang": "en",
+  "customers": [
+    { "id": "cust-mg", "userId": "u1", "name": "Maple Grove Apartments" },
+    { "id": "cust-hd", "userId": "u1", "name": "Hilltop Diner" }
+  ],
+  "_signals": {
+    "amount": "0",
+    "error": "Enter an amount greater than zero."
+  },
+  "_note": "Reachable two ways: client-side validation (amount<=0 / no dueDate / new-client missing name → invoicesPage.new.err* strings) or a thrown createInvoice (→ err.message or invoicesPage.new.errCreate). Either sets `error` and leaves the modal open; busy resets to false on the network path so the user can retry."
+}

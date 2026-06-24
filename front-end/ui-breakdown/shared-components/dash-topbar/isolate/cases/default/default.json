@@ -1,0 +1,10 @@
+{
+  "_name": "Default — greeting + live ticker",
+  "greetingName": "Raphael",
+  "initialUnread": 2,
+  "initialNotifications": [
+    { "title": "<strong>Cobblestone Cafe</strong> accepted your quote", "createdAt": "2026-06-18T14:35:00.000Z" },
+    { "title": "<strong>Maple Dental</strong> paid invoice #1042", "createdAt": "2026-06-18T13:10:00.000Z" }
+  ],
+  "lang": "en"
+}

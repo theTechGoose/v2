@@ -1,0 +1,14 @@
+{
+  "_name": "Fading out — post-click exit: backdrop opacity + blur transitioning to 0 before unmount",
+  "_signals": {
+    "lang": "en",
+    "visible": true,
+    "fadingOut": true,
+    "phase": 2,
+    "box": { "top": 132, "left": 20, "width": 176, "height": 48 }
+  },
+  "_mocks": {
+    "localStorage": { "pm:assistant-coachmark-shown": "1" },
+    "_anchor": { "selector": "a.sb__textus[href='/assistant']", "rect": { "top": 132, "left": 20, "width": 176, "height": 48 } }
+  }
+}

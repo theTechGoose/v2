@@ -1,0 +1,9 @@
+{
+  "category": "shared-components",
+  "folder": "ui-section-head",
+  "controls": {
+    "eyebrow": { "type": "text", "value": "Why Paperwork Monster" },
+    "title": { "type": "text", "value": "Quotes, contracts, and invoices in one place" },
+    "lede": { "type": "text", "value": "Stop juggling tools. Send a quote, get it signed, collect payment — all from your phone." }
+  }
+}

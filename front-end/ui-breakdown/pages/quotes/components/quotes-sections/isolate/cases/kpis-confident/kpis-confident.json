@@ -1,0 +1,12 @@
+{
+  "_name": "QuotesKpis — decided≥5 → real win-rate %",
+  "section": "QuotesKpis",
+  "lang": "en",
+  "outValue": 2983000,
+  "outCount": 7,
+  "draftCount": 2,
+  "decidedCount": 6,
+  "wonCount": 4,
+  "lostCount": 2,
+  "winRate": 67
+}

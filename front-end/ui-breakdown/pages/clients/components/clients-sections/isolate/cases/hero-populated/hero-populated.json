@@ -1,0 +1,9 @@
+{
+  "_name": "ClientsHero — populated (12 clients, 4 jobs, $7,280 owed, 3 quiet)",
+  "_component": "ClientsHero",
+  "lang": "en",
+  "totalClients": 12,
+  "activeJobs": 4,
+  "owedTotal": 7280,
+  "quietCount": 3
+}

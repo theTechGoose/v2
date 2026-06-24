@@ -1,0 +1,9 @@
+{
+  "category": "public-change-order",
+  "folder": "public-change-order-actions",
+  "controls": {
+    "changeOrderId": { "type": "text", "value": "co_7d2f1a9b3c4e5f60" },
+    "initialStatus": { "type": "select", "value": "pending", "options": ["pending", "approved", "declined"] },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

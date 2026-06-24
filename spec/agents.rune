@@ -1,0 +1,561 @@
+[MOD] agents
+
+[REQ] chat.send(ChatInputDto): ChatResultDto
+    db:conversation.get(GetByIdDto): AgentConversationDto
+      not-found
+      forbidden
+    db:message.append(AppendMessageDto): AgentMessageDto
+    db:message.listByConversation(GetByIdDto): MessageListDto
+    [PLY] llm.respond(LlmRequestDto): LlmResponseDto
+        [CSE] openai
+            ex:openai.respond(LlmRequestDto): LlmResponseDto
+              timeout
+              rate-limited
+        [CSE] stub
+            stub.respond(LlmRequestDto): LlmResponseDto
+    db:quote.upsert(UpsertQuoteDto): QuoteProjectionDto
+    db:message.appendCard(AppendMessageDto): AgentMessageDto
+    db:conversation.update(UpdateConversationDto): AgentConversationDto
+    db:conversation.toChatResult(GetByIdDto): ChatResultDto
+
+[REQ] conversation.list({}): ConversationListDto
+    db:conversation.listByUser(OwnerDto): ConversationListDto
+
+[REQ] conversation.create(CreateAgentConversationDto): AgentConversationDto
+    db:conversation.save(CreateAgentConversationDto): AgentConversationDto
+
+[REQ] conversation.onboardingStart({}): OnboardingStartDto
+    db:user.get(OwnerDto): UserProjectionDto
+    db:identity.get(OwnerDto): IdentityProjectionDto
+    db:address.get(OwnerDto): AddressProjectionDto
+    db:conversation.save(CreateAgentConversationDto): AgentConversationDto
+    db:message.append(AppendMessageDto): AgentMessageDto
+    db:conversation.toOnboardingStart(GetByIdDto): OnboardingStartDto
+
+[REQ] conversation.get(GetByIdDto): ConversationSnapshotDto
+    db:conversation.getOwned(GetByIdDto): AgentConversationDto
+      not-found
+      forbidden
+    db:conversation.clearUnreadEvent(GetByIdDto): AgentConversationDto
+    db:message.listByConversation(GetByIdDto): MessageListDto
+    db:conversation.getWizardState(GetByIdDto): WizardStateDto
+    db:contract.getOwned(ContractRefDto): ContractDto
+    db:customer.getOwned(CustomerRefDto): CustomerDto
+    db:conversation.toSnapshot(GetByIdDto): ConversationSnapshotDto
+
+[REQ] conversation.phase(GetByIdDto): PhaseStatusDto
+    db:conversation.getOwned(GetByIdDto): AgentConversationDto
+      not-found
+      forbidden
+    [NEW] phaseStatus
+    phaseStatus.fromConversation(currentPhase): PhaseStatusDto
+
+[REQ] conversation.transition(GetByIdDto): TransitionResultDto
+    db:conversation.getOwned(GetByIdDto): AgentConversationDto
+      not-found
+      forbidden
+    db:conversation.update(UpdateConversationDto): AgentConversationDto
+    db:conversation.putWizardState(WizardStateDto): WizardStateDto
+    db:message.append(AppendMessageDto): AgentMessageDto
+    db:conversation.toTransitionResult(GetByIdDto): TransitionResultDto
+
+[REQ] conversation.lockQuote(LockQuoteDto): LockQuoteResultDto
+    db:conversation.getOwned(GetByIdDto): AgentConversationDto
+      not-found
+      forbidden
+    db:quote.getOwned(QuoteRefDto): QuoteProjectionDto
+      not-found
+    db:quote.update(UpsertQuoteDto): QuoteProjectionDto
+    db:message.append(AppendMessageDto): AgentMessageDto
+    db:conversation.update(UpdateConversationDto): AgentConversationDto
+    db:conversation.toLockResult(GetByIdDto): LockQuoteResultDto
+
+[REQ] conversation.acceptContract(AcceptContractDto): AcceptContractResultDto
+    db:conversation.getOwned(GetByIdDto): AgentConversationDto
+      not-found
+      forbidden
+    db:contract.getOwned(ContractRefDto): ContractDto
+      not-found
+    db:contract.update(ContractRefDto): ContractDto
+    db:message.append(AppendMessageDto): AgentMessageDto
+    db:conversation.update(UpdateConversationDto): AgentConversationDto
+    db:conversation.toAcceptResult(GetByIdDto): AcceptContractResultDto
+
+[REQ] conversation.sendContract(SendContractDto): SendContractResultDto
+    db:conversation.getOwned(GetByIdDto): AgentConversationDto
+      not-found
+      forbidden
+    db:contract.getOwned(ContractRefDto): ContractDto
+      not-found
+    db:contract.update(ContractRefDto): ContractDto
+    ex:postmark.sendContract(SendDispatchDto): DispatchResultDto
+      timeout
+    ex:twilio.sendContract(SendDispatchDto): DispatchResultDto
+      timeout
+    db:message.append(AppendMessageDto): AgentMessageDto
+    db:conversation.toSendContractResult(GetByIdDto): SendContractResultDto
+
+[REQ] conversation.sendInvoice(GetByIdDto): SendInvoiceResultDto
+    db:conversation.getOwned(GetByIdDto): AgentConversationDto
+      not-found
+      forbidden
+    db:contract.getOwned(ContractRefDto): ContractDto
+      not-found
+    db:invoice.create(CreateInvoiceDto): InvoiceProjectionDto
+    db:invoice.update(InvoiceRefDto): InvoiceProjectionDto
+    ex:postmark.sendInvoice(SendDispatchDto): DispatchResultDto
+      timeout
+    db:message.append(AppendMessageDto): AgentMessageDto
+    db:conversation.toSendInvoiceResult(GetByIdDto): SendInvoiceResultDto
+
+[REQ] conversation.sampleQuote({}): SampleQuoteDto
+    db:quote.listByUser(OwnerDto): QuoteListDto
+    db:quote.create(UpsertQuoteDto): QuoteProjectionDto
+    [NEW] sampleQuote
+    sampleQuote.toDto(): SampleQuoteDto
+
+[REQ] conversation.bindCustomer(BindCustomerDto): BindCustomerResultDto
+    db:conversation.getOwned(GetByIdDto): AgentConversationDto
+      not-found
+      forbidden
+    db:customer.getOwned(CustomerRefDto): CustomerDto
+      not-found
+    db:contract.update(ContractRefDto): ContractDto
+    db:conversation.update(UpdateConversationDto): AgentConversationDto
+    db:conversation.toBindResult(GetByIdDto): BindCustomerResultDto
+
+[REQ] conversation.remove(GetByIdDto): OkDto
+    db:conversation.tryGet(GetByIdDto): AgentConversationDto
+      forbidden
+    db:conversation.purge(GetByIdDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] wizard.answer(WizardAnswerDto): WizardAnswerResultDto
+    db:conversation.getOwned(GetByIdDto): AgentConversationDto
+      not-found
+      forbidden
+    db:conversation.getWizardState(GetByIdDto): WizardStateDto
+      not-found
+    db:customer.create(CreateCustomerDto): CustomerDto
+    db:conversation.putWizardState(WizardStateDto): WizardStateDto
+    db:message.append(AppendMessageDto): AgentMessageDto
+    db:contract.create(CreateContractDto): ContractDto
+    db:conversation.update(UpdateConversationDto): AgentConversationDto
+    db:conversation.toWizardResult(GetByIdDto): WizardAnswerResultDto
+
+[REQ] wizard.back(BackDto): RewindResultDto
+    db:conversation.getOwned(GetByIdDto): AgentConversationDto
+      not-found
+      forbidden
+    db:conversation.getWizardState(GetByIdDto): WizardStateDto
+      not-found
+    db:conversation.putWizardState(WizardStateDto): WizardStateDto
+    db:message.deleteByIds(DeleteMessagesDto): void
+    db:conversation.toRewindResult(GetByIdDto): RewindResultDto
+
+[REQ] jobDetails.suggestPrices(SuggestPricesDto): PriceOptionsDto
+    [PLY] llm.respond(LlmRequestDto): LlmResponseDto
+        [CSE] openai
+            ex:openai.respond(LlmRequestDto): LlmResponseDto
+              timeout
+              rate-limited
+        [CSE] stub
+            stub.respond(LlmRequestDto): LlmResponseDto
+    [NEW] priceOptions
+    priceOptions.fromResponse(text): PriceOptionsDto
+
+[REQ] jobDetails.polish(PolishDto): PolishResultDto
+    [PLY] llm.respond(LlmRequestDto): LlmResponseDto
+        [CSE] openai
+            ex:openai.respond(LlmRequestDto): LlmResponseDto
+              timeout
+              rate-limited
+        [CSE] stub
+            stub.respond(LlmRequestDto): LlmResponseDto
+    [NEW] polishResult
+    polishResult.fromResponse(text): PolishResultDto
+
+[REQ] jobDetails.options(GenerateOptionsDto): JobOptionsResultDto
+    [PLY] llm.respond(LlmRequestDto): LlmResponseDto
+        [CSE] openai
+            ex:openai.respond(LlmRequestDto): LlmResponseDto
+              timeout
+              rate-limited
+        [CSE] stub
+            stub.respond(LlmRequestDto): LlmResponseDto
+    [NEW] jobOptions
+    jobOptions.fromResponse(text): JobOptionsResultDto
+
+[REQ] jobDetails.professionalize(ProfessionalizeDto): BulletResultDto
+    [PLY] llm.respond(LlmRequestDto): LlmResponseDto
+        [CSE] openai
+            ex:openai.respond(LlmRequestDto): LlmResponseDto
+              timeout
+              rate-limited
+        [CSE] stub
+            stub.respond(LlmRequestDto): LlmResponseDto
+    [NEW] bulletResult
+    bulletResult.fromResponse(text): BulletResultDto
+
+[REQ] jobDetails.translate(TranslateDto): TranslateResultDto
+    [PLY] llm.respond(LlmRequestDto): LlmResponseDto
+        [CSE] openai
+            ex:openai.respond(LlmRequestDto): LlmResponseDto
+              timeout
+              rate-limited
+        [CSE] stub
+            stub.respond(LlmRequestDto): LlmResponseDto
+    [NEW] translateResult
+    translateResult.fromResponse(text): TranslateResultDto
+
+[ENT] chat.send(ChatInputDto): ChatResultDto
+[ENT] conversations.list({}): ConversationListDto
+[ENT] conversations.create(CreateAgentConversationDto): AgentConversationDto
+[ENT] conversations.onboardingStart({}): OnboardingStartDto
+[ENT] conversations.get(GetByIdDto): ConversationSnapshotDto
+[ENT] conversations.phase(GetByIdDto): PhaseStatusDto
+[ENT] conversations.transition(GetByIdDto): TransitionResultDto
+[ENT] conversations.lockQuote(LockQuoteDto): LockQuoteResultDto
+[ENT] conversations.acceptContract(AcceptContractDto): AcceptContractResultDto
+[ENT] conversations.sendContract(SendContractDto): SendContractResultDto
+[ENT] conversations.sendInvoice(GetByIdDto): SendInvoiceResultDto
+[ENT] conversations.sampleQuote({}): SampleQuoteDto
+[ENT] conversations.bindCustomer(BindCustomerDto): BindCustomerResultDto
+[ENT] conversations.remove(GetByIdDto): OkDto
+[ENT] wizard.answer(WizardAnswerDto): WizardAnswerResultDto
+[ENT] wizard.back(BackDto): RewindResultDto
+[ENT] jobDetails.suggestPrices(SuggestPricesDto): PriceOptionsDto
+[ENT] jobDetails.polish(PolishDto): PolishResultDto
+[ENT] jobDetails.options(GenerateOptionsDto): JobOptionsResultDto
+[ENT] jobDetails.professionalize(ProfessionalizeDto): BulletResultDto
+[ENT] jobDetails.translate(TranslateDto): TranslateResultDto
+
+[TYP:uuid] id: string
+    a unique record identifier
+[TYP:ext] userId: string
+    the authenticated owner id, minted from the session
+[TYP] conversationId: string
+    a reference to an agent conversation
+[TYP] customerId: string
+    a reference to a bound customer record
+[TYP] quoteId: string
+    a reference to a bound quote record
+[TYP] contractId: string
+    a reference to a bound contract record
+[TYP] invoiceId: string
+    a reference to a bound invoice record
+[TYP] currentPhase: string
+    the conversation phase: quote or terms
+[TYP] title: string
+    the conversation title, derived from the first user message
+[TYP] preview: string
+    the last meaningful message snippet for the sidebar
+[TYP] hasUnreadEvent: boolean
+    whether the thread has an unread customer event badge
+[TYP] quoteStatus: string
+    denormalized quote status for the sidebar chip
+[TYP] contractStatus: string
+    denormalized contract status for the sidebar chip
+[TYP] invoiceStatus: string
+    denormalized invoice status for the sidebar chip
+[TYP] createdAt: string
+    an ISO creation timestamp
+[TYP] updatedAt: string
+    an ISO last-updated timestamp
+[TYP] role: string
+    the message role: user, assistant, or system
+[TYP] kind: string
+    the message kind: text, voice, image, action_card, wizard, continue_cta, phase_divider
+[TYP] content: string
+    the plain text body of a message
+[TYP] conversation: AgentConversationDto
+    a nested conversation record
+[TYP] newMessage: AgentMessageDto
+    a message appended this turn
+[TYP] message: AgentMessageDto
+    a persisted conversation message
+[TYP] wizard: WizardSnapshotDto
+    the wizard state plus computed progress
+[TYP] contract: ContractDto
+    a bound contract projection
+[TYP] customer: CustomerDto
+    a bound customer projection
+[TYP] canAdvance: boolean
+    whether the conversation can advance to the next phase
+[TYP] nextPhaseHint: string
+    the next phase the conversation may transition to
+[TYP] seeded: boolean
+    whether the onboarding conversation was seeded with a first ask
+[TYP] created: boolean
+    whether the sample quote was newly created
+[TYP] wizardState: WizardStateDto
+    the per-conversation wizard progress snapshot
+[TYP] state: WizardStateDto
+    a nested wizard state
+[TYP] specId: string
+    the wizard spec id
+[TYP:int] activeStepIdx: number
+    the index of the active wizard step
+[TYP] answer: WizardAnswerRecordDto
+    a recorded wizard pick
+[TYP] stepId: string
+    the wizard step id
+[TYP] optionId: string
+    the chosen wizard option id
+[TYP] customValue: string
+    a free-text value for a custom wizard option
+[TYP] answeredAt: string
+    an ISO timestamp of when the step was answered
+[TYP] activeStepId: string
+    the step id now being asked after a rewind
+[TYP] removedMessageId: string
+    a message id removed from the transcript by rewind
+[TYP] previousAnswer: PreviousAnswerDto
+    the popped answer the UI can pre-highlight
+[TYP] progress: WizardProgressDto
+    the computed wizard progress view
+[TYP] isComplete: boolean
+    whether every wizard step has been answered
+[TYP] fractionDone: number
+    completed over total steps, 0 to 1
+[TYP] raw: string
+    the raw text the contractor typed
+[TYP:int] priceCents: number
+    a price in integer cents
+[TYP] priceOption: PriceOptionDto
+    a suggested price tier
+[TYP] tier: string
+    the price tier id: basic, standard, premium
+[TYP] label: string
+    a short human-facing label
+[TYP] rationale: string
+    a one-line price justification
+[TYP] summary: string
+    a short job summary, eight words or fewer
+[TYP] jobName: string
+    a three-word Title Case job identifier
+[TYP] description: string
+    a polished one to three sentence job paragraph
+[TYP] jobOption: JobOptionDto
+    a scope-of-work option for the picker
+[TYP] bullet: string
+    a single scope-of-work bullet line
+[TYP] lang: string
+    a language code, en or es
+[TYP] text: string
+    a single line of text
+[TYP] to: string
+    the target translation language code
+[TYP:nonempty] name: string
+    a customer display name
+[TYP:email] email: string
+    a contact email address
+[TYP] phoneNumber: string
+    a contact phone number
+[TYP] isBusiness: boolean
+    whether the customer is a business entity
+[TYP] businessName: string
+    the legal business name
+[TYP] ok: boolean
+    a success flag
+[TYP] channel: string
+    the dispatch channel: email, sms, or both
+[TYP] language: string
+    the language to render the paperwork in
+[TYP] status: string
+    a record lifecycle status
+[TYP:int] totalAmount: number
+    a contract total in integer cents
+[TYP:int] estimatedTotal: number
+    a quote estimated total in integer cents
+[TYP:int] amount: number
+    an invoice amount in integer cents
+[TYP] dueDate: string
+    an ISO date the invoice is due
+[TYP] issuedDate: string
+    an ISO date the invoice was issued
+[TYP] systemPrompt: string
+    the system prompt sent to the model
+[TYP] llmTurn: LlmTurnDto
+    a single chat turn in the LLM request
+[TYP] businessContext: string
+    pre-computed business context appended to the prompt
+[TYP] actionType: string
+    the structured action the model wants executed
+[TYP] wizardCustomer: WizardCustomerDto
+    the customer payload for the wizard customer step
+[TYP] create: WizardCustomerCreateDto
+    the create-new customer sub-payload
+[TYP] reason: string
+    a dispatch failure reason
+[TYP] postal: string
+    a postal or zip code
+[TYP] quote: QuoteProjectionDto
+    a nested quote projection
+[TYP] to_: string
+    the recipient the dispatch was delivered to
+
+[DTO] ChatInputDto: conversationId?, content?, kind?
+    the chat turn input from the assistant page
+[DTO] AppendMessageDto: conversationId, role, kind, content
+    input to append a message to a conversation
+[DTO] MessageListDto: message(s)
+    the full message history of a conversation
+[DTO] AgentConversationDto: id, userId, customerId?, quoteId?, contractId?, invoiceId?, currentPhase, title?, preview?, hasUnreadEvent?, quoteStatus?, contractStatus?, invoiceStatus?, createdAt, updatedAt
+    a persisted agent conversation record
+[DTO] AgentMessageDto: id, conversationId, role, kind, content, createdAt
+    a persisted agent message
+[DTO] ChatResultDto: conversation, newMessage(s)
+    the conversation plus messages appended this turn
+[DTO] CreateAgentConversationDto: userId, customerId?, quoteId?
+    input to start a new conversation
+[DTO] ConversationListDto: conversation(s)
+    a list of conversations owned by the user
+[DTO] OwnerDto: userId
+    the owning user id wrapper
+[DTO] GetByIdDto: id
+    an id lookup wrapper
+[DTO] OnboardingStartDto: conversationId, seeded
+    the seeded onboarding conversation result
+[DTO] UserProjectionDto: id, userId, name?, email?, phoneNumber?, language?, createdAt, updatedAt
+    a projection of the owning user
+[DTO] IdentityProjectionDto: userId, businessName?, createdAt, updatedAt
+    a projection of the business identity
+[DTO] AddressProjectionDto: userId, state?, postal?, createdAt, updatedAt
+    a projection of the business address
+[DTO] ConversationSnapshotDto: conversation, message(s), wizard?, contract?, customer?
+    the composite read for a single conversation
+[DTO] WizardSnapshotDto: state, progress
+    wizard state plus computed progress
+[DTO] WizardStateDto: specId, activeStepIdx, answer(s)
+    the per-conversation wizard progress snapshot
+[DTO] WizardAnswerRecordDto: stepId, optionId, customValue?, answeredAt
+    a single recorded wizard pick
+[DTO] WizardProgressDto: isComplete, fractionDone
+    the computed wizard progress view
+[DTO] ContractDto: id, userId, quoteId?, customerId?, status, totalAmount?, createdAt, updatedAt
+    a bound contract projection
+[DTO] ContractRefDto: id, userId, status?, customerId?, totalAmount?
+    a contract reference scoped to its owner
+[DTO] CustomerDto: id, userId, name, email?, phoneNumber?, isBusiness?, businessName?, createdAt, updatedAt
+    a bound customer projection
+[DTO] CustomerRefDto: id, userId
+    a customer reference scoped to its owner
+[DTO] CreateCustomerDto: userId, name, email?, phoneNumber?, isBusiness?, businessName?
+    input to create a customer from the wizard step
+[DTO] PhaseStatusDto: currentPhase, quoteId?, contractId?, canAdvance, nextPhaseHint?
+    the phase status for the phase endpoint
+[DTO] UpdateConversationDto: id, currentPhase?, quoteId?, contractId?, invoiceId?, customerId?, title?, preview?, hasUnreadEvent?, quoteStatus?, contractStatus?, invoiceStatus?
+    a partial conversation patch keyed by id
+[DTO] TransitionResultDto: conversation, newMessage(s)
+    the conversation plus the divider and first wizard step
+[DTO] LockQuoteDto: id, quoteId
+    input to lock a specific quote on a conversation
+[DTO] LockQuoteResultDto: conversation, newMessage(s)
+    the conversation plus the sent card and continue CTA
+[DTO] QuoteProjectionDto: id, userId, status, summary?, estimatedTotal?, customerId?, createdAt, updatedAt
+    a projection of a paperwork quote
+[DTO] QuoteRefDto: id, userId
+    a quote reference scoped to its owner
+[DTO] QuoteListDto: quote(s)
+    a list of quotes owned by the user
+[DTO] UpsertQuoteDto: userId, summary?, status?, customerId?, estimatedTotal?
+    input to create or update a quote from chat
+[DTO] AcceptContractDto: id, contractId
+    input to mark a contract accepted
+[DTO] AcceptContractResultDto: conversation, newMessage(s)
+    the conversation plus the acceptance divider and CTA
+[DTO] SendContractDto: id, contractId, channel?, language?
+    input to dispatch a contract to the customer
+[DTO] SendContractResultDto: conversation, newMessage(s)
+    the conversation plus the dispatch status message
+[DTO] SendDispatchDto: userId, kind, contractId?, invoiceId?, quoteId?, language?
+    input to dispatch paperwork over a channel
+[DTO] DispatchResultDto: ok, to_?, reason?
+    the outcome of a dispatch attempt
+[DTO] SendInvoiceResultDto: conversation, newMessage(s)
+    the conversation plus the invoice action card
+[DTO] CreateInvoiceDto: userId, contractId, customerId?, amount?, issuedDate, dueDate, status
+    input to create an invoice from a contract
+[DTO] InvoiceProjectionDto: id, userId, contractId?, customerId?, amount?, status, dueDate?, issuedDate?, createdAt, updatedAt
+    a projection of a paperwork invoice
+[DTO] InvoiceRefDto: id, userId, status?
+    an invoice reference scoped to its owner
+[DTO] SampleQuoteDto: quoteId, created
+    the idempotent sample quote result
+[DTO] BindCustomerDto: id, customerId
+    input to re-point a conversation at a customer
+[DTO] BindCustomerResultDto: conversation, customer
+    the conversation plus its newly bound customer
+[DTO] WizardAnswerDto: conversationId, stepId, optionId, customValue?, wizardCustomer?
+    a single user wizard pick
+[DTO] WizardCustomerDto: id?, create?
+    the customer payload for the wizard customer step
+[DTO] WizardCustomerCreateDto: name, email?, phoneNumber?, isBusiness?, businessName?
+    the create-new customer sub-payload
+[DTO] WizardAnswerResultDto: conversation, wizardState, newMessage(s)
+    the conversation plus updated wizard state and messages
+[DTO] CreateContractDto: userId, quoteId, customerId?, status, totalAmount?
+    input to finalize a contract from the wizard
+[DTO] BackDto: conversationId
+    input to rewind the wizard one step
+[DTO] RewindResultDto: conversation, wizardState, activeStepId, removedMessageId(s), previousAnswer?
+    the conversation plus rewound wizard state
+[DTO] PreviousAnswerDto: stepId, optionId, customValue?
+    the popped answer the UI can pre-highlight
+[DTO] DeleteMessagesDto: conversationId, removedMessageId(s)
+    input to delete specific messages by id
+[DTO] SuggestPricesDto: userId, raw, lang?
+    input to suggest price tiers from a job description
+[DTO] PriceOptionsDto: priceOption(s)
+    the three suggested price tiers
+[DTO] PriceOptionDto: tier, label, priceCents, rationale
+    a single suggested price tier
+[DTO] PolishDto: userId, raw, priceCents?, language?
+    input to polish raw job details
+[DTO] PolishResultDto: summary, jobName, description
+    the polished job summary and paragraph
+[DTO] GenerateOptionsDto: userId, raw, priceCents?, lang(s)?
+    input to generate scope-of-work options
+[DTO] JobOptionsResultDto: jobOption(s), lang(s)
+    the generated options and their languages
+[DTO] JobOptionDto: id, jobName, summary, bullet(s)
+    a single scope-of-work option
+[DTO] ProfessionalizeDto: userId, text
+    input to professionalize a single bullet
+[DTO] BulletResultDto: text
+    the cleaned scope-of-work line
+[DTO] TranslateDto: userId, text(s), to
+    input to translate job-detail bullets
+[DTO] TranslateResultDto: text(s)
+    the translated bullets, same count and order
+[DTO] LlmRequestDto: systemPrompt, llmTurn(s), userId, businessContext?
+    a request to the LLM client
+[DTO] LlmTurnDto: role, content
+    a single chat turn in the LLM request
+[DTO] LlmResponseDto: text, actionType?
+    the model reply plus an optional structured action
+[DTO] OkDto: ok
+    a success marker body
+
+[NON] llm
+    the polymorphic LLM client dispatcher
+[NON] stub
+    the deterministic stub LLM client used in tests
+[NON] phaseStatus
+    a computed phase status view
+[NON] sampleQuote
+    the idempotent onboarding sample quote
+[NON] priceOptions
+    the suggested price tiers result
+[NON] polishResult
+    the polished job details result
+[NON] jobOptions
+    the generated scope-of-work options result
+[NON] bulletResult
+    the professionalized bullet result
+[NON] translateResult
+    the translated bullets result
+[NON] ok
+    a success marker

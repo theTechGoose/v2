@@ -1,0 +1,11 @@
+{
+  "_name": "Open — Track 01 expanded",
+  "num": "01",
+  "title": "Out for response",
+  "count": 3,
+  "defaultOpen": true,
+  "storageKey": "pm:qtrack:1",
+  "lang": "en",
+  "_signals": { "open": true },
+  "_innerHtml": "<div class=\"qcards\" style=\"opacity:.4\">[ quote cards slot ]</div>"
+}

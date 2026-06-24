@@ -1,0 +1,11 @@
+{
+  "_name": "Empty — fetch done, zero users (\"No users found.\")",
+  "_signals": {
+    "q": "999",
+    "rows": [],
+    "loading": false,
+    "busyId": null,
+    "error": null,
+    "impersonateId": ""
+  }
+}

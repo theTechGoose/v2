@@ -1,0 +1,7 @@
+{
+  "_name": "Ordinary session — renders nothing",
+  "_signals": {
+    "who": { "impersonating": false },
+    "busy": false
+  }
+}

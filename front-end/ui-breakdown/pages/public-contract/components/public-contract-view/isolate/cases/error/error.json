@@ -1,0 +1,8 @@
+{
+  "_name": "Error / link gone — fetch returns non-ok → ErrorCard ('This link is no longer available')",
+  "id": "ctr_dead0000",
+  "lang": "en",
+  "_mocks": {
+    "GET /api/contracts/ctr_dead0000/public": { "status": 404, "body": { "reason": "not_found" } }
+  }
+}

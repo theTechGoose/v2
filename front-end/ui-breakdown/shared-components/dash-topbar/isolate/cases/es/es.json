@@ -1,0 +1,9 @@
+{
+  "_name": "Spanish localization",
+  "greetingName": "Raphael",
+  "initialUnread": 1,
+  "initialNotifications": [
+    { "title": "<strong>Cobblestone Cafe</strong> aceptó tu presupuesto", "createdAt": "2026-06-18T14:35:00.000Z" }
+  ],
+  "lang": "es"
+}

@@ -1,0 +1,26 @@
+{
+  "_name": "Scheduled (front) — purple mood, 'Send now', 'Scheduled to send 2026-07-23'",
+  "idx": 0,
+  "now": "2026-06-18T12:00:00.000Z",
+  "lang": "en",
+  "inv": {
+    "id": "inv5566cc",
+    "userId": "u1",
+    "contractId": "ct-301",
+    "customerId": "cust-mg",
+    "amount": 420000,
+    "dueDate": "2026-07-30",
+    "status": "scheduled",
+    "scheduledFor": "2026-07-23",
+    "installmentIndex": 3,
+    "installmentTotal": 3,
+    "createdAt": "2026-05-04T09:00:00.000Z",
+    "updatedAt": "2026-05-04T09:00:00.000Z",
+    "client": "Maple Grove Apartments",
+    "initials": "MA",
+    "invoiceRef": "INV-INV556",
+    "daysOverdue": 0,
+    "daysIn": 0,
+    "stage": "scheduled"
+  }
+}

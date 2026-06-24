@@ -1,0 +1,19 @@
+{
+  "category": "quotes",
+  "folder": "quote-card",
+  "controls": {
+    "idx": { "type": "number", "value": 0 },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] },
+    "q.title": { "type": "text", "value": "Garage epoxy floor — 2-car" },
+    "q.client": { "type": "text", "value": "Tom & Linda Kowalski" },
+    "q.initials": { "type": "text", "value": "TK" },
+    "q.stage": {
+      "type": "select",
+      "value": "opened",
+      "options": ["draft", "sent", "opened", "cooling", "stale", "won", "lost"]
+    },
+    "q.value": { "type": "number", "value": 385000 },
+    "q.opens": { "type": "number", "value": 3 },
+    "q.sentDays": { "type": "number", "value": 1 }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "_name": "Chip variants — draft / sent / signed / invoiced / paid / terms",
+  "activeId": "t1",
+  "_note": "Exercises every branch of deriveChip() (walks invoice→contract→quote→phase backwards).",
+  "initialThreads": [
+    { "id": "p", "userId": "u_dev", "customerName": "Paid Job", "preview": "Invoice paid in full.", "currentPhase": "terms", "invoiceStatus": "paid", "updatedAt": "2026-06-18T12:50:00.000Z", "createdAt": "2026-06-18T08:00:00.000Z" },
+    { "id": "iv", "userId": "u_dev", "customerName": "Invoiced Job", "preview": "Invoice sent.", "currentPhase": "terms", "invoiceStatus": "sent", "updatedAt": "2026-06-18T12:40:00.000Z", "createdAt": "2026-06-18T08:00:00.000Z" },
+    { "id": "sg", "userId": "u_dev", "customerName": "Signed Job", "preview": "Contract signed.", "currentPhase": "terms", "contractStatus": "accepted", "updatedAt": "2026-06-18T12:30:00.000Z", "createdAt": "2026-06-18T08:00:00.000Z" },
+    { "id": "cs", "userId": "u_dev", "customerName": "Contract Sent", "preview": "Contract out for signature.", "currentPhase": "terms", "contractStatus": "sent", "updatedAt": "2026-06-18T12:20:00.000Z", "createdAt": "2026-06-18T08:00:00.000Z" },
+    { "id": "qs", "userId": "u_dev", "customerName": "Quote Sent", "preview": "Estimate sent.", "currentPhase": "quote", "quoteStatus": "sent", "updatedAt": "2026-06-18T12:10:00.000Z", "createdAt": "2026-06-18T08:00:00.000Z" },
+    { "id": "dr", "userId": "u_dev", "customerName": "Drafting", "preview": "Still gathering details.", "currentPhase": "quote", "updatedAt": "2026-06-18T12:00:00.000Z", "createdAt": "2026-06-18T08:00:00.000Z" }
+  ]
+}

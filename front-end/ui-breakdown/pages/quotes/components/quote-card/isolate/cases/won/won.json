@@ -1,0 +1,20 @@
+{
+  "_name": "Won — Q-1099, decided (green mood, \"Open quote\"; card-as-rendered, not the DecidedRow)",
+  "idx": 0,
+  "lang": "en",
+  "q": {
+    "id": "Q-1099",
+    "title": "Building C re-roof",
+    "client": "Maple Grove Apartments",
+    "initials": "MG",
+    "customerId": "cust-mg",
+    "stage": "won",
+    "value": 1420000,
+    "daysIn": 0,
+    "opens": 4,
+    "sentDays": 6,
+    "decidedDays": 1,
+    "band": ["#5FA34F", "#3F7A33"],
+    "shadow": "rgba(81,152,67,0.35)"
+  }
+}

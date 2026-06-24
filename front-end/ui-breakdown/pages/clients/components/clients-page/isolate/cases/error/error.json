@@ -1,0 +1,8 @@
+{
+  "_name": "Error — the on-mount Promise.all rejected at the .then/.catch boundary; renders <div class='cpage-error'> with clientsPage.loadError. UNSTYLED in source (no rule in static/*.css) — FLAG.",
+  "_signals": {
+    "s": { "loading": false, "error": "Network request failed", "cards": [], "top": { "results": [] }, "segments": { "segments": [] } },
+    "addOpen": false
+  },
+  "_note": "Each individual fetch is .catch-guarded to a benign empty, so this branch only fires if the outer .then itself throws (e.g. setS or a render-time exception). Drive in isolate via the error signal directly. The rendered text is the literal tFor(lang,'clientsPage.loadError',{error}) string."
+}

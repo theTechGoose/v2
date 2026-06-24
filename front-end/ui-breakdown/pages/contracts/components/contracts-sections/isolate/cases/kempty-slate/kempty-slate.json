@@ -1,0 +1,5 @@
+{
+  "_name": ".kempty slate — dashed empty-track box (rendered by parent)",
+  "_note": "Not its own export — the .kempty class lives in contracts-sections.css and is rendered by ContractsPage into an empty ContractTrack body. Isolated here via _innerHtml so the dashed slate style is captured.",
+  "_innerHtml": "<div class=\"kempty\">No jobs in progress right now. Quote a job to get one started.</div>"
+}

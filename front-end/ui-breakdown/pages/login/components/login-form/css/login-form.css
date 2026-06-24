@@ -1,0 +1,42 @@
+/* ============================================================
+   LoginForm — phone-entry island (/login).
+   THERE IS NO CLASS-BASED CSS FOR THIS COMPONENT. Every element in
+   LoginForm.tsx is styled with INLINE `style="…"` strings (the
+   <form>, <label> caption, <input>, error <p>, submit <button>,
+   helper <p>). The route's /verify.css stylesheet only contributes
+   the surrounding chrome (`.verify-shell`, `.verify-card`, `.brand`,
+   `h1`, `.muted`) — see ../../../css/verify.css and login.md.
+
+   Below: the exact inline declarations LoginForm.tsx applies, reproduced
+   as comments so a rebuild can port them to classes or keep them inline.
+   The literal hex fallbacks in the source (e.g. #519843) are the same
+   values as the Sabor tokens — prefer the token.
+   ============================================================ */
+
+/* form (root) — LoginForm.tsx line 64
+   display:flex; flex-direction:column; gap:14px; text-align:left; */
+
+/* label caption <span> — line 67
+   display:block; font-size:13px; font-weight:700;
+   color: var(--fg-muted, #6b7560); margin-bottom:6px; */
+
+/* phone <input> — `inputStyle`, line 58
+   width:100%; box-sizing:border-box; padding:14px 16px;
+   border:1px solid var(--border, #d8dcd5); border-radius:12px;
+   font:inherit; font-size:17px; background:#fff; color:var(--fg); */
+
+/* error <p role=alert> — line 84
+   color:#a83b3b; font-size:14px; margin:0;
+   (#a83b3b is the public-surface danger red, NOT the app --danger #e03131) */
+
+/* submit <button> — line 92
+   appearance:none; border:0; border-radius:12px; padding:14px 18px;
+   background: var(--brand-green, #519843); color:#fff;
+   font:inherit; font-weight:800; font-size:16px; cursor:pointer;
+   (no :hover / :disabled style — disabled only changes the label to "…") */
+
+/* helper <p> — line 96
+   color:var(--fg-muted, #6b7560); font-size:13px; margin:2px 0 0;
+   text-align:center; */
+
+/* Motion: none of its own. Reduced motion: N/A (no CSS animation/transition). */

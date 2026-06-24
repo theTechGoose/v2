@@ -1,0 +1,16 @@
+/* ============================================================
+   /admin — page-local CSS.
+   The route loads ONLY `/dashboard.css` (see <Head> in js/index.tsx) purely
+   for the app-shell (.app / .main / .content / .sb / .topbar) and the design
+   TOKENS (--border, --fg, --fg-muted, --brand-green). The AdminPage island
+   itself uses NO stylesheet classes — every element is inline-styled (operator
+   tool, English-only, off the semantic system). Those literals are captured in
+   the admin-page component's css/ folder.
+
+   So this page-level file has essentially nothing of its own: the shell is
+   shared (NOT re-spec'd) and the content is inline. Documented here for
+   completeness — the rebuild target is the @theme tokens + the shell, with the
+   AdminPage primitives in components/admin-page/css/admin-page.css.
+   ============================================================ */
+
+/* (no page-level rules — see notes above) */

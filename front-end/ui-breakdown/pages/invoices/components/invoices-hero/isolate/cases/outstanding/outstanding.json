@@ -1,0 +1,9 @@
+{
+  "_name": "Legacy outstanding — no forecast, '$7,285 on the way / across 3 invoices' + 'N past due'",
+  "outstandingTotal": 728500,
+  "outstandingCount": 3,
+  "overdueCount": 2,
+  "totalInvoiceCount": 9,
+  "forecast": null,
+  "lang": "en"
+}

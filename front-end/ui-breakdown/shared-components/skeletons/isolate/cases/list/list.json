@@ -1,0 +1,6 @@
+{
+  "_name": "ListSkeleton — single-column rows",
+  "_variant": "list",
+  "rows": 5,
+  "_mocks": { "ShimmerStyle": "stub" }
+}

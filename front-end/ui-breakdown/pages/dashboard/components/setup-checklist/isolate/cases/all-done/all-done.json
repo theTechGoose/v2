@@ -1,0 +1,23 @@
+{
+  "_name": "All done — every item complete → renders null (card disappears)",
+  "_signals": { "lang": "en", "dismissed": false },
+  "_mocks": {
+    "GET /profile": {
+      "user": { "id": "u1", "name": "Raphael Castro", "email": "raphael@rcincorporated.net", "language": "en", "createdAt": 1700000000000, "updatedAt": 1700000000000 },
+      "identity": {
+        "userId": "u1",
+        "businessName": "RC Incorporated",
+        "logoFileId": "file_logo_123",
+        "acceptedPaymentMethods": { "zelle": { "enabled": true, "mailTo": "raphael@rcincorporated.net" } },
+        "createdAt": "2026-05-01T00:00:00Z",
+        "updatedAt": "2026-05-01T00:00:00Z"
+      },
+      "address": { "userId": "u1", "street": "120 Maple St", "city": "Austin", "state": "TX", "postal": "78701", "country": "US", "createdAt": "2026-05-01T00:00:00Z", "updatedAt": "2026-05-01T00:00:00Z" },
+      "insurance": { "userId": "u1", "provider": "Hiscox", "policyNumber": "HX-99281", "createdAt": "2026-05-01T00:00:00Z", "updatedAt": "2026-05-01T00:00:00Z" },
+      "tax": null,
+      "contractDefaults": null,
+      "references": [],
+      "initials": "RC"
+    }
+  }
+}

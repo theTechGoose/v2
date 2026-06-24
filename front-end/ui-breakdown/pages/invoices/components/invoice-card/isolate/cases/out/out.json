@@ -1,0 +1,24 @@
+{
+  "_name": "Out for payment (front) — teal mood, 'View invoice', 'Out 3d · due Jul 15'",
+  "idx": 1,
+  "now": "2026-06-18T12:00:00.000Z",
+  "lang": "en",
+  "inv": {
+    "id": "inv3344bb",
+    "userId": "u1",
+    "contractId": "ct-309",
+    "customerId": "cust-gh",
+    "amount": 580000,
+    "issuedDate": "2026-06-15",
+    "dueDate": "2026-07-15",
+    "status": "sent",
+    "createdAt": "2026-06-15T09:00:00.000Z",
+    "updatedAt": "2026-06-15T09:00:00.000Z",
+    "client": "Greenleaf HOA",
+    "initials": "GH",
+    "invoiceRef": "INV-INV334",
+    "daysOverdue": 0,
+    "daysIn": 3,
+    "stage": "out"
+  }
+}

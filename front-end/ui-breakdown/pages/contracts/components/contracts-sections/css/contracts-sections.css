@@ -1,0 +1,288 @@
+/* ============================================================
+   ContractsSections — extracted from static/contracts.css.
+   Covers the 3 SSR sections: ContractsHero (.kph), ContractsKpis (.kkpi),
+   ScheduleStrip (.csched). The .kempty slate (rendered by ContractsPage when
+   a track is empty) also lives here since it is contracts-page chrome.
+   Tokens: --brand-teal, --brand-pink, --fg-muted, --radius-lg, --radius-xl,
+   --radius-pill, --font-heading, --font-body, --dur-fast, --ease-out,
+   --ease-bounce.
+   ============================================================ */
+
+@keyframes q-pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* --- Hero (.kph) --- */
+.kph { padding: 20px 0 24px; position: relative; }
+.kph__inner {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 20px;
+  align-items: end;
+}
+.kph__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brand-pink);
+  margin-bottom: 12px;
+}
+.kph__eyebrow-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--brand-pink);
+  animation: q-pulse-dot 2.4s infinite;
+}
+.kph__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: clamp(34px, 4.5vw, 56px);
+  line-height: 0.96;
+  color: var(--brand-teal);
+  letter-spacing: -0.02em;
+  margin: 0 0 14px;
+  text-wrap: balance;
+}
+.kph__title em { font-style: normal; color: var(--brand-pink); }
+.kph__sub {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--brand-teal);
+  max-width: 540px;
+  margin: 0;
+}
+.kph__sub strong { color: var(--brand-pink); font-weight: 700; }
+.kph__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 22px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-pink);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  box-shadow: 0 8px 18px -6px rgba(255, 107, 107, 0.55);
+  transition: transform 240ms var(--ease-bounce);
+  flex-shrink: 0;
+}
+.kph__cta:hover { transform: translateY(-2px); }
+
+/* --- KPI strip (.kkpi) --- */
+.kkpi {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 28px;
+}
+.kkpi__card {
+  background: #fff;
+  border: 1px solid rgba(26, 83, 92, 0.08);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+}
+.kkpi__card--accent {
+  background: linear-gradient(135deg, rgba(255, 107, 107, 0.08) 0%, rgba(255, 107, 107, 0.02) 100%);
+  border-color: rgba(255, 107, 107, 0.2);
+}
+.kkpi__lbl {
+  font-family: var(--font-heading);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-bottom: 8px;
+}
+.kkpi__num {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 24px;
+  color: var(--brand-teal);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.kkpi__num--pink { color: var(--brand-pink); }
+.kkpi__sub {
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  margin-top: 4px;
+}
+
+/* --- Schedule strip (.csched) — dark teal Gantt-style 30-day lane chart --- */
+.csched {
+  background: linear-gradient(135deg, #0f3a40 0%, #1a535c 100%);
+  border-radius: var(--radius-xl);
+  padding: 20px 22px 22px;
+  color: #fff;
+  margin-bottom: 28px;
+  position: relative;
+  overflow: hidden;
+}
+.csched::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 12% 18%, rgba(255, 255, 255, 0.12) 0, transparent 30%),
+    radial-gradient(circle at 88% 82%, rgba(255, 107, 107, 0.18) 0, transparent 38%);
+  pointer-events: none;
+}
+.csched__head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 14px;
+  position: relative;
+  z-index: 1;
+}
+.csched__eyebrow {
+  font-family: var(--font-heading);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brand-pink);
+}
+.csched__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 19px;
+  color: #fff;
+  letter-spacing: -0.01em;
+}
+.csched__legend {
+  margin-left: auto;
+  display: flex;
+  gap: 14px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.csched__legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+.csched__grid { position: relative; z-index: 1; }
+.csched__weekrow {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 12px;
+  padding: 5px 0;
+  align-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.csched__weekrow:first-child { border-top: none; }
+.csched__weeklbl {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.04em;
+}
+.csched__weekbar {
+  position: relative;
+  height: var(--lanes-h, 22px);     /* set inline per row from packLanes() */
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+}
+.csched__bar {
+  position: absolute;               /* left/width/top/height set inline */
+  height: 18px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, var(--bar-from) 0%, var(--bar-to) 100%);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-family: var(--font-heading);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  cursor: default;
+  transition: transform 240ms var(--ease-out), filter 240ms;
+}
+.csched__bar:hover { transform: scaleY(1.1); filter: brightness(1.1); }
+.csched__bar--scheduled {
+  background:
+    repeating-linear-gradient(45deg,
+      rgba(255, 255, 255, 0.10),
+      rgba(255, 255, 255, 0.10) 5px,
+      rgba(255, 255, 255, 0.18) 5px,
+      rgba(255, 255, 255, 0.18) 10px),
+    linear-gradient(135deg, var(--bar-from) 0%, var(--bar-to) 100%);
+}
+.csched__today {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--brand-pink);
+  box-shadow: 0 0 8px rgba(255, 107, 107, 0.7);
+  z-index: 2;
+}
+.csched__today::before {
+  content: "TODAY";
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--brand-pink);
+  color: #fff;
+  font-family: var(--font-heading);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 2px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.csched__empty {
+  padding: 28px 8px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+}
+
+/* --- empty-track slate (ContractsPage renders <div class="kempty">…) --- */
+.kempty {
+  padding: 22px 18px;
+  background: rgba(26, 83, 92, 0.03);
+  border: 1px dashed rgba(26, 83, 92, 0.16);
+  border-radius: var(--radius-lg);
+  color: var(--fg-muted);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  text-align: center;
+}
+
+/* Responsive (from static/contracts.css) */
+@media (max-width: 1100px) {
+  .kkpi { grid-template-columns: repeat(2, 1fr); }
+  .kph__inner { grid-template-columns: 1fr; align-items: start; }
+  .kph__cta { justify-self: start; }
+}
+@media (max-width: 700px) {
+  .kkpi { grid-template-columns: 1fr; }
+}

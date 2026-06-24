@@ -1,0 +1,13 @@
+{
+  "_name": "Conversation — user + assistant text bubbles (Marcus Lin / t2)",
+  "conversationId": "t2",
+  "userInitials": "ML",
+  "initialCustomer": { "id": "c2", "name": "Marcus Lin", "email": "marcus@example.com", "phoneNumber": "+15125550142" },
+  "initialMessages": [
+    { "id": "m1", "conversationId": "t2", "role": "user", "kind": "text", "content": "Need a quote for kitchen backsplash, ~30 sqft, white subway tile.", "createdAt": 1750247400000 },
+    { "id": "m2", "conversationId": "t2", "role": "assistant", "kind": "text", "content": "Got it — a 30 sqft white subway-tile backsplash. Do you already have a price in mind, or should I help you price it?", "createdAt": 1750247430000 },
+    { "id": "m3", "conversationId": "t2", "role": "user", "kind": "text", "content": "I'm thinking around $1,250 all-in.", "createdAt": 1750247490000 },
+    { "id": "m4", "conversationId": "t2", "role": "assistant", "kind": "text", "content": "$1,250 it is. I'll draft a clean scope of work — give me a sec.", "createdAt": 1750247520000 }
+  ],
+  "sendLanguages": ["en"]
+}

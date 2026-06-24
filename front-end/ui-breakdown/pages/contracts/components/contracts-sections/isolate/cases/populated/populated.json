@@ -1,0 +1,33 @@
+{
+  "_name": "Populated — hero + 4 KPIs + schedule strip with bars",
+  "components": {
+    "ContractsHero": {
+      "totalValue": 2940000,
+      "contractCount": 6,
+      "inFlightCount": 3,
+      "inFlightValue": 2030000,
+      "startingSoonCount": 2,
+      "pendingDeposits": 445000,
+      "lang": "en"
+    },
+    "ContractsKpis": {
+      "inProgressCount": 3,
+      "inProgressValue": 2030000,
+      "startingSoonCount": 2,
+      "startingSoonValue": 1080000,
+      "wrappingUpCount": 1,
+      "wrappingUpLeft": 60000,
+      "closedCount": 4,
+      "closedValue": 3870000,
+      "lang": "en"
+    },
+    "ScheduleStrip": {
+      "cards": [
+        { "id": "ctr_a1", "client": "Maria Delgado", "initials": "MD", "when": "Day 6 of 14", "scheduleStart": 3, "scheduleEnd": 17, "scheduleScheduled": false, "scheduleColor": ["#FF6B6B", "#C84A4A"] },
+        { "id": "ctr_b2", "client": "Hans Hansen", "initials": "HH", "when": "Wraps in 2 days", "scheduleStart": 1, "scheduleEnd": 10, "scheduleScheduled": false, "scheduleColor": ["#D9886F", "#A85A3A"] },
+        { "id": "ctr_c3", "client": "Northgate Property Mgmt", "initials": "NP", "when": "Starts in 5 days", "scheduleStart": 13, "scheduleEnd": 22, "scheduleScheduled": true, "scheduleColor": ["#9DBDC6", "#4F7A88"] }
+      ],
+      "lang": "en"
+    }
+  }
+}

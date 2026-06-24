@@ -1,0 +1,9 @@
+{
+  "_name": "Español — chrome localized (langSignal flipped to es)",
+  "_note": "AsstChat reads langSignal.value, NOT the lang prop. Flip the language signal via _signals so the empty-prompts, composer hint/placeholder, and CTA labels render in Spanish. Free-text message content stays verbatim.",
+  "conversationId": "new",
+  "userInitials": "ML",
+  "_signals": { "lang": "es" },
+  "initialMessages": [],
+  "sendLanguages": ["es", "en"]
+}

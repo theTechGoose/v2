@@ -1,0 +1,12 @@
+{
+  "_name": "Loading — mount before fetch resolves (Skeletons)",
+  "_note": "loading:true initial state. ShimmerStyle + PageHeaderSkeleton + CardGridSkeleton rows={3}. Drive by holding the three client promises pending.",
+  "lang": "en",
+  "_signals": { "loading": true },
+  "_mocks": {
+    "contractsClient.list": "pending",
+    "clientsClient.list": "pending",
+    "quotesClient.list": "pending",
+    "Skeletons": "real"
+  }
+}

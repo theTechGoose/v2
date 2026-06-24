@@ -1,0 +1,19 @@
+{
+  "_name": "Image bubble — kind:image attachment + caption",
+  "_note": "A user message with kind='image' and payload.fileId → .msg__image (links to /api/files/:id) above the text bubble. In isolate the image src 404s; the bubble + alt still render.",
+  "conversationId": "t2",
+  "userInitials": "ML",
+  "initialMessages": [
+    {
+      "id": "img1",
+      "conversationId": "t2",
+      "role": "user",
+      "kind": "image",
+      "content": "Here's the wall I need tiled.",
+      "createdAt": 1750247400000,
+      "payload": { "fileId": "f_kitchen", "filename": "kitchen-wall.jpg" }
+    },
+    { "id": "m2", "conversationId": "t2", "role": "assistant", "kind": "text", "content": "Got it — looks like about 30 sqft. I'll factor that into the quote.", "createdAt": 1750247430000 }
+  ],
+  "sendLanguages": ["en"]
+}

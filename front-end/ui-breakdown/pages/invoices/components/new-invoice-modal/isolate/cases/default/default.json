@@ -1,0 +1,9 @@
+{
+  "_name": "Default — open modal, client select populated, empty amount, due seeded +30d",
+  "lang": "en",
+  "customers": [
+    { "id": "cust-mg", "userId": "u1", "name": "Maple Grove Apartments" },
+    { "id": "cust-hd", "userId": "u1", "name": "Hilltop Diner" },
+    { "id": "cust-ml", "userId": "u1", "name": "Marcus Lin" }
+  ]
+}

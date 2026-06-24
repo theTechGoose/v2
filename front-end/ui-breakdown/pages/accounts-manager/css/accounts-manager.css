@@ -1,0 +1,15 @@
+/* ============================================================
+   /accounts-manager — page-local CSS.
+   HONEST-EMPTY: this route loads `/dashboard.css` purely for the app-shell
+   (.app / .main / .content / .sb / .topbar) and TOKENS. It renders NOTHING of
+   its own — `<div class="content">` is an explicit blank slate (a code comment
+   in the route says "Build the accounts-manager view here"). The sidebar is
+   mounted with showNav={false} (no nav tabs), and the topbar shows only the
+   greeting (no greetingDate prop).
+
+   There are therefore NO page-local CSS rules to extract. The only styled
+   surface is the shared shell — NOT re-spec'd here. This file exists for
+   structural parity with the other page folders.
+   ============================================================ */
+
+/* (intentionally empty — placeholder content area, shell-only) */

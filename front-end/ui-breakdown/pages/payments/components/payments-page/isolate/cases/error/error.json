@@ -1,0 +1,13 @@
+{
+  "_name": "Error — .qpage-error text (UNSTYLED, no role=alert)",
+  "lang": "en",
+  "_signals": {
+    "langSignal": "en"
+  },
+  "_mocks": {
+    "paymentsClient.list": { "_throw": "Network request failed (500)" },
+    "dashboardClient.invoices": { "value": [] },
+    "dashboardClient.customers": { "value": [] }
+  },
+  "_note": "Each client has its own .catch→[] so a single rejection does NOT trip the error branch — only a throw INSIDE the .then (or the outer Promise.all rejecting before the per-client catch) sets s.error. The renderable error state shows `paymentsPage.loadError` = \"Couldn't load payments: {error}\". Isolate must force the .then/Promise.all to reject; the per-call _throw documents intent."
+}

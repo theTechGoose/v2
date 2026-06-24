@@ -1,0 +1,22 @@
+{
+  "_name": "Forecast this week — '$X expected this week' + per-day breakdown + at-risk line",
+  "outstandingTotal": 728500,
+  "outstandingCount": 3,
+  "overdueCount": 1,
+  "totalInvoiceCount": 9,
+  "forecast": {
+    "thisWeekCents": 516000,
+    "thisWeek": [
+      { "expectedLandDate": "2026-06-19", "amount": 96000, "label": "Marcus Lin", "invoiceId": "inv1122aa", "source": "claimed" },
+      { "expectedLandDate": "2026-06-20", "amount": 240000, "label": "Greenleaf HOA", "invoiceId": "inv3344bb", "source": "sent_due" },
+      { "expectedLandDate": "2026-06-22", "amount": 180000, "label": "Hilltop Diner", "invoiceId": "inv7d8e9f", "source": "sent_due" }
+    ],
+    "nextWeekCents": 0,
+    "atRiskCents": 185000,
+    "atRisk": [
+      { "expectedLandDate": "2026-06-03", "amount": 185000, "label": "Hilltop Diner", "invoiceId": "inv7d8e9f", "source": "sent_due" }
+    ],
+    "asOf": "2026-06-18T12:00:00.000Z"
+  },
+  "lang": "en"
+}

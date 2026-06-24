@@ -1,0 +1,15 @@
+/* ===========================================================================
+ * Ticker — NO dedicated CSS.
+ *
+ * Ticker.tsx renders only a text fragment `<>{prefix}{v.toLocaleString()}</>`.
+ * It has no wrapper element and no class of its own. All visual styling comes
+ * from the host that embeds it:
+ *   - inside Outstanding → `.money__amt` (32px Nunito 800, brand-teal) — see
+ *     dash-sections/css/dash-sections.css
+ *   - inside the dead Hero → `.hero__title em` (pink, non-italic)
+ *
+ * The animation is JS (requestAnimationFrame easing 0→value over `duration`ms,
+ * default 1400), NOT CSS — see js/Ticker.tsx. There is no @keyframes here and
+ * NO reduced-motion guard: the rAF count-up runs regardless of
+ * prefers-reduced-motion (flagged as an a11y gap in ticker.md §6).
+ * ======================================================================== */

@@ -1,0 +1,9 @@
+{
+  "_name": "Spanish — ClientsHero populated, localized headline + stats",
+  "_component": "ClientsHero",
+  "lang": "es",
+  "totalClients": 12,
+  "activeJobs": 4,
+  "owedTotal": 7280,
+  "quietCount": 3
+}

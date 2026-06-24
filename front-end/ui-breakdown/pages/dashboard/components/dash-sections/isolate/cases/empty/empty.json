@@ -1,0 +1,47 @@
+{
+  "_name": "Empty \u2014 brand-new account; every block's honest-empty branch",
+  "lang": "en",
+  "_mocks": {
+    "Kpis": {
+      "props": {
+        "activeJobs": 0,
+        "outstanding": 0,
+        "outstandingCount": 0,
+        "outstandingOverdue": 0,
+        "pendingQuotes": 0,
+        "pendingTotal": 0,
+        "avgJob": 0,
+        "lang": "en"
+      }
+    },
+    "ActiveJobs": {
+      "props": {
+        "total": 0,
+        "lang": "en",
+        "jobs": []
+      }
+    },
+    "QuotesAwaiting": {
+      "props": {
+        "lang": "en",
+        "quotes": []
+      }
+    },
+    "Activity": {
+      "props": {
+        "lang": "en",
+        "items": []
+      }
+    },
+    "Outstanding": {
+      "props": {
+        "owed": 0,
+        "current": 0,
+        "mid": 0,
+        "overdue": 0,
+        "lang": "en",
+        "items": []
+      }
+    }
+  }
+}

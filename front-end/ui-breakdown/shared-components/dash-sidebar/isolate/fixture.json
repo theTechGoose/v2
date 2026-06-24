@@ -1,0 +1,12 @@
+{
+  "category": "shared-components",
+  "folder": "dash-sidebar",
+  "controls": {
+    "active": {
+      "type": "select",
+      "value": "home",
+      "options": ["home", "clients", "quotes", "contracts", "invoices", "payments", "admin", "messages"]
+    },
+    "showNav": { "type": "boolean", "value": true }
+  }
+}

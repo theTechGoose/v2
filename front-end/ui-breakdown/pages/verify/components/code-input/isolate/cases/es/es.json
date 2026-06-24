@@ -1,0 +1,6 @@
+{
+  "_name": "Spanish — errExpired shown (langSignal=es)",
+  "phoneNumber": "+15125550142",
+  "initialLang": "es",
+  "_signals": { "digits": ["", "", "", "", "", ""], "submitting": false, "errorKey": "verify.errExpired", "shake": false, "cooldown": 0, "_langSignal": "es" }
+}

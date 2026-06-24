@@ -1,0 +1,6 @@
+{
+  "_name": "Spanish — lang='es'; eyebrow 'Tu firma', pad 'Dibuja tu firma aquí', submit 'Todo bien — firma el contrato →'",
+  "contractId": "ctr_9f3a2b71c0d4e5f6",
+  "lang": "es",
+  "_signals": { "hasInk": true, "name": "Maria Delgado", "status": "idle" }
+}

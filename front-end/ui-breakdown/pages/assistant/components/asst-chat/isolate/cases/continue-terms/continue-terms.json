@@ -1,0 +1,18 @@
+{
+  "_name": "Continue CTA (terms) — Business / Person buttons",
+  "_note": "kind=continue_cta, payload.toPhase='terms' → .continue-cta with the PHASE 2 eyebrow and the two-button Business/Person split (the customer-type pick that kicks off the terms wizard).",
+  "conversationId": "t2",
+  "userInitials": "ML",
+  "initialMessages": [
+    {
+      "id": "cta1",
+      "conversationId": "t2",
+      "role": "assistant",
+      "kind": "continue_cta",
+      "content": "Quote locked in. Ready to set the contract terms?",
+      "createdAt": 1750247700000,
+      "payload": { "toPhase": "terms", "summary": "Subway Tile Backsplash — $1,250" }
+    }
+  ],
+  "sendLanguages": ["en"]
+}

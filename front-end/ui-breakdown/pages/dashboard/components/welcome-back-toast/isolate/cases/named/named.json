@@ -1,0 +1,8 @@
+{
+  "_name": "Named — ?welcome=back + /api/me resolves first name → \"Welcome back, Raphael.\"",
+  "_signals": { "lang": "en", "show": true, "name": "Raphael" },
+  "_mocks": {
+    "_url": "/dashboard?welcome=back",
+    "GET /api/me": { "name": "Raphael Castro" }
+  }
+}

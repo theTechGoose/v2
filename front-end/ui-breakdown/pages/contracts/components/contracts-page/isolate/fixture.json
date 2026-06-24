@@ -1,0 +1,21 @@
+{
+  "category": "contracts",
+  "folder": "contracts-page",
+  "controls": {
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  },
+  "components": {
+    "ContractsPage": {
+      "_note": "Whole-page island. Its only prop is `lang` (in practice it reads langSignal.value). All page DATA is fetched on mount — drive it in isolate via _mocks on the three clients, not props. It mounts ContractsHero/ContractsKpis/ScheduleStrip (page-composition) + ContractTrack + ContractCard (child islands) + shared Skeletons. _mocks keys stub the heavy children/clients so a case can pin loading / error / populated / empty deterministically.",
+      "_mocks": {
+        "contractsClient.list": "[] (override per case with a Contract[] carrying server `mood`)",
+        "clientsClient.list": "[] (CustomerCard[] — only customerId→name is used)",
+        "quotesClient.list": "[] (QuoteCard[] — only quoteId→jobName||summary is used)",
+        "ContractCard": "stub",
+        "ContractTrack": "passthrough (renders children)",
+        "ScheduleStrip": "stub",
+        "Skeletons": "real (loading state needs the shimmer)"
+      }
+    }
+  }
+}

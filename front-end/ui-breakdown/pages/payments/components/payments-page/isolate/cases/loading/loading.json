@@ -1,0 +1,13 @@
+{
+  "_name": "Loading — Skeletons (ShimmerStyle + PageHeaderSkeleton + CardGridSkeleton rows=2)",
+  "lang": "en",
+  "_signals": {
+    "langSignal": "en"
+  },
+  "_mocks": {
+    "paymentsClient.list": { "_delay": 100000, "value": [] },
+    "dashboardClient.invoices": { "_delay": 100000, "value": [] },
+    "dashboardClient.customers": { "_delay": 100000, "value": [] }
+  },
+  "_note": "useEffect Promise.all never resolves within the frame → s.loading stays true → the shared Skeletons branch renders (no hero/KPIs/tracks). Hold the never-resolving mocks to film the shimmer."
+}

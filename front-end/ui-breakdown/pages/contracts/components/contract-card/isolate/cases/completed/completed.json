@@ -1,0 +1,31 @@
+{
+  "_name": "Completed — 100%, all paid, view receipt",
+  "idx": 3,
+  "lang": "en",
+  "c": {
+    "id": "ctr_7c0182befa334510",
+    "client": "Greenwood HOA",
+    "initials": "GH",
+    "title": "Clubhouse Fence Replace",
+    "story": "Wrapped and paid in full — pull the receipt any time.",
+    "status": "COMPLETED",
+    "mood": "completed",
+    "moodFrom": "#5FA34F",
+    "moodTo": "#3F7A33",
+    "moodShadow": "rgba(81,152,67,0.4)",
+    "statusColor": "#2F5A26",
+    "when": "Closed",
+    "pct": 100,
+    "paid": "$12,300",
+    "left": "$0",
+    "total": "$12,300",
+    "cta": "View receipt",
+    "ctaHref": "/invoices",
+    "scheduleStart": 1,
+    "scheduleEnd": 6,
+    "scheduleScheduled": false,
+    "scheduleColor": ["#5FA34F", "#3F7A33"],
+    "startDate": "2026-05-20",
+    "completionDate": "2026-06-04"
+  }
+}

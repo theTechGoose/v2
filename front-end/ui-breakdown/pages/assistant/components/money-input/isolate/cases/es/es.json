@@ -1,0 +1,6 @@
+{
+  "_name": "Español — spelled-out words line in Spanish (langSignal=es)",
+  "_note": "MoneyInput reads langSignal.value (the lang prop is an ignored SSR seed). Flip the language signal via _signals so the words line + eyebrow/hints localize: $1,250.00 → 'mil doscientos cincuenta dólares'. Numeral formatting stays en-US grouping.",
+  "initialCents": 125000,
+  "_signals": { "lang": "es" }
+}

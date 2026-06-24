@@ -1,0 +1,25 @@
+/* PublicQuoteActions — FULLY INLINE-STYLED. No class-based CSS exists in source.
+ * Every visual is an inline style string on the element (captured in the .md
+ * anatomy and in js/PublicQuoteActions.tsx). This file is a placeholder that
+ * records the inline palette/shape constants so a class-based rebuild is
+ * mechanical. There are NO @keyframes / transitions to preserve. */
+
+/* Inline-style constants observed (for reference only — source applies them inline):
+ *   --pq-paper:        #fff      card surface
+ *   --pq-line:         #e3e8e6   hairline / input border
+ *   --pq-line-soft:    #d8e0db   secondary button + idle chip border
+ *   --pq-ink:          #1c2c30   input text
+ *   --pq-teal:         #144852   Ask submit / Ask button label / active chip text
+ *   --pq-muted:        #6b7a7e   labels, Decline button text, hints
+ *   --pq-green:        #519843   active chip border
+ *   --pq-green-tint:   rgba(81,152,67,0.10)   active chip bg
+ *   --pq-danger:       #a83b3b   Decline submit bg + DeclinedCard heading
+ *   --pq-danger-bg:    #fdf2f2   DeclinedCard bg
+ *   --pq-danger-line:  #f3d4d4   DeclinedCard border
+ *   --pq-err:          #b3261e   inline send-error text
+ *   --pq-radius-card:  14px      form/card radius
+ *   --pq-radius-input: 10px      input/secondary-button radius
+ *   --pq-radius-btn:   12px      primary submit radius
+ *   --pq-radius-pill:  999px     reason chips
+ *
+ * Light theme only. Do not add a dark variant. */

@@ -1,0 +1,8 @@
+{
+  "_name": "Approved — terminal green panel (rgba(81,152,67,0.08) bg): eyebrow 'Approved' (#519843) + 'Thanks! Your updated invoice total reflects this change.' No buttons.",
+  "changeOrderId": "co_7d2f1a9b3c4e5f60",
+  "initialStatus": "approved",
+  "lang": "en",
+  "_signals": { "status": "approved", "busy": null },
+  "_note": "Reached either by clicking Approve (status latches in-memory, NO reload) or by re-opening the link after a prior approval (initialStatus seeds status='approved' on mount)."
+}

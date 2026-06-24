@@ -1,0 +1,11 @@
+{
+  "_name": "Composer flash — bounce attention cue (awaiting job details)",
+  "_note": "awaitingJobDetails=true with no submittedJobDetails and an empty draft → composer gets .composer--flash (the one-shot composer-bounce). Drive via _signals; the bounce plays once on mount.",
+  "conversationId": "t2",
+  "userInitials": "ML",
+  "_signals": { "awaitingJobDetails": true, "submittedJobDetails": null, "draft": "" },
+  "initialMessages": [
+    { "id": "m1", "conversationId": "t2", "role": "assistant", "kind": "text", "content": "Great — now tell me what the job involves and I'll write it up.", "createdAt": 1750247400000 }
+  ],
+  "sendLanguages": ["en"]
+}

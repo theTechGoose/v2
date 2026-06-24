@@ -1,0 +1,199 @@
+{
+  "_name": "Populated \u2014 all blocks filled from lib/dash-seed.ts (SEED_*)",
+  "lang": "en",
+  "_mocks": {
+    "Kpis": {
+      "props": {
+        "activeJobs": 7,
+        "outstanding": 6420,
+        "outstandingCount": 4,
+        "outstandingOverdue": 1,
+        "pendingQuotes": 4,
+        "pendingTotal": 12800,
+        "avgJob": 2830,
+        "lang": "en"
+      }
+    },
+    "ActiveJobs": {
+      "props": {
+        "total": 7,
+        "lang": "en",
+        "jobs": [
+          {
+            "client": "Maple Grove Apartments",
+            "task": "Re-roof building C",
+            "amount": "$4,800",
+            "paid": "$2,400 paid",
+            "pct": 50,
+            "due": "today",
+            "icon": "hardhat",
+            "color": "var(--brand-green)",
+            "status": {
+              "kind": "green",
+              "txt": "On track"
+            }
+          },
+          {
+            "client": "Sarah Chen",
+            "task": "Bathroom remodel",
+            "amount": "$8,200",
+            "paid": "$3,000 paid",
+            "pct": 36,
+            "due": "Wed",
+            "icon": "wrench",
+            "color": "var(--brand-pink)",
+            "status": {
+              "kind": "green",
+              "txt": "Crew onsite"
+            }
+          },
+          {
+            "client": "Marshall & Sons",
+            "task": "Driveway re-pour",
+            "amount": "$2,950",
+            "paid": "Deposit due",
+            "pct": 18,
+            "due": "Fri",
+            "icon": "truck",
+            "color": "var(--coffee-500)",
+            "status": {
+              "kind": "warn",
+              "txt": "Awaiting permit"
+            }
+          },
+          {
+            "client": "Jana Patel",
+            "task": "Interior paint, 2BR",
+            "amount": "$1,650",
+            "paid": "Quoted",
+            "pct": 0,
+            "due": "Mon Apr 29",
+            "icon": "paint",
+            "color": "var(--brand-pink)",
+            "status": {
+              "kind": "teal",
+              "txt": "Scheduled"
+            }
+          },
+          {
+            "client": "Cobblestone Cafe",
+            "task": "Patio re-tile",
+            "amount": "$3,400",
+            "paid": "$1,000 paid",
+            "pct": 30,
+            "due": "Apr 30",
+            "icon": "ruler",
+            "color": "var(--brand-green)",
+            "status": {
+              "kind": "green",
+              "txt": "On track"
+            }
+          }
+        ]
+      }
+    },
+    "QuotesAwaiting": {
+      "props": {
+        "lang": "en",
+        "quotes": [
+          {
+            "client": "Tom & Linda K.",
+            "desc": "Garage epoxy floor",
+            "amt": "$3,400",
+            "sent": "Sent Mon \u00b7 viewed 2\u00d7",
+            "hot": true
+          },
+          {
+            "client": "Greenleaf HOA",
+            "desc": "Common-area repaint",
+            "amt": "$5,800",
+            "sent": "Sent Tue \u00b7 viewed",
+            "hot": false
+          },
+          {
+            "client": "Marcus Lin",
+            "desc": "Kitchen backsplash",
+            "amt": "$1,920",
+            "sent": "Sent today",
+            "hot": false
+          },
+          {
+            "client": "Bayside Properties",
+            "desc": "Gutter cleaning, 4-unit",
+            "amt": "$1,680",
+            "sent": "Sent 4 days ago",
+            "hot": false,
+            "cold": true
+          }
+        ]
+      }
+    },
+    "Activity": {
+      "props": {
+        "lang": "en",
+        "items": [
+          {
+            "icon": "check",
+            "bg": "var(--green-50)",
+            "fg": "var(--green-600)",
+            "html": "<strong>Tom K.</strong> opened your quote \u2014 2nd time",
+            "time": "2 min ago"
+          },
+          {
+            "icon": "send",
+            "bg": "var(--pink-50)",
+            "fg": "var(--pink-700)",
+            "html": "Texted quote to <strong>Greenleaf HOA</strong>",
+            "time": "1 hr ago"
+          },
+          {
+            "icon": "card",
+            "bg": "var(--green-50)",
+            "fg": "var(--green-600)",
+            "html": "<strong>Maple Grove</strong> paid invoice deposit",
+            "time": "3 hr ago"
+          },
+          {
+            "icon": "contract",
+            "bg": "var(--teal-50)",
+            "fg": "var(--teal-600)",
+            "html": "<strong>Sarah Chen</strong> e-signed her contract",
+            "time": "Yesterday"
+          }
+        ]
+      }
+    },
+    "Outstanding": {
+      "props": {
+        "owed": 6420,
+        "current": 3340,
+        "mid": 1920,
+        "overdue": 1160,
+        "lang": "en",
+        "items": [
+          {
+            "client": "Hilltop Diner",
+            "meta": "5 days overdue \u00b7 #INV-204",
+            "metaColor": "var(--pink-700)",
+            "metaWeight": 700,
+            "amount": "$1,160"
+          },
+          {
+            "client": "Sarah Chen",
+            "meta": "Due in 3 days \u00b7 #INV-208",
+            "metaColor": "var(--coffee-500)",
+            "metaWeight": 600,
+            "amount": "$1,920"
+          },
+          {
+            "client": "Maple Grove Apts.",
+            "meta": "Due Apr 30 \u00b7 #INV-210",
+            "metaColor": "var(--green-600)",
+            "metaWeight": 600,
+            "amount": "$3,340"
+          }
+        ]
+      }
+    }
+  }
+}

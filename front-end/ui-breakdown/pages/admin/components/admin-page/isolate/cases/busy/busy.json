@@ -1,0 +1,15 @@
+{
+  "_name": "Busy — Grant/Revoke or Impersonate in flight (all actions disabled)",
+  "_note": "busyId matches a row id → that row's primary action reads \"…\"; every Grant/Revoke/Impersonate/Go button is disabled while busyId !== null.",
+  "_signals": {
+    "q": "",
+    "rows": [
+      { "id": "usr_8f2a", "name": "Maria Lopez", "phoneNumber": "+15125550143", "businessName": "Lopez Landscaping", "superAdmin": false },
+      { "id": "usr_4d10", "name": "Dwayne Tucker", "phoneNumber": "+12145559981", "businessName": "Tucker Roofing", "superAdmin": false }
+    ],
+    "loading": false,
+    "busyId": "usr_8f2a",
+    "error": null,
+    "impersonateId": ""
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "_name": "Loading — /profile fetch in flight; snap===null → renders null",
+  "_signals": { "lang": "en", "dismissed": false },
+  "_mocks": {
+    "GET /profile": { "_delay": "pending" }
+  }
+}

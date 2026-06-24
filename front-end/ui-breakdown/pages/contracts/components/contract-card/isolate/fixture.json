@@ -1,0 +1,14 @@
+{
+  "category": "contracts",
+  "folder": "contract-card",
+  "controls": {
+    "c": {
+      "type": "select",
+      "value": "active",
+      "options": ["active", "starting-soon", "wrapping-up", "completed", "draft", "stale"],
+      "_note": "Selects a prebuilt ContractCard object (the `c` prop) by mood. Each option mirrors lib/contracts-shape.ts toContractCard() output: mood drives moodFrom/moodTo/moodShadow/statusColor, status label, when, story, cta, ctaHref, pct, paid/left/total (fmtMoney dollar strings from INTEGER CENTS). The full object literal lives in the matching cases/<mood>.json."
+    },
+    "idx": { "type": "number", "value": 0 },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

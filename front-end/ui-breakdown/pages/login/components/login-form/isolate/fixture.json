@@ -1,0 +1,7 @@
+{
+  "category": "login",
+  "folder": "login-form",
+  "controls": {
+    "_lang": { "type": "select", "value": "en", "options": ["en", "es"], "signal": true }
+  }
+}

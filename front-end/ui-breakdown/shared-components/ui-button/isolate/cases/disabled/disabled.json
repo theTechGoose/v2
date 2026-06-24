@@ -1,0 +1,7 @@
+{
+  "_name": "Disabled",
+  "variant": "primary",
+  "size": "md",
+  "disabled": true,
+  "_innerHtml": "Sending…"
+}

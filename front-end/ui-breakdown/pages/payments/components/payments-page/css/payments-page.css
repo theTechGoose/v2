@@ -1,0 +1,61 @@
+/* ============================================================================
+   PaymentsPage — the page-shell CSS the whole-page island owns directly.
+   The island composes sub-components that bring their own extracted CSS:
+     · PaymentsHero    → ../../payments-hero/css/payments-hero.css   (.pph*, from static/payments.css)
+     · PaymentsKpis    → ../../payments-kpis/css/payments-kpis.css   (.qkpi*, from static/quotes.css)
+     · PaymentCard     → ../../payment-card/css/payment-card.css     (.qcard* + .pcard__amount)
+     · LandedRow       → ../../landed-row/css/landed-row.css         (.qdone*)
+     · PaymentSideRail → ../../payment-side-rail/css/payment-side-rail.css (.qside*)
+     · QuoteTrack      → shared-components/quote-track/css/quote-track.css   (.qtrack*)
+     · Skeletons       → shared (loading branch)
+
+   What's LEFT for the page itself: the two-column layout grid `.qlay`
+   (main column + sticky `.qside` rail) — copied verbatim from
+   static/quotes.css (lines 898–931) — plus the .qcards card grid that wraps
+   the recent PaymentCards, and the UNSTYLED `.qpage-error` hook.
+   Tokens from dashboard.css / quotes.css. Single light theme.
+   ============================================================================ */
+
+/* Two-column page layout: main + sticky side rail. */
+.qlay {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 22px;
+  align-items: flex-start;
+}
+
+/* Card grid that holds the recent-landed PaymentCard flip cards. */
+.qcards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 1200px) {
+  .qlay {
+    grid-template-columns: 1fr;
+  }
+  /* rail drops below the main column and stops sticking */
+  .qside {
+    position: static;
+  }
+  .qkpi {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .qcards {
+    grid-template-columns: 1fr;
+  }
+  .qkpi {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* === UNSTYLED IN SOURCE — the error branch renders this with no rule ===
+   `.qpage-error` has NO definition in any static/*.css and no role="alert";
+   it falls back to default block body text. Flagged in payments-page.md §8.
+   REBUILD FIX: give it a styled error-card (danger-bg + danger fg + padding +
+   radius) and role="alert"/aria-live="assertive" so AT announces a load
+   failure. */

@@ -1,0 +1,10 @@
+{
+  "_name": "Open — Track 01 In progress expanded",
+  "num": "01",
+  "title": "In progress",
+  "count": "3 contracts",
+  "defaultOpen": true,
+  "storageKey": "contracts:track:01",
+  "_signals": { "open": true },
+  "_innerHtml": "<div class=\"kcards\" style=\"opacity:.4\">[ ContractCard grid slot ]</div>"
+}

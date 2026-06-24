@@ -1,0 +1,7 @@
+{
+  "category": "dashboard",
+  "folder": "dashboard-page",
+  "controls": {
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"], "signal": true }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "_name": "Large — 8-digit amount → hero font auto-shrinks",
+  "_note": "initialCents=1234567800 → display '12,345,678.00'. The hero font shrinks (clamped 32-88px) based on digit count + measured stage width via ResizeObserver so the long number still fits the card. Verify the shrink fires in the isolate mount (the RO must observe a sized stage).",
+  "initialCents": 1234567800
+}

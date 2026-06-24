@@ -1,0 +1,21 @@
+{
+  "_name": "Add-Client modal open over the board — inline-styled scrim + white card (Name required + autoFocus, Business name, Phone tel, Email), Cancel + Add. Submit disabled until name non-empty.",
+  "_mocks": {
+    "clientsClient.list": [
+      { "id": "cus_maplegrove", "userId": "u_demo", "name": "Maple Grove Apartments", "businessName": "Maple Grove Apartments", "segment": "property_mgmt", "vip": true, "createdAt": "2024-08-01T00:00:00Z", "updatedAt": "2026-06-18T00:00:00Z", "lastWhen": "2026-06-18T00:00:00Z", "lastWhenRel": "today", "lastTone": "hot", "balanceCents": 420000, "balanceSub": "Owes you", "activeJobs": 2, "jobsSub": "2 active jobs", "status": "active", "temp": 92, "daysSinceContact": 0, "revenue12moCents": 2480000 },
+      { "id": "cus_sarahchen", "userId": "u_demo", "name": "Sarah Chen", "segment": "homeowner", "vip": false, "createdAt": "2025-01-01T00:00:00Z", "updatedAt": "2026-06-15T00:00:00Z", "lastWhen": "2026-06-15T00:00:00Z", "lastWhenRel": "3 days ago", "lastTone": "hot", "balanceCents": 192000, "balanceSub": "Owes you", "activeJobs": 1, "jobsSub": "1 job", "status": "owes", "temp": 58, "daysSinceContact": 3, "revenue12moCents": 0 }
+    ],
+    "clientsClient.top": { "results": [] },
+    "clientsClient.segments": { "segments": [] }
+  },
+  "_signals": {
+    "addOpen": true,
+    "adding": false,
+    "addErr": null,
+    "addName": "Delgado Residence",
+    "addBusiness": "",
+    "addPhone": "(415) 555-0200",
+    "addEmail": "maria.delgado@gmail.com"
+  },
+  "_note": "Modal is a bare <div>/<form> (NOT role=dialog, no focus trap, Escape does not close — flagged in §8). With addName filled the green Add submit is enabled. Set addErr to a string + adding:false to capture the inline role='alert' error; set adding:true to capture the '…' submitting label with both buttons disabled."
+}

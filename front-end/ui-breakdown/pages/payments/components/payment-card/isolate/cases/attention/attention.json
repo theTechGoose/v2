@@ -1,0 +1,24 @@
+{
+  "_name": "Attention (front) — pink mood, \"Attention\" status, \"Text client\" CTA — DEAD branch the page never produces, kept for visual fidelity",
+  "lang": "en",
+  "idx": 0,
+  "p": {
+    "id": "pay_zz000001",
+    "userId": "usr_01",
+    "invoiceId": "inv_decl00aabbcc",
+    "amount": 215000,
+    "method": "check",
+    "receivedAt": "2026-06-16T10:00:00Z",
+    "createdAt": "2026-06-16T10:00:00Z",
+    "updatedAt": "2026-06-16T10:00:00Z",
+    "client": "Lopez Property Mgmt",
+    "initials": "LP",
+    "invoiceRef": "INV-DECL00",
+    "daysAgo": 2,
+    "whenLabel": "2d ago",
+    "note": "Payment from Lopez.",
+    "status": "attention"
+  },
+  "_signals": { "flipped": false },
+  "_note": "DOCUMENTATION-ONLY case — `deriveStatus` never returns \"attention\" (no source signal on Payment), so this mood is unreachable in the live app. Forced here to show STATUS_MOOD.attention (#FFD9D9→#FF6B6B, white status text), mood.attention.label=\"Attention\", cta=\"Text client\". Do NOT treat as a real-data screenshot."
+}

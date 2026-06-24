@@ -1,0 +1,8 @@
+{
+  "_name": "Icon busy — × disabled (opacity .5, cursor wait)",
+  "id": "Q-1094",
+  "variant": "icon",
+  "lang": "en",
+  "_signals": { "busy": true },
+  "_mocks": { "quotesClient.delete": "__never_resolves__" }
+}

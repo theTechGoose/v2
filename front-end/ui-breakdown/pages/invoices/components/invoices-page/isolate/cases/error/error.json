@@ -1,0 +1,10 @@
+{
+  "_name": "Error — Promise.all rejected → .qpage-error (UNSTYLED, hazard)",
+  "lang": "en",
+  "_signals": { "loading": false, "error": "Network request failed" },
+  "_mocks": {
+    "dashboardClient.invoices": "__reject:Network request failed__",
+    "dashboardClient.customers": "__reject:Network request failed__"
+  },
+  "_note": "Each fetch is individually .catch-guarded to [] inside Promise.all, so a single rejection does NOT trip the error branch — the page renders empty instead. The error div only shows if the outer .then→.catch fires (e.g. an exception thrown in the mapper). To force the .qpage-error state in isolate, drive _signals.error directly. Renders: <div class=\"qpage-error\">Couldn't load invoices: Network request failed</div> — no styling, no role=alert."
+}

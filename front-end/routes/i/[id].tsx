@@ -4,6 +4,27 @@ import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
 import { tFor } from "../../lib/i18n.ts";
 import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
+import {
+  BG,
+  computeMilestones,
+  fmtDate,
+  GREEN,
+  hasTermGrid,
+  INK,
+  JobDetailsSection,
+  type LineItem,
+  LINE,
+  MUTED,
+  PartyCard,
+  PaymentScheduleSection,
+  PINK,
+  PINK_DARK,
+  SectionHeader,
+  sumLineTotals,
+  TEAL,
+  type Term,
+  TermGrid,
+} from "../../components/doc-parts.tsx";
 
 interface Contractor {
   name?: string;
@@ -11,6 +32,9 @@ interface Contractor {
   phoneNumber?: string;
   email?: string;
   addressLine?: string;
+  /** 2-letter state code — expands governing-law / state-notices term values
+   *  to customer-readable text in the term grid (matches the agreement page). */
+  state?: string;
   acceptedPaymentMethods?: Record<string, { enabled?: boolean }>;
   /** Outgoing-comms language (roadmap p.13) — drives this page's copy. */
   commsLanguage?: string;
@@ -45,7 +69,17 @@ interface InvoicePublic {
     jobNameByLang?: Record<string, string>;
     summaryByLang?: Record<string, string>;
     descriptionByLang?: Record<string, string>;
+    lineItems?: LineItem[];
   };
+  /** Agreement context mirrored from the linked contract (quote-linked
+   *  invoices only) — lets the doc show the same itemized job + term grid as
+   *  the signed agreement, minus the legal clauses + signature. */
+  agreementTotal?: number;
+  terms?: Term[];
+  startDate?: string;
+  estimatedCompletionDate?: string;
+  effectiveDate?: string;
+  signedAgreement?: { id: string; signedAt?: string };
   siblings?: Array<{
     id: string;
     amount?: number;
@@ -56,15 +90,6 @@ interface InvoicePublic {
   }>;
   acceptedMethods?: Array<{ method: string; handle?: string }>;
 }
-
-const PINK = "#FF6B6B";
-const PINK_DARK = "#d94e4e";
-const TEAL = "#144852";
-const GREEN = "#519843";
-const INK = "#1c2c30";
-const MUTED = "#6b7a7e";
-const LINE = "#e3e8e6";
-const BG = "#f7f6f1";
 
 export default define.page(async function PublicInvoice(ctx) {
   const id = ctx.params.id;
@@ -144,6 +169,24 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
     )
     .map((s) => ({ amount: s.amount ?? 0, index: s.installmentIndex }));
 
+  // Agreement mirror — present only for quote-linked invoices (getInvoicePublic
+  // projects the linked contract's line items, total, and term grid). Standalone
+  // invoices have none of this and keep the lightweight amount-only document.
+  const items = invoice.jobDetails?.lineItems ?? [];
+  const agreementTotal = invoice.agreementTotal ??
+    (items.length ? sumLineTotals(items) : undefined);
+  const milestones = agreementTotal
+    ? computeMilestones(agreementTotal, invoice.terms, lang)
+    : [];
+  const showTermGrid = hasTermGrid({
+    startDate: invoice.startDate,
+    estimatedCompletionDate: invoice.estimatedCompletionDate,
+    terms: invoice.terms,
+  });
+  const rich = items.length > 0 || showTermGrid || agreementTotal != null;
+  let sec = 0;
+  const num = () => String(++sec).padStart(2, "0");
+
   return (
     <article
       style={`background:#fff;border-radius:24px;box-shadow:0 14px 50px rgba(20,72,82,0.10);overflow:hidden;border:1px solid rgba(255,107,107,0.10)`}
@@ -191,6 +234,44 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
             <div style={`margin-top:6px;color:${MUTED};font-size:14px`}>
               {milestoneLabel}
             </div>
+          )
+          : null}
+
+        {/* Standalone job description (quote-less invoices) — the itemized
+            job-details section below only renders for quote-linked invoices, so
+            carry the contractor's note here when it's absent. */}
+        {!rich &&
+            (invoice.jobDetails?.descriptionByLang?.[lang] ??
+              invoice.jobDetails?.description)
+          ? (
+            <p
+              style={`margin:14px 0 0;color:${INK};font-size:15px;line-height:1.6;white-space:pre-wrap`}
+            >
+              {invoice.jobDetails?.descriptionByLang?.[lang] ??
+                invoice.jobDetails?.description}
+            </p>
+          )
+          : null}
+
+        {/* Bill to / From — only on the rich (quote-linked) document */}
+        {rich
+          ? (
+            <section style="margin-top:22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
+              <PartyCard
+                role={tFor(lang, "publicInvoice.billTo")}
+                name={invoice.customer?.name}
+                email={invoice.customer?.email}
+                phone={invoice.customer?.phoneNumber}
+              />
+              <PartyCard
+                role={tFor(lang, "contractDoc.from")}
+                name={invoice.contractor?.name}
+                businessName={invoice.contractor?.businessName}
+                email={invoice.contractor?.email}
+                phone={invoice.contractor?.phoneNumber}
+                address={invoice.contractor?.addressLine}
+              />
+            </section>
           )
           : null}
 
@@ -276,6 +357,135 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
               lang={es ? "es" : "en"}
             />
           )}
+
+        {/* What this invoice covers — mirrors the signed agreement, minus the
+            14 legal clauses + the signature block. Quote-linked invoices only. */}
+        {rich
+          ? (
+            <>
+              {items.length > 0 && (
+                <JobDetailsSection
+                  n={num()}
+                  title={tFor(lang, "contractDoc.jobDetails")}
+                  description={invoice.jobDetails?.descriptionByLang?.[lang] ??
+                    invoice.jobDetails?.description}
+                  items={items}
+                  total={agreementTotal ?? sumLineTotals(items)}
+                  labels={{
+                    tableDescription: tFor(lang, "contractDoc.tableDescription"),
+                    tableQty: tFor(lang, "contractDoc.tableQty"),
+                    tableAmount: tFor(lang, "contractDoc.tableAmount"),
+                    unitEach: tFor(lang, "contractDoc.unitEach"),
+                    valueLabel: tFor(lang, "contractDoc.agreementValue"),
+                    valueSub: tFor(lang, "contractDoc.allIn"),
+                  }}
+                />
+              )}
+              {milestones.length > 0 && (
+                <PaymentScheduleSection
+                  n={num()}
+                  title={tFor(lang, "contractDoc.paymentSchedule")}
+                  milestones={milestones}
+                />
+              )}
+              {showTermGrid && (
+                <section style="margin-top:36px">
+                  <SectionHeader
+                    n={num()}
+                    title={tFor(lang, "contractDoc.terms")}
+                  />
+                  <TermGrid
+                    startDate={invoice.startDate}
+                    estimatedCompletionDate={invoice.estimatedCompletionDate}
+                    terms={invoice.terms}
+                    contractorState={invoice.contractor?.state}
+                    lang={lang}
+                    labels={{
+                      start: tFor(lang, "contractDoc.start"),
+                      estCompletion: tFor(lang, "contractDoc.estCompletion"),
+                      termLabels: {
+                        customer: tFor(lang, "contractDoc.termLabel.customer"),
+                        start_date: tFor(lang, "contractDoc.termLabel.startDate"),
+                        wraps: tFor(lang, "contractDoc.termLabel.wraps"),
+                        payment_terms: tFor(
+                          lang,
+                          "contractDoc.termLabel.paymentTerms",
+                        ),
+                        warranty: tFor(lang, "contractDoc.termLabel.warranty"),
+                      },
+                    }}
+                  />
+                </section>
+              )}
+              {invoice.signedAgreement
+                ? (
+                  <div style="margin-top:28px">
+                    <a
+                      href={`/c/${invoice.signedAgreement.id}`}
+                      style={`display:inline-flex;align-items:center;gap:10px;padding:13px 18px;border:1px solid ${LINE};border-radius:12px;background:#fff;color:${TEAL};text-decoration:none;font-weight:700;font-size:14px`}
+                    >
+                      <svg
+                        width="17"
+                        height="17"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <path d="M14 2v6h6" />
+                        <path d="m9 15 2 2 4-4" />
+                      </svg>
+                      <span>
+                        {tFor(lang, "publicInvoice.viewSignedAgreement")}
+                        {invoice.signedAgreement.signedAt
+                          ? (
+                            <span
+                              style={`display:block;font-weight:600;font-size:12px;color:${MUTED}`}
+                            >
+                              {tFor(lang, "publicInvoice.signedOn", {
+                                date: fmtDate(invoice.signedAgreement.signedAt),
+                              })}
+                            </span>
+                          )
+                          : null}
+                      </span>
+                    </a>
+                  </div>
+                )
+                : null}
+            </>
+          )
+          : null}
+
+        {/* Download PDF — works for any invoice (mirrors the agreement,
+            minus clauses + signature) */}
+        <div style="margin-top:24px;text-align:center">
+          <a
+            href={`/api/invoices/${invoice.id}/pdf`}
+            target="_blank"
+            rel="noopener"
+            style={`display:inline-flex;align-items:center;gap:8px;color:${MUTED};text-decoration:none;font-weight:700;font-size:13px`}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <path d="M7 10l5 5 5-5" />
+              <path d="M12 15V3" />
+            </svg>
+            {tFor(lang, "publicInvoice.downloadPdf")}
+          </a>
+        </div>
 
         {/* Contact footer */}
         {(invoice.contractor?.phoneNumber || invoice.contractor?.email)

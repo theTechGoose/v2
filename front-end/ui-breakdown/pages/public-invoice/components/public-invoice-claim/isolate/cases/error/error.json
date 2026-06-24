@@ -1,0 +1,11 @@
+{
+  "_name": "Error — claim POST failed; red error line inside the detail panel (body.reason or 'Couldn't record that (HTTP 500)'), form stays open",
+  "invoiceId": "inv_3b8c1d2e",
+  "acceptedMethods": [
+    { "method": "zelle", "handle": "hans@hansendecks.com" },
+    { "method": "cash" }
+  ],
+  "customerName": "Maria Delgado",
+  "lang": "en",
+  "_signals": { "selected": "zelle", "error": "already_claimed", "submitting": false, "claimedBy": "Maria Delgado" }
+}

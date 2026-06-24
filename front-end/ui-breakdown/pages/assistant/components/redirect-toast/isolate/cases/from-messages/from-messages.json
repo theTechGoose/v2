@@ -1,0 +1,5 @@
+{
+  "_name": "From messages — consolidation toast visible",
+  "_note": "Real trigger is location.search `?from=messages`; isolate can't set the URL per case, so force the resolved state via _signals.key.",
+  "_signals": { "key": "redirectToast.messagesConsolidated" }
+}

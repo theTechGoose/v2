@@ -1,0 +1,7 @@
+{
+  "_name": "Declined card — terminal, secondary buttons hidden",
+  "quoteId": "a1b2c3d4-1111-2222-3333-444455556666",
+  "customerName": "Jane Doe",
+  "lang": "en",
+  "_signals": { "mode": "decline", "resolved": "declined" }
+}

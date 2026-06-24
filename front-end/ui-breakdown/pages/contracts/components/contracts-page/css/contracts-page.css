@@ -1,0 +1,21 @@
+/* ============================================================
+   ContractsPage — the island owns LOADING/ERROR shells only; all visible
+   chrome is styled by its children (ContractsSections, ContractCard,
+   ContractTrack). Unlike /quotes there is NO two-column .qlay layout — the
+   contracts body is a single stacked column (hero → kpi → schedule → tracks).
+   Tokens: --font-body, --fg.
+   ============================================================ */
+
+/* ERROR STATE — the island renders <div class="kpage-error">…</div>.
+   HAZARD: this class has NO rule in static/contracts.css OR static/dashboard.css
+   — the error message renders as unstyled body text. Rebuild should add a real
+   error-card style. Reproduced minimal here for isolate legibility. */
+.kpage-error {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--fg, #1a535c);
+  padding: 24px 0;
+}
+
+/* LOADING STATE — shared Skeletons: <ShimmerStyle/> + <PageHeaderSkeleton/>
+   + <CardGridSkeleton rows={3}/>. Styles owned by shared-components/skeletons. */

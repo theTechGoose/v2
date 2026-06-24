@@ -1,0 +1,5 @@
+/* InvoicesKpis uses the `.qkpi` strip block from static/quotes.css (verbatim
+   in ../../../css/invoices.css): .qkpi / .qkpi__cell / .qkpi__cell--accent /
+   .qkpi__lbl / .qkpi__val / .qkpi__cell--accent .qkpi__val / .qkpi__sub.
+   The accent cell (pink gradient) is applied to the Overdue cell only when
+   overdueCount > 0. No component-local CSS. Tokens from dashboard.css. */

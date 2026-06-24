@@ -1,0 +1,12 @@
+{
+  "category": "clients",
+  "folder": "clients-sections",
+  "components": ["ClientsHero", "LoopBar", "TopClients", "ClientsSegments"],
+  "controls": {
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] },
+    "totalClients": { "type": "number", "value": 12 },
+    "activeJobs": { "type": "number", "value": 4 },
+    "owedTotal": { "type": "number", "value": 7280 },
+    "quietCount": { "type": "number", "value": 3 }
+  }
+}

@@ -20,7 +20,11 @@ import {
   parseUpdateInvoice,
 } from "@paperwork/dto/invoice.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
-import { parseCreateChangeOrder } from "@paperwork/dto/change-order.ts";
+import {
+  type ChangeOrder,
+  parseCreateChangeOrder,
+} from "@paperwork/dto/change-order.ts";
+import { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
 import { deriveUrgency } from "@paperwork/domain/business/invoice-urgency/mod.ts";
 import { ConfirmPayment } from "@paperwork/domain/coordinators/confirm-payment/mod.ts";
 import { ComputeInvoiceForecast } from "@paperwork/domain/coordinators/compute-invoice-forecast/mod.ts";
@@ -44,6 +48,7 @@ export class InvoiceController {
     private forecast: ComputeInvoiceForecast,
     private recordFromUtterance: RecordPaymentFromUtterance,
     private changeOrders: ChangeOrderStore,
+    private changeOrderAlert: SendChangeOrderAlert,
     private users: UserStore,
     private sessions: SessionStore,
   ) {}
@@ -89,7 +94,62 @@ export class InvoiceController {
       // this snapshot so revisiting the link after approval stays correct.
       originalAmountCents: inv.amount ?? 0,
     });
+    // Trigger approval: alert the contractor (email + SMS) with the shareable
+    // /co link to send the customer. Fire-and-forget — delivery problems must
+    // never fail the create.
+    this.changeOrderAlert.run(co.id).catch((err) =>
+      console.error(`[invoices/${id}/change-orders] alert failed:`, err)
+    );
     return ctx.json(co);
+  }
+
+  /**
+   * Edit a change order (roadmap p.12). Editing RE-OPENS approval: the order
+   * resets to `pending`, the contractor is re-alerted with the link, and the
+   * customer must approve the revised amount. If the prior version was already
+   * `approved`, its delta is first reverted from the live invoice so the new
+   * approval doesn't stack on top of the old one.
+   */
+  @Put(":id/change-orders/:coId")
+  async editChangeOrder(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Param("coId") coId: string,
+    @Body() body: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const existing = await this.changeOrders.getOwned(coId, user.id);
+    const dto = parseCreateChangeOrder(body);
+    // Revert any already-applied delta, then re-snapshot against the resulting
+    // live total so the customer's fresh approval math is correct.
+    const invAmount = await revertApprovedDelta(this.store, existing, user.id);
+    const co = await this.changeOrders.update(coId, user.id, {
+      description: dto.description,
+      deltaAmountCents: dto.deltaAmountCents,
+      originalAmountCents: invAmount,
+    });
+    this.changeOrderAlert.run(co.id).catch((err) =>
+      console.error(`[invoices/${id}/change-orders/${coId}] alert failed:`, err)
+    );
+    return ctx.json(co);
+  }
+
+  /** Delete a change order. If it was already approved, its delta was applied
+   *  to the live invoice — revert that first so deleting it doesn't leave a
+   *  phantom amount behind. Pending/declined orders never touched the invoice. */
+  @Delete(":id/change-orders/:coId")
+  async deleteChangeOrder(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Param("coId") coId: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const existing = await this.changeOrders.getOwned(coId, user.id);
+    // Revert (only) an approved order's applied delta; pending/declined never
+    // touched the invoice.
+    await revertApprovedDelta(this.store, existing, user.id);
+    await this.changeOrders.delete(coId, user.id);
+    return ctx.json({ ok: true });
   }
 
   /** List change orders for an invoice. */
@@ -296,6 +356,25 @@ export class InvoiceController {
       }),
     );
   }
+}
+
+/** Revert an already-approved change order's delta from its invoice (shared by
+ *  the edit + delete handlers so the "approved → undo" invariant lives in one
+ *  place). Returns the resulting invoice amount — unchanged when the order was
+ *  never approved — for re-snapshotting. Module-level on purpose: Danet
+ *  registers every *class method* on a controller as a route, so controller
+ *  helpers must be free functions (see resolveName/resolveJobName below). */
+async function revertApprovedDelta(
+  store: InvoiceStore,
+  co: ChangeOrder,
+  userId: string,
+): Promise<number> {
+  const inv = await store.getOwned(co.invoiceId, userId);
+  const current = inv.amount ?? 0;
+  if (co.status !== "approved") return current;
+  const reverted = Math.max(0, current - co.deltaAmountCents);
+  await store.update(co.invoiceId, userId, { amount: reverted });
+  return reverted;
 }
 
 async function resolveName(

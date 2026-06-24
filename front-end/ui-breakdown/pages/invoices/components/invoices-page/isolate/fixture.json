@@ -1,0 +1,14 @@
+{
+  "category": "invoices",
+  "folder": "invoices-page",
+  "controls": {
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  },
+  "components": [
+    "invoices-hero",
+    "invoices-kpis",
+    "invoice-card",
+    "new-invoice-modal",
+    "quote-track"
+  ]
+}

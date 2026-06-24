@@ -1,0 +1,6 @@
+{
+  "_name": "Named — customer-bound, terms phase",
+  "initialClient": "New conversation",
+  "initialStatus": "Bossie is ready to help",
+  "_signals": { "client": "Maria Gonzalez", "status": "Phase: terms" }
+}

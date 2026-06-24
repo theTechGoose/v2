@@ -1,0 +1,75 @@
+/* ============================================================
+   ui/Button — design-system Button + AnchorButton.
+   Emits classes: `btn`, `btn-{primary|outline|ghost}`, `btn-lg`.
+
+   HAZARD: there are TWO live definitions of these classes in the codebase.
+   The component's variant API (primary|outline|ghost) maps cleanly to the
+   verify.css set (the only one with all three + disabled), so THAT is the
+   canonical rebuild target. The landing.css set is a divergent MARKETING
+   restyle (pink primary, no ghost) loaded only on the public/landing surface.
+   A third, UNRELATED set in dashboard.css uses BEM `.btn--quote/.btn--ghost/
+   .btn--accent` (double-dash) and is NOT this component — ignore it.
+   ============================================================ */
+
+/* ---------- CANONICAL: static/verify.css (auth/app surface) ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 15px;
+  transition: transform 120ms ease, background 200ms ease, color 200ms ease;
+}
+.btn:active { transform: translateY(1px); }
+
+.btn-primary {
+  background: var(--accent);          /* brand-pink */
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover { background: var(--accent-hover); }
+
+.btn-outline {
+  background: #fff;
+  color: var(--fg);
+  border: 2px solid var(--border-strong);
+}
+.btn-outline:hover { border-color: var(--brand-teal); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--fg);
+}
+.btn-ghost:hover { background: var(--bg-sunken); }
+
+.btn-lg {
+  padding: 14px 24px;
+  font-size: 16px;
+}
+
+.btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ---------- DIVERGENT (do not merge): static/landing.css marketing restyle ----------
+.btn { display:inline-flex; align-items:center; gap:8px;
+       font-family:var(--font-heading); font-weight:700; border:none; cursor:pointer;
+       white-space:nowrap; transition:all 200ms var(--ease-bounce); text-decoration:none; }
+.btn-primary { background:var(--brand-pink); color:#fff; padding:12px 22px;
+               border-radius:var(--radius-lg); font-size:15px;
+               box-shadow:0 8px 20px rgba(255,107,107,.32); }
+.btn-primary:hover { background:var(--pink-600); transform:translateY(-1px);
+                     box-shadow:0 12px 28px rgba(255,107,107,.4); }
+.btn-primary:active { transform:scale(.97); }
+.btn-lg { padding:16px 28px; font-size:16px; border-radius:18px; }
+.btn-outline { background:#fff; color:var(--brand-teal); padding:16px 26px;
+               border-radius:18px; border:1.5px solid var(--border-strong); font-size:16px; }
+.btn-outline:hover { border-color:var(--brand-teal); transform:translateY(-1px); }
+   -- NOTE: landing.css has NO .btn-ghost; ghost variant only renders correctly
+      on a surface that loads verify.css.
+*/

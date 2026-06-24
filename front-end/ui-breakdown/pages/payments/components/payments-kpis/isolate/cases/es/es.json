@@ -1,0 +1,12 @@
+{
+  "_name": "Spanish — labels + plurals localize via es.json",
+  "lang": "es",
+  "landedCount": 4,
+  "monthTotal": 1591000,
+  "transitCount": 2,
+  "transitTotal": 525000,
+  "attentionCount": 0,
+  "attentionTotal": 0,
+  "avgDays": 6,
+  "_note": "All qkpi labels/subs resolve through es.json (landedLabel, transitLabel, attentionLabel, avgLabel, payments.one/other plural, onTheWay, heldUp, acrossLanded). Money formatting stays en-US."
+}

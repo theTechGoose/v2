@@ -1,0 +1,8 @@
+{
+  "_name": "End state (all steps shown, landing default)",
+  "messageCopy": "Message",
+  "messageCopyEs": "Mensaje",
+  "controls": false,
+  "autoPlayOnView": true,
+  "_signals": { "lang": "en", "shown": 12, "hidden": [2] }
+}

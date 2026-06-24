@@ -1,0 +1,8 @@
+{
+  "_name": "Approving — POST /approve in flight; green button reads 'Approving…', both buttons disabled.",
+  "changeOrderId": "co_7d2f1a9b3c4e5f60",
+  "initialStatus": "pending",
+  "lang": "en",
+  "_signals": { "status": "pending", "busy": "approve" },
+  "_note": "busy='approve' disables BOTH buttons (disabled={busy!==null}). The Decline button stays its idle 'Decline' label while Approve shows 'Approving…'. Drive by stalling the /api/change-orders/:id/approve mock."
+}

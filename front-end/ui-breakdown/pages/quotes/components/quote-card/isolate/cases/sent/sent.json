@@ -1,0 +1,19 @@
+{
+  "_name": "Sent — Q-1108, no opens (pink mood, NO opens badge, \"Set a reminder\")",
+  "idx": 1,
+  "lang": "en",
+  "q": {
+    "id": "Q-1108",
+    "title": "Fence stain — back run",
+    "client": "Marcus Lin",
+    "initials": "ML",
+    "customerId": "cust-ml",
+    "stage": "sent",
+    "value": 240000,
+    "daysIn": 0,
+    "opens": 0,
+    "sentDays": 0,
+    "band": ["#FFB3B3", "#FF6B6B"],
+    "shadow": "rgba(255,107,107,0.35)"
+  }
+}

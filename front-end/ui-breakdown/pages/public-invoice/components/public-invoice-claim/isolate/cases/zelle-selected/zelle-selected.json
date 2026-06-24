@@ -1,0 +1,13 @@
+{
+  "_name": "Zelle selected — pink active chip + detail panel ('Send to hans@hansendecks.com on Zelle'), reference + name inputs, 'I sent it' button",
+  "invoiceId": "inv_3b8c1d2e",
+  "acceptedMethods": [
+    { "method": "zelle", "handle": "hans@hansendecks.com" },
+    { "method": "cashapp", "handle": "$hansendecks" },
+    { "method": "check", "handle": "812 Cedar Ln, Austin, TX 78704" },
+    { "method": "cash" }
+  ],
+  "customerName": "Maria Delgado",
+  "lang": "en",
+  "_signals": { "selected": "zelle", "claimedBy": "Maria Delgado" }
+}

@@ -1,0 +1,10 @@
+{
+  "_name": "Single-method — PSideMix renders one segment at 100% (full-width bar, one legend row)",
+  "lang": "en",
+  "landedAmounts": [482000, 310000],
+  "landed": [
+    { "id": "pay_8a1f20c4", "client": "Maria Delgado", "method": "zelle", "amount": 482000 },
+    { "id": "pay_z2229911", "client": "Maria Delgado", "method": "zelle", "amount": 310000 }
+  ],
+  "_note": "Both payments are Zelle → PSideMix has a single segment at 100% (zelle color #8E5BD6), legend shows one \"Zelle 100%\" row. PSideTopPayors collides both into one \"Maria Delgado\" bar ($7,920) — documents the by-name tally hazard. PSideFlow shows a 2-point shape."
+}

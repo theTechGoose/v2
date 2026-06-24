@@ -1,0 +1,15 @@
+{
+  "_name": "showNav=false — accounts-manager chrome (no tabs)",
+  "active": "home",
+  "showNav": false,
+  "_signals": {
+    "collapsed": false,
+    "mobileOpen": false,
+    "s": {
+      "counts": {},
+      "identity": { "display": "Raphael Castro", "biz": "RC Incorporated", "initials": "RC" },
+      "lang": "en",
+      "superAdmin": true
+    }
+  }
+}

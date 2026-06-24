@@ -1,0 +1,16 @@
+{
+  "_name": "Forecast next week — quiet this week, '$X coming next week.'",
+  "outstandingTotal": 305000,
+  "outstandingCount": 2,
+  "overdueCount": 0,
+  "totalInvoiceCount": 7,
+  "forecast": {
+    "thisWeekCents": 0,
+    "thisWeek": [],
+    "nextWeekCents": 305000,
+    "atRiskCents": 0,
+    "atRisk": [],
+    "asOf": "2026-06-18T12:00:00.000Z"
+  },
+  "lang": "en"
+}

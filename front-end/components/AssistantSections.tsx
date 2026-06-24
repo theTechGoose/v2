@@ -71,22 +71,6 @@ export function ChatHeader(
           {status}
         </div>
       </div>
-      <div class="chat__head-tools">
-        <button
-          type="button"
-          class="chat__head-btn"
-          title={tFor(lang, "assistantDemo.chatHeader.shareThread")}
-        >
-          <I d={ICN.send} size={15} />
-        </button>
-        <button
-          type="button"
-          class="chat__head-btn"
-          title={tFor(lang, "assistantDemo.chatHeader.more")}
-        >
-          <I d={ICN.more} size={15} />
-        </button>
-      </div>
     </div>
   );
 }
@@ -151,10 +135,6 @@ export function DealBar(
           {tFor(lang, "assistantDemo.dealBar.phaseSend")}
         </span>
       </div>
-      <button type="button" class="deal__back">
-        <I d={ICN.back} size={11} />{" "}
-        {tFor(lang, "assistantDemo.dealBar.backToChat")}
-      </button>
     </div>
   );
 }

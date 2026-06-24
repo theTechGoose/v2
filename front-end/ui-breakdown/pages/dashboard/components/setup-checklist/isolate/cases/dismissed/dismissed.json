@@ -1,0 +1,16 @@
+{
+  "_name": "Dismissed — user clicked Hide; dismissed=true → renders null (session-only, not persisted)",
+  "_signals": { "lang": "en", "dismissed": true },
+  "_mocks": {
+    "GET /profile": {
+      "user": { "id": "u1", "name": "Raphael Castro", "email": "raphael@rcincorporated.net", "language": "en", "createdAt": 1700000000000, "updatedAt": 1700000000000 },
+      "identity": { "userId": "u1", "businessName": "RC Incorporated", "logoFileId": null, "acceptedPaymentMethods": {}, "createdAt": "2026-05-01T00:00:00Z", "updatedAt": "2026-05-01T00:00:00Z" },
+      "address": null,
+      "insurance": null,
+      "tax": null,
+      "contractDefaults": null,
+      "references": [],
+      "initials": "RC"
+    }
+  }
+}

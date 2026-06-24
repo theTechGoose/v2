@@ -193,7 +193,9 @@ export const dashboardClient = {
   invoices: (status?: string, opts: ApiOptions = {}) =>
     api.get<Invoice[]>("/invoices", { ...opts, query: { status } }),
   customers: (opts: ApiOptions = {}) => api.get<Customer[]>("/customers", opts),
-  /** Create a standalone invoice (no contract). `amount` is INTEGER CENTS. */
+  /** Create a standalone invoice (no contract). `amount` is INTEGER CENTS.
+   *  `jobName`/`description` give the quote-less invoice its own context
+   *  (rendered as the hero + note on the public page and email). */
   createInvoice: (
     body: {
       customerId?: string;
@@ -201,6 +203,8 @@ export const dashboardClient = {
       dueDate: string;
       issuedDate?: string;
       status?: string;
+      jobName?: string;
+      description?: string;
     },
     opts: ApiOptions = {},
   ) => api.post<Invoice>("/invoices", body, opts),

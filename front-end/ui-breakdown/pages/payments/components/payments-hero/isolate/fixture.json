@@ -1,0 +1,19 @@
+{
+  "category": "payments",
+  "folder": "payments-hero",
+  "controls": {
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] },
+    "monthTotal": { "type": "number", "value": 1591000 },
+    "transitTotal": { "type": "number", "value": 525000 },
+    "attentionCount": { "type": "number", "value": 0 },
+    "stubs": {
+      "type": "object",
+      "value": [
+        { "id": "pay_8a1f20c4", "method": "zelle", "initials": "MD", "client": "Maria Delgado", "whenLabel": "Today", "invoiceRef": "INV-3C91AB", "amount": 482000 },
+        { "id": "pay_5d77e9b2", "method": "cash", "initials": "GH", "client": "Greenfield HOA", "whenLabel": "Yesterday", "invoiceRef": "INV-77B0C1", "amount": 125000 },
+        { "id": "pay_2bb1043f", "method": "check", "initials": "TB", "client": "Tom Becker", "whenLabel": "8d ago", "invoiceRef": "INV-AA19FF", "amount": 920000 }
+      ]
+    }
+  },
+  "_note": "Money INTEGER CENTS. monthTotal 1591000 → \"$15,910\"; transitTotal 525000 → \"$5,250\". attentionCount is always 0 on the real page (no source signal). stubs = the parent's recentLanded.slice(0,3); each carries the EnrichedPayment subset the .pph__stub markup reads."
+}

@@ -1,0 +1,8 @@
+{
+  "category": "shared-components",
+  "folder": "ui-brand",
+  "controls": {
+    "size": { "type": "select", "value": "md", "options": ["sm", "md"] },
+    "inverse": { "type": "boolean", "value": false }
+  }
+}

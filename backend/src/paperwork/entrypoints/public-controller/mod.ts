@@ -14,6 +14,7 @@ import { EventBus } from "@core/business/events/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
+import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
@@ -136,6 +137,7 @@ export class PaperworkPublicController {
     private views: ViewStore,
     private shortlinks: ShortLinkStore,
     private files: FileStore,
+    private invoicePdf: RenderInvoicePdf,
   ) {}
 
   /**
@@ -171,6 +173,36 @@ export class PaperworkPublicController {
           "content-length": String(bytes.length),
           // Short-lived cache: replacing the logo shows up within minutes.
           "cache-control": "public, max-age=300",
+        },
+      });
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+
+  /**
+   * GET /invoices/:id/pdf — stream a downloadable PDF of the invoice.
+   * Same capability model as the rest of the public surface: knowing the
+   * unguessable invoice id grants the download. The PDF mirrors the signed
+   * agreement minus the 14 legal clauses + the signature block (see
+   * RenderInvoicePdf).
+   */
+  @Get("invoices/:id/pdf")
+  async getInvoicePdf(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
+    try {
+      const bytes = await this.invoicePdf.run(id);
+      return new Response(bytes as BodyInit, {
+        status: 200,
+        headers: {
+          "content-type": "application/pdf",
+          "content-length": String(bytes.length),
+          "content-disposition": `inline; filename="invoice-${
+            id.slice(0, 8).toUpperCase()
+          }.pdf"`,
+          "cache-control": "no-store",
         },
       });
     } catch (e) {
@@ -683,7 +715,13 @@ export class PaperworkPublicController {
         descriptionByLang?: Record<string, string>;
         jobNameByLang?: Record<string, string>;
         summaryByLang?: Record<string, string>;
+        lineItems?: Quote["lineItems"];
       } | undefined;
+      // The full agreement value (the whole job) — distinct from this
+      // invoice's `amount`, which may be a single milestone. Lets the public
+      // page mirror the signed agreement's itemized total alongside the
+      // amount due. Absent for standalone invoices.
+      let agreementTotal: number | undefined = contract?.totalAmount;
       if (contract?.quoteId) {
         try {
           const q = await this.quotes.get(contract.quoteId);
@@ -694,7 +732,15 @@ export class PaperworkPublicController {
             descriptionByLang: q.descriptionByLang,
             jobNameByLang: q.jobNameByLang,
             summaryByLang: q.summaryByLang,
+            lineItems: q.lineItems,
           };
+          if (agreementTotal == null) {
+            agreementTotal = q.estimatedTotal ??
+              ((q.lineItems ?? []).reduce(
+                (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
+                0,
+              ) || undefined);
+          }
         } catch { /* fall through */ }
       }
       // Standalone invoices (no contract/quote) carry their own jobName +
@@ -735,6 +781,29 @@ export class PaperworkPublicController {
         jobDetails,
         siblings: sortedSiblings,
         acceptedMethods,
+        // Agreement context mirrored from the linked contract so the invoice
+        // renders the same itemized job + term grid as the signed agreement
+        // (minus the legal clauses + signature block). Omitted for standalone
+        // invoices, which keep the lightweight amount-only document.
+        ...(agreementTotal != null ? { agreementTotal } : {}),
+        ...(contract
+          ? {
+            terms: contract.terms ?? [],
+            startDate: contract.startDate,
+            estimatedCompletionDate: contract.estimatedCompletionDate,
+            effectiveDate: contract.effectiveDate ?? contract.createdAt,
+            // "View the signed agreement" link target — only once actually
+            // signed (the user's "link to the signed quote if one exists").
+            ...(contract.status === "signed"
+              ? {
+                signedAgreement: {
+                  id: contract.id,
+                  signedAt: contract.signedAt,
+                },
+              }
+              : {}),
+          }
+          : {}),
       });
     } catch (e) {
       return notFoundResponse(ctx, e);

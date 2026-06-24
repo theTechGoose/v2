@@ -1,0 +1,11 @@
+{
+  "_name": "Default — all 4 cells, Overdue accent ON (count>0)",
+  "overdueCount": 2,
+  "overdueTotal": 605000,
+  "outCount": 1,
+  "outTotal": 580000,
+  "draftingCount": 2,
+  "paidCount": 1,
+  "paidTotal": 190000,
+  "lang": "en"
+}

@@ -1,0 +1,13 @@
+{
+  "_name": "Error — action failed, role=\"alert\" banner above table",
+  "_signals": {
+    "q": "512 555",
+    "rows": [
+      { "id": "usr_8f2a", "name": "Maria Lopez", "phoneNumber": "+15125550143", "businessName": "Lopez Landscaping", "superAdmin": false }
+    ],
+    "loading": false,
+    "busyId": null,
+    "error": "Update failed",
+    "impersonateId": ""
+  }
+}

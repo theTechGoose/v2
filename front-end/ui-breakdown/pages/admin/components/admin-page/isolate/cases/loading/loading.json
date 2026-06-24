@@ -1,0 +1,11 @@
+{
+  "_name": "Loading — first fetch in flight, no rows",
+  "_signals": {
+    "q": "",
+    "rows": [],
+    "loading": true,
+    "busyId": null,
+    "error": null,
+    "impersonateId": ""
+  }
+}

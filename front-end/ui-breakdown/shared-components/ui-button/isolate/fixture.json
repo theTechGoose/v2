@@ -1,0 +1,10 @@
+{
+  "category": "shared-components",
+  "folder": "ui-button",
+  "controls": {
+    "variant": { "type": "select", "value": "primary", "options": ["primary", "outline", "ghost"] },
+    "size": { "type": "select", "value": "md", "options": ["md", "lg"] },
+    "class": { "type": "text", "value": "" },
+    "_label": { "type": "text", "value": "Send quote" }
+  }
+}

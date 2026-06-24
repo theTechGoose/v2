@@ -1,0 +1,29 @@
+{
+  "_name": "Empty — hero allZero line + KPIs all 0 + .csched__empty slate",
+  "components": {
+    "ContractsHero": {
+      "totalValue": 0,
+      "contractCount": 0,
+      "inFlightCount": 0,
+      "inFlightValue": 0,
+      "startingSoonCount": 0,
+      "pendingDeposits": 0,
+      "lang": "en"
+    },
+    "ContractsKpis": {
+      "inProgressCount": 0,
+      "inProgressValue": 0,
+      "startingSoonCount": 0,
+      "startingSoonValue": 0,
+      "wrappingUpCount": 0,
+      "wrappingUpLeft": 0,
+      "closedCount": 0,
+      "closedValue": 0,
+      "lang": "en"
+    },
+    "ScheduleStrip": {
+      "cards": [],
+      "lang": "en"
+    }
+  }
+}

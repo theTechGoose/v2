@@ -1,0 +1,8 @@
+{
+  "category": "verify",
+  "folder": "code-input",
+  "controls": {
+    "phoneNumber": { "type": "text", "value": "+15125550142" },
+    "initialLang": { "type": "select", "value": "en", "options": ["en", "es"], "signal": true }
+  }
+}

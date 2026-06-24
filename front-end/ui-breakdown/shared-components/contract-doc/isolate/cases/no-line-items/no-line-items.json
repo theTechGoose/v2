@@ -1,0 +1,26 @@
+{
+  "_name": "No line items — Job details section suppressed (items.length===0); total falls back to contract.totalAmount; gapless section numbers still 01,02…",
+  "contract": {
+    "id": "ctr_aa00bb11cc22dd33",
+    "quoteId": "qt_lump1",
+    "status": "draft",
+    "totalAmount": 600000,
+    "startDate": "2026-07-01",
+    "contractor": {
+      "name": "Hans Hansen",
+      "businessName": "Hansen Decks & Patios",
+      "phoneNumber": "+15125550148",
+      "commsLanguage": "en"
+    },
+    "customer": { "name": "Maria Delgado" },
+    "jobDetails": {
+      "jobName": "Fence Repair",
+      "summary": "repair the back fence",
+      "lineItems": []
+    },
+    "terms": [
+      { "stepId": "payment_terms", "label": "Payment terms", "value": "Due on completion" }
+    ],
+    "createdAt": "2026-06-15T10:00:00Z"
+  }
+}

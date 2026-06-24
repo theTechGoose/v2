@@ -1,0 +1,61 @@
+/* ============================================================
+   ui/SectionHead — marketing section header. Emits `.section-head` wrapping a
+   `.eyebrow-pill` + <h2> + `<p class="lede">`.
+   Two surfaces define these; the component renders `<p class="lede">`, which
+   matches verify.css (`.section-head .lede`). landing.css styles `.section-head p`
+   (a fuller marketing restyle). Both are reproduced; pick per target surface.
+   Tokens: --green-50, --green-600, --green-100, --brand-teal, --brand-pink,
+   --fg-muted, --font-heading, --radius-pill.
+   ============================================================ */
+
+/* ---------- verify.css (matches `.lede` class) ---------- */
+.eyebrow-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--green-50);
+  color: var(--green-600);
+  border: 1px solid var(--green-100);
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.section-head {
+  text-align: center;
+  max-width: 720px;
+  margin: 0 auto 40px;
+}
+.section-head h2 {
+  margin: 16px 0 10px;
+}
+.section-head .lede {
+  color: var(--fg-muted);
+  font-size: 18px;
+}
+
+/* ---------- landing.css (fuller marketing restyle — for reference) ----------
+.eyebrow-pill {
+  display:inline-flex; align-items:center; gap:8px;
+  background:var(--green-50); color:var(--green-600);
+  font-family:var(--font-heading); font-weight:800; font-size:12px;
+  letter-spacing:0.08em; text-transform:uppercase; padding:6px 14px;
+  border-radius:var(--radius-pill);
+}
+.eyebrow-pill::before { content:""; width:6px; height:6px; border-radius:999px;
+  background:currentColor; }                              // a leading dot
+.section-head { text-align:center; max-width:720px; margin:0 auto 56px; }
+.section-head .eyebrow-pill { margin-bottom:18px; }
+.section-head h2 {
+  font-family:var(--font-heading); font-weight:800;
+  font-size:clamp(32px, 4.4vw, 52px); line-height:1.05;
+  letter-spacing:-0.025em; color:var(--brand-teal); margin:0 0 16px; text-wrap:balance;
+}
+.section-head p { font-size:18px; color:var(--fg-muted); margin:0; line-height:1.55; }
+.section-head h2 em { font-style:normal; color:var(--brand-pink); position:relative; }
+   -- NOTE: landing.css styles `.section-head p` (works since the component's lede
+      is a <p class="lede">), adds an eyebrow-pill ::before dot, a larger clamped
+      h2, and accent <em> support. Heavier than the verify.css variant. */

@@ -1,0 +1,10 @@
+{
+  "_name": "Error — fetch rejected → .qpage-error (UNSTYLED, hazard)",
+  "lang": "en",
+  "_mocks": {
+    "quotesClient.list": "__reject:Network request failed__",
+    "quotesClient.winRate": "__reject:Network request failed__",
+    "quotesClient.insight": "__reject:Network request failed__"
+  },
+  "_note": "Each fetch in QuotesPage has its own .catch() → fallback, so a single rejection does NOT trip the error branch. The error div only renders if Promise.all's .catch fires (e.g. an exception thrown in the .then mapper). To force it in isolate, make .list resolve to a non-array that breaks mapCard, or mock the whole Promise.all to reject."
+}

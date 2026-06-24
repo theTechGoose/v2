@@ -1,0 +1,11 @@
+{
+  "_name": "Empty — all three fetches resolve to [] (fresh account)",
+  "_note": "loading:false, no error, empty lists. Hero allZero line, KPIs all 0, .csched__empty strip, Tracks 01–03 each show a .kempty slate, Track 04 Drafts is omitted entirely (drafts.length === 0).",
+  "lang": "en",
+  "_signals": { "loading": false, "error": null },
+  "_mocks": {
+    "contractsClient.list": [],
+    "clientsClient.list": [],
+    "quotesClient.list": []
+  }
+}

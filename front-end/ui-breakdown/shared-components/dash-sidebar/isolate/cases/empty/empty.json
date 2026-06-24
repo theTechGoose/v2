@@ -1,0 +1,10 @@
+{
+  "_name": "Fresh account — no badges, no identity footer",
+  "active": "home",
+  "showNav": true,
+  "_signals": {
+    "collapsed": false,
+    "mobileOpen": false,
+    "s": { "counts": {}, "identity": null, "lang": "en", "superAdmin": false }
+  }
+}

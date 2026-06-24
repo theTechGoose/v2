@@ -1,0 +1,231 @@
+[MOD] quotes
+
+[REQ] quote.create(CreateQuoteDto): QuoteDto
+    db:quote.save(CreateQuoteDto): QuoteDto
+
+[REQ] quote.get(GetByIdDto): QuoteDto
+    db:quote.getOwned(GetByIdDto): QuoteDto
+      not-found
+      forbidden
+
+[REQ] quote.update(UpdateQuoteDto): QuoteDto
+    db:quote.getOwned(GetByIdDto): QuoteDto
+      not-found
+      forbidden
+    db:quote.patch(UpdateQuoteDto): QuoteDto
+
+[REQ] quote.remove(GetByIdDto): OkDto
+    db:quote.getOwned(GetByIdDto): QuoteDto
+      not-found
+      forbidden
+    db:quote.purge(GetByIdDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] quote.email(EmailDispatchDto): SendEmailResultDto
+    db:quote.getOwned(GetByIdDto): QuoteDto
+      not-found
+      forbidden
+    ex:email.send(EmailMessageDto): SendEmailResultDto
+      timeout
+      rate-limited
+
+[REQ] quote.text(SmsDispatchDto): SendSmsResultDto
+    db:quote.getOwned(GetByIdDto): QuoteDto
+      not-found
+      forbidden
+    db:shortlink.findOrCreate(ShortlinkMintDto): ShortlinkDto
+    ex:sms.send(SmsMessageDto): SendSmsResultDto
+      timeout
+
+[REQ] view.create(CreateViewDto): ViewDto
+    db:view.save(CreateViewDto): ViewDto
+
+[REQ] view.list(ViewQueryDto): ViewListDto
+    db:view.listAll(ViewQueryDto): ViewListDto
+
+[REQ] view.summary(ViewSummaryRefDto): PaperworkViewSummaryDto
+    db:view.listByPaperwork(ViewSummaryRefDto): ViewListDto
+    [NEW] summary
+    summary.compute(): PaperworkViewSummaryDto
+
+[REQ] view.get(GetByIdDto): ViewDto
+    db:view.get(GetByIdDto): ViewDto
+      not-found
+
+[REQ] view.update(UpdateViewDto): ViewDto
+    db:view.patch(UpdateViewDto): ViewDto
+      not-found
+
+[REQ] view.remove(GetByIdDto): OkDto
+    db:view.purge(GetByIdDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[ENT] quotes.create(CreateQuoteDto): QuoteDto
+[ENT] quotes.get(GetByIdDto): QuoteDto
+[ENT] quotes.update(UpdateQuoteDto): QuoteDto
+[ENT] quotes.remove(GetByIdDto): OkDto
+    [REQ] quote.remove(GetByIdDto): OkDto
+[ENT] quotes.email(EmailDispatchDto): SendEmailResultDto
+[ENT] quotes.text(SmsDispatchDto): SendSmsResultDto
+[ENT] views.create(CreateViewDto): ViewDto
+[ENT] views.list(ViewQueryDto): ViewListDto
+[ENT] views.summary(ViewSummaryRefDto): PaperworkViewSummaryDto
+[ENT] views.get(GetByIdDto): ViewDto
+[ENT] views.update(UpdateViewDto): ViewDto
+[ENT] views.remove(GetByIdDto): OkDto
+    [REQ] view.remove(GetByIdDto): OkDto
+
+[TYP:uuid] id: string
+    a unique record identifier
+[TYP:ext] userId: string
+    the authenticated owner id, minted from the session
+[TYP] createdAt: string
+    an ISO creation timestamp
+[TYP] updatedAt: string
+    an ISO last-updated timestamp
+[TYP] ok: boolean
+    a success flag
+[TYP] customerId: string
+    a reference to a CRM customer
+[TYP] summary: string
+    the quote summary line
+[TYP] jobName: string
+    a short job title
+[TYP] description: string
+    freeform description text
+[TYP] descriptionByLang: string
+    a JSON map of description keyed by language code
+[TYP] jobNameByLang: string
+    a JSON map of job title keyed by language code
+[TYP] summaryByLang: string
+    a JSON map of summary keyed by language code
+[TYP] estimatedTotal: number
+    total quote value in integer cents
+[TYP] status: string
+    a lifecycle status string
+[TYP] sentAt: string
+    ISO timestamp the document was sent
+[TYP] acceptedAt: string
+    ISO timestamp the quote was accepted
+[TYP] lostAt: string
+    ISO timestamp the quote was declined
+[TYP] acceptedSignature: string
+    captured acceptance signature data
+[TYP] acceptedName: string
+    name of who accepted the quote
+[TYP] quantity: number
+    a line-item quantity
+[TYP] unit: string
+    a line-item unit label
+[TYP] price: number
+    per-unit price in integer cents
+[TYP] to: string
+    the dispatch recipient address
+[TYP] from: string
+    the dispatch sender address
+[TYP] reason: string
+    a machine-readable reason code
+[TYP] subject: string
+    the email subject line
+[TYP] sid: string
+    a Twilio message SID
+[TYP] kind: string
+    a resource kind discriminator
+[TYP] code: string
+    a shortlink code
+[TYP] paperworkType: string
+    paperwork kind: quote, contract, or invoice
+[TYP] paperworkId: string
+    id of the viewed paperwork record
+[TYP] viewedAt: string
+    ISO timestamp of the view
+[TYP] viewerId: string
+    identifier of the viewer
+[TYP] viewerEmail: string
+    email of the viewer
+[TYP] userAgent: string
+    raw user-agent of the viewer
+[TYP] ipAddress: string
+    viewer ip address
+[TYP] referrer: string
+    referrer url of the view
+[TYP:int] durationMs: number
+    view duration in milliseconds
+[TYP] total: number
+    a total amount or count
+[TYP:int] uniqueViewers: number
+    count of distinct viewers
+[TYP] firstViewedAt: string
+    ISO timestamp of the first view
+[TYP] lastViewedAt: string
+    ISO timestamp of the most recent view
+[TYP] lineItem: LineItemDto
+    a nested quote line item
+[TYP] view: ViewDto
+    a nested view record
+[TYP] stats: ViewStatsDto
+    nested view statistics
+
+[DTO] LineItemDto: description, quantity, unit, price
+    a single quote line item
+[DTO] CreateQuoteDto: customerId?, summary, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?
+    input to create a quote
+[DTO] UpdateQuoteDto: customerId?, summary?, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?
+    a partial quote patch
+[DTO] QuoteDto: id, userId, customerId?, summary, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?, createdAt, updatedAt
+    a persisted quote record
+[DTO] CreateViewDto: paperworkType, paperworkId, viewedAt, viewerId?, viewerEmail?, userAgent?, ipAddress?, referrer?, durationMs?
+    input to record a paperwork view
+[DTO] UpdateViewDto: paperworkType?, paperworkId?, viewedAt?, viewerId?, viewerEmail?, userAgent?, ipAddress?, referrer?, durationMs?
+    a partial view patch
+[DTO] ViewDto: id, paperworkType, paperworkId, viewedAt, viewerId?, viewerEmail?, userAgent?, ipAddress?, referrer?, durationMs?, createdAt, updatedAt
+    a persisted view record
+[DTO] ViewListDto: view(s)
+    a list of views
+[DTO] ViewQueryDto: paperworkType?, paperworkId?
+    optional filters for listing views
+[DTO] ViewSummaryRefDto: paperworkType, paperworkId
+    a reference to summarize views for a record
+[DTO] ViewStatsDto: total, uniqueViewers, firstViewedAt?, lastViewedAt?
+    aggregated view statistics
+[DTO] PaperworkViewSummaryDto: paperworkType, paperworkId, view(s), stats
+    views plus computed stats for a record
+[DTO] EmailDispatchDto: id, to?, from?
+    input to email a paperwork resource
+[DTO] SmsDispatchDto: id, to?
+    input to text a paperwork resource
+[DTO] EmailMessageDto: to, subject
+    an outbound email envelope
+[DTO] SmsMessageDto: to
+    an outbound SMS envelope
+[DTO] SendEmailResultDto: ok, reason?, to, subject
+    result of an email dispatch
+[DTO] SendSmsResultDto: ok, to, sid?, reason?
+    result of an SMS dispatch
+[DTO] ShortlinkMintDto: userId, kind, id
+    input to mint or reuse a shortlink
+[DTO] ShortlinkDto: code, kind, id
+    a persisted shortlink record
+[DTO] OwnerDto: userId
+    the owning user id wrapper
+[DTO] GetByIdDto: id
+    an id lookup wrapper
+[DTO] OkDto: ok
+    a success body for deletes
+
+[NON] quote
+    a single quote
+[NON] view
+    a single paperwork view
+[NON] shortlink
+    a shortlink store
+[NON] email
+    the outbound email service
+[NON] sms
+    the outbound SMS service
+[NON] ok
+    a success marker
+[NON] summary
+    the paperwork-view summarizer

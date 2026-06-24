@@ -1,0 +1,12 @@
+{
+  "_name": "Error — approve POST returned non-ok with reason='invoice_update_failed'; inline red role='alert' shows the localized applyError ('We couldn't update the invoice — nothing was changed…'), buttons re-enabled for retry.",
+  "changeOrderId": "co_7d2f1a9b3c4e5f60",
+  "initialStatus": "pending",
+  "lang": "en",
+  "_signals": {
+    "status": "pending",
+    "busy": null,
+    "error": "We couldn't update the invoice — nothing was changed. Please try again or contact your contractor."
+  },
+  "_note": "The raw backend reason 'invoice_update_failed' is mapped to the friendly applyError string — the raw token is never shown to the homeowner. Other reasons surface as-is; missing reason falls back to submitError 'Couldn't submit ({status})'. After error, busy resets to null so both buttons are clickable again."
+}

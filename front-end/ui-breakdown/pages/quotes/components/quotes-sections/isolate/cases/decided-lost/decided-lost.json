@@ -1,0 +1,19 @@
+{
+  "_name": "DecidedRow — lost (coffee badge, struck-through amount)",
+  "section": "DecidedRow",
+  "lang": "en",
+  "q": {
+    "id": "Q-1094",
+    "title": "Window trim repaint",
+    "client": "Ortega Rentals",
+    "initials": "OR",
+    "stage": "lost",
+    "value": 190000,
+    "daysIn": 0,
+    "opens": 2,
+    "sentDays": 8,
+    "decidedDays": 4,
+    "band": ["#B89D90", "#785544"],
+    "shadow": "rgba(120,85,68,0.35)"
+  }
+}

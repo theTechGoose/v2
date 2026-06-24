@@ -1,0 +1,8 @@
+{
+  "_name": "AnchorButton (link)",
+  "_name_note": "render the AnchorButton export, not Button",
+  "variant": "outline",
+  "size": "lg",
+  "href": "/dashboard",
+  "_innerHtml": "Go to dashboard"
+}

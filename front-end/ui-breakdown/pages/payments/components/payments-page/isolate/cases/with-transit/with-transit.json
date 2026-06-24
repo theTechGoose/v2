@@ -1,0 +1,31 @@
+{
+  "_name": "With-transit — an ACH (<2d) + a check (<5d) still settling → In-transit track shows (collapsed) + transit total in hero/KPI accent cell",
+  "lang": "en",
+  "_signals": {
+    "langSignal": "en"
+  },
+  "_mocks": {
+    "paymentsClient.list": {
+      "value": [
+        { "id": "pay_8a1f20c4", "userId": "usr_01", "invoiceId": "inv_3c91ab77e201", "amount": 482000, "method": "zelle", "receivedAt": "2026-06-18T14:20:00Z", "createdAt": "2026-06-18T14:21:00Z", "updatedAt": "2026-06-18T14:21:00Z" },
+        { "id": "pay_ac77001e", "userId": "usr_01", "invoiceId": "inv_77b0c1aa4410", "amount": 310000, "method": "ach", "receivedAt": "2026-06-17T08:00:00Z", "createdAt": "2026-06-17T08:00:00Z", "updatedAt": "2026-06-17T08:00:00Z" },
+        { "id": "pay_ck902bd5", "userId": "usr_01", "invoiceId": "inv_aa19ff2c8e30", "amount": 215000, "method": "check", "receivedAt": "2026-06-16T10:00:00Z", "createdAt": "2026-06-16T10:00:00Z", "updatedAt": "2026-06-16T10:00:00Z" }
+      ]
+    },
+    "dashboardClient.invoices": {
+      "value": [
+        { "id": "inv_3c91ab77e201", "userId": "usr_01", "customerId": "cus_77a1", "amount": 482000, "issuedDate": "2026-06-11", "dueDate": "2026-06-25", "status": "paid", "createdAt": "2026-06-11T00:00:00Z", "updatedAt": "2026-06-18T14:21:00Z" },
+        { "id": "inv_77b0c1aa4410", "userId": "usr_01", "customerId": "cus_22b9", "amount": 310000, "issuedDate": "2026-06-13", "dueDate": "2026-06-27", "status": "claimed", "createdAt": "2026-06-13T00:00:00Z", "updatedAt": "2026-06-17T08:00:00Z" },
+        { "id": "inv_aa19ff2c8e30", "userId": "usr_01", "customerId": "cus_5c3d", "amount": 215000, "issuedDate": "2026-06-09", "dueDate": "2026-06-23", "status": "claimed", "createdAt": "2026-06-09T00:00:00Z", "updatedAt": "2026-06-16T10:00:00Z" }
+      ]
+    },
+    "dashboardClient.customers": {
+      "value": [
+        { "id": "cus_77a1", "userId": "usr_01", "name": "Maria Delgado", "phoneNumber": "+15125550199" },
+        { "id": "cus_22b9", "userId": "usr_01", "name": "Greenfield HOA", "email": "board@greenfieldhoa.org" },
+        { "id": "cus_5c3d", "userId": "usr_01", "name": "Tom Becker", "phoneNumber": "+15125550174" }
+      ]
+    }
+  },
+  "_note": "Zelle (today) → landed. ACH 2026-06-17 = 1d ago < 2d window → transit (etaDays 1). Check 2026-06-16 = 2d ago < 5d window → transit (etaDays 3). transit total = 310000+215000 = 525000 → \"$5,250\" shown in the hero subPlus line + the pink-accent In-transit KPI cell. The In-transit QuoteTrack renders defaultOpen=false (collapsed → must click to expand). attention still 0 (no source signal) so that track + KPI read 0. Track numbering: Just-landed=01, In-transit=02."
+}

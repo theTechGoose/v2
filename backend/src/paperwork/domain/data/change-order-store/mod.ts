@@ -1,5 +1,6 @@
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
+import { NotFoundError } from "@core/data/repository/mod.ts";
 import type {
   ChangeOrder,
   ChangeOrderStatus,
@@ -51,7 +52,7 @@ export class ChangeOrderStore {
   async get(id: string): Promise<ChangeOrder> {
     const kv = await getKv();
     const r = await kv.get<ChangeOrder>([PREFIX, id]);
-    if (!r.value) throw new Error(`change order not found: ${id}`);
+    if (!r.value) throw new NotFoundError(PREFIX, id);
     return r.value;
   }
 
@@ -74,6 +75,47 @@ export class ChangeOrderStore {
     }
     out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     return out;
+  }
+
+  /**
+   * Contractor edit (owner-gated). Editing re-opens approval: the row resets
+   * to `pending` and the prior `decidedAt` is cleared, so the customer must
+   * approve the revised amount. `originalAmountCents` is re-snapshotted by the
+   * caller (it knows the live invoice total after any revert). The delta is
+   * NOT applied to the invoice here — that still happens on the customer's
+   * public approval.
+   */
+  async update(
+    id: string,
+    userId: string,
+    patch: {
+      description: string;
+      deltaAmountCents: number;
+      originalAmountCents: number;
+    },
+  ): Promise<ChangeOrder> {
+    const co = await this.getOwned(id, userId);
+    // Drop decidedAt — the edit re-opens the decision.
+    const { decidedAt: _cleared, ...rest } = co;
+    const next: ChangeOrder = {
+      ...rest,
+      description: patch.description.trim(),
+      deltaAmountCents: Math.round(patch.deltaAmountCents),
+      originalAmountCents: Math.round(patch.originalAmountCents),
+      status: "pending",
+      updatedAt: new Date().toISOString(),
+    };
+    const kv = await getKv();
+    await kv.set([PREFIX, id], next, { expireIn: TTL_MS });
+    return next;
+  }
+
+  /** Owner-gated delete. The caller reverts any already-applied delta from
+   *  the invoice first (an approved order mutated the live total). */
+  async delete(id: string, userId: string): Promise<void> {
+    await this.getOwned(id, userId);
+    const kv = await getKv();
+    await kv.delete([PREFIX, id]);
   }
 
   /** Public decision write — no userId (the link is the capability). */

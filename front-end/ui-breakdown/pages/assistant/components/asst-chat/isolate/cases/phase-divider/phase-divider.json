@@ -1,0 +1,11 @@
+{
+  "_name": "Phase divider — full-width labelled separator",
+  "_note": "kind=phase_divider with a clean label (no failure reasons) → .phase-divider only (no recovery card).",
+  "conversationId": "t2",
+  "userInitials": "ML",
+  "initialMessages": [
+    { "id": "u1", "conversationId": "t2", "role": "user", "kind": "text", "content": "Looks good, lock it in.", "createdAt": 1750247700000 },
+    { "id": "pd1", "conversationId": "t2", "role": "system", "kind": "phase_divider", "content": "Contract terms", "createdAt": 1750247720000, "payload": { "label": "Phase 2 — Contract terms" } }
+  ],
+  "sendLanguages": ["en"]
+}

@@ -1,0 +1,31 @@
+{
+  "_name": "Job options — three scope-of-work cards, option 1 selected",
+  "_note": "jobOptionsOpen + jobOptions populated → .chat__jobopts. Composer is HIDDEN (tap-only screen). Drive `jobOptionsOpen`/`jobOptions`/`selectedOptionId`/`optionsLoading` via _signals since they're set by the flow, not props.",
+  "conversationId": "t2",
+  "userInitials": "ML",
+  "_signals": {
+    "jobOptionsOpen": true,
+    "optionsLoading": false,
+    "pickerMode": "polish",
+    "selectedOptionId": "o1",
+    "jobOptions": [
+      { "id": "o1", "jobName": "Subway Tile Backsplash", "summary": "30 sqft white subway tile install", "bullets": [
+        { "id": "b1", "text": "Remove existing backsplash and prep wall surface" },
+        { "id": "b2", "text": "Install ~30 sqft white subway tile, level and spaced" },
+        { "id": "b3", "text": "Grout, seal, and clean up" }
+      ] },
+      { "id": "o2", "jobName": "Backsplash Refresh", "summary": "Standard tile refresh", "bullets": [
+        { "id": "b1", "text": "Set white subway tile over prepped wall" },
+        { "id": "b2", "text": "Grout and seal" }
+      ] },
+      { "id": "o3", "jobName": "Premium Tile Job", "summary": "Detailed install with trim", "bullets": [
+        { "id": "b1", "text": "Full prep, waterproofing, and edge trim" },
+        { "id": "b2", "text": "Install, grout, seal, and haul-away" }
+      ] }
+    ]
+  },
+  "initialMessages": [
+    { "id": "m1", "conversationId": "t2", "role": "user", "kind": "text", "content": "Kitchen backsplash, ~30 sqft, white subway tile.", "createdAt": 1750247400000 }
+  ],
+  "sendLanguages": ["en"]
+}

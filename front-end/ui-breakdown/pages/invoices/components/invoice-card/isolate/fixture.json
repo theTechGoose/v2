@@ -1,0 +1,10 @@
+{
+  "category": "invoices",
+  "folder": "invoice-card",
+  "controls": {
+    "inv": { "type": "json", "value": {} },
+    "idx": { "type": "number", "value": 0 },
+    "now": { "type": "text", "value": "2026-06-18T12:00:00.000Z" },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

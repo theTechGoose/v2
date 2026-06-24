@@ -1,0 +1,29 @@
+{
+  "_name": "Populated — full board, tracks 01–04 with grouped cards",
+  "_note": "Real Contract[] (each with server `mood`) + CustomerCard[] (names) + QuoteCard[] (titles). toContractCard projects each → grouped by mood: active→Track01, starting-soon→Track02, wrapping-up→Track03, draft|stale→Track04. liveCards = active+starting-soon+wrapping-up drives hero/strip.",
+  "lang": "en",
+  "_signals": { "loading": false, "error": null },
+  "_mocks": {
+    "contractsClient.list": [
+      { "id": "ctr_9f3a2b71c0d4e5f6", "userId": "u1", "quoteId": "qt_a1", "customerId": "cus_1", "status": "signed", "startDate": "2026-06-13", "estimatedCompletionDate": "2026-06-27", "totalAmount": 1450000, "signedAt": "2026-06-11T12:00:00Z", "createdAt": "2026-06-10T15:04:00Z", "updatedAt": "2026-06-13T09:00:00Z", "mood": "active" },
+      { "id": "ctr_44e9013ab8c1207d", "userId": "u1", "quoteId": "qt_b2", "customerId": "cus_2", "status": "signed", "startDate": "2026-06-08", "estimatedCompletionDate": "2026-06-20", "totalAmount": 600000, "createdAt": "2026-06-05T10:00:00Z", "updatedAt": "2026-06-18T08:00:00Z", "mood": "wrapping-up" },
+      { "id": "ctr_b21c77aa401de9f0", "userId": "u1", "quoteId": "qt_c3", "customerId": "cus_3", "status": "signed", "startDate": "2026-06-23", "estimatedCompletionDate": "2026-07-02", "totalAmount": 890000, "createdAt": "2026-06-14T11:00:00Z", "updatedAt": "2026-06-15T11:00:00Z", "mood": "starting-soon" },
+      { "id": "ctr_7c0182befa334510", "userId": "u1", "quoteId": "qt_d4", "customerId": "cus_4", "status": "signed", "startDate": "2026-05-20", "estimatedCompletionDate": "2026-06-04", "totalAmount": 1230000, "signedAt": "2026-05-19T12:00:00Z", "createdAt": "2026-05-15T09:00:00Z", "updatedAt": "2026-06-05T09:00:00Z", "mood": "completed" },
+      { "id": "ctr_0a5512deccb73f81", "userId": "u1", "quoteId": "qt_e5", "customerId": "cus_5", "status": "draft", "totalAmount": 320000, "createdAt": "2026-06-16T09:00:00Z", "updatedAt": "2026-06-16T09:00:00Z", "mood": "draft" }
+    ],
+    "clientsClient.list": [
+      { "id": "cus_1", "userId": "u1", "name": "Maria Delgado" },
+      { "id": "cus_2", "userId": "u1", "name": "Hans Hansen" },
+      { "id": "cus_3", "userId": "u1", "name": "Northgate Property Mgmt" },
+      { "id": "cus_4", "userId": "u1", "name": "Greenwood HOA" },
+      { "id": "cus_5", "userId": "u1", "name": "Sam Rivera" }
+    ],
+    "quotesClient.list": [
+      { "id": "qt_a1", "userId": "u1", "jobName": "Backyard Deck Build", "summary": "build a 16x20 cedar deck", "createdAt": "2026-06-09T09:00:00Z", "updatedAt": "2026-06-09T09:00:00Z", "stage": "won" },
+      { "id": "qt_b2", "userId": "u1", "jobName": "Front Porch Repair", "createdAt": "2026-06-04T09:00:00Z", "updatedAt": "2026-06-04T09:00:00Z", "stage": "won" },
+      { "id": "qt_c3", "userId": "u1", "jobName": "Unit 4B Bathroom Reno", "createdAt": "2026-06-13T09:00:00Z", "updatedAt": "2026-06-13T09:00:00Z", "stage": "won" },
+      { "id": "qt_d4", "userId": "u1", "jobName": "Clubhouse Fence Replace", "createdAt": "2026-05-14T09:00:00Z", "updatedAt": "2026-05-14T09:00:00Z", "stage": "won" },
+      { "id": "qt_e5", "userId": "u1", "jobName": "Garage Epoxy Floor", "createdAt": "2026-06-16T09:00:00Z", "updatedAt": "2026-06-16T09:00:00Z", "stage": "draft" }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "_name": "Empty — no quotes (honest-empty hero + 0 KPIs + \"—\" rate)",
+  "lang": "en",
+  "_mocks": {
+    "quotesClient.list": [],
+    "quotesClient.winRate": { "windowDays": 90, "decided": 0, "won": 0, "lost": 0, "winRate": null },
+    "quotesClient.insight": null
+  }
+}

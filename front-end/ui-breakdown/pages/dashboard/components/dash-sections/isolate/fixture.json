@@ -1,0 +1,76 @@
+{
+  "category": "dashboard",
+  "folder": "dash-sections",
+  "controls": {
+    "lang": {
+      "type": "select",
+      "value": "en",
+      "options": [
+        "en",
+        "es"
+      ]
+    }
+  },
+  "components": {
+    "Kpis": {
+      "controls": {
+        "lang": {
+          "type": "select",
+          "value": "en",
+          "options": [
+            "en",
+            "es"
+          ]
+        }
+      }
+    },
+    "ActiveJobs": {
+      "controls": {
+        "lang": {
+          "type": "select",
+          "value": "en",
+          "options": [
+            "en",
+            "es"
+          ]
+        }
+      }
+    },
+    "QuotesAwaiting": {
+      "controls": {
+        "lang": {
+          "type": "select",
+          "value": "en",
+          "options": [
+            "en",
+            "es"
+          ]
+        }
+      }
+    },
+    "Activity": {
+      "controls": {
+        "lang": {
+          "type": "select",
+          "value": "en",
+          "options": [
+            "en",
+            "es"
+          ]
+        }
+      }
+    },
+    "Outstanding": {
+      "controls": {
+        "lang": {
+          "type": "select",
+          "value": "en",
+          "options": [
+            "en",
+            "es"
+          ]
+        }
+      }
+    }
+  }
+}

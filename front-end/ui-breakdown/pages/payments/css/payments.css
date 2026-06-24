@@ -1,0 +1,78 @@
+/* ============================================================================
+   /payments — CSS composition.
+
+   The /payments route <Head> links THREE stylesheets, in order:
+     /dashboard.css   (tokens + .app/.main/.content app-shell)
+     /quotes.css      (.qph/.qkpi/.qtrack/.qcard/.qcards/.qdone/.qside/.qlay)
+     /payments.css    (.pph* editorial hero + .pcard__amount — THIS file's
+                        verbatim copy lives in
+                        ../components/payments-hero/css/payments-hero.css)
+
+   PaymentsPage REUSES the Quotes card/track/layout classes (from quotes.css)
+   and ADDS the payments.css hero. The widget blocks below are the quotes.css
+   subset the page actually consumes; the .pph* / .pcard__amount block is in
+   payments-hero/css. Tokens come from dashboard.css (../../../design-tokens.md).
+
+   CLASSES THE PAYMENTS ISLAND USES THAT HAVE *NO* CSS RULE (render unstyled —
+   flagged in payments-page.md and payment-side-rail.md):
+     .qpage-error
+     .qdone__body  .qdone__sub                         (LandedRow)
+     .qside__rows  .qside__row  .qside__rank  .qside__row-body
+     .qside__row-name  .qside__bar  .qside__bar-fill  .qside__row-amt
+                                                       (PSideTopPayors)
+   The styled equivalents on QuotesPage are .qbig*/.qbar* — Payments uses a
+   DIFFERENT, undefined class family, so its Top-payors rail is largely
+   unstyled (only the inline width/background on .qside__bar-fill lands).
+   ============================================================================ */
+
+/* ---- Layout (.qlay): main column + 320px sticky aside.qside ---- */
+.qlay {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 22px;
+  align-items: flex-start;
+}
+.qside {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: sticky;
+  top: 16px;
+}
+.qside__card {
+  background: #fff;
+  border-radius: var(--radius-xl);
+  padding: 18px;
+  border: 1px solid rgba(26, 83, 92, 0.07);
+}
+.qside__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--brand-teal);
+  letter-spacing: -0.01em;
+}
+.qside__sub {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+/* NOTE: .qside__rows / .qside__row* / .qside__rank / .qside__bar* used by
+   PSideTopPayors are NOT defined anywhere — see header note above. */
+
+@media (max-width: 1200px) {
+  .qlay { grid-template-columns: 1fr; }
+  .qside { position: static; }
+  .qph { flex-direction: column; align-items: flex-start; }
+  .qkpi { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .qcards { grid-template-columns: 1fr; }
+  .qkpi { grid-template-columns: 1fr; }
+}
+
+/* The .qph/.qkpi/.qtrack/.qcard blocks are identical to the invoices page —
+   see ../../invoices/css/invoices.css and
+   ../../invoices/components/invoice-card/css/invoice-card.css. The .qdone* row
+   block used by LandedRow is in ../components/landed-row/css/landed-row.css.
+   The .pph*/.pcard__amount hero block is in
+   ../components/payments-hero/css/payments-hero.css (verbatim static/payments.css). */

@@ -1,0 +1,8 @@
+{
+  "category": "clients",
+  "folder": "clients-board",
+  "controls": {
+    "cards": { "type": "json", "value": [] },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

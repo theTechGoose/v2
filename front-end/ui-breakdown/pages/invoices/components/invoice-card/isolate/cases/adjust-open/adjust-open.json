@@ -1,0 +1,31 @@
+{
+  "_name": "Adjust open — back face, discount + change-order panel expanded, CO list loaded",
+  "idx": 0,
+  "now": "2026-06-18T12:00:00.000Z",
+  "lang": "en",
+  "_signals": { "flipped": true, "adjustOpen": true },
+  "_mocks": {
+    "fetch:/api/invoices/inv3344bb/change-orders": [
+      { "id": "co-9001", "description": "Added gutter guards (both buildings)", "deltaAmountCents": 48000, "status": "pending", "createdAt": "2026-06-16T10:00:00.000Z" },
+      { "id": "co-9000", "description": "Removed pressure-wash line item", "deltaAmountCents": -15000, "status": "approved", "createdAt": "2026-06-14T10:00:00.000Z" }
+    ]
+  },
+  "inv": {
+    "id": "inv3344bb",
+    "userId": "u1",
+    "contractId": "ct-309",
+    "customerId": "cust-gh",
+    "amount": 580000,
+    "issuedDate": "2026-06-15",
+    "dueDate": "2026-07-15",
+    "status": "sent",
+    "createdAt": "2026-06-15T09:00:00.000Z",
+    "updatedAt": "2026-06-15T09:00:00.000Z",
+    "client": "Greenleaf HOA",
+    "initials": "GH",
+    "invoiceRef": "INV-INV334",
+    "daysOverdue": 0,
+    "daysIn": 3,
+    "stage": "out"
+  }
+}

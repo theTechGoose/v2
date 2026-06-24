@@ -1,0 +1,9 @@
+{
+  "_name": "Fresh — invoices exist, nothing outstanding, no forecast ('All clear — nothing outstanding.')",
+  "outstandingTotal": 0,
+  "outstandingCount": 0,
+  "overdueCount": 0,
+  "totalInvoiceCount": 6,
+  "forecast": null,
+  "lang": "en"
+}

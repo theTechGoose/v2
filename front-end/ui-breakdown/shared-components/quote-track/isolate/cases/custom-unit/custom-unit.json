@@ -1,0 +1,11 @@
+{
+  "_name": "Custom unit — Invoices/Payments wording",
+  "num": "01",
+  "title": "Awaiting payment",
+  "count": 1,
+  "unit": "invoice",
+  "defaultOpen": true,
+  "storageKey": "pm:itrack:1",
+  "lang": "en",
+  "_signals": { "open": true }
+}

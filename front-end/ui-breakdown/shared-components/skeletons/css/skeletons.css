@@ -1,0 +1,38 @@
+/* ============================================================
+   Skeletons — the shimmer CSS is NOT in any feature stylesheet; it is INLINED
+   in components/Skeletons.tsx:
+     * the @keyframes is injected via <ShimmerStyle/> (a <style> element).
+     * each block's gradient/animation is an inline `style=""` string (SHIMMER).
+   Reproduced here verbatim so the primitives are rebuildable from CSS.
+
+   NOT tokenized — uses literal greys (#eef2ed / #f6f7f3), close to mint-200.
+   ============================================================ */
+
+/* Injected by <ShimmerStyle/> (component renders this <style> once per page) */
+@keyframes pmShimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* The SHIMMER constant applied inline to every SkelBlock */
+.skel-block {
+  background: linear-gradient(90deg, #eef2ed 0%, #f6f7f3 50%, #eef2ed 100%);
+  background-size: 200% 100%;
+  animation: pmShimmer 1.4s ease-in-out infinite;
+  /* height / width / border-radius / margin-top are set per-instance inline:
+     height:{h}px; width:{w ?? 100%}; border-radius:{r ?? 8}px; margin-top:{mt ?? 0}px */
+}
+
+/* No reduced-motion guard is shipped with this component — the global tokens
+   reduced-motion block (animation-duration: 0.01ms !important) is what stops
+   the shimmer. Rebuild should keep relying on that global, or add a local
+   @media (prefers-reduced-motion: reduce){ .skel-block{ animation:none } }. */
+
+/*
+  Layout classes the composite skeletons REUSE from the page's own feature CSS
+  (NOT defined here — they come from static/dashboard.css / quotes.css / etc.):
+    .grid   — two-column responsive panel grid (CardGridSkeleton)
+    .panel  — raised card surface (CardGridSkeleton, ListSkeleton)
+  The skeleton deliberately borrows the real layout shells so its shape matches
+  the loaded content and there's no layout shift on swap-in.
+*/

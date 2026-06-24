@@ -1,0 +1,46 @@
+{
+  "_name": "Spanish — contractor.commsLanguage='es' flips the whole doc; per-lang jobName/summary/description used",
+  "contract": {
+    "id": "ctr_9f3a2b71c0d4e5f6",
+    "quoteId": "qt_5521aa",
+    "customerId": "cus_77a1",
+    "status": "draft",
+    "totalAmount": 1450000,
+    "effectiveDate": "2026-06-10",
+    "startDate": "2026-06-24",
+    "estimatedCompletionDate": "2026-07-18",
+    "contractor": {
+      "name": "Hans Hansen",
+      "businessName": "Hansen Decks & Patios",
+      "phoneNumber": "+15125550148",
+      "email": "hans@hansendecks.com",
+      "addressLine": "812 Cedar Ln, Austin, TX 78704",
+      "state": "TX",
+      "commsLanguage": "es"
+    },
+    "customer": { "name": "Maria Delgado", "email": "maria.delgado@example.com", "phoneNumber": "+15125550199" },
+    "jobDetails": {
+      "jobName": "Construcción de Terraza",
+      "jobNameByLang": { "en": "Backyard Deck Build", "es": "Construcción de Terraza" },
+      "summary": "construir una terraza de cedro 16x20",
+      "summaryByLang": { "en": "build a 16x20 cedar deck", "es": "construir una terraza de cedro 16x20" },
+      "description": "Demoler y retirar la terraza vieja.\nEnmarcar y construir una terraza de cedro 16x20.\nInstalar escaleras y barandilla.\nSellar y teñir.",
+      "descriptionByLang": {
+        "en": "Demo and haul the old deck.\nFrame and build a 16x20 cedar deck.",
+        "es": "Demoler y retirar la terraza vieja.\nEnmarcar y construir una terraza de cedro 16x20.\nInstalar escaleras y barandilla.\nSellar y teñir."
+      },
+      "lineItems": [
+        { "description": "Demolición y retiro de terraza", "price": 180000, "quantity": 1 },
+        { "description": "Estructura y cubierta — cedro 16x20", "price": 920000, "quantity": 1 },
+        { "description": "Escaleras y barandilla", "price": 250000, "quantity": 1 },
+        { "description": "Sellado y teñido", "price": 100000, "quantity": 1 }
+      ]
+    },
+    "terms": [
+      { "stepId": "customer", "label": "Customer", "value": "Maria Delgado" },
+      { "stepId": "payment_terms", "label": "Payment terms", "value": "50% deposit, 50% on completion" },
+      { "stepId": "warranty", "label": "Warranty", "value": "12 months" }
+    ],
+    "createdAt": "2026-06-10T15:04:00Z"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "_name": "Error — POST /sign failed; red error line under the disclaimer, form still interactive for retry",
+  "contractId": "ctr_9f3a2b71c0d4e5f6",
+  "lang": "en",
+  "_signals": { "hasInk": true, "name": "Maria Delgado", "status": "error", "err": "413 Payload Too Large", "submitting": false }
+}

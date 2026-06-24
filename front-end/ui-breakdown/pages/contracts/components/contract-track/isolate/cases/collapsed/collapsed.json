@@ -1,0 +1,10 @@
+{
+  "_name": "Collapsed — Track 02 Starting soon (body clipped)",
+  "num": "02",
+  "title": "Starting soon",
+  "count": "2 contracts",
+  "defaultOpen": false,
+  "storageKey": "contracts:track:02",
+  "_signals": { "open": false },
+  "_innerHtml": "<div class=\"kcards\">[ hidden body ]</div>"
+}

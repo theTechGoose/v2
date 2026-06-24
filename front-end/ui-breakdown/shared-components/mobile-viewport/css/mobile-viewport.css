@@ -1,0 +1,46 @@
+/* ============================================================
+   MobileViewport — produces no DOM and ships NO CSS of its own.
+   It WRITES four CSS custom properties on :root (document.documentElement)
+   that other stylesheets read. This file documents the contract + the real
+   consumers extracted from the feature CSS, so the variables can be wired up.
+   ============================================================ */
+
+/*
+  Variables written by the island (cleared on unmount):
+
+    --app-vh  : visualViewport.height in px, ONLY while the soft keyboard
+                overlaps (>2px). Removed otherwise so consumers fall back to
+                100dvh and track the keyboard animation frame-for-frame.
+    --kb-inset: max(0, innerHeight - visualViewport.height) — full keyboard
+                overlap height. 0 on desktop / Android (layout already resized).
+    --vvh     : visualViewport.height (always set) — for fixed keyboard-aware
+                shells sized exactly to the visible band.
+    --vvt     : visualViewport.offsetTop (always set) — vertical offset of the
+                visible band; fixed overlays pin to (vvt, vvt+vvh).
+*/
+
+/* ---- Real consumer #1: app shell height (static/dashboard.css `.app`) ---- */
+.app {
+  height: 100vh;
+  height: var(--app-vh, 100dvh); /* shrinks with the keyboard; dvh fallback w/o JS */
+}
+
+/* ---- Real consumer #2: body-scroll room on mobile (static/dashboard.css,
+   @media max-width:640px `.app`) — adds keyboard-height of bottom padding so
+   trailing form fields/buttons can scroll clear of the keyboard ---- */
+@media (max-width: 640px) {
+  .app {
+    padding-bottom: var(--kb-inset, 0px);
+    scroll-padding-bottom: var(--kb-inset, 0px);
+  }
+}
+
+/*
+  ---- Other documented consumers (not duplicated here; live in their own
+       feature CSS) ----
+    * routes/_app.tsx sets body bottom padding to var(--kb-inset) for tall
+      scrollable public doc pages (quote / contract / invoice sign pages).
+    * Keyboard-aware fixed shells (login/verify card, chat composer) size to
+      `height: var(--vvh)` + `transform: translateY(var(--vvt))` so they overlay
+      exactly the band above the keyboard.
+*/

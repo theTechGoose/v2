@@ -1,4 +1,4 @@
-import { Body, Context, Controller, Param, Post } from "#danet/core";
+import { Context, Controller, Param, Post } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import { IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
@@ -32,6 +32,22 @@ function parseSmsDispatch(input: unknown): SmsDispatchDto {
 }
 
 /**
+ * Read the JSON body tolerantly. These dispatch routes take an OPTIONAL body
+ * ({to?, from?}); the common "just send it to the customer on file" call is a
+ * bodyless POST, which must NOT 500 on an empty-body JSON parse. Using @Body
+ * here threw "Unexpected end of JSON input" for every bodyless send, which the
+ * callers silently swallowed — so invoices flipped to "sent" but never went
+ * out. Read from the raw request and fall back to {} on empty/invalid.
+ */
+async function readDispatchBody(ctx: ExecutionContext): Promise<unknown> {
+  try {
+    return await ctx.req.raw.json();
+  } catch {
+    return {};
+  }
+}
+
+/**
  * PaperworkEmailController — three thin POST wrappers around
  * SendPaperworkEmail. Each renders + dispatches the corresponding
  * resource. Body is optional; if omitted the recipient is resolved from
@@ -55,23 +71,23 @@ export class PaperworkEmailController {
   ) {}
 
   @Post("quotes/:id/email")
-  async emailQuote(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+  async emailQuote(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const dto = parseEmailDispatch(body);
+    const dto = parseEmailDispatch(await readDispatchBody(ctx));
     return await this.flow.run(user.id, { kind: "quote", resourceId: id, to: dto.to, from: dto.from });
   }
 
   @Post("contracts/:id/email")
-  async emailContract(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+  async emailContract(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const dto = parseEmailDispatch(body);
+    const dto = parseEmailDispatch(await readDispatchBody(ctx));
     return await this.flow.run(user.id, { kind: "contract", resourceId: id, to: dto.to, from: dto.from });
   }
 
   @Post("invoices/:id/email")
-  async emailInvoice(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+  async emailInvoice(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const dto = parseEmailDispatch(body);
+    const dto = parseEmailDispatch(await readDispatchBody(ctx));
     return await this.flow.run(user.id, { kind: "invoice", resourceId: id, to: dto.to, from: dto.from });
   }
 
@@ -81,23 +97,23 @@ export class PaperworkEmailController {
   // short link through ShortLinkStore.
 
   @Post("quotes/:id/text")
-  async textQuote(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+  async textQuote(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const dto = parseSmsDispatch(body);
+    const dto = parseSmsDispatch(await readDispatchBody(ctx));
     return await this.smsFlow.run(user.id, { kind: "quote", resourceId: id, to: dto.to });
   }
 
   @Post("contracts/:id/text")
-  async textContract(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+  async textContract(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const dto = parseSmsDispatch(body);
+    const dto = parseSmsDispatch(await readDispatchBody(ctx));
     return await this.smsFlow.run(user.id, { kind: "contract", resourceId: id, to: dto.to });
   }
 
   @Post("invoices/:id/text")
-  async textInvoice(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+  async textInvoice(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const dto = parseSmsDispatch(body);
+    const dto = parseSmsDispatch(await readDispatchBody(ctx));
     return await this.smsFlow.run(user.id, { kind: "invoice", resourceId: id, to: dto.to });
   }
 }

@@ -1,0 +1,119 @@
+{
+  "_name": "Mobile (<=640px) \u2014 .grid stacks 1-col, .kpis drops to 2-up",
+  "lang": "en",
+  "_viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "_mocks": {
+    "Kpis": {
+      "props": {
+        "activeJobs": 7,
+        "outstanding": 6420,
+        "outstandingCount": 4,
+        "outstandingOverdue": 1,
+        "pendingQuotes": 4,
+        "pendingTotal": 12800,
+        "avgJob": 2830,
+        "lang": "en"
+      }
+    },
+    "ActiveJobs": {
+      "props": {
+        "total": 7,
+        "lang": "en",
+        "jobs": [
+          {
+            "client": "Maple Grove Apartments",
+            "task": "Re-roof building C",
+            "amount": "$4,800",
+            "paid": "$2,400 paid",
+            "pct": 50,
+            "due": "today",
+            "icon": "hardhat",
+            "color": "var(--brand-green)",
+            "status": {
+              "kind": "green",
+              "txt": "On track"
+            }
+          },
+          {
+            "client": "Sarah Chen",
+            "task": "Bathroom remodel",
+            "amount": "$8,200",
+            "paid": "$3,000 paid",
+            "pct": 36,
+            "due": "Wed",
+            "icon": "wrench",
+            "color": "var(--brand-pink)",
+            "status": {
+              "kind": "green",
+              "txt": "Crew onsite"
+            }
+          }
+        ]
+      }
+    },
+    "QuotesAwaiting": {
+      "props": {
+        "lang": "en",
+        "quotes": [
+          {
+            "client": "Tom & Linda K.",
+            "desc": "Garage epoxy floor",
+            "amt": "$3,400",
+            "sent": "Sent Mon \u00b7 viewed 2\u00d7",
+            "hot": true
+          },
+          {
+            "client": "Bayside Properties",
+            "desc": "Gutter cleaning, 4-unit",
+            "amt": "$1,680",
+            "sent": "Sent 4 days ago",
+            "hot": false,
+            "cold": true
+          }
+        ]
+      }
+    },
+    "Activity": {
+      "props": {
+        "lang": "en",
+        "items": [
+          {
+            "icon": "check",
+            "bg": "var(--green-50)",
+            "fg": "var(--green-600)",
+            "html": "<strong>Tom K.</strong> opened your quote \u2014 2nd time",
+            "time": "2 min ago"
+          },
+          {
+            "icon": "send",
+            "bg": "var(--pink-50)",
+            "fg": "var(--pink-700)",
+            "html": "Texted quote to <strong>Greenleaf HOA</strong>",
+            "time": "1 hr ago"
+          }
+        ]
+      }
+    },
+    "Outstanding": {
+      "props": {
+        "owed": 6420,
+        "current": 3340,
+        "mid": 1920,
+        "overdue": 1160,
+        "lang": "en",
+        "items": [
+          {
+            "client": "Hilltop Diner",
+            "meta": "5 days overdue \u00b7 #INV-204",
+            "metaColor": "var(--pink-700)",
+            "metaWeight": 700,
+            "amount": "$1,160"
+          }
+        ]
+      }
+    }
+  }
+}

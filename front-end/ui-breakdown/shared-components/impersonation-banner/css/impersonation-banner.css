@@ -1,0 +1,44 @@
+/* ============================================================
+   ImpersonationBanner — NO stylesheet classes. Every style is INLINE in
+   ImpersonationBanner.tsx. Reproduced here as ready-to-use rules so the
+   banner can be rebuilt without re-deriving the literals.
+
+   Palette is a deliberate hard-red operator chrome — NOT Sabor tokens (this is
+   a super-admin-only warning bar, intentionally off-palette so it can't be
+   mistaken for product UI).
+   ============================================================ */
+
+/* the fixed banner bar (role="status") */
+.impersonation-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  background: #7a2e2e;            /* hard maroon — off-token operator warning */
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* "Return to your account" button */
+.impersonation-banner__btn {
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 0;
+  background: #fff;
+  color: #7a2e2e;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+/* disabled (busy) state: button keeps styles; `disabled` attr set while the
+   stop-impersonating request is in flight (label flips to "Returning…"). */

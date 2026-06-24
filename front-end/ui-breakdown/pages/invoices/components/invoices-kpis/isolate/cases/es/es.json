@@ -1,0 +1,11 @@
+{
+  "_name": "Spanish — localized labels (Vencido / En cobro / Borradores / Pagado) + units",
+  "overdueCount": 2,
+  "overdueTotal": 605000,
+  "outCount": 1,
+  "outTotal": 580000,
+  "draftingCount": 2,
+  "paidCount": 1,
+  "paidTotal": 190000,
+  "lang": "es"
+}

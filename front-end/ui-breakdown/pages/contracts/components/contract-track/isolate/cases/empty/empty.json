@@ -1,0 +1,10 @@
+{
+  "_name": "Empty — zero count + .kempty slate as children",
+  "num": "03",
+  "title": "Wrapping up",
+  "count": "0 contracts",
+  "defaultOpen": true,
+  "storageKey": "contracts:track:03",
+  "_signals": { "open": true },
+  "_innerHtml": "<div class=\"kempty\">No jobs wrapping up right now.</div>"
+}

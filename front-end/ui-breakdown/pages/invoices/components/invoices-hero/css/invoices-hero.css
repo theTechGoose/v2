@@ -1,0 +1,14 @@
+/* InvoicesHero uses the `.qph` hero block from static/quotes.css (verbatim in
+   ../../../css/invoices.css, lines for .qph / .qph__eyebrow / .qph__eyebrow-dot
+   / .qph__title / .qph__title em / .qph__sub / .qph__cta). Tokens from
+   dashboard.css.
+
+   UNSTYLED classes this component's markup adds (no rule anywhere):
+     .qph__copy        — wrapper div (renders as default block; fine)
+     .qph__cta--ghost  — the Export-CSV secondary CTA. It has NO ghost rule;
+                         the visible "ghost" look comes ENTIRELY from inline
+                         style on the <a>: background:transparent +
+                         border:1px solid currentColor + margin-left:10px.
+                         (.qph__cta still applies its pink bg via the base
+                         class UNLESS the inline background:transparent wins —
+                         which it does, since inline beats the class.) */

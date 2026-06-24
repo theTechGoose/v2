@@ -1,0 +1,8 @@
+{
+  "_name": "Greeting override (Assistant route)",
+  "greetingName": "Raphael",
+  "greetingOverride": "Let's build a quote",
+  "initialUnread": 0,
+  "initialNotifications": [],
+  "lang": "en"
+}

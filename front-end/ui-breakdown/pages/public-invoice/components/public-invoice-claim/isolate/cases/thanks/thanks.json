@@ -1,0 +1,11 @@
+{
+  "_name": "Thanks — done=true after a successful claim; green panel ('Thanks — payment marked as sent'). NO reload (local state swap, the GOOD pattern vs PublicSignContract).",
+  "invoiceId": "inv_3b8c1d2e",
+  "acceptedMethods": [
+    { "method": "zelle", "handle": "hans@hansendecks.com" },
+    { "method": "cash" }
+  ],
+  "customerName": "Maria Delgado",
+  "lang": "en",
+  "_signals": { "done": true }
+}

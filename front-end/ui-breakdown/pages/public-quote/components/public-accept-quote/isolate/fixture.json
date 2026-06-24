@@ -1,0 +1,10 @@
+{
+  "category": "public-quote",
+  "folder": "public-accept-quote",
+  "controls": {
+    "quoteId": { "type": "text", "value": "a1b2c3d4-1111-2222-3333-444455556666" },
+    "contractorFirstName": { "type": "text", "value": "Marcus" },
+    "initialAccepted": { "type": "boolean", "value": false },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

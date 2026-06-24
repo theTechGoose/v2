@@ -1,0 +1,31 @@
+{
+  "_name": "Active — in progress, Day 6 of 14",
+  "idx": 0,
+  "lang": "en",
+  "c": {
+    "id": "ctr_9f3a2b71c0d4e5f6",
+    "client": "Maria Delgado",
+    "initials": "MD",
+    "title": "Backyard Deck Build",
+    "story": "Maria Delgado's job is underway — keep momentum and bill the progress.",
+    "status": "IN PROGRESS",
+    "mood": "active",
+    "moodFrom": "#FF6B6B",
+    "moodTo": "#C84A4A",
+    "moodShadow": "rgba(255,107,107,0.45)",
+    "statusColor": "#C84A4A",
+    "when": "Day 6 of 14",
+    "pct": 43,
+    "paid": "$6,235",
+    "left": "$8,265",
+    "total": "$14,500",
+    "cta": "Send progress invoice",
+    "ctaHref": "/invoices",
+    "scheduleStart": 3,
+    "scheduleEnd": 17,
+    "scheduleScheduled": false,
+    "scheduleColor": ["#FF6B6B", "#C84A4A"],
+    "startDate": "2026-06-13",
+    "completionDate": "2026-06-27"
+  }
+}

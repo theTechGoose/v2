@@ -1,0 +1,7 @@
+{
+  "_name": "Empty — fresh account: Flow/Payors/Mix show empty copy; Tip still renders",
+  "lang": "en",
+  "landedAmounts": [],
+  "landed": [],
+  "_note": "PSideFlow: no weeks>0 → flow.subEmpty + flow.empty text (no SVG). PSideTopPayors: top.length 0 → payors.empty text. PSideMix: no segments → mix.empty text. PSideTip: always renders (static)."
+}

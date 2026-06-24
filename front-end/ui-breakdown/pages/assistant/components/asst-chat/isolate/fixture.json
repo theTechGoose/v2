@@ -1,0 +1,30 @@
+{
+  "category": "assistant",
+  "folder": "asst-chat",
+  "controls": {
+    "conversationId": { "type": "text", "value": "t2" },
+    "initialMessages": {
+      "type": "json",
+      "value": [
+        {
+          "id": "m1",
+          "conversationId": "t2",
+          "role": "user",
+          "kind": "text",
+          "content": "Need a quote for kitchen backsplash, ~30 sqft, white subway tile.",
+          "createdAt": 1750247400000
+        },
+        {
+          "id": "m2",
+          "conversationId": "t2",
+          "role": "assistant",
+          "kind": "text",
+          "content": "Got it — a 30 sqft white subway-tile backsplash. Do you already have a price in mind, or should I help you price it?",
+          "createdAt": 1750247430000
+        }
+      ]
+    },
+    "userInitials": { "type": "text", "value": "ML" },
+    "sendLanguages": { "type": "json", "value": ["en", "es"] }
+  }
+}

@@ -1,0 +1,329 @@
+/* ===========================================================================
+ * Dashboard PAGE-level CSS — the slices of static/dashboard.css that belong to
+ * the route shell + the DashboardPage island's own top blocks (assistant-cta,
+ * the loading skeleton's structural classes). Per-section card CSS (kpis,
+ * panels, jobs, quotes, money, activity) lives in
+ * components/dash-sections/css/dash-sections.css. Sidebar/topbar CSS is in the
+ * shared-components specs — NOT duplicated here.
+ *
+ * Source: static/dashboard.css (loaded via <link rel=stylesheet href=/dashboard.css>
+ * in routes/dashboard/index.tsx <Head>). Single light theme; tokens from
+ * static/_proto/colors_and_type.css.
+ * ======================================================================== */
+
+/* ---- App shell scroll column (route renders <div class="content">) -------
+ * DashboardPage mounts INSIDE this. .content is the only scroll container on
+ * desktop; on mobile (<=640) it switches to visible/body-scroll (see bottom). */
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 22px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.content > * {
+  flex-shrink: 0;
+}
+.content::-webkit-scrollbar {
+  width: 8px;
+}
+.content::-webkit-scrollbar-track {
+  background: transparent;
+}
+.content::-webkit-scrollbar-thumb {
+  background: rgba(100, 69, 54, 0.18);
+  border-radius: 999px;
+}
+
+/* ---- Assistant hero (top block of DashboardPage island) ------------------ */
+.assistant-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  text-decoration: none;
+  border-radius: 28px;
+  padding: 40px 44px;
+  min-height: 232px;
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  background:
+    radial-gradient(
+      120% 160% at 0% 0%,
+      rgba(255, 255, 255, 0.22) 0%,
+      rgba(255, 255, 255, 0) 52%
+    ),
+    linear-gradient(120deg, var(--brand-green) 0%, var(--brand-teal) 100%);
+  box-shadow: 0 22px 46px rgba(81, 152, 67, 0.32);
+  transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 220ms;
+}
+.assistant-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 28px 56px rgba(81, 152, 67, 0.42);
+}
+.assistant-cta:hover .assistant-cta__btn {
+  filter: brightness(1.05);
+  transform: translateX(2px);
+}
+.assistant-cta__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  position: relative;
+  z-index: 2;
+  flex: 1;
+}
+.assistant-cta__eyebrow {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 10px;
+}
+.assistant-cta__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 40px;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.assistant-cta__sub {
+  font-size: 15px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.92);
+  max-width: 480px;
+  margin-top: 12px;
+}
+.assistant-cta__actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 26px;
+}
+.assistant-cta__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  background: #fff;
+  color: var(--brand-green);
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 16px;
+  padding: 15px 24px;
+  border-radius: 16px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
+  transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1), filter 180ms;
+}
+.assistant-cta__call {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 13px 18px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.1);
+  transition: background 160ms, border-color 160ms;
+}
+.assistant-cta__call:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+.assistant-cta__call-num {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.assistant-cta__call-label {
+  opacity: 0.9;
+}
+.assistant-cta__crown {
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(81, 152, 67, 0.14);
+  color: var(--brand-green);
+}
+.assistant-cta__art {
+  flex-shrink: 0;
+  position: relative;
+  width: 220px;
+  height: 200px;
+  align-self: stretch;
+}
+.assistant-cta__blob {
+  position: absolute;
+  inset: 50% 0 auto auto;
+  transform: translateY(-50%);
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(255, 255, 255, 0.22) 0%,
+    rgba(255, 255, 255, 0) 70%
+  );
+}
+.assistant-cta__monster {
+  position: absolute;
+  bottom: -40px;
+  right: 0;
+  width: 220px;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.22));
+  z-index: 1;
+}
+.assistant-cta__confetti {
+  position: absolute;
+  border-radius: 4px;
+  z-index: 2;
+}
+.assistant-cta__confetti--1 {
+  top: 24px;
+  right: 36px;
+  width: 14px;
+  height: 14px;
+  background: var(--brand-pink);
+  transform: rotate(18deg);
+}
+.assistant-cta__confetti--2 {
+  bottom: 48px;
+  left: -6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+}
+.assistant-cta__confetti--3 {
+  top: 64px;
+  right: 200px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* ---- Loading-skeleton structural classes used by DashboardSkeleton -------
+ * (`.hero`, `.kpis`, `.kpi`, `.grid`, `.panel`, `.money`) — the skeleton
+ * reuses the real section shells with shimmer SkelBlocks inside. `.hero` is
+ * otherwise DEAD on the live dashboard (the .assistant-cta block replaced it);
+ * kept here because the skeleton borrows its box. Full `.hero*` rules live in
+ * dash-sections/css for completeness/dead-code documentation. */
+.hero {
+  position: relative;
+  isolation: isolate;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 88% 120%, rgba(255, 193, 193, 0.55) 0%, transparent 55%),
+    radial-gradient(circle at -5% -10%, rgba(207, 229, 200, 0.85) 0%, transparent 50%),
+    linear-gradient(135deg, #f7fff4 0%, #fffbf5 100%);
+  border: 1px solid rgba(100, 69, 54, 0.08);
+  padding: 26px 30px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr 240px;
+  gap: 28px;
+  align-items: center;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+}
+
+/* ---- error state ---------------------------------------------------------
+ * `.dashpage-error` is referenced by DashboardPage's error branch but has NO
+ * rule in dashboard.css — it renders unstyled (browser-default block). Flagged
+ * as a missing style in the component spec. */
+
+/* =========================================================================
+ * Responsive — the dashboard's own breakpoints (NOT the 720 product default
+ * blindly): assistant-cta restacks at 720; shell cuts at 640/641.
+ * ======================================================================== */
+@media (max-width: 720px) {
+  .assistant-cta {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 26px 24px 0;
+    min-height: 0;
+    border-radius: 24px;
+  }
+  .assistant-cta__title {
+    font-size: 30px;
+  }
+  .assistant-cta__sub {
+    max-width: none;
+  }
+  .assistant-cta__actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-top: 22px;
+  }
+  .assistant-cta__btn,
+  .assistant-cta__call {
+    width: 100%;
+    justify-content: center;
+  }
+  .assistant-cta__art {
+    width: 100%;
+    height: 130px;
+    margin-top: 6px;
+  }
+  .assistant-cta__monster {
+    bottom: -18px;
+    right: 50%;
+    transform: translateX(50%);
+    width: 150px;
+  }
+  .assistant-cta__blob {
+    inset: auto 50% 0 auto;
+    transform: translateX(50%);
+    width: 170px;
+    height: 170px;
+  }
+  .assistant-cta__confetti--3 {
+    right: auto;
+    left: 24px;
+  }
+}
+
+/* Shell cutover at 640px (the .app flex shell → body-scroll block). These
+ * affect where the dashboard sits, hence relevant to capture viewports. */
+@media (max-width: 640px) {
+  .app {
+    height: auto;
+    min-height: 100dvh;
+    display: block;
+    overflow: visible;
+    padding-bottom: var(--kb-inset, 0px);
+    scroll-padding-bottom: var(--kb-inset, 0px);
+  }
+  .main {
+    display: block;
+    overflow: visible;
+  }
+  .content {
+    overflow: visible;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  }
+  .hero {
+    grid-template-columns: 1fr;
+    padding: 22px 20px;
+    gap: 14px;
+  }
+}
+
+/* Reduced motion: the global tokens @media clamps every transition-duration /
+ * animation-duration to 0.01ms !important. The bouncy assistant-cta lift +
+ * btn nudge are therefore neutralized globally — no component-local rule. */

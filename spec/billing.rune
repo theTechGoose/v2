@@ -1,0 +1,566 @@
+[MOD] billing
+
+[REQ] invoice.create(CreateInvoiceDto): InvoiceDto
+    db:invoice.save(CreateInvoiceDto): InvoiceDto
+    [NEW] invoice
+    invoice.project(): InvoiceDto
+
+[REQ] invoice.list({}): InvoiceListDto
+    db:invoice.listByUser(OwnerDto): InvoiceListDto
+
+[REQ] invoice.get(GetByIdDto): InvoiceDto
+    db:invoice.getOwned(GetByIdDto): InvoiceDto
+      not-found
+      forbidden
+    [NEW] invoice
+    invoice.project(): InvoiceDto
+
+[REQ] invoice.update(UpdateInvoiceDto): InvoiceDto
+    db:invoice.getOwned(GetByIdDto): InvoiceDto
+      not-found
+      forbidden
+    db:invoice.patch(UpdateInvoiceDto): InvoiceDto
+    [NEW] invoice
+    invoice.project(): InvoiceDto
+
+[REQ] invoice.remove(GetByIdDto): OkDto
+    db:invoice.getOwned(GetByIdDto): InvoiceDto
+      not-found
+      forbidden
+    db:invoice.purge(GetByIdDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] invoice.discount(DiscountInvoiceDto): InvoiceDto
+    db:invoice.getOwned(GetByIdDto): InvoiceDto
+      not-found
+      forbidden
+    [NEW] invoice
+    invoice.applyDiscount(DiscountInvoiceDto): invoice
+      invalid-amount
+    db:invoice.patch(UpdateInvoiceDto): InvoiceDto
+    invoice.project(): InvoiceDto
+
+[REQ] changeOrder.create(CreateChangeOrderForInvoiceDto): ChangeOrderDto
+    db:invoice.getOwned(GetByIdDto): InvoiceDto
+      not-found
+      forbidden
+    db:changeOrder.save(CreateChangeOrderForInvoiceDto): ChangeOrderDto
+
+[REQ] changeOrder.listByInvoice(GetByIdDto): ChangeOrderListDto
+    db:changeOrder.listByInvoice(GetByIdDto): ChangeOrderListDto
+
+[REQ] invoice.confirmPayment(GetByIdDto): ConfirmPaymentResultDto
+    db:invoice.getOwned(GetByIdDto): InvoiceDto
+      not-found
+      forbidden
+    db:payment.save(CreatePaymentDto): PaymentDto
+    db:invoice.patch(UpdateInvoiceDto): InvoiceDto
+    fs:document.build(RenderReceiptPdfDto): PdfDto
+    ex:email.send(EmailMessageDto): SendEmailResultDto
+      timeout
+      rate-limited
+    ex:sms.send(SmsMessageDto): SendSmsResultDto
+      timeout
+    mq:bus.emit(EventDto): void
+    [NEW] outcome
+    outcome.toDto(): ConfirmPaymentResultDto
+
+[REQ] invoice.rejectClaim(GetByIdDto): RejectClaimResultDto
+    db:invoice.getOwned(GetByIdDto): InvoiceDto
+      not-found
+      forbidden
+    db:invoice.patch(UpdateInvoiceDto): InvoiceDto
+    [NEW] outcome
+    outcome.toDto(): RejectClaimResultDto
+
+[REQ] invoice.forecastThisWeek({}): ForecastResultDto
+    db:invoice.listByUser(OwnerDto): InvoiceListDto
+    [NEW] forecast
+    forecast.compute(): ForecastResultDto
+
+[REQ] invoice.exportCsv(ExportCsvDto): CsvDto
+    db:invoice.listByUser(OwnerDto): InvoiceListDto
+    [NEW] report
+    report.toCsv(): CsvDto
+
+[REQ] invoice.recordFromVoice(VoiceRecordDto): UtteranceResultDto
+    db:invoice.listByUser(OwnerDto): InvoiceListDto
+    [NEW] utterance
+    utterance.parse(transcript): ParsedUtteranceDto
+    utterance.match(): UtteranceResultDto
+
+[REQ] invoice.recordFromPhoto(PhotoRecordDto): UtteranceResultDto
+    db:invoice.listByUser(OwnerDto): InvoiceListDto
+    [NEW] utterance
+    utterance.parseOcr(PhotoRecordDto): ParsedUtteranceDto
+    utterance.match(): UtteranceResultDto
+
+[REQ] invoice.computeBalance(InvoiceRefDto): InvoiceBalanceDto
+    db:invoice.getOwned(GetByIdDto): InvoiceDto
+      not-found
+      forbidden
+    db:payment.listByInvoice(InvoiceRefDto): PaymentListDto
+    [NEW] balance
+    balance.compute(): InvoiceBalanceDto
+
+[REQ] pdfRenderer.renderReceipt(RenderReceiptPdfDto): PdfDto
+    db:invoice.getOwned(GetByIdDto): InvoiceDto
+      not-found
+      forbidden
+    fs:document.build(RenderReceiptPdfDto): PdfDto
+
+[REQ] payment.create(CreatePaymentDto): PaymentDto
+    db:invoice.getOwned(GetByIdDto): InvoiceDto
+      not-found
+      forbidden
+    db:invoice.recompute(InvoiceRefDto): InvoiceBalanceDto
+    db:payment.save(CreatePaymentDto): PaymentDto
+
+[REQ] payment.list({}): PaymentListDto
+    db:payment.listByUser(OwnerDto): PaymentListDto
+
+[REQ] payment.get(GetByIdDto): PaymentDto
+    db:payment.getOwned(GetByIdDto): PaymentDto
+      not-found
+      forbidden
+
+[REQ] payment.update(UpdatePaymentDto): PaymentDto
+    db:payment.getOwned(GetByIdDto): PaymentDto
+      not-found
+      forbidden
+    db:invoice.recompute(InvoiceRefDto): InvoiceBalanceDto
+    db:payment.patch(UpdatePaymentDto): PaymentDto
+
+[REQ] payment.remove(GetByIdDto): OkDto
+    db:payment.getOwned(GetByIdDto): PaymentDto
+      not-found
+      forbidden
+    db:payment.purge(GetByIdDto): void
+    db:invoice.recompute(InvoiceRefDto): InvoiceBalanceDto
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] paymentTerms.create(CreatePaymentTermsDto): PaymentTermsDto
+    db:paymentTerms.save(CreatePaymentTermsDto): PaymentTermsDto
+
+[REQ] paymentTerms.list({}): PaymentTermsListDto
+    db:paymentTerms.listByUser(OwnerDto): PaymentTermsListDto
+
+[REQ] paymentTerms.get(GetByIdDto): PaymentTermsDto
+    db:paymentTerms.getOwned(GetByIdDto): PaymentTermsDto
+      not-found
+      forbidden
+
+[REQ] paymentTerms.check(GetByIdDto): PaymentTermsCheckDto
+    db:paymentTerms.getOwned(GetByIdDto): PaymentTermsDto
+      not-found
+      forbidden
+    [NEW] schedule
+    schedule.check(): PaymentTermsCheckDto
+
+[REQ] paymentTerms.resolve(ResolveTermsDto): ResolvedTermsDto
+    db:paymentTerms.getOwned(GetByIdDto): PaymentTermsDto
+      not-found
+      forbidden
+    [NEW] schedule
+    schedule.applyTo(total): ResolvedTermsDto
+      invalid-amount
+
+[REQ] paymentTerms.update(UpdatePaymentTermsDto): PaymentTermsDto
+    db:paymentTerms.getOwned(GetByIdDto): PaymentTermsDto
+      not-found
+      forbidden
+    db:paymentTerms.patch(UpdatePaymentTermsDto): PaymentTermsDto
+
+[REQ] paymentTerms.remove(GetByIdDto): OkDto
+    db:paymentTerms.getOwned(GetByIdDto): PaymentTermsDto
+      not-found
+      forbidden
+    db:paymentTerms.purge(GetByIdDto): void
+    [NEW] ok
+    ok.toDto(): OkDto
+
+[REQ] reminder.runAll({}): ReminderSweepDto
+    db:invoice.listByUser(OwnerDto): InvoiceListDto
+    [NEW] reminder
+    reminder.sweep(OwnerDto): ReminderSweepDto
+
+[REQ] nudge.runForUser({}): NudgeSweepDto
+    db:invoice.listByUser(OwnerDto): InvoiceListDto
+    [NEW] nudge
+    nudge.sweep(OwnerDto): NudgeSweepDto
+
+[REQ] reminder.runForInvoice(InvoiceReminderDto): ReminderResultDto
+    db:invoice.getOwned(GetByIdDto): InvoiceDto
+      not-found
+      forbidden
+    ex:email.send(EmailMessageDto): SendEmailResultDto
+      timeout
+    ex:sms.send(SmsMessageDto): SendSmsResultDto
+    [NEW] reminder
+    reminder.fire(): ReminderResultDto
+
+[REQ] dispatch.emailInvoice(EmailDispatchDto): SendEmailResultDto
+    db:invoice.getOwned(GetByIdDto): InvoiceDto
+      not-found
+      forbidden
+    ex:email.send(EmailMessageDto): SendEmailResultDto
+      timeout
+      rate-limited
+
+[REQ] dispatch.textInvoice(SmsDispatchDto): SendSmsResultDto
+    db:invoice.getOwned(GetByIdDto): InvoiceDto
+      not-found
+      forbidden
+    db:shortlink.findOrCreate(ShortlinkMintDto): ShortlinkDto
+    ex:sms.send(SmsMessageDto): SendSmsResultDto
+      timeout
+
+[ENT] invoices.create(CreateInvoiceDto): InvoiceDto
+[ENT] invoices.list({}): InvoiceListDto
+[ENT] invoices.get(GetByIdDto): InvoiceDto
+[ENT] invoices.update(UpdateInvoiceDto): InvoiceDto
+[ENT] invoices.remove(GetByIdDto): OkDto
+    [REQ] invoice.remove(GetByIdDto): OkDto
+[ENT] invoices.discount(DiscountInvoiceDto): InvoiceDto
+[ENT] invoices.createChangeOrder(CreateChangeOrderForInvoiceDto): ChangeOrderDto
+[ENT] invoices.listChangeOrders(GetByIdDto): ChangeOrderListDto
+[ENT] invoices.confirmPayment(GetByIdDto): ConfirmPaymentResultDto
+[ENT] invoices.rejectClaim(GetByIdDto): RejectClaimResultDto
+[ENT] invoices.forecastThisWeek({}): ForecastResultDto
+[ENT] invoices.exportCsv(ExportCsvDto): CsvDto
+[ENT] invoices.recordFromVoice(VoiceRecordDto): UtteranceResultDto
+[ENT] invoices.recordFromPhoto(PhotoRecordDto): UtteranceResultDto
+[ENT] invoices.email(EmailDispatchDto): SendEmailResultDto
+[ENT] invoices.text(SmsDispatchDto): SendSmsResultDto
+[ENT] payments.create(CreatePaymentDto): PaymentDto
+[ENT] payments.list({}): PaymentListDto
+[ENT] payments.get(GetByIdDto): PaymentDto
+[ENT] payments.update(UpdatePaymentDto): PaymentDto
+[ENT] payments.remove(GetByIdDto): OkDto
+    [REQ] payment.remove(GetByIdDto): OkDto
+[ENT] paymentTerms.create(CreatePaymentTermsDto): PaymentTermsDto
+[ENT] paymentTerms.list({}): PaymentTermsListDto
+[ENT] paymentTerms.get(GetByIdDto): PaymentTermsDto
+[ENT] paymentTerms.check(GetByIdDto): PaymentTermsCheckDto
+[ENT] paymentTerms.resolve(ResolveTermsDto): ResolvedTermsDto
+[ENT] paymentTerms.update(UpdatePaymentTermsDto): PaymentTermsDto
+[ENT] paymentTerms.remove(GetByIdDto): OkDto
+    [REQ] paymentTerms.remove(GetByIdDto): OkDto
+[ENT] cron.runReminders({}): ReminderSweepDto
+[ENT] cron.runNudges({}): NudgeSweepDto
+[ENT] cron.oneOffReminder(InvoiceReminderDto): ReminderResultDto
+
+[TYP:uuid] id: string
+    a unique record identifier
+[TYP:ext] userId: string
+    the authenticated owner id, minted from the session
+[TYP] createdAt: string
+    an ISO creation timestamp
+[TYP] updatedAt: string
+    an ISO last-updated timestamp
+[TYP:nonempty] name: string
+    a display or template name
+[TYP] ok: boolean
+    a success flag
+[TYP:int] count: number
+    a count of affected records
+[TYP] status: string
+    a lifecycle status string
+[TYP] reason: string
+    a machine-readable reason code
+[TYP] customerId: string
+    a reference to a CRM customer
+[TYP] contractId: string
+    a reference to a contract
+[TYP] invoiceId: string
+    a reference to an invoice
+[TYP] jobName: string
+    a short job title
+[TYP] description: string
+    freeform description text
+[TYP] dueDate: string
+    invoice due date
+[TYP] amount: number
+    a money amount in integer cents
+[TYP] discountCents: number
+    cumulative discount applied in integer cents
+[TYP] discountReason: string
+    reason for an applied discount
+[TYP] issuedDate: string
+    invoice issued date
+[TYP] paidAt: string
+    ISO timestamp the invoice was paid
+[TYP] scheduledFor: string
+    scheduled-fire date for scheduled invoices
+[TYP:int] installmentIndex: number
+    milestone position for invoice-X-of-Y framing
+[TYP:int] installmentTotal: number
+    total number of milestone invoices
+[TYP] remindersMuted: boolean
+    per-invoice mute for the reminder cadence
+[TYP] channel: string
+    a dispatch channel name
+[TYP:int] day: number
+    cadence step in days past due
+[TYP] method: string
+    a payment method label
+[TYP] reference: string
+    a free-text payment reference
+[TYP] claimedAt: string
+    ISO timestamp the customer claimed payment
+[TYP] claimedBy: string
+    name of who claimed payment
+[TYP] urgency: string
+    derived invoice urgency badge
+[TYP] receivedAt: string
+    ISO timestamp the payment was received
+[TYP] confirmedAt: string
+    ISO timestamp the contractor confirmed receipt
+[TYP] percent: number
+    installment percent of the total
+[TYP] note: string
+    a freeform note
+[TYP] deltaAmountCents: number
+    signed delta to the invoice total in integer cents
+[TYP] originalAmountCents: number
+    snapshot of the invoice amount at create time
+[TYP] decidedAt: string
+    ISO timestamp the change order was decided
+[TYP] total: number
+    a total amount or count
+[TYP] totalPercent: number
+    sum of installment percents
+[TYP] isBalanced: boolean
+    whether installments sum to 100 percent
+[TYP] to: string
+    the dispatch recipient address
+[TYP] from: string
+    the dispatch sender address
+[TYP] subject: string
+    the email subject line
+[TYP] sid: string
+    a Twilio message SID
+[TYP:int] year: number
+    a calendar year for the CSV export
+[TYP] transcript: string
+    a free-form voice transcript
+[TYP] payerHint: string
+    a parsed payer-name hint
+[TYP] csv: string
+    a CSV document body
+[TYP] pdf: Uint8Array
+    rendered PDF bytes
+[TYP] paidTotal: number
+    sum of payments in integer cents
+[TYP] balance: number
+    outstanding balance in integer cents
+[TYP] expectedLandDate: string
+    ISO date funds are expected to land
+[TYP] thisWeekCents: number
+    total expected this week in integer cents
+[TYP] nextWeekCents: number
+    total expected next week in integer cents
+[TYP] atRiskCents: number
+    total at-risk overdue amount in integer cents
+[TYP] asOf: string
+    reference timestamp for the forecast
+[TYP] source: string
+    where a forecast estimate came from
+[TYP] escalated: boolean
+    whether the day-30 escalation was used
+[TYP] customerName: string
+    a customer display name for copy
+[TYP] matchedInvoiceId: string
+    the single invoice matched from an utterance
+[TYP] paymentId: string
+    the minted payment id
+[TYP] entityType: string
+    domain-event entity type
+[TYP] entityId: string
+    domain-event entity id
+[TYP] action: string
+    domain-event action verb
+[TYP] code: string
+    a shortlink code
+[TYP] kind: string
+    a resource kind discriminator
+[TYP] label: string
+    a human-readable label
+[TYP] sentAt: string
+    ISO timestamp a reminder step was sent
+[TYP] reminderHistory: ReminderHistoryEntryDto
+    a nested reminder-cadence history row
+[TYP] paymentIntent: PaymentIntentDto
+    a nested customer payment claim
+[TYP] installment: InstallmentDto
+    a nested installment schedule row
+[TYP] invoice: InvoiceDto
+    a nested invoice record
+[TYP] payment: PaymentDto
+    a nested payment record
+[TYP] changeOrder: ChangeOrderDto
+    a nested change-order record
+[TYP] plan: PaymentTermsDto
+    a nested payment-terms template
+[TYP] result: ReminderResultDto
+    a nested reminder sweep result
+[TYP] nudge: NudgeResultDto
+    a nested nudge result
+[TYP] entry: ForecastEntryDto
+    a nested forecast entry
+[TYP] disambiguation: DisambiguationDto
+    a nested payment-match candidate
+[TYP] parsed: ParsedUtteranceDto
+    the parsed utterance fields
+
+[DTO] ReminderHistoryEntryDto: day, sentAt, channel(s)
+    one reminder-cadence history row
+[DTO] PaymentIntentDto: method, amount, reference?, claimedAt, claimedBy?
+    a customer's recorded payment claim
+[DTO] InstallmentDto: percent, dueDate, label?, note?
+    one installment in a payment schedule
+[DTO] CreateInvoiceDto: contractId?, jobName?, description?, dueDate, customerId?, amount?, discountCents?, discountReason?, issuedDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?
+    input to create an invoice
+[DTO] UpdateInvoiceDto: contractId?, jobName?, description?, customerId?, amount?, discountCents?, discountReason?, issuedDate?, dueDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?
+    a partial invoice patch
+[DTO] InvoiceDto: id, userId, contractId?, jobName?, description?, dueDate, customerId?, amount?, discountCents?, discountReason?, issuedDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?, urgency?, createdAt, updatedAt
+    a persisted invoice record
+[DTO] InvoiceListDto: invoice(s)
+    a list of invoices owned by the user
+[DTO] DiscountInvoiceDto: id, discountCents, reason?
+    input to apply a discount to an invoice
+[DTO] CreatePaymentDto: invoiceId, amount, method, receivedAt, reference?
+    input to record a payment
+[DTO] UpdatePaymentDto: amount?, method?, receivedAt?, reference?
+    a partial payment patch
+[DTO] PaymentDto: id, userId, invoiceId, amount, method, receivedAt, reference?, createdAt, updatedAt
+    a persisted payment record
+[DTO] PaymentListDto: payment(s)
+    a list of payments
+[DTO] CreatePaymentTermsDto: name, installment(s), description?
+    input to create a payment-terms template
+[DTO] UpdatePaymentTermsDto: name?, installment(s), description?
+    a partial payment-terms patch
+[DTO] PaymentTermsDto: id, userId, name, installment(s), description?, createdAt, updatedAt
+    a persisted payment-terms template
+[DTO] PaymentTermsListDto: plan(s)
+    a list of payment-terms templates
+[DTO] PaymentTermsCheckDto: id, totalPercent, isBalanced
+    a percent-balance check for a terms template
+[DTO] ResolveTermsDto: id, total?
+    input to resolve installments against a total
+[DTO] ResolvedTermsDto: id, total, installment(s)
+    installments resolved to concrete amounts
+[DTO] CreateChangeOrderForInvoiceDto: id, description, deltaAmountCents
+    input to create a change order against an invoice
+[DTO] ChangeOrderDto: id, userId, invoiceId, contractId?, customerId?, description, deltaAmountCents, originalAmountCents?, status, createdAt, updatedAt, decidedAt?
+    a persisted change-order record
+[DTO] ChangeOrderListDto: changeOrder(s)
+    a list of change orders for an invoice
+[DTO] OwnerDto: userId
+    the owning user id wrapper
+[DTO] GetByIdDto: id
+    an id lookup wrapper
+[DTO] OkDto: ok
+    a success body for deletes
+[DTO] InvoiceRefDto: userId, invoiceId
+    an invoice reference scoped to its owner
+[DTO] InvoiceBalanceDto: invoiceId, amount, paidTotal, balance, status
+    a computed invoice balance rollup
+[DTO] ConfirmPaymentResultDto: ok, reason?, paymentId?
+    result of confirming a claimed payment
+[DTO] RejectClaimResultDto: ok, reason?
+    result of rejecting a payment claim
+[DTO] ForecastEntryDto: expectedLandDate, amount, label, invoiceId, source
+    one forecast line entry
+[DTO] ForecastResultDto: thisWeekCents, nextWeekCents, atRiskCents, asOf, entry(s)
+    the receivables forecast result
+[DTO] ExportCsvDto: year?
+    input selecting the export year
+[DTO] CsvDto: csv
+    a CSV document payload
+[DTO] VoiceRecordDto: transcript
+    a voice transcript for payment recording
+[DTO] PhotoRecordDto: amount?, payerHint?, method?, reference?
+    OCR fields from a check photo
+[DTO] ParsedUtteranceDto: amount?, payerHint?, method?, reference?
+    fields parsed from an utterance
+[DTO] DisambiguationDto: invoiceId, label, amount, customerName?
+    one ambiguous payment-match candidate
+[DTO] UtteranceResultDto: matchedInvoiceId?, paymentId?, parsed, disambiguation(s)
+    result of recording a payment from an utterance
+[DTO] InvoiceReminderDto: invoiceId, day
+    input to fire one cadence reminder
+[DTO] ReminderResultDto: invoiceId, day, channel(s), escalated
+    result of one reminder fire
+[DTO] ReminderSweepDto: ok, count, result(s)
+    result of a full reminder sweep
+[DTO] NudgeResultDto: invoiceId, scheduledFor
+    result of one scheduled-invoice nudge
+[DTO] NudgeSweepDto: ok, count, nudge(s)
+    result of a full nudge sweep
+[DTO] EmailDispatchDto: id, to?, from?
+    input to email a paperwork resource
+[DTO] SmsDispatchDto: id, to?
+    input to text a paperwork resource
+[DTO] EmailMessageDto: to, subject
+    an outbound email envelope
+[DTO] SmsMessageDto: to
+    an outbound SMS envelope
+[DTO] SendEmailResultDto: ok, reason?, to, subject
+    result of an email dispatch
+[DTO] SendSmsResultDto: ok, to, sid?, reason?
+    result of an SMS dispatch
+[DTO] ShortlinkMintDto: userId, kind, id
+    input to mint or reuse a shortlink
+[DTO] ShortlinkDto: code, kind, id
+    a persisted shortlink record
+[DTO] EventDto: userId, entityType, entityId, action
+    a domain event envelope
+[DTO] RenderReceiptPdfDto: invoiceId, method, confirmedAt, reference?
+    input to render a receipt PDF
+[DTO] PdfDto: pdf
+    rendered PDF bytes wrapper
+
+[NON] invoice
+    a single invoice
+[NON] payment
+    a single payment
+[NON] paymentTerms
+    a single payment-terms template
+[NON] changeOrder
+    a single change order
+[NON] ok
+    a success marker
+[NON] outcome
+    a mutation outcome marker
+[NON] reminder
+    the payment-reminder engine
+[NON] nudge
+    the scheduled-invoice nudger
+[NON] forecast
+    the receivables forecast computer
+[NON] report
+    the CSV export builder
+[NON] utterance
+    the payment-from-utterance recorder
+[NON] schedule
+    the installment schedule helper
+[NON] balance
+    the invoice balance computer
+[NON] dispatch
+    the invoice email/SMS dispatcher
+[NON] pdfRenderer
+    the PDF rendering coordinator
+[NON] document
+    the PDF document builder
+[NON] email
+    the outbound email service
+[NON] sms
+    the outbound SMS service
+[NON] bus
+    the domain event bus
+[NON] shortlink
+    a shortlink store

@@ -1,0 +1,8 @@
+{
+  "_name": "Loading — on-mount skeletons (ShimmerStyle + PageHeaderSkeleton + CardGridSkeleton rows=3). First paint before the three fetches resolve.",
+  "_signals": {
+    "s": { "loading": true, "error": null, "cards": [], "top": { "results": [] }, "segments": { "segments": [] } },
+    "addOpen": false
+  },
+  "_note": "The route SSRs no page body, so this skeleton is the literal first paint on every /clients visit. Drive by stalling the three /clients + /analytics/clients/* mocks (never resolving)."
+}

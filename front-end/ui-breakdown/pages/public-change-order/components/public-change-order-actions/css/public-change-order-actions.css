@@ -1,0 +1,41 @@
+/* public-change-order-actions.css — EXTRACTED real CSS.
+ *
+ * The change-order actions island is 100% inline-styled and emits NO <style>
+ * and uses NO CSS classes — only inline `style=` strings. There is genuinely no
+ * extractable rule. Recorded for completeness + the inline structure key.
+ * Surface: PUBLIC palette (inline hex, NOT Sabor tokens). The host route
+ * /co/:id loads /landing.css only for resets; this island links nothing.
+ *
+ * Public palette literals used (from js/PublicChangeOrderActions.tsx):
+ *   GREEN     #519843   approve button bg / approved eyebrow
+ *   INK       #1c2c30   result-panel body text
+ *   MUTED     #6b7a7e   decline button text
+ *   LINE      #e3e8e6   decline border + result-panel border
+ *   declined  #a83b3b   declined eyebrow + error text
+ *
+ * Action stack (status === "pending"):
+ *   wrapper : margin-top:24px; display:flex; flex-direction:column; gap:12px
+ *   approve : border:0; border-radius:12px; padding:15px 18px; background:#519843;
+ *             color:#fff; font:inherit 16px/800; cursor:pointer
+ *   decline : border:1px solid #e3e8e6; border-radius:12px; padding:13px 18px;
+ *             background:#fff; color:#6b7a7e; font:inherit 15px/700; cursor:pointer
+ *   both    : disabled while busy !== null (disabled attr only — no style change
+ *             beyond the UA default; label text swaps instead)
+ *   error   : <p role="alert"> color:#a83b3b; font-size:13px; margin:2px 0 0
+ *
+ * Result panel (status !== "pending", terminal):
+ *   wrapper : margin-top:24px; border:1px solid #e3e8e6; border-radius:14px;
+ *             padding:20px 24px;
+ *             bg = approved ? rgba(81,152,67,0.08) : rgba(168,59,59,0.06)
+ *   eyebrow : font-size:11px; font-weight:800; letter-spacing:.14em; uppercase;
+ *             color = approved ? #519843 : #a83b3b
+ *   body    : margin:8px 0 0; color:#1c2c30; font-size:15px; line-height:1.55
+ *
+ * No motion: NO @keyframes, NO transition declared. State swaps are instant.
+ * No @media: full-width column buttons inside the route's 560px doc column —
+ *   reflows without a query. No reduced-motion concern.
+ *
+ * NOTE: unlike the sibling PublicInvoiceClaim, this island has NO data-cy/test
+ * hooks and no stable class/id on the buttons — capture them by tag + label
+ * text. Rebuild should add stable selectors for testability.
+ */

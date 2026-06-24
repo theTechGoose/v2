@@ -1,0 +1,28 @@
+{
+  "category": "payments",
+  "folder": "landed-row",
+  "controls": {
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] },
+    "p": {
+      "type": "object",
+      "value": {
+        "id": "pay_2bb1043f",
+        "userId": "usr_01",
+        "invoiceId": "inv_aa19ff2c8e30",
+        "amount": 920000,
+        "method": "check",
+        "receivedAt": "2026-06-10T09:30:00Z",
+        "createdAt": "2026-06-10T09:31:00Z",
+        "updatedAt": "2026-06-10T09:31:00Z",
+        "client": "Tom Becker",
+        "initials": "TB",
+        "invoiceRef": "INV-AA19FF",
+        "daysAgo": 8,
+        "whenLabel": "8d ago",
+        "note": "Check from Tom, deposited via mobile.",
+        "status": "landed"
+      }
+    }
+  },
+  "_note": "p is an EnrichedPayment (>1d landed → it's a LandedRow, not a card). Row reads client/method/whenLabel/invoiceRef/amount. amount 920000 → \"$9,200\". Badge is always --won (green). HAZARD: .qdone__body / .qdone__sub are undefined in CSS → the sub-line renders as plain inherited body text."
+}

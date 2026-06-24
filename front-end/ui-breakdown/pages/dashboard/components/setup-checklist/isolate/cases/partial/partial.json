@@ -1,0 +1,23 @@
+{
+  "_name": "Partial — name+email+biz done, logo/address/payment/insurance left (4 of 7)",
+  "_signals": { "lang": "en", "dismissed": false },
+  "_mocks": {
+    "GET /profile": {
+      "user": { "id": "u1", "name": "Raphael Castro", "email": "raphael@rcincorporated.net", "language": "en", "createdAt": 1700000000000, "updatedAt": 1700000000000 },
+      "identity": {
+        "userId": "u1",
+        "businessName": "RC Incorporated",
+        "logoFileId": null,
+        "acceptedPaymentMethods": {},
+        "createdAt": "2026-05-01T00:00:00Z",
+        "updatedAt": "2026-05-01T00:00:00Z"
+      },
+      "address": null,
+      "insurance": null,
+      "tax": null,
+      "contractDefaults": null,
+      "references": [],
+      "initials": "RC"
+    }
+  }
+}

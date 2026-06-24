@@ -1,0 +1,13 @@
+{
+  "_name": "Desktop / no keyboard — vars cleared",
+  "_mocks": {
+    "visualViewport": { "height": 900, "offsetTop": 0 },
+    "innerHeight": 900
+  },
+  "_expect": {
+    "--app-vh": "(removed)",
+    "--kb-inset": "0px",
+    "--vvh": "900px",
+    "--vvt": "0px"
+  }
+}

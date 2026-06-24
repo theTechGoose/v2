@@ -1,0 +1,11 @@
+{
+  "_name": "Empty — every count/total 0 → '$0', '0 invoices', Drafting sub 'no drafts open'",
+  "overdueCount": 0,
+  "overdueTotal": 0,
+  "outCount": 0,
+  "outTotal": 0,
+  "draftingCount": 0,
+  "paidCount": 0,
+  "paidTotal": 0,
+  "lang": "en"
+}

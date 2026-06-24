@@ -1,0 +1,19 @@
+{
+  "_name": "Draft — Q-1109, never sent (coffee mood, no opens badge, \"Finish + send\")",
+  "idx": 2,
+  "lang": "en",
+  "q": {
+    "id": "Q-1109",
+    "title": "Storefront awning replacement",
+    "client": "Cobblestone Cafe",
+    "initials": "CC",
+    "customerId": "cust-cc",
+    "stage": "draft",
+    "value": 425000,
+    "daysIn": 1,
+    "opens": 0,
+    "sentDays": null,
+    "band": ["#9C8074", "#5C4034"],
+    "shadow": "rgba(92,64,52,0.32)"
+  }
+}

@@ -1,0 +1,106 @@
+/* ============================================================================
+   PaymentSideRail (PSideFlow / PSideTopPayors / PSideMix / PSideTip) — the
+   `.qside` widget shell. Copied from static/quotes.css (lines 780–809).
+   Tokens from dashboard.css.
+
+   IMPORTANT — much of this rail is UNSTYLED. The four widgets only have CSS
+   for the *card shell* (.qside__card / .qside__title / .qside__sub). Every
+   inner structure is either inline-styled in the island OR uses an UNDEFINED
+   class:
+
+   • PSideFlow   — inline-styled (SVG sparkline + flex labels). OK.
+   • PSideMix    — inline-styled (stacked bar + legend grid). OK.
+   • PSideTip    — inline-styled (teal gradient card). OK.
+   • PSideTopPayors — uses `.qside__rows .qside__row .qside__rank
+       .qside__row-body .qside__row-name .qside__bar .qside__bar-fill
+       .qside__row-amt`, NONE of which exist in any static/*.css. The list
+       renders as default block flow; only the inline `width`/`background` on
+       .qside__bar-fill produces a visible bar (with no track behind it and no
+       height — so it is effectively invisible). QuotesPage's equivalent uses
+       the STYLED .qbig*/.qbar* family instead.
+
+   REBUILD FIX: either (a) add the missing .qside__* rules, or (b) switch
+   PSideTopPayors to the existing .qbig*/.qbar* classes (defined in quotes.css
+   lines 810–865, reproduced at the bottom for convenience).
+   ============================================================================ */
+
+.qside {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: sticky;
+  top: 16px;
+}
+.qside__card {
+  background: #fff;
+  border-radius: var(--radius-xl);
+  padding: 18px;
+  border: 1px solid rgba(26, 83, 92, 0.07);
+}
+.qside__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.qside__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--brand-teal);
+  letter-spacing: -0.01em;
+}
+.qside__sub {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+/* === UNDEFINED IN SOURCE — markup references these but no rule exists ===
+   .qside__rows  .qside__row  .qside__rank  .qside__row-body
+   .qside__row-name  .qside__bar  .qside__bar-fill  .qside__row-amt           */
+
+/* === The STYLED equivalents QuotesPage uses (rebuild target for the fix) === */
+.qbig { display: flex; flex-direction: column; gap: 10px; }
+.qbig__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.qbig__rank {
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--brand-pink);
+  width: 18px;
+  letter-spacing: 0.05em;
+}
+.qbig__name {
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--brand-teal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qbig__amt {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 13.5px;
+  color: var(--brand-teal);
+  letter-spacing: -0.01em;
+}
+.qbar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--mint-200);
+  overflow: hidden;
+  margin-top: 8px;
+}
+.qbar__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand-green), var(--green-700));
+  border-radius: 999px;
+  transition: width 1.2s var(--ease-out);
+}

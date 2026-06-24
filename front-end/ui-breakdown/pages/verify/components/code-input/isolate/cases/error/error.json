@@ -1,0 +1,6 @@
+{
+  "_name": "Error — wrong code (shake + cleared digits)",
+  "phoneNumber": "+15125550142",
+  "initialLang": "en",
+  "_signals": { "digits": ["", "", "", "", "", ""], "submitting": false, "errorKey": "verify.errInvalid", "shake": true, "cooldown": 0, "_langSignal": "en" }
+}

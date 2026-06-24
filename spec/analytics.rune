@@ -1,0 +1,370 @@
+[MOD] analytics
+
+[REQ] clientCard.list({}): CustomerCardListDto
+    db:customerCard.listForOwner(OwnerDto): CustomerCardListDto
+
+[REQ] topClient.list(TopClientsQueryDto): TopClientsResponseDto
+    db:customerCard.listForOwner(OwnerDto): CustomerCardListDto
+    [NEW] topClient
+    topClient.rank(CustomerCardListDto): TopClientsResponseDto
+
+[REQ] clientSegment.list({}): ClientSegmentsResponseDto
+    db:customerCard.listForOwner(OwnerDto): CustomerCardListDto
+    [NEW] clientSegment
+    clientSegment.tally(CustomerCardListDto): ClientSegmentsResponseDto
+
+[REQ] dashboard.stats({}): DashboardStatsDto
+    db:dashboard.compute(OwnerDto): DashboardStatsDto
+
+[REQ] job.list({}): JobListDto
+    db:job.listForOwner(OwnerDto): JobListDto
+
+[REQ] quoteCard.list(QuoteCardsQueryDto): QuoteCardListDto
+    db:quoteCard.listForOwner(OwnerDto): QuoteCardListDto
+    [NEW] quoteCard
+    quoteCard.filterByStatus(QuoteCardsQueryDto): QuoteCardListDto
+
+[REQ] quoteOpens.get(GetByIdDto): QuoteOpensResponseDto
+    db:quote.getOwned(GetByIdDto): QuoteCardDto
+      not-found
+      forbidden
+    db:view.listForQuote(GetByIdDto): QuoteOpensResponseDto
+
+[REQ] quoteWinRate.compute(WinRateQueryDto): WinRateResponseDto
+    db:quoteWinRate.compute(WinRateQueryDto): WinRateResponseDto
+
+[REQ] quoteInsight.compute({}): InsightResponseDto
+    db:quote.listForOwner(OwnerDto): QuoteCardListDto
+    [NEW] quoteInsight
+    [PLY] quoteInsight.derive(QuoteCardListDto): InsightResponseDto
+        [CSE] static-fallback
+            quoteInsight.fallback(QuoteCardListDto): InsightResponseDto
+        [CSE] open-count
+            quoteInsight.average(QuoteCardListDto): InsightResponseDto
+
+[REQ] search.run(SearchQueryDto): SearchResultsDto
+    db:search.scan(SearchQueryDto): SearchResultsDto
+
+[ENT] clients.listCards({}): CustomerCardListDto
+[ENT] clients.top(TopClientsQueryDto): TopClientsResponseDto
+[ENT] clients.segments({}): ClientSegmentsResponseDto
+[ENT] analytics.dashboard({}): DashboardStatsDto
+[ENT] jobs.list({}): JobListDto
+[ENT] quotes.list(QuoteCardsQueryDto): QuoteCardListDto
+[ENT] quotes.opens(GetByIdDto): QuoteOpensResponseDto
+[ENT] quotes.winRate(WinRateQueryDto): WinRateResponseDto
+[ENT] quotes.insight({}): InsightResponseDto
+[ENT] search.run(SearchQueryDto): SearchResultsDto
+
+[TYP:uuid] id: string
+    a unique record identifier
+[TYP:ext] userId: string
+    the authenticated owner id, minted from the session
+[TYP:nonempty] name: string
+    a display name
+[TYP:email] email: string
+    a contact email address
+[TYP] phoneNumber: string
+    a contact phone number
+[TYP] address: string
+    a postal or service address
+[TYP] notes: string
+    freeform notes
+[TYP] segment: string
+    client segment: property_mgmt, homeowner, small_biz, hoa
+[TYP] vip: boolean
+    whether the customer is flagged VIP
+[TYP] isBusiness: boolean
+    whether the customer is a business entity
+[TYP] businessName: string
+    the legal business name
+[TYP] createdAt: string
+    an ISO creation timestamp
+[TYP] updatedAt: string
+    an ISO last-updated timestamp
+[TYP] lastWhen: string
+    ISO timestamp of the customer's most recent activity
+[TYP] lastWhenRel: string
+    humanized relative time of the last activity
+[TYP] lastTone: string
+    recency tone: hot, warm, or cold
+[TYP] balanceCents: number
+    net outstanding balance in cents (positive = owed)
+[TYP] balanceSub: string
+    a humanized balance subtitle for the card
+[TYP:int] activeJobs: number
+    count of active jobs for the customer
+[TYP] jobsSub: string
+    a humanized jobs subtitle for the card
+[TYP] status: string
+    a derived status label
+[TYP] temp: number
+    a 0-100 engagement temperature score
+[TYP:int] daysSinceContact: number
+    days since the last activity
+[TYP] revenue12moCents: number
+    trailing 12-month paid revenue in cents
+[TYP] customerCard: CustomerCardDto
+    a nested enriched customer card
+[TYP] customerId: string
+    a reference to a customer record
+[TYP:int] limit: number
+    a result cap
+[TYP:int] rank: number
+    1-based rank position
+[TYP] barPct: number
+    revenue relative to the leader, 0-100
+[TYP] result: TopClientDto
+    a nested ranked top-client row
+[TYP] key: string
+    a segment key, or "unsorted"
+[TYP] label: string
+    a human-readable label
+[TYP:int] count: number
+    a count of records
+[TYP] pct: number
+    a percentage, 0-100
+[TYP] segmentRow: ClientSegmentRowDto
+    a nested segment-mix row
+[TYP:int] customers: number
+    the total number of customers
+[TYP] quotes: QuoteCountsDto
+    nested quote status counts
+[TYP] contracts: ContractCountsDto
+    nested contract status counts
+[TYP] invoices: InvoiceCountsDto
+    nested invoice status counts
+[TYP] quotedValueCents: number
+    sum of estimatedTotal across sent quotes, in cents
+[TYP:int] awaitingResponse: number
+    number of quotes awaiting a customer response
+[TYP] revenue: RevenueStatsDto
+    nested revenue rollup
+[TYP] payments: PaymentStatsDto
+    nested payment rollup
+[TYP:int] total: number
+    a total count
+[TYP:int] draft: number
+    count in draft status
+[TYP:int] sent: number
+    count in sent status
+[TYP:int] accepted: number
+    count in accepted status
+[TYP:int] signed: number
+    count in signed status
+[TYP:int] pending: number
+    count in pending status
+[TYP:int] paid: number
+    count in paid status
+[TYP:int] overdue: number
+    count past due
+[TYP] agingBuckets: AgingBucketsDto
+    nested pending-invoice aging buckets
+[TYP:int] current: number
+    count of not-yet-due invoices
+[TYP:int] aging14d: number
+    count aging 1-14 days
+[TYP:int] overdue1530d: number
+    count overdue 15-30 days
+[TYP:int] overdue30plus: number
+    count overdue more than 30 days
+[TYP] ytdCents: number
+    year-to-date paid revenue in cents
+[TYP] lastMonthCents: number
+    previous calendar month paid revenue in cents
+[TYP] monthOverMonthPct: number
+    month-over-month percentage change
+[TYP] sparkPoint: number
+    one monthly paid-revenue bucket in cents
+[TYP] receivedYtdCents: number
+    payments received year-to-date in cents
+[TYP] methodMixCents: number
+    total payment volume by method, in cents (keyed map)
+[TYP] topPayor: TopPayorDto
+    a nested top-payor row
+[TYP] totalCents: number
+    a total amount in cents
+[TYP] customer: JobCustomerDto
+    a nested job customer summary
+[TYP] quote: JobQuoteDto
+    a nested job quote summary
+[TYP] contract: JobContractDto
+    a nested job contract summary
+[TYP] summary: string
+    a short quote summary line
+[TYP] estimatedTotalCents: number
+    the quote estimated total in cents
+[TYP] paidCents: number
+    amount paid in cents
+[TYP:int] pctPaid: number
+    paid over total, 0-100
+[TYP] nextDueDate: string
+    earliest pending invoice due date (ISO yyyy-mm-dd)
+[TYP] statusLabel: string
+    a human-readable status label
+[TYP] job: JobDto
+    a nested synthesized job row
+[TYP] description: string
+    freeform description
+[TYP] quantity: number
+    a line-item quantity
+[TYP] unit: string
+    a line-item unit label
+[TYP] price: number
+    a line-item unit price in cents
+[TYP] lineItem: LineItemDto
+    a nested quote line item
+[TYP] jobName: string
+    a quote job name
+[TYP] estimatedTotal: number
+    the quote estimated total in cents
+[TYP] sentAt: string
+    ISO timestamp the quote was sent
+[TYP] acceptedAt: string
+    ISO timestamp the quote was accepted
+[TYP] lostAt: string
+    ISO timestamp the quote was lost
+[TYP] stage: string
+    derived quote stage: draft, sent, opened, cooling, stale, won, lost
+[TYP:int] daysIn: number
+    days since entering the current stage
+[TYP:int] opens: number
+    count of distinct quote opens
+[TYP] lastOpenAt: string
+    ISO timestamp of the most recent open
+[TYP:int] sentDays: number
+    days since the quote was sent
+[TYP:int] decidedDays: number
+    days since the quote was decided
+[TYP] customerName: string
+    the joined customer display name
+[TYP] quoteCard: QuoteCardDto
+    a nested enriched quote card
+[TYP] at: string
+    ISO timestamp of the open event
+[TYP] atRel: string
+    humanized relative time of the open
+[TYP] device: string
+    device class: desktop, mobile, tablet, unknown
+[TYP:int] durationMs: number
+    open duration in milliseconds
+[TYP] open: QuoteOpenEntryDto
+    a nested quote-open event
+[TYP:int] days: number
+    a rolling window length in days
+[TYP:int] windowDays: number
+    the win-rate window length in days
+[TYP:int] decided: number
+    number of decided quotes in the window
+[TYP:int] won: number
+    number of won quotes in the window
+[TYP:int] lost: number
+    number of lost quotes in the window
+[TYP:int] winRate: number
+    win percentage, 0-100, or null when none decided
+[TYP] text: string
+    a single-line insight observation
+[TYP] kind: string
+    insight kind: open_count, median_days_to_decide, best_day_of_week, static_fallback
+[TYP] q: string
+    a free-text search query
+[TYP] type: string
+    a hit/entity type: customer, quote, contract, invoice
+[TYP] sub: string
+    a secondary subtitle line for a hit
+[TYP] amount: number
+    a monetary amount in cents
+[TYP] hit: SearchHitDto
+    a nested search hit
+
+[DTO] OwnerDto: userId
+    the owning user id wrapper
+[DTO] GetByIdDto: id
+    an id lookup wrapper
+[DTO] CustomerCardDto: id, userId, name, email?, phoneNumber?, address?, notes?, segment?, vip?, isBusiness?, businessName?, createdAt, updatedAt, lastWhen?, lastWhenRel, lastTone, balanceCents, balanceSub, activeJobs, jobsSub, status, temp, daysSinceContact, revenue12moCents
+    an enriched customer card for the /clients page
+[DTO] CustomerCardListDto: customerCard(s)
+    a list of enriched customer cards
+[DTO] TopClientsQueryDto: userId, limit?
+    query input for the top-clients leaderboard
+[DTO] TopClientDto: customerId, name, revenue12moCents, rank, barPct
+    a ranked top-client leaderboard row
+[DTO] TopClientsResponseDto: result(s)
+    the top-clients leaderboard payload
+[DTO] ClientSegmentRowDto: key, label, count, pct
+    a segment-mix bar-chart row
+[DTO] ClientSegmentsResponseDto: segmentRow(s)
+    the segment-mix payload
+[DTO] QuoteCountsDto: total, draft, sent, accepted
+    quote counts by status
+[DTO] ContractCountsDto: total, draft, signed
+    contract counts by status
+[DTO] AgingBucketsDto: current, aging14d, overdue1530d, overdue30plus
+    pending-invoice aging buckets
+[DTO] InvoiceCountsDto: total, pending, paid, overdue, agingBuckets
+    invoice counts by status plus aging buckets
+[DTO] RevenueStatsDto: ytdCents, lastMonthCents, monthOverMonthPct, sparkPoint(s)
+    revenue rollup with a 12-month sparkline
+[DTO] TopPayorDto: customerId, totalCents
+    a top-payor row by lifetime payment total
+[DTO] PaymentStatsDto: receivedYtdCents, methodMixCents, topPayor(s)
+    payment rollup with method mix and top payors
+[DTO] DashboardStatsDto: customers, quotes, contracts, invoices, quotedValueCents, awaitingResponse, revenue, payments
+    the full dashboard stats payload
+[DTO] JobCustomerDto: id, name
+    a job's customer summary
+[DTO] JobQuoteDto: id, summary, estimatedTotalCents
+    a job's originating quote summary
+[DTO] JobContractDto: id, status?
+    a job's contract summary
+[DTO] JobDto: id, customer, quote, contract?, totalCents, paidCents, pctPaid, nextDueDate?, status, statusLabel
+    a synthesized active-job row
+[DTO] JobListDto: job(s)
+    a list of synthesized active jobs
+[DTO] LineItemDto: description, quantity, unit, price
+    a quote line item
+[DTO] QuoteCardDto: id, userId, customerId?, summary, jobName?, description?, lineItem(s), estimatedTotal?, status?, sentAt?, acceptedAt?, lostAt?, createdAt, updatedAt, stage, daysIn, opens, lastOpenAt?, sentDays?, decidedDays?, customerName?
+    an enriched quote card for the /quotes page
+[DTO] QuoteCardsQueryDto: userId, status?
+    query input for the quote cards list
+[DTO] QuoteCardListDto: quoteCard(s)
+    a list of enriched quote cards
+[DTO] QuoteOpenEntryDto: at, atRel, device, durationMs?
+    a single quote-open engagement event
+[DTO] QuoteOpensResponseDto: open(s)
+    the engagement timeline for a quote
+[DTO] WinRateQueryDto: userId, days?
+    query input for the quote win-rate computation
+[DTO] WinRateResponseDto: windowDays, decided, won, lost, winRate?
+    the quote win-rate payload
+[DTO] InsightResponseDto: text, kind
+    a single-line quote insight
+[DTO] SearchQueryDto: userId, q, type?, limit?
+    query input for global search
+[DTO] SearchHitDto: type, id, label, sub?, total?, amount?
+    a discriminated global-search hit
+[DTO] SearchResultsDto: hit(s)
+    the global-search results payload
+
+[NON] customerCard
+    a single enriched customer card
+[NON] topClient
+    a ranked top-client builder
+[NON] clientSegment
+    a segment-mix tallier
+[NON] dashboard
+    the dashboard stats rollup
+[NON] job
+    a single synthesized active job
+[NON] quoteCard
+    a single enriched quote card
+[NON] quote
+    a single quote record
+[NON] view
+    a single quote-view event
+[NON] quoteWinRate
+    the quote win-rate computation
+[NON] quoteInsight
+    the quote insight derivation
+[NON] search
+    the global-search scanner

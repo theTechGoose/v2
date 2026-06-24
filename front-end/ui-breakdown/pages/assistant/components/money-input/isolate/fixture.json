@@ -1,0 +1,9 @@
+{
+  "category": "assistant",
+  "folder": "money-input",
+  "controls": {
+    "initialCents": { "type": "number", "value": 0 },
+    "autoFocus": { "type": "boolean", "value": false },
+    "name": { "type": "text", "value": "price" }
+  }
+}

@@ -1,0 +1,91 @@
+/* ============================================================
+   CodeInput — 6-digit OTP entry island (/verify).
+   Extracted from static/verify.css (route <Head> links /verify.css).
+   Renders: .code-input > input × 6, an optional .error <p>, a
+   .btn.btn-primary.btn-lg verify button, and a .meta row with two
+   links/buttons. Shake animation toggled via the `.shake` class.
+   Tokens: --brand-green, --border-strong, --danger, --danger-bg,
+   --accent (pink), --radius-md/-sm/-pill, --font-heading, --shadow-sm.
+   ============================================================ */
+
+/* ---- the digit grid ---- */
+.code-input {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.code-input input {
+  width: 44px;
+  height: 56px;
+  text-align: center;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 24px;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--border-strong);
+  background: #fff;
+  transition: border-color 140ms, box-shadow 140ms;
+}
+.code-input input:focus,
+.code-input input:focus-visible {
+  outline: 2px solid var(--brand-green);
+  outline-offset: 2px;
+  border-color: var(--brand-green);
+  box-shadow: 0 0 0 4px rgba(81, 152, 67, 0.20);
+}
+
+/* ---- error shake (added to .code-input for 380ms on a wrong code) ---- */
+.shake { animation: shake 360ms ease; }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-8px); }
+  40%      { transform: translateX(8px); }
+  60%      { transform: translateX(-6px); }
+  80%      { transform: translateX(6px); }
+}
+
+/* ---- inline error message ---- */
+.error {
+  color: var(--danger);
+  background: var(--danger-bg);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+}
+
+/* ---- verify button (shared .btn family, canonical verify.css) ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 15px;
+  transition: transform 120ms ease, background 200ms ease, color 200ms ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary {
+  background: var(--accent);          /* NOTE: verify.css maps .btn-primary to
+                                         --accent (pink), not --primary green */
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-lg { padding: 14px 24px; font-size: 16px; }
+.btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+
+/* ---- the edit-phone / resend meta row (inside .verify-card) ---- */
+.verify-card .meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  color: var(--fg-muted);
+  margin-top: 4px;
+}
+
+/* Reduced motion: verify.css global token clamp neutralizes the shake +
+   .btn transitions; the .pm-steps active-dot pulse (driven by the SSR page,
+   not this island) is also disabled under prefers-reduced-motion. */

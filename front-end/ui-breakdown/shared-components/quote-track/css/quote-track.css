@@ -1,0 +1,81 @@
+/* ============================================================
+   QuoteTrack — extracted from static/quotes.css
+   Tokens: --brand-teal, --brand-pink, --fg-muted, --font-heading, --font-body,
+   --dur-fast, --ease-out, --ease-bounce.
+   ============================================================ */
+
+.qtrack {
+  margin-bottom: 28px;
+}
+
+.qtrack__head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+  cursor: pointer;
+  user-select: none;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(26, 83, 92, 0.08);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.qtrack__head:hover {
+  border-color: rgba(26, 83, 92, 0.2);
+}
+
+.qtrack__chev {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--brand-teal);
+  transition: transform 240ms var(--ease-bounce);
+  transform: rotate(90deg);          /* open: chevron points down */
+}
+.qtrack--collapsed .qtrack__chev {
+  transform: rotate(0deg);           /* collapsed: chevron points right */
+}
+
+.qtrack__num {
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--brand-pink);
+}
+.qtrack__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--brand-teal);
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.qtrack__count {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--fg-muted);
+  margin-left: auto;
+}
+
+/* Collapsible body — animates via grid-template-rows 1fr -> 0fr */
+.qtrack__body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows 320ms var(--ease-out),
+    margin-top 320ms var(--ease-out);
+  margin-top: 14px;
+}
+.qtrack__body-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+.qtrack--collapsed .qtrack__body {
+  grid-template-rows: 0fr;
+  margin-top: 0;
+}
+
+/* No component-local reduced-motion block — relies on the global tokens
+   reduced-motion clamp for the chevron rotate + grid-rows collapse. */

@@ -1,0 +1,9 @@
+{
+  "_name": "SkelBlock — atomic shimmer rectangle",
+  "_variant": "skel-block",
+  "h": 56,
+  "w": "100%",
+  "r": 8,
+  "mt": 0,
+  "_mocks": { "ShimmerStyle": "stub" }
+}

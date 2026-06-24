@@ -1,0 +1,19 @@
+{
+  "_name": "Error — already-accepted (200 {ok:false}) surfaced friendly",
+  "quoteId": "a1b2c3d4-1111-2222-3333-444455556666",
+  "customerName": "Jane Doe",
+  "lang": "en",
+  "_signals": {
+    "mode": "decline",
+    "resolved": null,
+    "reason": "timing",
+    "status": "error",
+    "err": "This quote has already been accepted."
+  },
+  "_mocks": {
+    "POST /api/quotes/:id/decline": {
+      "status": 200,
+      "body": { "ok": false, "reason": "already_accepted" }
+    }
+  }
+}

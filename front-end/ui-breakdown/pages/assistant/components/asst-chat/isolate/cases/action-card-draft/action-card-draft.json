@@ -1,0 +1,28 @@
+{
+  "_name": "Action card (draft) — in-chat Quote+Agreement, Lock-in/Edit",
+  "_note": "kind=action_card, payload.status='draft' → .action-card with the Draft chip and the Lock-in + Edit CTAs (needs payload.quoteId for Lock-in to be enabled).",
+  "conversationId": "t2",
+  "userInitials": "ML",
+  "initialMessages": [
+    {
+      "id": "ac1",
+      "conversationId": "t2",
+      "role": "assistant",
+      "kind": "action_card",
+      "content": "Subway Tile Backsplash",
+      "createdAt": 1750247600000,
+      "payload": {
+        "actionType": "quote",
+        "status": "draft",
+        "quoteId": "q_abc",
+        "description": "Remove existing backsplash and prep wall.\nInstall ~30 sqft white subway tile.\nGrout, seal, and clean up.",
+        "lineItems": [
+          { "description": "Labor — tile install (30 sqft)", "amountCents": 90000 },
+          { "description": "Materials — subway tile, grout, sealant", "amountCents": 35000 }
+        ],
+        "totalCents": 125000
+      }
+    }
+  ],
+  "sendLanguages": ["en"]
+}

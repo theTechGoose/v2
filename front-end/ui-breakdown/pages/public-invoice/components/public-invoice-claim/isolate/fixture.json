@@ -1,0 +1,18 @@
+{
+  "category": "public-invoice",
+  "folder": "public-invoice-claim",
+  "controls": {
+    "invoiceId": { "type": "text", "value": "inv_3b8c1d2e" },
+    "acceptedMethods": {
+      "type": "json",
+      "value": [
+        { "method": "zelle", "handle": "hans@hansendecks.com" },
+        { "method": "cashapp", "handle": "$hansendecks" },
+        { "method": "check", "handle": "812 Cedar Ln, Austin, TX 78704" },
+        { "method": "cash" }
+      ]
+    },
+    "customerName": { "type": "text", "value": "Maria Delgado" },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

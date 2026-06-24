@@ -827,7 +827,7 @@ export default function AsstChat({
 
   // ── Assistant history stack ──────────────────────────────────────
   // Snapshots of UI-only state pushed before every user-initiated
-  // view change. The back button (chat__head-btn) pops the latest.
+  // view change; the universal back button pops the latest (see onBack).
   interface ViewSnapshot {
     priceCaptureOpen: boolean;
     awaitingJobDetails: boolean;
@@ -839,14 +839,6 @@ export default function AsstChat({
   }
   const historyStackRef = useRef<ViewSnapshot[]>([]);
 
-  function broadcastHistoryDepth() {
-    globalThis.dispatchEvent(
-      new CustomEvent("pm:asst-history", {
-        detail: { depth: historyStackRef.current.length },
-      }),
-    );
-  }
-
   function pushHistory() {
     historyStackRef.current.push({
       priceCaptureOpen,
@@ -857,7 +849,6 @@ export default function AsstChat({
       priceCents,
       jobOptionsOpen,
     });
-    broadcastHistoryDepth();
   }
 
   function popHistory() {
@@ -870,13 +861,31 @@ export default function AsstChat({
     setPendingPriceCents(snap.pendingPriceCents);
     setPriceCents(snap.priceCents);
     setJobOptionsOpen(snap.jobOptionsOpen);
-    broadcastHistoryDepth();
   }
 
-  // Listen for the back-button click event from ChatHeaderLive.
+  // The universal back button (ChatHeaderLive) dispatches `pm:asst-back`;
+  // resolve what "back" means here, most-immediate action first:
+  //   1. an active wizard step (last message, stepIdx > 0) → rewind a step
+  //   2. an in-chat view on the stack (price capture / job details / …) → pop
+  //   3. nothing left → leave the chat for the dashboard
+  // No deps array (re-binds each render) so the closure reads current state.
   useEffect(() => {
     function onBack() {
-      popHistory();
+      const last = messages[messages.length - 1];
+      const wizardStepIdx =
+        (last?.payload as { stepIdx?: number } | undefined)?.stepIdx;
+      if (
+        last?.kind === "wizard" && typeof wizardStepIdx === "number" &&
+        wizardStepIdx > 0
+      ) {
+        goBackWizard();
+        return;
+      }
+      if (historyStackRef.current.length > 0) {
+        popHistory();
+        return;
+      }
+      globalThis.location.href = "/dashboard";
     }
     globalThis.addEventListener("pm:asst-back", onBack);
     return () => globalThis.removeEventListener("pm:asst-back", onBack);
@@ -4819,7 +4828,11 @@ export default function AsstChat({
                             );
                           })()}
 
-                          {reviewDocType === "quote" && termAnswers.length > 0
+                          {/* Term grid shows in BOTH modes — the invoice keeps
+                            the start/duration/payment/warranty grid; only the
+                            14 legal clauses + signature are dropped (and the
+                            compact preview never rendered those anyway). */}
+                          {termAnswers.length > 0
                             ? (
                               <section class="quote-review__section">
                                 <div class="quote-review__section-label">
@@ -5140,7 +5153,7 @@ export default function AsstChat({
                                 {totalStr}
                               </span>
                             </div>
-                            {reviewDocType === "quote" && milestones &&
+                            {milestones &&
                                 milestones.length > 1
                               ? (
                                 <ul class="quote-review__milestones">
@@ -5824,23 +5837,11 @@ export default function AsstChat({
                               );
                             })()}
                             {
-                              /* Roadmap p.2: Back button to re-edit prior steps.
-                              Hidden on the first step (nothing to go back to). */
+                              /* Step re-edit ("back") is handled by the
+                                universal header back button: pm:asst-back →
+                                goBackWizard when this step is active. No
+                                per-step control needed (Roadmap p.2). */
                             }
-                            {typeof payload.stepIdx === "number" &&
-                                payload.stepIdx > 0
-                              ? (
-                                <button
-                                  type="button"
-                                  class="wiz__back"
-                                  disabled={sending}
-                                  onClick={goBackWizard}
-                                  style="margin-top:12px;background:none;border:none;color:var(--fg-muted,#6b7560);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:4px 2px"
-                                >
-                                  ← {tFor(lang, "common.back")}
-                                </button>
-                              )
-                              : null}
                           </div>
                         </div>
                         <div class="msg__time">{fmtTime(m.createdAt)}</div>

@@ -5,17 +5,42 @@
  * fetch the contract client-side and paint a skeleton first, instead of
  * blocking SSR on the backend round-trip (which left the page blank-white
  * until the first byte). See problems.md #25.
+ *
+ * The presentational sections (header primitives, party cards, job-details
+ * table, payment schedule, term grid) live in ./doc-parts.tsx so the invoice
+ * (/i/:id) mirrors this layout without duplicating markup. This file keeps the
+ * agreement-only bits: the 14 numbered legal clauses and the signature block.
  */
 import PublicSignContract from "../islands/PublicSignContract.tsx";
-import { computePaymentSplit, type MilestoneRole } from "../lib/payment-split.ts";
-import {
-  detailLines,
-  fmtMoneyExact,
-  fmtPhone,
-  telHref,
-} from "../lib/format.ts";
+import { fmtPhone, telHref } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
-import { localizeTermValue } from "../lib/term-i18n.ts";
+import {
+  computeMilestones,
+  CREAM,
+  fmtDate,
+  GREEN,
+  hasTermGrid,
+  initialsFromName,
+  INK,
+  JobDetailsSection,
+  KV,
+  type LineItem,
+  LINE,
+  MUTED,
+  PartyCard,
+  PaymentScheduleSection,
+  Pill,
+  PINK,
+  PINK_DARK,
+  SectionHeader,
+  sumLineTotals,
+  TEAL,
+  type Term,
+  TermGrid,
+} from "./doc-parts.tsx";
+
+// Re-export the palette tokens the public route shell pulls from here.
+export { BG, INK, LINE } from "./doc-parts.tsx";
 
 interface Contractor {
   name?: string;
@@ -29,82 +54,6 @@ interface Contractor {
   /** True when the contractor uploaded a business logo — rendered via the
    *  public-logo endpoint above the brand strip (roadmap p.2). */
   hasLogo?: boolean;
-}
-
-/** Two-letter US state abbreviations → full names. Used to expand the
- *  "Use my business state" / "Yes" wizard answers into customer-readable
- *  sentences on the contract page. */
-const US_STATES: Record<string, string> = {
-  AL: "Alabama",
-  AK: "Alaska",
-  AZ: "Arizona",
-  AR: "Arkansas",
-  CA: "California",
-  CO: "Colorado",
-  CT: "Connecticut",
-  DE: "Delaware",
-  DC: "District of Columbia",
-  FL: "Florida",
-  GA: "Georgia",
-  HI: "Hawaii",
-  ID: "Idaho",
-  IL: "Illinois",
-  IN: "Indiana",
-  IA: "Iowa",
-  KS: "Kansas",
-  KY: "Kentucky",
-  LA: "Louisiana",
-  ME: "Maine",
-  MD: "Maryland",
-  MA: "Massachusetts",
-  MI: "Michigan",
-  MN: "Minnesota",
-  MS: "Mississippi",
-  MO: "Missouri",
-  MT: "Montana",
-  NE: "Nebraska",
-  NV: "Nevada",
-  NH: "New Hampshire",
-  NJ: "New Jersey",
-  NM: "New Mexico",
-  NY: "New York",
-  NC: "North Carolina",
-  ND: "North Dakota",
-  OH: "Ohio",
-  OK: "Oklahoma",
-  OR: "Oregon",
-  PA: "Pennsylvania",
-  RI: "Rhode Island",
-  SC: "South Carolina",
-  SD: "South Dakota",
-  TN: "Tennessee",
-  TX: "Texas",
-  UT: "Utah",
-  VT: "Vermont",
-  VA: "Virginia",
-  WA: "Washington",
-  WV: "West Virginia",
-  WI: "Wisconsin",
-  WY: "Wyoming",
-};
-
-function expandStateName(code: string | undefined): string | undefined {
-  if (!code) return undefined;
-  const upper = code.trim().toUpperCase();
-  return US_STATES[upper] ?? code;
-}
-
-interface LineItem {
-  description: string;
-  price?: number;
-  quantity?: number;
-  unit?: string;
-}
-
-interface Term {
-  stepId: string;
-  label: string;
-  value: string;
 }
 
 export interface ContractPublic {
@@ -135,16 +84,6 @@ export interface ContractPublic {
   terms?: Term[];
   createdAt?: string;
 }
-
-const PINK = "#FF6B6B";
-const PINK_DARK = "#d94e4e";
-const TEAL = "#144852";
-const GREEN = "#519843";
-export const INK = "#1c2c30";
-const MUTED = "#6b7a7e";
-export const LINE = "#e3e8e6";
-const CREAM = "#fffdf7";
-export const BG = "#f7f6f1";
 
 /** Roadmap p.13: the public contract is customer-facing, so it renders in
  *  the contractor's OUTGOING-COMMS language (default en). One table so the
@@ -264,7 +203,6 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
   const senderInitials = initialsFromName(contractorName ?? businessLabel);
 
   const items = contract.jobDetails?.lineItems ?? [];
-  const showQty = items.some((li) => (li.quantity ?? 1) > 1);
   // Title/summary in the document's language when the per-language fields are
   // present (populated from the picked job option); else the single value.
   const summary =
@@ -414,151 +352,31 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
 
           {/* Job details */}
           {items.length > 0 && (
-            <section style="margin-top:36px">
-              <SectionHeader n={num()} title={t.jobDetails} />
-              {(() => {
-                const lines = detailLines(
-                  contract.jobDetails?.descriptionByLang?.[lang] ??
-                    contract.jobDetails?.description,
-                );
-                if (lines.length === 0) return null;
-                return lines.length > 1
-                  ? (
-                    <ul
-                      style={`margin:0;padding:0;list-style:none;color:${INK};font-size:15px;line-height:1.6`}
-                    >
-                      {lines.map((l, i) => (
-                        <li
-                          key={i}
-                          style="position:relative;padding:5px 0 5px 22px"
-                        >
-                          <span
-                            style={`position:absolute;left:2px;top:13px;width:6px;height:6px;border-radius:50%;background:${GREEN}`}
-                          >
-                          </span>
-                          {l}
-                        </li>
-                      ))}
-                    </ul>
-                  )
-                  : (
-                    <p
-                      style={`margin:0;color:${INK};font-size:15px;line-height:1.6;white-space:pre-wrap`}
-                    >
-                      {lines[0]}
-                    </p>
-                  );
-              })()}
-              {
-                /* Line-item breakdown only for multi-line quotes — a single
-                  line just repeats the total card, and the Job details
-                  bullets above already describe the scope. */
-              }
-              {items.length > 1 && (
-                <table style="width:100%;border-collapse:collapse;margin-top:14px">
-                  <thead>
-                    <tr>
-                      <th
-                        style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:left`}
-                      >
-                        {t.tableDescription}
-                      </th>
-                      {showQty && (
-                        <th
-                          style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:right`}
-                        >
-                          {t.tableQty}
-                        </th>
-                      )}
-                      <th
-                        style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:right`}
-                      >
-                        {t.tableAmount}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((li, i) => {
-                      const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
-                      return (
-                        <tr key={i}>
-                          <td
-                            style={`padding:14px 0;border-bottom:1px solid ${LINE};color:${INK};font-size:15px;font-weight:600`}
-                          >
-                            {li.description}
-                          </td>
-                          {showQty && (
-                            <td
-                              style={`padding:14px 0;border-bottom:1px solid ${LINE};color:${MUTED};font-size:13px;text-align:right`}
-                            >
-                              {li.quantity ?? 1} {li.unit ?? t.unitEach}
-                            </td>
-                          )}
-                          <td
-                            style={`padding:14px 0;border-bottom:1px solid ${LINE};color:${INK};font-size:15px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums`}
-                          >
-                            {fmtMoneyExact(lineTotal)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-              {/* Total card — the money moment */}
-              <div
-                style={`margin-top:20px;background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:16px;padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px`}
-              >
-                <div>
-                  <div
-                    style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}
-                  >
-                    {t.agreementValue}
-                  </div>
-                  <div style={`margin-top:4px;color:${MUTED};font-size:12px`}>
-                    {t.allIn}
-                  </div>
-                </div>
-                <div
-                  class="ctr__total-amt"
-                  style={`font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${TEAL};line-height:1;font-variant-numeric:tabular-nums`}
-                >
-                  {fmtMoneyExact(total)}
-                </div>
-              </div>
-            </section>
+            <JobDetailsSection
+              n={num()}
+              title={t.jobDetails}
+              description={contract.jobDetails?.descriptionByLang?.[lang] ??
+                contract.jobDetails?.description}
+              items={items}
+              total={total}
+              labels={{
+                tableDescription: t.tableDescription,
+                tableQty: t.tableQty,
+                tableAmount: t.tableAmount,
+                unitEach: t.unitEach,
+                valueLabel: t.agreementValue,
+                valueSub: t.allIn,
+              }}
+            />
           )}
 
           {/* Payment milestones */}
           {milestones.length > 0 && (
-            <section style="margin-top:36px">
-              <SectionHeader n={num()} title={t.paymentSchedule} />
-              <div
-                class="ctr__milestones"
-                style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px"
-              >
-                {milestones.map((m, i) => (
-                  <div
-                    key={i}
-                    style={`background:#fff;border:1px solid ${LINE};border-radius:14px;padding:14px 16px`}
-                  >
-                    <div
-                      style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
-                    >
-                      {m.label}
-                    </div>
-                    <div
-                      style={`margin-top:6px;color:${TEAL};font-weight:900;font-size:20px;font-variant-numeric:tabular-nums`}
-                    >
-                      {fmtMoneyExact(m.amount)}
-                    </div>
-                    <div style={`margin-top:2px;color:${MUTED};font-size:12px`}>
-                      {m.when}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+            <PaymentScheduleSection
+              n={num()}
+              title={t.paymentSchedule}
+              milestones={milestones}
+            />
           )}
 
           {
@@ -570,47 +388,30 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
               applies. */
           }
           {(() => {
-            const hasTermGrid =
-              !!(contract.startDate || contract.estimatedCompletionDate ||
-                (contract.terms && contract.terms.length > 0));
+            const grid = hasTermGrid(contract);
             return (
               <section style="margin-top:36px">
                 <SectionHeader n={num()} title={t.terms} />
-                {hasTermGrid && (
-                  <div
-                    class="ctr__terms-grid"
-                    style="display:grid;grid-template-columns:1fr 1fr;gap:12px"
-                  >
-                    {contract.startDate && (
-                      <KV k={t.start} v={fmtDate(contract.startDate)} />
-                    )}
-                    {contract.estimatedCompletionDate && (
-                      <KV
-                        k={t.estCompletion}
-                        v={fmtDate(contract.estimatedCompletionDate)}
-                      />
-                    )}
-                    {(contract.terms ?? [])
-                      .filter((term) =>
-                        term.stepId !== "customer" && !isEmptyWarranty(term)
-                      )
-                      .map((term) => (
-                        <KV
-                          key={term.stepId}
-                          k={t.termLabels[term.stepId] ?? term.label}
-                          v={expandTermValue(term, contractor?.state, lang)}
-                        />
-                      ))}
-                  </div>
-                )}
-                {hasTermGrid && (
-                  <div
-                    style={`margin-top:22px;height:1px;background:${LINE}`}
+                {grid && (
+                  <TermGrid
+                    startDate={contract.startDate}
+                    estimatedCompletionDate={contract.estimatedCompletionDate}
+                    terms={contract.terms}
+                    contractorState={contractor?.state}
+                    lang={lang}
+                    labels={{
+                      start: t.start,
+                      estCompletion: t.estCompletion,
+                      termLabels: t.termLabels,
+                    }}
                   />
+                )}
+                {grid && (
+                  <div style={`margin-top:22px;height:1px;background:${LINE}`} />
                 )}
                 <ol
                   style={`margin:${
-                    hasTermGrid ? "22px" : "0"
+                    grid ? "22px" : "0"
                   } 0 0;padding-left:20px;color:${INK};font-size:14px;line-height:1.65`}
                 >
                   {t.clauses.map(([title, body]) => (
@@ -819,248 +620,4 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
       </div>
     </>
   );
-}
-
-function Pill(
-  { bg, color, label }: { bg: string; color: string; label: string },
-) {
-  return (
-    <span
-      style={`background:${bg};color:${color};font-weight:800;font-size:11px;letter-spacing:.12em;text-transform:uppercase;padding:7px 14px;border-radius:999px;flex-shrink:0`}
-    >
-      {label}
-    </span>
-  );
-}
-
-/** One consistent section header across the whole document: a teal numbered
- *  badge + an uppercase letter-spaced title + a full-width hairline rule.
- *  The header owns the spacing below it, so section content sits flush
- *  under the rule (content margin-top:0). */
-function SectionHeader({ n, title }: { n: string; title: string }) {
-  return (
-    <div style="margin-bottom:16px">
-      <div style="display:flex;align-items:center;gap:11px">
-        <span
-          style={`display:inline-flex;align-items:center;justify-content:center;width:25px;height:25px;border-radius:50%;background:${TEAL};color:#fff;font-weight:800;font-size:11px;flex-shrink:0;font-variant-numeric:tabular-nums`}
-        >
-          {n}
-        </span>
-        <div
-          style={`font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:800;color:${TEAL};font-size:13px;letter-spacing:.14em;text-transform:uppercase`}
-        >
-          {title}
-        </div>
-      </div>
-      <div style={`margin-top:12px;height:1px;background:${LINE}`} />
-    </div>
-  );
-}
-
-function KV({ k, v }: { k: string; v: string }) {
-  return (
-    <div
-      style={`background:#fff;border:1px solid ${LINE};border-radius:12px;padding:12px 14px`}
-    >
-      <div
-        style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
-      >
-        {k}
-      </div>
-      <div
-        style={`margin-top:5px;color:${INK};font-weight:700;font-size:14px;line-height:1.35`}
-      >
-        {v}
-      </div>
-    </div>
-  );
-}
-
-function PartyCard(props: {
-  role: string;
-  name?: string;
-  businessName?: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-}) {
-  const displayName = props.name?.trim();
-  const biz = props.businessName?.trim();
-  return (
-    <div
-      style={`background:#fff;border:1px solid ${LINE};border-radius:12px;padding:14px 16px`}
-    >
-      <div
-        style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
-      >
-        {props.role}
-      </div>
-      <div
-        style={`margin-top:6px;color:${INK};font-weight:800;font-size:15px;line-height:1.25`}
-      >
-        {displayName ?? "—"}
-      </div>
-      {biz && biz !== displayName && (
-        <div
-          style={`margin-top:2px;color:${MUTED};font-size:12.5px;line-height:1.3`}
-        >
-          {biz}
-        </div>
-      )}
-      {props.phone && (
-        <div style={`margin-top:4px;font-size:12.5px;line-height:1.35`}>
-          <a
-            href={telHref(props.phone)}
-            style={`color:${TEAL};text-decoration:none;font-weight:600;white-space:nowrap`}
-          >
-            {fmtPhone(props.phone)}
-          </a>
-        </div>
-      )}
-      {props.email && (
-        <div style={`margin-top:2px;font-size:12.5px;line-height:1.35`}>
-          <a
-            href={`mailto:${props.email}`}
-            style={`color:${TEAL};text-decoration:none;font-weight:600`}
-          >
-            {props.email}
-          </a>
-        </div>
-      )}
-      {props.address && (
-        <div
-          style={`margin-top:4px;color:${MUTED};font-size:12px;line-height:1.35`}
-        >
-          {props.address}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function sumLineTotals(items: LineItem[] | undefined): number {
-  if (!items) return 0;
-  return items.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0);
-}
-
-function initialsFromName(name?: string): string {
-  if (!name) return "PM";
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
-  return (parts[0] ?? "PM").slice(0, 2).toUpperCase();
-}
-
-function fmtDate(iso: string): string {
-  const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
-  const d = new Date(isDateOnly ? `${iso}T12:00:00Z` : iso);
-  if (Number.isNaN(+d)) return iso;
-  return d.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-function termValue(
-  terms: Term[] | undefined,
-  stepId: string,
-): string | undefined {
-  return terms?.find((t) => t.stepId === stepId)?.value;
-}
-
-/** Expand wizard-shorthand answers into customer-readable sentences.
- *  E.g. "Use my business state" → "California". "Yes" / "No" for state
- *  notices → a sentence the customer can actually act on. */
-/** Localize a wizard-captured term value for the customer copy. Maps the
- *  known preset option labels to Spanish and converts numeric durations
- *  ("12 months" → "12 meses"); custom free-text and universal ratios
- *  ("50/50") pass through unchanged. Mirrors the backend PDF renderer. */
-function expandTermValue(
-  term: Term,
-  contractorState: string | undefined,
-  lang: Lang = "en",
-): string {
-  const stateName = expandStateName(contractorState);
-  if (term.stepId === "wraps") {
-    const v = localizeTermValue(term.value, lang);
-    return tFor(lang, "contractDoc.estimated", { value: v });
-  }
-  if (term.stepId === "governing_state") {
-    if (/use my business|business state/i.test(term.value)) {
-      if (!stateName) return term.value;
-      return tFor(lang, "contractDoc.termValue.stateLaw", { state: stateName });
-    }
-    if (/job\s*site|use the job/i.test(term.value)) {
-      return tFor(lang, "contractDoc.termValue.jobSiteState");
-    }
-    // User picked a specific state ("Pick a different state — TX")
-    return expandStateName(term.value) ?? term.value;
-  }
-  if (term.stepId === "state_notices") {
-    const v = term.value.trim().toLowerCase();
-    if (v === "yes") {
-      return stateName
-        ? tFor(lang, "contractDoc.termValue.stateNoticesYesState", {
-          state: stateName,
-        })
-        : tFor(lang, "contractDoc.termValue.stateNoticesYes");
-    }
-    if (v === "no") {
-      return tFor(lang, "contractDoc.termValue.stateNoticesNo");
-    }
-    if (v.startsWith("review")) {
-      return tFor(lang, "contractDoc.termValue.stateNoticesReview");
-    }
-    return term.value;
-  }
-  return localizeTermValue(term.value, lang);
-}
-
-/** Hide warranty term row when the contractor selected "No warranty" — the
- *  legal-text warranty clause in the Fine Print still applies. The warranty
- *  step id from the wizard is `warranty`; some users type "none" / "n/a". */
-function isEmptyWarranty(term: Term): boolean {
-  if (term.stepId !== "warranty") return false;
-  const v = term.value.trim().toLowerCase();
-  return v === "" || v === "no warranty" || v === "none" || v === "n/a" ||
-    v === "no";
-}
-
-function computeMilestones(
-  total: number,
-  terms: Term[] | undefined,
-  lang: Lang = "en",
-): { label: string; amount: number; when: string }[] {
-  if (!total || total <= 0) return [];
-  const L = {
-    deposit: tFor(lang, "contractDoc.milestone.deposit"),
-    balance: tFor(lang, "contractDoc.milestone.balance"),
-    midpoint: tFor(lang, "contractDoc.milestone.midpoint"),
-    final: tFor(lang, "contractDoc.milestone.final"),
-    beforeStart: tFor(lang, "contractDoc.milestone.beforeStart"),
-    onCompletion: tFor(lang, "contractDoc.milestone.onCompletion"),
-    atMidpoint: tFor(lang, "contractDoc.milestone.atMidpoint"),
-    onSigning: tFor(lang, "contractDoc.milestone.onSigning"),
-  };
-  const roleLabel: Record<MilestoneRole, { label: string; when: string }> = {
-    deposit: { label: L.deposit, when: L.beforeStart },
-    midpoint: { label: L.midpoint, when: L.atMidpoint },
-    milestone: { label: L.midpoint, when: L.atMidpoint },
-    completion: { label: L.balance, when: L.onCompletion },
-    full: { label: L.final, when: L.onCompletion },
-  };
-  const term = termValue(terms, "payment_terms");
-  // "Due Now" terms collapse to a single full payment — but it's owed at
-  // signing, not "on completion".
-  const dueNow = /\bdue now\b/i.test(term ?? "");
-  return computePaymentSplit(term, total).map((
-    p,
-  ) => ({
-    ...roleLabel[p.role],
-    ...(dueNow && p.role === "full" ? { when: L.onSigning } : {}),
-    amount: p.amountCents,
-  }));
 }

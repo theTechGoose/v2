@@ -1,0 +1,7 @@
+{
+  "_name": "Inked + named — hasInk=true (placeholder gone, strokes drawn), name filled, undo/clear enabled, submit enabled (green gradient, 'Looks good — sign the contract →')",
+  "contractId": "ctr_9f3a2b71c0d4e5f6",
+  "lang": "en",
+  "_signals": { "hasInk": true, "name": "Maria Delgado", "status": "idle" },
+  "_note": "hasInk + name drive the submit's enabled styling. The canvas strokes (strokesRef) are imperative refs, not signals — isolate can only fake the post-stroke UI via hasInk; real ink must be drawn by the Events pointer sequence."
+}

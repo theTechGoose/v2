@@ -1,0 +1,9 @@
+{
+  "_name": "Search 'maple' — query narrows grid to one match",
+  "lang": "en",
+  "_signals": { "query": "maple" },
+  "cards": [
+    { "id": "c2", "userId": "u1", "name": "Maple Grove Apartments", "businessName": "Maple Grove PM", "email": "janet@maplegrove.co", "phoneNumber": "(415) 555-0124", "segment": "property_mgmt", "vip": true, "createdAt": "2025-02-10T10:00:00.000Z", "updatedAt": "2026-06-18T10:00:00.000Z", "lastWhen": "2026-06-18T10:00:00.000Z", "lastWhenRel": "today", "lastTone": "hot", "balanceCents": 420000, "balanceSub": "Invoice #204", "activeJobs": 2, "jobsSub": "Roof + gutters", "status": "active", "temp": 92, "daysSinceContact": 0, "revenue12moCents": 2480000 },
+    { "id": "c5", "userId": "u1", "name": "Sarah Chen", "email": "sarah.chen@gmail.com", "phoneNumber": "(415) 555-0188", "segment": "homeowner", "vip": false, "createdAt": "2025-04-02T10:00:00.000Z", "updatedAt": "2026-06-15T10:00:00.000Z", "lastWhen": "2026-06-15T10:00:00.000Z", "lastWhenRel": "3 days ago", "lastTone": "hot", "balanceCents": 192000, "balanceSub": "Deck stain bal.", "activeJobs": 1, "jobsSub": "Deck", "status": "owes", "temp": 58, "daysSinceContact": 3, "revenue12moCents": 480000 }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "category": "shared-components",
+  "folder": "skeletons",
+  "controls": {
+    "_variant": {
+      "type": "select",
+      "value": "card-grid",
+      "options": ["skel-block", "page-header", "card-grid", "list"]
+    },
+    "h": { "type": "number", "value": 56 },
+    "w": { "type": "text", "value": "100%" },
+    "r": { "type": "number", "value": 8 },
+    "mt": { "type": "number", "value": 0 },
+    "rows": { "type": "number", "value": 4 }
+  }
+}

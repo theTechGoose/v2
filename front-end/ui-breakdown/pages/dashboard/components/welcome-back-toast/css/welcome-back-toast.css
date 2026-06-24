@@ -1,0 +1,34 @@
+/* ===========================================================================
+ * WelcomeBackToast — NO entries in static/dashboard.css.
+ *
+ * Fully INLINE-STYLED; ships its own <style> with the @keyframes below.
+ * A position:fixed top-right pill (white, pill radius 999px, soft shadow,
+ * teal #144852 text) with a pink 👋 avatar. pointer-events:none — purely
+ * informational, auto-dismisses after 3s.
+ * ======================================================================== */
+
+/* --- Self-injected keyframes (verbatim) --- */
+@keyframes pm-toast-in {
+  0%   { opacity: 0; transform: translateY(-6px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+/* --- Reduced motion (verbatim — the island's own guard) --- */
+@media (prefers-reduced-motion: reduce) {
+  [role=status][style*="pm-toast-in"] {
+    animation: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Inline-style reference (documents the box for a rebuild):
+ *   container : position:fixed; top:18px; right:18px; z-index:9999;
+ *               padding:10px 16px 10px 14px; inline-flex; gap:10px;
+ *               background:#fff; border:1px solid rgba(0,0,0,.06);
+ *               border-radius:999px;
+ *               box-shadow:0 6px 24px rgba(0,0,0,.10), 0 1px 3px rgba(0,0,0,.04);
+ *               font-size:14px; font-weight:600; color:#144852;
+ *               animation:pm-toast-in 280ms cubic-bezier(.34,1.56,.64,1) both;
+ *               pointer-events:none
+ *   avatar    : 22x22 circle; background:#FF6B6B; color:#fff; centered 👋
+ * ------------------------------------------------------------------------- */

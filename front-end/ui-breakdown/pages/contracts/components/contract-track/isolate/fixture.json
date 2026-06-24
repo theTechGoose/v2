@@ -1,0 +1,11 @@
+{
+  "category": "contracts",
+  "folder": "contract-track",
+  "controls": {
+    "num": { "type": "text", "value": "01" },
+    "title": { "type": "text", "value": "In progress" },
+    "count": { "type": "text", "value": "3 contracts" },
+    "defaultOpen": { "type": "boolean", "value": true },
+    "storageKey": { "type": "text", "value": "contracts:track:01" }
+  }
+}

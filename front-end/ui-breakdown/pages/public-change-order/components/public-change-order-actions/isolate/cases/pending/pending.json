@@ -1,0 +1,7 @@
+{
+  "_name": "Pending — idle action stack: solid green 'Approve this change' over outlined white 'Decline'. No error.",
+  "changeOrderId": "co_7d2f1a9b3c4e5f60",
+  "initialStatus": "pending",
+  "lang": "en",
+  "_signals": { "status": "pending", "busy": null }
+}

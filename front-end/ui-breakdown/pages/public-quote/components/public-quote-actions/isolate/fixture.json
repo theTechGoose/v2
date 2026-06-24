@@ -1,0 +1,10 @@
+{
+  "category": "public-quote",
+  "folder": "public-quote-actions",
+  "controls": {
+    "quoteId": { "type": "text", "value": "a1b2c3d4-1111-2222-3333-444455556666" },
+    "contractorFirstName": { "type": "text", "value": "Marcus" },
+    "customerName": { "type": "text", "value": "Jane Doe" },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

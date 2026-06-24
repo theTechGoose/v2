@@ -1,0 +1,8 @@
+{
+  "_name": "No matches — non-empty roster but search hides all ('zzzz')",
+  "lang": "en",
+  "_signals": { "query": "zzzz" },
+  "cards": [
+    { "id": "c3", "userId": "u1", "name": "Cobblestone Cafe", "email": "hello@cobblestone.cafe", "phoneNumber": "(415) 555-0117", "segment": "small_biz", "vip": false, "createdAt": "2025-03-01T10:00:00.000Z", "updatedAt": "2026-06-17T10:00:00.000Z", "lastWhen": "2026-06-17T10:00:00.000Z", "lastWhenRel": "yesterday", "lastTone": "hot", "balanceCents": 0, "balanceSub": "Settled", "activeJobs": 1, "jobsSub": "Patio repair", "status": "regular", "temp": 71, "daysSinceContact": 1, "revenue12moCents": 1592000 }
+  ]
+}

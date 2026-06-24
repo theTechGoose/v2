@@ -1,0 +1,13 @@
+{
+  "category": "quotes",
+  "folder": "quotes-page",
+  "controls": {
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  },
+  "components": [
+    "quotes-sections",
+    "quote-card",
+    "delete-quote-button",
+    "quote-track"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "_name": "Default — settled older check payment: won badge, \"Check · 8d ago · INV-AA19FF\", $9,200",
+  "lang": "en",
+  "p": {
+    "id": "pay_2bb1043f",
+    "userId": "usr_01",
+    "invoiceId": "inv_aa19ff2c8e30",
+    "amount": 920000,
+    "method": "check",
+    "receivedAt": "2026-06-10T09:30:00Z",
+    "createdAt": "2026-06-10T09:31:00Z",
+    "updatedAt": "2026-06-10T09:31:00Z",
+    "client": "Tom Becker",
+    "initials": "TB",
+    "invoiceRef": "INV-AA19FF",
+    "daysAgo": 8,
+    "whenLabel": "8d ago",
+    "note": "Check from Tom, deposited via mobile.",
+    "status": "landed"
+  }
+}

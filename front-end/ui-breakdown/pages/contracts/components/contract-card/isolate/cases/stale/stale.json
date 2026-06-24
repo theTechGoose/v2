@@ -1,0 +1,29 @@
+{
+  "_name": "Stale — old draft, re-engage",
+  "idx": 1,
+  "lang": "en",
+  "c": {
+    "id": "ctr_e1937740bb2ac056",
+    "client": "Lakeside Cafe",
+    "initials": "LC",
+    "title": "Patio Pergola Install",
+    "story": "This one's gone quiet — a quick nudge could bring it back to life.",
+    "status": "STALE",
+    "mood": "stale",
+    "moodFrom": "#B89D90",
+    "moodTo": "#785544",
+    "moodShadow": "rgba(120,85,68,0.4)",
+    "statusColor": "#5A3C2A",
+    "when": "Stale draft",
+    "pct": 0,
+    "paid": "$0",
+    "left": "$9,750",
+    "total": "$9,750",
+    "cta": "Re-engage",
+    "ctaHref": "/c/ctr_e1937740bb2ac056",
+    "scheduleStart": 8,
+    "scheduleEnd": 12,
+    "scheduleScheduled": false,
+    "scheduleColor": ["#B89D90", "#785544"]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "_name": "Default — grouped list, t1 active",
+  "activeId": "t1",
+  "initialThreads": [
+    { "id": "t1", "userId": "u_dev", "customerName": "Maria Gonzalez", "preview": "Estimate sent — kitchen backsplash + under-cabinet lighting.", "currentPhase": "terms", "contractStatus": "sent", "updatedAt": "2026-06-18T12:30:00.000Z", "createdAt": "2026-06-18T11:00:00.000Z" },
+    { "id": "t2", "userId": "u_dev", "customerName": "Davis Remodel", "preview": "Drafted quote for bathroom tile re-grout.", "currentPhase": "quote", "quoteStatus": "draft", "updatedAt": "2026-06-18T11:30:00.000Z", "createdAt": "2026-06-18T11:00:00.000Z" },
+    { "id": "t4", "userId": "u_dev", "customerName": "Carter Family", "preview": "Contract signed — deck rebuild.", "currentPhase": "terms", "contractStatus": "accepted", "updatedAt": "2026-06-17T15:00:00.000Z", "createdAt": "2026-06-17T09:00:00.000Z" }
+  ]
+}

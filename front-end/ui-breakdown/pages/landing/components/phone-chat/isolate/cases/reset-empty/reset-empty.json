@@ -1,0 +1,7 @@
+{
+  "_name": "Reset — empty chat body (story mode)",
+  "messageCopy": "Message",
+  "controls": true,
+  "autoPlayOnView": false,
+  "_signals": { "lang": "en", "shown": 0, "hidden": [] }
+}

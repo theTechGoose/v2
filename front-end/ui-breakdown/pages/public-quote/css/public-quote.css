@@ -1,0 +1,31 @@
+/* Public Quote page (/q/:id) — the page itself is INLINE-STYLED.
+ * The only external stylesheet it loads is /landing.css (resets), via:
+ *   <link rel="stylesheet" href="/landing.css" />
+ * No page-scoped class-based CSS exists in source. This file documents the two
+ * environmental contracts the inline styles depend on. */
+
+/* 1) Reset baseline expected from /landing.css.
+ *    The inline styles assume box-sizing:border-box and zeroed body margin so
+ *    the 100dvh paper background and centered 640px column lay out correctly.
+ *    If rebuilding without /landing.css, ensure at minimum: */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+}
+
+/* 2) Soft-keyboard inset variable contract.
+ *    The page root uses padding-bottom: calc(32px + var(--kb-inset, 0px)) and
+ *    scroll-padding-bottom: var(--kb-inset, 0px) so the on-screen keyboard
+ *    (set elsewhere by the app shell on focus) does not occlude the
+ *    accept/decline/ask inputs. Default 0 when no keyboard is shown. */
+:root {
+  --kb-inset: 0px;
+}
+
+/* Note: this is light-theme only. There is no [data-theme] / dark variant on
+ * the public surface. Do NOT introduce one. */

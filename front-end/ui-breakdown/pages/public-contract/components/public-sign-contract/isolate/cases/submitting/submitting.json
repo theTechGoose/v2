@@ -1,0 +1,6 @@
+{
+  "_name": "Submitting — POST /sign in flight; button shows <span class='spinner'> + 'Signing…', inputs locked",
+  "contractId": "ctr_9f3a2b71c0d4e5f6",
+  "lang": "en",
+  "_signals": { "hasInk": true, "name": "Maria Delgado", "submitting": true, "status": "idle" }
+}

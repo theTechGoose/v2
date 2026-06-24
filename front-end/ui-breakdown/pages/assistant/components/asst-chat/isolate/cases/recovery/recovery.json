@@ -1,0 +1,25 @@
+{
+  "_name": "Recovery — failed-send divider → contact-recovery card",
+  "_note": "A phase_divider whose payload carries an emailFailureReason and contractId, with a bound customer that has NO email → renders .recovery-card under the divider (add-email + Save & resend). Requires this divider's id to equal lastRecoveryDividerId — drive via _signals.",
+  "conversationId": "t1",
+  "userInitials": "TK",
+  "initialCustomer": { "id": "c1", "name": "Tom & Linda K.", "phoneNumber": "+15125550101" },
+  "_signals": { "lastRecoveryDividerId": "pd1" },
+  "initialMessages": [
+    {
+      "id": "pd1",
+      "conversationId": "t1",
+      "role": "system",
+      "kind": "phase_divider",
+      "content": "Couldn't email the contract",
+      "createdAt": 1750247900000,
+      "payload": {
+        "label": "Contract not delivered",
+        "contractId": "ct_1",
+        "channel": "email",
+        "emailFailureReason": "no email on file"
+      }
+    }
+  ],
+  "sendLanguages": ["en"]
+}

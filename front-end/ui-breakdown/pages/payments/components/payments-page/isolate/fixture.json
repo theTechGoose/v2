@@ -1,0 +1,8 @@
+{
+  "category": "payments",
+  "folder": "payments-page",
+  "controls": {
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  },
+  "_note": "Whole-page island (islands/PaymentsPage.tsx). The only real prop is `lang` (an ignored SSR seed — the island reads langSignal.value). Every visible state is driven by what the three clients return, so cases stub them via `_mocks`: paymentsClient.list() → Payment[], dashboardClient.invoices() → Invoice[], dashboardClient.customers() → Customer[]. Money is INTEGER CENTS. There are NO mutations on this page; the only client state is `s:{loading,error,payments,invoices,customers}` plus each PaymentCard's local `flipped`."
+}

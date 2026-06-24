@@ -1,0 +1,7 @@
+{
+  "_name": "Submitting — 'Accepting…', disabled mid-POST",
+  "quoteId": "a1b2c3d4-1111-2222-3333-444455556666",
+  "contractorFirstName": "Marcus",
+  "lang": "en",
+  "_signals": { "name": "Jane Doe", "submitting": true, "status": "idle" }
+}

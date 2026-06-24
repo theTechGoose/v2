@@ -1,0 +1,74 @@
+/* ===========================================================================
+ * AssistantCoachmark — NO entries in static/dashboard.css.
+ *
+ * The island is fully INLINE-STYLED and ships its OWN <style> block with the
+ * @keyframes below, embedded at the bottom of the rendered overlay. Reproduced
+ * verbatim from js/AssistantCoachmark.tsx so a rebuild has the exact motion.
+ *
+ * The overlay is a position:fixed inset:0 z-index:9999 backdrop with an SVG
+ * mask that cuts a rounded-rect hole over the sidebar's `.sb__textus`
+ * ("My Assistant") button, a pink spotlight ring, sonar ripples, orbital
+ * sparkles, and a speech bubble. Backdrop blur(2px) + rgba(15,28,33,0.74).
+ * ======================================================================== */
+
+/* --- Self-injected keyframes (verbatim from the island's inline <style>) --- */
+@keyframes coach-ripple {
+  0%   { transform: scale(0.7); opacity: 0.55; }
+  80%  { opacity: 0; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+@keyframes coach-breathe {
+  0%, 100% { filter: drop-shadow(0 0 14px rgba(255, 107, 107, 0.75)); transform: scale(1); }
+  50%      { filter: drop-shadow(0 0 22px rgba(255, 107, 107, 0.95)); transform: scale(1.025); }
+}
+@keyframes coach-orbit {
+  0%   { transform: rotate(0deg)   translateY(0) scale(1);    opacity: 0; }
+  15%  { opacity: 0.95; }
+  50%  { transform: rotate(180deg) translateY(0) scale(1.15); opacity: 0.95; }
+  85%  { opacity: 0.95; }
+  100% { transform: rotate(360deg) translateY(0) scale(1);    opacity: 0; }
+}
+@keyframes coach-wave {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  70%           { transform: rotate(14deg); }
+  80%           { transform: rotate(-8deg); }
+  90%           { transform: rotate(10deg); }
+}
+@keyframes coach-arrow-nudge {
+  0%, 100% { transform: translateY(-50%) translateX(0); }
+  50%      { transform: translateY(-50%) translateX(4px); }
+}
+
+/* --- Reduced motion (verbatim — the island's own guard, scoped to the
+ * role=dialog overlay; kills all child animations + clamps transitions to
+ * 80ms). This is in ADDITION to the global tokens clamp. --- */
+@media (prefers-reduced-motion: reduce) {
+  [role=dialog] *,
+  [role=dialog] *::before,
+  [role=dialog] *::after {
+    animation: none !important;
+    transition-duration: 80ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Inline-style transition reference (NOT a stylesheet rule — documents the
+ * timing carried in the TSX style attrs so motion is rebuildable):
+ *
+ *   backdrop wrapper : transition opacity 320ms ease-out,
+ *                      backdrop-filter 320ms ease-out; blur 0↔2px
+ *   spotlight ring   : transition transform 520ms cubic-bezier(.34,1.56,.64,1) 120ms,
+ *                      opacity 320ms ease-out 120ms; scale .6→1;
+ *                      animation coach-breathe 2.6s ease-in-out infinite 800ms (phase 2)
+ *   sonar ripples ×2 : animation coach-ripple 1.6s ease-out 0.24s/0.48s 2 (phase>=1)
+ *   ambient glow     : transition opacity 480ms ease-out 240ms
+ *   orbital sparkles : animation coach-orbit 5.2s linear infinite, delay i*1.3s (phase 2)
+ *   speech bubble    : transition transform 460ms cubic-bezier(.34,1.56,.64,1) 320ms,
+ *                      opacity 320ms ease-out 320ms;
+ *                      translateX(-24px) scale(.85) rotate(2deg) → 0/1/0
+ *   bubble wave 👋   : animation coach-wave 2.8s ease-in-out infinite
+ *   arrow notch      : animation coach-arrow-nudge 1.6s ease-in-out infinite 800ms (phase 2)
+ *   dismiss hint     : transition opacity 320ms ease-out 520ms,
+ *                      transform 460ms cubic-bezier(.34,1.56,.64,1) 520ms
+ *   dismiss/fade-out : wrapper opacity→0 + blur→0 over 320ms, then unmount
+ * ------------------------------------------------------------------------- */

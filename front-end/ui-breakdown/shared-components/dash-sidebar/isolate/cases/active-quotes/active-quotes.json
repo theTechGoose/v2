@@ -1,0 +1,15 @@
+{
+  "_name": "Quotes active",
+  "active": "quotes",
+  "showNav": true,
+  "_signals": {
+    "collapsed": false,
+    "mobileOpen": false,
+    "s": {
+      "counts": { "clients": 8, "quotes": 3, "contracts": 2, "invoices": 4 },
+      "identity": { "display": "Raphael Castro", "biz": "RC Incorporated", "initials": "RC" },
+      "lang": "en",
+      "superAdmin": false
+    }
+  }
+}

@@ -1,0 +1,126 @@
+/* ============================================================
+   /settings — page-local CSS, extracted VERBATIM from static/dashboard.css.
+   The route loads ONLY `/dashboard.css` (see <Head> in js/index.tsx); there
+   is no settings.css in the live app. SettingsPage reuses dashboard's
+   .hero / .grid / .panel primitives, so these are the rules it actually
+   paints. The .app / .main / .content / .sb / .topbar shell classes are
+   OWNED BY THE SHARED app-shell (DashSidebar/DashTopbar) — see
+   shared-components/, NOT re-spec'd here.
+
+   Everything ELSE SettingsPage renders (inputs, edit grids, danger zone,
+   payment toggles) is INLINE style on the elements — captured in the
+   settings-page component's css/ folder, not here.
+   ============================================================ */
+
+/* ---- Hero (settings overrides grid-template-columns:1fr inline) ---- */
+.hero {
+  position: relative;
+  isolation: isolate;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 88% 120%, rgba(255, 193, 193, 0.55) 0%, transparent 55%),
+    radial-gradient(circle at -5% -10%, rgba(207, 229, 200, 0.85) 0%, transparent 50%),
+    linear-gradient(135deg, #f7fff4 0%, #fffbf5 100%);
+  border: 1px solid rgba(100, 69, 54, 0.08);
+  padding: 26px 30px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr 240px; /* settings sets 1fr inline (no art column) */
+  gap: 28px;
+  align-items: center;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+}
+.hero > .hero__copy {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+}
+.hero__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 32px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--brand-teal);
+  margin: 0 0 8px;
+}
+.hero__title em {
+  font-style: normal;
+  color: var(--brand-pink);
+}
+.hero__sub {
+  font-size: 14px;
+  color: var(--fg-muted);
+  margin: 0 0 18px;
+  max-width: 540px;
+}
+
+/* ---- Two-column grid (settings stacks Account/Identity, Address/Insurance,
+        Tax/ContractDefaults pairs into this) ---- */
+.grid {
+  display: grid;
+  grid-template-columns: 1.45fr 1fr;
+  gap: 18px;
+}
+
+/* ---- Panel (every settings card — read-only Card + editable EditPanel) ---- */
+.panel {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.panel__head {
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+/* NOTE: SettingsPage overrides .panel padding to 18px 20px inline and removes
+   the head border via inline margin-bottom — the extracted defaults above are
+   the base; the inline overrides win at render. */
+.panel__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--brand-teal);
+  letter-spacing: -0.01em;
+  margin: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ---- Error state class (FLAG: referenced by SettingsPage's load-error branch
+        `<div class="dashpage-error">` but NO rule defines it in any
+        static/*.css — it renders as an unstyled <div>. Rebuild should add a
+        real rule or the error message is plain unstyled text). ---- */
+.dashpage-error {
+  /* (undefined in source — placeholder so the rebuild has a hook) */
+  color: var(--danger, #e03131);
+  font-size: 14px;
+  padding: 16px;
+}
+
+/* ============================================================
+   Responsive — settings-relevant rules live in dashboard.css's
+   @media (max-width: 640px) block (NOT 720px). Verbatim:
+   ============================================================ */
+@media (max-width: 640px) {
+  .hero {
+    grid-template-columns: 1fr;
+    padding: 22px 20px;
+    gap: 14px;
+  }
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  /* The shell's .content adds keyboard-clearing bottom padding here so the
+     last Settings field (Danger Zone) scrolls above the soft keyboard —
+     owned by the app-shell, referenced for context. */
+}

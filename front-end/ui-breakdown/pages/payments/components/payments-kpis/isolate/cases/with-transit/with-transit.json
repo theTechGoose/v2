@@ -1,0 +1,12 @@
+{
+  "_name": "With-transit — pink-accent In-transit cell carries a non-zero $5,250 (2 on the way)",
+  "lang": "en",
+  "landedCount": 1,
+  "monthTotal": 482000,
+  "transitCount": 2,
+  "transitTotal": 525000,
+  "attentionCount": 0,
+  "attentionTotal": 0,
+  "avgDays": 3,
+  "_note": "Focus the In-transit accent cell: gradient bg (#fff1ed→#ffe4da), pink value \"$5,250\", sub \"2 on the way\". monthTotal 482000 → \"$4,820\" (just the single landed Zelle)."
+}

@@ -1,0 +1,9 @@
+{
+  "_name": "Fresh — all totals 0 → \"Nothing's landed yet — let's change that.\" + freshSub; no stubs",
+  "lang": "en",
+  "monthTotal": 0,
+  "transitTotal": 0,
+  "attentionCount": 0,
+  "stubs": [],
+  "_note": "fresh branch: smaller clamped title (clamp(28px,3.4vw,44px)), pink non-italic <em> on \"let's change that\", freshSub explainer about clearing windows. Empty stubs → the .pph__stack renders no cards (still aria-hidden)."
+}

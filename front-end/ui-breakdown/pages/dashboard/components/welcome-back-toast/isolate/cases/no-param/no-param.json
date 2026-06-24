@@ -1,0 +1,8 @@
+{
+  "_name": "No param — plain /dashboard load (no ?welcome=back) → renders nothing",
+  "_signals": { "lang": "en", "show": false, "name": "" },
+  "_mocks": {
+    "_url": "/dashboard",
+    "GET /api/me": { "name": "Raphael Castro" }
+  }
+}

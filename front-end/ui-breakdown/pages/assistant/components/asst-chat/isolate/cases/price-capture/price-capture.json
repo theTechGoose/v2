@@ -1,0 +1,12 @@
+{
+  "_name": "Price capture — MoneyInput screen (heavy child mocked)",
+  "_note": "priceCaptureOpen=true, suggestPricing=false → .chat__price-capture with the embedded MoneyInput. Composer HIDDEN. MoneyInput is stubbed via _mocks so the still renders without its odometer/ResizeObserver.",
+  "conversationId": "t2",
+  "userInitials": "ML",
+  "_signals": { "priceCaptureOpen": true, "suggestPricing": false, "priceCents": 125000 },
+  "_mocks": { "MoneyInput": { "stub": "<div class='mi-stub' style='border:1px dashed #cfd6cb;border-radius:28px;padding:26px;text-align:center;font:700 32px Inter,sans-serif;color:#0F3036'>$1,250.00</div>" } },
+  "initialMessages": [
+    { "id": "m1", "conversationId": "t2", "role": "user", "kind": "text", "content": "Kitchen backsplash, ~30 sqft, white subway tile.", "createdAt": 1750247400000 }
+  ],
+  "sendLanguages": ["en"]
+}

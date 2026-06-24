@@ -1,0 +1,12 @@
+{
+  "category": "invoices",
+  "folder": "invoices-hero",
+  "controls": {
+    "outstandingTotal": { "type": "number", "value": 728500 },
+    "outstandingCount": { "type": "number", "value": 3 },
+    "overdueCount": { "type": "number", "value": 2 },
+    "totalInvoiceCount": { "type": "number", "value": 9 },
+    "forecast": { "type": "json", "value": null },
+    "lang": { "type": "select", "value": "en", "options": ["en", "es"] }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "_name": "Wrapping up — 90%, draft final invoice",
+  "idx": 2,
+  "lang": "en",
+  "c": {
+    "id": "ctr_44e9013ab8c1207d",
+    "client": "Hans Hansen",
+    "initials": "HH",
+    "title": "Front Porch Repair",
+    "story": "Almost done — get the final invoice out while the work is fresh.",
+    "status": "WRAPPING UP",
+    "mood": "wrapping-up",
+    "moodFrom": "#D9886F",
+    "moodTo": "#A85A3A",
+    "moodShadow": "rgba(217,136,111,0.45)",
+    "statusColor": "#7A3D24",
+    "when": "Wraps in 2 days",
+    "pct": 90,
+    "paid": "$5,400",
+    "left": "$600",
+    "total": "$6,000",
+    "cta": "Draft final invoice",
+    "ctaHref": "/invoices",
+    "scheduleStart": 1,
+    "scheduleEnd": 10,
+    "scheduleScheduled": false,
+    "scheduleColor": ["#D9886F", "#A85A3A"],
+    "startDate": "2026-06-08",
+    "completionDate": "2026-06-20"
+  }
+}

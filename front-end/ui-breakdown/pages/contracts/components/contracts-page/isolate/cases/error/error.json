@@ -1,0 +1,9 @@
+{
+  "_name": "Error — a fetch rejects past the .catch([]) guard",
+  "_note": "Per-client .catch(()=>[]) swallows individual failures; this case rejects the outer Promise.all chain (e.g. a throw before .then) so loading:false + error set → <div class=\"kpage-error\">. NOTE: .kpage-error has no real style in contracts.css/dashboard.css — renders as unstyled text (flagged hazard).",
+  "lang": "en",
+  "_signals": { "loading": false, "error": "Network request failed (503)" },
+  "_mocks": {
+    "contractsClient.list": "reject: Network request failed (503)"
+  }
+}

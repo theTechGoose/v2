@@ -1,0 +1,139 @@
+/* ============================================================
+   SettingsPage — extracted INLINE-style literals.
+   The island uses ZERO dedicated stylesheet classes; every field, button,
+   grid and card override is an inline `style="…"` string (a handful are
+   hoisted to module consts: inputStyle, labelStyle, btnSecondary, btnPrimary).
+   The only stylesheet classes it borrows are dashboard's .panel / .hero /
+   .grid (see the page-level css/settings.css). Reproduced here as ready-to-use
+   rules so the screen can be rebuilt without re-deriving the literals.
+
+   The two class hooks present in the markup — `.settings-edit__input` on the
+   name/email/business inputs — have NO CSS rule in any static/*.css (FLAG:
+   dead/placeholder class; inputStyle inline string does all the work).
+   ============================================================ */
+
+/* ---- inputStyle const (every text/email/number/date/select field) ---- */
+.settings-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #d8dcd5);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13.5px;
+  background: #fff;
+  color: var(--fg);
+}
+/* mismatch state on the payments retype-confirm input (bad === true) */
+.settings-input--error { border-color: #a83b3b; }
+
+/* ---- labelStyle const (uppercase field caption) ---- */
+.settings-label {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted, #6b7560);
+  margin-bottom: 4px;
+}
+
+/* ---- btnSecondary const (Upload logo / Upload cert / Upload W-9) ---- */
+.settings-btn-secondary {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #d8dcd5);
+  background: #fff;
+  color: var(--fg);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+/* ---- btnPrimary const (Save payment methods) ---- */
+.settings-btn-primary {
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 0;
+  background: var(--brand-green, #519843);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+/* ---- Panel padding override (inline on every Card/EditPanel) ---- */
+.settings-panel { /* applied via .panel + inline style="padding:18px 20px" */
+  padding: 18px 20px;
+}
+.settings-panel__head { /* inline margin-bottom:12px, no bottom border */
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* ---- EditPanel status line ---- */
+.settings-status--saving { font-size: 11.5px; color: var(--fg-muted); }
+.settings-status--saved  { font-size: 11.5px; color: var(--brand-green, #519843); }
+.settings-error          { margin-top: 10px; color: #a83b3b; font-size: 12.5px; }
+
+/* ---- Read-only Card key/value grid ---- */
+.settings-kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 18px;
+  font-size: 13.5px;
+}
+.settings-kv__k { color: var(--fg-muted, #6b7560); }
+.settings-kv__v { color: var(--fg); }
+.settings-kv__empty { color: var(--fg-muted, #6b7560); font-size: 13px; }
+
+/* ---- Editable field grid (auto-fit columns) ---- */
+.settings-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px; /* address/insurance use 12px; payments inner uses 10px */
+}
+
+/* ---- Comms-language chips & payment-method toggle cards ---- */
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  border: 1px solid var(--border, #d8dcd5);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #fff;
+}
+.settings-toggle--on { border-color: var(--brand-green, #519843); }
+
+.settings-pay-row {
+  border: 1px solid var(--border, #d8dcd5);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fff;
+}
+.settings-pay-row--on { border-color: var(--brand-green, #519843); }
+
+/* ---- Danger Zone (off-token destructive red, mirrors AdminPage danger red) ---- */
+.settings-danger {
+  /* applied via .panel + inline border/background */
+  padding: 18px 20px;
+  border: 1px solid #e3b4b4;
+  background: #fdf6f6;
+}
+.settings-danger__title { color: #a83b3b; }
+.settings-danger__btn {            /* disarmed */
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 0;
+  background: #d8b4b4;             /* armed → #a83b3b */
+  color: #fff;
+  cursor: not-allowed;            /* armed && !busy → pointer */
+  font: inherit;
+  font-weight: 700;
+}
+.settings-danger__btn--armed { background: #a83b3b; cursor: pointer; }

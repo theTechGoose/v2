@@ -1,0 +1,231 @@
+/* ============================================================================
+   /invoices — extracted CSS.
+
+   The /invoices route loads NO invoices.css. Its <Head> links:
+     /dashboard.css   (tokens: --brand-*, --pink/teal/green/coffee/mint-*,
+                        --bg-*, --fg-*, --radius-*, --dur-*, --ease-*, --font-*
+                        + the .app/.main/.content app-shell)
+     /quotes.css      (all the .qph/.qkpi/.qtrack/.qcard/.qcards/.qlay classes)
+
+   The InvoicesPage island REUSES the Quotes code path verbatim — same class
+   names, swapped copy + stage moods. So the relevant CSS is the quotes.css
+   subset below, copied 1:1 from static/quotes.css. Tokens come from
+   dashboard.css (see ../../../design-tokens.md). Reference only; do not
+   re-spec the shared QuoteTrack (.qtrack*) — see shared-components/quote-track.
+
+   CLASSES THE INVOICE ISLAND USES THAT HAVE *NO* CSS RULE (render unstyled,
+   browser defaults — flagged in invoices-page.md):
+     .qph__copy   .qph__cta--ghost   .qpage-error
+   (Everything else below is defined.)
+   ============================================================================ */
+
+/* ---- Hero (.qph) — copied from static/quotes.css ---- */
+.qph {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px 0 22px;
+  border-bottom: 1px solid rgba(26, 83, 92, 0.08);
+  margin-bottom: 22px;
+}
+.qph__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--brand-pink);
+  margin-bottom: 6px;
+}
+.qph__eyebrow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--brand-pink);
+}
+.qph__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: clamp(28px, 4vw, 44px);
+  color: var(--brand-teal);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+  text-wrap: balance;
+}
+.qph__title em {
+  color: var(--brand-pink);
+  font-style: normal;
+}
+.qph__sub {
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  color: var(--fg-muted);
+  line-height: 1.5;
+  max-width: 520px;
+  text-wrap: pretty;
+}
+.qph__sub strong {
+  color: var(--brand-teal);
+  font-weight: 700;
+}
+.qph__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 20px;
+  background: var(--brand-pink);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 8px 18px -8px rgba(255, 107, 107, 0.55);
+  transition: transform var(--dur-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+.qph__cta:hover {
+  transform: translateY(-1px);
+}
+
+/* ---- KPI strip (.qkpi) ---- */
+.qkpi {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.qkpi__cell {
+  background: #fff;
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  border: 1px solid rgba(26, 83, 92, 0.07);
+  position: relative;
+  overflow: hidden;
+}
+.qkpi__cell--accent {
+  background: linear-gradient(135deg, #fff1ed 0%, #ffe4da 100%);
+  border-color: rgba(255, 107, 107, 0.2);
+}
+.qkpi__lbl {
+  font-family: var(--font-heading);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-bottom: 4px;
+}
+.qkpi__val {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--brand-teal);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.qkpi__cell--accent .qkpi__val {
+  color: var(--brand-pink);
+}
+.qkpi__sub {
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  margin-top: 4px;
+}
+
+/* ---- Track group (.qtrack) — SHARED QuoteTrack; see
+        shared-components/quote-track. Copied here only so /invoices renders
+        in isolation. ---- */
+.qtrack { margin-bottom: 28px; }
+.qtrack__head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+  cursor: pointer;
+  user-select: none;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(26, 83, 92, 0.08);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.qtrack__head:hover { border-color: rgba(26, 83, 92, 0.2); }
+.qtrack__chev {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--brand-teal);
+  transition: transform 240ms var(--ease-bounce);
+  transform: rotate(90deg);
+}
+.qtrack--collapsed .qtrack__chev { transform: rotate(0deg); }
+.qtrack__num {
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--brand-pink);
+}
+.qtrack__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--brand-teal);
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.qtrack__count {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--fg-muted);
+  margin-left: auto;
+}
+.qtrack__body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows 320ms var(--ease-out),
+    margin-top 320ms var(--ease-out);
+  margin-top: 14px;
+}
+.qtrack__body-inner { overflow: hidden; min-height: 0; }
+.qtrack--collapsed .qtrack__body { grid-template-rows: 0fr; margin-top: 0; }
+
+/* ---- Card grid + flip card (.qcards / .qcard) — see invoice-card/css ---- */
+.qcards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+/* The full .qcard / .qcard__* rule block (mood, av, body, foot, back, etc.)
+   is extracted in ../components/invoice-card/css/invoice-card.css. */
+
+/* ---- Layout (.qlay) ---- */
+.qlay {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 22px;
+  align-items: flex-start;
+}
+/* NOTE: /invoices renders a single column inside .qlay (no aside.qside), so
+   the 320px rail track is empty — the content sits in the first column and the
+   2nd column collapses to nothing visible. Below 1200px it's one column. */
+
+@media (max-width: 1200px) {
+  .qlay { grid-template-columns: 1fr; }
+  .qph { flex-direction: column; align-items: flex-start; }
+  .qkpi { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .qcards { grid-template-columns: 1fr; }
+  .qkpi { grid-template-columns: 1fr; }
+}

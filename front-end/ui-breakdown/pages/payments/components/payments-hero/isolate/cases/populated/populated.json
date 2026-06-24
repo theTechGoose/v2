@@ -1,0 +1,12 @@
+{
+  "_name": "Populated — \"$15,910 showed up this month.\" + 3 stubs + \"Plus $5,250 on the way\"",
+  "lang": "en",
+  "monthTotal": 1591000,
+  "transitTotal": 525000,
+  "attentionCount": 0,
+  "stubs": [
+    { "id": "pay_8a1f20c4", "method": "zelle", "initials": "MD", "client": "Maria Delgado", "whenLabel": "Today", "invoiceRef": "INV-3C91AB", "amount": 482000 },
+    { "id": "pay_5d77e9b2", "method": "cash", "initials": "GH", "client": "Greenfield HOA", "whenLabel": "Yesterday", "invoiceRef": "INV-77B0C1", "amount": 125000 },
+    { "id": "pay_2bb1043f", "method": "check", "initials": "TB", "client": "Tom Becker", "whenLabel": "8d ago", "invoiceRef": "INV-AA19FF", "amount": 920000 }
+  ]
+}

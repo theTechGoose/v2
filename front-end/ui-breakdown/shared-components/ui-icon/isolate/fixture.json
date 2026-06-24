@@ -1,0 +1,13 @@
+{
+  "category": "shared-components",
+  "folder": "ui-icon",
+  "controls": {
+    "name": {
+      "type": "select",
+      "value": "home",
+      "options": ["home", "doc", "file-text", "receipt", "chat", "users", "settings", "bell", "search", "send", "mic", "image", "check", "chevron-right", "menu", "logo"]
+    },
+    "size": { "type": "number", "value": 18 },
+    "class": { "type": "text", "value": "" }
+  }
+}

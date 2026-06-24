@@ -1,0 +1,10 @@
+{
+  "_name": "Empty — all three fetches returned empty ([] / no results / no segments); hero + board + rails render their honest-empty branches (zero counts, no client cards, no leaderboard, no segment mix).",
+  "_mocks": {
+    "clientsClient.list": [],
+    "clientsClient.top": { "results": [] },
+    "clientsClient.segments": { "segments": [] }
+  },
+  "_signals": { "addOpen": false },
+  "_note": "Derived counts all collapse to 0: totalClients=0, activeJobs=0, owedTotal=0, quietCount=0, loopPicks=[]. This is the brand-new-account first run. The 'Add a client' CTA (button.ph2__cta) is the only meaningful affordance."
+}

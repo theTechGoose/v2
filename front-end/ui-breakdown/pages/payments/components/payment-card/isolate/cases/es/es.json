@@ -1,0 +1,24 @@
+{
+  "_name": "Spanish — mood label/cta, note, method label, value cell localize via es.json",
+  "lang": "es",
+  "idx": 0,
+  "p": {
+    "id": "pay_8a1f20c4",
+    "userId": "usr_01",
+    "invoiceId": "inv_3c91ab77e201",
+    "amount": 482000,
+    "method": "zelle",
+    "receivedAt": "2026-06-18T14:20:00Z",
+    "createdAt": "2026-06-18T14:21:00Z",
+    "updatedAt": "2026-06-18T14:21:00Z",
+    "client": "Maria Delgado",
+    "initials": "MD",
+    "invoiceRef": "INV-3C91AB",
+    "daysAgo": 0,
+    "whenLabel": "Hoy",
+    "note": "Pago de Maria.",
+    "status": "landed"
+  },
+  "_signals": { "flipped": false },
+  "_note": "lang=es → mood.landed.label/cta, card.method/expected/eta, methodLabel, and the parent-supplied `note`/`whenLabel` (already localized by the parent via tFor(lang,…)) all read ES. fmtMoney stays en-US (\"$4,820\")."
+}

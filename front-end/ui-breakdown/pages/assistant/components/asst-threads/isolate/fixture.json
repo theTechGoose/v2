@@ -1,0 +1,44 @@
+{
+  "category": "assistant",
+  "folder": "asst-threads",
+  "controls": {
+    "initialThreads": {
+      "type": "json",
+      "value": [
+        {
+          "id": "t1",
+          "userId": "u_dev",
+          "customerName": "Maria Gonzalez",
+          "preview": "Estimate sent — kitchen backsplash + under-cabinet lighting.",
+          "currentPhase": "terms",
+          "contractStatus": "sent",
+          "hasUnreadEvent": false,
+          "updatedAt": "2026-06-18T12:30:00.000Z",
+          "createdAt": "2026-06-18T11:00:00.000Z"
+        },
+        {
+          "id": "t2",
+          "userId": "u_dev",
+          "customerName": "Davis Remodel",
+          "preview": "Drafted quote for bathroom tile re-grout.",
+          "currentPhase": "quote",
+          "quoteStatus": "draft",
+          "updatedAt": "2026-06-18T11:30:00.000Z",
+          "createdAt": "2026-06-18T11:00:00.000Z"
+        },
+        {
+          "id": "t3",
+          "userId": "u_dev",
+          "customerName": "The Lakers",
+          "preview": "Nudged customer — waiting on a reply.",
+          "currentPhase": "quote",
+          "quoteStatus": "sent",
+          "hasUnreadEvent": true,
+          "updatedAt": "2026-06-18T09:30:00.000Z",
+          "createdAt": "2026-06-18T08:00:00.000Z"
+        }
+      ]
+    },
+    "activeId": { "type": "text", "value": "t1" }
+  }
+}

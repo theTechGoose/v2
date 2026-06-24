@@ -1,0 +1,6 @@
+{
+  "_name": "Success — status='ok' green check panel ('Contract signed!'). NOTE: in the real app this is transient — a 900ms setTimeout then location.reload() takes over with the SSR signed doc. FLAGGED anti-pattern.",
+  "contractId": "ctr_9f3a2b71c0d4e5f6",
+  "lang": "en",
+  "_signals": { "status": "ok" }
+}

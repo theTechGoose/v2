@@ -1,0 +1,35 @@
+/* contract-doc.css — EXTRACTED real CSS for the rendered contract document.
+ *
+ * IMPORTANT: contract-doc.tsx carries NO stylesheet of its own. Every visual
+ * is an inline `style=` string (see js/contract-doc.tsx and the .md § Anatomy
+ * for the literal inline values). The only CSS that touches it lives in the
+ * HOST ROUTE (`routes/c/[id].tsx`) <style> block, reproduced here because the
+ * doc's class hooks (`.ctr`, `.ctr__inner`, `.ctr__title`, `.ctr__total-amt`,
+ * `.ctr__terms-grid`, `.ctr__milestones`, `.ctr__no-print`) are ONLY styled by
+ * these rules. The classes exist on the doc purely so the route can override
+ * the inline padding/size at the mobile breakpoint and hide the brand strip in
+ * print. Rebuild the doc as inline styles + this single media/print pair.
+ *
+ * Surface: PUBLIC palette (inline hex), NOT Sabor tokens.
+ *   PINK #FF6B6B · PINK_DARK #d94e4e · TEAL #144852 · GREEN #519843
+ *   INK #1c2c30 · MUTED #6b7a7e · LINE #e3e8e6 · CREAM #fffdf7 · BG #f7f6f1
+ */
+
+/* --- Mobile cutover (route inline <style>, max-width:720px) ------------------ */
+@media (max-width: 720px) {
+  .ctr__inner { padding: 28px 22px !important; }      /* from 36px 44px 40px */
+  .ctr__title { font-size: 30px !important; }          /* from 42px */
+  .ctr__total-amt { font-size: 34px !important; }      /* from 42px */
+  .ctr__terms-grid { grid-template-columns: 1fr !important; }     /* 2-col → 1 */
+  .ctr__milestones { grid-template-columns: 1fr 1fr !important; } /* auto-fit → fixed 2 */
+}
+
+/* --- Print (route inline <style>) ------------------------------------------- */
+@media print {
+  /* host route also sets body background #fff !important */
+  .ctr__no-print { display: none !important; }  /* hides logo + brand strip */
+  .ctr {
+    box-shadow: none !important;
+    border: 1px solid #e3e8e6;  /* LINE — interpolated from the route */
+  }
+}

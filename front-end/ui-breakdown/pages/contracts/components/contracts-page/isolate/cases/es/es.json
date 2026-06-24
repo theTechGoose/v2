@@ -1,0 +1,20 @@
+{
+  "_name": "Spanish — whole page re-localized via langSignal",
+  "_note": "Same populated data; langSignal flipped to es. Doc title, hero, KPI labels, track titles + counts (local plural helper), card chrome, schedule labels all re-localize. Underlying data is NOT re-fetched on flip.",
+  "lang": "es",
+  "_signals": { "loading": false, "error": null, "lang": "es" },
+  "_mocks": {
+    "contractsClient.list": [
+      { "id": "ctr_9f3a2b71c0d4e5f6", "userId": "u1", "quoteId": "qt_a1", "customerId": "cus_1", "status": "signed", "startDate": "2026-06-13", "estimatedCompletionDate": "2026-06-27", "totalAmount": 1450000, "createdAt": "2026-06-10T15:04:00Z", "updatedAt": "2026-06-13T09:00:00Z", "mood": "active" },
+      { "id": "ctr_b21c77aa401de9f0", "userId": "u1", "quoteId": "qt_c3", "customerId": "cus_3", "status": "signed", "startDate": "2026-06-23", "estimatedCompletionDate": "2026-07-02", "totalAmount": 890000, "createdAt": "2026-06-14T11:00:00Z", "updatedAt": "2026-06-15T11:00:00Z", "mood": "starting-soon" }
+    ],
+    "clientsClient.list": [
+      { "id": "cus_1", "userId": "u1", "name": "Maria Delgado" },
+      { "id": "cus_3", "userId": "u1", "name": "Northgate Property Mgmt" }
+    ],
+    "quotesClient.list": [
+      { "id": "qt_a1", "userId": "u1", "jobName": "Terraza de Cedro", "createdAt": "2026-06-09T09:00:00Z", "updatedAt": "2026-06-09T09:00:00Z", "stage": "won" },
+      { "id": "qt_c3", "userId": "u1", "jobName": "Baño Unidad 4B", "createdAt": "2026-06-13T09:00:00Z", "updatedAt": "2026-06-13T09:00:00Z", "stage": "won" }
+    ]
+  }
+}

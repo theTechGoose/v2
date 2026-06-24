@@ -1,0 +1,31 @@
+{
+  "_name": "Claimed (front) — amber mood, 'Okay, I got it', 'Customer paid via Zelle · ref ZL-88421'",
+  "idx": 0,
+  "now": "2026-06-18T12:00:00.000Z",
+  "lang": "en",
+  "inv": {
+    "id": "inv1122aa",
+    "userId": "u1",
+    "contractId": "ct-310",
+    "customerId": "cust-ml",
+    "amount": 96000,
+    "issuedDate": "2026-06-12",
+    "dueDate": "2026-06-26",
+    "status": "claimed",
+    "createdAt": "2026-06-12T09:00:00.000Z",
+    "updatedAt": "2026-06-17T15:30:00.000Z",
+    "paymentIntent": {
+      "method": "zelle",
+      "amount": 96000,
+      "reference": "ZL-88421",
+      "claimedAt": "2026-06-17T15:30:00.000Z",
+      "claimedBy": "Marcus Lin"
+    },
+    "client": "Marcus Lin",
+    "initials": "ML",
+    "invoiceRef": "INV-INV112",
+    "daysOverdue": 0,
+    "daysIn": 6,
+    "stage": "claimed"
+  }
+}

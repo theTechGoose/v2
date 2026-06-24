@@ -1,0 +1,458 @@
+[MOD] public
+
+[REQ] publicDoc.publicLogo(PublicLogoDto): LogoBytesDto
+    [NEW] owner
+    [PLY] owner.resolve(PublicLogoDto): OwnerDto
+        [CSE] quote
+            db:quote.getOwner(GetByIdDto): OwnerDto
+              not-found
+        [CSE] contract
+            db:contract.getOwner(GetByIdDto): OwnerDto
+              not-found
+        [CSE] invoice
+            db:invoice.getOwner(GetByIdDto): OwnerDto
+              not-found
+    db:identity.get(OwnerDto): ContractorDto
+    fs:logo.read(OwnerDto): LogoBytesDto
+      not-found
+
+[REQ] publicDoc.resolveShortlink(ShortlinkCodeDto): ShortlinkResolveDto
+    db:shortlink.get(ShortlinkCodeDto): ShortlinkDto
+      not-found
+    [NEW] link
+    link.toResolve(): ShortlinkResolveDto
+
+[REQ] publicDoc.getChangeOrderPublic(GetByIdDto): ChangeOrderPublicDto
+    db:changeOrder.get(GetByIdDto): ChangeOrderDto
+      not-found
+    db:invoice.get(GetByIdDto): InvoiceDto
+    db:identity.get(OwnerDto): ContractorDto
+    [NEW] order
+    order.toPublic(): ChangeOrderPublicDto
+
+[REQ] publicDoc.approveChangeOrder(GetByIdDto): OkResultDto
+    db:changeOrder.get(GetByIdDto): ChangeOrderDto
+      not-found
+    db:invoice.patch(UpdateInvoiceDto): InvoiceDto
+    db:changeOrder.setStatus(SetStatusDto): ChangeOrderDto
+    mq:bus.emit(EventDto): void
+    [NEW] outcome
+    outcome.toDto(): OkResultDto
+
+[REQ] publicDoc.declineChangeOrder(GetByIdDto): OkResultDto
+    db:changeOrder.get(GetByIdDto): ChangeOrderDto
+      not-found
+    db:changeOrder.setStatus(SetStatusDto): ChangeOrderDto
+    mq:bus.emit(EventDto): void
+    [NEW] outcome
+    outcome.toDto(): OkResultDto
+
+[REQ] publicDoc.getQuotePublic(GetByIdDto): QuotePublicDto
+    db:quote.get(GetByIdDto): QuoteDto
+      not-found
+    db:view.save(CreateViewDto): ViewDto
+    db:quote.patch(UpdateQuoteDto): QuoteDto
+    mq:bus.emit(EventDto): void
+    db:identity.get(OwnerDto): ContractorDto
+    [NEW] page
+    page.toPublic(): QuotePublicDto
+
+[REQ] publicDoc.acceptQuote(AcceptQuoteDto): OkResultDto
+    db:quote.get(GetByIdDto): QuoteDto
+      not-found
+    db:quote.patch(UpdateQuoteDto): QuoteDto
+    mq:bus.emit(EventDto): void
+    [NEW] outcome
+    outcome.toDto(): OkResultDto
+
+[REQ] publicDoc.declineQuote(DeclineQuoteDto): OkResultDto
+    db:quote.get(GetByIdDto): QuoteDto
+      not-found
+    db:quote.patch(UpdateQuoteDto): QuoteDto
+    mq:bus.emit(EventDto): void
+    [NEW] outcome
+    outcome.toDto(): OkResultDto
+
+[REQ] publicDoc.inquireQuote(InquireQuoteDto): OkResultDto
+    db:quote.get(GetByIdDto): QuoteDto
+      not-found
+    mq:bus.emit(EventDto): void
+    [NEW] outcome
+    outcome.toDto(): OkResultDto
+
+[REQ] publicDoc.getContractPublic(GetByIdDto): ContractPublicDto
+    db:contract.get(GetByIdDto): ContractDto
+      not-found
+    db:contract.patch(UpdateContractDto): ContractDto
+    mq:bus.emit(EventDto): void
+    db:identity.get(OwnerDto): ContractorDto
+    db:quote.get(GetByIdDto): QuoteDto
+    [NEW] page
+    page.toContractPublic(): ContractPublicDto
+
+[REQ] publicDoc.getContractByQuote(QuoteRefDto): ContractByQuoteDto
+    db:quote.get(GetByIdDto): QuoteDto
+      not-found
+    db:contract.listByUser(OwnerDto): ContractListDto
+    [NEW] page
+    page.toContractRef(): ContractByQuoteDto
+
+[REQ] publicDoc.signContract(SignContractDto): OkResultDto
+    db:contract.get(GetByIdDto): ContractDto
+      not-found
+    db:contract.patch(UpdateContractDto): ContractDto
+    mq:bus.emit(EventDto): void
+    [NEW] outcome
+    outcome.toDto(): OkResultDto
+
+[REQ] publicDoc.getInvoicePublic(GetByIdDto): InvoicePublicDto
+    db:invoice.get(GetByIdDto): InvoiceDto
+      not-found
+    db:identity.get(OwnerDto): ContractorDto
+    db:contract.get(GetByIdDto): ContractDto
+    db:quote.get(GetByIdDto): QuoteDto
+    db:invoice.listByUser(OwnerDto): InvoiceListDto
+    [NEW] page
+    page.toInvoicePublic(): InvoicePublicDto
+
+[REQ] publicDoc.claimInvoicePayment(ClaimPaymentDto): OkResultDto
+    db:invoice.get(GetByIdDto): InvoiceDto
+      not-found
+    db:invoice.patch(UpdateInvoiceDto): InvoiceDto
+    mq:bus.emit(EventDto): void
+    [NEW] outcome
+    outcome.toDto(): OkResultDto
+
+[ENT] public.publicLogo(PublicLogoDto): LogoBytesDto
+[ENT] public.resolveShortlink(ShortlinkCodeDto): ShortlinkResolveDto
+[ENT] public.getChangeOrderPublic(GetByIdDto): ChangeOrderPublicDto
+[ENT] public.approveChangeOrder(GetByIdDto): OkResultDto
+    [REQ] publicDoc.approveChangeOrder(GetByIdDto): OkResultDto
+[ENT] public.declineChangeOrder(GetByIdDto): OkResultDto
+    [REQ] publicDoc.declineChangeOrder(GetByIdDto): OkResultDto
+[ENT] public.getQuotePublic(GetByIdDto): QuotePublicDto
+[ENT] public.acceptQuote(AcceptQuoteDto): OkResultDto
+[ENT] public.declineQuote(DeclineQuoteDto): OkResultDto
+[ENT] public.inquireQuote(InquireQuoteDto): OkResultDto
+[ENT] public.getContractPublic(GetByIdDto): ContractPublicDto
+[ENT] public.getContractByQuote(QuoteRefDto): ContractByQuoteDto
+[ENT] public.signContract(SignContractDto): OkResultDto
+[ENT] public.getInvoicePublic(GetByIdDto): InvoicePublicDto
+[ENT] public.claimInvoicePayment(ClaimPaymentDto): OkResultDto
+
+[TYP:uuid] id: string
+    a unique record identifier
+[TYP:ext] userId: string
+    the authenticated owner id, minted from the session
+[TYP] createdAt: string
+    an ISO creation timestamp
+[TYP] updatedAt: string
+    an ISO last-updated timestamp
+[TYP:nonempty] name: string
+    a display or person name
+[TYP:email] email: string
+    a contact email address
+[TYP] phoneNumber: string
+    a contact phone number
+[TYP] ok: boolean
+    a success flag
+[TYP] status: string
+    a lifecycle status string
+[TYP] reason: string
+    a machine-readable reason code
+[TYP] customerId: string
+    a reference to a CRM customer
+[TYP] contractId: string
+    a reference to a contract
+[TYP] quoteId: string
+    a reference to a quote
+[TYP] invoiceId: string
+    a reference to an invoice
+[TYP] summary: string
+    the quote summary line
+[TYP] jobName: string
+    a short job title
+[TYP] description: string
+    freeform description text
+[TYP] descriptionByLang: string
+    a JSON map of description keyed by language code
+[TYP] jobNameByLang: string
+    a JSON map of job title keyed by language code
+[TYP] summaryByLang: string
+    a JSON map of summary keyed by language code
+[TYP] estimatedTotal: number
+    total quote value in integer cents
+[TYP] sentAt: string
+    ISO timestamp the document was sent
+[TYP] acceptedAt: string
+    ISO timestamp the quote was accepted
+[TYP] lostAt: string
+    ISO timestamp the quote was declined
+[TYP] acceptedSignature: string
+    captured acceptance signature data
+[TYP] acceptedName: string
+    name of who accepted the quote
+[TYP] quantity: number
+    a line-item quantity
+[TYP] unit: string
+    a line-item unit label
+[TYP] price: number
+    per-unit price in integer cents
+[TYP] effectiveDate: string
+    contract effective date
+[TYP] startDate: string
+    contract start date
+[TYP] estimatedCompletionDate: string
+    estimated completion date
+[TYP] totalAmount: number
+    contract total in integer cents
+[TYP] signedAt: string
+    ISO timestamp the contract was signed
+[TYP] stepId: string
+    wizard step identifier
+[TYP] label: string
+    a human-readable label
+[TYP] value: string
+    a resolved agreed value
+[TYP] mood: string
+    derived contract mood badge
+[TYP] dueDate: string
+    invoice due date
+[TYP] amount: number
+    a money amount in integer cents
+[TYP] discountCents: number
+    cumulative discount applied in integer cents
+[TYP] discountReason: string
+    reason for an applied discount
+[TYP] issuedDate: string
+    invoice issued date
+[TYP] paidAt: string
+    ISO timestamp the invoice was paid
+[TYP] scheduledFor: string
+    scheduled-fire date for scheduled invoices
+[TYP:int] installmentIndex: number
+    milestone position for invoice-X-of-Y framing
+[TYP:int] installmentTotal: number
+    total number of milestone invoices
+[TYP] remindersMuted: boolean
+    per-invoice mute for the reminder cadence
+[TYP] channel: string
+    a dispatch channel name
+[TYP:int] day: number
+    cadence step in days past due
+[TYP] method: string
+    a payment method label
+[TYP] reference: string
+    a free-text payment reference
+[TYP] claimedAt: string
+    ISO timestamp the customer claimed payment
+[TYP] claimedBy: string
+    name of who claimed payment
+[TYP] urgency: string
+    derived invoice urgency badge
+[TYP] note: string
+    a freeform note
+[TYP] deltaAmountCents: number
+    signed delta to the invoice total in integer cents
+[TYP] originalAmountCents: number
+    snapshot of the invoice amount at create time
+[TYP] decidedAt: string
+    ISO timestamp the change order was decided
+[TYP] paperworkType: string
+    paperwork kind: quote, contract, or invoice
+[TYP] paperworkId: string
+    id of the viewed paperwork record
+[TYP] viewedAt: string
+    ISO timestamp of the view
+[TYP] viewerId: string
+    identifier of the viewer
+[TYP] viewerEmail: string
+    email of the viewer
+[TYP] userAgent: string
+    raw user-agent of the viewer
+[TYP] ipAddress: string
+    viewer ip address
+[TYP] referrer: string
+    referrer url of the view
+[TYP:int] durationMs: number
+    view duration in milliseconds
+[TYP] code: string
+    a shortlink code
+[TYP] kind: string
+    a resource kind discriminator
+[TYP] question: string
+    a customer question on a quote
+[TYP] contactBack: string
+    how the contractor should follow up
+[TYP] signature: string
+    captured signature data
+[TYP] tin: string
+    a taxpayer identification number
+[TYP] bytes: Uint8Array
+    raw image bytes
+[TYP] businessName: string
+    the contractor's business name
+[TYP] commsLanguage: string
+    the outgoing-comms language code
+[TYP] currentAmount: number
+    the pre-change invoice total in integer cents
+[TYP] newAmount: number
+    the post-change invoice total in integer cents
+[TYP] handle: string
+    a payment-method handle or instructions
+[TYP] addressLine: string
+    single-line composed business address
+[TYP] state: string
+    two-letter state code
+[TYP] hasLogo: boolean
+    whether the contractor uploaded a logo
+[TYP] customerSignedName: string
+    the customer's typed legal name on signing
+[TYP] entityType: string
+    domain-event entity type
+[TYP] entityId: string
+    domain-event entity id
+[TYP] action: string
+    domain-event action verb
+[TYP] alreadyAccepted: boolean
+    whether the quote was already accepted
+[TYP] alreadyDeclined: boolean
+    whether the quote was already declined
+[TYP] alreadySigned: boolean
+    whether the contract was already signed
+[TYP] lineItem: LineItemDto
+    a nested quote line item
+[TYP] term: ContractTermDto
+    a nested captured contract term
+[TYP] reminderHistory: ReminderHistoryEntryDto
+    a nested reminder-cadence history row
+[TYP] paymentIntent: PaymentIntentDto
+    a nested customer payment claim
+[TYP] contract: ContractDto
+    a nested contract record
+[TYP] invoice: InvoiceDto
+    a nested invoice record
+[TYP] contractor: ContractorDto
+    a nested public contractor projection
+[TYP] customer: CustomerPublicDto
+    a nested public customer projection
+[TYP] jobDetails: JobDetailsDto
+    a nested job-details projection
+[TYP] sibling: InvoiceSiblingDto
+    a nested sibling invoice projection
+[TYP] acceptedMethod: AcceptedMethodDto
+    a nested accepted-payment method
+
+[DTO] LineItemDto: description, quantity, unit, price
+    a single quote line item
+[DTO] ContractTermDto: stepId, label, value
+    a captured contract wizard answer
+[DTO] ReminderHistoryEntryDto: day, sentAt, channel(s)
+    one reminder-cadence history row
+[DTO] PaymentIntentDto: method, amount, reference?, claimedAt, claimedBy?
+    a customer's recorded payment claim
+[DTO] QuoteDto: id, userId, customerId?, summary, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?, createdAt, updatedAt
+    a persisted quote record
+[DTO] UpdateQuoteDto: customerId?, summary?, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?
+    a partial quote patch
+[DTO] ContractDto: id, userId, quoteId, customerId?, status?, effectiveDate?, startDate?, estimatedCompletionDate?, totalAmount?, signedAt?, term(s), mood?, createdAt, updatedAt
+    a persisted contract record
+[DTO] UpdateContractDto: quoteId?, customerId?, status?, effectiveDate?, startDate?, estimatedCompletionDate?, totalAmount?, signedAt?, term(s)
+    a partial contract patch
+[DTO] ContractListDto: contract(s)
+    a list of contracts owned by the user
+[DTO] InvoiceDto: id, userId, contractId?, jobName?, description?, dueDate, customerId?, amount?, discountCents?, discountReason?, issuedDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?, urgency?, createdAt, updatedAt
+    a persisted invoice record
+[DTO] UpdateInvoiceDto: contractId?, jobName?, description?, customerId?, amount?, discountCents?, discountReason?, issuedDate?, dueDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?
+    a partial invoice patch
+[DTO] InvoiceListDto: invoice(s)
+    a list of invoices owned by the user
+[DTO] ChangeOrderDto: id, userId, invoiceId, contractId?, customerId?, description, deltaAmountCents, originalAmountCents?, status, createdAt, updatedAt, decidedAt?
+    a persisted change-order record
+[DTO] ChangeOrderPublicDto: id, description, deltaAmountCents, status?, currentAmount?, newAmount?, businessName?, commsLanguage?, decidedAt?
+    a customer-facing change-order projection
+[DTO] CreateViewDto: paperworkType, paperworkId, viewedAt, viewerId?, viewerEmail?, userAgent?, ipAddress?, referrer?, durationMs?
+    input to record a paperwork view
+[DTO] ViewDto: id, paperworkType, paperworkId, viewedAt, viewerId?, viewerEmail?, userAgent?, ipAddress?, referrer?, durationMs?, createdAt, updatedAt
+    a persisted view record
+[DTO] OwnerDto: userId
+    the owning user id wrapper
+[DTO] GetByIdDto: id
+    an id lookup wrapper
+[DTO] OkResultDto: ok, reason?, quoteId?, contractId?, invoiceId?, alreadyAccepted?, alreadyDeclined?, alreadySigned?
+    a public mutation result body
+[DTO] EventDto: userId, entityType, entityId, action
+    a domain event envelope
+[DTO] ShortlinkDto: code, kind, id
+    a persisted shortlink record
+[DTO] ShortlinkCodeDto: code
+    a shortlink code lookup
+[DTO] ShortlinkResolveDto: kind, id
+    a resolved shortlink target
+[DTO] PublicLogoDto: kind, id
+    input to fetch a public document logo
+[DTO] LogoBytesDto: bytes
+    raw logo image bytes
+[DTO] SetStatusDto: id, status
+    input to set a change-order status
+[DTO] QuoteRefDto: quoteId
+    a quote reference lookup
+[DTO] ContractByQuoteDto: contractId?
+    the contract id bound to a quote, if any
+[DTO] ContractorDto: name?, businessName?, phoneNumber?, email?, addressLine?, state?, commsLanguage?, hasLogo?
+    a public-safe contractor projection
+[DTO] CustomerPublicDto: name?, phoneNumber?, email?
+    a public-safe customer projection
+[DTO] JobDetailsDto: summary?, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s)
+    a public job-details projection
+[DTO] InvoiceSiblingDto: id, amount?, status?, paidAt?, installmentIndex?, installmentTotal?
+    a sibling invoice on the same contract
+[DTO] AcceptedMethodDto: method, handle?
+    one enabled accepted-payment method
+[DTO] QuotePublicDto: id, summary?, description?, descriptionByLang?, jobName?, jobNameByLang?, summaryByLang?, customerId?, lineItem(s), estimatedTotal?, status?, createdAt?, contractor?, customer?
+    a customer-facing quote projection
+[DTO] ContractPublicDto: id, quoteId?, customerId?, status?, effectiveDate?, startDate?, estimatedCompletionDate?, totalAmount?, signedAt?, createdAt?, term(s), customerSignedName?, contractor?, customer?, jobDetails?
+    a customer-facing contract projection
+[DTO] InvoicePublicDto: id, contractId?, customerId?, amount?, issuedDate?, dueDate?, status?, paidAt?, createdAt?, installmentIndex?, installmentTotal?, scheduledFor?, paymentIntent?, contractor?, customer?, jobDetails?, sibling(s), acceptedMethod(s)
+    a customer-facing invoice projection
+[DTO] AcceptQuoteDto: id, signature?, name?
+    input to accept a quote
+[DTO] DeclineQuoteDto: id, reason?, note?, name?
+    input to decline a quote
+[DTO] InquireQuoteDto: id, question, contactBack?, name?
+    input to ask a question on a quote
+[DTO] SignContractDto: id, signature, name, tin?
+    input to sign a contract
+[DTO] ClaimPaymentDto: id, method, reference?, claimedBy?
+    input to claim payment on an invoice
+
+[NON] quote
+    a single quote
+[NON] contract
+    a single contract
+[NON] invoice
+    a single invoice
+[NON] changeOrder
+    a single change order
+[NON] view
+    a single paperwork view
+[NON] shortlink
+    a shortlink store
+[NON] identity
+    the business-identity store
+[NON] bus
+    the domain event bus
+[NON] logo
+    the logo file store
+[NON] link
+    a resolved shortlink
+[NON] order
+    a change-order public projector
+[NON] page
+    a public document projector
+[NON] outcome
+    a mutation outcome marker
+[NON] owner
+    the document-owner resolver
+[NON] publicDoc
+    the public paperwork surface
