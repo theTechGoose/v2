@@ -1,85 +1,155 @@
 import { useState } from "preact/hooks";
-import { langSignal, STRINGS } from "../lib/lang.ts";
-import { t } from "../lib/i18n.ts";
 import { landingClient } from "../clients/landing.ts";
 import { ApiError } from "../lib/api.ts";
 
-function formatPhoneDisplay(raw: string): string {
-  const digits = raw.replace(/\D/g, "").slice(0, 10);
-  const a = digits.slice(0, 3), b = digits.slice(3, 6), c = digits.slice(6);
-  if (digits.length <= 3) return a;
-  if (digits.length <= 6) return `(${a}) ${b}`;
-  return `(${a}) ${b}-${c}`;
+/**
+ * ContactForm — the public inquiry form used by /contact. Posts
+ * name/email/subject/message to the backend ContactPublicController
+ * (POST /contact, proxied via /api/contact). All copy is passed in as
+ * `labels` so the island stays language-agnostic — the route resolves the
+ * language server-side (cookie / Accept-Language) and hands strings down,
+ * matching the SSR render exactly (no toggle, no flash).
+ */
+export interface ContactFormLabels {
+  name: string;
+  namePh: string;
+  email: string;
+  emailPh: string;
+  subject: string;
+  subjectPh: string;
+  message: string;
+  messagePh: string;
+  submit: string;
+  sending: string;
+  success: string;
+  errorRate: string;
+  errorGeneric: string;
 }
 
-function toE164(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  if (raw.startsWith("+")) return "+" + digits;
-  if (digits.length === 10) return "+1" + digits;
-  return "+" + digits;
-}
-
-export default function ContactForm() {
-  const [phone, setPhone] = useState("");
+export default function ContactForm({ labels }: { labels: ContactFormLabels }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  const lang = langSignal.value;
-  const s = STRINGS[lang];
+  const [done, setDone] = useState(false);
 
   async function onSubmit(e: Event) {
     e.preventDefault();
     setErr(null);
-    const e164 = toE164(phone);
-    if (e164.replace(/\D/g, "").length < 10) {
-      setErr(t("contactForm.error.incompletePhone"));
-      return;
-    }
     setSubmitting(true);
     try {
-      await landingClient.sendOtp({ phoneNumber: e164, language: lang });
-      globalThis.location.href = `/verify?phone=${encodeURIComponent(e164)}`;
+      const res = await landingClient.submitContact({
+        name: name.trim(),
+        email: email.trim(),
+        subject: subject.trim(),
+        message: message.trim(),
+      });
+      if (res.ok) {
+        setDone(true);
+      } else if (res.reason === "too_many_attempts") {
+        setErr(labels.errorRate);
+      } else {
+        setErr(labels.errorGeneric);
+      }
     } catch (error) {
-      const msg = error instanceof ApiError
-        ? `${error.status}`
-        : t("contactForm.error.sendFailed");
-      setErr(t("contactForm.error.generic", { msg }));
+      // Validation failures come back as a non-2xx (ApiError); everything
+      // else (backend unreachable, etc.) also lands here.
+      void (error instanceof ApiError ? error.status : 0);
+      setErr(labels.errorGeneric);
     } finally {
       setSubmitting(false);
     }
   }
 
+  const fieldStyle =
+    "width:100%;box-sizing:border-box;padding:14px 16px;border:1px solid var(--border,#d8dcd5);border-radius:12px;font:inherit;font-size:16px;background:#fff;color:var(--fg)";
+  const labelStyle =
+    "display:block;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560);margin-bottom:6px";
+
+  if (done) {
+    return (
+      <div
+        role="status"
+        style="background:var(--mint-100,#eaf5e6);border:1px solid var(--brand-green,#519843);border-radius:14px;padding:24px;text-align:center;color:var(--fg)"
+      >
+        <div style="font-size:32px;line-height:1">✓</div>
+        <p style="margin:10px 0 0;font-size:17px;font-weight:700">
+          {labels.success}
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <form class="contact-card" onSubmit={onSubmit}>
-      <div class="col" style="gap:14px">
-        <span class="eyebrow-pill">{s["contact.eyebrow"] as string}</span>
-        <h3 style="font-size:28px">{s["contact.title"] as string}</h3>
-        <p class="muted">{s["contact.lede"] as string}</p>
-      </div>
-      <div class="col" style="gap:16px">
-        <div class="field">
-          <label htmlFor="phone">{s["contact.phone"] as string}</label>
-          <input
-            id="phone"
-            name="phone"
-            type="tel"
-            inputMode="numeric"
-            autoComplete="tel"
-            value={formatPhoneDisplay(phone)}
-            onInput={(e) => setPhone((e.target as HTMLInputElement).value)}
-            placeholder={s["contact.placeholder"] as string}
-            required
-          />
-        </div>
-        {err ? <p class="error" role="alert">{err}</p> : null}
-        <button
-          class="btn btn-primary btn-lg"
-          type="submit"
-          disabled={submitting}
-        >
-          {submitting ? "…" : (s["contact.cta"] as string)}
-        </button>
-      </div>
+    <form
+      onSubmit={onSubmit}
+      style="display:flex;flex-direction:column;gap:14px;text-align:left"
+    >
+      <label style="display:block">
+        <span style={labelStyle}>{labels.name}</span>
+        <input
+          type="text"
+          autoComplete="name"
+          value={name}
+          onInput={(e) => setName((e.target as HTMLInputElement).value)}
+          placeholder={labels.namePh}
+          required
+          maxLength={120}
+          style={fieldStyle}
+        />
+      </label>
+      <label style="display:block">
+        <span style={labelStyle}>{labels.email}</span>
+        <input
+          type="email"
+          autoComplete="email"
+          value={email}
+          onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
+          placeholder={labels.emailPh}
+          required
+          style={fieldStyle}
+        />
+      </label>
+      <label style="display:block">
+        <span style={labelStyle}>{labels.subject}</span>
+        <input
+          type="text"
+          value={subject}
+          onInput={(e) => setSubject((e.target as HTMLInputElement).value)}
+          placeholder={labels.subjectPh}
+          required
+          maxLength={200}
+          style={fieldStyle}
+        />
+      </label>
+      <label style="display:block">
+        <span style={labelStyle}>{labels.message}</span>
+        <textarea
+          value={message}
+          onInput={(e) => setMessage((e.target as HTMLTextAreaElement).value)}
+          placeholder={labels.messagePh}
+          required
+          maxLength={5000}
+          rows={5}
+          style={`${fieldStyle};resize:vertical;min-height:120px`}
+        />
+      </label>
+      {err
+        ? (
+          <p style="color:#a83b3b;font-size:14px;margin:0" role="alert">
+            {err}
+          </p>
+        )
+        : null}
+      <button
+        type="submit"
+        disabled={submitting}
+        style="appearance:none;border:0;border-radius:12px;padding:14px 18px;background:var(--brand-green,#519843);color:#fff;font:inherit;font-weight:800;font-size:16px;cursor:pointer"
+      >
+        {submitting ? labels.sending : labels.submit}
+      </button>
     </form>
   );
 }

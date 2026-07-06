@@ -2810,6 +2810,81 @@ section {
     0 8px 16px -4px rgba(255, 107, 107, 0.36);
 }
 
+/* ----- Dead-simple sign-up phone field ----- */
+.signup-field {
+  display: block;
+}
+.signup-field__label {
+  display: block;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.92);
+  margin-bottom: 10px;
+  text-align: center;
+}
+.contact-form .signup-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 24px;
+  letter-spacing: 0.02em;
+  text-align: center;
+  padding: 20px 18px;
+  border-radius: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  background: #fff;
+  color: var(--brand-teal);
+  outline: none;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+.contact-form .signup-input::placeholder {
+  color: var(--fg-subtle);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.contact-form .signup-input:focus {
+  border-color: var(--brand-pink);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.28);
+}
+.signup-error {
+  margin: 10px 0 0;
+  min-height: 1em;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffd7d7;
+  text-align: center;
+}
+.signup-error:empty {
+  margin: 0;
+  min-height: 0;
+}
+/* Pulse to pull the eye to the field; stops once the user engages it. */
+@keyframes signupPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgba(255, 107, 107, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 107, 107, 0);
+  }
+}
+.signup-input--pulse {
+  animation: signupPulse 1.8s ease-out infinite;
+}
+.signup-input--pulse:focus {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .signup-input--pulse {
+    animation: none;
+  }
+}
+
 /* trust row beneath CTA */
 .cf-trust {
   display: flex;
@@ -2882,6 +2957,16 @@ section {
   color: var(--fg-muted);
 }
 .footer-row .links a:hover {
+  color: var(--brand-pink);
+}
+.footer-phone {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--brand-green);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.footer-phone:hover {
   color: var(--brand-pink);
 }
 

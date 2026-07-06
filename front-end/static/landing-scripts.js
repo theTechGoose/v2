@@ -18,7 +18,7 @@
       "hero.h1a": "You do the work.",
       "hero.h1b": "We handle the",
       "hero.lead":
-        "Quotes, contracts, and invoices done right — so you get paid what your work is worth. No apps to learn. Just text us.",
+        "You communicate with us in Spanish. Everything goes out to your clients in perfect English. No apps to learn. Just chat with us.",
       "hero.cta1": "Get Started →",
       "hero.cta2": "See How It Works",
       "hero.trustStrong": "1,200+ contractors",
@@ -74,29 +74,29 @@
       "feat.f3.h": "Simple invoicing",
       "feat.f3.p":
         "Job done? We turn it into an invoice. Keep track of who’s paid and who hasn’t — without a spreadsheet.",
-      "feat.f4.h": "Just text us",
+      "feat.f4.h": "Just chat with us",
       "feat.f4.p":
-        "No fancy apps. No complicated software. Text us the job details and we do the rest. Simple as that.",
+        "No fancy apps. Text us the job details and we do the rest. Simple as that.",
       "how.eyebrow": "Straight to the point",
       "how.h2": "How it works",
       "how.lead":
-        "Three steps. No forms. No software. We meet you where you already are — your phone.",
-      "how.s1.h": "Tell us about the job",
+        "Three steps. No forms. We meet you where you already are — your phone.",
+      "how.s1.h": "Check the paperwork",
       "how.s1.p":
         "Send us a text with the job details. We’ll ask you one question at a time — no long forms, no hassle.",
-      "how.s2.h": "Check your quote",
+      "how.s2.h": "Check your paperwork",
       "how.s2.p":
-        "We put together a professional quote with fair pricing. Look it over, change what you need, and give us the thumbs up.",
+        "We put together professional paperwork with fair pricing. Look it over, change what you need, and give us the thumbs up.",
       "how.s3.h": "Send it and get paid",
       "how.s3.p":
-        "Send the quote to your client. When the job’s done, we turn it into a contract and invoice. Everything’s in one place.",
+        "Send the paperwork to your client. When the job’s done, we turn it into an invoice. Everything’s in one place.",
       "demo.eyebrow": "See it in action",
-      "demo.h2": "Just text us. We handle the rest.",
+      "demo.h2": "Just chat with us. We handle the rest.",
       "demo.lead":
-        "Quotes, contracts, invoices — sent from your phone in seconds. No app to download. No software to learn.",
+        "Quotes, contracts, invoices — sent from your phone in seconds. No app to download.",
       "demo.quote":
-        "I used to spend my Sundays writing quotes on notebook paper. Now I text these guys the job details from my truck and get a professional quote back in minutes. My close rate went through the roof.",
-      "demo.role": "General Contractor · 12 years",
+        "Having a quick turn for the quotes frees up my mind and has allowed me to quote more jobs and fill my pipeline much quicker.",
+      "demo.role": "Four Brothers",
       "demo.online": "Online",
       "demo.message": "Message",
       "price.eyebrow": "Pricing",
@@ -133,7 +133,7 @@
       "cta.fromPrice": "Plans from $15/month",
       "cta.b3": "English & Spanish, every step",
       "cta.label": "Your phone number",
-      "cta.btn": "Send my code",
+      "cta.btn": "Sign up",
       "cta.fine":
         "By submitting, you agree to receive a friendly text from us.",
       "cta.smsPreview":
@@ -157,7 +157,7 @@
       "hero.h1a": "Tú haces el trabajo.",
       "hero.h1b": "Nosotros manejamos las",
       "hero.lead":
-        "Cotizaciones, contratos y facturas bien hechos — para que cobres lo que tu trabajo vale. Sin apps que aprender. Solo escríbenos.",
+        "Nos escribes en español. Todo sale a tus clientes en inglés perfecto. Sin apps que aprender. Solo chatea con nosotros.",
       "hero.cta1": "Empezar →",
       "hero.cta2": "Ver cómo funciona",
       "hero.trustStrong": "+1.200 contratistas",
@@ -213,29 +213,29 @@
       "feat.f3.h": "Facturación sencilla",
       "feat.f3.p":
         "¿Trabajo terminado? Lo convertimos en factura. Lleva el control de quién pagó y quién no — sin hojas de cálculo.",
-      "feat.f4.h": "Solo escríbenos",
+      "feat.f4.h": "Solo chatea con nosotros",
       "feat.f4.p":
-        "Sin apps complicadas. Sin software. Mándanos los detalles del trabajo por mensaje y nosotros hacemos el resto. Así de fácil.",
+        "Sin apps complicadas. Mándanos los detalles del trabajo por mensaje y nosotros hacemos el resto. Así de fácil.",
       "how.eyebrow": "Directo al grano",
       "how.h2": "Cómo funciona",
       "how.lead":
-        "Tres pasos. Sin formularios. Sin software. Te encontramos donde ya estás — en tu celular.",
-      "how.s1.h": "Cuéntanos del trabajo",
+        "Tres pasos. Sin formularios. Te encontramos donde ya estás — en tu celular.",
+      "how.s1.h": "Revisa el papeleo",
       "how.s1.p":
         "Mándanos un mensaje con los detalles. Te preguntamos una cosa a la vez — sin formularios largos.",
-      "how.s2.h": "Revisa tu cotización",
+      "how.s2.h": "Revisa tu papeleo",
       "how.s2.p":
-        "Armamos una cotización profesional con precios justos. Revísala, cambia lo que necesites, y dale el visto bueno.",
+        "Armamos papeleo profesional con precios justos. Revísalo, cambia lo que necesites, y dale el visto bueno.",
       "how.s3.h": "Envía y cobra",
       "how.s3.p":
-        "Mándale la cotización a tu cliente. Cuando termines el trabajo, lo convertimos en contrato y factura. Todo en un solo lugar.",
+        "Mándale el papeleo a tu cliente. Cuando termines el trabajo, lo convertimos en factura. Todo en un solo lugar.",
       "demo.eyebrow": "Mira cómo funciona",
-      "demo.h2": "Solo escríbenos. Nosotros nos encargamos.",
+      "demo.h2": "Solo chatea con nosotros. Nosotros nos encargamos.",
       "demo.lead":
-        "Cotizaciones, contratos, facturas — enviados desde tu celular en segundos. Sin app que descargar. Sin software que aprender.",
+        "Cotizaciones, contratos, facturas — enviados desde tu celular en segundos. Sin app que descargar.",
       "demo.quote":
-        "Antes pasaba los domingos haciendo cotizaciones en papel rayado. Ahora les escribo desde la troca y me regresan una cotización pro en minutos. Mi cierre de ventas se disparó.",
-      "demo.role": "Contratista General · 12 años",
+        "Tener respuestas rápidas en las cotizaciones me libera la mente y me ha permitido cotizar más trabajos y llenar mi cartera mucho más rápido.",
+      "demo.role": "Four Brothers",
       "demo.online": "En línea",
       "demo.message": "Mensaje",
       "price.eyebrow": "Precios",
@@ -272,7 +272,7 @@
       "cta.fromPrice": "Planes desde $15 al mes",
       "cta.b3": "Inglés y español, en cada paso",
       "cta.label": "Tu número de teléfono",
-      "cta.btn": "Enviar mi código",
+      "cta.btn": "Regístrate",
       "cta.fine":
         "Al enviar, aceptas recibir un mensaje amigable de nuestra parte.",
       "cta.smsPreview":

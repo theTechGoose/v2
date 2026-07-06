@@ -56,7 +56,7 @@ export default function LoginForm() {
   }
 
   const inputStyle =
-    "width:100%;box-sizing:border-box;padding:14px 16px;border:1px solid var(--border,#d8dcd5);border-radius:12px;font:inherit;font-size:17px;background:#fff;color:var(--fg)";
+    "width:100%;box-sizing:border-box;padding:18px 16px;border:2px solid var(--border,#d8dcd5);border-radius:14px;font:inherit;font-weight:800;font-size:22px;letter-spacing:0.02em;text-align:center;background:#fff;color:var(--fg)";
 
   return (
     <form

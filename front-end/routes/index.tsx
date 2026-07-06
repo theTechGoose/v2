@@ -231,8 +231,8 @@ export default define.page(async function Landing(ctx) {
             </h1>
 
             <p class="lead" data-i18n="hero.lead">
-              Quotes, contracts, and invoices done right — so you get paid what
-              your work is worth. No apps to learn. Just text us.
+              You communicate with us in Spanish. Everything goes out to your
+              clients in perfect English. No apps to learn. Just chat with us.
             </p>
 
             <div class="hero-ctas">
@@ -421,8 +421,8 @@ export default define.page(async function Landing(ctx) {
       <div class="marquee" aria-hidden="true">
         <div class="marquee-track" id="marquee-track">
           <span
-            data-en="30% average revenue increase|Professional quotes in minutes|Contracts with one tap|Invoices that track payments|No apps to download|Just text us"
-            data-es="30% más ingresos en promedio|Cotizaciones pro en minutos|Contratos con un toque|Facturas que rastrean pagos|Sin apps que descargar|Solo escríbenos"
+            data-en="30% average revenue increase|Professional quotes in minutes|Contracts with one tap|Invoices that track payments|No apps to download|Just chat with us"
+            data-es="30% más ingresos en promedio|Cotizaciones pro en minutos|Contratos con un toque|Facturas que rastrean pagos|Sin apps que descargar|Solo chatea con nosotros"
           >
           </span>
         </div>
@@ -661,10 +661,10 @@ export default define.page(async function Landing(ctx) {
                 </svg>
               </div>
               <div>
-                <h3 data-i18n="feat.f4.h">Just text us</h3>
+                <h3 data-i18n="feat.f4.h">Just chat with us</h3>
                 <p data-i18n="feat.f4.p">
-                  No fancy apps. No complicated software. Text us the job
-                  details and we do the rest. Simple as that.
+                  No fancy apps. Text us the job details and we do the rest.
+                  Simple as that.
                 </p>
               </div>
             </div>
@@ -681,15 +681,15 @@ export default define.page(async function Landing(ctx) {
             </span>
             <h2 data-i18n="how.h2">How it works</h2>
             <p data-i18n="how.lead">
-              Three steps. No forms. No software. We meet you where you already
-              are — your phone.
+              Three steps. No forms. We meet you where you already are — your
+              phone.
             </p>
           </div>
 
           <div class="how-grid">
             <div class="how-step">
               <div class="num-circle">1</div>
-              <h3 data-i18n="how.s1.h">Tell us about the job</h3>
+              <h3 data-i18n="how.s1.h">Check the paperwork</h3>
               <p data-i18n="how.s1.p">
                 Send us a text with the job details. We'll ask you one question
                 at a time — no long forms, no hassle.
@@ -697,18 +697,18 @@ export default define.page(async function Landing(ctx) {
             </div>
             <div class="how-step">
               <div class="num-circle">2</div>
-              <h3 data-i18n="how.s2.h">Check your quote</h3>
+              <h3 data-i18n="how.s2.h">Check your paperwork</h3>
               <p data-i18n="how.s2.p">
-                We put together a professional quote with fair pricing. Look it
-                over, change what you need, and give us the thumbs up.
+                We put together professional paperwork with fair pricing. Look
+                it over, change what you need, and give us the thumbs up.
               </p>
             </div>
             <div class="how-step">
               <div class="num-circle">3</div>
               <h3 data-i18n="how.s3.h">Send it and get paid</h3>
               <p data-i18n="how.s3.p">
-                Send the quote to your client. When the job's done, we turn it
-                into a contract and invoice. Everything's in one place.
+                Send the paperwork to your client. When the job's done, we turn
+                it into an invoice. Everything's in one place.
               </p>
             </div>
           </div>
@@ -722,26 +722,24 @@ export default define.page(async function Landing(ctx) {
             <span class="eyebrow-pill" data-i18n="demo.eyebrow">
               See it in action
             </span>
-            <h2 data-i18n="demo.h2">Just text us. We handle the rest.</h2>
+            <h2 data-i18n="demo.h2">Just chat with us. We handle the rest.</h2>
             <p data-i18n="demo.lead">
               Quotes, contracts, invoices — sent from your phone in seconds. No
-              app to download. No software to learn.
+              app to download.
             </p>
 
             <div class="testimonial">
               <span class="quote-mark">"</span>
               <p data-i18n="demo.quote">
-                I used to spend my Sundays writing quotes on notebook paper. Now
-                I text these guys the job details from my truck and get a
-                professional quote back in minutes. My close rate went through
-                the roof.
+                Having a quick turn for the quotes frees up my mind and has
+                allowed me to quote more jobs and fill my pipeline much quicker.
               </p>
               <div class="who">
-                <div class="av">MR</div>
+                <div class="av">AR</div>
                 <div>
-                  <strong>Mike R.</strong>
+                  <strong>Alex R.</strong>
                   <span data-i18n="demo.role">
-                    General Contractor · 12 years
+                    Four Brothers
                   </span>
                 </div>
               </div>
@@ -953,111 +951,27 @@ export default define.page(async function Landing(ctx) {
                 </button>
               </div>
 
-              <div class="cf-phone">
-                <div class="cf-phone__hdr">
-                  <span class="cf-phone__avatar">PM</span>
-                  <span class="cf-phone__name">
-                    <strong>Paperwork Monster</strong>
-                    <em>
-                      Online <span class="cf-phone__live"></span>
-                    </em>
-                  </span>
-                  <span class="cf-phone__call" aria-hidden="true">
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2.2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z" />
-                    </svg>
-                  </span>
-                </div>
-
-                <div class="cf-phone__body" id="cf-phone-body">
-                  <div class="cf-bubble cf-bubble--them">
-                    <span>
-                      👋 Welcome to <strong>Paperwork Monster</strong>.
-                    </span>
-                  </div>
-                  <div class="cf-bubble cf-bubble--them" id="cf-bubble-sms">
-                    <span data-i18n="cta.smsPreview">
-                      Paperwork Monster: Your code is 482-913. Don't share it.
-                    </span>
-                  </div>
-                  <div class="cf-meta" id="cf-meta">
-                    <span class="cf-meta__check">
-                      <svg
-                        width="9"
-                        height="9"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                      <svg
-                        width="9"
-                        height="9"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        style="margin-left:-5px"
-                      >
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    </span>
-                    <span>Delivered · Auto-fills on iOS</span>
-                  </div>
-                </div>
-
-                <div class="cf-phone__compose">
-                  <span class="cf-phone__plus" aria-hidden="true">+</span>
-                  <label for="f-phone" class="cf-phone__field">
-                    <input
-                      id="f-phone"
-                      name="phone"
-                      type="tel"
-                      placeholder="Tap to enter your number"
-                      required
-                      autocomplete="tel"
-                      inputmode="tel"
-                    />
-                  </label>
-                  <button
-                    class="cf-phone__send"
-                    type="submit"
-                    aria-label="Send"
-                  >
-                    <svg
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2.5"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path d="M22 2L11 13" />
-                      <path d="M22 2l-7 20-4-9-9-4 20-7z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
+              {/* Dead-simple phone entry — one obvious field. The input
+                  pulses to draw the eye until it's focused. */}
+              <label class="signup-field" for="f-phone">
+                <span class="signup-field__label" data-i18n="cta.label">
+                  Your phone number
+                </span>
+                <input
+                  id="f-phone"
+                  name="phone"
+                  type="tel"
+                  class="signup-input signup-input--pulse"
+                  placeholder="(555) 123-4567"
+                  required
+                  autocomplete="tel"
+                  inputmode="tel"
+                />
+              </label>
+              <p class="signup-error" id="cf-meta" role="alert"></p>
 
               <button class="cf-cta submit" type="submit">
-                <span data-i18n="cta.btn">Send my code</span>
+                <span data-i18n="cta.btn">Sign up</span>
                 <svg
                   width="20"
                   height="20"
@@ -1119,8 +1033,9 @@ export default define.page(async function Landing(ctx) {
             <a href="#features" data-i18n="nav.features">What We Do</a>
             <a href="#how-it-works" data-i18n="nav.how">How It Works</a>
             <a href="#pricing" data-i18n="nav.pricing">Pricing</a>
-            <a href="#contact" data-i18n="footer.contact">Contact</a>
+            <a href="/contact" data-i18n="footer.contact">Contact</a>
           </div>
+          <a class="footer-phone" href="tel:+18667678399">(866) 767-8399</a>
           <div class="copy" data-i18n="footer.copy">
             © 2026 Paperwork Monster. All rights reserved.
           </div>
