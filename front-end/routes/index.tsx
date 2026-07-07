@@ -689,7 +689,7 @@ export default define.page(async function Landing(ctx) {
           <div class="how-grid">
             <div class="how-step">
               <div class="num-circle">1</div>
-              <h3 data-i18n="how.s1.h">Check the paperwork</h3>
+              <h3 data-i18n="how.s1.h">Chat with us</h3>
               <p data-i18n="how.s1.p">
                 Send us a text with the job details. We'll ask you one question
                 at a time — no long forms, no hassle.

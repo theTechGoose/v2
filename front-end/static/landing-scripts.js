@@ -81,7 +81,7 @@
       "how.h2": "How it works",
       "how.lead":
         "Three steps. No forms. We meet you where you already are — your phone.",
-      "how.s1.h": "Check the paperwork",
+      "how.s1.h": "Chat with us",
       "how.s1.p":
         "Send us a text with the job details. We’ll ask you one question at a time — no long forms, no hassle.",
       "how.s2.h": "Check your paperwork",
@@ -220,7 +220,7 @@
       "how.h2": "Cómo funciona",
       "how.lead":
         "Tres pasos. Sin formularios. Te encontramos donde ya estás — en tu celular.",
-      "how.s1.h": "Revisa el papeleo",
+      "how.s1.h": "Chatea con nosotros",
       "how.s1.p":
         "Mándanos un mensaje con los detalles. Te preguntamos una cosa a la vez — sin formularios largos.",
       "how.s2.h": "Revisa tu papeleo",
@@ -696,6 +696,7 @@
     const track = document.getElementById("rotor-track");
     if (!track) return;
     const words = Array.prototype.slice.call(track.querySelectorAll(".word"));
+    if (!words.length) return;
     let i = 0;
     fitRotor();
     // Re-fit once the custom font has loaded — Safari's first measurement
@@ -710,22 +711,36 @@
     // engines.
     requestAnimationFrame(fitRotor);
     setTimeout(fitRotor, 1000);
+
+    // Deterministically render the rotor: exactly ONE word is active (.in),
+    // the word it just replaced plays its exit (.out), and EVERY other word
+    // is fully reset (no classes → hidden). Re-clearing all the other words
+    // on every step is what guarantees only one word is ever visible: if a
+    // transition or timer is skipped while the tab sits in the background or
+    // on another macOS Space (rAF + timers freeze/throttle there), the next
+    // step — or the visibilitychange handler — repairs the state instead of
+    // letting stale ".in" words pile up and stack. No rAF/timeout is relied
+    // on for correctness, so there's no queued burst to misfire on return.
+    function render(active, prev) {
+      for (let k = 0; k < words.length; k++) {
+        words[k].classList.toggle("in", k === active);
+        words[k].classList.toggle("out", k === prev && prev !== active);
+      }
+    }
+
+    render(0, -1); // clean single-visible starting state
     setInterval(function () {
-      const cur = words[i];
-      const next = words[(i + 1) % words.length];
-      cur.classList.remove("in");
-      cur.classList.add("out");
-      next.classList.remove("out");
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () {
-          next.classList.add("in");
-        });
-      });
-      setTimeout(function () {
-        cur.classList.remove("out");
-      }, 600);
-      i = (i + 1) % words.length;
+      const next = (i + 1) % words.length;
+      render(next, i);
+      i = next;
     }, 2200);
+
+    // Coming back from another tab/window/Space can interrupt a transition
+    // mid-flight — snap back to exactly one visible word.
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) render(i, -1);
+    });
+
     addEventListener("resize", fitRotor);
   })();
 
