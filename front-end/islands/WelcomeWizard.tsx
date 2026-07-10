@@ -119,13 +119,19 @@ function StepBody(
     children: ComponentChildren;
   },
 ) {
-  // Move focus to the step heading each time a step mounts (every advance
-  // remounts the keyed step component) so screen readers announce the new
-  // question. Not focusing an input keeps the soft keyboard from popping on
-  // every step on mobile.
+  // On each step mount (every advance remounts the keyed step component) move
+  // focus to the step's first input so the user can just start typing. Every
+  // input carries an aria-label equal to the question, so screen readers still
+  // announce it. Steps with no input (the education screens) fall back to
+  // focusing the heading so the new screen is still announced.
   const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const fieldRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    headingRef.current?.focus();
+    const focusable = fieldRef.current?.querySelector<HTMLElement>(
+      'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled])',
+    );
+    if (focusable) focusable.focus();
+    else headingRef.current?.focus();
   }, []);
   return (
     <div class="welcome__step">
@@ -133,7 +139,7 @@ function StepBody(
         {question}
       </h1>
       {why ? <p class="welcome__why">{why}</p> : null}
-      <div class="welcome__field">{children}</div>
+      <div class="welcome__field" ref={fieldRef}>{children}</div>
     </div>
   );
 }

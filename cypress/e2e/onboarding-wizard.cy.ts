@@ -418,26 +418,26 @@ describe("Onboarding wizard — polish (i18n / mobile / a11y)", () => {
     });
   });
 
-  it("focuses the step heading on advance and has no critical a11y violations (3 steps)", () => {
+  it("auto-focuses the input on each step and has no critical a11y violations (3 steps)", () => {
     cy.startFreshOnboarding(PHONE);
     cy.visit("/welcome");
     cy.injectAxe();
 
-    cy.step("step 1 (name) — heading focused, no critical violations");
-    cy.get(".welcome__question", { timeout: 10_000 }).should("be.visible");
-    cy.focused().should("have.class", "welcome__question");
+    cy.step("step 1 (name) — input auto-focused, no critical violations");
+    cy.get(".welcome__input", { timeout: 10_000 }).should("be.visible");
+    cy.focused().should("have.class", "welcome__input");
     cy.checkA11y(undefined, { includedImpacts: ["critical"] });
 
-    cy.step("advance → step 2 (business): focus moves to the new heading");
-    cy.get(".welcome__input").clear().type("Rafa");
+    cy.step("advance → step 2 (business): focus moves to the new input");
+    cy.focused().clear().type("Rafa");
     cy.contains("button", /^continue$/i).click();
-    cy.focused().should("have.class", "welcome__question");
+    cy.focused().should("have.class", "welcome__input");
     cy.checkA11y(undefined, { includedImpacts: ["critical"] });
 
-    cy.step("advance → step 3 (email): still clean");
-    cy.get(".welcome__input").clear().type("Monster Roofing Co");
+    cy.step("advance → step 3 (email): input focused, still clean");
+    cy.focused().clear().type("Monster Roofing Co");
     cy.contains("button", /^continue$/i).click();
-    cy.focused().should("have.class", "welcome__question");
+    cy.focused().should("have.class", "welcome__input");
     cy.checkA11y(undefined, { includedImpacts: ["critical"] });
   });
 });
