@@ -388,6 +388,14 @@ describe("Onboarding wizard — polish (i18n / mobile / a11y)", () => {
     cy.contains(/omitir configuración/i).should("exist");
   });
 
+  it("defaults to Spanish pre-login when no language is chosen (Spanish-first app)", () => {
+    // No account, no EN-preference cookie → the app is Spanish-first, so a
+    // pre-login page must render in Spanish by default (Spanish digit labels).
+    cy.clearCookie("pm_lang");
+    cy.visit(`/verify?phone=${encodeURIComponent("+18435559123")}`);
+    cy.get('input[aria-label="Dígito 1"]', { timeout: 10_000 }).should("exist");
+  });
+
   it("mobile (375px): no horizontal scroll and mobile input attributes are set", () => {
     cy.viewport(375, 700);
     cy.startFreshOnboarding(PHONE);

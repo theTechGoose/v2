@@ -36,6 +36,9 @@ describe("Onboarding — reconciled audit", () => {
 
   beforeEach(() => {
     cy.clearCookies();
+    // App is Spanish-first now; these specs assert English copy. Re-pin EN
+    // (the support beforeEach set it, but our clearCookies above wiped it).
+    cy.setCookie("pm_lang", "en");
   });
 
   it("#3 dev master OTP (000000) returns isNewUser=true and routes a fresh phone to /welcome (no 'Dev User / Dev Business' seed)", () => {

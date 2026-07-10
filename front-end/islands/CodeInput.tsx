@@ -24,8 +24,12 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
   const [, force] = useState(0);
 
   useEffect(() => {
+    // initialLang (SSR-resolved from the pm_lang cookie / Accept-Language) wins
+    // over localStorage: lib/lang.ts's module-load seed writes a *defaulted*
+    // "es" into pm:lang on a fresh session, and reading that back first would
+    // clobber a page the server rendered in English. See project_langsignal.
     const stored = globalThis.localStorage?.getItem("pm:lang") as Lang | null;
-    langSignal.value = stored ?? initialLang ?? "en";
+    langSignal.value = initialLang ?? stored ?? "es";
     refs.current[0]?.focus();
     const unsub = langSignal.subscribe(() => force((n) => n + 1));
     return () => unsub();

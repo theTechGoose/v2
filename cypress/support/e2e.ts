@@ -11,8 +11,13 @@
 import "./commands";
 import "cypress-axe";
 
-// Inject axe-core into every page so cy.checkA11y() is available in specs.
+// The app is Spanish-first (langSignal defaults to "es"). The bulk of these
+// specs assert English copy, so pin the language to EN for every test via the
+// pm_lang cookie (SSR routes read it; the WelcomeWizard island seeds from the
+// SSR-provided lang first). Specs that exercise Spanish set user.language="es"
+// (which outranks this cookie) or clear the cookie explicitly.
 beforeEach(() => {
+  cy.setCookie("pm_lang", "en");
   cy.injectAxe();
 });
 

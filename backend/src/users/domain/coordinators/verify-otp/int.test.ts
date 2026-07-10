@@ -129,8 +129,8 @@ Deno.test("verify-otp integration: dev master OTP on a fresh phone creates a use
   const user = await users.get(result.userId);
   // Gets the neutral placeholder name (so identity-dependent UI like the
   // sidebar's Settings entry point is reachable immediately), but must NOT
-  // be the legacy auto-seeded "Dev User".
-  assertEquals(user.name, "New user");
+  // be the legacy auto-seeded "Dev User". Spanish-first → "Nuevo usuario".
+  assertEquals(user.name, "Nuevo usuario");
   const biz = await identities.get(result.userId);
   // Must NOT be auto-seeded "Dev Business".
   assertEquals(biz, null);

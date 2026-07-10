@@ -132,8 +132,9 @@ Deno.test("agents conversations e2e: onboarding-start handoff seeds the invitati
     assertEquals(snap.messages.length, 1);
     assertEquals(snap.messages[0].role, "assistant");
     const content = snap.messages[0].content as string;
-    // Contains the hand-off invitation ("first quote") AND the chosen example.
-    if (!content.includes("first quote")) {
+    // Contains the hand-off invitation AND the chosen example. Fresh users are
+    // Spanish-first, so the invitation is the Spanish "primera cotización".
+    if (!content.includes("primera cotización")) {
       throw new Error(`handoff invitation missing: ${content}`);
     }
     if (!content.includes("Paver patio for the Nguyens")) {

@@ -45,7 +45,7 @@ export class SendOtp {
     const code = generateOtpCode();
     await this.otps.put({ phoneNumber: normalizedPhone, code, language: input.language });
 
-    const body = renderSmsBody(code, input.language ?? "en");
+    const body = renderSmsBody(code, input.language ?? "es");
     if (Deno.env.get("DEV_LOG_OTP") === "1") {
       console.log(`[otp:debug] code=${code} phone=${normalizedPhone}`);
     }

@@ -260,7 +260,8 @@
       "price.t2.f3": "Seguimiento de pagos y recordatorios",
       "price.t2.f4": "Órdenes de cambio",
       "price.t3.name": "Crew",
-      "price.t3.blurb": "Para cuadrillas que manejan varios trabajos por semana.",
+      "price.t3.blurb":
+        "Para cuadrillas que manejan varios trabajos por semana.",
       "price.t3.f1": "Todo lo de Pro",
       "price.t3.f2": "Soporte prioritario",
       "price.t3.f3": "Funciones para equipos y varios oficios",
@@ -283,8 +284,7 @@
       "cta.useSaved": "Usar",
       "cta.notYou": "¿No eres tú?",
       "footer.contact": "Contacto",
-      "footer.copy":
-        "© 2026 Paperwork Monster. Todos los derechos reservados.",
+      "footer.copy": "© 2026 Paperwork Monster. Todos los derechos reservados.",
     },
   };
 
@@ -589,7 +589,8 @@
   }
 
   /* ===== state ===== */
-  // Resolve the active language once: ?lang= (URL) > localStorage > "en".
+  // Resolve the active language once: ?lang= (URL) > localStorage > "es".
+  // Spanish-first — the app is built for Spanish-speaking contractors.
   // Mirror the result back to localStorage so it survives a query-less nav.
   let curLang = (function () {
     try {
@@ -597,7 +598,7 @@
       if (q === "en" || q === "es") return q;
     } catch (_e) { /* ignore malformed URL */ }
     const s = localStorage.getItem("pm:lang");
-    return s === "en" || s === "es" ? s : "en";
+    return s === "en" || s === "es" ? s : "es";
   })();
   try {
     localStorage.setItem("pm:lang", curLang);

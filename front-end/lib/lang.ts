@@ -9,7 +9,10 @@ import { signal } from "@preact/signals";
 
 export type Lang = "en" | "es";
 
-export const langSignal = signal<Lang>("en");
+// Spanish-first: the product is built for Spanish-speaking contractors, so the
+// app defaults to ES everywhere unless a stored choice / cookie / explicit
+// English browser preference says otherwise. Users can always switch to EN.
+export const langSignal = signal<Lang>("es");
 
 /** Narrow an arbitrary string to a valid Lang, else null. */
 function asLang(v: string | null | undefined): Lang | null {
@@ -76,7 +79,7 @@ if (typeof document !== "undefined" && globalThis.location) {
       new URLSearchParams(globalThis.location.search).get("lang"),
     );
     const fromStorage = asLang(globalThis.localStorage?.getItem("pm:lang"));
-    const resolved: Lang = fromQuery ?? fromStorage ?? "en";
+    const resolved: Lang = fromQuery ?? fromStorage ?? "es";
     langSignal.value = resolved;
     // Mirror into localStorage + cookie so SSR routes (verify/login) render
     // the same language the islands will hydrate to.
@@ -353,7 +356,11 @@ export const STRINGS: Record<Lang, Strings> = {
 
 export type StringKey = keyof Strings;
 
-export function pickLangFromAcceptLanguage(header: string | null): Lang {
-  if (!header) return "en";
-  return /\bes\b|^es-/i.test(header) ? "es" : "en";
+export function pickLangFromAcceptLanguage(_header: string | null): Lang {
+  // Spanish-first, by product decision: the app is built for Spanish-speaking
+  // contractors, so it defaults to ES for EVERYONE regardless of the browser's
+  // Accept-Language (an English-locale device still lands on Spanish). English
+  // is opt-in via the language toggle, which persists pm_lang / pm:lang. The
+  // header is ignored on purpose; kept in the signature so callers are unchanged.
+  return "es";
 }

@@ -14,8 +14,8 @@ Deno.test("deriveLanguageOnVerify: new user inherits OTP language", () => {
   assertEquals(deriveLanguageOnVerify(null, "es"), "es");
 });
 
-Deno.test("deriveLanguageOnVerify: new user without OTP language defaults to 'en'", () => {
-  assertEquals(deriveLanguageOnVerify(null, undefined), "en");
+Deno.test("deriveLanguageOnVerify: new user without OTP language defaults to 'es' (Spanish-first)", () => {
+  assertEquals(deriveLanguageOnVerify(null, undefined), "es");
 });
 
 Deno.test("deriveLanguageOnVerify: existing user keeps their preference (es) regardless of OTP toggle (en)", () => {

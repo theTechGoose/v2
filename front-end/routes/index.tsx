@@ -2,6 +2,7 @@ import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import { loadUser } from "../lib/auth.ts";
 import { tFor } from "../lib/i18n.ts";
+import { langFromCookie, pickLangFromAcceptLanguage } from "../lib/lang.ts";
 import PhoneChat, {
   type Bubble,
   type QuoteCopy,
@@ -137,13 +138,16 @@ export default define.page(async function Landing(ctx) {
     });
   }
 
+  const lang = langFromCookie(ctx.req.headers.get("cookie")) ??
+    pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
+
   return (
     <>
       <Head>
-        <title>{tFor("en", "landing.head.title")}</title>
+        <title>{tFor(lang, "landing.head.title")}</title>
         <meta
           name="description"
-          content={tFor("en", "landing.head.metaDescription")}
+          content={tFor(lang, "landing.head.metaDescription")}
         />
         <link rel="stylesheet" href="/landing.css" />
         <script src="/landing-scripts.js" defer></script>
@@ -164,10 +168,12 @@ export default define.page(async function Landing(ctx) {
           </a>
 
           <div class="lang-toggle" role="tablist" aria-label="Language">
-            <button class="on" type="button" data-lang="en">
+            <button type="button" data-lang="en">
               I speak English
             </button>
-            <button type="button" data-lang="es">Yo hablo Español</button>
+            <button class="on" type="button" data-lang="es">
+              Yo hablo Español
+            </button>
           </div>
 
           <nav class="nav-links">
@@ -767,8 +773,8 @@ export default define.page(async function Landing(ctx) {
               Flat monthly pricing. <em>No surprises.</em>
             </h2>
             <p data-i18n="price.plans.lead">
-              Your whole back office — quotes, contracts, invoices, follow-ups
-              — for one flat monthly price. No setup fees, cancel anytime.
+              Your whole back office — quotes, contracts, invoices, follow-ups —
+              for one flat monthly price. No setup fees, cancel anytime.
             </p>
           </div>
 
@@ -951,8 +957,10 @@ export default define.page(async function Landing(ctx) {
                 </button>
               </div>
 
-              {/* Dead-simple phone entry — one obvious field. The input
-                  pulses to draw the eye until it's focused. */}
+              {
+                /* Dead-simple phone entry — one obvious field. The input
+                  pulses to draw the eye until it's focused. */
+              }
               <label class="signup-field" for="f-phone">
                 <span class="signup-field__label" data-i18n="cta.label">
                   Your phone number

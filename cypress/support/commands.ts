@@ -190,7 +190,11 @@ Cypress.Commands.add("startFreshOnboarding", (phoneNumber: string) => {
     `cd ../backend && deno run -A --unstable-kv scripts/dev-wipe-user.ts ${phoneNumber}`,
     { failOnNonZeroExit: true, timeout: 30_000 },
   );
-  cy.request("POST", "/api/auth/send-otp", { phoneNumber }).its("status").should("eq", 200);
+  // Seed the new user as English so the English-asserting specs are
+  // deterministic (the app is Spanish-first, so a language-less signup would
+  // otherwise default to "es"). Specs that want Spanish PUT language:"es".
+  cy.request("POST", "/api/auth/send-otp", { phoneNumber, language: "en" })
+    .its("status").should("eq", 200);
   return cy
     .exec(
       `cd ../backend && deno run -A --unstable-kv scripts/dev-get-otp.ts ${phoneNumber}`,

@@ -136,7 +136,7 @@ export class VerifyOtp {
       const otpLang = existing
         ? undefined
         : (await this.otps.get(phone).catch(() => null))?.language;
-      const newLang = deriveLanguageOnVerify(null, otpLang) ?? "en";
+      const newLang = deriveLanguageOnVerify(null, otpLang) ?? "es";
       let user = existing
         ?? await this.users.create({
           phoneNumber: phone,
