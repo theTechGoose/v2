@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { landingClient } from "../clients/landing.ts";
-import { ApiError } from "../lib/api.ts";
+import { type Lang } from "../lib/lang.ts";
+import { tFor } from "../lib/i18n.ts";
 
 /**
  * TrialSignup — the "Start My Free Trial" phone form on the /landing promo
@@ -22,7 +23,8 @@ function toE164(raw: string): string {
   return "+" + digits;
 }
 
-export default function TrialSignup() {
+export default function TrialSignup({ lang = "es" }: { lang?: Lang }) {
+  const t = (k: string) => tFor(lang, `promoLanding.${k}`);
   const [phone, setPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -32,24 +34,20 @@ export default function TrialSignup() {
     setErr(null);
     const e164 = toE164(phone);
     if (e164.replace(/\D/g, "").length < 10) {
-      setErr("Enter a valid phone number.");
+      setErr(t("formInvalid"));
       return;
     }
     setSubmitting(true);
     try {
-      await landingClient.sendOtp({ phoneNumber: e164, language: "en" });
+      await landingClient.sendOtp({ phoneNumber: e164, language: lang });
       try {
         localStorage.setItem("pm:last-phone", e164);
       } catch { /* private mode */ }
       globalThis.location.href = `/verify?phone=${
         encodeURIComponent(e164)
-      }&lang=en`;
-    } catch (error) {
-      setErr(
-        error instanceof ApiError
-          ? "Couldn't send. Please try again."
-          : "Couldn't send. Please try again.",
-      );
+      }&lang=${lang}`;
+    } catch (_error) {
+      setErr(t("formError"));
     } finally {
       setSubmitting(false);
     }
@@ -58,7 +56,7 @@ export default function TrialSignup() {
   return (
     <form class="pm-trial-form" onSubmit={onSubmit}>
       <label class="pm-trial-form__label" for="trial-phone">
-        Phone Number
+        {t("formPhoneLabel")}
       </label>
       <input
         id="trial-phone"
@@ -72,18 +70,16 @@ export default function TrialSignup() {
         placeholder="(555) 123-4567"
         required
       />
-      {err
-        ? <p class="pm-trial-error" role="alert">{err}</p>
-        : null}
+      {err ? <p class="pm-trial-error" role="alert">{err}</p> : null}
       <button
         class="pm-btn pm-btn--primary pm-btn--lg"
         type="submit"
         disabled={submitting}
       >
-        {submitting ? "Sending…" : "Start My Free Trial"}
+        {submitting ? t("formSending") : t("formSubmit")}
       </button>
       <p class="pm-trial-fine">
-        We'll text you a code to get started.
+        {t("formFine")}
       </p>
     </form>
   );

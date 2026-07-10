@@ -1,6 +1,12 @@
 import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import TrialSignup from "../islands/TrialSignup.tsx";
+import { tFor } from "../lib/i18n.ts";
+import {
+  type Lang,
+  langFromCookie,
+  pickLangFromAcceptLanguage,
+} from "../lib/lang.ts";
 
 // Toll-free support line (same number the dashboard "Call support" CTA dials).
 const SUPPORT_PHONE = "+18667678399";
@@ -48,17 +54,20 @@ function DownArrow() {
  * "/" landing). Simple top-to-bottom pitch with a working "Start My Free
  * Trial" phone form that reuses the OTP sign-up flow.
  */
-export default define.page(function PromoLanding() {
+export default define.page(function PromoLanding(ctx) {
+  const url = new URL(ctx.req.url);
+  const q = url.searchParams.get("lang");
+  const lang: Lang = (q === "en" || q === "es") ? q : (langFromCookie(
+    ctx.req.headers.get("cookie"),
+  ) ?? pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language")));
+  const t = (k: string) => tFor(lang, `promoLanding.${k}`);
+  const h1b = t("h1b");
+
   return (
     <>
       <Head>
-        <title>
-          Paperwork Monster — Your Spanish-speaking paperwork assistant
-        </title>
-        <meta
-          name="description"
-          content="Chat with us in Spanish. Your customers receive professional paperwork in English — quotes, invoices, contracts, and customer emails. Try free for 30 days."
-        />
+        <title>{t("docTitle")}</title>
+        <meta name="description" content={t("metaDescription")} />
         <link rel="stylesheet" href="/promo.css" />
       </Head>
 
@@ -68,40 +77,61 @@ export default define.page(function PromoLanding() {
           <header class="pm-header">
             <a href="/landing" class="pm-brand">
               <img src="/logo-monster.png" alt="Paperwork Monster" />
-              <span>Paperwork <em>Monster</em></span>
+              <span>
+                Paperwork <em>Monster</em>
+              </span>
             </a>
+            <div class="pm-langtoggle" role="tablist" aria-label="Language">
+              <a
+                href="/landing?lang=es"
+                class={lang === "es" ? "on" : ""}
+              >
+                {t("langEs")}
+              </a>
+              <a
+                href="/landing?lang=en"
+                class={lang === "en" ? "on" : ""}
+              >
+                {t("langEn")}
+              </a>
+            </div>
           </header>
 
           {/* ---------- hero ---------- */}
           <section class="pm-hero">
             <p class="pm-hero__hook">
-              Do paperwork after work? Or have paperwork that needs to go out?
-              {" "}
-              <strong>We can help.</strong>
+              {t("hookLead")} <strong>{t("hookStrong")}</strong>
             </p>
             <h1>
-              Your <span class="pm-accent">Spanish-speaking</span>{" "}
-              paperwork assistant.
+              {t("h1a")} <span class="pm-accent">{t("h1accent")}</span>
+              {h1b ? <>{" "}{h1b}</> : null}
             </h1>
             <p class="pm-hero__sub">
-              <strong>Chat with us in Spanish.</strong>{" "}
-              Your customers receive professional paperwork in{" "}
-              <strong>English</strong>.
+              <strong>{t("subStrong1")}</strong> {t("subMid")}{" "}
+              <strong>{t("subStrong2")}</strong>
             </p>
 
             <div class="pm-prepare">
-              <div class="pm-prepare__label">We prepare your</div>
+              <div class="pm-prepare__label">{t("prepareLabel")}</div>
               <div class="pm-chips">
-                <span class="pm-chip"><Check /> Quotes</span>
-                <span class="pm-chip"><Check /> Invoices</span>
-                <span class="pm-chip"><Check /> Contracts</span>
-                <span class="pm-chip"><Check /> Customer emails</span>
+                <span class="pm-chip">
+                  <Check /> {t("chipQuotes")}
+                </span>
+                <span class="pm-chip">
+                  <Check /> {t("chipInvoices")}
+                </span>
+                <span class="pm-chip">
+                  <Check /> {t("chipContracts")}
+                </span>
+                <span class="pm-chip">
+                  <Check /> {t("chipEmails")}
+                </span>
               </div>
             </div>
 
             <div class="pm-hero__cta">
               <a href="#trial" class="pm-btn pm-btn--primary">
-                Start Your Free Trial
+                {t("ctaPrimary")}
               </a>
             </div>
           </section>
@@ -109,16 +139,16 @@ export default define.page(function PromoLanding() {
           {/* ---------- free trial ---------- */}
           <section class="pm-trial" id="trial">
             <div class="pm-trial__card">
-              <span class="pm-trial__badge">30 days free</span>
-              <h2>Try Paperwork Monster FREE for 30 Days</h2>
+              <span class="pm-trial__badge">{t("trialBadge")}</span>
+              <h2>{t("trialH2")}</h2>
               <p class="pm-trial__sub">
-                <b>Unlimited paperwork.</b> No obligation.
+                <b>{t("trialSubStrong")}</b> {t("trialSubRest")}
               </p>
 
-              <TrialSignup />
+              <TrialSignup lang={lang} />
 
               <div class="pm-call">
-                <p class="pm-call__q">Questions? Call us today.</p>
+                <p class="pm-call__q">{t("callQ")}</p>
                 <a class="pm-call__num" href={`tel:${SUPPORT_PHONE}`}>
                   <svg
                     width="20"
@@ -140,21 +170,21 @@ export default define.page(function PromoLanding() {
 
           {/* ---------- how it works ---------- */}
           <section class="pm-how">
-            <h2>How It Works</h2>
+            <h2>{t("howH2")}</h2>
             <div class="pm-steps">
               <div class="pm-step">
                 <div class="pm-step__num">1</div>
-                <p>Chat with us in Spanish.</p>
+                <p>{t("step1")}</p>
               </div>
               <DownArrow />
               <div class="pm-step">
                 <div class="pm-step__num">2</div>
-                <p>We prepare your paperwork.</p>
+                <p>{t("step2")}</p>
               </div>
               <DownArrow />
               <div class="pm-step">
                 <div class="pm-step__num">3</div>
-                <p>Your customer receives professional English documents.</p>
+                <p>{t("step3")}</p>
               </div>
             </div>
           </section>
@@ -164,13 +194,10 @@ export default define.page(function PromoLanding() {
         <section class="pm-close">
           <div class="pm-wrap">
             <div class="pm-close__band">
-              <h2>Stop Doing Paperwork.</h2>
-              <p>
-                Spend more time growing your business. We'll handle the
-                paperwork.
-              </p>
+              <h2>{t("closeH2")}</h2>
+              <p>{t("closeP")}</p>
               <a href="#trial" class="pm-btn pm-btn--primary">
-                Start Your Free Trial
+                {t("ctaPrimary")}
               </a>
             </div>
           </div>
@@ -181,14 +208,14 @@ export default define.page(function PromoLanding() {
           <footer class="pm-footer">
             <a href="/landing" class="pm-brand">
               <img src="/logo-monster.png" alt="" />
-              <span>Paperwork <em>Monster</em></span>
+              <span>
+                Paperwork <em>Monster</em>
+              </span>
             </a>
             <a class="pm-footer__phone" href={`tel:${SUPPORT_PHONE}`}>
               {SUPPORT_PHONE_DISPLAY}
             </a>
-            <div class="pm-footer__copy">
-              © 2026 Paperwork Monster. All rights reserved.
-            </div>
+            <div class="pm-footer__copy">{t("footerCopy")}</div>
           </footer>
         </div>
       </div>
