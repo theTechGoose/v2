@@ -7,7 +7,8 @@ import {
   pickLangFromAcceptLanguage,
 } from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
-import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
+import { type ProfileSnapshot } from "../clients/profile.ts";
+import { ssrBackendGetAuthed } from "../lib/backend-fetch.ts";
 import WelcomeWizard from "../islands/WelcomeWizard.tsx";
 
 /**
@@ -29,10 +30,18 @@ export default define.page(async function Welcome(ctx) {
     return new Response(null, { status: 302, headers: { Location: "/" } });
   }
 
+  // In-process SSR fetch — the HTTP profile client self-fetches the public URL
+  // (508 Loop Detected on Deno Deploy) or falls back to BACKEND_URL=localhost,
+  // which fails in prod and left this page stuck on welcome.loadError. Go
+  // through the in-process backend handler like the assistant routes do.
   const sessionId = getSessionId(ctx.req);
-  const snapshot = await profileClient.get({ sessionId }).catch(() =>
-    null as ProfileSnapshot | null
-  );
+  const snapRes = await ssrBackendGetAuthed<ProfileSnapshot>(
+    "/profile",
+    sessionId,
+  ).catch(() => ({ ok: false as const, status: 0 }));
+  const snapshot: ProfileSnapshot | null = snapRes.ok && snapRes.data
+    ? snapRes.data
+    : null;
 
   // Already finished (or skipped) onboarding → never trap them here again.
   if (snapshot?.user?.onboardedAt) {
