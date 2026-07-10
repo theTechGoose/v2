@@ -8,6 +8,7 @@ import { BusinessAddressStore } from "@profile/domain/data/business-address-stor
 import {
   ONBOARD_ASK_ADDRESS,
   ONBOARD_ASK_BUSINESS,
+  ONBOARD_HANDOFF,
   onboardAskStateWithGuess,
 } from "@agents/domain/business/onboarding/mod.ts";
 
@@ -35,7 +36,18 @@ export class StartOnboardingConversation {
     private addresses: BusinessAddressStore,
   ) {}
 
-  async run(input: { userId: string }): Promise<{ conversationId: string; seeded: boolean }> {
+  async run(
+    input: {
+      userId: string;
+      /** Wizard finish hand-off: instead of asking for a missing field, seed
+       *  the conversation with Bossie's "we're set — first quote?" invitation
+       *  so the user lands in a ready-to-go chat. */
+      handoff?: boolean;
+      /** Optional concrete example the user picked on the finish screen,
+       *  appended to the invitation as a "try this" nudge. */
+      examplePrompt?: string;
+    },
+  ): Promise<{ conversationId: string; seeded: boolean }> {
     const [me, ident, addr] = await Promise.all([
       this.users.get(input.userId).catch(() => null),
       this.identity.get(input.userId).catch(() => null),
@@ -56,6 +68,26 @@ export class StartOnboardingConversation {
     // very first message is English.
     const lang = me?.language === "es" ? "es" : "en";
     const firstName = me?.name?.trim().split(/\s+/)[0] ?? "there";
+
+    // Wizard finish hand-off: skip the field-asks entirely and seed the
+    // "let's do your first quote" invitation. The seeded assistant message
+    // does all the work — no AsstChat changes needed.
+    if (input.handoff) {
+      let handoff = ONBOARD_HANDOFF(firstName, lang);
+      const example = (input.examplePrompt ?? "").trim().slice(0, 160);
+      if (example) {
+        handoff = `${handoff}\n\n${t(lang, "onboarding.handoffExample", { example })}`;
+      }
+      await this.messages.append({
+        conversationId: conv.id, role: "assistant", kind: "text", content: handoff,
+      });
+      await this.conversations.update(conv.id, {
+        preview: handoff,
+        title: t(lang, "onboardingConversation.title"),
+      });
+      return { conversationId: conv.id, seeded: true };
+    }
+
     let ask: string | undefined;
     if (needsName) ask = t(lang, "onboarding.askName");
     else if (needsBiz) ask = ONBOARD_ASK_BUSINESS(firstName, lang);

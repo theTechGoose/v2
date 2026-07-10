@@ -1,10 +1,7 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { getSessionId } from "../../lib/auth.ts";
-import {
-  ssrBackendGetAuthed,
-  ssrBackendPostAuthed,
-} from "../../lib/backend-fetch.ts";
+import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import AsstThreads from "../../islands/AsstThreads.tsx";
@@ -30,31 +27,17 @@ export default define.page(async function AssistantHome(ctx) {
   // an empty /assistant?onboard=1 chat ("0 messages" limbo). On any failure
   // we send them to the dashboard — now reachable without onboarding and
   // carrying the SetupChecklist nudge — rather than stranding them here.
+  // New-user onboarding now lives in the first-sign-in wizard at /welcome, not
+  // the chat state machine. Anything still arriving here with ?onboard=1 (old
+  // links, the assistant `?onboard=1` deep-link) is forwarded to /welcome,
+  // which owns the single onboarding redirect (and bounces already-onboarded
+  // users to /dashboard). The chat `onboarding-start` flow + handle-chat-message
+  // state machine stay in place as a backstop for existing half-onboarded users.
   const url = new URL(ctx.req.url);
   if (url.searchParams.has("onboard")) {
-    if (sessionId) {
-      const r = await ssrBackendPostAuthed<
-        { conversationId: string; seeded: boolean }
-      >("/agents/conversations/onboarding-start", {}, sessionId)
-        .catch((err) => {
-          console.error(
-            "[/assistant?onboard=1] start failed:",
-            (err as Error).message,
-          );
-          return { ok: false as const, status: 0 };
-        });
-      if (r.ok && r.data?.conversationId) {
-        return new Response(null, {
-          status: 302,
-          headers: { Location: `/assistant/${r.data.conversationId}?onboard=1` },
-        });
-      }
-    }
-    // Couldn't seed the onboarding thread — don't leave them in an empty
-    // chat. The dashboard is reachable without onboarding and nudges setup.
     return new Response(null, {
       status: 302,
-      headers: { Location: "/dashboard" },
+      headers: { Location: "/welcome" },
     });
   }
 

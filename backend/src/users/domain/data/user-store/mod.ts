@@ -142,6 +142,29 @@ export class UserStore {
     return updated;
   }
 
+  /**
+   * Stamp first-sign-in onboarding completion. Idempotent: the FIRST call
+   * sets `onboardedAt` to now + records `onboardingSkipped`; every later call
+   * is a no-op that returns the existing record unchanged (the first
+   * timestamp — and whether it was a skip — is preserved forever).
+   *
+   * Kept off `update` so `onboardedAt`/`onboardingSkipped` can never ride in
+   * on a general PUT /me profile patch (UpdateUserDto doesn't carry them).
+   */
+  async markOnboarded(id: string, skipped: boolean): Promise<User> {
+    const existing = await this.get(id);
+    if (existing.onboardedAt) return existing;
+    const updated: User = {
+      ...existing,
+      onboardedAt: new Date().toISOString(),
+      onboardingSkipped: skipped,
+      updatedAt: new Date().toISOString(),
+    };
+    const kv = await getKv();
+    await kv.set(["user", id], updated);
+    return updated;
+  }
+
   async delete(id: string): Promise<void> {
     const user = await this.get(id);
     const kv = await getKv();

@@ -16,6 +16,18 @@ export interface User {
    * so it can never be set from an arbitrary PUT /me body.
    */
   superAdmin?: boolean;
+  /**
+   * First-sign-in onboarding completion. `onboardedAt` is the server ISO
+   * timestamp of the FIRST time the user finished or skipped the /welcome
+   * wizard; once set it never changes (skip is permanent). `onboardingSkipped`
+   * records whether that first completion was a skip vs. a real finish.
+   *
+   * NEVER part of UpdateUserDto — they are stamped only through the dedicated
+   * `UserStore.markOnboarded` write path (POST /me/onboarded), so they can't
+   * ride in on an arbitrary PUT /me body.
+   */
+  onboardedAt?: string;
+  onboardingSkipped?: boolean;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { stateFromPhone } from "@core/business/us-states/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { ContractDefaultsStore } from "@profile/domain/data/contract-defaults-store/mod.ts";
@@ -39,6 +40,13 @@ export interface ProfileSnapshot {
   references:       Reference[];
   /** Convenience derived field — sidebar avatar initials. */
   initials: string;
+  /**
+   * Phone-area-code guess for the business state, surfaced to the /welcome
+   * wizard so it can pre-select "looks like you're in South Carolina?".
+   * Present ONLY when we have a guess AND the user hasn't set an address
+   * state yet — so a real answer is never overridden by a guess.
+   */
+  suggestedState?: string;
 }
 
 /** Customer-facing subset — never includes private aggregates. */
@@ -77,6 +85,9 @@ export class LoadProfile {
       this.defaults.get(userId),
       this.refs.listByUser(userId),
     ]);
+    const suggestedState = address?.state
+      ? undefined
+      : stateFromPhone(user.phoneNumber);
     return {
       user,
       identity,
@@ -86,6 +97,7 @@ export class LoadProfile {
       contractDefaults,
       references,
       initials: computeInitials(user.name, identity?.businessName),
+      ...(suggestedState ? { suggestedState } : {}),
     };
   }
 

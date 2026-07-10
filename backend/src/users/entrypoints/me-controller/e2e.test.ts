@@ -108,6 +108,47 @@ Deno.test("me e2e: GET /me with bogus session header is rejected", async () => {
   });
 });
 
+Deno.test("me e2e: POST /me/onboarded without session is rejected", async () => {
+  await withServer(async (port) => {
+    const res = await fetch(`http://localhost:${port}/me/onboarded`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ skipped: true }),
+    });
+    const ok = res.ok;
+    await drain(res);
+    assertEquals(ok, false, "missing session must be rejected");
+  });
+});
+
+Deno.test("me e2e: POST /me/onboarded stamps onboardedAt; second call is a no-op", async () => {
+  await withServer(async (port) => {
+    const session = await login(port, "+15125551234");
+    const before = await fetch(`http://localhost:${port}/me`, {
+      headers: { "x-session-id": session.sessionId },
+    }).then((r) => r.json());
+    assertEquals(before.onboardedAt, undefined);
+
+    const first = await fetch(`http://localhost:${port}/me/onboarded`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": session.sessionId },
+      body: JSON.stringify({ skipped: true }),
+    }).then((r) => r.json());
+    assert(first.onboardedAt, "first call stamps onboardedAt");
+    assertEquals(first.onboardingSkipped, true);
+
+    await new Promise((r) => setTimeout(r, 10));
+    // Second call, even with skipped:false, keeps the first timestamp + flag.
+    const second = await fetch(`http://localhost:${port}/me/onboarded`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": session.sessionId },
+      body: JSON.stringify({ skipped: false }),
+    }).then((r) => r.json());
+    assertEquals(second.onboardedAt, first.onboardedAt);
+    assertEquals(second.onboardingSkipped, true);
+  });
+});
+
 Deno.test("me e2e: DELETE /me closes the account", async () => {
   await withServer(async (port) => {
     const session = await login(port, "+15125551234");

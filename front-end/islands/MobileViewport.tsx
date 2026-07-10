@@ -111,7 +111,7 @@ export default function MobileViewport() {
     // explicitly center the field in its scroll container, which sits entirely
     // above the keyboard, so it (and the row/buttons around it) is always
     // visible. Covers every input on every page from one place.
-    let focusTimer = 0;
+    const focusTimer = 0;
     const onFocusIn = (e: FocusEvent) => {
       const t = e.target as HTMLElement | null;
       if (

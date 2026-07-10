@@ -68,6 +68,44 @@ Deno.test("user-store smoke: update merges name/email/language and bumps updated
   await resetKv();
 });
 
+Deno.test("user-store smoke: markOnboarded stamps onboardedAt + skipped, round-trips through get/update", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const store = new UserStore();
+  const created = await store.create({ phoneNumber: "+15125551234" });
+  assertEquals(created.onboardedAt, undefined);
+
+  const marked = await store.markOnboarded(created.id, true);
+  assertEquals(marked.onboardingSkipped, true);
+  if (!marked.onboardedAt) throw new Error("onboardedAt should be set");
+
+  // Round-trips through a plain get.
+  const got = await store.get(created.id);
+  assertEquals(got.onboardedAt, marked.onboardedAt);
+  assertEquals(got.onboardingSkipped, true);
+
+  // A subsequent unrelated update must PRESERVE the onboarding fields.
+  const afterUpdate = await store.update(created.id, { name: "Diego R." });
+  assertEquals(afterUpdate.name, "Diego R.");
+  assertEquals(afterUpdate.onboardedAt, marked.onboardedAt);
+  assertEquals(afterUpdate.onboardingSkipped, true);
+  await resetKv();
+});
+
+Deno.test("user-store smoke: markOnboarded is idempotent — second call keeps the first timestamp", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const store = new UserStore();
+  const created = await store.create({ phoneNumber: "+15125551234" });
+  const first = await store.markOnboarded(created.id, false);
+  await new Promise((r) => setTimeout(r, 10));
+  // Second call (even with a different `skipped`) is a no-op.
+  const second = await store.markOnboarded(created.id, true);
+  assertEquals(second.onboardedAt, first.onboardedAt);
+  assertEquals(second.onboardingSkipped, false);
+  await resetKv();
+});
+
 Deno.test("user-store smoke: delete removes both record and phone index", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();

@@ -107,6 +107,32 @@ Deno.test("profile composite e2e: GET /profile/:userId/public is reachable witho
   });
 });
 
+Deno.test("profile composite e2e: GET /profile derives suggestedState from a known area code (843 → SC)", async () => {
+  await withServer(async (port) => {
+    const session = await login(port, "+18435551234");
+    const snap = await fetch(`http://localhost:${port}/profile`, {
+      headers: { "x-session-id": session.sessionId },
+    }).then((r) => r.json());
+    assertEquals(snap.suggestedState, "SC");
+  });
+});
+
+Deno.test("profile composite e2e: suggestedState is absent once address.state is set", async () => {
+  await withServer(async (port) => {
+    const session = await login(port, "+18435551234");
+    await drain(await fetch(`http://localhost:${port}/profile/address`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-session-id": session.sessionId },
+      body: JSON.stringify({ state: "GA" }),
+    }));
+    const snap = await fetch(`http://localhost:${port}/profile`, {
+      headers: { "x-session-id": session.sessionId },
+    }).then((r) => r.json());
+    assert(!("suggestedState" in snap), "suggestedState must not override a real address state");
+    assertEquals(snap.address.state, "GA");
+  });
+});
+
 Deno.test("profile composite e2e: GET /profile without session is rejected", async () => {
   await withServer(async (port) => {
     const res = await fetch(`http://localhost:${port}/profile`);

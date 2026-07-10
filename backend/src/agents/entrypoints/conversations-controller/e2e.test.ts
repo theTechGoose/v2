@@ -101,6 +101,47 @@ Deno.test("agents conversations e2e: GET /:id returns conversation + empty messa
   });
 });
 
+Deno.test("agents conversations e2e: POST /sample-quote is idempotent (same quote on repeat)", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const first = await fetch(`http://localhost:${port}/agents/conversations/sample-quote`, {
+      method: "POST", headers: { "content-type": "application/json", "x-session-id": sid }, body: "{}",
+    }).then((r) => r.json());
+    assertEquals(first.created, true);
+    const second = await fetch(`http://localhost:${port}/agents/conversations/sample-quote`, {
+      method: "POST", headers: { "content-type": "application/json", "x-session-id": sid }, body: "{}",
+    }).then((r) => r.json());
+    assertEquals(second.created, false);
+    assertEquals(second.quoteId, first.quoteId);
+  });
+});
+
+Deno.test("agents conversations e2e: onboarding-start handoff seeds the invitation + example", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const start = await fetch(`http://localhost:${port}/agents/conversations/onboarding-start`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ handoff: true, examplePrompt: "Paver patio for the Nguyens — $3,700" }),
+    }).then((r) => r.json());
+    assertEquals(start.seeded, true);
+
+    const snap = await fetch(`http://localhost:${port}/agents/conversations/${start.conversationId}`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(snap.messages.length, 1);
+    assertEquals(snap.messages[0].role, "assistant");
+    const content = snap.messages[0].content as string;
+    // Contains the hand-off invitation ("first quote") AND the chosen example.
+    if (!content.includes("first quote")) {
+      throw new Error(`handoff invitation missing: ${content}`);
+    }
+    if (!content.includes("Paver patio for the Nguyens")) {
+      throw new Error(`example prompt missing: ${content}`);
+    }
+  });
+});
+
 Deno.test("agents conversations e2e: POST /:id/transition-to-terms flips phase + appends divider + wizard", async () => {
   await withServer(async (port) => {
     const sid = await login(port);

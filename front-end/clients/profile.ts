@@ -97,6 +97,11 @@ export interface ProfileUser {
   language?: "en" | "es";
   /** Super-admin flag — drives the sidebar Admin tab. Server-enforced. */
   superAdmin?: boolean;
+  /** ISO timestamp of the first time the user finished/skipped the /welcome
+   *  wizard. Once set it never changes; drives the "already onboarded?" guard. */
+  onboardedAt?: string;
+  /** Whether that first onboarding completion was a skip vs. a real finish. */
+  onboardingSkipped?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -110,6 +115,10 @@ export interface ProfileSnapshot {
   contractDefaults: ContractDefaults | null;
   references: unknown[];
   initials: string;
+  /** Phone-area-code guess for the business state — present only when we
+   *  have a guess AND no address state is set yet. Drives the /welcome
+   *  wizard's tap-to-confirm state pre-selection. */
+  suggestedState?: string;
 }
 
 export const profileClient = {

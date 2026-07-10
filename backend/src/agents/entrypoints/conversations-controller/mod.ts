@@ -59,9 +59,16 @@ export class ConversationsController {
    * expected to redirect away on the first hit and never call again).
    */
   @Post("onboarding-start")
-  async onboardingStart(@Context() ctx: ExecutionContext) {
+  async onboardingStart(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return ctx.json(await this.onboardingFlow.run({ userId: user.id }));
+    const b = (body ?? {}) as { handoff?: unknown; examplePrompt?: unknown };
+    return ctx.json(await this.onboardingFlow.run({
+      userId: user.id,
+      handoff: b.handoff === true,
+      examplePrompt: typeof b.examplePrompt === "string"
+        ? b.examplePrompt
+        : undefined,
+    }));
   }
 
   @Get(":id")

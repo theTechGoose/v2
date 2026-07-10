@@ -46,8 +46,10 @@ export const handler = define.handlers({
 
     if (res.ok && typeof parsed.sessionId === "string") {
       const isNewUser = parsed.isNewUser === true;
+      // New users go to the first-sign-in wizard at /welcome; returning users
+      // land on the dashboard with the welcome-back toast.
       const redirectTo = isNewUser
-        ? "/assistant?onboard=1"
+        ? "/welcome"
         : "/dashboard?welcome=back";
       return new Response(
         JSON.stringify({

@@ -1,4 +1,4 @@
-import { Body, Context, Controller, Delete, Get, Put } from "#danet/core";
+import { Body, Context, Controller, Delete, Get, Post, Put } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
@@ -32,6 +32,20 @@ export class MeController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const patch = parseUpdateUser(body);
     return await this.users.update(user.id, patch);
+  }
+
+  /**
+   * POST /me/onboarded — mark first-sign-in onboarding as finished (or
+   * skipped). Body `{ skipped?: boolean }` (defaults to false = a real
+   * finish). Idempotent: the first call stamps the server's now-ISO onto
+   * `onboardedAt`; later calls are no-ops that keep the first timestamp, so
+   * `/welcome` bounces to `/dashboard` forever after (skip is permanent).
+   */
+  @Post("onboarded")
+  async onboarded(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const skipped = Boolean((body as { skipped?: unknown } | null)?.skipped);
+    return await this.users.markOnboarded(user.id, skipped);
   }
 
   @Delete()

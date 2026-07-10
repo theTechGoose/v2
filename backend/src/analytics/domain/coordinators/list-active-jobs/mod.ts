@@ -65,6 +65,7 @@ export class ListActiveJobs {
     for (const c of contracts) contractsByQuote.set(c.quoteId, c);
     const invoicesByContract = new Map<string, Invoice[]>();
     for (const i of invoices) {
+      if (!i.contractId) continue;
       const arr = invoicesByContract.get(i.contractId) ?? [];
       arr.push(i);
       invoicesByContract.set(i.contractId, arr);

@@ -137,14 +137,14 @@
       "cta.fine":
         "By submitting, you agree to receive a friendly text from us.",
       "cta.smsPreview":
-        "Paperwork Monsters: Your code is 482-913. Don’t share it.",
+        "Paperwork Monster: Your code is 482-913. Don’t share it.",
       "cta.steps.phone": "Phone",
       "cta.steps.code": "Code",
       "cta.steps.in": "You’re in",
       "cta.useSaved": "Use",
       "cta.notYou": "Not you?",
       "footer.contact": "Contact",
-      "footer.copy": "© 2026 Paperwork Monsters. All rights reserved.",
+      "footer.copy": "© 2026 Paperwork Monster. All rights reserved.",
     },
     es: {
       "nav.features": "Qué hacemos",
@@ -276,7 +276,7 @@
       "cta.fine":
         "Al enviar, aceptas recibir un mensaje amigable de nuestra parte.",
       "cta.smsPreview":
-        "Paperwork Monsters: Tu código es 482-913. No lo compartas.",
+        "Paperwork Monster: Tu código es 482-913. No lo compartas.",
       "cta.steps.phone": "Teléfono",
       "cta.steps.code": "Código",
       "cta.steps.in": "Listo",
@@ -284,7 +284,7 @@
       "cta.notYou": "¿No eres tú?",
       "footer.contact": "Contacto",
       "footer.copy":
-        "© 2026 Paperwork Monsters. Todos los derechos reservados.",
+        "© 2026 Paperwork Monster. Todos los derechos reservados.",
     },
   };
 
