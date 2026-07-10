@@ -20,3 +20,7 @@ front-end/_fresh/
 # Local Claude Code worktrees (never commit these)
 .claude/worktrees/
 
+
+# local-only owner wipe secret (never commit)
+.reset.secret
+backend/.reset.secret

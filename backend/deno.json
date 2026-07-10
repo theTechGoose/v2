@@ -2,7 +2,8 @@
   "tasks": {
     "start": "AGENTS_LLM_CLIENT=openai TRANSCRIPTION_CLIENT=openai deno run -A --env-file=../.env --unstable-kv bootstrap/mod.ts",
     "dev":   "AGENTS_LLM_CLIENT=openai TRANSCRIPTION_CLIENT=openai deno run -A --env-file=../.env --watch --unstable-kv bootstrap/mod.ts",
-    "test": "deno test -A --unstable-kv --parallel"
+    "test": "deno test -A --unstable-kv --parallel",
+    "wipe": "deno run -A --unstable-kv scripts/wipe.ts"
   },
   "imports": {
     "#mrg-keystone/danet": "jsr:@mrg-keystone/danet@^1.0.2",

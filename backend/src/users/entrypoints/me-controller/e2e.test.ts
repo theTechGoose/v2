@@ -26,7 +26,7 @@ async function drain(res: Response): Promise<void> {
   await res.body?.cancel();
 }
 
-async function login(port: number, phoneNumber: string, language?: string): Promise<{ sessionId: string; userId: string }> {
+async function login(port: number, phoneNumber: string, language?: string): Promise<{ sessionId: string; userId: string; isNewUser?: boolean }> {
   await drain(await fetch(`http://localhost:${port}/auth/send-otp`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -146,6 +146,112 @@ Deno.test("me e2e: POST /me/onboarded stamps onboardedAt; second call is a no-op
     }).then((r) => r.json());
     assertEquals(second.onboardedAt, first.onboardedAt);
     assertEquals(second.onboardingSkipped, true);
+  });
+});
+
+const RESET_SECRET = "test-reset-secret-0123456789";
+
+Deno.test("reset-by-phone: refused when RESET_SECRET is unset (no backdoor by default)", async () => {
+  await withServer(async (port) => {
+    const session = await login(port, "+15125551234");
+    Deno.env.delete("RESET_SECRET");
+    const res = await fetch(`http://localhost:${port}/me/reset-by-phone`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-reset-secret": "anything-at-all-here" },
+      body: JSON.stringify({ phoneNumber: "+15125551234" }),
+    }).then((r) => r.json());
+    assertEquals(res, { ok: false, error: "forbidden" });
+    // user must survive
+    const me = await fetch(`http://localhost:${port}/me`, {
+      headers: { "x-session-id": session.sessionId },
+    }).then((r) => r.json());
+    assertEquals(me.id, session.userId);
+  });
+});
+
+Deno.test("reset-by-phone: wrong secret is refused; account survives", async () => {
+  await withServer(async (port) => {
+    const session = await login(port, "+15125551234");
+    Deno.env.set("RESET_SECRET", RESET_SECRET);
+    try {
+      const res = await fetch(`http://localhost:${port}/me/reset-by-phone`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-reset-secret": "wrong-secret-but-16+" },
+        body: JSON.stringify({ phoneNumber: "+15125551234" }),
+      }).then((r) => r.json());
+      assertEquals(res, { ok: false, error: "forbidden" });
+      const me = await fetch(`http://localhost:${port}/me`, {
+        headers: { "x-session-id": session.sessionId },
+      }).then((r) => r.json());
+      assertEquals(me.id, session.userId, "account must survive a wrong-secret call");
+    } finally {
+      Deno.env.delete("RESET_SECRET");
+    }
+  });
+});
+
+Deno.test("reset-by-phone: correct secret wipes the user; re-login is a NEW user", async () => {
+  await withServer(async (port) => {
+    const session = await login(port, "+15125551234");
+    // seed a little data so the sweep has something to delete beyond the user row
+    await drain(await fetch(`http://localhost:${port}/me`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-session-id": session.sessionId },
+      body: JSON.stringify({ name: "Wipe Me", email: "wipe@test.dev" }),
+    }));
+
+    Deno.env.set("RESET_SECRET", RESET_SECRET);
+    try {
+      const res = await fetch(`http://localhost:${port}/me/reset-by-phone`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-reset-secret": RESET_SECRET },
+        body: JSON.stringify({ phoneNumber: "8438557133" }), // also proves normalization is independent of the seeded +1512 user
+      }).then((r) => r.json());
+      // different phone → nothing to delete
+      assertEquals(res.ok, true);
+      assertEquals(res.note, "no_such_user");
+
+      // now wipe the real seeded user
+      const real = await fetch(`http://localhost:${port}/me/reset-by-phone`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-reset-secret": RESET_SECRET },
+        body: JSON.stringify({ phoneNumber: "+15125551234" }),
+      }).then((r) => r.json());
+      assertEquals(real.ok, true);
+      assert(real.deleted > 0, "wipe should delete at least the user + index keys");
+      assertEquals(real.userId, session.userId);
+
+      // old session is gone
+      const dead = await fetch(`http://localhost:${port}/me`, {
+        headers: { "x-session-id": session.sessionId },
+      });
+      const okDead = dead.ok;
+      await drain(dead);
+      assertEquals(okDead, false, "old session must be invalid after wipe");
+
+      // re-login on the same phone yields a brand-new user
+      const fresh = await login(port, "+15125551234");
+      assert(fresh.isNewUser, "re-login after wipe must be a fresh user");
+      assert(fresh.userId !== session.userId, "a new userId is minted");
+    } finally {
+      Deno.env.delete("RESET_SECRET");
+    }
+  });
+});
+
+Deno.test("reset-by-phone: bad phone yields bad_phone (with a valid secret)", async () => {
+  await withServer(async (port) => {
+    Deno.env.set("RESET_SECRET", RESET_SECRET);
+    try {
+      const res = await fetch(`http://localhost:${port}/me/reset-by-phone`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-reset-secret": RESET_SECRET },
+        body: JSON.stringify({ phoneNumber: "nope" }),
+      }).then((r) => r.json());
+      assertEquals(res, { ok: false, error: "bad_phone" });
+    } finally {
+      Deno.env.delete("RESET_SECRET");
+    }
   });
 });
 
