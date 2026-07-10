@@ -6,7 +6,8 @@
     "start": "deno serve -A --unstable-kv mod.ts",
     "start:local": "deno serve -A --unstable-kv --env-file=.env mod.ts",
     "serve": "deno run -A --unstable-kv serve.ts",
-    "test:e2e": "deno run -A --unstable-kv tests/e2e.ts"
+    "test:e2e": "deno run -A --unstable-kv tests/e2e.ts",
+    "wipe": "cd backend && deno task wipe"
   },
   "compilerOptions": {
     "experimentalDecorators": true,

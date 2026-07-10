@@ -60,15 +60,20 @@ if (!secret) {
 }
 
 console.log(`→ wiping ${phone} on ${base} …`);
-const res = await fetch(`${base}/me/reset-by-phone`, {
-  method: "POST",
-  headers: {
-    "content-type": "application/json",
-    "x-reset-secret": secret,
-    "accept": "application/json",
-  },
-  body: JSON.stringify({ phoneNumber: phone }),
-});
+let res: Response;
+try {
+  res = await fetch(`${base}/me/reset-by-phone`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-reset-secret": secret,
+      "accept": "application/json",
+    },
+    body: JSON.stringify({ phoneNumber: phone }),
+  });
+} catch (err) {
+  fail(`could not reach ${base}: ${err instanceof Error ? err.message : err}`);
+}
 
 const body = await res.json().catch(() => ({}));
 if (!res.ok && res.status !== 201) {
