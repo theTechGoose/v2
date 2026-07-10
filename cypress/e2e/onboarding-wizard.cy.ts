@@ -319,6 +319,23 @@ describe("Onboarding wizard — education + finish", () => {
       .should("be.visible");
   });
 
+  it("a custom scenario hands off the user's own typed job to a seeded chat", () => {
+    cy.startFreshOnboarding(PHONE);
+    seedAllData();
+    cy.visit("/welcome");
+    continueBtn().click(); // -> sampleQuote
+    continueBtn().click(); // -> finish
+    cy.contains(/you're all set/i, { timeout: 10_000 }).should("be.visible");
+
+    cy.step("type a custom job and hand off to Bossie with exactly that text");
+    const custom = "Roof replacement for the Alvarez family — $9,800";
+    cy.get("#welcome-custom").type(custom);
+    cy.contains("button", /start with this/i).click();
+    cy.location("pathname", { timeout: 15_000 }).should("match", /^\/assistant\//);
+    cy.contains(/roof replacement for the alvarez/i, { timeout: 15_000 })
+      .should("be.visible");
+  });
+
   it("'explore on my own' lands on the dashboard, and /welcome never traps again", () => {
     cy.startFreshOnboarding(PHONE);
     seedAllData();

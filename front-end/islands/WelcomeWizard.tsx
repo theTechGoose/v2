@@ -899,6 +899,7 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
 
 function FinishStep({ ctx }: { ctx: StepCtx }) {
   const [busy, setBusy] = useState(false);
+  const [custom, setCustom] = useState("");
 
   async function toAssistant(examplePrompt: string) {
     if (busy) return;
@@ -944,6 +945,43 @@ function FinishStep({ ctx }: { ctx: StepCtx }) {
           </button>
         ))}
       </div>
+
+      {
+        /* Custom scenario — the user types their own job and hands off to
+          Bossie with exactly that text (same seed path as the preset chips). */
+      }
+      <form
+        class="welcome__custom"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const text = custom.trim();
+          if (text) toAssistant(text);
+        }}
+      >
+        <label class="welcome__custom-label" for="welcome-custom">
+          {t("welcome.finish.customLabel")}
+        </label>
+        <div class="welcome__custom-row">
+          <input
+            id="welcome-custom"
+            class="welcome__input"
+            type="text"
+            value={custom}
+            disabled={busy}
+            aria-label={t("welcome.finish.customLabel")}
+            placeholder={t("welcome.finish.customPlaceholder")}
+            onInput={(e) => setCustom((e.target as HTMLInputElement).value)}
+          />
+          <button
+            type="submit"
+            class="welcome__btn welcome__btn--primary"
+            disabled={busy || custom.trim().length === 0}
+          >
+            {t("welcome.finish.customStart")}
+          </button>
+        </div>
+      </form>
+
       <div class="welcome__footer">
         {ctx.canGoBack
           ? (

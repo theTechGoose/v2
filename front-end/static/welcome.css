@@ -371,6 +371,37 @@
   flex-direction: column;
   gap: 10px;
 }
+.welcome__custom {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-strong);
+}
+.welcome__custom-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted, #667);
+}
+.welcome__custom-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.welcome__custom-row .welcome__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.welcome__custom-row .welcome__btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+@media (max-width: 480px) {
+  .welcome__custom-row {
+    flex-direction: column;
+  }
+}
 .welcome__prompt-chip {
   display: flex;
   flex-direction: column;
