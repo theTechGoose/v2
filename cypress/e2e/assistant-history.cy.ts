@@ -1,13 +1,17 @@
 /// <reference types="cypress" />
 
 /**
- * Assistant back-button (a.chat__head-btn) — single-step history.
+ * Assistant universal back button (a.chat__head-btn).
  *
- *  - Before every user-initiated assistant state change, the app pushes
- *    a snapshot of the current view onto a history stack.
- *  - Clicking the back button pops the most recent snapshot and restores
- *    that view. UI state only (no backend revert).
- *  - When the stack is empty the button is not rendered at all.
+ *  - The header back button is ALWAYS rendered (ChatHeaderLive). Clicking it
+ *    dispatches `pm:asst-back`; AsstChat resolves what "back" means,
+ *    most-immediate action first:
+ *      1. an active wizard step (stepIdx > 0) → rewind one step
+ *      2. an in-chat view on the history stack  → pop + restore that view
+ *      3. nothing left                          → leave for /dashboard
+ *  - Before every user-initiated assistant state change, the app pushes a
+ *    snapshot of the current view onto the history stack. Restores are UI
+ *    state only (no backend revert).
  *
  * State changes exercised here, in order:
  *   1. Empty state (3 prompts visible)                        — stack empty
@@ -15,7 +19,7 @@
  *   3. Type details + submit                                  — push → price capture
  *   4. Click back                                             — pop  → awaiting details
  *   5. Click back                                             — pop  → empty state
- *   6. Stack is empty again                                   — button gone
+ *   6. Click back on the empty stack                          — exit → /dashboard
  */
 describe("assistant — back button (chat__head-btn)", () => {
   const CONTRACTOR_PHONE = "+15125550111";
@@ -26,31 +30,34 @@ describe("assistant — back button (chat__head-btn)", () => {
     cy.visit("/assistant");
   });
 
-  it("is hidden on a fresh assistant view (empty history stack)", () => {
+  it("is always visible; on a fresh view (empty stack) it exits to the dashboard", () => {
     cy.contains("button.chat__empty-prompt", "I know my price, write it up.")
       .should("be.visible");
 
-    cy.get("a.chat__head-btn").should("not.exist");
+    // Universal back button is rendered even with no history.
+    cy.get("a.chat__head-btn").should("be.visible");
+
+    // Nothing to rewind or pop → back leaves the chat for the dashboard.
+    cy.get("a.chat__head-btn").click();
+    cy.location("pathname").should("eq", "/dashboard");
   });
 
-  it("appears after a state change and reverts the latest change on click", () => {
+  it("reverts the latest change on click, then exits once the stack is empty", () => {
     // --- State change #1: open the details-first flow ------------------------
     cy.contains("button.chat__empty-prompt", "I know my price, write it up.")
       .click();
     cy.contains(".chat__details-prompt-bubble", /tell me the job details/i)
       .should("be.visible");
 
-    // Back button is now in the DOM (history depth = 1).
-    cy.get("a.chat__head-btn").should("be.visible");
-
-    // Click back → state restored to the empty-state prompts.
+    // History depth = 1 → click back restores the empty-state prompts.
     cy.get("a.chat__head-btn").click();
     cy.contains("button.chat__empty-prompt", "I know my price, write it up.")
       .should("be.visible");
     cy.get(".chat__details-prompt-bubble").should("not.exist");
 
-    // Stack is empty again → button is gone.
-    cy.get("a.chat__head-btn").should("not.exist");
+    // Stack is empty again, but the button stays; one more click exits.
+    cy.get("a.chat__head-btn").should("be.visible").click();
+    cy.location("pathname").should("eq", "/dashboard");
   });
 
   it("steps back one change at a time across multiple changes", () => {
@@ -79,7 +86,8 @@ describe("assistant — back button (chat__head-btn)", () => {
       .should("be.visible");
     cy.get(".chat__details-prompt-bubble").should("not.exist");
 
-    // No more history → button hidden.
-    cy.get("a.chat__head-btn").should("not.exist");
+    // No more history → the button remains and now exits to the dashboard.
+    cy.get("a.chat__head-btn").should("be.visible").click();
+    cy.location("pathname").should("eq", "/dashboard");
   });
 });

@@ -264,7 +264,7 @@ Cypress.Commands.add("apiInquiry", (quoteId: string, body) => {
 Cypress.Commands.add("apiSendQuoteEmail", (quoteId: string) => {
   return cy.request({
     method: "POST",
-    url: `/api/paperwork/quotes/${quoteId}/email`,
+    url: `/api/quotes/${quoteId}/email`,
     failOnStatusCode: false,
   });
 });
@@ -320,7 +320,7 @@ Cypress.Commands.add("apiConfirmPayment", (invoiceId) => {
 Cypress.Commands.add("apiSendInvoiceEmail", (invoiceId: string) => {
   return cy.request({
     method: "POST",
-    url: `/api/paperwork/invoices/${invoiceId}/email`,
+    url: `/api/invoices/${invoiceId}/email`,
     failOnStatusCode: false,
   });
 });
