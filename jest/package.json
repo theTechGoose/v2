@@ -1,0 +1,17 @@
+{
+  "name": "v2-jest",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Unit + integration TDD harness for the Quote Flow Tasks plan (TDD-QUOTE-FLOW.md). Lives outside the Deno workspace, same pattern as cypress/.",
+  "scripts": {
+    "test": "jest",
+    "test:unit": "jest --selectProjects unit",
+    "test:integration": "jest --selectProjects integration"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.6.0"
+  }
+}
