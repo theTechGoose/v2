@@ -26,10 +26,11 @@ import {
 import { filesClient } from "../clients/files.ts";
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
 import { api } from "../lib/api.ts";
+import { type AddressSuggestion, suggestAddresses } from "../lib/mapbox.ts";
 
-/** The concrete example prompts shown on the Meet-Bossie cards and reused as
- *  the finish-screen chips. Each mirrors something `handle-chat-message`
- *  actually supports (quote / invoice / follow-up). */
+/** The concrete example prompts shown on the meet-your-assistant cards. Each
+ *  mirrors something `handle-chat-message` actually supports (quote / invoice
+ *  / follow-up). */
 const EXAMPLE_PROMPTS = [
   {
     id: "quote",
@@ -92,6 +93,11 @@ interface StepCtx {
   skippable: boolean;
   index: number;
   total: number;
+  /** Sample-quote id pre-generated at wizard mount (empty while the request
+   *  is still in flight) so the preview step renders instantly. */
+  sampleQuoteId: string;
+  sampleQuoteFailed: boolean;
+  retrySampleQuote: () => void;
 }
 
 /** A step is a real Preact component (rendered as `<Step ctx={ctx} />` with a
@@ -493,6 +499,48 @@ function AddressStep({ ctx }: { ctx: StepCtx }) {
   const valid = street.trim().length > 0 || city.trim().length > 0 ||
     postal.trim().length > 0;
 
+  // Mapbox autocomplete on the street input. The typed text is ALWAYS the
+  // first option so a PO box, "misma dirección que arriba", or any address
+  // Mapbox doesn't know stays enterable. Suggestions are a convenience —
+  // failures just mean an empty list.
+  const [sugs, setSugs] = useState<AddressSuggestion[]>([]);
+  const [acOpen, setAcOpen] = useState(false);
+  const acTimer = useRef<number | undefined>(undefined);
+  const acAbort = useRef<AbortController | null>(null);
+
+  function onStreetInput(value: string) {
+    setStreet(value);
+    clearTimeout(acTimer.current);
+    acAbort.current?.abort();
+    if (value.trim().length < 3) {
+      setSugs([]);
+      setAcOpen(false);
+      return;
+    }
+    setAcOpen(true);
+    acTimer.current = setTimeout(async () => {
+      const ac = new AbortController();
+      acAbort.current = ac;
+      try {
+        const found = await suggestAddresses(value, {
+          lang: langSignal.value,
+          signal: ac.signal,
+        });
+        if (!ac.signal.aborted) setSugs(found);
+      } catch {
+        // Aborted by newer keystroke — the newer request owns the list.
+      }
+    }, 250) as unknown as number;
+  }
+
+  function pickSuggestion(s: AddressSuggestion) {
+    setStreet(s.street);
+    if (s.city) setCity(s.city);
+    if (s.postal) setPostal(s.postal);
+    setSugs([]);
+    setAcOpen(false);
+  }
+
   async function save() {
     if (!valid || busy) return;
     setBusy(true);
@@ -521,16 +569,67 @@ function AddressStep({ ctx }: { ctx: StepCtx }) {
       question={t("welcome.address.question")}
       why={t("welcome.address.why")}
     >
-      <input
-        class="welcome__input"
-        type="text"
-        autoComplete="address-line1"
-        aria-label={t("welcome.address.street")}
-        placeholder={t("welcome.address.street")}
-        value={street}
-        // deno-lint-ignore no-explicit-any
-        onInput={(e: any) => setStreet(e.currentTarget.value)}
-      />
+      <div class="welcome__ac">
+        <input
+          class="welcome__input"
+          type="text"
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={acOpen}
+          aria-controls="welcome-ac-list"
+          aria-label={t("welcome.address.street")}
+          placeholder={t("welcome.address.street")}
+          value={street}
+          // deno-lint-ignore no-explicit-any
+          onInput={(e: any) => onStreetInput(e.currentTarget.value)}
+          // deno-lint-ignore no-explicit-any
+          onKeyDown={(e: any) => {
+            if (e.key === "Escape") setAcOpen(false);
+          }}
+          onBlur={() => setAcOpen(false)}
+        />
+        {acOpen && street.trim().length >= 3
+          ? (
+            <ul
+              id="welcome-ac-list"
+              class="welcome__ac-list"
+              role="listbox"
+              // Options select on mousedown-preventDefault + click so the
+              // input's blur (which closes the list) never wins the race.
+              // deno-lint-ignore no-explicit-any
+              onMouseDown={(e: any) => e.preventDefault()}
+            >
+              <li role="option" aria-selected={false}>
+                <button
+                  type="button"
+                  class="welcome__ac-opt welcome__ac-opt--custom"
+                  onClick={() => {
+                    setSugs([]);
+                    setAcOpen(false);
+                  }}
+                >
+                  <span class="welcome__ac-text">{street.trim()}</span>
+                  <span class="welcome__ac-hint">
+                    {t("welcome.address.useTyped")}
+                  </span>
+                </button>
+              </li>
+              {sugs.map((s) => (
+                <li key={s.label} role="option" aria-selected={false}>
+                  <button
+                    type="button"
+                    class="welcome__ac-opt"
+                    onClick={() =>
+                      pickSuggestion(s)}
+                  >
+                    <span class="welcome__ac-text">{s.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
+          : null}
+      </div>
       <input
         class="welcome__input"
         type="text"
@@ -845,25 +944,17 @@ function MeetBossieStep({ ctx }: { ctx: StepCtx }) {
 
 function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
   const [busy, setBusy] = useState(false);
-  const [quoteId, setQuoteId] = useState("");
-  const [err, setErr] = useState("");
+  const quoteId = ctx.sampleQuoteId;
 
-  async function createSample() {
+  // Final step: Continue marks onboarding finished and lands the user on the
+  // assistant's NEW-chat view (/assistant renders an empty conversation) —
+  // deliberately NOT a pre-seeded conversation, so their first message starts
+  // a fresh thread.
+  async function finish() {
     if (busy) return;
     setBusy(true);
-    setErr("");
-    try {
-      const res = await api.post<{ quoteId: string; created: boolean }>(
-        "/agents/conversations/sample-quote",
-        {},
-      );
-      setQuoteId(res.quoteId);
-      globalThis.open?.(`/q/${res.quoteId}`, "_blank", "noopener");
-    } catch {
-      setErr(t("welcome.sample.error"));
-    } finally {
-      setBusy(false);
-    }
+    await markOnboardedFinish();
+    globalThis.location.href = "/assistant";
   }
 
   return (
@@ -871,141 +962,47 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
       question={t("welcome.sample.question")}
       why={t("welcome.sample.why")}
     >
-      <button
-        type="button"
-        class="welcome__btn welcome__btn--outline"
-        onClick={createSample}
-        disabled={busy}
-      >
-        {t("welcome.sample.button")}
-      </button>
       {quoteId
         ? (
-          <a
-            class="welcome__sample-link"
-            href={`/q/${quoteId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {t("welcome.sample.button")} ↗
-          </a>
+          <>
+            <div class="welcome__sample-frame-wrap">
+              <iframe
+                class="welcome__sample-frame"
+                src={`/q/${quoteId}`}
+                title={t("welcome.sample.question")}
+              />
+            </div>
+            <a
+              class="welcome__sample-link"
+              href={`/q/${quoteId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {t("welcome.sample.openFull")} ↗
+            </a>
+          </>
         )
-        : null}
-      {err ? <p class="welcome__error" role="alert">{err}</p> : null}
-      <StepFooter ctx={ctx} valid busy={busy} onContinue={ctx.advance} />
-    </StepBody>
-  );
-}
-
-function FinishStep({ ctx }: { ctx: StepCtx }) {
-  const [busy, setBusy] = useState(false);
-  const [custom, setCustom] = useState("");
-
-  async function toAssistant(examplePrompt: string) {
-    if (busy) return;
-    setBusy(true);
-    await markOnboardedFinish();
-    try {
-      const r = await api.post<{ conversationId: string }>(
-        "/agents/conversations/onboarding-start",
-        { handoff: true, examplePrompt },
-      );
-      globalThis.location.href = `/assistant/${r.conversationId}`;
-      return;
-    } catch {
-      // Couldn't seed the hand-off chat — don't strand them; the dashboard is
-      // reachable and nudges setup.
-      globalThis.location.href = "/dashboard";
-    }
-  }
-
-  async function toDashboard() {
-    if (busy) return;
-    setBusy(true);
-    await markOnboardedFinish();
-    globalThis.location.href = "/dashboard";
-  }
-
-  return (
-    <StepBody
-      question={t("welcome.finish.question")}
-      why={t("welcome.finish.why")}
-    >
-      <div class="welcome__chips-col">
-        {EXAMPLE_PROMPTS.map((ex) => (
-          <button
-            key={ex.id}
-            type="button"
-            class="welcome__prompt-chip"
-            disabled={busy}
-            onClick={() => toAssistant(t(ex.textKey))}
-          >
-            <span class="welcome__prompt-label">{t(ex.labelKey)}</span>
-            <span class="welcome__prompt-text">"{t(ex.textKey)}"</span>
-          </button>
-        ))}
-      </div>
-
-      {
-        /* Custom scenario — the user types their own job and hands off to
-          Bossie with exactly that text (same seed path as the preset chips). */
-      }
-      <form
-        class="welcome__custom"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const text = custom.trim();
-          if (text) toAssistant(text);
-        }}
-      >
-        <label class="welcome__custom-label" for="welcome-custom">
-          {t("welcome.finish.customLabel")}
-        </label>
-        <div class="welcome__custom-row">
-          <input
-            id="welcome-custom"
-            class="welcome__input"
-            type="text"
-            value={custom}
-            disabled={busy}
-            aria-label={t("welcome.finish.customLabel")}
-            placeholder={t("welcome.finish.customPlaceholder")}
-            onInput={(e) => setCustom((e.target as HTMLInputElement).value)}
-          />
-          <button
-            type="submit"
-            class="welcome__btn welcome__btn--primary"
-            disabled={busy || custom.trim().length === 0}
-          >
-            {t("welcome.finish.customStart")}
-          </button>
-        </div>
-      </form>
-
-      <div class="welcome__footer">
-        {ctx.canGoBack
-          ? (
+        : ctx.sampleQuoteFailed
+        ? (
+          <>
+            <p class="welcome__error" role="alert">
+              {t("welcome.sample.error")}
+            </p>
             <button
               type="button"
-              class="welcome__btn welcome__btn--ghost"
-              onClick={ctx.goBack}
-              disabled={busy}
+              class="welcome__btn welcome__btn--outline"
+              onClick={ctx.retrySampleQuote}
             >
-              {t("welcome.back")}
+              {t("welcome.sample.retry")}
             </button>
-          )
-          : <span />}
-        <div class="welcome__footer-right">
-          <button
-            type="button"
-            class="welcome__btn welcome__btn--ghost"
-            onClick={toDashboard}
-            disabled={busy}
-          >
-            {t("welcome.finish.explore")}
-          </button>
-        </div>
-      </div>
+          </>
+        )
+        : (
+          <p class="welcome__sample-loading">
+            {t("welcome.sample.loading")}
+          </p>
+        )}
+      <StepFooter ctx={ctx} valid busy={busy} onContinue={finish} />
     </StepBody>
   );
 }
@@ -1065,8 +1062,9 @@ function buildSteps(): StepDef[] {
       isComplete: (s) => Boolean(s.insurance?.provider?.trim()),
       Component: InsuranceStep,
     },
-    // Education + finish — always shown (isComplete: false) so a data-complete
-    // user still gets the teach-and-hand-off screens before landing in the app.
+    // Education — always shown (isComplete: false) so a data-complete user
+    // still gets the teach screens. The sample-quote step is the last one:
+    // its Continue finishes onboarding and hands off to the assistant chat.
     {
       id: "meetBossie",
       skippable: false,
@@ -1078,12 +1076,6 @@ function buildSteps(): StepDef[] {
       skippable: false,
       isComplete: () => false,
       Component: SampleQuoteStep,
-    },
-    {
-      id: "finish",
-      skippable: false,
-      isComplete: () => false,
-      Component: FinishStep,
     },
   ];
 }
@@ -1104,6 +1096,31 @@ export default function WelcomeWizard(
   const [snap, setSnap] = useState<ProfileSnapshot>(snapshot);
   const [index, setIndex] = useState(() => firstIncomplete(steps, snapshot));
   const [, force] = useState(0);
+
+  // Pre-generate the sample quote while the user fills the form so the
+  // "see what your customer sees" step renders instantly. Idempotent
+  // server-side (per-user tag), and the public page loads branding live,
+  // so business name / logo entered on later steps still show up.
+  const [sampleQuoteId, setSampleQuoteId] = useState("");
+  const [sampleQuoteFailed, setSampleQuoteFailed] = useState(false);
+  const samplePending = useRef(false);
+  function ensureSampleQuote() {
+    if (samplePending.current || sampleQuoteId) return;
+    samplePending.current = true;
+    setSampleQuoteFailed(false);
+    api.post<{ quoteId: string; created: boolean }>(
+      "/agents/conversations/sample-quote",
+      {},
+    )
+      .then((r) => setSampleQuoteId(r.quoteId))
+      .catch(() => setSampleQuoteFailed(true))
+      .finally(() => {
+        samplePending.current = false;
+      });
+  }
+  useEffect(() => {
+    ensureSampleQuote();
+  }, []);
 
   // Seed the client language, then re-render whenever the language toggles.
   //
@@ -1138,6 +1155,9 @@ export default function WelcomeWizard(
     skippable: step.skippable,
     index,
     total,
+    sampleQuoteId,
+    sampleQuoteFailed,
+    retrySampleQuote: ensureSampleQuote,
   };
 
   const [leaving, setLeaving] = useState(false);

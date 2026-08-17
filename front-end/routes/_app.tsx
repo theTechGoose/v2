@@ -11,10 +11,26 @@ const PUBLIC_BACKEND_URL = typeof Deno !== "undefined"
   ? Deno.env.get("PUBLIC_BACKEND_URL") ?? ""
   : "";
 
+// The app has NO service worker of its own, so any registration/CacheStorage
+// found on this origin is a leftover (e.g. another project once served on
+// this localhost port) that keeps serving STALE JS across tabs and server
+// restarts. Purge it and reload once so the page picks up fresh modules.
+// sessionStorage-guarded so a failed purge can never reload-loop.
+const SW_PURGE_SCRIPT = `(async()=>{try{
+var regs=navigator.serviceWorker?await navigator.serviceWorker.getRegistrations():[];
+var keys=self.caches?await caches.keys():[];
+if((regs.length||keys.length)&&!sessionStorage.getItem("pm:sw-purged")){
+sessionStorage.setItem("pm:sw-purged","1");
+await Promise.all(regs.map(function(r){return r.unregister()}));
+await Promise.all(keys.map(function(k){return caches.delete(k)}));
+console.warn("[pm] purged stale service worker/caches — reloading");
+location.reload();}
+}catch(_e){}})();`;
+
 export default define.page(function App({ Component }) {
-  const bootScript = PUBLIC_BACKEND_URL
+  const bootScript = (PUBLIC_BACKEND_URL
     ? `window.__PUBLIC_BACKEND_URL=${JSON.stringify(PUBLIC_BACKEND_URL)};`
-    : "";
+    : "") + SW_PURGE_SCRIPT;
   return (
     <html>
       <head>

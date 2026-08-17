@@ -111,6 +111,15 @@ describe("Onboarding wizard — data questions", () => {
     cy.step("address");
     cy.get('input[aria-label="Street address"]', { timeout: 10_000 })
       .clear().type("123 Palm Ave");
+    // Mapbox autocomplete opens under the street input; its FIRST option is
+    // always the raw typed text (custom entry). Pick it — that both proves
+    // the custom path and closes the dropdown so it can't cover the next
+    // fields (network-independent: the typed option renders even when the
+    // Mapbox request fails or returns nothing).
+    cy.get(".welcome__ac-list li").first()
+      .should("contain.text", "123 Palm Ave")
+      .find("button").click();
+    cy.get(".welcome__ac-list").should("not.exist");
     cy.get('input[aria-label="City"]').clear().type("Charleston");
     cy.get('input[aria-label="ZIP"]').clear().type("29401");
     continueBtn().click();
@@ -131,7 +140,9 @@ describe("Onboarding wizard — data questions", () => {
 
     cy.step("insurance");
     cy.contains(/are you insured/i, { timeout: 10_000 }).should("be.visible");
-    cy.get('input[aria-label="Insurance provider"]').clear().type("Acme Mutual");
+    cy.get('input[aria-label="Insurance provider"]').clear().type(
+      "Acme Mutual",
+    );
     continueBtn().click();
 
     cy.step("everything persisted on /api/profile");
@@ -231,7 +242,11 @@ describe("Onboarding wizard — data questions", () => {
 
     cy.step("Zelle is already on; add Venmo and save");
     cy.contains(/how do you want to get paid/i).should("be.visible");
-    cy.contains("button", /^zelle$/i).should("have.attr", "aria-pressed", "true");
+    cy.contains("button", /^zelle$/i).should(
+      "have.attr",
+      "aria-pressed",
+      "true",
+    );
     cy.contains("button", /^venmo$/i).click();
     cy.get('input[aria-label="@your-venmo"]').clear().type("@rafa");
     continueBtn().click();
@@ -246,7 +261,7 @@ describe("Onboarding wizard — data questions", () => {
   });
 });
 
-describe("Onboarding wizard — education + finish", () => {
+describe("Onboarding wizard — education + hand-off", () => {
   const PHONE = "+18435559004";
 
   // Seed every data step so /welcome resumes on the first education screen.
@@ -272,31 +287,35 @@ describe("Onboarding wizard — education + finish", () => {
     return cy.contains("button", /^continue$/i);
   }
 
-  it("shows the Meet-Bossie screen with three example prompts after the data steps", () => {
+  it("shows the meet-your-assistant screen with three example prompts after the data steps", () => {
     cy.startFreshOnboarding(PHONE);
     seedAllData();
     cy.visit("/welcome");
-    cy.contains(/meet bossie/i, { timeout: 10_000 }).should("be.visible");
+    cy.contains(/meet your assistant/i, { timeout: 10_000 }).should(
+      "be.visible",
+    );
     cy.contains(/paver patio for the nguyens/i).should("be.visible");
     cy.contains(/invoice maria for the deck job/i).should("be.visible");
     cy.contains(/nudge tom about the bathroom quote/i).should("be.visible");
   });
 
-  it("sample quote is branded with the business name, never 'Dev Business'", () => {
+  it("sample quote renders inline, branded with the business name, never 'Dev Business'", () => {
     cy.startFreshOnboarding(PHONE);
     seedAllData();
     cy.visit("/welcome");
     cy.step("advance to the sample-quote screen");
-    continueBtn().click(); // meetBossie -> sampleQuote
+    continueBtn().click(); // meet-your-assistant -> sampleQuote
     cy.contains(/see what your customer sees/i, { timeout: 10_000 })
       .should("be.visible");
 
-    cy.step("create the sample and open its public page");
-    cy.contains("button", /preview a sample quote/i).click();
-    cy.get(".welcome__sample-link", { timeout: 10_000 })
-      .should("have.attr", "href")
-      .then((href) => {
-        cy.visit(String(href));
+    cy.step("the pre-generated quote shows inline without any button click");
+    cy.get(".welcome__sample-frame", { timeout: 10_000 })
+      .should("have.attr", "src")
+      .and("match", /^\/q\//);
+    cy.get(".welcome__sample-frame")
+      .invoke("attr", "src")
+      .then((src) => {
+        cy.visit(String(src));
         cy.contains(/monster roofing co/i, { timeout: 10_000 })
           .should("be.visible");
         cy.contains(/dev business/i).should("not.exist");
@@ -304,46 +323,18 @@ describe("Onboarding wizard — education + finish", () => {
       });
   });
 
-  it("picking a prompt chip lands in a seeded assistant chat", () => {
+  it("Continue on the sample step finishes onto a fresh assistant chat, and /welcome never traps again", () => {
     cy.startFreshOnboarding(PHONE);
     seedAllData();
     cy.visit("/welcome");
-    continueBtn().click(); // -> sampleQuote
-    continueBtn().click(); // -> finish
-    cy.contains(/you're all set/i, { timeout: 10_000 }).should("be.visible");
-
-    cy.step("pick the quote chip → seeded /assistant chat");
-    cy.contains("button", /paver patio for the nguyens/i).click();
-    cy.location("pathname", { timeout: 15_000 }).should("match", /^\/assistant\//);
-    cy.contains(/first quote|paver patio/i, { timeout: 15_000 })
+    continueBtn().click(); // -> sampleQuote (final step)
+    cy.contains(/see what your customer sees/i, { timeout: 10_000 })
       .should("be.visible");
-  });
 
-  it("a custom scenario hands off the user's own typed job to a seeded chat", () => {
-    cy.startFreshOnboarding(PHONE);
-    seedAllData();
-    cy.visit("/welcome");
-    continueBtn().click(); // -> sampleQuote
-    continueBtn().click(); // -> finish
-    cy.contains(/you're all set/i, { timeout: 10_000 }).should("be.visible");
-
-    cy.step("type a custom job and hand off to Bossie with exactly that text");
-    const custom = "Roof replacement for the Alvarez family — $9,800";
-    cy.get("#welcome-custom").type(custom);
-    cy.contains("button", /start with this/i).click();
-    cy.location("pathname", { timeout: 15_000 }).should("match", /^\/assistant\//);
-    cy.contains(/roof replacement for the alvarez/i, { timeout: 15_000 })
-      .should("be.visible");
-  });
-
-  it("'explore on my own' lands on the dashboard, and /welcome never traps again", () => {
-    cy.startFreshOnboarding(PHONE);
-    seedAllData();
-    cy.visit("/welcome");
-    continueBtn().click(); // -> sampleQuote
-    continueBtn().click(); // -> finish
-    cy.contains("button", /explore on my own/i, { timeout: 10_000 }).click();
-    cy.location("pathname", { timeout: 10_000 }).should("eq", "/dashboard");
+    cy.step("Continue → onboarded + NEW empty chat (no seeded conversation)");
+    continueBtn().click();
+    cy.location("pathname", { timeout: 15_000 }).should("eq", "/assistant");
+    cy.contains(/new conversation/i, { timeout: 15_000 }).should("be.visible");
 
     cy.step("onboarding is finished — /welcome now bounces to /dashboard");
     cy.visit("/welcome");
@@ -361,7 +352,9 @@ describe("Onboarding wizard — entry points", () => {
     // Second login, same phone, NOT wiped → returning user.
     cy.clearCookies();
     cy.request("POST", "/api/auth/send-otp", { phoneNumber: PHONE });
-    cy.exec(`cd ../backend && deno run -A --unstable-kv scripts/dev-get-otp.ts ${PHONE}`)
+    cy.exec(
+      `cd ../backend && deno run -A --unstable-kv scripts/dev-get-otp.ts ${PHONE}`,
+    )
       .then((res) => {
         const code = res.stdout.trim();
         cy.request("POST", "/api/auth/verify", { phoneNumber: PHONE, code })
@@ -386,7 +379,15 @@ describe("Onboarding wizard — entry points", () => {
   it("a brand-new user who skipped setup can reach every core page (no gate)", () => {
     cy.startFreshOnboarding(PHONE);
     cy.request("POST", "/api/me/onboarded", { skipped: true });
-    for (const path of ["/dashboard", "/quotes", "/invoices", "/clients", "/settings"]) {
+    for (
+      const path of [
+        "/dashboard",
+        "/quotes",
+        "/invoices",
+        "/clients",
+        "/settings",
+      ]
+    ) {
       cy.visit(path);
       cy.location("pathname", { timeout: 10_000 }).should("eq", path);
     }
