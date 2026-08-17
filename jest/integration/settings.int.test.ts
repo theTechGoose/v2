@@ -42,16 +42,23 @@ describe("settings editability", () => {
     expect(body.policyNumber).toBe("PN-123456");
   });
 
-  it("W-9 tax info can be saved, read and deleted", async () => {
+  it("W-9 tax info can be saved, read (masked) and deleted", async () => {
+    // Shipped privacy model: the W-9 is a FILE reference and the TIN is
+    // hashed+masked server-side — the raw TIN is never stored or echoed.
     const put = await s.put("/profile/tax", {
-      w9: { businessName: "JEST LLC", tinLast4: "1234", classification: "LLC" },
+      w9FileId: "jest-w9-file",
+      tin: "123-45-6789",
     });
     expect(put.status).toBeLessThan(400);
 
     const read = await s.get("/profile/tax");
-    expect(JSON.stringify(read.body)).toMatch(/JEST LLC/);
+    expect(read.body?.w9FileId).toBe("jest-w9-file");
+    expect(read.body?.tinMasked).toMatch(/6789$/);
+    expect(JSON.stringify(read.body)).not.toContain("123-45-6789");
 
     const del = await s.del("/profile/tax/w9");
     expect(del.status).toBeLessThan(400);
+    const after = await s.get("/profile/tax");
+    expect(after.body?.w9FileId ?? null).toBeNull();
   });
 });

@@ -18,6 +18,9 @@ import {
 } from "@communication/domain/data/email-service/mod.ts";
 import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import { ConversationStore as CommConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
+import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
 
 function fresh() {
   const conversations = new AgentConversationStore();
@@ -41,8 +44,8 @@ function fresh() {
     invoices,
     customers,
     users,
-    identity,
-    email,
+    identity,email,
+    new LogPaperworkMessage(new CommConversationStore(), new CommMessageStore()),
   );
   // SMS dispatch is best-effort; in dev (no TWILIO_* env) SmsService logs
   // instead of sending and never throws, so it doesn't affect these
@@ -54,8 +57,8 @@ function fresh() {
     customers,
     users,
     identity,
-    new SmsService(),
-    new ShortLinkStore(),
+    new SmsService(),new ShortLinkStore(),
+    new LogPaperworkMessage(new CommConversationStore(), new CommMessageStore()),
   );
   const flow = new SendContract(
     conversations,

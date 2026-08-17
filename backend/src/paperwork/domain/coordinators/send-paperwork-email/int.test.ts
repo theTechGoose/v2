@@ -10,6 +10,9 @@ import {
   EmailService,
   type SendEmailInput,
 } from "@communication/domain/data/email-service/mod.ts";
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import { ConversationStore as CommConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
+import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
 interface SetupResult {
@@ -43,8 +46,8 @@ function fresh(): SetupResult {
     invoices,
     customers,
     new UserStore(),
-    new BusinessIdentityStore(),
-    email,
+    new BusinessIdentityStore(),email,
+    new LogPaperworkMessage(new CommConversationStore(), new CommMessageStore()),
   );
   return { flow, customers, quotes, contracts, invoices, email, sent };
 }

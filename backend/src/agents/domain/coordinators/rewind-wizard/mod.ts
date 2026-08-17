@@ -46,13 +46,20 @@ export class RewindWizard {
   async run(input: RewindWizardInput): Promise<RewindWizardResult> {
     const conv = await this.conversations.get(input.conversationId);
     if (conv.userId !== input.userId) throw new Error("forbidden");
-    if (conv.currentPhase !== "terms") {
-      throw new Error("conversation is not in 'terms' phase");
-    }
 
-    const state = await this.conversations.getWizardState(input.conversationId);
+    const state = conv.currentPhase === "terms"
+      ? await this.conversations.getWizardState(input.conversationId)
+      : undefined;
+    // No active wizard (wrong phase, or terms never started) → clean no-op:
+    // back before the wizard is the CLIENT'S concern (history pop / exit to
+    // dashboard), never a 500 (roadmap p.2/p.3).
     if (!state) {
-      throw new Error("wizard state missing — call transition-to-terms first");
+      return {
+        conversation: conv,
+        wizardState: { specId: CONTRACT_TERMS_WIZARD_V1.id, activeStepIdx: 0, answers: [] },
+        activeStepId: null,
+        removedMessageIds: [],
+      };
     }
 
     if (state.activeStepIdx <= 0) {

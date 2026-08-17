@@ -692,7 +692,7 @@ export class PaperworkPublicController {
   ) {
     try {
       const i = await this.invoices.get(id);
-      const [contractor, customer, contract, siblings] = await Promise.all([
+      const [contractor, customer, contractDirect, siblings] = await Promise.all([
         loadContractor(this.users, this.identity, this.addresses, i.userId),
         lookupCustomerPublic(this.customers, i.customerId, i.userId),
         // The public page surfaces job context (the linked contract's
@@ -710,6 +710,18 @@ export class PaperworkPublicController {
           ).catch(() => [])
           : Promise.resolve([]),
       ]);
+      // Quote-derived invoices may predate their contract (p6: "link to the
+      // signed quote if one exists") — fall back to resolving the newest
+      // contract bound to the invoice's quote.
+      let contract = contractDirect;
+      if (!contract && i.quoteId) {
+        contract = await this.contracts.listByUser(i.userId)
+          .then((all) =>
+            all.filter((c) => c.quoteId === i.quoteId)
+              .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))[0]
+          )
+          .catch(() => undefined);
+      }
       // Resolve the linked quote for jobName/summary/lineItems projection.
       let jobDetails: {
         summary?: string;
@@ -789,9 +801,11 @@ export class PaperworkPublicController {
         // (minus the legal clauses + signature block). Omitted for standalone
         // invoices, which keep the lightweight amount-only document.
         ...(agreementTotal != null ? { agreementTotal } : {}),
+        // Roadmap p.6: the invoice mirrors the quote's information but NOT
+        // the numbered Terms (and never a signature block) — those live on
+        // the agreement, which is linked instead once signed.
         ...(contract
           ? {
-            terms: contract.terms ?? [],
             startDate: contract.startDate,
             estimatedCompletionDate: contract.estimatedCompletionDate,
             effectiveDate: contract.effectiveDate ?? contract.createdAt,
@@ -799,6 +813,7 @@ export class PaperworkPublicController {
             // signed (the user's "link to the signed quote if one exists").
             ...(contract.status === "signed"
               ? {
+                signedQuoteUrl: `/c/${contract.id}`,
                 signedAgreement: {
                   id: contract.id,
                   signedAt: contract.signedAt,
@@ -1112,6 +1127,13 @@ function redactInvoice(i: Invoice) {
     // a "you said you paid by X on Y" confirmation strip after the
     // customer submits a claim.
     paymentIntent: i.paymentIntent,
+    // Quote parity (roadmap p.6): the bill itself carries the job identity
+    // and itemization the quote had.
+    jobName: i.jobName,
+    description: i.description,
+    lineItems: i.lineItems,
+    discountCents: i.discountCents,
+    discountReason: i.discountReason,
     // omit: userId, updatedAt, remindersMuted, reminderHistory (internal)
   };
 }

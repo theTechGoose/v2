@@ -15,7 +15,17 @@ export class InvoiceStore {
   async create(userId: string, input: CreateInvoiceDto): Promise<Invoice> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const inv: Invoice = { ...input, id, userId, createdAt: now, updatedAt: now };
+    // Stored rows always carry a dueDate (the controller defaults it; this
+    // is the type-level backstop for direct store callers).
+    const inv: Invoice = {
+      ...input,
+      dueDate: input.dueDate ??
+        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      id,
+      userId,
+      createdAt: now,
+      updatedAt: now,
+    };
     const kv = await getKv();
     await kv.atomic()
       .set([PREFIX, id], inv)

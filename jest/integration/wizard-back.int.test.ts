@@ -1,64 +1,69 @@
 /**
  * PDF p2/p8 — the wizard must support stepping BACK server-side so any step
- * (especially Job Details) can be edited: POST /agents/wizard/back returns
- * the previous step WITH the previously entered answer preserved.
+ * can be re-edited: POST /agents/wizard/back rewinds one terms step and
+ * returns the popped answer (so the UI pre-fills what was entered).
  *
- * Uses the shipped answer contract ({ conversationId, stepId, optionId,
- * customValue? } — wizard-controller): the current step and its options are
- * read from the conversation's wizardState first.
+ * Shipped contract: the wizard is the TERMS wizard — activated via
+ * POST /agents/conversations/:id/transition-to-terms; answers are
+ * { conversationId, stepId, optionId, customValue? }; back returns
+ * { conversation, wizardState, activeStepId, removedMessageIds,
+ *   previousAnswer? }.
  */
 import { contractor, type ApiSession } from "./helpers/api";
 
-type WizardOption = { id: string };
-type WizardState = {
-  stepId?: string;
-  currentStepId?: string;
-  options?: WizardOption[];
-  customOptionId?: string;
+type WizardStateShape = {
+  activeStepIdx?: number;
+  answers?: Array<{ stepId: string; optionId: string; customValue?: string }>;
 };
 
-async function currentWizardState(s: ApiSession, conversationId: string): Promise<WizardState> {
-  const { body } = await s.get(`/agents/conversations/${conversationId}`);
-  return body.wizardState ?? body.conversation?.wizardState ?? {};
-}
-
 describe("POST /agents/wizard/back", () => {
-  const TYPED = "Remove old toilet, install new toilet, test for leaks";
   let s: ApiSession;
 
   beforeAll(async () => {
     s = await contractor("+15125550917");
   });
 
-  it("after answering a step, back returns to that step with the answer intact", async () => {
+  it("after answering a step, back rewinds to it with the previous answer preserved", async () => {
     const conv = await s.post("/agents/conversations", {});
-    const conversationId = conv.body?.id;
+    const conversationId = conv.body?.id ?? conv.body?.conversation?.id;
     expect(conversationId).toBeTruthy();
 
-    const wiz = await currentWizardState(s, conversationId);
-    const stepId = wiz.stepId ?? wiz.currentStepId;
-    expect(stepId).toBeTruthy();
+    // Enter the terms wizard.
+    const trans = await s.post(
+      `/agents/conversations/${conversationId}/transition-to-terms`,
+      {},
+    );
+    expect(trans.status).toBeLessThan(400);
+    const stepId: string = trans.body?.wizardState
+      ? trans.body.activeStepId ?? "customer"
+      : "customer";
 
-    // Answer the current step with a typed custom value (the job details).
-    const optionId = wiz.customOptionId ?? wiz.options?.[0]?.id ?? "custom";
+    // Answer the first step (customer → create_new with a typed name).
     const answer = await s.post("/agents/wizard/answer", {
       conversationId,
       stepId,
-      optionId,
-      customValue: TYPED,
+      optionId: "create_new",
+      customValue: "Back Button Test Customer",
     });
     expect(answer.status).toBeLessThan(400);
+    const advanced = (answer.body?.wizardState ?? {}) as WizardStateShape;
+    expect(advanced.answers?.length).toBeGreaterThanOrEqual(1);
 
-    // Step back: the previous step must come back editable, seeded with what
-    // was typed.
+    // Step back: the same step is active again and the popped answer comes
+    // back so the UI can restore what was entered (editable, not lost).
     const back = await s.post("/agents/wizard/back", { conversationId });
     expect(back.status).toBeLessThan(400);
-    expect(JSON.stringify(back.body)).toMatch(/Remove old toilet/);
+    expect(back.body?.activeStepId).toBe(stepId);
+    expect(back.body?.previousAnswer?.optionId).toBe("create_new");
+    expect(back.body?.previousAnswer?.customValue).toBe("Back Button Test Customer");
   });
 
-  it("back at the first step is a clean no-op/exit, not a 500", async () => {
+  it("back with no active wizard is a clean no-op, not a 500", async () => {
     const conv = await s.post("/agents/conversations", {});
-    const back = await s.post("/agents/wizard/back", { conversationId: conv.body?.id });
-    expect(back.status).toBeLessThan(500);
+    const back = await s.post("/agents/wizard/back", {
+      conversationId: conv.body?.id ?? conv.body?.conversation?.id,
+    });
+    expect(back.status).toBeLessThan(400);
+    expect(back.body?.removedMessageIds).toEqual([]);
   });
 });

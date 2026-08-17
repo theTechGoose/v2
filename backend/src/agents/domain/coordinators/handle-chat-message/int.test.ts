@@ -16,6 +16,9 @@ import {
   EmailService,
   type SendEmailInput,
 } from "@communication/domain/data/email-service/mod.ts";
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import { ConversationStore as CommConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
+import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
 import { getKv, resetKv } from "@core/data/kv/mod.ts";
 
@@ -74,8 +77,8 @@ function fresh() {
     invoices,
     customers,
     users,
-    identity,
-    email,
+    identity,email,
+    new LogPaperworkMessage(new CommConversationStore(), new CommMessageStore()),
   );
   const files = new FileStore();
   const addresses = new BusinessAddressStore();

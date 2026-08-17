@@ -54,7 +54,7 @@ Deno.test("public e2e: GET /quotes/:id/public works WITHOUT a session", async ()
   }
 });
 
-Deno.test("public e2e: POST /quotes/:id/accept (no session) flips status to accepted", async () => {
+Deno.test("public e2e: POST /quotes/:id/accept (no session) flips status to approved", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
@@ -75,7 +75,7 @@ Deno.test("public e2e: POST /quotes/:id/accept (no session) flips status to acce
     assertEquals(out.ok, true);
 
     const refetched = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
-    assertEquals(refetched.status, "accepted");
+    assertEquals(refetched.status, "approved");
   } finally {
     await server.stop();
     await resetKv();
@@ -138,7 +138,7 @@ Deno.test("public e2e: POST /quotes/:id/decline cannot revoke an already-accepte
     await drain(declineRes);
 
     const refetched = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
-    assertEquals(refetched.status, "accepted");
+    assertEquals(refetched.status, "approved");
   } finally {
     await server.stop();
     await resetKv();

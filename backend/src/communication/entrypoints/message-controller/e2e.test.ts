@@ -87,7 +87,10 @@ Deno.test("message e2e: posting into someone else's conversation is forbidden", 
   }
 });
 
-Deno.test("message e2e: GET /messages without conversationId is rejected", async () => {
+Deno.test("message e2e: GET /messages without conversationId lists across the caller's own conversations", async () => {
+  // Contract changed for the paperwork comms trail (roadmap p.8): a bare GET
+  // is user-scoped (never global) and returns the caller's messages across
+  // all their conversations.
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
@@ -97,9 +100,9 @@ Deno.test("message e2e: GET /messages without conversationId is rejected", async
     const res = await fetch(`http://localhost:${PORT}/messages`, {
       headers: { "x-session-id": sid },
     });
-    const ok = res.ok;
-    await drain(res);
-    assertEquals(ok, false);
+    assertEquals(res.ok, true);
+    const body = await res.json();
+    assertEquals(Array.isArray(body), true);
   } finally {
     await server.stop();
     await resetKv();

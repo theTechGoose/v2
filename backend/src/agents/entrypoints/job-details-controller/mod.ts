@@ -101,10 +101,14 @@ export class JobDetailsController {
   @Post("polish")
   async polishDetails(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const b = (body ?? {}) as { raw?: unknown; priceCents?: unknown };
-    if (typeof b.raw !== "string" || !b.raw.trim()) {
-      throw new Error("raw is required");
-    }
+    const b = (body ?? {}) as { raw?: unknown; details?: unknown; priceCents?: unknown };
+    // `details` is an accepted alias for `raw` (TDD-QUOTE-FLOW contract).
+    const raw = typeof b.raw === "string" && b.raw.trim()
+      ? b.raw
+      : typeof b.details === "string" && b.details.trim()
+      ? b.details
+      : undefined;
+    if (!raw) throw new Error("raw is required");
     const priceCents =
       typeof b.priceCents === "number" && Number.isFinite(b.priceCents)
         ? b.priceCents
@@ -112,7 +116,7 @@ export class JobDetailsController {
     return ctx.json(
       await this.polish.run({
         userId: user.id,
-        raw: b.raw,
+        raw,
         priceCents,
         commsLanguage: await commsLang(this.identity, user.id),
       }),
@@ -157,11 +161,13 @@ export class JobDetailsController {
 
   /**
    * POST /agents/job-details/professionalize
-   * Body: { text: string }
-   * Returns: { text: string }
    *
-   * Single-line cleanup invoked when the contractor edits or adds a bullet
-   * on the picker screen and opts in to "professionalize that".
+   * Two shapes (TDD-QUOTE-FLOW contract):
+   *   { text: string }     → { text: string }      — legacy single-bullet cleanup
+   *   { details: string }  → { items: string[] }   — roadmap p.5: break the
+   *     contractor's raw multi-line "write it myself" input into professional
+   *     line items. The result is a PROPOSAL — the client offers accept/edit,
+   *     nothing is applied server-side.
    */
   @Post("professionalize")
   async professionalizeBullet(
@@ -169,7 +175,23 @@ export class JobDetailsController {
     @Body() body: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const b = (body ?? {}) as { text?: unknown };
+    const b = (body ?? {}) as { text?: unknown; details?: unknown };
+
+    if (typeof b.details === "string") {
+      const lines = b.details
+        .split(/\r?\n/)
+        .map((l) => l.replace(/^\s*[-•*·]\s*/, "").trim())
+        .filter((l) => l.length > 0);
+      if (!lines.length) throw new Error("details is empty");
+      const items = await Promise.all(
+        lines.map((line) =>
+          this.professionalize.run({ userId: user.id, text: line })
+            .then((r) => r.text)
+        ),
+      );
+      return ctx.json({ items });
+    }
+
     if (typeof b.text !== "string" || !b.text.trim()) {
       throw new Error("text is required");
     }

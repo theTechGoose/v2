@@ -12,6 +12,9 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import { ConversationStore as CommConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
+import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
 
 function fresh() {
   const conversations = new AgentConversationStore();
@@ -22,7 +25,7 @@ function fresh() {
   const customers = new CustomerStore();
   const email = new EmailService();
   const bus = new EventBus();
-  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, new UserStore(), new BusinessIdentityStore(), email);
+  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, new UserStore(), new BusinessIdentityStore(), email, new LogPaperworkMessage(new CommConversationStore(), new CommMessageStore()));
   return {
     conversations, messages, quotes, contracts, invoices, customers, email, bus, emailer,
     flow: new LockQuote(conversations, messages, quotes, bus, emailer, new UserStore()),

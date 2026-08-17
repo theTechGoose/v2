@@ -76,6 +76,22 @@ export class CreateInvoiceDto {
   @IsOptional() @IsString()
   contractId?: string;
 
+  /** Derive-from-quote (roadmap p.6): when set, jobName / description /
+   *  customer / line items / amount default from the quote so the invoice
+   *  carries all the quote's information without re-entry. */
+  @IsOptional() @IsString()
+  quoteId?: string;
+
+  /** Itemized bill lines, mirroring the quote's line items (integer-cents
+   *  price per unit). Populated by the quote derivation or sent directly. */
+  @IsOptional() @IsArray()
+  lineItems?: Array<{
+    description: string;
+    quantity: number;
+    unit: string;
+    price: number;
+  }>;
+
   /** ≤3-word job title for STANDALONE invoices (roadmap p.10) — contract-
    *  linked invoices resolve theirs from the quote instead. */
   @IsOptional() @IsString()
@@ -85,8 +101,10 @@ export class CreateInvoiceDto {
   @IsOptional() @IsString()
   description?: string;
 
-  @IsString()
-  dueDate!: string;
+  /** Defaults to +30 days at create when omitted (quote-derived invoices
+   *  usually don't specify one). */
+  @IsOptional() @IsString()
+  dueDate?: string;
 
   @IsOptional() @IsString()
   customerId?: string;
@@ -133,6 +151,13 @@ export class CreateInvoiceDto {
 export class UpdateInvoiceDto {
   @IsOptional() @IsString()
   contractId?: string;
+  @IsOptional() @IsArray()
+  lineItems?: Array<{
+    description: string;
+    quantity: number;
+    unit: string;
+    price: number;
+  }>;
   @IsOptional() @IsString()
   jobName?: string;
   @IsOptional() @IsString()
@@ -178,6 +203,9 @@ export interface Invoice extends CreateInvoiceDto {
   id: string;
   /** Owner. Populated server-side from the auth context — never accept from request body. */
   userId: string;
+  /** Optional on the request (quote-derived creates omit it) but ALWAYS
+   *  present on stored rows — create() defaults it to +30 days. */
+  dueDate: string;
   createdAt: string;
   updatedAt: string;
   /** Computed read-only field: never accepted from request bodies; projected on read. */

@@ -165,10 +165,36 @@ export class InvoiceController {
   @Post()
   async create(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return project(
-      await this.store.create(user.id, parseCreateInvoice(body)),
-      new Date(),
-    );
+    const dto = parseCreateInvoice(body);
+
+    // Derive-from-quote (roadmap p.6): the invoice carries all the quote's
+    // information — job name, description, customer, line items, amount —
+    // without re-entry. Explicit fields on the request still win.
+    if (dto.quoteId) {
+      const q = await this.quotes.getOwned(dto.quoteId, user.id);
+      dto.jobName ??= q.jobName ?? q.summary;
+      dto.description ??= q.description;
+      dto.customerId ??= q.customerId;
+      dto.lineItems ??= q.lineItems;
+      dto.amount ??= q.estimatedTotal ??
+        ((q.lineItems ?? []).reduce(
+          (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
+          0,
+        ) || undefined);
+      if (!dto.contractId) {
+        const contract = (await this.contracts.listByUser(user.id))
+          .filter((c) => c.quoteId === q.id)
+          .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))[0];
+        if (contract) dto.contractId = contract.id;
+      }
+    }
+    // Every invoice gets a due date; +30 days is the trade default.
+    if (!dto.dueDate) {
+      dto.dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        .toISOString().slice(0, 10);
+    }
+
+    return project(await this.store.create(user.id, dto), new Date());
   }
 
   @Get()
