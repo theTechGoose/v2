@@ -8,6 +8,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
@@ -59,6 +60,7 @@ export class SendPaperworkSms {
     private identity: BusinessIdentityStore,
     private sms: SmsService,
     private shortlinks: ShortLinkStore,
+    private commsLog: LogPaperworkMessage,
   ) {}
 
   async run(
@@ -76,10 +78,12 @@ export class SendPaperworkSms {
 
     let recipient: string | undefined = input.to;
     let body: string;
+    let customerIdForLog: string | undefined;
 
     if (input.kind === "quote") {
       const quote = await this.quotes.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, quote.customerId);
+      customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.phoneNumber ?? undefined;
       const boundContract = await this.findContractForQuote(userId, quote.id);
       // Prefer linking customers straight to the contract page when one
@@ -93,6 +97,7 @@ export class SendPaperworkSms {
     } else if (input.kind === "contract") {
       const contract = await this.contracts.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, contract.customerId);
+      customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.phoneNumber ?? undefined;
       let quoteForBody: Quote | undefined;
       if (contract.quoteId) {
@@ -115,6 +120,7 @@ export class SendPaperworkSms {
     } else {
       const invoice = await this.invoices.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
+      customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.phoneNumber ?? undefined;
       const shortUrl = await this.mintShortUrl(userId, {
         kind: "invoice",
@@ -148,6 +154,21 @@ export class SendPaperworkSms {
     }
 
     const result = await this.sms.send({ to: e164, body });
+
+    // Comms trail (roadmap p.8): record the dispatch in the customer's
+    // thread so every outbound text is queryable per document.
+    if (result.ok) {
+      await this.commsLog.run({
+        userId,
+        customerId: customerIdForLog,
+        channel: "text",
+        content: body,
+        toAddress: e164,
+        paperworkId: input.resourceId,
+        paperworkType: input.kind,
+      });
+    }
+
     return { ...result, to: e164 };
   }
 

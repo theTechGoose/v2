@@ -66,14 +66,22 @@ export class ApiSession {
     return this.req("DELETE", path);
   }
 
-  /** Dev master-OTP login; seeds name + business identity like cy.loginAs. */
+  /** Dev master-OTP login; seeds name + email + business identity like cy.loginAs. */
   async loginAs(phoneNumber: string) {
     const v = await this.post("/auth/verify", { phoneNumber, code: "000000" });
     if (v.status >= 400) {
       throw new Error(`loginAs(${phoneNumber}) failed: ${v.status} ${JSON.stringify(v.body)}`);
     }
     const me = await this.get("/me");
-    if (!me.body?.name) await this.put("/me", { name: "Jest Contractor" });
+    if (!me.body?.name || !me.body?.email) {
+      // blackhole.postmarkapp.com: Postmark's official accept-and-discard
+      // domain — real dispatch path, no real inbox, never marked inactive.
+      await this.put("/me", {
+        name: me.body?.name ?? "Jest Contractor",
+        email: me.body?.email ?? "jest.contractor@blackhole.postmarkapp.com",
+        language: "en",
+      });
+    }
     const id = await this.get("/profile/identity");
     if (!id.body?.businessName) {
       await this.put("/profile/identity", { businessName: "JEST LLC" });
@@ -99,8 +107,8 @@ export async function seedCustomer(
 ): Promise<string> {
   const r = await s.post("/customers", {
     name: "Green Goblin",
-    email: "green.jest@example.com",
-    phone: "+15125550902",
+    email: "green.jest@blackhole.postmarkapp.com",
+    phoneNumber: "+15125550902",
     ...overrides,
   });
   if (r.status >= 400 || !r.body?.id) {

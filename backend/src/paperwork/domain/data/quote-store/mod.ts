@@ -16,6 +16,11 @@ export class QuoteStore {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const quote: Quote = { ...input, id, userId, createdAt: now, updatedAt: now };
+    // Lifecycle (roadmap p.10): every quote is born a draft; send/view/accept
+    // move it forward from there. (Set after the spread — the DTO's declared
+    // class field materializes `status: undefined`, which would clobber a
+    // spread-in default.)
+    if (!quote.status) quote.status = "draft";
     const kv = await getKv();
     await kv.atomic()
       .set([PREFIX, id], quote)

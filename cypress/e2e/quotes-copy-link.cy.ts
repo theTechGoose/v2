@@ -19,8 +19,8 @@ describe("quote card — Copy link must give the FULL quote", () => {
     cy.apiUpdateUser({ language: "en" }); // fresh users default to es; EN copy asserted
     cy.apiCreateCustomer({
       name: "Green Goblin",
-      email: "green.copy@example.com",
-      phone: "+15125550927",
+      email: "green.copy@blackhole.postmarkapp.com",
+      phoneNumber: "+15125550927",
     }).then((customerId) => {
       cy.apiCreateQuote({
         customerId,

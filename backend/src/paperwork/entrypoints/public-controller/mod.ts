@@ -415,7 +415,9 @@ export class PaperworkPublicController {
   ) {
     const dto = parseAccept(body);
     const existing = await this.quotes.get(id);
-    if (existing.status === "accepted") {
+    // "approved" is the canonical signed state (roadmap p.10); "accepted" is
+    // the legacy value from before the rename — treat both as terminal.
+    if (existing.status === "approved" || existing.status === "accepted") {
       return ctx.json({ ok: true, alreadyAccepted: true });
     }
     // A declined quote is terminal — don't let a stale public link silently
@@ -425,7 +427,7 @@ export class PaperworkPublicController {
       return ctx.json({ ok: false, reason: "declined" }, 409);
     }
     const updated = await this.quotes.update(id, existing.userId, {
-      status: "accepted",
+      status: "approved",
       // The accept action augments the quote with signature metadata if provided.
       // Stored on the quote itself so the contractor can see who accepted.
       ...(dto.signature ? { acceptedSignature: dto.signature } : {}),
@@ -447,8 +449,9 @@ export class PaperworkPublicController {
     });
     // Completion Text + Email to the contractor (roadmap p.10). Best-effort —
     // never fails the customer's accept; the bell notification above already
-    // landed via the bus event.
-    this.acceptedAlert.run(updated.id).catch((err) => {
+    // landed via the bus event. Awaited so the comms-trail entries exist by
+    // the time the accept response lands (readers poll /messages right after).
+    await this.acceptedAlert.run(updated.id).catch((err) => {
       console.error(`[quotes/${updated.id}/accept] accepted-alert failed:`, err);
     });
     return ctx.json({ ok: true, quoteId: updated.id });
@@ -468,8 +471,8 @@ export class PaperworkPublicController {
   ) {
     const dto = parseDecline(body);
     const existing = await this.quotes.get(id);
-    if (existing.status === "accepted") {
-      // Already accepted — don't let a stale link revoke it.
+    if (existing.status === "approved" || existing.status === "accepted") {
+      // Already approved — don't let a stale link revoke it.
       return ctx.json({ ok: false, reason: "already_accepted" }, 409);
     }
     if (existing.status === "lost") {

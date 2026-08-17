@@ -20,8 +20,8 @@ describe("quote status badge lifecycle", () => {
     cy.apiUpdateUser({ language: "en" }); // fresh users default to es; EN copy asserted
     cy.apiCreateCustomer({
       name: "Green Goblin",
-      email: "green.badge@example.com",
-      phone: "+15125550925",
+      email: "green.badge@blackhole.postmarkapp.com",
+      phoneNumber: "+15125550925",
     }).then((customerId) => {
       cy.apiCreateQuote({
         customerId,

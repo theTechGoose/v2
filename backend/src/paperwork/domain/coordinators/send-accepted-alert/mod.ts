@@ -4,6 +4,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 
 const APP_URL = (() => {
@@ -40,6 +41,7 @@ export class SendAcceptedAlert {
     private users: UserStore,
     private email: EmailService,
     private sms: SmsService,
+    private commsLog: LogPaperworkMessage,
   ) {}
 
   async run(quoteId: string): Promise<{ ok: boolean; reason?: string }> {
@@ -79,6 +81,20 @@ export class SendAcceptedAlert {
             res.reason ? ` (${res.reason})` : ""
           }`,
         );
+        if (res.ok) {
+          await this.commsLog.run({
+            userId: quote.userId,
+            customerId: quote.customerId,
+            channel: "email",
+            content: `quote ${quoteId} approved — completion email to ${contractor.email}`,
+            subject: jobName
+              ? t(lang, "acceptedAlert.email.subjectJob", { name: customerName, job: jobName })
+              : t(lang, "acceptedAlert.email.subject", { name: customerName }),
+            toAddress: contractor.email.trim(),
+            paperworkId: quoteId,
+            paperworkType: "quote",
+          });
+        }
         sentAny = sentAny || res.ok;
       } catch (err) {
         console.error("[send-accepted-alert] email failed:", err);
@@ -102,6 +118,17 @@ export class SendAcceptedAlert {
             res.reason ? ` (${res.reason})` : ""
           }`,
         );
+        if (res.ok) {
+          await this.commsLog.run({
+            userId: quote.userId,
+            customerId: quote.customerId,
+            channel: "text",
+            content: `quote ${quoteId} approved — completion text: ${body}`,
+            toAddress: contractor.phoneNumber.trim(),
+            paperworkId: quoteId,
+            paperworkType: "quote",
+          });
+        }
         sentAny = sentAny || res.ok;
       } catch (err) {
         console.error("[send-accepted-alert] sms failed:", err);

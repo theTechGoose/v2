@@ -53,7 +53,7 @@ describe("job name — ≤3 words, consistent platform-wide", () => {
   });
 
   it("a quote created WITHOUT an explicit name derives one of three words or less", () => {
-    cy.apiCreateCustomer({ name: "Iron Man", phone: "+15125550929" }).then((customerId) =>
+    cy.apiCreateCustomer({ name: "Iron Man", phoneNumber: "+15125550929" }).then((customerId) =>
       cy.apiCreateQuote({
         customerId,
         summary: "Full kitchen refresh with cabinet resurfacing and new backsplash",

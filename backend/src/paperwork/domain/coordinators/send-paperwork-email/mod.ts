@@ -11,6 +11,7 @@ import {
   EmailService,
   type SendEmailResult,
 } from "@communication/domain/data/email-service/mod.ts";
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
@@ -58,6 +59,7 @@ export class SendPaperworkEmail {
     private users: UserStore,
     private identity: BusinessIdentityStore,
     private email: EmailService,
+    private commsLog: LogPaperworkMessage,
   ) {}
 
   async run(
@@ -78,9 +80,11 @@ export class SendPaperworkEmail {
     let recipient: string | undefined = input.to;
 
     let quoteForStamp: Quote | undefined;
+    let customerIdForLog: string | undefined;
     if (input.kind === "quote") {
       const quote = await this.quotes.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, quote.customerId);
+      customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.email ?? undefined;
       // The customer-facing flow goes: email → contract page → sign.
       // No separate contract email exists — the quote email IS the
@@ -100,6 +104,7 @@ export class SendPaperworkEmail {
     } else if (input.kind === "contract") {
       const contract = await this.contracts.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, contract.customerId);
+      customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.email ?? undefined;
       // Single email design across the board: render the same WOW quote
       // email, but with the CTA pointing at the contract page (so the
@@ -137,6 +142,7 @@ export class SendPaperworkEmail {
     } else {
       const invoice = await this.invoices.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
+      customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.email ?? undefined;
       // The email goes to the customer, so it follows the contractor's
       // outgoing-comms language (default en), not their UI language.
@@ -206,6 +212,21 @@ export class SendPaperworkEmail {
       await this.quotes.update(input.resourceId, userId, {
         status: "sent",
         sentAt: new Date().toISOString(),
+      });
+    }
+
+    // Comms trail (roadmap p.8): record the dispatch in the customer's
+    // thread so every outbound email is queryable per document.
+    if (result.ok) {
+      await this.commsLog.run({
+        userId,
+        customerId: customerIdForLog,
+        channel: "email",
+        content: `${input.kind} ${input.resourceId} emailed to ${recipient}`,
+        subject,
+        toAddress: recipient,
+        paperworkId: input.resourceId,
+        paperworkType: input.kind,
       });
     }
 

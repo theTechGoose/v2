@@ -53,7 +53,7 @@ export class ComputeDashboardStats {
       total:    quotes.length,
       draft:    quotes.filter((q) => q.status === "draft").length,
       sent:     quotes.filter((q) => q.status === "sent").length,
-      accepted: quotes.filter((q) => q.status === "accepted").length,
+      accepted: quotes.filter((q) => q.status === "accepted" || q.status === "approved").length,
     };
 
     const contractCounts = {

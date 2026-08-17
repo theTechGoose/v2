@@ -91,7 +91,7 @@ function buildOne(
 
   // ---------------- jobs ----------------
   // "active job" = accepted quote without a paid invoice covering it
-  const acceptedQuotes = myQuotes.filter((q) => q.status === "accepted" || q.acceptedAt);
+  const acceptedQuotes = myQuotes.filter((q) => q.status === "accepted" || q.status === "approved" || q.acceptedAt);
   const paidInvoiceCount = myInvoices.filter((i) => i.status === "paid").length;
   const activeJobs = Math.max(0, acceptedQuotes.length - paidInvoiceCount);
   const overdueCount = myInvoices.filter(

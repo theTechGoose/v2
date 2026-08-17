@@ -23,6 +23,12 @@ export class CreateMessageDto {
   @IsOptional() @IsString() subject?: string;
   @IsOptional() @IsString() fromAddress?: string;
   @IsOptional() @IsString() toAddress?: string;
+
+  /** When the message is an outbound paperwork dispatch (quote/contract/
+   *  invoice email or text), the paperwork row it references — powers the
+   *  per-document comms trail (roadmap p.8 completion notifications). */
+  @IsOptional() @IsString() paperworkId?: string;
+  @IsOptional() @IsString() paperworkType?: string;
 }
 
 export class UpdateMessageDto {

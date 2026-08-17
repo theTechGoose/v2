@@ -10,6 +10,7 @@ import { ConversationStore } from "@communication/domain/data/conversation-store
 import { MessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { NotificationStore } from "@communication/domain/data/notification-store/mod.ts";
 import { NotifyOnEvent } from "@communication/domain/coordinators/notify-on-event/mod.ts";
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { RateLimiter } from "@core/data/rate-limit/mod.ts";
@@ -44,6 +45,7 @@ import { RateLimiter } from "@core/data/rate-limit/mod.ts";
     NotificationStore,
     EventBus,
     NotifyOnEvent,
+    LogPaperworkMessage,
     EmailService,
     RateLimiter,
   ],

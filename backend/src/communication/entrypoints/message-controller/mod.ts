@@ -33,8 +33,13 @@ export class MessageController {
   async list(@Context() ctx: ExecutionContext, @Query("conversationId") conversationId?: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
     if (!conversationId) {
-      // Listing every message globally is dangerous; force a conversation filter.
-      throw new Error("conversationId query param is required");
+      // No filter → every message across the USER'S OWN conversations
+      // (never global). Powers the paperwork comms trail (roadmap p.8).
+      const mine = await this.conversations.listByUser(user.id);
+      const batches = await Promise.all(
+        mine.map((c) => this.store.listByConversation(c.id)),
+      );
+      return batches.flat().sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     }
     await this.conversations.getOwned(conversationId, user.id);
     return await this.store.listByConversation(conversationId);

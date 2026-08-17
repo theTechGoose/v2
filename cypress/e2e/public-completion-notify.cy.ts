@@ -10,7 +10,7 @@
  */
 describe("completion text + email receipts", () => {
   const PHONE = "+15125550942";
-  const CUSTOMER_EMAIL = "green.notify@example.com";
+  const CUSTOMER_EMAIL = "green.notify@blackhole.postmarkapp.com";
   let quoteId: string;
 
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe("completion text + email receipts", () => {
     cy.apiCreateCustomer({
       name: "Green Goblin",
       email: CUSTOMER_EMAIL,
-      phone: "+15125550943",
+      phoneNumber: "+15125550943",
     }).then((customerId) => {
       cy.apiCreateQuote({
         customerId,

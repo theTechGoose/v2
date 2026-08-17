@@ -77,7 +77,7 @@ export class ListActiveJobs {
     // Build one Job per quote where the customer has *committed* in some way:
     // either accepted (so a contract is implied) or there's already a contract.
     for (const q of quotes) {
-      if (q.status !== "accepted" && q.status !== "sent") continue;
+      if (q.status !== "accepted" && q.status !== "approved" && q.status !== "sent") continue;
       const contract = q.id ? contractsByQuote.get(q.id) : undefined;
 
       const customer = q.customerId ? customerById.get(q.customerId) : undefined;
