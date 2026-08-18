@@ -138,6 +138,19 @@ export class AuthController {
   }
 
   /**
+   * POST /auth/verify — alias of /auth/verify-otp.
+   *
+   * The :5280 frontend proxy exposes the flow as /api/auth/verify; API
+   * clients that talk to the backend directly (the jest integration
+   * harness with API_BASE_URL pointed at this port) use the same path, so
+   * the backend answers it too. Identical semantics to verify-otp.
+   */
+  @Post("verify")
+  verifyAlias(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    return this.verify(ctx, body);
+  }
+
+  /**
    * POST /auth/logout
    * Idempotent. Always returns ok regardless of whether the session existed.
    * Also clears the `pm_session` cookie via Max-Age=0.

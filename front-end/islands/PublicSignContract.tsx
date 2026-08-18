@@ -314,7 +314,11 @@ export default function PublicSignContract({ contractId, lang = "en" }: Props) {
   }
 
   return (
-    <form onSubmit={onSign} style="margin-top:12px;text-align:left">
+    <form
+      onSubmit={onSign}
+      class="ctr__sign-form"
+      style="margin-top:12px;text-align:left"
+    >
       {
         /* Pad toolbar — the "YOUR Signature" heading + the "Sign & type name
           below" instruction now live on the enclosing signature card

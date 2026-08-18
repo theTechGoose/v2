@@ -62,6 +62,10 @@ export default function PublicQuoteActions(
 ) {
   const [mode, setMode] = useState<Mode>("actions");
   const [resolved, setResolved] = useState<Resolved>(null);
+  // P-63: a sent question must NOT strand the panel in ask mode — the
+  // quote is still open, so the confirmation renders above the action row
+  // with Accept and Decline still available (no reload needed).
+  const [askSent, setAskSent] = useState(false);
   const es = lang === "es";
 
   // Once accepted, the Accept island renders its own success card; we
@@ -90,6 +94,17 @@ export default function PublicQuoteActions(
       )}
 
       {resolved === "declined" && <DeclinedCard es={es} />}
+
+      {resolved === null && mode === "actions" && askSent && (
+        <div style="margin-top:18px;background:rgba(20,72,82,0.06);border:1px solid rgba(20,72,82,0.18);border-radius:14px;padding:18px 20px;text-align:center">
+          <div style="font-weight:800;color:#144852;font-size:16px">
+            {tFor(lang, "publicQuoteActions.askForm.sentTitle")}
+          </div>
+          <div style="margin-top:6px;color:#6b7a7e;font-size:13px">
+            {tFor(lang, "publicQuoteActions.askForm.sentBody")}
+          </div>
+        </div>
+      )}
 
       {resolved === null && mode === "actions" && (
         <div style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
@@ -125,6 +140,10 @@ export default function PublicQuoteActions(
           customerName={customerName}
           es={es}
           onCancel={() => setMode("actions")}
+          onSent={() => {
+            setAskSent(true);
+            setMode("actions");
+          }}
         />
       )}
     </div>
@@ -246,7 +265,10 @@ function DeclineForm(
         value={note}
         onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)}
         rows={3}
-        placeholder={tFor(lang, "publicQuoteActions.declineForm.notePlaceholder")}
+        placeholder={tFor(
+          lang,
+          "publicQuoteActions.declineForm.notePlaceholder",
+        )}
         style="width:100%;padding:10px 12px;border:1px solid #e3e8e6;border-radius:10px;font-size:14px;color:#1c2c30;font-family:inherit;background:#fff;resize:vertical"
       />
       <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin:12px 0 6px">
@@ -282,11 +304,14 @@ function DeclineForm(
 }
 
 function AskForm(
-  { quoteId, customerName, es, onCancel }: {
+  { quoteId, customerName, es, onCancel, onSent }: {
     quoteId: string;
     customerName?: string;
     es: boolean;
     onCancel: () => void;
+    /** Success → the parent shows the sent card AND restores the action
+     *  row (Accept + Decline stay available on the still-open quote). */
+    onSent: () => void;
   },
 ) {
   const lang = es ? "es" : "en";
@@ -316,23 +341,13 @@ function AskForm(
         throw new Error(text.slice(0, 200) || `${r.status}`);
       }
       setStatus("ok");
+      // Hand the success state up: the parent renders the sent card and
+      // returns to the action row so Accept/Decline remain available.
+      onSent();
     } catch (e) {
       setStatus("error");
       setErr(friendlyError((e as Error).message, es));
     }
-  }
-
-  if (status === "ok") {
-    return (
-      <div style="margin-top:18px;background:rgba(20,72,82,0.06);border:1px solid rgba(20,72,82,0.18);border-radius:14px;padding:18px 20px;text-align:center">
-        <div style="font-weight:800;color:#144852;font-size:16px">
-          {tFor(lang, "publicQuoteActions.askForm.sentTitle")}
-        </div>
-        <div style="margin-top:6px;color:#6b7a7e;font-size:13px">
-          {tFor(lang, "publicQuoteActions.askForm.sentBody")}
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -360,7 +375,10 @@ function AskForm(
         value={question}
         onInput={(e) => setQuestion((e.target as HTMLTextAreaElement).value)}
         rows={3}
-        placeholder={tFor(lang, "publicQuoteActions.askForm.questionPlaceholder")}
+        placeholder={tFor(
+          lang,
+          "publicQuoteActions.askForm.questionPlaceholder",
+        )}
         required
         style="width:100%;padding:10px 12px;border:1px solid #e3e8e6;border-radius:10px;font-size:14px;color:#1c2c30;font-family:inherit;background:#fff;resize:vertical"
       />
@@ -371,7 +389,10 @@ function AskForm(
         type="text"
         value={contactBack}
         onInput={(e) => setContactBack((e.target as HTMLInputElement).value)}
-        placeholder={tFor(lang, "publicQuoteActions.askForm.contactPlaceholder")}
+        placeholder={tFor(
+          lang,
+          "publicQuoteActions.askForm.contactPlaceholder",
+        )}
         style="width:100%;padding:10px 12px;border:1px solid #e3e8e6;border-radius:10px;font-size:14px;color:#1c2c30;font-family:inherit;background:#fff"
       />
       <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin:12px 0 6px">
