@@ -21,10 +21,13 @@ const INTENTS: Record<ChipKey, string> = {
 
 const REPLIES: Record<"en" | "es", Record<ChipKey, string>> = {
   en: {
+    // The EN knownPrice/helpPrice replies keep the "tell me the job details"
+    // phrase — the back-button and help-me-price e2e contracts pin the
+    // details bubble to /tell me the job( details)?/i.
     knownPrice:
-      "Great — you know your price. Tell me the job and the amount, and I'll write it up.",
+      "Great — you know your price. Tell me the job details and the amount, and I'll write it up.",
     helpPrice:
-      "Let's price it together. Describe the job and I'll suggest a fair number.",
+      "Let's price it together — tell me the job details and I'll suggest a fair number.",
     quickQuote:
       "Quick quote coming up. Give me the job in one line and I'll draft it fast.",
     invoiceDone:

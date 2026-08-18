@@ -4,6 +4,7 @@ import {
   type LLMClient,
 } from "@agents/domain/business/llm/base/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
+import { disambiguateTitle, versionTitle } from "#quote-flow/version-titles.ts";
 
 export interface GenerateJobOptionsInput {
   userId: string;
@@ -165,7 +166,7 @@ function normalizeOptions(
         primaryLang;
     }
     // Disambiguate duplicate primary jobNames across the option set.
-    const unique = disambiguate(byLang[primary].jobName, seenNames);
+    const unique = disambiguate(byLang[primary].jobName, seenNames, primary);
     if (unique !== byLang[primary].jobName) {
       byLang[primary] = { ...byLang[primary], jobName: unique };
     }
@@ -175,17 +176,12 @@ function normalizeOptions(
   return out;
 }
 
-/** Ensure a jobName is unique within the option set; appends " (2)", " (3)"
- *  … on collision. Tracks seen names case-insensitively. */
-function disambiguate(name: string, seen: Set<string>): string {
-  let unique = name;
-  let n = 2;
-  while (seen.has(unique.toLowerCase())) {
-    unique = `${name} (${n})`;
-    n++;
-  }
-  seen.add(unique.toLowerCase());
-  return unique;
+/** Ensure a jobName is unique within the option set. On collision it takes
+ *  a localized version qualifier ("… · Versión breve") — never the old
+ *  " (2)" / " (3)" numeric suffix, which read like duplicates of one job
+ *  rather than versions of it (P-24). Tracks names case-insensitively. */
+function disambiguate(name: string, seen: Set<string>, lang: Lang): string {
+  return disambiguateTitle(name, seen, lang);
 }
 
 function tryParseJson(s: string): { options?: unknown } | undefined {
@@ -250,8 +246,15 @@ function fallbackOptions(raw: string, langs: Lang[]): JobOption[] {
       ? base.slice(0, 3)
       : [...base.slice(0, 3), t(lang, "generateJobOptions.jobsiteCleanup")]
         .slice(0, 4);
+    // P-24: the three fallback variants get honest, localized qualifiers
+    // ("· Versión breve" / "· Alcance ampliado") instead of "(2)" / "(3)",
+    // which read as duplicates rather than versions.
     return {
-      jobName: variant === 0 ? jobName : `${jobName} (${variant + 1})`,
+      jobName: versionTitle(
+        jobName,
+        variant === 0 ? "full" : variant === 1 ? "short" : "wider",
+        lang,
+      ),
       summary,
       bullets,
     };
