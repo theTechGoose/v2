@@ -138,19 +138,6 @@ export class AuthController {
   }
 
   /**
-   * POST /auth/verify — compat alias for /auth/verify-otp.
-   *
-   * The browser flow goes through the frontend proxy route
-   * front-end/routes/api/auth/verify.ts (client posts /api/auth/verify);
-   * API clients and the jest integration harness hit the backend directly
-   * with the same path. Same handler, same contract.
-   */
-  @Post("verify")
-  async verifyAlias(@Context() ctx: ExecutionContext, @Body() body: unknown) {
-    return await this.verify(ctx, body);
-  }
-
-  /**
    * POST /auth/logout
    * Idempotent. Always returns ok regardless of whether the session existed.
    * Also clears the `pm_session` cookie via Max-Age=0.
