@@ -2,9 +2,7 @@ import { Injectable } from "#danet/core";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import type { InsightResponse } from "@analytics/dto/quotes-stats.ts";
-
-const STATIC_FALLBACK =
-  "Most quotes are accepted within the first 48 hours after the customer first opens them.";
+import { type Lang, t } from "@core/i18n/mod.ts";
 
 /**
  * ComputeQuoteInsight — single-line statistical observation for the
@@ -21,18 +19,22 @@ export class ComputeQuoteInsight {
     private views:  ViewStore,
   ) {}
 
-  async run(userId: string): Promise<InsightResponse> {
+  async run(userId: string, lang: Lang = "en"): Promise<InsightResponse> {
+    const fallback: InsightResponse = {
+      text: t(lang, "quotesInsight.staticFallback"),
+      kind: "static_fallback",
+    };
     const quotes = await this.quotes.listByUser(userId);
     const decided = quotes.filter((q) => q.acceptedAt || q.lostAt);
     if (decided.length < 10) {
-      return { text: STATIC_FALLBACK, kind: "static_fallback" };
+      return fallback;
     }
 
     // Real observation: average open count before acceptance.
     const allViews = await this.views.listByType("quote");
     const accepted = quotes.filter((q) => q.acceptedAt);
     if (accepted.length === 0) {
-      return { text: STATIC_FALLBACK, kind: "static_fallback" };
+      return fallback;
     }
 
     let totalOpens = 0;
@@ -44,7 +46,7 @@ export class ComputeQuoteInsight {
       totalOpens += before.length;
     }
     const avg = totalOpens / accepted.length;
-    const text = `Your average quote is opened ${avg.toFixed(1)}× before acceptance.`;
+    const text = t(lang, "quotesInsight.openCount", { avg: avg.toFixed(1) });
     return { text, kind: "open_count" };
   }
 }

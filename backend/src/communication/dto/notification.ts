@@ -62,6 +62,16 @@ export interface Notification extends CreateNotificationDto {
   read: boolean;
   readAt?: string;
   createdAt: string;
+  /**
+   * P-59 viewer-language feed: event-sourced notifications persist their
+   * translation KEY + PARAMS so the read path can re-render `title`/`body`
+   * in the current viewer's language instead of the frozen prose. Absent on
+   * legacy / direct-store rows, which keep their materialized `title`.
+   */
+  titleKey?: string;
+  titleParams?: Record<string, string | number>;
+  bodyKey?: string;
+  bodyParams?: Record<string, string | number>;
 }
 
 export function parseCreateNotification(input: unknown): CreateNotificationDto {

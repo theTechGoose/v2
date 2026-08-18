@@ -11,6 +11,7 @@ import type {
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import type { Lang } from "@core/i18n/mod.ts";
 
 const SEGMENT_LABELS: Record<ClientSegment | "unsorted", string> = {
   property_mgmt: "Property mgmt",
@@ -45,7 +46,7 @@ export class ClientsController {
   @Get("clients")
   async listCards(@Context() ctx: ExecutionContext) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return await this.flow.run(user.id);
+    return await this.flow.run(user.id, new Date(), (user.language ?? "en") as Lang);
   }
 
   @Get("analytics/clients/top")

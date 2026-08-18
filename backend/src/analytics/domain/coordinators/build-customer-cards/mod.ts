@@ -7,7 +7,15 @@ import type { Customer, CustomerCard, CustomerStatus, CustomerLastTone } from "@
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { View } from "@paperwork/dto/view.ts";
-import { relativeTime } from "@core/business/relative-time/mod.ts";
+import { relativeTime } from "#quote-flow/format-helpers.ts";
+import { type Lang, t } from "@core/i18n/mod.ts";
+
+const JOBS_SUB_KEY: Record<"overdue" | "active" | "scheduled" | "none", string> = {
+  overdue:   "clientsDisplay.jobsSub.overdue",
+  active:    "clientsDisplay.jobsSub.active",
+  scheduled: "clientsDisplay.jobsSub.scheduled",
+  none:      "clientsDisplay.jobsSub.none",
+};
 
 const MS_PER_DAY = 86_400_000;
 const TWELVE_MONTHS_MS = 365 * MS_PER_DAY;
@@ -31,7 +39,7 @@ export class BuildCustomerCards {
     private views:     ViewStore,
   ) {}
 
-  async run(userId: string, now: Date = new Date()): Promise<CustomerCard[]> {
+  async run(userId: string, now: Date = new Date(), lang: Lang = "en"): Promise<CustomerCard[]> {
     const [customers, quotes, invoices, views] = await Promise.all([
       this.customers.listByUser(userId),
       this.quotes.listByUser(userId),
@@ -44,7 +52,7 @@ export class BuildCustomerCards {
     const quoteToCustomer = new Map<string, string | undefined>();
     for (const q of quotes) quoteToCustomer.set(q.id, q.customerId);
 
-    return customers.map((c) => buildOne(c, quotes, invoices, views, quoteToCustomer, now));
+    return customers.map((c) => buildOne(c, quotes, invoices, views, quoteToCustomer, now, lang));
   }
 }
 
@@ -55,6 +63,7 @@ function buildOne(
   allViews: View[],
   quoteToCustomer: Map<string, string | undefined>,
   now: Date,
+  lang: Lang,
 ): CustomerCard {
   const myQuotes   = allQuotes.filter((q) => q.customerId === c.id);
   const myInvoices = allInvoices.filter((i) => i.customerId === c.id);
@@ -73,7 +82,7 @@ function buildOne(
   const lastTs = Math.max(...eventTimes);
   const lastWhen = new Date(lastTs).toISOString();
   const daysSinceContact = Math.floor((now.getTime() - lastTs) / MS_PER_DAY);
-  const lastWhenRel = relativeTime(lastWhen, now);
+  const lastWhenRel = relativeTime(lastWhen, now, lang);
   const lastTone: CustomerLastTone =
     daysSinceContact <= 7 ? "hot" : daysSinceContact <= 30 ? "warm" : "cold";
 
@@ -97,11 +106,14 @@ function buildOne(
   const overdueCount = myInvoices.filter(
     (i) => i.status === "pending" && i.dueDate < now.toISOString().slice(0, 10),
   ).length;
-  const jobsSub =
+  // Localized to the viewer so the story line never leaks an EN "· active"
+  // suffix into a Spanish card (P-34/P-64).
+  const jobsSubKind: "overdue" | "active" | "scheduled" | "none" =
     overdueCount > 0 ? "overdue"
     : activeJobs > 0 ? "active"
     : acceptedQuotes.length > 0 ? "scheduled"
-    : "no active jobs";
+    : "none";
+  const jobsSub = t(lang, JOBS_SUB_KEY[jobsSubKind]);
 
   // ---------------- 12-month revenue ----------------
   const twelveMoAgo = now.getTime() - TWELVE_MONTHS_MS;
