@@ -1,0 +1,65 @@
+/* ============================================================
+   public-contract.css — chrome for the public agreement page (/c/:id).
+
+   These rules used to live in an inline <style> inside routes/c/[id].tsx's
+   <Head>. Fresh emitted that tag INSIDE the PublicContractView island's SSR
+   boundary, so Preact dropped it the moment the island hydrated: in a real
+   browser the phone layout rules and the @media print block never applied
+   (P-62 — "printed contracts get raw screen CSS"). A linked stylesheet is
+   outside the island's DOM range and always survives.
+   ============================================================ */
+
+/* ---------- phones ---------- */
+@media (max-width: 720px) {
+  .ctr__inner {
+    padding: 28px 22px !important;
+  }
+  .ctr__title {
+    font-size: 30px !important;
+  }
+  .ctr__total-amt {
+    font-size: 34px !important;
+  }
+  .ctr__terms-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .ctr__milestones {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+/* ---------- paper ----------
+   A printed agreement is a record, not a control panel: keep the document,
+   drop every interactive affordance (the signature pad and its Undo/Clear
+   aids, the typed-name field, the submit button, the brand strip). */
+@media print {
+  body {
+    background: #ffffff !important;
+  }
+  .ctr {
+    box-shadow: none !important;
+    border: 1px solid #e3e8e6;
+  }
+  .ctr__no-print {
+    display: none !important;
+  }
+  /* The signing form is the interactive chrome — it never belongs on paper.
+     An already-signed contract renders its signature block outside any
+     <form>, so the executed record still prints in full. */
+  form {
+    display: none !important;
+  }
+  form button,
+  form input,
+  form textarea,
+  form select,
+  form canvas {
+    display: none !important;
+  }
+  button[type="submit"] {
+    display: none !important;
+  }
+  @page {
+    margin: 14mm;
+  }
+}

@@ -1,7 +1,7 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import PublicContractView from "../../islands/PublicContractView.tsx";
-import { BG, INK, LINE } from "../../components/contract-doc.tsx";
+import { BG, INK } from "../../components/contract-doc.tsx";
 import { langFromCookie } from "../../lib/lang.ts";
 
 /**
@@ -19,28 +19,14 @@ export default define.page(function PublicContract(ctx) {
   return (
     <>
       <Head>
-        <title>Quote & Agreement · Paperwork Monster</title>
+        <title>Quote + Agreement · Paperwork Monster</title>
         <link rel="stylesheet" href="/landing.css" />
-        <style>
-          {`
-          @media (max-width: 720px) {
-            .ctr__inner { padding: 28px 22px !important; }
-            .ctr__title { font-size: 30px !important; }
-            .ctr__total-amt { font-size: 34px !important; }
-            .ctr__terms-grid { grid-template-columns: 1fr !important; }
-            .ctr__milestones { grid-template-columns: 1fr 1fr !important; }
-          }
-          @media print {
-            body { background: #ffffff !important; }
-            .ctr__no-print { display: none !important; }
-            /* P-62: the interactive signing chrome — the signature pad, its
-               Undo/Clear aids, the typed-name input, and the submit button
-               (all inside the .ctr__sign-form form) — must not print. */
-            .ctr__sign-form { display: none !important; }
-            .ctr { box-shadow: none !important; border: 1px solid ${LINE}; }
-          }
-        `}
-        </style>
+        {/* P-62: the phone-layout + @media print rules live in a LINKED
+            stylesheet, not an inline <style> — Fresh emits a Head <style>
+            inside the island's SSR boundary and Preact deletes it on
+            hydration, so print styles silently never applied in a real
+            browser (see front-end/static/public-contract.css). */}
+        <link rel="stylesheet" href="/public-contract.css" />
       </Head>
       <div
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};padding:32px 16px calc(64px + var(--kb-inset, 0px));scroll-padding-bottom:var(--kb-inset, 0px)`}
