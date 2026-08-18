@@ -234,6 +234,20 @@ function localFallbackOptions(raw: string, lang: Lang): JobOption[] {
   ];
 }
 
+/** P-26: the preview's send button brands the ACTION ("Send by Text +
+ *  Email"), never a "Click here to …" imperative. The EN channel dict values
+ *  still carry the legacy prefix, so strip it here (ES values are already
+ *  clean — this is the identity for them). */
+function sendActionLabel(lang: Lang, key: string): string {
+  const raw = tFor(lang, key);
+  const stripped = raw.replace(
+    /^\s*(click here to|haz clic aqu[ií] para)\s+/i,
+    "",
+  );
+  if (stripped === raw) return raw;
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+}
+
 /** Split a chip reply into a bold lead + the rest for the details bubble
  *  (P-20). The lead runs to the first "—" or sentence period; the rest keeps
  *  its own leading punctuation/space so the markup can render
@@ -3868,7 +3882,12 @@ export default function AsstChat({
                               );
                             })}
                             <div
-                              class={`chat__jobopt chat__jobopt-custom${
+                              // P-24: the "Write it myself" tile is NOT one
+                              // of the three version cards — it must not
+                              // match .chat__jobopt (the picker shows exactly
+                              // 3 versions). Card chrome comes from the
+                              // .chat__jobopt-custom CSS twin.
+                              class={`chat__jobopt-custom${
                                 selectedOptionId === CUSTOM_OPTION_ID
                                   ? " is-selected"
                                   : ""
@@ -5882,16 +5901,16 @@ export default function AsstChat({
                                         "asstChat.preview.sendInvoice",
                                       )
                                       : sendChannel === "both"
-                                      ? tFor(
+                                      ? sendActionLabel(
                                         previewLang,
                                         "asstChat.preview.sendBoth",
                                       )
                                       : sendChannel === "sms"
-                                      ? tFor(
+                                      ? sendActionLabel(
                                         previewLang,
                                         "asstChat.preview.sendSms",
                                       )
-                                      : tFor(
+                                      : sendActionLabel(
                                         previewLang,
                                         "asstChat.preview.sendEmail",
                                       )}

@@ -17,7 +17,10 @@ export type VersionVariant = "full" | "short" | "wider";
 
 type Lang = "en" | "es";
 
-const QUALIFIERS: Record<Lang, Record<Exclude<VersionVariant, "full">, string>> = {
+const QUALIFIERS: Record<
+  Lang,
+  Record<Exclude<VersionVariant, "full">, string>
+> = {
   en: {
     short: "Short version",
     wider: "Wider scope",

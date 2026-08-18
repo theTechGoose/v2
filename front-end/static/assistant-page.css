@@ -8497,7 +8497,11 @@ body {
   margin: 0 -4px;
   padding: 2px 4px;
 }
-.chat__jobopt {
+/* .chat__jobopt-custom shares the card chrome but is deliberately NOT a
+   .chat__jobopt: the "Write it myself" tile isn't one of the three version
+   cards (P-24 — the picker shows exactly 3 versions). */
+.chat__jobopt,
+.chat__jobopt-custom {
   border: 1.5px solid var(--line, #d8e0d4);
   background: #fff;
   border-radius: 11px;
@@ -8508,10 +8512,12 @@ body {
     background 0.12s ease,
     box-shadow 0.12s ease;
 }
-.chat__jobopt:hover {
+.chat__jobopt:hover,
+.chat__jobopt-custom:hover {
   border-color: var(--brand-green, #519843);
 }
-.chat__jobopt.is-selected {
+.chat__jobopt.is-selected,
+.chat__jobopt-custom.is-selected {
   border-color: var(--brand-green, #519843);
   background: var(--mint-50, #f3f8ee);
   box-shadow: 0 4px 14px -8px rgba(81, 152, 67, 0.5);
@@ -8530,7 +8536,8 @@ body {
   border: 2px solid var(--line, #c7d2c0);
   transition: border-color 0.12s ease, background 0.12s ease;
 }
-.chat__jobopt.is-selected .chat__jobopt-radio {
+.chat__jobopt.is-selected .chat__jobopt-radio,
+.chat__jobopt-custom.is-selected .chat__jobopt-radio {
   border-color: var(--brand-green, #519843);
   background: radial-gradient(
     circle at center,
