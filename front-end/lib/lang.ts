@@ -166,7 +166,7 @@ export const STRINGS: Record<Lang, Strings> = {
     "hero.title.after": ".",
     "hero.rotor": ["paperwork", "headache", "delay", "missed payment"],
     "hero.lede":
-      "Bossie texts your client, drafts the docs, and gets you paid. You just say yes.",
+      "Your assistant texts your client, drafts the docs, and gets you paid. You just say yes.",
     "hero.cta.primary": "Get my number",
     "hero.cta.outline": "See how it works",
     "marquee.items":
@@ -188,7 +188,7 @@ export const STRINGS: Record<Lang, Strings> = {
       },
     ],
     "docs.eyebrow": "Live preview",
-    "docs.title": "What Bossie sends, on your behalf",
+    "docs.title": "What your assistant sends, on your behalf",
     "docs.tabs": ["Quote", "Contract", "Invoice"],
     "features.eyebrow": "What you get",
     "features.title": "Everything the office never had time for",
@@ -204,22 +204,28 @@ export const STRINGS: Record<Lang, Strings> = {
       { t: "Real signatures", d: "Tap-to-sign contracts. Court-ready." },
       {
         t: "Photo intake",
-        d: "Customers snap pics, Bossie writes the job details.",
+        d: "Customers snap pics, your assistant writes the job details.",
       },
     ],
     "how.eyebrow": "How it works",
     "how.title": "Three steps. No app to install.",
     "how.steps": [
       { t: "Forward the lead", d: "Drop the customer's number into the chat." },
-      { t: "Approve the draft", d: "Bossie writes a quote — you tap to send." },
-      { t: "Get paid", d: "Invoice goes out, Bossie chases the balance." },
+      {
+        t: "Approve the draft",
+        d: "Your assistant writes a quote — you tap to send.",
+      },
+      {
+        t: "Get paid",
+        d: "Invoice goes out, your assistant chases the balance.",
+      },
     ],
     "demo.eyebrow": "Real conversation",
     "demo.title": "It feels like texting your best foreman",
     "pricing.eyebrow": "Pricing",
     "pricing.title": "Pay for what works",
-    "pricing.without": "Without Bossie",
-    "pricing.with": "With Bossie",
+    "pricing.without": "Without Paperwork Monster",
+    "pricing.with": "With Paperwork Monster",
     "pricing.withoutPrice": "$0/mo",
     "pricing.withPrice": "$49/mo",
     "pricing.withoutNotes": [
@@ -233,7 +239,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "Bilingual replies",
     ],
     "contact.eyebrow": "Get started",
-    "contact.title": "Drop your number — Bossie texts you in 60 seconds",
+    "contact.title":
+      "Drop your number — your assistant texts you in 60 seconds",
     "contact.lede":
       "We'll send a 6-digit code to log you in. No app to install.",
     "contact.phone": "Mobile number",
@@ -267,7 +274,7 @@ export const STRINGS: Record<Lang, Strings> = {
     "hero.title.after": ".",
     "hero.rotor": ["papeleo", "dolor de cabeza", "retraso", "pago atrasado"],
     "hero.lede":
-      "Bossie le escribe a tu cliente, redacta los documentos y te hace cobrar. Tú solo dices que sí.",
+      "Tu asistente le escribe a tu cliente, redacta los documentos y te hace cobrar. Tú solo dices que sí.",
     "hero.cta.primary": "Empezar",
     "hero.cta.outline": "Ver cómo funciona",
     "marquee.items":
@@ -289,7 +296,7 @@ export const STRINGS: Record<Lang, Strings> = {
       },
     ],
     "docs.eyebrow": "Vista previa",
-    "docs.title": "Lo que Bossie envía por ti",
+    "docs.title": "Lo que tu asistente envía por ti",
     "docs.tabs": ["Cotización", "Contrato", "Factura"],
     "features.eyebrow": "Lo que recibes",
     "features.title": "Todo lo que la oficina nunca tuvo tiempo de hacer",
@@ -302,22 +309,22 @@ export const STRINGS: Record<Lang, Strings> = {
       { t: "Firmas reales", d: "Contratos firmados con un toque." },
       {
         t: "Fotos del cliente",
-        d: "Tu cliente toma fotos y Bossie cotiza el trabajo.",
+        d: "Tu cliente toma fotos y tu asistente cotiza el trabajo.",
       },
     ],
     "how.eyebrow": "Cómo funciona",
     "how.title": "Tres pasos. Sin app que instalar.",
     "how.steps": [
       { t: "Reenvía al cliente", d: "Pásale el número del cliente al chat." },
-      { t: "Aprueba el borrador", d: "Bossie redacta — tú lo envías." },
-      { t: "Cobra", d: "Sale la factura y Bossie persigue el pago." },
+      { t: "Aprueba el borrador", d: "Tu asistente redacta — tú lo envías." },
+      { t: "Cobra", d: "Sale la factura y tu asistente persigue el pago." },
     ],
     "demo.eyebrow": "Conversación real",
     "demo.title": "Se siente como mensajear con tu mejor capataz",
     "pricing.eyebrow": "Precios",
     "pricing.title": "Paga por lo que funciona",
-    "pricing.without": "Sin Bossie",
-    "pricing.with": "Con Bossie",
+    "pricing.without": "Sin Paperwork Monster",
+    "pricing.with": "Con Paperwork Monster",
     "pricing.withoutPrice": "$0/mes",
     "pricing.withPrice": "$49/mes",
     "pricing.withoutNotes": [
@@ -331,7 +338,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "Respuestas bilingües",
     ],
     "contact.eyebrow": "Empezar",
-    "contact.title": "Déjanos tu número — Bossie te escribe en 60 segundos",
+    "contact.title":
+      "Déjanos tu número — tu asistente te escribe en 60 segundos",
     "contact.lede": "Te enviamos un código de 6 dígitos para entrar. Sin app.",
     "contact.phone": "Número celular",
     "contact.cta": "Enviarme el código",

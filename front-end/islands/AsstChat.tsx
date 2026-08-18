@@ -1409,21 +1409,36 @@ export default function AsstChat({
         // If this turn produced an onboarding ack/handoff, the user just
         // saved a profile field (name / business / state / address) —
         // refresh the dash cache so the sidebar's identity card rebuilds
-        // in real time. Cheap pattern match: the strings are stable
-        // server-side ack copy.
+        // in real time. Detection matches the stable leading literal of
+        // each server ack template (everything before the first
+        // `{placeholder}`) in BOTH languages, derived from the shared lang
+        // dicts — the old English-only string match meant ES completions
+        // never fired the payoff (P-33).
+        const ackTemplatePrefix = (l: Lang, key: string): string =>
+          tFor(l, key).split("{")[0].trim();
+        const ACK_TEMPLATE_KEYS = [
+          "onboarding.askBusiness", // "Nice to meet you," / "¡Mucho gusto,"
+          "onboarding.askState", // "Almost there." / "Ya casi terminamos."
+          "onboarding.askStateGuess",
+          "onboarding.askAddress", // "Last one," / "La última,"
+          "onboarding.handoff", // "Awesome — we're set," / "…ya está todo listo,"
+        ];
+        const ACK_LANGS: Lang[] = ["en", "es"];
+        const ackPrefixes = ACK_LANGS.flatMap((l) =>
+          ACK_TEMPLATE_KEYS.map((k) => ackTemplatePrefix(l, k))
+        ).filter((p) => p.length > 0);
+        const handoffPrefixes = ACK_LANGS.map((l) =>
+          ackTemplatePrefix(l, "onboarding.handoff")
+        ).filter((p) => p.length > 0);
         const onboardingHit = res.newMessages.some((msg) => {
           if (msg.role !== "assistant" || msg.kind !== "text") return false;
           const c = (msg.content ?? "").trim();
-          return (
-            c.startsWith("Nice to meet you,") ||
-            c.startsWith("Almost there.") ||
-            c.startsWith("Last one,") ||
-            c.startsWith("Awesome — we're set,")
-          );
+          return ackPrefixes.some((p) => c.startsWith(p));
         });
         const handoffFired = res.newMessages.some((msg) => {
           if (msg.role !== "assistant" || msg.kind !== "text") return false;
-          return (msg.content ?? "").trim().startsWith("Awesome — we're set,");
+          const c = (msg.content ?? "").trim();
+          return handoffPrefixes.some((p) => c.startsWith(p));
         });
         if (onboardingHit) {
           refreshDash().catch(() => {

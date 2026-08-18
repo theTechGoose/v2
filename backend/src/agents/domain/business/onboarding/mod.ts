@@ -20,8 +20,12 @@
 
 import { type Lang, t } from "@core/i18n/mod.ts";
 import {
-  areaCodeFromPhone,
+  matchesConfirmIntent,
+  matchesSkipIntent,
+} from "#quote-flow/intent-parsers.ts";
+import {
   AREA_CODE_STATE,
+  areaCodeFromPhone,
   stateFromPhone,
   US_STATES,
 } from "@core/business/us-states/mod.ts";
@@ -29,21 +33,55 @@ import {
 // US state data + phone→state helpers were hoisted to a shared core module
 // so the users/profile side can reuse them without importing the agents
 // module. Re-exported from this path so every existing import keeps working.
-export { areaCodeFromPhone, AREA_CODE_STATE, stateFromPhone, US_STATES };
+export { AREA_CODE_STATE, areaCodeFromPhone, stateFromPhone, US_STATES };
 
-const PREFIX_RE = /^(?:i'?m|i\s+am|it'?s|name'?s|name\s+is|this\s+is|call\s+me|hi[, ]+i'?m|hey[, ]+i'?m)\s+/i;
+const PREFIX_RE =
+  /^(?:i'?m|i\s+am|it'?s|name'?s|name\s+is|this\s+is|call\s+me|hi[, ]+i'?m|hey[, ]+i'?m)\s+/i;
 const SEPARATOR_RE = /(?:,|\s+(?:from|at|of|with|—|-|–))\s+/i;
-const QUOTE_SIGNAL_RE = /(\$\s*\d|\b\d+\s*(?:sqft|sq\.?\s*ft|sq|hours?|hrs?|days?|gal|panels?|pieces?|units?|ft)\b|\bquote\b|\binvoice\b|\bnudge\b|\bfollow\s*up\b|\bdraft\b|\bestimate\b|\bbid\b)/i;
-const SKIP_RE = /^\s*(?:skip|later|not\s+now|nah|no\s+thanks?|pass|maybe\s+later|nope)\b/i;
+const QUOTE_SIGNAL_RE =
+  /(\$\s*\d|\b\d+\s*(?:sqft|sq\.?\s*ft|sq|hours?|hrs?|days?|gal|panels?|pieces?|units?|ft)\b|\bquote\b|\binvoice\b|\bnudge\b|\bfollow\s*up\b|\bdraft\b|\bestimate\b|\bbid\b)/i;
+// Skip vocabulary lives in the shared bilingual intent parser
+// (#quote-flow/intent-parsers.ts — EN mirrors the old SKIP_RE; ES adds the
+// words the ES UI itself advertises: omitir · más tarde · luego · ahora no ·
+// saltar). P-04: "omitir" must be accepted, not looped.
 /**
  * Words that look name-shaped (capitalised, single token) but obviously
  * aren't names. The extractor would otherwise greedily lock these in.
  */
 const STOP_WORDS = new Set([
-  "hey", "hi", "hello", "hola", "yo", "sup", "ok", "okay", "k", "kk",
-  "morning", "afternoon", "evening", "good", "thanks", "thank", "ty",
-  "yes", "yeah", "yep", "yup", "no", "nope", "sure", "test", "testing",
-  "help", "wait", "hmm", "uhh", "uh", "um", "umm",
+  "hey",
+  "hi",
+  "hello",
+  "hola",
+  "yo",
+  "sup",
+  "ok",
+  "okay",
+  "k",
+  "kk",
+  "morning",
+  "afternoon",
+  "evening",
+  "good",
+  "thanks",
+  "thank",
+  "ty",
+  "yes",
+  "yeah",
+  "yep",
+  "yup",
+  "no",
+  "nope",
+  "sure",
+  "test",
+  "testing",
+  "help",
+  "wait",
+  "hmm",
+  "uhh",
+  "uh",
+  "um",
+  "umm",
 ]);
 
 export interface OnboardingExtraction {
@@ -53,7 +91,7 @@ export interface OnboardingExtraction {
 
 export function isSkipReply(text: string): boolean {
   if (!text) return false;
-  return SKIP_RE.test(text);
+  return matchesSkipIntent(text);
 }
 
 /**
@@ -67,7 +105,8 @@ export function isSkipReply(text: string): boolean {
  *     longer is likely a real request)
  *   - construction trade vocabulary (door, roof, fence, etc.)
  */
-const TRADE_RE = /\b(?:fence|deck|roof(?:ing)?|gutter|paint(?:ing)?|epoxy|floor(?:ing)?|garage|kitchen|bath(?:room)?|patio|driveway|tile|plumb(?:ing)?|electric(?:al|ian)?|hvac|window|door|siding|drywall|insulat(?:e|ion)|landscap(?:e|ing)|concrete|carpentr?y|repair|install(?:ation)?|remodel|renovat(?:e|ion)|backsplash|shingle|stucco|trim)\b/i;
+const TRADE_RE =
+  /\b(?:fence|deck|roof(?:ing)?|gutter|paint(?:ing)?|epoxy|floor(?:ing)?|garage|kitchen|bath(?:room)?|patio|driveway|tile|plumb(?:ing)?|electric(?:al|ian)?|hvac|window|door|siding|drywall|insulat(?:e|ion)|landscap(?:e|ing)|concrete|carpentr?y|repair|install(?:ation)?|remodel|renovat(?:e|ion)|backsplash|shingle|stucco|trim)\b/i;
 export function looksLikeJobRequest(text: string): boolean {
   if (!text) return false;
   if (QUOTE_SIGNAL_RE.test(text)) return true;
@@ -89,7 +128,9 @@ export function looksLikeJobRequest(text: string): boolean {
  *   - Strip leading "I'm/it's/name's/call me" prefixes.
  *   - Split on "from / at / of / with / , / —" to separate name from biz.
  */
-export function extractNameAndBusiness(input: string): OnboardingExtraction | undefined {
+export function extractNameAndBusiness(
+  input: string,
+): OnboardingExtraction | undefined {
   if (!input) return undefined;
   // Strip a single trailing `!` or `?`, but keep trailing `.` so
   // abbreviated business suffixes ("Co.", "Inc.", "LLC.") survive.
@@ -131,9 +172,10 @@ export function extractNameAndBusiness(input: string): OnboardingExtraction | un
   // Title-case single-token lowercase names ("diego" → "Diego"). Leave
   // multi-word names alone — the user likely typed them with their own
   // casing intent.
-  const name = nameWords.length === 1 && nameWords[0] === nameWords[0].toLowerCase()
-    ? nameWords[0][0].toUpperCase() + nameWords[0].slice(1)
-    : namePart;
+  const name =
+    nameWords.length === 1 && nameWords[0] === nameWords[0].toLowerCase()
+      ? nameWords[0][0].toUpperCase() + nameWords[0].slice(1)
+      : namePart;
 
   // Business validation: same digit-free rule, max ~50 chars.
   let businessName: string | undefined;
@@ -151,20 +193,28 @@ export const ONBOARDING_ASK_TEXT = t("en", "onboarding.askNameAndBusiness");
  *  field is missing and want to keep the conversation feeling like a
  *  one-thing-at-a-time chat instead of a form. */
 export const ONBOARD_ASK_NAME = t("en", "onboarding.askName");
-export const ONBOARD_ASK_BUSINESS = (firstName: string, lang: Lang = "en"): string =>
-  t(lang, "onboarding.askBusiness", { firstName });
-export const ONBOARD_ASK_STATE = (firstName: string, lang: Lang = "en"): string =>
-  t(lang, "onboarding.askState", { firstName });
-export const ONBOARD_ASK_ADDRESS = (firstName: string, lang: Lang = "en"): string =>
-  t(lang, "onboarding.askAddress", { firstName });
+export const ONBOARD_ASK_BUSINESS = (
+  firstName: string,
+  lang: Lang = "en",
+): string => t(lang, "onboarding.askBusiness", { firstName });
+export const ONBOARD_ASK_STATE = (
+  firstName: string,
+  lang: Lang = "en",
+): string => t(lang, "onboarding.askState", { firstName });
+export const ONBOARD_ASK_ADDRESS = (
+  firstName: string,
+  lang: Lang = "en",
+): string => t(lang, "onboarding.askAddress", { firstName });
 export const ONBOARD_HANDOFF = (firstName: string, lang: Lang = "en"): string =>
   t(lang, "onboarding.handoff", { firstName });
 /** Combined email + payment-method ask. Single question on purpose so
  *  the user types one quick line and we extract whichever pieces they
  *  give us (email regex; payment handle keyword-match). Both are nice
  *  to have but not blocking — "skip" jumps to the handoff. */
-export const ONBOARD_ASK_PAYOUT = (firstName: string, lang: Lang = "en"): string =>
-  t(lang, "onboarding.askPayout", { firstName });
+export const ONBOARD_ASK_PAYOUT = (
+  firstName: string,
+  lang: Lang = "en",
+): string => t(lang, "onboarding.askPayout", { firstName });
 
 /**
  * Language-robust detection of which onboarding question a prior assistant
@@ -261,11 +311,23 @@ export function extractPayout(raw: string): ParsedPayout | undefined {
   const lower = t.toLowerCase();
   // Venmo @handle
   let m = lower.match(/venmo[^a-z0-9@]*(@?[a-z0-9._-]+)?/);
-  if (m) return { method: "venmo", handle: m[1] ? (m[1].startsWith("@") ? m[1] : `@${m[1]}`) : undefined };
+  if (m) {
+    return {
+      method: "venmo",
+      handle: m[1] ? (m[1].startsWith("@") ? m[1] : `@${m[1]}`) : undefined,
+    };
+  }
   // Cash App $tag
   m = lower.match(/cash\s*app[^a-z0-9$]*(\$?[a-z0-9._-]+)?/);
-  if (m) return { method: "cashapp", handle: m[1] ? (m[1].startsWith("$") ? m[1] : `$${m[1]}`) : undefined };
-  m = lower.match(/zelle[^a-z0-9@]*([\w.+-]+@[\w-]+(?:\.[\w-]+)+|\+?\d[\d\s().-]{6,})?/);
+  if (m) {
+    return {
+      method: "cashapp",
+      handle: m[1] ? (m[1].startsWith("$") ? m[1] : `$${m[1]}`) : undefined,
+    };
+  }
+  m = lower.match(
+    /zelle[^a-z0-9@]*([\w.+-]+@[\w-]+(?:\.[\w-]+)+|\+?\d[\d\s().-]{6,})?/,
+  );
   if (m) return { method: "zelle", handle: m[1]?.trim() };
   if (/\bach\b|wire/i.test(t)) return { method: "ach" };
   if (/\bcheck\b/i.test(t)) return { method: "check" };
@@ -281,10 +343,12 @@ const STATE_NAME_TO_CODE: Record<string, string> = Object.fromEntries(
 );
 
 /** Did the user reply something that means "yes, that's right"?
- *  Used after a phone-area-code state guess. */
+ *  Used after a phone-area-code state guess. Delegates to the shared
+ *  bilingual parser (EN mirrors the old inline regex; ES adds sí/si ·
+ *  claro · correcto · así es — P-23: "sí" must confirm, not reprompt). */
 export function isAffirmativeReply(text: string): boolean {
   if (!text) return false;
-  return /^\s*(?:yes|yep|yup|yeah|yea|y|sure|correct|right|that'?s\s+right|that\s+is\s+right|exactly|sounds?\s+(?:good|right)|👍|✅)\b/i.test(text.trim());
+  return matchesConfirmIntent(text);
 }
 
 /** Compose the state-ask, optionally with a phone-derived guess. */
@@ -335,12 +399,18 @@ export function extractAddressOnly(input: string): ParsedAddress | undefined {
   if (!state) {
     for (const [name, code] of Object.entries(STATE_NAME_TO_CODE)) {
       const re = new RegExp(`\\b${name.replace(/\s+/g, "\\s+")}\\b`, "i");
-      if (re.test(raw)) { state = code; break; }
+      if (re.test(raw)) {
+        state = code;
+        break;
+      }
     }
   }
   // Strip zip + state from the end so we can split the rest by commas.
   let rest = raw;
-  if (postal) rest = rest.replace(new RegExp(`\\b${postal}(?:-?\\d{4})?\\b\\s*$`), "").trim();
+  if (postal) {
+    rest = rest.replace(new RegExp(`\\b${postal}(?:-?\\d{4})?\\b\\s*$`), "")
+      .trim();
+  }
   if (state) {
     rest = rest.replace(new RegExp(`\\b${state}\\b\\s*$`, "i"), "").trim();
     rest = rest.replace(new RegExp(`,?\\s*${state}\\s*,?$`, "i"), "").trim();
@@ -410,10 +480,18 @@ export async function extractAddressViaLLM(
   const m = raw.match(/\{[\s\S]*?\}/);
   if (!m) return undefined;
   let obj: Record<string, unknown>;
-  try { obj = JSON.parse(m[0]); } catch { return undefined; }
+  try {
+    obj = JSON.parse(m[0]);
+  } catch {
+    return undefined;
+  }
   const out: ParsedAddress = {};
-  if (typeof obj.street === "string" && obj.street.trim()) out.street = obj.street.trim();
-  if (typeof obj.city === "string" && obj.city.trim()) out.city = obj.city.trim();
+  if (typeof obj.street === "string" && obj.street.trim()) {
+    out.street = obj.street.trim();
+  }
+  if (typeof obj.city === "string" && obj.city.trim()) {
+    out.city = obj.city.trim();
+  }
   if (typeof obj.state === "string" && obj.state.trim()) {
     const s = obj.state.trim().toUpperCase();
     if (US_STATES[s]) out.state = s;
@@ -468,7 +546,9 @@ export function extractNameOnly(input: string): string | undefined {
   if (tokens.length === 0 || tokens.length > 4) return undefined;
   if (/\d/.test(stripped)) return undefined;
   if (!/^[A-Za-z]/.test(tokens[0])) return undefined;
-  if (tokens.length === 1 && STOP_WORDS.has(tokens[0].toLowerCase())) return undefined;
+  if (tokens.length === 1 && STOP_WORDS.has(tokens[0].toLowerCase())) {
+    return undefined;
+  }
   return tokens.length === 1 && tokens[0] === tokens[0].toLowerCase()
     ? tokens[0][0].toUpperCase() + tokens[0].slice(1)
     : stripped;
@@ -487,7 +567,10 @@ export function extractBusinessOnly(input: string): string | undefined {
   // Strip a leading "It's / We're / We are / I'm" if the user phrases it
   // conversationally — "It's Riley Roofing Co.".
   const stripped = trimmed
-    .replace(/^(?:it'?s|we'?re|we\s+are|i'?m|it\s+is|the\s+business\s+is|business\s+is|company\s+is|called)\s+/i, "")
+    .replace(
+      /^(?:it'?s|we'?re|we\s+are|i'?m|it\s+is|the\s+business\s+is|business\s+is|company\s+is|called)\s+/i,
+      "",
+    )
     .trim();
   if (!stripped) return undefined;
   // Must contain at least one letter (rule out "..." / "—").

@@ -84,6 +84,43 @@ export class AuthController {
   }
 
   /**
+   * POST /auth/verify — proxy-shaped alias of /auth/verify-otp.
+   *
+   * The FE proxy (front-end/routes/api/auth/verify.ts) normalizes the
+   * verify-otp response to `{ ok, sessionId, userId, isNewUser, redirectTo }`;
+   * harnesses that hit the backend directly (jest integration with
+   * API_BASE_URL pointing at this server) speak that same shape, so the
+   * backend answers it natively too. Same coordinator, same cookie.
+   */
+  @Post("verify")
+  async verifyAlias(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const dto = parseVerifyOtp(body);
+    try {
+      const result = await this.verifyOtp.run({
+        phoneNumber: dto.phoneNumber,
+        code: dto.code,
+      });
+      ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
+      return {
+        ok: true,
+        sessionId: result.sessionId,
+        userId: result.userId,
+        isNewUser: result.isNewUser,
+        redirectTo: result.isNewUser ? "/welcome" : "/dashboard?welcome=back",
+      };
+    } catch (err) {
+      if (err instanceof InvalidCodeError) {
+        return errorBody("invalid_code", 401);
+      }
+      if (err instanceof ExpiredCodeError) return errorBody("expired", 410);
+      if (err instanceof RateLimitedError) {
+        return errorBody("rate_limited", 429);
+      }
+      throw err;
+    }
+  }
+
+  /**
    * POST /auth/logout
    * Idempotent. Always returns ok regardless of whether the session existed.
    * Also clears the `pm_session` cookie via Max-Age=0.
