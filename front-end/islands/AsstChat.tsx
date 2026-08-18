@@ -20,6 +20,20 @@ import { contractsClient } from "../clients/contracts.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { localizeTermValue } from "../lib/term-i18n.ts";
+import {
+  type ChipKey,
+  chipIntent,
+  chipReply,
+} from "../../shared/quote-flow/starter-chips.ts";
+import { termLabel } from "../../shared/quote-flow/terms-i18n.ts";
+import {
+  TimeoutError,
+  withChatTimeout,
+} from "../../shared/quote-flow/chat-timeout.ts";
+import {
+  interpretSendResult,
+  sendResultLangKey,
+} from "../../shared/quote-flow/send-result.ts";
 import MoneyInput from "./MoneyInput.tsx";
 
 type WizardFieldType = "percent" | "number" | "currency" | "days" | "text";
