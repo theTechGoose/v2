@@ -138,6 +138,18 @@ export class AuthController {
   }
 
   /**
+   * POST /auth/verify — direct-API alias of /auth/verify-otp for clients
+   * that reach the backend WITHOUT the frontend proxy (the jest integration
+   * harness posts here; the browser goes through /api/auth/verify on the
+   * frontend, which forwards to /auth/verify-otp). Same body, same result,
+   * same pm_session cookie.
+   */
+  @Post("verify")
+  verifyAlias(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    return this.verify(ctx, body);
+  }
+
+  /**
    * POST /auth/logout
    * Idempotent. Always returns ok regardless of whether the session existed.
    * Also clears the `pm_session` cookie via Max-Age=0.

@@ -7,7 +7,7 @@
   "acceptedAlert.email.headline": "{name} approved your quote!",
   "acceptedAlert.email.headlineJob": "{name} approved your quote for {job}!",
   "acceptedAlert.email.subject": "{name} approved your quote 🎉",
-  "acceptedAlert.email.subjectJob": "{name} approved your quote — {job}",
+  "acceptedAlert.email.subjectJob": "{name} approved your quote for {job} 🎉",
   "acceptedAlert.sms.body": "{name} just approved your quote. Next step: send the agreement or invoice → {url}",
   "acceptedAlert.sms.bodyJob": "{name} just approved your quote for {job}. Next step: send the agreement or invoice → {url}",
   "activeJobs.count": "{n} active",
