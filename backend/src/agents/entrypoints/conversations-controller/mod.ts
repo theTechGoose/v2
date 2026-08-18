@@ -1,6 +1,7 @@
 import { Body, Context, Controller, Delete, Get, Param, Post, Query } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
+import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { StartConversation } from "@agents/domain/coordinators/start-conversation/mod.ts";
 import { LoadConversation } from "@agents/domain/coordinators/load-conversation/mod.ts";
 import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
@@ -21,6 +22,7 @@ import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 export class ConversationsController {
   constructor(
     private store: AgentConversationStore,
+    private messages: AgentMessageStore,
     private startFlow: StartConversation,
     private loadFlow: LoadConversation,
     private transitionFlow: TransitionToTerms,
@@ -156,6 +158,44 @@ export class ConversationsController {
   async sampleQuote(@Context() ctx: ExecutionContext) {
     const user = await requireUser(ctx, this.sessions, this.users);
     return ctx.json(await this.sampleQuoteFlow.run({ userId: user.id }));
+  }
+
+  /**
+   * POST /agents/conversations/:id/draft   { note?, quoteId? }
+   *
+   * Records in-flight assistant work on a conversation the MOMENT it starts
+   * (P-22: "mid-flow work silently lost"). The details-first flow used to
+   * keep the contractor's typed job details in component state and only mint
+   * a conversation once the quote existed, so the URL stayed at /assistant
+   * and navigating away threw the work on the floor.
+   *
+   *   note    — append the contractor's raw job details as a user message so
+   *             a reload of /assistant/:id shows what they already typed.
+   *   quoteId — bind the quote to this (already-minted) conversation instead
+   *             of starting a second one.
+   */
+  @Post(":id/draft")
+  async draft(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const conv = await this.store.get(id);
+    if (conv.userId !== user.id) throw new Error("forbidden");
+    const b = (body ?? {}) as { note?: unknown; quoteId?: unknown };
+    if (typeof b.note === "string" && b.note.trim().length > 0) {
+      await this.messages.append({
+        conversationId: id,
+        role: "user",
+        kind: "text",
+        content: b.note.trim(),
+      });
+    }
+    if (typeof b.quoteId === "string" && b.quoteId.length > 0) {
+      return ctx.json(await this.store.update(id, { quoteId: b.quoteId }));
+    }
+    return ctx.json(conv);
   }
 
   @Post(":id/bind-customer")

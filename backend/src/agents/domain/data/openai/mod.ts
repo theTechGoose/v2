@@ -2,6 +2,7 @@ import OpenAI from "#openai";
 import { encodeBase64 } from "#std/encoding/base64";
 import type { LLMClient, LLMRequest, LLMResponse } from "@agents/domain/business/llm/base/mod.ts";
 import { TOOL_DEFS, parseToolCall } from "@agents/domain/business/openai-tools/mod.ts";
+import { DEFAULT_CHAT_TIMEOUT_MS, withChatTimeout } from "#quote-flow/chat-timeout.ts";
 
 const DEFAULT_MODEL = "gpt-4o-mini";
 
@@ -41,6 +42,34 @@ export class OpenAILLMClient implements LLMClient {
     this.model = opts.model ?? Deno.env.get("OPENAI_MODEL") ?? DEFAULT_MODEL;
   }
 
+  /**
+   * One BOUNDED chat completion (P-10). The SDK's own defaults are 600s per
+   * attempt × 2 retries, so a hung call meant an endless spinner with no
+   * error and no cancel. `withChatTimeout` races the request against
+   * DEFAULT_CHAT_TIMEOUT_MS and rejects with the typed, retryable
+   * `TimeoutError`; the AbortSignal (fired just after the race is lost, so
+   * the TimeoutError — not the SDK's abort error — is what surfaces) cancels
+   * the in-flight request instead of leaving the socket open, and
+   * `maxRetries: 1` caps the SDK's internal retry loop so a hung call errors
+   * at ~30s rather than ~30 minutes.
+   */
+  private complete(
+    // deno-lint-ignore no-explicit-any
+    messages: Array<any>,
+  ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), DEFAULT_CHAT_TIMEOUT_MS + 1_000);
+    const call = this.client.chat.completions.create({
+      model: this.model,
+      messages,
+      tools: TOOL_DEFS as unknown as OpenAI.Chat.Completions.ChatCompletionTool[],
+      tool_choice: "auto",
+      // Keep responses tight — we want one focused step per turn.
+      temperature: 0.2,
+    }, { signal: ctl.signal, maxRetries: 1 });
+    return withChatTimeout(call).finally(() => clearTimeout(timer));
+  }
+
   async respond(req: LLMRequest): Promise<LLMResponse> {
     // Build the message array. System prompt first, then history. Optional
     // pre-computed business context lands as a second system message so the
@@ -77,26 +106,13 @@ export class OpenAILLMClient implements LLMClient {
     // call output is truncated; the user sees zero assistant messages,
     // which reads as a broken UI. The retry is deterministic enough to be
     // worth the latency cost (~1s when it triggers).
-    let completion = await this.client.chat.completions.create({
-      model: this.model,
-      messages,
-      tools: TOOL_DEFS as unknown as OpenAI.Chat.Completions.ChatCompletionTool[],
-      tool_choice: "auto",
-      // Keep responses tight — we want one focused step per turn.
-      temperature: 0.2,
-    });
+    let completion = await this.complete(messages);
     let choice = completion.choices[0];
     const isEmpty = (c: typeof choice) =>
       !((c?.message?.content ?? "").trim()) && (c?.message?.tool_calls ?? []).length === 0;
     if (isEmpty(choice)) {
       console.warn("[openai-llm] empty response on first try; retrying once");
-      completion = await this.client.chat.completions.create({
-        model: this.model,
-        messages,
-        tools: TOOL_DEFS as unknown as OpenAI.Chat.Completions.ChatCompletionTool[],
-        tool_choice: "auto",
-        temperature: 0.2,
-      });
+      completion = await this.complete(messages);
       choice = completion.choices[0];
     }
 

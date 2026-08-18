@@ -29,11 +29,42 @@ export default function AsstThreads(
     if (typeof globalThis.localStorage === "undefined") return false;
     return globalThis.localStorage.getItem("pm:threads-collapsed") === "1";
   });
+  // P-22: below 880px the conversation column is display:none, and the
+  // 390px hamburger only ever opened the nav rail — so past conversations
+  // were unreachable on a phone. The conversation list now rides ALONG WITH
+  // that drawer: it mirrors the sidebar's own `sb--open` state (rather than
+  // listening to `pm:sb-toggle` independently, which opened two competing
+  // overlays) and docks into the bottom of the drawer's column, so one
+  // hamburger tap yields ONE panel: nav links on top, conversations below.
+  const [mobileOpen, setMobileOpen] = useState(false);
   const asideRef = useRef<HTMLElement | null>(null);
   // Cypress hook (data-cy) is only attached after hydration so a test can
   // never click the toggle before its listener is live.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const sb = document.querySelector(".sb");
+    if (!sb) return;
+    // The drawer's open state is the single source of truth: it opens on the
+    // hamburger and closes on the hamburger, the backdrop, or a nav tap — the
+    // dock follows it in every one of those cases with no second listener.
+    const sync = () =>
+      setMobileOpen(
+        sb.classList.contains("sb--open") &&
+          typeof globalThis.innerWidth === "number" &&
+          globalThis.innerWidth <= 880,
+      );
+    sync();
+    const mo = new MutationObserver(sync);
+    mo.observe(sb, { attributes: true, attributeFilter: ["class"] });
+    globalThis.addEventListener("resize", sync);
+    return () => {
+      mo.disconnect();
+      globalThis.removeEventListener("resize", sync);
+    };
+  }, []);
 
   useEffect(() => {
     const parent = asideRef.current?.parentElement;
@@ -93,109 +124,124 @@ export default function AsstThreads(
   const total = threads.length;
 
   return (
-    <aside
-      ref={asideRef}
-      class={`threads ${collapsed ? "threads--collapsed" : ""}`}
-    >
-      <div class="threads__head">
-        <button
-          type="button"
-          class="threads__toggle"
-          // Same QuickBooks pattern as the sidebar (roadmap p9): one physical
-          // button — collapse arrow when open, hamburger when collapsed.
-          data-cy={mounted
-            ? (collapsed ? "asst-threads-expand" : "asst-threads-collapse")
-            : undefined}
-          onClick={toggleCollapsed}
-          aria-label={collapsed
-            ? tFor(lang, "asstThreads.expandConversations")
-            : tFor(lang, "asstThreads.collapseConversations")}
-          title={collapsed
-            ? tFor(lang, "asstThreads.expand")
-            : tFor(lang, "asstThreads.collapse")}
-        >
-          <I
-            d={collapsed
-              ? (
-                <>
-                  <path d="M3 6h18M3 12h18M3 18h18" />
-                </>
-              )
-              : (
-                <>
-                  {/* QuickBooks-style hamburger + collapse arrow */}
-                  <path d="M3 6h13M3 12h13M3 18h13" />
-                  <path d="M21 9l-3 3 3 3" />
-                </>
-              )}
-            size={16}
-          />
-        </button>
-        <h3 class="threads__title">
-          {tFor(lang, "asstThreads.conversations")}
-        </h3>
-        <span class="threads__count">{total}</span>
-      </div>
-      <a
-        href="/assistant"
-        class="threads__new"
-        style="text-decoration:none"
-        title={tFor(lang, "asstThreads.newConversation")}
+    <>
+      <aside
+        ref={asideRef}
+        class={`threads ${collapsed ? "threads--collapsed" : ""}${
+          mobileOpen ? " threads--dock" : ""
+        }`}
+        // Docked into the BOTTOM of the drawer's own 260px column (never a
+        // full-width sheet, and never with a backdrop of its own): the nav
+        // links keep the top of the panel and stay tappable, so one tap
+        // reveals navigation AND conversation history. Inline so it beats the
+        // `.asst .threads { display:none }` phone rule without a second
+        // source of truth in the stylesheet.
+        style={mobileOpen
+          ? "display:flex;position:fixed;left:0;width:260px;right:auto;bottom:0;top:auto;max-height:42vh;z-index:61;border-radius:14px 14px 0 0;background:#fff;box-shadow:0 -10px 24px rgba(0,0,0,0.28)"
+          : undefined}
       >
-        <I d={ICN.plus} size={14} sw={2.5} />
-        <span class="threads__new-label">
-          {tFor(lang, "asstThreads.newConversation")}
-        </span>
-        <span class="threads__new-kbd">{tFor(lang, "asstThreads.newKbd")}</span>
-      </a>
-      <div class="threads__list">
-        {groups.length === 0
-          ? (
-            <div class="threads__empty">
-              {tFor(lang, "asstThreads.empty")}
-            </div>
-          )
-          : groups.map((group) => (
-            <div key={group.label}>
-              <div class="threads__group-label">{group.label}</div>
-              {group.items.map((c) => {
-                const chip = deriveChip(c, lang);
-                return (
-                  <a
-                    key={c.id}
-                    href={`/assistant/${c.id}`}
-                    class={`thread ${
-                      c.id === activeId ? "thread--active" : ""
-                    } ${c.hasUnreadEvent ? "thread--unread" : ""}`}
-                    style="text-decoration:none;text-align:left;width:100%;display:block"
-                  >
-                    <div class="thread__head">
-                      {c.hasUnreadEvent
-                        ? (
-                          <span
-                            class="thread__unread-dot"
-                            aria-label={tFor(lang, "asstThreads.newEvent")}
-                          />
-                        )
-                        : null}
-                      <span class="thread__client">{titleFor(c, lang)}</span>
-                      <span class="thread__time">
-                        {fmtTime(c.updatedAt, lang)}
-                      </span>
-                    </div>
-                    <div class="thread__preview">{c.preview ?? "—"}</div>
-                    <div class="thread__chips">
-                      <span class={`thread__chip thread__chip--${chip.kind}`}>
-                        {chip.label}
-                      </span>
-                    </div>
-                  </a>
-                );
-              })}
-            </div>
-          ))}
-      </div>
-    </aside>
+        <div class="threads__head">
+          <button
+            type="button"
+            class="threads__toggle"
+            // Same QuickBooks pattern as the sidebar (roadmap p9): one physical
+            // button — collapse arrow when open, hamburger when collapsed.
+            data-cy={mounted
+              ? (collapsed ? "asst-threads-expand" : "asst-threads-collapse")
+              : undefined}
+            onClick={toggleCollapsed}
+            aria-label={collapsed
+              ? tFor(lang, "asstThreads.expandConversations")
+              : tFor(lang, "asstThreads.collapseConversations")}
+            title={collapsed
+              ? tFor(lang, "asstThreads.expand")
+              : tFor(lang, "asstThreads.collapse")}
+          >
+            <I
+              d={collapsed
+                ? (
+                  <>
+                    <path d="M3 6h18M3 12h18M3 18h18" />
+                  </>
+                )
+                : (
+                  <>
+                    {/* QuickBooks-style hamburger + collapse arrow */}
+                    <path d="M3 6h13M3 12h13M3 18h13" />
+                    <path d="M21 9l-3 3 3 3" />
+                  </>
+                )}
+              size={16}
+            />
+          </button>
+          <h3 class="threads__title">
+            {tFor(lang, "asstThreads.conversations")}
+          </h3>
+          <span class="threads__count">{total}</span>
+        </div>
+        <a
+          href="/assistant"
+          class="threads__new"
+          style="text-decoration:none"
+          title={tFor(lang, "asstThreads.newConversation")}
+        >
+          <I d={ICN.plus} size={14} sw={2.5} />
+          <span class="threads__new-label">
+            {tFor(lang, "asstThreads.newConversation")}
+          </span>
+          <span class="threads__new-kbd">
+            {tFor(lang, "asstThreads.newKbd")}
+          </span>
+        </a>
+        <div class="threads__list">
+          {groups.length === 0
+            ? (
+              <div class="threads__empty">
+                {tFor(lang, "asstThreads.empty")}
+              </div>
+            )
+            : groups.map((group) => (
+              <div key={group.label}>
+                <div class="threads__group-label">{group.label}</div>
+                {group.items.map((c) => {
+                  const chip = deriveChip(c, lang);
+                  return (
+                    <a
+                      key={c.id}
+                      href={`/assistant/${c.id}`}
+                      class={`thread ${
+                        c.id === activeId ? "thread--active" : ""
+                      } ${c.hasUnreadEvent ? "thread--unread" : ""}`}
+                      style="text-decoration:none;text-align:left;width:100%;display:block"
+                    >
+                      <div class="thread__head">
+                        {c.hasUnreadEvent
+                          ? (
+                            <span
+                              class="thread__unread-dot"
+                              aria-label={tFor(lang, "asstThreads.newEvent")}
+                            />
+                          )
+                          : null}
+                        <span class="thread__client">{titleFor(c, lang)}</span>
+                        <span class="thread__time">
+                          {fmtTime(c.updatedAt, lang)}
+                        </span>
+                      </div>
+                      <div class="thread__preview">{c.preview ?? "—"}</div>
+                      <div class="thread__chips">
+                        <span class={`thread__chip thread__chip--${chip.kind}`}>
+                          {chip.label}
+                        </span>
+                      </div>
+                    </a>
+                  );
+                })}
+              </div>
+            ))}
+        </div>
+      </aside>
+    </>
   );
 }
 
@@ -216,7 +262,7 @@ function deriveChip(
 ): { kind: Chip; label: string } {
   // Walk the chain backwards (latest stage wins). Customer acceptance
   // is a single event on the contract — quoteStatus only ever reaches
-  // "sent" in this flow, so no quote-accepted branch is needed.
+  // "locked"/"sent" in this flow, so no quote-accepted branch is needed.
   if (c.invoiceStatus === "paid") {
     return { kind: "paid", label: tFor(lang, "status.paid") };
   }
@@ -234,6 +280,11 @@ function deriveChip(
   }
   if (c.quoteStatus === "sent") {
     return { kind: "sent", label: tFor(lang, "asstThreads.chip.quoteSent") };
+  }
+  // Audit2 #5: locking is not sending. A locked quote with no customer bound
+  // gets its own chip instead of borrowing "Cotización enviada".
+  if (c.quoteStatus === "locked") {
+    return { kind: "needs", label: tFor(lang, "asstThreads.chip.quoteLocked") };
   }
   if (c.currentPhase === "terms") {
     return { kind: "needs", label: tFor(lang, "asstThreads.chip.terms") };
