@@ -245,3 +245,67 @@ customer"; the ES twin kept the old pattern).
   on /q intro (singular line item).
 - Preview polish: the TOTAL / "Estimated:" rows show a pinkish selected/edit-state
   tint without user interaction (looks like an accidental attention state).
+
+---
+
+# Third pass (same session) — contract signing, milestone billing, remaining flows
+
+Drove: the real `/c` signature ceremony (drawn signature on the pad), the milestone
+invoices it spawns, help-me-price + its tier suggestions, the change-order loop on
+`/co`, an English-mode sweep, wrong-OTP entry, and the returning-visitor saved-phone
+chip.
+
+Works well: the signature pad (draw/undo/clear, typed-name gate, consent copy) is
+flawless and the drawn signature renders on the signed page with a working PDF; the
+`/co` approve loop is clean with clear before/after math and a persisted APROBADO
+state; wrong-code entry resets and refocuses nicely; the saved-phone "Usar (512)
+555-4001" chip is a great returning-visitor touch; the EN sweep found ZERO Spanish
+leaks (viewer-localized feed working); the Básico/Estándar/Premium price suggestions
+are exactly the right shape.
+
+## 🔴 CRITICAL
+
+**UX-36 [BILLING] Signing the contract after the job was invoiced and paid DOUBLE-BILLS
+the customer.** Sequence driven live: quick-quote → customer accepts on /q → contractor
+invoices $3,700 → customer pays → confirmed… then the customer opens the still-live
+/c link and signs → the app auto-creates the 50/50 milestone invoices: $1,850
+(1/2, status `sent`, due Aug 25) + $1,850 (2/2, scheduled Sep 8). María is now booked
+for $7,400 on a $3,700 job she already paid; Rafa's /invoices hero says "$1,850
+esperados esta semana — Aug 25: María Nguyen $1,850"; and the signed-confirmation SMS
+told her "your first invoice" is coming. Milestone creation must reconcile against
+existing invoices/payments for the quote (skip, or only bill the remainder).
+
+**UX-37 [DOC MODEL] Two independent signature ceremonies exist for one agreement.**
+María accept-signed the "Cotización + Acuerdo" on /q (badge ACEPTADA, typed-name
+signature persisted) — yet /c for the SAME deal still said "PENDIENTE DE FIRMA" and
+offered a full second signing ceremony, which she completed (that second signature is
+what triggered UX-36). Either the quote-accept should mark the linked contract
+signed, or /c should render "ya aceptaste esto el 18 de agosto" instead of a fresh
+pad. Two live documents with independent states for one agreement will confuse every
+customer who receives both links.
+
+## 🟠 MAJOR
+
+**UX-38 [I18N] English-formatted dates throughout the Spanish /c page.** "vigente
+**August 18, 2026**", contractor block "Fecha: **August 18, 2026**", the signed badge
+"FIRMADO **AUGUST 18, 2026**", and the signature timestamp — the P-28 date fix covered
+the EMAil renderer; the /c web view (and /invoices ES hero "**Aug 25**: María…") still
+format en-US.
+
+**UX-39 [PUBLIC/TRUST] The post-sign confirmation promises an email to a customer who
+has none.** "Espera hasta 2 minutos antes de revisar tu **correo**. No olvides revisar
+el **spam**." — María has no email on file (the send path had already adapted to
+text-only). Adapt the copy to the channels that actually exist.
+
+## 🟡 MINOR
+
+**UX-40 [I18N] /c browser-tab title is English** ("Quote + Agreement · Paperwork
+Monster") on the Spanish customer-facing contract (same class as UX-16, but
+customer-visible).
+
+**UX-41 [ASSISTANT] Help-me-price step nits.** The version-confirm step's ONLY advance
+affordance is the green strip "Se ve bien — confirma estos detalles", styled as a
+passive summary rather than a button (no Continuar exists — measured: nothing else
+advances); the "Atrás"/heading overlap recurs on this card; and the ES Title-Casing
+convention shows again ("Cambiar 12 **T**ablas") — Spanish titles should be sentence
+case throughout, not Title Case with stopword exceptions.
