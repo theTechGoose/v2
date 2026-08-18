@@ -16,6 +16,7 @@
     "#std/assert": "jsr:@std/assert@^1",
     "#std/encoding/base64": "jsr:@std/encoding@^1/base64",
     "#payment-split": "../front-end/lib/payment-split.ts",
+    "#quote-flow/": "../shared/quote-flow/",
     "@core/": "./src/core/",
     "@crm/": "./src/crm/",
     "@paperwork/": "./src/paperwork/",

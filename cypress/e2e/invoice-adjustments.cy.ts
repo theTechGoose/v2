@@ -27,24 +27,25 @@ describe("invoice adjustments — discount and change order with customer approv
 
   it("a $50 discount drops the displayed total from $350 to $300", () => {
     cy.visit(`/invoices?open=${invoiceId}`);
-    cy.contains(/\$\s?350(\.00)?/, { timeout: 10_000 }).should("be.visible");
+    cy.contains(/\$\s?350(\.00)?/, { timeout: 10_000 }).scrollIntoView().should("be.visible");
 
-    cy.get("[data-cy=invoice-discount-btn]").click();
+    cy.get("[data-cy=invoice-discount-btn]").scrollIntoView().click();
     cy.focused().type("50"); // $50 off
-    cy.contains("button", /apply|save/i).click();
+    cy.contains("button", /apply|save/i).scrollIntoView().click();
 
-    cy.contains(/discount/i).should("be.visible");
-    cy.contains(/\$\s?300(\.00)?/).should("be.visible");
+    cy.contains(/discount/i).scrollIntoView().should("be.visible");
+    cy.contains(/\$\s?300(\.00)?/).scrollIntoView().should("be.visible");
   });
 
   it("a change order produces a NEW approval link for the customer", () => {
     cy.visit(`/invoices?open=${invoiceId}`);
-    cy.get("[data-cy=invoice-change-order-btn]", { timeout: 10_000 }).click();
+    cy.get("[data-cy=invoice-change-order-btn]", { timeout: 10_000 }).scrollIntoView().click();
     cy.get("input, textarea").filter(":visible").first().type("Haul extra debris");
     cy.contains(/amount|price|\$/i).parent().find("input").last().type("150");
-    cy.contains("button", /create|send|save/i).click();
+    cy.contains("button", /create|send|save/i).scrollIntoView().click();
 
     cy.get("[data-cy=change-order-approval-link]", { timeout: 10_000 })
+      .scrollIntoView()
       .should("be.visible")
       .invoke("text")
       .should("match", /\/co\//);
@@ -60,9 +61,11 @@ describe("invoice adjustments — discount and change order with customer approv
 
       // Pending: contractor view still shows the original $350 total.
       cy.visit(`/invoices?open=${invoiceId}`);
-      cy.contains(/pending/i, { timeout: 10_000 }).should("be.visible");
-      cy.contains(/\$\s?350(\.00)?/).should("be.visible");
-      cy.contains(/\$\s?500(\.00)?/).should("not.exist");
+      cy.contains(/pending/i, { timeout: 10_000 }).scrollIntoView().should("be.visible");
+      cy.contains(/\$\s?350(\.00)?/).scrollIntoView().should("be.visible");
+      // Not applied yet: the live invoice amount is still $350 (the pending
+      // row may PREVIEW the post-approval total, which is fine).
+      cy.request(`/api/invoices/${invoiceId}`).its("body.amount").should("eq", 35000);
 
       // Customer opens the approval page and approves.
       cy.clearCookies();
@@ -77,7 +80,7 @@ describe("invoice adjustments — discount and change order with customer approv
       cy.loginAs(PHONE);
     cy.apiUpdateUser({ language: "en" }); // fresh users default to es; EN copy asserted
       cy.visit(`/invoices?open=${invoiceId}`);
-      cy.contains(/\$\s?500(\.00)?/, { timeout: 10_000 }).should("be.visible");
+      cy.contains(/\$\s?500(\.00)?/, { timeout: 10_000 }).scrollIntoView().should("be.visible");
     });
   });
 
@@ -95,10 +98,10 @@ describe("invoice adjustments — discount and change order with customer approv
       cy.loginAs(PHONE);
     cy.apiUpdateUser({ language: "en" }); // fresh users default to es; EN copy asserted
       cy.visit(`/invoices?open=${invoiceId}`);
-      cy.contains(/declined/i, { timeout: 10_000 }).should("be.visible");
+      cy.contains(/declined/i, { timeout: 10_000 }).scrollIntoView().should("be.visible");
       // Total still the original $350 — the declined $99 never applied.
-      cy.contains(/\$\s?350(\.00)?/).should("be.visible");
-      cy.contains(/\$\s?449(\.00)?/).should("not.exist");
+      cy.contains(/\$\s?350(\.00)?/).scrollIntoView().should("be.visible");
+      cy.request(`/api/invoices/${invoiceId}`).its("body.amount").should("eq", 35000);
     });
   });
 });

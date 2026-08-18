@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { summarizeJobName } from "#quote-flow/job-name.ts";
 import { getKv } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import type {
@@ -21,6 +22,13 @@ export class QuoteStore {
     // class field materializes `status: undefined`, which would clobber a
     // spread-in default.)
     if (!quote.status) quote.status = "draft";
+    // Roadmap p.8: every quote carries a ≤3-word job name platform-wide.
+    // The LLM polish step supplies one on assistant-built quotes; API-created
+    // quotes fall back to the deterministic summarizer.
+    if (!quote.jobName?.trim()) {
+      const source = quote.summary?.trim() || quote.description?.trim();
+      if (source) quote.jobName = summarizeJobName(source);
+    }
     const kv = await getKv();
     await kv.atomic()
       .set([PREFIX, id], quote)
