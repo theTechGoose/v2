@@ -150,3 +150,98 @@ Render the full evidence immediately.
 
 **UX-23 [INVOICES] "Exportar CSV 2026" ghost button is near-invisible** (pale pill on
 cream) and questionable on a zero-invoice empty state at all.
+
+---
+
+# Second pass (same session) — skip-setup persona, money loop, edge flows
+
+Drove: OTP-cooldown UX on the landing form, a skip-setup user (global "Omitir
+configuración") through quote-send, the full invoice loop (facturar chip → send →
+customer claim on /i → contractor confirm), /payments, /clients, /settings, /login,
+logout/return, and the /q question + decline flows.
+
+What works well in these paths: the claim→confirm loop is excellent (claim card
+"El cliente pagó por Zelle / Listo, lo recibí →", instant list update, truthful
+"Todo en orden / $3,700 pagadas"); /i and /co fully localized; question flow keeps
+the action row; decline flow has reason chips + prefilled name; login/logout clean;
+returning users route to /dashboard.
+
+## 🔴 CRITICAL
+
+**UX-26 [OUTBOUND/P-06 REGRESSION-CLASS] The assistant's send path bypasses the
+placeholder-name guard — a customer received "Hi Pedro, this is Nuevo."** A skip-setup
+user (no name, no business) drove quick-quote → "Enviar por texto": the UI celebrated
+"Contrato enviado" and the SMS logged to the customer reads
+`"Hi Pedro, this is Nuevo.\n\nYour Quote + Agreement for Pintar La Sala is ready…"`.
+Three defects in one message: (a) the placeholder first name leaks ("this is Nuevo") —
+the P-06 refusal was wired on the paperwork controller endpoints
+(`/quotes/:id/email|text`), but the assistant's send-contract coordinator dispatches
+through its own path and skips the guard — route ALL outbound through one identity
+gate; (b) the preview showed "DE: Nuevo usuario" with no warning and NO edit affordance
+on the De-block (Para has pencils; De doesn't) — nothing invites the user to fix it;
+(c) "Pintar **La** Sala" — stopword Title-Casing again in the SMS job name.
+
+**UX-27 [SKIP-USER] The placeholder name is treated as a real name everywhere the
+user could fix it.** Topbar greets "Hola, Nuevo 👋" (UX-25) and the SetupChecklist
+shows "✓ Tu nombre" as COMPLETE for "Nuevo usuario" — the one field this user most
+needs to supply is marked done, so the "collect it when needed" product intent
+(P-06's <<solution>>) never triggers.
+
+## 🟠 MAJOR
+
+**UX-28 [OUTBOUND] Outbound language is inconsistent for the same contractor +
+customer.** Rafa's quote SMS went out in Spanish ("Hola María, soy Rafa de Techos
+Morales…") but his invoice SMS in English ("Hi María, your invoice is ready…") — the
+two send paths resolve commsLanguage differently. Pick one resolution (identity
+commsLanguage) and use it on every channel/doc type. (EN-by-default is the product's
+promise; the inconsistency is the bug.)
+
+**UX-29 [INVOICE] The ≤3-word job-name derivation produces preposition-ending
+nonsense.** "El patio de adoquines de María Nguyen, $3,700" → jobName "El patio de" —
+which then HEADLINES the customer's invoice page and the SMS. Trim leading articles and
+never end on a stopword ("Patio de adoquines").
+
+**UX-30 [PAYMENTS/TRUST] The promised payment receipt never goes out.** The customer's
+claim confirmation says "Confirmará cuando llegue el dinero — **y te enviaremos un
+recibo**." After the contractor confirmed, no receipt SMS/email was dispatched (comms
+log checked). Broken promise at the exact moment trust is built.
+
+**UX-31 [INVOICE] The invoice is created and "saved" without any review step, with a
+silent due date of TODAY.** Facturar flow: price → customer → "¡Factura lista! 🎉
+Quedó guardada" — the user never saw line items, description, or due date; the customer
+then receives an invoice that is already due the day it arrives ("Vence 18 de agosto").
+Add a review card (like the quote preview) with an editable due date.
+
+**UX-32 [INVOICE] The facturar flow ignores what the app already knows.** It opens with
+a cold "¿De qué trabajo es la factura?" instead of offering the just-accepted job as a
+chip ("¿La factura es del patio de María — $3,700?"); the typed "$3,700" is ignored
+(picker at $0, same as UX-04); the typed "María Nguyen" doesn't preselect her in the
+customer step.
+
+**UX-33 [OTP] The send-cooldown surfaces as a generic failure that invites retrying.**
+Second submit within 30s shows "No pudimos enviar el código. Intenta otra vez." — the
+retry keeps failing for 30s while a valid code sits in the user's SMS. On 429 the form
+should route to /verify ("Ya te enviamos un código — revísalo") or show the countdown
+from the response's retryAfterSeconds.
+
+## 🟡 MINOR
+
+**UX-34 [ASSISTANT/I18N] "Haz clic aquí para clientes existentes"** — click-language
+calque as the ES dropdown trigger (the EN cluster was fixed to "Choose an existing
+customer"; the ES twin kept the old pattern).
+
+**UX-35 [COSMETIC/COPY] Small-issue cluster from this pass:**
+- Garbled overlapping toast/header text at the top-left during invoice creation
+  (two strings rendered on top of each other for a few seconds).
+- Assistant step cards/composer float mid-viewport with large dead space below
+  (invoice flow, customer step) — content should anchor near the composer.
+- /payments hero chip "PAGOS · AUGUST" — English month in the ES UI.
+- /i after claiming: header badge stays "PENDIENTE" (no visible state change) and the
+  footer still asks "¿Preguntas antes de pagar?".
+- /settings renders the same fields twice (read-only "Cuenta"/"Identidad" cards + an
+  "Edita tus datos" form below); long email value clips at the card edge.
+- /clients card: "SALDO / Saldado" reads clunky; giant translucent "0" watermark on
+  the client card; "una sola línea de trabajo desglosadas abajo" number disagreement
+  on /q intro (singular line item).
+- Preview polish: the TOTAL / "Estimated:" rows show a pinkish selected/edit-state
+  tint without user interaction (looks like an accidental attention state).
