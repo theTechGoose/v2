@@ -2,8 +2,10 @@
 .env.*
 !.env.example
 
-node_modules/
+node_modules
 .vite/
+# Local dev KV database (worktree backend boots point KV_PATH here)
+dev-kv.sqlite*
 dist/
 build/
 .DS_Store

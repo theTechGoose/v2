@@ -3,12 +3,27 @@ import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import { generateOtpCode } from "@users/domain/business/generate-otp-code/mod.ts";
+import { evaluateSendOtp } from "#quote-flow/otp-rate-limit.ts";
 import type { Language } from "@users/dto/user.ts";
 import { t } from "@core/i18n/mod.ts";
 
 export interface SendOtpInput {
   phoneNumber: string;
   language?: Language;
+}
+
+/**
+ * P-03: thrown when a send is requested inside the 30s per-phone cooldown.
+ * The controller surfaces it as HTTP 429 + Retry-After — never {sent:true}.
+ * The cooldown state is the pending OTP record's own `sentAt` (key
+ * ["otp", phone]), so `scripts/dev-wipe-user.ts` — which deletes every KV
+ * key containing the phone — clears the cooldown along with the record.
+ */
+export class SendOtpCooldownError extends Error {
+  constructor(readonly retryAfterSeconds: number) {
+    super("cooldown");
+    this.name = "SendOtpCooldownError";
+  }
 }
 
 export interface SendOtpResult {
@@ -42,6 +57,19 @@ export class SendOtp {
 
   async run(input: SendOtpInput): Promise<SendOtpResult> {
     const normalizedPhone = normalizePhone(input.phoneNumber);
+
+    // P-03 gate: a pending OTP's sentAt is the last-send timestamp for this
+    // phone. Reject BEFORE generating/persisting/dispatching so a blocked
+    // request costs no SMS and leaves the existing record (and its attempts
+    // lock) untouched.
+    const existing = await this.otps.get(normalizedPhone);
+    const gate = evaluateSendOtp({
+      phone: normalizedPhone,
+      lastSentAt: existing?.sentAt ?? null,
+      now: new Date().toISOString(),
+    });
+    if (!gate.allowed) throw new SendOtpCooldownError(gate.retryAfterSeconds);
+
     const code = generateOtpCode();
     await this.otps.put({ phoneNumber: normalizedPhone, code, language: input.language });
 

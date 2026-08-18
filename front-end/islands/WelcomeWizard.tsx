@@ -481,9 +481,12 @@ function StateStep({ ctx }: { ctx: StepCtx }) {
           </>
         )}
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
-      {suggestion && !picking
-        ? null
-        : <StepFooter ctx={ctx} valid={valid} busy={busy} onContinue={save} />}
+      {
+        /* P-54: the footer (Back + Skip + Continue) renders in BOTH the
+          tap-to-confirm banner mode and the full picker mode — the state
+          step offers Back and Skip like every other step. */
+      }
+      <StepFooter ctx={ctx} valid={valid} busy={busy} onContinue={save} />
     </StepBody>
   );
 }
@@ -522,8 +525,12 @@ function AddressStep({ ctx }: { ctx: StepCtx }) {
       const ac = new AbortController();
       acAbort.current = ac;
       try {
+        // P-38: bias + filter suggestions to the state the user confirmed
+        // one step earlier (PUT /profile/address) so "1600 Congress" with
+        // TX on record suggests Austin, not Chicago.
         const found = await suggestAddresses(value, {
           lang: langSignal.value,
+          state: ctx.snap.address?.state,
           signal: ac.signal,
         });
         if (!ac.signal.aborted) setSugs(found);
@@ -1034,7 +1041,9 @@ function buildSteps(): StepDef[] {
     },
     {
       id: "state",
-      skippable: false,
+      // P-54: skippable like every other data step — skip advances without
+      // saving a state, exactly like skipping business name or email.
+      skippable: true,
       isComplete: (s) => Boolean(s.address?.state),
       Component: StateStep,
     },
