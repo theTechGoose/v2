@@ -49,7 +49,9 @@ export default function MoneyInput(
   const [ready, setReady] = useState(false);
   const [stageWidth, setStageWidth] = useState(380);
   // Touch-only devices have no arrow keys / Shift, so the keyboard-nudge hint
-  // is noise there — swap it for a touch-appropriate one.
+  // is noise there — swap it for a touch-appropriate one. Phone-width
+  // viewports count too (P-53): the hint used to key off hover/pointer alone,
+  // so a 390px screen still advertised "Shift = $100".
   const [isTouchOnly, setIsTouchOnly] = useState(false);
 
   useEffect(() => {
@@ -59,7 +61,9 @@ export default function MoneyInput(
 
   useEffect(() => {
     if (typeof globalThis.matchMedia !== "function") return;
-    const mq = globalThis.matchMedia("(hover: none) and (pointer: coarse)");
+    const mq = globalThis.matchMedia(
+      "(hover: none) and (pointer: coarse), (max-width: 640px)",
+    );
     const apply = () => setIsTouchOnly(mq.matches);
     apply();
     mq.addEventListener("change", apply);

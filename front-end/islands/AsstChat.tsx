@@ -22,10 +22,10 @@ import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { localizeTermValue } from "../lib/term-i18n.ts";
 import {
   type ChipKey,
-  chipIntent,
   chipReply,
 } from "../../shared/quote-flow/starter-chips.ts";
 import { termLabel } from "../../shared/quote-flow/terms-i18n.ts";
+import { versionTitle } from "../../shared/quote-flow/version-titles.ts";
 import {
   TimeoutError,
   withChatTimeout,
@@ -212,17 +212,36 @@ function localFallbackOptions(raw: string, lang: Lang): JobOption[] {
   const summary = base[0]?.split(/\s+/).slice(0, 8).join(" ") ||
     tFor(lang, "asstChat.newJob");
   const jobName = summary.split(/\s+/).slice(0, 3).join(" ");
+  // P-24: the three versions must be distinguishable at a glance. They used
+  // to share one jobName verbatim (and the server's old scheme numbered the
+  // collisions "(2)" / "(3)"), so the picker looked like the same job three
+  // times. Each variant now carries the qualifier that describes what it IS.
   return [
     { id: "opt1", jobName, summary, bullets: base },
-    { id: "opt2", jobName, summary, bullets: base.slice(0, 3) },
+    {
+      id: "opt2",
+      jobName: versionTitle(jobName, "short", lang),
+      summary,
+      bullets: base.slice(0, 3),
+    },
     {
       id: "opt3",
-      jobName,
+      jobName: versionTitle(jobName, "wider", lang),
       summary,
       bullets: [...base.slice(0, 3), tFor(lang, "asstChat.jobsiteCleanup")]
         .slice(0, 4),
     },
   ];
+}
+
+/** Split a chip reply into a bold lead + the rest for the details bubble
+ *  (P-20). The lead runs to the first "—" or sentence period; the rest keeps
+ *  its own leading punctuation/space so the markup can render
+ *  <strong>{lead}</strong>{rest} verbatim. */
+function chipBubbleParts(reply: string): { lead: string; rest: string } {
+  const idx = reply.search(/[—.]/);
+  if (idx <= 0) return { lead: reply, rest: "" };
+  return { lead: reply.slice(0, idx), rest: reply.slice(idx) };
 }
 
 interface ActionCardLineItem {
@@ -524,6 +543,11 @@ export default function AsstChat({
    *  next submission is treated as raw job-details, sent through the
    *  polish endpoint, then used to seed the new quote + phase 2 wizard. */
   const [awaitingJobDetails, setAwaitingJobDetails] = useState(false);
+  /** Which starter chip opened the current flow (P-20). Drives the
+   *  intent-appropriate first reply on the job-details screen — the
+   *  "job done, need to invoice" chip must never be answered with quote
+   *  copy. Null before any chip is tapped. */
+  const [flowChip, setFlowChip] = useState<ChipKey | null>(null);
   const [pendingPriceCents, setPendingPriceCents] = useState<number | null>(
     null,
   );
@@ -665,6 +689,15 @@ export default function AsstChat({
    *  with the public /i/:id link. The ref keeps the create idempotent if
    *  dispatch fails and the user retries. */
   const [swapInvoiceSent, setSwapInvoiceSent] = useState<string | null>(null);
+  /** Honest swap-send outcome (P-09): the invoice endpoints report logical
+   *  failure as HTTP 200 + {ok:false, reason}, so the swap panel must read
+   *  the BODY — never just Response.ok. When a leg fails this holds the
+   *  divider lang key (sendContract.divider.noEmail / .emailFailed) plus
+   *  the server's reason text, rendered like the honest contract-send
+   *  divider. Null = everything requested was delivered. */
+  const [swapSendFail, setSwapSendFail] = useState<
+    { key: string; reason: string } | null
+  >(null);
   const swapInvoiceIdRef = useRef<string | null>(null);
   const [swapLinkCopied, setSwapLinkCopied] = useState(false);
   /** "Job done, need to invoice." starter (roadmap p.3): marks the pre-quote
@@ -838,6 +871,11 @@ export default function AsstChat({
    *  that the mic is hearing them. */
   const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState<string | undefined>();
+  /** Re-fires the last failed chat turn (P-10): when a send times out or
+   *  errors, the composer error strip offers one-tap retry instead of an
+   *  endless spinner + lost message. Cleared on the next attempt. */
+  const retryTurnRef = useRef<(() => void) | null>(null);
+  const [canRetryTurn, setCanRetryTurn] = useState(false);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recChunksRef = useRef<Blob[]>([]);
@@ -874,6 +912,7 @@ export default function AsstChat({
     priceCents: number | null;
     jobOptionsOpen: boolean;
     writeMyselfOpen: boolean;
+    flowChip: ChipKey | null;
   }
   const historyStackRef = useRef<ViewSnapshot[]>([]);
 
@@ -887,6 +926,7 @@ export default function AsstChat({
       priceCents,
       jobOptionsOpen,
       writeMyselfOpen,
+      flowChip,
     });
   }
 
@@ -901,6 +941,7 @@ export default function AsstChat({
     setPriceCents(snap.priceCents);
     setJobOptionsOpen(snap.jobOptionsOpen);
     setWriteMyselfOpen(snap.writeMyselfOpen);
+    setFlowChip(snap.flowChip);
   }
 
   // The universal back button (ChatHeaderLive) dispatches `pm:asst-back`;
@@ -1394,6 +1435,8 @@ export default function AsstChat({
   ) {
     if (sending) return;
     setError(undefined);
+    retryTurnRef.current = null;
+    setCanRetryTurn(false);
     setSending(true);
     const tmpId = `tmp-${Date.now()}`;
     const stub: Message = {
@@ -1407,7 +1450,10 @@ export default function AsstChat({
     setMessages((m) => [...m, stub]);
 
     try {
-      const res = await submit();
+      // P-10: bound the turn client-side too — a hung backend/LLM call used
+      // to spin forever with no error and no way out. After ~30s the send
+      // rejects with a typed TimeoutError and the error strip offers Retry.
+      const res = await withChatTimeout(submit());
       const newConvoId = res.conversation?.id ?? res.conversationId;
       if (newConvoId && newConvoId !== convoId) {
         setConvoId(newConvoId);
@@ -1472,7 +1518,18 @@ export default function AsstChat({
         ]);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "send failed");
+      // A timed-out turn gets a human message (not "Chat turn timed out
+      // after 30000ms") — and every failure arms the one-tap Retry that
+      // re-fires this exact turn.
+      setError(
+        err instanceof TimeoutError
+          ? tFor(lang, "landing.cta.sendError")
+          : err instanceof Error
+          ? err.message
+          : "send failed",
+      );
+      retryTurnRef.current = () => void submitTurn(optimistic, submit, onError);
+      setCanRetryTurn(true);
       setMessages((m) => m.filter((msg) => msg.id !== tmpId));
       onError?.();
     } finally {
@@ -1877,9 +1934,17 @@ export default function AsstChat({
       });
       if (!quote?.id) throw new Error("failed to create quote");
 
-      const conv = await api.post<{ id?: string }>("/agents/conversations", {
-        quoteId: quote.id,
-      });
+      // P-22: reuse the conversation minted when the details were submitted
+      // (its id is already in the URL) instead of orphaning it behind a
+      // second one. Falls back to creating one when the early mint failed.
+      const conv = convoId
+        ? await api.post<{ id?: string }>(
+          `/agents/conversations/${convoId}/draft`,
+          { quoteId: quote.id },
+        )
+        : await api.post<{ id?: string }>("/agents/conversations", {
+          quoteId: quote.id,
+        });
       if (!conv?.id) throw new Error("failed to start conversation");
 
       await api.post(`/agents/conversations/${conv.id}/transition-to-terms`);
@@ -2086,10 +2151,36 @@ export default function AsstChat({
    * hands off into the terms wizard; the Job Details picker is deferred to
    * the end of phase 2.
    */
+  /**
+   * P-22 — "mid-flow work silently lost." The details-first flow used to keep
+   * everything in component state and only mint a conversation once the quote
+   * existed, so the URL sat at /assistant and navigating away discarded the
+   * work. Mint the conversation the moment real work exists, park the typed
+   * details on it, and put its id in the address bar (replaceState, so the
+   * in-flight UI is not torn down). startQuoteFromRaw then REUSES this
+   * conversation instead of starting a second one.
+   */
+  async function ensureConversationForDraft(note: string) {
+    if (convoId) return;
+    try {
+      const conv = await assistantClient.startConversation({});
+      const id = conv?.id;
+      if (!id) return;
+      setConvoId(id);
+      if (typeof globalThis.history !== "undefined") {
+        globalThis.history.replaceState(null, "", `/assistant/${id}`);
+      }
+      await api.post(`/agents/conversations/${id}/draft`, { note });
+    } catch {
+      // Best-effort: a failed mint must never block the flow the user is in.
+    }
+  }
+
   function submitJobDetails(raw: string) {
     const trimmed = raw.trim();
     if (sending || !trimmed) return;
     setError(undefined);
+    void ensureConversationForDraft(trimmed);
     pushHistory();
     setPendingJobDetailsRaw(trimmed);
     setSubmittedJobDetails(trimmed);
@@ -2890,12 +2981,29 @@ export default function AsstChat({
    */
   function startKnownPriceFlow() {
     pushHistory();
+    setFlowChip("knownPrice");
     setSuggestPricing(false);
     setPriceSuggestions(null);
     setPendingJobDetailsRaw(null);
     setAwaitingJobDetails(true);
     // Synchronous focus inside the user gesture so iOS Safari pops the
     // keyboard. The effect at the awaitingJobDetails mount is a fallback.
+    taRef.current?.focus();
+  }
+
+  /**
+   * "Just give me a quick quote." — mechanically the same details-first
+   * capture as the known-price starter, but it is its OWN entry point so the
+   * chip gets its own intent-appropriate first reply (P-20: the four chips
+   * used to share one canned bubble).
+   */
+  function startQuickQuoteFlow() {
+    pushHistory();
+    setFlowChip("quickQuote");
+    setSuggestPricing(false);
+    setPriceSuggestions(null);
+    setPendingJobDetailsRaw(null);
+    setAwaitingJobDetails(true);
     taRef.current?.focus();
   }
 
@@ -2907,6 +3015,7 @@ export default function AsstChat({
    */
   function startHelpMePriceFlow() {
     pushHistory();
+    setFlowChip("helpPrice");
     setSuggestPricing(true);
     setPriceSuggestions(null);
     setPendingJobDetailsRaw(null);
@@ -2922,6 +3031,7 @@ export default function AsstChat({
    */
   function startInvoiceFlow() {
     pushHistory();
+    setFlowChip("invoiceDone");
     setInvoiceFlow(true);
     setSuggestPricing(false);
     setPriceSuggestions(null);
@@ -3054,12 +3164,47 @@ export default function AsstChat({
         invId = inv.id;
         swapInvoiceIdRef.current = invId;
       }
+      // P-09: the invoice send endpoints report logical failure as HTTP 200
+      // + {ok:false, reason} — interpret the BODY, never just Response.ok
+      // (the old `await` chain read every 200 as delivered). A failed leg
+      // surfaces the same honest divider the contract-send path renders.
+      let fail: { key: string; reason: string } | null = null;
+      const interpretLeg = (body: unknown, httpOk: boolean) => {
+        const outcome = interpretSendResult({ httpOk, body });
+        const key = sendResultLangKey(outcome);
+        if (key && !fail) {
+          const b = body as { reason?: unknown } | null;
+          fail = {
+            key,
+            reason: typeof b?.reason === "string"
+              ? b.reason
+              : outcome.reason ?? "",
+          };
+        }
+      };
       if (channel === "email" || channel === "both") {
-        await api.post(`/invoices/${invId}/email`, {});
+        try {
+          const res = await api.post<{ ok?: boolean; reason?: string }>(
+            `/invoices/${invId}/email`,
+            {},
+          );
+          interpretLeg(res, true);
+        } catch {
+          interpretLeg(null, false);
+        }
       }
       if (channel === "sms" || channel === "both") {
-        await api.post(`/invoices/${invId}/text`, {});
+        try {
+          const res = await api.post<{ ok?: boolean; reason?: string }>(
+            `/invoices/${invId}/text`,
+            {},
+          );
+          interpretLeg(res, true);
+        } catch {
+          interpretLeg(null, false);
+        }
       }
+      setSwapSendFail(fail);
       setSwapInvoiceSent(invId);
     } catch (err) {
       setError(
@@ -3521,33 +3666,57 @@ export default function AsstChat({
                                         />
                                       )
                                       : (
-                                        <button
-                                          type="button"
-                                          class="chat__jobopt-name-btn"
-                                          title={tFor(
-                                            lang,
-                                            "asstChat.jobOpts.editTitle",
-                                          )}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            startTitleEdit(opt.id, opt.jobName);
-                                          }}
-                                        >
-                                          <span>
-                                            {opt.jobName ||
-                                              tFor(
-                                                lang,
-                                                "asstChat.jobOpts.optionN",
-                                                { n: i + 1 },
-                                              )}
-                                          </span>
-                                          <span
+                                        <>
+                                          {
+                                            /* P-24: tapping the card's TEXT
+                                              selects it — it no longer opens
+                                              inline editing (which popped the
+                                              phone keyboard on a first tap).
+                                              Editing lives on the always-
+                                              visible pencil beside it. */
+                                          }
+                                          <button
+                                            type="button"
+                                            class="chat__jobopt-name-btn"
+                                            style="cursor:pointer"
+                                            aria-pressed={selected}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setSelectedOptionId(opt.id);
+                                            }}
+                                          >
+                                            <span>
+                                              {opt.jobName ||
+                                                tFor(
+                                                  lang,
+                                                  "asstChat.jobOpts.optionN",
+                                                  { n: i + 1 },
+                                                )}
+                                            </span>
+                                          </button>
+                                          <button
+                                            type="button"
                                             class="chat__jobopt-name-pencil"
-                                            aria-hidden="true"
+                                            style="opacity:1;appearance:none;border:0;background:transparent;cursor:pointer;padding:0 2px;line-height:1"
+                                            title={tFor(
+                                              lang,
+                                              "asstChat.jobOpts.editTitle",
+                                            )}
+                                            aria-label={tFor(
+                                              lang,
+                                              "asstChat.jobOpts.editTitle",
+                                            )}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              startTitleEdit(
+                                                opt.id,
+                                                opt.jobName,
+                                              );
+                                            }}
                                           >
                                             ✎
-                                          </span>
-                                        </button>
+                                          </button>
+                                        </>
                                       )}
                                   </div>
                                   <ul class="chat__jobopt-bullets">
@@ -3837,13 +4006,38 @@ export default function AsstChat({
                         <img src="/logo-monster.png" alt="" />
                       </div>
                       <div class="chat__details-prompt-bubble">
-                        <strong>
-                          {tFor(lang, "asstChat.details.promptBold")}
-                        </strong>{" "}
-                        {tFor(lang, "asstChat.details.promptRest")}
-                        <span class="chat__details-prompt-hint">
-                          {tFor(lang, "asstChat.details.hint")}
-                        </span>
+                        {flowChip
+                          ? (
+                            // P-20: each starter chip opens with its own
+                            // intent-appropriate reply — the invoice chip
+                            // talks facturas, never a cotización (so it
+                            // also drops the quote-polish hint).
+                            <>
+                              <strong>
+                                {chipBubbleParts(chipReply(flowChip, lang))
+                                  .lead}
+                              </strong>
+                              {chipBubbleParts(chipReply(flowChip, lang)).rest}
+                              {flowChip !== "invoiceDone"
+                                ? (
+                                  <span class="chat__details-prompt-hint">
+                                    {tFor(lang, "asstChat.details.hint")}
+                                  </span>
+                                )
+                                : null}
+                            </>
+                          )
+                          : (
+                            <>
+                              <strong>
+                                {tFor(lang, "asstChat.details.promptBold")}
+                              </strong>{" "}
+                              {tFor(lang, "asstChat.details.promptRest")}
+                              <span class="chat__details-prompt-hint">
+                                {tFor(lang, "asstChat.details.hint")}
+                              </span>
+                            </>
+                          )}
                       </div>
                     </div>
                     {/* Roadmap p.5: "Write it myself" — a structured editor
@@ -4325,7 +4519,7 @@ export default function AsstChat({
                     <button
                       type="button"
                       class="chat__empty-prompt"
-                      onClick={startKnownPriceFlow}
+                      onClick={startQuickQuoteFlow}
                     >
                       {tFor(lang, "asstChat.prompt.quickQuote")}
                     </button>
@@ -5588,12 +5782,32 @@ export default function AsstChat({
                             {swapInvoiceSent
                               ? (
                                 <div style="display:flex;flex-direction:column;gap:8px;width:100%">
-                                  <div style="padding:12px 14px;background:var(--green-50,#eef6ea);border:1px solid var(--brand-green,#519843);border-radius:12px;font-weight:700;font-size:13.5px;color:var(--brand-teal,#144852)">
-                                    {tFor(
-                                      previewLang,
-                                      "asstChat.preview.invoiceSent",
+                                  {swapSendFail
+                                    ? (
+                                      // P-09: honest outcome — the invoice
+                                      // exists but delivery failed; render
+                                      // the same divider chip the contract-
+                                      // send path uses instead of a green
+                                      // "sent" banner.
+                                      <div class="phase-divider">
+                                        <div class="phase-divider__line" />
+                                        <div class="phase-divider__label">
+                                          <I d={ICN.contract} size={11} />{" "}
+                                          {tFor(lang, swapSendFail.key, {
+                                            reason: swapSendFail.reason,
+                                          })}
+                                        </div>
+                                        <div class="phase-divider__line" />
+                                      </div>
+                                    )
+                                    : (
+                                      <div style="padding:12px 14px;background:var(--green-50,#eef6ea);border:1px solid var(--brand-green,#519843);border-radius:12px;font-weight:700;font-size:13.5px;color:var(--brand-teal,#144852)">
+                                        {tFor(
+                                          previewLang,
+                                          "asstChat.preview.invoiceSent",
+                                        )}
+                                      </div>
                                     )}
-                                  </div>
                                   <div style="display:flex;gap:8px">
                                     <button
                                       type="button"
@@ -6611,7 +6825,35 @@ export default function AsstChat({
                 : ""
             }`}
           >
-            {error ? <div class="composer__err">{error}</div> : null}
+            {error
+              ? (
+                <div class="composer__err">
+                  {error}
+                  {canRetryTurn && retryTurnRef.current
+                    ? (
+                      // P-10: one-tap retry for a timed-out/failed turn —
+                      // the affordance that replaces the endless spinner.
+                      <button
+                        type="button"
+                        class="composer__err-retry"
+                        style="margin-left:8px;appearance:none;border:1px solid currentColor;background:transparent;color:inherit;border-radius:8px;padding:2px 10px;font-weight:700;cursor:pointer"
+                        onClick={() => {
+                          const fn = retryTurnRef.current;
+                          retryTurnRef.current = null;
+                          setCanRetryTurn(false);
+                          setError(undefined);
+                          setDraft("");
+                          autosize();
+                          fn?.();
+                        }}
+                      >
+                        {tFor(lang, "welcome.sample.retry")}
+                      </button>
+                    )
+                    : null}
+                </div>
+              )
+              : null}
             {recording
               ? (
                 <RecordingPanel
@@ -7705,7 +7947,12 @@ function CustomDurationPickerForm(props: {
   onCancel: () => void;
 }) {
   const { sending, lang = "en", onSubmit, onCancel } = props;
-  const [phase, setPhase] = useState<"ask" | "verify">("ask");
+  // P-25/P-24: "Personalizado" opens the STRUCTURED picker (number + unit +
+  // presets + a live contract preview) straight away. It used to land on a
+  // chat-style free-text ask that popped the keyboard for what is literally
+  // a number and a unit; describing it in words is still one tap away via
+  // "Probar de otra forma".
+  const [phase, setPhase] = useState<"ask" | "verify">("verify");
   const [freeText, setFreeText] = useState("");
   const [parseFailed, setParseFailed] = useState(false);
   const [n, setN] = useState("3");
@@ -7715,8 +7962,13 @@ function CustomDurationPickerForm(props: {
 
   const num = Math.max(1, Math.min(99, Number(n) || 0));
   const valid = Number.isFinite(num) && num >= 1 && num <= 99;
-  const unitLabel = num === 1 ? unit.replace(/s$/, "") : unit;
-  const preview = valid ? `${num} ${unitLabel}` : "—";
+  // P-25: the manual duration control used to build the EN string
+  // ("3 weeks") and submit it verbatim into a Spanish contract. Preview AND
+  // submitted value now go through termLabel, so an ES contractor locks in
+  // "3 semanas".
+  const preview = valid
+    ? termLabel({ kind: "duration", value: { n: num, unit } }, lang)
+    : "—";
 
   const presets: {
     label: string;
@@ -7849,7 +8101,11 @@ function CustomDurationPickerForm(props: {
     <div class="dur dur--verify" style="margin-top:8px">
       <div class="dur__head">
         <strong class="dur__title">
-          {confidence === "fail"
+          {
+            /* Nothing was "heard" on a cold open — headline the task
+              ("Configura la duración"), not a confirmation. */
+          }
+          {confidence === "fail" || !heardFrom
             ? tFor(lang, "asstChat.duration.titleFail")
             : confidence === "guess"
             ? tFor(lang, "asstChat.verify.titleGuess")
@@ -7959,6 +8215,23 @@ function CustomDurationPickerForm(props: {
         >
           {tFor(lang, "asstChat.tryDifferent")}
         </button>
+        {
+          /* Cold open (nothing parsed yet) — keep a way back out of the
+            custom editor without detouring through the free-text ask. */
+        }
+        {!heardFrom
+          ? (
+            <button
+              type="button"
+              class="cust-create__btn"
+              style="background:transparent;border-color:transparent"
+              onClick={onCancel}
+              disabled={sending}
+            >
+              {tFor(lang, "common.back")}
+            </button>
+          )
+          : null}
       </div>
     </div>
   );
@@ -8085,13 +8358,16 @@ function CustomWarrantyPickerForm(props: {
   const num = Math.max(1, Math.min(cap, Number(n) || 0));
   const valid = kind !== "term" ||
     (Number.isFinite(num) && num >= 1 && num <= cap);
-  const unitLabel = num === 1 ? unit.replace(/s$/, "") : unit;
+  // P-25: the fallback used to build "Lifetime" / "No warranty" / "12
+  // months" and submit them verbatim into a Spanish contract. Preview AND
+  // submitted value now go through termLabel ("De por vida", "Sin
+  // garantía", "12 meses").
   const preview = kind === "lifetime"
-    ? "Lifetime"
+    ? termLabel({ kind: "warranty", value: "lifetime" }, lang)
     : kind === "none"
-    ? "No warranty"
+    ? termLabel({ kind: "warranty", value: "none" }, lang)
     : valid
-    ? `${num} ${unitLabel}`
+    ? termLabel({ kind: "warranty", value: { n: num, unit } }, lang)
     : "—";
 
   const presets: {
@@ -8490,10 +8766,14 @@ function CustomPaymentPickerForm(props: {
   const splitSum = splitNums.reduce((a, b) => a + b, 0);
   const splitsValid = splitNums.length >= 2 && splitSum === 100;
 
+  // P-25: the fallback used to build "Net 30" / "Net 0 — due on completion"
+  // and submit them verbatim into a Spanish contract. Preview AND submitted
+  // value now go through termLabel ("Neto 30", "Neto 0 — se paga al
+  // terminar").
   const preview = mode === "net"
-    ? days === 0 ? "Net 0 — due on completion" : `Net ${days}`
+    ? termLabel({ kind: "payment", value: { net: days } }, lang)
     : splitsValid
-    ? splitNums.join(" / ")
+    ? termLabel({ kind: "payment", value: { splits: splitNums } }, lang)
     : "—";
 
   const valid = mode === "net" ? Number.isFinite(days) : splitsValid;
