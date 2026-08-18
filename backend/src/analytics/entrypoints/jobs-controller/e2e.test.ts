@@ -45,7 +45,43 @@ Deno.test("jobs e2e: GET /jobs returns [] for fresh user", async () => {
   }
 });
 
-Deno.test("jobs e2e: GET /jobs synthesizes Job from quote+customer (awaiting)", async () => {
+Deno.test("jobs e2e: a merely SENT quote is NOT an active job (problems.md P-14)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const auth = { "content-type": "application/json", "x-session-id": sid };
+
+    const customer = await fetch(`http://localhost:${PORT}/customers`, {
+      method: "POST", headers: auth, body: JSON.stringify({ name: "Green Goblin" }),
+    }).then((r) => r.json());
+    const quote = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST", headers: auth, body: JSON.stringify({
+        customerId: customer.id, summary: "Fence repair", lineItems: [],
+        status: "sent", estimatedTotal: 850_00,
+      }),
+    }).then((r) => r.json());
+    // The assistant drafts an agreement the moment a quote is sent — but
+    // NOBODY signed it, so there is still no job.
+    await drain(await fetch(`http://localhost:${PORT}/contracts`, {
+      method: "POST", headers: auth, body: JSON.stringify({
+        quoteId: quote.id, customerId: customer.id, status: "draft", totalAmount: 850_00,
+      }),
+    }));
+
+    const jobs = await fetch(`http://localhost:${PORT}/jobs`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(jobs, []);
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+Deno.test("jobs e2e: GET /jobs synthesizes Job from an ACCEPTED quote+customer (awaiting signature)", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
@@ -60,8 +96,9 @@ Deno.test("jobs e2e: GET /jobs synthesizes Job from quote+customer (awaiting)", 
     const quote = await fetch(`http://localhost:${PORT}/quotes`, {
       method: "POST", headers: auth, body: JSON.stringify({
         customerId: customer.id, summary: "Roof tear-off", lineItems: [],
-        // Audit1 #3 — INTEGER CENTS.
-        status: "sent", estimatedTotal: 12_500_00,
+        // Audit1 #3 — INTEGER CENTS. P-14: only an ACCEPTED (or signed)
+        // quote becomes a job; "sent" alone is still awaiting a decision.
+        status: "accepted", estimatedTotal: 12_500_00,
       }),
     }).then((r) => r.json());
 
@@ -140,7 +177,7 @@ Deno.test("jobs e2e: A's jobs and B's jobs are isolated", async () => {
     }).then((r) => r.json());
     await drain(await fetch(`http://localhost:${PORT}/quotes`, {
       method: "POST", headers: authA, body: JSON.stringify({
-        customerId: customer.id, summary: "x", lineItems: [], status: "sent", estimatedTotal: 100_00,
+        customerId: customer.id, summary: "x", lineItems: [], status: "accepted", estimatedTotal: 100_00,
       }),
     }));
 

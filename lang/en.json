@@ -2023,6 +2023,8 @@
   "quotesHero.emptySub": "Quotes you send land here automatically — opens, replies, and stale flags are tracked for you.",
   "quotesHero.emptyTitleLine1": "Nothing in the pipeline yet.",
   "quotesHero.emptyTitleLine2": "Draft your first quote in the assistant.",
+  "quotesHero.settledSub": "Every quote you have sent is decided. Start the next one when you are ready.",
+  "quotesHero.settledTitle": "nothing is waiting on a client right now.",
   "quotesHero.eyebrow": "The pipeline this week",
   "quotesHero.needsPlural": "need",
   "quotesHero.needsSingular": "needs",

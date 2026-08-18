@@ -158,3 +158,32 @@ Deno.test("compute-dashboard-stats integration: month-over-month percentage from
   assertEquals(stats.revenue.monthOverMonthPct, 24);
   await resetKv();
 });
+
+Deno.test("compute-dashboard-stats integration: the onboarding sample pollutes nothing (problems.md P-15)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { quotes, flow } = fresh();
+  // Exactly what EnsureSampleQuote persists: summary-tagged, "sent", $3,700.
+  await quotes.create("u-1", {
+    summary: "onboarding-sample-v1 · Paver Patio Installation",
+    lineItems: [], status: "sent", estimatedTotal: 3_700_00,
+  });
+  const stats = await flow.run("u-1", NOW);
+  assertEquals(stats.quotes, { total: 0, draft: 0, sent: 0, accepted: 0 });
+  assertEquals(stats.quotedValueCents, 0);
+  assertEquals(stats.awaitingResponse, 0);
+  await resetKv();
+});
+
+Deno.test("compute-dashboard-stats integration: an unsigned agreement leaves the quote awaiting (problems.md P-14)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { quotes, contracts, flow } = fresh();
+  const q = await quotes.create("u-1", { summary: "Fence repair", lineItems: [], status: "sent", estimatedTotal: 850_00 });
+  await contracts.create("u-1", { quoteId: q.id, status: "draft", totalAmount: 850_00 });
+  const stats = await flow.run("u-1", NOW);
+  assertEquals(stats.quotes, { total: 1, draft: 0, sent: 1, accepted: 0 });
+  assertEquals(stats.quotedValueCents, 850_00);
+  assertEquals(stats.awaitingResponse, 1);
+  await resetKv();
+});

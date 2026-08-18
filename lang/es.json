@@ -2023,6 +2023,8 @@
   "quotesHero.emptySub": "Las cotizaciones que envías llegan aquí automáticamente: las aperturas, las respuestas y los avisos de inactividad se registran por ti.",
   "quotesHero.emptyTitleLine1": "Todavía no hay nada en el pipeline.",
   "quotesHero.emptyTitleLine2": "Crea tu primera cotización en el asistente.",
+  "quotesHero.settledSub": "Todas las cotizaciones que enviaste ya están decididas. Empieza la siguiente cuando quieras.",
+  "quotesHero.settledTitle": "nada está esperando a un cliente ahora mismo.",
   "quotesHero.eyebrow": "El pipeline de esta semana",
   "quotesHero.needsPlural": "necesitan",
   "quotesHero.needsSingular": "necesita",

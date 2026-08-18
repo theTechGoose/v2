@@ -89,13 +89,25 @@ Deno.test("stage: won when acceptedAt set", async () => {
   });
 });
 
-Deno.test("stage: won when a contract references the quoteId", async () => {
+Deno.test("stage: won when a SIGNED contract references the quoteId", async () => {
   await withKv(async () => {
     const { quotes, contracts, flow } = fresh();
     const q = await makeQuote(quotes, { sentAt: minus(MS_PER_DAY) });
-    await contracts.create("u-1", { quoteId: q.id });
+    await contracts.create("u-1", { quoteId: q.id, status: "signed", signedAt: minus(3600 * 1000) });
     const [c] = await flow.run("u-1", NOW);
     assertEquals(c.stage, "won");
+  });
+});
+
+Deno.test("stage: an UNSIGNED agreement leaves a sent quote awaiting (problems.md P-14)", async () => {
+  await withKv(async () => {
+    const { quotes, contracts, flow } = fresh();
+    // The exact first-quote state from the audit: the assistant drafted the
+    // agreement the moment the quote went out, and nobody signed it.
+    const q = await makeQuote(quotes, { sentAt: minus(MS_PER_DAY) });
+    await contracts.create("u-1", { quoteId: q.id, status: "draft" });
+    const [c] = await flow.run("u-1", NOW);
+    assertEquals(c.stage, "sent");
   });
 });
 
