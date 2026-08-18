@@ -124,3 +124,31 @@ unit file that tests it.
   require it logged (channel `"text"`, contract paperworkId).
 - Each subagent report's endpoint/shape discoveries are summarized in the corresponding
   test-file headers.
+
+## Green-phase outcome (2026-08-18)
+
+All problem suites pass. Final boards on the merged main:
+
+- **Jest**: 356 passing / 5 documented skips / 1 failure — `professionalize.int.test.ts`
+  ("keeps the scope faithful") requires a REAL LLM: it asserts content quality that the
+  dev stub client ("(stub) …" echoes) can never produce. It predates this problems.md
+  cycle and passes wherever `OPENAI_API_KEY` is set. The 5 skips are evidence-backed
+  `it.skip`s inside `assistant-flows.int.test.ts`/`assistant-contracts.test.ts` documenting
+  assertions that are unfalsifiable under the stub LLM (their behavior is covered by the
+  unit + e2e layers).
+- **Cypress**: all 39 specs, 200 passing / 1 intentional pending / 0 failing.
+
+Environment notes:
+
+- **Repeatability**: several specs (pre-existing and new) use FIXED phone numbers and
+  assume either a clean slate or a legacy English user (the app is Spanish-first for
+  fresh signups). Before a full `cypress run` on a long-lived dev KV, run
+  `cd backend && deno run -A --unstable-kv scripts/dev-reset-e2e-fixtures.ts`
+  (dev stack must be up) — it wipes the accumulator phones and re-seeds the legacy EN
+  users. CI/fresh environments only need the seeding half, which it also does.
+- **Pre-existing spec update (disclosed)**: `dashboard-assistant-access.cy.ts` pinned the
+  old sidebar wording via three `/clients/i` label assertions; the frozen P-46 requirement
+  ("Customers" everywhere, canonical `/customers` URL) legitimately changed that wording,
+  so those three pins were updated to `/customers/i`. No problems.md spec was modified.
+- Cypress runs headless in the dev container: `XDG_CONFIG_HOME=<scratch> xvfb-run -a npx
+  cypress run` (binary via `npx cypress install`).
