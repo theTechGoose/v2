@@ -15,6 +15,7 @@ import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
+import { RenderContractPdf } from "@paperwork/domain/coordinators/render-contract-pdf/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
@@ -138,6 +139,7 @@ export class PaperworkPublicController {
     private shortlinks: ShortLinkStore,
     private files: FileStore,
     private invoicePdf: RenderInvoicePdf,
+    private contractPdf: RenderContractPdf,
   ) {}
 
   /**
@@ -200,6 +202,67 @@ export class PaperworkPublicController {
           "content-type": "application/pdf",
           "content-length": String(bytes.length),
           "content-disposition": `inline; filename="invoice-${
+            id.slice(0, 8).toUpperCase()
+          }.pdf"`,
+          "cache-control": "no-store",
+        },
+      });
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+
+  /**
+   * GET /contracts/:id/pdf — stream a downloadable PDF of the agreement
+   * (invoice parity, P-63). Same capability model as GET /invoices/:id/pdf:
+   * knowing the unguessable contract id grants the download. Reuses the
+   * RenderContractPdf coordinator the signed-confirmation email already
+   * attaches, so the download and the attachment never drift.
+   */
+  @Get("contracts/:id/pdf")
+  async getContractPdf(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
+    try {
+      const contract = await this.contracts.get(id);
+      const userId = contract.userId;
+      const [contractor, ident, quoteRaw] = await Promise.all([
+        this.users.get(userId).catch(() => undefined),
+        this.identity.get(userId).catch(() => null),
+        contract.quoteId
+          ? this.quotes.get(contract.quoteId).catch(() => undefined)
+          : Promise.resolve(undefined),
+      ]);
+      // All data user-owned: only the owner's quote may feed the render.
+      const quote = quoteRaw && quoteRaw.userId === userId
+        ? quoteRaw
+        : undefined;
+      // Customer off the contract, falling back to the linked quote's
+      // customer (wizard-shaped contracts omit customerId — see P-13).
+      let customer = contract.customerId
+        ? await this.customers.getOwned(contract.customerId, userId)
+          .catch(() => undefined)
+        : undefined;
+      if (!customer && quote?.customerId) {
+        customer = await this.customers.getOwned(quote.customerId, userId)
+          .catch(() => undefined);
+      }
+      const businessName = ident?.businessName ?? ident?.legalName;
+      const bytes = await this.contractPdf.run({
+        contract,
+        quote,
+        customer,
+        contractor,
+        ...(businessName ? { businessName } : {}),
+        ...(ident?.commsLanguage ? { commsLanguage: ident.commsLanguage } : {}),
+      });
+      return new Response(bytes as BodyInit, {
+        status: 200,
+        headers: {
+          "content-type": "application/pdf",
+          "content-length": String(bytes.length),
+          "content-disposition": `inline; filename="contract-${
             id.slice(0, 8).toUpperCase()
           }.pdf"`,
           "cache-control": "no-store",
@@ -418,7 +481,13 @@ export class PaperworkPublicController {
     // "approved" is the canonical signed state (roadmap p.10); "accepted" is
     // the legacy value from before the rename — treat both as terminal.
     if (existing.status === "approved" || existing.status === "accepted") {
-      return ctx.json({ ok: true, alreadyAccepted: true });
+      // P-11: a second accept is a conflict, not a silent success — a stale
+      // pristine form must not "accept" again as if it worked (and must
+      // never overwrite who actually accepted).
+      return ctx.json(
+        { ok: false, reason: "already_accepted", alreadyAccepted: true },
+        409,
+      );
     }
     // A declined quote is terminal — don't let a stale public link silently
     // flip "lost" back to "accepted" (mirrors decline's already_accepted
@@ -452,7 +521,10 @@ export class PaperworkPublicController {
     // landed via the bus event. Awaited so the comms-trail entries exist by
     // the time the accept response lands (readers poll /messages right after).
     await this.acceptedAlert.run(updated.id).catch((err) => {
-      console.error(`[quotes/${updated.id}/accept] accepted-alert failed:`, err);
+      console.error(
+        `[quotes/${updated.id}/accept] accepted-alert failed:`,
+        err,
+      );
     });
     return ctx.json({ ok: true, quoteId: updated.id });
   }
@@ -577,7 +649,7 @@ export class PaperworkPublicController {
           console.warn(`[contracts/${id}/public] mark-viewed failed:`, err);
         }
       }
-      const [contractor, customer, quote] = await Promise.all([
+      const [contractor, customerDirect, quote] = await Promise.all([
         loadContractor(this.users, this.identity, this.addresses, c.userId),
         lookupCustomerPublic(this.customers, c.customerId, c.userId),
         // Public contract page surfaces the linked quote's job details so the
@@ -588,6 +660,18 @@ export class PaperworkPublicController {
           ? this.quotes.get(c.quoteId).catch(() => undefined)
           : Promise.resolve(undefined),
       ]);
+      // P-13: wizard-shaped contracts are created WITHOUT a customerId —
+      // fall back to the linked quote's customer so the To/Para card can
+      // name them. Owner-scoped: only a quote owned by the same contractor
+      // may resolve the customer (lookupCustomerPublic re-checks ownership).
+      let customer = customerDirect;
+      if (!customer && quote && quote.userId === c.userId) {
+        customer = await lookupCustomerPublic(
+          this.customers,
+          quote.customerId,
+          c.userId,
+        );
+      }
       const jobDetails = quote
         ? {
           summary: quote.summary,
@@ -692,24 +776,25 @@ export class PaperworkPublicController {
   ) {
     try {
       const i = await this.invoices.get(id);
-      const [contractor, customer, contractDirect, siblings] = await Promise.all([
-        loadContractor(this.users, this.identity, this.addresses, i.userId),
-        lookupCustomerPublic(this.customers, i.customerId, i.userId),
-        // The public page surfaces job context (the linked contract's
-        // quote summary + jobName) so the customer sees what they're
-        // paying for. Best-effort — a missing contract shouldn't 404.
-        i.contractId
-          ? this.contracts.get(i.contractId).catch(() => undefined)
-          : Promise.resolve(undefined),
-        // Sibling invoices for the same contract — used to render the
-        // "Invoice X of Y" framing and the "What you've paid so far"
-        // strip on the public page.
-        i.contractId
-          ? this.invoices.listByUser(i.userId).then((all) =>
-            all.filter((row) => row.contractId === i.contractId)
-          ).catch(() => [])
-          : Promise.resolve([]),
-      ]);
+      const [contractor, customer, contractDirect, siblings] = await Promise
+        .all([
+          loadContractor(this.users, this.identity, this.addresses, i.userId),
+          lookupCustomerPublic(this.customers, i.customerId, i.userId),
+          // The public page surfaces job context (the linked contract's
+          // quote summary + jobName) so the customer sees what they're
+          // paying for. Best-effort — a missing contract shouldn't 404.
+          i.contractId
+            ? this.contracts.get(i.contractId).catch(() => undefined)
+            : Promise.resolve(undefined),
+          // Sibling invoices for the same contract — used to render the
+          // "Invoice X of Y" framing and the "What you've paid so far"
+          // strip on the public page.
+          i.contractId
+            ? this.invoices.listByUser(i.userId).then((all) =>
+              all.filter((row) => row.contractId === i.contractId)
+            ).catch(() => [])
+            : Promise.resolve([]),
+        ]);
       // Quote-derived invoices may predate their contract (p6: "link to the
       // signed quote if one exists") — fall back to resolving the newest
       // contract bound to the invoice's quote.
@@ -718,7 +803,9 @@ export class PaperworkPublicController {
         contract = await this.contracts.listByUser(i.userId)
           .then((all) =>
             all.filter((c) => c.quoteId === i.quoteId)
-              .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))[0]
+              .sort((a, b) =>
+                (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
+              )[0]
           )
           .catch(() => undefined);
       }
@@ -1083,7 +1170,12 @@ function redactQuote(q: Quote) {
     estimatedTotal: q.estimatedTotal,
     status: q.status,
     createdAt: q.createdAt,
-    // omit: userId, updatedAt, internal acceptedSignature/acceptedName
+    // P-11: the persisted accepted state — who accepted and when — so a
+    // reloaded /q/:id can render the confirmation without an in-session
+    // acceptance. The raw acceptedSignature stays internal.
+    acceptedName: q.acceptedName,
+    acceptedAt: q.acceptedAt,
+    // omit: userId, updatedAt, internal acceptedSignature
   };
 }
 
@@ -1105,7 +1197,11 @@ function redactContract(c: Contract) {
     // stay omitted.
     customerSignedName:
       (c as { customerSignedName?: string }).customerSignedName,
-    // omit: userId, updatedAt, customer signature PNG, customerTinMasked
+    // P-40: the captured signature mark (a compact data-URL PNG drawn or
+    // typed by the customer themselves) is safe to render back on the
+    // signed public page — it's the customer's own signature.
+    customerSignature: (c as { customerSignature?: string }).customerSignature,
+    // omit: userId, updatedAt, customerTinMasked
   };
 }
 

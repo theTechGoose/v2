@@ -267,14 +267,18 @@ export default function OnboardingProgress(
                 <>
                   <button
                     type="button"
-                    onClick={() => quickReply("Yes")}
+                    onClick={() =>
+                      quickReply(tFor(lang, "onboardingProgress.reply.yes"))}
                     style={`appearance:none;font:inherit;font-weight:700;font-size:11.5px;padding:5px 11px;border-radius:999px;border:1px solid ${GREEN};background:#fff;color:${GREEN};cursor:pointer`}
                   >
                     {tFor(lang, "onboardingProgress.reply.yes")}
                   </button>
                   <button
                     type="button"
-                    onClick={() => quickReply("different state")}
+                    onClick={() =>
+                      quickReply(
+                        tFor(lang, "onboardingProgress.reply.differentState"),
+                      )}
                     style={`appearance:none;font:inherit;font-weight:700;font-size:11.5px;padding:5px 11px;border-radius:999px;border:1px solid rgba(20,72,82,0.20);background:#fff;color:${TEAL};cursor:pointer`}
                   >
                     {tFor(lang, "onboardingProgress.reply.differentState")}
@@ -284,7 +288,8 @@ export default function OnboardingProgress(
               {step === 3 && (
                 <button
                   type="button"
-                  onClick={() => quickReply("skip")}
+                  onClick={() =>
+                    quickReply(tFor(lang, "onboardingProgress.reply.skip"))}
                   style={`appearance:none;font:inherit;font-weight:700;font-size:11.5px;padding:5px 11px;border-radius:999px;border:1px solid rgba(20,72,82,0.20);background:#fff;color:${TEAL};cursor:pointer`}
                 >
                   {tFor(lang, "onboardingProgress.reply.skip")}

@@ -43,9 +43,12 @@ export default function TrialSignup({ lang = "es" }: { lang?: Lang }) {
       try {
         localStorage.setItem("pm:last-phone", e164);
       } catch { /* private mode */ }
+      // P-39: carry the signup origin in the URL (survives reload) so
+      // /verify's "Wrong number? Edit" link can return to THIS form
+      // instead of the main "/" landing.
       globalThis.location.href = `/verify?phone=${
         encodeURIComponent(e164)
-      }&lang=${lang}`;
+      }&lang=${lang}&from=landing`;
     } catch (_error) {
       setErr(t("formError"));
     } finally {

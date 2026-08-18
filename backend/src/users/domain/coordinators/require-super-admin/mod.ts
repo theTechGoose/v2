@@ -8,6 +8,9 @@ import type { User } from "@users/dto/user.ts";
  *  Distinct from UnauthorizedError (no/invalid session) so the surface can
  *  tell "log in" from "you're logged in but not allowed". */
 export class ForbiddenError extends Error {
+  /** HTTP status. Danet's exception layer serializes `error.status || 500`,
+   *  so this maps "logged in but not allowed" to a proper 403 (P-35). */
+  readonly status: number = 403;
   constructor() {
     super("forbidden");
     this.name = "ForbiddenError";

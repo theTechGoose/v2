@@ -8,6 +8,8 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { RenderContractPdf } from "@paperwork/domain/coordinators/render-contract-pdf/mod.ts";
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import { buildSignedConfirmSms, smsJobName } from "#quote-flow/sms-i18n.ts";
 import type { Contract, ContractTerm } from "@paperwork/dto/contract.ts";
 import { computePaymentSplit } from "#payment-split";
 import { type Lang, t } from "@core/i18n/mod.ts";
@@ -71,6 +73,7 @@ export class SendSignedConfirmation {
     private renderPdf: RenderContractPdf,
     private email: EmailService,
     private sms: SmsService,
+    private commsLog: LogPaperworkMessage,
   ) {}
 
   async run(
@@ -276,19 +279,32 @@ export class SendSignedConfirmation {
     try {
       const toSms = normalizeE164(customer?.phoneNumber ?? "");
       if (toSms) {
+        // P-30: the shared builder handles the unnamed-customer greeting
+        // natively ("Hola, …" / "Hi there, …") — never prefill a fallback
+        // name here, or ES renders the doubled "Hola hola, …".
         const first = (customer?.name ?? "").trim().split(/\s+/)[0] ||
-          t(lang, "signedConfirm.sms.nameFallback");
-        const jobName = quote?.jobName?.trim() ||
-          quote?.summary?.replace(/^\s*quote\s*:\s*/i, "").trim() ||
-          t(lang, "signedConfirm.fallback.project");
-        const fromBiz = businessName ? ` — ${businessName}` : "";
-        const body = t(lang, "signedConfirm.sms.body", {
-          first,
-          jobName,
+          undefined;
+        const body = buildSignedConfirmSms({
+          customerFirstName: first,
+          jobName: smsJobName(quote ?? {}, lang),
           url: `${APP_URL}/c/${contract.id}`,
-          fromBiz,
+          businessName,
+          lang,
         });
-        await this.sms.send({ to: toSms, body });
+        const res = await this.sms.send({ to: toSms, body });
+        // Comms trail (roadmap p.8): record the dispatch like every other
+        // outbound text so it's queryable per document.
+        if (res.ok) {
+          await this.commsLog.run({
+            userId,
+            customerId: customer?.id,
+            channel: "text",
+            content: body,
+            toAddress: toSms,
+            paperworkId: contract.id,
+            paperworkType: "contract",
+          });
+        }
       }
     } catch (err) {
       console.error("[send-signed-confirmation] completion SMS failed:", err);

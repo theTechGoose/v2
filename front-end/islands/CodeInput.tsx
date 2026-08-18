@@ -6,11 +6,16 @@ import { verifyClient } from "../clients/verify.ts";
 interface Props {
   phoneNumber: string;
   initialLang?: Lang;
+  /** P-39: where "Wrong number? Edit" returns to — the phone form the user
+   *  actually came from (e.g. "/landing#trial"). Defaults to "/". */
+  editHref?: string;
 }
 
 const SLOT_COUNT = 6;
 
-export default function CodeInput({ phoneNumber, initialLang }: Props) {
+export default function CodeInput(
+  { phoneNumber, initialLang, editHref }: Props,
+) {
   // Single ref holding the slot inputs (a callback ref fills the array) —
   // calling useRef inside a loop would violate the rules of hooks.
   const refs = useRef<(HTMLInputElement | null)[]>([]);
@@ -184,7 +189,7 @@ export default function CodeInput({ phoneNumber, initialLang }: Props) {
         {submitting ? t("verify.busy") : s["verify.cta"]}
       </button>
       <div class="meta">
-        <a href="/">{s["verify.editPhone"]}</a>
+        <a href={editHref ?? "/"}>{s["verify.editPhone"]}</a>
         <button type="button" onClick={resend} disabled={cooldown > 0}>
           {cooldown > 0
             ? s["verify.resendIn"].replace("{n}", String(cooldown))

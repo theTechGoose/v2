@@ -33,6 +33,10 @@ export default define.page(function PublicContract(ctx) {
           @media print {
             body { background: #ffffff !important; }
             .ctr__no-print { display: none !important; }
+            /* P-62: the interactive signing chrome — the signature pad, its
+               Undo/Clear aids, the typed-name input, and the submit button
+               (all inside the .ctr__sign-form form) — must not print. */
+            .ctr__sign-form { display: none !important; }
             .ctr { box-shadow: none !important; border: 1px solid ${LINE}; }
           }
         `}

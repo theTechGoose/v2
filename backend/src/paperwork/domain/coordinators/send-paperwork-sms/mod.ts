@@ -9,6 +9,7 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import { buildInvoiceSms, smsJobName } from "#quote-flow/sms-i18n.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
@@ -302,9 +303,9 @@ function renderQuoteBody(
   const hi = customerFirst(c);
   const who = senderFirst(sender);
   const biz = businessName(senderBiz);
-  const jobName = q.jobName?.trim() ||
-    q.summary?.replace(/^\s*quote\s*:\s*/i, "").trim() ||
-    t(lang, "paperworkSms.body.jobNameFallback");
+  // P-27: project the job name in the send language (jobNameByLang[lang]),
+  // exactly like the email path — never the raw wrong-language jobName.
+  const jobName = smsJobName(q, lang);
   return composeSmsBody({
     hi,
     who,
@@ -328,9 +329,8 @@ function renderContractBody(
   const hi = customerFirst(cust);
   const who = senderFirst(sender);
   const biz = businessName(senderBiz);
-  const jobName = q?.jobName?.trim() ||
-    q?.summary?.replace(/^\s*quote\s*:\s*/i, "").trim() ||
-    t(lang, "paperworkSms.body.jobNameFallback");
+  // P-27: same localized projection as the quote body.
+  const jobName = smsJobName(q ?? {}, lang);
   return composeSmsBody({
     hi,
     who,
@@ -390,15 +390,14 @@ function renderInvoiceBody(
   url: string,
   lang: "en" | "es" = "en",
 ): string {
-  const hi = customerFirst(cust);
-  const who = senderFirst(sender);
-  const lead = hi ? t(lang, "paperworkSms.invoice.lead", { hi }) : "";
-  const tail = who ? t(lang, "paperworkSms.invoice.tail", { who }) : "";
-  return t(lang, "paperworkSms.invoice.body", {
-    lead,
+  // P-49: the shared builder guarantees a capitalized sentence start for
+  // unnamed customers ("Tu factura…" / "Your invoice…"), greeting otherwise.
+  return buildInvoiceSms({
+    customerFirstName: customerFirst(cust),
+    contractorFirstName: senderFirst(sender),
     amount: fmtUSD(i.amount),
     url,
-    tail,
+    lang,
   });
 }
 

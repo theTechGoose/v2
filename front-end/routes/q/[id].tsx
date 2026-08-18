@@ -10,6 +10,7 @@ import {
 } from "../../lib/format.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import { langFromCookie } from "../../lib/lang.ts";
+import { deriveQuoteView } from "../../../shared/quote-flow/public-doc-state.ts";
 
 interface QuotePublic {
   id: string;
@@ -32,6 +33,8 @@ interface QuotePublic {
     price?: number;
   }[];
   status?: string;
+  /** Persisted accepted state (P-11) — who accepted and when. */
+  acceptedName?: string;
   acceptedAt?: string;
   createdAt?: string;
   contractor?: {
@@ -67,8 +70,7 @@ export default define.page(async function PublicQuote(ctx) {
         <title>
           {quote?.jobNameByLang?.[docLang] ?? quote?.jobName ??
             quote?.summaryByLang?.[docLang] ?? quote?.summary ??
-            tFor(lang, "publicQuote.quote")} ·{" "}
-          {tFor(lang, "brand.name")}
+            tFor(lang, "publicQuote.quote")} · {tFor(lang, "brand.name")}
         </title>
         <link rel="stylesheet" href="/landing.css" />
       </Head>
@@ -81,7 +83,12 @@ export default define.page(async function PublicQuote(ctx) {
         lang={lang}
       >
         {err || !quote
-          ? <ErrorCard message={err ?? tFor(lang, "publicQuote.unavailable")} lang={lang} />
+          ? (
+            <ErrorCard
+              message={err ?? tFor(lang, "publicQuote.unavailable")}
+              lang={lang}
+            />
+          )
           : <QuoteCard quote={quote} lang={lang} />}
       </PublicShell>
     </>
@@ -122,7 +129,9 @@ function PublicShell(
         {!address && <div style="height:12px"></div>}
         {children}
         <div style="margin-top:18px;text-align:center;color:#b9c1bf;font-size:10px;letter-spacing:.08em">
-          {tFor(lang, "publicQuote.poweredBy", { brand: tFor(lang, "brand.name") })}
+          {tFor(lang, "publicQuote.poweredBy", {
+            brand: tFor(lang, "brand.name"),
+          })}
         </div>
       </div>
     </div>
@@ -146,8 +155,12 @@ function QuoteCard({ quote, lang }: { quote: QuotePublic; lang: Lang }) {
       (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
       0,
     );
-  const accepted = quote.status === "accepted";
-  const declined = quote.status === "lost";
+  // P-11: the backend writes "approved" on accept (legacy rows may say
+  // "accepted") — deriveQuoteView maps both to the accepted view, carrying
+  // the persisted who/when so a reload renders the confirmation (SSR-safe).
+  const view = deriveQuoteView(quote);
+  const accepted = view.mode === "accepted";
+  const declined = view.mode === "declined";
   // Multi-quantity items are rare for handyman work; only show the qty column
   // when at least one line is > 1, and drop the "ea" suffix entirely.
   const showQty = quote.lineItems.some((li) => (li.quantity ?? 1) > 1);
@@ -265,12 +278,17 @@ function QuoteCard({ quote, lang }: { quote: QuotePublic; lang: Lang }) {
                 <th style="padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:left">
                   {tFor(lang, "publicQuote.colDescription")}
                 </th>
+                {
+                  /* P-58: horizontal padding on the qty column + a left pad
+                    on the amount column keep a painted gap between the two
+                    right-aligned cells at 390px — never "32$1,120.00". */
+                }
                 {showQty && (
-                  <th style="padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:right">
+                  <th style="padding:8px 12px 8px 8px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:right">
                     {tFor(lang, "publicQuote.colQty")}
                   </th>
                 )}
-                <th style="padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:right">
+                <th style="padding:8px 0 8px 8px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b7a7e;border-bottom:1px solid #e3e8e6;text-align:right">
                   {tFor(lang, "publicQuote.colAmount")}
                 </th>
               </tr>
@@ -284,11 +302,11 @@ function QuoteCard({ quote, lang }: { quote: QuotePublic; lang: Lang }) {
                       {li.description}
                     </td>
                     {showQty && (
-                      <td style="padding:10px 0;border-bottom:1px solid #e3e8e6;color:#6b7a7e;font-size:13px;text-align:right">
+                      <td style="padding:10px 12px 10px 8px;border-bottom:1px solid #e3e8e6;color:#6b7a7e;font-size:13px;text-align:right">
                         {li.quantity ?? 1}
                       </td>
                     )}
-                    <td style="padding:10px 0;border-bottom:1px solid #e3e8e6;color:#1c2c30;font-size:14px;font-weight:700;text-align:right">
+                    <td style="padding:10px 0 10px 8px;border-bottom:1px solid #e3e8e6;color:#1c2c30;font-size:14px;font-weight:700;text-align:right;white-space:nowrap">
                       {fmtMoneyExact(lineTotal)}
                     </td>
                   </tr>
@@ -306,6 +324,24 @@ function QuoteCard({ quote, lang }: { quote: QuotePublic; lang: Lang }) {
           {fmtMoneyExact(total)}
         </div>
       </div>
+      {accepted && (
+        <div style="margin-top:18px;background:rgba(81,152,67,0.10);border:1px solid rgba(72,158,95,0.30);border-radius:14px;padding:18px 20px;text-align:center">
+          <div style="font-weight:800;color:#519843;font-size:16px">
+            {"✓ "}
+            {tFor(lang, "publicQuote.acceptedTitle")}
+          </div>
+          <div style="margin-top:6px;color:#1c2c30;font-size:13.5px">
+            {view.acceptedBy
+              ? tFor(lang, "publicQuote.acceptedByOn", {
+                name: view.acceptedBy,
+                date: fmtAcceptedDate(view.acceptedAt, lang),
+              })
+              : tFor(lang, "publicQuote.acceptedOn", {
+                date: fmtAcceptedDate(view.acceptedAt, lang),
+              })}
+          </div>
+        </div>
+      )}
       {accepted || declined ? null : (
         <PublicQuoteActions
           quoteId={quote.id}
@@ -317,10 +353,15 @@ function QuoteCard({ quote, lang }: { quote: QuotePublic; lang: Lang }) {
       {(contractor?.phoneNumber || contractor?.email) && (
         <div style="margin-top:22px;padding-top:16px;border-top:1px dashed #e3e8e6;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:13px;color:#6b7a7e">
           <div>
-            {tFor(lang, "publicQuote.contactPrompt")}{" "}
-            {contractor?.name || tFor(lang, "publicQuote.contractorNameFallback")}:
+            {tFor(lang, "publicQuote.contactPrompt")} {contractor?.name ||
+              tFor(lang, "publicQuote.contractorNameFallback")}:
           </div>
-          <div style="display:flex;gap:14px">
+          {
+            /* P-58: long contractor emails overflowed the 390px viewport —
+              the row wraps and the email itself may break mid-address so
+              nothing ever paints past the card edge. */
+          }
+          <div style="display:flex;gap:14px;flex-wrap:wrap;min-width:0;max-width:100%">
             {contractor?.phoneNumber && (
               <a
                 href={telHref(contractor.phoneNumber)}
@@ -332,7 +373,7 @@ function QuoteCard({ quote, lang }: { quote: QuotePublic; lang: Lang }) {
             {contractor?.email && (
               <a
                 href={`mailto:${contractor.email}`}
-                style="color:#144852;text-decoration:none;font-weight:700"
+                style="color:#144852;text-decoration:none;font-weight:700;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-all"
               >
                 {contractor.email}
               </a>
@@ -342,6 +383,19 @@ function QuoteCard({ quote, lang }: { quote: QuotePublic; lang: Lang }) {
       )}
     </article>
   );
+}
+
+/** Long-form acceptance date ("August 18, 2026" / "18 de agosto de 2026") —
+ *  the year is always spelled out so the confirmation reads as a record.
+ *  Falls back to today when the row predates the acceptedAt stamp. */
+function fmtAcceptedDate(iso: string | undefined, lang: Lang): string {
+  const d = iso ? new Date(iso) : new Date();
+  const safe = isNaN(d.getTime()) ? new Date() : d;
+  return safe.toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 }
 
 /** Lower-case + strip the leading "Quote: " prefix the LLM sometimes emits,

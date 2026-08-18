@@ -6,6 +6,10 @@ import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
+import {
+  buildAcceptedAlertSms,
+  buildAcceptedAlertSubject,
+} from "#quote-flow/sms-i18n.ts";
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
@@ -60,20 +64,21 @@ export class SendAcceptedAlert {
     const customerName = customer?.name?.trim() ||
       quote.acceptedName?.trim() ||
       t(lang, "notify.fallbackClient");
-    const jobName = quote.jobName?.trim() || quote.summary?.trim() || "";
+    // P-50/P-27: project the job name in the CONTRACTOR's language for the
+    // email body headline (subject + SMS use the shared builders below).
+    const jobName = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim() ||
+      quote.summary?.trim() || "";
     const url = `${APP_URL}/quotes`;
+    // P-50: with-job variant keeps the celebratory tone (es ¡…! 🎉 / en 🎉)
+    // and the localized job name — shared source of truth in sms-i18n.ts.
+    const subject = buildAcceptedAlertSubject({ customerName, quote, lang });
 
     let sentAny = false;
     if (contractor.email?.trim()) {
       try {
         const res = await this.email.send({
           to: contractor.email.trim(),
-          subject: jobName
-            ? t(lang, "acceptedAlert.email.subjectJob", {
-              name: customerName,
-              job: jobName,
-            })
-            : t(lang, "acceptedAlert.email.subject", { name: customerName }),
+          subject,
           htmlBody: renderHtml({ customerName, jobName, url, lang }),
         });
         console.log(
@@ -92,9 +97,7 @@ export class SendAcceptedAlert {
             customerId: quote.customerId,
             channel: "email",
             content: `quote ${quoteId} approved — completion email to ${contractor.email}`,
-            subject: jobName
-              ? t(lang, "acceptedAlert.email.subjectJob", { name: customerName, job: jobName })
-              : t(lang, "acceptedAlert.email.subject", { name: customerName }),
+            subject,
             toAddress: contractor.email.trim(),
           });
         }
@@ -105,13 +108,7 @@ export class SendAcceptedAlert {
     }
     if (contractor.phoneNumber?.trim()) {
       try {
-        const body = jobName
-          ? t(lang, "acceptedAlert.sms.bodyJob", {
-            name: customerName,
-            job: jobName,
-            url,
-          })
-          : t(lang, "acceptedAlert.sms.body", { name: customerName, url });
+        const body = buildAcceptedAlertSms({ customerName, quote, url, lang });
         const res = await this.sms.send({
           to: contractor.phoneNumber.trim(),
           body,

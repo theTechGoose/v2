@@ -7,6 +7,10 @@ export interface StoredEntity {
 }
 
 export class NotFoundError extends Error {
+  /** HTTP status. Danet's exception layer serializes `error.status || 500`,
+   *  so carrying the real status here maps every NotFoundError anywhere on
+   *  the API surface to a proper 404 (P-35). */
+  readonly status: number = 404;
   constructor(public resource: string, public id: string) {
     super(`${resource} ${id} not found`);
     this.name = "NotFoundError";
@@ -15,6 +19,8 @@ export class NotFoundError extends Error {
 
 /** Thrown when an authenticated user tries to access another user's record. */
 export class ForbiddenError extends Error {
+  /** HTTP status — see NotFoundError.status (P-35). */
+  readonly status: number = 403;
   constructor(public resource: string, public id: string) {
     super(`${resource} ${id} not accessible`);
     this.name = "ForbiddenError";
