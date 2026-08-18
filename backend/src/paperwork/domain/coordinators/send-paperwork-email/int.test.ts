@@ -76,7 +76,9 @@ Deno.test("send-paperwork-email integration: dispatches a quote to the linked cu
   assertEquals(result.ok, true);
   assertEquals(result.to, "ops@acme.test");
   assertEquals(sent.length, 1);
-  assertStringIncludes(sent[0].subject, "Roof tear-off");
+  // QuoteStore now auto-derives a ≤3-word jobName from the summary
+  // (roadmap p.8), and the subject renders the jobName.
+  assertStringIncludes(sent[0].subject, "Roof Tear Off");
   assertStringIncludes(sent[0].htmlBody, "Demo");
 
   await resetKv();
