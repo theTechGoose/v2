@@ -76,6 +76,7 @@ function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
     decidedDays: c.decidedDays ?? undefined,
     band: ["#FFB3B3", "#FF6B6B"],
     shadow: "rgba(255,107,107,0.35)",
+    ...(c.isSample === true ? { isSample: true } : {}),
   };
 }
 
@@ -326,21 +327,32 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
 
   const { quotes, winRate, insight } = s;
 
-  const open = quotes.filter((q) =>
+  // P-15: the onboarding sample stays VISIBLE as a badged card, but it
+  // contributes to NO aggregate — the hero, KPI strip, and side panels all
+  // roll over real quotes only.
+  const isReal = (q: Quote) => q.isSample !== true;
+  const real = quotes.filter(isReal);
+
+  // Card lists for the tracks (samples included — the card renders):
+  const outCards = quotes.filter((q) =>
+    ["sent", "opened", "cooling", "stale"].includes(q.stage)
+  );
+  const draftCards = quotes.filter((q) => q.stage === "draft");
+  const decidedCards = quotes.filter((q) => ["won", "lost"].includes(q.stage));
+
+  // Aggregates (real quotes only):
+  const open = real.filter((q) =>
     ["draft", "sent", "opened", "cooling", "stale"].includes(q.stage)
   );
   const openTotal = open.reduce((acc, q) => acc + q.value, 0);
-  const stale = quotes.filter((q) => q.stage === "stale");
-
-  const out = quotes.filter((q) =>
-    ["sent", "opened", "cooling", "stale"].includes(q.stage)
-  );
+  const stale = real.filter((q) => q.stage === "stale");
+  const out = outCards.filter(isReal);
   const outVal = out.reduce((acc, q) => acc + q.value, 0);
-  const drafts = quotes.filter((q) => q.stage === "draft");
-  const decided = quotes.filter((q) => ["won", "lost"].includes(q.stage));
+  const drafts = draftCards.filter(isReal);
+  const decided = decidedCards.filter(isReal);
 
   // Inner sort: opened > sent > cooling > stale within "Out for response".
-  const outSorted = [...out].sort((a, b) => {
+  const outSorted = [...outCards].sort((a, b) => {
     const av = STAGE_ORDER[a.stage as keyof typeof STAGE_ORDER] ?? 9;
     const bv = STAGE_ORDER[b.stage as keyof typeof STAGE_ORDER] ?? 9;
     return av - bv;
@@ -358,6 +370,9 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
     <>
       <QuotesHero
         lang={lang}
+        // P-37: "empty" means zero REAL quotes TOTAL (open or resolved) —
+        // the giant empty-state hero never shouts above a real card.
+        totalCount={real.length}
         openCount={open.length}
         openTotal={openTotal}
         staleCount={stale.length}
@@ -386,9 +401,9 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             lang={lang}
             num="01"
             title={tFor(lang, "quotesPage.track.outForResponse")}
-            count={out.length}
+            count={outCards.length}
             defaultOpen
-            forceOpen={openId != null && out.some((q) => q.id === openId)}
+            forceOpen={openId != null && outCards.some((q) => q.id === openId)}
             storageKey="quotes:track:01"
           >
             <div class="qcards">
@@ -408,13 +423,14 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             lang={lang}
             num="02"
             title={tFor(lang, "quotesPage.track.drafting")}
-            count={drafts.length}
+            count={draftCards.length}
             defaultOpen={false}
-            forceOpen={openId != null && drafts.some((q) => q.id === openId)}
+            forceOpen={openId != null &&
+              draftCards.some((q) => q.id === openId)}
             storageKey="quotes:track:02"
           >
             <div class="qcards">
-              {drafts.map((q, i) => (
+              {draftCards.map((q, i) => (
                 <QuoteCard
                   key={q.id}
                   q={q}
@@ -430,16 +446,19 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             lang={lang}
             num="03"
             title={tFor(lang, "quotesPage.track.decidedThisMonth")}
-            count={decided.length}
+            count={decidedCards.length}
             // Open by default when there are decided rows so the ≤3-word Job
             // Name stays visible on the list (roadmap p.8); a user's stored
             // collapse preference still wins via storageKey.
-            defaultOpen={decided.length > 0}
-            forceOpen={openId != null && decided.some((q) => q.id === openId)}
+            defaultOpen={decidedCards.length > 0}
+            forceOpen={openId != null &&
+              decidedCards.some((q) => q.id === openId)}
             storageKey="quotes:track:03"
           >
             <div class="qdone">
-              {decided.map((q) => <DecidedRow key={q.id} q={q} lang={lang} />)}
+              {decidedCards.map((q) => (
+                <DecidedRow key={q.id} q={q} lang={lang} />
+              ))}
             </div>
           </QuoteTrack>
         </div>

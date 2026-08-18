@@ -27,6 +27,7 @@ import {
 } from "../components/DashSections.tsx";
 import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
 import { fmtMoney } from "../lib/format.ts";
+import { dueDateLine } from "../../shared/quote-flow/pipeline-stats.ts";
 import { readCached, refreshDash } from "../lib/dash-cache.ts";
 import { ShimmerStyle, SkelBlock } from "../components/Skeletons.tsx";
 import SetupChecklist from "./SetupChecklist.tsx";
@@ -45,8 +46,16 @@ function shortDay(lang: Lang, dayIdx: number): string {
   return tFor(lang, `common.dayShort.${dayIdx}`);
 }
 
+/** COMPLETE due phrase for a job row (P-36). Missing due date → the bare
+ *  dueDateLine ("Sin fecha de vencimiento" / "No due date") — never wrapped
+ *  with a due verb again, so the "Vence Sin fecha de vencimiento" run-on
+ *  cannot re-form. A real date keeps the relative "Vence {rel}" phrasing. */
 function fmtDue(iso: string | null, now: Date, lang: Lang): string {
-  if (!iso) return tFor(lang, "dashboardPage.due.none");
+  if (!iso) return dueDateLine({ dueDate: null }, lang);
+  return tFor(lang, "activeJobs.due", { due: fmtDueRel(iso, now, lang) });
+}
+
+function fmtDueRel(iso: string, now: Date, lang: Lang): string {
   const due = new Date(iso + "T00:00:00");
   if (Number.isNaN(due.getTime())) return iso;
   const startOfToday = new Date(now);
@@ -290,7 +299,9 @@ function pickKpis(stats: DashboardStats | undefined) {
     outstandingCount: pending,
     outstandingOverdue: stats?.invoices.overdue ?? 0,
     pendingQuotes: stats?.quotes.sent ?? 0,
-    pendingTotal: (stats?.quotedValueCents ?? 0) / 100,
+    // INTEGER CENTS end to end (P-36) — the KPI formats via
+    // formatMoneyCompact, so no /100 dollars conversion here.
+    pendingTotal: stats?.quotedValueCents ?? 0,
     avgJob,
     owed,
     current,
@@ -506,6 +517,9 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
     .slice()
     .sort((a, b) => (b.sentAt ?? "").localeCompare(a.sentAt ?? ""))
     .filter((q) => {
+      // P-15: the onboarding sample is not a quote awaiting response — it
+      // never renders (or sums) in this panel.
+      if (q.isSample === true) return false;
       if (!q.id || seenQuoteIds.has(q.id)) return false;
       seenQuoteIds.add(q.id);
       return true;

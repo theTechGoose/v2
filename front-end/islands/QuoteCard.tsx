@@ -2,19 +2,45 @@
  * Pipeline quote card with flip-to-back engagement timeline.
  * Mirrors the prototype's QuoteCard component verbatim.
  */
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
+import { api } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoney } from "../lib/format.ts";
 import { tFor } from "../lib/i18n.ts";
 import {
-  buildOpens,
   moodForQuote,
+  type OpenEvent,
   QSTORIES,
   type Quote,
   readingFor,
-  stageLabel,
+  stageLabelFor,
 } from "../lib/quotes-seed.ts";
 import DeleteQuoteButton from "./DeleteQuoteButton.tsx";
+
+/** Real engagement entry from GET /quotes/:id/opens. */
+interface RealOpen {
+  at: string;
+  atRel: string;
+  device: "desktop" | "mobile" | "tablet" | "unknown";
+}
+
+/** Map a REAL open to the card's timeline shape — day, local time, device.
+ *  Nothing is invented: the canned "Today · 9:42am · iPhone" seed list is
+ *  gone (P-15); only recorded views render. */
+function toOpenEvent(o: RealOpen, lang: "en" | "es"): OpenEvent {
+  const locale = lang === "es" ? "es-US" : "en-US";
+  const d = new Date(o.at);
+  const valid = Number.isFinite(d.getTime());
+  return {
+    when: valid
+      ? d.toLocaleDateString(locale, { month: "short", day: "numeric" })
+      : o.atRel,
+    time: valid
+      ? d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })
+      : "",
+    device: tFor(lang, `quoteCard.device.${o.device}`),
+  };
+}
 
 interface Props {
   q: Quote;
@@ -43,6 +69,26 @@ export default function QuoteCard(
 ) {
   const [flipped, setFlipped] = useState(flipOnMount);
   const [copied, setCopied] = useState(false);
+  // REAL opens, fetched lazily on first flip. Until loaded (or when there
+  // are none) the timeline shows the honest "no opens" copy — never a
+  // fabricated seed entry (P-15).
+  const [realOpens, setRealOpens] = useState<OpenEvent[] | null>(null);
+
+  useEffect(() => {
+    if (!flipped || realOpens !== null || q.opens === 0) return;
+    let alive = true;
+    api.get<{ opens: RealOpen[] }>(`/quotes/${q.id}/opens`)
+      .then((r) => {
+        if (!alive) return;
+        setRealOpens((r?.opens ?? []).map((o) => toOpenEvent(o, lang)));
+      })
+      .catch(() => {
+        if (alive) setRealOpens([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [flipped, q.id, q.opens, lang]);
 
   async function copyPublicLink(e: MouseEvent) {
     e.stopPropagation();
@@ -70,8 +116,8 @@ export default function QuoteCard(
     ? tFor(lang, "quoteCard.cta.setReminder")
     : tFor(lang, "quoteCard.cta.openQuote");
   const showOpens = q.stage !== "draft" && q.opens > 0;
-  const opens = buildOpens(q);
-  const reading = readingFor(q, opens);
+  const opens = realOpens ?? [];
+  const reading = readingFor(q, opens, lang);
 
   function onCardClick(e: MouseEvent) {
     if (flipped) return;
@@ -98,7 +144,9 @@ export default function QuoteCard(
         <div class="qcard__numeral">{String(idx + 1).padStart(2, "0")}</div>
         <div class="qcard__status">
           <span class="qcard__status-dot" />
-          {stageLabel[q.stage]}
+          {q.isSample
+            ? tFor(lang, "quoteCard.sampleTag")
+            : stageLabelFor(lang, q.stage)}
         </div>
         {showOpens && (
           <div class="qcard__opens">
@@ -122,8 +170,18 @@ export default function QuoteCard(
           <span style="display:inline-block;transition:transform 240ms">→</span>
         </button>
         <div class="qcard__val-wrap">
-          <div class="qcard__val-lbl">{tFor(lang, "quoteCard.valueLabel")}</div>
-          <div class="qcard__val-num">{fmtMoney(q.value)}</div>
+          <div class="qcard__val-lbl">
+            {q.isSample
+              ? tFor(lang, "quoteCard.sampleTag")
+              : tFor(lang, "quoteCard.valueLabel")}
+          </div>
+          {
+            /* P-15: the sample's canned $3,700 never renders as real money —
+              its value cell carries the sample marker instead. */
+          }
+          <div class="qcard__val-num">
+            {q.isSample ? "—" : fmtMoney(q.value)}
+          </div>
         </div>
       </div>
 

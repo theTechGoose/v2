@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsNumber,
   IsObject,
   IsOptional,
@@ -80,6 +81,13 @@ export class CreateQuoteDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  /** Onboarding "see what your customer sees" sample (EnsureSampleQuote).
+   *  Sample quotes render as a badged card but contribute to NO pipeline,
+   *  money, or open-tracking aggregate (P-15). */
+  @IsOptional()
+  @IsBoolean()
+  isSample?: boolean;
 
   @IsOptional() @IsString() sentAt?: string;
   @IsOptional() @IsString() acceptedAt?: string;

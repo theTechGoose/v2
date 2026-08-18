@@ -6,6 +6,10 @@
 import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
 import Ticker from "../islands/Ticker.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import {
+  activeJobsCountLabel,
+  formatMoneyCompact,
+} from "../../shared/quote-flow/pipeline-stats.ts";
 
 /** Plural resolver for SSR call sites (frontend `tn` is langSignal-reactive
  *  only, so it can't honor an explicit lang). */
@@ -52,7 +56,8 @@ export function Hero(
               <em>
                 $<Ticker value={thisMonthBilled} />
               </em>{" "}
-              {tFor(lang, "dashHero.title.billedTrail")}<br />
+              {tFor(lang, "dashHero.title.billedTrail")}
+              <br />
               {tFor(lang, "dashHero.title.getQuotesOut")}
             </>
           )}
@@ -110,6 +115,8 @@ interface KpisProps {
   outstandingCount: number;
   outstandingOverdue: number;
   pendingQuotes: number;
+  /** Pending-quote pipeline total in INTEGER CENTS (P-36: rendered via
+   *  formatMoneyCompact — "$850", never "$0.8k"). */
   pendingTotal: number;
   avgJob: number;
   lang?: Lang;
@@ -123,7 +130,9 @@ export function Kpis(props: KpisProps) {
   const avgJobVal = props.avgJob > 0
     ? `$${props.avgJob.toLocaleString()}`
     : tFor(lang, "kpis.avgJob.none");
-  const avgJobSub = props.avgJob > 0 ? tFor(lang, "kpis.avgJob.trailingYear") : "";
+  const avgJobSub = props.avgJob > 0
+    ? tFor(lang, "kpis.avgJob.trailingYear")
+    : "";
   const items: Array<
     {
       icon: IconName;
@@ -168,7 +177,9 @@ export function Kpis(props: KpisProps) {
       val: String(props.pendingQuotes),
       sub: props.pendingTotal > 0
         ? tFor(lang, "kpis.quotesPending.inFlight", {
-          amt: (props.pendingTotal / 1000).toFixed(1),
+          // P-36: full sub-$1k amounts ("$850"), compacting only at ≥ $1k —
+          // never the old dollars/1000 "$0.8k" artifact.
+          amt: formatMoneyCompact(props.pendingTotal),
         })
         : "—",
       delta: null,
@@ -223,6 +234,8 @@ export interface JobRow {
   amount: string;
   paid: string;
   pct: number;
+  /** COMPLETE due phrase, ready to render ("Vence mañana" /
+   *  "Sin fecha de vencimiento") — never re-wrapped with a due verb. */
   due: string;
   icon: IconName;
   color: string;
@@ -250,10 +263,20 @@ export function ActiveJobs(
           />
           <h3 class="panel__title">{tFor(lang, "kpis.activeJobs.label")}</h3>
           <span class="panel__count">
-            {tFor(lang, "activeJobs.count", { n: count })}
+            {
+              /* P-36: correct Spanish pluralization — "1 activo", never
+                "1 activos". */
+            }
+            {activeJobsCountLabel(count, lang)}
           </span>
         </div>
-        <a class="panel__action" href="#">{tFor(lang, "dashPanel.seeAll")}</a>
+        {
+          /* P-36: "Ver todo" goes to the page that actually lists the jobs
+            (signed agreements), never a dead href="#". */
+        }
+        <a class="panel__action" href="/contracts">
+          {tFor(lang, "dashPanel.seeAll")}
+        </a>
       </div>
       {jobs.length === 0
         ? (
@@ -281,8 +304,13 @@ export function ActiveJobs(
                   <h4 class="job__title">{j.client}</h4>
                 </div>
                 <div class="job__meta">
-                  {j.task} <span class="job__meta-dot" />{" "}
-                  {tFor(lang, "activeJobs.due", { due: j.due })}
+                  {
+                    /* `due` arrives as ONE complete phrase (dueDateLine /
+                      "Vence {date}") — wrapping it again here is what
+                      produced the "Vence Sin fecha de vencimiento" run-on
+                      (P-36). */
+                  }
+                  {j.task} <span class="job__meta-dot" /> {j.due}
                 </div>
                 <div class="job__progress">
                   <div
@@ -372,10 +400,12 @@ export function QuotesAwaiting(
           </div>
           <div class="quote-item__cta">
             <button type="button" class="qbtn qbtn--nudge">
-              <I d={ICN.send} size={11} /> {tFor(lang, "quotesAwaiting.nudgeByText")}
+              <I d={ICN.send} size={11} />{" "}
+              {tFor(lang, "quotesAwaiting.nudgeByText")}
             </button>
             <button type="button" class="qbtn qbtn--view">
-              <I d={ICN.eye} size={11} /> {tFor(lang, "quotesAwaiting.viewQuote")}
+              <I d={ICN.eye} size={11} />{" "}
+              {tFor(lang, "quotesAwaiting.viewQuote")}
             </button>
           </div>
         </div>

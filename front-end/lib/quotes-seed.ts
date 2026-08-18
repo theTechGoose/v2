@@ -32,6 +32,9 @@ export interface Quote {
   decidedDays?: number;
   band: [string, string];
   shadow: string;
+  /** Onboarding sample quote (P-15): rendered as a badged card but
+   *  excluded from every money/pipeline aggregate. */
+  isSample?: boolean;
 }
 
 export const QPIPELINE: Quote[] = [
@@ -265,6 +268,12 @@ export const stageLabel: Record<Stage, string> = {
   lost: tFor("en", "quotesSeed.stage.lost"),
 };
 
+/** Localized stage label. The `stageLabel` record above resolves EN at
+ *  module load; live components must use this so an ES account never sees
+ *  "Drafting" / "Just sent" (P-15). */
+export const stageLabelFor = (lang: "en" | "es", stage: Stage): string =>
+  tFor(lang, `quotesSeed.stage.${stage}`);
+
 export interface MoodPalette {
   from: string;
   to: string;
@@ -325,13 +334,33 @@ export interface OpenEvent {
 export const buildOpens = (q: Quote): OpenEvent[] => {
   if (q.opens === 0) return [];
   const seeds: OpenEvent[] = [
-    { when: tFor("en", "quotesSeed.when.today"), time: "9:42am", device: "iPhone" },
-    { when: tFor("en", "quotesSeed.when.today"), time: "2:18pm", device: "Mac" },
-    { when: tFor("en", "quotesSeed.when.yesterday"), time: "4:12pm", device: "iPhone" },
-    { when: tFor("en", "quotesSeed.when.tue"), time: "11:30am", device: "iPhone" },
+    {
+      when: tFor("en", "quotesSeed.when.today"),
+      time: "9:42am",
+      device: "iPhone",
+    },
+    {
+      when: tFor("en", "quotesSeed.when.today"),
+      time: "2:18pm",
+      device: "Mac",
+    },
+    {
+      when: tFor("en", "quotesSeed.when.yesterday"),
+      time: "4:12pm",
+      device: "iPhone",
+    },
+    {
+      when: tFor("en", "quotesSeed.when.tue"),
+      time: "11:30am",
+      device: "iPhone",
+    },
     { when: tFor("en", "quotesSeed.when.mon"), time: "7:54pm", device: "iPad" },
     { when: tFor("en", "quotesSeed.when.sun"), time: "10:08am", device: "Mac" },
-    { when: tFor("en", "quotesSeed.when.sat"), time: "8:21pm", device: "iPhone" },
+    {
+      when: tFor("en", "quotesSeed.when.sat"),
+      time: "8:21pm",
+      device: "iPhone",
+    },
   ];
   const offset = q.stage === "cooling"
     ? 2
@@ -345,61 +374,65 @@ export const buildOpens = (q: Quote): OpenEvent[] => {
 
 export type ReadingChunk = { text: string; em?: string; tail?: string };
 
-export const readingFor = (q: Quote, opens: OpenEvent[]): ReadingChunk => {
+export const readingFor = (
+  q: Quote,
+  opens: OpenEvent[],
+  lang: "en" | "es" = "en",
+): ReadingChunk => {
   if (q.stage === "draft") {
     return {
-      text: tFor("en", "quotesSeed.reading.draft.text"),
-      em: tFor("en", "quotesSeed.reading.draft.em"),
-      tail: tFor("en", "quotesSeed.reading.draft.tail"),
+      text: tFor(lang, "quotesSeed.reading.draft.text"),
+      em: tFor(lang, "quotesSeed.reading.draft.em"),
+      tail: tFor(lang, "quotesSeed.reading.draft.tail"),
     };
   }
   if (opens.length === 0) {
     return {
-      text: tFor("en", "quotesSeed.reading.noOpens.text"),
+      text: tFor(lang, "quotesSeed.reading.noOpens.text"),
     };
   }
   const devices = new Set(opens.map((o) => o.device));
   if (q.stage === "opened" && q.opens >= 3 && devices.size >= 2) {
     return {
-      text: tFor("en", "quotesSeed.reading.shopping.text"),
-      em: tFor("en", "quotesSeed.reading.shopping.em"),
-      tail: tFor("en", "quotesSeed.reading.shopping.tail"),
+      text: tFor(lang, "quotesSeed.reading.shopping.text"),
+      em: tFor(lang, "quotesSeed.reading.shopping.em"),
+      tail: tFor(lang, "quotesSeed.reading.shopping.tail"),
     };
   }
   if (q.stage === "opened" && q.opens >= 3) {
     return {
-      text: tFor("en", "quotesSeed.reading.hot.text"),
-      em: tFor("en", "quotesSeed.reading.hot.em"),
-      tail: tFor("en", "quotesSeed.reading.hot.tail"),
+      text: tFor(lang, "quotesSeed.reading.hot.text"),
+      em: tFor(lang, "quotesSeed.reading.hot.em"),
+      tail: tFor(lang, "quotesSeed.reading.hot.tail"),
     };
   }
   if (q.stage === "opened") {
     return {
-      text: tFor("en", "quotesSeed.reading.peek.text"),
-      em: tFor("en", "quotesSeed.reading.peek.em"),
-      tail: tFor("en", "quotesSeed.reading.peek.tail"),
+      text: tFor(lang, "quotesSeed.reading.peek.text"),
+      em: tFor(lang, "quotesSeed.reading.peek.em"),
+      tail: tFor(lang, "quotesSeed.reading.peek.tail"),
     };
   }
   if (q.stage === "cooling") {
     return {
-      text: tFor("en", "quotesSeed.reading.cooling.text"),
-      em: tFor("en", "quotesSeed.reading.cooling.em"),
-      tail: tFor("en", "quotesSeed.reading.cooling.tail"),
+      text: tFor(lang, "quotesSeed.reading.cooling.text"),
+      em: tFor(lang, "quotesSeed.reading.cooling.em"),
+      tail: tFor(lang, "quotesSeed.reading.cooling.tail"),
     };
   }
   if (q.stage === "stale") {
     return {
-      text: tFor("en", "quotesSeed.reading.stale.text"),
-      em: tFor("en", "quotesSeed.reading.stale.em"),
-      tail: tFor("en", "quotesSeed.reading.stale.tail"),
+      text: tFor(lang, "quotesSeed.reading.stale.text"),
+      em: tFor(lang, "quotesSeed.reading.stale.em"),
+      tail: tFor(lang, "quotesSeed.reading.stale.tail"),
     };
   }
   if (q.stage === "sent") {
     return {
-      text: tFor("en", "quotesSeed.reading.sent.text"),
-      em: tFor("en", "quotesSeed.reading.sent.em"),
-      tail: tFor("en", "quotesSeed.reading.sent.tail"),
+      text: tFor(lang, "quotesSeed.reading.sent.text"),
+      em: tFor(lang, "quotesSeed.reading.sent.em"),
+      tail: tFor(lang, "quotesSeed.reading.sent.tail"),
     };
   }
-  return { text: tFor("en", "quotesSeed.reading.quiet.text") };
+  return { text: tFor(lang, "quotesSeed.reading.quiet.text") };
 };

@@ -16,12 +16,22 @@ function fresh() {
   return { customers, quotes, contracts, invoices, flow: new ListActiveJobs(customers, quotes, contracts, invoices) };
 }
 
-Deno.test("list-active-jobs integration: quote without a contract is 'awaiting signature'", async () => {
+Deno.test("list-active-jobs integration: a merely SENT quote is no job at all (problems.md P-14)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, flow } = fresh();
+  const sentCust = await customers.create("u-1", { name: "Green Goblin" });
+  await quotes.create("u-1", { summary: "Fence repair", lineItems: [], status: "sent", customerId: sentCust.id, estimatedTotal: 850_00 });
+  assertEquals(await flow.run("u-1", NOW), []);
+  await resetKv();
+});
+
+Deno.test("list-active-jobs integration: ACCEPTED quote without a contract is 'awaiting signature'", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { customers, quotes, flow } = fresh();
   const cust = await customers.create("u-1", { name: "Acme" });
-  await quotes.create("u-1", { summary: "Re-roof", lineItems: [], status: "sent", customerId: cust.id, estimatedTotal: 4_800_00 });
+  await quotes.create("u-1", { summary: "Re-roof", lineItems: [], status: "accepted", customerId: cust.id, estimatedTotal: 4_800_00 });
   const jobs = await flow.run("u-1", NOW);
   assertEquals(jobs.length, 1);
   assertEquals(jobs[0].status, "awaiting");
@@ -85,9 +95,9 @@ Deno.test("list-active-jobs integration: per-user isolation", async () => {
   await resetKv();
   const { customers, quotes, flow } = fresh();
   const c1 = await customers.create("u-1", { name: "A" });
-  await quotes.create("u-1", { summary: "x", lineItems: [], status: "sent", customerId: c1.id });
+  await quotes.create("u-1", { summary: "x", lineItems: [], status: "accepted", customerId: c1.id });
   const c2 = await customers.create("u-2", { name: "B" });
-  await quotes.create("u-2", { summary: "y", lineItems: [], status: "sent", customerId: c2.id });
+  await quotes.create("u-2", { summary: "y", lineItems: [], status: "accepted", customerId: c2.id });
 
   assertEquals((await flow.run("u-1", NOW)).length, 1);
   assertEquals((await flow.run("u-2", NOW)).length, 1);
@@ -104,14 +114,30 @@ Deno.test("list-active-jobs integration: quote without a customer is dropped (ca
   await resetKv();
 });
 
-Deno.test("list-active-jobs integration: draft + cancelled quotes are skipped", async () => {
+Deno.test("list-active-jobs integration: draft + cancelled + merely-sent quotes are skipped", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { customers, quotes, flow } = fresh();
   const cust = await customers.create("u-1", { name: "X" });
   await quotes.create("u-1", { summary: "draft",     lineItems: [], status: "draft",     customerId: cust.id });
   await quotes.create("u-1", { summary: "cancelled", lineItems: [], status: "cancelled", customerId: cust.id });
-  await quotes.create("u-1", { summary: "sent",      lineItems: [], status: "sent",      customerId: cust.id });
-  assertEquals((await flow.run("u-1", NOW)).length, 1);
+  await quotes.create("u-1", { summary: "sent",      lineItems: [], status: "sent",      customerId: cust.id });   // P-14: still awaiting
+  await quotes.create("u-1", { summary: "accepted",  lineItems: [], status: "accepted",  customerId: cust.id });
+  const jobs = await flow.run("u-1", NOW);
+  assertEquals(jobs.length, 1);
+  assertEquals(jobs[0].quote.summary, "accepted");
+  await resetKv();
+});
+
+Deno.test("list-active-jobs integration: the onboarding sample is never a job (problems.md P-15)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, flow } = fresh();
+  const cust = await customers.create("u-1", { name: "Sample Customer" });
+  await quotes.create("u-1", {
+    summary: "onboarding-sample-v1 · Paver Patio Installation",
+    lineItems: [], status: "accepted", customerId: cust.id, estimatedTotal: 3_700_00,
+  });
+  assertEquals(await flow.run("u-1", NOW), []);
   await resetKv();
 });

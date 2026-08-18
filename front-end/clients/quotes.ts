@@ -41,6 +41,9 @@ export interface QuoteCard {
   }[];
   estimatedTotal?: number;
   status?: string;
+  /** Onboarding sample quote (P-15): rendered as a badged card, excluded
+   *  from every pipeline/money aggregate. */
+  isSample?: boolean;
   sentAt?: string;
   acceptedAt?: string;
   lostAt?: string;

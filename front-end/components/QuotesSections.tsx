@@ -11,7 +11,12 @@ import DeleteQuoteButton from "../islands/DeleteQuoteButton.tsx";
 
 /** Explicit-language plural picker for SSR components (mirrors tn() but
  *  honors the resolved `lang` prop instead of the reactive langSignal). */
-function tnFor(lang: Lang, key: string, n: number, vars?: Record<string, string | number>): string {
+function tnFor(
+  lang: Lang,
+  key: string,
+  n: number,
+  vars?: Record<string, string | number>,
+): string {
   return tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });
 }
 
@@ -20,14 +25,23 @@ interface HeroProps {
   openTotal: number;
   staleCount: number;
   clientCount: number;
+  /** REAL quotes total (open + resolved). The empty-state hero renders only
+   *  when the user has zero quotes, period — never above a resolved card
+   *  (P-37). Defaults to openCount for legacy call sites. */
+  totalCount?: number;
   lang?: Lang;
 }
 
 export function QuotesHero(
-  { openCount, openTotal, staleCount, clientCount, lang = "en" }: HeroProps,
+  { openCount, openTotal, staleCount, clientCount, totalCount, lang = "en" }:
+    HeroProps,
 ) {
-  const empty = openCount === 0;
-  const allWarm = !empty && staleCount === 0;
+  // P-37: the giant empty-state hero used to shout over an APROBADA card
+  // because it only counted OPEN quotes.
+  const empty = (totalCount ?? openCount) === 0;
+  // Nothing open, but there IS history — say that instead of "no pipeline".
+  const settled = !empty && openCount === 0;
+  const allWarm = !empty && !settled && staleCount === 0;
   const openQuotes = tnFor(lang, "quotesHero.openQuotes", openCount);
   const clients = tnFor(lang, "quotesHero.clients", clientCount);
   return (
@@ -47,6 +61,17 @@ export function QuotesHero(
               </h1>
               <p class="qph__sub">
                 {tFor(lang, "quotesHero.emptySub")}
+              </p>
+            </>
+          )
+          : settled
+          ? (
+            <>
+              <h1 class="qph__title">
+                <em>{tFor(lang, "quotesHero.settledTitle")}</em>
+              </h1>
+              <p class="qph__sub">
+                {tFor(lang, "quotesHero.settledSub")}
               </p>
             </>
           )
