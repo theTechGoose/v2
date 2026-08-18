@@ -28,10 +28,12 @@ type CountKey = "clients" | "quotes" | "contracts" | "invoices";
 const NAV: NavEntry[] = [
   { id: "home", icon: "home", label: "Dashboard", href: "/dashboard" },
   {
-    id: "clients",
+    // P-46: one EN term — the nav, URL, and page all say "customers"
+    // (/clients stays live as an alias route; countKey is the store name).
+    id: "customers",
     icon: "user",
-    label: "Clients",
-    href: "/clients",
+    label: "Customers",
+    href: "/customers",
     countKey: "clients",
   },
   {

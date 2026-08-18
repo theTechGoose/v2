@@ -433,9 +433,13 @@ export class HandleChatMessage {
             });
             return { conversation: updated, newMessages: [userMsg, ask] };
           }
-        } else if (needsAddress) {
+        } else if (needsAddress && !lastAskInfo.payout) {
           // 4) ADDRESS — last question, free-form parse. "skip" jumps
           //    straight to the handoff so the user isn't blocked.
+          //    When the PAYOUT ask was the one just answered (the user
+          //    skipped the address earlier, so needsAddress is still true),
+          //    this branch must yield to (5) — otherwise the payout answer
+          //    loops the user straight back into the address ask (P-33).
           const firstName = firstNameOf(me?.name);
           if (justAskedAddress) {
             if (isSkipReply(text)) {

@@ -527,7 +527,9 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             title={tFor(lang, "invoicesPage.track.upcomingTitle")}
             count={scheduled.length}
             unit={tFor(lang, "invoicesPage.unit.invoice")}
-            defaultOpen={false}
+            /* P-31/P-09: an invoice with a live CTA must not hide behind a
+               collapsed track — open whenever there is something actionable. */
+            defaultOpen={scheduled.length > 0}
             storageKey="invoices:track:upcoming"
           >
             {scheduled.length === 0
@@ -552,7 +554,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             title={tFor(lang, "invoicesPage.track.draftingTitle")}
             count={drafting.length}
             unit={tFor(lang, "invoicesPage.unit.invoice")}
-            defaultOpen={false}
+            defaultOpen={drafting.length > 0}
             storageKey="invoices:track:03"
           >
             {drafting.length === 0
