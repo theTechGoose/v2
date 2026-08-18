@@ -17,8 +17,9 @@ front-end/_fresh/
 *.png
 *.pdf
 
-# Local Claude Code worktrees (never commit these)
+# Local Claude Code worktrees + per-machine settings (never commit these)
 .claude/worktrees/
+.claude/settings.local.json
 
 
 # local-only owner wipe secret (never commit)

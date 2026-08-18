@@ -1,38 +1,24 @@
-# problems.md — First-2-Hours Adversarial Audit (pre-Facebook-ads)
-
-**Date:** 2026-08-17 · **Method:** 5 adversarial agents against the LIVE app (mobile-first, Spanish-first persona) + code verification. Every finding below was observed live or proven in source — file:line cited where known. **No fixes applied — findings only.**
-
-**Severity:** 🔴 BLOCKER = burns money or trust at scale the day ads go live · 🟠 MAJOR = visibly sloppy/confusing at a moment of trust · 🟡 MINOR = noticeable rough edge · ⚪ POLISH = nitpick.
-
-**TL;DR — do not buy ads until the 8 blockers are closed.** Every ad and every forwarded quote link previews as a blank gray box (no OG tags), none of the spend can be attributed (no pixel), the OTP endpoint is an open Twilio bill (no rate limit), the Spanish onboarding has a literal dead-loop ("omitir"), skip-setup users text their customers as "Nuevo usuario", and the Spanish contractor's customer emails go out **in English** by default.
-
----
-
-## 🔴 LAUNCH BLOCKERS
-
-**P-01 [ADS] Zero Open Graph / Twitter Card tags on every page.**
-`rg 'og:image|og:title|twitter:card'` across `front-end/` → nothing. `/`, `/landing`, and the public docs `/q /c /i` serve only charset/viewport/icon/title/description. Facebook renders every ad and reshare as a blank gray box; WhatsApp/iMessage previews of forwarded quote links (the audience's #1 channel) show a bare URL at the exact moment a customer receives a price. A ready share-card already exists unused: `front-end/static/logo-monster-card.png` (200 OK, 43KB, referenced only in `DashSidebar.tsx:236`).
-
-**P-02 [ADS] No Facebook pixel, no analytics, no conversion event anywhere.**
-Grep for gtag/fbq/fbevents/segment/posthog/plausible on live pages + source → nothing; the trial-signup form fires no event. Ad spend cannot be attributed, no cost-per-signup, no retargeting/lookalike audiences. (Corollary: no consent banner exists either — fine only while nothing is tracked.)
-
 **P-03 [SECURITY/COST] `POST /api/auth/send-otp` is unauthenticated with ZERO rate limiting → SMS-pumping toll fraud.**
 `send-otp/mod.ts:43-58`, `auth-controller/mod.ts:36-44`; the FE proxy forwards verbatim. No per-IP cap, per-number cap, CAPTCHA, or cooldown — every call is a real Twilio SMS in prod, and bots WILL find it once ads run (the `/contact` form has a limiter; this doesn't). Bonus hole: every re-send resets `attempts=0`, defeating the `MAX_ATTEMPTS=5` OTP brute-force guard (`verify-otp/mod.ts:171`). Live-proven: `{"sent":true}` with no auth.
+<<solution>>
+set a backend 30 second cooldown per phone
 
 **P-04 [SIGNUP/I18N] The Spanish onboarding tells users to type "omitir" — which the backend never accepts. Infinite loop.**
 Composer placeholders + the failure re-prompt itself say `'omitir'` (`lang/es.json`: `asstChat.composer.address/email`, `onboardingChat.address.reprompt`), but the only skip parser is English: `SKIP_RE = /^(?:skip|later|not now|...)/i` (`backend/src/agents/domain/business/onboarding/mod.ts:37`; zero hits for "omitir" in backend). A Spanish user typing what the UI tells them gets re-prompted to type it again, forever. The assistant bubble even says type "skip" while the placeholder says "omitir".
 
-**P-05 [OUTBOUND] Spanish-first contractors send their customers ENGLISH email by default.**
-`commsLanguage` unset → `'en'` (`backend/src/users/dto/business-identity.ts`); setting the user's app language to ES never touches it. Live-proven: ES contractor's send produced subject "Sánchez Remodeling Quote for María García, Remodelación de Baño". Settings shows "Idiomas para enviar: Inglés ✓ / Español ☐" for an all-Spanish user. The first artifact the customer of a Spanish-funnel ad ever receives is in the wrong language.
-
 **P-06 [OUTBOUND] "Nuevo usuario" / "New user" leaks into customer-facing email and SMS.**
 Every account is seeded name "Nuevo usuario" (`verify-otp/mod.ts:35`) and nothing filters it from outbound copy. For skip-setup users (an explicitly supported path): email subject "Nuevo usuario Cotización para…", intro "Nuevo preparó esto para ti.", SMS "Hola María, soy Nuevo." (`send-paperwork-email/mod.ts:523-526,711-716`; `send-paperwork-sms/mod.ts:265-267,363-369`), invoice subject "…de Nuevo usuario", change-order alert "Nuevo usuario te envió un cambio", topbar "Hola, Nuevo 👋". The placeholder filter exists only in `WelcomeWizard.tsx:73`.
+
+<<solution>>
+if a skip user tries to use a function that requires a piece of info, collect it.
 
 **P-07 [OUTBOUND] Accented Spanish job names are mangled in the email hero.**
 `summaryClean.replace(/\b\w/g, c => c.toUpperCase())` (`send-paperwork-email/mod.ts:638,1026`) — non-Unicode `\b` fires after accents: "instalación de baño y cocina" renders as **"InstalacióN De BañO Y Cocina"** in the 36px headline of the quote AND invoice emails; also Title-Cases Spanish prepositions ("De", "Y").
 
 **P-08 [LANDING] Two landing pages selling contradictory offers.**
 `/landing`: "Prueba GRATIS por 30 días", "Papeleo ilimitado" as the $99 differentiator. `/`: no trial anywhere, "Sin cuotas iniciales… desde $15", unlimited included at $15. Marketing numbers also fight each other: "+1.200 contratistas" (hero) vs "34 contractors signed up this week" (form, hardcoded English) vs "48.215 documentos enviados". Whichever page the ad uses, the other reads as bait-and-switch on "free" and "unlimited".
+
+<<solution>> add a section in super admin to configure landing offers
 
 ---
 
@@ -42,7 +28,7 @@ Every account is seeded name "Nuevo usuario" (`verify-otp/mod.ts:35`) and nothin
 
 **P-10 [ASSISTANT] No timeout on the LLM chat turn.** `backend/.../openai/mod.ts:80-101` uses SDK defaults (600s/attempt × 2 retries + its own retry); no AbortSignal from the frontend. A hung OpenAI call = spinner for minutes, no cancel, no error. (`generateJobOptions`/`suggestPrices` degrade gracefully via local heuristics; free-text chat has no fallback.)
 
-**P-11 [PUBLIC] The public quote has no persisted accepted state.** After accepting and reloading `/q/:id`, María sees the pristine "type your name + Aceptar" UI again (server says `approved`); she can "accept" again, and decline only errors *after* submitting ("ya fue aceptada", via 409). A customer returning next day has zero evidence her acceptance registered. (`/c` and `/i` persist state correctly.)
+**P-11 [PUBLIC] The public quote has no persisted accepted state.** After accepting and reloading `/q/:id`, María sees the pristine "type your name + Aceptar" UI again (server says `approved`); she can "accept" again, and decline only errors _after_ submitting ("ya fue aceptada", via 409). A customer returning next day has zero evidence her acceptance registered. (`/c` and `/i` persist state correctly.)
 
 **P-12 [PUBLIC] The money pages ignore localization — `/i` and `/co` are English-only.** With `pm_lang=es` in the same browser that rendered `/q` and `/c` in Spanish: "Bill to", "Amount due", "How would you like to pay?", "I sent it", "Approve this change" — 100% EN chrome on the highest-stakes customer surfaces.
 
@@ -68,7 +54,7 @@ Every account is seeded name "Nuevo usuario" (`verify-otp/mod.ts:35`) and nothin
 
 **P-23 [ASSISTANT/I18N] The Spanish chat doesn't understand "sí".** Confirm parser is English-only (`onboarding/mod.ts:287`); the workaround chips are labeled "Sí — está correcto" but dispatch raw "Yes"/"different state"/"skip" — so the Spanish user's own chat bubble shows them speaking English.
 
-**P-24 [ASSISTANT] The "choose a version" step undermines trust.** Three near-identical options titled "Reparar Cerca De", "… (2)", "… (3)"; meta-sentences become customer-facing bullets ("**No sé cuánto cobrar**" printed on the quote; "Son $850 por todo el trabajo" as a bullet); a later draft invented specifics never said ("1500 sqft, semi-brillante"); tapping a card's text opens inline editing (keyboard pops) instead of selecting. *(Dev-LLM caveat on content quality; the UI mechanics are real.)*
+**P-24 [ASSISTANT] The "choose a version" step undermines trust.** Three near-identical options titled "Reparar Cerca De", "… (2)", "… (3)"; meta-sentences become customer-facing bullets ("**No sé cuánto cobrar**" printed on the quote; "Son $850 por todo el trabajo" as a bullet); a later draft invented specifics never said ("1500 sqft, semi-brillante"); tapping a card's text opens inline editing (keyboard pops) instead of selecting. _(Dev-LLM caveat on content quality; the UI mechanics are real.)_
 
 **P-25 [ASSISTANT/I18N] Manual terms controls write English into Spanish contracts.** Duration/warranty/payment fallbacks build EN strings and submit them verbatim: "El contrato dice: **Lifetime**", "3 weeks", "Net 30" (`AsstChat.tsx:7705,8075-8079,8479-8483`). Translated keys exist but are only used for the buttons.
 
@@ -102,7 +88,7 @@ Every account is seeded name "Nuevo usuario" (`verify-otp/mod.ts:35`) and nothin
 
 **P-38 [SIGNUP] Address autocomplete ignores the state confirmed 10 seconds earlier.** After "Sí, Texas", typing "1600 Congress" returns Chicago/Ypsilanti/Indianapolis/Cincinnati — zero Texas.
 
-**P-39 [SIGNUP] "¿Número incorrecto? Editar" on /verify links to `/`** — dropping a `/landing`-originated user onto the *other* landing with no scroll target to the phone form.
+**P-39 [SIGNUP] "¿Número incorrecto? Editar" on /verify links to `/`** — dropping a `/landing`-originated user onto the _other_ landing with no scroll target to the phone form.
 
 **P-40 [PUBLIC] The drawn signature is captured, stored… and never shown.** Pad works on touch (draw/undo/clear verified; PNG persisted on the record) but neither the signed page nor the public payload renders it — the consent copy calls the drawing part of the signature, then it vanishes.
 
@@ -129,6 +115,8 @@ Every account is seeded name "Nuevo usuario" (`verify-otp/mod.ts:35`) and nothin
 **P-51 [OUTBOUND] "3 ea · $350.00 c/u" — the unit fallback "ea" leaks untranslated into ES emails** (`send-paperwork-email/mod.ts:653,1060`; `contractDoc.unitEach` = "c/u" exists unused here).
 
 **P-52 [PRODUCT] Two names for the assistant:** onboarding/coachmark say "Bossie", the chat header and landing say "PM Assistant" — a first-session user meets both.
+<<solution>>
+remove bossie
 
 **P-53 [ASSISTANT] Desktop-keyboard hint on the mobile amount picker:** "↑ ↓ para ajustar $10 · **Shift = $100**" — no Shift key on a phone. Both price screens.
 
@@ -159,19 +147,3 @@ Every account is seeded name "Nuevo usuario" (`verify-otp/mod.ts:35`) and nothin
 **P-67** Transient console noise around login/logout transitions (one 502 on `/api/admin/whoami`, ERR_CONNECTION_REFUSED on two polls); all steady-state pages console-clean.
 
 ---
-
-## Verified CLEAN (checked adversarially — don't chase these)
-
-- **OTP entry UX is excellent**: tel/numeric inputmodes, `one-time-code` autocomplete, auto-advance, auto-submit, Spanish inline errors, boxes reset+refocus on failure.
-- **Master OTP `000000` is hard-disabled in prod** (`DENO_DEPLOYMENT_ID` guard). *Caveat: env-based — running prod off Deno Deploy without that var would re-enable it.*
-- Wizard resumes at the right step after reload with data intact; back preserves values; send is double-tap-safe.
-- `/c` and `/i` persist signed/claimed state cleanly; the invoice links the signed agreement; money math is correct everywhere it was checked (quote=contract=invoice; CO chains; discount recomputation).
-- Signature pad genuinely works on touch (draw/undo/clear pixel-verified); emoji/apostrophe/accent names safe end-to-end (no XSS, correct escaping).
-- Public bad links (`/q|/i|/co/BAD-ID`, `/s/BADCODE`) render graceful messages; double-accept is API-idempotent; declined-after-accepted is guarded.
-- Zero-data dashboard math has no NaN/Infinity; sidebar collapse persists with a pre-paint script (no flash); viewport meta correct everywhere (no user-scalable=no); favicon/apple-touch resolve; titles distinct + branded in both languages; no external CDN scripts or web fonts; no image over 300KB on landing paths; no hardcoded localhost in shipping code; `DEV_BYPASS_AUTH` defaults off in prod.
-- Zero app-generated console errors across the full customer + contractor journeys in steady state; no broken images.
-
-## Dev-environment caveats
-
-- Findings about LLM *content* (P-20, P-24) carry a dev-LLM caveat — re-verify against prod model output; the UI mechanics around them are real either way.
-- All test users created during the audit were wiped via `GET /me/wipe` (17+27+43 records). One pre-existing dev user (+15125550937) was left alone.
