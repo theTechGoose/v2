@@ -81,18 +81,27 @@ export default define.page(function PromoLanding(ctx) {
                 Paperwork <em>Monster</em>
               </span>
             </a>
-            <div class="pm-langtoggle" role="tablist" aria-label="Language">
+            <div class="pm-header__right">
+              <div class="pm-langtoggle" role="tablist" aria-label="Language">
+                <a
+                  href="/landing?lang=es"
+                  class={lang === "es" ? "on" : ""}
+                >
+                  {t("langEs")}
+                </a>
+                <a
+                  href="/landing?lang=en"
+                  class={lang === "en" ? "on" : ""}
+                >
+                  {t("langEn")}
+                </a>
+              </div>
               <a
-                href="/landing?lang=es"
-                class={lang === "es" ? "on" : ""}
+                href="/login"
+                class="pm-header__login"
+                data-cy="landing-login"
               >
-                {t("langEs")}
-              </a>
-              <a
-                href="/landing?lang=en"
-                class={lang === "en" ? "on" : ""}
-              >
-                {t("langEn")}
+                {t("navLogin")}
               </a>
             </div>
           </header>
@@ -185,6 +194,83 @@ export default define.page(function PromoLanding(ctx) {
               <div class="pm-step">
                 <div class="pm-step__num">3</div>
                 <p>{t("step3")}</p>
+              </div>
+            </div>
+          </section>
+
+          {/* ---------- pricing ---------- */}
+          <section class="pm-pricing" id="pricing">
+            <h2>{t("pricingH2")}</h2>
+            <p class="pm-pricing__sub">{t("pricingSub")}</p>
+            <div class="pm-plans">
+              <div class="pm-plan pm-plan--featured" data-cy="pricing-plan">
+                <span class="pm-plan__badge">{t("pricingBadge")}</span>
+                <h3 class="pm-plan__name">{t("pricingStarterName")}</h3>
+                <div class="pm-plan__price">
+                  $15
+                  <span class="pm-plan__cadence">{t("pricingPerMonth")}</span>
+                </div>
+                <p class="pm-plan__blurb">{t("pricingStarterBlurb")}</p>
+                <ul class="pm-plan__feats">
+                  <li>
+                    <Check /> {t("pricingStarterF1")}
+                  </li>
+                  <li>
+                    <Check /> {t("pricingStarterF2")}
+                  </li>
+                  <li>
+                    <Check /> {t("pricingStarterF3")}
+                  </li>
+                </ul>
+                <a href="#trial" class="pm-btn pm-btn--primary pm-plan__cta">
+                  {t("pricingCta")}
+                </a>
+              </div>
+
+              <div class="pm-plan" data-cy="pricing-plan">
+                <h3 class="pm-plan__name">{t("pricingProName")}</h3>
+                <div class="pm-plan__price">
+                  $99
+                  <span class="pm-plan__cadence">{t("pricingPerMonth")}</span>
+                </div>
+                <p class="pm-plan__blurb">{t("pricingProBlurb")}</p>
+                <ul class="pm-plan__feats">
+                  <li>
+                    <Check /> {t("pricingProF1")}
+                  </li>
+                  <li>
+                    <Check /> {t("pricingProF2")}
+                  </li>
+                  <li>
+                    <Check /> {t("pricingProF3")}
+                  </li>
+                </ul>
+                <a href="#trial" class="pm-btn pm-btn--ghost pm-plan__cta">
+                  {t("pricingCta")}
+                </a>
+              </div>
+
+              <div class="pm-plan" data-cy="pricing-plan">
+                <h3 class="pm-plan__name">{t("pricingCrewName")}</h3>
+                <div class="pm-plan__price">
+                  $199
+                  <span class="pm-plan__cadence">{t("pricingPerMonth")}</span>
+                </div>
+                <p class="pm-plan__blurb">{t("pricingCrewBlurb")}</p>
+                <ul class="pm-plan__feats">
+                  <li>
+                    <Check /> {t("pricingCrewF1")}
+                  </li>
+                  <li>
+                    <Check /> {t("pricingCrewF2")}
+                  </li>
+                  <li>
+                    <Check /> {t("pricingCrewF3")}
+                  </li>
+                </ul>
+                <a href="#trial" class="pm-btn pm-btn--ghost pm-plan__cta">
+                  {t("pricingCta")}
+                </a>
               </div>
             </div>
           </section>

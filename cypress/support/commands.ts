@@ -374,6 +374,9 @@ Cypress.Commands.add("seedQuoteToCash", (overrides = {}) => {
       return cy.apiCreateContract(contractBody).then((contractId: string) => {
         const invoiceBody = {
           contractId,
+          // quoteId triggers the derive-from-quote path so the invoice
+          // carries the quote's jobName/description (roadmap p.6).
+          quoteId,
           customerId,
           amount: 35_000,
           dueDate: "2099-01-01",

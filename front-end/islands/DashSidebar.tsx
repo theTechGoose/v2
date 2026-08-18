@@ -22,6 +22,9 @@ type CountKey = "clients" | "quotes" | "contracts" | "invoices";
 // `countKey` maps a sidebar entry to a derived count from /analytics/dashboard.
 // We never seed counts client-side — if the fetch fails or returns 0, the
 // badge is omitted (rendering an empty pill on a fresh account looks broken).
+// PDF p4 "Why is contracts back?" — contracts are folded into the unified
+// Quote + Agreement document, so there is deliberately NO separate Contracts
+// entry here (/contracts deep links 302 into /quotes).
 const NAV: NavEntry[] = [
   { id: "home", icon: "home", label: "Dashboard", href: "/dashboard" },
   {
@@ -37,13 +40,6 @@ const NAV: NavEntry[] = [
     label: "Quotes",
     href: "/quotes",
     countKey: "quotes",
-  },
-  {
-    id: "contracts",
-    icon: "contract",
-    label: "Contracts",
-    href: "/contracts",
-    countKey: "contracts",
   },
   {
     id: "invoices",
@@ -124,12 +120,18 @@ function projectSidebar(snap: CachedDash | null): SbState {
   return { counts, identity: { display, biz, initials }, lang, superAdmin };
 }
 
-export default function DashSidebar({ active = "home", showNav = true }: Props) {
+export default function DashSidebar(
+  { active = "home", showNav = true }: Props,
+) {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof globalThis.localStorage === "undefined") return false;
     return globalThis.localStorage.getItem("pm:sb-collapsed") === "1";
   });
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Cypress hooks (data-cy) are only attached after hydration so a test
+  // can never click the toggle before its listener is live.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   // Seed from the shared cache so a navigation between pages renders the
   // last-known counts/identity immediately and the badge doesn't flash
   // empty before the refetch lands.
@@ -209,6 +211,19 @@ export default function DashSidebar({ active = "home", showNav = true }: Props) 
           mobileOpen ? "sb--open" : ""
         }`}
       >
+        {
+          /* Pre-paint collapse: SSR can't know localStorage, so without this
+            a collapsed rail flashes expanded until hydration. The parser runs
+            this synchronously before painting the nav below. Hydration then
+            re-derives the same class from the useState initializer. */
+        }
+        <script
+          // deno-lint-ignore react-no-danger
+          dangerouslySetInnerHTML={{
+            __html:
+              `(function(){try{if(localStorage.getItem("pm:sb-collapsed")==="1"){var s=document.currentScript;var a=s&&s.closest(".sb");if(a){a.classList.add("sb--collapsed");}}}catch(_){}})();`,
+          }}
+        />
         <div class="sb__inner">
           <a
             class="sb__brand"
@@ -244,49 +259,58 @@ export default function DashSidebar({ active = "home", showNav = true }: Props) 
           <div class="sb__divider" />
 
           {showNav && (
-          <nav class="sb__nav">
-            {NAV.map((item) => {
-              const count = item.countKey ? s.counts[item.countKey] : undefined;
-              return (
-                <a
-                  key={item.id}
-                  href={item.href}
-                  class={`nav-item ${
-                    active === item.id ? "nav-item--active" : ""
-                  }`}
-                >
-                  <span class="nav-item__icon">
-                    <I d={ICN[item.icon]} size={18} />
-                  </span>
-                  <span class="nav-item__label">
-                    {tFor(lang, `nav.${item.id}`)}
-                  </span>
-                  {count != null && count > 0
-                    ? <span class="nav-item__count">{count}</span>
-                    : null}
-                </a>
-              );
-            })}
-            {
-              /* Admin tab — super-admins only. Server enforces the /admin
+            <nav class="sb__nav">
+              {NAV.map((item) => {
+                const count = item.countKey
+                  ? s.counts[item.countKey]
+                  : undefined;
+                return (
+                  <a
+                    key={item.id}
+                    href={item.href}
+                    class={`nav-item ${
+                      active === item.id ? "nav-item--active" : ""
+                    }`}
+                  >
+                    <span class="nav-item__icon">
+                      <I d={ICN[item.icon]} size={18} />
+                    </span>
+                    {
+                      /* Icon-only rail: the label leaves the DOM entirely when
+                      collapsed (not just display:none) so the rail is a true
+                      QuickBooks-style icon rail (roadmap p9). */
+                    }
+                    {!collapsed && (
+                      <span class="nav-item__label">
+                        {tFor(lang, `nav.${item.id}`)}
+                      </span>
+                    )}
+                    {!collapsed && count != null && count > 0
+                      ? <span class="nav-item__count">{count}</span>
+                      : null}
+                  </a>
+                );
+              })}
+              {
+                /* Admin tab — super-admins only. Server enforces the /admin
                 gate too (route middleware + every endpoint); this just hides
                 the entry for everyone else. Label is intentionally not i18n'd
                 (internal operator tool). */
-            }
-            {s.superAdmin && (
-              <a
-                href="/admin"
-                class={`nav-item ${
-                  active === "admin" ? "nav-item--active" : ""
-                }`}
-              >
-                <span class="nav-item__icon">
-                  <I d={ICN.shield} size={18} />
-                </span>
-                <span class="nav-item__label">Admin</span>
-              </a>
-            )}
-          </nav>
+              }
+              {s.superAdmin && (
+                <a
+                  href="/admin"
+                  class={`nav-item ${
+                    active === "admin" ? "nav-item--active" : ""
+                  }`}
+                >
+                  <span class="nav-item__icon">
+                    <I d={ICN.shield} size={18} />
+                  </span>
+                  {!collapsed && <span class="nav-item__label">Admin</span>}
+                </a>
+              )}
+            </nav>
           )}
 
           <div class="sb__bottom">
@@ -333,6 +357,13 @@ export default function DashSidebar({ active = "home", showNav = true }: Props) 
               <button
                 type="button"
                 class="sb__toggle"
+                // QuickBooks-style minimize (roadmap p9). The same physical
+                // button is the collapse arrow when expanded and the rail
+                // hamburger when collapsed; the hook only appears after
+                // hydration so tests can't click a dead button.
+                data-cy={mounted
+                  ? (collapsed ? "sidebar-expand" : "sidebar-collapse")
+                  : undefined}
                 onClick={toggle}
                 aria-label={collapsed
                   ? tFor(lang, "sidebar.expand")

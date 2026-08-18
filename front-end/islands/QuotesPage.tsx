@@ -10,6 +10,8 @@ import {
   quotesClient,
   type WinRate,
 } from "../clients/quotes.ts";
+import { api } from "../lib/api.ts";
+import { fmtMoney } from "../lib/format.ts";
 import {
   DecidedRow,
   QSideBig,
@@ -78,6 +80,142 @@ interface State {
   insight: Insight | null;
 }
 
+/** Lifecycle badge on the open-quote surface (roadmap p.10): the RAW quote
+ *  `status` walks draft → sent → viewed → approved on the backend; legacy
+ *  rows may carry "accepted" (≡ approved) and "lost" (≡ declined). */
+type BadgeStatus = "draft" | "sent" | "viewed" | "approved" | "declined";
+
+function badgeStatusFor(q: BackendQuoteCard): BadgeStatus {
+  const raw = typeof q.status === "string" ? q.status.toLowerCase() : "";
+  // Never regress after signature: approved/accepted (or a recorded
+  // acceptedAt) wins over any later "viewed" bookkeeping.
+  if (raw === "approved" || raw === "accepted" || q.acceptedAt) {
+    return "approved";
+  }
+  if (raw === "lost") return "declined";
+  if (raw === "viewed") return "viewed";
+  if (raw === "sent") return "sent";
+  if (q.sentAt) return "sent";
+  return "draft";
+}
+
+/** Outbound send logged by the backend comms trail (GET /messages). */
+interface TrailMessage {
+  channel?: string;
+  toAddress?: string;
+  paperworkId?: string;
+}
+
+interface SendReceipt {
+  channel: "email" | "text";
+  to: string;
+}
+
+interface OpenQuoteState {
+  loading: boolean;
+  quote: BackendQuoteCard | null;
+  receipts: SendReceipt[];
+}
+
+/** Detail surface for /quotes?open=<id> — job name, lifecycle status badge,
+ *  full-quote actions, and the "emailed to … / texted to …" receipt strip
+ *  built from the per-document comms trail (roadmap p.8). */
+function OpenQuotePanel(
+  { lang, state }: { lang: "en" | "es"; state: OpenQuoteState },
+) {
+  const [copied, setCopied] = useState(false);
+
+  if (state.loading) {
+    return (
+      <section class="qopen qopen--pending">
+        {tFor(lang, "quotesPage.open.loading")}
+      </section>
+    );
+  }
+  const q = state.quote;
+  if (!q) {
+    return (
+      <section class="qopen qopen--pending">
+        {tFor(lang, "quotesPage.open.notFound")}
+      </section>
+    );
+  }
+
+  const badge = badgeStatusFor(q);
+  const quoteId = q.id;
+  const title = q.jobName?.trim() || q.summary ||
+    tFor(lang, "quotesPage.untitledQuote");
+
+  async function copyLink() {
+    try {
+      // Always the FULL public quote URL (/q/:id) — never a summary variant.
+      await navigator.clipboard.writeText(
+        `${globalThis.location.origin}/q/${quoteId}`,
+      );
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable — leave the label as-is */ }
+  }
+
+  return (
+    <section class="qopen" data-cy="quote-open-panel">
+      <div class="qopen__head">
+        <div class="qopen__id">
+          <div class="qopen__eyebrow">{tFor(lang, "quoteCard.valueLabel")}</div>
+          <h2 class="qopen__title">{title}</h2>
+        </div>
+        <span
+          class={`qopen__badge qopen__badge--${badge}`}
+          data-cy="quote-status-badge"
+        >
+          {tFor(lang, `quotesPage.status.${badge}`)}
+        </span>
+      </div>
+      {q.summary && q.jobName?.trim() && (
+        <p class="qopen__summary">{q.summary}</p>
+      )}
+      <div class="qopen__meta">
+        <div class="qopen__amount">{fmtMoney(q.estimatedTotal ?? 0)}</div>
+        <div class="qopen__actions">
+          <button type="button" class="qopen__btn" onClick={copyLink}>
+            {copied
+              ? tFor(lang, "quotesPage.open.linkCopied")
+              : tFor(lang, "quotesPage.open.copyLink")}
+          </button>
+          <a
+            class="qopen__btn"
+            href={`/q/${q.id}`}
+            target="_blank"
+            rel="noopener"
+          >
+            {tFor(lang, "quotesPage.open.viewAsClient")}
+          </a>
+        </div>
+      </div>
+      {(badge === "approved" || state.receipts.length > 0) && (
+        <div class="qopen__receipts">
+          {badge === "approved" && (
+            <div class="qopen__receipt qopen__receipt--signed">
+              {tFor(lang, "quotesPage.open.receipt.signed")}
+            </div>
+          )}
+          {state.receipts.map((r) => (
+            <div class="qopen__receipt" key={`${r.channel}:${r.to}`}>
+              {tFor(
+                lang,
+                r.channel === "email"
+                  ? "quotesPage.open.receipt.emailedTo"
+                  : "quotesPage.open.receipt.textedTo",
+                { to: r.to },
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 const INITIAL: State = {
   loading: true,
   error: null,
@@ -92,6 +230,43 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
   // optional `lang` prop is an ignored SSR seed.
   const lang = langSignal.value;
   const [s, setS] = useState<State>(INITIAL);
+
+  // /quotes?open=<id> deep link — captured once on mount (client-only).
+  const [openId] = useState<string | null>(() => {
+    if (typeof globalThis.location === "undefined") return null;
+    return new URLSearchParams(globalThis.location.search).get("open");
+  });
+  const [openQ, setOpenQ] = useState<OpenQuoteState>({
+    loading: true,
+    quote: null,
+    receipts: [],
+  });
+
+  useEffect(() => {
+    if (!openId) return;
+    let alive = true;
+    Promise.all([
+      quotesClient.get(openId).catch(() => null),
+      // Comms trail: outbound sends logged per document (paperworkId).
+      api.get<TrailMessage[]>("/messages").catch(() => [] as TrailMessage[]),
+    ]).then(([quote, messages]) => {
+      if (!alive) return;
+      const receipts: SendReceipt[] = [];
+      const seen = new Set<string>();
+      for (const m of Array.isArray(messages) ? messages : []) {
+        if (m.paperworkId !== openId || !m.toAddress) continue;
+        if (m.channel !== "email" && m.channel !== "text") continue;
+        const key = `${m.channel}:${m.toAddress}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        receipts.push({ channel: m.channel, to: m.toAddress });
+      }
+      setOpenQ({ loading: false, quote, receipts });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [openId]);
 
   useEffect(() => {
     let alive = true;
@@ -190,6 +365,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         lostCount={lost}
         winRate={winRatePct}
       />
+      {openId && <OpenQuotePanel lang={lang} state={openQ} />}
       <div class="qlay">
         <div>
           <QuoteTrack
@@ -198,11 +374,18 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             title={tFor(lang, "quotesPage.track.outForResponse")}
             count={out.length}
             defaultOpen
+            forceOpen={openId != null && out.some((q) => q.id === openId)}
             storageKey="quotes:track:01"
           >
             <div class="qcards">
               {outSorted.map((q, i) => (
-                <QuoteCard key={q.id} q={q} idx={i} lang={lang} />
+                <QuoteCard
+                  key={q.id}
+                  q={q}
+                  idx={i}
+                  lang={lang}
+                  flipOnMount={q.id === openId}
+                />
               ))}
             </div>
           </QuoteTrack>
@@ -213,11 +396,18 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             title={tFor(lang, "quotesPage.track.drafting")}
             count={drafts.length}
             defaultOpen={false}
+            forceOpen={openId != null && drafts.some((q) => q.id === openId)}
             storageKey="quotes:track:02"
           >
             <div class="qcards">
               {drafts.map((q, i) => (
-                <QuoteCard key={q.id} q={q} idx={i} lang={lang} />
+                <QuoteCard
+                  key={q.id}
+                  q={q}
+                  idx={i}
+                  lang={lang}
+                  flipOnMount={q.id === openId}
+                />
               ))}
             </div>
           </QuoteTrack>
@@ -227,7 +417,11 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             num="03"
             title={tFor(lang, "quotesPage.track.decidedThisMonth")}
             count={decided.length}
-            defaultOpen={false}
+            // Open by default when there are decided rows so the ≤3-word Job
+            // Name stays visible on the list (roadmap p.8); a user's stored
+            // collapse preference still wins via storageKey.
+            defaultOpen={decided.length > 0}
+            forceOpen={openId != null && decided.some((q) => q.id === openId)}
             storageKey="quotes:track:03"
           >
             <div class="qdone">

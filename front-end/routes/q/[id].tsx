@@ -9,6 +9,7 @@ import {
   telHref,
 } from "../../lib/format.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
+import { langFromCookie } from "../../lib/lang.ts";
 
 interface QuotePublic {
   id: string;
@@ -51,16 +52,21 @@ export default define.page(async function PublicQuote(ctx) {
   let quote: QuotePublic | undefined;
   const r = await ssrBackendGet<QuotePublic>(`/quotes/${id}/public`);
   if (r.ok) quote = r.data;
-  // Roadmap p.13: customer-facing → outgoing-comms language (default en).
-  const lang: Lang = quote?.contractor?.commsLanguage === "es" ? "es" : "en";
+  // Document language — the contractor's outgoing-comms language (roadmap
+  // p.13; default en). Quote CONTENT (job name / summary / description)
+  // renders in this language, whatever it was written in.
+  const docLang: Lang = quote?.contractor?.commsLanguage === "es" ? "es" : "en";
+  // UI-chrome language — the visitor's own saved choice (pm_lang cookie,
+  // same as every other public route) wins; falls back to the doc language.
+  const lang: Lang = langFromCookie(ctx.req.headers.get("cookie")) ?? docLang;
   const err = r.ok ? undefined : tFor(lang, "publicQuote.linkExpired");
 
   return (
     <>
       <Head>
         <title>
-          {quote?.jobNameByLang?.[lang] ?? quote?.jobName ??
-            quote?.summaryByLang?.[lang] ?? quote?.summary ??
+          {quote?.jobNameByLang?.[docLang] ?? quote?.jobName ??
+            quote?.summaryByLang?.[docLang] ?? quote?.summary ??
             tFor(lang, "publicQuote.quote")} ·{" "}
           {tFor(lang, "brand.name")}
         </title>
@@ -76,7 +82,7 @@ export default define.page(async function PublicQuote(ctx) {
       >
         {err || !quote
           ? <ErrorCard message={err ?? tFor(lang, "publicQuote.unavailable")} lang={lang} />
-          : <QuoteCard quote={quote} />}
+          : <QuoteCard quote={quote} lang={lang} />}
       </PublicShell>
     </>
   );
@@ -134,7 +140,7 @@ function ErrorCard({ message, lang }: { message: string; lang: Lang }) {
   );
 }
 
-function QuoteCard({ quote }: { quote: QuotePublic }) {
+function QuoteCard({ quote, lang }: { quote: QuotePublic; lang: Lang }) {
   const total = quote.estimatedTotal ??
     quote.lineItems.reduce(
       (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
@@ -148,15 +154,16 @@ function QuoteCard({ quote }: { quote: QuotePublic }) {
   const customerName = quote.customer?.name?.trim();
   const contractorFirst = quote.contractor?.name?.trim()?.split(/\s+/)[0];
   const contractor = quote.contractor;
-  // Roadmap p.13: customer-facing → outgoing-comms language (default en).
-  const lang: Lang = contractor?.commsLanguage === "es" ? "es" : "en";
-  // Title + bullets in the document's language when the per-language fields
-  // are present (populated from the picked job option).
-  const qSummary = quote.summaryByLang?.[lang] ?? quote.summary;
-  const qDesc = quote.descriptionByLang?.[lang] ?? quote.description;
+  // `lang` (UI chrome) arrives from the route handler — pm_lang cookie
+  // first, then the doc language. CONTENT stays in the document's language:
+  // title + bullets use the outgoing-comms language (roadmap p.13) when the
+  // per-language fields are present (populated from the picked job option).
+  const docLang: Lang = contractor?.commsLanguage === "es" ? "es" : "en";
+  const qSummary = quote.summaryByLang?.[docLang] ?? quote.summary;
+  const qDesc = quote.descriptionByLang?.[docLang] ?? quote.description;
   // Hero = the platform-wide Job Name (roadmap p.10) when present, so the
   // quote heading matches the agreement, the invoice, and the SMS/email.
-  const qName = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim();
+  const qName = (quote.jobNameByLang?.[docLang] ?? quote.jobName)?.trim();
   const heroTitle = qName || qSummary;
   return (
     <article style="background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">

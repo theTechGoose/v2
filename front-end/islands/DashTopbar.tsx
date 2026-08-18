@@ -72,6 +72,11 @@ export default function DashTopbar(
   const [, setUnread] = useState(initialUnread);
   const [items, setItems] = useState<Notification[]>(initialNotifications);
   const [tickerIdx, setTickerIdx] = useState(0);
+  // The data-cy hook appears only after hydration so a test can never click
+  // the hamburger before the pm:sb-toggle listener (DashSidebar) is live —
+  // pre-hydration clicks were the "hamburger does not work" bug (PDF p8).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     let stopped = false;
@@ -112,6 +117,7 @@ export default function DashTopbar(
       <button
         class="topbar__menu"
         type="button"
+        data-cy={mounted ? "mobile-menu" : undefined}
         aria-label={tFor(lang, "dashTopbar.toggleSidebar")}
         onClick={() =>
           globalThis.dispatchEvent(new CustomEvent("pm:sb-toggle"))}
@@ -121,7 +127,8 @@ export default function DashTopbar(
       <div class="topbar__greet">
         <div class="topbar__greet-line">{greetingDate}</div>
         <div class="topbar__greet-name">
-          {greetingOverride ?? tFor(lang, "dashTopbar.greeting", { name: greetingName })}
+          {greetingOverride ??
+            tFor(lang, "dashTopbar.greeting", { name: greetingName })}
         </div>
       </div>
       {

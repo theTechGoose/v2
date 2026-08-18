@@ -8154,6 +8154,297 @@ body {
   opacity: 0.7;
 }
 
+/* Job-details recap on the price screen — keeps the (re)typed details
+   visible while pricing, so a Back-and-edit run reads its result. */
+.chat__price-details-recap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  background: var(--mint-100, #e8f3e0);
+  border: 1px solid rgba(81, 152, 67, 0.22);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.chat__price-details-recap-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-green, #519843);
+}
+.chat__price-details-recap-text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg, #1a2415);
+  white-space: pre-wrap;
+}
+
+/* 4th pricing option — custom price. Clicking focuses the MoneyInput. */
+.chat__price-custom-cta {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  align-self: flex-start;
+  padding: 4px 2px;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted, #6b7560);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(107, 117, 96, 0.4);
+  text-underline-offset: 3px;
+  transition: color 0.12s;
+}
+.chat__price-custom-cta:hover {
+  color: var(--brand-teal, #1a535c);
+}
+
+/* "Write it myself" trigger on the job-details step (roadmap p.5). */
+.chat__details-writeself {
+  align-self: flex-start;
+  appearance: none;
+  border: 1px dashed var(--line, #d8e0d4);
+  background: #fff;
+  color: var(--brand-teal, #1a535c);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.chat__details-writeself:hover {
+  border-color: var(--brand-green, #519843);
+  background: var(--mint-100, #e8f3e0);
+}
+
+/* "Write it myself" editor card + Professionalize proposal loop. */
+.chat__writeself {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid var(--line, #d8e0d4);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 1px 2px rgba(20, 36, 21, 0.04);
+  animation: chat-price-in 280ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.chat__writeself-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chat__writeself-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--brand-teal, #1a535c);
+}
+.chat__writeself-sub {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--fg-muted, #6b7560);
+}
+.chat__writeself-input,
+.chat__writeself-proposal-edit {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--line, #d8e0d4);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg, #1a2415);
+  background: #fdfef9;
+}
+.chat__writeself-input:focus,
+.chat__writeself-proposal-edit:focus {
+  outline: none;
+  border-color: var(--brand-green, #519843);
+  box-shadow: 0 0 0 3px rgba(81, 152, 67, 0.14);
+}
+.chat__writeself-err {
+  font-size: 12.5px;
+  color: var(--brand-pink, #d94f4f);
+}
+.chat__writeself-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.chat__writeself-pro {
+  appearance: none;
+  border: 1px solid var(--brand-teal, #1a535c);
+  background: #fff;
+  color: var(--brand-teal, #1a535c);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.12s, color 0.12s, opacity 0.12s;
+}
+.chat__writeself-pro:hover:not(:disabled) {
+  background: rgba(26, 83, 92, 0.06);
+}
+.chat__writeself-pro:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.chat__writeself-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--mint-100, #e8f3e0);
+  border: 1px solid rgba(81, 152, 67, 0.25);
+  border-radius: 12px;
+  padding: 12px;
+  animation: chat-price-in 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.chat__writeself-proposal-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-green, #519843);
+}
+.chat__writeself-proposal-text {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--fg, #1a2415);
+}
+.chat__writeself-proposal-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.chat__writeself-accept {
+  appearance: none;
+  border: 0;
+  background: var(--brand-green, #519843);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px -4px rgba(81, 152, 67, 0.55);
+  transition: background 0.12s;
+}
+.chat__writeself-accept:hover {
+  background: #437b37;
+}
+.chat__writeself-editbtn {
+  appearance: none;
+  border: 1px solid var(--line, #d8e0d4);
+  background: #fff;
+  color: var(--brand-teal, #1a535c);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.chat__writeself-editbtn:hover {
+  border-color: var(--brand-teal, #1a535c);
+  background: rgba(26, 83, 92, 0.05);
+}
+.chat__writeself-dismiss {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted, #6b7560);
+  font-weight: 600;
+  font-size: 12.5px;
+  padding: 8px 8px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: color 0.12s;
+}
+.chat__writeself-dismiss:hover {
+  color: var(--fg, #1a2415);
+}
+
+/* Confirm-details step of "help me price it" (roadmap p.16): a clickable
+   card that shows the collected details and confirms on click. */
+.chat__confirm-details {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  border: 1px solid rgba(81, 152, 67, 0.35);
+  background: var(--mint-100, #e8f3e0);
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
+}
+.chat__confirm-details:hover:not(:disabled) {
+  border-color: var(--brand-green, #519843);
+  box-shadow: 0 6px 16px -8px rgba(81, 152, 67, 0.5);
+  transform: translateY(-1px);
+}
+.chat__confirm-details:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+.chat__confirm-details-label {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--brand-green, #519843);
+}
+.chat__confirm-details-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg, #1a2415);
+  white-space: pre-wrap;
+}
+
+/* Step-level Back inside wizard cards ([data-cy=wizard-back]) — same look
+   as .chat__price-back but statically positioned in the card flow. */
+.wiz__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted, #6b7560);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+  margin: 0 0 6px -6px;
+  border-radius: 6px;
+  transition: color 0.12s, background 0.12s;
+}
+.wiz__back:hover {
+  color: var(--brand-teal, #1a535c);
+  background: rgba(26, 83, 92, 0.06);
+}
+.wiz__back:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* "Job Details" picker — three LLM-generated scope-of-work options the
    contractor edits and picks between before the quote is built. Opens
    after the price step, in place of the empty-state prompts. */
@@ -8630,4 +8921,61 @@ body {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ============================================================
+   Conversations panel minimize (roadmap p9 — same QuickBooks
+   pattern as the sidebar rail). AsstThreads toggles
+   `.threads--collapsed` on the aside and `.asst--threads-collapsed`
+   on the parent grid; these rules do the actual shrinking.
+   Placed at the end of the file so they win the cascade over the
+   base `.asst` / `.asst:not(:has(.docpane))` templates above.
+   ============================================================ */
+
+/* Small icon button in the panel head (was unstyled). */
+.threads__toggle {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--fg-muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  transition: background 160ms, color 160ms;
+}
+.threads__toggle:hover {
+  background: var(--mint-100);
+  color: var(--brand-teal);
+}
+
+/* Scoped to ≥881px: below that the threads column is display:none in a
+   single-column grid, and a 64px first track would swallow the chat. */
+@media (min-width: 881px) {
+  .asst.asst--threads-collapsed,
+  .asst.asst--threads-collapsed:not(:has(.docpane)) {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+}
+@media (min-width: 1100px) {
+  .asst.asst--threads-collapsed:has(.docpane) {
+    grid-template-columns: 64px minmax(0, 1fr) 360px;
+  }
+}
+
+/* Inside the collapsed rail only the toggle survives. */
+.threads--collapsed .threads__title,
+.threads--collapsed .threads__count,
+.threads--collapsed .threads__new,
+.threads--collapsed .threads__list,
+.threads--collapsed .threads__empty {
+  display: none;
+}
+.threads--collapsed .threads__head {
+  justify-content: center;
+  padding: 14px 8px 12px;
+  border-bottom: none;
 }

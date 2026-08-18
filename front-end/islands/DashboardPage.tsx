@@ -30,7 +30,7 @@ import { fmtMoney } from "../lib/format.ts";
 import { readCached, refreshDash } from "../lib/dash-cache.ts";
 import { ShimmerStyle, SkelBlock } from "../components/Skeletons.tsx";
 import SetupChecklist from "./SetupChecklist.tsx";
-import { langSignal, type Lang, tFor } from "../lib/i18n.ts";
+import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 
 // Toll-free support line (TWILIO_SUPPORT_NUMBER). Public number, safe to ship.
 // A call here hits the Twilio Studio Flow that texts a heads-up, plays a brief
@@ -123,9 +123,11 @@ function clientFromSummary(summary: string | null | undefined): string {
 
 function quoteToRow(q: QuoteCard, now: Date, lang: Lang): QuoteRow {
   const sentLabel = q.sentAt
-    ? `${tFor(lang, "dashboardPage.quote.sent", {
-      rel: fmtRel(q.sentAt, now, lang),
-    })}${
+    ? `${
+      tFor(lang, "dashboardPage.quote.sent", {
+        rel: fmtRel(q.sentAt, now, lang),
+      })
+    }${
       q.opens > 0
         ? ` · ${tFor(lang, "dashboardPage.quote.viewed")}${
           q.opens > 1 ? ` ${q.opens}×` : ""
@@ -230,7 +232,11 @@ const NOTIF_ICON: Record<
   generic: { icon: "sparkle", bg: "var(--teal-50)", fg: "var(--teal-600)" },
 };
 
-function notifToActivity(n: Notification, now: Date, lang: Lang): ActivityEntry {
+function notifToActivity(
+  n: Notification,
+  now: Date,
+  lang: Lang,
+): ActivityEntry {
   const skin = NOTIF_ICON[n.type] ?? NOTIF_ICON.generic;
   return {
     icon: skin.icon,
@@ -316,17 +322,11 @@ const INITIAL: State = {
 };
 
 function DashboardSkeleton() {
+  // No hero skeleton: the real assistant CTA (static content) always renders
+  // above this, so a shimmering hero would just duplicate it during load.
   return (
     <>
       <ShimmerStyle />
-      <section class="hero" style="min-height:200px">
-        <div class="hero__copy">
-          <SkelBlock h={36} w="80%" />
-          <SkelBlock h={16} w="60%" mt={14} />
-          <SkelBlock h={16} w="45%" mt={8} />
-          <SkelBlock h={44} w="220px" r={12} mt={22} />
-        </div>
-      </section>
       <section class="kpis">
         {[0, 1, 2, 3].map((i) => (
           <div class="kpi" key={i}>
@@ -418,12 +418,70 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
     };
   }, []);
 
-  if (s.loading) return <DashboardSkeleton />;
+  // PDF p8: "My Assistant needs to be on the dashboard at the top because on
+  // mobile you have to hit the hamburger to actually see that." This block is
+  // static content, so it renders in EVERY state (loading / error / loaded) —
+  // the entry to the assistant never waits on the dashboard fetches, and the
+  // [data-cy=assistant-cta] anchor works pre-hydration (plain href).
+  const assistantCta = (
+    <div class="assistant-cta">
+      <div class="assistant-cta__body">
+        <span class="assistant-cta__eyebrow">
+          {tFor(lang, "dashHero.cta.assistant")}
+        </span>
+        <span class="assistant-cta__title">
+          {tFor(lang, "dashAssistantCta.title")}
+        </span>
+        <span class="assistant-cta__sub">
+          {tFor(lang, "dashAssistantCta.sub")}
+        </span>
+        <div class="assistant-cta__actions">
+          <a
+            class="assistant-cta__btn"
+            data-cy="assistant-cta"
+            href="/assistant"
+          >
+            <span class="assistant-cta__crown">
+              <I d={ICN.crown} size={16} />
+            </span>
+            {tFor(lang, "dashHero.cta.assistant")}
+            <I d={ICN.arrow} size={16} />
+          </a>
+          <a class="assistant-cta__call" href={`tel:${SUPPORT_PHONE}`}>
+            <I d={ICN.phone} size={15} />
+            <span class="assistant-cta__call-label">
+              {tFor(lang, "dashAssistantCta.callSupport")}
+            </span>
+            <span class="assistant-cta__call-num">{SUPPORT_PHONE_DISPLAY}</span>
+          </a>
+        </div>
+      </div>
+      <div class="assistant-cta__art">
+        <span class="assistant-cta__confetti assistant-cta__confetti--1" />
+        <span class="assistant-cta__confetti assistant-cta__confetti--2" />
+        <span class="assistant-cta__confetti assistant-cta__confetti--3" />
+        <span class="assistant-cta__blob" />
+        <img src="/logo-monster.png" alt="" class="assistant-cta__monster" />
+      </div>
+    </div>
+  );
+
+  if (s.loading) {
+    return (
+      <>
+        {assistantCta}
+        <DashboardSkeleton />
+      </>
+    );
+  }
   if (s.error) {
     return (
-      <div class="dashpage-error">
-        {tFor(lang, "dashboardPage.loadError")}: {s.error}
-      </div>
+      <>
+        {assistantCta}
+        <div class="dashpage-error">
+          {tFor(lang, "dashboardPage.loadError")}: {s.error}
+        </div>
+      </>
     );
   }
 
@@ -487,42 +545,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
 
   return (
     <>
-      <div class="assistant-cta">
-        <div class="assistant-cta__body">
-          <span class="assistant-cta__eyebrow">
-            {tFor(lang, "dashHero.cta.assistant")}
-          </span>
-          <span class="assistant-cta__title">
-            {tFor(lang, "dashAssistantCta.title")}
-          </span>
-          <span class="assistant-cta__sub">
-            {tFor(lang, "dashAssistantCta.sub")}
-          </span>
-          <div class="assistant-cta__actions">
-            <a class="assistant-cta__btn" href="/assistant">
-              <span class="assistant-cta__crown">
-                <I d={ICN.crown} size={16} />
-              </span>
-              {tFor(lang, "dashHero.cta.assistant")}
-              <I d={ICN.arrow} size={16} />
-            </a>
-            <a class="assistant-cta__call" href={`tel:${SUPPORT_PHONE}`}>
-              <I d={ICN.phone} size={15} />
-              <span class="assistant-cta__call-label">
-                {tFor(lang, "dashAssistantCta.callSupport")}
-              </span>
-              <span class="assistant-cta__call-num">{SUPPORT_PHONE_DISPLAY}</span>
-            </a>
-          </div>
-        </div>
-        <div class="assistant-cta__art">
-          <span class="assistant-cta__confetti assistant-cta__confetti--1" />
-          <span class="assistant-cta__confetti assistant-cta__confetti--2" />
-          <span class="assistant-cta__confetti assistant-cta__confetti--3" />
-          <span class="assistant-cta__blob" />
-          <img src="/logo-monster.png" alt="" class="assistant-cta__monster" />
-        </div>
-      </div>
+      {assistantCta}
       <SetupChecklist />
       <Kpis
         activeJobs={kpis.activeJobs}

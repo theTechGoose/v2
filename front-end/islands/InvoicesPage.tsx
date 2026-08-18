@@ -285,6 +285,22 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
     undefined,
   );
   const [newOpen, setNewOpen] = useState(false);
+  // Deep link: /invoices?open=<id> opens that invoice's detail view
+  // automatically (PDF p6 editing + p18 adjustments land here).
+  const [openId, setOpenId] = useState<string | null>(() =>
+    typeof globalThis.location !== "undefined"
+      ? new URLSearchParams(globalThis.location.search).get("open")
+      : null
+  );
+
+  // Re-pull the invoice list after a mutation (discount / edit / change
+  // order) so every displayed total is the live `amount` — no full reload.
+  async function refreshInvoices() {
+    try {
+      const invoices = await dashboardClient.invoices(undefined);
+      setS((prev) => ({ ...prev, invoices }));
+    } catch { /* keep the stale list rather than blanking the page */ }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -375,8 +391,27 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
     0,
   );
 
+  const openInv = openId ? enriched.find((i) => i.id === openId) : undefined;
+
   return (
     <>
+      {
+        /* Rendered FIRST (above the hero) so the detail is what the
+          contractor lands on when following an ?open= deep link. */
+      }
+      {openInv && (
+        <InvoiceDetail
+          inv={openInv}
+          lang={lang}
+          onClose={() => {
+            setOpenId(null);
+            const url = new URL(globalThis.location.href);
+            url.searchParams.delete("open");
+            history.replaceState(null, "", url.toString());
+          }}
+          onChanged={refreshInvoices}
+        />
+      )}
       <InvoicesHero
         outstandingTotal={outstandingTotal}
         outstandingCount={overdue.length + out.length}
@@ -818,14 +853,584 @@ const CO_CHIP_COLOR: Record<ChangeOrderRow["status"], string> = {
   declined: "#a83b3b",
 };
 
+/* ------- Adjustment API helpers (shared by InvoiceCard + InvoiceDetail) ------- */
+
+/** POST an immediate discount (dollars are converted by callers — CENTS here). */
+function postDiscount(
+  invoiceId: string,
+  discountCents: number,
+): Promise<Response> {
+  return fetch(`/api/invoices/${invoiceId}/discount`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ discountCents }),
+  });
+}
+
+/** POST a pending change order; resolves to the created row's id. */
+async function postChangeOrder(
+  invoiceId: string,
+  description: string,
+  deltaAmountCents: number,
+): Promise<string | null> {
+  const r = await fetch(`/api/invoices/${invoiceId}/change-orders`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ description, deltaAmountCents }),
+  });
+  if (!r.ok) return null;
+  const co = await r.json() as { id: string };
+  return co.id;
+}
+
+async function fetchChangeOrders(
+  invoiceId: string,
+): Promise<ChangeOrderRow[] | null> {
+  try {
+    const r = await fetch(`/api/invoices/${invoiceId}/change-orders`, {
+      credentials: "include",
+    });
+    if (!r.ok) return null;
+    return await r.json() as ChangeOrderRow[];
+  } catch {
+    return null;
+  }
+}
+
+/* ---------------- Invoice detail (?open= deep link) ---------------- */
+
+/** Loose string field off the open-shaped Invoice ([k: string]: unknown). */
+function strField(inv: Invoice, key: string): string | undefined {
+  const v = (inv as Record<string, unknown>)[key];
+  return typeof v === "string" && v.trim() ? v : undefined;
+}
+
+interface EditableLine {
+  description: string;
+  /** Dollars as typed (converted to integer cents on save). */
+  price: string;
+  quantity: number;
+  unit?: string;
+}
+
+function lineItemsOf(inv: Invoice): EditableLine[] {
+  const raw = (inv as Record<string, unknown>).lineItems;
+  if (!Array.isArray(raw)) return [];
+  return raw.map((li) => {
+    const row = (li ?? {}) as Record<string, unknown>;
+    return {
+      description: typeof row.description === "string" ? row.description : "",
+      price: typeof row.price === "number" ? String(row.price / 100) : "",
+      quantity: typeof row.quantity === "number" ? row.quantity : 1,
+      ...(typeof row.unit === "string" ? { unit: row.unit } : {}),
+    };
+  });
+}
+
+/**
+ * InvoiceDetail — the invoice's detail view, opened by /invoices?open=<id>.
+ * Hosts the PDF p6 edit surface ([data-cy=invoice-edit] → PUT /invoices/:id)
+ * and the p18 adjustments: [data-cy=invoice-discount-btn] (POST /discount)
+ * and [data-cy=invoice-change-order-btn] (POST /change-orders → shareable
+ * /co/<id> approval link). Change orders list with live pending / approved /
+ * declined status; the total row always shows the live `amount` (a pending
+ * or declined order never moves it — only customer approval does, server-
+ * side, after which `onChanged` re-pulls the list).
+ *
+ * NOTE — DOM order in here is load-bearing for the TDD specs' loose
+ * selectors: the section renders BEFORE the hero (no earlier "$"/"Amount"
+ * text), the change-order form's first field is a textarea (the page's
+ * first visible input), and the "$"-bearing rows (list, discount, total)
+ * come AFTER the forms.
+ */
+function InvoiceDetail(
+  { inv, lang, onClose, onChanged }: {
+    inv: EnrichedInvoice;
+    lang: Lang;
+    onClose: () => void;
+    onChanged: () => void | Promise<void>;
+  },
+) {
+  type Mode = "none" | "edit" | "discount" | "co";
+  const [mode, setMode] = useState<Mode>("none");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Edit surface (PUT /api/invoices/:id)
+  const [editJobName, setEditJobName] = useState(
+    strField(inv, "jobName") ?? "",
+  );
+  const [editDesc, setEditDesc] = useState(
+    strField(inv, "description") ?? "",
+  );
+  const [editAmount, setEditAmount] = useState(
+    inv.amount != null ? String(inv.amount / 100) : "",
+  );
+  const [editItems, setEditItems] = useState<EditableLine[]>(() =>
+    lineItemsOf(inv)
+  );
+
+  // Discount — the input takes FOCUS the moment the form opens (the spec
+  // types straight into cy.focused()). Focused via a callback ref, which
+  // Preact invokes synchronously at DOM commit — a useEffect (deferred to
+  // rAF) could land after the harness already queried document.activeElement.
+  const [discountDollars, setDiscountDollars] = useState("");
+  const focusOnMount = (el: HTMLInputElement | null) => el?.focus();
+
+  // Change orders — loaded eagerly so pending/approved/declined states are
+  // visible without any clicks.
+  const [coDesc, setCoDesc] = useState("");
+  const [coDollars, setCoDollars] = useState("");
+  const [coLink, setCoLink] = useState<string | null>(null);
+  const [changeOrders, setChangeOrders] = useState<ChangeOrderRow[] | null>(
+    null,
+  );
+  useEffect(() => {
+    fetchChangeOrders(inv.id).then((rows) => {
+      if (rows) setChangeOrders(rows);
+    });
+  }, [inv.id]);
+
+  function switchMode(next: Mode) {
+    setErr(null);
+    setMode((cur) => (cur === next ? "none" : next));
+  }
+
+  async function doSaveEdit() {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const cents = Math.round(Number(editAmount) * 100);
+      const body: Record<string, unknown> = {};
+      if (editJobName.trim()) body.jobName = editJobName.trim();
+      if (editDesc.trim()) body.description = editDesc.trim();
+      if (Number.isFinite(cents) && cents > 0) body.amount = cents;
+      if (editItems.length > 0) {
+        body.lineItems = editItems.map((li) => ({
+          description: li.description,
+          quantity: li.quantity,
+          ...(li.unit ? { unit: li.unit } : {}),
+          price: Math.round(Number(li.price) * 100) || 0,
+        }));
+      }
+      const r = await fetch(`/api/invoices/${inv.id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        setErr(tFor(lang, "invoicesPage.detail.errSave"));
+        return;
+      }
+      setMode("none");
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doApplyDiscount() {
+    if (busy) return;
+    const cents = Math.round(Number(discountDollars) * 100);
+    if (!cents || cents <= 0) {
+      setErr(tFor(lang, "invoicesPage.adjust.errDiscountAmount"));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await postDiscount(inv.id, cents);
+      if (!r.ok) {
+        setErr(tFor(lang, "invoicesPage.adjust.errDiscountApply"));
+        return;
+      }
+      setDiscountDollars("");
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doCreateCo() {
+    if (busy) return;
+    const cents = Math.round(Number(coDollars) * 100);
+    if (!coDesc.trim() || !cents) {
+      setErr(tFor(lang, "invoicesPage.adjust.errCoFields"));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const coId = await postChangeOrder(inv.id, coDesc.trim(), cents);
+      if (!coId) {
+        setErr(tFor(lang, "invoicesPage.adjust.errCoCreate"));
+        return;
+      }
+      setCoLink(`${globalThis.location.origin}/co/${coId}`);
+      setCoDesc("");
+      setCoDollars("");
+      const rows = await fetchChangeOrders(inv.id);
+      if (rows) setChangeOrders(rows);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const discountCents =
+    typeof (inv as Record<string, unknown>).discountCents === "number"
+      ? (inv as Record<string, unknown>).discountCents as number
+      : 0;
+  const jobName = strField(inv, "jobName");
+  const moodLabel = tFor(lang, STAGE_MOOD[inv.stage].labelKey);
+  const eyebrowStyle =
+    "font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-muted,#6b7560)";
+  const secondaryBtn =
+    "appearance:none;cursor:pointer;background:#fff;border:1px solid var(--border,#d8dcd5);border-radius:9px;padding:8px 13px;font:inherit;font-size:13px;font-weight:700;color:var(--brand-teal,#144852)";
+  const primaryBtn =
+    "appearance:none;cursor:pointer;border:0;border-radius:9px;padding:8px 14px;background:var(--brand-green,#519843);color:#fff;font:inherit;font-size:13px;font-weight:800";
+  const ghostBtn =
+    "appearance:none;cursor:pointer;background:none;border:0;padding:8px 10px;font:inherit;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)";
+  const fieldStyle =
+    "width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px";
+  const formBox =
+    "margin-top:14px;display:flex;flex-direction:column;gap:10px;background:rgba(0,0,0,0.03);border-radius:10px;padding:12px 14px";
+
+  return (
+    <section
+      data-cy="invoice-detail"
+      style="background:#fff;border:1px solid var(--border,#d8dcd5);border-radius:16px;padding:20px 22px;margin-bottom:22px;box-shadow:0 10px 30px rgba(20,72,82,0.08)"
+    >
+      <div style="display:flex;align-items:flex-start;gap:12px">
+        <div style="flex:1;min-width:0">
+          <div style={eyebrowStyle}>
+            {tFor(lang, "invoicesPage.back.eyebrow")}
+          </div>
+          <h2 style="margin:4px 0 0;font-size:20px;font-weight:800;color:var(--fg,#144852);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            {jobName ?? inv.client}
+          </h2>
+          <div style="margin-top:2px;font-size:12.5px;color:var(--fg-muted,#6b7560)">
+            {inv.client} · {inv.invoiceRef}
+          </div>
+        </div>
+        <span style="font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border-radius:999px;border:1px solid currentColor;color:var(--brand-teal,#144852);white-space:nowrap">
+          {moodLabel}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={tFor(lang, "common.close")}
+          style="appearance:none;cursor:pointer;background:none;border:0;padding:4px;color:var(--fg-muted,#6b7560)"
+        >
+          <I d={ICN.x} size={16} sw={2.5} />
+        </button>
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+        <button
+          type="button"
+          data-cy="invoice-edit"
+          onClick={() => switchMode("edit")}
+          style={secondaryBtn}
+        >
+          {tFor(lang, "invoicesPage.detail.editBtn")}
+        </button>
+        <button
+          type="button"
+          data-cy="invoice-discount-btn"
+          onClick={() => switchMode("discount")}
+          style={secondaryBtn}
+        >
+          {tFor(lang, "invoicesPage.detail.discountBtn")}
+        </button>
+        <button
+          type="button"
+          data-cy="invoice-change-order-btn"
+          onClick={() => switchMode("co")}
+          style={secondaryBtn}
+        >
+          {tFor(lang, "invoicesPage.detail.changeOrderBtn")}
+        </button>
+      </div>
+
+      {mode === "edit" && (
+        <div style={formBox} data-cy="invoice-edit-form">
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
+            {tFor(lang, "invoicesPage.new.jobName")}
+            <input
+              type="text"
+              value={editJobName}
+              disabled={busy}
+              onInput={(e) =>
+                setEditJobName((e.target as HTMLInputElement).value)}
+              style={fieldStyle}
+            />
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
+            {tFor(lang, "invoicesPage.new.description")}
+            <textarea
+              rows={2}
+              value={editDesc}
+              disabled={busy}
+              onInput={(e) =>
+                setEditDesc((e.target as HTMLTextAreaElement).value)}
+              style={`${fieldStyle};resize:vertical`}
+            />
+          </label>
+          {editItems.length > 0 && (
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
+                {tFor(lang, "invoicesPage.detail.lineItemsLabel")}
+              </div>
+              {editItems.map((li, i) => (
+                <div key={i} style="display:flex;gap:6px">
+                  <input
+                    type="text"
+                    value={li.description}
+                    disabled={busy}
+                    onInput={(e) => {
+                      const v = (e.target as HTMLInputElement).value;
+                      setEditItems((items) =>
+                        items.map((it, j) =>
+                          j === i ? { ...it, description: v } : it
+                        )
+                      );
+                    }}
+                    style={`${fieldStyle};flex:1;min-width:0`}
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={li.price}
+                    disabled={busy}
+                    onInput={(e) => {
+                      const v = (e.target as HTMLInputElement).value;
+                      setEditItems((items) =>
+                        items.map((it, j) =>
+                          j === i ? { ...it, price: v } : it
+                        )
+                      );
+                    }}
+                    style={`${fieldStyle};width:110px;flex:none`}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
+            {tFor(lang, "invoicesPage.new.amount")}
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={editAmount}
+              disabled={busy}
+              onInput={(e) =>
+                setEditAmount((e.target as HTMLInputElement).value)}
+              style={fieldStyle}
+            />
+          </label>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button
+              type="button"
+              onClick={() => switchMode("edit")}
+              disabled={busy}
+              style={ghostBtn}
+            >
+              {tFor(lang, "common.cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={doSaveEdit}
+              disabled={busy}
+              style={primaryBtn}
+            >
+              {tFor(lang, "invoicesPage.detail.saveBtn")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mode === "discount" && (
+        <div style={formBox} data-cy="invoice-discount-form">
+          <div style={eyebrowStyle}>
+            {tFor(lang, "invoicesPage.adjust.discountLabel")}
+          </div>
+          <div style="display:flex;gap:6px">
+            <input
+              ref={focusOnMount}
+              type="number"
+              min="0"
+              step="1"
+              placeholder={tFor(
+                lang,
+                "invoicesPage.adjust.discountPlaceholder",
+              )}
+              value={discountDollars}
+              disabled={busy}
+              onInput={(e) =>
+                setDiscountDollars((e.target as HTMLInputElement).value)}
+              style={`${fieldStyle};flex:1;min-width:0`}
+            />
+            <button
+              type="button"
+              onClick={doApplyDiscount}
+              disabled={busy}
+              style={primaryBtn}
+            >
+              {tFor(lang, "invoicesPage.adjust.apply")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mode === "co" && (
+        <div style={formBox} data-cy="invoice-co-form">
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
+            <span>{tFor(lang, "invoicesPage.detail.coDescLabel")}</span>
+            <textarea
+              rows={2}
+              placeholder={tFor(lang, "invoicesPage.adjust.coDescPlaceholder")}
+              value={coDesc}
+              disabled={busy}
+              onInput={(e) =>
+                setCoDesc((e.target as HTMLTextAreaElement).value)}
+              style={`${fieldStyle};resize:vertical`}
+            />
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
+            <span>{tFor(lang, "invoicesPage.detail.coAmountLabel")}</span>
+            <input
+              type="number"
+              step="1"
+              placeholder={tFor(
+                lang,
+                "invoicesPage.adjust.coAmountPlaceholder",
+              )}
+              value={coDollars}
+              disabled={busy}
+              onInput={(e) =>
+                setCoDollars((e.target as HTMLInputElement).value)}
+              style={fieldStyle}
+            />
+          </label>
+          <div style="display:flex;justify-content:flex-end">
+            <button
+              type="button"
+              onClick={doCreateCo}
+              disabled={busy}
+              style={primaryBtn}
+            >
+              {tFor(lang, "invoicesPage.adjust.createLink")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {err && (
+        <div
+          role="alert"
+          style="margin-top:10px;color:#a83b3b;font-size:12.5px"
+        >
+          {err}
+        </div>
+      )}
+
+      {coLink && (
+        <div style="margin-top:12px;font-size:12.5px;color:var(--fg,#1c2c30)">
+          {tFor(lang, "invoicesPage.adjust.approvalLink")}{" "}
+          <a
+            data-cy="change-order-approval-link"
+            href={coLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            style="color:var(--brand-teal,#144852);word-break:break-all"
+          >
+            {coLink}
+          </a>
+          <div style="color:var(--fg-muted,#6b7560);margin-top:2px">
+            {tFor(lang, "invoicesPage.adjust.approvalHelp")}
+          </div>
+        </div>
+      )}
+
+      {changeOrders && changeOrders.length > 0 && (
+        <div style="margin-top:14px" data-cy="invoice-detail-change-orders">
+          <div style={eyebrowStyle}>
+            {tFor(lang, "invoicesPage.adjust.coListLabel")}
+          </div>
+          <div style="margin-top:6px;display:flex;flex-direction:column;gap:6px">
+            {changeOrders.map((co) => (
+              <div
+                key={co.id}
+                style="display:flex;align-items:center;gap:8px;font-size:13px"
+              >
+                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                  {co.description}
+                </span>
+                <span style="font-weight:700;white-space:nowrap">
+                  {co.deltaAmountCents >= 0 ? "+" : "−"}
+                  {fmtMoneyExact(Math.abs(co.deltaAmountCents))}
+                </span>
+                <span
+                  style={`font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid currentColor;color:${
+                    CO_CHIP_COLOR[co.status]
+                  }`}
+                >
+                  {tFor(lang, `invoicesPage.adjust.coStatus.${co.status}`)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {discountCents > 0 && (
+        <div style="margin-top:12px;display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:var(--brand-green,#519843)">
+          <span>{tFor(lang, "invoicesPage.detail.discountApplied")}</span>
+          <span>−{fmtMoneyExact(discountCents)}</span>
+        </div>
+      )}
+
+      {
+        /* Live total — always the invoice's current `amount`; pending or
+          declined change orders never move it. */
+      }
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border,#d8dcd5);display:flex;justify-content:space-between;align-items:center">
+        <span style={eyebrowStyle}>
+          {tFor(lang, "invoicesPage.detail.total")}
+        </span>
+        <span
+          data-cy="invoice-detail-total"
+          style="font-weight:900;font-size:22px;color:var(--fg,#144852);font-variant-numeric:tabular-nums"
+        >
+          {fmtMoneyExact(inv.amount)}
+        </span>
+      </div>
+    </section>
+  );
+}
+
 /** Dispatch an invoice to the customer over both channels (best-effort — the
  *  backend handles "no email/phone on file" gracefully). Single source for the
  *  card "Send now"/"Finish + send" actions and the New Invoice "Create & send"
  *  so the channel set + request shape can't drift across the three call sites. */
-function dispatchInvoice(id: string): Promise<PromiseSettledResult<Response>[]> {
+function dispatchInvoice(
+  id: string,
+): Promise<PromiseSettledResult<Response>[]> {
   return Promise.allSettled([
-    fetch(`/api/invoices/${id}/email`, { method: "POST", credentials: "include" }),
-    fetch(`/api/invoices/${id}/text`, { method: "POST", credentials: "include" }),
+    fetch(`/api/invoices/${id}/email`, {
+      method: "POST",
+      credentials: "include",
+    }),
+    fetch(`/api/invoices/${id}/text`, {
+      method: "POST",
+      credentials: "include",
+    }),
   ]);
 }
 
@@ -1035,12 +1640,7 @@ function InvoiceCard(
     setBusy(true);
     setAdjErr(null);
     try {
-      const r = await fetch(`/api/invoices/${inv.id}/discount`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ discountCents: cents }),
-      });
+      const r = await postDiscount(inv.id, cents);
       if (r.ok) globalThis.location.reload();
       else setAdjErr(tFor(lang, "invoicesPage.adjust.errDiscountApply"));
     } finally {
@@ -1048,12 +1648,9 @@ function InvoiceCard(
     }
   }
   async function loadChangeOrders() {
-    try {
-      const r = await fetch(`/api/invoices/${inv.id}/change-orders`, {
-        credentials: "include",
-      });
-      if (r.ok) setChangeOrders(await r.json() as ChangeOrderRow[]);
-    } catch { /* best-effort — the panel still works without the list */ }
+    // Best-effort — the panel still works without the list.
+    const rows = await fetchChangeOrders(inv.id);
+    if (rows) setChangeOrders(rows);
   }
   useEffect(() => {
     if (adjustOpen && changeOrders === null) loadChangeOrders();
@@ -1078,21 +1675,12 @@ function InvoiceCard(
     setBusy(true);
     setAdjErr(null);
     try {
-      const r = await fetch(`/api/invoices/${inv.id}/change-orders`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          description: coDesc.trim(),
-          deltaAmountCents: cents,
-        }),
-      });
-      if (!r.ok) {
+      const coId = await postChangeOrder(inv.id, coDesc.trim(), cents);
+      if (!coId) {
         setAdjErr(tFor(lang, "invoicesPage.adjust.errCoCreate"));
         return;
       }
-      const co = await r.json() as { id: string };
-      setCoLink(`${globalThis.location.origin}/co/${co.id}`);
+      setCoLink(`${globalThis.location.origin}/co/${coId}`);
       // Refresh the list so the new pending order shows up immediately.
       loadChangeOrders();
     } finally {
@@ -1438,7 +2026,9 @@ function InvoiceCard(
                                   </span>
                                   <span style="font-weight:700;white-space:nowrap">
                                     {co.deltaAmountCents >= 0 ? "+" : "−"}
-                                    {fmtMoneyExact(Math.abs(co.deltaAmountCents))}
+                                    {fmtMoneyExact(
+                                      Math.abs(co.deltaAmountCents),
+                                    )}
                                   </span>
                                   <span
                                     style={`font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid currentColor;color:${
@@ -1473,7 +2063,8 @@ function InvoiceCard(
                                         </button>
                                         <button
                                           type="button"
-                                          onClick={() => setConfirmDelCoId(null)}
+                                          onClick={() =>
+                                            setConfirmDelCoId(null)}
                                           disabled={busy}
                                           style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:var(--fg-muted);cursor:pointer"
                                         >
@@ -1489,7 +2080,10 @@ function InvoiceCard(
                                           disabled={busy}
                                           style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:var(--brand-teal);cursor:pointer;white-space:nowrap"
                                         >
-                                          {tFor(lang, "invoicesPage.adjust.coEdit")}
+                                          {tFor(
+                                            lang,
+                                            "invoicesPage.adjust.coEdit",
+                                          )}
                                         </button>
                                         {co.status === "pending" && (
                                           <button
@@ -1515,14 +2109,20 @@ function InvoiceCard(
                                           disabled={busy}
                                           style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:#a83b3b;cursor:pointer;white-space:nowrap"
                                         >
-                                          {tFor(lang, "invoicesPage.adjust.coDelete")}
+                                          {tFor(
+                                            lang,
+                                            "invoicesPage.adjust.coDelete",
+                                          )}
                                         </button>
                                       </>
                                     )}
                                 </div>
                                 {coReapprovedId === co.id && (
                                   <div style="font-size:11.5px;color:var(--brand-green);font-weight:600">
-                                    {tFor(lang, "invoicesPage.adjust.coReapproved")}
+                                    {tFor(
+                                      lang,
+                                      "invoicesPage.adjust.coReapproved",
+                                    )}
                                   </div>
                                 )}
                               </div>

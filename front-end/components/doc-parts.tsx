@@ -11,7 +11,10 @@
  * feature brief: "all the information as the agreement, minus the 1–14 Terms
  * clauses and the signature block."
  */
-import { computePaymentSplit, type MilestoneRole } from "../lib/payment-split.ts";
+import {
+  computePaymentSplit,
+  type MilestoneRole,
+} from "../lib/payment-split.ts";
 import {
   detailLines,
   fmtMoneyExact,
@@ -368,6 +371,10 @@ export function JobDetailsSection(props: {
   description?: string;
   items: LineItem[];
   total: number;
+  /** Render the DESCRIPTION/AMOUNT table even for a single line item.
+   *  The agreement (deck p12) always carries the line-item table; the
+   *  invoice keeps the >1 gate (a single line just repeats the total). */
+  forceTable?: boolean;
   labels: {
     tableDescription: string;
     tableQty: string;
@@ -406,7 +413,7 @@ export function JobDetailsSection(props: {
             {lines[0]}
           </p>
         )}
-      {items.length > 1 && (
+      {(items.length > 1 || (props.forceTable && items.length > 0)) && (
         <table style="width:100%;border-collapse:collapse;margin-top:14px">
           <thead>
             <tr>
@@ -537,15 +544,26 @@ export function TermGrid(props: {
   terms?: Term[];
   contractorState?: string;
   lang: Lang;
-  labels: { start: string; estCompletion: string; termLabels: Record<string, string> };
+  /** Shown as the Start value when no startDate was captured (the agreement
+   *  always shows a Start row — deck p12 Terms anatomy). Omit to hide the
+   *  row entirely when startDate is absent (invoice behavior). */
+  startFallback?: string;
+  labels: {
+    start: string;
+    estCompletion: string;
+    termLabels: Record<string, string>;
+  };
 }) {
   return (
     <div
       class="ctr__terms-grid"
       style="display:grid;grid-template-columns:1fr 1fr;gap:12px"
     >
-      {props.startDate && (
-        <KV k={props.labels.start} v={fmtDate(props.startDate)} />
+      {(props.startDate || props.startFallback) && (
+        <KV
+          k={props.labels.start}
+          v={props.startDate ? fmtDate(props.startDate) : props.startFallback!}
+        />
       )}
       {props.estimatedCompletionDate && (
         <KV

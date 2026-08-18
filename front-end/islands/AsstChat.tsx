@@ -554,6 +554,26 @@ export default function AsstChat({
     { optionId: string; bulletId: string } | null
   >(null);
   const [proBusy, setProBusy] = useState(false);
+  /** "Write it myself" editor on the job-details step (roadmap p.5): the
+   *  contractor types the scope one item per line, then can ask Bossie to
+   *  "Professionalize that" — the polished items come back as a PROPOSAL
+   *  they accept / edit-in-place / discard before anything is applied. */
+  const [writeMyselfOpen, setWriteMyselfOpen] = useState(false);
+  /** Whether the editor textarea currently has content (gates the
+   *  Professionalize button without re-rendering on every keystroke). */
+  const [wmHasText, setWmHasText] = useState(false);
+  /** The professionalized items proposed by the backend — NOT yet applied
+   *  to the user's textarea (they accept/edit first). */
+  const [wmProposal, setWmProposal] = useState<string[] | null>(null);
+  /** True while the proposal is editable in place (Edit was clicked). */
+  const [wmEditingProposal, setWmEditingProposal] = useState(false);
+  const [wmBusy, setWmBusy] = useState(false);
+  const [wmError, setWmError] = useState<string | undefined>(undefined);
+  /** Uncontrolled editor value (same pattern as customDraftRef — typing must
+   *  not re-render this whole island). */
+  const wmDraftRef = useRef<string>("");
+  const wmTaRef = useRef<HTMLTextAreaElement | null>(null);
+  const wmProposalTaRef = useRef<HTMLTextAreaElement | null>(null);
   /** In-flight options generation, kicked off the moment the user submits
    *  the raw job-details bubble so the LLM runs while they type the price. */
   const optionsInFlightRef = useRef<
@@ -824,6 +844,9 @@ export default function AsstChat({
   const levelRafRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  /** Wraps the price-capture MoneyInput so [data-cy=pricing-option-custom]
+   *  can focus its (visually hidden) input without reaching into MoneyInput. */
+  const moneyBoxRef = useRef<HTMLDivElement | null>(null);
 
   // ── Assistant history stack ──────────────────────────────────────
   // Snapshots of UI-only state pushed before every user-initiated
@@ -836,6 +859,7 @@ export default function AsstChat({
     pendingPriceCents: number | null;
     priceCents: number | null;
     jobOptionsOpen: boolean;
+    writeMyselfOpen: boolean;
   }
   const historyStackRef = useRef<ViewSnapshot[]>([]);
 
@@ -848,6 +872,7 @@ export default function AsstChat({
       pendingPriceCents,
       priceCents,
       jobOptionsOpen,
+      writeMyselfOpen,
     });
   }
 
@@ -861,6 +886,7 @@ export default function AsstChat({
     setPendingPriceCents(snap.pendingPriceCents);
     setPriceCents(snap.priceCents);
     setJobOptionsOpen(snap.jobOptionsOpen);
+    setWriteMyselfOpen(snap.writeMyselfOpen);
   }
 
   // The universal back button (ChatHeaderLive) dispatches `pm:asst-back`;
@@ -1024,6 +1050,36 @@ export default function AsstChat({
     globalThis.history.replaceState({}, "", url.toString());
     // Focus on next paint so the composer expands and the user can edit/send.
     queueMicrotask(() => taRef.current?.focus());
+  }, []);
+
+  // /assistant?c=<conversationId> deep link: open THAT conversation in place.
+  // The /assistant route SSRs with no thread bound, so we hydrate the target
+  // conversation client-side. Once loaded, the universal back behaves exactly
+  // as on /assistant/<id>: rewind an active wizard step → pop history →
+  // (terminal / nothing left) exit to /dashboard.
+  useEffect(() => {
+    if (typeof globalThis.window === "undefined") return;
+    if (conversationId) return; // the route already bound a conversation
+    const target = new URL(globalThis.location.href).searchParams.get("c");
+    if (!target) return;
+    let cancelled = false;
+    assistantClient
+      .conversation(target)
+      .then((detail) => {
+        if (cancelled) return;
+        setConvoId(target);
+        if (Array.isArray(detail.messages)) setMessages(detail.messages);
+        if (detail.customer) setCustomer(detail.customer);
+        if (detail.contract) setContract(detail.contract);
+        const qId =
+          (detail.conversation as { quoteId?: string } | undefined)?.quoteId ??
+            (detail.contract as { quoteId?: string } | undefined)?.quoteId;
+        if (qId) setQuoteId(qId);
+      })
+      .catch(() => {/* stay on the empty state — back still exits */});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // #27 — subscribe to the shared dash cache so the empty-state chip
@@ -2034,6 +2090,137 @@ export default function AsstChat({
     }
   }
 
+  /**
+   * In-flow step back ([data-cy=wizard-back], roadmap p.2/p.8): steps back
+   * exactly ONE view using the same snapshots the universal back pops. When
+   * the landing view is the job-details step, the composer is PREFILLED with
+   * the previously typed details so they're editable — not blanked — and
+   * re-sending regenerates the flow with the edits.
+   */
+  function wizardStepBack() {
+    // "Help me price it": pricing came AFTER the confirm step — back reopens
+    // the confirm picker instead of dumping to the start screen.
+    if (priceCaptureOpen && suggestPricing && confirmedOptionRef.current) {
+      setPriceCaptureOpen(false);
+      setPriceCents(null);
+      setPriceSuggestions(null);
+      setPickerMode("confirm");
+      setJobOptionsOpen(true);
+      return;
+    }
+    const prevDetails = pendingJobDetailsRaw ?? submittedJobDetails ?? "";
+    const landing =
+      historyStackRef.current[historyStackRef.current.length - 1];
+    if (landing) {
+      popHistory();
+      if (landing.awaitingJobDetails && prevDetails) {
+        setDraft(prevDetails);
+        requestAnimationFrame(() => {
+          taRef.current?.focus();
+          autosize();
+        });
+      }
+      return;
+    }
+    // No snapshot to pop (deep-linked mid-flow) — close the capture back to
+    // the empty-state prompts, mirroring the old inline reset.
+    setPriceCaptureOpen(false);
+    setPriceCents(null);
+    setSuggestPricing(false);
+    setPriceSuggestions(null);
+  }
+
+  /** Opens the "Write it myself" details editor on the job-details step. */
+  function openWriteMyself() {
+    pushHistory();
+    setWriteMyselfOpen(true);
+    setWmError(undefined);
+    setWmProposal(null);
+    setWmEditingProposal(false);
+    setWmHasText(wmDraftRef.current.trim().length > 0);
+    requestAnimationFrame(() => wmTaRef.current?.focus());
+  }
+
+  /**
+   * "Professionalize that" (roadmap p.5): sends the editor's raw lines to
+   * POST /agents/job-details/professionalize ({details} → {items}) and shows
+   * the polished items as a proposal WITHOUT touching the user's textarea.
+   */
+  async function professionalizeWmDetails() {
+    if (wmBusy) return;
+    const details = (wmTaRef.current?.value ?? wmDraftRef.current).trim();
+    if (!details) return;
+    setWmError(undefined);
+    setWmBusy(true);
+    try {
+      const res = await api.post<{ items?: string[] }>(
+        "/agents/job-details/professionalize",
+        { details },
+      );
+      const items = (res?.items ?? [])
+        .map((s) => String(s).trim())
+        .filter((s) => s.length > 0);
+      if (items.length === 0) {
+        throw new Error(tFor(lang, "asstChat.writeSelf.error"));
+      }
+      setWmProposal(items);
+      setWmEditingProposal(false);
+    } catch (err) {
+      setWmError(
+        err instanceof Error && err.message
+          ? err.message
+          : tFor(lang, "asstChat.writeSelf.error"),
+      );
+    } finally {
+      setWmBusy(false);
+    }
+  }
+
+  /** Makes the proposal editable in place, focused with the caret at the end
+   *  so appended lines land after the proposed items. The trigger button is
+   *  blurred synchronously so focus unambiguously belongs to the editor once
+   *  it mounts (nothing else holds focus in between). */
+  function editWmProposal(trigger?: HTMLElement | null) {
+    trigger?.blur();
+    setWmEditingProposal(true);
+    requestAnimationFrame(() => {
+      const ta = wmProposalTaRef.current;
+      if (!ta) return;
+      ta.focus();
+      const len = ta.value.length;
+      try {
+        ta.setSelectionRange(len, len);
+      } catch { /* selection unsupported — focus is enough */ }
+    });
+  }
+
+  /** Applies the (possibly edited) proposal to the editor textarea and
+   *  clears the proposal UI. */
+  function acceptWmProposal() {
+    const source = wmEditingProposal
+      ? (wmProposalTaRef.current?.value ?? "")
+      : (wmProposal ?? []).join("\n");
+    const text = source
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .join("\n");
+    setWmProposal(null);
+    setWmEditingProposal(false);
+    if (!text) return;
+    wmDraftRef.current = text;
+    if (wmTaRef.current) wmTaRef.current.value = text;
+    setWmHasText(true);
+  }
+
+  /** Continue out of the editor: the typed items become the job details and
+   *  the flow proceeds exactly like a composer submission. */
+  function useWmDetails() {
+    const raw = (wmTaRef.current?.value ?? wmDraftRef.current).trim();
+    if (!raw) return;
+    submitJobDetails(raw);
+  }
+
   async function seedPhase2() {
     if (sending) return;
     setError(undefined);
@@ -2581,6 +2768,7 @@ export default function AsstChat({
           email?: string;
           phoneNumber?: string;
           isBusiness?: boolean;
+          businessName?: string;
         };
       };
     },
@@ -2606,6 +2794,7 @@ export default function AsstChat({
           email?: string;
           phoneNumber?: string;
           isBusiness?: boolean;
+          businessName?: string;
         };
       };
       followUpValues?: Record<string, string | number>;
@@ -2751,6 +2940,7 @@ export default function AsstChat({
           email?: string;
           phoneNumber?: string;
           isBusiness?: boolean;
+          businessName?: string;
         };
       };
     },
@@ -2773,6 +2963,7 @@ export default function AsstChat({
           name: c.name,
           ...(c.phoneNumber ? { phoneNumber: c.phoneNumber } : {}),
           ...(c.email ? { email: c.email } : {}),
+          ...(c.businessName ? { businessName: c.businessName } : {}),
         });
         customerId = created.id;
         custEmail = created.email;
@@ -3206,6 +3397,7 @@ export default function AsstChat({
                       }
                       <button
                         type="button"
+                        data-cy="wizard-back"
                         class="chat__price-back"
                         onClick={() => {
                           if (pickerMode === "confirm") {
@@ -3538,22 +3730,50 @@ export default function AsstChat({
                                 )}
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            class="chat__price-continue"
-                            disabled={!selectedOptionId || sending}
-                            onClick={applyJobOption}
-                          >
-                            {sending
-                              ? (
-                                <>
-                                  <span class="spinner" aria-hidden="true" />
-                                  {" "}
-                                  {tFor(lang, "asstChat.settingUp")}
-                                </>
-                              )
-                              : tFor(lang, "asstChat.continue")}
-                          </button>
+                          {pickerMode === "confirm"
+                            ? (
+                              /* Roadmap p.16: explicit confirm-details step —
+                                 shows the collected details and confirms on
+                                 click, advancing to the pricing options. */
+                              <button
+                                type="button"
+                                data-cy="confirm-details"
+                                class="chat__confirm-details"
+                                disabled={sending}
+                                onClick={applyJobOption}
+                              >
+                                <span class="chat__confirm-details-label">
+                                  {sending
+                                    ? tFor(lang, "asstChat.settingUp")
+                                    : tFor(lang, "asstChat.confirmDetails.cta")}
+                                </span>
+                                {pendingJobDetailsRaw
+                                  ? (
+                                    <span class="chat__confirm-details-text">
+                                      {pendingJobDetailsRaw}
+                                    </span>
+                                  )
+                                  : null}
+                              </button>
+                            )
+                            : (
+                              <button
+                                type="button"
+                                class="chat__price-continue"
+                                disabled={!selectedOptionId || sending}
+                                onClick={applyJobOption}
+                              >
+                                {sending
+                                  ? (
+                                    <>
+                                      <span class="spinner" aria-hidden="true" />
+                                      {" "}
+                                      {tFor(lang, "asstChat.settingUp")}
+                                    </>
+                                  )
+                                  : tFor(lang, "asstChat.continue")}
+                              </button>
+                            )}
                         </>
                       )}
                     {proPopup
@@ -3612,6 +3832,155 @@ export default function AsstChat({
                         </span>
                       </div>
                     </div>
+                    {/* Roadmap p.5: "Write it myself" — a structured editor
+                        (one item per line) with the "Professionalize that"
+                        accept/edit proposal loop. */}
+                    {!submittedJobDetails && !writeMyselfOpen
+                      ? (
+                        <button
+                          type="button"
+                          class="chat__details-writeself"
+                          onClick={openWriteMyself}
+                        >
+                          ✎ {tFor(lang, "asstChat.jobOpts.customTitle")}
+                        </button>
+                      )
+                      : null}
+                    {!submittedJobDetails && writeMyselfOpen
+                      ? (
+                        <div class="chat__writeself">
+                          <div class="chat__writeself-head">
+                            <h4 class="chat__writeself-title">
+                              {tFor(lang, "asstChat.jobOpts.customTitle")}
+                            </h4>
+                            <p class="chat__writeself-sub">
+                              {tFor(lang, "asstChat.writeSelf.hint")}
+                            </p>
+                          </div>
+                          <textarea
+                            ref={wmTaRef}
+                            class="chat__writeself-input"
+                            rows={5}
+                            placeholder={tFor(
+                              lang,
+                              "asstChat.jobOpts.customPlaceholder",
+                            )}
+                            defaultValue={wmDraftRef.current}
+                            onInput={(e) => {
+                              const v =
+                                (e.currentTarget as HTMLTextAreaElement).value;
+                              wmDraftRef.current = v;
+                              const has = v.trim().length > 0;
+                              if (has !== wmHasText) setWmHasText(has);
+                            }}
+                          />
+                          {wmError
+                            ? <div class="chat__writeself-err">{wmError}</div>
+                            : null}
+                          {wmProposal
+                            ? (
+                              <div class="chat__writeself-proposal">
+                                <div class="chat__writeself-proposal-label">
+                                  {tFor(lang, "asstChat.writeSelf.proposalLabel")}
+                                </div>
+                                {wmEditingProposal
+                                  ? (
+                                    <textarea
+                                      ref={wmProposalTaRef}
+                                      data-cy="professionalize-proposal"
+                                      class="chat__writeself-proposal-edit"
+                                      rows={Math.max(3, wmProposal.length + 2)}
+                                      defaultValue={wmProposal.join("\n")}
+                                    />
+                                  )
+                                  : (
+                                    <div
+                                      data-cy="professionalize-proposal"
+                                      class="chat__writeself-proposal-text"
+                                    >
+                                      {wmProposal.join("\n")}
+                                    </div>
+                                  )}
+                                <div class="chat__writeself-proposal-actions">
+                                  <button
+                                    type="button"
+                                    data-cy="professionalize-accept"
+                                    class="chat__writeself-accept"
+                                    onClick={acceptWmProposal}
+                                  >
+                                    {tFor(lang, "asstChat.writeSelf.accept")}
+                                  </button>
+                                  {!wmEditingProposal
+                                    ? (
+                                      <button
+                                        type="button"
+                                        data-cy="professionalize-edit"
+                                        class="chat__writeself-editbtn"
+                                        onClick={(e) =>
+                                          editWmProposal(
+                                            e.currentTarget as HTMLElement,
+                                          )}
+                                      >
+                                        {tFor(lang, "common.edit")}
+                                      </button>
+                                    )
+                                    : null}
+                                  <button
+                                    type="button"
+                                    class="chat__writeself-dismiss"
+                                    onClick={() => {
+                                      setWmProposal(null);
+                                      setWmEditingProposal(false);
+                                    }}
+                                  >
+                                    {tFor(lang, "common.cancel")}
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                            : null}
+                          <div class="chat__writeself-actions">
+                            {wmHasText && !wmProposal
+                              ? (
+                                <button
+                                  type="button"
+                                  data-cy="professionalize-btn"
+                                  class="chat__writeself-pro"
+                                  disabled={wmBusy}
+                                  onClick={professionalizeWmDetails}
+                                >
+                                  {wmBusy
+                                    ? (
+                                      <>
+                                        <span
+                                          class="spinner"
+                                          aria-hidden="true"
+                                        />{" "}
+                                        {tFor(
+                                          lang,
+                                          "asstChat.writeSelf.professionalizing",
+                                        )}
+                                      </>
+                                    )
+                                    : tFor(
+                                      lang,
+                                      "asstChat.writeSelf.professionalize",
+                                    )}
+                                </button>
+                              )
+                              : null}
+                            <button
+                              type="button"
+                              class="chat__price-continue"
+                              disabled={!wmHasText || wmBusy || sending}
+                              onClick={useWmDetails}
+                            >
+                              {tFor(lang, "asstChat.continue")}
+                            </button>
+                          </div>
+                        </div>
+                      )
+                      : null}
                     {submittedJobDetails
                       ? (
                         <>
@@ -3750,6 +4119,7 @@ export default function AsstChat({
                     <div class="chat__price-capture-head">
                       <button
                         type="button"
+                        data-cy="wizard-back"
                         class="chat__price-back"
                         onClick={() => {
                           setInvoiceCustomerOpen(false);
@@ -3790,25 +4160,10 @@ export default function AsstChat({
                     <div class="chat__price-capture-head">
                       <button
                         type="button"
+                        data-cy="wizard-back"
                         class="chat__price-back"
-                        onClick={() => {
-                          // "Help me price it": pricing came AFTER the confirm
-                          // step (roadmap p.18) — Back reopens the confirm
-                          // picker instead of dumping to the start screen.
-                          if (suggestPricing && confirmedOptionRef.current) {
-                            setPriceCaptureOpen(false);
-                            setPriceCents(null);
-                            setPriceSuggestions(null);
-                            setPickerMode("confirm");
-                            setJobOptionsOpen(true);
-                            return;
-                          }
-                          setPriceCaptureOpen(false);
-                          setPriceCents(null);
-                          setSuggestPricing(false);
-                          setPriceSuggestions(null);
-                        }}
-                        aria-label={tFor(lang, "asstChat.price.backToPrompts")}
+                        onClick={wizardStepBack}
+                        aria-label={tFor(lang, "common.back")}
                       >
                         <svg
                           viewBox="0 0 16 16"
@@ -3838,6 +4193,21 @@ export default function AsstChat({
                           : tFor(lang, "asstChat.price.buildSub")}
                       </p>
                     </div>
+                    {/* Job-details recap: keeps the (possibly re-edited)
+                        details visible while pricing, so Back-and-edit runs
+                        visibly land on the regenerated flow (roadmap p.2). */}
+                    {pendingJobDetailsRaw
+                      ? (
+                        <div class="chat__price-details-recap">
+                          <span class="chat__price-details-recap-label">
+                            {tFor(lang, "asstChat.price.forJob")}
+                          </span>
+                          <span class="chat__price-details-recap-text">
+                            {pendingJobDetailsRaw}
+                          </span>
+                        </div>
+                      )
+                      : null}
                     {/* Roadmap p.10: three suggested tiers (+ custom input). */}
                     {suggestPricing && (
                       <div
@@ -3854,6 +4224,7 @@ export default function AsstChat({
                             <button
                               key={t.tier}
                               type="button"
+                              data-cy="pricing-option"
                               disabled={sending}
                               onClick={() => onPriceContinue(t.priceCents)}
                               style="display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:12px 14px;border:1px solid var(--border,#d8dcd5);border-radius:12px;background:#fff;cursor:pointer;font:inherit"
@@ -3875,19 +4246,35 @@ export default function AsstChat({
                               </span>
                             </button>
                           ))}
-                        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-muted,#6b7560);margin-top:4px">
+                        {/* 4th option (roadmap p.16): custom price — clicking
+                            focuses the MoneyInput below so the contractor can
+                            type their own number and press Enter. */}
+                        <button
+                          type="button"
+                          data-cy="pricing-option-custom"
+                          class="chat__price-custom-cta"
+                          disabled={sending}
+                          onClick={() => {
+                            const el = moneyBoxRef.current?.querySelector(
+                              "input",
+                            ) as HTMLInputElement | null;
+                            el?.focus();
+                          }}
+                        >
                           {tFor(lang, "asstChat.price.orCustom")}
-                        </div>
+                        </button>
                       </div>
                     )}
-                    <MoneyInput
-                      autoFocus={!suggestPricing}
-                      onChange={setPriceCents}
-                      onSubmit={(cents) => {
-                        if (sending) return;
-                        onPriceContinue(cents);
-                      }}
-                    />
+                    <div ref={moneyBoxRef}>
+                      <MoneyInput
+                        autoFocus={!suggestPricing}
+                        onChange={setPriceCents}
+                        onSubmit={(cents) => {
+                          if (sending) return;
+                          onPriceContinue(cents);
+                        }}
+                      />
+                    </div>
                     <button
                       type="button"
                       class="chat__price-continue"
@@ -5606,6 +5993,40 @@ export default function AsstChat({
                         <div class="wiz">
                           <div class="wiz__step">
                             {
+                              /* Step-level Back (roadmap p.2/p.8): every wizard
+                                step after Job Details carries a visible Back.
+                                It routes through the SAME universal resolver as
+                                the header button (pm:asst-back): rewind a step
+                                → pop an in-chat view → exit to /dashboard. */
+                            }
+                            <button
+                              type="button"
+                              data-cy="wizard-back"
+                              class="wiz__back"
+                              disabled={sending}
+                              onClick={() =>
+                                globalThis.dispatchEvent(
+                                  new CustomEvent("pm:asst-back"),
+                                )}
+                            >
+                              <svg
+                                viewBox="0 0 16 16"
+                                width="14"
+                                height="14"
+                                aria-hidden="true"
+                              >
+                                <path
+                                  d="M10 3L5 8l5 5"
+                                  stroke="currentColor"
+                                  stroke-width="2.2"
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round"
+                                  fill="none"
+                                />
+                              </svg>
+                              {tFor(lang, "common.back")}
+                            </button>
+                            {
                               /* No "Step N of 10" label: the flow has an
                                 unnumbered Job Details picker after the wizard,
                                 so numbering only the wizard steps read as
@@ -6485,6 +6906,7 @@ function CustomerStepPanel(props: {
           email?: string;
           phoneNumber?: string;
           isBusiness?: boolean;
+          businessName?: string;
         };
       };
     },
@@ -6522,6 +6944,9 @@ function CustomerStepPanel(props: {
   const [search, setSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [createName, setCreateName] = useState("");
+  /** Roadmap p.7: the "Who is this for?" step also collects a Business
+   *  Name. Optional — an empty value never blocks Next. */
+  const [createBusiness, setCreateBusiness] = useState("");
   const [createEmail, setCreateEmail] = useState("");
   const [createPhone, setCreatePhone] = useState("");
   const [localErr, setLocalErr] = useState<string | undefined>();
@@ -6532,7 +6957,12 @@ function CustomerStepPanel(props: {
     assistantClient
       .listCustomers()
       .then((list) => {
-        if (!cancelled) setCustomers(list);
+        if (!cancelled) {
+          setCustomers(list);
+          // Fresh users have nobody to pick — jump straight to the
+          // "Who is this for?" create form instead of an empty dropdown.
+          if (list.length === 0 && !boundCustomer) setView("form");
+        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -6628,6 +7058,22 @@ function CustomerStepPanel(props: {
             onInput={(e) => setCreateName((e.target as HTMLInputElement).value)}
             autoFocus
           />
+          <input
+            type="text"
+            data-cy="wizard-business-name"
+            class="cust-pick__search"
+            placeholder={tFor(
+              lang,
+              "asstChat.customerStep.businessNamePlaceholder",
+            )}
+            aria-label={tFor(
+              lang,
+              "asstChat.customerStep.businessNamePlaceholder",
+            )}
+            value={createBusiness}
+            onInput={(e) =>
+              setCreateBusiness((e.target as HTMLInputElement).value)}
+          />
           <div class="cust-create__row">
             <input
               type="tel"
@@ -6666,6 +7112,9 @@ function CustomerStepPanel(props: {
                         ? { phoneNumber: createPhone.trim() }
                         : {}),
                       isBusiness,
+                      ...(createBusiness.trim()
+                        ? { businessName: createBusiness.trim() }
+                        : {}),
                     },
                   },
                 })}
@@ -6689,9 +7138,15 @@ function CustomerStepPanel(props: {
   // ---- View: default — dropdown (kind already picked on the lock-quote CTA) ----
   return (
     <div ref={rootRef}>
+      {/* Lead with the step question ("Who is this for?") so the customer
+          step reads the same whether the user lands on the pick list or the
+          create form (roadmap p.7). */}
       <h3 class="wiz__step-q">
-        {tFor(lang, "asstChat.customerStep.pickTitle")}
+        {tFor(lang, "asstChat.customerStep.whoFor")}
       </h3>
+      <div class="wiz__step-hint">
+        {tFor(lang, "asstChat.customerStep.pickTitle")}
+      </div>
       <div
         class="wiz__opts"
         style="flex-direction:column;align-items:stretch;gap:8px;margin-top:8px"

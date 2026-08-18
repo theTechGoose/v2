@@ -22,6 +22,7 @@ describe("settings — mailing address, insurance, W-9 are editable", () => {
 
   it("mailing address is editable and persists across reload", () => {
     cy.get("[data-cy=settings-mailing-address]", { timeout: 10_000 })
+      .scrollIntoView()
       .should("be.visible")
       .within(() => {
         cy.get("input").first().clear().type("123 Main St");
@@ -30,6 +31,7 @@ describe("settings — mailing address, insurance, W-9 are editable", () => {
     cy.contains("button", /save|guardar/i).click();
 
     cy.reload();
+    cy.get("[data-cy=settings-mailing-address]", { timeout: 10_000 }).scrollIntoView();
     cy.get("[data-cy=settings-mailing-address] input")
       .first()
       .should("have.value", "123 Main St");
@@ -37,6 +39,7 @@ describe("settings — mailing address, insurance, W-9 are editable", () => {
 
   it("insurance offers a file upload control", () => {
     cy.get("[data-cy=settings-insurance-upload]", { timeout: 10_000 })
+      .scrollIntoView()
       .should("be.visible")
       .find("input[type=file]")
       .should("exist");
@@ -51,11 +54,12 @@ describe("settings — mailing address, insurance, W-9 are editable", () => {
       },
       { force: true },
     );
-    cy.contains(/policy\.pdf/i, { timeout: 10_000 }).should("be.visible");
+    cy.contains(/policy\.pdf/i, { timeout: 10_000 }).scrollIntoView().should("be.visible");
   });
 
   it("W-9 offers a file upload control and lists the uploaded form", () => {
     cy.get("[data-cy=settings-w9-upload]", { timeout: 10_000 })
+      .scrollIntoView()
       .should("be.visible")
       .find("input[type=file]")
       .should("exist");
@@ -67,6 +71,6 @@ describe("settings — mailing address, insurance, W-9 are editable", () => {
       },
       { force: true },
     );
-    cy.contains(/w9\.pdf/i, { timeout: 10_000 }).should("be.visible");
+    cy.contains(/w9\.pdf/i, { timeout: 10_000 }).scrollIntoView().should("be.visible");
   });
 });

@@ -34,8 +34,9 @@ const MONTH_KEYS = [
 export default define.page(function Dashboard(ctx) {
   const user = ctx.state.user;
   const lang = user?.language === "es" ? "es" : "en";
-  const greetingName = (user?.name?.trim() || tFor(lang, "common.thereFallback"))
-    .split(" ")[0];
+  const greetingName =
+    (user?.name?.trim() || tFor(lang, "common.thereFallback"))
+      .split(" ")[0];
   const now = new Date();
   const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
     tFor(lang, MONTH_KEYS[now.getMonth()])
@@ -44,12 +45,21 @@ export default define.page(function Dashboard(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "dashboardPage.docTitle", { brand: tFor(lang, "brand.name") })}</title>
+        <title>
+          {tFor(lang, "dashboardPage.docTitle", {
+            brand: tFor(lang, "brand.name"),
+          })}
+        </title>
         <link rel="stylesheet" href="/dashboard.css" />
       </Head>
 
       <div class="app">
-        <DashSidebar active="home" />
+        {
+          /* Main precedes the sidebar in the DOM (CSS `.sb { order: -1 }`
+            keeps it visually left) so on phones the first "My Assistant"
+            link in document order is the visible in-page CTA, not the
+            same-named pill inside the off-canvas drawer (PDF p8). */
+        }
         <main class="main">
           <DashTopbar
             greetingDate={greetingDate}
@@ -59,6 +69,7 @@ export default define.page(function Dashboard(ctx) {
             <DashboardPage />
           </div>
         </main>
+        <DashSidebar active="home" />
       </div>
       {
         /* One-shot coachmark — self-gates on localStorage so SSR is

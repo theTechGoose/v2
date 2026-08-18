@@ -18,6 +18,10 @@ interface Props {
    *  wording. When omitted, falls back to the localized "quote" unit. */
   unit?: string;
   defaultOpen?: boolean;
+  /** Deep-link override (/quotes?open=<id>): when true the track mounts
+   *  expanded regardless of the stored preference, so the opened quote's
+   *  card is actually visible. The user can still collapse it. */
+  forceOpen?: boolean;
   storageKey?: string;
   lang?: "en" | "es";
   children?: ComponentChildren;
@@ -30,12 +34,14 @@ export default function QuoteTrack(
     count,
     unit,
     defaultOpen = true,
+    forceOpen = false,
     storageKey,
     lang = "en",
     children,
   }: Props,
 ) {
   const [open, setOpen] = useState<boolean>(() => {
+    if (forceOpen) return true;
     if (typeof globalThis.localStorage === "undefined" || !storageKey) {
       return defaultOpen;
     }
@@ -44,6 +50,10 @@ export default function QuoteTrack(
     if (raw === "0") return false;
     return defaultOpen;
   });
+
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
 
   useEffect(() => {
     if (!storageKey) return;
@@ -61,13 +71,11 @@ export default function QuoteTrack(
         <span class="qtrack__num">{num}</span>
         <span class="qtrack__title">{title}</span>
         <span class="qtrack__count">
-          {unit
-            ? `${count} ${count === 1 ? unit : `${unit}s`}`
-            : tFor(
-              lang,
-              `quoteTrack.count.${count === 1 ? "one" : "other"}`,
-              { n: count },
-            )}
+          {unit ? `${count} ${count === 1 ? unit : `${unit}s`}` : tFor(
+            lang,
+            `quoteTrack.count.${count === 1 ? "one" : "other"}`,
+            { n: count },
+          )}
         </span>
       </header>
       <div class="qtrack__body">

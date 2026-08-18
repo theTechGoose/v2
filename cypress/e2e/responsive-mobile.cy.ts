@@ -43,7 +43,9 @@ describe("mobile friendliness (390px)", () => {
       cy.visit(path);
       cy.wait(500); // allow islands to hydrate/layout
       assertNoHorizontalScroll();
-      cy.contains("button, a", cta).should("be.visible");
+      // Scope to the page content — the off-canvas drawer duplicates nav
+      // copy that would otherwise steal the match while hidden.
+      cy.get("main").contains("button, a", cta).should("be.visible");
     });
   }
 

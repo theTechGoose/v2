@@ -2,6 +2,7 @@ import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import PublicContractView from "../../islands/PublicContractView.tsx";
 import { BG, INK, LINE } from "../../components/contract-doc.tsx";
+import { langFromCookie } from "../../lib/lang.ts";
 
 /**
  * Public agreement page. The contract is fetched client-side by the
@@ -11,6 +12,9 @@ import { BG, INK, LINE } from "../../components/contract-doc.tsx";
  */
 export default define.page(function PublicContract(ctx) {
   const id = ctx.params.id;
+  // The customer's own language choice (pm_lang cookie) wins; when absent the
+  // document falls back to the contractor's outgoing-comms language.
+  const lang = langFromCookie(ctx.req.headers.get("cookie")) ?? undefined;
 
   return (
     <>
@@ -38,7 +42,7 @@ export default define.page(function PublicContract(ctx) {
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};padding:32px 16px calc(64px + var(--kb-inset, 0px));scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
         <div style="max-width:760px;margin:0 auto">
-          <PublicContractView id={id} />
+          <PublicContractView id={id} lang={lang} />
         </div>
       </div>
     </>

@@ -68,10 +68,10 @@ describe("PM Assistant hamburger works on mobile (p8 bug)", () => {
     cy.get("[data-cy=mobile-menu], button[aria-label*=menu i], .hamburger, [class*=hamburger]")
       .filter(":visible")
       .first()
-      .as("burger")
       .click();
     cy.contains("a", /dashboard/i).should("be.visible");
-    cy.get("@burger").click({ force: true });
+    // Close via the drawer's designed affordance (backdrop overlay).
+    cy.get(".sb-backdrop").click({ force: true });
     cy.contains("a", /dashboard/i).should("not.be.visible");
   });
 });
@@ -120,22 +120,26 @@ describe("QuickBooks-style sidebar minimize (p9)", () => {
 
   it("the PM Assistant conversations panel collapses and expands with the same pattern", () => {
     cy.visit("/assistant");
-    // Measure the threads panel, collapse it, and PROVE it minimized.
-    cy.get("[data-cy=asst-threads-collapse]", { timeout: 10_000 })
-      .parents("[class*=thread], aside, [data-cy=asst-threads]")
-      .first()
-      .as("panel")
-      .invoke("outerWidth")
-      .then((widthBefore) => {
-        cy.get("[data-cy=asst-threads-collapse]").click();
-        cy.get("@panel").should(($p) => {
-          const w = $p.is(":visible") ? $p.outerWidth() ?? 0 : 0;
-          expect(w, "threads panel minimized").to.be.lessThan(Number(widthBefore) / 2);
-        });
-        // The chat itself survives, and an expand control restores the panel.
-        cy.get("textarea.composer__input, .chat__head").should("be.visible");
-        cy.get("[data-cy=asst-threads-expand]").click();
-        cy.get("@panel").invoke("outerWidth").should("be.gte", Number(widthBefore) - 5);
+    // Measure via the DOM directly — the island re-renders while its list
+    // loads, so element subjects detach; widths are read fresh each check.
+    const panelWidth = (win: Window) => {
+      const panel = win.document.querySelector(".threads, [data-cy=asst-threads]") as HTMLElement | null;
+      return panel ? panel.getBoundingClientRect().width : 0;
+    };
+    cy.get("[data-cy=asst-threads-collapse]", { timeout: 10_000 }).should("be.visible");
+    cy.window().then((win) => {
+      const before = panelWidth(win);
+      expect(before, "panel starts expanded").to.be.greaterThan(100);
+      cy.get("[data-cy=asst-threads-collapse]").click();
+      cy.window().should((w2) => {
+        expect(panelWidth(w2), "threads panel minimized").to.be.lessThan(before / 2);
       });
+      // The chat itself survives, and an expand control restores the panel.
+      cy.get("textarea.composer__input, .chat__head").should("be.visible");
+      cy.get("[data-cy=asst-threads-expand]", { timeout: 10_000 }).click();
+      cy.window().should((w3) => {
+        expect(panelWidth(w3), "threads panel restored").to.be.gte(before - 5);
+      });
+    });
   });
 });

@@ -56,6 +56,14 @@ export default function AssistantCoachmark(
         'a[href="/assistant"].sb__textus, .sb__textus[href="/assistant"]',
       );
       if (el instanceof HTMLElement) {
+        // On phones the sidebar pill lives in the off-canvas drawer — there
+        // is nothing on screen to spotlight (the top-of-dashboard assistant
+        // CTA is always visible there instead), so skip the coachmark rather
+        // than veiling the page around an off-screen hole.
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.right <= 0 || r.left >= globalThis.innerWidth) {
+          return;
+        }
         measure(el);
         setVisible(true);
         // Kick off the entrance — defer one frame so the initial paint
@@ -85,6 +93,17 @@ export default function AssistantCoachmark(
     const r = el.getBoundingClientRect();
     setBox({ top: r.top, left: r.left, width: r.width, height: r.height });
   }
+
+  // "Click anywhere to dismiss" — bound at the document level (capture)
+  // because the overlay itself is pointer-events:none: it must never trap a
+  // click aimed at the app underneath (e.g. the sidebar collapse arrow or
+  // the assistant CTA). The user's first click both acts AND dismisses.
+  useEffect(() => {
+    if (!visible || fadingOut) return;
+    const onDocClick = () => dismiss();
+    document.addEventListener("click", onDocClick, true);
+    return () => document.removeEventListener("click", onDocClick, true);
+  }, [visible, fadingOut]);
 
   function dismiss() {
     setFadingOut(true);
@@ -116,7 +135,7 @@ export default function AssistantCoachmark(
   return (
     <div
       onClick={dismiss}
-      style={`position:fixed;inset:0;z-index:9999;cursor:pointer;transition:opacity 320ms ease-out, backdrop-filter 320ms ease-out;opacity:${
+      style={`position:fixed;inset:0;z-index:9999;pointer-events:none;transition:opacity 320ms ease-out, backdrop-filter 320ms ease-out;opacity:${
         fadingOut ? 0 : 1
       };backdrop-filter:${
         fadingOut ? "blur(0px)" : "blur(2px)"

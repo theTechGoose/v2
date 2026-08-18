@@ -12,7 +12,6 @@ interface Stroke {
 }
 
 const PINK = "#FF6B6B";
-const PINK_DARK = "#d94e4e";
 const TEAL = "#144852";
 const GREEN = "#519843";
 const INK = "#1c2c30";
@@ -21,11 +20,13 @@ const LINE = "#e3e8e6";
 
 /**
  * Customer-facing signature pad. Two-input flow:
- *   1. **Draw** your signature on a canvas (pointer / touch / pen).
- *   2. **Type** your full legal name underneath.
+ *   1. **Draw** your signature on a canvas (pointer / touch / pen) — optional.
+ *   2. **Type** your full legal name underneath — this is what completes
+ *      the signature (deck p14: "Sign & type name below").
  * Both are submitted to /api/contracts/:id/sign as `signature` (PNG data
- * URL) + `name`. The typed name is the legal-record fallback; the canvas
- * captures the visual mark.
+ * URL) + `name`. The typed name is the legal record; when the customer
+ * skips drawing, the PNG is rendered from the typed name in the same
+ * cursive the document uses, so the signed artifact always carries a mark.
  *
  * The pad supports:
  *   - Hi-DPI strokes (we scale the canvas backing buffer to devicePixelRatio).
@@ -220,14 +221,36 @@ export default function PublicSignContract({ contractId, lang = "en" }: Props) {
     return off.toDataURL("image/png");
   }
 
+  /** Fallback signature mark when the customer typed but didn't draw:
+   *  render the typed name in the document's cursive onto a compact PNG. */
+  function typedNamePng(text: string): string {
+    const off = document.createElement("canvas");
+    const probe = off.getContext("2d");
+    if (!probe) return "";
+    const font = "44px 'Snell Roundhand','Brush Script MT',cursive";
+    probe.font = font;
+    const w = Math.min(480, Math.ceil(probe.measureText(text).width) + 32);
+    off.width = Math.max(1, w);
+    off.height = 88;
+    const ctx = off.getContext("2d");
+    if (!ctx) return "";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, off.width, off.height);
+    ctx.font = font;
+    ctx.fillStyle = TEAL;
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 16, 46, off.width - 32);
+    return off.toDataURL("image/png");
+  }
+
   async function onSign(e: Event) {
     e.preventDefault();
     const trimmed = name.trim();
-    if (!trimmed || !hasInk) return;
+    if (!trimmed) return;
     setSubmitting(true);
     setErr(undefined);
     try {
-      const dataUrl = exportSignaturePng();
+      const dataUrl = exportSignaturePng() || typedNamePng(trimmed);
       const r = await fetch(`/api/contracts/${contractId}/sign`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -291,16 +314,16 @@ export default function PublicSignContract({ contractId, lang = "en" }: Props) {
   }
 
   return (
-    <form onSubmit={onSign} style="margin-top:24px;text-align:left">
-      {/* Sign header strip */}
+    <form onSubmit={onSign} style="margin-top:12px;text-align:left">
+      {
+        /* Pad toolbar — the "YOUR Signature" heading + the "Sign & type name
+          below" instruction now live on the enclosing signature card
+          (contract-doc.tsx), so this strip only carries the Undo/Clear
+          signature aids. */
+      }
       <div
-        style={`display:flex;justify-content:space-between;align-items:center;margin-bottom:8px`}
+        style={`display:flex;justify-content:flex-end;align-items:center;margin-bottom:8px`}
       >
-        <div
-          style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${PINK_DARK}`}
-        >
-          {tFor(lang, "publicSign.eyebrow")}
-        </div>
         <div style={`display:flex;gap:8px`}>
           <button
             type="button"
@@ -428,17 +451,17 @@ export default function PublicSignContract({ contractId, lang = "en" }: Props) {
 
       <button
         type="submit"
-        disabled={submitting || !name.trim() || !hasInk}
+        disabled={submitting || !name.trim()}
         style={`margin-top:18px;width:100%;background:${
-          submitting || !name.trim() || !hasInk
+          submitting || !name.trim()
             ? "#a8c8a0"
             : `linear-gradient(135deg,${GREEN} 0%,#71a85f 100%)`
         };color:#fff;border:0;font-weight:800;font-size:16px;padding:18px 28px;border-radius:14px;box-shadow:${
-          submitting || !name.trim() || !hasInk
+          submitting || !name.trim()
             ? "none"
             : "0 10px 22px -6px rgba(81,152,67,0.55)"
         };cursor:${
-          submitting || !name.trim() || !hasInk ? "default" : "pointer"
+          submitting || !name.trim() ? "default" : "pointer"
         };transition:transform 160ms;display:flex;align-items:center;justify-content:center;gap:10px`}
       >
         {submitting
@@ -464,7 +487,7 @@ export default function PublicSignContract({ contractId, lang = "en" }: Props) {
                 <path d="M14 5l5 5" />
               </svg>
               <span>
-                {hasInk && name.trim()
+                {name.trim()
                   ? tFor(lang, "publicSign.submitEnabled")
                   : tFor(lang, "publicSign.submitDisabled")}
               </span>

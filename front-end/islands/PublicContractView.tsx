@@ -12,7 +12,7 @@ import {
   type ContractPublic,
   ErrorCard,
 } from "../components/contract-doc.tsx";
-import { tFor } from "../lib/i18n.ts";
+import { type Lang, tFor } from "../lib/i18n.ts";
 
 interface State {
   phase: "loading" | "error" | "ok";
@@ -21,9 +21,16 @@ interface State {
 }
 
 export default function PublicContractView(
-  { id, lang = "en" }: { id: string; lang?: "en" | "es" },
+  { id, lang }: {
+    id: string;
+    /** Customer's language, resolved by the route from the pm_lang cookie.
+     *  Undefined → the document falls back to the contractor's
+     *  outgoing-comms language (ContractDoc decides). */
+    lang?: Lang;
+  },
 ) {
-  const LINK_GONE = tFor(lang, "publicContract.linkGone");
+  const msgLang: Lang = lang ?? "en";
+  const LINK_GONE = tFor(msgLang, "publicContract.linkGone");
   const [s, setS] = useState<State>({ phase: "loading" });
 
   useEffect(() => {
@@ -48,12 +55,13 @@ export default function PublicContractView(
   }, [id]);
 
   if (s.phase === "ok" && s.contract) {
-    return <ContractDoc contract={s.contract} />;
+    return <ContractDoc contract={s.contract} lang={lang} />;
   }
   if (s.phase === "error") {
     return (
       <ErrorCard
-        message={s.message ?? tFor(lang, "publicContract.notAvailable")}
+        message={s.message ?? tFor(msgLang, "publicContract.notAvailable")}
+        lang={msgLang}
       />
     );
   }

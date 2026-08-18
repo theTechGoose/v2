@@ -45,7 +45,11 @@ const btnPrimary =
  * the specific too-large copy; everything else falls back to the generic
  * per-card message.
  */
-function uploadErrorMessage(ex: unknown, tooLarge: string, fallback: string): string {
+function uploadErrorMessage(
+  ex: unknown,
+  tooLarge: string,
+  fallback: string,
+): string {
   console.error("file upload failed", ex);
   if (ex instanceof ApiError) {
     const body = ex.body as { code?: unknown } | null;
@@ -90,6 +94,7 @@ function tr(es: boolean) {
     license: tFor(lang, "settings.license"),
     businessName: tFor(lang, "settings.businessName"),
     // Address
+    saveAddress: tFor(lang, "settings.saveAddress"),
     street: tFor(lang, "settings.street"),
     city: tFor(lang, "settings.city"),
     state: tFor(lang, "settings.state"),
@@ -202,7 +207,8 @@ function Card(
   );
 }
 
-/** Small shell for an editable card: title, optional status line, error. */
+/** Small shell for an editable card: title, optional status line, error.
+ *  `dataCy` stamps the Cypress contract selector on the card root. */
 function EditPanel(
   {
     title,
@@ -212,6 +218,7 @@ function EditPanel(
     saved,
     saving = tFor("en", "settings.saving"),
     savedLabel = tFor("en", "settings.saved"),
+    dataCy,
   }: {
     title: string;
     children: ComponentChildren;
@@ -220,10 +227,11 @@ function EditPanel(
     saved?: boolean;
     saving?: string;
     savedLabel?: string;
+    dataCy?: string;
   },
 ) {
   return (
-    <div class="panel" style="padding:18px 20px">
+    <div class="panel" style="padding:18px 20px" data-cy={dataCy}>
       <div
         class="panel__head"
         style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px"
@@ -474,7 +482,11 @@ function EditCard(
   );
 }
 
-/** AddressEditCard — editable mailing address (roadmap p.2). Saves on blur. */
+/** AddressEditCard — editable mailing address (roadmap p.8). Explicit Save
+ *  button (contract: [data-cy=settings-mailing-address]) PUTs the whole
+ *  address in one shot — no per-field blur-saves, so typing across fields
+ *  never races a mid-save disabled state. Input order is part of the
+ *  contract: street first, city second, then state/zip/country. */
 function AddressEditCard(
   { snapshot, onSaved }: {
     snapshot: ProfileSnapshot;
@@ -492,12 +504,18 @@ function AddressEditCard(
   const [saved, setSaved] = useState(false);
   const t = tr(langSignal.value === "es");
 
-  async function save(patch: Record<string, string>) {
+  async function save() {
     setBusy(true);
     setErr(null);
     setSaved(false);
     try {
-      const next = await profileClient.updateAddress(patch);
+      const next = await profileClient.updateAddress({
+        street: street.trim(),
+        city: city.trim(),
+        state: stateV.trim(),
+        postal: postal.trim(),
+        country: country.trim(),
+      });
       onSaved({ address: next });
       setSaved(true);
     } catch (e) {
@@ -506,9 +524,6 @@ function AddressEditCard(
       setBusy(false);
     }
   }
-  const blur = (field: string, val: string, was: string) => {
-    if (val.trim() !== (was ?? "")) save({ [field]: val.trim() });
-  };
 
   return (
     <EditPanel
@@ -518,6 +533,7 @@ function AddressEditCard(
       saved={saved}
       saving={t.saving}
       savedLabel={t.saved}
+      dataCy="settings-mailing-address"
     >
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
         <label style="display:block;grid-column:1 / -1">
@@ -529,7 +545,6 @@ function AddressEditCard(
             disabled={busy}
             placeholder={t.phStreet}
             onInput={(e) => setStreet((e.target as HTMLInputElement).value)}
-            onBlur={() => blur("street", street, a?.street ?? "")}
           />
         </label>
         <label style="display:block">
@@ -540,7 +555,6 @@ function AddressEditCard(
             value={city}
             disabled={busy}
             onInput={(e) => setCity((e.target as HTMLInputElement).value)}
-            onBlur={() => blur("city", city, a?.city ?? "")}
           />
         </label>
         <label style="display:block">
@@ -554,7 +568,6 @@ function AddressEditCard(
             placeholder={t.phState}
             onInput={(e) =>
               setStateV((e.target as HTMLInputElement).value.toUpperCase())}
-            onBlur={() => blur("state", stateV, a?.state ?? "")}
           />
         </label>
         <label style="display:block">
@@ -565,7 +578,6 @@ function AddressEditCard(
             value={postal}
             disabled={busy}
             onInput={(e) => setPostal((e.target as HTMLInputElement).value)}
-            onBlur={() => blur("postal", postal, a?.postal ?? "")}
           />
         </label>
         <label style="display:block">
@@ -576,9 +588,18 @@ function AddressEditCard(
             value={country}
             disabled={busy}
             onInput={(e) => setCountry((e.target as HTMLInputElement).value)}
-            onBlur={() => blur("country", country, a?.country ?? "")}
           />
         </label>
+      </div>
+      <div style="margin-top:16px">
+        <button
+          type="button"
+          style={btnPrimary}
+          disabled={busy}
+          onClick={save}
+        >
+          {busy ? t.saving : t.saveAddress}
+        </button>
       </div>
     </EditPanel>
   );
@@ -601,10 +622,14 @@ function InsuranceEditCard(
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  /** Original name of the certificate uploaded THIS session — the backend
+   *  insurance record only stores insuranceFileId, so the human-readable
+   *  name lives in island state (from the POST /files FileRecord). */
+  const [fileName, setFileName] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const t = tr(langSignal.value === "es");
 
-  async function save(patch: Record<string, unknown>) {
+  async function save(patch: Record<string, unknown>): Promise<boolean> {
     setBusy("fields");
     setErr(null);
     setSaved(false);
@@ -612,8 +637,10 @@ function InsuranceEditCard(
       const next = await profileClient.updateInsurance(patch);
       onSaved({ insurance: next });
       setSaved(true);
+      return true;
     } catch (e) {
       setErr(e instanceof Error ? e.message : t.saveFailed);
+      return false;
     } finally {
       setBusy(null);
     }
@@ -625,7 +652,7 @@ function InsuranceEditCard(
     setErr(null);
     try {
       const rec = await filesClient.uploadBlob(file, file.name);
-      await save({ insuranceFileId: rec.id });
+      if (await save({ insuranceFileId: rec.id })) setFileName(rec.filename);
     } catch (ex) {
       setErr(uploadErrorMessage(ex, t.uploadTooLarge, t.uploadFailed));
     } finally {
@@ -706,7 +733,10 @@ function InsuranceEditCard(
           />
         </label>
       </div>
-      <div style="margin-top:14px;display:flex;align-items:center;gap:12px">
+      <div
+        data-cy="settings-insurance-upload"
+        style="margin-top:14px;display:flex;align-items:center;gap:12px"
+      >
         <button
           type="button"
           disabled={busy === "file"}
@@ -728,7 +758,9 @@ function InsuranceEditCard(
           onChange={onFilePick}
         />
         <span style="font-size:12px;color:var(--fg-muted)">
-          {ins?.insuranceFileId
+          {fileName
+            ? `${t.certOnFile} · ${fileName}`
+            : ins?.insuranceFileId
             ? `${t.certOnFile}${
               ins.insuranceUploadedAt
                 ? ` · ${ins.insuranceUploadedAt.slice(0, 10)}`
@@ -754,10 +786,13 @@ function TaxEditCard(
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  /** Original name of the W-9 uploaded THIS session — the tax record only
+   *  stores w9FileId, so the readable name lives in island state. */
+  const [fileName, setFileName] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const t = tr(langSignal.value === "es");
 
-  async function save(patch: Record<string, unknown>) {
+  async function save(patch: Record<string, unknown>): Promise<boolean> {
     setBusy("save");
     setErr(null);
     setSaved(false);
@@ -766,8 +801,10 @@ function TaxEditCard(
       onSaved({ tax: next });
       setSaved(true);
       setTin("");
+      return true;
     } catch (e) {
       setErr(e instanceof Error ? e.message : t.saveFailed);
+      return false;
     } finally {
       setBusy(null);
     }
@@ -779,7 +816,7 @@ function TaxEditCard(
     setErr(null);
     try {
       const rec = await filesClient.uploadBlob(file, file.name);
-      await save({ w9FileId: rec.id });
+      if (await save({ w9FileId: rec.id })) setFileName(rec.filename);
     } catch (ex) {
       setErr(uploadErrorMessage(ex, t.uploadTooLarge, t.uploadFailed));
     } finally {
@@ -813,7 +850,10 @@ function TaxEditCard(
           />
         </label>
       </div>
-      <div style="margin-top:14px;display:flex;align-items:center;gap:12px">
+      <div
+        data-cy="settings-w9-upload"
+        style="margin-top:14px;display:flex;align-items:center;gap:12px"
+      >
         <button
           type="button"
           disabled={busy === "file"}
@@ -835,7 +875,9 @@ function TaxEditCard(
           onChange={onFilePick}
         />
         <span style="font-size:12px;color:var(--fg-muted)">
-          {tax?.w9UploadedAt
+          {fileName
+            ? `${t.uploaded} · ${fileName}`
+            : tax?.w9UploadedAt
             ? `${t.uploaded} ${tax.w9UploadedAt.slice(0, 10)}`
             : t.w9Hint}
         </span>

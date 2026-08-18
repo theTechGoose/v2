@@ -396,7 +396,8 @@
   border-top: 1px solid rgba(26, 83, 92, 0.08);
   background: rgba(26, 83, 92, 0.02);
 }
-.qcard__back-foot button {
+.qcard__back-foot button,
+.qcard__back-foot a {
   background: #fff;
   border: 1px solid rgba(26, 83, 92, 0.12);
   border-radius: 10px;
@@ -410,12 +411,15 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
+  text-decoration: none;
+  text-align: center;
   transition:
     border-color var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out),
     transform var(--dur-fast) var(--ease-out);
 }
-.qcard__back-foot button:hover {
+.qcard__back-foot button:hover,
+.qcard__back-foot a:hover {
   border-color: var(--brand-pink);
   color: var(--brand-pink);
   transform: translateY(-1px);
@@ -925,4 +929,162 @@
   .qkpi {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Open-quote detail panel — /quotes?open=<id> deep link.
+   Job name + lifecycle status badge (Draft → Sent → Viewed → Approved),
+   full-quote actions, and the emailed-to / texted-to receipt strip built
+   from the per-document comms trail (roadmap p.8 + p.10).
+--------------------------------------------------------------------------- */
+.qopen {
+  background: #fff;
+  border: 1px solid rgba(26, 83, 92, 0.1);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 28px rgba(26, 83, 92, 0.07);
+  padding: 18px 20px;
+  margin-bottom: 22px;
+}
+.qopen--pending {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.qopen__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.qopen__eyebrow {
+  font-family: var(--font-heading);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brand-pink);
+  margin-bottom: 4px;
+}
+.qopen__title {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--brand-teal);
+  margin: 0;
+  line-height: 1.2;
+}
+.qopen__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.qopen__badge--draft {
+  background: rgba(92, 64, 52, 0.1);
+  color: #5c4034;
+}
+.qopen__badge--sent {
+  background: rgba(26, 83, 92, 0.1);
+  color: var(--brand-teal);
+}
+.qopen__badge--viewed {
+  background: rgba(168, 67, 31, 0.12);
+  color: #a8431f;
+}
+.qopen__badge--approved {
+  background: rgba(63, 122, 51, 0.12);
+  color: #3f7a33;
+}
+.qopen__badge--declined {
+  background: rgba(178, 48, 48, 0.12);
+  color: #b23030;
+}
+.qopen__summary {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--fg-muted);
+  margin: 8px 0 0;
+}
+.qopen__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.qopen__amount {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--brand-teal);
+}
+.qopen__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.qopen__btn {
+  background: #fff;
+  border: 1px solid rgba(26, 83, 92, 0.14);
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--brand-teal);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  text-decoration: none;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.qopen__btn:hover {
+  border-color: var(--brand-pink);
+  color: var(--brand-pink);
+  transform: translateY(-1px);
+}
+.qopen__receipts {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(26, 83, 92, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.qopen__receipt {
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.qopen__receipt::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand-teal);
+  opacity: 0.45;
+  flex: 0 0 auto;
+}
+.qopen__receipt--signed {
+  color: #3f7a33;
+  font-weight: 600;
+}
+.qopen__receipt--signed::before {
+  background: #3f7a33;
+  opacity: 0.8;
 }

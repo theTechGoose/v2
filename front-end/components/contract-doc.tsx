@@ -12,6 +12,7 @@
  * agreement-only bits: the 14 numbered legal clauses and the signature block.
  */
 import PublicSignContract from "../islands/PublicSignContract.tsx";
+import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
 import { fmtPhone, telHref } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import {
@@ -19,12 +20,11 @@ import {
   CREAM,
   fmtDate,
   GREEN,
-  hasTermGrid,
   initialsFromName,
   INK,
   JobDetailsSection,
-  type LineItem,
   LINE,
+  type LineItem,
   MUTED,
   PartyCard,
   PaymentScheduleSection,
@@ -111,7 +111,14 @@ function cstr(lang: Lang) {
     awaiting: tFor(lang, "contractDoc.awaiting"),
     between: tFor(lang, "contractDoc.between"),
     and: tFor(lang, "contractDoc.and"),
+    contractorTag: tFor(lang, "contractDoc.contractorTag"),
+    clientTag: tFor(lang, "contractDoc.clientTag"),
     effective: tFor(lang, "contractDoc.effective"),
+    plainEnglish: tFor(lang, "contractDoc.plainEnglish"),
+    plainEnglishBody: (contractor: string, customer?: string) =>
+      customer
+        ? tFor(lang, "contractDoc.plainEnglishNamed", { contractor, customer })
+        : tFor(lang, "contractDoc.plainEnglishUnnamed", { contractor }),
     to: tFor(lang, "contractDoc.to"),
     from: tFor(lang, "contractDoc.from"),
     jobDetails: tFor(lang, "contractDoc.jobDetails"),
@@ -119,11 +126,12 @@ function cstr(lang: Lang) {
     tableQty: tFor(lang, "contractDoc.tableQty"),
     tableAmount: tFor(lang, "contractDoc.tableAmount"),
     unitEach: tFor(lang, "contractDoc.unitEach"),
-    agreementValue: tFor(lang, "contractDoc.agreementValue"),
+    contractValue: tFor(lang, "contractDoc.contractValue"),
     allIn: tFor(lang, "contractDoc.allIn"),
     paymentSchedule: tFor(lang, "contractDoc.paymentSchedule"),
     terms: tFor(lang, "contractDoc.terms"),
     start: tFor(lang, "contractDoc.start"),
+    startTbd: tFor(lang, "contractDoc.startTbd"),
     estCompletion: tFor(lang, "contractDoc.estCompletion"),
     estimated: (v: string) => tFor(lang, "contractDoc.estimated", { value: v }),
     signHere: tFor(lang, "contractDoc.signHere"),
@@ -132,7 +140,7 @@ function cstr(lang: Lang) {
       first
         ? tFor(lang, "contractDoc.bySigningNamed", { name: first })
         : tFor(lang, "contractDoc.bySigning"),
-    contractor: tFor(lang, "contractDoc.contractor"),
+    contractorSignature: tFor(lang, "contractDoc.contractorSignature"),
     by: tFor(lang, "contractDoc.by"),
     date: tFor(lang, "contractDoc.date"),
     today: tFor(lang, "contractDoc.today"),
@@ -185,16 +193,22 @@ export function ErrorCard(
   );
 }
 
-export function ContractDoc({ contract }: { contract: ContractPublic }) {
+export function ContractDoc(
+  { contract, lang: langOverride }: {
+    contract: ContractPublic;
+    /** Customer's own language (pm_lang cookie, resolved by the /c route).
+     *  Wins over the contractor's outgoing-comms language when present. */
+    lang?: Lang;
+  },
+) {
   const signed = contract.status === "signed";
   const declined = contract.status === "declined";
   const total = contract.totalAmount ??
     sumLineTotals(contract.jobDetails?.lineItems);
   const customerName = contract.customer?.name?.trim();
-  const customerFirst = customerName?.split(/\s+/)[0];
   const contractor = contract.contractor;
-  const es = contractor?.commsLanguage === "es";
-  const lang: Lang = es ? "es" : "en";
+  const lang: Lang = langOverride ??
+    (contractor?.commsLanguage === "es" ? "es" : "en");
   const t = cstr(lang);
   const businessLabel = contractor?.businessName?.trim() ||
     contractor?.name?.trim() || tFor(lang, "brand.name");
@@ -204,13 +218,12 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
   const items = contract.jobDetails?.lineItems ?? [];
   // Title/summary in the document's language when the per-language fields are
   // present (populated from the picked job option); else the single value.
-  const summary =
-    (contract.jobDetails?.summaryByLang?.[lang] ??
-      contract.jobDetails?.summary ?? tFor(lang, "contractDoc.serviceAgreement"))
-      .replace(
-        /^\s*quote\s*:\s*/i,
-        "",
-      ).trim();
+  const summary = (contract.jobDetails?.summaryByLang?.[lang] ??
+    contract.jobDetails?.summary ?? tFor(lang, "contractDoc.serviceAgreement"))
+    .replace(
+      /^\s*quote\s*:\s*/i,
+      "",
+    ).trim();
   const jobNameRaw =
     (contract.jobDetails?.jobNameByLang?.[lang] ?? contract.jobDetails?.jobName)
       ?.trim();
@@ -220,6 +233,32 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
 
   const effective = contract.effectiveDate ?? contract.createdAt;
   const milestones = computeMilestones(total, contract.terms, lang);
+
+  // Signature-block copy (deck p14) — shared with the backend renderers via
+  // the pure module so the web page, the PDF, and the email never drift.
+  // The module speaks English; the ES page mirrors it through i18n.
+  const sig = customerName
+    ? buildSignatureBlock({
+      clientName: customerName,
+      contractorName: contractorName ?? businessLabel,
+      businessName: contractor?.businessName,
+      signedDateISO: effective ?? new Date().toISOString(),
+    })
+    : undefined;
+  const agreementLine = lang === "en" && sig
+    ? sig.agreementLine
+    : t.bySigning(customerName);
+  const contractorByLine = contractorName
+    ? (lang === "en" && sig
+      ? sig.contractor.byLine
+      : `${t.by} ${contractorName}`)
+    : undefined;
+  const contractorDateLine = lang === "en" && sig
+    ? sig.contractor.dateLine
+    : `${t.date} ${effective ? fmtDate(effective) : t.today}`;
+  const customerInstruction = lang === "en" && sig
+    ? sig.customer.instruction
+    : t.signTypeBelow;
 
   // Sequential section numbers. Sections are conditionally rendered, so
   // hardcoding 01/02/03 leaves gaps (01,03,…) when one is absent — which
@@ -312,9 +351,10 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
           {customerName && (
             <div style={`margin-top:10px;color:${MUTED};font-size:14px`}>
               {t.between}{" "}
-              <strong style={`color:${INK}`}>{businessLabel}</strong> {t.and}
-              {" "}
-              <strong style={`color:${INK}`}>{customerName}</strong>
+              <strong style={`color:${INK}`}>{businessLabel}</strong>{" "}
+              {t.contractorTag} {t.and}{" "}
+              <strong style={`color:${INK}`}>{customerName}</strong>{" "}
+              {t.clientTag}
               {effective
                 ? (
                   <>
@@ -326,9 +366,11 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
             </div>
           )}
 
-          {/* To / From block — auto-fit so the two cards stack on narrow
+          {
+            /* To / From block — auto-fit so the two cards stack on narrow
               phones instead of squeezing into ~175px columns (which wrapped
-              the contractor's phone number mid-digit). Two-up on wider screens. */}
+              the contractor's phone number mid-digit). Two-up on wider screens. */
+          }
           <section
             style="margin-top:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px"
             class="ctr__tofrom"
@@ -349,6 +391,17 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
             />
           </section>
 
+          {
+            /* The deal in plain English (deck p12) — one no-legalese sentence
+              stating who does what for whom, before the itemized sections. */
+          }
+          <section style="margin-top:36px">
+            <SectionHeader n={num()} title={t.plainEnglish} />
+            <p style={`margin:0;color:${INK};font-size:15px;line-height:1.6`}>
+              {t.plainEnglishBody(businessLabel, customerName)}
+            </p>
+          </section>
+
           {/* Job details */}
           {items.length > 0 && (
             <JobDetailsSection
@@ -358,12 +411,13 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
                 contract.jobDetails?.description}
               items={items}
               total={total}
+              forceTable
               labels={{
                 tableDescription: t.tableDescription,
                 tableQty: t.tableQty,
                 tableAmount: t.tableAmount,
                 unitEach: t.unitEach,
-                valueLabel: t.agreementValue,
+                valueLabel: t.contractValue,
                 valueSub: t.allIn,
               }}
             />
@@ -387,31 +441,30 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
               applies. */
           }
           {(() => {
-            const grid = hasTermGrid(contract);
             return (
               <section style="margin-top:36px">
                 <SectionHeader n={num()} title={t.terms} />
-                {grid && (
-                  <TermGrid
-                    startDate={contract.startDate}
-                    estimatedCompletionDate={contract.estimatedCompletionDate}
-                    terms={contract.terms}
-                    contractorState={contractor?.state}
-                    lang={lang}
-                    labels={{
-                      start: t.start,
-                      estCompletion: t.estCompletion,
-                      termLabels: t.termLabels,
-                    }}
-                  />
-                )}
-                {grid && (
-                  <div style={`margin-top:22px;height:1px;background:${LINE}`} />
-                )}
+                {
+                  /* Always rendered: even a contract without wizard terms
+                    keeps a Start row ("To be scheduled") so the schedule
+                    seam is visible on every agreement (deck p12). */
+                }
+                <TermGrid
+                  startDate={contract.startDate}
+                  estimatedCompletionDate={contract.estimatedCompletionDate}
+                  terms={contract.terms}
+                  contractorState={contractor?.state}
+                  lang={lang}
+                  startFallback={t.startTbd}
+                  labels={{
+                    start: t.start,
+                    estCompletion: t.estCompletion,
+                    termLabels: t.termLabels,
+                  }}
+                />
+                <div style={`margin-top:22px;height:1px;background:${LINE}`} />
                 <ol
-                  style={`margin:${
-                    grid ? "22px" : "0"
-                  } 0 0;padding-left:20px;color:${INK};font-size:14px;line-height:1.65`}
+                  style={`margin:22px 0 0;padding-left:20px;color:${INK};font-size:14px;line-height:1.65`}
                 >
                   {t.clauses.map(([title, body]) => (
                     <li key={title}>
@@ -434,35 +487,35 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
               <div
                 style={`margin:-4px 0 0;color:${MUTED};font-size:13px;line-height:1.5`}
               >
-                {signed ? t.bothCaptured : t.bySigning(customerFirst)}
+                {signed ? t.bothCaptured : agreementLine}
               </div>
-              <div style="margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:18px;align-items:stretch">
-                {/* Contractor card */}
+              <div style="margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;align-items:start">
+                {/* Contractor signature column (deck p14) */}
                 <div
                   style={`padding:14px 16px;background:#fff;border:1px solid ${LINE};border-radius:12px;min-height:96px;display:flex;flex-direction:column;justify-content:flex-end`}
                 >
                   <div
                     style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
                   >
-                    {t.contractor}
+                    {t.contractorSignature}
                   </div>
                   <div
                     style={`margin-top:2px;font-size:14px;font-weight:800;color:${INK}`}
                   >
-                    {businessLabel}
+                    {sig?.contractor.heading ?? businessLabel}
                   </div>
                   <div
                     style={`margin-top:6px;font-family:'Snell Roundhand','Brush Script MT',cursive;font-size:26px;color:${TEAL};line-height:1.1`}
                   >
                     {contractorName ?? businessLabel}
                   </div>
-                  {contractorName && (
+                  {contractorByLine && (
                     <div style={`margin-top:6px;font-size:11px;color:${MUTED}`}>
-                      {t.by} {contractorName}
+                      {contractorByLine}
                     </div>
                   )}
                   <div style={`margin-top:2px;font-size:11px;color:${MUTED}`}>
-                    {t.date} {effective ? fmtDate(effective) : t.today}
+                    {contractorDateLine}
                   </div>
                 </div>
                 {/* Customer card — placeholder OR filled */}
@@ -474,8 +527,8 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
                       <div
                         style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
                       >
-                        {customerFirst
-                          ? t.signatureOf(customerName ?? customerFirst)
+                        {customerName
+                          ? t.signatureOf(customerName)
                           : t.clientSignature}
                       </div>
                       <div
@@ -492,14 +545,14 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
                       </div>
                     </div>
                   )
-                  /* Unsigned: "YOUR Signature" card (roadmap slide 16) —
-                     mirrors the contractor card and points the customer at
-                     the actual sign pad (PublicSignContract) right below.
-                     It deliberately has no dashed pad styling so it doesn't
-                     read as a second signature box. */
+                  /* Unsigned: "YOUR Signature" column (deck p14) — the
+                     heading, the "Sign & type name below" instruction, and
+                     the actual sign pad (PublicSignContract with its Undo /
+                     Clear aids, name input, and Sign button) all live inside
+                     this one card, mirroring the contractor column. */
                   : (
                     <div
-                      style={`padding:14px 16px;background:#fff;border:1px solid ${LINE};border-radius:12px;min-height:96px;display:flex;flex-direction:column;justify-content:flex-end`}
+                      style={`padding:14px 16px;background:#fff;border:1px solid ${LINE};border-radius:12px;min-height:96px;display:flex;flex-direction:column`}
                     >
                       <div
                         style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
@@ -512,23 +565,17 @@ export function ContractDoc({ contract }: { contract: ContractPublic }) {
                         {customerName ?? t.clientSignature}
                       </div>
                       <div
-                        style={`margin-top:6px;flex:1;display:flex;align-items:flex-end`}
-                      >
-                        <div
-                          style={`width:100%;border-bottom:1.5px dashed ${LINE}`}
-                        />
-                      </div>
-                      <div
                         style={`margin-top:8px;font-size:12px;font-weight:700;color:${TEAL}`}
                       >
-                        {t.signTypeBelow}
+                        {customerInstruction}
                       </div>
+                      <PublicSignContract
+                        contractId={contract.id}
+                        lang={lang}
+                      />
                     </div>
                   )}
               </div>
-              {!signed && (
-                <PublicSignContract contractId={contract.id} lang={lang} />
-              )}
               {signed && (
                 <div
                   style={`margin-top:22px;padding:18px 22px;background:linear-gradient(135deg,rgba(81,152,67,0.12) 0%,rgba(81,152,67,0.04) 100%);border:1px solid rgba(72,158,95,0.35);border-radius:16px;display:flex;align-items:center;gap:14px`}

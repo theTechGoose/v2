@@ -34,13 +34,19 @@ describe("landing page — top login button → clean login → same OTP flow", 
     cy.get("input[type=tel], input[name*=phone i]").first().type("+15125550944");
     cy.contains("button", /continue|send|código|enviar/i).click();
 
-    // Master OTP in dev.
-    cy.get("input").filter("[inputmode=numeric], [autocomplete*=one-time]")
-      .first()
-      .type("000000");
-    // Some flows auto-submit on the 6th digit; submit explicitly if a button remains.
+    // Master OTP in dev — the widget is six discrete boxes (aria-labels are
+    // localized, so select structurally by inputmode).
+    cy.location("pathname", { timeout: 15_000 }).should("eq", "/verify");
+    cy.get("input[inputmode=numeric]", { timeout: 10_000 }).should("have.length", 6);
+    for (let i = 0; i < 6; i++) {
+      cy.get("input[inputmode=numeric]").eq(i).type("0", { force: true });
+    }
+    // Some flows auto-submit on the 6th digit (the button stays disabled while
+    // verifying) — only click an ENABLED Verify button if one is offered.
     cy.get("body").then(($b) => {
-      const btn = $b.find("button:contains('Verify'), button:contains('Verificar')");
+      const btn = $b
+        .find("button:contains('Verify'), button:contains('Verificar')")
+        .filter(":not(:disabled)");
       if (btn.length) cy.wrap(btn.first()).click();
     });
 

@@ -20,6 +20,9 @@ interface Props {
   q: Quote;
   idx: number;
   lang?: "en" | "es";
+  /** Deep-link (/quotes?open=<id>): mount the card already flipped to its
+   *  detail back so the opened quote's actions are immediately visible. */
+  flipOnMount?: boolean;
 }
 
 function OpenDots({ count, max = 5 }: { count: number; max?: number }) {
@@ -35,8 +38,10 @@ function OpenDots({ count, max = 5 }: { count: number; max?: number }) {
   );
 }
 
-export default function QuoteCard({ q, idx, lang = "en" }: Props) {
-  const [flipped, setFlipped] = useState(false);
+export default function QuoteCard(
+  { q, idx, lang = "en", flipOnMount = false }: Props,
+) {
+  const [flipped, setFlipped] = useState(flipOnMount);
   const [copied, setCopied] = useState(false);
 
   async function copyPublicLink(e: MouseEvent) {
@@ -186,15 +191,14 @@ export default function QuoteCard({ q, idx, lang = "en" }: Props) {
               ? tFor(lang, "quoteCard.back.linkCopied")
               : tFor(lang, "quoteCard.back.copyLink")}
           </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              globalThis.open(`/q/${q.id}`, "_blank", "noopener");
-            }}
+          <a
+            href={`/q/${q.id}`}
+            target="_blank"
+            rel="noopener"
+            onClick={(e) => e.stopPropagation()}
           >
             {tFor(lang, "quoteCard.back.viewAsClient")}
-          </button>
+          </a>
           <DeleteQuoteButton id={q.id} />
         </div>
       </div>

@@ -30,6 +30,10 @@ export default function AsstThreads(
     return globalThis.localStorage.getItem("pm:threads-collapsed") === "1";
   });
   const asideRef = useRef<HTMLElement | null>(null);
+  // Cypress hook (data-cy) is only attached after hydration so a test can
+  // never click the toggle before its listener is live.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     const parent = asideRef.current?.parentElement;
@@ -37,16 +41,20 @@ export default function AsstThreads(
   }, [collapsed]);
 
   function toggleCollapsed() {
-    setCollapsed((c) => {
-      const next = !c;
-      try {
-        globalThis.localStorage?.setItem(
-          "pm:threads-collapsed",
-          next ? "1" : "0",
-        );
-      } catch { /* SSR-safe */ }
-      return next;
-    });
+    const next = !collapsed;
+    try {
+      globalThis.localStorage?.setItem(
+        "pm:threads-collapsed",
+        next ? "1" : "0",
+      );
+    } catch { /* SSR-safe */ }
+    // Flip the parent grid class synchronously (the effect above also keeps
+    // it in sync for the initial-mount case) so the panel's measured width
+    // shrinks in the same frame as the toggle instead of one effect-tick
+    // later.
+    const parent = asideRef.current?.parentElement;
+    if (parent) parent.classList.toggle("asst--threads-collapsed", next);
+    setCollapsed(next);
   }
 
   // Live-refresh: poll on an interval so a customer accept (which flips
@@ -93,6 +101,11 @@ export default function AsstThreads(
         <button
           type="button"
           class="threads__toggle"
+          // Same QuickBooks pattern as the sidebar (roadmap p9): one physical
+          // button — collapse arrow when open, hamburger when collapsed.
+          data-cy={mounted
+            ? (collapsed ? "asst-threads-expand" : "asst-threads-collapse")
+            : undefined}
           onClick={toggleCollapsed}
           aria-label={collapsed
             ? tFor(lang, "asstThreads.expandConversations")
@@ -118,7 +131,9 @@ export default function AsstThreads(
             size={16}
           />
         </button>
-        <h3 class="threads__title">{tFor(lang, "asstThreads.conversations")}</h3>
+        <h3 class="threads__title">
+          {tFor(lang, "asstThreads.conversations")}
+        </h3>
         <span class="threads__count">{total}</span>
       </div>
       <a
