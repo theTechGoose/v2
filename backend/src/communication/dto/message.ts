@@ -1,11 +1,17 @@
-import { IsIn, IsString, IsOptional, validateSync } from "#class-validator";
+import { IsIn, IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
 
 export type MessageRole = "user" | "assistant" | "system";
 export type MessageChannel = "text" | "email" | "web" | "phone" | "in_person";
 
 export const MESSAGE_ROLES: MessageRole[] = ["user", "assistant", "system"];
-export const MESSAGE_CHANNELS: MessageChannel[] = ["text", "email", "web", "phone", "in_person"];
+export const MESSAGE_CHANNELS: MessageChannel[] = [
+  "text",
+  "email",
+  "web",
+  "phone",
+  "in_person",
+];
 
 export class CreateMessageDto {
   @IsString()
@@ -20,24 +26,41 @@ export class CreateMessageDto {
   @IsString()
   content!: string;
 
-  @IsOptional() @IsString() subject?: string;
-  @IsOptional() @IsString() fromAddress?: string;
-  @IsOptional() @IsString() toAddress?: string;
+  @IsOptional() @IsString()
+  subject?: string;
+  @IsOptional() @IsString()
+  fromAddress?: string;
+  @IsOptional() @IsString()
+  toAddress?: string;
+
+  /** Rendered HTML copy of an outbound email dispatch, logged verbatim so the
+   *  customer-facing wording is auditable per message (content stays the
+   *  short human-readable summary line). */
+  @IsOptional() @IsString()
+  htmlBody?: string;
 
   /** When the message is an outbound paperwork dispatch (quote/contract/
    *  invoice email or text), the paperwork row it references — powers the
    *  per-document comms trail (roadmap p.8 completion notifications). */
-  @IsOptional() @IsString() paperworkId?: string;
-  @IsOptional() @IsString() paperworkType?: string;
+  @IsOptional() @IsString()
+  paperworkId?: string;
+  @IsOptional() @IsString()
+  paperworkType?: string;
 }
 
 export class UpdateMessageDto {
-  @IsOptional() @IsIn(MESSAGE_ROLES) role?: MessageRole;
-  @IsOptional() @IsIn(MESSAGE_CHANNELS) channel?: MessageChannel;
-  @IsOptional() @IsString() content?: string;
-  @IsOptional() @IsString() subject?: string;
-  @IsOptional() @IsString() fromAddress?: string;
-  @IsOptional() @IsString() toAddress?: string;
+  @IsOptional() @IsIn(MESSAGE_ROLES)
+  role?: MessageRole;
+  @IsOptional() @IsIn(MESSAGE_CHANNELS)
+  channel?: MessageChannel;
+  @IsOptional() @IsString()
+  content?: string;
+  @IsOptional() @IsString()
+  subject?: string;
+  @IsOptional() @IsString()
+  fromAddress?: string;
+  @IsOptional() @IsString()
+  toAddress?: string;
 }
 
 export interface Message extends CreateMessageDto {
@@ -49,13 +72,17 @@ export interface Message extends CreateMessageDto {
 export function parseCreateMessage(input: unknown): CreateMessageDto {
   const dto = plainToInstance(CreateMessageDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid message: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid message: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }
 
 export function parseUpdateMessage(input: unknown): UpdateMessageDto {
   const dto = plainToInstance(UpdateMessageDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid message patch: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid message patch: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }

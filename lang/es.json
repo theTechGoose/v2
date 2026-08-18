@@ -1621,7 +1621,7 @@
   "paperworkEmail.quote.step3Title": "Eliges fecha de inicio",
   "paperworkEmail.quote.step4Sub": "Recibo + garantía en tu correo",
   "paperworkEmail.quote.step4Title": "Listo",
-  "paperworkEmail.quote.subject": "{businessName} Cotización para {customerName}, {jobName}",
+  "paperworkEmail.quote.subject": "Cotización de {businessName} para {customerName}, {jobName}",
   "paperworkEmail.quote.summaryFallback": "Tu proyecto",
   "paperworkEmail.quote.titleWord": "Cotización",
   "paperworkEmail.quote.whatNext": "Qué sigue",
