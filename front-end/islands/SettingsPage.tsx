@@ -45,6 +45,21 @@ const btnPrimary =
  * the specific too-large copy; everything else falls back to the generic
  * per-card message.
  */
+/**
+ * PUT JSON with `keepalive` so the instant-save model survives navigation:
+ * the /settings header promises "changes save as you go", and a blur/change
+ * save fired right before a page switch must still reach the backend.
+ */
+function putKeepalive(path: string, body: unknown): Promise<Response> {
+  return fetch(`/api${path}`, {
+    method: "PUT",
+    credentials: "include",
+    keepalive: true,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 function uploadErrorMessage(
   ex: unknown,
   tooLarge: string,
@@ -482,11 +497,13 @@ function EditCard(
   );
 }
 
-/** AddressEditCard — editable mailing address (roadmap p.8). Explicit Save
- *  button (contract: [data-cy=settings-mailing-address]) PUTs the whole
- *  address in one shot — no per-field blur-saves, so typing across fields
- *  never races a mid-save disabled state. Input order is part of the
- *  contract: street first, city second, then state/zip/country. */
+/** AddressEditCard — editable mailing address (roadmap p.8). P-42: honors
+ *  the page's "changes save as you go" promise — every edit autosaves
+ *  (debounced on input, flushed on blur and on page-hide via keepalive), so
+ *  persistence never depends on the explicit Save button (kept as a
+ *  reassurance affordance). Contract: [data-cy=settings-mailing-address];
+ *  input order is part of it: street first, city second, then
+ *  state/zip/country. */
 function AddressEditCard(
   { snapshot, onSaved }: {
     snapshot: ProfileSnapshot;
@@ -504,18 +521,69 @@ function AddressEditCard(
   const [saved, setSaved] = useState(false);
   const t = tr(langSignal.value === "es");
 
+  // Latest field values + dirty flag, readable from timers/unload handlers.
+  const pendingRef = useRef<Record<string, string> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  function payload(patch: Partial<Record<string, string>> = {}) {
+    return {
+      street: (patch.street ?? street).trim(),
+      city: (patch.city ?? city).trim(),
+      state: (patch.state ?? stateV).trim(),
+      postal: (patch.postal ?? postal).trim(),
+      country: (patch.country ?? country).trim(),
+    };
+  }
+
+  /** Debounced instant-save: keepalive PUT so a save racing a navigation
+   *  still lands. Inputs are never disabled by it — typing wins. */
+  function queueAutosave(next: Record<string, string>) {
+    pendingRef.current = next;
+    setSaved(false);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => flushAutosave(), 350);
+  }
+  function flushAutosave() {
+    const body = pendingRef.current;
+    if (!body) return;
+    pendingRef.current = null;
+    clearTimeout(timerRef.current);
+    setBusy(true);
+    setErr(null);
+    putKeepalive("/profile/address", body)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(t.saveFailed);
+        const next = await r.json().catch(() => null);
+        if (next) onSaved({ address: next });
+        setSaved(true);
+      })
+      .catch((e) => setErr(e instanceof Error ? e.message : t.saveFailed))
+      .finally(() => setBusy(false));
+  }
+  useEffect(() => {
+    // Page unloading (navigation away) — fire any pending save NOW; the
+    // keepalive fetch outlives the document.
+    const onHide = () => {
+      const body = pendingRef.current;
+      if (!body) return;
+      pendingRef.current = null;
+      putKeepalive("/profile/address", body).catch(() => {/* best-effort */});
+    };
+    addEventListener("pagehide", onHide);
+    return () => {
+      removeEventListener("pagehide", onHide);
+      onHide();
+    };
+  }, []);
+
   async function save() {
+    pendingRef.current = null;
+    clearTimeout(timerRef.current);
     setBusy(true);
     setErr(null);
     setSaved(false);
     try {
-      const next = await profileClient.updateAddress({
-        street: street.trim(),
-        city: city.trim(),
-        state: stateV.trim(),
-        postal: postal.trim(),
-        country: country.trim(),
-      });
+      const next = await profileClient.updateAddress(payload());
       onSaved({ address: next });
       setSaved(true);
     } catch (e) {
@@ -542,9 +610,13 @@ function AddressEditCard(
             type="text"
             style={inputStyle}
             value={street}
-            disabled={busy}
             placeholder={t.phStreet}
-            onInput={(e) => setStreet((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              setStreet(v);
+              queueAutosave(payload({ street: v }));
+            }}
+            onBlur={flushAutosave}
           />
         </label>
         <label style="display:block">
@@ -553,8 +625,12 @@ function AddressEditCard(
             type="text"
             style={inputStyle}
             value={city}
-            disabled={busy}
-            onInput={(e) => setCity((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              setCity(v);
+              queueAutosave(payload({ city: v }));
+            }}
+            onBlur={flushAutosave}
           />
         </label>
         <label style="display:block">
@@ -563,11 +639,14 @@ function AddressEditCard(
             type="text"
             style={inputStyle}
             value={stateV}
-            disabled={busy}
             maxLength={2}
             placeholder={t.phState}
-            onInput={(e) =>
-              setStateV((e.target as HTMLInputElement).value.toUpperCase())}
+            onInput={(e) => {
+              const v = (e.target as HTMLInputElement).value.toUpperCase();
+              setStateV(v);
+              queueAutosave(payload({ state: v }));
+            }}
+            onBlur={flushAutosave}
           />
         </label>
         <label style="display:block">
@@ -576,8 +655,12 @@ function AddressEditCard(
             type="text"
             style={inputStyle}
             value={postal}
-            disabled={busy}
-            onInput={(e) => setPostal((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              setPostal(v);
+              queueAutosave(payload({ postal: v }));
+            }}
+            onBlur={flushAutosave}
           />
         </label>
         <label style="display:block">
@@ -586,8 +669,12 @@ function AddressEditCard(
             type="text"
             style={inputStyle}
             value={country}
-            disabled={busy}
-            onInput={(e) => setCountry((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              setCountry(v);
+              queueAutosave(payload({ country: v }));
+            }}
+            onBlur={flushAutosave}
           />
         </label>
       </div>

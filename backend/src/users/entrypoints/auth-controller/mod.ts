@@ -59,28 +59,17 @@ export class AuthController {
    */
   @Post("verify-otp")
   async verify(@Context() ctx: ExecutionContext, @Body() body: unknown) {
-    const dto = parseVerifyOtp(body);
-    try {
-      const result = await this.verifyOtp.run({
-        phoneNumber: dto.phoneNumber,
-        code: dto.code,
-      });
-      ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
-      return {
-        sessionId: result.sessionId,
-        userId: result.userId,
-        isNewUser: result.isNewUser,
-      };
-    } catch (err) {
-      if (err instanceof InvalidCodeError) {
-        return errorBody("invalid_code", 401);
-      }
-      if (err instanceof ExpiredCodeError) return errorBody("expired", 410);
-      if (err instanceof RateLimitedError) {
-        return errorBody("rate_limited", 429);
-      }
-      throw err;
-    }
+    return await handleVerify(ctx, body, this.verifyOtp);
+  }
+
+  /** Path-parity alias: the web proxy exposes this as POST /api/auth/verify,
+   *  so direct-backend clients (integration tests, SDKs) get the same name.
+   *  Shared body lives in the module-level handleVerify — Danet registers
+   *  every class method as a route, so controller helpers must be free
+   *  functions. */
+  @Post("verify")
+  async verifyAlias(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    return await handleVerify(ctx, body, this.verifyOtp);
   }
 
   /**
@@ -94,6 +83,38 @@ export class AuthController {
     if (sessionId) await this.logout.run(sessionId);
     ctx.header("Set-Cookie", clearSessionCookie());
     return { ok: true };
+  }
+}
+
+/** Shared verify body for /auth/verify-otp and its /auth/verify alias.
+ *  Module-level on purpose: Danet registers every controller class method
+ *  as a route. */
+async function handleVerify(
+  ctx: ExecutionContext,
+  body: unknown,
+  verifyOtp: VerifyOtp,
+) {
+  const dto = parseVerifyOtp(body);
+  try {
+    const result = await verifyOtp.run({
+      phoneNumber: dto.phoneNumber,
+      code: dto.code,
+    });
+    ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
+    return {
+      sessionId: result.sessionId,
+      userId: result.userId,
+      isNewUser: result.isNewUser,
+    };
+  } catch (err) {
+    if (err instanceof InvalidCodeError) {
+      return errorBody("invalid_code", 401);
+    }
+    if (err instanceof ExpiredCodeError) return errorBody("expired", 410);
+    if (err instanceof RateLimitedError) {
+      return errorBody("rate_limited", 429);
+    }
+    throw err;
   }
 }
 

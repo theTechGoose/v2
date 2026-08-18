@@ -82,6 +82,11 @@ export class SendAcceptedAlert {
           }`,
         );
         if (res.ok) {
+          // P-32: deliberately NOT tagged with the quote's paperworkId — this
+          // is a SELF-notification to the contractor, and tagging it against
+          // the document made the receipts strip (and GET /messages consumers)
+          // count it as a customer delivery. The content string still carries
+          // the quote id for traceability.
           await this.commsLog.run({
             userId: quote.userId,
             customerId: quote.customerId,
@@ -91,8 +96,6 @@ export class SendAcceptedAlert {
               ? t(lang, "acceptedAlert.email.subjectJob", { name: customerName, job: jobName })
               : t(lang, "acceptedAlert.email.subject", { name: customerName }),
             toAddress: contractor.email.trim(),
-            paperworkId: quoteId,
-            paperworkType: "quote",
           });
         }
         sentAny = sentAny || res.ok;
@@ -119,14 +122,13 @@ export class SendAcceptedAlert {
           }`,
         );
         if (res.ok) {
+          // P-32: self-alert — see the email log above; no paperworkId tag.
           await this.commsLog.run({
             userId: quote.userId,
             customerId: quote.customerId,
             channel: "text",
             content: `quote ${quoteId} approved — completion text: ${body}`,
             toAddress: contractor.phoneNumber.trim(),
-            paperworkId: quoteId,
-            paperworkType: "quote",
           });
         }
         sentAny = sentAny || res.ok;
