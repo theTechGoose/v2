@@ -13,6 +13,7 @@
  */
 import PublicSignContract from "../islands/PublicSignContract.tsx";
 import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
+import { deriveContractView } from "../../shared/quote-flow/public-doc-state.ts";
 import { fmtPhone, telHref } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import {
@@ -66,6 +67,9 @@ export interface ContractPublic {
   estimatedCompletionDate?: string;
   signedAt?: string;
   customerSignedName?: string;
+  /** Captured signature mark (compact data-URL PNG) — present once signed
+   *  (P-40). */
+  customerSignature?: string;
   contractor?: Contractor;
   customer?: { name?: string; phoneNumber?: string; email?: string };
   jobDetails?: {
@@ -152,6 +156,8 @@ function cstr(lang: Lang) {
     signedBinding: tFor(lang, "contractDoc.signedBinding"),
     signedNote: tFor(lang, "contractDoc.signedNote"),
     qBefore: tFor(lang, "contractDoc.qBefore"),
+    qSigned: tFor(lang, "contractDoc.qSigned"),
+    downloadPdf: tFor(lang, "contractDoc.downloadPdf"),
     callWord: tFor(lang, "contractDoc.callWord"),
     orWord: tFor(lang, "contractDoc.orWord"),
     emailWord: tFor(lang, "contractDoc.emailWord"),
@@ -201,7 +207,11 @@ export function ContractDoc(
     lang?: Lang;
   },
 ) {
-  const signed = contract.status === "signed";
+  // Shared view derivation (P-11/P-13/P-40/P-63) — signed state, the
+  // stored signature image, the post-signed footer variant, and the PDF
+  // download URL all come from the same pure module the tests pin.
+  const view = deriveContractView(contract);
+  const signed = view.signed;
   const declined = contract.status === "declined";
   const total = contract.totalAmount ??
     sumLineTotals(contract.jobDetails?.lineItems);
@@ -531,11 +541,28 @@ export function ContractDoc(
                           ? t.signatureOf(customerName)
                           : t.clientSignature}
                       </div>
-                      <div
-                        style={`margin-top:6px;font-family:'Snell Roundhand','Brush Script MT',cursive;font-size:26px;color:${TEAL};line-height:1.1`}
-                      >
-                        {contract.customerSignedName ?? customerName ?? "—"}
-                      </div>
+                      {
+                        /* P-40: the captured signature mark (drawn on the
+                          pad, or the typed-name PNG) renders back on the
+                          signed page; the cursive text is the fallback for
+                          legacy rows without a stored image. */
+                      }
+                      {view.signatureImage
+                        ? (
+                          <img
+                            src={view.signatureImage}
+                            alt={contract.customerSignedName ??
+                              customerName ?? ""}
+                            style="margin-top:6px;display:block;max-width:240px;max-height:80px;object-fit:contain;object-position:left center"
+                          />
+                        )
+                        : (
+                          <div
+                            style={`margin-top:6px;font-family:'Snell Roundhand','Brush Script MT',cursive;font-size:26px;color:${TEAL};line-height:1.1`}
+                          >
+                            {contract.customerSignedName ?? customerName ?? "—"}
+                          </div>
+                        )}
                       <div
                         style={`margin-top:4px;font-size:11px;color:${MUTED}`}
                       >
@@ -608,6 +635,40 @@ export function ContractDoc(
                   </div>
                 </div>
               )}
+              {
+                /* P-63: the signed agreement offers the same PDF download
+                  the invoice page has (deriveContractView emits the URL
+                  for every signed contract). */
+              }
+              {signed && view.pdfUrl && (
+                <div
+                  class="ctr__no-print"
+                  style="margin-top:18px;text-align:center"
+                >
+                  <a
+                    href={view.pdfUrl}
+                    target="_blank"
+                    rel="noopener"
+                    style={`display:inline-flex;align-items:center;gap:8px;color:${MUTED};text-decoration:none;font-weight:700;font-size:13px`}
+                  >
+                    <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <path d="M7 10l5 5 5-5" />
+                      <path d="M12 15V3" />
+                    </svg>
+                    {t.downloadPdf}
+                  </a>
+                </div>
+              )}
             </section>
           )}
 
@@ -623,7 +684,13 @@ export function ContractDoc(
               </div>
               <div style="min-width:0;flex:1">
                 <div style={`color:${INK};font-size:14px;line-height:1.5`}>
-                  {t.qBefore} {contractor?.phoneNumber && (
+                  {
+                    /* P-63: once signed, the footer stops asking "Questions
+                      before signing?" — deriveContractView's footerVariant
+                      picks the post-signed copy. */
+                  }
+                  {view.footerVariant === "signed" ? t.qSigned : t.qBefore}{" "}
+                  {contractor?.phoneNumber && (
                     <>
                       {t.callWord}{" "}
                       <a
