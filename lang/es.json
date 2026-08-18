@@ -562,6 +562,7 @@
   "clientsDisplay.jobsSub.scheduled": "programado",
   "clientsDisplay.since.day.one": "día atrás",
   "clientsDisplay.since.day.other": "días atrás",
+  "clientsDisplay.since.today": "hoy",
   "clientsDisplay.since.week.one": "semana atrás",
   "clientsDisplay.since.week.other": "semanas atrás",
   "clientsDisplay.status.active": "Trabajo activo",

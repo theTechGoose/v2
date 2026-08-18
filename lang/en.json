@@ -562,6 +562,7 @@
   "clientsDisplay.jobsSub.scheduled": "scheduled",
   "clientsDisplay.since.day.one": "day ago",
   "clientsDisplay.since.day.other": "days ago",
+  "clientsDisplay.since.today": "today",
   "clientsDisplay.since.week.one": "week ago",
   "clientsDisplay.since.week.other": "weeks ago",
   "clientsDisplay.status.active": "Active job",
