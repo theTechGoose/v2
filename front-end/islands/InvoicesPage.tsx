@@ -2177,9 +2177,11 @@ function InvoiceCard(
                                     )
                                     : (
                                       <>
-                                        {/* P-41: a customer-APPROVED change
+                                        {
+                                          /* P-41: a customer-APPROVED change
                                             order is immutable — no Edit, no
-                                            Delete (server 409s them too). */}
+                                            Delete (server 409s them too). */
+                                        }
                                         {isChangeOrderMutable(co) && (
                                           <button
                                             type="button"
@@ -2250,9 +2252,11 @@ function InvoiceCard(
           )}
         </div>
         <div class="qcard__back-foot">
-          {/* Design rule: exactly ONE solid primary per action row — the
+          {
+            /* Design rule: exactly ONE solid primary per action row — the
               stage CTA (e.g. "Confirm payment" on a claimed card); every
-              other action stays outlined. */}
+              other action stays outlined. */
+          }
           <button
             type="button"
             class="qcard__back-btn--primary"

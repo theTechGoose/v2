@@ -257,10 +257,10 @@
   inset: 0;
   background-image:
     radial-gradient(
-      circle at 18% 22%,
-      rgba(255, 255, 255, 0.18) 0,
-      transparent 35%
-    ),
+    circle at 18% 22%,
+    rgba(255, 255, 255, 0.18) 0,
+    transparent 35%
+  ),
     radial-gradient(circle at 82% 78%, rgba(0, 0, 0, 0.10) 0, transparent 40%);
   pointer-events: none;
 }
@@ -515,10 +515,10 @@
   inset: 0;
   background-image:
     radial-gradient(
-      circle at 18% 22%,
-      rgba(255, 255, 255, 0.18) 0,
-      transparent 35%
-    ),
+    circle at 18% 22%,
+    rgba(255, 255, 255, 0.18) 0,
+    transparent 35%
+  ),
     radial-gradient(circle at 82% 78%, rgba(0, 0, 0, 0.10) 0, transparent 40%);
   pointer-events: none;
 }
@@ -565,7 +565,8 @@
   animation: q-pulse-dot 2.4s infinite;
 }
 @keyframes q-pulse-dot {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {

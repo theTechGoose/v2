@@ -1081,10 +1081,21 @@ function PaymentsEditCard(
   const [saved, setSaved] = useState(false);
   const lang: Lang = langSignal.value === "es" ? "es" : "en";
   const t = tr(langSignal.value === "es");
+  // Latest rows, readable synchronously from blur handlers (P-42 autosave).
+  const rowsRef = useRef<Record<string, PayState>>(rows);
+  rowsRef.current = rows;
 
-  function patchRow(key: string, next: Partial<PayState>) {
+  /** Patch one row; `saveNow` persists the merged state immediately (the
+   *  instant-save path for checkbox toggles). */
+  function patchRow(key: string, next: Partial<PayState>, saveNow = false) {
+    const merged = {
+      ...rowsRef.current,
+      [key]: { ...rowsRef.current[key], ...next },
+    };
+    rowsRef.current = merged;
     setSaved(false);
-    setRows((cur) => ({ ...cur, [key]: { ...cur[key], ...next } }));
+    setRows(merged);
+    if (saveNow) autosave(merged);
   }
 
   const mismatch = (r: PayRow) => {
@@ -1092,6 +1103,60 @@ function PaymentsEditCard(
     return st.enabled && r.field !== null && st.value.trim() !== "" &&
       st.confirm.trim() !== "" && st.value.trim() !== st.confirm.trim();
   };
+
+  /** Build the full acceptedPaymentMethods patch from a rows snapshot,
+   *  preserving methods this card doesn't render (e.g. `other`). */
+  function buildPatch(
+    cur: Record<string, PayState>,
+  ): Record<string, Record<string, unknown>> {
+    const apmPatch: Record<string, Record<string, unknown>> = {
+      ...(apm as Record<string, Record<string, unknown>>),
+    };
+    for (const r of PAY_ROWS) {
+      const st = cur[r.key];
+      const entry: Record<string, unknown> = { enabled: st.enabled };
+      if (r.field) entry[r.field] = st.value.trim();
+      apmPatch[r.key] = entry;
+    }
+    return apmPatch;
+  }
+
+  /** Every enabled required-handle method is complete + confirmed — the gate
+   *  for a SILENT instant-save (incomplete rows wait for the explicit Save,
+   *  which surfaces the validation copy). */
+  function autosaveReady(cur: Record<string, PayState>): boolean {
+    return PAY_ROWS.every((r) => {
+      const st = cur[r.key];
+      if (!st.enabled || r.field === null || r.optional) return true;
+      return st.value.trim() !== "" && st.value.trim() === st.confirm.trim();
+    });
+  }
+
+  /** P-42 instant-save: persist the toggles/handles the moment they change
+   *  (keepalive so a save racing a navigation still lands). */
+  function autosave(cur: Record<string, PayState>) {
+    if (!autosaveReady(cur)) return;
+    setErr(null);
+    setBusy(true);
+    putKeepalive("/profile/identity", {
+      acceptedPaymentMethods: buildPatch(cur),
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(t.saveFailed);
+        const id = await r.json().catch(() => null);
+        if (id) {
+          onSaved({
+            identity: {
+              ...(snapshot.identity ?? {} as never),
+              ...id,
+            } as typeof snapshot.identity,
+          });
+        }
+        setSaved(true);
+      })
+      .catch((e) => setErr(e instanceof Error ? e.message : t.saveFailed))
+      .finally(() => setBusy(false));
+  }
 
   async function save() {
     // Validate every enabled handle-bearing method has a matching confirm.
@@ -1113,19 +1178,9 @@ function PaymentsEditCard(
     setBusy(true);
     setErr(null);
     setSaved(false);
-    // Preserve any methods we don't render here (e.g. `other`) via shallow spread.
-    const apmPatch: Record<string, Record<string, unknown>> = {
-      ...(apm as Record<string, Record<string, unknown>>),
-    };
-    for (const r of PAY_ROWS) {
-      const st = rows[r.key];
-      const entry: Record<string, unknown> = { enabled: st.enabled };
-      if (r.field) entry[r.field] = st.value.trim();
-      apmPatch[r.key] = entry;
-    }
     try {
       const id = await profileClient.updateIdentity({
-        acceptedPaymentMethods: apmPatch,
+        acceptedPaymentMethods: buildPatch(rows),
       });
       onSaved({
         identity: {
@@ -1172,11 +1227,11 @@ function PaymentsEditCard(
                 <input
                   type="checkbox"
                   checked={st.enabled}
-                  disabled={busy}
                   onChange={(e) =>
+                    // P-42: a toggle IS the edit — persist it instantly.
                     patchRow(r.key, {
                       enabled: (e.target as HTMLInputElement).checked,
-                    })}
+                    }, true)}
                 />
                 <span style="font-weight:700;font-size:14px;color:var(--fg)">
                   {label}
@@ -1196,12 +1251,12 @@ function PaymentsEditCard(
                       type="text"
                       style={inputStyle}
                       value={st.value}
-                      disabled={busy}
                       placeholder={placeholder}
                       onInput={(e) =>
                         patchRow(r.key, {
                           value: (e.target as HTMLInputElement).value,
                         })}
+                      onBlur={() => autosave(rowsRef.current)}
                     />
                   </label>
                   {!r.optional && (
@@ -1213,12 +1268,12 @@ function PaymentsEditCard(
                           bad ? ";border-color:#a83b3b" : ""
                         }`}
                         value={st.confirm}
-                        disabled={busy}
                         placeholder={placeholder}
                         onInput={(e) =>
                           patchRow(r.key, {
                             confirm: (e.target as HTMLInputElement).value,
                           })}
+                        onBlur={() => autosave(rowsRef.current)}
                       />
                     </label>
                   )}
@@ -1242,6 +1297,124 @@ function PaymentsEditCard(
   );
 }
 
+/** ContractDefaultsEditCard — the "Valores del contrato" card, made live
+ *  (P-42): three editable fields wired to GET/PUT /profile/contract-defaults
+ *  ({ paymentTermsDays, depositPct, warrantyDays }), instant-saved on
+ *  change/blur like everything else on this page. */
+function ContractDefaultsEditCard(
+  { snapshot, onSaved }: {
+    snapshot: ProfileSnapshot;
+    onSaved: (partial: Partial<ProfileSnapshot>) => void;
+  },
+) {
+  const cd = snapshot.contractDefaults;
+  const [terms, setTerms] = useState(
+    cd?.paymentTermsDays != null ? String(cd.paymentTermsDays) : "",
+  );
+  const [deposit, setDeposit] = useState(
+    cd?.depositPct != null ? String(cd.depositPct) : "",
+  );
+  const [warranty, setWarranty] = useState(
+    cd?.warrantyDays != null ? String(cd.warrantyDays) : "",
+  );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const t = tr(langSignal.value === "es");
+
+  function autosave(
+    patch: Partial<Record<"terms" | "deposit" | "warranty", string>> = {},
+  ) {
+    const num = (raw: string) => {
+      const n = Math.round(Number(raw));
+      return raw.trim() !== "" && Number.isFinite(n) && n >= 0 ? n : undefined;
+    };
+    const body = {
+      ...(num(patch.terms ?? terms) != null
+        ? { paymentTermsDays: num(patch.terms ?? terms) }
+        : {}),
+      ...(num(patch.deposit ?? deposit) != null
+        ? { depositPct: num(patch.deposit ?? deposit) }
+        : {}),
+      ...(num(patch.warranty ?? warranty) != null
+        ? { warrantyDays: num(patch.warranty ?? warranty) }
+        : {}),
+    };
+    if (Object.keys(body).length === 0) return;
+    setBusy(true);
+    setErr(null);
+    putKeepalive("/profile/contract-defaults", body)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(t.saveFailed);
+        const next = await r.json().catch(() => null);
+        if (next) onSaved({ contractDefaults: next });
+        setSaved(true);
+      })
+      .catch((e) => setErr(e instanceof Error ? e.message : t.saveFailed))
+      .finally(() => setBusy(false));
+  }
+
+  const fields: Array<{
+    key: "terms" | "deposit" | "warranty";
+    label: string;
+    suffix: string;
+    value: string;
+    set: (v: string) => void;
+  }> = [
+    {
+      key: "terms",
+      label: t.paymentTerms,
+      suffix: t.days,
+      value: terms,
+      set: setTerms,
+    },
+    {
+      key: "deposit",
+      label: t.deposit,
+      suffix: "%",
+      value: deposit,
+      set: setDeposit,
+    },
+    {
+      key: "warranty",
+      label: t.warranty,
+      suffix: t.days,
+      value: warranty,
+      set: setWarranty,
+    },
+  ];
+
+  return (
+    <EditPanel
+      title={t.contractDefaults}
+      busy={busy}
+      err={err}
+      saved={saved}
+      saving={t.saving}
+      savedLabel={t.saved}
+      dataCy="settings-contract-defaults"
+    >
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
+        {fields.map((f) => (
+          <label key={f.key} style="display:block">
+            <span style={labelStyle}>{f.label} ({f.suffix})</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              style={inputStyle}
+              value={f.value}
+              onInput={(e) => f.set((e.target as HTMLInputElement).value)}
+              onBlur={(e) =>
+                autosave({ [f.key]: (e.target as HTMLInputElement).value })}
+            />
+          </label>
+        ))}
+      </div>
+    </EditPanel>
+  );
+}
+
 /** DangerZoneCard — irreversible account wipe. Type-to-confirm gate, then a
  *  single destructive button hits GET /me/wipe and bounces to the login page
  *  (the wipe drops every session, so the app is logged out anyway). */
@@ -1250,7 +1423,12 @@ function DangerZoneCard(_props: { snapshot: ProfileSnapshot }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const t = tr(langSignal.value === "es");
-  const armed = confirm.trim().toUpperCase() === "DELETE";
+  // P-65: the confirm keyword is the quoted word inside the localized label
+  // ('Type "DELETE" to confirm' / 'Escribe "ELIMINAR" para confirmar') — the
+  // ES page must never demand the English "DELETE".
+  const keyword = (t.wipeConfirmLabel.match(/"([^"]+)"/)?.[1] ?? "DELETE")
+    .toUpperCase();
+  const armed = confirm.trim().toUpperCase() === keyword;
 
   async function wipe() {
     if (!armed) return;
@@ -1284,7 +1462,7 @@ function DangerZoneCard(_props: { snapshot: ProfileSnapshot }) {
           style={inputStyle}
           value={confirm}
           disabled={busy}
-          placeholder="DELETE"
+          placeholder={keyword}
           aria-label={t.ariaWipeConfirm}
           onInput={(e) => setConfirm((e.target as HTMLInputElement).value)}
         />
@@ -1407,32 +1585,11 @@ export default function SettingsPage() {
 
       <div class="grid">
         <TaxEditCard snapshot={p} onSaved={onSaved} />
-        <Card
-          title={t.contractDefaults}
-          empty={t.nothingSet}
-          rows={[
-            [
-              t.paymentTerms,
-              p.contractDefaults?.paymentTermsDays != null
-                ? tFor(lang, "settings.contractDefaults.net", {
-                  n: p.contractDefaults.paymentTermsDays,
-                })
-                : null,
-            ],
-            [
-              t.deposit,
-              p.contractDefaults?.depositPct != null
-                ? `${p.contractDefaults.depositPct}%`
-                : null,
-            ],
-            [
-              t.warranty,
-              p.contractDefaults?.warrantyDays != null
-                ? `${p.contractDefaults.warrantyDays} ${t.days}`
-                : null,
-            ],
-          ]}
-        />
+        {
+          /* P-42: live editor wired to GET/PUT /profile/contract-defaults —
+            the card is no longer a dead read-only panel. */
+        }
+        <ContractDefaultsEditCard snapshot={p} onSaved={onSaved} />
       </div>
 
       <PaymentsEditCard snapshot={p} onSaved={onSaved} />
