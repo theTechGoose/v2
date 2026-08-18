@@ -317,6 +317,65 @@ export class SendSignedConfirmation {
       ...(invoiceId ? { invoiceId } : {}),
     };
   }
+
+  /**
+   * Quote-accept flavor of the completion text (deck p.2/p.8: "Post
+   * Quotes/Signed Quotes we need to send a completion Text" — the CUSTOMER
+   * gets a confirmation their acceptance registered, and the receipts strip
+   * gets an honest customer-facing "texted" line instead of the contractor
+   * self-alert it used to count, P-32). Email is not duplicated here — the
+   * customer already holds the quote email, and the accepted state renders
+   * on /q/:id itself.
+   *
+   * At-most-once: the accept endpoint 409s on a second accept, so this
+   * fires once per quote lifetime. Best-effort like the contract flavor.
+   */
+  async runForQuote(quoteId: string): Promise<{ ok: boolean }> {
+    try {
+      const quote = await this.quotes.get(quoteId);
+      const userId = quote.userId;
+      const [ident, customer] = await Promise.all([
+        this.identity.get(userId).catch(() => null),
+        quote.customerId
+          ? this.customers.getOwned(quote.customerId, userId).catch(() =>
+            undefined as Customer | undefined
+          )
+          : Promise.resolve(undefined as Customer | undefined),
+      ]);
+      const toSms = normalizeE164(customer?.phoneNumber ?? "");
+      if (!toSms) return { ok: false };
+      const contractor = await this.users.get(userId).catch(() =>
+        undefined as User | undefined
+      );
+      const businessName = ident?.businessName?.trim() ||
+        ident?.legalName?.trim() || contractor?.name?.trim();
+      const lang: Lang = ident?.commsLanguage === "es" ? "es" : "en";
+      const first = (customer?.name ?? "").trim().split(/\s+/)[0] || undefined;
+      const body = buildSignedConfirmSms({
+        customerFirstName: first,
+        jobName: smsJobName(quote ?? {}, lang),
+        url: `${APP_URL}/q/${quote.id}`,
+        businessName,
+        lang,
+      });
+      const res = await this.sms.send({ to: toSms, body });
+      if (res.ok) {
+        await this.commsLog.run({
+          userId,
+          customerId: customer?.id,
+          channel: "text",
+          content: body,
+          toAddress: toSms,
+          paperworkId: quote.id,
+          paperworkType: "quote",
+        });
+      }
+      return { ok: res.ok };
+    } catch (err) {
+      console.error("[send-signed-confirmation] quote completion SMS failed:", err);
+      return { ok: false };
+    }
+  }
 }
 
 /* ---------------- helpers ---------------- */

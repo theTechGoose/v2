@@ -424,7 +424,9 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             num="02"
             title={tFor(lang, "quotesPage.track.drafting")}
             count={draftCards.length}
-            defaultOpen={false}
+            /* A draft the user is mid-writing must not hide behind a
+               collapsed track (same rule as the invoice tracks, P-31). */
+            defaultOpen={draftCards.length > 0}
             forceOpen={openId != null &&
               draftCards.some((q) => q.id === openId)}
             storageKey="quotes:track:02"

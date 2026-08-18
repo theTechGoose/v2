@@ -526,6 +526,18 @@ export class PaperworkPublicController {
         err,
       );
     });
+    // Completion text to the CUSTOMER (deck p.2/p.8) — their receipt that
+    // the acceptance registered, and the honest "texted" line on the
+    // contractor's receipts strip (the strip no longer counts the
+    // contractor self-alert as a customer send, P-32). Awaited for the
+    // same comms-trail-visibility reason as the alert above; at-most-once
+    // because a second accept 409s before reaching here.
+    await this.signedConfirmation.runForQuote(updated.id).catch((err) => {
+      console.error(
+        `[quotes/${updated.id}/accept] customer completion text failed:`,
+        err,
+      );
+    });
     return ctx.json({ ok: true, quoteId: updated.id });
   }
 

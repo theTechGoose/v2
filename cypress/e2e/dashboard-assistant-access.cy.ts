@@ -102,20 +102,20 @@ describe("QuickBooks-style sidebar minimize (p9)", () => {
     cy.get("[data-cy=sidebar-collapse]", { timeout: 10_000 }).click();
     // Nav labels disappear; the rail (with a hamburger/expand control) remains.
     cy.get("[data-cy=sidebar-expand]").should("be.visible");
-    assertNavLabelGone(/clients/i);
+    assertNavLabelGone(/customers/i);
   });
 
   it("the hamburger on the collapsed rail restores the full sidebar", () => {
     cy.get("[data-cy=sidebar-collapse]").click();
     cy.get("[data-cy=sidebar-expand]").click();
-    cy.contains("a", /clients/i).should("be.visible");
+    cy.contains("a", /customers/i).should("be.visible");
   });
 
   it("the collapsed state survives navigation (added spec beyond p9 — sanity of the pattern)", () => {
     cy.get("[data-cy=sidebar-collapse]").click();
     cy.visit("/quotes");
     cy.get("[data-cy=sidebar-expand]").should("be.visible");
-    assertNavLabelGone(/clients/i);
+    assertNavLabelGone(/customers/i);
   });
 
   it("the PM Assistant conversations panel collapses and expands with the same pattern", () => {
