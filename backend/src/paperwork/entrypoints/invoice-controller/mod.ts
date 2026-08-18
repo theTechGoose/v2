@@ -32,6 +32,10 @@ import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/recor
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import {
+  canAdjustInvoice,
+  isChangeOrderMutable,
+} from "#quote-flow/adjustment-guards.ts";
 
 function project(invoice: Invoice, now: Date): Invoice {
   return { ...invoice, urgency: deriveUrgency(invoice, now) };
@@ -62,10 +66,34 @@ export class InvoiceController {
     @Body() body: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const b = (body ?? {}) as { discountCents?: number; reason?: string };
+    const b = (body ?? {}) as {
+      discountCents?: number;
+      reason?: string;
+      /** Explicit "I know a payment claim is pending" acknowledgement. */
+      acknowledgeClaim?: boolean;
+      override?: boolean;
+    };
     const cents = Math.max(0, Math.round(Number(b.discountCents ?? 0)));
     if (!cents) throw new Error("discountCents must be a positive integer");
     const inv = await this.store.getOwned(id, user.id);
+    // P-41 integrity guard: an UNCONFIRMED payment claim means the customer
+    // already claimed the OLD total — never silently change it under them.
+    // 409 with a machine-readable reason unless explicitly acknowledged.
+    const decision = canAdjustInvoice({
+      paymentIntent: inv.paymentIntent ? { ...inv.paymentIntent } : null,
+    });
+    const acknowledged = b.acknowledgeClaim === true || b.override === true;
+    if (decision.requiresWarning && !acknowledged) {
+      return ctx.json(
+        {
+          ok: false,
+          blocked: true,
+          requiresConfirmation: true,
+          reason: decision.reason ?? "unconfirmed-payment-claim",
+        },
+        409,
+      );
+    }
     const newAmount = Math.max(0, (inv.amount ?? 0) - cents);
     const updated = await this.store.update(id, user.id, {
       amount: newAmount,
@@ -119,6 +147,14 @@ export class InvoiceController {
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const existing = await this.changeOrders.getOwned(coId, user.id);
+    // P-41: a customer-APPROVED change order is immutable — the customer
+    // signed off on that exact description + delta.
+    if (!isChangeOrderMutable(existing)) {
+      return ctx.json(
+        { ok: false, reason: "approved-change-order-immutable" },
+        409,
+      );
+    }
     const dto = parseCreateChangeOrder(body);
     // Revert any already-applied delta, then re-snapshot against the resulting
     // live total so the customer's fresh approval math is correct.
@@ -145,9 +181,15 @@ export class InvoiceController {
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const existing = await this.changeOrders.getOwned(coId, user.id);
-    // Revert (only) an approved order's applied delta; pending/declined never
-    // touched the invoice.
-    await revertApprovedDelta(this.store, existing, user.id);
+    // P-41: a customer-APPROVED change order is immutable — deleting it would
+    // silently rewrite an amount the customer already agreed to.
+    if (!isChangeOrderMutable(existing)) {
+      return ctx.json(
+        { ok: false, reason: "approved-change-order-immutable" },
+        409,
+      );
+    }
+    // Pending/declined orders never touched the invoice — nothing to revert.
     await this.changeOrders.delete(coId, user.id);
     return ctx.json({ ok: true });
   }

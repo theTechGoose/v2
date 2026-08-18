@@ -257,10 +257,10 @@
   inset: 0;
   background-image:
     radial-gradient(
-      circle at 18% 22%,
-      rgba(255, 255, 255, 0.18) 0,
-      transparent 35%
-    ),
+    circle at 18% 22%,
+    rgba(255, 255, 255, 0.18) 0,
+    transparent 35%
+  ),
     radial-gradient(circle at 82% 78%, rgba(0, 0, 0, 0.10) 0, transparent 40%);
   pointer-events: none;
 }
@@ -425,6 +425,57 @@
   transform: translateY(-1px);
 }
 
+/* ---- P-31: invoice flip-card back (InvoicesPage stamps .qcard--inv) ----
+   When flipped, the back leaves its absolute overlay and participates in
+   layout so the card grows to fit it: the gradient header is never clipped
+   (head previously flex-shrank under overflow:hidden) and the Discount /
+   Change-order controls are never trapped behind an inner scroll. The front
+   faces are display:none while flipped, so the back alone sizes the card. */
+.qcard--inv.qcard--flipped {
+  cursor: default;
+}
+.qcard--inv.qcard--flipped > .qcard__mood,
+.qcard--inv.qcard--flipped > .qcard__av,
+.qcard--inv.qcard--flipped > .qcard__body,
+.qcard--inv.qcard--flipped > .qcard__foot,
+.qcard--inv.qcard--flipped > .qcard__flip-hint {
+  display: none;
+}
+.qcard--inv.qcard--flipped .qcard__back {
+  position: static;
+  overflow: visible;
+}
+.qcard--inv .qcard__back-head {
+  flex: 0 0 auto; /* never shrink the header below its content */
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+.qcard--inv.qcard--flipped .qcard__back-body {
+  overflow-y: visible;
+}
+/* Exactly ONE solid primary action in the back footer; the rest stay
+   outlined (owner's standing action-row rule). */
+.qcard__back-foot .qcard__back-btn--primary {
+  background: var(--brand-green, #519843);
+  border-color: var(--brand-green, #519843);
+  color: #fff;
+}
+.qcard__back-foot .qcard__back-btn--primary:hover {
+  background: var(--brand-green, #519843);
+  border-color: var(--brand-green, #519843);
+  color: #fff;
+  filter: brightness(1.06);
+}
+/* P-09: honest send-failure note on the card front. */
+.qcard__sendfail {
+  margin: 0;
+  padding: 10px 14px 12px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  line-height: 1.45;
+  font-weight: 600;
+  color: #a83b3b;
+}
+
 .qcard__flip-hint {
   position: absolute;
   bottom: 10px;
@@ -464,10 +515,10 @@
   inset: 0;
   background-image:
     radial-gradient(
-      circle at 18% 22%,
-      rgba(255, 255, 255, 0.18) 0,
-      transparent 35%
-    ),
+    circle at 18% 22%,
+    rgba(255, 255, 255, 0.18) 0,
+    transparent 35%
+  ),
     radial-gradient(circle at 82% 78%, rgba(0, 0, 0, 0.10) 0, transparent 40%);
   pointer-events: none;
 }
@@ -514,7 +565,8 @@
   animation: q-pulse-dot 2.4s infinite;
 }
 @keyframes q-pulse-dot {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {

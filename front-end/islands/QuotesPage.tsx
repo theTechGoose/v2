@@ -29,6 +29,13 @@ import {
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
+import {
+  buildViewedReceipt,
+  classifyReceipts,
+  type CustomerReceipt,
+  type TrailMessage,
+  type ViewedReceipt,
+} from "../../shared/quote-flow/receipts.ts";
 
 // Inner sort order for the "Out for response" track — most engaged
 // (opened) at top, then sent, cooling, stale. Mirrors the reference's
@@ -99,22 +106,13 @@ function badgeStatusFor(q: BackendQuoteCard): BadgeStatus {
   return "draft";
 }
 
-/** Outbound send logged by the backend comms trail (GET /messages). */
-interface TrailMessage {
-  channel?: string;
-  toAddress?: string;
-  paperworkId?: string;
-}
-
-interface SendReceipt {
-  channel: "email" | "text";
-  to: string;
-}
-
 interface OpenQuoteState {
   loading: boolean;
   quote: BackendQuoteCard | null;
-  receipts: SendReceipt[];
+  /** Customer-facing deliveries only (shared classifyReceipts — P-32). */
+  receipts: CustomerReceipt[];
+  /** "Viewed by the client" receipt when the doc was actually opened. */
+  viewed: ViewedReceipt | null;
 }
 
 /** Detail surface for /quotes?open=<id> — job name, lifecycle status badge,
@@ -192,11 +190,16 @@ function OpenQuotePanel(
           </a>
         </div>
       </div>
-      {(badge === "approved" || state.receipts.length > 0) && (
+      {(badge === "approved" || state.receipts.length > 0 || state.viewed) && (
         <div class="qopen__receipts">
           {badge === "approved" && (
             <div class="qopen__receipt qopen__receipt--signed">
               {tFor(lang, "quotesPage.open.receipt.signed")}
+            </div>
+          )}
+          {state.viewed && (
+            <div class="qopen__receipt qopen__receipt--viewed">
+              {tFor(lang, "quotesPage.open.receipt.viewed")}
             </div>
           )}
           {state.receipts.map((r) => (
@@ -240,6 +243,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
     loading: true,
     quote: null,
     receipts: [],
+    viewed: null,
   });
 
   useEffect(() => {
@@ -249,19 +253,29 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
       quotesClient.get(openId).catch(() => null),
       // Comms trail: outbound sends logged per document (paperworkId).
       api.get<TrailMessage[]>("/messages").catch(() => [] as TrailMessage[]),
-    ]).then(([quote, messages]) => {
+      // Contractor's own contact info — classifyReceipts drops anything
+      // addressed to it (P-32: accepted-alert self-notifications are not
+      // customer deliveries).
+      api.get<{ email?: string; phoneNumber?: string }>("/me")
+        .catch(() => ({} as { email?: string; phoneNumber?: string })),
+      // Engagement timeline — feeds the "Viewed by the client" receipt.
+      api.get<{ opens?: { at: string }[] }>(`/quotes/${openId}/opens`)
+        .catch(() => ({ opens: [] as { at: string }[] })),
+    ]).then(([quote, messages, me, opensRes]) => {
       if (!alive) return;
-      const receipts: SendReceipt[] = [];
-      const seen = new Set<string>();
-      for (const m of Array.isArray(messages) ? messages : []) {
-        if (m.paperworkId !== openId || !m.toAddress) continue;
-        if (m.channel !== "email" && m.channel !== "text") continue;
-        const key = `${m.channel}:${m.toAddress}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        receipts.push({ channel: m.channel, to: m.toAddress });
-      }
-      setOpenQ({ loading: false, quote, receipts });
+      const receipts = classifyReceipts(
+        Array.isArray(messages) ? messages : [],
+        { email: me.email ?? null, phone: me.phoneNumber ?? null },
+        openId,
+      );
+      const opens = Array.isArray(opensRes?.opens) ? opensRes.opens : [];
+      const q = quote as (BackendQuoteCard & { viewedAt?: string }) | null;
+      const viewed = buildViewedReceipt({
+        viewedAt: q?.viewedAt ?? null,
+        lastOpenAt: opens[opens.length - 1]?.at ?? null,
+        opens: opens.length,
+      });
+      setOpenQ({ loading: false, quote, receipts, viewed });
     });
     return () => {
       alive = false;

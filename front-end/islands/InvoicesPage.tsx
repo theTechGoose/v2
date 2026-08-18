@@ -30,6 +30,12 @@ import {
 import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
+import { isChangeOrderMutable } from "../../shared/quote-flow/adjustment-guards.ts";
+import {
+  interpretSendResult,
+  type SendOutcome,
+  sendResultLangKey,
+} from "../../shared/quote-flow/send-result.ts";
 
 interface State {
   loading: boolean;
@@ -1045,7 +1051,8 @@ function InvoiceDetail(
     try {
       const r = await postDiscount(inv.id, cents);
       if (!r.ok) {
-        setErr(tFor(lang, "invoicesPage.adjust.errDiscountApply"));
+        // P-41: the pending-claim 409 gets its explicit warning copy.
+        setErr(await discountErrorCopy(r, lang));
         return;
       }
       setDiscountDollars("");
@@ -1415,14 +1422,50 @@ function InvoiceDetail(
   );
 }
 
-/** Dispatch an invoice to the customer over both channels (best-effort — the
- *  backend handles "no email/phone on file" gracefully). Single source for the
- *  card "Send now"/"Finish + send" actions and the New Invoice "Create & send"
- *  so the channel set + request shape can't drift across the three call sites. */
-function dispatchInvoice(
-  id: string,
-): Promise<PromiseSettledResult<Response>[]> {
-  return Promise.allSettled([
+/** One channel's honest send result: the interpreted outcome plus the raw
+ *  backend reason string (for the "email failed — {reason}" copy). */
+interface ChannelSendResult {
+  outcome: SendOutcome;
+  rawReason?: string;
+}
+
+/** Everything a caller needs to report a dispatch honestly (P-09):
+ *  `delivered` is true when AT LEAST one channel actually delivered. */
+interface DispatchResult {
+  delivered: boolean;
+  email: ChannelSendResult;
+  text: ChannelSendResult;
+}
+
+/** Interpret one settled send Response through the shared honest-result
+ *  contract — an HTTP 200 + {ok:false} body is a FAILURE. */
+async function interpretSettledSend(
+  r: PromiseSettledResult<Response>,
+): Promise<ChannelSendResult> {
+  if (r.status === "rejected") {
+    return { outcome: { delivered: false, reason: "http" } };
+  }
+  let body: unknown = null;
+  try {
+    body = await r.value.json();
+  } catch { /* empty / non-JSON body — interpret on httpOk alone */ }
+  const reason = body && typeof body === "object" &&
+      typeof (body as { reason?: unknown }).reason === "string"
+    ? (body as { reason: string }).reason
+    : undefined;
+  return {
+    outcome: interpretSendResult({ httpOk: r.value.ok, body }),
+    ...(reason ? { rawReason: reason } : {}),
+  };
+}
+
+/** Dispatch an invoice to the customer over both channels and interpret the
+ *  BODIES, never just Response.ok (P-09: the endpoints report logical failure
+ *  as HTTP 200 + {ok:false, reason}). Single source for the card "Send now"/
+ *  "Finish + send" actions and the New Invoice "Create & send" so the channel
+ *  set + request shape can't drift across the three call sites. */
+async function dispatchInvoice(id: string): Promise<DispatchResult> {
+  const settled = await Promise.allSettled([
     fetch(`/api/invoices/${id}/email`, {
       method: "POST",
       credentials: "include",
@@ -1432,6 +1475,50 @@ function dispatchInvoice(
       credentials: "include",
     }),
   ]);
+  const [email, text] = await Promise.all(settled.map(interpretSettledSend));
+  return {
+    delivered: email.outcome.delivered || text.outcome.delivered,
+    email,
+    text,
+  };
+}
+
+/** Honest failure copy when NO channel delivered — the same lang keys the
+ *  assistant contract-send divider uses. */
+function dispatchFailureCopy(lang: Lang, d: DispatchResult): string {
+  const key = sendResultLangKey(d.email.outcome) ??
+    "sendContract.divider.emailFailed";
+  if (key === "sendContract.divider.noEmail") {
+    return tFor(lang, "sendContract.divider.noEmail");
+  }
+  return tFor(lang, key, {
+    reason: d.email.rawReason ?? d.email.outcome.reason ?? "unknown",
+  });
+}
+
+/** Honest failure copy for the single-channel "Text client" action. */
+function textFailureCopy(lang: Lang, r: ChannelSendResult): string {
+  if (r.outcome.reason === "noPhone" || r.outcome.reason === "noEmail") {
+    return tFor(lang, "invoicesPage.new.needContact");
+  }
+  return tFor(lang, "sendContract.divider.emailFailed", {
+    reason: r.rawReason ?? r.outcome.reason ?? "unknown",
+  });
+}
+
+/** Map a discount rejection to its copy — the 409 unconfirmed-payment-claim
+ *  guard (P-41) gets its specific warning, everything else the generic one. */
+async function discountErrorCopy(r: Response, lang: Lang): Promise<string> {
+  let body: unknown = null;
+  try {
+    body = await r.json();
+  } catch { /* non-JSON error body */ }
+  const reason = body && typeof body === "object"
+    ? (body as { reason?: unknown }).reason
+    : undefined;
+  return r.status === 409 && reason === "unconfirmed-payment-claim"
+    ? tFor(lang, "invoicesPage.adjust.errClaimPending")
+    : tFor(lang, "invoicesPage.adjust.errDiscountApply");
 }
 
 function InvoiceCard(
@@ -1444,6 +1531,9 @@ function InvoiceCard(
 ) {
   const [flipped, setFlipped] = useState(false);
   const [busy, setBusy] = useState(false);
+  // P-09: honest send state — set when a dispatch delivered on NO channel,
+  // rendered on the card instead of the old silent reload-as-success.
+  const [sendFail, setSendFail] = useState<string | null>(null);
   // Roadmap p.12: in-card discount + change-order controls.
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [discountDollars, setDiscountDollars] = useState("");
@@ -1552,12 +1642,18 @@ function InvoiceCard(
     e.stopPropagation();
     if (busy) return;
     setBusy(true);
+    setSendFail(null);
     try {
-      const r = await fetch(`/api/invoices/${inv.id}/text`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (r.ok) globalThis.location.reload();
+      const settled = await Promise.allSettled([
+        fetch(`/api/invoices/${inv.id}/text`, {
+          method: "POST",
+          credentials: "include",
+        }),
+      ]);
+      // P-09: interpret the BODY — a 200 {ok:false} is a failure, not a send.
+      const result = await interpretSettledSend(settled[0]);
+      if (result.outcome.delivered) globalThis.location.reload();
+      else setSendFail(textFailureCopy(lang, result));
     } finally {
       setBusy(false);
     }
@@ -1566,12 +1662,14 @@ function InvoiceCard(
     e.stopPropagation();
     if (busy) return;
     setBusy(true);
+    setSendFail(null);
     try {
-      // Fire both channels — the backend coordinator handles "no
-      // email/phone on file" gracefully and the user gets a fresh state
-      // on reload either way.
-      await dispatchInvoice(inv.id);
-      globalThis.location.reload();
+      // Fire both channels and interpret honestly (P-09): only reload-as-
+      // success when at least one channel actually delivered; otherwise the
+      // failure is surfaced on the card and nothing pretends it was sent.
+      const d = await dispatchInvoice(inv.id);
+      if (d.delivered) globalThis.location.reload();
+      else setSendFail(dispatchFailureCopy(lang, d));
     } finally {
       setBusy(false);
     }
@@ -1586,6 +1684,7 @@ function InvoiceCard(
     e.stopPropagation();
     if (busy) return;
     setBusy(true);
+    setSendFail(null);
     try {
       await fetch(`/api/invoices/${inv.id}`, {
         method: "PUT",
@@ -1598,10 +1697,12 @@ function InvoiceCard(
             : { issuedDate: new Date().toISOString().slice(0, 10) }),
         }),
       });
-      // Deliver over both channels — the backend handles "no email/phone on
-      // file" gracefully; the invoice still lands in "Out for payment".
-      await dispatchInvoice(inv.id);
-      globalThis.location.reload();
+      // Deliver over both channels. Finalizing (draft → sent) proceeds either
+      // way, but a delivery failure is SURFACED (P-09) — the contractor must
+      // never walk away believing an undeliverable invoice reached anyone.
+      const d = await dispatchInvoice(inv.id);
+      if (d.delivered) globalThis.location.reload();
+      else setSendFail(dispatchFailureCopy(lang, d));
     } finally {
       setBusy(false);
     }
@@ -1642,7 +1743,8 @@ function InvoiceCard(
     try {
       const r = await postDiscount(inv.id, cents);
       if (r.ok) globalThis.location.reload();
-      else setAdjErr(tFor(lang, "invoicesPage.adjust.errDiscountApply"));
+      // P-41: the pending-claim 409 gets its explicit warning copy.
+      else setAdjErr(await discountErrorCopy(r, lang));
     } finally {
       setBusy(false);
     }
@@ -1755,9 +1857,39 @@ function InvoiceCard(
       setBusy(false);
     }
   }
+  // Coral alert content per stage — rendered ONLY when there is something to
+  // say (P-31: never an empty coral bar). The claimed stage gets the claim
+  // context so the "confirm or reject" decision is self-explanatory.
+  const readText = inv.stage === "overdue"
+    ? tFor(
+      lang,
+      inv.daysOverdue === 1
+        ? "invoicesPage.read.overdue.one"
+        : "invoicesPage.read.overdue.other",
+      { n: inv.daysOverdue },
+    )
+    : inv.stage === "out"
+    ? tFor(lang, "invoicesPage.read.out", {
+      issued: fmtDate(inv.issuedDate ?? inv.createdAt, now, lang),
+      due: fmtDate(inv.dueDate, now, lang),
+    })
+    : inv.stage === "drafting"
+    ? tFor(lang, "invoicesPage.read.drafting", {
+      date: fmtDate(inv.issuedDate ?? inv.createdAt, now, lang),
+    })
+    : inv.stage === "paid"
+    ? tFor(lang, "invoicesPage.read.paid", {
+      date: fmtDate(inv.paidAt, now, lang),
+    })
+    : inv.stage === "claimed"
+    ? tFor(lang, "invoicesPage.read.claimed", {
+      name: inv.paymentIntent?.claimedBy?.trim() || inv.client,
+      method: methodLabel(inv.paymentIntent?.method, lang),
+    })
+    : null;
   return (
     <article
-      class={`qcard ${flipped ? "qcard--flipped" : ""}`}
+      class={`qcard qcard--inv ${flipped ? "qcard--flipped" : ""}`}
       onClick={(e) => {
         if (flipped) return;
         const t = e.target as HTMLElement;
@@ -1805,6 +1937,11 @@ function InvoiceCard(
           </div>
         </div>
       </div>
+      {sendFail && (
+        <p class="qcard__sendfail" role="alert" data-cy="invoice-send-failure">
+          {sendFail}
+        </p>
+      )}
 
       <div class="qcard__back" aria-hidden={!flipped}>
         <div class="qcard__back-head">
@@ -1828,41 +1965,7 @@ function InvoiceCard(
           </p>
         </div>
         <div class="qcard__back-body">
-          <p class="qcard__read">
-            {inv.stage === "overdue" && (
-              <>
-                {tFor(
-                  lang,
-                  inv.daysOverdue === 1
-                    ? "invoicesPage.read.overdue.one"
-                    : "invoicesPage.read.overdue.other",
-                  { n: inv.daysOverdue },
-                )}
-              </>
-            )}
-            {inv.stage === "out" && (
-              <>
-                {tFor(lang, "invoicesPage.read.out", {
-                  issued: fmtDate(inv.issuedDate ?? inv.createdAt, now, lang),
-                  due: fmtDate(inv.dueDate, now, lang),
-                })}
-              </>
-            )}
-            {inv.stage === "drafting" && (
-              <>
-                {tFor(lang, "invoicesPage.read.drafting", {
-                  date: fmtDate(inv.issuedDate ?? inv.createdAt, now, lang),
-                })}
-              </>
-            )}
-            {inv.stage === "paid" && (
-              <>
-                {tFor(lang, "invoicesPage.read.paid", {
-                  date: fmtDate(inv.paidAt, now, lang),
-                })}
-              </>
-            )}
-          </p>
+          {readText && <p class="qcard__read">{readText}</p>}
           {inv.stage !== "paid" && (
             <div
               style="margin-top:6px"
@@ -2074,17 +2177,24 @@ function InvoiceCard(
                                     )
                                     : (
                                       <>
-                                        <button
-                                          type="button"
-                                          onClick={() => startEditCo(co)}
-                                          disabled={busy}
-                                          style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:var(--brand-teal);cursor:pointer;white-space:nowrap"
-                                        >
-                                          {tFor(
-                                            lang,
-                                            "invoicesPage.adjust.coEdit",
-                                          )}
-                                        </button>
+                                        {
+                                          /* P-41: a customer-APPROVED change
+                                            order is immutable — no Edit, no
+                                            Delete (server 409s them too). */
+                                        }
+                                        {isChangeOrderMutable(co) && (
+                                          <button
+                                            type="button"
+                                            onClick={() => startEditCo(co)}
+                                            disabled={busy}
+                                            style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:var(--brand-teal);cursor:pointer;white-space:nowrap"
+                                          >
+                                            {tFor(
+                                              lang,
+                                              "invoicesPage.adjust.coEdit",
+                                            )}
+                                          </button>
+                                        )}
                                         {co.status === "pending" && (
                                           <button
                                             type="button"
@@ -2102,18 +2212,20 @@ function InvoiceCard(
                                               )}
                                           </button>
                                         )}
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            setConfirmDelCoId(co.id)}
-                                          disabled={busy}
-                                          style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:#a83b3b;cursor:pointer;white-space:nowrap"
-                                        >
-                                          {tFor(
-                                            lang,
-                                            "invoicesPage.adjust.coDelete",
-                                          )}
-                                        </button>
+                                        {isChangeOrderMutable(co) && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setConfirmDelCoId(co.id)}
+                                            disabled={busy}
+                                            style="appearance:none;background:none;border:1px solid var(--border);border-radius:7px;padding:3px 8px;font:inherit;font-size:11.5px;font-weight:700;color:#a83b3b;cursor:pointer;white-space:nowrap"
+                                          >
+                                            {tFor(
+                                              lang,
+                                              "invoicesPage.adjust.coDelete",
+                                            )}
+                                          </button>
+                                        )}
                                       </>
                                     )}
                                 </div>
@@ -2140,8 +2252,14 @@ function InvoiceCard(
           )}
         </div>
         <div class="qcard__back-foot">
+          {
+            /* Design rule: exactly ONE solid primary per action row — the
+              stage CTA (e.g. "Confirm payment" on a claimed card); every
+              other action stays outlined. */
+          }
           <button
             type="button"
+            class="qcard__back-btn--primary"
             onClick={ctaAction}
             disabled={busy}
             data-cy={`invoice-back-cta-${inv.stage}`}
