@@ -10,6 +10,8 @@ export interface LogPaperworkMessageInput {
   channel: MessageChannel;
   content: string;
   subject?: string;
+  /** Rendered HTML copy of an email dispatch (auditable outbound wording). */
+  htmlBody?: string;
   toAddress?: string;
   paperworkId?: string;
   paperworkType?: string;
@@ -45,6 +47,7 @@ export class LogPaperworkMessage {
         channel: input.channel,
         content: input.content,
         ...(input.subject ? { subject: input.subject } : {}),
+        ...(input.htmlBody ? { htmlBody: input.htmlBody } : {}),
         ...(input.toAddress ? { toAddress: input.toAddress } : {}),
         ...(input.paperworkId ? { paperworkId: input.paperworkId } : {}),
         ...(input.paperworkType ? { paperworkType: input.paperworkType } : {}),
