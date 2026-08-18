@@ -180,6 +180,9 @@ export default function DashSidebar({ active = "home", showNav = true }: Props) 
   }
 
   async function logout() {
+    // P-67: tell polling islands (DashTopbar) to stand down BEFORE the
+    // session dies, so no in-flight poll lands mid-transition.
+    globalThis.dispatchEvent(new Event("pm:logout"));
     try {
       await fetch("/api/auth/logout", {
         method: "POST",

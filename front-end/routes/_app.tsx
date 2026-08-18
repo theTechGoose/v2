@@ -1,6 +1,7 @@
 import { define } from "../utils.ts";
 import MobileViewport from "../islands/MobileViewport.tsx";
 import ImpersonationBanner from "../islands/ImpersonationBanner.tsx";
+import { readSessionCookie } from "../lib/api.ts";
 import { tFor } from "../lib/i18n.ts";
 
 // Browser-side `lib/api.ts` reads window.__PUBLIC_BACKEND_URL to decide
@@ -11,10 +12,18 @@ const PUBLIC_BACKEND_URL = typeof Deno !== "undefined"
   ? Deno.env.get("PUBLIC_BACKEND_URL") ?? ""
   : "";
 
-export default define.page(function App({ Component }) {
+export default define.page(function App(ctx) {
+  const { Component } = ctx;
   const bootScript = PUBLIC_BACKEND_URL
     ? `window.__PUBLIC_BACKEND_URL=${JSON.stringify(PUBLIC_BACKEND_URL)};`
     : "";
+  // P-67: only mount the impersonation banner when the request actually
+  // carries a session cookie. pm_session is HttpOnly, so the island can't
+  // gate itself client-side — without this SSR gate it probed
+  // /api/admin/whoami on EVERY page for anonymous visitors too, spraying
+  // transient 5xx/refused noise across login/logout transitions.
+  const hasSession =
+    readSessionCookie(ctx.req.headers.get("cookie")) !== undefined;
   return (
     <html>
       <head>
@@ -47,10 +56,12 @@ export default define.page(function App({ Component }) {
         }
         <MobileViewport />
         {
-          /* Global super-admin impersonation banner. Self-gates on
-            /admin/whoami — renders nothing for ordinary sessions. */
+          /* Global super-admin impersonation banner. Mounted only for
+            requests that carry a session cookie (SSR gate above); it then
+            self-gates on /admin/whoami — renders nothing for ordinary
+            sessions. */
         }
-        <ImpersonationBanner />
+        {hasSession ? <ImpersonationBanner /> : null}
         <Component />
       </body>
     </html>

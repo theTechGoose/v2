@@ -4,6 +4,10 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import type { User } from "@users/dto/user.ts";
 
 export class UnauthorizedError extends Error {
+  /** HTTP status. Danet's exception layer serializes `error.status || 500`,
+   *  so carrying the real status here maps every UnauthorizedError anywhere
+   *  on the API surface to a proper 401 (P-35). */
+  readonly status: number = 401;
   constructor() {
     super("unauthorized");
     this.name = "UnauthorizedError";

@@ -87,10 +87,21 @@ export default function DashTopbar(
         if (!stopped) setItems(next);
       } catch { /* ignore */ }
     }, 10_000);
-    return () => {
+    const teardown = () => {
       stopped = true;
       clearInterval(idA);
       clearInterval(idB);
+    };
+    // P-67: stop both polls the moment logout starts ("pm:logout", fired by
+    // DashSidebar before it kills the session) or the page starts navigating
+    // away (pagehide). Without this a poll could fire into the logout
+    // transition window and surface a refused/5xx request.
+    globalThis.addEventListener("pm:logout", teardown);
+    globalThis.addEventListener("pagehide", teardown);
+    return () => {
+      teardown();
+      globalThis.removeEventListener("pm:logout", teardown);
+      globalThis.removeEventListener("pagehide", teardown);
     };
   }, []);
 
