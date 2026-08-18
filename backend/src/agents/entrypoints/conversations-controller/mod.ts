@@ -155,7 +155,12 @@ export class ConversationsController {
   @Post("/sample-quote")
   async sampleQuote(@Context() ctx: ExecutionContext) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return ctx.json(await this.sampleQuoteFlow.run({ userId: user.id }));
+    // P-15: the sample's customer-facing copy renders in the contractor's
+    // own language — an ES account never gets a hardcoded-EN sample.
+    return ctx.json(await this.sampleQuoteFlow.run({
+      userId: user.id,
+      language: user.language === "es" ? "es" : "en",
+    }));
   }
 
   @Post(":id/bind-customer")

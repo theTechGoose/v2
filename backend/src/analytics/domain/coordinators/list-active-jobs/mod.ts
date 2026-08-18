@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { classifyQuoteForPipeline, isSampleQuote } from "#quote-flow/pipeline-stats.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore }    from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
@@ -61,8 +62,13 @@ export class ListActiveJobs {
     ]);
 
     const customerById = new Map<string, Customer>(customers.map((c) => [c.id, c]));
+    // quoteId → contract, preferring a SIGNED agreement over draft rows.
     const contractsByQuote = new Map<string, Contract>();
-    for (const c of contracts) contractsByQuote.set(c.quoteId, c);
+    for (const c of contracts) {
+      const prev = contractsByQuote.get(c.quoteId);
+      const signed = (x: Contract) => x.status === "signed" || Boolean(x.signedAt);
+      if (!prev || (!signed(prev) && signed(c))) contractsByQuote.set(c.quoteId, c);
+    }
     const invoicesByContract = new Map<string, Invoice[]>();
     for (const i of invoices) {
       if (!i.contractId) continue;
@@ -74,11 +80,19 @@ export class ListActiveJobs {
     const todayIso = now.toISOString().slice(0, 10);
     const out: Job[] = [];
 
-    // Build one Job per quote where the customer has *committed* in some way:
-    // either accepted (so a contract is implied) or there's already a contract.
+    // Build one Job per WON quote — the customer accepted/signed (P-14).
+    // A merely-sent quote is not a job: the panel's own empty-state promises
+    // "jobs appear once a customer signs", and the KPI must agree.
     for (const q of quotes) {
-      if (q.status !== "accepted" && q.status !== "approved" && q.status !== "sent") continue;
+      if (isSampleQuote(q)) continue; // P-15: the sample is never a job
       const contract = q.id ? contractsByQuote.get(q.id) : undefined;
+      const cls = classifyQuoteForPipeline(
+        { status: q.status, sentAt: q.sentAt, acceptedAt: q.acceptedAt, lostAt: q.lostAt },
+        contract
+          ? { quoteId: contract.quoteId, status: contract.status, signedAt: contract.signedAt }
+          : null,
+      );
+      if (cls !== "won") continue;
 
       const customer = q.customerId ? customerById.get(q.customerId) : undefined;
       if (!customer) continue;          // can't render a job without a customer

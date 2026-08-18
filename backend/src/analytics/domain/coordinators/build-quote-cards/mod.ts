@@ -1,8 +1,10 @@
 import { Injectable } from "#danet/core";
+import { classifyQuoteForPipeline, isSampleQuote } from "#quote-flow/pipeline-stats.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
+import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Quote, QuoteCard, QuoteStage } from "@paperwork/dto/quote.ts";
 import type { View } from "@paperwork/dto/view.ts";
 
@@ -36,17 +38,34 @@ export class BuildQuoteCards {
     ]);
 
     const customerNames = new Map(customers.map((c) => [c.id, c.name]));
-    const contractsByQuoteId = new Set(contracts.map((c) => c.quoteId).filter(Boolean));
+    // quoteId → contract, preferring a SIGNED agreement when several rows
+    // reference the same quote (a draft never outranks a signature).
+    const contractsByQuoteId = new Map<string, Contract>();
+    for (const c of contracts) {
+      if (!c.quoteId) continue;
+      const prev = contractsByQuoteId.get(c.quoteId);
+      if (!prev || (!contractIsSigned(prev) && contractIsSigned(c))) {
+        contractsByQuoteId.set(c.quoteId, c);
+      }
+    }
 
     return quotes.map((q) => buildOne(q, views, customerNames, contractsByQuoteId, now));
   }
 }
 
+function contractIsSigned(c: Contract | undefined): boolean {
+  return !!c && (c.status === "signed" || Boolean(c.signedAt));
+}
+
+/** EnsureSampleQuote's legacy summary tag ("onboarding-sample-v1 · <name>").
+ *  Never rendered: strip it at projection time (P-15). */
+const SAMPLE_TAG_RE = /^onboarding-sample\S*\s*(?:·\s*)?/;
+
 function buildOne(
   q: Quote,
   allViews: View[],
   customerNames: Map<string, string>,
-  contractsByQuoteId: Set<string | undefined>,
+  contractsByQuoteId: Map<string, Contract>,
   now: Date,
 ): QuoteCard {
   const myViews = allViews.filter((v) => v.paperworkId === q.id)
@@ -63,13 +82,10 @@ function buildOne(
   const lastOpenAt = myViews.at(-1)?.viewedAt ?? null;
 
   const stage = deriveStage({
-    sentAt:    q.sentAt,
-    acceptedAt:q.acceptedAt,
-    lostAt:    q.lostAt,
+    quote: q,
+    contract: contractsByQuoteId.get(q.id),
     opens,
     lastOpenAt,
-    quoteId:   q.id,
-    contractsByQuoteId,
     now,
   });
 
@@ -88,8 +104,17 @@ function buildOne(
 
   const customerName = q.customerId ? (customerNames.get(q.customerId) ?? null) : null;
 
+  // P-15: the sample never renders its internal slug; the card carries an
+  // explicit isSample flag so the UI can badge it and keep it out of stats.
+  const sample = isSampleQuote(q);
+  const summary = sample && q.summary
+    ? q.summary.replace(SAMPLE_TAG_RE, "").trim() || (q.jobName ?? "")
+    : q.summary;
+
   return {
     ...q,
+    summary,
+    ...(sample ? { isSample: true } : {}),
     stage,
     daysIn,
     opens,
@@ -101,23 +126,35 @@ function buildOne(
 }
 
 function deriveStage(args: {
-  sentAt?: string;
-  acceptedAt?: string;
-  lostAt?: string;
+  quote: Quote;
+  contract: Contract | undefined;
   opens: number;
   lastOpenAt: string | null;
-  quoteId: string;
-  contractsByQuoteId: Set<string | undefined>;
   now: Date;
 }): QuoteStage {
-  const { sentAt, acceptedAt, lostAt, opens, lastOpenAt, quoteId, contractsByQuoteId, now } = args;
+  const { quote, contract, opens, lastOpenAt, now } = args;
 
-  // won / lost win over earlier stages
-  if (acceptedAt) return "won";
-  if (contractsByQuoteId.has(quoteId)) return "won";
-  if (lostAt) return "lost";
+  // P-14: the pipeline classifier is the single source of truth for
+  // won/lost/draft-vs-awaiting. Only a signature/acceptance wins — a
+  // draft or merely-sent agreement referencing the quote changes nothing.
+  const cls = classifyQuoteForPipeline(
+    {
+      status: quote.status,
+      sentAt: quote.sentAt,
+      acceptedAt: quote.acceptedAt,
+      lostAt: quote.lostAt,
+    },
+    contract
+      ? { quoteId: contract.quoteId, status: contract.status, signedAt: contract.signedAt }
+      : null,
+  );
+  if (cls === "won") return "won";
+  if (cls === "lost") return "lost";
+  if (cls === "draft") return "draft";
 
-  if (!sentAt) return "draft";
+  // Awaiting → refine by engagement (sent/opened/cooling/stale).
+  const { sentAt } = quote;
+  if (!sentAt) return "sent"; // status says sent but no timestamp recorded
   const sentMs = new Date(sentAt).getTime();
   const sinceSent = now.getTime() - sentMs;
 

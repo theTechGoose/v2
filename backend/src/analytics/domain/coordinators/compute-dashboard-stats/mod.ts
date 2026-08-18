@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { isSampleQuote } from "#quote-flow/pipeline-stats.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
@@ -49,11 +50,15 @@ export class ComputeDashboardStats {
       this.payments.listByUser(userId),
     ]);
 
+    // P-15: the onboarding sample contributes to NOTHING — every quote
+    // aggregate below rolls over real quotes only.
+    const realQuotes = quotes.filter((q) => !isSampleQuote(q));
+
     const quoteCounts = {
-      total:    quotes.length,
-      draft:    quotes.filter((q) => q.status === "draft").length,
-      sent:     quotes.filter((q) => q.status === "sent").length,
-      accepted: quotes.filter((q) => q.status === "accepted" || q.status === "approved").length,
+      total:    realQuotes.length,
+      draft:    realQuotes.filter((q) => q.status === "draft").length,
+      sent:     realQuotes.filter((q) => q.status === "sent").length,
+      accepted: realQuotes.filter((q) => q.status === "accepted" || q.status === "approved").length,
     };
 
     const contractCounts = {
@@ -74,7 +79,7 @@ export class ComputeDashboardStats {
     // Quoted value: sum of estimatedTotal across quotes that are still
     // open (sent but not accepted/declined). Audit1 #3 — estimatedTotal
     // is now stored as INTEGER CENTS, so this is a passthrough sum.
-    const quotedValueCents = quotes
+    const quotedValueCents = realQuotes
       .filter((q) => q.status === "sent")
       .reduce((sum, q) => sum + (q.estimatedTotal ?? 0), 0);
 
