@@ -7,7 +7,7 @@
   "acceptedAlert.email.headline": "¡{name} aprobó tu cotización!",
   "acceptedAlert.email.headlineJob": "¡{name} aprobó tu cotización de {job}!",
   "acceptedAlert.email.subject": "¡{name} aprobó tu cotización! 🎉",
-  "acceptedAlert.email.subjectJob": "{name} aprobó tu cotización — {job}",
+  "acceptedAlert.email.subjectJob": "¡{name} aprobó tu cotización de {job}! 🎉",
   "acceptedAlert.sms.body": "{name} acaba de aprobar tu cotización. Siguiente paso: envía el contrato o la factura → {url}",
   "acceptedAlert.sms.bodyJob": "{name} acaba de aprobar tu cotización de {job}. Siguiente paso: envía el contrato o la factura → {url}",
   "activeJobs.count": "{n} activos",
