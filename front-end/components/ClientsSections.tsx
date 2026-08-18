@@ -52,8 +52,16 @@ export function ClientsHero(
           )
           : (
             <>
+              {/* Grammatical number drives the WHOLE headline, not just the
+                  noun: ES needs "La persona que mantiene…" for one and
+                  "Las personas que mantienen…" for many (P-34). */}
               <h1 class="ph2__title">
-                {tFor(lang, "clientsHero.titlePre")}{" "}
+                {tFor(
+                  lang,
+                  totalClients === 1
+                    ? "clientsHero.titlePre.one"
+                    : "clientsHero.titlePre",
+                )}{" "}
                 <em>
                   {tFor(
                     lang,
@@ -61,7 +69,13 @@ export function ClientsHero(
                     { word: numberWord(totalClients, lang) },
                   )}
                 </em>
-                <br />{tFor(lang, "clientsHero.titlePost")}
+                <br />
+                {tFor(
+                  lang,
+                  totalClients === 1
+                    ? "clientsHero.titlePost.one"
+                    : "clientsHero.titlePost",
+                )}
               </h1>
               <p class="ph2__sub">
                 <strong>
@@ -75,14 +89,21 @@ export function ClientsHero(
                 </strong>{" "}
                 · <strong>${owedFmt}</strong>{" "}
                 {tFor(lang, "clientsHero.owed")} ·{" "}
+                {/* count + noun in ONE key so ES keeps noun-then-adjective
+                    order ("2 clientes sin contacto"), never the EN calque
+                    "sin contacto clientes" (P-34). */}
                 <strong>
-                  {tFor(lang, "clientsHero.quiet", { n: quietCount })}
+                  {tFor(
+                    lang,
+                    `clientsHero.quietCount.${
+                      quietCount === 1 ? "one" : "other"
+                    }`,
+                    { n: quietCount },
+                  )}
                 </strong>{" "}
                 {tFor(
                   lang,
-                  `clientsHero.quietClients.${
-                    quietCount === 1 ? "one" : "other"
-                  }`,
+                  `clientsHero.quietTail.${quietCount === 1 ? "one" : "other"}`,
                   { n: quietCount },
                 )}
               </p>

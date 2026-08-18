@@ -9,6 +9,7 @@ import type { QuoteOpenEntry, QuoteOpensResponse } from "@paperwork/dto/quote.ts
 import type { InsightResponse, WinRateResponse } from "@analytics/dto/quotes-stats.ts";
 import { deviceFromUa } from "@paperwork/domain/business/device-from-ua/mod.ts";
 import { relativeTime } from "@core/business/relative-time/mod.ts";
+import type { Lang } from "@core/i18n/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
@@ -78,6 +79,6 @@ export class QuotesController {
   @Get("analytics/quotes/insight")
   async insightRoute(@Context() ctx: ExecutionContext): Promise<InsightResponse> {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return await this.insight.run(user.id);
+    return await this.insight.run(user.id, (user.language ?? "en") as Lang);
   }
 }

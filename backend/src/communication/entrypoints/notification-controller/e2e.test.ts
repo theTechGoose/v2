@@ -179,6 +179,15 @@ Deno.test("cross-module e2e: customer accepts a quote → notification appears i
   await withCrossModuleServer(async (port) => {
     const sid = await loginXmod(port);
     const auth = { "content-type": "application/json", "x-session-id": sid };
+    // P-59: /notifications now re-renders each title in the VIEWER's
+    // language, so pin it to English — matching this test's fixed
+    // assertion strings — instead of relying on whatever a fresh user's
+    // default language happens to be.
+    await drain(
+      await fetch(`http://localhost:${port}/me`, {
+        method: "PUT", headers: auth, body: JSON.stringify({ language: "en" }),
+      }),
+    );
     await drain(await fetch(`http://localhost:${port}/notifications`, { headers: { "x-session-id": sid } }));
 
     const customer = await fetch(`http://localhost:${port}/customers`, {
@@ -211,6 +220,13 @@ Deno.test("cross-module e2e: customer signs a contract → notification appears 
   await withCrossModuleServer(async (port) => {
     const sid = await loginXmod(port);
     const auth = { "content-type": "application/json", "x-session-id": sid };
+    // P-59: pin the viewer's language to English so this test's fixed
+    // assertion strings stay meaningful under the viewer-localized read path.
+    await drain(
+      await fetch(`http://localhost:${port}/me`, {
+        method: "PUT", headers: auth, body: JSON.stringify({ language: "en" }),
+      }),
+    );
     await drain(await fetch(`http://localhost:${port}/notifications`, { headers: { "x-session-id": sid } }));
 
     const customer = await fetch(`http://localhost:${port}/customers`, {

@@ -27,6 +27,10 @@ export class NotificationStore {
     body?: string;
     entityType?: Notification["entityType"];
     entityId?: string;
+    titleKey?: string;
+    titleParams?: Record<string, string | number>;
+    bodyKey?: string;
+    bodyParams?: Record<string, string | number>;
   }): Promise<Notification> {
     const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
@@ -38,6 +42,10 @@ export class NotificationStore {
       entityId: input.entityId,
       title: input.title,
       body: input.body,
+      titleKey: input.titleKey,
+      titleParams: input.titleParams,
+      bodyKey: input.bodyKey,
+      bodyParams: input.bodyParams,
       read: false,
       createdAt,
     };

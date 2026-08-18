@@ -12,6 +12,7 @@ import type {
   CustomerCard,
 } from "../clients/clients.ts";
 import { type Lang, tFor } from "./i18n.ts";
+import { hasAddress } from "../../shared/quote-flow/format-helpers.ts";
 
 export interface MoodPalette {
   from: string;
@@ -117,6 +118,11 @@ export function sinceBadge(days: number, lang: Lang = "en"): SinceBadgeData {
     : days <= 21
     ? "cool"
     : "cold";
+  // Contacted today: the watermark reads "0 / TODAY". Zero-padding it would
+  // print the nonsense "00 días atrás" (P-34), so the pad starts at day 1.
+  if (days <= 0) {
+    return { tier, num: "0", unit: tFor(lang, "clientsDisplay.since.today") };
+  }
   if (days < 30) {
     return {
       tier,
@@ -184,19 +190,17 @@ export function segmentLabel(
   return tFor(lang, SEGMENT_LABEL_KEYS[key ?? "unsorted"]);
 }
 
-/** Address fallback when the customer record has none. */
+/**
+ * The customer's address, or an honest "none on file" line.
+ *
+ * P-64: every branch here used to invent a location for a customer whose
+ * record carries no address at all — "Address on file" is a claim, and
+ * "{name} — main location" reads like a real one. The claim is now gated
+ * behind `hasAddress`, so an address-less client says so.
+ */
 export function addressFor(c: CustomerCard, lang: Lang = "en"): string {
-  if (c.address) return c.address;
-  if (c.segment === "hoa") return tFor(lang, "clientsDisplay.address.onFile");
-  if (c.segment === "property_mgmt") {
-    return tFor(lang, "clientsDisplay.address.propertyMgmt", {
-      name: c.name.split(" ")[0],
-    });
-  }
-  if (c.segment === "small_biz") {
-    return tFor(lang, "clientsDisplay.address.smallBiz", { name: c.name });
-  }
-  return tFor(lang, "clientsDisplay.address.onFile");
+  if (hasAddress(c)) return c.address as string;
+  return tFor(lang, "clientsDisplay.address.none");
 }
 
 /** One-line "what's going on" copy for the card body. */

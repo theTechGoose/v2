@@ -2,6 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import { I } from "../lib/dash-icons.tsx";
 import { dashboardClient, type Notification } from "../clients/dashboard.ts";
 import { langSignal, tFor } from "../lib/i18n.ts";
+import { capitalizeDateLine } from "../../shared/quote-flow/format-helpers.ts";
 
 interface Props {
   /** @deprecated Ignored — the date is now computed reactively in-component
@@ -66,9 +67,14 @@ export default function DashTopbar(
   // Reactive app language (seeded from user.language, flipped live by Settings).
   const lang = langSignal.value;
   const now = new Date();
-  const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
-    tFor(lang, MONTH_KEYS[now.getMonth()])
-  } ${now.getDate()}`;
+  // ES weekday/month names are lowercase in the dict ("viernes · agosto"), but
+  // this is the first line of the greeting — sentence-initial capital (P-65).
+  const greetingDate = capitalizeDateLine(
+    `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
+      tFor(lang, MONTH_KEYS[now.getMonth()])
+    } ${now.getDate()}`,
+    lang,
+  );
   const [, setUnread] = useState(initialUnread);
   const [items, setItems] = useState<Notification[]>(initialNotifications);
   const [tickerIdx, setTickerIdx] = useState(0);

@@ -83,7 +83,11 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
       setAddOpen(false);
       await refreshClients();
     } catch (err) {
-      setAddErr(err instanceof Error ? err.message : "Could not add client");
+      setAddErr(
+        err instanceof Error
+          ? err.message
+          : tFor(lang, "clientsPage.addError"),
+      );
     } finally {
       setAdding(false);
     }

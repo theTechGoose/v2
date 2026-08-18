@@ -21,6 +21,10 @@ import {
   sinceBadge,
   storyLineFor,
 } from "../lib/clients-display.ts";
+import {
+  formatPhoneDisplay,
+  telHref,
+} from "../../shared/quote-flow/format-helpers.ts";
 
 // Chip set matches the canonical reference (Paperwork Monster Clients.html)
 // — six entries with the exact labels from the design source. URL
@@ -153,7 +157,10 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose, lang }: CardProps) {
         </div>
         <div class="ccard2__panel-rows">
           {c.phoneNumber && (
-            <a class="ccard2__panel-row" href={`tel:${c.phoneNumber}`}>
+            /* One phone formatter everywhere: the dial href is always
+               normalized to tel:+1…, the label always reads
+               "+1 (512) 555-3150" (P-64). */
+            <a class="ccard2__panel-row" href={telHref(c.phoneNumber)}>
               <span class="ccard2__panel-row-icon">
                 <I d={ICN.phone} size={13} sw={2.2} />
               </span>
@@ -161,7 +168,9 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose, lang }: CardProps) {
                 <div class="ccard2__panel-row-lbl">
                   {tFor(lang, "clientsBoard.panel.phone")}
                 </div>
-                <div class="ccard2__panel-row-val">{c.phoneNumber}</div>
+                <div class="ccard2__panel-row-val">
+                  {formatPhoneDisplay(c.phoneNumber)}
+                </div>
               </span>
               <span class="ccard2__panel-row-arrow">
                 <I d={ICN.arrow} size={12} sw={2.4} />
