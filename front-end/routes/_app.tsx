@@ -1,8 +1,11 @@
 import { define } from "../utils.ts";
 import MobileViewport from "../islands/MobileViewport.tsx";
 import ImpersonationBanner from "../islands/ImpersonationBanner.tsx";
+import HtmlLang from "../islands/HtmlLang.tsx";
 import { readSessionCookie } from "../lib/api.ts";
-import { tFor } from "../lib/i18n.ts";
+import { type Lang, tFor } from "../lib/i18n.ts";
+import { langFromCookie } from "../lib/lang.ts";
+import { pmLangFromAcceptLanguage } from "../../shared/quote-flow/public-lang.ts";
 
 // Browser-side `lib/api.ts` reads window.__PUBLIC_BACKEND_URL to decide
 // where to POST. Inline the SSR-side env so islands hit the standalone
@@ -40,17 +43,40 @@ export default define.page(function App(ctx) {
   // transient 5xx/refused noise across login/logout transitions.
   const hasSession =
     readSessionCookie(ctx.req.headers.get("cookie")) !== undefined;
+  // SSR-resolve <html lang> so the very first paint declares the right
+  // language (screen readers, crawlers, browser translate prompts).
+  //
+  // An explicit ?lang= is the strongest signal (a Spanish ad set links
+  // "/?lang=es"), then the visitor's persisted pm_lang choice. With neither:
+  // the two marketing landings are Spanish-first BY PRODUCT DECISION
+  // (lib/lang.ts pickLangFromAcceptLanguage) and render ES regardless of the
+  // browser, so <html lang> must say "es" to match what they actually paint;
+  // every other surface — the public customer documents, the branded 404 —
+  // follows the visitor's own Accept-Language, which is why English pages
+  // used to be mislabelled <html lang="es">.
+  const url = new URL(ctx.req.url);
+  const qLang = url.searchParams.get("lang");
+  const spanishFirst = url.pathname === "/" || url.pathname === "/landing";
+  const lang: Lang = (qLang === "en" || qLang === "es")
+    ? qLang
+    : langFromCookie(ctx.req?.headers?.get("cookie")) ??
+      (spanishFirst
+        ? "es"
+        : pmLangFromAcceptLanguage(ctx.req?.headers?.get("accept-language")) ??
+          "es");
   return (
-    <html>
+    <html lang={lang}>
       <head>
         <meta charset="utf-8" />
         <meta
           name="viewport"
           content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
         />
+        <meta name="theme-color" content="#144852" />
+        <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/logo.png" />
-        <title>{tFor("en", "brand.name")}</title>
+        <title>{tFor(lang, "brand.name")}</title>
         {bootScript
           ? (
             <script
@@ -71,6 +97,14 @@ export default define.page(function App(ctx) {
             above; this makes iOS behave the same. Renders nothing. */
         }
         <MobileViewport />
+        {
+          /* Keeps <html lang> in sync with the in-app language toggle
+            (langSignal) after hydration. SSR sets the initial value above from
+            the pm_lang cookie; this covers the logged-in case where the
+            language comes from the user's profile (no cookie). Renders
+            nothing. */
+        }
+        <HtmlLang initial={lang} />
         {
           /* Global super-admin impersonation banner. Mounted only for
             requests that carry a session cookie (SSR gate above); it then

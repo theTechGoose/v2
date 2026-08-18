@@ -7,6 +7,18 @@ import {
   langFromCookie,
   pickLangFromAcceptLanguage,
 } from "../lib/lang.ts";
+import { LANDING_OFFER } from "../../shared/quote-flow/landing-offers.ts";
+import { PRICING_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import {
+  absoluteUrl,
+  socialMetaTags,
+} from "../../shared/quote-flow/site-meta.ts";
+
+/** "$15" / "$99" / "$199" — the plan prices come from PRICING_PLANS, so this
+ *  page and "/" quote the same numbers (P-08). */
+const TIER_PRICE: Record<string, string> = Object.fromEntries(
+  PRICING_PLANS.map((p) => [p.id, `$${Math.round(p.priceCents / 100)}`]),
+);
 
 // Toll-free support line (same number the dashboard "Call support" CTA dials).
 const SUPPORT_PHONE = "+18667678399";
@@ -60,7 +72,10 @@ export default define.page(function PromoLanding(ctx) {
   const lang: Lang = (q === "en" || q === "es") ? q : (langFromCookie(
     ctx.req.headers.get("cookie"),
   ) ?? pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language")));
-  const t = (k: string) => tFor(lang, `promoLanding.${k}`);
+  // {d} — the free-trial length, from the ONE landing offer both pages sell
+  // (P-08). Never re-typed in lang/*.json.
+  const t = (k: string) =>
+    tFor(lang, `promoLanding.${k}`, { d: LANDING_OFFER.trialDays });
   const h1b = t("h1b");
 
   return (
@@ -68,6 +83,22 @@ export default define.page(function PromoLanding(ctx) {
       <Head>
         <title>{t("docTitle")}</title>
         <meta name="description" content={t("metaDescription")} />
+        {
+          /* Same share plumbing "/" ships, from the ONE tag set
+            (shared/quote-flow/site-meta.ts). The canonical is self-referential:
+            this page is a distinct offer page, not a copy of "/". */
+        }
+        <link rel="canonical" href={absoluteUrl("/landing")} />
+        {socialMetaTags({
+          path: "/landing",
+          title: t("docTitle"),
+          description: t("metaDescription"),
+          lang,
+        }).map((m) =>
+          m.kind === "property"
+            ? <meta key={m.key} property={m.key} content={m.content} />
+            : <meta key={m.key} name={m.key} content={m.content} />
+        )}
         <link rel="stylesheet" href="/promo.css" />
       </Head>
 
@@ -207,20 +238,22 @@ export default define.page(function PromoLanding(ctx) {
                 <span class="pm-plan__badge">{t("pricingBadge")}</span>
                 <h3 class="pm-plan__name">{t("pricingStarterName")}</h3>
                 <div class="pm-plan__price">
-                  $15
+                  {TIER_PRICE.starter}
                   <span class="pm-plan__cadence">{t("pricingPerMonth")}</span>
                 </div>
                 <p class="pm-plan__blurb">{t("pricingStarterBlurb")}</p>
+                {
+                  /* One feature list per tier, from the ONE plan source
+                    (shared/quote-flow/pricing-plans.ts) — the same list
+                    "/" renders, so the two pages can no longer promise
+                    different things at the same price. */
+                }
                 <ul class="pm-plan__feats">
-                  <li>
-                    <Check /> {t("pricingStarterF1")}
-                  </li>
-                  <li>
-                    <Check /> {t("pricingStarterF2")}
-                  </li>
-                  <li>
-                    <Check /> {t("pricingStarterF3")}
-                  </li>
+                  {PRICING_PLANS[0].features.map((f) => (
+                    <li key={f.id}>
+                      <Check /> {lang === "es" ? f.es : f.en}
+                    </li>
+                  ))}
                 </ul>
                 <a href="#trial" class="pm-btn pm-btn--primary pm-plan__cta">
                   {t("pricingCta")}
@@ -230,20 +263,22 @@ export default define.page(function PromoLanding(ctx) {
               <div class="pm-plan" data-cy="pricing-plan">
                 <h3 class="pm-plan__name">{t("pricingProName")}</h3>
                 <div class="pm-plan__price">
-                  $99
+                  {TIER_PRICE.pro}
                   <span class="pm-plan__cadence">{t("pricingPerMonth")}</span>
                 </div>
                 <p class="pm-plan__blurb">{t("pricingProBlurb")}</p>
+                {
+                  /* One feature list per tier, from the ONE plan source
+                    (shared/quote-flow/pricing-plans.ts) — the same list
+                    "/" renders, so the two pages can no longer promise
+                    different things at the same price. */
+                }
                 <ul class="pm-plan__feats">
-                  <li>
-                    <Check /> {t("pricingProF1")}
-                  </li>
-                  <li>
-                    <Check /> {t("pricingProF2")}
-                  </li>
-                  <li>
-                    <Check /> {t("pricingProF3")}
-                  </li>
+                  {PRICING_PLANS[1].features.map((f) => (
+                    <li key={f.id}>
+                      <Check /> {lang === "es" ? f.es : f.en}
+                    </li>
+                  ))}
                 </ul>
                 <a href="#trial" class="pm-btn pm-btn--ghost pm-plan__cta">
                   {t("pricingCta")}
@@ -253,20 +288,22 @@ export default define.page(function PromoLanding(ctx) {
               <div class="pm-plan" data-cy="pricing-plan">
                 <h3 class="pm-plan__name">{t("pricingCrewName")}</h3>
                 <div class="pm-plan__price">
-                  $199
+                  {TIER_PRICE.crew}
                   <span class="pm-plan__cadence">{t("pricingPerMonth")}</span>
                 </div>
                 <p class="pm-plan__blurb">{t("pricingCrewBlurb")}</p>
+                {
+                  /* One feature list per tier, from the ONE plan source
+                    (shared/quote-flow/pricing-plans.ts) — the same list
+                    "/" renders, so the two pages can no longer promise
+                    different things at the same price. */
+                }
                 <ul class="pm-plan__feats">
-                  <li>
-                    <Check /> {t("pricingCrewF1")}
-                  </li>
-                  <li>
-                    <Check /> {t("pricingCrewF2")}
-                  </li>
-                  <li>
-                    <Check /> {t("pricingCrewF3")}
-                  </li>
+                  {PRICING_PLANS[2].features.map((f) => (
+                    <li key={f.id}>
+                      <Check /> {lang === "es" ? f.es : f.en}
+                    </li>
+                  ))}
                 </ul>
                 <a href="#trial" class="pm-btn pm-btn--ghost pm-plan__cta">
                   {t("pricingCta")}

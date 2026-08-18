@@ -23,6 +23,7 @@ import {
 } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { localizeTermValue } from "../lib/term-i18n.ts";
+import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 
 /* ---------- palette ---------- */
 export const PINK = "#FF6B6B";
@@ -256,16 +257,15 @@ export function initialsFromName(name?: string): string {
   return (parts[0] ?? "PM").slice(0, 2).toUpperCase();
 }
 
-export function fmtDate(iso: string): string {
-  const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
-  const d = new Date(isDateOnly ? `${iso}T12:00:00Z` : iso);
-  if (Number.isNaN(+d)) return iso;
-  return d.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+/**
+ * Long date in the DOCUMENT's language. Delegates to the one shared
+ * formatter so the web page, the PDF and the email can never drift — and so
+ * a Spanish agreement stops printing "FIRMADO AUGUST 18, 2026".
+ * `lang` defaults to English only so an un-migrated caller keeps its old
+ * output; every customer-facing call site passes the document language.
+ */
+export function fmtDate(iso: string, lang: Lang = "en"): string {
+  return formatLongDate(iso, lang);
 }
 
 export function termValue(
@@ -554,25 +554,44 @@ export function TermGrid(props: {
     termLabels: Record<string, string>;
   };
 }) {
+  // Audit2 #24 — the agreement printed TWO contradictory start rows:
+  // "INICIO / Por agendar" (this fallback) directly above "FECHA DE INICIO /
+  // De inmediato" (the wizard's own start_date answer). Exactly one may
+  // render: a concrete startDate wins outright, else the contractor's wizard
+  // answer speaks for itself, and the "To be scheduled" placeholder only
+  // fills in when there is neither (deck p12 keeps a Start row on every
+  // agreement).
+  const hasStartTerm = (props.terms ?? []).some(
+    (t) => t.stepId === "start_date" && !!t.value,
+  );
+  const showStartFallback = !props.startDate && !!props.startFallback &&
+    !hasStartTerm;
   return (
     <div
       class="ctr__terms-grid"
       style="display:grid;grid-template-columns:1fr 1fr;gap:12px"
     >
-      {(props.startDate || props.startFallback) && (
+      {(props.startDate || showStartFallback) && (
         <KV
           k={props.labels.start}
-          v={props.startDate ? fmtDate(props.startDate) : props.startFallback!}
+          v={props.startDate
+            ? fmtDate(props.startDate, props.lang)
+            : props.startFallback!}
         />
       )}
       {props.estimatedCompletionDate && (
         <KV
           k={props.labels.estCompletion}
-          v={fmtDate(props.estimatedCompletionDate)}
+          v={fmtDate(props.estimatedCompletionDate, props.lang)}
         />
       )}
       {(props.terms ?? [])
-        .filter((term) => term.stepId !== "customer" && !isEmptyWarranty(term))
+        .filter((term) =>
+          term.stepId !== "customer" && !isEmptyWarranty(term) &&
+          // A concrete start date on the contract supersedes the coarse
+          // wizard answer — never print both.
+          !(term.stepId === "start_date" && !!props.startDate)
+        )
         .map((term) => (
           <KV
             key={term.stepId}

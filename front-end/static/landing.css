@@ -376,6 +376,11 @@ section {
   background: var(--brand-teal);
   color: #fff;
 }
+/* Wide screens read the full sentence; the @media(max-width:720px) block
+   swaps in the "EN"/"ES" abbreviation so the phone header stays one row. */
+.lang-toggle__abbr {
+  display: none;
+}
 
 .nav-links {
   display: flex;
@@ -2861,6 +2866,13 @@ section {
   margin: 0;
   min-height: 0;
 }
+/* P-07: the field the #cf-meta alert is talking about. A validation error used
+   to be invisible (focus only), so the input carries the state too. */
+.signup-input--error,
+.signup-input[aria-invalid="true"] {
+  border-color: #ff6b6b;
+  box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.28);
+}
 /* Pulse to pull the eye to the field; stops once the user engages it. */
 @keyframes signupPulse {
   0% {
@@ -3033,6 +3045,77 @@ section {
   .doc-counter {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+/* ============================================================
+   P-17 — compact single-row header on phones.
+   The 980px block above lets .nav wrap, which on a 390px screen stacked
+   brand / language pill / Log in / Get Started into three rows: a 193px
+   header whose "Get Started" CTA landed flush at x=0 and bled into the
+   hero. Below 720px the bar stops wrapping and every control shrinks to
+   phone scale so it stays one ~60px row.
+   ============================================================ */
+@media (max-width: 720px) {
+  .nav {
+    flex-wrap: nowrap;
+    gap: 10px;
+    row-gap: 0;
+    /* .nav's own shorthand padding overrides .container's gutter, so restate
+       it here — otherwise the brand and the CTA sit flush on the screen
+       edges. */
+    padding: 10px 16px;
+  }
+  .nav .brand {
+    font-size: 16px;
+    gap: 7px;
+    min-width: 0;
+  }
+  .nav .brand img {
+    width: 32px;
+    height: 32px;
+  }
+  /* .nav-links is display:none here, so its margin-left:auto no longer
+     pushes the actions right — the language pill takes that job. */
+  .nav .lang-toggle {
+    margin-left: auto;
+    flex-shrink: 0;
+    padding: 3px;
+    font-size: 11px;
+  }
+  .nav .lang-toggle button {
+    padding: 6px 10px;
+  }
+  /* "I speak English" / "Yo hablo Español" → "EN" / "ES". */
+  .lang-toggle__full {
+    display: none;
+  }
+  .lang-toggle__abbr {
+    display: inline;
+  }
+  .nav .btn-outline {
+    padding: 9px 13px;
+    font-size: 13px;
+    border-radius: var(--radius-pill);
+    flex-shrink: 0;
+  }
+  .nav .btn-primary {
+    padding: 10px 14px;
+    font-size: 13px;
+    border-radius: 12px;
+    box-shadow: 0 6px 14px rgba(255, 107, 107, 0.28);
+    flex-shrink: 0;
+  }
+}
+
+/* Phone widths cannot carry the "Paperwork Monster" word-mark AND the four
+   nav controls on one row — the logo alone keeps the row honest. */
+@media (max-width: 520px) {
+  /* .nav-scoped on purpose — /login, /verify, /contact and the landing
+     footer reuse .brand and must keep their word-mark. */
+  .nav .brand span,
+  .nav .brand em {
+    display: none;
   }
 }
 

@@ -70,22 +70,29 @@ export function writeLangToUrl(lang: Lang): void {
 }
 
 // Client-only seed: resolve the initial language exactly once at module load.
-// Priority: ?lang= (URL) > localStorage["pm:lang"] > default "en". The resolved
-// value is mirrored back into localStorage so it survives a later navigation
-// that drops the query param. Guarded because this module is imported in SSR.
+// Priority: ?lang= (URL) > localStorage["pm:lang"] > the "es" default.
+// Guarded because this module is imported in SSR.
+//
+// CRITICAL — only an actual CHOICE is persisted. This block used to call
+// persistLang(resolved) unconditionally, so merely loading ANY page (including
+// a customer's public /q, /c or /i document, which imports this module through
+// its islands) stamped `pm_lang=es` on a cookie-less visitor. The first visit
+// rendered the document correctly and the reload rendered it in Spanish — a
+// signed legal agreement silently changing language between two loads of the
+// same URL. The default is a fallback, not a preference: it is never written.
 if (typeof document !== "undefined" && globalThis.location) {
   try {
     const fromQuery = asLang(
       new URLSearchParams(globalThis.location.search).get("lang"),
     );
     const fromStorage = asLang(globalThis.localStorage?.getItem("pm:lang"));
-    const resolved: Lang = fromQuery ?? fromStorage ?? "es";
-    langSignal.value = resolved;
-    // Mirror into localStorage + cookie so SSR routes (verify/login) render
-    // the same language the islands will hydrate to.
-    persistLang(resolved);
+    const chosen = fromQuery ?? fromStorage;
+    langSignal.value = chosen ?? "es";
+    // Mirror ONLY a real choice into localStorage + cookie, so SSR routes
+    // (verify/login) render the same language the islands hydrate to.
+    if (chosen) persistLang(chosen);
   } catch {
-    /* keep the default "en" */
+    /* keep the default */
   }
 }
 

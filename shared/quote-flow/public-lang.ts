@@ -16,7 +16,54 @@
 
 export type PublicLang = "en" | "es";
 
-/** Resolve the language a public money page should render in. */
+/** Parse the pm_lang choice out of a RAW Cookie header — null when absent. */
+export function pmLangFromCookie(
+  cookie?: string | null,
+): PublicLang | null {
+  // Accept "," as a separator too: over HTTP/2 each cookie arrives in its
+  // own header field, which Deno re-joins with ", " (langFromCookie parity).
+  const m = cookie?.match(/(?:^|[;,]\s*)pm_lang=(en|es)(?:[;,]|$)/);
+  return m ? (m[1] as PublicLang) : null;
+}
+
+/** Narrow the leading Accept-Language tag to a PublicLang — null when it is
+ *  neither an "es" nor an "en" tag. */
+export function pmLangFromAcceptLanguage(
+  header?: string | null,
+): PublicLang | null {
+  const firstTag = header?.split(",")[0]?.trim() ?? "";
+  if (/^es\b/i.test(firstTag)) return "es";
+  if (/^en\b/i.test(firstTag)) return "en";
+  return null;
+}
+
+/**
+ * The ONE precedence table, over ALREADY-PARSED values.
+ *
+ * Public documents are rendered by a mix of SSR routes (which hold the raw
+ * request headers) and client islands (which can only be handed serializable
+ * props — never the raw Cookie header, which carries the session). Both go
+ * through this function so /q, /c, /i and /co can never drift apart.
+ */
+export function resolvePublicLangFrom(parts: {
+  /** The visitor's persisted pm_lang CHOICE, already parsed. */
+  cookieLang?: PublicLang | null;
+  /** The document's generation language (contractor.commsLanguage). */
+  docLang?: string | null;
+  /** The browser's preferred language, already parsed. */
+  headerLang?: PublicLang | null;
+}): PublicLang {
+  if (parts.cookieLang === "en" || parts.cookieLang === "es") {
+    return parts.cookieLang;
+  }
+  if (parts.docLang === "es" || parts.docLang === "en") return parts.docLang;
+  if (parts.headerLang === "es" || parts.headerLang === "en") {
+    return parts.headerLang;
+  }
+  return "en";
+}
+
+/** Resolve the language a public page should render in, from RAW headers. */
 export function resolvePublicLang(args: {
   /** The RAW Cookie request header. */
   cookie?: string | null;
@@ -25,17 +72,11 @@ export function resolvePublicLang(args: {
   /** The Accept-Language request header. */
   header?: string | null;
 }): PublicLang {
-  // Accept "," as a separator too: over HTTP/2 each cookie arrives in its
-  // own header field, which Deno re-joins with ", " (langFromCookie parity).
-  const m = args.cookie?.match(/(?:^|[;,]\s*)pm_lang=(en|es)(?:[;,]|$)/);
-  if (m) return m[1] as PublicLang;
-
-  if (args.docLang === "es" || args.docLang === "en") return args.docLang;
-
-  const firstTag = args.header?.split(",")[0]?.trim() ?? "";
-  if (/^es\b/i.test(firstTag)) return "es";
-
-  return "en";
+  return resolvePublicLangFrom({
+    cookieLang: pmLangFromCookie(args.cookie),
+    docLang: args.docLang,
+    headerLang: pmLangFromAcceptLanguage(args.header),
+  });
 }
 
 export interface MoneyPageStrings {

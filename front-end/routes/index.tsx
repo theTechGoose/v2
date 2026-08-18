@@ -3,10 +3,60 @@ import { define } from "../utils.ts";
 import { loadUser } from "../lib/auth.ts";
 import { tFor } from "../lib/i18n.ts";
 import { langFromCookie, pickLangFromAcceptLanguage } from "../lib/lang.ts";
+import {
+  formatSocialProof,
+  LANDING_OFFER,
+} from "../../shared/quote-flow/landing-offers.ts";
+import { PRICING_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import { LANDING_DICT } from "../lib/landing-dict.ts";
+import {
+  absoluteUrl,
+  socialMetaTags,
+} from "../../shared/quote-flow/site-meta.ts";
+import {
+  buildRotorPhrase,
+  ES_ROTOR,
+} from "../../shared/quote-flow/landing-rotor.ts";
 import PhoneChat, {
   type Bubble,
   type QuoteCopy,
 } from "../islands/PhoneChat.tsx";
+
+/** ES rotor phrase per word ("cotizaciones" → "las cotizaciones."), so each
+ *  rotating word carries its OWN agreeing article (P-16) instead of the hero
+ *  prefix baking in a one-size-fits-none "las". */
+const ES_ROTOR_BY_WORD = new Map(
+  ES_ROTOR.map((e) => [e.word, buildRotorPhrase(e)]),
+);
+const esRotor = (word: string) => ES_ROTOR_BY_WORD.get(word) ?? `${word}.`;
+
+/** "$15" / "$99" / "$199" — tier prices come from PRICING_PLANS, never
+ *  re-typed in the markup (P-08). */
+const TIER_PRICE: Record<string, string> = Object.fromEntries(
+  PRICING_PLANS.map((p) => [p.id, `$${Math.round(p.priceCents / 100)}`]),
+);
+
+/** The from-price the "{p}" placeholder resolves to, in whole dollars. */
+const PRICE_FROM = String(Math.round(LANDING_OFFER.priceFromCents / 100));
+
+/** Offer numbers the client script needs, SSR-injected so neither the counter
+ *  targets nor the price/trial claims are ever re-typed in the static script
+ *  (P-08). `__PM_DOCS_SENT` drives the animated documents counter; `__PM_OFFER`
+ *  fills the dictionary's {n}/{p}/{d} placeholders on a language switch. */
+const OFFER_BOOT =
+  `window.__PM_DOCS_SENT=${LANDING_OFFER.socialProof.docsSent};` +
+  `window.__PM_OFFER=${
+    JSON.stringify({
+      trialDays: LANDING_OFFER.trialDays,
+      priceFrom: PRICE_FROM,
+      counts: {
+        contractors: {
+          en: formatSocialProof(LANDING_OFFER.socialProof.contractors, "en"),
+          es: formatSocialProof(LANDING_OFFER.socialProof.contractors, "es"),
+        },
+      },
+    })
+  };`;
 
 const DEMO_SCRIPT_EN: Bubble[] = [
   {
@@ -138,8 +188,35 @@ export default define.page(async function Landing(ctx) {
     });
   }
 
-  const lang = langFromCookie(ctx.req.headers.get("cookie")) ??
-    pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
+  // A paid Spanish ad set points at "/?lang=es" — an explicit ?lang= in the
+  // URL is the strongest signal there is and outranks a stale pm_lang cookie
+  // from an unrelated visit (routes/landing.tsx already worked this way; the
+  // two landings used to disagree).
+  const qLang = new URL(ctx.req.url).searchParams.get("lang");
+  const lang = (qLang === "en" || qLang === "es")
+    ? qLang
+    : langFromCookie(ctx.req.headers.get("cookie")) ??
+      pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
+  // SSR-render every data-i18n node from the ONE landing dictionary
+  // (lib/landing-dict.ts) so a pm_lang=es request paints Spanish on the first
+  // byte (P-19: no EN-first flash). The browser gets the same dict from
+  // /landing-dict.js and re-applies it on a language switch — no drift.
+  const dict = LANDING_DICT[lang] ?? LANDING_DICT.en;
+  const contractors = formatSocialProof(
+    LANDING_OFFER.socialProof.contractors,
+    lang,
+  );
+  /** First-paint text for one rotor word — the client keeps swapping it from
+   *  the data-en/data-es attributes on a language toggle. */
+  const rotorWord = (en: string, esWord: string) =>
+    lang === "es" ? esRotor(esWord) : en;
+  /** Dictionary lookup + offer-placeholder fill: {n} social-proof counter,
+   *  {p} from-price, {d} free-trial days — all from LANDING_OFFER. */
+  const t = (key: string, n?: string) =>
+    (dict[key] ?? LANDING_DICT.en[key] ?? "")
+      .replace(/\{p\}/g, PRICE_FROM)
+      .replace(/\{d\}/g, String(LANDING_OFFER.trialDays))
+      .replace(/\{n\}/g, n ?? "");
 
   return (
     <>
@@ -149,7 +226,40 @@ export default define.page(async function Landing(ctx) {
           name="description"
           content={tFor(lang, "landing.head.metaDescription")}
         />
+        {
+          /* Share plumbing. Without it every share of an ad link — including
+            the comment thread under the ad itself — rendered as a bare URL:
+            no title, no blurb, no image. Built from the ONE tag set both
+            marketing pages use (shared/quote-flow/site-meta.ts). */
+        }
+        <link rel="canonical" href={absoluteUrl("/")} />
+        {socialMetaTags({
+          path: "/",
+          title: tFor(lang, "landing.head.title"),
+          description: tFor(lang, "landing.head.metaDescription"),
+          lang,
+        }).map((m) =>
+          m.kind === "property"
+            ? <meta key={m.key} property={m.key} content={m.content} />
+            : <meta key={m.key} name={m.key} content={m.content} />
+        )}
         <link rel="stylesheet" href="/landing.css" />
+        {
+          /* Single-source the offer numbers (P-08): counters, from-price and
+            trial length are SSR-injected from LANDING_OFFER instead of being
+            magic numbers in the static script. Runs before the deferred ones. */
+        }
+        <script
+          // deno-lint-ignore react-no-danger
+          dangerouslySetInnerHTML={{ __html: OFFER_BOOT }}
+        />
+        {
+          /* The same dictionary this page server-rendered, for the client-side
+            language toggle. Served from its own URL (never inlined) so the
+            Spanish page ships no English copy and vice versa. Deferred scripts
+            run in document order, so the dict lands before its consumer. */
+        }
+        <script src="/landing-dict.js" defer></script>
         <script src="/landing-scripts.js" defer></script>
       </Head>
 
@@ -158,40 +268,58 @@ export default define.page(async function Landing(ctx) {
         <div class="container nav">
           <a href="#" class="brand">
             <img src="/logo-monster.png" alt="Paperwork Monster" />
-            <span data-i18n="brand1">Paperwork</span>
+            <span data-i18n="brand1">{t("brand1")}</span>
             <em
               data-i18n="brand2"
               style="font-style:normal;color:var(--brand-green)"
             >
-              Monster
+              {t("brand2")}
             </em>
           </a>
 
+          {
+            /* P-17: the full sentences are what blew the 390px header up to
+              three wrapped rows. Both labels ship, and CSS swaps to the
+              EN/ES abbreviation below 720px; the aria-label keeps the full
+              sentence for assistive tech at every width. */
+          }
           <div class="lang-toggle" role="tablist" aria-label="Language">
-            <button type="button" data-lang="en">
-              I speak English
+            <button
+              class={lang === "en" ? "on" : ""}
+              type="button"
+              data-lang="en"
+              aria-label="I speak English"
+            >
+              <span class="lang-toggle__full">I speak English</span>
+              <span class="lang-toggle__abbr" aria-hidden="true">EN</span>
             </button>
-            <button class="on" type="button" data-lang="es">
-              Yo hablo Español
+            <button
+              class={lang === "es" ? "on" : ""}
+              type="button"
+              data-lang="es"
+              aria-label="Yo hablo Español"
+            >
+              <span class="lang-toggle__full">Yo hablo Español</span>
+              <span class="lang-toggle__abbr" aria-hidden="true">ES</span>
             </button>
           </div>
 
           <nav class="nav-links">
-            <a href="#features" data-i18n="nav.features">What We Do</a>
-            <a href="#how-it-works" data-i18n="nav.how">How It Works</a>
-            <a href="#pricing" data-i18n="nav.pricing">Pricing</a>
+            <a href="#features" data-i18n="nav.features">{t("nav.features")}</a>
+            <a href="#how-it-works" data-i18n="nav.how">{t("nav.how")}</a>
+            <a href="#pricing" data-i18n="nav.pricing">{t("nav.pricing")}</a>
           </nav>
 
           {/* Roadmap p.13: top-of-view Login → clean /login component. */}
           <a href="/login" class="btn btn-outline" data-i18n="nav.login">
-            Log in
+            {t("nav.login")}
           </a>
           <a
             href="#contact"
             class="btn btn-primary cta-scroll"
             data-i18n="nav.cta"
           >
-            Get Started
+            {t("nav.cta")}
           </a>
         </div>
       </div>
@@ -203,43 +331,50 @@ export default define.page(async function Landing(ctx) {
           <div class="hero-copy">
             <div class="kicker">
               <span class="kicker-pill" data-i18n="hero.kickerPill">
-                For pros
+                {t("hero.kickerPill")}
               </span>
-              <span data-i18n="hero.kicker">
-                Built for contractors who work with their hands
-              </span>
+              <span data-i18n="hero.kicker">{t("hero.kicker")}</span>
             </div>
 
             <h1>
-              <span data-i18n="hero.h1a">You do the work.</span>
+              <span data-i18n="hero.h1a">{t("hero.h1a")}</span>
               <br />
-              <span data-i18n="hero.h1b">We handle the</span>
+              <span data-i18n="hero.h1b">{t("hero.h1b")}</span>
               <span class="rotor">
                 <span class="rotor-track" id="rotor-track">
                   <span
                     class="word in"
                     data-en="quotes."
-                    data-es="cotizaciones."
+                    data-es={esRotor("cotizaciones")}
                   >
-                    quotes.
+                    {rotorWord("quotes.", "cotizaciones")}
                   </span>
-                  <span class="word" data-en="contracts." data-es="contratos.">
-                    contracts.
+                  <span
+                    class="word"
+                    data-en="contracts."
+                    data-es={esRotor("contratos")}
+                  >
+                    {rotorWord("contracts.", "contratos")}
                   </span>
-                  <span class="word" data-en="invoices." data-es="facturas.">
-                    invoices.
+                  <span
+                    class="word"
+                    data-en="invoices."
+                    data-es={esRotor("facturas")}
+                  >
+                    {rotorWord("invoices.", "facturas")}
                   </span>
-                  <span class="word" data-en="paperwork." data-es="papeleo.">
-                    paperwork.
+                  <span
+                    class="word"
+                    data-en="paperwork."
+                    data-es={esRotor("papeleo")}
+                  >
+                    {rotorWord("paperwork.", "papeleo")}
                   </span>
                 </span>
               </span>
             </h1>
 
-            <p class="lead" data-i18n="hero.lead">
-              You communicate with us in Spanish. Everything goes out to your
-              clients in perfect English. No apps to learn. Just chat with us.
-            </p>
+            <p class="lead" data-i18n="hero.lead">{t("hero.lead")}</p>
 
             <div class="hero-ctas">
               <a
@@ -248,7 +383,7 @@ export default define.page(async function Landing(ctx) {
                 data-cta="primary"
                 data-i18n="hero.cta1"
               >
-                Get Started →
+                {t("hero.cta1")}
               </a>
               <a
                 href="#how-it-works"
@@ -256,7 +391,7 @@ export default define.page(async function Landing(ctx) {
                 data-cta="secondary"
                 data-i18n="hero.cta2"
               >
-                See How It Works
+                {t("hero.cta2")}
               </a>
             </div>
 
@@ -268,9 +403,10 @@ export default define.page(async function Landing(ctx) {
                 <div class="av" style="background:var(--coffee-500)">TS</div>
               </div>
               <span>
-                <strong data-i18n="hero.trustStrong">1,200+ contractors</strong>
-                {" "}
-                <span data-i18n="hero.trustRest">getting paid faster</span>
+                <strong data-i18n="hero.trustStrong" data-count="contractors">
+                  {t("hero.trustStrong", contractors)}
+                </strong>{" "}
+                <span data-i18n="hero.trustRest">{t("hero.trustRest")}</span>
               </span>
             </div>
           </div>
@@ -296,7 +432,7 @@ export default define.page(async function Landing(ctx) {
                   </svg>
                 </span>
                 <span class="hs-badge__body">
-                  <strong data-i18n="hero.chip1">Quote sent</strong>
+                  <strong data-i18n="hero.chip1">{t("hero.chip1")}</strong>
                   <em>9:42 AM</em>
                 </span>
               </div>
@@ -310,7 +446,7 @@ export default define.page(async function Landing(ctx) {
                 </span>
                 <span class="hs-badge__body">
                   <strong>R. Hernández</strong>
-                  <em data-i18n="hero.chip2">Contract signed</em>
+                  <em data-i18n="hero.chip2">{t("hero.chip2")}</em>
                 </span>
                 <span class="hs-badge__icon pink" style="margin-left:auto">
                   <svg
@@ -330,34 +466,38 @@ export default define.page(async function Landing(ctx) {
 
               <div class="hs-doc">
                 <div class="hs-doc__head">
-                  <span class="hs-doc__tag">Quote</span>
+                  <span class="hs-doc__tag" data-i18n="doc.q.tag">
+                    {t("doc.q.tag")}
+                  </span>
                   <span class="hs-doc__num">#PM-2641</span>
                 </div>
                 <h4 class="hs-doc__title" data-i18n="doc.q.title">
-                  Kitchen remodel
+                  {t("doc.q.title")}
                 </h4>
                 <div class="hs-doc__client">R. Hernández · Apr 26</div>
                 <div class="hs-doc__rows">
                   <div class="hs-doc__row">
-                    <span data-i18n="doc.q.l1">Cabinets</span>
+                    <span data-i18n="doc.q.l1">{t("doc.q.l1")}</span>
                     <strong>$4,200.00</strong>
                   </div>
                   <div class="hs-doc__row">
-                    <span data-i18n="doc.q.l2">Counters</span>
+                    <span data-i18n="doc.q.l2">{t("doc.q.l2")}</span>
                     <strong>$3,990.00</strong>
                   </div>
                   <div class="hs-doc__row">
-                    <span data-i18n="doc.q.l3">Labor (3 days)</span>
+                    <span data-i18n="doc.q.l3">{t("doc.q.l3")}</span>
                     <strong>$1,950.00</strong>
                   </div>
                   <div class="hs-doc__row hs-doc__row--total">
-                    <span data-i18n="doc.total">Total</span>
+                    <span data-i18n="doc.total">{t("doc.total")}</span>
                     <strong>$10,990.00</strong>
                   </div>
                 </div>
                 <div class="hs-doc__sign">
                   <div class="hs-doc__sign-line"></div>
-                  <span class="hs-doc__sign-label">Signed ✓</span>
+                  <span class="hs-doc__sign-label" data-i18n="doc.q.signed">
+                    {t("doc.q.signed")}
+                  </span>
                 </div>
               </div>
 
@@ -368,7 +508,9 @@ export default define.page(async function Landing(ctx) {
                     <span class="hs-chat__avatar">PM</span>
                     <span class="hs-chat__name">
                       <strong>Paperwork Monster</strong>
-                      <em>Online • SMS</em>
+                      <em data-i18n="hero.chatStatus">
+                        {t("hero.chatStatus")}
+                      </em>
                     </span>
                   </div>
                   <div class="hs-chat__body">
@@ -439,45 +581,32 @@ export default define.page(async function Landing(ctx) {
         <div class="container">
           <div class="section-head">
             <span class="eyebrow-pill" data-i18n="problem.eyebrow">
-              The problem
+              {t("problem.eyebrow")}
             </span>
-            <h2 data-i18n="problem.h2html" data-html="1">
-              Good work deserves <em>good paperwork</em>
-            </h2>
-            <p data-i18n="problem.lead">
-              You know your trade. But chasing down quotes on scrap paper and
-              guessing at prices is costing you real money.
-            </p>
+            <h2
+              data-i18n="problem.h2html"
+              data-html="1"
+              // deno-lint-ignore react-no-danger
+              dangerouslySetInnerHTML={{ __html: t("problem.h2html") }}
+            />
+            <p data-i18n="problem.lead">{t("problem.lead")}</p>
           </div>
 
           <div class="problem-grid">
             <div class="problem-card">
               <span class="num">01</span>
-              <h3 data-i18n="problem.c1.h">Leaving money on the table</h3>
-              <p data-i18n="problem.c1.p">
-                Without solid pricing info, most contractors bid too low. That
-                means less money in your pocket for the same hard work.
-              </p>
+              <h3 data-i18n="problem.c1.h">{t("problem.c1.h")}</h3>
+              <p data-i18n="problem.c1.p">{t("problem.c1.p")}</p>
             </div>
             <div class="problem-card">
               <span class="num">02</span>
-              <h3 data-i18n="problem.c2.h">
-                Paperwork that doesn't look right
-              </h3>
-              <p data-i18n="problem.c2.p">
-                Handwritten quotes on notebook paper don't build trust. Clients
-                pick the contractor who looks like they have it together.
-              </p>
+              <h3 data-i18n="problem.c2.h">{t("problem.c2.h")}</h3>
+              <p data-i18n="problem.c2.p">{t("problem.c2.p")}</p>
             </div>
             <div class="problem-card">
               <span class="num">03</span>
-              <h3 data-i18n="problem.c3.h">
-                Hours you're not getting paid for
-              </h3>
-              <p data-i18n="problem.c3.p">
-                Every hour figuring out paperwork is an hour you could be on a
-                job site earning real money.
-              </p>
+              <h3 data-i18n="problem.c3.h">{t("problem.c3.h")}</h3>
+              <p data-i18n="problem.c3.p">{t("problem.c3.p")}</p>
             </div>
           </div>
         </div>
@@ -488,29 +617,31 @@ export default define.page(async function Landing(ctx) {
         <div class="container">
           <div class="section-head">
             <span class="eyebrow-pill" data-i18n="docs.eyebrow">
-              One text. Three documents.
+              {t("docs.eyebrow")}
             </span>
-            <h2 data-i18n="docs.h2html" data-html="1">
-              Quote, contract, invoice — <em>handled</em>.
-            </h2>
-            <p data-i18n="docs.lead">
-              Send us a message. We send back a real document with real numbers
-              — not a sketch on the back of an envelope.
-            </p>
+            <h2
+              data-i18n="docs.h2html"
+              data-html="1"
+              // deno-lint-ignore react-no-danger
+              dangerouslySetInnerHTML={{ __html: t("docs.h2html") }}
+            />
+            <p data-i18n="docs.lead">{t("docs.lead")}</p>
           </div>
 
           <div class="doc-tabs" role="tablist">
             <button type="button" class="doc-tab on" data-doc="quote">
               <span class="step">01</span>{" "}
-              <span data-i18n="docs.tab.quote">Quote</span>
+              <span data-i18n="docs.tab.quote">{t("docs.tab.quote")}</span>
             </button>
             <button type="button" class="doc-tab" data-doc="contract">
               <span class="step">02</span>{" "}
-              <span data-i18n="docs.tab.contract">Contract</span>
+              <span data-i18n="docs.tab.contract">
+                {t("docs.tab.contract")}
+              </span>
             </button>
             <button type="button" class="doc-tab" data-doc="invoice">
               <span class="step">03</span>{" "}
-              <span data-i18n="docs.tab.invoice">Invoice</span>
+              <span data-i18n="docs.tab.invoice">{t("docs.tab.invoice")}</span>
             </button>
           </div>
 
@@ -537,15 +668,15 @@ export default define.page(async function Landing(ctx) {
           <div class="doc-counter">
             <div>
               <div class="label" data-i18n="docs.counter.label">
-                Documents sent so far
+                {t("docs.counter.label")}
               </div>
               <div class="big" id="doc-counter-num">0</div>
             </div>
             <div class="types">
-              <span data-i18n="docs.counter.t1">Quotes</span>
-              <span data-i18n="docs.counter.t2">Contracts</span>
-              <span data-i18n="docs.counter.t3">Invoices</span>
-              <span data-i18n="docs.counter.t4">Change orders</span>
+              <span data-i18n="docs.counter.t1">{t("docs.counter.t1")}</span>
+              <span data-i18n="docs.counter.t2">{t("docs.counter.t2")}</span>
+              <span data-i18n="docs.counter.t3">{t("docs.counter.t3")}</span>
+              <span data-i18n="docs.counter.t4">{t("docs.counter.t4")}</span>
             </div>
           </div>
         </div>
@@ -556,15 +687,15 @@ export default define.page(async function Landing(ctx) {
         <div class="container">
           <div class="section-head">
             <span class="eyebrow-pill" data-i18n="feat.eyebrow">
-              What we do
+              {t("feat.eyebrow")}
             </span>
-            <h2 data-i18n="feat.h2html" data-html="1">
-              We take care of the <em>business side</em>
-            </h2>
-            <p data-i18n="feat.lead">
-              From the first quote to the final invoice — we handle it so you
-              can stay on the job.
-            </p>
+            <h2
+              data-i18n="feat.h2html"
+              data-html="1"
+              // deno-lint-ignore react-no-danger
+              dangerouslySetInnerHTML={{ __html: t("feat.h2html") }}
+            />
+            <p data-i18n="feat.lead">{t("feat.lead")}</p>
           </div>
 
           <div class="features-grid">
@@ -590,12 +721,8 @@ export default define.page(async function Landing(ctx) {
                 </svg>
               </div>
               <div>
-                <h3 data-i18n="feat.f1.h">Fair prices, not guesses</h3>
-                <p data-i18n="feat.f1.p">
-                  Real construction pricing data, adjusted for today's costs.
-                  Get a low, middle, and high range so you know exactly where
-                  you stand.
-                </p>
+                <h3 data-i18n="feat.f1.h">{t("feat.f1.h")}</h3>
+                <p data-i18n="feat.f1.p">{t("feat.f1.p")}</p>
               </div>
             </div>
 
@@ -616,11 +743,8 @@ export default define.page(async function Landing(ctx) {
                 </svg>
               </div>
               <div>
-                <h3 data-i18n="feat.f2.h">Contracts that protect you</h3>
-                <p data-i18n="feat.f2.p">
-                  One tap turns your quote into a real contract. Protect your
-                  work and look professional to your clients.
-                </p>
+                <h3 data-i18n="feat.f2.h">{t("feat.f2.h")}</h3>
+                <p data-i18n="feat.f2.p">{t("feat.f2.p")}</p>
               </div>
             </div>
 
@@ -643,11 +767,8 @@ export default define.page(async function Landing(ctx) {
                 </svg>
               </div>
               <div>
-                <h3 data-i18n="feat.f3.h">Simple invoicing</h3>
-                <p data-i18n="feat.f3.p">
-                  Job done? We turn it into an invoice. Keep track of who's paid
-                  and who hasn't — without a spreadsheet.
-                </p>
+                <h3 data-i18n="feat.f3.h">{t("feat.f3.h")}</h3>
+                <p data-i18n="feat.f3.p">{t("feat.f3.p")}</p>
               </div>
             </div>
 
@@ -667,11 +788,8 @@ export default define.page(async function Landing(ctx) {
                 </svg>
               </div>
               <div>
-                <h3 data-i18n="feat.f4.h">Just chat with us</h3>
-                <p data-i18n="feat.f4.p">
-                  No fancy apps. Text us the job details and we do the rest.
-                  Simple as that.
-                </p>
+                <h3 data-i18n="feat.f4.h">{t("feat.f4.h")}</h3>
+                <p data-i18n="feat.f4.p">{t("feat.f4.p")}</p>
               </div>
             </div>
           </div>
@@ -683,39 +801,27 @@ export default define.page(async function Landing(ctx) {
         <div class="container">
           <div class="section-head">
             <span class="eyebrow-pill" data-i18n="how.eyebrow">
-              Straight to the point
+              {t("how.eyebrow")}
             </span>
-            <h2 data-i18n="how.h2">How it works</h2>
-            <p data-i18n="how.lead">
-              Three steps. No forms. We meet you where you already are — your
-              phone.
-            </p>
+            <h2 data-i18n="how.h2">{t("how.h2")}</h2>
+            <p data-i18n="how.lead">{t("how.lead")}</p>
           </div>
 
           <div class="how-grid">
             <div class="how-step">
               <div class="num-circle">1</div>
-              <h3 data-i18n="how.s1.h">Chat with us</h3>
-              <p data-i18n="how.s1.p">
-                Send us a text with the job details. We'll ask you one question
-                at a time — no long forms, no hassle.
-              </p>
+              <h3 data-i18n="how.s1.h">{t("how.s1.h")}</h3>
+              <p data-i18n="how.s1.p">{t("how.s1.p")}</p>
             </div>
             <div class="how-step">
               <div class="num-circle">2</div>
-              <h3 data-i18n="how.s2.h">Check your paperwork</h3>
-              <p data-i18n="how.s2.p">
-                We put together professional paperwork with fair pricing. Look
-                it over, change what you need, and give us the thumbs up.
-              </p>
+              <h3 data-i18n="how.s2.h">{t("how.s2.h")}</h3>
+              <p data-i18n="how.s2.p">{t("how.s2.p")}</p>
             </div>
             <div class="how-step">
               <div class="num-circle">3</div>
-              <h3 data-i18n="how.s3.h">Send it and get paid</h3>
-              <p data-i18n="how.s3.p">
-                Send the paperwork to your client. When the job's done, we turn
-                it into an invoice. Everything's in one place.
-              </p>
+              <h3 data-i18n="how.s3.h">{t("how.s3.h")}</h3>
+              <p data-i18n="how.s3.p">{t("how.s3.p")}</p>
             </div>
           </div>
         </div>
@@ -726,27 +832,19 @@ export default define.page(async function Landing(ctx) {
         <div class="container demo-grid">
           <div class="demo-info">
             <span class="eyebrow-pill" data-i18n="demo.eyebrow">
-              See it in action
+              {t("demo.eyebrow")}
             </span>
-            <h2 data-i18n="demo.h2">Just chat with us. We handle the rest.</h2>
-            <p data-i18n="demo.lead">
-              Quotes, contracts, invoices — sent from your phone in seconds. No
-              app to download.
-            </p>
+            <h2 data-i18n="demo.h2">{t("demo.h2")}</h2>
+            <p data-i18n="demo.lead">{t("demo.lead")}</p>
 
             <div class="testimonial">
               <span class="quote-mark">"</span>
-              <p data-i18n="demo.quote">
-                Having a quick turn for the quotes frees up my mind and has
-                allowed me to quote more jobs and fill my pipeline much quicker.
-              </p>
+              <p data-i18n="demo.quote">{t("demo.quote")}</p>
               <div class="who">
                 <div class="av">AR</div>
                 <div>
                   <strong>Alex R.</strong>
-                  <span data-i18n="demo.role">
-                    Four Brothers
-                  </span>
+                  <span data-i18n="demo.role">{t("demo.role")}</span>
                 </div>
               </div>
             </div>
@@ -768,86 +866,126 @@ export default define.page(async function Landing(ctx) {
       <section class="pricing" id="pricing">
         <div class="container">
           <div class="section-head">
-            <span class="eyebrow-pill" data-i18n="price.eyebrow">Pricing</span>
-            <h2 data-i18n="price.plans.h2html" data-html="1">
-              Flat monthly pricing. <em>No surprises.</em>
-            </h2>
-            <p data-i18n="price.plans.lead">
-              Your whole back office — quotes, contracts, invoices, follow-ups —
-              for one flat monthly price. No setup fees, cancel anytime.
-            </p>
+            <span class="eyebrow-pill" data-i18n="price.eyebrow">
+              {t("price.eyebrow")}
+            </span>
+            <h2
+              data-i18n="price.plans.h2html"
+              data-html="1"
+              // deno-lint-ignore react-no-danger
+              dangerouslySetInnerHTML={{ __html: t("price.plans.h2html") }}
+            />
+            <p data-i18n="price.plans.lead">{t("price.plans.lead")}</p>
+            {/* The one free-trial claim, same length /landing advertises. */}
+            <p data-i18n="price.plans.trial">{t("price.plans.trial")}</p>
           </div>
 
           <div class="pricing-tiers">
             <div class="tier">
-              <div class="tier-name" data-i18n="price.t1.name">Starter</div>
+              <div class="tier-name" data-i18n="price.t1.name">
+                {t("price.t1.name")}
+              </div>
               <div class="tier-price">
-                $15<span class="permo" data-i18n="price.permo">/month</span>
+                {TIER_PRICE.starter}
+                <span class="permo" data-i18n="price.permo">
+                  {t("price.permo")}
+                </span>
               </div>
               <p class="tier-blurb" data-i18n="price.t1.blurb">
-                Legitimize your business for less than an ad-free Netflix
-                subscription.
+                {t("price.t1.blurb")}
               </p>
+              {
+                /* One feature list per tier, from the ONE plan source
+                  (shared/quote-flow/pricing-plans.ts) — the same list
+                  /landing renders. The data-i18n keys stay so the
+                  client-side language toggle keeps working. */
+              }
               <ul class="tier-list">
-                <li data-i18n="price.t1.f1">Unlimited quotes & agreements</li>
-                <li data-i18n="price.t1.f2">E-signatures</li>
-                <li data-i18n="price.t1.f3">Invoices</li>
-                <li data-i18n="price.t1.f4">The PM Assistant</li>
+                {PRICING_PLANS[0].features.map((f, i) => (
+                  <li key={f.id} data-i18n={`price.t1.f${i + 1}`}>
+                    {t(`price.t1.f${i + 1}`)}
+                  </li>
+                ))}
               </ul>
               <a
                 href="#contact"
                 class="btn btn-outline tier-cta cta-scroll"
                 data-i18n="price.plans.cta"
               >
-                Get started
+                {t("price.plans.cta")}
               </a>
             </div>
 
             <div class="tier featured">
               <span class="tier-badge" data-i18n="price.t2.badge">
-                Most popular
+                {t("price.t2.badge")}
               </span>
-              <div class="tier-name" data-i18n="price.t2.name">Pro</div>
+              <div class="tier-name" data-i18n="price.t2.name">
+                {t("price.t2.name")}
+              </div>
               <div class="tier-price">
-                $99<span class="permo" data-i18n="price.permo">/month</span>
+                {TIER_PRICE.pro}
+                <span class="permo" data-i18n="price.permo">
+                  {t("price.permo")}
+                </span>
               </div>
               <p class="tier-blurb" data-i18n="price.t2.blurb">
-                Win more jobs and get paid faster — without the chasing.
+                {t("price.t2.blurb")}
               </p>
+              {
+                /* One feature list per tier, from the ONE plan source
+                  (shared/quote-flow/pricing-plans.ts) — the same list
+                  /landing renders. The data-i18n keys stay so the
+                  client-side language toggle keeps working. */
+              }
               <ul class="tier-list">
-                <li data-i18n="price.t2.f1">Everything in Starter</li>
-                <li data-i18n="price.t2.f2">SMS & email sending</li>
-                <li data-i18n="price.t2.f3">Payment tracking + nudges</li>
-                <li data-i18n="price.t2.f4">Change orders</li>
+                {PRICING_PLANS[1].features.map((f, i) => (
+                  <li key={f.id} data-i18n={`price.t2.f${i + 1}`}>
+                    {t(`price.t2.f${i + 1}`)}
+                  </li>
+                ))}
               </ul>
               <a
                 href="#contact"
                 class="btn btn-primary tier-cta cta-scroll"
                 data-i18n="price.plans.cta"
               >
-                Get started
+                {t("price.plans.cta")}
               </a>
             </div>
 
             <div class="tier">
-              <div class="tier-name" data-i18n="price.t3.name">Crew</div>
+              <div class="tier-name" data-i18n="price.t3.name">
+                {t("price.t3.name")}
+              </div>
               <div class="tier-price">
-                $199<span class="permo" data-i18n="price.permo">/month</span>
+                {TIER_PRICE.crew}
+                <span class="permo" data-i18n="price.permo">
+                  {t("price.permo")}
+                </span>
               </div>
               <p class="tier-blurb" data-i18n="price.t3.blurb">
-                For crews that run several jobs a week.
+                {t("price.t3.blurb")}
               </p>
+              {
+                /* One feature list per tier, from the ONE plan source
+                  (shared/quote-flow/pricing-plans.ts) — the same list
+                  /landing renders. The data-i18n keys stay so the
+                  client-side language toggle keeps working. */
+              }
               <ul class="tier-list">
-                <li data-i18n="price.t3.f1">Everything in Pro</li>
-                <li data-i18n="price.t3.f2">Priority support</li>
-                <li data-i18n="price.t3.f3">Multi-trade & team features</li>
+                {PRICING_PLANS[2].features.map((f, i) => (
+                  <li key={f.id} data-i18n={`price.t3.f${i + 1}`}>
+                    {t(`price.t3.f${i + 1}`)}
+                  </li>
+                ))}
               </ul>
               <a
                 href="#contact"
                 class="btn btn-outline tier-cta cta-scroll"
                 data-i18n="price.plans.cta"
               >
-                Get started
+                {t("price.plans.cta")}
               </a>
             </div>
           </div>
@@ -859,36 +997,33 @@ export default define.page(async function Landing(ctx) {
         <div class="container">
           <div class="contact-card">
             <div class="contact-info">
-              <span class="eyebrow-pill" data-i18n="cta.eyebrow">Let's go</span>
+              <span class="eyebrow-pill" data-i18n="cta.eyebrow">
+                {t("cta.eyebrow")}
+              </span>
               <ol class="pm-steps" aria-label="Sign-in steps">
                 <li class="pm-steps__item pm-steps__item--active">
                   <span class="pm-steps__dot">1</span>
                   <span class="pm-steps__label" data-i18n="cta.steps.phone">
-                    Phone
+                    {t("cta.steps.phone")}
                   </span>
                 </li>
                 <span class="pm-steps__bar" aria-hidden="true"></span>
                 <li class="pm-steps__item">
                   <span class="pm-steps__dot">2</span>
                   <span class="pm-steps__label" data-i18n="cta.steps.code">
-                    Code
+                    {t("cta.steps.code")}
                   </span>
                 </li>
                 <span class="pm-steps__bar" aria-hidden="true"></span>
                 <li class="pm-steps__item">
                   <span class="pm-steps__dot">3</span>
                   <span class="pm-steps__label" data-i18n="cta.steps.in">
-                    You're in
+                    {t("cta.steps.in")}
                   </span>
                 </li>
               </ol>
-              <h2 data-i18n="cta.h2">
-                Ready to get the paperwork off your plate?
-              </h2>
-              <p data-i18n="cta.lead">
-                Drop your number — we'll text you a 6-digit code. Login or sign
-                up, same form.
-              </p>
+              <h2 data-i18n="cta.h2">{t("cta.h2")}</h2>
+              <p data-i18n="cta.lead">{t("cta.lead")}</p>
               <ul class="checks">
                 <li>
                   <svg
@@ -903,7 +1038,7 @@ export default define.page(async function Landing(ctx) {
                   >
                     <polyline points="20 6 9 17 4 12" />
                   </svg>{" "}
-                  <span data-i18n="cta.b1">No setup fees, no contracts</span>
+                  <span data-i18n="cta.b1">{t("cta.b1")}</span>
                 </li>
                 <li>
                   <svg
@@ -918,9 +1053,7 @@ export default define.page(async function Landing(ctx) {
                   >
                     <polyline points="20 6 9 17 4 12" />
                   </svg>{" "}
-                  <span data-i18n="cta.fromPrice">
-                    Plans from $15/month
-                  </span>
+                  <span data-i18n="cta.fromPrice">{t("cta.fromPrice")}</span>
                 </li>
                 <li>
                   <svg
@@ -935,7 +1068,7 @@ export default define.page(async function Landing(ctx) {
                   >
                     <polyline points="20 6 9 17 4 12" />
                   </svg>{" "}
-                  <span data-i18n="cta.b3">English & Spanish, every step</span>
+                  <span data-i18n="cta.b3">{t("cta.b3")}</span>
                 </li>
               </ul>
             </div>
@@ -943,7 +1076,9 @@ export default define.page(async function Landing(ctx) {
             <form class="contact-form" id="contact-form">
               {/* Saved-phone chip — populated by LandingScripts when localStorage.pm:last-phone is present. */}
               <div class="cf-saved" id="cf-saved" hidden>
-                <span class="cf-saved__hint" data-i18n="cta.useSaved">Use</span>
+                <span class="cf-saved__hint" data-i18n="cta.useSaved">
+                  {t("cta.useSaved")}
+                </span>
                 <button type="button" class="cf-saved__btn" id="cf-saved-btn">
                   <span id="cf-saved-phone">(xxx) xxx-xxxx</span>
                 </button>
@@ -953,7 +1088,7 @@ export default define.page(async function Landing(ctx) {
                   id="cf-saved-dismiss"
                   data-i18n="cta.notYou"
                 >
-                  Not you?
+                  {t("cta.notYou")}
                 </button>
               </div>
 
@@ -963,7 +1098,7 @@ export default define.page(async function Landing(ctx) {
               }
               <label class="signup-field" for="f-phone">
                 <span class="signup-field__label" data-i18n="cta.label">
-                  Your phone number
+                  {t("cta.label")}
                 </span>
                 <input
                   id="f-phone"
@@ -979,7 +1114,7 @@ export default define.page(async function Landing(ctx) {
               <p class="signup-error" id="cf-meta" role="alert"></p>
 
               <button class="cf-cta submit" type="submit">
-                <span data-i18n="cta.btn">Sign up</span>
+                <span data-i18n="cta.btn">{t("cta.btn")}</span>
                 <svg
                   width="20"
                   height="20"
@@ -1017,13 +1152,14 @@ export default define.page(async function Landing(ctx) {
                   </span>
                 </div>
                 <div class="cf-trust__text">
-                  <strong>34 contractors</strong> signed up this week
+                  <strong data-i18n="hero.trustStrong" data-count="contractors">
+                    {t("hero.trustStrong", contractors)}
+                  </strong>{" "}
+                  <span data-i18n="cta.trustRest">{t("cta.trustRest")}</span>
                 </div>
               </div>
 
-              <div class="fine" data-i18n="cta.fine">
-                By submitting, you agree to receive a friendly text from us.
-              </div>
+              <div class="fine" data-i18n="cta.fine">{t("cta.fine")}</div>
             </form>
           </div>
         </div>
@@ -1038,15 +1174,15 @@ export default define.page(async function Landing(ctx) {
             <em style="font-style:normal;color:var(--brand-green)">Monster</em>
           </a>
           <div class="links">
-            <a href="#features" data-i18n="nav.features">What We Do</a>
-            <a href="#how-it-works" data-i18n="nav.how">How It Works</a>
-            <a href="#pricing" data-i18n="nav.pricing">Pricing</a>
-            <a href="/contact" data-i18n="footer.contact">Contact</a>
+            <a href="#features" data-i18n="nav.features">{t("nav.features")}</a>
+            <a href="#how-it-works" data-i18n="nav.how">{t("nav.how")}</a>
+            <a href="#pricing" data-i18n="nav.pricing">{t("nav.pricing")}</a>
+            <a href="/contact" data-i18n="footer.contact">
+              {t("footer.contact")}
+            </a>
           </div>
           <a class="footer-phone" href="tel:+18667678399">(866) 767-8399</a>
-          <div class="copy" data-i18n="footer.copy">
-            © 2026 Paperwork Monster. All rights reserved.
-          </div>
+          <div class="copy" data-i18n="footer.copy">{t("footer.copy")}</div>
         </div>
       </footer>
     </>

@@ -48,6 +48,14 @@ export function t(key: string, vars?: Vars): string {
  */
 export function setLang(lang: Lang): void {
   if (langSignal.value !== lang) langSignal.value = lang;
+  // P-65: <html lang> must follow the app language too. Mirrored HERE (not
+  // only via the HtmlLang island's signal subscription) because seeding the
+  // profile language may be a no-op on the signal — the module-load default
+  // is already "es" — and a subscription that never fires would leave the
+  // SSR attribute (resolved without the profile) stale.
+  if (typeof document !== "undefined" && document.documentElement.lang !== lang) {
+    document.documentElement.lang = lang;
+  }
   // Keep localStorage + the SSR cookie in sync (Settings change, or the
   // dashboard seeding from the server's user.language) so a later SSR route
   // render (verify/login) matches the app language.

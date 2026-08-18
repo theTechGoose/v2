@@ -1,0 +1,21 @@
+User-agent: *
+Allow: /$
+Allow: /landing
+Allow: /contact
+Disallow: /q
+Disallow: /c
+Disallow: /i
+Disallow: /co
+# Auth funnel, not marketing content: nothing to index, and /login was
+# simultaneously listed in sitemap.xml and left crawlable.
+Disallow: /login
+Disallow: /verify
+Disallow: /dashboard
+Disallow: /assistant
+Disallow: /quotes
+Disallow: /invoices
+Disallow: /clients
+Disallow: /settings
+Disallow: /api
+
+Sitemap: https://paperworkmonster.com/sitemap.xml

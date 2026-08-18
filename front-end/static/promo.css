@@ -78,6 +78,42 @@
   flex-wrap: wrap;
   gap: 8px 16px;
 }
+/* P-18 — the two language links used to render as bare adjacent 20px
+   underlined anchors ("EspañolEnglish", zero gap, far under the 44px tap
+   minimum). They are now separated pills with a real touch target. */
+.pm-langtoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.pm-langtoggle a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 1.5px solid var(--pm-border-strong);
+  border-radius: 999px;
+  background: #fff;
+  font-family: var(--pm-font-h);
+  font-weight: 800;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--pm-teal);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: border-color 150ms, color 150ms, background 150ms;
+}
+.pm-langtoggle a:hover {
+  border-color: var(--pm-green);
+  color: var(--pm-green);
+}
+.pm-langtoggle a.on {
+  background: var(--pm-teal);
+  border-color: var(--pm-teal);
+  color: #fff;
+}
 .pm-header__login {
   font-family: var(--pm-font-h);
   font-weight: 800;

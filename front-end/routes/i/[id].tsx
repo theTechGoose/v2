@@ -2,7 +2,9 @@ import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
-import { tFor } from "../../lib/i18n.ts";
+import { type Lang, tFor } from "../../lib/i18n.ts";
+import { resolvePublicLang } from "../../../shared/quote-flow/public-lang.ts";
+import { projectLineItems } from "../../../shared/quote-flow/public-doc-state.ts";
 import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
 import {
   BG,
@@ -66,6 +68,9 @@ interface InvoicePublic {
     jobNameByLang?: Record<string, string>;
     summaryByLang?: Record<string, string>;
     descriptionByLang?: Record<string, string>;
+    /** Per-language line-item descriptions, positionally aligned with
+     *  `lineItems`. */
+    lineItemsByLang?: Record<string, string[]>;
     lineItems?: LineItem[];
   };
   /** Agreement context mirrored from the linked contract (quote-linked
@@ -92,16 +97,22 @@ interface InvoicePublic {
 
 export default define.page(async function PublicInvoice(ctx) {
   const id = ctx.params.id;
-  let invoice: InvoicePublic | undefined;
-  let err: string | undefined;
   const r = await ssrBackendGet<InvoicePublic>(`/invoices/${id}/public`);
-  if (r.ok) invoice = r.data;
-  else err = tFor("en", "publicInvoice.error.expired");
+  const invoice = r.ok ? r.data : undefined;
+  // Chrome language — the visitor's own saved choice (pm_lang cookie) wins over
+  // the document's generation language, exactly like /q and /c (P-12). The
+  // claim + change-order islands below receive this same resolved language.
+  const lang: Lang = resolvePublicLang({
+    cookie: ctx.req.headers.get("cookie"),
+    docLang: invoice?.contractor?.commsLanguage,
+    header: ctx.req.headers.get("accept-language"),
+  });
+  const err = r.ok ? undefined : tFor(lang, "publicInvoice.error.expired");
 
   return (
     <>
       <Head>
-        <title>{tFor("en", "publicInvoice.docTitle")}</title>
+        <title>{tFor(lang, "publicInvoice.docTitle")}</title>
         <link rel="stylesheet" href="/landing.css" />
       </Head>
       <div
@@ -111,29 +122,30 @@ export default define.page(async function PublicInvoice(ctx) {
           {err || !invoice
             ? (
               <ErrorCard
-                message={err ?? tFor("en", "publicInvoice.error.notAvailable")}
+                message={err ?? tFor(lang, "publicInvoice.error.notAvailable")}
+                lang={lang}
               />
             )
-            : <InvoiceDoc invoice={invoice} />}
+            : <InvoiceDoc invoice={invoice} lang={lang} />}
         </div>
       </div>
     </>
   );
 });
 
-function ErrorCard({ message }: { message: string }) {
+function ErrorCard({ message, lang }: { message: string; lang: Lang }) {
   return (
     <>
       <div
         style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN};text-align:center;margin-bottom:18px`}
       >
-        {tFor("en", "brand.name")}
+        {tFor(lang, "brand.name")}
       </div>
       <div
         style={`background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center`}
       >
         <div style={`font-weight:800;color:${TEAL};font-size:18px`}>
-          {tFor("en", "publicInvoice.error.heading")}
+          {tFor(lang, "publicInvoice.error.heading")}
         </div>
         <p style={`margin:8px 0 0;color:${MUTED};font-size:14px`}>{message}</p>
       </div>
@@ -141,12 +153,13 @@ function ErrorCard({ message }: { message: string }) {
   );
 }
 
-function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
+function InvoiceDoc(
+  { invoice, lang }: { invoice: InvoicePublic; lang: Lang },
+) {
   const paid = invoice.status === "paid" || !!invoice.paidAt;
   const claimed = invoice.status === "claimed" && !!invoice.paymentIntent;
   const pastDue = !paid && !claimed && isPastDue(invoice.dueDate);
-  const es = invoice.contractor?.commsLanguage === "es";
-  const lang = es ? "es" : "en";
+  const es = lang === "es";
   const businessLabel = invoice.contractor?.businessName?.trim() ||
     invoice.contractor?.name?.trim() ||
     tFor(lang, "brand.name");
@@ -171,7 +184,13 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
   // Agreement mirror — present only for quote-linked invoices (getInvoicePublic
   // projects the linked contract's line items, total, and term grid). Standalone
   // invoices have none of this and keep the lightweight amount-only document.
-  const items = invoice.jobDetails?.lineItems ?? [];
+  // The itemized job in the BILL's language (descriptions only — the money
+  // is language-neutral).
+  const items = projectLineItems(
+    invoice.jobDetails?.lineItems,
+    invoice.jobDetails?.lineItemsByLang,
+    lang,
+  );
   const agreementTotal = invoice.agreementTotal ??
     (items.length ? sumLineTotals(items) : undefined);
   const milestones = agreementTotal
@@ -300,10 +319,10 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
                   <div style={`margin-top:4px;color:${MUTED};font-size:12px`}>
                     {paid
                       ? tFor(lang, "publicInvoice.paidOn", {
-                        date: invoice.paidAt ?? "",
+                        date: fmtDate(invoice.paidAt ?? "", lang),
                       })
                       : tFor(lang, "publicInvoice.dueOn", {
-                        date: invoice.dueDate,
+                        date: fmtDate(invoice.dueDate, lang),
                       })}
                   </div>
                 )
@@ -527,7 +546,7 @@ function InvoiceDoc({ invoice }: { invoice: InvoicePublic }) {
                       style={`display:block;font-weight:600;font-size:12px;color:${MUTED}`}
                     >
                       {tFor(lang, "publicInvoice.signedOn", {
-                        date: fmtDate(invoice.signedAgreement.signedAt),
+                        date: fmtDate(invoice.signedAgreement.signedAt, lang),
                       })}
                     </span>
                   )

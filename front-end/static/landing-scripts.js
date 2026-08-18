@@ -6,287 +6,28 @@
 (function () {
   "use strict";
 
-  const I18N = {
-    en: {
-      "nav.features": "What We Do",
-      "nav.how": "How It Works",
-      "nav.pricing": "Pricing",
-      "nav.cta": "Get Started",
-      "nav.login": "Log in",
-      "hero.kickerPill": "For pros",
-      "hero.kicker": "Built for contractors who work with their hands",
-      "hero.h1a": "You do the work.",
-      "hero.h1b": "We handle the",
-      "hero.lead":
-        "You communicate with us in Spanish. Everything goes out to your clients in perfect English. No apps to learn. Just chat with us.",
-      "hero.cta1": "Get Started →",
-      "hero.cta2": "See How It Works",
-      "hero.trustStrong": "1,200+ contractors",
-      "hero.trustRest": "getting paid faster",
-      "hero.chip1": "Quote sent",
-      "hero.chip2": "Contract signed",
-      "hero.chip3": "Paid in full",
-      "doc.q.tag": "Quote",
-      "doc.q.title": "Kitchen remodel",
-      "doc.q.l1": "Cabinets",
-      "doc.q.l2": "Counters",
-      "doc.q.l3": "Labor (3 days)",
-      "doc.total": "Total",
-      "doc.c.tag": "Contract",
-      "doc.c.title": "Service Agreement",
-      "doc.i.tag": "Invoice",
-      "doc.i.title": "Final billing",
-      "problem.eyebrow": "The problem",
-      "problem.h2html": "Good work deserves <em>good paperwork</em>",
-      "problem.lead":
-        "You know your trade. But chasing down quotes on scrap paper and guessing at prices is costing you real money.",
-      "problem.c1.h": "Leaving money on the table",
-      "problem.c1.p":
-        "Without solid pricing info, most contractors bid too low. That means less money in your pocket for the same hard work.",
-      "problem.c2.h": "Paperwork that doesn’t look right",
-      "problem.c2.p":
-        "Handwritten quotes on notebook paper don’t build trust. Clients pick the contractor who looks like they have it together.",
-      "problem.c3.h": "Hours you’re not getting paid for",
-      "problem.c3.p":
-        "Every hour figuring out paperwork is an hour you could be on a job site earning real money.",
-      "docs.eyebrow": "One text. Three documents.",
-      "docs.h2html": "Quote, contract, invoice — <em>handled</em>.",
-      "docs.lead":
-        "Send us a message. We send back a real document with real numbers — not a sketch on the back of an envelope.",
-      "docs.tab.quote": "Quote",
-      "docs.tab.contract": "Contract",
-      "docs.tab.invoice": "Invoice",
-      "docs.counter.label": "Documents sent so far",
-      "docs.counter.t1": "Quotes",
-      "docs.counter.t2": "Contracts",
-      "docs.counter.t3": "Invoices",
-      "docs.counter.t4": "Change orders",
-      "feat.eyebrow": "What we do",
-      "feat.h2html": "We take care of the <em>business side</em>",
-      "feat.lead":
-        "From the first quote to the final invoice — we handle it so you can stay on the job.",
-      "feat.f1.h": "Fair prices, not guesses",
-      "feat.f1.p":
-        "Real construction pricing data, adjusted for today’s costs. Get a low, middle, and high range so you know exactly where you stand.",
-      "feat.f2.h": "Contracts that protect you",
-      "feat.f2.p":
-        "One tap turns your quote into a real contract. Protect your work and look professional to your clients.",
-      "feat.f3.h": "Simple invoicing",
-      "feat.f3.p":
-        "Job done? We turn it into an invoice. Keep track of who’s paid and who hasn’t — without a spreadsheet.",
-      "feat.f4.h": "Just chat with us",
-      "feat.f4.p":
-        "No fancy apps. Text us the job details and we do the rest. Simple as that.",
-      "how.eyebrow": "Straight to the point",
-      "how.h2": "How it works",
-      "how.lead":
-        "Three steps. No forms. We meet you where you already are — your phone.",
-      "how.s1.h": "Chat with us",
-      "how.s1.p":
-        "Send us a text with the job details. We’ll ask you one question at a time — no long forms, no hassle.",
-      "how.s2.h": "Check your paperwork",
-      "how.s2.p":
-        "We put together professional paperwork with fair pricing. Look it over, change what you need, and give us the thumbs up.",
-      "how.s3.h": "Send it and get paid",
-      "how.s3.p":
-        "Send the paperwork to your client. When the job’s done, we turn it into an invoice. Everything’s in one place.",
-      "demo.eyebrow": "See it in action",
-      "demo.h2": "Just chat with us. We handle the rest.",
-      "demo.lead":
-        "Quotes, contracts, invoices — sent from your phone in seconds. No app to download.",
-      "demo.quote":
-        "Having a quick turn for the quotes frees up my mind and has allowed me to quote more jobs and fill my pipeline much quicker.",
-      "demo.role": "Four Brothers",
-      "demo.online": "Online",
-      "demo.message": "Message",
-      "price.eyebrow": "Pricing",
-      "price.plans.h2html": "Flat monthly pricing. <em>No surprises.</em>",
-      "price.plans.lead":
-        "Your whole back office — quotes, contracts, invoices, follow-ups — for one flat monthly price. No setup fees, cancel anytime.",
-      "price.plans.cta": "Get started",
-      "price.permo": "/month",
-      "price.t1.name": "Starter",
-      "price.t1.blurb":
-        "Legitimize your business for less than an ad-free Netflix subscription.",
-      "price.t1.f1": "Unlimited quotes & agreements",
-      "price.t1.f2": "E-signatures",
-      "price.t1.f3": "Invoices",
-      "price.t1.f4": "The PM Assistant",
-      "price.t2.name": "Pro",
-      "price.t2.badge": "Most popular",
-      "price.t2.blurb":
-        "Win more jobs and get paid faster — without the chasing.",
-      "price.t2.f1": "Everything in Starter",
-      "price.t2.f2": "SMS & email sending",
-      "price.t2.f3": "Payment tracking + nudges",
-      "price.t2.f4": "Change orders",
-      "price.t3.name": "Crew",
-      "price.t3.blurb": "For crews that run several jobs a week.",
-      "price.t3.f1": "Everything in Pro",
-      "price.t3.f2": "Priority support",
-      "price.t3.f3": "Multi-trade & team features",
-      "cta.eyebrow": "Let’s go",
-      "cta.h2": "Ready to get the paperwork off your plate?",
-      "cta.lead":
-        "Drop your number — we’ll text you a 6-digit code. Login or sign up, same form.",
-      "cta.b1": "No setup fees, no contracts",
-      "cta.fromPrice": "Plans from $15/month",
-      "cta.b3": "English & Spanish, every step",
-      "cta.label": "Your phone number",
-      "cta.btn": "Sign up",
-      "cta.fine":
-        "By submitting, you agree to receive a friendly text from us.",
-      "cta.smsPreview":
-        "Paperwork Monster: Your code is 482-913. Don’t share it.",
-      "cta.steps.phone": "Phone",
-      "cta.steps.code": "Code",
-      "cta.steps.in": "You’re in",
-      "cta.useSaved": "Use",
-      "cta.notYou": "Not you?",
-      "footer.contact": "Contact",
-      "footer.copy": "© 2026 Paperwork Monster. All rights reserved.",
-    },
-    es: {
-      "nav.features": "Qué hacemos",
-      "nav.how": "Cómo funciona",
-      "nav.pricing": "Precios",
-      "nav.cta": "Empezar",
-      "nav.login": "Entrar",
-      "hero.kickerPill": "Para pros",
-      "hero.kicker": "Hecho para contratistas que trabajan con las manos",
-      "hero.h1a": "Tú haces el trabajo.",
-      "hero.h1b": "Nosotros manejamos las",
-      "hero.lead":
-        "Nos escribes en español. Todo sale a tus clientes en inglés perfecto. Sin apps que aprender. Solo chatea con nosotros.",
-      "hero.cta1": "Empezar →",
-      "hero.cta2": "Ver cómo funciona",
-      "hero.trustStrong": "+1.200 contratistas",
-      "hero.trustRest": "cobrando más rápido",
-      "hero.chip1": "Cotización enviada",
-      "hero.chip2": "Contrato firmado",
-      "hero.chip3": "Pagado completo",
-      "doc.q.tag": "Cotización",
-      "doc.q.title": "Remodelación cocina",
-      "doc.q.l1": "Gabinetes",
-      "doc.q.l2": "Cubiertas",
-      "doc.q.l3": "Mano de obra (3 días)",
-      "doc.total": "Total",
-      "doc.c.tag": "Contrato",
-      "doc.c.title": "Acuerdo de servicio",
-      "doc.i.tag": "Factura",
-      "doc.i.title": "Cobro final",
-      "problem.eyebrow": "El problema",
-      "problem.h2html": "Buen trabajo merece <em>buen papeleo</em>",
-      "problem.lead":
-        "Tú conoces tu oficio. Pero hacer cotizaciones en papel y adivinar precios te está costando dinero de verdad.",
-      "problem.c1.h": "Dejas dinero en la mesa",
-      "problem.c1.p":
-        "Sin info real de precios, la mayoría de contratistas cotizan bajo. Menos dinero en tu bolsillo por el mismo trabajo duro.",
-      "problem.c2.h": "Papeles que no se ven bien",
-      "problem.c2.p":
-        "Cotizaciones a mano en papel rayado no inspiran confianza. El cliente elige al que se ve organizado.",
-      "problem.c3.h": "Horas que no te pagan",
-      "problem.c3.p":
-        "Cada hora batallando con papeles es una hora que podrías estar en obra ganando dinero.",
-      "docs.eyebrow": "Un mensaje. Tres documentos.",
-      "docs.h2html": "Cotización, contrato, factura — <em>listo</em>.",
-      "docs.lead":
-        "Mandanos un mensaje. Te regresamos un documento real con números reales — no un garabato en una servilleta.",
-      "docs.tab.quote": "Cotización",
-      "docs.tab.contract": "Contrato",
-      "docs.tab.invoice": "Factura",
-      "docs.counter.label": "Documentos enviados hasta hoy",
-      "docs.counter.t1": "Cotizaciones",
-      "docs.counter.t2": "Contratos",
-      "docs.counter.t3": "Facturas",
-      "docs.counter.t4": "Órdenes de cambio",
-      "feat.eyebrow": "Qué hacemos",
-      "feat.h2html": "Nos encargamos del <em>lado del negocio</em>",
-      "feat.lead":
-        "Desde la primera cotización hasta la factura final — nosotros lo manejamos para que tú sigas en la obra.",
-      "feat.f1.h": "Precios justos, no adivinanzas",
-      "feat.f1.p":
-        "Datos reales de construcción ajustados a costos de hoy. Rango bajo, medio y alto para que sepas exactamente dónde estás parado.",
-      "feat.f2.h": "Contratos que te protegen",
-      "feat.f2.p":
-        "Un toque convierte tu cotización en un contrato real. Protege tu trabajo y luce profesional con tus clientes.",
-      "feat.f3.h": "Facturación sencilla",
-      "feat.f3.p":
-        "¿Trabajo terminado? Lo convertimos en factura. Lleva el control de quién pagó y quién no — sin hojas de cálculo.",
-      "feat.f4.h": "Solo chatea con nosotros",
-      "feat.f4.p":
-        "Sin apps complicadas. Mándanos los detalles del trabajo por mensaje y nosotros hacemos el resto. Así de fácil.",
-      "how.eyebrow": "Directo al grano",
-      "how.h2": "Cómo funciona",
-      "how.lead":
-        "Tres pasos. Sin formularios. Te encontramos donde ya estás — en tu celular.",
-      "how.s1.h": "Chatea con nosotros",
-      "how.s1.p":
-        "Mándanos un mensaje con los detalles. Te preguntamos una cosa a la vez — sin formularios largos.",
-      "how.s2.h": "Revisa tu papeleo",
-      "how.s2.p":
-        "Armamos papeleo profesional con precios justos. Revísalo, cambia lo que necesites, y dale el visto bueno.",
-      "how.s3.h": "Envía y cobra",
-      "how.s3.p":
-        "Mándale el papeleo a tu cliente. Cuando termines el trabajo, lo convertimos en factura. Todo en un solo lugar.",
-      "demo.eyebrow": "Mira cómo funciona",
-      "demo.h2": "Solo chatea con nosotros. Nosotros nos encargamos.",
-      "demo.lead":
-        "Cotizaciones, contratos, facturas — enviados desde tu celular en segundos. Sin app que descargar.",
-      "demo.quote":
-        "Tener respuestas rápidas en las cotizaciones me libera la mente y me ha permitido cotizar más trabajos y llenar mi cartera mucho más rápido.",
-      "demo.role": "Four Brothers",
-      "demo.online": "En línea",
-      "demo.message": "Mensaje",
-      "price.eyebrow": "Precios",
-      "price.plans.h2html": "Precio fijo al mes. <em>Sin sorpresas.</em>",
-      "price.plans.lead":
-        "Toda tu oficina — cotizaciones, contratos, facturas, seguimientos — por un precio fijo al mes. Sin cuotas iniciales, cancela cuando quieras.",
-      "price.plans.cta": "Empezar",
-      "price.permo": "/mes",
-      "price.t1.name": "Starter",
-      "price.t1.blurb":
-        "Legitima tu negocio por menos de lo que cuesta Netflix sin anuncios.",
-      "price.t1.f1": "Cotizaciones y acuerdos ilimitados",
-      "price.t1.f2": "Firmas electrónicas",
-      "price.t1.f3": "Facturas",
-      "price.t1.f4": "El Asistente PM",
-      "price.t2.name": "Pro",
-      "price.t2.badge": "El más popular",
-      "price.t2.blurb":
-        "Gana más trabajos y cobra más rápido — sin andar persiguiendo pagos.",
-      "price.t2.f1": "Todo lo de Starter",
-      "price.t2.f2": "Envío por SMS y correo",
-      "price.t2.f3": "Seguimiento de pagos y recordatorios",
-      "price.t2.f4": "Órdenes de cambio",
-      "price.t3.name": "Crew",
-      "price.t3.blurb":
-        "Para cuadrillas que manejan varios trabajos por semana.",
-      "price.t3.f1": "Todo lo de Pro",
-      "price.t3.f2": "Soporte prioritario",
-      "price.t3.f3": "Funciones para equipos y varios oficios",
-      "cta.eyebrow": "Vamos",
-      "cta.h2": "¿Listo para quitarte el papeleo de encima?",
-      "cta.lead":
-        "Pon tu número — te enviamos un código de 6 dígitos. Entrar o registrarse, mismo formulario.",
-      "cta.b1": "Sin cuotas iniciales, sin contratos",
-      "cta.fromPrice": "Planes desde $15 al mes",
-      "cta.b3": "Inglés y español, en cada paso",
-      "cta.label": "Tu número de teléfono",
-      "cta.btn": "Regístrate",
-      "cta.fine":
-        "Al enviar, aceptas recibir un mensaje amigable de nuestra parte.",
-      "cta.smsPreview":
-        "Paperwork Monster: Tu código es 482-913. No lo compartas.",
-      "cta.steps.phone": "Teléfono",
-      "cta.steps.code": "Código",
-      "cta.steps.in": "Listo",
-      "cta.useSaved": "Usar",
-      "cta.notYou": "¿No eres tú?",
-      "footer.contact": "Contacto",
-      "footer.copy": "© 2026 Paperwork Monster. Todos los derechos reservados.",
-    },
-  };
+  /* One dictionary for the whole landing page, served by
+     routes/landing-dict.js.ts from front-end/lib/landing-dict.ts — the very
+     object routes/index.tsx server-rendered this page from (P-19). Loaded by
+     an earlier deferred <script>, so it is already here. */
+  const I18N = globalThis.__PM_LANDING_DICT || { en: {}, es: {} };
+
+  /* Offer numbers (P-08), SSR-injected from shared/quote-flow/landing-offers
+     so no counter, price or trial length is ever re-typed in this file. */
+  const OFFER = globalThis.__PM_OFFER || {};
+
+  /* Fill a dictionary string's offer placeholders: {n} the social-proof
+     counter the element names via data-count, {p} the from-price, {d} the
+     free-trial length. Mirrors the `t()` helper in routes/index.tsx. */
+  function fillOffer(text, el, lang) {
+    if (text.indexOf("{") < 0) return text;
+    const out = text
+      .replace(/\{p\}/g, OFFER.priceFrom == null ? "" : OFFER.priceFrom)
+      .replace(/\{d\}/g, OFFER.trialDays == null ? "" : OFFER.trialDays);
+    const name = el && el.getAttribute("data-count");
+    const counts = (OFFER.counts || {})[name] || {};
+    return out.replace(/\{n\}/g, counts[lang] || "");
+  }
 
   const DOC_CONTENT = {
     en: {
@@ -372,13 +113,13 @@
         date: "26 de abril de 2026",
         lines: [
           ["Demolición y limpieza", "1", "$ 850", "$ 850"],
-          ["Gabinetes — maple sólido", "12", "$ 350", "$ 4.200"],
-          ["Cubiertas de cuarzo (pie²)", "42", "$ 95", "$ 3.990"],
-          ["Plomería e instalación", "3 días", "$ 650", "$ 1.950"],
+          ["Gabinetes — maple sólido", "12", "$ 350", "$ 4,200"],
+          ["Cubiertas de cuarzo (pie²)", "42", "$ 95", "$ 3,990"],
+          ["Plomería e instalación", "3 días", "$ 650", "$ 1,950"],
         ],
-        totals: [["Subtotal", "$ 10.990"], ["Impuesto (est.)", "$ 880"], [
+        totals: [["Subtotal", "$ 10,990"], ["Impuesto (est.)", "$ 880"], [
           "Estimado",
-          "$ 11.870",
+          "$ 11,870",
         ]],
         infoTitle: "Precios justos, no adivinanzas",
         infoBody:
@@ -398,11 +139,11 @@
           ["Alcance: Remodelación cocina — Hernández", "", "", "✓"],
           ["Fecha de inicio", "", "", "2 de mayo"],
           ["Terminación", "", "", "14 de mayo"],
-          ["Anticipo (25%)", "", "", "$ 2.500"],
-          ["Avance (50%)", "", "", "$ 5.495"],
-          ["Pago final", "", "", "$ 2.995"],
+          ["Anticipo (25%)", "", "", "$ 2,500"],
+          ["Avance (50%)", "", "", "$ 5,495"],
+          ["Pago final", "", "", "$ 2,995"],
         ],
-        totals: [["Valor total", "$ 10.990"], [
+        totals: [["Valor total", "$ 10,990"], [
           "Firmado por cliente",
           "✓ 26 abr",
         ], ["Estado", "Activo"]],
@@ -421,12 +162,12 @@
         num: "#PM-2641-I",
         date: "14 de mayo de 2026",
         lines: [
-          ["Remodelación cocina — completada", "", "", "$ 10.990"],
+          ["Remodelación cocina — completada", "", "", "$ 10,990"],
           ["Orden de cambio: luces bajo gabinete", "1", "$ 420", "$ 420"],
-          ["Anticipo recibido", "", "", "− $ 2.500"],
-          ["Pago de avance recibido", "", "", "− $ 5.495"],
+          ["Anticipo recibido", "", "", "− $ 2,500"],
+          ["Pago de avance recibido", "", "", "− $ 5,495"],
         ],
-        totals: [["Saldo por pagar", "$ 3.415"], [
+        totals: [["Saldo por pagar", "$ 3,415"], [
           "Vence",
           "18 de mayo de 2026",
         ], ["Paga en línea", "toca para pagar"]],
@@ -529,7 +270,7 @@
         side: "left",
         kind: "bubble",
         cls: "them",
-        text: "Perfecto. Va la cotización — rango típico $10.800–$12.400.",
+        text: "Perfecto. Va la cotización — rango típico $10,800–$12,400.",
       },
       {
         side: "left",
@@ -589,37 +330,94 @@
   }
 
   /* ===== state ===== */
-  // Resolve the active language once: ?lang= (URL) > localStorage > "es".
+  // Resolve the active language once: ?lang= (URL) > localStorage >
+  // <html lang> (what the server just rendered, from the pm_lang cookie) >
+  // "es". Honoring the SSR language keeps the first client pass a no-op
+  // instead of re-painting the page in the other language (P-19).
   // Spanish-first — the app is built for Spanish-speaking contractors.
   // Mirror the result back to localStorage so it survives a query-less nav.
+  // `chose` is true only when the visitor actually PICKED this language
+  // (?lang= in the URL, or a stored choice from a previous toggle). A value
+  // merely inherited from the server render is a default, not a preference.
+  let chose = false;
   let curLang = (function () {
     try {
       const q = new URLSearchParams(location.search).get("lang");
-      if (q === "en" || q === "es") return q;
+      if (q === "en" || q === "es") {
+        chose = true;
+        return q;
+      }
     } catch (_e) { /* ignore malformed URL */ }
-    const s = localStorage.getItem("pm:lang");
-    return s === "en" || s === "es" ? s : "es";
+    try {
+      const s = localStorage.getItem("pm:lang");
+      if (s === "en" || s === "es") {
+        chose = true;
+        return s;
+      }
+    } catch (_e) { /* storage unavailable */ }
+    const ssr = document.documentElement.getAttribute("lang");
+    return ssr === "en" || ssr === "es" ? ssr : "es";
   })();
-  try {
-    localStorage.setItem("pm:lang", curLang);
-  } catch { /* storage unavailable */ }
-  // Mirror into a cookie too so the SSR routes (/login, /verify) render in the
-  // chosen language instead of falling back to the browser's Accept-Language.
-  try {
-    document.cookie = "pm_lang=" + curLang +
-      ";path=/;max-age=31536000;samesite=lax";
-  } catch { /* noop */ }
+  // Persist ONLY a real choice. Stamping the default here used to give every
+  // first-time landing visitor a pm_lang cookie they never asked for, which
+  // then outranked the document language on any customer quote/agreement/
+  // invoice opened later in the same browser.
+  if (chose) persistLangChoice(curLang);
   let activeDoc = "quote";
 
+  /**
+   * Digit grouping for COUNTS (documents sent, contractors) — mirrors
+   * shared/quote-flow/landing-offers.ts#formatSocialProof: "48,217" (en) /
+   * "48.217" (es). Intl is deliberately not used: Spanish CLDR sets
+   * minimumGroupingDigits=2, so toLocaleString("es-ES") leaves 4-digit values
+   * ungrouped and the counter would change shape mid-animation.
+   *
+   * MONEY is never formatted this way. Every amount on this page is US
+   * dollars for a US client, so it stays US-grouped in BOTH languages
+   * ("$10,990"): the es-ES form "$ 10.990" reads as eleven dollars to the
+   * person receiving the quote.
+   */
+  function groupCount(n, lang) {
+    const sep = lang === "es" ? "." : ",";
+    return String(Math.trunc(Math.abs(n)))
+      .replace(/\B(?=(\d{3})+(?!\d))/g, sep);
+  }
+
+  /** Set by the counter IIFE below; re-paints it on a language switch. */
+  let paintCounter = null;
+
   /* ===== i18n ===== */
+  /** localStorage + cookie, the one write path for a chosen language. */
+  function persistLangChoice(lang) {
+    try {
+      localStorage.setItem("pm:lang", lang);
+    } catch (_e) { /* storage unavailable */ }
+    // Mirror into a cookie so the SSR routes (/login, /verify) render in the
+    // chosen language instead of falling back to the browser's default.
+    try {
+      document.cookie = "pm_lang=" + lang +
+        ";path=/;max-age=31536000;samesite=lax";
+    } catch (_e) { /* noop */ }
+  }
+
   function applyLang(lang) {
     curLang = lang;
     const dict = I18N[lang];
+    // The <head> is part of the page's language too: the toggle used to flip
+    // every visible string while leaving <html lang>, the tab title and the
+    // meta description in the other language.
+    document.documentElement.setAttribute("lang", lang);
+    if (dict["head.title"]) document.title = dict["head.title"];
+    const metaDesc = document.querySelector('meta[name="description"]');
+    if (metaDesc && dict["head.metaDescription"]) {
+      metaDesc.setAttribute("content", dict["head.metaDescription"]);
+    }
     document.querySelectorAll("[data-i18n]").forEach(function (el) {
       const k = el.getAttribute("data-i18n");
       if (!k || dict[k] == null) return;
-      if (el.getAttribute("data-html") === "1") el.innerHTML = dict[k];
-      else el.textContent = dict[k];
+      const v = fillOffer(dict[k], el, lang);
+      if (el.getAttribute("data-html") === "1") el.innerHTML = v;
+      else el.textContent = v;
     });
     document.querySelectorAll(".rotor-track .word").forEach(function (w) {
       w.textContent = w.getAttribute("data-" + lang) || w.textContent;
@@ -645,13 +443,8 @@
     renderDoc(activeDoc);
     renderChat();
     fitRotor();
-    try {
-      localStorage.setItem("pm:lang", lang);
-    } catch { /* storage unavailable */ }
-    try {
-      document.cookie = "pm_lang=" + lang +
-        ";path=/;max-age=31536000;samesite=lax";
-    } catch { /* noop */ }
+    if (paintCounter) paintCounter();
+    if (chose) persistLangChoice(lang);
     document.querySelectorAll(".lang-toggle button").forEach(function (b) {
       if (b.dataset.lang === lang) b.classList.add("on");
       else b.classList.remove("on");
@@ -671,6 +464,7 @@
 
   document.querySelectorAll(".lang-toggle button").forEach(function (btn) {
     btn.addEventListener("click", function () {
+      chose = true;
       applyLang(btn.dataset.lang);
       writeLangToUrl(btn.dataset.lang);
     });
@@ -805,7 +599,17 @@
   (function counter() {
     const el = document.getElementById("doc-counter-num");
     if (!el) return;
-    const target = 48217;
+    // Single-sourced from shared/quote-flow/landing-offers.ts and injected by
+    // routes/index.tsx as window.__PM_DOCS_SENT (P-08) — never a literal here.
+    const target = Number(globalThis.__PM_DOCS_SENT) || 0;
+    if (!target) return;
+    let shown = 0;
+    // Remembered so a language toggle re-groups the number that is already on
+    // screen. It used to be painted once, behind a `fired` flag that was never
+    // reset, so switching language left the other locale's grouping in place.
+    paintCounter = function () {
+      el.textContent = groupCount(shown, curLang);
+    };
     let fired = false;
     const io = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) {
@@ -816,9 +620,8 @@
           const tick = function (ts) {
             const p = Math.min(1, (ts - start) / dur);
             const ease = 1 - Math.pow(1 - p, 3);
-            el.textContent = Math.round(target * ease).toLocaleString(
-              curLang === "es" ? "es-ES" : "en-US",
-            );
+            shown = Math.round(target * ease);
+            paintCounter();
             if (p < 1) requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
@@ -976,13 +779,43 @@
       }
     }
 
+    /** Localized copy from the ONE landing dictionary, with an inline
+     *  fallback so a dict that failed to load still shows a real message. */
+    function copy(key, en, es) {
+      const d = I18N[curLang] || {};
+      return d[key] || (curLang === "es" ? es : en);
+    }
+    /** Paint the role="alert" #cf-meta and mark the field invalid. */
+    function showError(text) {
+      if (meta) meta.textContent = text;
+      phoneInput.setAttribute("aria-invalid", "true");
+      phoneInput.classList.add("signup-input--error");
+      phoneInput.focus();
+    }
+    function clearError() {
+      if (meta) meta.textContent = "";
+      phoneInput.removeAttribute("aria-invalid");
+      phoneInput.classList.remove("signup-input--error");
+    }
+    // Typing is the user answering the error — drop it as soon as they do.
+    phoneInput.addEventListener("input", clearError);
+
     form.addEventListener("submit", async function (e) {
       e.preventDefault();
       const e164 = toE164(phoneInput.value);
       if (e164.replace(/\D/g, "").length < 10) {
-        phoneInput.focus();
+        // P-07: this used to be a bare `.focus()` — no message, no request,
+        // no visible change. On a phone that reads as a dead Sign-up button
+        // at the literal top of the paid funnel. #cf-meta is role="alert"
+        // and exists for exactly this.
+        showError(copy(
+          "cta.errPhone",
+          "That doesn\u2019t look like a phone number. Enter your 10-digit US number.",
+          "Ese n\u00famero no parece v\u00e1lido. Escribe tus 10 d\u00edgitos de EE. UU.",
+        ));
         return;
       }
+      clearError();
       const cta = form.querySelector(".cf-cta");
       const original = cta ? cta.innerHTML : "";
       if (cta) {
@@ -1011,11 +844,11 @@
           cta.disabled = false;
           cta.innerHTML = original;
         }
-        if (meta) {
-          meta.innerHTML = curLang === "es"
-            ? '<span class="cf-meta__check">!</span><span style="color:var(--danger)">No pudimos enviar. Intenta otra vez.</span>'
-            : '<span class="cf-meta__check">!</span><span style="color:var(--danger)">Couldn’t send. Try again.</span>';
-        }
+        showError(copy(
+          "cta.errSend",
+          "We couldn\u2019t send the code. Try again.",
+          "No pudimos enviar el c\u00f3digo. Intenta otra vez.",
+        ));
       }
     });
   })();

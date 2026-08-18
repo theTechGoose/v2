@@ -17,7 +17,12 @@ export interface LandingOffer {
   priceFromCents: number;
   /** Id of the ONE plan sold as "unlimited" (root page's price.t1.f1). */
   unlimitedTier: string;
-  /** Social-proof counters (today hardcoded as 34 / 48217 in the pages). */
+  /**
+   * Social-proof counters. ONE contractor counter for the whole site — the
+   * root page used to show both "+1.200 contratistas" and a contradictory
+   * "34 contractors signed up this week" (P-08); both lines now render this
+   * number through `formatSocialProof`.
+   */
   socialProof: { contractors: number; docsSent: number };
 }
 
@@ -28,7 +33,7 @@ export const LANDING_OFFER: LandingOffer = {
   trialDays: 30,
   priceFromCents: STARTER.priceCents,
   unlimitedTier: "starter",
-  socialProof: { contractors: 34, docsSent: 48217 },
+  socialProof: { contractors: 1200, docsSent: 48217 },
 };
 
 /**

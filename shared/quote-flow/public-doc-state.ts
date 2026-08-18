@@ -69,3 +69,41 @@ export function deriveContractView(
   }
   return view;
 }
+
+/* ---------- per-language line items ---------- */
+
+export interface LineItemLike {
+  description: string;
+  price?: number;
+  quantity?: number;
+  unit?: string;
+}
+
+/**
+ * Project the itemized job into the language the document is rendered in.
+ *
+ * `lineItemsByLang[lang]` is positionally aligned with `lineItems`; prices,
+ * quantities and units are language-neutral, so only the description swaps.
+ * A missing translation (or a stale array whose length no longer matches
+ * after the contractor edited the lines) falls back to the stored
+ * description rather than dropping or mis-pairing a line — the customer must
+ * always see every line she is being charged for.
+ *
+ * Without this the customer's itemized table stayed in the language the
+ * contractor typed in even when the quote was sent in the other one — the
+ * product's headline promise ("everything goes out in perfect English")
+ * failing on the one page the customer actually reads.
+ */
+export function projectLineItems<T extends LineItemLike>(
+  items: readonly T[] | undefined,
+  byLang: Record<string, string[]> | undefined,
+  lang: string,
+): T[] {
+  const list = items ?? [];
+  const translated = byLang?.[lang];
+  if (!translated || translated.length !== list.length) return [...list];
+  return list.map((li, i) => {
+    const t = translated[i]?.trim();
+    return t ? { ...li, description: t } : li;
+  });
+}

@@ -16,6 +16,7 @@ import { BootstrapSuperAdmin } from "@users/domain/coordinators/bootstrap-super-
 import { requireSuperAdmin } from "@users/domain/coordinators/require-super-admin/mod.ts";
 import {
   readSessionId,
+  requireUser,
   UnauthorizedError,
 } from "@users/domain/coordinators/require-user/mod.ts";
 import {
@@ -23,6 +24,7 @@ import {
   projectAdminUser,
 } from "@users/domain/business/admin-user-view/mod.ts";
 import { buildSessionCookie } from "@users/domain/business/session-cookie/mod.ts";
+import { LANDING_OFFER } from "#quote-flow/landing-offers.ts";
 
 /**
  * /admin — super-admin-only surface. EVERY mutating/listing endpoint calls
@@ -159,6 +161,28 @@ export class AdminController {
       superAdmin: user.superAdmin === true,
       impersonating: Boolean(session.impersonatorId),
       impersonator,
+    };
+  }
+
+  /**
+   * GET /admin/landing-offers — the single source of truth for the marketing
+   * offer both landing pages render (trial length, from-price, the "unlimited"
+   * tier, social-proof counters). Read by the super-admin "configure landing
+   * offers" section (P-08). Any authenticated session may read it; the values
+   * live in shared/quote-flow/landing-offers.ts so the pages and this endpoint
+   * never drift.
+   */
+  @Get("landing-offers")
+  async landingOffers(@Context() ctx: ExecutionContext) {
+    await requireUser(ctx, this.sessions, this.users);
+    return {
+      trialDays: LANDING_OFFER.trialDays,
+      priceFromCents: LANDING_OFFER.priceFromCents,
+      unlimitedTier: LANDING_OFFER.unlimitedTier,
+      socialProof: {
+        contractors: LANDING_OFFER.socialProof.contractors,
+        docsSent: LANDING_OFFER.socialProof.docsSent,
+      },
     };
   }
 

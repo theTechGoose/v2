@@ -2,6 +2,7 @@ import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
+import { resolvePublicLang } from "../../../shared/quote-flow/public-lang.ts";
 import PublicChangeOrderActions from "../../islands/PublicChangeOrderActions.tsx";
 
 interface ChangeOrderPublic {
@@ -41,9 +42,14 @@ export default define.page(async function PublicChangeOrder(ctx) {
     `/change-orders/${id}/public`,
   );
   const co = r.ok ? r.data : undefined;
-  // Render in the document's language (the contractor's outgoing-comms
-  // language), supplied by the backend payload; default EN.
-  const lang: Lang = co?.commsLanguage === "es" ? "es" : "en";
+  // Chrome language — the visitor's own saved choice (pm_lang cookie) wins over
+  // the document's generation language, exactly like /q and /c (P-12). Falls
+  // back to the contractor's outgoing-comms language from the backend payload.
+  const lang: Lang = resolvePublicLang({
+    cookie: ctx.req.headers.get("cookie"),
+    docLang: co?.commsLanguage,
+    header: ctx.req.headers.get("accept-language"),
+  });
 
   return (
     <>

@@ -94,6 +94,82 @@ export function hasAddress(client: { address?: string | null }): boolean {
 }
 
 /**
+ * Fold a standalone phrase into the middle of a sentence ("This estimate
+ * covers <phrase> — ...") without destroying proper nouns.
+ *
+ * The customer's quote used to read "…covers reparación de tablaroca y
+ * pintura en 2 cuartos — ramírez — 2 lines of work…": the whole summary was
+ * pushed through toLowerCase(), which lowercases the CLIENT'S SURNAME. Only
+ * the first character is a sentence-position artifact, and only when the
+ * opening word is an ordinary capitalized word — an ALL-CAPS acronym ("HVAC")
+ * and an already-lowercase word are both left exactly as written.
+ */
+export function midSentence(s: string): string {
+  const trimmed = s.trim();
+  if (!trimmed) return trimmed;
+  const first = trimmed.split(/\s+/)[0];
+  // "HVAC", "LED" — an acronym keeps its case.
+  if (first.length > 1 && first === first.toUpperCase()) return trimmed;
+  return trimmed.charAt(0).toLowerCase() + trimmed.slice(1);
+}
+
+const MONTHS: Record<Lang, readonly string[]> = {
+  en: [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ],
+  es: [
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+  ],
+};
+
+/**
+ * The ONE long-date format for customer-facing documents, in the document's
+ * own language: en "August 18, 2026", es "18 de agosto de 2026".
+ *
+ * The signed agreement used to print "FIRMADO AUGUST 18, 2026" and "vigente
+ * August 18, 2026" — English dates embedded in Spanish legal copy — because
+ * every renderer called toLocaleDateString("en-US") unconditionally.
+ *
+ * Deterministic by construction (no Intl), like everything else in this
+ * module: a bare "YYYY-MM-DD" is read as calendar-local noon UTC so it can
+ * never slip a day, and an unparseable value passes through untouched.
+ */
+export function formatLongDate(iso: string | undefined, lang: Lang): string {
+  if (!iso) return "";
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
+  const d = new Date(dateOnly ? `${iso}T12:00:00Z` : iso);
+  if (Number.isNaN(+d)) return iso;
+  const day = d.getUTCDate();
+  const month = MONTHS[lang === "es" ? "es" : "en"][d.getUTCMonth()];
+  const year = d.getUTCFullYear();
+  return lang === "es"
+    ? `${day} de ${month} de ${year}`
+    : `${month} ${day}, ${year}`;
+}
+
+/**
  * Spanish weekday lines are lowercase from the locale ("viernes · agosto
  * 17") but a greeting line starts a sentence — capitalize the leading
  * character only (P-65).
