@@ -23,19 +23,34 @@ export interface AddressSuggestion {
 /**
  * Autocomplete US street addresses. Returns [] for short queries and on any
  * API failure — autocomplete is a convenience layer, never an error surface.
+ *
+ * P-38 — state bias + filter. When `opts.state` (two-letter code, e.g. "TX")
+ * is provided:
+ *   1. BIAS: the state code is appended to the geocode query ("1600
+ *      Congress, TX") so Mapbox ranks in-state matches first, and the
+ *      fetch limit is raised so filtering still leaves enough rows.
+ *   2. FILTER: results are narrowed to that state whenever the filter
+ *      leaves at least one match — so a user who just confirmed Texas
+ *      never sees a Chicago/Ypsilanti list.
+ *   3. FALLBACK: if Mapbox returns ZERO in-state rows for the biased query
+ *      (rural queries, typos), the unfiltered biased results are returned
+ *      instead of an empty list — out-of-state suggestions beat none, and
+ *      the typed-text option (always rendered first by the caller) keeps
+ *      any address enterable.
  */
 export async function suggestAddresses(
   query: string,
-  opts: { lang?: string; signal?: AbortSignal } = {},
+  opts: { lang?: string; state?: string; signal?: AbortSignal } = {},
 ): Promise<AddressSuggestion[]> {
   const q = query.trim();
   if (q.length < 3) return [];
+  const stateCode = (opts.state ?? "").trim().toUpperCase();
   const url = new URL(GEOCODE_URL);
-  url.searchParams.set("q", q);
+  url.searchParams.set("q", stateCode ? `${q}, ${stateCode}` : q);
   url.searchParams.set("autocomplete", "true");
   url.searchParams.set("country", "us");
   url.searchParams.set("types", "address");
-  url.searchParams.set("limit", "5");
+  url.searchParams.set("limit", stateCode ? "10" : "5");
   if (opts.lang) url.searchParams.set("language", opts.lang);
   url.searchParams.set("access_token", MAPBOX_TOKEN);
   try {
@@ -43,9 +58,12 @@ export async function suggestAddresses(
     if (!res.ok) return [];
     const data = await res.json();
     const feats: unknown[] = Array.isArray(data?.features) ? data.features : [];
-    return feats
+    const parsed = feats
       .map(parseFeature)
       .filter((s): s is AddressSuggestion => s !== null);
+    if (!stateCode) return parsed;
+    const inState = parsed.filter((s) => s.state === stateCode);
+    return (inState.length > 0 ? inState : parsed).slice(0, 5);
   } catch (err) {
     // Surface aborts so callers can ignore stale requests; swallow the rest.
     if (err instanceof DOMException && err.name === "AbortError") throw err;

@@ -40,6 +40,14 @@ export default define.page(async function Verify(ctx) {
   const s = STRINGS[lang];
   const display = formatPhoneDisplay(phone);
 
+  // P-39: "Wrong number? Edit" returns to the form the user came from.
+  // Origin travels as ?from= (set by the /landing trial form) so it
+  // survives reload. Allowlisted — never reflect an arbitrary URL.
+  // "#trial" jumps straight to the phone-form section on /landing.
+  const editHref = url.searchParams.get("from") === "landing"
+    ? "/landing#trial"
+    : "/";
+
   return (
     <>
       <Head>
@@ -82,7 +90,11 @@ export default define.page(async function Verify(ctx) {
             {s["verify.lede"]}{" "}
             <strong style="color:var(--fg)">{display}</strong>
           </p>
-          <CodeInput phoneNumber={phone} initialLang={lang} />
+          <CodeInput
+            phoneNumber={phone}
+            initialLang={lang}
+            editHref={editHref}
+          />
         </div>
       </div>
     </>
