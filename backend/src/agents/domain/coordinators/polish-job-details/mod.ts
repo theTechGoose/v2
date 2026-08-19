@@ -4,6 +4,8 @@ import {
   type LLMClient,
 } from "@agents/domain/business/llm/base/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import { summarizeJobName } from "#quote-flow/job-name.ts";
+import { clampSummary } from "#quote-flow/summary-clamp.ts";
 
 export interface PolishJobDetailsInput {
   userId: string;
@@ -92,8 +94,8 @@ export class PolishJobDetails {
       const summary = clampSummary(parsed.summary);
       const jobName =
         typeof parsed.jobName === "string" && parsed.jobName.trim()
-          ? clampJobName(parsed.jobName)
-          : deriveJobName(summary);
+          ? clampJobName(parsed.jobName, lang)
+          : deriveJobName(summary, lang);
       return {
         summary,
         jobName,
@@ -123,13 +125,13 @@ function tryParseJson(
   return undefined;
 }
 
-function clampSummary(s: string): string {
-  const cleaned = s.trim().replace(/\s+/g, " ");
-  const words = cleaned.split(" ");
-  return words.length <= 8 ? cleaned : words.slice(0, 8).join(" ");
-}
+// UX-18: summaries are clamped by the ONE shared helper (visible "…" on
+// truncation, never a silent mid-phrase cut) — imported above.
 
-function clampJobName(s: string): string {
+/** UX-05/UX-41: Spanish names are sentence case with lowercase connectors,
+ *  never blanket Title Case — the shared lang-aware derivation owns that. */
+function clampJobName(s: string, lang: "en" | "es"): string {
+  if (lang === "es") return summarizeJobName(s, "es");
   const cleaned = s.trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(
     /\s+/g,
     " ",
@@ -138,8 +140,8 @@ function clampJobName(s: string): string {
   return words.map(titleCaseWord).join(" ");
 }
 
-function deriveJobName(summary: string): string {
-  return clampJobName(summary);
+function deriveJobName(summary: string, lang: "en" | "es"): string {
+  return clampJobName(summary, lang);
 }
 
 function titleCaseWord(w: string): string {
@@ -149,11 +151,11 @@ function titleCaseWord(w: string): string {
 
 function fallback(raw: string, lang: "en" | "es"): PolishJobDetailsResult {
   const firstLine = raw.split(/\n/)[0].trim();
-  const summaryWords = firstLine.split(/\s+/).slice(0, 8).join(" ");
+  const summaryWords = clampSummary(firstLine);
   const summary = summaryWords || t(lang, "polishJobDetails.fallbackSummary");
   return {
     summary,
-    jobName: deriveJobName(summary),
+    jobName: deriveJobName(summary, lang),
     description: raw,
   };
 }

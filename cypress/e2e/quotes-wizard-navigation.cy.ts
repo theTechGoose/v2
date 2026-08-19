@@ -1,17 +1,17 @@
 /// <reference types="cypress" />
 
 /**
- * PDF p2, p3, p7, p8 — wizard step navigation.
+ * Wizard step navigation — SINGLE back button contract (2026-08-19).
  *
- *  p2/p8: every step of the quote tasks needs a Go Back control so earlier
- *         answers — Job Details above all — can be edited, with the typed
- *         content preserved.
- *  p3:    once the flow has produced the invoice (terminal stage), Go Back
- *         exits to the Dashboard.
- *  p7:    the "Who is this for?" step must also collect a Business Name.
- *
- * Contract selectors (green phase must add): [data-cy=wizard-back],
- * [data-cy=wizard-business-name].
+ * Supersedes the old roadmap p2/p8 per-step [data-cy=wizard-back] controls:
+ * the assistant now renders exactly ONE back control, the chat header's
+ * a.chat__head-btn, and it UNDOES the previous action via the shared
+ * resolver (shared/quote-flow/assistant-back.ts). The BEHAVIOR the roadmap
+ * wanted is unchanged and asserted here:
+ *  - earlier answers stay editable: backing into Job Details restores the
+ *    typed content (p2), and edits flow into the regenerated quote;
+ *  - the "Who is this for?" step collects a Business Name (p7);
+ *  - at the terminal (invoice-produced) stage back exits to /dashboard (p3).
  */
 describe("quote wizard — back navigation through the steps", () => {
   const PHONE = "+15125550921";
@@ -33,12 +33,12 @@ describe("quote wizard — back navigation through the steps", () => {
     cy.get("button.composer__send").click();
   }
 
-  it("every step after job details shows a Go Back control", () => {
+  it("steps render NO in-widget back control — the header back is the single one", () => {
     submitDetails("Remove old toilet, install new toilet, test for leaks");
     cy.get(".chat__price-capture", { timeout: 10_000 }).should("be.visible");
 
-    // Price step must expose a step-level back control.
-    cy.get("[data-cy=wizard-back]").should("be.visible");
+    cy.get("[data-cy=wizard-back]").should("not.exist");
+    cy.get("a.chat__head-btn").should("have.length", 1).and("be.visible");
   });
 
   it("going back to Job Details restores the typed content for editing (p2)", () => {
@@ -46,7 +46,7 @@ describe("quote wizard — back navigation through the steps", () => {
     submitDetails(details);
     cy.get(".chat__price-capture", { timeout: 10_000 }).should("be.visible");
 
-    cy.get("[data-cy=wizard-back]").click();
+    cy.get("a.chat__head-btn").click();
 
     // The job-details step is back AND still holds what was typed — editable,
     // not blanked.
@@ -60,7 +60,7 @@ describe("quote wizard — back navigation through the steps", () => {
     submitDetails("Remove old toilet, install new toilet");
     cy.get(".chat__price-capture", { timeout: 10_000 }).should("be.visible");
 
-    cy.get("[data-cy=wizard-back]").click();
+    cy.get("a.chat__head-btn").click();
     cy.get("textarea.composer__input").should("be.visible")
       .type(", also test for leaks");
     cy.get("button.composer__send").click();

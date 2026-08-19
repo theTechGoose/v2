@@ -514,7 +514,11 @@ export class PaperworkPublicController {
       entityType: "quote",
       entityId: updated.id,
       action: "accepted",
-      data: { ...(customerName ? { customerName } : {}) },
+      data: {
+        ...(customerName ? { customerName } : {}),
+        // UX-20: the feed event names the job, not just "tu cotización".
+        ...(updated.jobName ? { jobName: updated.jobName } : {}),
+      },
     });
     // Completion Text + Email to the contractor (roadmap p.10). Best-effort —
     // never fails the customer's accept; the bell notification above already
@@ -695,8 +699,21 @@ export class PaperworkPublicController {
           lineItems: quote.lineItems,
         }
         : undefined;
+      // UX-37: one deal, one ceremony — surface the linked quote's
+      // acceptance evidence so /c can render "you already accepted this on
+      // <date>" instead of a second independent signing ceremony.
+      const quoteEvidence = quote && quote.userId === c.userId
+        ? {
+          ...(quote.status ? { quoteStatus: quote.status } : {}),
+          ...(quote.acceptedAt ? { quoteAcceptedAt: quote.acceptedAt } : {}),
+          ...(quote.acceptedName
+            ? { quoteAcceptedName: quote.acceptedName }
+            : {}),
+        }
+        : {};
       return ctx.json({
         ...redactContract(c),
+        ...quoteEvidence,
         contractor,
         customer,
         jobDetails,

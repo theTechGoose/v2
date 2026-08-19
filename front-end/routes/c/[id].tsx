@@ -3,6 +3,7 @@ import { define } from "../../utils.ts";
 import PublicContractView from "../../islands/PublicContractView.tsx";
 import { BG, INK } from "../../components/contract-doc.tsx";
 import { langFromCookie } from "../../lib/lang.ts";
+import { tFor } from "../../lib/i18n.ts";
 
 /**
  * Public agreement page. The contract is fetched client-side by the
@@ -19,7 +20,8 @@ export default define.page(function PublicContract(ctx) {
   return (
     <>
       <Head>
-        <title>Quote + Agreement · Paperwork Monster</title>
+        {/* UX-40: localized like /i and /co (tFor docTitle). */}
+        <title>{tFor(lang ?? "en", "contractDoc.docTitle")}</title>
         <link rel="stylesheet" href="/landing.css" />
         {/* P-62: the phone-layout + @media print rules live in a LINKED
             stylesheet, not an inline <style> — Fresh emits a Head <style>

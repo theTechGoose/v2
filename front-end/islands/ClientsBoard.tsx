@@ -59,7 +59,13 @@ function SinceBadge({ days, lang }: { days: number; lang: "en" | "es" }) {
   const { tier, num, unit } = sinceBadge(days, lang);
   return (
     <div class={`ccard2__since ccard2__since--${tier}`}>
-      <span class="ccard2__since-num">{num}</span>
+      <span
+        class={`ccard2__since-num${
+          num.length > 2 ? " ccard2__since-num--word" : ""
+        }`}
+      >
+        {num}
+      </span>
       <span class="ccard2__since-unit">{unit}</span>
     </div>
   );

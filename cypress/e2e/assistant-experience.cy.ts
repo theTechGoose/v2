@@ -225,6 +225,7 @@ describe("P-25 manual duration control is localized in Spanish", () => {
   it("P-25 the duration preview reads '3 semanas', never the EN '3 weeks'", () => {
     seedToTerms();
     // customer step (fresh user → create form): name + a contact, then Next.
+    cy.openCustomerCreateForm();
     cy.get(".cust-create input.cust-pick__search", { timeout: 20_000 })
       .first()
       .type("Cliente Prueba");
@@ -286,6 +287,7 @@ describe("P-26 preview EN send button has no 'Click here' prefix", () => {
     cy.location("pathname", { timeout: 20_000 })
       .should("match", /^\/assistant\/[A-Za-z0-9_-]+$/);
     // customer step
+    cy.openCustomerCreateForm();
     cy.get(".cust-create input.cust-pick__search", { timeout: 20_000 })
       .first()
       .type("Cliente Prueba");
@@ -342,6 +344,7 @@ describe("P-21 send moment keeps one term, no shouting, full email", () => {
     cy.location("pathname", { timeout: 20_000 })
       .should("match", /^\/assistant\/[A-Za-z0-9_-]+$/);
     // customer step — seed a long-ish email so a truncated toast is provable.
+    cy.openCustomerCreateForm();
     cy.get(".cust-create input.cust-pick__search", { timeout: 20_000 })
       .first()
       .type("Cliente Prueba");

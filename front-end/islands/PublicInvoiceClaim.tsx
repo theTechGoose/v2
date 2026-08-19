@@ -108,6 +108,29 @@ export default function PublicInvoiceClaim(
         );
       }
       setDone(true);
+      // UX-35: the SSR chrome OUTSIDE this island must reflect the claim
+      // without a manual reload — flip the header badge to the awaiting-
+      // confirmation state and retire the "questions before paying?" footer.
+      try {
+        const pill = document.querySelector<HTMLElement>("[data-status-pill]");
+        if (pill) {
+          pill.textContent = tFor(
+            lang,
+            "publicInvoice.status.awaitingConfirmation",
+          );
+          pill.style.background = "rgba(255,170,40,0.15)";
+          pill.style.color = "#a06800";
+        }
+        const question = document.querySelector<HTMLElement>(
+          "[data-invoice-question]",
+        );
+        if (question) {
+          question.textContent = tFor(
+            lang,
+            "publicInvoice.footer.questionsClaimed",
+          );
+        }
+      } catch { /* decorative — the reload path renders the same states */ }
     } catch (err) {
       setError((err as Error).message);
     } finally {

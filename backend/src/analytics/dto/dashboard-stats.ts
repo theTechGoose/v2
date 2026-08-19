@@ -73,6 +73,9 @@ export class DashboardStatsDto {
   @ValidateNested() @Type(() => InvoiceCountsDto)  invoices!: InvoiceCountsDto;
   /** Sum of estimatedTotal across quotes whose status === 'sent'. In cents. */
   @IsNumber() quotedValueCents!: number;
+  /** UX-02: sum of estimatedTotal across WON (accepted/signed) non-sample
+   *  quotes — the "ganado / por facturar" bucket. In cents. */
+  @IsNumber() wonValueCents!: number;
   /** Number of quotes in 'sent' status (i.e. waiting on the customer). */
   @IsNumber() awaitingResponse!: number;
   @ValidateNested() @Type(() => RevenueStatsDto) revenue!: RevenueStatsDto;

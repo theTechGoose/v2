@@ -10,6 +10,7 @@ import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { RenderContractPdf } from "@paperwork/domain/coordinators/render-contract-pdf/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { buildSignedConfirmSms, smsJobName } from "#quote-flow/sms-i18n.ts";
+import { reconcileMilestones } from "#quote-flow/milestone-reconcile.ts";
 import type { Contract, ContractTerm } from "@paperwork/dto/contract.ts";
 import { computePaymentSplit } from "#payment-split";
 import { type Lang, t } from "@core/i18n/mod.ts";
@@ -134,7 +135,24 @@ export class SendSignedConfirmation {
     // remaining ones scheduled for equal-spaced dates over the contract's
     // completion window).
     const total = contract.totalAmount ?? 0;
-    const milestoneAmounts = computeMilestoneAmounts(total, contract.terms);
+    const plannedMilestones = computeMilestoneAmounts(total, contract.terms);
+    // UX-36: bill only the unbilled remainder. A late /c sign on a deal that
+    // was already invoiced (or fully paid) must never re-bill the customer —
+    // every non-void invoice on the deal counts as committed.
+    let milestoneAmounts: number[] = plannedMilestones;
+    try {
+      const allInvoices = await this.invoices.listByUser(userId);
+      const existing = allInvoices.filter((i) =>
+        i.contractId === contract.id ||
+        (contract.quoteId && i.quoteId === contract.quoteId)
+      );
+      milestoneAmounts = reconcileMilestones(plannedMilestones, total, existing);
+    } catch (err) {
+      console.error(
+        "[send-signed-confirmation] milestone reconcile failed; billing the full plan:",
+        err,
+      );
+    }
     let invoiceId: string | undefined;
     if (milestoneAmounts.length > 0) {
       const today = new Date();

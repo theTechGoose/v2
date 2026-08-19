@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { isSampleQuote } from "#quote-flow/pipeline-stats.ts";
+import { aggregatePipeline, isSampleQuote } from "#quote-flow/pipeline-stats.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
@@ -83,6 +83,13 @@ export class ComputeDashboardStats {
       .filter((q) => q.status === "sent")
       .reduce((sum, q) => sum + (q.estimatedTotal ?? 0), 0);
 
+    // UX-02: the won bucket — the accepted value must not vanish the moment
+    // a quote leaves "sent". Samples contribute nothing (P-15 discipline).
+    const wonValueCents = aggregatePipeline(
+      quotes.map((q) => ({ ...q })),
+      contracts.map((c) => ({ ...c })),
+    ).wonCents;
+
     // Revenue rows: each paid invoice contributes amount → revenue. Invoice
     // amounts are also INTEGER CENTS now (no × 100 needed).
     const revenueRows: RevenueRow[] = invoices
@@ -98,6 +105,7 @@ export class ComputeDashboardStats {
       contracts: contractCounts,
       invoices:  invoiceCounts,
       quotedValueCents,
+      wonValueCents,
       awaitingResponse: quoteCounts.sent,
       revenue: {
         ytdCents:           ytdRevenue(revenueRows, now),

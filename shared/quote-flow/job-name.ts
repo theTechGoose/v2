@@ -9,21 +9,106 @@
  */
 
 const STOPWORDS = new Set([
-  "a", "an", "the", "and", "or", "of", "for", "from", "with", "to", "in",
-  "on", "at", "by", "is", "are", "be", "no", "not", "sure", "make", "making",
-  "maksure", "that", "this", "it", "up", "out", "all", "any", "so", "then",
+  "a",
+  "an",
+  "the",
+  "and",
+  "or",
+  "of",
+  "for",
+  "from",
+  "with",
+  "to",
+  "in",
+  "on",
+  "at",
+  "by",
+  "is",
+  "are",
+  "be",
+  "no",
+  "not",
+  "sure",
+  "make",
+  "making",
+  "maksure",
+  "that",
+  "this",
+  "it",
+  "up",
+  "out",
+  "all",
+  "any",
+  "so",
+  "then",
+]);
+
+/** Spanish connectors are KEPT mid-name (lowercase) — see the ES path. */
+const ES_STOPWORDS = new Set([
+  "de",
+  "del",
+  "la",
+  "el",
+  "los",
+  "las",
+  "un",
+  "una",
+  "y",
+  "o",
+  "para",
+  "por",
+  "con",
+  "en",
+  "al",
 ]);
 
 function titleCase(word: string): string {
   return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
 }
 
-/** Deterministically summarize free-form job details into ≤3 title-cased words. */
-export function summarizeJobName(details: string): string {
+/** Accent-safe first-letter capitalization (code-point aware, never \b\w). */
+function capitalizeFirst(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+/**
+ * Spanish derivation (UX-05/26c/29/41): connectors are kept mid-name as
+ * lowercase connectors, never first (leading articles/connectors trimmed)
+ * and never last (no stopword tail); sentence case, accent-safe.
+ */
+function summarizeJobNameEs(words: string[]): string {
+  // Trim leading connectors/articles — a name never starts with "el"/"de".
+  let start = 0;
+  while (start < words.length && ES_STOPWORDS.has(words[start].toLowerCase())) {
+    start++;
+  }
+  let window = words.slice(start, start + 3);
+  // Never end on a stopword.
+  while (
+    window.length > 0 &&
+    ES_STOPWORDS.has(window[window.length - 1].toLowerCase())
+  ) {
+    window = window.slice(0, -1);
+  }
+  if (window.length === 0 && words.length > 0) {
+    window = [words[0]];
+  }
+  const cased = window.map((w, i) => {
+    if (i === 0) return capitalizeFirst(w);
+    if (ES_STOPWORDS.has(w.toLowerCase())) return w.toLowerCase();
+    return w;
+  });
+  return cased.join(" ");
+}
+
+/** Deterministically summarize free-form job details into ≤3 words. */
+export function summarizeJobName(details: string, lang?: "en" | "es"): string {
   const words = details
     .replace(/[^\p{L}\p{N}\s]/gu, " ") // strip bullets & punctuation
     .split(/\s+/)
     .filter((w) => w.length > 0);
+
+  if (lang === "es") return summarizeJobNameEs(words);
 
   const significant: string[] = [];
   const seen = new Set<string>();

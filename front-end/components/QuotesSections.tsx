@@ -190,13 +190,32 @@ export function QuotesKpis(
   );
 }
 
-export function DecidedRow({ q, lang = "en" }: { q: Quote; lang?: Lang }) {
+export function DecidedRow(
+  { q, lang = "en", onOpen }: {
+    q: Quote;
+    lang?: Lang;
+    /** UX-08: tapping the row opens the quote's detail panel. */
+    onOpen?: (id: string) => void;
+  },
+) {
   const decidedDays = q.decidedDays ?? 0;
   const when = decidedDays === 1
     ? tFor(lang, "quotesDecided.yesterday")
     : tFor(lang, "quotesDecided.daysAgo", { n: decidedDays });
   return (
-    <div class="qdone__row">
+    <div
+      class="qdone__row"
+      role={onOpen ? "button" : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      style={onOpen ? "cursor:pointer" : undefined}
+      onClick={onOpen
+        ? (e) => {
+          // The delete icon keeps its own action — a tap there never opens.
+          if ((e.target as HTMLElement).closest("button")) return;
+          onOpen(q.id);
+        }
+        : undefined}
+    >
       <div class={`qdone__badge qdone__badge--${q.stage}`}>
         <I d={q.stage === "won" ? ICN.check : ICN.x} size={16} sw={2.5} />
       </div>
@@ -230,6 +249,16 @@ export function QSideBig({ open, lang = "en" }: QSideBigProps) {
         </div>
       </div>
       <div class="qbig">
+        {/* UX-20: an empty pipeline explains itself instead of rendering a
+            bare shell under the header. */}
+        {top4.length === 0 && (
+          <div
+            class="qbig__empty"
+            style="font-size:13px;color:var(--fg-muted);line-height:1.5;padding:6px 0"
+          >
+            {tFor(lang, "quotesSide.topEmpty")}
+          </div>
+        )}
         {top4.map((q, i) => (
           <div key={q.id}>
             <div class="qbig__row">

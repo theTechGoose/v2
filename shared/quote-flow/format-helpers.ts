@@ -169,6 +169,55 @@ export function formatLongDate(iso: string | undefined, lang: Lang): string {
     : `${month} ${day}, ${year}`;
 }
 
+const SHORT_MONTHS: Record<Lang, readonly string[]> = {
+  en: [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ],
+  // Agrees with lang/es.json invoicesPage.month.* — the table the invoice
+  // cards already render.
+  es: [
+    "ene",
+    "feb",
+    "mar",
+    "abr",
+    "may",
+    "jun",
+    "jul",
+    "ago",
+    "sep",
+    "oct",
+    "nov",
+    "dic",
+  ],
+};
+
+/**
+ * The ONE short month-day format for in-app compact dates (UX-38):
+ * en "Aug 25" (month-first, TitleCase 3-letter), es "25 ago" (day-first,
+ * lowercase 3-letter). Deterministic like formatLongDate: a bare
+ * "YYYY-MM-DD" is read as calendar-local noon UTC so it can never slip a
+ * day; an unparseable value passes through untouched.
+ */
+export function formatShortDate(iso: string, lang: Lang): string {
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
+  const d = new Date(dateOnly ? `${iso}T12:00:00Z` : iso);
+  if (Number.isNaN(+d)) return iso;
+  const day = d.getUTCDate();
+  const month = SHORT_MONTHS[lang === "es" ? "es" : "en"][d.getUTCMonth()];
+  return lang === "es" ? `${day} ${month}` : `${month} ${day}`;
+}
+
 /**
  * Spanish weekday lines are lowercase from the locale ("viernes · agosto
  * 17") but a greeting line starts a sentence — capitalize the leading

@@ -64,6 +64,8 @@ export interface Conversation {
   currentPhase: ConversationPhase;
   title?: string;
   customerName?: string;
+  /** Denormalized quote.jobName (UX-14) — titles the thread row. */
+  jobName?: string;
   preview?: string;
   /** Set by accept-contract; cleared by load-conversation on next read. */
   hasUnreadEvent?: boolean;

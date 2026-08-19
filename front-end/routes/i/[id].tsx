@@ -460,7 +460,9 @@ function InvoiceDoc(
               <footer
                 style={`margin-top:30px;padding-top:22px;border-top:1px solid ${LINE};color:${INK};font-size:14px;line-height:1.5`}
               >
-                {tFor(lang, "publicInvoice.footer.questions")}{" "}
+                <span data-invoice-question>
+                  {tFor(lang, "publicInvoice.footer.questions")}
+                </span>{" "}
                 {invoice.contractor.phoneNumber
                   ? (
                     <>
@@ -610,6 +612,9 @@ function Pill(
 ) {
   return (
     <span
+      // UX-35: stable hook so the claim island can flip the SSR badge
+      // in place the moment the customer claims (no manual reload).
+      data-status-pill
       style={`background:${bg};color:${color};font-weight:800;font-size:11px;letter-spacing:.12em;text-transform:uppercase;padding:7px 14px;border-radius:999px`}
     >
       {label}

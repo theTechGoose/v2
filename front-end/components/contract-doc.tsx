@@ -72,6 +72,11 @@ export interface ContractPublic {
   customerSignature?: string;
   contractor?: Contractor;
   customer?: { name?: string; phoneNumber?: string; email?: string };
+  /** UX-37: the linked quote's acceptance evidence — one deal, one
+   *  ceremony. Present when the customer already accept-signed on /q. */
+  quoteStatus?: string;
+  quoteAcceptedAt?: string;
+  quoteAcceptedName?: string;
   jobDetails?: {
     summary?: string;
     jobName?: string;
@@ -155,6 +160,10 @@ function cstr(lang: Lang) {
       tFor(lang, "contractDoc.signatureOf", { name: n }),
     signedBinding: tFor(lang, "contractDoc.signedBinding"),
     signedNote: tFor(lang, "contractDoc.signedNote"),
+    signedNoteSms: tFor(lang, "contractDoc.signedNoteSms"),
+    acceptedPill: tFor(lang, "status.accepted"),
+    alreadyAccepted: (name: string, date: string) =>
+      tFor(lang, "contractDoc.alreadyAccepted", { name, date }),
     qBefore: tFor(lang, "contractDoc.qBefore"),
     qSigned: tFor(lang, "contractDoc.qSigned"),
     downloadPdf: tFor(lang, "contractDoc.downloadPdf"),
@@ -265,7 +274,7 @@ export function ContractDoc(
     : undefined;
   const contractorDateLine = lang === "en" && sig
     ? sig.contractor.dateLine
-    : `${t.date} ${effective ? fmtDate(effective) : t.today}`;
+    : `${t.date} ${effective ? fmtDate(effective, lang) : t.today}`;
   const customerInstruction = lang === "en" && sig
     ? sig.customer.instruction
     : t.signTypeBelow;
@@ -330,7 +339,7 @@ export function ContractDoc(
                   bg="rgba(81,152,67,0.15)"
                   color={GREEN}
                   label={t.signed(
-                    contract.signedAt ? fmtDate(contract.signedAt) : "",
+                    contract.signedAt ? fmtDate(contract.signedAt, lang) : "",
                   )}
                 />
               )
@@ -340,6 +349,20 @@ export function ContractDoc(
                   bg="rgba(168,59,59,0.10)"
                   color="#a83b3b"
                   label={t.declined}
+                />
+              )
+              : !view.pendingSignature
+              ? (
+                // UX-37: the deal was accepted on /q — never a second
+                // "Awaiting signature" state for the same agreement.
+                <Pill
+                  bg="rgba(81,152,67,0.15)"
+                  color={GREEN}
+                  label={`${t.acceptedPill}${
+                    view.acceptedEvidence?.at
+                      ? ` ${fmtDate(view.acceptedEvidence.at, lang)}`
+                      : ""
+                  }`}
                 />
               )
               : (
@@ -369,7 +392,9 @@ export function ContractDoc(
                 ? (
                   <>
                     {" "}· {t.effective}{" "}
-                    <strong style={`color:${INK}`}>{fmtDate(effective)}</strong>
+                    <strong style={`color:${INK}`}>
+                      {fmtDate(effective, lang)}
+                    </strong>
                   </>
                 )
                 : null}
@@ -567,8 +592,35 @@ export function ContractDoc(
                         style={`margin-top:4px;font-size:11px;color:${MUTED}`}
                       >
                         {contract.signedAt
-                          ? fmtDate(contract.signedAt)
+                          ? fmtDate(contract.signedAt, lang)
                           : t.today}
+                      </div>
+                    </div>
+                  )
+                  /* UX-37: a fresh ceremony renders ONLY when
+                     view.pendingSignature says one is appropriate. A deal
+                     the customer already accept-signed on /q shows the
+                     acceptance evidence instead of a second pad. */
+                  : !view.pendingSignature
+                  ? (
+                    <div
+                      style={`padding:14px 16px;background:#fff;border:1px solid ${LINE};border-radius:12px;min-height:96px;display:flex;flex-direction:column;justify-content:center`}
+                    >
+                      <div
+                        style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}
+                      >
+                        {t.acceptedPill}
+                      </div>
+                      <div
+                        style={`margin-top:6px;font-size:13px;color:${INK};line-height:1.5`}
+                      >
+                        {t.alreadyAccepted(
+                          view.acceptedEvidence?.by ?? customerName ??
+                            t.clientSignature,
+                          view.acceptedEvidence?.at
+                            ? fmtDate(view.acceptedEvidence.at, lang)
+                            : t.today,
+                        )}
                       </div>
                     </div>
                   )
@@ -630,7 +682,11 @@ export function ContractDoc(
                       {t.signedBinding}
                     </div>
                     <div style={`margin-top:2px;color:${MUTED};font-size:13px`}>
-                      {t.signedNote}
+                      {/* UX-39: never promise an email to a customer who has
+                          none on file — name the channel that exists. */}
+                      {contract.customer?.email?.trim()
+                        ? t.signedNote
+                        : t.signedNoteSms}
                     </div>
                   </div>
                 </div>
@@ -689,7 +745,9 @@ export function ContractDoc(
                       before signing?" — deriveContractView's footerVariant
                       picks the post-signed copy. */
                   }
-                  {view.footerVariant === "signed" ? t.qSigned : t.qBefore}{" "}
+                  {view.footerVariant === "signed" || !view.pendingSignature
+                    ? t.qSigned
+                    : t.qBefore}{" "}
                   {contractor?.phoneNumber && (
                     <>
                       {t.callWord}{" "}

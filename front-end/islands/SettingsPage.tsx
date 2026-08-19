@@ -1558,7 +1558,9 @@ export default function SettingsPage() {
               t.phone,
               p.user.phoneNumber ? fmtPhone(p.user.phoneNumber) : undefined,
             ],
-            [t.email, p.user.email],
+            // UX-35: the email lives on ONE surface — the editable form
+            // below. Repeating it read-only here competed with the form and
+            // clipped long addresses at the card edge.
             [t.language, p.user.language === "es" ? t.spanish : t.english],
           ]}
         />

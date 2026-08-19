@@ -109,20 +109,30 @@ export class SendContract {
       }
     }
 
-    // Also (re-)dispatch the linked quote if it was never actually
-    // delivered. Email-only backfill: the customer-facing email and the
-    // contract page link from it cover the gap when the LLM-drafted
-    // quote was locked before a customer was bound.
+    // Also backfill the linked quote's send state. UX-02: the SMS-only
+    // path used to skip this entirely, so the quote never gained its
+    // customer link or sentAt — the freshly won job then vanished from
+    // /jobs and every dashboard number.
     const quoteId = conv.quoteId ?? contract.quoteId;
-    if (quoteId && wantEmail) {
+    if (quoteId) {
       try {
         const quote = await this.quotes.getOwned(quoteId, input.userId);
+        if (!quote.customerId && conv.customerId) {
+          await this.quotes.update(quote.id, input.userId, { customerId: conv.customerId });
+        }
         if (!quote.sentAt) {
-          if (!quote.customerId && conv.customerId) {
-            await this.quotes.update(quote.id, input.userId, { customerId: conv.customerId });
+          if (wantEmail) {
+            const r = await this.emailer.run(input.userId, { kind: "quote", resourceId: quote.id, language: input.language });
+            console.log(`[send-contract] quote-backfill quote=${quote.id} email ok=${r.ok} to=${r.to ?? "<none>"} reason=${r.reason ?? "ok"}`);
+          } else if (textedTo) {
+            // The contract SMS is branded "Quote + Agreement" and links the
+            // customer to the deal — the quote WAS delivered. Stamp it.
+            await this.quotes.update(quote.id, input.userId, {
+              status: "sent",
+              sentAt: new Date().toISOString(),
+            });
+            console.log(`[send-contract] quote-backfill quote=${quote.id} stamped sent via sms`);
           }
-          const r = await this.emailer.run(input.userId, { kind: "quote", resourceId: quote.id, language: input.language });
-          console.log(`[send-contract] quote-backfill quote=${quote.id} email ok=${r.ok} to=${r.to ?? "<none>"} reason=${r.reason ?? "ok"}`);
         }
       } catch (err) {
         console.error(`[send-contract] quote backfill dispatch failed for quote ${quoteId}:`, err);

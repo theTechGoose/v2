@@ -17,7 +17,10 @@ export class QuoteController {
   @Post()
   async create(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return await this.store.create(user.id, parseCreateQuote(body));
+    // UX-29: derive a missing jobName in the owner's language.
+    return await this.store.create(user.id, parseCreateQuote(body), {
+      jobNameLang: user.language === "es" ? "es" : "en",
+    });
   }
 
   @Get(":id")

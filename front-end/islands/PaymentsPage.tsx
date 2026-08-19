@@ -469,7 +469,26 @@ function PaymentsHero(
     stubs: EnrichedPayment[];
   },
 ) {
-  const monthName = new Date().toLocaleString("en-US", { month: "long" });
+  // UX-35: the hero chip month renders in the page language ("PAGOS ·
+  // AGOSTO"), never the en-US month inside the Spanish UI.
+  const MONTH_KEYS = [
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+  ] as const;
+  const monthName = tFor(
+    lang,
+    `dashboardPage.month.${MONTH_KEYS[new Date().getMonth()]}`,
+  );
   const fresh = monthTotal === 0 && transitTotal === 0 && attentionCount === 0;
   return (
     <header class="pph">

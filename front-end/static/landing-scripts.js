@@ -830,6 +830,17 @@
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ phoneNumber: e164, language: curLang }),
         });
+        // UX-33: a 429 cooldown means a valid code is ALREADY in the user's
+        // SMS — hand them to the code screen ("Te enviamos un código a …")
+        // instead of painting the generic send-failure that invites retries.
+        if (res.status === 429) {
+          try {
+            localStorage.setItem("pm:last-phone", e164);
+          } catch { /* ignore */ }
+          location.href = "/verify?phone=" + encodeURIComponent(e164) +
+            "&lang=" + curLang;
+          return;
+        }
         if (!res.ok) throw new Error("send failed " + res.status);
         // Persist for next-visit one-tap. The /verify page also writes
         // this on successful verify (more authoritative), but writing

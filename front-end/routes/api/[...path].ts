@@ -50,7 +50,13 @@ async function forward(req: Request, path: string): Promise<Response> {
 
   const respHeaders = new Headers();
   for (const [k, v] of upstream.headers.entries()) {
-    if (!HOP_BY_HOP.has(k.toLowerCase())) respHeaders.set(k, v);
+    const key = k.toLowerCase();
+    // Deno's fetch transparently DECODES a gzip/br upstream body but leaves
+    // the content-encoding header on the response — re-serving that header
+    // over the decoded bytes makes strict clients (Cypress, node zlib) fail
+    // with "incorrect header check", so it must never be forwarded.
+    if (key === "content-encoding") continue;
+    if (!HOP_BY_HOP.has(key)) respHeaders.set(k, v);
   }
   return new Response(upstream.body, {
     status: upstream.status,

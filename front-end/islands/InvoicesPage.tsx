@@ -31,6 +31,7 @@ import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 import { isChangeOrderMutable } from "../../shared/quote-flow/adjustment-guards.ts";
+import { formatShortDate } from "../../shared/quote-flow/format-helpers.ts";
 import {
   interpretSendResult,
   type SendOutcome,
@@ -95,21 +96,22 @@ function methodLabel(m: string | undefined, lang: Lang): string {
   }
 }
 
-/** "2026-05-19" → "Tue" / "May 19" — short day-of-week label for the
- *  forecast hero breakdown. Falls back to MMM d when the date is more
- *  than a week out. */
-function shortDay(iso: string): string {
+/** ES weekday abbreviations (Sunday-first, matching Date#getUTCDay). */
+const ES_WEEKDAYS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+
+/** "2026-05-19" → "Tue"/"mar" / "May 19"/"19 may" — short label for the
+ *  forecast hero breakdown, in the page language (UX-38: the ES hero must
+ *  never show en-US tokens). Falls back to the month-day form when the date
+ *  is more than a week out. */
+function shortDay(iso: string, lang: Lang): string {
   const d = new Date(`${iso}T12:00:00Z`);
   if (!Number.isFinite(d.getTime())) return iso;
   const diffDays = Math.round((d.getTime() - Date.now()) / (24 * 3600 * 1000));
   if (diffDays >= 0 && diffDays < 7) {
+    if (lang === "es") return ES_WEEKDAYS[d.getUTCDay()];
     return d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
   }
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+  return formatShortDate(iso, lang);
 }
 
 function monthLabel(idx: number, lang: Lang): string {
@@ -290,7 +292,12 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   const [forecast, setForecast] = useState<ForecastResult | undefined>(
     undefined,
   );
-  const [newOpen, setNewOpen] = useState(false);
+  // UX-02: /invoices?new=1 (the won-quote "Crear la factura" CTA) opens the
+  // new-invoice modal directly.
+  const [newOpen, setNewOpen] = useState(() =>
+    typeof globalThis.location !== "undefined" &&
+    new URLSearchParams(globalThis.location.search).get("new") === "1"
+  );
   // Deep link: /invoices?open=<id> opens that invoice's detail view
   // automatically (PDF p6 editing + p18 adjustments land here).
   const [openId, setOpenId] = useState<string | null>(() =>
@@ -700,7 +707,7 @@ function InvoicesHero(
                 {forecast!.thisWeek.slice(0, 3).map((e, i) => (
                   <span key={e.invoiceId}>
                     {i > 0 ? " · " : ""}
-                    {shortDay(e.expectedLandDate)}:{" "}
+                    {shortDay(e.expectedLandDate, lang)}:{" "}
                     <strong>{e.label} {fmtMoney(e.amount)}</strong>
                   </span>
                 ))}
@@ -750,16 +757,21 @@ function InvoicesHero(
             <I d={ICN.plus} size={14} sw={2.5} />{" "}
             {tFor(lang, "invoicesPage.newInvoice")}
           </button>
-          <a
-            class="qph__cta qph__cta--ghost"
-            data-cy="invoice-export"
-            href={`/api/invoices/export.csv?year=${new Date().getFullYear()}`}
-            style="margin-left:10px;background:transparent;border:1px solid currentColor"
-          >
-            {tFor(lang, "invoicesPage.exportCsv", {
-              year: new Date().getFullYear(),
-            })}
-          </a>
+          {/* UX-23: nothing to export on an empty account — and when shown,
+              the ghost must be legible on the cream page, not the .qph__cta
+              white-on-transparent ghost the audit measured. */}
+          {!trulyEmpty && (
+            <a
+              class="qph__cta qph__cta--ghost"
+              data-cy="invoice-export"
+              href={`/api/invoices/export.csv?year=${new Date().getFullYear()}`}
+              style="margin-left:10px;background:transparent;border:1px solid var(--brand-teal);color:var(--brand-teal)"
+            >
+              {tFor(lang, "invoicesPage.exportCsv", {
+                year: new Date().getFullYear(),
+              })}
+            </a>
+          )}
         </div>
       </div>
     </header>

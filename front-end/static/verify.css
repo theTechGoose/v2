@@ -733,6 +733,18 @@ footer a:hover {
   display: grid;
   gap: 18px;
   text-align: center;
+  /* UX-01: as a centered grid item the card refuses to shrink below its
+     min-content (the .pm-steps row), bleeding ~28px past a 390px viewport.
+     min-width:0 (card + children) lets it honor the shell's padding box. */
+  min-width: 0;
+}
+.verify-card > * {
+  min-width: 0;
+}
+.verify-card .pm-steps {
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 6px;
 }
 .verify-card .meta {
   display: flex;

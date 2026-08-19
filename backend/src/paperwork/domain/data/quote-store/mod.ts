@@ -13,7 +13,11 @@ const INDEX_PREFIX = "quote_by_user";
 
 @Injectable()
 export class QuoteStore {
-  async create(userId: string, input: CreateQuoteDto): Promise<Quote> {
+  async create(
+    userId: string,
+    input: CreateQuoteDto,
+    opts?: { jobNameLang?: "en" | "es" },
+  ): Promise<Quote> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const quote: Quote = { ...input, id, userId, createdAt: now, updatedAt: now };
@@ -24,10 +28,12 @@ export class QuoteStore {
     if (!quote.status) quote.status = "draft";
     // Roadmap p.8: every quote carries a ≤3-word job name platform-wide.
     // The LLM polish step supplies one on assistant-built quotes; API-created
-    // quotes fall back to the deterministic summarizer.
+    // quotes fall back to the deterministic summarizer. UX-29: the owner's
+    // language governs the derivation — Spanish input must never come out
+    // Title-Cased with a stopword tail ("El Patio De").
     if (!quote.jobName?.trim()) {
       const source = quote.summary?.trim() || quote.description?.trim();
-      if (source) quote.jobName = summarizeJobName(source);
+      if (source) quote.jobName = summarizeJobName(source, opts?.jobNameLang);
     }
     const kv = await getKv();
     await kv.atomic()

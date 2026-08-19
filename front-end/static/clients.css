@@ -89,6 +89,12 @@
   font-size: 96px;
   display: block;
 }
+/* UX-35: word watermarks ("HOY"/"TODAY") scale down so they stay an accent,
+   not a wall of letters. */
+.ccard2__since-num--word {
+  font-size: 44px;
+  line-height: 1.1;
+}
 .ccard2__since-unit {
   display: block;
   font-size: 16px;

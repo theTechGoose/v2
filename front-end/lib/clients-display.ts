@@ -118,10 +118,10 @@ export function sinceBadge(days: number, lang: Lang = "en"): SinceBadgeData {
     : days <= 21
     ? "cool"
     : "cold";
-  // Contacted today: the watermark reads "0 / TODAY". Zero-padding it would
-  // print the nonsense "00 días atrás" (P-34), so the pad starts at day 1.
+  // Contacted today: the word tells the story — a giant translucent "0"
+  // watermark read as a defect (UX-35), so the badge is just "HOY"/"TODAY".
   if (days <= 0) {
-    return { tier, num: "0", unit: tFor(lang, "clientsDisplay.since.today") };
+    return { tier, num: tFor(lang, "clientsDisplay.since.today"), unit: "" };
   }
   if (days < 30) {
     return {

@@ -230,23 +230,60 @@ export default function DashSidebar(
           }}
         />
         <div class="sb__inner">
-          <a
-            class="sb__brand"
-            href="/dashboard"
-            title={tFor(lang, "nav.brandTitle")}
-            style="text-decoration:none;color:inherit"
-          >
-            <div class="sb__brand-logo">
-              <img
-                src="/logo-monster-card.png"
-                alt=""
-                style="width:30px;height:30px;object-fit:cover;border-radius:8px;display:block"
+          <div class="sb__head">
+            <a
+              class="sb__brand"
+              href="/dashboard"
+              title={tFor(lang, "nav.brandTitle")}
+              style="text-decoration:none;color:inherit"
+            >
+              <div class="sb__brand-logo">
+                <img
+                  src="/logo-monster-card.png"
+                  alt=""
+                  style="width:30px;height:30px;object-fit:cover;border-radius:8px;display:block"
+                />
+              </div>
+              <div class="sb__brand-text">
+                <div class="sb__brand-name">{tFor(lang, "brand.name")}</div>
+              </div>
+            </a>
+            <button
+              type="button"
+              class="sb__toggle"
+              // QuickBooks-style minimize (roadmap p9), in the QuickBooks
+              // position: the header row beside the brand — not orphaned
+              // between the account card and logout. The same physical
+              // button is the collapse arrow when expanded and the rail
+              // hamburger when collapsed; the hook only appears after
+              // hydration so tests can't click a dead button.
+              data-cy={mounted
+                ? (collapsed ? "sidebar-expand" : "sidebar-collapse")
+                : undefined}
+              onClick={toggle}
+              aria-label={collapsed
+                ? tFor(lang, "sidebar.expand")
+                : tFor(lang, "sidebar.collapse")}
+              title={collapsed
+                ? tFor(lang, "sidebar.expandTitle")
+                : tFor(lang, "sidebar.collapseTitle")}
+            >
+              <I
+                d={
+                  <>
+                    {
+                      /* QuickBooks-style hamburger + arrow — CSS rotates it
+                        180° so the chevron points right when the rail is
+                        collapsed (roadmap p.4). */
+                    }
+                    <path d="M3 6h13M3 12h13M3 18h13" />
+                    <path d="M21 9l-3 3 3 3" />
+                  </>
+                }
+                size={14}
               />
-            </div>
-            <div class="sb__brand-text">
-              <div class="sb__brand-name">{tFor(lang, "brand.name")}</div>
-            </div>
-          </a>
+            </button>
+          </div>
 
           <a
             class="sb__textus"
@@ -355,45 +392,6 @@ export default function DashSidebar(
                 </span>
               </a>
             )}
-            <div
-              class="sb__bottom-head"
-              style="display:flex;align-items:center;justify-content:flex-end;padding:4px 4px 2px"
-            >
-              <button
-                type="button"
-                class="sb__toggle"
-                // QuickBooks-style minimize (roadmap p9). The same physical
-                // button is the collapse arrow when expanded and the rail
-                // hamburger when collapsed; the hook only appears after
-                // hydration so tests can't click a dead button.
-                data-cy={mounted
-                  ? (collapsed ? "sidebar-expand" : "sidebar-collapse")
-                  : undefined}
-                onClick={toggle}
-                aria-label={collapsed
-                  ? tFor(lang, "sidebar.expand")
-                  : tFor(lang, "sidebar.collapse")}
-                title={collapsed
-                  ? tFor(lang, "sidebar.expandTitle")
-                  : tFor(lang, "sidebar.collapseTitle")}
-                style="width:28px;height:28px;border-radius:9px;background:rgba(255,255,255,0.08);border:none;color:rgba(255,255,255,0.65);cursor:pointer;display:grid;place-items:center;flex-shrink:0"
-              >
-                <I
-                  d={
-                    <>
-                      {
-                        /* QuickBooks-style hamburger + arrow — CSS rotates it
-                          180° so the chevron points right when the rail is
-                          collapsed (roadmap p.4). */
-                      }
-                      <path d="M3 6h13M3 12h13M3 18h13" />
-                      <path d="M21 9l-3 3 3 3" />
-                    </>
-                  }
-                  size={14}
-                />
-              </button>
-            </div>
             {
               /* Roadmap p.4: removed the duplicate "Settings" nav link — the user block
               above (which opens /settings) is the single entry point. */

@@ -19,6 +19,10 @@ const shared = {
 };
 
 module.exports = {
+  // Jest ignores `testTimeout` in per-project position (it's a global-only
+  // option), so the integration project's intended 30s ceiling silently fell
+  // back to the 5s default — declare it here where it actually applies.
+  testTimeout: 30_000,
   projects: [
     {
       ...shared,

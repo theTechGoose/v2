@@ -120,6 +120,17 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
     return { type: "quote_sent", titleKey: "notify.quote.sent", titleParams: nameParams };
   }
   if (event.entityType === "quote" && event.action === "accepted") {
+    // UX-20: when the event knows the job, the feed line names it too
+    // ("María aceptó tu cotización de Cerca Nueva") — tappable context, not
+    // a generic sentence. Job-less events keep the original key.
+    const jobName = event.data?.jobName as string | undefined;
+    if (jobName) {
+      return {
+        type: "quote_accepted",
+        titleKey: "notify.quote.acceptedJob",
+        titleParams: { ...(nameParams ?? {}), job: jobName },
+      };
+    }
     return { type: "quote_accepted", titleKey: "notify.quote.accepted", titleParams: nameParams };
   }
   if (event.entityType === "quote" && event.action === "declined") {

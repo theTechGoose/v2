@@ -62,6 +62,9 @@ export default function PublicQuoteActions(
 ) {
   const [mode, setMode] = useState<Mode>("actions");
   const [resolved, setResolved] = useState<Resolved>(null);
+  /** UX-22: the name typed on accept — the remounted success card must keep
+   *  rendering the full acceptance evidence, not a thin "accepted" line. */
+  const [acceptedName, setAcceptedName] = useState<string | undefined>();
   // P-63: a sent question must NOT strand the panel in ask mode — the
   // quote is still open, so the confirmation renders above the action row
   // with Accept and Decline still available (no reload needed).
@@ -78,6 +81,7 @@ export default function PublicQuoteActions(
         contractorFirstName={contractorFirstName}
         lang={lang}
         initialAccepted
+        initialAcceptedName={acceptedName}
       />
     );
   }
@@ -89,7 +93,10 @@ export default function PublicQuoteActions(
           quoteId={quoteId}
           contractorFirstName={contractorFirstName}
           lang={lang}
-          onAccepted={() => setResolved("accepted")}
+          onAccepted={(name) => {
+            setAcceptedName(name);
+            setResolved("accepted");
+          }}
         />
       )}
 

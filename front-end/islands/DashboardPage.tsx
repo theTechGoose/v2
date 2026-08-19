@@ -247,12 +247,20 @@ function notifToActivity(
   lang: Lang,
 ): ActivityEntry {
   const skin = NOTIF_ICON[n.type] ?? NOTIF_ICON.generic;
+  // UX-20: feed rows link to the thing they report — an accepted quote
+  // opens that quote's panel, an invoice event lands on /invoices.
+  const href = n.entityType === "quote" && n.entityId
+    ? `/quotes?open=${encodeURIComponent(n.entityId)}`
+    : n.entityType === "invoice"
+    ? "/invoices"
+    : undefined;
   return {
     icon: skin.icon,
     bg: skin.bg,
     fg: skin.fg,
     html: escapeHtml(n.title),
     time: fmtRel(n.createdAt, now, lang),
+    ...(href ? { href } : {}),
   };
 }
 
@@ -573,7 +581,11 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
       />
       <div class="grid">
         <ActiveJobs jobs={jobRows} total={kpis.activeJobs} lang={lang} />
-        <QuotesAwaiting quotes={quoteRows} lang={lang} />
+        <QuotesAwaiting
+          quotes={quoteRows}
+          lang={lang}
+          hasDecidedHistory={(stats?.quotes.accepted ?? 0) > 0}
+        />
       </div>
       <div class="grid">
         <Activity items={activityRows} lang={lang} />

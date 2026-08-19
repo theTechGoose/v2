@@ -151,11 +151,15 @@ function StepBody(
 }
 
 function StepFooter(
-  { ctx, valid, busy, onContinue }: {
+  { ctx, valid, busy, onContinue, hideContinue }: {
     ctx: StepCtx;
     valid: boolean;
     busy: boolean;
     onContinue: () => void;
+    /** UX-11: a step whose card already offers its own solid primary (the
+     *  state tap-to-confirm banner) drops the footer Continue — one primary
+     *  action per card, per the app's action-row rule. */
+    hideContinue?: boolean;
   },
 ) {
   return (
@@ -185,14 +189,16 @@ function StepFooter(
             </button>
           )
           : null}
-        <button
-          type="button"
-          class="welcome__btn welcome__btn--primary"
-          onClick={() => onContinue()}
-          disabled={!valid || busy}
-        >
-          {t("welcome.continue")}
-        </button>
+        {!hideContinue && (
+          <button
+            type="button"
+            class="welcome__btn welcome__btn--primary"
+            onClick={() => onContinue()}
+            disabled={!valid || busy}
+          >
+            {t("welcome.continue")}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -482,11 +488,19 @@ function StateStep({ ctx }: { ctx: StepCtx }) {
         )}
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
       {
-        /* P-54: the footer (Back + Skip + Continue) renders in BOTH the
-          tap-to-confirm banner mode and the full picker mode — the state
-          step offers Back and Skip like every other step. */
+        /* P-54: the footer (Back + Skip) renders in BOTH the tap-to-confirm
+          banner mode and the full picker mode — the state step offers Back
+          and Skip like every other step. UX-11: in banner mode the "Sí,
+          {state}" button IS the primary, so the footer Continue steps aside
+          (one solid primary per card). */
       }
-      <StepFooter ctx={ctx} valid={valid} busy={busy} onContinue={save} />
+      <StepFooter
+        ctx={ctx}
+        valid={valid}
+        busy={busy}
+        onContinue={save}
+        hideContinue={Boolean(suggestion) && !picking}
+      />
     </StepBody>
   );
 }

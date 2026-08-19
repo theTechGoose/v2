@@ -132,7 +132,10 @@ All problem suites pass. Final boards on the merged main:
 - **Jest**: 356 passing / 5 documented skips / 1 failure — `professionalize.int.test.ts`
   ("keeps the scope faithful") requires a REAL LLM: it asserts content quality that the
   dev stub client ("(stub) …" echoes) can never produce. It predates this problems.md
-  cycle and passes wherever `OPENAI_API_KEY` is set. The 5 skips are evidence-backed
+  cycle and passes wherever `OPENAI_API_KEY` is set. *(Resolved in the UX green phase,
+  2026-08-19: ProfessionalizeBullet now carries a scope-faithfulness gate + deterministic
+  fallback, so this test is green under the stub too — see TESTS-UX-PROBLEMS.md.)*
+  The 5 skips are evidence-backed
   `it.skip`s inside `assistant-flows.int.test.ts`/`assistant-contracts.test.ts` documenting
   assertions that are unfalsifiable under the stub LLM (their behavior is covered by the
   unit + e2e layers).

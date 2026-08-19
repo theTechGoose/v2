@@ -41,6 +41,20 @@ export interface PublicContractPayloadLike {
   status?: string;
   customer?: { name?: string };
   customerSignature?: string;
+  signedAt?: string;
+  customerSignedName?: string;
+  /** Linked quote's acceptance evidence (UX-37): "approved" is what
+   *  POST /quotes/:id/accept writes; legacy rows may say "accepted". */
+  quoteStatus?: string;
+  quoteAcceptedAt?: string;
+  quoteAcceptedName?: string;
+}
+
+/** How the one agreement got accepted (UX-37). */
+export interface AcceptedEvidence {
+  at?: string;
+  by?: string;
+  via: "contractSign" | "quoteAccept";
 }
 
 export interface ContractView {
@@ -49,6 +63,17 @@ export interface ContractView {
   signatureImage?: string;
   footerVariant: "beforeSigning" | "signed";
   pdfUrl?: string;
+  /** True ONLY when a fresh signature ceremony is appropriate: the contract
+   *  is not signed AND the linked quote is not accepted (UX-37 — one deal,
+   *  one ceremony). The /c page must consult this before rendering the pad. */
+  pendingSignature: boolean;
+  /** Present whenever pendingSignature is false. */
+  acceptedEvidence?: AcceptedEvidence;
+}
+
+function quoteAccepted(payload: PublicContractPayloadLike): boolean {
+  return payload.quoteStatus === "approved" ||
+    payload.quoteStatus === "accepted";
 }
 
 /** Derive the /c/:id view state from the public contract payload. */
@@ -56,16 +81,27 @@ export function deriveContractView(
   payload: PublicContractPayloadLike,
 ): ContractView {
   const signed = payload.status === "signed";
+  const accepted = quoteAccepted(payload);
   const view: ContractView = {
     customerName: payload.customer?.name ?? "",
     signed,
     footerVariant: signed ? "signed" : "beforeSigning",
+    pendingSignature: !signed && !accepted,
   };
   if (signed) {
     if (payload.customerSignature) {
       view.signatureImage = payload.customerSignature;
     }
     view.pdfUrl = `/api/contracts/${payload.id}/pdf`;
+    const evidence: AcceptedEvidence = { via: "contractSign" };
+    if (payload.signedAt) evidence.at = payload.signedAt;
+    if (payload.customerSignedName) evidence.by = payload.customerSignedName;
+    view.acceptedEvidence = evidence;
+  } else if (accepted) {
+    const evidence: AcceptedEvidence = { via: "quoteAccept" };
+    if (payload.quoteAcceptedAt) evidence.at = payload.quoteAcceptedAt;
+    if (payload.quoteAcceptedName) evidence.by = payload.quoteAcceptedName;
+    view.acceptedEvidence = evidence;
   }
   return view;
 }

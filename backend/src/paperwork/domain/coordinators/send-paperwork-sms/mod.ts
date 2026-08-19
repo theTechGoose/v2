@@ -10,6 +10,11 @@ import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { buildInvoiceSms, smsJobName } from "#quote-flow/sms-i18n.ts";
+import {
+  outboundSenderFirstName,
+  senderIdentityRefusal,
+} from "#quote-flow/outbound-identity.ts";
+import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
@@ -37,6 +42,8 @@ export interface SendPaperworkSmsResult {
   sid?: string;
   /** Reason if it failed (or 'dev_mode_no_dispatch'). */
   reason?: string;
+  /** P-06/UX-26 machine-readable needs-name refusal marker. */
+  needsName?: boolean;
 }
 
 /**
@@ -70,12 +77,37 @@ export class SendPaperworkSms {
   ): Promise<SendPaperworkSmsResult> {
     const sender = await this.tryGetUser(userId);
     const rawBiz = await this.tryGetBusinessIdentity(userId);
-    // Per-send language override (the "Send in <lang>" button) beats the
-    // stored default. Overriding commsLanguage on the resolved identity lets
-    // every downstream body/subject helper honor it without new params.
-    const senderBiz = input.language && rawBiz
-      ? { ...rawBiz, commsLanguage: input.language }
-      : rawBiz;
+
+    // UX-26: THE one pre-dispatch identity gate. Every SMS dispatch —
+    // controller routes AND the assistant's send-contract path — inherits it
+    // here: no compose, no dispatch, no comms-log with a placeholder identity.
+    const refusal = senderIdentityRefusal({
+      userName: sender?.name,
+      businessName: rawBiz?.businessName ?? rawBiz?.legalName,
+    });
+    if (refusal) return refusal;
+
+    // UX-28: ONE commsLanguage resolution for every outbound (explicit
+    // per-send pick → stored Settings default → en). An explicit pick is
+    // adopted as the stored default when none exists yet, so every later
+    // dispatch for this contractor resolves to the same answer.
+    const lang = resolveCommsLanguage({
+      override: input.language,
+      identityCommsLanguage: rawBiz?.commsLanguage,
+    });
+    if (
+      (input.language === "en" || input.language === "es") &&
+      rawBiz?.commsLanguage !== "en" && rawBiz?.commsLanguage !== "es"
+    ) {
+      try {
+        await this.identity.upsert(userId, { commsLanguage: input.language });
+      } catch (err) {
+        console.warn("[send-paperwork-sms] commsLanguage adopt failed:", err);
+      }
+    }
+    // Overriding commsLanguage on the resolved identity lets every
+    // downstream body/subject helper honor the resolution without new params.
+    const senderBiz = { ...(rawBiz ?? {}), commsLanguage: lang } as BusinessIdentity;
 
     let recipient: string | undefined = input.to;
     let body: string;
@@ -263,8 +295,9 @@ const APP_URL = (() => {
 
 // ---------- bodies ----------------------------------------------------------
 
+/** UX-26: the shared helper never yields the placeholder's first token. */
 function senderFirst(u: User | undefined): string | undefined {
-  return u?.name?.trim()?.split(/\s+/)[0] || undefined;
+  return outboundSenderFirstName(u?.name);
 }
 
 function customerFirst(c: Customer | undefined): string | undefined {

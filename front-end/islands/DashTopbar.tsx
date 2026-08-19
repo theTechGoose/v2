@@ -164,6 +164,9 @@ export default function DashTopbar(
             href="/dashboard#activity"
             class="topbar__ticker"
             aria-label={tFor(lang, "dashTopbar.liveActivity")}
+            // UX-21: sighted users hovering "● hace 4m" get the same
+            // explanation the aria-label already gives screen readers.
+            title={tFor(lang, "dashTopbar.liveActivity")}
           >
             <span class="topbar__ticker-dot" />
             <span class="topbar__ticker-track" aria-live="polite">

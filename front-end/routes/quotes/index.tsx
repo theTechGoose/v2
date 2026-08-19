@@ -16,7 +16,8 @@ export default define.page(function QuotesRoute(ctx) {
   return (
     <>
       <Head>
-        <title>Quotes · Paperwork Monster</title>
+        {/* UX-16: dictionary-driven like dashboard/invoices/settings. */}
+        <title>{tFor(lang, "quotesPage.docTitle")}</title>
         <link key="css-dashboard" rel="stylesheet" href="/dashboard.css" />
         <link key="css-quotes" rel="stylesheet" href="/quotes.css" />
       </Head>

@@ -19,9 +19,16 @@ export const handler = define.handlers({
         },
         body,
       });
+      // UX-33: the backend's 429 carries Retry-After — the cooldown countdown
+      // the landing form renders is built from it, so forward it.
+      const headers: Record<string, string> = {
+        "content-type": "application/json",
+      };
+      const retryAfter = res.headers.get("retry-after");
+      if (retryAfter) headers["retry-after"] = retryAfter;
       return new Response(await res.text(), {
         status: res.status,
-        headers: { "content-type": "application/json" },
+        headers,
       });
     } catch {
       return new Response(

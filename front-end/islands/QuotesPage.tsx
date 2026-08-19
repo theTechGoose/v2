@@ -57,7 +57,12 @@ function clientFromSummary(summary: string | null | undefined): string {
 }
 
 function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
-  const fallbackClient = clientFromSummary(c.summary);
+  // UX-17: the customer-less onboarding sample explains itself instead of
+  // rendering bare "—" placeholders in the avatar tile and client line.
+  const sampleClient = c.isSample === true
+    ? tFor(lang, "quoteCard.sampleClient")
+    : null;
+  const fallbackClient = sampleClient ?? clientFromSummary(c.summary);
   const client = c.customerName ?? fallbackClient;
   return {
     id: c.id,
@@ -173,6 +178,11 @@ function OpenQuotePanel(
       {q.summary && q.jobName?.trim() && (
         <p class="qopen__summary">{q.summary}</p>
       )}
+      {q.customerName && (
+        <p class="qopen__client" style="font-size:13px;color:var(--fg-muted)">
+          {tFor(lang, "quotesPage.open.customer", { name: q.customerName })}
+        </p>
+      )}
       <div class="qopen__meta">
         <div class="qopen__amount">{fmtMoney(q.estimatedTotal ?? 0)}</div>
         <div class="qopen__actions">
@@ -189,6 +199,19 @@ function OpenQuotePanel(
           >
             {tFor(lang, "quotesPage.open.viewAsClient")}
           </a>
+          {/* UX-02: the won quote's obvious next step — never a dead end. */}
+          {badge === "approved" && (
+            <a
+              class="qopen__btn qopen__btn--primary"
+              href={`/invoices?new=1&quoteId=${encodeURIComponent(q.id)}`}
+            >
+              {q.customerName
+                ? tFor(lang, "quotesPage.open.createInvoiceFor", {
+                  name: q.customerName,
+                })
+                : tFor(lang, "quotesPage.open.createInvoice")}
+            </a>
+          )}
         </div>
       </div>
       {(badge === "approved" || state.receipts.length > 0 || state.viewed) && (
@@ -235,8 +258,9 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
   const lang = langSignal.value;
   const [s, setS] = useState<State>(INITIAL);
 
-  // /quotes?open=<id> deep link — captured once on mount (client-only).
-  const [openId] = useState<string | null>(() => {
+  // /quotes?open=<id> deep link — seeded from the URL; UX-08: also settable
+  // from the list (tapping a decided row opens the same panel).
+  const [openId, setOpenId] = useState<string | null>(() => {
     if (typeof globalThis.location === "undefined") return null;
     return new URLSearchParams(globalThis.location.search).get("open");
   });
@@ -246,6 +270,16 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
     receipts: [],
     viewed: null,
   });
+
+  function openQuote(id: string) {
+    setOpenQ({ loading: true, quote: null, receipts: [], viewed: null });
+    setOpenId(id);
+    try {
+      const url = new URL(globalThis.location.href);
+      url.searchParams.set("open", id);
+      globalThis.history.replaceState(null, "", url.toString());
+    } catch { /* history unavailable — the panel still opens */ }
+  }
 
   useEffect(() => {
     if (!openId) return;
@@ -262,8 +296,18 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
       // Engagement timeline — feeds the "Viewed by the client" receipt.
       api.get<{ opens?: { at: string }[] }>(`/quotes/${openId}/opens`)
         .catch(() => ({ opens: [] as { at: string }[] })),
-    ]).then(([quote, messages, me, opensRes]) => {
+      // UX-08: GET /quotes/:id is the raw row (customerId only) — join the
+      // customer so the panel can say WHO the deal is with.
+      api.get<{ id: string; name?: string }[]>("/customers")
+        .catch(() => [] as { id: string; name?: string }[]),
+    ]).then(([quoteRaw, messages, me, opensRes, customersList]) => {
       if (!alive) return;
+      let quote = quoteRaw as BackendQuoteCard | null;
+      if (quote && !quote.customerName && quote.customerId) {
+        const found = (Array.isArray(customersList) ? customersList : [])
+          .find((c) => c.id === quote!.customerId);
+        if (found?.name) quote = { ...quote, customerName: found.name };
+      }
       const receipts = classifyReceipts(
         Array.isArray(messages) ? messages : [],
         { email: me.email ?? null, phone: me.phoneNumber ?? null },
@@ -282,6 +326,17 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
       alive = false;
     };
   }, [openId]);
+
+  // UX-08: once the opened panel has data, make sure it is actually on
+  // screen — at 390px it renders below the hero + 4 stacked KPI cells and a
+  // deep link used to land the user on a viewport that never showed it.
+  useEffect(() => {
+    if (!openId || openQ.loading || !openQ.quote) return;
+    document.querySelector("[data-cy=quote-open-panel]")?.scrollIntoView({
+      block: "start",
+      behavior: "auto",
+    });
+  }, [openId, openQ.loading, openQ.quote?.id]);
 
   useEffect(() => {
     let alive = true;
@@ -401,7 +456,9 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             lang={lang}
             num="01"
             title={tFor(lang, "quotesPage.track.outForResponse")}
-            count={outCards.length}
+            // UX-17: header count agrees with the KPI — real quotes only
+            // (the badged sample card stays visible but counts nowhere).
+            count={out.length}
             defaultOpen
             forceOpen={openId != null && outCards.some((q) => q.id === openId)}
             storageKey="quotes:track:01"
@@ -423,7 +480,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             lang={lang}
             num="02"
             title={tFor(lang, "quotesPage.track.drafting")}
-            count={draftCards.length}
+            count={drafts.length}
             /* A draft the user is mid-writing must not hide behind a
                collapsed track (same rule as the invoice tracks, P-31). */
             defaultOpen={draftCards.length > 0}
@@ -448,7 +505,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             lang={lang}
             num="03"
             title={tFor(lang, "quotesPage.track.decidedThisMonth")}
-            count={decidedCards.length}
+            count={decided.length}
             // Open by default when there are decided rows so the ≤3-word Job
             // Name stays visible on the list (roadmap p.8); a user's stored
             // collapse preference still wins via storageKey.
@@ -459,7 +516,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
           >
             <div class="qdone">
               {decidedCards.map((q) => (
-                <DecidedRow key={q.id} q={q} lang={lang} />
+                <DecidedRow key={q.id} q={q} lang={lang} onOpen={openQuote} />
               ))}
             </div>
           </QuoteTrack>

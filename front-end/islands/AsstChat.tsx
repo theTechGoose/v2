@@ -24,8 +24,24 @@ import {
   type ChipKey,
   chipReply,
 } from "../../shared/quote-flow/starter-chips.ts";
+import {
+  activeWizardStepIdx,
+  resolveAssistantBack,
+} from "../../shared/quote-flow/assistant-back.ts";
+import {
+  customerStepEntryView,
+  type CustomerStepView,
+  formOffersPickExisting,
+} from "../../shared/quote-flow/customer-step.ts";
 import { termLabel } from "../../shared/quote-flow/terms-i18n.ts";
 import { versionTitle } from "../../shared/quote-flow/version-titles.ts";
+import {
+  acceptedJobChipLabel,
+  extractQuickQuotePrefill,
+} from "../../shared/quote-flow/quick-quote-prefill.ts";
+import { formatPhoneDisplay } from "../../shared/quote-flow/format-helpers.ts";
+import { summarizeJobName } from "../../shared/quote-flow/job-name.ts";
+import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import {
   TimeoutError,
   withChatTimeout,
@@ -542,9 +558,16 @@ export default function AsstChat({
         price?: number;
       }[];
       estimatedTotal?: number;
+      /** Lifecycle — "approved"/"accepted" once the customer signed on /q
+       *  (UX-02: the thread must reflect it and stop offering re-sends). */
+      status?: string;
+      acceptedAt?: string | null;
     }
     | undefined
   >();
+  /** UX-02: the customer already accepted this deal on /q. */
+  const quoteAccepted = quote?.status === "approved" ||
+    quote?.status === "accepted" || Boolean(quote?.acceptedAt);
   const [draft, setDraft] = useState("");
   /** Inline price-capture flow opened by the "I already have my price"
    *  empty-state prompt. When set, renders the MoneyInput card in place
@@ -552,6 +575,11 @@ export default function AsstChat({
    *  Continue can hand the value to the phase-2 kickoff. */
   const [priceCaptureOpen, setPriceCaptureOpen] = useState(false);
   const [priceCents, setPriceCents] = useState<number | null>(null);
+  /** UX-04: the "para <Name>" candidate regex-extracted from the typed
+   *  quick-quote sentence — prefills the customer step's name input. */
+  const [prefillCustomerName, setPrefillCustomerName] = useState<
+    string | null
+  >(null);
   /** Set after the user clicks Continue on the price step. While true,
    *  the chat input no longer routes to the LLM chat — instead its
    *  next submission is treated as raw job-details, sent through the
@@ -720,6 +748,26 @@ export default function AsstChat({
    *  invoice. */
   const [invoiceFlow, setInvoiceFlow] = useState(false);
   const [invoiceCustomerOpen, setInvoiceCustomerOpen] = useState(false);
+  /** UX-31: the facturar flow REVIEWS before it saves — customer resolved,
+   *  waiting on the contractor to confirm amount + an editable due date.
+   *  Nothing is persisted until they confirm. */
+  const [invoiceReview, setInvoiceReview] = useState<
+    {
+      customerId: string;
+      customerName?: string;
+      custEmail?: string;
+      custPhone?: string;
+    } | null
+  >(null);
+  const [invoiceDueDate, setInvoiceDueDate] = useState<string>("");
+  /** UX-32: the just-accepted job(s) offered as one-tap facturar chips. */
+  const [acceptedJobChips, setAcceptedJobChips] = useState<
+    Array<{
+      jobName: string;
+      customerName?: string | null;
+      totalCents: number;
+    }>
+  >([]);
   const [invoiceResult, setInvoiceResult] = useState<
     { id: string; customerEmail?: string; customerPhone?: string } | null
   >(null);
@@ -787,6 +835,11 @@ export default function AsstChat({
   // in the reader's language. Translates once per language, cached on the
   // quote, and only when a language is actually previewed/sent.
   const descLangInFlight = useRef<Set<string>>(new Set<string>());
+  /** UX-06: visible translation state per language — the preview must never
+   *  silently fall back to the base language without saying so. */
+  const [translationPendingLangs, setTranslationPendingLangs] = useState<
+    Set<string>
+  >(new Set<string>());
   async function ensureDescriptionLang(targetLang: "en" | "es") {
     const id = quoteId ?? quote?.id;
     const base = (quote?.description ?? "").trim();
@@ -794,6 +847,7 @@ export default function AsstChat({
     if (quote?.descriptionByLang?.[targetLang]?.trim()) return;
     if (descLangInFlight.current.has(targetLang)) return;
     descLangInFlight.current.add(targetLang);
+    setTranslationPendingLangs((s) => new Set(s).add(targetLang));
     try {
       const lines = base.split("\n").map((l) => l.trim()).filter(Boolean);
       const res = await assistantClient.translate(lines, targetLang);
@@ -807,9 +861,15 @@ export default function AsstChat({
       setQuote((q) => q ? { ...q, descriptionByLang: merged } : q);
       quotesClient.update(id, { descriptionByLang: merged }).catch(() => {});
     } catch {
-      /* keep the base description */
+      /* keep the base description — the preview's missing-translation
+         notice (UX-06) says so instead of failing silently. */
     } finally {
       descLangInFlight.current.delete(targetLang);
+      setTranslationPendingLangs((s) => {
+        const next = new Set(s);
+        next.delete(targetLang);
+        return next;
+      });
     }
   }
 
@@ -958,29 +1018,69 @@ export default function AsstChat({
     setFlowChip(snap.flowChip);
   }
 
-  // The universal back button (ChatHeaderLive) dispatches `pm:asst-back`;
-  // resolve what "back" means here, most-immediate action first:
-  //   1. an active wizard step (last message, stepIdx > 0) → rewind a step
-  //   2. an in-chat view on the stack (price capture / job details / …) → pop
-  //   3. nothing left → leave the chat for the dashboard
+  // The ONE back button (ChatHeaderLive) dispatches `pm:asst-back`. It
+  // UNDOES the previous action — never a second browser back. The shared
+  // resolver (shared/quote-flow/assistant-back.ts) picks the single undo
+  // that applies, most-immediate surface first; exiting to /dashboard is
+  // the last resort (nothing left to undo) and the terminal invoice card.
   // No deps array (re-binds each render) so the closure reads current state.
   useEffect(() => {
     function onBack() {
-      const last = messages[messages.length - 1];
-      const wizardStepIdx =
-        (last?.payload as { stepIdx?: number } | undefined)?.stepIdx;
-      if (
-        last?.kind === "wizard" && typeof wizardStepIdx === "number" &&
-        wizardStepIdx > 0
-      ) {
-        goBackWizard();
-        return;
+      const action = resolveAssistantBack({
+        previewOpen: previewCtaId !== null,
+        invoiceResultOpen: invoiceResult !== null,
+        invoiceReviewOpen: invoiceReview !== null,
+        invoiceCustomerOpen,
+        jobOptionsOpen,
+        jobOptionsMode: jobOptionsOpen ? pickerMode : null,
+        priceCaptureOpen,
+        priceAfterConfirm: priceCaptureOpen && suggestPricing &&
+          confirmedOptionRef.current !== null,
+        activeWizardStepIdx: activeWizardStepIdx(messages),
+        viewStackDepth: historyStackRef.current.length,
+      });
+      switch (action) {
+        case "close-preview":
+          // Mirrors the preview's ✕: back to the thread, no backend revert.
+          setPreviewCtaId(null);
+          return;
+        case "invoice-review-to-customer":
+          setInvoiceReview(null);
+          setInvoiceCustomerOpen(true);
+          return;
+        case "invoice-customer-to-price":
+          setInvoiceCustomerOpen(false);
+          setPriceCaptureOpen(true);
+          return;
+        case "job-options-to-details":
+          // Confirm mode (pre-quote): return to the details entry with the
+          // typed text restored so it stays editable.
+          setJobOptionsOpen(false);
+          setPickerMode("polish");
+          setSubmittedJobDetails(null);
+          setAwaitingJobDetails(true);
+          setDraft(pendingJobDetailsRaw ?? "");
+          return;
+        case "close-job-options":
+          // Polish mode: the picker is re-openable from the review CTA, so
+          // backing out just returns to the chat without losing answers.
+          pendingReviewCtaRef.current = null;
+          setJobOptionsOpen(false);
+          return;
+        case "price-to-confirm":
+        case "price-step-back":
+          wizardStepBack();
+          return;
+        case "rewind-wizard":
+          goBackWizard();
+          return;
+        case "pop-view":
+          popHistory();
+          return;
+        case "exit-dashboard":
+          globalThis.location.href = "/dashboard";
+          return;
       }
-      if (historyStackRef.current.length > 0) {
-        popHistory();
-        return;
-      }
-      globalThis.location.href = "/dashboard";
     }
     globalThis.addEventListener("pm:asst-back", onBack);
     return () => globalThis.removeEventListener("pm:asst-back", onBack);
@@ -1071,6 +1171,10 @@ export default function AsstChat({
             description: q.description,
             lineItems: q.lineItems,
             estimatedTotal: q.estimatedTotal,
+            // UX-02: the lifecycle fields — the thread must reflect a
+            // customer acceptance and stop offering re-sends.
+            status: (q as { status?: string }).status,
+            acceptedAt: (q as { acceptedAt?: string | null }).acceptedAt,
           });
         }
       })
@@ -1104,6 +1208,23 @@ export default function AsstChat({
           return null;
         });
     }
+  }, [convoId]);
+
+  // UX-04: the customer-name candidate extracted from the typed quick-quote
+  // sentence survives the phase-2 hand-off page load the same way the raw
+  // job details do (startQuoteFromRaw does a real navigation). Consumed by
+  // the wizard's customer step; cleared once read.
+  useEffect(() => {
+    if (!convoId) return;
+    try {
+      const stored = globalThis.sessionStorage?.getItem(
+        `pm:custprefill:${convoId}`,
+      );
+      if (stored && stored.trim()) {
+        setPrefillCustomerName(stored.trim());
+        globalThis.sessionStorage?.removeItem(`pm:custprefill:${convoId}`);
+      }
+    } catch { /* sessionStorage unavailable — no prefill */ }
   }, [convoId]);
 
   // ?seed=… pre-fills the composer from a deeplink (e.g. hero CTAs on
@@ -1201,8 +1322,12 @@ export default function AsstChat({
     const dividerPhase = (
       lastDivider?.payload as { phase?: number } | undefined
     )?.phase;
+    // UX-02: the customer's acceptance is the loudest state this thread can
+    // reach — it outranks "out for signature", which reads as still-waiting.
     let status = tFor(lang, "asstChat.header.default");
-    if (contractStatus === "signed") {
+    if (quoteAccepted && contractStatus !== "signed") {
+      status = tFor(lang, "asstChat.header.contractAccepted");
+    } else if (contractStatus === "signed") {
       status = tFor(lang, "asstChat.header.contractSigned");
     } else if (contractStatus === "sent") {
       status = tFor(lang, "asstChat.header.contractOutForSignature");
@@ -1236,6 +1361,8 @@ export default function AsstChat({
     customer?.name,
     contract?.id,
     contract?.status,
+    quote?.status,
+    quote?.acceptedAt,
     convoId,
     messages.length,
     lang,
@@ -1920,8 +2047,9 @@ export default function AsstChat({
       const summary = confirmed?.summary ||
         firstLine.split(/\s+/).slice(0, 8).join(" ") ||
         tFor(lang, "asstChat.newJob");
-      const jobName = confirmed?.jobName ||
-        summary.split(/\s+/).slice(0, 3).join(" ");
+      // UX-29: the shared lang-aware derivation — a bare 3-word slice
+      // produced titles like "El patio de".
+      const jobName = confirmed?.jobName || summarizeJobName(summary, lang);
       const byLang = confirmed?.byLang;
       const byLangFields = byLang
         ? {
@@ -1985,6 +2113,16 @@ export default function AsstChat({
             raw.trim(),
           );
         } catch { /* sessionStorage unavailable — picker just won't auto-open */ }
+      }
+      // UX-04: carry the extracted customer-name candidate across the real
+      // page navigation below (island state does not survive it).
+      if (prefillCustomerName) {
+        try {
+          globalThis.sessionStorage?.setItem(
+            `pm:custprefill:${conv.id}`,
+            prefillCustomerName,
+          );
+        } catch { /* sessionStorage unavailable — no prefill */ }
       }
 
       globalThis.location.href = `/assistant/${conv.id}`;
@@ -2214,6 +2352,14 @@ export default function AsstChat({
     setPendingJobDetailsRaw(trimmed);
     setSubmittedJobDetails(trimmed);
     setAwaitingJobDetails(false);
+    // UX-04/UX-32: the sentence often already answers the next questions
+    // ("…para la familia Nguyen, $3,700 todo incluido") — seed the price
+    // picker and the customer step instead of asking again from $0.
+    const prefill = extractQuickQuotePrefill(trimmed);
+    if (prefill.priceCents && !suggestPricing) {
+      setPriceCents(prefill.priceCents);
+    }
+    setPrefillCustomerName(prefill.customerName);
     if (suggestPricing) {
       // "Help me price it" (roadmap p.18): confirm the job details FIRST,
       // then price the confirmed scope. The picker's Continue advances to
@@ -2225,11 +2371,12 @@ export default function AsstChat({
   }
 
   /**
-   * In-flow step back ([data-cy=wizard-back], roadmap p.2/p.8): steps back
-   * exactly ONE view using the same snapshots the universal back pops. When
-   * the landing view is the job-details step, the composer is PREFILLED with
-   * the previously typed details so they're editable — not blanked — and
-   * re-sending regenerates the flow with the edits.
+   * Price-capture undo (dispatched from the single header back via the
+   * shared resolver): steps back exactly ONE view using the same snapshots
+   * the universal back pops. When the landing view is the job-details step,
+   * the composer is PREFILLED with the previously typed details so they're
+   * editable — not blanked — and re-sending regenerates the flow with the
+   * edits.
    */
   function wizardStepBack() {
     // "Help me price it": pricing came AFTER the confirm step — back reopens
@@ -3066,6 +3213,38 @@ export default function AsstChat({
     setPriceSuggestions(null);
     setPendingJobDetailsRaw(null);
     setAwaitingJobDetails(true);
+    // UX-32: the app often already KNOWS what to invoice — offer the
+    // accepted job(s) as tappable chips instead of opening with a cold
+    // "¿De qué trabajo es la factura?".
+    setAcceptedJobChips([]);
+    void api.get<
+      Array<{
+        id?: string;
+        jobName?: string | null;
+        summary?: string | null;
+        customerName?: string | null;
+        estimatedTotal?: number | null;
+        stage?: string;
+        status?: string;
+        acceptedAt?: string | null;
+        isSample?: boolean;
+      }>
+    >("/quotes").then((cards) => {
+      const list = (Array.isArray(cards) ? cards : [])
+        .filter((c) => c.isSample !== true)
+        .filter((c) =>
+          c.stage === "won" || c.status === "approved" ||
+          c.status === "accepted" || Boolean(c.acceptedAt)
+        )
+        .slice(0, 3)
+        .map((c) => ({
+          jobName: (c.jobName ?? c.summary ?? "").trim(),
+          customerName: c.customerName ?? null,
+          totalCents: c.estimatedTotal ?? 0,
+        }))
+        .filter((j) => j.jobName.length > 0);
+      setAcceptedJobChips(list);
+    }).catch(() => {});
     taRef.current?.focus();
   }
 
@@ -3132,26 +3311,73 @@ export default function AsstChat({
         setError(tFor(lang, "asstChat.invoiceFlow.needCustomer"));
         return;
       }
+      // UX-31: don't mint anything yet — land on a review step where the
+      // due date is visible and editable (defaulting to the same +30-day
+      // window the /invoices modal uses), and only save on confirm. The old
+      // path silently persisted an invoice due the day it was created.
+      const customerName = optionId === "create_new"
+        ? body?.customer?.create?.name
+        : undefined;
+      setInvoiceDueDate(
+        new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(
+          0,
+          10,
+        ),
+      );
+      setInvoiceCustomerOpen(false);
+      setInvoiceReview({
+        customerId: customerId!,
+        ...(customerName ? { customerName } : {}),
+        ...(custEmail ? { custEmail } : {}),
+        ...(custPhone ? { custPhone } : {}),
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "couldn't create the invoice",
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /** UX-31: the reviewed save — fires only after the contractor confirmed
+   *  the amount + due date on the review step. */
+  async function saveInvoiceFromReview() {
+    if (sending || !invoiceReview) return;
+    const cents = pendingPriceCents ?? 0;
+    if (cents <= 0) {
+      setError(tFor(lang, "asstChat.invoiceFlow.noAmount"));
+      return;
+    }
+    setError(undefined);
+    setSending(true);
+    try {
       const raw = (pendingJobDetailsRaw ?? "").trim();
-      const firstLine = raw.split("\n")[0]?.trim() ?? "";
-      const jobName = firstLine.split(/\s+/).slice(0, 3).join(" ") ||
-        tFor(lang, "asstChat.newJob");
+      // UX-29: the shared lang-aware derivation — never a bare 3-word slice
+      // ("El patio de") headlining the customer's invoice.
+      const jobName = (raw
+        ? summarizeJobName(raw.split("\n")[0] ?? raw, lang)
+        : "") || tFor(lang, "asstChat.newJob");
       const today = new Date().toISOString().slice(0, 10);
       const inv = await api.post<{ id?: string }>("/invoices", {
-        customerId,
+        customerId: invoiceReview.customerId,
         amount: cents,
-        dueDate: today, // job's done — due on receipt
+        ...(invoiceDueDate ? { dueDate: invoiceDueDate } : {}),
         issuedDate: today,
         status: "sent",
         jobName,
         ...(raw ? { description: raw } : {}),
       });
       if (!inv?.id) throw new Error("failed to create invoice");
-      setInvoiceCustomerOpen(false);
+      setInvoiceReview(null);
       setInvoiceResult({
         id: inv.id,
-        ...(custEmail ? { customerEmail: custEmail } : {}),
-        ...(custPhone ? { customerPhone: custPhone } : {}),
+        ...(invoiceReview.custEmail
+          ? { customerEmail: invoiceReview.custEmail }
+          : {}),
+        ...(invoiceReview.custPhone
+          ? { customerPhone: invoiceReview.custPhone }
+          : {}),
       });
     } catch (err) {
       setError(
@@ -3561,7 +3787,7 @@ export default function AsstChat({
           ? (
             <div class="chat__empty">
               {!priceCaptureOpen && !awaitingJobDetails && !jobOptionsOpen &&
-                !invoiceCustomerOpen && !invoiceResult && (
+                !invoiceCustomerOpen && !invoiceReview && !invoiceResult && (
                 <>
                   <div class="chat__empty-icon">
                     <img src="/logo-monster.png" alt="" />
@@ -3576,48 +3802,12 @@ export default function AsstChat({
                   <div class="chat__jobopts">
                     <div class="chat__jobopts-head">
                       {
-                        /* Roadmap p.8: every step needs a working Back. In
-                          confirm mode (pre-quote) Back returns to the details
-                          entry with the typed text restored; in polish mode
-                          the picker is re-openable from the review CTA, so
-                          backing out just returns to the chat without losing
-                          answers. */
+                        /* Single-back rule: no in-widget back button. The
+                          header's universal back (pm:asst-back) undoes this
+                          view — confirm mode returns to the details entry
+                          with the typed text restored; polish mode closes
+                          the picker (re-openable from the review CTA). */
                       }
-                      <button
-                        type="button"
-                        data-cy="wizard-back"
-                        class="chat__price-back"
-                        onClick={() => {
-                          if (pickerMode === "confirm") {
-                            setJobOptionsOpen(false);
-                            setPickerMode("polish");
-                            setSubmittedJobDetails(null);
-                            setAwaitingJobDetails(true);
-                            setDraft(pendingJobDetailsRaw ?? "");
-                            return;
-                          }
-                          pendingReviewCtaRef.current = null;
-                          setJobOptionsOpen(false);
-                        }}
-                        aria-label={tFor(lang, "common.back")}
-                      >
-                        <svg
-                          viewBox="0 0 16 16"
-                          width="14"
-                          height="14"
-                          aria-hidden="true"
-                        >
-                          <path
-                            d="M10 3L5 8l5 5"
-                            stroke="currentColor"
-                            stroke-width="2.2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            fill="none"
-                          />
-                        </svg>
-                        {tFor(lang, "common.back")}
-                      </button>
                       <h4 class="chat__jobopts-title">
                         {pickerMode === "confirm"
                           ? tFor(lang, "asstChat.jobOpts.confirmHeading")
@@ -3951,27 +4141,55 @@ export default function AsstChat({
                             ? (
                               /* Roadmap p.16: explicit confirm-details step —
                                  shows the collected details and confirms on
-                                 click, advancing to the pricing options. */
-                              <button
-                                type="button"
-                                data-cy="confirm-details"
-                                class="chat__confirm-details"
-                                disabled={sending}
-                                onClick={applyJobOption}
-                              >
-                                <span class="chat__confirm-details-label">
+                                 click, advancing to the pricing options.
+                                 UX-41: the summary strip stays, but the
+                                 standard button-styled advance control every
+                                 other step renders comes back below it — the
+                                 green strip alone read as a passive summary,
+                                 not the step's way forward. */
+                              <>
+                                <button
+                                  type="button"
+                                  data-cy="confirm-details"
+                                  class="chat__confirm-details"
+                                  disabled={sending}
+                                  onClick={applyJobOption}
+                                >
+                                  <span class="chat__confirm-details-label">
+                                    {sending
+                                      ? tFor(lang, "asstChat.settingUp")
+                                      : tFor(
+                                        lang,
+                                        "asstChat.confirmDetails.cta",
+                                      )}
+                                  </span>
+                                  {pendingJobDetailsRaw
+                                    ? (
+                                      <span class="chat__confirm-details-text">
+                                        {pendingJobDetailsRaw}
+                                      </span>
+                                    )
+                                    : null}
+                                </button>
+                                <button
+                                  type="button"
+                                  class="chat__price-continue"
+                                  disabled={sending}
+                                  onClick={applyJobOption}
+                                >
                                   {sending
-                                    ? tFor(lang, "asstChat.settingUp")
-                                    : tFor(lang, "asstChat.confirmDetails.cta")}
-                                </span>
-                                {pendingJobDetailsRaw
-                                  ? (
-                                    <span class="chat__confirm-details-text">
-                                      {pendingJobDetailsRaw}
-                                    </span>
-                                  )
-                                  : null}
-                              </button>
+                                    ? (
+                                      <>
+                                        <span
+                                          class="spinner"
+                                          aria-hidden="true"
+                                        />{" "}
+                                        {tFor(lang, "asstChat.settingUp")}
+                                      </>
+                                    )
+                                    : tFor(lang, "asstChat.continue")}
+                                </button>
+                              </>
                             )
                             : (
                               <button
@@ -4074,6 +4292,36 @@ export default function AsstChat({
                           )}
                       </div>
                     </div>
+                    {/* UX-32: one-tap chips for the accepted job(s) — the
+                        facturar flow uses what the app already knows. */}
+                    {flowChip === "invoiceDone" && !submittedJobDetails &&
+                      acceptedJobChips.length > 0 && (
+                      <div
+                        class="chat__accepted-jobs"
+                        style="display:flex;flex-direction:column;gap:8px;margin:10px 0 0"
+                      >
+                        {acceptedJobChips.map((j, i) => (
+                          <button
+                            type="button"
+                            key={`${j.jobName}-${i}`}
+                            class="chat__empty-prompt chat__accepted-job"
+                            onClick={() => {
+                              pushHistory();
+                              setPendingJobDetailsRaw(j.jobName);
+                              setSubmittedJobDetails(j.jobName);
+                              setAwaitingJobDetails(false);
+                              if (j.totalCents > 0) {
+                                setPriceCents(j.totalCents);
+                              }
+                              setPrefillCustomerName(j.customerName ?? null);
+                              setPriceCaptureOpen(true);
+                            }}
+                          >
+                            {acceptedJobChipLabel(j, lang)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {/* Roadmap p.5: "Write it myself" — a structured editor
                         (one item per line) with the "Professionalize that"
                         accept/edit proposal loop. */}
@@ -4351,6 +4599,60 @@ export default function AsstChat({
                     </div>
                   </div>
                 )
+                : invoiceReview
+                ? (
+                  // UX-31: review BEFORE save — amount, customer, and an
+                  // editable due date (+30-day default, like the /invoices
+                  // modal). Nothing is persisted until the confirm click.
+                  <div class="chat__price-capture">
+                    {/* Single-back rule: the header back undoes this view
+                      (invoice review → customer step). */}
+                    <h3 class="chat__price-title">
+                      {tFor(lang, "asstChat.invoiceFlow.reviewTitle")}
+                    </h3>
+                    <div style="margin:10px 0;font-size:14px;line-height:1.6">
+                      <div>
+                        <strong>
+                          ${((pendingPriceCents ?? 0) / 100).toLocaleString(
+                            "en-US",
+                          )}
+                        </strong>
+                        {invoiceReview.customerName
+                          ? ` — ${invoiceReview.customerName}`
+                          : ""}
+                      </div>
+                      <label style="display:block;margin-top:10px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
+                        {tFor(lang, "asstChat.invoiceFlow.dueDateLabel")}
+                        <input
+                          type="date"
+                          data-cy="invoice-flow-due"
+                          value={invoiceDueDate}
+                          onInput={(e) =>
+                            setInvoiceDueDate(
+                              (e.target as HTMLInputElement).value,
+                            )}
+                          style="display:block;margin-top:6px;padding:10px 12px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit"
+                        />
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      class="chat__price-continue"
+                      data-cy="invoice-flow-save"
+                      disabled={sending || !invoiceDueDate}
+                      onClick={() => void saveInvoiceFromReview()}
+                    >
+                      {sending
+                        ? (
+                          <>
+                            <span class="spinner" aria-hidden="true" />{" "}
+                            {tFor(lang, "asstChat.settingUp")}
+                          </>
+                        )
+                        : tFor(lang, "asstChat.invoiceFlow.saveCta")}
+                    </button>
+                  </div>
+                )
                 : invoiceCustomerOpen
                 ? (
                   // Customer step of the invoice flow — the SAME wizard
@@ -4358,38 +4660,12 @@ export default function AsstChat({
                   // dropdown + "+ New Customer" form), so the assistant has
                   // one customer-pick interaction everywhere.
                   <div class="chat__price-capture">
-                    <div class="chat__price-capture-head">
-                      <button
-                        type="button"
-                        data-cy="wizard-back"
-                        class="chat__price-back"
-                        onClick={() => {
-                          setInvoiceCustomerOpen(false);
-                          setPriceCaptureOpen(true);
-                        }}
-                        aria-label={tFor(lang, "common.back")}
-                      >
-                        <svg
-                          viewBox="0 0 16 16"
-                          width="14"
-                          height="14"
-                          aria-hidden="true"
-                        >
-                          <path
-                            d="M10 3L5 8l5 5"
-                            stroke="currentColor"
-                            stroke-width="2.2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            fill="none"
-                          />
-                        </svg>
-                        {tFor(lang, "common.back")}
-                      </button>
-                    </div>
+                    {/* Single-back rule: the header back undoes this view
+                      (invoice customer step → price capture). */}
                     <CustomerStepPanel
                       ownerEmail={from?.email}
                       ownerPhone={from?.phone}
+                      initialName={prefillCustomerName ?? undefined}
                       sending={sending}
                       lang={lang}
                       onSubmit={createInvoiceFromFlow}
@@ -4400,30 +4676,8 @@ export default function AsstChat({
                 ? (
                   <div class="chat__price-capture">
                     <div class="chat__price-capture-head">
-                      <button
-                        type="button"
-                        data-cy="wizard-back"
-                        class="chat__price-back"
-                        onClick={wizardStepBack}
-                        aria-label={tFor(lang, "common.back")}
-                      >
-                        <svg
-                          viewBox="0 0 16 16"
-                          width="14"
-                          height="14"
-                          aria-hidden="true"
-                        >
-                          <path
-                            d="M10 3L5 8l5 5"
-                            stroke="currentColor"
-                            stroke-width="2.2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            fill="none"
-                          />
-                        </svg>
-                        {tFor(lang, "common.back")}
-                      </button>
+                      {/* Single-back rule: the header back undoes this view
+                        (price capture → details entry, wizardStepBack). */}
                       <h4 class="chat__price-title">
                         {suggestPricing
                           ? tFor(lang, "asstChat.price.pickTitle")
@@ -4509,6 +4763,11 @@ export default function AsstChat({
                     )}
                     <div ref={moneyBoxRef}>
                       <MoneyInput
+                        // UX-04: seed the picker with the $-amount the user
+                        // already typed; key remounts it per details text so
+                        // a re-entered flow never shows a stale value.
+                        key={pendingJobDetailsRaw ?? "blank"}
+                        initialCents={priceCents ?? 0}
                         autoFocus={!suggestPricing}
                         onChange={setPriceCents}
                         onSubmit={(cents) => {
@@ -4833,18 +5092,34 @@ export default function AsstChat({
                   // succeeded with a `to:` override.
                   const ctaIdx = visible.indexOf(m);
                   let dispatchedTo: string | undefined;
+                  let dispatchedChannel: "email" | "sms" | undefined;
                   let dispatchFailReason: string | undefined;
                   if (reviewed && ctaIdx >= 0) {
                     for (let i = ctaIdx + 1; i < visible.length; i++) {
                       const next = visible[i];
                       if (next.kind !== "phase_divider") continue;
+                      // UX-03: read BOTH channels — an SMS-only success used
+                      // to leave dispatchedTo empty, so the card claimed
+                      // sent-✓ while its sub demanded an email "to deliver".
                       const np = (next.payload ?? {}) as {
                         emailedTo?: string;
+                        textedTo?: string;
                         emailFailureReason?: string;
+                        smsFailureReason?: string;
                       };
-                      if (np.emailedTo || np.emailFailureReason) {
-                        dispatchedTo = np.emailedTo;
-                        dispatchFailReason = np.emailFailureReason;
+                      if (
+                        np.emailedTo || np.textedTo ||
+                        np.emailFailureReason || np.smsFailureReason
+                      ) {
+                        if (np.emailedTo) {
+                          dispatchedTo = np.emailedTo;
+                          dispatchedChannel = "email";
+                        } else if (np.textedTo) {
+                          dispatchedTo = np.textedTo;
+                          dispatchedChannel = "sms";
+                        }
+                        dispatchFailReason = np.emailFailureReason ??
+                          np.smsFailureReason;
                         break;
                       }
                     }
@@ -5169,6 +5444,39 @@ export default function AsstChat({
                               </div>
                             )
                             : null}
+                          {/* UX-06: never silently show the base language —
+                              surface the live translation state when the
+                              toggled language's details aren't ready (in
+                              flight, failed, or never produced at all). */}
+                          {translationPendingLangs.has(previewLang)
+                            ? (
+                              <div
+                                class="quote-review__translation-state"
+                                role="status"
+                                style="margin:10px 14px 0;padding:8px 12px;background:var(--mint-100,#e8f3e0);border-radius:10px;font-size:12.5px;color:var(--fg-muted,#6b7560)"
+                              >
+                                {tFor(
+                                  lang,
+                                  "asstChat.preview.translationPending",
+                                )}
+                              </div>
+                            )
+                            : previewLang !== lang &&
+                                !quote?.descriptionByLang?.[previewLang]
+                                  ?.trim()
+                            ? (
+                              <div
+                                class="quote-review__translation-state"
+                                role="alert"
+                                style="margin:10px 14px 0;padding:8px 12px;background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.25);border-radius:10px;font-size:12.5px;color:var(--pink-700,#d94e4e)"
+                              >
+                                {tFor(
+                                  lang,
+                                  "asstChat.preview.translationMissing",
+                                )}
+                              </div>
+                            )
+                            : null}
 
                           {
                             /* Roadmap p.5 (Preview.docx): FROM = the contractor.
@@ -5186,6 +5494,23 @@ export default function AsstChat({
                                 <div class="quote-review__hero-name">
                                   {from.business || from.name}
                                 </div>
+                                {/* UX-26(b)/UX-27: the placeholder account
+                                    name is not a finished identity — warn
+                                    and invite the fix instead of presenting
+                                    "Nuevo usuario" as the sender. */}
+                                {!from.business?.trim() &&
+                                  isPlaceholderName(from.name) && (
+                                  <a
+                                    href="/settings"
+                                    class="quote-review__from-warn"
+                                    style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:700;color:var(--pink-700,#d94e4e);text-decoration:none"
+                                  >
+                                    ⚠ {tFor(
+                                      previewLang,
+                                      "asstChat.preview.fromNeedsName",
+                                    )}
+                                  </a>
+                                )}
                                 <div class="quote-review__hero-meta">
                                   {from.name && from.business
                                     ? <span>{from.name}</span>
@@ -5194,7 +5519,11 @@ export default function AsstChat({
                                     ? (
                                       <>
                                         <span class="quote-review__dot">·</span>
-                                        <span>{from.phone}</span>
+                                        {/* UX-15: one phone formatter
+                                            everywhere — never raw E.164. */}
+                                        <span>
+                                          {formatPhoneDisplay(from.phone)}
+                                        </span>
                                       </>
                                     )
                                     : null}
@@ -5305,7 +5634,13 @@ export default function AsstChat({
                                         e.currentTarget as HTMLElement,
                                       )}
                                   >
-                                    {customer.phoneNumber ?? ""}
+                                    {/* UX-15: display-formatted, not the
+                                        raw stored digits. */}
+                                    {customer.phoneNumber
+                                      ? formatPhoneDisplay(
+                                        customer.phoneNumber,
+                                      )
+                                      : ""}
                                   </span>
                                 </div>
                                 {customerPickerOpen
@@ -5902,7 +6237,11 @@ export default function AsstChat({
                                           sendChannel,
                                           previewLang,
                                         )}
-                                    disabled={sending}
+                                    // UX-02: an accepted deal offers no live
+                                    // re-send of the same agreement.
+                                    disabled={sending ||
+                                      (quoteAccepted &&
+                                        reviewDocType !== "invoice")}
                                   >
                                     <I d={ICN.send} size={14} sw={2.4} />
                                     {sending
@@ -6128,7 +6467,12 @@ export default function AsstChat({
                                   {sentRecipient
                                     ? (
                                       <>
-                                        {tFor(lang, "asstChat.cta.emailedTo")}
+                                        {tFor(
+                                          lang,
+                                          dispatchedChannel === "sms"
+                                            ? "asstChat.cta.textedTo"
+                                            : "asstChat.cta.emailedTo",
+                                        )}
                                         {" "}
                                         <code>{sentRecipient}</code>
                                       </>
@@ -6255,39 +6599,11 @@ export default function AsstChat({
                         <div class="wiz">
                           <div class="wiz__step">
                             {
-                              /* Step-level Back (roadmap p.2/p.8): every wizard
-                                step after Job Details carries a visible Back.
-                                It routes through the SAME universal resolver as
-                                the header button (pm:asst-back): rewind a step
-                                → pop an in-chat view → exit to /dashboard. */
+                              /* Single-back rule: no step-level Back. The
+                                header's universal back (pm:asst-back) rewinds
+                                the active wizard step via the shared
+                                resolver. */
                             }
-                            <button
-                              type="button"
-                              data-cy="wizard-back"
-                              class="wiz__back"
-                              disabled={sending}
-                              onClick={() =>
-                                globalThis.dispatchEvent(
-                                  new CustomEvent("pm:asst-back"),
-                                )}
-                            >
-                              <svg
-                                viewBox="0 0 16 16"
-                                width="14"
-                                height="14"
-                                aria-hidden="true"
-                              >
-                                <path
-                                  d="M10 3L5 8l5 5"
-                                  stroke="currentColor"
-                                  stroke-width="2.2"
-                                  stroke-linecap="round"
-                                  stroke-linejoin="round"
-                                  fill="none"
-                                />
-                              </svg>
-                              {tFor(lang, "common.back")}
-                            </button>
                             {
                               /* No "Step N of 10" label: the flow has an
                                 unnumbered Job Details picker after the wizard,
@@ -6318,6 +6634,8 @@ export default function AsstChat({
                                       setPrecommittedKind(null)}
                                     ownerEmail={from?.email}
                                     ownerPhone={from?.phone}
+                                    initialName={prefillCustomerName ??
+                                      undefined}
                                     sending={sending}
                                     lang={lang}
                                     onSubmit={(optionId, body) =>
@@ -6848,7 +7166,8 @@ export default function AsstChat({
         // set): that screen is tap-only — the user sends via the card's button,
         // so a text box underneath just invites stray typing.
         const composerHidden = priceCaptureOpen || jobOptionsOpen ||
-          invoiceCustomerOpen || invoiceResult !== null ||
+          invoiceCustomerOpen || invoiceReview !== null ||
+          invoiceResult !== null ||
           hasUnansweredWizard || previewCtaId !== null;
         if (composerHidden) return null;
         return (
@@ -7167,7 +7486,6 @@ function RecordingPanel({
  * a successful pick via the onSubmit callback, which routes through the
  * shared wizard answer pipeline.
  * =========================================================================== */
-type CustomerStepView = "list" | "form";
 type CustomerKind = "business" | "person";
 
 function CustomerStepPanel(props: {
@@ -7184,6 +7502,10 @@ function CustomerStepPanel(props: {
    *  sent to the contractor instead of the customer. */
   ownerEmail?: string;
   ownerPhone?: string;
+  /** UX-04: the name candidate extracted from the typed quick-quote
+   *  sentence ("para la familia Nguyen" → "Familia Nguyen") — prefills the
+   *  create-form name input so the user isn't asked what they already said. */
+  initialName?: string;
   sending: boolean;
   lang?: Lang;
   onSubmit: (
@@ -7208,20 +7530,20 @@ function CustomerStepPanel(props: {
     onKindConsumed,
     ownerEmail,
     ownerPhone,
+    initialName,
     sending,
     lang = "en",
     onSubmit,
   } = props;
-  // Two views, walked in order:
-  //   1. list — Use [bound] from chat / pick existing / create a new
-  //             [business|person]. The kind itself is picked on the
-  //             lock-quote CTA, not here, so this is the entry point.
-  //   2. form — name + phone + email, with the heading swapped to ask for
-  //             the right thing ("What is the business name?" etc.)
+  // Two views (shared/quote-flow/customer-step.ts): the pick LIST whenever
+  // there is anyone to pick — existing customers must be pickable, never
+  // buried — and the create FORM directly when there is nobody to pick.
   // `initialKind` is supplied by the lock-quote CTA. On the rare edge
   // case of a page reload with no precommit, we fall back to "person"
   // (the most common kind) rather than blocking the user.
-  const [view, setView] = useState<CustomerStepView>("list");
+  const [view, setView] = useState<CustomerStepView>(
+    customerStepEntryView(null, !!boundCustomer),
+  );
   const [kind] = useState<CustomerKind>(initialKind ?? "person");
 
   // Consume the precommitted kind exactly once so the parent can clear it.
@@ -7233,7 +7555,15 @@ function CustomerStepPanel(props: {
   const [loadingList, setLoadingList] = useState(true);
   const [search, setSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [createName, setCreateName] = useState("");
+  const [createName, setCreateName] = useState(initialName ?? "");
+  // The prefill candidate can arrive after mount (sessionStorage hand-off
+  // effect) — adopt it only while the field is still untouched.
+  useEffect(() => {
+    if (initialName && createName.trim().length === 0) {
+      setCreateName(initialName);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialName]);
   /** Roadmap p.7: the "Who is this for?" step also collects a Business
    *  Name. Optional — an empty value never blocks Next. */
   const [createBusiness, setCreateBusiness] = useState("");
@@ -7251,7 +7581,11 @@ function CustomerStepPanel(props: {
           setCustomers(list);
           // Fresh users have nobody to pick — jump straight to the
           // "Who is this for?" create form instead of an empty dropdown.
-          if (list.length === 0 && !boundCustomer) setView("form");
+          // (Only ever downgrade list→form here: forcing "list" could yank
+          // a user who already opened the create form themselves.)
+          if (customerStepEntryView(list.length, !!boundCustomer) === "form") {
+            setView("form");
+          }
         }
       })
       .catch((err) => {
@@ -7411,14 +7745,24 @@ function CustomerStepPanel(props: {
             >
               {tFor(lang, "common.next")}
             </button>
-            <button
-              type="button"
-              class="cust-create__btn"
-              onClick={backToList}
-              disabled={sending}
-            >
-              {tFor(lang, "common.back")}
-            </button>
+            {/* Single-back rule: no back button inside the widget. When
+                there is anyone to pick, offer the pick list as a FORWARD
+                affordance instead — existing customers must be pickable,
+                never buried behind an "Atrás". */}
+            {formOffersPickExisting(
+              customers?.length ?? null,
+              !!boundCustomer,
+            ) && (
+              <button
+                type="button"
+                class="cust-create__btn"
+                data-cy="customer-pick-existing"
+                onClick={backToList}
+                disabled={sending}
+              >
+                {tFor(lang, "asstChat.customerStep.existingTrigger")}
+              </button>
+            )}
           </div>
         </div>
       </div>

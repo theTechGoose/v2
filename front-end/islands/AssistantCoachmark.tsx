@@ -49,6 +49,7 @@ export default function AssistantCoachmark(
       alreadyShown = globalThis.localStorage.getItem(STORAGE_KEY) === "1";
     } catch { /* SSR-safe */ }
     if (alreadyShown) return;
+    let alive = true;
     let tries = 0;
     const find = () => {
       tries++;
@@ -78,7 +79,27 @@ export default function AssistantCoachmark(
       }
       if (tries < 30) globalThis.setTimeout(find, 120);
     };
-    find();
+    // UX-07: the coachmark teaches the assistant — a user who has already
+    // used it (any conversation of their own, on ANY browser) needs no veil.
+    // localStorage alone can't know that, so ask the API first; only a
+    // conversation-less account proceeds to the spotlight find-loop.
+    (async () => {
+      try {
+        const res = await fetch("/api/agents/conversations?limit=1", {
+          headers: { accept: "application/json" },
+        });
+        if (res.ok) {
+          const rows = await res.json();
+          if (Array.isArray(rows) && rows.length > 0) {
+            try {
+              globalThis.localStorage.setItem(STORAGE_KEY, "1");
+            } catch { /* ignore */ }
+            return; // mastery — never show
+          }
+        }
+      } catch { /* offline/API error → fall through to the localStorage rule */ }
+      if (alive) find();
+    })();
     const onResize = () => {
       const el = document.querySelector(
         'a[href="/assistant"].sb__textus, .sb__textus[href="/assistant"]',
@@ -86,7 +107,10 @@ export default function AssistantCoachmark(
       if (el instanceof HTMLElement) measure(el);
     };
     globalThis.addEventListener("resize", onResize);
-    return () => globalThis.removeEventListener("resize", onResize);
+    return () => {
+      alive = false;
+      globalThis.removeEventListener("resize", onResize);
+    };
   }, []);
 
   function measure(el: HTMLElement) {
@@ -94,15 +118,28 @@ export default function AssistantCoachmark(
     setBox({ top: r.top, left: r.left, width: r.width, height: r.height });
   }
 
-  // "Click anywhere to dismiss" — bound at the document level (capture)
+  // "Tap anywhere to dismiss" — bound at the document level (capture)
   // because the overlay itself is pointer-events:none: it must never trap a
   // click aimed at the app underneath (e.g. the sidebar collapse arrow or
-  // the assistant CTA). The user's first click both acts AND dismisses.
+  // the assistant CTA). The user's first gesture both acts AND dismisses.
+  // UX-07: the gesture's FIRST event (pointerdown) dismisses — a press-drag
+  // whose click never completes (intercepted by an underlying panel) must
+  // not leave the veil up — and Escape works like every dismissible layer.
   useEffect(() => {
     if (!visible || fadingOut) return;
     const onDocClick = () => dismiss();
+    const onDocPointerDown = () => dismiss();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") dismiss();
+    };
     document.addEventListener("click", onDocClick, true);
-    return () => document.removeEventListener("click", onDocClick, true);
+    document.addEventListener("pointerdown", onDocPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("click", onDocClick, true);
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
   }, [visible, fadingOut]);
 
   function dismiss() {
@@ -135,6 +172,7 @@ export default function AssistantCoachmark(
   return (
     <div
       onClick={dismiss}
+      onPointerDown={dismiss}
       style={`position:fixed;inset:0;z-index:9999;pointer-events:none;transition:opacity 320ms ease-out, backdrop-filter 320ms ease-out;opacity:${
         fadingOut ? 0 : 1
       };backdrop-filter:${
@@ -143,6 +181,19 @@ export default function AssistantCoachmark(
       aria-label={tFor(lang, "assistantCoachmark.ariaLabel")}
       role="dialog"
     >
+      {
+        /* UX-07: a small centered dismiss hotspot. The overlay itself stays
+          pointer-events:none so the user's first gesture still reaches the
+          app underneath (acting AND dismissing via the document-level
+          pointerdown/click listeners) — this hotspot only anchors the
+          overlay's own hit-testing so the layer registers as the element
+          at its center. */
+      }
+      <div
+        onClick={dismiss}
+        onPointerDown={dismiss}
+        style="position:absolute;left:50%;top:50%;width:48px;height:48px;transform:translate(-50%,-50%);pointer-events:auto"
+      />
       {
         /* SVG mask: dark overlay everywhere EXCEPT a rounded rect
           around the assistant button. Uses evenodd fill rule so the

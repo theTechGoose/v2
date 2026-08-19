@@ -5,6 +5,8 @@ import {
 } from "@agents/domain/business/llm/base/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { disambiguateTitle, versionTitle } from "#quote-flow/version-titles.ts";
+import { summarizeJobName } from "#quote-flow/job-name.ts";
+import { clampSummary } from "#quote-flow/summary-clamp.ts";
 
 export interface GenerateJobOptionsInput {
   userId: string;
@@ -125,7 +127,7 @@ export class GenerateJobOptions {
   }
 }
 
-function normalizeOneLang(o: unknown): JobOptionLang | null {
+function normalizeOneLang(o: unknown, lang: Lang): JobOptionLang | null {
   const obj = o as { jobName?: unknown; summary?: unknown; bullets?: unknown };
   const bullets = Array.isArray(obj?.bullets)
     ? obj.bullets
@@ -138,8 +140,8 @@ function normalizeOneLang(o: unknown): JobOptionLang | null {
     ? clampSummary(obj.summary)
     : clampSummary(bullets[0]);
   const jobName = typeof obj?.jobName === "string" && obj.jobName.trim()
-    ? clampJobName(obj.jobName)
-    : deriveJobName(summary);
+    ? clampJobName(obj.jobName, lang)
+    : deriveJobName(summary, lang);
   return { jobName, summary, bullets };
 }
 
@@ -159,10 +161,11 @@ function normalizeOptions(
     // language the model skipped.
     const primaryLang = normalizeOneLang(
       (src as Record<string, unknown>)?.[primary],
+      primary,
     );
     if (!primaryLang) continue;
     for (const l of langs) {
-      byLang[l] = normalizeOneLang((src as Record<string, unknown>)?.[l]) ??
+      byLang[l] = normalizeOneLang((src as Record<string, unknown>)?.[l], l) ??
         primaryLang;
     }
     // Disambiguate duplicate primary jobNames across the option set.
@@ -201,13 +204,13 @@ function tryParseJson(s: string): { options?: unknown } | undefined {
   return undefined;
 }
 
-function clampSummary(s: string): string {
-  const cleaned = s.trim().replace(/\s+/g, " ");
-  const words = cleaned.split(" ");
-  return words.length <= 8 ? cleaned : words.slice(0, 8).join(" ");
-}
+// UX-18: summaries are clamped by the ONE shared helper (visible "…" on
+// truncation, never a silent mid-phrase cut) — imported above.
 
-function clampJobName(s: string): string {
+/** UX-05/UX-41: Spanish names are sentence case with lowercase connectors,
+ *  never blanket Title Case — the shared lang-aware derivation owns that. */
+function clampJobName(s: string, lang: Lang): string {
+  if (lang === "es") return summarizeJobName(s, "es");
   const cleaned = s.trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(
     /\s+/g,
     " ",
@@ -216,8 +219,8 @@ function clampJobName(s: string): string {
   return words.map(titleCaseWord).join(" ");
 }
 
-function deriveJobName(summary: string): string {
-  return clampJobName(summary);
+function deriveJobName(summary: string, lang: Lang): string {
+  return clampJobName(summary, lang);
 }
 
 function titleCaseWord(w: string): string {
@@ -239,7 +242,7 @@ function fallbackOptions(raw: string, langs: Lang[]): JobOption[] {
 
   const perLang = (lang: Lang, variant: 0 | 1 | 2): JobOptionLang => {
     const summary = clampSummary(base[0] || t(lang, "generateJobOptions.newJob"));
-    const jobName = deriveJobName(summary);
+    const jobName = deriveJobName(summary, lang);
     const bullets = variant === 0
       ? base
       : variant === 1

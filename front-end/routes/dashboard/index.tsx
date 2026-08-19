@@ -1,6 +1,7 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { tFor } from "../../lib/i18n.ts";
+import { isPlaceholderName } from "../../../shared/quote-flow/outbound-identity.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import DashboardPage from "../../islands/DashboardPage.tsx";
@@ -34,9 +35,16 @@ const MONTH_KEYS = [
 export default define.page(function Dashboard(ctx) {
   const user = ctx.state.user;
   const lang = user?.language === "es" ? "es" : "en";
-  const greetingName =
-    (user?.name?.trim() || tFor(lang, "common.thereFallback"))
-      .split(" ")[0];
+  // UX-27: the seeded placeholder ("Nuevo usuario"/"New user") is not a real
+  // name — never greet the user as "Nuevo"; greet namelessly instead.
+  const realName = isPlaceholderName(user?.name)
+    ? undefined
+    : user?.name?.trim();
+  const greetingName = (realName || tFor(lang, "common.thereFallback"))
+    .split(" ")[0];
+  const greetingOverride = realName
+    ? undefined
+    : tFor(lang, "dashTopbar.greetingNoName");
   const now = new Date();
   const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
     tFor(lang, MONTH_KEYS[now.getMonth()])
@@ -64,6 +72,7 @@ export default define.page(function Dashboard(ctx) {
           <DashTopbar
             greetingDate={greetingDate}
             greetingName={greetingName}
+            greetingOverride={greetingOverride}
           />
           <div class="content">
             <DashboardPage />

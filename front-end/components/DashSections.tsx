@@ -124,15 +124,13 @@ interface KpisProps {
 
 export function Kpis(props: KpisProps) {
   const lang = props.lang ?? "en";
-  // "Avg. paid job" — only counts paid invoices. Reads as "—" with an
-  // honest sub when there's no paid history yet (was "$0 / last 30 days",
-  // which looked broken).
-  const avgJobVal = props.avgJob > 0
-    ? `$${props.avgJob.toLocaleString()}`
-    : tFor(lang, "kpis.avgJob.none");
+  // "Avg. paid job" — only counts paid invoices. UX-20: the VALUE slot holds
+  // a compact value ("—" when there's no paid history yet); the explanatory
+  // sentence belongs in the sub line, never wrapped inside a KPI number.
+  const avgJobVal = props.avgJob > 0 ? `$${props.avgJob.toLocaleString()}` : "—";
   const avgJobSub = props.avgJob > 0
     ? tFor(lang, "kpis.avgJob.trailingYear")
-    : "";
+    : tFor(lang, "kpis.avgJob.none");
   const items: Array<
     {
       icon: IconName;
@@ -342,7 +340,13 @@ export interface QuoteRow {
 }
 
 export function QuotesAwaiting(
-  { quotes, lang = "en" }: { quotes: QuoteRow[]; lang?: Lang },
+  { quotes, lang = "en", hasDecidedHistory = false }: {
+    quotes: QuoteRow[];
+    lang?: Lang;
+    /** UX-02: quotes WERE sent and got answered — the empty state must not
+     *  claim "no quotes were ever sent" over a user's first accepted win. */
+    hasDecidedHistory?: boolean;
+  },
 ) {
   const total = quotes.reduce(
     (s, q) => s + Number(q.amt.replace(/[^0-9.]/g, "")),
@@ -370,7 +374,12 @@ export function QuotesAwaiting(
       </div>
       {empty && (
         <div style="font-size:13px;color:var(--fg-muted);padding:8px 0 14px">
-          {tFor(lang, "quotesAwaiting.empty")}
+          {tFor(
+            lang,
+            hasDecidedHistory
+              ? "quotesAwaiting.emptyDecided"
+              : "quotesAwaiting.empty",
+          )}
         </div>
       )}
       {quotes.map((q, i) => (
@@ -554,6 +563,8 @@ export interface ActivityEntry {
   fg: string;
   html: string;
   time: string;
+  /** UX-20: where tapping the event goes (e.g. /quotes?open=<id>). */
+  href?: string;
 }
 
 export function Activity(
@@ -573,24 +584,42 @@ export function Activity(
           {tFor(lang, "activity.fullLog")}
         </a>
       </div>
-      {items.map((a, i) => (
-        <div class="activity-item" key={i}>
-          <div
-            class="activity-item__icon"
-            style={`background:${a.bg};color:${a.fg}`}
-          >
-            <I d={ICN[a.icon]} size={14} />
-          </div>
-          <div class="activity-item__text">
-            <span
-              // Trusted server-derived activity markup (no user input).
-              // deno-lint-ignore react-no-danger
-              dangerouslySetInnerHTML={{ __html: a.html }}
-            />
-            <div class="activity-item__time">{a.time}</div>
-          </div>
-        </div>
-      ))}
+      {items.map((a, i) => {
+        const body = (
+          <>
+            <div
+              class="activity-item__icon"
+              style={`background:${a.bg};color:${a.fg}`}
+            >
+              <I d={ICN[a.icon]} size={14} />
+            </div>
+            <div class="activity-item__text">
+              <span
+                // Trusted server-derived activity markup (no user input).
+                // deno-lint-ignore react-no-danger
+                dangerouslySetInnerHTML={{ __html: a.html }}
+              />
+              <div class="activity-item__time">{a.time}</div>
+            </div>
+          </>
+        );
+        // UX-20: an event with a destination is a link, not an inert row.
+        return a.href
+          ? (
+            <a
+              class="activity-item activity-item--link"
+              href={a.href}
+              key={i}
+            >
+              {body}
+            </a>
+          )
+          : (
+            <div class="activity-item" key={i}>
+              {body}
+            </div>
+          );
+      })}
     </div>
   );
 }

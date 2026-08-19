@@ -4512,6 +4512,12 @@ body {
   font-size: 10px;
   font-weight: 700;
 }
+/* UX-14: a desktop keyboard hint has no business inside a phone drawer. */
+@media (max-width: 768px) {
+  .threads__new-kbd {
+    display: none;
+  }
+}
 .threads__list {
   flex: 1;
   overflow-y: auto;
@@ -6094,6 +6100,13 @@ body {
 .cust-create__row .cust-pick__search {
   flex: 1;
   min-width: 0;
+}
+/* UX-13: at phone widths the half-width pair clips its own placeholders
+   ("Número de tel…", "Correo (opcio…") — stack them full-width instead. */
+@media (max-width: 480px) {
+  .cust-create__row {
+    flex-direction: column;
+  }
 }
 .cust-create__actions {
   display: flex;
@@ -7875,9 +7888,12 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* UX-35: anchor the step content near the bottom of the panel — where
+     the composer lives on conversational steps — instead of floating it
+     mid-viewport over a large dead band. */
+  justify-content: flex-end;
   text-align: center;
-  padding: 20px 32px;
+  padding: 20px 32px 28px;
   max-width: 480px;
   margin: 0 auto;
   gap: 12px;
@@ -8468,7 +8484,10 @@ body {
   padding-top: 0;
 }
 .chat__jobopts-title {
-  margin: 2px 0 0;
+  /* UX-41: clear the absolutely-positioned "Atrás" control the head hosts
+     (same 22px clearance .chat__price-title uses) — 2px let the two boxes
+     overlap on the version-confirm card. */
+  margin: 26px 0 0;
   font-size: 17px;
   font-weight: 700;
   color: var(--brand-teal, #1a535c);

@@ -46,6 +46,13 @@ declare global {
        *  The user is created on first login. Dev/local only. */
       loginAs(phoneNumber: string): Chainable<void>;
 
+      /** Land on the customer step's CREATE form regardless of entry view:
+       *  the step opens on the pick LIST when the account has saved
+       *  customers (single-back / pick-existing rules, 2026-08-19) and
+       *  directly on the form when it has none. Clicks "+ New customer"
+       *  when the list shows, then waits for the form. */
+      openCustomerCreateForm(): Chainable<void>;
+
       /** Start the REAL onboarding flow for `phoneNumber`. Wipes any
        *  prior KV record for that number, sends a real OTP, reads the
        *  pending code from KV, and verifies — landing the browser in
@@ -396,6 +403,19 @@ Cypress.Commands.add("seedQuoteToCash", (overrides = {}) => {
       });
     });
   });
+});
+
+Cypress.Commands.add("openCustomerCreateForm", () => {
+  // Either the create form (empty account) or the pick list (saved
+  // customers exist) renders — wait for whichever arrives, then make sure
+  // the create form is the one on screen.
+  cy.get(".cust-create, .wiz-opt--custom", { timeout: 20_000 }).should("exist");
+  cy.get("body").then(($b) => {
+    if ($b.find(".cust-create").length === 0) {
+      cy.get(".wiz-opt--custom").filter(":visible").first().click();
+    }
+  });
+  cy.get(".cust-create", { timeout: 10_000 }).should("be.visible");
 });
 
 export {};

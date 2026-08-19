@@ -49,6 +49,9 @@ export interface PipelineAggregate {
   decidedCount: number;
   /** Signed/accepted only — a sent quote is NOT an active job. */
   activeJobs: number;
+  /** INTEGER cents won (sum of estimatedTotal over WON, non-sample quotes)
+   *  — the "ganado / por facturar" money (UX-02). */
+  wonCents: number;
 }
 
 /** EnsureSampleQuote tags its row via this summary prefix (no flag yet). */
@@ -116,6 +119,7 @@ export function aggregatePipeline(
     lostCount: 0,
     decidedCount: 0,
     activeJobs: 0,
+    wonCents: 0,
   };
 
   for (const q of quotes) {
@@ -126,13 +130,27 @@ export function aggregatePipeline(
     else if (cls === "awaiting") {
       agg.awaitingCount += 1;
       agg.awaitingCents += Math.round(q.estimatedTotal ?? 0);
-    } else if (cls === "won") agg.wonCount += 1;
-    else agg.lostCount += 1;
+    } else if (cls === "won") {
+      agg.wonCount += 1;
+      agg.wonCents += Math.round(q.estimatedTotal ?? 0);
+    } else agg.lostCount += 1;
   }
 
   agg.decidedCount = agg.wonCount + agg.lostCount;
   agg.activeJobs = agg.wonCount; // only a signature creates a job
   return agg;
+}
+
+/**
+ * The customer a job renders under (UX-02): the quote's own link when
+ * present, else the linked agreement's — the assistant flow binds the
+ * customer to the CONTRACT only, and that win must still be visible.
+ */
+export function resolveJobCustomerId(
+  quote: { customerId?: string | null },
+  contract?: { customerId?: string | null } | null,
+): string | null {
+  return quote.customerId || contract?.customerId || null;
 }
 
 /**

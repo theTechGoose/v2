@@ -8,8 +8,10 @@ import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
+import { outboundSenderFirstName } from "#quote-flow/outbound-identity.ts";
 import type { PaymentMethod } from "@paperwork/dto/invoice.ts";
 import type { PaymentMethod as PaymentStorageMethod } from "@paperwork/dto/payment.ts";
 
@@ -42,6 +44,7 @@ export class ConfirmPayment {
     private sms: SmsService,
     private shortlinks: ShortLinkStore,
     private receiptPdf: RenderReceiptPdf,
+    private commsLog: LogPaperworkMessage,
     private bus: EventBus,
   ) {}
 
@@ -105,17 +108,18 @@ export class ConfirmPayment {
         const subject = t(lang, "confirmPayment.email.subject", {
           id: invoice.id.slice(0, 8).toUpperCase(),
         });
+        const htmlBody = renderReceiptHtml({
+          customer,
+          contractor,
+          businessName,
+          intent,
+          amount: intent.amount,
+          lang,
+        });
         await this.email.send({
           to: customer.email,
           subject,
-          htmlBody: renderReceiptHtml({
-            customer,
-            contractor,
-            businessName,
-            intent,
-            amount: intent.amount,
-            lang,
-          }),
+          htmlBody,
           ...(contractor?.email ? { cc: [contractor.email] } : {}),
           attachments: [{
             name: t(lang, "confirmPayment.email.attachmentName", {
@@ -124,6 +128,22 @@ export class ConfirmPayment {
             content: pdfBytes,
             contentType: "application/pdf",
           }],
+        });
+        // UX-30: the promised receipt must be auditable in the comms trail,
+        // like every other outbound paperwork dispatch.
+        await this.commsLog.run({
+          userId,
+          customerId: invoice.customerId,
+          channel: "email",
+          content: t(lang, "confirmPayment.email.body", {
+            amount: fmtUSD(intent.amount),
+            ref: "",
+          }),
+          subject,
+          htmlBody,
+          toAddress: customer.email,
+          paperworkId: invoice.id,
+          paperworkType: "invoice",
         });
       }
       if (customer?.phoneNumber) {
@@ -141,7 +161,9 @@ export class ConfirmPayment {
           shortUrl = `${appUrl}/s/${link.code}`;
         } catch { /* fall through to no-url body */ }
         const customerFirst = customer.name?.trim().split(/\s+/)[0];
-        const senderFirst = contractor?.name?.trim().split(/\s+/)[0];
+        // UX-26: the receipt sender token goes through the shared identity
+        // helper — the seeded placeholder ("Nuevo"/"New") never leaks out.
+        const senderFirst = outboundSenderFirstName(contractor?.name);
         const lead = customerFirst
           ? t(lang, "confirmPayment.sms.lead", { name: customerFirst })
           : "";
@@ -155,6 +177,16 @@ export class ConfirmPayment {
           tail,
         });
         await this.sms.send({ to: customer.phoneNumber, body });
+        // UX-30: log the receipt SMS to the comms trail.
+        await this.commsLog.run({
+          userId,
+          customerId: invoice.customerId,
+          channel: "text",
+          content: body,
+          toAddress: customer.phoneNumber,
+          paperworkId: invoice.id,
+          paperworkType: "invoice",
+        });
       }
     } catch (err) {
       console.error("[confirm-payment] receipt dispatch failed:", err);

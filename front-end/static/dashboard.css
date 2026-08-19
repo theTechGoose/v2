@@ -429,6 +429,19 @@ body {
   padding: 22px 16px 16px;
   gap: 14px;
 }
+.sb__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sb__head .sb__brand {
+  flex: 1;
+  padding: 0;
+}
+.sb--collapsed .sb__head {
+  flex-direction: column;
+  gap: 10px;
+}
 .sb__brand {
   display: flex;
   align-items: center;
@@ -461,7 +474,7 @@ body {
 .sb__brand-name {
   font-family: var(--font-heading);
   font-weight: 800;
-  font-size: 13px;
+  font-size: 12px;
   color: #fff;
   letter-spacing: -0.02em;
   line-height: 1.05;
@@ -684,20 +697,10 @@ body {
   border-top: 1px solid rgba(255, 255, 255, 0.10);
   padding-top: 8px;
 }
-.sb__bottom-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 4px 2px;
-}
-.sb__bottom-head .sb__label {
-  padding: 0;
-  margin: 0;
-}
 .sb__toggle {
-  width: 28px;
-  height: 28px;
-  border-radius: 9px;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.08);
   border: none;
   color: rgba(255, 255, 255, 0.65);
@@ -717,11 +720,14 @@ body {
 .sb--collapsed .sb__toggle {
   transform: rotate(180deg);
 }
-.sb--collapsed .sb__bottom-head {
+/* Collapsed rail: the account card shrinks to just the centered avatar —
+   the name/business text and the chevron would otherwise poke out clipped
+   at the rail edge. */
+.sb--collapsed .sb__footer {
   justify-content: center;
-  padding: 4px 0 2px;
 }
-.sb--collapsed .sb__bottom-head .sb__label {
+.sb--collapsed .sb__footer-text,
+.sb--collapsed .sb__footer-chev {
   display: none;
 }
 
@@ -739,6 +745,13 @@ body {
   transition: background 160ms, color 160ms, transform 160ms;
   padding: 0;
   margin-right: 8px;
+}
+/* UX-21: the hamburger belongs to the ≤640px slide-in drawer — on desktop
+   the full sidebar is already on screen, so a second nav system is noise. */
+@media (min-width: 641px) {
+  .topbar__menu {
+    display: none;
+  }
 }
 .topbar__menu:hover {
   background: #fff;
@@ -1768,6 +1781,15 @@ body {
   white-space: nowrap;
   flex-shrink: 0;
 }
+/* UX-09: at phone widths the activity header can't carry title + subtitle +
+   action in one row — the subtitle got squeezed into a one-word-per-line
+   sliver and the action clipped at the panel edge. Drop the subtitle; the
+   title + "Registro completo →" pair fits. */
+@media (max-width: 480px) {
+  #activity .panel__head > span:not([class]) {
+    display: none;
+  }
+}
 
 /* ------ Active jobs feed ------ */
 .job {
@@ -2044,6 +2066,16 @@ body {
 }
 .activity-item:last-child {
   border-bottom: none;
+}
+/* UX-20: linked feed rows keep the row look but read as tappable. */
+a.activity-item--link {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+a.activity-item--link:hover {
+  background: var(--mint-100, rgba(20, 72, 82, 0.05));
 }
 .activity-item__icon {
   width: 32px;

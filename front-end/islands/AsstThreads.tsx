@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { assistantClient, type Conversation } from "../clients/assistant.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
+import { threadTitle } from "../../shared/quote-flow/thread-title.ts";
 
 interface Props {
   initialThreads: Conversation[];
@@ -246,8 +247,12 @@ export default function AsstThreads(
 }
 
 function titleFor(c: Conversation, lang: Lang): string {
-  return c.customerName?.trim() || c.title?.trim() ||
-    tFor(lang, "asstThreads.newConversation");
+  // UX-14: name the thread by what it is about — "«job» · «customer»" —
+  // through the one shared derivation, never a wall of "Nueva conversación".
+  return threadTitle(
+    { jobName: c.jobName, customerName: c.customerName, title: c.title },
+    lang,
+  );
 }
 
 /**

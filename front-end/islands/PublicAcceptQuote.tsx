@@ -4,10 +4,13 @@ import { type Lang, tFor } from "../lib/i18n.ts";
 interface Props {
   quoteId: string;
   contractorFirstName?: string;
-  /** Notify parent so it can hide its sibling Decline/Ask buttons. */
-  onAccepted?: () => void;
+  /** Notify parent so it can hide its sibling Decline/Ask buttons. Carries
+   *  the typed name so a remounted success card keeps the UX-22 evidence. */
+  onAccepted?: (acceptedName?: string) => void;
   /** Render directly in the success state (used when remounted by parent). */
   initialAccepted?: boolean;
+  /** The name typed on accept — survives the parent's remount (UX-22). */
+  initialAcceptedName?: string;
   /** Outgoing-comms language (roadmap p.13). Customer-facing. */
   lang?: "en" | "es";
 }
@@ -39,8 +42,14 @@ function friendlyError(raw: string, lang: Lang = "en"): string {
 }
 
 export default function PublicAcceptQuote(
-  { quoteId, contractorFirstName, onAccepted, initialAccepted, lang = "en" }:
-    Props,
+  {
+    quoteId,
+    contractorFirstName,
+    onAccepted,
+    initialAccepted,
+    initialAcceptedName,
+    lang = "en",
+  }: Props,
 ) {
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -74,7 +83,7 @@ export default function PublicAcceptQuote(
         }
       }
       setStatus("ok");
-      onAccepted?.();
+      onAccepted?.(name.trim() || undefined);
     } catch (e) {
       setStatus("error");
       setErr(friendlyError((e as Error).message, lang));
@@ -85,12 +94,35 @@ export default function PublicAcceptQuote(
 
   if (status === "ok") {
     const who = contractorFirstName?.trim();
+    // UX-22: the immediate confirmation carries the SAME evidence the reload
+    // renders — status badge, who accepted, and the long-form date — not a
+    // thin "✓ accepted" that only fills in after a refresh.
+    const acceptedName = name.trim() || initialAcceptedName?.trim() || "";
+    const acceptedDate = new Date().toLocaleDateString(
+      lang === "es" ? "es-MX" : "en-US",
+      { year: "numeric", month: "long", day: "numeric" },
+    );
     return (
       <div style="margin-top:24px;background:rgba(81,152,67,0.10);border:1px solid rgba(72,158,95,0.30);border-radius:14px;padding:18px 20px;text-align:center">
+        {acceptedName && (
+          <div style="display:flex;justify-content:center;margin-bottom:10px">
+            <span style="background:rgba(81,152,67,0.12);color:#519843;font-weight:800;font-size:11px;letter-spacing:.10em;text-transform:uppercase;padding:6px 12px;border-radius:999px">
+              {tFor(lang, "status.accepted")}
+            </span>
+          </div>
+        )}
         <div style="font-weight:800;color:#519843;font-size:16px">
           {"✓ "}
           {tFor(lang, "publicAcceptQuote.success.title")}
         </div>
+        {acceptedName && (
+          <div style="margin-top:6px;color:#1c2c30;font-size:13.5px">
+            {tFor(lang, "publicQuote.acceptedByOn", {
+              name: acceptedName,
+              date: acceptedDate,
+            })}
+          </div>
+        )}
         <div style="margin-top:6px;color:#6b7a7e;font-size:13px">
           {who
             ? tFor(lang, "publicAcceptQuote.success.subNamed", { name: who })

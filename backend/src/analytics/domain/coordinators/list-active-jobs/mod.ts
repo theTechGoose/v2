@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { classifyQuoteForPipeline, isSampleQuote } from "#quote-flow/pipeline-stats.ts";
+import { classifyQuoteForPipeline, isSampleQuote, resolveJobCustomerId } from "#quote-flow/pipeline-stats.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore }    from "@paperwork/domain/data/quote-store/mod.ts";
 import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
@@ -94,7 +94,11 @@ export class ListActiveJobs {
       );
       if (cls !== "won") continue;
 
-      const customer = q.customerId ? customerById.get(q.customerId) : undefined;
+      // UX-02: the assistant's SMS flow binds the customer to the CONTRACT
+      // only — fall back to the agreement's link so the freshly won job
+      // still renders.
+      const customerId = resolveJobCustomerId(q, contract);
+      const customer = customerId ? customerById.get(customerId) : undefined;
       if (!customer) continue;          // can't render a job without a customer
 
       const relatedInvoices = contract ? (invoicesByContract.get(contract.id) ?? []) : [];

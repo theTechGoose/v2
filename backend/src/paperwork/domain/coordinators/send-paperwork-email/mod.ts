@@ -23,6 +23,7 @@ import {
   isPlaceholderName,
   outboundSenderName,
 } from "#quote-flow/outbound-identity.ts";
+import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
@@ -88,12 +89,29 @@ export class SendPaperworkEmail {
   ): Promise<SendPaperworkEmailResult> {
     const sender = await this.tryGetUser(userId);
     const rawBiz = await this.tryGetBusinessIdentity(userId);
-    // Per-send language override (the "Send in <lang>" button) beats the
-    // stored default. Overriding commsLanguage on the resolved identity lets
-    // every downstream subject/body helper honor it without new params.
-    const senderBiz = input.language && rawBiz
-      ? { ...rawBiz, commsLanguage: input.language }
-      : rawBiz;
+    // UX-28: ONE commsLanguage resolution for every outbound (explicit
+    // per-send pick → stored Settings default → en); an explicit pick is
+    // adopted as the stored default when none exists yet. Overriding
+    // commsLanguage on the resolved identity lets every downstream
+    // subject/body helper honor the resolution without new params.
+    const resolvedLang = resolveCommsLanguage({
+      override: input.language,
+      identityCommsLanguage: rawBiz?.commsLanguage,
+    });
+    if (
+      (input.language === "en" || input.language === "es") &&
+      rawBiz?.commsLanguage !== "en" && rawBiz?.commsLanguage !== "es"
+    ) {
+      try {
+        await this.identity.upsert(userId, { commsLanguage: input.language });
+      } catch (err) {
+        console.warn("[send-paperwork-email] commsLanguage adopt failed:", err);
+      }
+    }
+    const senderBiz = {
+      ...(rawBiz ?? {}),
+      commsLanguage: resolvedLang,
+    } as BusinessIdentity;
 
     // P-06 — the seeded placeholder account name ("Nuevo usuario"/"New user")
     // must never reach a customer. Resolve the outbound display name (real
