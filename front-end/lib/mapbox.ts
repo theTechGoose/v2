@@ -1,13 +1,11 @@
 /**
  * Mapbox forward-geocoding helper for US address autocomplete.
  *
- * The token is a publishable (pk.) Mapbox token — designed to ship in
- * client-side code. Scope/rotate it from the Mapbox dashboard if needed.
+ * NO token here: the browser calls the same-origin /api/geocode proxy
+ * (front-end/routes/api/geocode.ts), which attaches the MAPBOX_TOKEN env
+ * var server-side. Secrets never ship in source or in the client bundle.
  */
-const MAPBOX_TOKEN =
-  "REDACTED_ROTATED_TOKEN";
-
-const GEOCODE_URL = "https://api.mapbox.com/search/geocode/v6/forward";
+const GEOCODE_URL = "/api/geocode";
 
 export interface AddressSuggestion {
   /** One-line display label, e.g. "1600 Pennsylvania Ave, Lorain, OH 44052" */
@@ -45,14 +43,13 @@ export async function suggestAddresses(
   const q = query.trim();
   if (q.length < 3) return [];
   const stateCode = (opts.state ?? "").trim().toUpperCase();
-  const url = new URL(GEOCODE_URL);
+  const url = new URL(GEOCODE_URL, globalThis.location?.origin ?? "http://localhost");
   url.searchParams.set("q", stateCode ? `${q}, ${stateCode}` : q);
   url.searchParams.set("autocomplete", "true");
   url.searchParams.set("country", "us");
   url.searchParams.set("types", "address");
   url.searchParams.set("limit", stateCode ? "10" : "5");
   if (opts.lang) url.searchParams.set("language", opts.lang);
-  url.searchParams.set("access_token", MAPBOX_TOKEN);
   try {
     const res = await fetch(url, { signal: opts.signal });
     if (!res.ok) return [];
