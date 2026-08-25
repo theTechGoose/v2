@@ -404,11 +404,13 @@ function InvoiceDoc(
                       invoice.jobDetails?.description}
                     items={items}
                     total={agreementTotal ?? sumLineTotals(items)}
-                    // No duplicate numbers: the table renders only for
-                    // multi-line jobs (a single line repeats the amount-due
-                    // card), and the agreement-value card only when it
-                    // DIFFERS from this invoice's amount (i.e. this bill is
-                    // one installment of a larger job).
+                    // The itemized DESCRIPTION/AMOUNT table is the invoice
+                    // standard — always rendered, single-line jobs included.
+                    forceTable
+                    // But totals never repeat: the agreement-value card only
+                    // renders when it DIFFERS from this invoice's amount
+                    // (i.e. this bill is one installment of a larger job) —
+                    // the amount-due card up top is the single total.
                     showTotal={(agreementTotal ?? sumLineTotals(items)) !==
                       invoice.amount}
                     labels={{
