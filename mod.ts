@@ -46,6 +46,7 @@ function matchesBackend(pathname: string): boolean {
 const FRONTEND_OVERRIDES = [
   "/quotes",
   "/clients",
+  "/customers",
   "/invoices",
   "/contracts",
   "/messages",
@@ -61,6 +62,20 @@ export default {
   fetch(req: Request, info: Deno.ServeHandlerInfo): Response | Promise<Response> {
     const url = new URL(req.url);
     let pathname = url.pathname;
+
+    // A few /api/* routes are implemented by the FRONTEND itself (literal
+    // Fresh routes that must not be swallowed by the backend dispatch below
+    // — in dev Vite serves them first, so without this carve-out they work
+    // locally and 404 in prod). /api/geocode is the server-side Mapbox
+    // proxy holding MAPBOX_TOKEN.
+    if (pathname === "/api/geocode") {
+      return (frontend as unknown as {
+        fetch: (
+          req: Request,
+          info: Deno.ServeHandlerInfo,
+        ) => Response | Promise<Response>;
+      }).fetch(req, info);
+    }
 
     // Frontend islands call `/api/<backend-path>`; the `/api` prefix IS the
     // "dispatch to the backend" signal, so strip it and hand EVERY such
@@ -81,6 +96,6 @@ export default {
     if (matchesBackend(pathname) && !isFrontendOverride(pathname)) {
       return backend.fetch(req);
     }
-    return (frontend as { fetch: (req: Request, info: Deno.ServeHandlerInfo) => Response | Promise<Response> }).fetch(req, info);
+    return (frontend as unknown as { fetch: (req: Request, info: Deno.ServeHandlerInfo) => Response | Promise<Response> }).fetch(req, info);
   },
 };
