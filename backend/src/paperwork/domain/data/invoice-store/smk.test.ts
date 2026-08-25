@@ -7,9 +7,12 @@ Deno.test("invoice-store smoke: create + getOwned for owner", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const store = new InvoiceStore();
-  const i = await store.create("u-1", { contractId: "c-1", dueDate: "2026-05-01" });
+  const i = await store.create("u-1", {
+    quoteId: "c-1",
+    dueDate: "2026-05-01",
+  });
   const fetched = await store.getOwned(i.id, "u-1");
-  assertEquals(fetched.contractId, "c-1");
+  assertEquals(fetched.quoteId, "c-1");
   await resetKv();
 });
 
@@ -17,7 +20,10 @@ Deno.test("invoice-store smoke: cross-user denied", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const store = new InvoiceStore();
-  const i = await store.create("u-1", { contractId: "c-1", dueDate: "2026-05-01" });
+  const i = await store.create("u-1", {
+    quoteId: "c-1",
+    dueDate: "2026-05-01",
+  });
   await assertRejects(() => store.getOwned(i.id, "u-2"), ForbiddenError);
   await resetKv();
 });
@@ -26,9 +32,21 @@ Deno.test("invoice-store smoke: listByUserAndStatus ('pending' / 'paid')", async
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const store = new InvoiceStore();
-  await store.create("u-1", { contractId: "c-1", dueDate: "2026-05-01", status: "pending" });
-  await store.create("u-1", { contractId: "c-1", dueDate: "2026-05-02", status: "paid" });
-  await store.create("u-2", { contractId: "c-1", dueDate: "2026-05-03", status: "pending" });
+  await store.create("u-1", {
+    quoteId: "c-1",
+    dueDate: "2026-05-01",
+    status: "pending",
+  });
+  await store.create("u-1", {
+    quoteId: "c-1",
+    dueDate: "2026-05-02",
+    status: "paid",
+  });
+  await store.create("u-2", {
+    quoteId: "c-1",
+    dueDate: "2026-05-03",
+    status: "pending",
+  });
   assertEquals((await store.listByUserAndStatus("u-1", "pending")).length, 1);
   assertEquals((await store.listByUserAndStatus("u-1", "paid")).length, 1);
   assertEquals((await store.listByUserAndStatus("u-2", "pending")).length, 1);
@@ -40,7 +58,7 @@ Deno.test("invoice-store smoke: milestone fields round-trip", async () => {
   await resetKv();
   const store = new InvoiceStore();
   const i = await store.create("u-1", {
-    contractId: "c-1",
+    quoteId: "c-1",
     dueDate: "2026-05-14",
     status: "scheduled",
     scheduledFor: "2026-05-07",
@@ -62,7 +80,7 @@ Deno.test("invoice-store smoke: paymentIntent round-trip + clear", async () => {
   await resetKv();
   const store = new InvoiceStore();
   const i = await store.create("u-1", {
-    contractId: "c-1",
+    quoteId: "c-1",
     dueDate: "2026-05-14",
     amount: 180_000,
     status: "sent",
@@ -95,13 +113,17 @@ Deno.test("invoice-store smoke: reminder history append", async () => {
   await resetKv();
   const store = new InvoiceStore();
   const i = await store.create("u-1", {
-    contractId: "c-1",
+    quoteId: "c-1",
     dueDate: "2026-04-01",
     amount: 50_000,
     status: "sent",
   });
   const after3 = await store.update(i.id, "u-1", {
-    reminderHistory: [{ day: 3, sentAt: "2026-04-04T15:00:00Z", channels: ["email", "sms"] }],
+    reminderHistory: [{
+      day: 3,
+      sentAt: "2026-04-04T15:00:00Z",
+      channels: ["email", "sms"],
+    }],
   });
   assertEquals(after3.reminderHistory?.length, 1);
   const after7 = await store.update(i.id, "u-1", {

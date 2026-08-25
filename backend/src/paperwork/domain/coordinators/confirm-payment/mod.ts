@@ -22,7 +22,7 @@ import type { PaymentMethod as PaymentStorageMethod } from "@paperwork/dto/payme
  *   1. Take the customer's existing `paymentIntent` on the invoice.
  *   2. Mint a real `Payment` row (the canonical record-of-funds-received).
  *   3. Flip the invoice to `paid`, stamp `paidAt`, clear the intent.
- *   4. Render a receipt PDF (via RenderReceiptPdf, sibling of contract PDF).
+ *   4. Render a receipt PDF (via RenderReceiptPdf, sibling of the agreement PDF).
  *   5. Fire receipt email (to customer + CC contractor) + SMS receipt
  *      with a short-link to the public invoice page.
  *   6. Emit an `invoice:paid` domain event.

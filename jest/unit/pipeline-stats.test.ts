@@ -12,19 +12,20 @@
  *        $0.01' (visible one-cent artifact) … '$850' displayed as '$0.8k';
  *        '1 activos'; 'Vence Sin fecha de vencimiento' run-on."
  *
- * Target module (NEW — does not exist yet, so every test here is red with
- * "Cannot find module"): shared/quote-flow/pipeline-stats.ts
+ * Target module: shared/quote-flow/pipeline-stats.ts
  *
- * Expected exports:
+ * Post Quote+Contract merge there is NO contract entity: the quote carries
+ * its own acceptance, so the classifier and aggregator take ONE argument.
+ *
+ * Exports under test:
  *
  *   export type PipelineClass = "awaiting" | "won" | "lost" | "draft";
  *   export function classifyQuoteForPipeline(
  *     quote: { status?: string; sentAt?: string | null; acceptedAt?: string | null;
  *              lostAt?: string | null },
- *     contract?: { status?: string; signedAt?: string | null } | null,
  *   ): PipelineClass;
- *     // sent + unsigned (even with a draft/sent agreement attached) → "awaiting"
- *     // acceptedAt / status approved|accepted / SIGNED contract → "won"
+ *     // sent + unsigned (drafted terms on the quote change nothing) → "awaiting"
+ *     // acceptedAt / status accepted → "won"
  *     // lostAt / status lost → "lost"; never sent → "draft"
  *
  *   export function aggregatePipeline(
@@ -32,7 +33,6 @@
  *                     acceptedAt?: string | null; lostAt?: string | null;
  *                     estimatedTotal?: number | null; summary?: string | null;
  *                     isSample?: boolean }>,
- *     contracts?: Array<{ quoteId?: string; status?: string }>,
  *   ): {
  *     totalQuotes: number;       // real (non-sample) quotes only
  *     draftCount: number;
@@ -106,7 +106,7 @@ const sentQuote = {
 
 const acceptedQuote = {
   id: "q-won",
-  status: "approved",
+  status: "accepted",
   sentAt: SENT_AT,
   acceptedAt: "2026-08-18T12:00:00.000Z",
   estimatedTotal: 90_000,
@@ -140,30 +140,36 @@ const sampleQuote = {
 };
 
 describe("P-14 classifyQuoteForPipeline — sent-but-unsigned is AWAITING, never won", () => {
-  it("P-14 a sent quote with no agreement is awaiting", () => {
+  it("P-14 a sent quote is awaiting until somebody signs", () => {
     expect(classifyQuoteForPipeline(sentQuote)).toBe("awaiting");
   });
 
-  it("P-14 a sent quote with a DRAFT (unsigned) agreement is still awaiting — not won", () => {
-    // This is the exact first-quote state from the audit: the assistant
-    // drafted the agreement, nobody signed, yet /quotes said "1 ganadas".
-    expect(classifyQuoteForPipeline(sentQuote, { status: "draft" })).toBe("awaiting");
-  });
-
-  it("P-14 a sent quote with a merely SENT agreement is still awaiting", () => {
-    expect(classifyQuoteForPipeline(sentQuote, { status: "sent" })).toBe("awaiting");
-  });
-
-  it("P-14 a SIGNED agreement makes it won", () => {
+  it("P-14 a sent quote with drafted terms on it is still awaiting — not won", () => {
+    // The merged analogue of the audit's first-quote state: the terms wizard
+    // wrote the agreement terms ONTO the quote, nobody signed. Drafted terms
+    // are not a signature.
     expect(
-      classifyQuoteForPipeline(sentQuote, {
-        status: "signed",
-        signedAt: "2026-08-18T12:00:00.000Z",
+      classifyQuoteForPipeline({
+        ...sentQuote,
+        terms: [
+          { stepId: "payment_terms", label: "Payment terms", value: "50 / 50" },
+        ],
       }),
+    ).toBe("awaiting");
+  });
+
+  it("P-14 the dead legacy 'approved' status is NOT a win (single canonical 'accepted')", () => {
+    expect(classifyQuoteForPipeline({ ...sentQuote, status: "approved" }))
+      .toBe("awaiting");
+  });
+
+  it("P-14 the canonical 'accepted' status alone makes it won", () => {
+    expect(
+      classifyQuoteForPipeline({ ...sentQuote, status: "accepted" }),
     ).toBe("won");
   });
 
-  it("P-14 a customer-accepted quote is won", () => {
+  it("P-14 a customer-accepted quote (acceptedAt stamp) is won", () => {
     expect(classifyQuoteForPipeline(acceptedQuote)).toBe("won");
   });
 
@@ -175,11 +181,8 @@ describe("P-14 classifyQuoteForPipeline — sent-but-unsigned is AWAITING, never
     expect(classifyQuoteForPipeline(draftQuote)).toBe("draft");
   });
 
-  it("P-14 aggregatePipeline: sent + unsigned agreement → 1 awaiting with its $850, 0 won, 0 active jobs", () => {
-    const agg = aggregatePipeline(
-      [sentQuote],
-      [{ quoteId: "q-sent", status: "draft" }],
-    );
+  it("P-14 aggregatePipeline: sent + unsigned → 1 awaiting with its $850, 0 won, 0 active jobs", () => {
+    const agg = aggregatePipeline([sentQuote]);
     expect(agg.awaitingCount).toBe(1);
     expect(agg.awaitingCents).toBe(85_000);
     expect(agg.wonCount).toBe(0);
@@ -187,11 +190,8 @@ describe("P-14 classifyQuoteForPipeline — sent-but-unsigned is AWAITING, never
     expect(agg.activeJobs).toBe(0);
   });
 
-  it("P-14 aggregatePipeline: only a signature creates a won + active job", () => {
-    const agg = aggregatePipeline(
-      [acceptedQuote],
-      [{ quoteId: "q-won", status: "signed" }],
-    );
+  it("P-14 aggregatePipeline: only an acceptance creates a won + active job", () => {
+    const agg = aggregatePipeline([acceptedQuote]);
     expect(agg.wonCount).toBe(1);
     expect(agg.decidedCount).toBe(1);
     expect(agg.activeJobs).toBe(1);
@@ -277,9 +277,27 @@ describe("P-36 money formatting, integer-cents aggregation, due line, pluralizat
 
   it("P-36 aggregation of mixed amounts is exact integer cents", () => {
     const agg = aggregatePipeline([
-      { id: "a", status: "sent", sentAt: SENT_AT, estimatedTotal: 10, summary: "a" },
-      { id: "b", status: "sent", sentAt: SENT_AT, estimatedTotal: 20, summary: "b" },
-      { id: "c", status: "sent", sentAt: SENT_AT, estimatedTotal: 85_000, summary: "c" },
+      {
+        id: "a",
+        status: "sent",
+        sentAt: SENT_AT,
+        estimatedTotal: 10,
+        summary: "a",
+      },
+      {
+        id: "b",
+        status: "sent",
+        sentAt: SENT_AT,
+        estimatedTotal: 20,
+        summary: "b",
+      },
+      {
+        id: "c",
+        status: "sent",
+        sentAt: SENT_AT,
+        estimatedTotal: 85_000,
+        summary: "c",
+      },
     ]);
     expect(agg.awaitingCents).toBe(85_030);
     expect(Number.isInteger(agg.awaitingCents)).toBe(true);

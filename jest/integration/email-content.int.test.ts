@@ -27,7 +27,13 @@
  * the copy is both fixed AND observable. Subject-anchored assertions
  * (P-44/P-28/P-06) are red today on the subject alone.
  */
-import { ApiSession, contractor, seedCustomer, seedInvoice, seedQuote } from "./helpers/api";
+import {
+  ApiSession,
+  contractor,
+  seedCustomer,
+  seedInvoice,
+  seedQuote,
+} from "./helpers/api";
 
 type LoggedMessage = {
   channel?: string;
@@ -42,7 +48,10 @@ type LoggedMessage = {
 
 const PLACEHOLDER = /Nuevo usuario|New user/;
 
-async function messagesFor(s: ApiSession, paperworkId: string): Promise<LoggedMessage[]> {
+async function messagesFor(
+  s: ApiSession,
+  paperworkId: string,
+): Promise<LoggedMessage[]> {
   const { body } = await s.get("/messages");
   const all: LoggedMessage[] = Array.isArray(body) ? body : body?.items ?? [];
   return all.filter((m) => JSON.stringify(m).includes(paperworkId));
@@ -98,14 +107,19 @@ describe("outbound email content — ES contractor", () => {
       lineItems: [
         // qty > 1 renders the "{qty} {unit} · {price} c/u" sub-line
         // (send-paperwork-email/mod.ts:653) — today "3 ea · $350.00 c/u".
-        { description: "Instalación de gabinetes", quantity: 3, unit: "ea", price: 35000 },
+        {
+          description: "Instalación de gabinetes",
+          quantity: 3,
+          unit: "ea",
+          price: 35000,
+        },
       ],
       estimatedTotal: 105000,
     });
     const qSend = await s.post(`/quotes/${quoteId}/email`);
     expect(qSend.status).toBeLessThan(400);
 
-    // Standalone invoice (no contract/quote link) → the basic invoice email
+    // Standalone invoice (no quote link) → the basic invoice email
     // with the Issued/Due/Status rows (send-paperwork-email/mod.ts:1357-1391).
     invoiceId = await seedInvoice(s, {
       customerId,
@@ -126,7 +140,9 @@ describe("outbound email content — ES contractor", () => {
     const subject = quoteEmail!.subject ?? "";
     // Today (observed live): "JEST LLC Cotización para Cliente Jest, …"
     expect(subject).not.toMatch(/^JEST LLC\s+Cotización/);
-    expect(subject.startsWith("Cotización de JEST LLC para Cliente Jest")).toBe(true);
+    expect(subject.startsWith("Cotización de JEST LLC para Cliente Jest")).toBe(
+      true,
+    );
   });
 
   it('P-07 the job name renders "Instalación de Baño y Cocina" — never "InstalacióN De BañO"', () => {
@@ -146,7 +162,11 @@ describe("outbound email content — ES contractor", () => {
     expect(copy).not.toContain("August");
     expect(copy).not.toMatch(/vence\s+\d{4}-\d{2}-\d{2}/);
     // No raw ISO date anywhere in the rendered copy (subject/body fields).
-    const rendered = [invoiceEmail?.subject, invoiceEmail?.body, invoiceEmail?.htmlBody]
+    const rendered = [
+      invoiceEmail?.subject,
+      invoiceEmail?.body,
+      invoiceEmail?.htmlBody,
+    ]
       .filter(Boolean).join("\n");
     expect(rendered).not.toMatch(/\b\d{4}-\d{2}-\d{2}\b/);
   });
@@ -161,7 +181,7 @@ describe("outbound email content — ES contractor", () => {
 
   it('P-51 ES quote email uses the localized unit — "3 c/u", never "3 ea"', () => {
     const copy = copyOf(quoteEmail);
-    // lang/es.json "contractDoc.unitEach" = "c/u" (unused by the email today).
+    // lang/es.json "quoteDoc.unitEach" = "c/u" (unused by the email today).
     expect(copy).toMatch(/3\s*c\/u/);
     expect(copy).not.toMatch(/\b3\s+ea\b/);
     expect(copy).not.toMatch(/·\s*ea\b/);
@@ -178,7 +198,10 @@ describe("outbound email content — P-06 skip-setup user (placeholder name)", (
     // placeholder "Nuevo usuario" (verify-otp/mod.ts:35) survives. No business
     // identity either — exactly the account state a skip user sends from.
     s = new ApiSession();
-    const v = await s.post("/auth/verify", { phoneNumber: "+15125552210", code: "000000" });
+    const v = await s.post("/auth/verify", {
+      phoneNumber: "+15125552210",
+      code: "000000",
+    });
     expect(v.status).toBeLessThan(400);
     const me = await s.put("/me", {
       email: "skip.jest@blackhole.postmarkapp.com",
@@ -198,7 +221,12 @@ describe("outbound email content — P-06 skip-setup user (placeholder name)", (
       customerId,
       summary: "pintura de interiores",
       jobName: "Pintura de interiores",
-      lineItems: [{ description: "Pintura", quantity: 1, unit: "ea", price: 50000 }],
+      lineItems: [{
+        description: "Pintura",
+        quantity: 1,
+        unit: "ea",
+        price: 50000,
+      }],
       estimatedTotal: 50000,
     });
     invoiceId = await seedInvoice(s, {

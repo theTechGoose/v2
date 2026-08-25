@@ -4,9 +4,14 @@
  *         → (customer GET /quotes/:id/public) → viewed
  *         → (customer POST /quotes/:id/accept with signature) → approved
  */
-import { anonymous, contractor, seedQuote, type ApiSession } from "./helpers/api";
+import {
+  anonymous,
+  type ApiSession,
+  contractor,
+  seedQuote,
+} from "./helpers/api";
 
-describe("quote status lifecycle (draft → sent → viewed → approved)", () => {
+describe("quote status lifecycle (draft → sent → viewed → accepted)", () => {
   let s: ApiSession;
   let quoteId: string;
 
@@ -34,19 +39,19 @@ describe("quote status lifecycle (draft → sent → viewed → approved)", () =
     expect(body.status).toBe("viewed");
   });
 
-  it("the customer signing flips status to 'approved'", async () => {
+  it("the customer signing flips status to 'accepted'", async () => {
     const accept = await anonymous().post(`/quotes/${quoteId}/accept`, {
       signature: "Green Goblin",
       name: "Green Goblin",
     });
     expect(accept.status).toBeLessThan(400);
     const { body } = await s.get(`/quotes/${quoteId}`);
-    expect(body.status).toBe("approved");
+    expect(body.status).toBe("accepted");
   });
 
-  it("a later public view never demotes the approved quote", async () => {
+  it("a later public view never demotes the accepted quote", async () => {
     await anonymous().get(`/quotes/${quoteId}/public`);
     const { body } = await s.get(`/quotes/${quoteId}`);
-    expect(body.status).toBe("approved");
+    expect(body.status).toBe("accepted");
   });
 });

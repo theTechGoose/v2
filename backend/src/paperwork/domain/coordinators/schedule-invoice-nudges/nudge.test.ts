@@ -6,7 +6,7 @@ function inv(overrides: Partial<Invoice>): Invoice {
   return {
     id: "i-1",
     userId: "u-1",
-    contractId: "c-1",
+    quoteId: "q-1",
     dueDate: "2026-05-21",
     amount: 100_00,
     status: "scheduled",

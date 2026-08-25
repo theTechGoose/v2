@@ -1,7 +1,6 @@
 import { assert, assertEquals } from "#std/assert";
 import { BuildQuoteCards } from "./mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
@@ -12,21 +11,37 @@ const NOW = new Date(Date.UTC(2026, 3, 28, 12, 0, 0));
 const minus = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
 
 function fresh() {
-  const quotes    = new QuoteStore();
-  const contracts = new ContractStore();
-  const views     = new ViewStore();
+  const quotes = new QuoteStore();
+  const views = new ViewStore();
   const customers = new CustomerStore();
-  return { quotes, contracts, views, customers, flow: new BuildQuoteCards(quotes, contracts, views, customers) };
+  return {
+    quotes,
+    views,
+    customers,
+    flow: new BuildQuoteCards(quotes, views, customers),
+  };
 }
 
 async function withKv<T>(fn: () => Promise<T>): Promise<T> {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  try { return await fn(); } finally { await resetKv(); }
+  try {
+    return await fn();
+  } finally {
+    await resetKv();
+  }
 }
 
-async function makeQuote(quotes: QuoteStore, patch: Record<string, unknown> = {}, customerId?: string) {
-  const q = await quotes.create("u-1", { customerId, summary: "x", lineItems: [] });
+async function makeQuote(
+  quotes: QuoteStore,
+  patch: Record<string, unknown> = {},
+  customerId?: string,
+) {
+  const q = await quotes.create("u-1", {
+    customerId,
+    summary: "x",
+    lineItems: [],
+  });
   if (Object.keys(patch).length) {
     return await quotes.update(q.id, "u-1", patch);
   }
@@ -55,7 +70,11 @@ Deno.test("stage: opened when opens >= 1 and >= 24h since sent and recent open",
   await withKv(async () => {
     const { quotes, views, flow } = fresh();
     const q = await makeQuote(quotes, { sentAt: minus(2 * MS_PER_DAY) });
-    await views.create({ paperworkType: "quote", paperworkId: q.id, viewedAt: minus(12 * 3600 * 1000) });
+    await views.create({
+      paperworkType: "quote",
+      paperworkId: q.id,
+      viewedAt: minus(12 * 3600 * 1000),
+    });
     const [c] = await flow.run("u-1", NOW);
     assertEquals(c.stage, "opened");
   });
@@ -65,7 +84,11 @@ Deno.test("stage: cooling when sentAt > 4d and last open > 48h ago", async () =>
   await withKv(async () => {
     const { quotes, views, flow } = fresh();
     const q = await makeQuote(quotes, { sentAt: minus(5 * MS_PER_DAY) });
-    await views.create({ paperworkType: "quote", paperworkId: q.id, viewedAt: minus(3 * MS_PER_DAY) });
+    await views.create({
+      paperworkType: "quote",
+      paperworkId: q.id,
+      viewedAt: minus(3 * MS_PER_DAY),
+    });
     const [c] = await flow.run("u-1", NOW);
     assertEquals(c.stage, "cooling");
   });
@@ -83,17 +106,19 @@ Deno.test("stage: stale when sentAt > 7d and 0 opens", async () => {
 Deno.test("stage: won when acceptedAt set", async () => {
   await withKv(async () => {
     const { quotes, flow } = fresh();
-    await makeQuote(quotes, { sentAt: minus(MS_PER_DAY), acceptedAt: minus(3600 * 1000) });
+    await makeQuote(quotes, {
+      sentAt: minus(MS_PER_DAY),
+      acceptedAt: minus(3600 * 1000),
+    });
     const [c] = await flow.run("u-1", NOW);
     assertEquals(c.stage, "won");
   });
 });
 
-Deno.test("stage: won when a SIGNED contract references the quoteId", async () => {
+Deno.test("stage: won on status 'accepted' even without an acceptedAt stamp", async () => {
   await withKv(async () => {
-    const { quotes, contracts, flow } = fresh();
-    const q = await makeQuote(quotes, { sentAt: minus(MS_PER_DAY) });
-    await contracts.create("u-1", { quoteId: q.id, status: "signed", signedAt: minus(3600 * 1000) });
+    const { quotes, flow } = fresh();
+    await makeQuote(quotes, { sentAt: minus(MS_PER_DAY), status: "accepted" });
     const [c] = await flow.run("u-1", NOW);
     assertEquals(c.stage, "won");
   });
@@ -101,11 +126,17 @@ Deno.test("stage: won when a SIGNED contract references the quoteId", async () =
 
 Deno.test("stage: an UNSIGNED agreement leaves a sent quote awaiting (problems.md P-14)", async () => {
   await withKv(async () => {
-    const { quotes, contracts, flow } = fresh();
-    // The exact first-quote state from the audit: the assistant drafted the
-    // agreement the moment the quote went out, and nobody signed it.
-    const q = await makeQuote(quotes, { sentAt: minus(MS_PER_DAY) });
-    await contracts.create("u-1", { quoteId: q.id, status: "draft" });
+    const { quotes, flow } = fresh();
+    // The quote IS the agreement now: drafted terms on the quote are not a
+    // signature — only acceptance (the one ceremony) wins.
+    await makeQuote(quotes, {
+      sentAt: minus(MS_PER_DAY),
+      terms: [{
+        stepId: "payment_terms",
+        label: "Payment terms",
+        value: "50 / 50",
+      }],
+    });
     const [c] = await flow.run("u-1", NOW);
     assertEquals(c.stage, "sent");
   });
@@ -114,7 +145,10 @@ Deno.test("stage: an UNSIGNED agreement leaves a sent quote awaiting (problems.m
 Deno.test("stage: lost when lostAt set", async () => {
   await withKv(async () => {
     const { quotes, flow } = fresh();
-    await makeQuote(quotes, { sentAt: minus(2 * MS_PER_DAY), lostAt: minus(3600 * 1000) });
+    await makeQuote(quotes, {
+      sentAt: minus(2 * MS_PER_DAY),
+      lostAt: minus(3600 * 1000),
+    });
     const [c] = await flow.run("u-1", NOW);
     assertEquals(c.stage, "lost");
   });
@@ -132,8 +166,15 @@ Deno.test("stage: lost when sentAt > 30d with no signal", async () => {
 Deno.test("stage precedence: won/lost beat earlier stages (would be opened, but acceptedAt set)", async () => {
   await withKv(async () => {
     const { quotes, views, flow } = fresh();
-    const q = await makeQuote(quotes, { sentAt: minus(2 * MS_PER_DAY), acceptedAt: minus(3600 * 1000) });
-    await views.create({ paperworkType: "quote", paperworkId: q.id, viewedAt: minus(12 * 3600 * 1000) });
+    const q = await makeQuote(quotes, {
+      sentAt: minus(2 * MS_PER_DAY),
+      acceptedAt: minus(3600 * 1000),
+    });
+    await views.create({
+      paperworkType: "quote",
+      paperworkId: q.id,
+      viewedAt: minus(12 * 3600 * 1000),
+    });
     const [c] = await flow.run("u-1", NOW);
     assertEquals(c.stage, "won");
   });
@@ -144,9 +185,21 @@ Deno.test("opens: dedupes within a 1-hour bucket", async () => {
     const { quotes, views, flow } = fresh();
     const q = await makeQuote(quotes, { sentAt: minus(2 * MS_PER_DAY) });
     const T = NOW.getTime() - 12 * 3600 * 1000;
-    await views.create({ paperworkType: "quote", paperworkId: q.id, viewedAt: new Date(T).toISOString() });
-    await views.create({ paperworkType: "quote", paperworkId: q.id, viewedAt: new Date(T + 30 * 60 * 1000).toISOString() });
-    await views.create({ paperworkType: "quote", paperworkId: q.id, viewedAt: new Date(T + 45 * 60 * 1000).toISOString() });
+    await views.create({
+      paperworkType: "quote",
+      paperworkId: q.id,
+      viewedAt: new Date(T).toISOString(),
+    });
+    await views.create({
+      paperworkType: "quote",
+      paperworkId: q.id,
+      viewedAt: new Date(T + 30 * 60 * 1000).toISOString(),
+    });
+    await views.create({
+      paperworkType: "quote",
+      paperworkId: q.id,
+      viewedAt: new Date(T + 45 * 60 * 1000).toISOString(),
+    });
     const [c] = await flow.run("u-1", NOW);
     assertEquals(c.opens, 1);
   });
@@ -157,8 +210,16 @@ Deno.test("opens: counts separate hour buckets", async () => {
     const { quotes, views, flow } = fresh();
     const q = await makeQuote(quotes, { sentAt: minus(2 * MS_PER_DAY) });
     const T = NOW.getTime() - 12 * 3600 * 1000;
-    await views.create({ paperworkType: "quote", paperworkId: q.id, viewedAt: new Date(T).toISOString() });
-    await views.create({ paperworkType: "quote", paperworkId: q.id, viewedAt: new Date(T + 90 * 60 * 1000).toISOString() });
+    await views.create({
+      paperworkType: "quote",
+      paperworkId: q.id,
+      viewedAt: new Date(T).toISOString(),
+    });
+    await views.create({
+      paperworkType: "quote",
+      paperworkId: q.id,
+      viewedAt: new Date(T + 90 * 60 * 1000).toISOString(),
+    });
     const [c] = await flow.run("u-1", NOW);
     assertEquals(c.opens, 2);
   });

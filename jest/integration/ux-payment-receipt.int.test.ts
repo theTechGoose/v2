@@ -41,7 +41,12 @@
  * Phones used (reserved block +15125556200…6299):
  *   +15125556220 contractor, +15125556221 customer.
  */
-import { anonymous, ApiSession, seedCustomer, seedInvoice } from "./helpers/api";
+import {
+  anonymous,
+  ApiSession,
+  seedCustomer,
+  seedInvoice,
+} from "./helpers/api";
 
 const CONTRACTOR_PHONE = "+15125556220";
 const CUSTOMER_PHONE = "+15125556221";
@@ -95,10 +100,13 @@ describe("UX-30: confirming a claimed payment sends the promised receipt to the 
 
     // Customer side: the public claim ("El cliente pagó por Zelle") — this
     // is the moment the UI promises "y te enviaremos un recibo".
-    const claim = await anonymous().post(`/invoices/${invoiceId}/claim-payment`, {
-      method: "zelle",
-      claimedBy: "María Pagadora",
-    });
+    const claim = await anonymous().post(
+      `/invoices/${invoiceId}/claim-payment`,
+      {
+        method: "zelle",
+        claimedBy: "María Pagadora",
+      },
+    );
     expect(claim.status).toBeLessThan(400);
     expect(claim.body?.ok).toBe(true);
 
@@ -114,23 +122,29 @@ describe("UX-30: confirming a claimed payment sends the promised receipt to the 
     expect(inv.body?.status).toBe("paid");
   });
 
-  it("UX-30: a receipt comm to the CUSTOMER is logged (channel text or email)", async () => {
-    // The receipt dispatch may be fire-and-forget (PDF render first) — poll.
-    let receipt: LoggedMessage | undefined;
-    for (let i = 0; i < 20 && !receipt; i++) {
-      const rows = await allMessages(s);
-      receipt = rows.find((m) =>
-        (m.channel === "text" || m.channel === "email") &&
-        (m.toAddress === CUSTOMER_PHONE || m.toAddress === CUSTOMER_EMAIL) &&
-        JSON.stringify(m).includes(invoiceId)
+  it(
+    "UX-30: a receipt comm to the CUSTOMER is logged (channel text or email)",
+    async () => {
+      // The receipt dispatch may be fire-and-forget (PDF render first) — poll.
+      let receipt: LoggedMessage | undefined;
+      for (let i = 0; i < 20 && !receipt; i++) {
+        const rows = await allMessages(s);
+        receipt = rows.find((m) =>
+          (m.channel === "text" || m.channel === "email") &&
+          (m.toAddress === CUSTOMER_PHONE || m.toAddress === CUSTOMER_EMAIL) &&
+          JSON.stringify(m).includes(invoiceId)
+        );
+        if (!receipt) await new Promise((r) => setTimeout(r, 500));
+      }
+      // RED today: ConfirmPayment never logs its receipt dispatch — after the
+      // full claim→confirm loop the comms log holds nothing for this invoice.
+      expect(receipt).toBeDefined();
+      // And it must actually read as a receipt, not as a re-send of the bill.
+      const copy = [receipt?.subject, receipt?.content].filter(Boolean).join(
+        "\n",
       );
-      if (!receipt) await new Promise((r) => setTimeout(r, 500));
-    }
-    // RED today: ConfirmPayment never logs its receipt dispatch — after the
-    // full claim→confirm loop the comms log holds nothing for this invoice.
-    expect(receipt).toBeDefined();
-    // And it must actually read as a receipt, not as a re-send of the bill.
-    const copy = [receipt?.subject, receipt?.content].filter(Boolean).join("\n");
-    expect(copy).toMatch(/recib|receipt|pago|payment/i);
-  }, 25_000);
+      expect(copy).toMatch(/recib|receipt|pago|payment/i);
+    },
+    25_000,
+  );
 });

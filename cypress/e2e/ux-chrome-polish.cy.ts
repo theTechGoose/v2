@@ -33,23 +33,23 @@
  *                    .kpi__val slot (front-end/components/DashSections.tsx:
  *                    130-132,191-193).
  *   hamburger        button.topbar__menu (front-end/islands/DashTopbar.tsx:
- *                    134-143) — no desktop media rule hides it
- *                    (front-end/static/dashboard.css:728-752), so at 1440×900
- *                    it renders beside the full .sb sidebar.
- *   icon-only button button.sb__toggle above the logout button — HONESTY: it
- *                    ALREADY carries aria-label + title (DashSidebar.tsx:
- *                    373-378, keys sidebar.expand/collapse present in both
- *                    dicts) → pinned as a labeled CONTRACT-PIN (green).
+ *                    134-143) — visible at ALL widths: it is the single
+ *                    sidebar toggle (collapses the rail on desktop, slides
+ *                    the drawer ≤640px; the rail's own toggle was removed).
+ *   icon-only button button.topbar__menu — the rail's own .sb__toggle was
+ *                    removed as redundant (the topbar hamburger is the single
+ *                    sidebar toggle); its aria-label (dashTopbar.toggleSidebar,
+ *                    both dicts) → pinned as a labeled CONTRACT-PIN (green).
  *   ticker pill      a.topbar__ticker "● hace Xm" — has aria-label
  *                    (dashTopbar.liveActivity) but NO title tooltip for
  *                    sighted users (DashTopbar.tsx:163-181) → the red half
  *                    pins the visible tooltip.
- *   checklist chip   "garantía: 6 meses" — label key
- *                    contractTermsWizard.warranty.label = "garantía"
- *                    (lang/es.json:945) while its step siblings are
- *                    capitalized: "Cliente" (:919), "Pago" (:931), "Inicio"
- *                    (:940). Emitted by backend/src/agents/domain/business/
- *                    contract-terms-wizard-spec/mod.ts:110. Pinned at the
+ *   checklist chip   "Garantía: 6 meses" — label key
+ *                    termsWizard.warranty.label (renamed from
+ *                    contractTermsWizard.* in the Quote+Contract merge),
+ *                    beside its capitalized step siblings "Cliente" /
+ *                    "Pago" / "Inicio". Emitted by backend/src/agents/
+ *                    domain/business/terms-wizard-spec/mod.ts. Pinned at the
  *                    dictionary (driving the full terms wizard for one chip
  *                    would be needlessly brittle; the chip renders this value
  *                    verbatim).
@@ -202,21 +202,23 @@ describe("UX-21: desktop chrome — one nav system, labeled controls", () => {
     cy.visit("/dashboard");
   });
 
-  it("UX-21: at 1440×900 the mobile hamburger does not render beside the full sidebar", () => {
+  it("UX-21: at 1440×900 the topbar hamburger renders as the single sidebar toggle", () => {
     cy.get(".sb", { timeout: 10_000 }).should("be.visible");
-    // RED today: .topbar__menu has no desktop media rule
-    // (dashboard.css:728-752) — two nav systems side by side.
-    cy.get("button.topbar__menu").should("not.be.visible");
+    // The rail's own toggle was removed as redundant, so the topbar
+    // hamburger must stay visible on desktop — it is the only control
+    // that collapses/expands the rail (roadmap p.2/p.4).
+    cy.get("button.topbar__menu").should("be.visible");
   });
 
-  it("UX-21: [CONTRACT-PIN — green] the icon-only button above 'Cerrar sesión' keeps its accessible name", () => {
-    // HONESTY: DashSidebar.tsx:373-378 already ships aria-label + title on
-    // .sb__toggle (sidebar.expand/collapse, both dicts). This pin freezes it
-    // so the hamburger/desktop rework cannot strip the name.
-    cy.get("button.sb__toggle", { timeout: 10_000 })
+  it("UX-21: [CONTRACT-PIN — green] the icon-only sidebar toggle keeps its accessible name", () => {
+    // HONESTY: the rail's own .sb__toggle was removed as redundant — the
+    // topbar hamburger (.topbar__menu, dashTopbar.toggleSidebar in both
+    // dicts) is now the single toggle. This pin freezes ITS accessible
+    // name so a rework cannot strip it.
+    cy.get("button.topbar__menu", { timeout: 10_000 })
       .invoke("attr", "aria-label")
       .then((label) => {
-        expect(String(label ?? "").trim().length, "sb__toggle aria-label").to
+        expect(String(label ?? "").trim().length, "topbar__menu aria-label").to
           .be.greaterThan(0);
       });
   });
@@ -242,19 +244,19 @@ describe("UX-21: desktop chrome — one nav system, labeled controls", () => {
     // root is cypress/, so the repo dict is one level up.
     cy.readFile("../lang/es.json").then(
       (dict: Record<string, string>) => {
-        const warranty = dict["contractTermsWizard.warranty.label"] ?? "";
+        const warranty = dict["termsWizard.warranty.label"] ?? "";
         const siblings = [
-          dict["contractTermsWizard.customer.label"] ?? "",
-          dict["contractTermsWizard.paymentTerms.label"] ?? "",
-          dict["contractTermsWizard.startDate.label"] ?? "",
+          dict["termsWizard.customer.label"] ?? "",
+          dict["termsWizard.paymentTerms.label"] ?? "",
+          dict["termsWizard.startDate.label"] ?? "",
         ];
         for (const s of siblings) {
           expect(s.charAt(0), `sibling label "${s}" starts uppercase`).to.match(
             /[A-ZÁÉÍÓÚÑ]/,
           );
         }
-        // RED today: "garantía" (lang/es.json:945) — lowercase beside its
-        // capitalized siblings.
+        // Regression pin: the warranty label must stay capitalized like its
+        // siblings.
         expect(
           warranty.charAt(0),
           `warranty label "${warranty}" starts uppercase like its siblings`,

@@ -16,7 +16,7 @@ export class JobsController {
   /**
    * GET /jobs
    *
-   * Synthesized view across customer + quote + contract + invoice for
+   * Synthesized view across customer + quote + invoice for
    * the dashboard's "Active jobs" panel. No own storage — recomputed
    * on every read.
    */

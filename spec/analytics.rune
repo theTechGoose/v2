@@ -130,8 +130,6 @@
     the total number of customers
 [TYP] quotes: QuoteCountsDto
     nested quote status counts
-[TYP] contracts: ContractCountsDto
-    nested contract status counts
 [TYP] invoices: InvoiceCountsDto
     nested invoice status counts
 [TYP] quotedValueCents: number
@@ -149,9 +147,7 @@
 [TYP:int] sent: number
     count in sent status
 [TYP:int] accepted: number
-    count in accepted status
-[TYP:int] signed: number
-    count in signed status
+    count of quotes with status accepted, the canonical signed state
 [TYP:int] pending: number
     count in pending status
 [TYP:int] paid: number
@@ -188,8 +184,6 @@
     a nested job customer summary
 [TYP] quote: JobQuoteDto
     a nested job quote summary
-[TYP] contract: JobContractDto
-    a nested job contract summary
 [TYP] summary: string
     a short quote summary line
 [TYP] estimatedTotalCents: number
@@ -269,7 +263,7 @@
 [TYP] q: string
     a free-text search query
 [TYP] type: string
-    a hit/entity type: customer, quote, contract, invoice
+    a hit/entity type: customer, quote, invoice
 [TYP] sub: string
     a secondary subtitle line for a hit
 [TYP] amount: number
@@ -296,9 +290,7 @@
 [DTO] ClientSegmentsResponseDto: segmentRow(s)
     the segment-mix payload
 [DTO] QuoteCountsDto: total, draft, sent, accepted
-    quote counts by status
-[DTO] ContractCountsDto: total, draft, signed
-    contract counts by status
+    quote counts by status, accepted counts status accepted only
 [DTO] AgingBucketsDto: current, aging14d, overdue1530d, overdue30plus
     pending-invoice aging buckets
 [DTO] InvoiceCountsDto: total, pending, paid, overdue, agingBuckets
@@ -309,16 +301,14 @@
     a top-payor row by lifetime payment total
 [DTO] PaymentStatsDto: receivedYtdCents, methodMixCents, topPayor(s)
     payment rollup with method mix and top payors
-[DTO] DashboardStatsDto: customers, quotes, contracts, invoices, quotedValueCents, awaitingResponse, revenue, payments
+[DTO] DashboardStatsDto: customers, quotes, invoices, quotedValueCents, awaitingResponse, revenue, payments
     the full dashboard stats payload
 [DTO] JobCustomerDto: id, name
     a job's customer summary
 [DTO] JobQuoteDto: id, summary, estimatedTotalCents
     a job's originating quote summary
-[DTO] JobContractDto: id, status?
-    a job's contract summary
-[DTO] JobDto: id, customer, quote, contract?, totalCents, paidCents, pctPaid, nextDueDate?, status, statusLabel
-    a synthesized active-job row
+[DTO] JobDto: id, customer, quote, totalCents, paidCents, pctPaid, nextDueDate?, status, statusLabel
+    a quote-anchored active-job row, status: on_track, awaiting_permit, overdue, complete
 [DTO] JobListDto: job(s)
     a list of synthesized active jobs
 [DTO] LineItemDto: description, quantity, unit, price

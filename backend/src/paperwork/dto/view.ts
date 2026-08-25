@@ -1,8 +1,14 @@
-import { IsIn, IsNumber, IsOptional, IsString, validateSync } from "#class-validator";
+import {
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  validateSync,
+} from "#class-validator";
 import { plainToInstance } from "#class-transformer";
 
-export type PaperworkType = "quote" | "contract" | "invoice";
-export const PAPERWORK_TYPES: PaperworkType[] = ["quote", "contract", "invoice"];
+export type PaperworkType = "quote" | "invoice";
+export const PAPERWORK_TYPES: PaperworkType[] = ["quote", "invoice"];
 
 export class CreateViewDto {
   @IsIn(PAPERWORK_TYPES)
@@ -14,24 +20,39 @@ export class CreateViewDto {
   @IsString()
   viewedAt!: string;
 
-  @IsOptional() @IsString() viewerId?: string;
-  @IsOptional() @IsString() viewerEmail?: string;
-  @IsOptional() @IsString() userAgent?: string;
-  @IsOptional() @IsString() ipAddress?: string;
-  @IsOptional() @IsString() referrer?: string;
-  @IsOptional() @IsNumber() durationMs?: number;
+  @IsOptional() @IsString()
+  viewerId?: string;
+  @IsOptional() @IsString()
+  viewerEmail?: string;
+  @IsOptional() @IsString()
+  userAgent?: string;
+  @IsOptional() @IsString()
+  ipAddress?: string;
+  @IsOptional() @IsString()
+  referrer?: string;
+  @IsOptional() @IsNumber()
+  durationMs?: number;
 }
 
 export class UpdateViewDto {
-  @IsOptional() @IsIn(PAPERWORK_TYPES) paperworkType?: PaperworkType;
-  @IsOptional() @IsString() paperworkId?: string;
-  @IsOptional() @IsString() viewedAt?: string;
-  @IsOptional() @IsString() viewerId?: string;
-  @IsOptional() @IsString() viewerEmail?: string;
-  @IsOptional() @IsString() userAgent?: string;
-  @IsOptional() @IsString() ipAddress?: string;
-  @IsOptional() @IsString() referrer?: string;
-  @IsOptional() @IsNumber() durationMs?: number;
+  @IsOptional() @IsIn(PAPERWORK_TYPES)
+  paperworkType?: PaperworkType;
+  @IsOptional() @IsString()
+  paperworkId?: string;
+  @IsOptional() @IsString()
+  viewedAt?: string;
+  @IsOptional() @IsString()
+  viewerId?: string;
+  @IsOptional() @IsString()
+  viewerEmail?: string;
+  @IsOptional() @IsString()
+  userAgent?: string;
+  @IsOptional() @IsString()
+  ipAddress?: string;
+  @IsOptional() @IsString()
+  referrer?: string;
+  @IsOptional() @IsNumber()
+  durationMs?: number;
 }
 
 export interface View extends CreateViewDto {
@@ -50,6 +71,8 @@ export function parseCreateView(input: unknown): CreateViewDto {
 export function parseUpdateView(input: unknown): UpdateViewDto {
   const dto = plainToInstance(UpdateViewDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid view patch: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid view patch: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }

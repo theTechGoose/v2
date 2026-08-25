@@ -6,11 +6,13 @@
  * P-58 "[PUBLIC] /q layout at 390px: 56px horizontal overflow (contractor
  *       email cut at x=446/390 in the footer); qty/amount columns touch —
  *       renders '32$1,120.00'."
- * P-62 "[POLISH] No @media print on /c — printed contracts get raw screen
- *       CSS." Desired: print styles that at minimum hide the interactive
- *       chrome (today's @media print block only hides .ctr__no-print — the
- *       brand strip — while the signature pad, its Undo/Clear buttons, the
- *       name input and the submit button all still print).
+ * P-62 "[POLISH] No @media print on the public agreement — printed
+ *       agreements get raw screen CSS." (Ported to /q after the
+ *       Quote+Contract merge: /q renders the full agreement + sign pad; the
+ *       print rules live in front-end/static/public-contract.css, linked by
+ *       routes/q/[id].tsx.) Desired: print styles that at minimum hide the
+ *       interactive chrome (the signature pad, its Undo/Clear buttons, the
+ *       name input and the submit button).
  * P-56 "[ADS] Unstyled plaintext 404." Desired: branded 404 with a working
  *       back-home link.
  * P-57 "[ADS] No theme-color, no manifest." Desired: theme-color meta +
@@ -128,7 +130,7 @@ describe("public surface plumbing (mobile layout, print, 404, PWA)", () => {
     });
   });
 
-  describe("P-62 /c print styles", () => {
+  describe("P-62 /q print styles", () => {
     beforeEach(() => {
       cy.clearCookies();
       cy.loginAs(PHONE);
@@ -136,12 +138,12 @@ describe("public surface plumbing (mobile layout, print, 404, PWA)", () => {
       cy.apiUpdateUser({ language: "en" });
     });
 
-    it("P-62 the contract page ships an @media print block that hides the interactive signing chrome", () => {
-      cy.seedQuoteToCash().then(({ contractId }) => {
+    it("P-62 the agreement page ships an @media print block that hides the interactive signing chrome", () => {
+      cy.seedQuoteToCash().then(({ quoteId }) => {
         cy.clearCookies();
         cy.setCookie("pm_lang", "en");
-        cy.visit(`/c/${contractId}`);
-        // Unsigned contract → the signature form (pad + inputs + submit)
+        cy.visit(`/q/${quoteId}`);
+        // Unsigned agreement → the signature form (pad + inputs + submit)
         // renders after the island fetch.
         cy.get('button[type="submit"]', { timeout: 10_000 }).should("exist");
 
@@ -171,10 +173,10 @@ describe("public surface plumbing (mobile layout, print, 404, PWA)", () => {
             try {
               walk(sheet.cssRules);
             } catch {
-              /* cross-origin sheet — none expected on /c */
+              /* cross-origin sheet — none expected on /q */
             }
           }
-          expect(printBlocks, "at least one @media print block on /c").to.be
+          expect(printBlocks, "at least one @media print block on /q").to.be
             .greaterThan(0);
 
           const coveredByPrintHide = (el: Element | null) =>

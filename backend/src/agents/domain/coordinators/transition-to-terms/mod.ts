@@ -3,7 +3,10 @@ import { AgentConversationStore } from "@agents/domain/data/agent-conversation-s
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { transitionPhase } from "@agents/domain/business/derive-phase/mod.ts";
 import { freshState } from "@agents/domain/business/wizard-progress/mod.ts";
-import { CONTRACT_TERMS_WIZARD_V1, localizeOptions } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
+import {
+  localizeOptions,
+  TERMS_WIZARD_V1,
+} from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
@@ -21,7 +24,7 @@ export interface TransitionToTermsResult {
  *   1. Validate ownership + that we're currently in 'quote'.
  *   2. Flip conversation.currentPhase = 'terms'.
  *   3. Initialize wizard state (activeStepIdx = 0, no answers).
- *   4. Append a `phase_divider` message ("Phase 2 — Contract terms").
+ *   4. Append a `phase_divider` message ("Phase 2 — Agreement terms").
  *   5. Append a `wizard` message rendering the first step.
  *
  * This is idempotent-ish: re-calling on a conversation already in terms
@@ -36,7 +39,9 @@ export class TransitionToTerms {
     private messages: AgentMessageStore,
   ) {}
 
-  async run(input: { userId: string; conversationId: string; lang?: "en" | "es" }): Promise<TransitionToTermsResult> {
+  async run(
+    input: { userId: string; conversationId: string; lang?: "en" | "es" },
+  ): Promise<TransitionToTermsResult> {
     // Chat copy is rendered to the contractor in their own UI language; default to "en".
     const lang = input.lang === "es" ? "es" : "en";
     const conv = await this.conversations.get(input.conversationId);
@@ -45,7 +50,7 @@ export class TransitionToTerms {
       // Already transitioned — just re-emit the current step (no divider duplicate).
       const state = await this.conversations.getWizardState(conv.id);
       const stepIdx = state?.activeStepIdx ?? 0;
-      const step = CONTRACT_TERMS_WIZARD_V1.steps[stepIdx];
+      const step = TERMS_WIZARD_V1.steps[stepIdx];
       const wizardMsg = await this.messages.append({
         conversationId: conv.id,
         role: "assistant",
@@ -53,15 +58,22 @@ export class TransitionToTerms {
         content: step
           ? t(lang, step.question)
           : t(lang, "transitionToTerms.allTermsAnswered"),
-        payload: { specId: CONTRACT_TERMS_WIZARD_V1.id, stepIdx, stepId: step?.id, options: step ? localizeOptions(step.options, lang) : undefined },
+        payload: {
+          specId: TERMS_WIZARD_V1.id,
+          stepIdx,
+          stepId: step?.id,
+          options: step ? localizeOptions(step.options, lang) : undefined,
+        },
       });
       return { conversation: conv, newMessages: [wizardMsg] };
     }
 
     const transitioned = transitionPhase(conv, "terms");
-    const updated = await this.conversations.update(transitioned.id, { currentPhase: "terms" });
+    const updated = await this.conversations.update(transitioned.id, {
+      currentPhase: "terms",
+    });
 
-    const state = freshState(CONTRACT_TERMS_WIZARD_V1);
+    const state = freshState(TERMS_WIZARD_V1);
     await this.conversations.putWizardState(conv.id, state);
 
     const newMessages: AgentMessage[] = [];
@@ -74,13 +86,19 @@ export class TransitionToTerms {
       payload: { phase: 2, label: t(lang, "transitionToTerms.phaseDivider") },
     });
 
-    const firstStep = CONTRACT_TERMS_WIZARD_V1.steps[0];
+    const firstStep = TERMS_WIZARD_V1.steps[0];
     const wizardMsg = await this.messages.append({
       conversationId: conv.id,
       role: "assistant",
       kind: "wizard",
       content: t(lang, firstStep.question),
-      payload: { specId: CONTRACT_TERMS_WIZARD_V1.id, stepIdx: 0, stepId: firstStep.id, options: localizeOptions(firstStep.options, lang), hint: firstStep.hint },
+      payload: {
+        specId: TERMS_WIZARD_V1.id,
+        stepIdx: 0,
+        stepId: firstStep.id,
+        options: localizeOptions(firstStep.options, lang),
+        hint: firstStep.hint,
+      },
     });
 
     newMessages.push(divider, wizardMsg);

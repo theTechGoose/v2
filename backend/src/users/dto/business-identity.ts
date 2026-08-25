@@ -120,7 +120,7 @@ export interface BusinessIdentity {
    *  customer sees a "Reach out to coordinate payment" fallback. */
   acceptedPaymentMethods?: AcceptedPaymentMethods;
   /** Language the contractor's CUSTOMERS receive outbound comms in —
-   *  quote/contract SMS + email, public docs, PDF (roadmap p.13). Distinct
+   *  quote/invoice SMS + email, public docs, PDF (roadmap p.13). Distinct
    *  from the contractor's own UI language (user.language). Unset → "en".
    *  Kept as a free string so we can broaden the set later. */
   commsLanguage?: string;

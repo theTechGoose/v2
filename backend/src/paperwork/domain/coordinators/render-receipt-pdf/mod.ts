@@ -20,7 +20,7 @@ export interface RenderReceiptPdfInput {
 
 /**
  * RenderReceiptPdf — pure-JS PDF receipt fired after a contractor
- * confirms a customer's payment. Mirrors the look of the contract PDF
+ * confirms a customer's payment. Mirrors the look of the agreement PDF
  * (pink ribbon, green-on-cream amount card) so customers recognize the
  * brand across artifacts.
  *

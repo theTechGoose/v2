@@ -14,7 +14,6 @@
  *   Customers:  cy.apiCreateCustomer
  *   Quotes:     cy.apiCreateQuote, cy.apiAcceptQuote, cy.apiDeclineQuote,
  *               cy.apiInquiry, cy.apiSendQuoteEmail
- *   Contracts:  cy.apiCreateContract, cy.apiSignContract
  *   Invoices:   cy.apiCreateInvoice, cy.apiClaimPayment, cy.apiConfirmPayment,
  *               cy.apiSendInvoiceEmail
  *   Profile:    cy.apiUpdateProfile, cy.apiUpdateUser
@@ -28,7 +27,6 @@
 interface SeedQuoteToCashResult {
   customerId: string;
   quoteId: string;
-  contractId: string;
   invoiceId: string;
 }
 
@@ -59,7 +57,9 @@ declare global {
        *  the `isNewUser: true` state without the dev master shortcut.
        *  Use this for any test that needs to exercise the onboarding
        *  conversation itself. Dev/local only. */
-      startFreshOnboarding(phoneNumber: string): Chainable<{ redirectTo: string; userId: string }>;
+      startFreshOnboarding(
+        phoneNumber: string,
+      ): Chainable<{ redirectTo: string; userId: string }>;
 
       // -- Customers ----------------------------------------------------------
       /** Create a customer via the backend API. Returns its id. */
@@ -69,10 +69,12 @@ declare global {
       /** Create a quote via the backend API. Returns its id. */
       apiCreateQuote(body: Record<string, unknown>): Chainable<string>;
 
-      /** Customer accepts a public quote (no auth required). */
+      /** Customer accepts a public quote (no auth required). Accepting IS
+       *  the signature ceremony — on success the backend also creates the
+       *  milestone invoices from the quote's payment terms. */
       apiAcceptQuote(
         quoteId: string,
-        body?: { signature?: string; name?: string },
+        body?: { signature?: string; name?: string; tin?: string },
       ): Chainable<Cypress.Response<unknown>>;
 
       /** Customer declines a public quote (no auth required). */
@@ -90,16 +92,6 @@ declare global {
       /** Send quote email to the customer (contractor auth required). */
       apiSendQuoteEmail(quoteId: string): Chainable<Cypress.Response<unknown>>;
 
-      // -- Contracts ----------------------------------------------------------
-      /** Create a contract via the backend API. Returns its id. */
-      apiCreateContract(body: Record<string, unknown>): Chainable<string>;
-
-      /** Customer signs a public contract (no auth required). */
-      apiSignContract(
-        contractId: string,
-        body: { signature: string; name: string; tin?: string },
-      ): Chainable<Cypress.Response<unknown>>;
-
       // -- Invoices -----------------------------------------------------------
       /** Create an invoice via the backend API. Returns its id. */
       apiCreateInvoice(body: Record<string, unknown>): Chainable<string>;
@@ -111,28 +103,36 @@ declare global {
       ): Chainable<Cypress.Response<unknown>>;
 
       /** Contractor confirm. Requires loginAs first. */
-      apiConfirmPayment(invoiceId: string): Chainable<Cypress.Response<unknown>>;
+      apiConfirmPayment(
+        invoiceId: string,
+      ): Chainable<Cypress.Response<unknown>>;
 
       /** Send invoice email to the customer (contractor auth required). */
-      apiSendInvoiceEmail(invoiceId: string): Chainable<Cypress.Response<unknown>>;
+      apiSendInvoiceEmail(
+        invoiceId: string,
+      ): Chainable<Cypress.Response<unknown>>;
 
       // -- Profile ------------------------------------------------------------
       /** Update the contractor's payment methods / business identity. */
-      apiUpdateProfile(body: Record<string, unknown>): Chainable<Cypress.Response<unknown>>;
+      apiUpdateProfile(
+        body: Record<string, unknown>,
+      ): Chainable<Cypress.Response<unknown>>;
 
       /** Update the authenticated user (name, language, etc.). */
-      apiUpdateUser(body: Record<string, unknown>): Chainable<Cypress.Response<unknown>>;
+      apiUpdateUser(
+        body: Record<string, unknown>,
+      ): Chainable<Cypress.Response<unknown>>;
 
       // -- Composite ----------------------------------------------------------
       /**
-       * Seed a full customer → quote → contract → invoice chain.
+       * Seed a full customer → quote → invoice chain (the quote IS the
+       * agreement — there is no separate contract entity).
        * Requires loginAs first. Returns all created IDs.
        */
       seedQuoteToCash(
         overrides?: Partial<{
           customer: Record<string, unknown>;
           quote: Record<string, unknown>;
-          contract: Record<string, unknown>;
           invoice: Record<string, unknown>;
         }>,
       ): Chainable<SeedQuoteToCashResult>;
@@ -214,7 +214,10 @@ Cypress.Commands.add("startFreshOnboarding", (phoneNumber: string) => {
         .request("POST", "/api/auth/verify", { phoneNumber, code })
         .then((res) => {
           expect(res.body.ok, `verify ok for ${phoneNumber}`).to.eq(true);
-          return cy.wrap({ redirectTo: res.body.redirectTo, userId: res.body.userId });
+          return cy.wrap({
+            redirectTo: res.body.redirectTo,
+            userId: res.body.userId,
+          });
         });
     });
 });
@@ -272,26 +275,6 @@ Cypress.Commands.add("apiSendQuoteEmail", (quoteId: string) => {
   return cy.request({
     method: "POST",
     url: `/api/quotes/${quoteId}/email`,
-    failOnStatusCode: false,
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Contracts
-// ---------------------------------------------------------------------------
-
-Cypress.Commands.add("apiCreateContract", (body: Record<string, unknown>) => {
-  return cy
-    .request("POST", "/api/contracts", body)
-    .its("body")
-    .then((b: { id: string }) => b.id);
-});
-
-Cypress.Commands.add("apiSignContract", (contractId: string, body) => {
-  return cy.request({
-    method: "POST",
-    url: `/api/contracts/${contractId}/sign`,
-    body,
     failOnStatusCode: false,
   });
 });
@@ -359,8 +342,14 @@ Cypress.Commands.add("apiUpdateUser", (body: Record<string, unknown>) => {
 // ---------------------------------------------------------------------------
 
 Cypress.Commands.add("seedQuoteToCash", (overrides = {}) => {
-  const customerBody = overrides.customer ?? { name: "Asha Patel", email: "asha@example.com", phone: "+15125559876" };
-  const lineItems = [{ description: "Fence repair", quantity: 1, unit: "ea", price: 35_000 }];
+  const customerBody = overrides.customer ??
+    { name: "Asha Patel", email: "asha@example.com", phone: "+15125559876" };
+  const lineItems = [{
+    description: "Fence repair",
+    quantity: 1,
+    unit: "ea",
+    price: 35_000,
+  }];
 
   return cy.apiCreateCustomer(customerBody).then((customerId: string) => {
     const quoteBody = {
@@ -372,33 +361,23 @@ Cypress.Commands.add("seedQuoteToCash", (overrides = {}) => {
       ...overrides.quote,
     };
     return cy.apiCreateQuote(quoteBody).then((quoteId: string) => {
-      const contractBody = {
+      const invoiceBody = {
+        // quoteId triggers the derive-from-quote path so the invoice
+        // carries the quote's jobName/description (roadmap p.6).
         quoteId,
         customerId,
-        totalAmount: 35_000,
-        ...overrides.contract,
+        amount: 35_000,
+        dueDate: "2099-01-01",
+        status: "sent",
+        installmentIndex: 1,
+        installmentTotal: 1,
+        ...overrides.invoice,
       };
-      return cy.apiCreateContract(contractBody).then((contractId: string) => {
-        const invoiceBody = {
-          contractId,
-          // quoteId triggers the derive-from-quote path so the invoice
-          // carries the quote's jobName/description (roadmap p.6).
-          quoteId,
+      return cy.apiCreateInvoice(invoiceBody).then((invoiceId: string) => {
+        return cy.wrap<SeedQuoteToCashResult>({
           customerId,
-          amount: 35_000,
-          dueDate: "2099-01-01",
-          status: "sent",
-          installmentIndex: 1,
-          installmentTotal: 1,
-          ...overrides.invoice,
-        };
-        return cy.apiCreateInvoice(invoiceBody).then((invoiceId: string) => {
-          return cy.wrap<SeedQuoteToCashResult>({
-            customerId,
-            quoteId,
-            contractId,
-            invoiceId,
-          });
+          quoteId,
+          invoiceId,
         });
       });
     });

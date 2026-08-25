@@ -16,7 +16,12 @@
  * Desired: the feed returns viewer-localized strings (or key+params the FE
  * localizes), so an ES viewer sees Spanish and every string is capitalized.
  */
-import { anonymous, contractor, seedQuote, type ApiSession } from "./helpers/api";
+import {
+  anonymous,
+  type ApiSession,
+  contractor,
+  seedQuote,
+} from "./helpers/api";
 
 const PHONE = "+15125553100";
 
@@ -34,7 +39,8 @@ async function feed(s: ApiSession): Promise<Notif[]> {
 }
 
 // English event prose an ES viewer's feed must NOT contain.
-const ENGLISH_EVENT_PROSE = /\b(accepted|signed|declined|approved|paid|overdue)\b|your quote|the contract/i;
+const ENGLISH_EVENT_PROSE =
+  /\b(accepted|signed|declined|approved|paid|overdue)\b|your quote|the contract/i;
 
 describe("P-59 activity feed renders in the viewer's language", () => {
   let s: ApiSession;
@@ -62,7 +68,9 @@ describe("P-59 activity feed renders in the viewer's language", () => {
     const items = await feed(s);
     expect(items.length).toBeGreaterThan(0);
     // The customer name proves the accept event reached the feed.
-    expect(items.some((n) => (n.title ?? "").includes("Green Goblin"))).toBe(true);
+    expect(items.some((n) => (n.title ?? "").includes("Green Goblin"))).toBe(
+      true,
+    );
   });
 
   it("P-59 the ES viewer's feed shows Spanish, not frozen English event prose", async () => {

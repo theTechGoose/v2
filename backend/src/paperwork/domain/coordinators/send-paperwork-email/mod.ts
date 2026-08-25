@@ -1,7 +1,6 @@
 import { Injectable } from "#danet/core";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -25,12 +24,11 @@ import {
 } from "#quote-flow/outbound-identity.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
-import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 
-export type PaperworkKind = "quote" | "contract" | "invoice";
+export type PaperworkKind = "quote" | "invoice";
 
 export interface SendPaperworkEmailInput {
   kind: PaperworkKind;
@@ -60,7 +58,7 @@ export const SENDER_NAME_REQUIRED_REASON =
   "sender name required — add your name in Settings / falta el nombre: agrega tu nombre en Configuración";
 
 /**
- * SendPaperworkEmail — render + dispatch a quote/contract/invoice email.
+ * SendPaperworkEmail — render + dispatch a quote/invoice email.
  *
  * Resolves the recipient from the resource's `customerId` if `to` is
  * omitted. Renders a minimal HTML body server-side; richer templates
@@ -74,7 +72,6 @@ export const SENDER_NAME_REQUIRED_REASON =
 export class SendPaperworkEmail {
   constructor(
     private quotes: QuoteStore,
-    private contracts: ContractStore,
     private invoices: InvoiceStore,
     private customers: CustomerStore,
     private users: UserStore,
@@ -145,59 +142,11 @@ export class SendPaperworkEmail {
       const customer = await this.tryGetCustomer(userId, quote.customerId);
       customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.email ?? undefined;
-      // The customer-facing flow goes: email → contract page → sign.
-      // No separate contract email exists — the quote email IS the
-      // outbound, and its CTA jumps straight into the bonafide contract.
-      // If a contract has already been finalized for this quote, link to
-      // it directly. Otherwise we fall back to the quote-public page.
-      const boundContract = await this.findContractForQuote(userId, quote.id);
+      // The customer-facing flow goes: email → /q page → sign. The quote IS
+      // the agreement, so this one email carries the review-and-sign CTA.
       subject = renderQuoteSubject(quote, safeSender, senderBiz, customer);
-      htmlBody = renderQuoteHtml(
-        quote,
-        customer,
-        safeSender,
-        senderBiz,
-        boundContract,
-      );
+      htmlBody = renderQuoteHtml(quote, customer, safeSender, senderBiz);
       quoteForStamp = quote;
-    } else if (input.kind === "contract") {
-      const contract = await this.contracts.getOwned(input.resourceId, userId);
-      const customer = await this.tryGetCustomer(userId, contract.customerId);
-      customerIdForLog = customer?.id;
-      if (!recipient) recipient = customer?.email ?? undefined;
-      // Single email design across the board: render the same WOW quote
-      // email, but with the CTA pointing at the contract page (so the
-      // customer signs without an extra hop). We resolve the bound quote
-      // for line items + summary; if missing, the quote-render falls
-      // back gracefully.
-      let quoteForBody: Quote | undefined;
-      if (contract.quoteId) {
-        try {
-          quoteForBody = await this.quotes.getOwned(contract.quoteId, userId);
-        } catch { /* fall through to contract-only */ }
-      }
-      // The customer sees a quote-styled email with a "sign" CTA — the
-      // subject must match that framing. "Sign your contract #ABCD..."
-      // confused customers (audit2 N9) since the body and CTA copy
-      // present this as a quote review. Reuse the quote subject builder
-      // with the resolved quote (or a synthesized one when missing).
-      // The email goes to the customer, so it follows the contractor's
-      // outgoing-comms language (default en), not their UI language.
-      const lang: Lang = senderBiz?.commsLanguage === "es" ? "es" : "en";
-      const quoteForSubject = quoteForBody ?? quoteFromContract(contract, lang);
-      subject = renderQuoteSubject(
-        quoteForSubject,
-        safeSender,
-        senderBiz,
-        customer,
-      );
-      htmlBody = renderQuoteHtml(
-        quoteForBody ?? quoteFromContract(contract, lang),
-        customer,
-        safeSender,
-        senderBiz,
-        contract,
-      );
     } else {
       const invoice = await this.invoices.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
@@ -206,24 +155,15 @@ export class SendPaperworkEmail {
       // The email goes to the customer, so it follows the contractor's
       // outgoing-comms language (default en), not their UI language.
       const lang: Lang = senderBiz?.commsLanguage === "es" ? "es" : "en";
-      // Resolve the linked agreement + quote so the email mirrors the signed
-      // agreement (itemized job, totals, signed-agreement link) — minus the
-      // legal clauses + signature. Both are best-effort; a standalone invoice
-      // falls back to the lightweight amount-only email.
-      let invContract: Contract | undefined;
+      // Resolve the linked quote so the email mirrors the signed agreement
+      // (itemized job, totals, signed-agreement link) — minus the legal
+      // clauses + signature. Best-effort; a standalone invoice falls back to
+      // the lightweight amount-only email.
       let invQuote: Quote | undefined;
-      if (invoice.contractId) {
+      if (invoice.quoteId) {
         try {
-          invContract = await this.contracts.getOwned(
-            invoice.contractId,
-            userId,
-          );
+          invQuote = await this.quotes.getOwned(invoice.quoteId, userId);
         } catch { /* standalone or missing */ }
-      }
-      if (invContract?.quoteId) {
-        try {
-          invQuote = await this.quotes.getOwned(invContract.quoteId, userId);
-        } catch { /* fall through */ }
       }
       subject = renderInvoiceSubject(invoice, safeSender, lang);
       htmlBody = renderInvoiceHtml(
@@ -232,7 +172,6 @@ export class SendPaperworkEmail {
         safeSender,
         senderBiz,
         invQuote,
-        invContract,
       );
     }
 
@@ -320,28 +259,6 @@ export class SendPaperworkEmail {
   ): Promise<BusinessIdentity | undefined> {
     try {
       return (await this.identity.get(userId)) ?? undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  /** Find a contract owned by `userId` whose quoteId matches `quoteId`.
-   *  Used by the quote-email path so the CTA can link straight to the
-   *  bonafide contract page (no separate accept-quote step). */
-  private async findContractForQuote(
-    userId: string,
-    quoteId: string,
-  ): Promise<Contract | undefined> {
-    try {
-      const all = await this.contracts.listByUser(userId);
-      // Prefer the most recently updated contract bound to the quote so a
-      // stale draft from before the wizard re-ran doesn't shadow the
-      // current one.
-      return all
-        .filter((c) => c.quoteId === quoteId)
-        .sort((a, b) =>
-          (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
-        )[0];
     } catch {
       return undefined;
     }
@@ -621,7 +538,6 @@ function renderQuoteHtml(
   customer: Customer | undefined,
   sender: User | undefined,
   senderBiz: BusinessIdentity | undefined,
-  contract?: Contract,
 ): string {
   const docNumber = `#${q.id.slice(0, 8).toUpperCase()}`;
   // Roadmap p.13: the email goes to the customer, so it follows the
@@ -670,15 +586,10 @@ function renderQuoteHtml(
       ],
     ],
   };
-  // CTA points at the contract page when a contract has been finalized;
-  // otherwise the legacy quote-public page (still cents-correct, still
-  // accept/decline). Customers in both cases land on a real document.
-  const ctaUrl = contract
-    ? `${APP_URL}/c/${contract.id}`
-    : `${APP_URL}/q/${q.id}`;
-  const ctaLabel = contract
-    ? t(lang, "paperworkEmail.quote.ctaSign")
-    : t(lang, "paperworkEmail.quote.ctaAccept");
+  // CTA lands on the /q page — the one Quote + Agreement document the
+  // customer reviews, accepts, and signs in a single ceremony.
+  const ctaUrl = `${APP_URL}/q/${q.id}`;
+  const ctaLabel = t(lang, "paperworkEmail.quote.ctaAccept");
 
   const customerFirst = customer?.name?.trim().split(/\s+/)[0];
   const senderFirst = sender?.name?.trim()?.split(/\s+/)[0];
@@ -714,7 +625,7 @@ function renderQuoteHtml(
     const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
     const qty = li.quantity ?? 1;
     const subBits = [
-      // P-51: localized unit — the "ea" fallback maps to contractDoc.unitEach
+      // P-51: localized unit — the "ea" fallback maps to quoteDoc.unitEach
       // ("c/u" in es); custom units pass through.
       qty > 1 ? `${qty} ${escapeHtml(unitLabel(li.unit, lang))}` : null,
       qty > 1
@@ -992,33 +903,6 @@ function renderQuoteHtml(
 </html>`;
 }
 
-// ---------- contract ----------------------------------------------------------
-
-/**
- * Synthesize a Quote-shaped object from a Contract when no real quote is
- * bound. Lets renderQuoteHtml work as the universal customer-facing
- * email body — even contracts that lost their linked quote get a
- * dignified-looking email with the contract value as the total.
- */
-function quoteFromContract(c: Contract, lang: Lang): Quote {
-  const serviceAgreement = t(lang, "paperworkEmail.contract.serviceAgreement");
-  return {
-    id: c.id,
-    userId: c.userId,
-    summary: serviceAgreement,
-    lineItems: [{
-      description: serviceAgreement,
-      quantity: 1,
-      unit: "ea",
-      price: c.totalAmount ?? 0,
-    }],
-    estimatedTotal: c.totalAmount ?? 0,
-    status: c.status ?? "draft",
-    createdAt: c.createdAt,
-    updatedAt: c.updatedAt,
-  } as Quote;
-}
-
 // ---------- invoice -----------------------------------------------------------
 
 function renderInvoiceSubject(
@@ -1042,10 +926,10 @@ function renderInvoiceSubject(
  * Rich invoice email — mirrors the WOW quote email (renderQuoteHtml): pink
  * ribbon, hero, job-details, line items, a prominent amount-due card, and a
  * personal contact card. Drops the agreement's legal clauses + signature
- * block (an invoice is a bill, not the contract). Adds a "View signed
- * agreement" link when the linked contract is signed.
+ * block (an invoice is a bill, not the agreement). Adds a "View signed
+ * agreement" link when the linked quote is accepted.
  *
- * Quote-linked invoices only — a standalone invoice (no linked quote/contract)
+ * Quote-linked invoices only — a standalone invoice (no linked quote)
  * has no itemized job to show and falls back to renderInvoiceBasicHtml.
  */
 function renderInvoiceHtml(
@@ -1054,12 +938,11 @@ function renderInvoiceHtml(
   sender: User | undefined,
   senderBiz: BusinessIdentity | undefined,
   quote?: Quote,
-  contract?: Contract,
 ): string {
   const es = senderBiz?.commsLanguage === "es";
   const lang: Lang = es ? "es" : "en";
   const items = quote?.lineItems ?? [];
-  const agreementTotal = contract?.totalAmount ?? quote?.estimatedTotal ??
+  const agreementTotal = quote?.estimatedTotal ??
     (items.length
       ? items.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0)
       : undefined);
@@ -1083,7 +966,7 @@ function renderInvoiceHtml(
     by: t(lang, "paperworkEmail.quote.by"),
     jobDetails: t(lang, "paperworkEmail.quote.jobDetails"),
     whatWeHandle: t(lang, "paperworkEmail.quote.whatWeHandle"),
-    agreementValue: t(lang, "contractDoc.agreementValue"),
+    agreementValue: t(lang, "quoteDoc.agreementValue"),
     amountDue: t(lang, "paperworkEmail.invoice.amountDueLabel"),
     dueLabel: t(lang, "paperworkEmail.invoice.dueLabel"),
     pasteLink: t(lang, "paperworkEmail.pasteLink"),
@@ -1104,8 +987,8 @@ function renderInvoiceHtml(
   const description = quote?.descriptionByLang?.[lang] ?? quote?.description;
 
   const ctaUrl = `${APP_URL}/i/${i.id}`;
-  const signedUrl = contract && contract.status === "signed"
-    ? `${APP_URL}/c/${contract.id}`
+  const signedUrl = quote && (quote.status === "accepted" || quote.acceptedAt)
+    ? `${APP_URL}/q/${quote.id}`
     : undefined;
   const pdfUrl = `${APP_URL}/api/invoices/${i.id}/pdf`;
 
@@ -1134,7 +1017,7 @@ function renderInvoiceHtml(
     const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
     const qty = li.quantity ?? 1;
     const subBits = [
-      // P-51: localized unit — the "ea" fallback maps to contractDoc.unitEach
+      // P-51: localized unit — the "ea" fallback maps to quoteDoc.unitEach
       // ("c/u" in es); custom units pass through.
       qty > 1 ? `${qty} ${escapeHtml(unitLabel(li.unit, lang))}` : null,
       qty > 1
@@ -1407,7 +1290,7 @@ function renderInvoiceHtml(
 }
 
 /** Lightweight amount-only invoice email (the original) — used for standalone
- *  invoices with no linked quote/contract to itemize. */
+ *  invoices with no linked quote to itemize. */
 function renderInvoiceBasicHtml(
   i: Invoice,
   customer: Customer | undefined,

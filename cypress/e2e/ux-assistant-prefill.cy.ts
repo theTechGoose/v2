@@ -144,8 +144,8 @@ describe("UX-32 facturar flow uses what the app already knows", () => {
   beforeEach(() => {
     loginEs(PHONE);
     // Seed an ACCEPTED quote via API: customer + quote (status flips to
-    // "approved" on accept — the canonical accepted state, backend/src/
-    // paperwork/entrypoints/public-controller/mod.ts:481-483).
+    // "accepted" on accept — the canonical accepted state, backend/src/
+    // paperwork/entrypoints/public-controller/mod.ts acceptQuote).
     cy.apiCreateCustomer({
       name: "María Nguyen",
       email: "maria.nguyen.ux32@blackhole.postmarkapp.com",
@@ -155,7 +155,12 @@ describe("UX-32 facturar flow uses what the app already knows", () => {
         jobName: JOB_NAME,
         description: "Instalación de patio de adoquines 20x15",
         lineItems: [
-          { description: "Patio de adoquines", quantity: 1, unit: "job", price: 370000 },
+          {
+            description: "Patio de adoquines",
+            quantity: 1,
+            unit: "job",
+            price: 370000,
+          },
         ],
         estimatedTotal: 370000,
         status: "sent",
@@ -191,7 +196,9 @@ describe("UX-32 facturar flow uses what the app already knows", () => {
       .click();
     cy.get("textarea.composer__input", { timeout: 10_000 })
       .should("be.visible")
-      .type("La factura del patio para la familia Nguyen, $3,700 todo incluido");
+      .type(
+        "La factura del patio para la familia Nguyen, $3,700 todo incluido",
+      );
     cy.get("button.composer__send").click();
     cy.get(".chat__price-capture", { timeout: 10_000 }).should("be.visible");
     // RED today: same $0 picker as UX-04 (no initialCents at AsstChat.tsx:

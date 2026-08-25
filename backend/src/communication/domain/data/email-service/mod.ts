@@ -2,7 +2,7 @@ import { Injectable } from "#danet/core";
 import { encodeBase64 } from "#std/encoding/base64";
 
 export interface EmailAttachment {
-  /** Filename the recipient sees (e.g., "Contract-1A0AE6B6.pdf"). */
+  /** Filename the recipient sees (e.g., "Agreement-1A0AE6B6.pdf"). */
   name: string;
   /** Raw bytes; will be base64-encoded into the Postmark payload. */
   content: Uint8Array;
@@ -11,23 +11,23 @@ export interface EmailAttachment {
 }
 
 export interface SendEmailInput {
-  to:        string;
-  subject:   string;
-  htmlBody:  string;
+  to: string;
+  subject: string;
+  htmlBody: string;
   /** Optional From override; otherwise falls back to POSTMARK_FROM env. */
-  from?:     string;
+  from?: string;
   /** Optional CC list — Postmark accepts a comma-separated string. */
-  cc?:       string[];
+  cc?: string[];
   /** File attachments — Postmark base64-encodes them; we accept raw bytes. */
   attachments?: EmailAttachment[];
 }
 
 export interface SendEmailResult {
-  ok:        boolean;
+  ok: boolean;
   /** Postmark MessageID, when the dispatch happened. */
   messageId?: string;
   /** Reason if the send failed (or 'dev_mode_no_dispatch'). */
-  reason?:   string;
+  reason?: string;
 }
 
 /**
@@ -62,38 +62,45 @@ export class EmailService {
 
     if (!apiKey) {
       const attachLog = input.attachments?.length
-        ? ` attachments=[${input.attachments.map((a) => `${a.name} (${a.contentType}, ${a.content.byteLength}B)`).join(", ")}]`
+        ? ` attachments=[${
+          input.attachments.map((a) =>
+            `${a.name} (${a.contentType}, ${a.content.byteLength}B)`
+          ).join(", ")
+        }]`
         : "";
-      console.log(`[email:dev-mode] would send to=${input.to} subject="${input.subject}"${attachLog}`);
+      console.log(
+        `[email:dev-mode] would send to=${input.to} subject="${input.subject}"${attachLog}`,
+      );
       return { ok: true, reason: "dev_mode_no_dispatch" };
     }
     if (!from) {
       return { ok: false, reason: "POSTMARK_FROM not set; cannot dispatch" };
     }
 
-    const baseUrl = Deno.env.get("POSTMARK_BASE_URL") ?? "https://api.postmarkapp.com";
+    const baseUrl = Deno.env.get("POSTMARK_BASE_URL") ??
+      "https://api.postmarkapp.com";
     const f = this.fetchOverride ?? globalThis.fetch;
 
     try {
       const res = await f(`${baseUrl}/email`, {
-        method:  "POST",
+        method: "POST",
         headers: {
-          "Accept":                 "application/json",
-          "Content-Type":           "application/json",
+          "Accept": "application/json",
+          "Content-Type": "application/json",
           "X-Postmark-Server-Token": apiKey,
         },
         body: JSON.stringify({
-          From:     from,
-          To:       input.to,
+          From: from,
+          To: input.to,
           ...(input.cc?.length ? { Cc: input.cc.join(", ") } : {}),
-          Subject:  input.subject,
+          Subject: input.subject,
           HtmlBody: input.htmlBody,
           MessageStream: "outbound",
           ...(input.attachments?.length
             ? {
               Attachments: input.attachments.map((a) => ({
-                Name:        a.name,
-                Content:     encodeBase64(a.content),
+                Name: a.name,
+                Content: encodeBase64(a.content),
                 ContentType: a.contentType,
               })),
             }
@@ -103,7 +110,10 @@ export class EmailService {
       if (!res.ok) {
         // Drain the body so the response doesn't leak in tests.
         const text = await res.text().catch(() => "");
-        return { ok: false, reason: `postmark ${res.status}: ${text.slice(0, 200)}` };
+        return {
+          ok: false,
+          reason: `postmark ${res.status}: ${text.slice(0, 200)}`,
+        };
       }
       const body = await res.json() as { MessageID?: string };
       return { ok: true, messageId: body.MessageID };

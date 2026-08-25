@@ -1,8 +1,10 @@
 import { Injectable } from "#danet/core";
-import { aggregatePipeline, isSampleQuote } from "#quote-flow/pipeline-stats.ts";
+import {
+  aggregatePipeline,
+  isSampleQuote,
+} from "#quote-flow/pipeline-stats.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import { PAYMENT_METHODS, type PaymentMethod } from "@paperwork/dto/payment.ts";
@@ -16,7 +18,10 @@ import {
   type RevenueRow,
   ytdRevenue,
 } from "@core/business/sparkline/mod.ts";
-import type { DashboardStats, TopPayor } from "@analytics/dto/dashboard-stats.ts";
+import type {
+  DashboardStats,
+  TopPayor,
+} from "@analytics/dto/dashboard-stats.ts";
 
 /**
  * ComputeDashboardStats — fans across CRM + Paperwork stores (all already
@@ -32,20 +37,18 @@ import type { DashboardStats, TopPayor } from "@analytics/dto/dashboard-stats.ts
 export class ComputeDashboardStats {
   constructor(
     private customers: CustomerStore,
-    private quotes:    QuoteStore,
-    private contracts: ContractStore,
-    private invoices:  InvoiceStore,
-    private payments:  PaymentStore,
+    private quotes: QuoteStore,
+    private invoices: InvoiceStore,
+    private payments: PaymentStore,
   ) {}
 
   async run(userId: string, now: Date = new Date()): Promise<DashboardStats> {
-    // Five parallel listByUser scans. Each is in-memory after the KV index
+    // Four parallel listByUser scans. Each is in-memory after the KV index
     // hit, so they're cheap. If we add 1000-customer accounts this becomes
     // the place to introduce per-resource counters.
-    const [customers, quotes, contracts, invoices, payments] = await Promise.all([
+    const [customers, quotes, invoices, payments] = await Promise.all([
       this.customers.listByUser(userId),
       this.quotes.listByUser(userId),
-      this.contracts.listByUser(userId),
       this.invoices.listByUser(userId),
       this.payments.listByUser(userId),
     ]);
@@ -55,24 +58,20 @@ export class ComputeDashboardStats {
     const realQuotes = quotes.filter((q) => !isSampleQuote(q));
 
     const quoteCounts = {
-      total:    realQuotes.length,
-      draft:    realQuotes.filter((q) => q.status === "draft").length,
-      sent:     realQuotes.filter((q) => q.status === "sent").length,
-      accepted: realQuotes.filter((q) => q.status === "accepted" || q.status === "approved").length,
-    };
-
-    const contractCounts = {
-      total:  contracts.length,
-      draft:  contracts.filter((c) => c.status === "draft").length,
-      signed: contracts.filter((c) => c.status === "signed").length,
+      total: realQuotes.length,
+      draft: realQuotes.filter((q) => q.status === "draft").length,
+      sent: realQuotes.filter((q) => q.status === "sent").length,
+      accepted: realQuotes.filter((q) => q.status === "accepted").length,
     };
 
     const todayIso = now.toISOString().slice(0, 10);
     const invoiceCounts = {
-      total:        invoices.length,
-      pending:      invoices.filter((i) => i.status === "pending").length,
-      paid:         invoices.filter((i) => i.status === "paid").length,
-      overdue:      invoices.filter((i) => i.status === "pending" && i.dueDate < todayIso).length,
+      total: invoices.length,
+      pending: invoices.filter((i) => i.status === "pending").length,
+      paid: invoices.filter((i) => i.status === "paid").length,
+      overdue:
+        invoices.filter((i) => i.status === "pending" && i.dueDate < todayIso)
+          .length,
       agingBuckets: bucketPendingInvoices(invoices, now),
     };
 
@@ -85,10 +84,8 @@ export class ComputeDashboardStats {
 
     // UX-02: the won bucket — the accepted value must not vanish the moment
     // a quote leaves "sent". Samples contribute nothing (P-15 discipline).
-    const wonValueCents = aggregatePipeline(
-      quotes.map((q) => ({ ...q })),
-      contracts.map((c) => ({ ...c })),
-    ).wonCents;
+    const wonValueCents =
+      aggregatePipeline(quotes.map((q) => ({ ...q }))).wonCents;
 
     // Revenue rows: each paid invoice contributes amount → revenue. Invoice
     // amounts are also INTEGER CENTS now (no × 100 needed).
@@ -101,24 +98,27 @@ export class ComputeDashboardStats {
 
     return {
       customers: customers.length,
-      quotes:    quoteCounts,
-      contracts: contractCounts,
-      invoices:  invoiceCounts,
+      quotes: quoteCounts,
+      invoices: invoiceCounts,
       quotedValueCents,
       wonValueCents,
       awaitingResponse: quoteCounts.sent,
       revenue: {
-        ytdCents:           ytdRevenue(revenueRows, now),
-        lastMonthCents:     lastMonthRevenue(revenueRows, now),
-        monthOverMonthPct:  monthOverMonthPct(revenueRows, now),
-        sparkline12mo:      bucketBy12Months(revenueRows, now),
+        ytdCents: ytdRevenue(revenueRows, now),
+        lastMonthCents: lastMonthRevenue(revenueRows, now),
+        monthOverMonthPct: monthOverMonthPct(revenueRows, now),
+        sparkline12mo: bucketBy12Months(revenueRows, now),
       },
       payments: computePaymentStats(payments, invoices, now),
     };
   }
 }
 
-function computePaymentStats(payments: Payment[], invoices: Invoice[], now: Date) {
+function computePaymentStats(
+  payments: Payment[],
+  invoices: Invoice[],
+  now: Date,
+) {
   // Audit1 #3 — Payment.amount is INTEGER CENTS, so all the previous
   // dollar→cents conversions in this function become identity copies.
   const yearStart = `${now.getUTCFullYear()}-01-01T00:00:00.000Z`;
@@ -130,10 +130,13 @@ function computePaymentStats(payments: Payment[], invoices: Invoice[], now: Date
     PAYMENT_METHODS.map((m) => [m, 0]),
   ) as Record<PaymentMethod, number>;
   for (const p of payments) {
-    methodMixCents[p.method] = (methodMixCents[p.method] ?? 0) + (p.amount ?? 0);
+    methodMixCents[p.method] = (methodMixCents[p.method] ?? 0) +
+      (p.amount ?? 0);
   }
 
-  const invoiceCustomer = new Map(invoices.map((i) => [i.id, i.customerId ?? ""]));
+  const invoiceCustomer = new Map(
+    invoices.map((i) => [i.id, i.customerId ?? ""]),
+  );
   const totalsByCustomer = new Map<string, number>();
   for (const p of payments) {
     const customerId = invoiceCustomer.get(p.invoiceId) ?? "";

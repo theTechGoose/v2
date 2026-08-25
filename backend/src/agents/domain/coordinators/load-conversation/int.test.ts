@@ -5,7 +5,6 @@ import { HandleWizardAnswer } from "@agents/domain/coordinators/handle-wizard-an
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
@@ -15,7 +14,6 @@ function fresh() {
   const conversations = new AgentConversationStore();
   const messages = new AgentMessageStore();
   const quotes = new QuoteStore();
-  const contracts = new ContractStore();
   const customers = new CustomerStore();
   const users = new UserStore();
   const bus = new EventBus();
@@ -27,12 +25,11 @@ function fresh() {
       conversations,
       messages,
       quotes,
-      contracts,
       customers,
       users,
       bus,
     ),
-    load: new LoadConversation(conversations, messages, contracts, customers),
+    load: new LoadConversation(conversations, messages, quotes, customers),
   };
 }
 

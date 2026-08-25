@@ -35,7 +35,10 @@ function entries(dict: Record<string, string>): Array<[string, string]> {
 }
 /** Minimal {token} interpolation, mirroring the app's tFor substitution. */
 function render(tmpl: string, params: Record<string, string>): string {
-  return tmpl.replace(/\{(\w+)\}/g, (_m, k) => (k in params ? params[k] : `{${k}}`));
+  return tmpl.replace(
+    /\{(\w+)\}/g,
+    (_m, k) => (k in params ? params[k] : `{${k}}`),
+  );
 }
 
 describe("P-43 one Spanish term for 'deposit' across all dict values", () => {
@@ -44,11 +47,11 @@ describe("P-43 one Spanish term for 'deposit' across all dict values", () => {
   const DEPOSIT_LABEL_KEYS = [
     "asstChat.milestone.deposit",
     "asstChat.payment.deposit",
-    "contractDoc.milestone.deposit",
+    "quoteDoc.milestone.deposit",
     "dashSeed.jobs.deposit",
     "dashboardPage.job.deposit",
     "publicInvoice.milestone.deposit", // "Anticipo" today — the drift
-    "renderContractPdf.milestone.deposit",
+    "renderQuotePdf.milestone.deposit", // renamed from renderContractPdf.* in the merge
     "settings.deposit", // "Anticipo" today — the drift
   ];
 
@@ -56,23 +59,29 @@ describe("P-43 one Spanish term for 'deposit' across all dict values", () => {
     for (const k of DEPOSIT_LABEL_KEYS) {
       expect(typeof es[k]).toBe("string"); // key must exist in es
     }
-    const terms = new Set(DEPOSIT_LABEL_KEYS.map((k) => es[k].trim().toLowerCase()));
+    const terms = new Set(
+      DEPOSIT_LABEL_KEYS.map((k) => es[k].trim().toLowerCase()),
+    );
     // Red today: {"depósito","anticipo"} → size 2.
     expect(terms.size).toBe(1);
   });
 });
 
 describe("P-45 preview timeline label matches the contract-doc duration label (es)", () => {
-  it("P-45 asstChat.preview.termLabel.wraps === contractDoc.termLabel.wraps", () => {
+  it("P-45 asstChat.preview.termLabel.wraps === quoteDoc.termLabel.wraps", () => {
     // "Tiempo de entrega" (preview) vs "Duración" (signed doc) — must agree.
-    expect(es["asstChat.preview.termLabel.wraps"]).toBe(es["contractDoc.termLabel.wraps"]);
+    expect(es["asstChat.preview.termLabel.wraps"]).toBe(
+      es["quoteDoc.termLabel.wraps"],
+    );
   });
 });
 
 describe("P-47 one ES translation per /quotes concept", () => {
   it("P-47 'decided this month' KPI and track labels agree", () => {
     // "Resueltas este mes" (KPI) vs "Decididas este mes" (track).
-    expect(es["quotesKpi.decidedLbl"]).toBe(es["quotesPage.track.decidedThisMonth"]);
+    expect(es["quotesKpi.decidedLbl"]).toBe(
+      es["quotesPage.track.decidedThisMonth"],
+    );
   });
 
   it("P-47 'out for response' KPI and track labels agree", () => {
@@ -84,7 +93,9 @@ describe("P-47 one ES translation per /quotes concept", () => {
 describe("P-48 ES plural agreement for overdue days", () => {
   it("P-48 the plural overdue template says 'días vencidos', never 'días vencido'", () => {
     // Offender: dashboardPage.invoice.overdue.other = "{n} días vencido · #INV-{num}".
-    expect(es["dashboardPage.invoice.overdue.other"]).not.toMatch(/\bdías vencido\b/);
+    expect(es["dashboardPage.invoice.overdue.other"]).not.toMatch(
+      /\bdías vencido\b/,
+    );
   });
 
   it("P-48 no es value has the ungrammatical plural 'días vencido' (missing final s)", () => {
@@ -129,15 +140,21 @@ describe("P-46 EN customers-surface: one term, sentence case", () => {
 
   it("P-46 the customers surface does not mix 'client' and 'customer'", () => {
     const usesClient = SURFACE_KEYS.some((k) => /\bclients?\b/i.test(en[k]));
-    const usesCustomer = SURFACE_KEYS.some((k) => /\bcustomers?\b/i.test(en[k]));
+    const usesCustomer = SURFACE_KEYS.some((k) =>
+      /\bcustomers?\b/i.test(en[k])
+    );
     // Red today: nav="Customers" (customer) + page="… clients …" (client).
     expect(usesClient && usesCustomer).toBe(false);
   });
 
   it("P-46 the customer-picker cluster is sentence case, no 'Click here for…'", () => {
-    expect(en["asstChat.customerStep.existingTrigger"]).not.toMatch(/click here for/i);
+    expect(en["asstChat.customerStep.existingTrigger"]).not.toMatch(
+      /click here for/i,
+    );
     expect(en["asstChat.customerStep.newCustomer"]).not.toMatch(/New Customer/);
-    expect(en["asstChat.customerStep.pickTitle"]).not.toMatch(/Pick a Customer/);
+    expect(en["asstChat.customerStep.pickTitle"]).not.toMatch(
+      /Pick a Customer/,
+    );
   });
 });
 
@@ -145,11 +162,13 @@ describe("P-34 clients headline agrees in number for one client (es)", () => {
   it("P-34 the one-client headline is not 'Las uno persona … que mantienen'", () => {
     // FE builds: titlePre + people.one(word=numberWord(1)) + titlePost.
     // Prefer a `.one` pluralization variant if the fix introduces one.
-    const pre = es["clientsHero.titlePre.one"] ?? es["clientsHero.titlePre"] ?? "";
+    const pre = es["clientsHero.titlePre.one"] ?? es["clientsHero.titlePre"] ??
+      "";
     const ppl = render(es["clientsHero.people.one"] ?? "", {
       word: es["clientsDisplay.num.one"] ?? "",
     });
-    const post = es["clientsHero.titlePost.one"] ?? es["clientsHero.titlePost"] ?? "";
+    const post = es["clientsHero.titlePost.one"] ??
+      es["clientsHero.titlePost"] ?? "";
     const headlineOne = `${pre} ${ppl} ${post}`.replace(/\s+/g, " ").trim();
 
     // Red today: "Las uno persona que mantienen las luces encendidas."

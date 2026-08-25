@@ -12,7 +12,7 @@
  */
 describe("invoice — parity with the quote, minus terms and signatures", () => {
   const PHONE = "+15125550931";
-  let ids: { quoteId: string; contractId: string; invoiceId: string };
+  let ids: { quoteId: string; invoiceId: string };
 
   before(() => {
     cy.clearCookies();
@@ -22,12 +22,16 @@ describe("invoice — parity with the quote, minus terms and signatures", () => 
     cy.seedQuoteToCash({
       quote: {
         jobName: "Backyard Junk Removal",
-        description: "Removing junk from a backyard and making sure no trash remains",
+        description:
+          "Removing junk from a backyard and making sure no trash remains",
       },
     }).then((seeded) => {
       ids = seeded;
-      // Sign the contract so the signed-quote link case is real.
-      cy.apiSignContract(ids.contractId, {
+      // Accept the quote — the one signature ceremony — so the
+      // signed-agreement link case is real. The pre-seeded full-amount
+      // invoice means the accept's milestone billing reconciles to zero
+      // new invoices (UX-36).
+      cy.apiAcceptQuote(ids.quoteId, {
         signature: "Green Goblin",
         name: "Green Goblin",
       });
@@ -41,7 +45,9 @@ describe("invoice — parity with the quote, minus terms and signatures", () => 
 
   it("public invoice shows the quote's info: job name, details, line items, total", () => {
     cy.visit(`/i/${ids.invoiceId}`);
-    cy.contains(/backyard junk removal/i, { timeout: 10_000 }).should("be.visible");
+    cy.contains(/backyard junk removal/i, { timeout: 10_000 }).should(
+      "be.visible",
+    );
     cy.contains(/no trash remains/i).should("be.visible");
     cy.contains(/\$\s?\d/).should("be.visible");
   });
@@ -64,15 +70,19 @@ describe("invoice — parity with the quote, minus terms and signatures", () => 
     cy.get("[data-cy=invoice-signed-quote-link]", { timeout: 10_000 })
       .should("be.visible")
       .and("have.attr", "href")
-      .and("match", new RegExp(ids.contractId.slice(0, 8)));
+      .and("match", new RegExp(`/q/${ids.quoteId}`));
   });
 
   it("the contractor can edit the invoice from its detail view", () => {
     cy.loginAs(PHONE);
     cy.apiUpdateUser({ language: "en" }); // fresh users default to es; EN copy asserted
     cy.visit(`/invoices?open=${ids.invoiceId}`);
-    cy.get("[data-cy=invoice-edit]", { timeout: 10_000 }).should("be.visible").click();
+    cy.get("[data-cy=invoice-edit]", { timeout: 10_000 }).should("be.visible")
+      .click();
     // An editable surface appears (line items / total inputs).
-    cy.get("input, textarea").filter(":visible").should("have.length.greaterThan", 0);
+    cy.get("input, textarea").filter(":visible").should(
+      "have.length.greaterThan",
+      0,
+    );
   });
 });

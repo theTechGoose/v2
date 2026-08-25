@@ -22,6 +22,10 @@ export const handler = define.handlers({
     url.searchParams.set("autocomplete", "true");
     url.searchParams.set("country", "us");
     url.searchParams.set("types", "address");
+    // Rank matches near the requester (Mapbox resolves "ip" to the caller's
+    // location) — without it, a query with no state hint returns arbitrary
+    // far-away states first.
+    url.searchParams.set("proximity", "ip");
     url.searchParams.set(
       "limit",
       ctx.url.searchParams.get("limit") === "10" ? "10" : "5",

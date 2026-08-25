@@ -25,7 +25,7 @@
  *   → { conversation: {...}, newMessages: [ {role:"user",...}, {role:"assistant",...} ] }
  *   Omitting conversationId starts a new conversation server-side.
  */
-import { contractor, anonymous, type ApiSession } from "./helpers/api";
+import { anonymous, type ApiSession, contractor } from "./helpers/api";
 
 // ---------------------------------------------------------------------------
 // P-20 — starter chips (client-side; no server-side "identical reply" defect)
@@ -60,7 +60,9 @@ describe("P-20 starter-chip routing (server side)", () => {
     const replies: string[] = [];
     for (const content of labels) {
       const { body } = await s.post("/agents/chat", { content });
-      const asst = (body.newMessages ?? []).find((m: any) => m.role === "assistant");
+      const asst = (body.newMessages ?? []).find((m: any) =>
+        m.role === "assistant"
+      );
       replies.push(String(asst?.content ?? ""));
     }
     expect(new Set(replies).size).toBe(labels.length);
@@ -114,7 +116,10 @@ describe("P-26 translate/projection endpoint (backend half)", () => {
   it.skip("P-26 translate ES→EN returns EN descriptionByLang (blocked: stub can't translate)", async () => {
     const s: ApiSession = await contractor("+15125553012");
     const { status, body } = await s.post("/agents/job-details/translate", {
-      texts: ["Reparar la cerca del patio trasero", "Instalar tres postes nuevos"],
+      texts: [
+        "Reparar la cerca del patio trasero",
+        "Instalar tres postes nuevos",
+      ],
       to: "en",
     });
     expect(status).toBe(200);
@@ -138,8 +143,16 @@ describe("P-26 translate/projection endpoint (backend half)", () => {
       jobName: "Cerca",
       summary: "Reparar cerca",
       description: "Reparar la cerca del patio",
-      descriptionByLang: { es: "Reparar la cerca del patio", en: "Repair the backyard fence" },
-      lineItems: [{ description: "Cerca", quantity: 1, unit: "job", price: 55000 }],
+      descriptionByLang: {
+        es: "Reparar la cerca del patio",
+        en: "Repair the backyard fence",
+      },
+      lineItems: [{
+        description: "Cerca",
+        quantity: 1,
+        unit: "job",
+        price: 55000,
+      }],
       estimatedTotal: 55000,
     });
     const got = await s.get(`/quotes/${q.body.id}`);

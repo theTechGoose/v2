@@ -93,13 +93,12 @@ async function smsSenderRefusal(
 }
 
 /**
- * PaperworkEmailController — three thin POST wrappers around
+ * PaperworkEmailController — thin POST wrappers around
  * SendPaperworkEmail. Each renders + dispatches the corresponding
  * resource. Body is optional; if omitted the recipient is resolved from
  * the linked customer's email.
  *
  *   POST /quotes/:id/email      { to?, from? }
- *   POST /contracts/:id/email   { to?, from? }
  *   POST /invoices/:id/email    { to?, from? }
  *
  * Note: routes are mounted under their resource prefix so they sit
@@ -122,21 +121,6 @@ export class PaperworkEmailController {
     const dto = parseEmailDispatch(await readDispatchBody(ctx));
     return await this.flow.run(user.id, {
       kind: "quote",
-      resourceId: id,
-      to: dto.to,
-      from: dto.from,
-    });
-  }
-
-  @Post("contracts/:id/email")
-  async emailContract(
-    @Context() ctx: ExecutionContext,
-    @Param("id") id: string,
-  ) {
-    const user = await requireUser(ctx, this.sessions, this.users);
-    const dto = parseEmailDispatch(await readDispatchBody(ctx));
-    return await this.flow.run(user.id, {
-      kind: "contract",
       resourceId: id,
       to: dto.to,
       from: dto.from,
@@ -171,22 +155,6 @@ export class PaperworkEmailController {
     const dto = parseSmsDispatch(await readDispatchBody(ctx));
     return await this.smsFlow.run(user.id, {
       kind: "quote",
-      resourceId: id,
-      to: dto.to,
-    });
-  }
-
-  @Post("contracts/:id/text")
-  async textContract(
-    @Context() ctx: ExecutionContext,
-    @Param("id") id: string,
-  ) {
-    const user = await requireUser(ctx, this.sessions, this.users);
-    const refusal = await smsSenderRefusal(this.identity, user, user.id);
-    if (refusal) return refusal;
-    const dto = parseSmsDispatch(await readDispatchBody(ctx));
-    return await this.smsFlow.run(user.id, {
-      kind: "contract",
       resourceId: id,
       to: dto.to,
     });

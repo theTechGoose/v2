@@ -3,18 +3,26 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
-import type { Customer, CustomerCard, CustomerStatus, CustomerLastTone } from "@crm/dto/customer.ts";
+import type {
+  Customer,
+  CustomerCard,
+  CustomerLastTone,
+  CustomerStatus,
+} from "@crm/dto/customer.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { View } from "@paperwork/dto/view.ts";
 import { relativeTime } from "#quote-flow/format-helpers.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 
-const JOBS_SUB_KEY: Record<"overdue" | "active" | "scheduled" | "none", string> = {
-  overdue:   "clientsDisplay.jobsSub.overdue",
-  active:    "clientsDisplay.jobsSub.active",
+const JOBS_SUB_KEY: Record<
+  "overdue" | "active" | "scheduled" | "none",
+  string
+> = {
+  overdue: "clientsDisplay.jobsSub.overdue",
+  active: "clientsDisplay.jobsSub.active",
   scheduled: "clientsDisplay.jobsSub.scheduled",
-  none:      "clientsDisplay.jobsSub.none",
+  none: "clientsDisplay.jobsSub.none",
 };
 
 const MS_PER_DAY = 86_400_000;
@@ -34,12 +42,16 @@ const TWELVE_MONTHS_MS = 365 * MS_PER_DAY;
 export class BuildCustomerCards {
   constructor(
     private customers: CustomerStore,
-    private quotes:    QuoteStore,
-    private invoices:  InvoiceStore,
-    private views:     ViewStore,
+    private quotes: QuoteStore,
+    private invoices: InvoiceStore,
+    private views: ViewStore,
   ) {}
 
-  async run(userId: string, now: Date = new Date(), lang: Lang = "en"): Promise<CustomerCard[]> {
+  async run(
+    userId: string,
+    now: Date = new Date(),
+    lang: Lang = "en",
+  ): Promise<CustomerCard[]> {
     const [customers, quotes, invoices, views] = await Promise.all([
       this.customers.listByUser(userId),
       this.quotes.listByUser(userId),
@@ -52,7 +64,9 @@ export class BuildCustomerCards {
     const quoteToCustomer = new Map<string, string | undefined>();
     for (const q of quotes) quoteToCustomer.set(q.id, q.customerId);
 
-    return customers.map((c) => buildOne(c, quotes, invoices, views, quoteToCustomer, now, lang));
+    return customers.map((c) =>
+      buildOne(c, quotes, invoices, views, quoteToCustomer, now, lang)
+    );
   }
 }
 
@@ -65,9 +79,9 @@ function buildOne(
   now: Date,
   lang: Lang,
 ): CustomerCard {
-  const myQuotes   = allQuotes.filter((q) => q.customerId === c.id);
+  const myQuotes = allQuotes.filter((q) => q.customerId === c.id);
   const myInvoices = allInvoices.filter((i) => i.customerId === c.id);
-  const myViews    = allViews.filter((v) => {
+  const myViews = allViews.filter((v) => {
     const cid = quoteToCustomer.get(v.paperworkId);
     return cid === c.id;
   });
@@ -83,8 +97,11 @@ function buildOne(
   const lastWhen = new Date(lastTs).toISOString();
   const daysSinceContact = Math.floor((now.getTime() - lastTs) / MS_PER_DAY);
   const lastWhenRel = relativeTime(lastWhen, now, lang);
-  const lastTone: CustomerLastTone =
-    daysSinceContact <= 7 ? "hot" : daysSinceContact <= 30 ? "warm" : "cold";
+  const lastTone: CustomerLastTone = daysSinceContact <= 7
+    ? "hot"
+    : daysSinceContact <= 30
+    ? "warm"
+    : "cold";
 
   // ---------------- balance ----------------
   // pending invoices owed → positive cents; overpaid/credits → negative.
@@ -94,13 +111,17 @@ function buildOne(
     // Audit1 #3 — invoice.amount is INTEGER CENTS now (no × 100).
     const cents = i.amount ?? 0;
     if (i.status === "pending") balanceCents += cents;
-    else if (i.status === "credit" || i.status === "deposit") balanceCents -= cents;
+    else if (i.status === "credit" || i.status === "deposit") {
+      balanceCents -= cents;
+    }
   }
   const balanceSub = buildBalanceSub(balanceCents, myInvoices, myQuotes, now);
 
   // ---------------- jobs ----------------
   // "active job" = accepted quote without a paid invoice covering it
-  const acceptedQuotes = myQuotes.filter((q) => q.status === "accepted" || q.status === "approved" || q.acceptedAt);
+  const acceptedQuotes = myQuotes.filter((q) =>
+    q.status === "accepted" || q.acceptedAt
+  );
   const paidInvoiceCount = myInvoices.filter((i) => i.status === "paid").length;
   const activeJobs = Math.max(0, acceptedQuotes.length - paidInvoiceCount);
   const overdueCount = myInvoices.filter(
@@ -109,10 +130,13 @@ function buildOne(
   // Localized to the viewer so the story line never leaks an EN "· active"
   // suffix into a Spanish card (P-34/P-64).
   const jobsSubKind: "overdue" | "active" | "scheduled" | "none" =
-    overdueCount > 0 ? "overdue"
-    : activeJobs > 0 ? "active"
-    : acceptedQuotes.length > 0 ? "scheduled"
-    : "none";
+    overdueCount > 0
+      ? "overdue"
+      : activeJobs > 0
+      ? "active"
+      : acceptedQuotes.length > 0
+      ? "scheduled"
+      : "none";
   const jobsSub = t(lang, JOBS_SUB_KEY[jobsSubKind]);
 
   // ---------------- 12-month revenue ----------------
@@ -138,12 +162,13 @@ function buildOne(
 
   // ---------------- temp ----------------
   const temp = clamp(
-    100
-    - Math.min(daysSinceContact, 60) * 1.2
-    + (revenue12moCents > 0 ? 20 : 0)
-    + (c.vip ? 15 : 0)
-    + (activeJobs > 0 ? 10 : 0),
-    0, 100,
+    100 -
+      Math.min(daysSinceContact, 60) * 1.2 +
+      (revenue12moCents > 0 ? 20 : 0) +
+      (c.vip ? 15 : 0) +
+      (activeJobs > 0 ? 10 : 0),
+    0,
+    100,
   );
 
   return {
@@ -171,16 +196,27 @@ function deriveStatus(args: {
   daysSinceContact: number;
   paidInvoiceCount: number;
 }): CustomerStatus {
-  const { balanceCents, acceptedQuotes, myQuotes, activeJobs, revenue12moCents, daysSinceContact } = args;
+  const {
+    balanceCents,
+    acceptedQuotes,
+    myQuotes,
+    activeJobs,
+    revenue12moCents,
+    daysSinceContact,
+  } = args;
   if (balanceCents > 0) return "owes";
   if (acceptedQuotes.length > args.paidInvoiceCount) return "active";
   if (myQuotes.length > 0 && acceptedQuotes.length === 0) {
-    const onlyOpen = myQuotes.every((q) => q.status === "draft" || q.status === "sent");
+    const onlyOpen = myQuotes.every((q) =>
+      q.status === "draft" || q.status === "sent"
+    );
     if (onlyOpen) return "lead";
   }
-  if (revenue12moCents > 0 && activeJobs === 0 && balanceCents === 0) return "regular";
+  if (revenue12moCents > 0 && activeJobs === 0 && balanceCents === 0) {
+    return "regular";
+  }
   if (daysSinceContact > 60 && balanceCents <= 0) return "cold";
-  // Fallback: if there's any non-decided open quote/contract treat as lead, else regular
+  // Fallback: if there's any non-decided open quote treat as lead, else regular
   if (myQuotes.length > 0 && acceptedQuotes.length === 0) return "lead";
   return "regular";
 }
@@ -211,7 +247,9 @@ function buildBalanceSub(
   const openQuote = quotes.find((q) => q.status === "sent");
   if (openQuote) {
     // estimatedTotal is INTEGER CENTS now (audit1 #3).
-    return `settled · quote out ${formatDollars(openQuote.estimatedTotal ?? 0)}`;
+    return `settled · quote out ${
+      formatDollars(openQuote.estimatedTotal ?? 0)
+    }`;
   }
   return "settled";
 }

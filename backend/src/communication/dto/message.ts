@@ -39,7 +39,7 @@ export class CreateMessageDto {
   @IsOptional() @IsString()
   htmlBody?: string;
 
-  /** When the message is an outbound paperwork dispatch (quote/contract/
+  /** When the message is an outbound paperwork dispatch (quote/
    *  invoice email or text), the paperwork row it references — powers the
    *  per-document comms trail (roadmap p.8 completion notifications). */
   @IsOptional() @IsString()

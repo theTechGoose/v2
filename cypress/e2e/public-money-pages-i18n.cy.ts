@@ -2,16 +2,14 @@
 
 /**
  * P-12 "[PUBLIC] The money pages ignore localization — /i and /co are
- * English-only. With pm_lang=es in the same browser that rendered /q and /c
+ * English-only. With pm_lang=es in the same browser that rendered /q
  * in Spanish: 'Bill to', 'Amount due', 'How would you like to pay?',
  * 'I sent it', 'Approve this change' — 100% EN chrome on the highest-stakes
  * customer surfaces."
  *
  * Desired: with the pm_lang=es cookie, /i/:id and /co/:id render their
- * chrome in Spanish — exactly like /q and /c already do. All the Spanish
- * strings asserted below ALREADY exist in lang/es.json; the routes just
- * never read the cookie (front-end/routes/i/[id].tsx keys off
- * contractor.commsLanguage only, front-end/routes/co/[id].tsx likewise).
+ * chrome in Spanish — exactly like the /q agreement already does. All the
+ * Spanish strings asserted below ALREADY exist in lang/es.json.
  */
 describe("P-12 public money pages honor the customer's pm_lang=es", () => {
   const PHONE = "+15125552620";
@@ -110,20 +108,23 @@ describe("P-12 public money pages honor the customer's pm_lang=es", () => {
     });
   });
 
-  it("P-12 parity: /q and /c stay Spanish in the same pm_lang=es session", () => {
-    // Regression guard — these two surfaces already resolve the pm_lang
-    // cookie (langFromCookie in their routes), so this is expected GREEN
-    // today. It pins the behavior the /i + /co fix must match.
-    cy.seedQuoteToCash().then(({ quoteId, contractId }) => {
+  it("P-12 parity: the /q agreement stays Spanish in the same pm_lang=es session", () => {
+    // Regression guard — the /q agreement already resolves the pm_lang
+    // cookie (langFromCookie in its route), so this is expected GREEN
+    // today. It pins the behavior the /i + /co fix must match. (/q now
+    // renders the FULL Quote + Agreement — value block AND signature
+    // ceremony — the old /c page is gone.)
+    cy.seedQuoteToCash().then(({ quoteId }) => {
       cy.clearCookies();
       cy.setCookie("pm_lang", "es");
 
       cy.visit(`/q/${quoteId}`);
-      cy.contains(/total estimado/i, { timeout: 10_000 }).should("be.visible");
-      cy.get("body").invoke("text").should("not.include", "Estimated total");
-
-      cy.visit(`/c/${contractId}`);
-      cy.contains(/firma|firmar/i, { timeout: 10_000 }).should("be.visible");
+      // quoteDoc.contractValue (es) — the agreement's value block.
+      cy.contains(/valor del acuerdo/i, { timeout: 10_000 })
+        .should("be.visible");
+      cy.get("body").invoke("text").should("not.include", "Agreement value");
+      // …and the signature ceremony is Spanish on the same page.
+      cy.contains(/firma|firmar/i).should("be.visible");
     });
   });
 });

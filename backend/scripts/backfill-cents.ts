@@ -12,21 +12,17 @@
  *
  * Fields touched (others stay untouched by design):
  *   Quote.estimatedTotal, Quote.lineItems[].price
- *   Contract.totalAmount
  *   Invoice.amount
  *   Payment.amount
  */
 
-interface Migrated { _centsMigrated?: boolean }
+interface Migrated {
+  _centsMigrated?: boolean;
+}
 interface QuoteRow extends Migrated {
   id: string;
   estimatedTotal?: number;
   lineItems?: { price?: number; [k: string]: unknown }[];
-  [k: string]: unknown;
-}
-interface ContractRow extends Migrated {
-  id: string;
-  totalAmount?: number;
   [k: string]: unknown;
 }
 interface InvoiceRow extends Migrated {
@@ -71,10 +67,18 @@ async function migrateOne<T extends Migrated>(
     const { row: next, touched } = transform(row);
     next._centsMigrated = true;
     if (DRY_RUN) {
-      vlog(`[dry-run] ${prefix} ${(row as { id?: string }).id ?? "?"} touched=${touched}`);
+      vlog(
+        `[dry-run] ${prefix} ${
+          (row as { id?: string }).id ?? "?"
+        } touched=${touched}`,
+      );
     } else {
       await kv.set(e.key, next);
-      vlog(`[write]   ${prefix} ${(row as { id?: string }).id ?? "?"} touched=${touched}`);
+      vlog(
+        `[write]   ${prefix} ${
+          (row as { id?: string }).id ?? "?"
+        } touched=${touched}`,
+      );
     }
     migrated++;
   }
@@ -103,17 +107,9 @@ async function main(): Promise<void> {
     }
     return { row: q, touched };
   });
-  log(`quotes:    scanned=${quotes.scanned} migrated=${quotes.migrated} skipped=${quotes.skipped}`);
-
-  const contracts = await migrateOne<ContractRow>(kv, "contract", (c) => {
-    let touched = false;
-    if (typeof c.totalAmount === "number") {
-      c.totalAmount = x100(c.totalAmount)!;
-      touched = true;
-    }
-    return { row: c, touched };
-  });
-  log(`contracts: scanned=${contracts.scanned} migrated=${contracts.migrated} skipped=${contracts.skipped}`);
+  log(
+    `quotes:    scanned=${quotes.scanned} migrated=${quotes.migrated} skipped=${quotes.skipped}`,
+  );
 
   const invoices = await migrateOne<InvoiceRow>(kv, "invoice", (i) => {
     let touched = false;
@@ -123,7 +119,9 @@ async function main(): Promise<void> {
     }
     return { row: i, touched };
   });
-  log(`invoices:  scanned=${invoices.scanned} migrated=${invoices.migrated} skipped=${invoices.skipped}`);
+  log(
+    `invoices:  scanned=${invoices.scanned} migrated=${invoices.migrated} skipped=${invoices.skipped}`,
+  );
 
   const payments = await migrateOne<PaymentRow>(kv, "payment", (p) => {
     let touched = false;
@@ -133,7 +131,9 @@ async function main(): Promise<void> {
     }
     return { row: p, touched };
   });
-  log(`payments:  scanned=${payments.scanned} migrated=${payments.migrated} skipped=${payments.skipped}`);
+  log(
+    `payments:  scanned=${payments.scanned} migrated=${payments.migrated} skipped=${payments.skipped}`,
+  );
 
   kv.close();
   log(DRY_RUN ? "done (dry-run)" : "done");

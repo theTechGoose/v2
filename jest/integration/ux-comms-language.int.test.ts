@@ -13,8 +13,8 @@
  * identity has a businessName but NO stored commsLanguage — the state a
  * fresh Spanish-first signup is in. The quote/agreement text goes out
  * through the ASSISTANT's send path with the explicit Spanish pick the UI
- * passes (AsstChat.tsx:5901-5904 confirmSendContract(m, channel,
- * previewLang) → POST /agents/conversations/:id/send-contract
+ * passes (AsstChat confirmSendQuote(m, channel, previewLang) →
+ * POST /agents/conversations/:id/send-quote
  * {channel:"sms", language:"es"}); the invoice text goes out through the
  * path the assistant's invoice flow uses (AsstChat.tsx:3225-3236, 4279-4289
  * → POST /invoices/:id/text, which has NO language parameter —
@@ -22,12 +22,12 @@
  *
  * NOTE on "quote text": the plain POST /quotes/:id/text cannot carry the
  * assistant's language pick at all, so the honest reproduction of the
- * audited divergence is assistant-contract-text vs invoice-text — the two
+ * audited divergence is assistant-quote-text vs invoice-text — the two
  * dispatches the audited user actually fired. (Both plain /text routes,
  * probed, resolve identically from the stored default — the divergence
  * needs the assistant leg.)
  *
- * Observable: GET /messages (channel "text", paperworkId = contract id /
+ * Observable: GET /messages (channel "text", paperworkId = quote id /
  * invoice id).
  *
  * Live probe (2026-08-19, this exact flow, phone +15125556210):
@@ -76,9 +76,9 @@ function smsLangOf(body: string): "es" | "en" | "unknown" {
 
 describe("UX-28: one outbound language per contractor across doc types", () => {
   let s: ApiSession;
-  let contractId: string | undefined;
+  let quoteId: string;
   let invoiceId: string;
-  let contractSms: string;
+  let quoteSms: string;
   let invoiceSms: string;
 
   beforeAll(async () => {
@@ -114,11 +114,16 @@ describe("UX-28: one outbound language per contractor across doc types", () => {
       summary: "Reparar el techo",
       jobName: "Reparación de techo",
       jobNameByLang: { en: "Roof repair", es: "Reparación de techo" },
-      lineItems: [{ description: "Reparación", quantity: 1, unit: "ea", price: 370000 }],
+      lineItems: [{
+        description: "Reparación",
+        quantity: 1,
+        unit: "ea",
+        price: 370000,
+      }],
       estimatedTotal: 370000,
     });
     expect(q.status).toBeLessThan(400);
-    const quoteId = q.body?.id;
+    quoteId = q.body?.id;
 
     // Assistant leg: conversation → terms wizard ×5 → send with the ES pick.
     const conv = await s.post("/agents/conversations", { quoteId });
@@ -126,20 +131,25 @@ describe("UX-28: one outbound language per contractor across doc types", () => {
     expect(convId).toBeTruthy();
     await s.post(`/agents/conversations/${convId}/transition-to-terms`, {});
     const answers: Array<Record<string, unknown>> = [
-      { stepId: "customer", optionId: "pick_existing", customer: { id: customerId } },
+      {
+        stepId: "customer",
+        optionId: "pick_existing",
+        customer: { id: customerId },
+      },
       { stepId: "start_date", optionId: "asap" },
       { stepId: "wraps", optionId: "1_week" },
       { stepId: "payment_terms", optionId: "due_now" },
       { stepId: "warranty", optionId: "none" },
     ];
     for (const a of answers) {
-      const r = await s.post("/agents/wizard/answer", { conversationId: convId, ...a });
+      const r = await s.post("/agents/wizard/answer", {
+        conversationId: convId,
+        ...a,
+      });
       expect(r.status).toBeLessThan(400);
-      contractId = r.body?.conversation?.contractId ?? contractId;
     }
-    expect(contractId).toBeTruthy();
-    const send = await s.post(`/agents/conversations/${convId}/send-contract`, {
-      contractId,
+    const send = await s.post(`/agents/conversations/${convId}/send-quote`, {
+      quoteId,
       channel: "sms",
       language: "es", // ← exactly what AsstChat passes (previewLang)
     });
@@ -156,23 +166,20 @@ describe("UX-28: one outbound language per contractor across doc types", () => {
     expect(itext.status).toBeLessThan(400);
     expect(itext.body?.ok).toBe(true);
 
-    const cTexts = await textsFor(s, contractId!);
+    const qTexts = await textsFor(s, quoteId);
     const iTexts = await textsFor(s, invoiceId);
-    expect(cTexts.length).toBeGreaterThan(0);
+    expect(qTexts.length).toBeGreaterThan(0);
     expect(iTexts.length).toBeGreaterThan(0);
-    contractSms = cTexts[cTexts.length - 1];
+    quoteSms = qTexts[qTexts.length - 1];
     invoiceSms = iTexts[iTexts.length - 1];
   }, 30_000);
 
   it("UX-28: both logged texts are classifiable (anchor)", () => {
-    expect(smsLangOf(contractSms)).not.toBe("unknown");
+    expect(smsLangOf(quoteSms)).not.toBe("unknown");
     expect(smsLangOf(invoiceSms)).not.toBe("unknown");
   });
 
   it("UX-28: the invoice text speaks the SAME language as the quote/agreement text", () => {
-    // RED today: contract "Hola María, soy Rafa … está lista" (es) while the
-    // invoice reads "Hi María, your invoice is ready ($3,700)…" (en) — for
-    // the same contractor, same customer, same session.
-    expect(smsLangOf(invoiceSms)).toBe(smsLangOf(contractSms));
+    expect(smsLangOf(invoiceSms)).toBe(smsLangOf(quoteSms));
   });
 });

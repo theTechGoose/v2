@@ -2,7 +2,6 @@ import { assert, assertEquals, assertRejects } from "#std/assert";
 import { SendInvoice } from "./mod.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -19,16 +18,39 @@ import { MessageStore as CommMessageStore } from "@communication/domain/data/mes
 function fresh() {
   const conversations = new AgentConversationStore();
   const messages = new AgentMessageStore();
-  const contracts = new ContractStore();
   const invoices = new InvoiceStore();
   const quotes = new QuoteStore();
   const customers = new CustomerStore();
   const email = new EmailService();
   const bus = new EventBus();
-  const emailer = new SendPaperworkEmail(quotes, contracts, invoices, customers, new UserStore(), new BusinessIdentityStore(), email, new LogPaperworkMessage(new CommConversationStore(), new CommMessageStore()));
+  const emailer = new SendPaperworkEmail(
+    quotes,
+    invoices,
+    customers,
+    new UserStore(),
+    new BusinessIdentityStore(),
+    email,
+    new LogPaperworkMessage(
+      new CommConversationStore(),
+      new CommMessageStore(),
+    ),
+  );
   return {
-    conversations, messages, contracts, invoices, customers, bus, emailer,
-    flow: new SendInvoice(conversations, messages, contracts, invoices, bus, emailer),
+    conversations,
+    messages,
+    quotes,
+    invoices,
+    customers,
+    bus,
+    emailer,
+    flow: new SendInvoice(
+      conversations,
+      messages,
+      quotes,
+      invoices,
+      bus,
+      emailer,
+    ),
   };
 }
 
@@ -36,25 +58,48 @@ async function withKv<T>(fn: () => Promise<T>): Promise<T> {
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("POSTMARK_API_KEY");
   await resetKv();
-  try { return await fn(); } finally { await resetKv(); }
+  try {
+    return await fn();
+  } finally {
+    await resetKv();
+  }
 }
 
-Deno.test("send-invoice: creates invoice from contract, flips→sent, appends action_card, binds conv.invoiceId", async () => {
+async function seedAcceptedQuote(
+  s: ReturnType<typeof fresh>,
+  userId: string,
+  estimatedTotal: number,
+) {
+  const q = await s.quotes.create(userId, {
+    summary: "Job",
+    lineItems: [],
+    estimatedTotal,
+    status: "accepted",
+  });
+  return q;
+}
+
+Deno.test("send-invoice: creates invoice from the bound quote, flips→sent, appends action_card, binds conv.invoiceId", async () => {
   await withKv(async () => {
     const s = fresh();
-    const contract = await s.contracts.create("u-1", { quoteId: "q-1", totalAmount: 1200, status: "accepted" });
+    const quote = await seedAcceptedQuote(s, "u-1", 1200);
     const conv = await s.conversations.update(
-      (await s.conversations.create({ userId: "u-1", currentPhase: "terms" })).id,
-      { contractId: contract.id },
+      (await s.conversations.create({ userId: "u-1", currentPhase: "terms" }))
+        .id,
+      { quoteId: quote.id },
     );
     const r = await s.flow.run({ userId: "u-1", conversationId: conv.id });
     assertEquals(r.newMessages.length, 1);
     assertEquals(r.newMessages[0].kind, "action_card");
+    assertEquals(
+      (r.newMessages[0].payload as { quoteId?: string }).quoteId,
+      quote.id,
+    );
     assert(r.conversation.invoiceId);
     const inv = await s.invoices.get(r.conversation.invoiceId!);
     assertEquals(inv.status, "sent");
     assertEquals(inv.amount, 1200);
-    assertEquals(inv.contractId, contract.id);
+    assertEquals(inv.quoteId, quote.id);
   });
 });
 
@@ -63,11 +108,14 @@ Deno.test("send-invoice: re-Send retries email but state-flip + bus emit + invoi
     const s = fresh();
     // deno-lint-ignore no-explicit-any
     const events: any[] = [];
-    s.bus.subscribe((e) => { if (e.entityType === "invoice") events.push(e); });
-    const contract = await s.contracts.create("u-1", { quoteId: "q-1", totalAmount: 500, status: "accepted" });
+    s.bus.subscribe((e) => {
+      if (e.entityType === "invoice") events.push(e);
+    });
+    const quote = await seedAcceptedQuote(s, "u-1", 500);
     const conv = await s.conversations.update(
-      (await s.conversations.create({ userId: "u-1", currentPhase: "terms" })).id,
-      { contractId: contract.id },
+      (await s.conversations.create({ userId: "u-1", currentPhase: "terms" }))
+        .id,
+      { quoteId: quote.id },
     );
     const a = await s.flow.run({ userId: "u-1", conversationId: conv.id });
     const b = await s.flow.run({ userId: "u-1", conversationId: conv.id });
@@ -80,14 +128,17 @@ Deno.test("send-invoice: re-Send retries email but state-flip + bus emit + invoi
   });
 });
 
-Deno.test("send-invoice: forbidden when conversation has no contract bound", async () => {
+Deno.test("send-invoice: forbidden when conversation has no quote bound", async () => {
   await withKv(async () => {
     const s = fresh();
-    const conv = await s.conversations.create({ userId: "u-1", currentPhase: "quote" });
+    const conv = await s.conversations.create({
+      userId: "u-1",
+      currentPhase: "quote",
+    });
     await assertRejects(
       () => s.flow.run({ userId: "u-1", conversationId: conv.id }),
       Error,
-      "no bound contract",
+      "no bound quote",
     );
   });
 });
@@ -95,10 +146,11 @@ Deno.test("send-invoice: forbidden when conversation has no contract bound", asy
 Deno.test("send-invoice: forbidden across users", async () => {
   await withKv(async () => {
     const s = fresh();
-    const contract = await s.contracts.create("u-A", { quoteId: "q-1", totalAmount: 100, status: "accepted" });
+    const quote = await seedAcceptedQuote(s, "u-A", 100);
     const conv = await s.conversations.update(
-      (await s.conversations.create({ userId: "u-B", currentPhase: "terms" })).id,
-      { contractId: contract.id },
+      (await s.conversations.create({ userId: "u-B", currentPhase: "terms" }))
+        .id,
+      { quoteId: quote.id },
     );
     await assertRejects(
       () => s.flow.run({ userId: "u-B", conversationId: conv.id }),
@@ -111,14 +163,19 @@ Deno.test("send-invoice: emits 'invoice:sent' on the bus", async () => {
     const s = fresh();
     // deno-lint-ignore no-explicit-any
     const events: any[] = [];
-    s.bus.subscribe((e) => { events.push(e); });
-    const contract = await s.contracts.create("u-1", { quoteId: "q-1", totalAmount: 999, status: "accepted" });
+    s.bus.subscribe((e) => {
+      events.push(e);
+    });
+    const quote = await seedAcceptedQuote(s, "u-1", 999);
     const conv = await s.conversations.update(
-      (await s.conversations.create({ userId: "u-1", currentPhase: "terms" })).id,
-      { contractId: contract.id },
+      (await s.conversations.create({ userId: "u-1", currentPhase: "terms" }))
+        .id,
+      { quoteId: quote.id },
     );
     await s.flow.run({ userId: "u-1", conversationId: conv.id });
-    const sent = events.find((e) => e.entityType === "invoice" && e.action === "sent");
+    const sent = events.find((e) =>
+      e.entityType === "invoice" && e.action === "sent"
+    );
     assert(sent);
   });
 });

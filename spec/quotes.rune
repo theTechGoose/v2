@@ -104,7 +104,7 @@
 [TYP] estimatedTotal: number
     total quote value in integer cents
 [TYP] status: string
-    a lifecycle status string
+    lifecycle status: draft, sent, viewed, accepted (canonical; never approved), or lost
 [TYP] sentAt: string
     ISO timestamp the document was sent
 [TYP] acceptedAt: string
@@ -115,6 +115,30 @@
     captured acceptance signature data
 [TYP] acceptedName: string
     name of who accepted the quote
+[TYP] acceptedTinMasked: string
+    masked TIN captured at the signature ceremony, last 4 only
+[TYP] acceptedNotifiedAt: string
+    idempotency stamp: the post-accept billing and confirmation already ran
+[TYP] declineReason: string
+    machine-readable decline reason chip
+[TYP] declineNote: string
+    freetext note left by the declining customer
+[TYP] declinedName: string
+    name of who declined the quote
+[TYP] stepId: string
+    terms-wizard step identifier
+[TYP] label: string
+    a human-readable label
+[TYP] value: string
+    a resolved agreed value
+[TYP] effectiveDate: string
+    agreement effective date
+[TYP] startDate: string
+    agreement start date
+[TYP] estimatedCompletionDate: string
+    estimated completion date
+[TYP] term: QuoteTermDto
+    a nested captured agreement term
 [TYP] quantity: number
     a line-item quantity
 [TYP] unit: string
@@ -136,7 +160,7 @@
 [TYP] code: string
     a shortlink code
 [TYP] paperworkType: string
-    paperwork kind: quote, contract, or invoice
+    paperwork kind: quote or invoice
 [TYP] paperworkId: string
     id of the viewed paperwork record
 [TYP] viewedAt: string
@@ -170,12 +194,14 @@
 
 [DTO] LineItemDto: description, quantity, unit, price
     a single quote line item
-[DTO] CreateQuoteDto: customerId?, summary, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?
+[DTO] QuoteTermDto: stepId, label, value
+    a captured terms-wizard answer, stored in English on the quote
+[DTO] CreateQuoteDto: customerId?, summary, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, term(s), effectiveDate?, startDate?, estimatedCompletionDate?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?, acceptedTinMasked?, acceptedNotifiedAt?, declineReason?, declineNote?, declinedName?
     input to create a quote
-[DTO] UpdateQuoteDto: customerId?, summary?, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?
+[DTO] UpdateQuoteDto: customerId?, summary?, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, term(s), effectiveDate?, startDate?, estimatedCompletionDate?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?, acceptedTinMasked?, acceptedNotifiedAt?, declineReason?, declineNote?, declinedName?
     a partial quote patch
-[DTO] QuoteDto: id, userId, customerId?, summary, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?, createdAt, updatedAt
-    a persisted quote record
+[DTO] QuoteDto: id, userId, customerId?, summary, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, term(s), effectiveDate?, startDate?, estimatedCompletionDate?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?, acceptedTinMasked?, acceptedNotifiedAt?, declineReason?, declineNote?, declinedName?, createdAt, updatedAt
+    the persisted Quote + Agreement document record
 [DTO] CreateViewDto: paperworkType, paperworkId, viewedAt, viewerId?, viewerEmail?, userAgent?, ipAddress?, referrer?, durationMs?
     input to record a paperwork view
 [DTO] UpdateViewDto: paperworkType?, paperworkId?, viewedAt?, viewerId?, viewerEmail?, userAgent?, ipAddress?, referrer?, durationMs?
@@ -216,7 +242,7 @@
     a success body for deletes
 
 [NON] quote
-    a single quote
+    a single quote — the merged Quote + Agreement document (no separate agreement entity)
 [NON] view
     a single paperwork view
 [NON] shortlink

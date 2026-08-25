@@ -127,7 +127,9 @@ export function Kpis(props: KpisProps) {
   // "Avg. paid job" — only counts paid invoices. UX-20: the VALUE slot holds
   // a compact value ("—" when there's no paid history yet); the explanatory
   // sentence belongs in the sub line, never wrapped inside a KPI number.
-  const avgJobVal = props.avgJob > 0 ? `$${props.avgJob.toLocaleString()}` : "—";
+  const avgJobVal = props.avgJob > 0
+    ? `$${props.avgJob.toLocaleString()}`
+    : "—";
   const avgJobSub = props.avgJob > 0
     ? tFor(lang, "kpis.avgJob.trailingYear")
     : tFor(lang, "kpis.avgJob.none");
@@ -272,7 +274,7 @@ export function ActiveJobs(
           /* P-36: "Ver todo" goes to the page that actually lists the jobs
             (signed agreements), never a dead href="#". */
         }
-        <a class="panel__action" href="/contracts">
+        <a class="panel__action" href="/quotes">
           {tFor(lang, "dashPanel.seeAll")}
         </a>
       </div>

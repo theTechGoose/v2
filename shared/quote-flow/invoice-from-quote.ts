@@ -1,11 +1,15 @@
 /**
  * Invoice ⇄ quote parity (raw-plan p6): the invoice carries ALL the quote's
  * information EXCEPT the numbered Terms list, has no signature block, and
- * links to the signed agreement when one exists.
+ * links to the accepted agreement (the quote itself) once it is accepted.
  */
+
+import { isAccepted } from "./quote-status.ts";
 
 export interface QuoteLike {
   id: string;
+  status?: string;
+  acceptedAt?: string | null;
   jobName?: string;
   summary?: string;
   description?: string;
@@ -25,10 +29,7 @@ export interface InvoiceFromQuote {
   signedQuoteUrl?: string;
 }
 
-export function buildInvoiceFromQuote(
-  quote: QuoteLike,
-  signedContract?: { contractId: string; signedAt: string },
-): InvoiceFromQuote {
+export function buildInvoiceFromQuote(quote: QuoteLike): InvoiceFromQuote {
   const invoice: InvoiceFromQuote = {
     quoteId: quote.id,
     jobName: quote.jobName ?? quote.summary,
@@ -39,8 +40,8 @@ export function buildInvoiceFromQuote(
   };
   // Deliberately NO terms and NO signature fields — the invoice is a bill,
   // not an agreement (the agreement is linked instead).
-  if (signedContract) {
-    invoice.signedQuoteUrl = `/c/${signedContract.contractId}`;
+  if (isAccepted(quote)) {
+    invoice.signedQuoteUrl = `/q/${quote.id}`;
   }
   return invoice;
 }

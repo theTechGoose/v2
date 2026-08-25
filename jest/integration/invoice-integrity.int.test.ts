@@ -46,7 +46,7 @@ function warningField(body: unknown): boolean {
   const b = (body ?? {}) as Record<string, unknown>;
   return !!(
     b.warning ?? b.warnings ?? b.requiresConfirmation ?? b.requiresWarning ??
-    b.claimPending ?? b.blocked ?? b.needsConfirmation
+      b.claimPending ?? b.blocked ?? b.needsConfirmation
   );
 }
 
@@ -62,10 +62,13 @@ describe("P-41 discount while a payment claim is pending", () => {
 
     // Customer claims the full $3,200 (unconfirmed — the contractor has not
     // pressed "I got it" yet).
-    const claim = await anonymous().post(`/invoices/${invoiceId}/claim-payment`, {
-      method: "zelle",
-      claimedBy: "Green Goblin",
-    });
+    const claim = await anonymous().post(
+      `/invoices/${invoiceId}/claim-payment`,
+      {
+        method: "zelle",
+        claimedBy: "Green Goblin",
+      },
+    );
     expect(claim.status).toBeLessThan(400);
 
     // The contractor now tries to knock $100 off.
@@ -94,7 +97,9 @@ describe("P-41 an approved change order is immutable", () => {
     s = await contractor("+15125552821");
   });
 
-  async function approvedChangeOrder(): Promise<{ invoiceId: string; coId: string }> {
+  async function approvedChangeOrder(): Promise<
+    { invoiceId: string; coId: string }
+  > {
     const invoiceId = await seedInvoice(s, { amount: 320000 });
     const created = await s.post(`/invoices/${invoiceId}/change-orders`, {
       description: "Haul extra debris",
@@ -108,7 +113,9 @@ describe("P-41 an approved change order is immutable", () => {
     expect(approve.status).toBeLessThan(400);
     // Confirm it really is approved before we try to mutate it.
     const list = await s.get(`/invoices/${invoiceId}/change-orders`);
-    const co = (list.body as Array<{ id: string; status: string }>).find((c) => c.id === coId);
+    const co = (list.body as Array<{ id: string; status: string }>).find((c) =>
+      c.id === coId
+    );
     expect(co?.status).toBe("approved");
     return { invoiceId, coId };
   }
@@ -121,7 +128,9 @@ describe("P-41 an approved change order is immutable", () => {
     });
     expect(r.status).toBe(409);
     const list = await s.get(`/invoices/${invoiceId}/change-orders`);
-    const co = (list.body as Array<{ id: string; status: string }>).find((c) => c.id === coId);
+    const co = (list.body as Array<{ id: string; status: string }>).find((c) =>
+      c.id === coId
+    );
     expect(co?.status).toBe("approved");
   });
 
@@ -139,7 +148,14 @@ describe("P-32 the quote's customer receipts exclude the contractor's self-alert
   const CUSTOMER_EMAIL = "maria.int@blackhole.postmarkapp.com";
 
   async function messages(): Promise<
-    Array<{ channel?: string; toAddress?: string; paperworkId?: string; content?: string }>
+    Array<
+      {
+        channel?: string;
+        toAddress?: string;
+        paperworkId?: string;
+        content?: string;
+      }
+    >
   > {
     const { body } = await s.get("/messages");
     return Array.isArray(body) ? body : [];
@@ -153,7 +169,8 @@ describe("P-32 the quote's customer receipts exclude the contractor's self-alert
     let msgs = await messages();
     while (Date.now() < deadline) {
       const settled = msgs.some((m) =>
-        selfAddrs.includes(m.toAddress ?? "") && /approv/i.test(String(m.content ?? ""))
+        selfAddrs.includes(m.toAddress ?? "") &&
+        /approv/i.test(String(m.content ?? ""))
       );
       if (settled) break;
       await new Promise((r) => setTimeout(r, 500));
@@ -180,24 +197,30 @@ describe("P-32 the quote's customer receipts exclude the contractor's self-alert
     expect(accept.status).toBeLessThan(400);
   }, 30000);
 
-  it("P-32 the document's customer receipts do not include the contractor's own phone/email", async () => {
-    const selfAddrs = [me.email, me.phoneNumber].filter(Boolean) as string[];
-    const msgs = await waitForSelfAlert(selfAddrs);
+  it(
+    "P-32 the document's customer receipts do not include the contractor's own phone/email",
+    async () => {
+      const selfAddrs = [me.email, me.phoneNumber].filter(Boolean) as string[];
+      const msgs = await waitForSelfAlert(selfAddrs);
 
-    // The customer-facing receipts for THIS quote (mirrors QuotesPage's filter).
-    const receipts = msgs.filter((m) =>
-      m.paperworkId === quoteId &&
-      (m.channel === "email" || m.channel === "text") &&
-      !!m.toAddress
-    );
+      // The customer-facing receipts for THIS quote (mirrors QuotesPage's filter).
+      const receipts = msgs.filter((m) =>
+        m.paperworkId === quoteId &&
+        (m.channel === "email" || m.channel === "text") &&
+        !!m.toAddress
+      );
 
-    // The genuine send to the customer survives.
-    expect(receipts.some((r) => r.toAddress === CUSTOMER_EMAIL)).toBe(true);
+      // The genuine send to the customer survives.
+      expect(receipts.some((r) => r.toAddress === CUSTOMER_EMAIL)).toBe(true);
 
-    // …but the accepted-alert to the contractor's OWN phone/email must NOT be
-    // presented as a customer delivery. (RED today: both self-alerts carry the
-    // quote's paperworkId + toAddress = contractor email/phone.)
-    const selfReceipts = receipts.filter((r) => selfAddrs.includes(r.toAddress ?? ""));
-    expect(selfReceipts).toEqual([]);
-  }, 30000);
+      // …but the accepted-alert to the contractor's OWN phone/email must NOT be
+      // presented as a customer delivery. (RED today: both self-alerts carry the
+      // quote's paperworkId + toAddress = contractor email/phone.)
+      const selfReceipts = receipts.filter((r) =>
+        selfAddrs.includes(r.toAddress ?? "")
+      );
+      expect(selfReceipts).toEqual([]);
+    },
+    30000,
+  );
 });

@@ -12,7 +12,6 @@ import {
 import type { ExecutionContext } from "#danet/core";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import {
   type Invoice,
@@ -46,7 +45,6 @@ export class InvoiceController {
   constructor(
     private store: InvoiceStore,
     private customers: CustomerStore,
-    private contracts: ContractStore,
     private quotes: QuoteStore,
     private confirm: ConfirmPayment,
     private forecast: ComputeInvoiceForecast,
@@ -116,7 +114,7 @@ export class InvoiceController {
     const dto = parseCreateChangeOrder(body);
     const co = await this.changeOrders.create(user.id, id, {
       ...dto,
-      ...(inv.contractId ? { contractId: inv.contractId } : {}),
+      ...(inv.quoteId ? { quoteId: inv.quoteId } : {}),
       ...(inv.customerId ? { customerId: inv.customerId } : {}),
       // Freeze the pre-change total — the public page renders its math from
       // this snapshot so revisiting the link after approval stays correct.
@@ -223,12 +221,6 @@ export class InvoiceController {
           (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
           0,
         ) || undefined);
-      if (!dto.contractId) {
-        const contract = (await this.contracts.listByUser(user.id))
-          .filter((c) => c.quoteId === q.id)
-          .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))[0];
-        if (contract) dto.contractId = contract.id;
-      }
     }
     // Every invoice gets a due date; +30 days is the trade default.
     if (!dto.dueDate) {
@@ -333,7 +325,7 @@ export class InvoiceController {
     });
     // Hydrate customer + job context for the export rows. Best-effort.
     const customerCache = new Map<string, string>();
-    const contractCache = new Map<string, string>();
+    const jobNameCache = new Map<string, string>();
     const rows: string[][] = [[
       "Date",
       "Customer",
@@ -350,11 +342,10 @@ export class InvoiceController {
         customerCache,
       );
       const jobName = await resolveJobName(
-        this.contracts,
         this.quotes,
         user.id,
-        inv.contractId,
-        contractCache,
+        inv.quoteId,
+        jobNameCache,
       );
       // Payment intent at the moment-of-paid carries the method/reference.
       // After confirm clears the intent, we lose this — for v1 we mirror
@@ -463,20 +454,17 @@ async function resolveName(
 }
 
 async function resolveJobName(
-  contracts: ContractStore,
   quotes: QuoteStore,
   userId: string,
-  contractId: string | undefined,
+  quoteId: string | undefined,
   cache: Map<string, string>,
 ): Promise<string | undefined> {
-  if (!contractId) return undefined;
-  if (cache.has(contractId)) return cache.get(contractId);
+  if (!quoteId) return undefined;
+  if (cache.has(quoteId)) return cache.get(quoteId);
   try {
-    const c = await contracts.getOwned(contractId, userId);
-    if (!c.quoteId) return undefined;
-    const q = await quotes.getOwned(c.quoteId, userId);
+    const q = await quotes.getOwned(quoteId, userId);
     const name = q.jobName?.trim() || q.summary?.trim() || undefined;
-    if (name) cache.set(contractId, name);
+    if (name) cache.set(quoteId, name);
     return name;
   } catch {
     return undefined;

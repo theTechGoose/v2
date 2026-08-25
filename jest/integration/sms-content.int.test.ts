@@ -20,21 +20,19 @@
  * Observable: GET /messages — Twilio is silent in dev, every outbound paperwork
  * dispatch is recorded in the communication log (channel "text" for SMS).
  *
- * NOTE FOR THE GREEN AGENT (P-30): SendSignedConfirmation
- * (backend/src/paperwork/domain/coordinators/send-signed-confirmation/mod.ts:276-295)
- * currently fires its customer SMS WITHOUT logging it via LogPaperworkMessage —
- * unlike send-paperwork-sms/mod.ts:160-170 and send-accepted-alert/mod.ts:121-131.
- * The signed-confirm test below asserts the roadmap-p.8 comms trail ("every
- * outbound text is queryable per document"): log the signed-confirm SMS with
- * channel "text" + paperworkId = contract id, AND fix the greeting.
+ * P-30: SendSignedConfirmation fires the customer's signed-confirm SMS on
+ * quote-accept and logs it via LogPaperworkMessage (channel "text",
+ * paperworkId = quote id) — the roadmap-p.8 comms trail ("every outbound
+ * text is queryable per document"). The greeting must never double up
+ * ("Hola hola") for an unnamed customer.
  */
 import {
   anonymous,
+  type ApiSession,
   contractor,
   seedCustomer,
   seedInvoice,
   seedQuote,
-  type ApiSession,
 } from "./helpers/api";
 
 const CONTRACTOR_PHONE = "+15125552340"; // reserved block +15125552300…99
@@ -55,7 +53,10 @@ type LoggedMessage = {
   paperworkType?: string;
 };
 
-async function messagesFor(s: ApiSession, id: string): Promise<LoggedMessage[]> {
+async function messagesFor(
+  s: ApiSession,
+  id: string,
+): Promise<LoggedMessage[]> {
   const { body } = await s.get("/messages");
   const all: LoggedMessage[] = Array.isArray(body) ? body : body?.items ?? [];
   return all.filter((m) => JSON.stringify(m).includes(id));
@@ -82,13 +83,12 @@ describe("P-27/P-30/P-49/P-50 outbound SMS content — ES contractor, unnamed cu
   let s: ApiSession;
   let customerId: string;
   let quoteId: string;
-  let contractId: string;
   let invoiceId: string;
 
   beforeAll(async () => {
     s = await contractor(CONTRACTOR_PHONE);
     // Contractor UI language (accepted alerts) AND customer-comms language
-    // (quote/contract/invoice texts, signed confirmation) both Spanish.
+    // (quote/invoice texts, signed confirmation) both Spanish.
     await s.put("/me", {
       name: "Marta Contratista",
       email: "sms.es.jest@blackhole.postmarkapp.com",
@@ -117,7 +117,9 @@ describe("P-27/P-30/P-49/P-50 outbound SMS content — ES contractor, unnamed cu
     expect(r.status).toBeLessThan(400);
     expect(r.body?.ok).toBe(true);
 
-    const texts = (await messagesFor(s, quoteId)).filter((m) => m.channel === "text");
+    const texts = (await messagesFor(s, quoteId)).filter((m) =>
+      m.channel === "text"
+    );
     expect(texts.length).toBeGreaterThan(0);
     const body = texts[texts.length - 1].content ?? "";
     // Desired: exactly like the email path (send-paperwork-email/mod.ts:529),
@@ -158,37 +160,27 @@ describe("P-27/P-30/P-49/P-50 outbound SMS content — ES contractor, unnamed cu
     expect(body).not.toContain(JOB_EN);
   });
 
-  it("P-30: signing the contract sends the unnamed customer a signed-confirm text that never reads 'Hola hola'", async () => {
-    const created = await s.post("/contracts", {
-      quoteId,
-      customerId,
-      totalAmount: 250_000,
-    });
-    expect(created.status).toBeLessThan(400);
-    contractId = created.body?.id;
-    expect(contractId).toBeTruthy();
-
-    const sign = await anonymous().post(`/contracts/${contractId}/sign`, {
-      signature: "Cliente Firmante",
-      name: "Cliente Firmante",
-    });
-    expect(sign.status).toBeLessThan(400);
-
-    // Desired comms trail (roadmap p.8): the customer-facing signed-confirm
-    // SMS is recorded like every other outbound text. The SMS body itself
-    // links to /c/<contractId>, so matching on the contract id is stable.
-    const smsEntry = await pollForMessage(
-      s,
-      contractId,
-      (m) => m.channel === "text",
-    );
-    expect(smsEntry).toBeDefined(); // RED today: SendSignedConfirmation never logs its SMS
-    const body = smsEntry?.content ?? "";
-    // The unnamed-customer ES greeting must be natural — never the doubled
-    // "Hola hola, tu Cotización + Acuerdo…".
-    expect(body).not.toMatch(/hola[\s,]+hola/i);
-    expect(body).toMatch(STARTS_CAPITAL);
-  }, 25_000);
+  it(
+    "P-30: accepting the quote sends the unnamed customer a signed-confirm text that never reads 'Hola hola'",
+    async () => {
+      // The accept in the P-50 test above already ran the one signature
+      // ceremony, which dispatches the signed-confirm SMS (comms trail:
+      // channel "text", paperworkId = quote id, body from
+      // signedConfirm.sms.body — "…está firmada…").
+      const smsEntry = await pollForMessage(
+        s,
+        quoteId,
+        (m) => m.channel === "text" && /firmada/i.test(m.content ?? ""),
+      );
+      expect(smsEntry).toBeDefined();
+      const body = smsEntry?.content ?? "";
+      // The unnamed-customer ES greeting must be natural — never the doubled
+      // "Hola hola, tu Cotización + Acuerdo…".
+      expect(body).not.toMatch(/hola[\s,]+hola/i);
+      expect(body).toMatch(STARTS_CAPITAL);
+    },
+    25_000,
+  );
 
   it("P-49: the invoice text to the unnamed customer starts with a capital letter", async () => {
     invoiceId = await seedInvoice(s, {
@@ -200,7 +192,9 @@ describe("P-27/P-30/P-49/P-50 outbound SMS content — ES contractor, unnamed cu
     expect(r.status).toBeLessThan(400);
     expect(r.body?.ok).toBe(true);
 
-    const texts = (await messagesFor(s, invoiceId)).filter((m) => m.channel === "text");
+    const texts = (await messagesFor(s, invoiceId)).filter((m) =>
+      m.channel === "text"
+    );
     expect(texts.length).toBeGreaterThan(0);
     const body = texts[texts.length - 1].content ?? "";
     expect(body).toMatch(/factura/i); // still the ES invoice body

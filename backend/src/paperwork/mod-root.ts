@@ -4,7 +4,6 @@ import { CrmModule } from "@crm/mod-root.ts";
 import { CommunicationModule } from "@communication/mod-root.ts";
 import { FilesModule } from "@files/mod-root.ts";
 import { QuoteController } from "@paperwork/entrypoints/quote-controller/mod.ts";
-import { ContractController } from "@paperwork/entrypoints/contract-controller/mod.ts";
 import { InvoiceController } from "@paperwork/entrypoints/invoice-controller/mod.ts";
 import { ViewController } from "@paperwork/entrypoints/view-controller/mod.ts";
 import { PaymentTermsController } from "@paperwork/entrypoints/payment-terms-controller/mod.ts";
@@ -13,7 +12,6 @@ import { PaperworkPublicController } from "@paperwork/entrypoints/public-control
 import { PaperworkEmailController } from "@paperwork/entrypoints/paperwork-email-controller/mod.ts";
 import { CronController } from "@paperwork/entrypoints/cron-controller/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
@@ -24,7 +22,7 @@ import { SummarizePaperworkViews } from "@paperwork/domain/coordinators/summariz
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
 import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-invoice-balance/mod.ts";
-import { RenderContractPdf } from "@paperwork/domain/coordinators/render-contract-pdf/mod.ts";
+import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
@@ -40,7 +38,6 @@ import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/recor
   imports: [UsersModule, CrmModule, CommunicationModule, FilesModule],
   controllers: [
     QuoteController,
-    ContractController,
     InvoiceController,
     ViewController,
     PaymentTermsController,
@@ -51,7 +48,6 @@ import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/recor
   ],
   injectables: [
     QuoteStore,
-    ContractStore,
     InvoiceStore,
     ChangeOrderStore,
     ViewStore,
@@ -62,7 +58,7 @@ import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/recor
     SendPaperworkEmail,
     SendPaperworkSms,
     ComputeInvoiceBalance,
-    RenderContractPdf,
+    RenderQuotePdf,
     RenderReceiptPdf,
     RenderInvoicePdf,
     SendSignedConfirmation,

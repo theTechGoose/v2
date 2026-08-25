@@ -1,5 +1,4 @@
 import { useState } from "preact/hooks";
-import PublicAcceptQuote from "./PublicAcceptQuote.tsx";
 import { tFor } from "../lib/i18n.ts";
 
 interface Props {
@@ -52,54 +51,26 @@ function friendlyError(raw: string, es = false): string {
 }
 
 /**
- * Public-quote actions panel — Accept (delegated to PublicAcceptQuote),
- * Decline, and Ask-a-question. Once the customer resolves the quote
- * (accept or decline) we hide *both* secondary buttons immediately so
- * the panel can't fire a second mutation against a settled quote.
+ * Public-quote secondary actions panel — Decline and Ask-a-question.
+ * Accepting lives in the document's signature ceremony (PublicSignQuote),
+ * one ceremony for the one Quote + Agreement document. Once the customer
+ * declines we hide both buttons immediately so the panel can't fire a
+ * second mutation against a settled quote, then reload so the document
+ * renders its persisted declined state.
  */
 export default function PublicQuoteActions(
-  { quoteId, contractorFirstName, customerName, lang = "en" }: Props,
+  { quoteId, customerName, lang = "en" }: Props,
 ) {
   const [mode, setMode] = useState<Mode>("actions");
   const [resolved, setResolved] = useState<Resolved>(null);
-  /** UX-22: the name typed on accept — the remounted success card must keep
-   *  rendering the full acceptance evidence, not a thin "accepted" line. */
-  const [acceptedName, setAcceptedName] = useState<string | undefined>();
   // P-63: a sent question must NOT strand the panel in ask mode — the
   // quote is still open, so the confirmation renders above the action row
-  // with Accept and Decline still available (no reload needed).
+  // with Decline still available (no reload needed).
   const [askSent, setAskSent] = useState(false);
   const es = lang === "es";
 
-  // Once accepted, the Accept island renders its own success card; we
-  // only need to hide our secondary buttons. Once declined, we render
-  // the decline success card from this component instead.
-  if (resolved === "accepted") {
-    return (
-      <PublicAcceptQuote
-        quoteId={quoteId}
-        contractorFirstName={contractorFirstName}
-        lang={lang}
-        initialAccepted
-        initialAcceptedName={acceptedName}
-      />
-    );
-  }
-
   return (
     <div>
-      {resolved !== "declined" && (
-        <PublicAcceptQuote
-          quoteId={quoteId}
-          contractorFirstName={contractorFirstName}
-          lang={lang}
-          onAccepted={(name) => {
-            setAcceptedName(name);
-            setResolved("accepted");
-          }}
-        />
-      )}
-
       {resolved === "declined" && <DeclinedCard es={es} />}
 
       {resolved === null && mode === "actions" && askSent && (
@@ -138,7 +109,16 @@ export default function PublicQuoteActions(
           customerName={customerName}
           es={es}
           onCancel={() => setMode("actions")}
-          onDeclined={() => setResolved("declined")}
+          onDeclined={() => {
+            setResolved("declined");
+            // Reload after a brief moment so the client-fetched document
+            // re-renders its persisted declined state (pill + hidden pad).
+            setTimeout(() => {
+              try {
+                globalThis.location.reload();
+              } catch { /* SSR-safe */ }
+            }, 1200);
+          }}
         />
       )}
       {resolved === null && mode === "ask" && (

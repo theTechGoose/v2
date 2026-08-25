@@ -61,13 +61,28 @@ describe("P-14 a sent-but-unsigned $850 quote reads as awaiting on both pages", 
         customerId,
         summary: "Reparación de cerca",
         jobName: "Reparación de cerca",
-        lineItems: [{ description: "Reparación de cerca", quantity: 1, unit: "job", price: 85000 }],
+        lineItems: [{
+          description: "Reparación de cerca",
+          quantity: 1,
+          unit: "job",
+          price: 85000,
+        }],
         estimatedTotal: 85000,
       }).then((quoteId) => {
         cy.apiSendQuoteEmail(quoteId);
-        // Mirror the assistant first-quote flow: a DRAFT agreement exists
-        // referencing the quote — but NOBODY signed it.
-        cy.apiCreateContract({ quoteId, customerId, status: "draft", totalAmount: 85000 });
+        // Mirror the assistant first-quote flow post-merge: the terms
+        // wizard writes its answers onto the QUOTE (there is no separate
+        // contract entity) — but NOBODY signed it. Only a signature
+        // (status "accepted") may count as won (P-14).
+        cy.request("PUT", `/api/quotes/${quoteId}`, {
+          terms: [
+            {
+              stepId: "payment_terms",
+              label: "Payment terms",
+              value: "50 / 50",
+            },
+          ],
+        });
       });
     });
   });
@@ -122,7 +137,9 @@ describe("P-15 the onboarding sample pollutes nothing and leaks nothing", () => 
   it("P-15 the /quotes hero money excludes the sample's $3,700", () => {
     cy.visit("/quotes");
     // Anchor: the Spanish KPI strip has rendered.
-    cy.contains(".qkpi__lbl", "En borrador", { timeout: 10000 }).should("exist");
+    cy.contains(".qkpi__lbl", "En borrador", { timeout: 10000 }).should(
+      "exist",
+    );
     // Today the hero claims "$3,700 en trabajo en manos de los clientes"
     // out of nothing but the sample.
     cy.contains("$3,700").should("not.exist");
@@ -132,7 +149,9 @@ describe("P-15 the onboarding sample pollutes nothing and leaks nothing", () => 
 
   it("P-15 no English sample copy leaks into the Spanish UI", () => {
     cy.visit("/quotes");
-    cy.contains(".qkpi__lbl", "En borrador", { timeout: 10000 }).should("exist");
+    cy.contains(".qkpi__lbl", "En borrador", { timeout: 10000 }).should(
+      "exist",
+    );
     // Today the sample card renders hardcoded-EN strings in the ES UI.
     cy.contains("Drafting").should("not.exist"); // ES: "Redactando"
     cy.contains("Not sent yet").should("not.exist"); // ES: "Aún sin enviar"
@@ -143,7 +162,9 @@ describe("P-15 the onboarding sample pollutes nothing and leaks nothing", () => 
 
   it("P-15 the internal slug onboarding-sample is never rendered", () => {
     cy.visit("/quotes");
-    cy.contains(".qkpi__lbl", "En borrador", { timeout: 10000 }).should("exist");
+    cy.contains(".qkpi__lbl", "En borrador", { timeout: 10000 }).should(
+      "exist",
+    );
     cy.contains("onboarding-sample").should("not.exist");
     cy.visit("/dashboard");
     cy.contains(".kpi", "Trabajos activos", { timeout: 10000 }).should("exist");
@@ -159,7 +180,9 @@ describe("P-15 the onboarding sample pollutes nothing and leaks nothing", () => 
     cy.request(`/api/quotes/${sampleId}/public`);
     relogin(PHONE);
     cy.visit("/quotes");
-    cy.contains(".qkpi__lbl", "En borrador", { timeout: 10000 }).should("exist");
+    cy.contains(".qkpi__lbl", "En borrador", { timeout: 10000 }).should(
+      "exist",
+    );
     // Today the card's engagement timeline invents "Today · 9:42am · iPhone"
     // (and "2:18pm · Mac") from a hardcoded seed list instead of showing the
     // real open — or nothing at all for a sample.
@@ -185,11 +208,19 @@ describe("P-37 no empty-pipeline hero above real (resolved) quotes", () => {
         customerId,
         summary: "Terraza nueva",
         jobName: "Terraza nueva",
-        lineItems: [{ description: "Terraza nueva", quantity: 1, unit: "job", price: 90000 }],
+        lineItems: [{
+          description: "Terraza nueva",
+          quantity: 1,
+          unit: "job",
+          price: 90000,
+        }],
         estimatedTotal: 90000,
       }).then((quoteId) => {
         cy.apiSendQuoteEmail(quoteId);
-        cy.apiAcceptQuote(quoteId, { signature: "Marta Vega", name: "Marta Vega" });
+        cy.apiAcceptQuote(quoteId, {
+          signature: "Marta Vega",
+          name: "Marta Vega",
+        });
       });
     });
   });
@@ -200,7 +231,9 @@ describe("P-37 no empty-pipeline hero above real (resolved) quotes", () => {
     cy.visit("/quotes");
     // The real resolved card is on the page (Decididas opens by default
     // when it has rows).
-    cy.contains(".qdone__title", "Terraza nueva", { timeout: 10000 }).should("exist");
+    cy.contains(".qdone__title", "Terraza nueva", { timeout: 10000 }).should(
+      "exist",
+    );
     // Today the hero still shouts "Todavía no hay nada en el pipeline. Crea
     // tu primera cotización…" right above it, because it only counts OPEN
     // quotes. Desired: the empty-state hero renders only when the user has
@@ -226,7 +259,12 @@ describe("P-36 sub-$1k money renders in full and Ver todo goes somewhere", () =>
         customerId,
         summary: "Pintura de reja",
         jobName: "Pintura de reja",
-        lineItems: [{ description: "Pintura de reja", quantity: 1, unit: "job", price: 85000 }],
+        lineItems: [{
+          description: "Pintura de reja",
+          quantity: 1,
+          unit: "job",
+          price: 85000,
+        }],
         estimatedTotal: 85000,
       }).then((quoteId) => {
         cy.apiSendQuoteEmail(quoteId);
@@ -270,19 +308,24 @@ describe("P-36 a due-less active job renders one clean phrase and correct plural
         customerId,
         summary: "Reparar cerca",
         jobName: "Reparar cerca",
-        lineItems: [{ description: "Reparar cerca", quantity: 1, unit: "job", price: 90000 }],
+        lineItems: [{
+          description: "Reparar cerca",
+          quantity: 1,
+          unit: "job",
+          price: 90000,
+        }],
         estimatedTotal: 90000,
       }).then((quoteId) => {
         cy.apiSendQuoteEmail(quoteId);
-        cy.apiAcceptQuote(quoteId, { signature: "Sofia Peralta", name: "Sofia Peralta" });
         // A SIGNED agreement, but no invoice yet → a legit active job with
-        // no due date.
-        cy.apiCreateContract({
-          quoteId,
-          customerId,
-          status: "signed",
-          totalAmount: 90000,
-          signedAt: new Date().toISOString(),
+        // no due date. NOTE: POST /quotes/:id/accept now always bills (it
+        // creates the milestone invoices), so the due-less state is seeded
+        // via the owner update instead — the accepted quote IS the signed
+        // agreement (isAccepted: status "accepted" + acceptedAt).
+        cy.request("PUT", `/api/quotes/${quoteId}`, {
+          status: "accepted",
+          acceptedAt: new Date().toISOString(),
+          acceptedName: "Sofia Peralta",
         });
       });
     });

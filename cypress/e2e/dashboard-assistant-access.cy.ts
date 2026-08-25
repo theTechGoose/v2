@@ -10,8 +10,10 @@
  *       hamburger rail; the same pattern applies to the PM Assistant
  *       conversations panel.
  *
- * Contract selectors: [data-cy=assistant-cta], [data-cy=sidebar-collapse],
- * [data-cy=sidebar-expand], [data-cy=asst-threads-collapse].
+ * Contract selectors: [data-cy=assistant-cta], [data-cy=mobile-menu] (the
+ * topbar hamburger — on desktop it collapses/expands the rail via the
+ * pm:sb-toggle event; the rail's own toggle button was removed as
+ * redundant), [data-cy=asst-threads-collapse].
  */
 describe("My Assistant access on mobile dashboard (p8)", () => {
   const PHONE = "+15125550933";
@@ -98,23 +100,26 @@ describe("QuickBooks-style sidebar minimize (p9)", () => {
     });
   }
 
-  it("a collapse arrow minimizes the sidebar to a slim rail", () => {
-    cy.get("[data-cy=sidebar-collapse]", { timeout: 10_000 }).click();
-    // Nav labels disappear; the rail (with a hamburger/expand control) remains.
-    cy.get("[data-cy=sidebar-expand]").should("be.visible");
+  it("the topbar hamburger minimizes the sidebar to a slim rail", () => {
+    cy.get("[data-cy=mobile-menu]", { timeout: 10_000 }).click();
+    // Nav labels disappear; the slim rail remains.
+    cy.get(".sb").should("have.class", "sb--collapsed");
     assertNavLabelGone(/customers/i);
   });
 
-  it("the hamburger on the collapsed rail restores the full sidebar", () => {
-    cy.get("[data-cy=sidebar-collapse]").click();
-    cy.get("[data-cy=sidebar-expand]").click();
+  it("the topbar hamburger restores the full sidebar", () => {
+    cy.get("[data-cy=mobile-menu]", { timeout: 10_000 }).click();
+    cy.get(".sb").should("have.class", "sb--collapsed");
+    cy.get("[data-cy=mobile-menu]").click();
+    cy.get(".sb").should("not.have.class", "sb--collapsed");
     cy.contains("a", /customers/i).should("be.visible");
   });
 
   it("the collapsed state survives navigation (added spec beyond p9 — sanity of the pattern)", () => {
-    cy.get("[data-cy=sidebar-collapse]").click();
+    cy.get("[data-cy=mobile-menu]", { timeout: 10_000 }).click();
+    cy.get(".sb").should("have.class", "sb--collapsed");
     cy.visit("/quotes");
-    cy.get("[data-cy=sidebar-expand]").should("be.visible");
+    cy.get(".sb").should("have.class", "sb--collapsed");
     assertNavLabelGone(/customers/i);
   });
 

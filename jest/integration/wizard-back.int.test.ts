@@ -9,7 +9,7 @@
  * { conversation, wizardState, activeStepId, removedMessageIds,
  *   previousAnswer? }.
  */
-import { contractor, type ApiSession } from "./helpers/api";
+import { type ApiSession, contractor } from "./helpers/api";
 
 type WizardStateShape = {
   activeStepIdx?: number;
@@ -55,7 +55,9 @@ describe("POST /agents/wizard/back", () => {
     expect(back.status).toBeLessThan(400);
     expect(back.body?.activeStepId).toBe(stepId);
     expect(back.body?.previousAnswer?.optionId).toBe("create_new");
-    expect(back.body?.previousAnswer?.customValue).toBe("Back Button Test Customer");
+    expect(back.body?.previousAnswer?.customValue).toBe(
+      "Back Button Test Customer",
+    );
   });
 
   it("back with no active wizard is a clean no-op, not a 500", async () => {

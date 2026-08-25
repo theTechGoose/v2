@@ -2,7 +2,7 @@ import type { BusinessIdentity } from "@profile/dto/business-identity.ts";
 
 /**
  * Filter a `BusinessIdentity` down to fields that are safe to show to a
- * customer on a public quote / contract / invoice page.
+ * customer on a public quote / invoice page.
  *
  * Currently this is a near-pass-through (all the BusinessIdentity fields
  * are public-facing by design), but we keep the projection in place so the

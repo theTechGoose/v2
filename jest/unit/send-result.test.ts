@@ -12,9 +12,9 @@
  *   - front-end/islands/AsstChat.tsx:3043-3049 (swap-invoice — ignores the
  *     result entirely and marks the invoice sent)
  * The honest counter-examples are PublicQuoteActions.tsx:179-192 (treats
- * 200+{ok:false} as an error) and the assistant contract-send divider
- * (backend send-contract coordinator → lang keys sendContract.divider.emailFailed
- * / sendContract.divider.noEmail).
+ * 200+{ok:false} as an error) and the assistant quote-send divider
+ * (backend send-quote coordinator → lang keys sendQuote.divider.emailFailed
+ * / sendQuote.divider.noEmail).
  *
  * Target (NEW module — this file is intentionally RED via "Cannot find
  * module" until it exists): shared/quote-flow/send-result.ts
@@ -26,9 +26,9 @@
  *     input: { httpOk: boolean; body: unknown },
  *   ): SendOutcome;
  *   export function sendResultLangKey(outcome: SendOutcome): string | null;
- *     // null when delivered; "sendContract.divider.noEmail" for reason
- *     // "noEmail"; "sendContract.divider.emailFailed" for any other failure
- *     // (the same lang keys the honest assistant contract-send path uses).
+ *     // null when delivered; "sendQuote.divider.noEmail" for reason
+ *     // "noEmail"; "sendQuote.divider.emailFailed" for any other failure
+ *     // (the same lang keys the honest assistant quote-send path uses).
  *
  * Wire it at InvoicesPage.tsx:1422/1551 and AsstChat.tsx:3043 so every send
  * surface interprets the BODY, not just the HTTP status.
@@ -101,19 +101,19 @@ describe("P-09 interpretSendResult — {ok:false} in a 200 body is a FAILURE", (
 describe("P-09 sendResultLangKey — maps failures to the honest divider lang keys", () => {
   it("P-09 maps reason noEmail to the assistant's honest no-email divider key", () => {
     expect(sendResultLangKey({ delivered: false, reason: "noEmail" })).toBe(
-      "sendContract.divider.noEmail",
+      "sendQuote.divider.noEmail",
     );
   });
 
   it("P-09 maps every other failure to the honest email-failed divider key", () => {
     expect(sendResultLangKey({ delivered: false, reason: "http" })).toBe(
-      "sendContract.divider.emailFailed",
+      "sendQuote.divider.emailFailed",
     );
     expect(sendResultLangKey({ delivered: false, reason: "bounced" })).toBe(
-      "sendContract.divider.emailFailed",
+      "sendQuote.divider.emailFailed",
     );
     expect(sendResultLangKey({ delivered: false, reason: "unknown" })).toBe(
-      "sendContract.divider.emailFailed",
+      "sendQuote.divider.emailFailed",
     );
   });
 
@@ -127,10 +127,10 @@ describe("P-09 sendResultLangKey — maps failures to the honest divider lang ke
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const es = require("../../lang/es.json") as Record<string, string>;
     for (const dict of [en, es]) {
-      expect(typeof dict["sendContract.divider.noEmail"]).toBe("string");
-      expect(typeof dict["sendContract.divider.emailFailed"]).toBe("string");
+      expect(typeof dict["sendQuote.divider.noEmail"]).toBe("string");
+      expect(typeof dict["sendQuote.divider.emailFailed"]).toBe("string");
     }
     // Grounding: the EN copy is the "no email on file" wording the e2e asserts.
-    expect(en["sendContract.divider.noEmail"]).toContain("no email on file");
+    expect(en["sendQuote.divider.noEmail"]).toContain("no email on file");
   });
 });

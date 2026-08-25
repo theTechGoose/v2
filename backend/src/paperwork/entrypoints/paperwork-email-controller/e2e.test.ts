@@ -11,20 +11,36 @@ class TestApp {}
 
 const PORT = 9093;
 
-async function drain(res: Response) { await res.body?.cancel(); }
+async function drain(res: Response) {
+  await res.body?.cancel();
+}
 
 async function login(port: number, phone = "+15125551234"): Promise<string> {
-  await drain(await fetch(`http://localhost:${port}/auth/send-otp`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ phoneNumber: phone }),
-  }));
+  await drain(
+    await fetch(`http://localhost:${port}/auth/send-otp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phoneNumber: phone }),
+    }),
+  );
   const stored = await new OtpStore().get(phone);
   const v = await fetch(`http://localhost:${port}/auth/verify-otp`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ phoneNumber: phone, code: stored!.code }),
   }).then((r) => r.json());
+  // P-06: outbound dispatch refuses while the account still carries the
+  // seeded placeholder name — give the contractor a real name first.
+  await drain(
+    await fetch(`http://localhost:${port}/me`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-session-id": v.sessionId,
+      },
+      body: JSON.stringify({ name: "Test Contractor" }),
+    }),
+  );
   return v.sessionId;
 }
 
@@ -39,17 +55,30 @@ Deno.test("paperwork-email e2e: POST /quotes/:id/email dispatches in dev mode", 
     const auth = { "content-type": "application/json", "x-session-id": sid };
 
     const customer = await fetch(`http://localhost:${PORT}/customers`, {
-      method: "POST", headers: auth, body: JSON.stringify({ name: "Acme", email: "ops@acme.test" }),
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Acme", email: "ops@acme.test" }),
     }).then((r) => r.json());
     const quote = await fetch(`http://localhost:${PORT}/quotes`, {
-      method: "POST", headers: auth, body: JSON.stringify({
-        customerId: customer.id, summary: "Roof", lineItems: [], status: "sent", estimatedTotal: 1000,
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        summary: "Roof",
+        lineItems: [],
+        status: "sent",
+        estimatedTotal: 1000,
       }),
     }).then((r) => r.json());
 
-    const res = await fetch(`http://localhost:${PORT}/quotes/${quote.id}/email`, {
-      method: "POST", headers: auth, body: JSON.stringify({}),
-    }).then((r) => r.json());
+    const res = await fetch(
+      `http://localhost:${PORT}/quotes/${quote.id}/email`,
+      {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({}),
+      },
+    ).then((r) => r.json());
     assertEquals(res.ok, true);
     assertEquals(res.to, "ops@acme.test");
     assert(res.subject.includes("Roof"));
@@ -70,14 +99,22 @@ Deno.test("paperwork-email e2e: POST /quotes/:id/email returns ok=false when no 
     const auth = { "content-type": "application/json", "x-session-id": sid };
 
     const quote = await fetch(`http://localhost:${PORT}/quotes`, {
-      method: "POST", headers: auth, body: JSON.stringify({
-        summary: "Orphan", lineItems: [],
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        summary: "Orphan",
+        lineItems: [],
       }),
     }).then((r) => r.json());
 
-    const res = await fetch(`http://localhost:${PORT}/quotes/${quote.id}/email`, {
-      method: "POST", headers: auth, body: JSON.stringify({}),
-    }).then((r) => r.json());
+    const res = await fetch(
+      `http://localhost:${PORT}/quotes/${quote.id}/email`,
+      {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({}),
+      },
+    ).then((r) => r.json());
     assertEquals(res.ok, false);
     assert(res.reason.includes("no recipient"));
   } finally {
@@ -86,7 +123,7 @@ Deno.test("paperwork-email e2e: POST /quotes/:id/email returns ok=false when no 
   }
 });
 
-Deno.test("paperwork-email e2e: POST /contracts/:id/email + /invoices/:id/email dispatch", async () => {
+Deno.test("paperwork-email e2e: quote email honors explicit `to`; /invoices/:id/email dispatches", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("POSTMARK_API_KEY");
   await resetKv();
@@ -97,33 +134,52 @@ Deno.test("paperwork-email e2e: POST /contracts/:id/email + /invoices/:id/email 
     const auth = { "content-type": "application/json", "x-session-id": sid };
 
     const customer = await fetch(`http://localhost:${PORT}/customers`, {
-      method: "POST", headers: auth, body: JSON.stringify({ name: "Acme", email: "ops@acme.test" }),
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Acme", email: "ops@acme.test" }),
     }).then((r) => r.json());
     const quote = await fetch(`http://localhost:${PORT}/quotes`, {
-      method: "POST", headers: auth, body: JSON.stringify({
-        customerId: customer.id, summary: "x", lineItems: [], status: "accepted",
-      }),
-    }).then((r) => r.json());
-    const contract = await fetch(`http://localhost:${PORT}/contracts`, {
-      method: "POST", headers: auth, body: JSON.stringify({
-        quoteId: quote.id, customerId: customer.id, totalAmount: 1500,
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        summary: "x",
+        lineItems: [],
+        status: "accepted",
       }),
     }).then((r) => r.json());
     const invoice = await fetch(`http://localhost:${PORT}/invoices`, {
-      method: "POST", headers: auth, body: JSON.stringify({
-        contractId: contract.id, customerId: customer.id, dueDate: "2026-06-01", amount: 750,
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        quoteId: quote.id,
+        customerId: customer.id,
+        dueDate: "2026-06-01",
+        amount: 750,
       }),
     }).then((r) => r.json());
 
-    const cRes = await fetch(`http://localhost:${PORT}/contracts/${contract.id}/email`, {
-      method: "POST", headers: auth, body: JSON.stringify({ to: "owner@acme.test" }),
-    }).then((r) => r.json());
-    const iRes = await fetch(`http://localhost:${PORT}/invoices/${invoice.id}/email`, {
-      method: "POST", headers: auth, body: JSON.stringify({}),
-    }).then((r) => r.json());
+    // The quote IS the agreement — its email is the one review-and-sign
+    // dispatch, and an explicit `to` overrides the customer's address.
+    const qRes = await fetch(
+      `http://localhost:${PORT}/quotes/${quote.id}/email`,
+      {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ to: "owner@acme.test" }),
+      },
+    ).then((r) => r.json());
+    const iRes = await fetch(
+      `http://localhost:${PORT}/invoices/${invoice.id}/email`,
+      {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({}),
+      },
+    ).then((r) => r.json());
 
-    assertEquals(cRes.ok, true);
-    assertEquals(cRes.to, "owner@acme.test");
+    assertEquals(qRes.ok, true);
+    assertEquals(qRes.to, "owner@acme.test");
     assertEquals(iRes.ok, true);
     assertEquals(iRes.to, "ops@acme.test");
   } finally {
@@ -145,17 +201,28 @@ Deno.test("paperwork-email e2e: cross-tenant POST is rejected", async () => {
     const authB = { "content-type": "application/json", "x-session-id": sidB };
 
     const customer = await fetch(`http://localhost:${PORT}/customers`, {
-      method: "POST", headers: authA, body: JSON.stringify({ name: "Acme", email: "x@y.z" }),
+      method: "POST",
+      headers: authA,
+      body: JSON.stringify({ name: "Acme", email: "x@y.z" }),
     }).then((r) => r.json());
     const quote = await fetch(`http://localhost:${PORT}/quotes`, {
-      method: "POST", headers: authA, body: JSON.stringify({
-        customerId: customer.id, summary: "x", lineItems: [],
+      method: "POST",
+      headers: authA,
+      body: JSON.stringify({
+        customerId: customer.id,
+        summary: "x",
+        lineItems: [],
       }),
     }).then((r) => r.json());
 
-    const res = await fetch(`http://localhost:${PORT}/quotes/${quote.id}/email`, {
-      method: "POST", headers: authB, body: JSON.stringify({}),
-    });
+    const res = await fetch(
+      `http://localhost:${PORT}/quotes/${quote.id}/email`,
+      {
+        method: "POST",
+        headers: authB,
+        body: JSON.stringify({}),
+      },
+    );
     const ok = res.ok;
     await drain(res);
     assertEquals(ok, false);
@@ -175,18 +242,29 @@ Deno.test("paperwork-email e2e: send stamps quote.sentAt + status='sent'", async
     const sid = await login(PORT);
     const auth = { "content-type": "application/json", "x-session-id": sid };
     const customer = await fetch(`http://localhost:${PORT}/customers`, {
-      method: "POST", headers: auth, body: JSON.stringify({ name: "Acme", email: "ops@acme.test" }),
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Acme", email: "ops@acme.test" }),
     }).then((r) => r.json());
     const quote = await fetch(`http://localhost:${PORT}/quotes`, {
-      method: "POST", headers: auth, body: JSON.stringify({
-        customerId: customer.id, summary: "Roof", lineItems: [], status: "draft",
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        summary: "Roof",
+        lineItems: [],
+        status: "draft",
       }),
     }).then((r) => r.json());
     assertEquals(quote.sentAt, undefined);
 
-    await drain(await fetch(`http://localhost:${PORT}/quotes/${quote.id}/email`, {
-      method: "POST", headers: auth, body: JSON.stringify({}),
-    }));
+    await drain(
+      await fetch(`http://localhost:${PORT}/quotes/${quote.id}/email`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({}),
+      }),
+    );
 
     const after = await fetch(`http://localhost:${PORT}/quotes/${quote.id}`, {
       headers: { "x-session-id": sid },
@@ -209,17 +287,27 @@ Deno.test("paperwork-email e2e: send is idempotent on resend (sentAt unchanged)"
     const sid = await login(PORT);
     const auth = { "content-type": "application/json", "x-session-id": sid };
     const customer = await fetch(`http://localhost:${PORT}/customers`, {
-      method: "POST", headers: auth, body: JSON.stringify({ name: "Acme", email: "ops@acme.test" }),
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Acme", email: "ops@acme.test" }),
     }).then((r) => r.json());
     const quote = await fetch(`http://localhost:${PORT}/quotes`, {
-      method: "POST", headers: auth, body: JSON.stringify({
-        customerId: customer.id, summary: "Roof", lineItems: [],
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        summary: "Roof",
+        lineItems: [],
       }),
     }).then((r) => r.json());
 
-    await drain(await fetch(`http://localhost:${PORT}/quotes/${quote.id}/email`, {
-      method: "POST", headers: auth, body: JSON.stringify({}),
-    }));
+    await drain(
+      await fetch(`http://localhost:${PORT}/quotes/${quote.id}/email`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({}),
+      }),
+    );
     const first = await fetch(`http://localhost:${PORT}/quotes/${quote.id}`, {
       headers: { "x-session-id": sid },
     }).then((r) => r.json());
@@ -227,9 +315,13 @@ Deno.test("paperwork-email e2e: send is idempotent on resend (sentAt unchanged)"
     // Wait long enough that a re-stamp would produce a different ISO string
     await new Promise((res) => setTimeout(res, 25));
 
-    await drain(await fetch(`http://localhost:${PORT}/quotes/${quote.id}/email`, {
-      method: "POST", headers: auth, body: JSON.stringify({}),
-    }));
+    await drain(
+      await fetch(`http://localhost:${PORT}/quotes/${quote.id}/email`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({}),
+      }),
+    );
     const second = await fetch(`http://localhost:${PORT}/quotes/${quote.id}`, {
       headers: { "x-session-id": sid },
     }).then((r) => r.json());
@@ -249,7 +341,9 @@ Deno.test("paperwork-email e2e: unauthenticated POST rejected", async () => {
   await server.listen();
   try {
     const res = await fetch(`http://localhost:${PORT}/quotes/anything/email`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}),
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
     });
     const ok = res.ok;
     await drain(res);

@@ -1,12 +1,17 @@
 import { assertEquals } from "#std/assert";
-import { alreadyFiredOn, composeReminderCopy, daysOverdue, pickNextDay } from "./mod.ts";
+import {
+  alreadyFiredOn,
+  composeReminderCopy,
+  daysOverdue,
+  pickNextDay,
+} from "./mod.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 
 function inv(overrides: Partial<Invoice>): Invoice {
   return {
     id: "i-1",
     userId: "u-1",
-    contractId: "c-1",
+    quoteId: "q-1",
     dueDate: "2026-05-01",
     amount: 100_00,
     status: "sent",
@@ -31,7 +36,13 @@ Deno.test("pickNextDay: picks the largest unfired step that's elapsed", () => {
   // Already fired 30 → undefined (we never re-fire).
   assertEquals(
     pickNextDay(
-      inv({ reminderHistory: [{ day: 30, sentAt: NOW.toISOString(), channels: ["email"] }] }),
+      inv({
+        reminderHistory: [{
+          day: 30,
+          sentAt: NOW.toISOString(),
+          channels: ["email"],
+        }],
+      }),
       NOW,
     ),
     undefined,
@@ -46,7 +57,13 @@ Deno.test("pickNextDay: progressing through the cadence", () => {
   const eightPast = new Date("2026-05-09T12:00:00Z");
   assertEquals(
     pickNextDay(
-      inv({ reminderHistory: [{ day: 3, sentAt: "2026-05-04T12:00:00Z", channels: ["email", "sms"] }] }),
+      inv({
+        reminderHistory: [{
+          day: 3,
+          sentAt: "2026-05-04T12:00:00Z",
+          channels: ["email", "sms"],
+        }],
+      }),
       eightPast,
     ),
     7,

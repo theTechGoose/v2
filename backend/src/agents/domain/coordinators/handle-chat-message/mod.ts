@@ -77,7 +77,7 @@ function stripCustomerAsk(text: string): string {
 
 /** Pick the message that should drive the conversation list preview.
  *  Walks newMessages backwards picking the most-meaningful surface:
- *    1. action_card — quote/contract/invoice summary lands as the preview.
+ *    1. action_card — quote/invoice summary lands as the preview.
  *    2. assistant text — the model's reply if no card was produced.
  *  Returns undefined if neither is present (e.g. only a continue_cta or a
  *  user message), so the caller can leave the existing preview untouched. */
@@ -423,7 +423,11 @@ export class HandleChatMessage {
               conversationId: conv.id,
               role: "assistant",
               kind: "text",
-              content: onboardAskStateWithGuess(firstName, me?.phoneNumber, lang),
+              content: onboardAskStateWithGuess(
+                firstName,
+                me?.phoneNumber,
+                lang,
+              ),
             });
             const updated = await this.conversations.update(conv.id, {
               ...(history.length === 1
@@ -886,7 +890,8 @@ export class HandleChatMessage {
             conversationId: conv.id,
             role: "assistant",
             kind: "action_card",
-            content: locked.summary ?? t(replyLang, "chatCoordinator.quoteSent"),
+            content: locked.summary ??
+              t(replyLang, "chatCoordinator.quoteSent"),
             payload: {
               actionType: "quote",
               status: "sent",
@@ -946,7 +951,7 @@ export class HandleChatMessage {
     ) {
       convPatch.title = deriveTitleFromFirstUserMessage(input.content);
     }
-    // Audit P6.13 — preview priority: latest action_card (quote/contract/invoice
+    // Audit P6.13 — preview priority: latest action_card (quote/invoice
     // summary) > latest assistant text > do nothing. Never the user prompt:
     // the sidebar should reflect what the assistant did, not what the user
     // said. continue_cta messages ("Continue to terms") are skipped — they're

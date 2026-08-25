@@ -1,4 +1,13 @@
-import { Body, Context, Controller, Delete, Get, Param, Post, Query } from "#danet/core";
+import {
+  Body,
+  Context,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Query,
+} from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
@@ -6,8 +15,8 @@ import { StartConversation } from "@agents/domain/coordinators/start-conversatio
 import { LoadConversation } from "@agents/domain/coordinators/load-conversation/mod.ts";
 import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
 import { LockQuote } from "@agents/domain/coordinators/lock-quote/mod.ts";
-import { AcceptContract } from "@agents/domain/coordinators/accept-contract/mod.ts";
-import { SendContract } from "@agents/domain/coordinators/send-contract/mod.ts";
+import { AcceptQuote } from "@agents/domain/coordinators/accept-quote/mod.ts";
+import { SendQuote } from "@agents/domain/coordinators/send-quote/mod.ts";
 import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
 import { StartOnboardingConversation } from "@agents/domain/coordinators/start-onboarding-conversation/mod.ts";
 import { BindConversationCustomer } from "@agents/domain/coordinators/bind-conversation-customer/mod.ts";
@@ -29,8 +38,8 @@ export class ConversationsController {
     private loadFlow: LoadConversation,
     private transitionFlow: TransitionToTerms,
     private lockFlow: LockQuote,
-    private acceptFlow: AcceptContract,
-    private sendContractFlow: SendContract,
+    private acceptFlow: AcceptQuote,
+    private sendQuoteFlow: SendQuote,
     private sendInvoiceFlow: SendInvoice,
     private onboardingFlow: StartOnboardingConversation,
     private bindCustomerFlow: BindConversationCustomer,
@@ -85,34 +94,45 @@ export class ConversationsController {
    * expected to redirect away on the first hit and never call again).
    */
   @Post("onboarding-start")
-  async onboardingStart(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+  async onboardingStart(
+    @Context() ctx: ExecutionContext,
+    @Body() body: unknown,
+  ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const b = (body ?? {}) as { handoff?: unknown; examplePrompt?: unknown };
-    return ctx.json(await this.onboardingFlow.run({
-      userId: user.id,
-      handoff: b.handoff === true,
-      examplePrompt: typeof b.examplePrompt === "string"
-        ? b.examplePrompt
-        : undefined,
-    }));
+    return ctx.json(
+      await this.onboardingFlow.run({
+        userId: user.id,
+        handoff: b.handoff === true,
+        examplePrompt: typeof b.examplePrompt === "string"
+          ? b.examplePrompt
+          : undefined,
+      }),
+    );
   }
 
   @Get(":id")
   async getOne(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return ctx.json(await this.loadFlow.run({ userId: user.id, conversationId: id }));
+    return ctx.json(
+      await this.loadFlow.run({ userId: user.id, conversationId: id }),
+    );
   }
 
   @Get(":id/phase")
   async phase(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const { conversation } = await this.loadFlow.run({ userId: user.id, conversationId: id });
+    const { conversation } = await this.loadFlow.run({
+      userId: user.id,
+      conversationId: id,
+    });
     const canAdvance = shouldTransitionToTerms(conversation);
-    const nextPhaseHint = conversation.currentPhase === "quote" ? "terms" : undefined;
+    const nextPhaseHint = conversation.currentPhase === "quote"
+      ? "terms"
+      : undefined;
     return ctx.json({
       currentPhase: conversation.currentPhase,
-      quoteId:      conversation.quoteId,
-      contractId:   conversation.contractId,
+      quoteId: conversation.quoteId,
       canAdvance,
       nextPhaseHint,
     });
@@ -124,7 +144,13 @@ export class ConversationsController {
     // UX-12: the phase divider is STORED — it must be written in the
     // contractor's own language, never frozen English into a Spanish chat.
     const lang = user.language === "es" ? "es" : "en";
-    return ctx.json(await this.transitionFlow.run({ userId: user.id, conversationId: id, lang }));
+    return ctx.json(
+      await this.transitionFlow.run({
+        userId: user.id,
+        conversationId: id,
+        lang,
+      }),
+    );
   }
 
   @Post(":id/lock-quote")
@@ -135,43 +161,74 @@ export class ConversationsController {
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const quoteId = (body as { quoteId?: unknown } | null | undefined)?.quoteId;
-    if (typeof quoteId !== "string" || !quoteId) throw new Error("quoteId is required");
-    return ctx.json(await this.lockFlow.run({ userId: user.id, conversationId: id, quoteId }));
+    if (typeof quoteId !== "string" || !quoteId) {
+      throw new Error("quoteId is required");
+    }
+    return ctx.json(
+      await this.lockFlow.run({ userId: user.id, conversationId: id, quoteId }),
+    );
   }
 
-  @Post(":id/accept-contract")
-  async acceptContract(
+  @Post(":id/accept-quote")
+  async acceptQuote(
     @Context() ctx: ExecutionContext,
     @Param("id") id: string,
     @Body() body: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const contractId = (body as { contractId?: unknown } | null | undefined)?.contractId;
-    if (typeof contractId !== "string" || !contractId) throw new Error("contractId is required");
-    return ctx.json(await this.acceptFlow.run({ userId: user.id, conversationId: id, contractId }));
+    const quoteId = (body as { quoteId?: unknown } | null | undefined)?.quoteId;
+    if (typeof quoteId !== "string" || !quoteId) {
+      throw new Error("quoteId is required");
+    }
+    return ctx.json(
+      await this.acceptFlow.run({
+        userId: user.id,
+        conversationId: id,
+        quoteId,
+      }),
+    );
   }
 
-  @Post(":id/send-contract")
-  async sendContract(
+  @Post(":id/send-quote")
+  async sendQuote(
     @Context() ctx: ExecutionContext,
     @Param("id") id: string,
     @Body() body: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const b = (body ?? {}) as { contractId?: unknown; channel?: unknown; language?: unknown };
-    const contractId = b.contractId;
-    if (typeof contractId !== "string" || !contractId) throw new Error("contractId is required");
-    const channel = b.channel === "sms" || b.channel === "both" || b.channel === "email"
-      ? b.channel
-      : "email";
-    const language = b.language === "es" || b.language === "en" ? b.language : undefined;
-    return ctx.json(await this.sendContractFlow.run({ userId: user.id, conversationId: id, contractId, channel, language }));
+    const b = (body ?? {}) as {
+      quoteId?: unknown;
+      channel?: unknown;
+      language?: unknown;
+    };
+    const quoteId = b.quoteId;
+    if (typeof quoteId !== "string" || !quoteId) {
+      throw new Error("quoteId is required");
+    }
+    const channel =
+      b.channel === "sms" || b.channel === "both" || b.channel === "email"
+        ? b.channel
+        : "email";
+    const language = b.language === "es" || b.language === "en"
+      ? b.language
+      : undefined;
+    return ctx.json(
+      await this.sendQuoteFlow.run({
+        userId: user.id,
+        conversationId: id,
+        quoteId,
+        channel,
+        language,
+      }),
+    );
   }
 
   @Post(":id/send-invoice")
   async sendInvoice(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return ctx.json(await this.sendInvoiceFlow.run({ userId: user.id, conversationId: id }));
+    return ctx.json(
+      await this.sendInvoiceFlow.run({ userId: user.id, conversationId: id }),
+    );
   }
 
   /**
@@ -186,10 +243,12 @@ export class ConversationsController {
     const user = await requireUser(ctx, this.sessions, this.users);
     // P-15: the sample's customer-facing copy renders in the contractor's
     // own language — an ES account never gets a hardcoded-EN sample.
-    return ctx.json(await this.sampleQuoteFlow.run({
-      userId: user.id,
-      language: user.language === "es" ? "es" : "en",
-    }));
+    return ctx.json(
+      await this.sampleQuoteFlow.run({
+        userId: user.id,
+        language: user.language === "es" ? "es" : "en",
+      }),
+    );
   }
 
   /**
@@ -237,9 +296,18 @@ export class ConversationsController {
     @Body() body: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const customerId = (body as { customerId?: unknown } | null | undefined)?.customerId;
-    if (typeof customerId !== "string" || !customerId) throw new Error("customerId is required");
-    return ctx.json(await this.bindCustomerFlow.run({ userId: user.id, conversationId: id, customerId }));
+    const customerId = (body as { customerId?: unknown } | null | undefined)
+      ?.customerId;
+    if (typeof customerId !== "string" || !customerId) {
+      throw new Error("customerId is required");
+    }
+    return ctx.json(
+      await this.bindCustomerFlow.run({
+        userId: user.id,
+        conversationId: id,
+        customerId,
+      }),
+    );
   }
 
   @Delete(":id")

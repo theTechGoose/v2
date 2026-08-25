@@ -49,26 +49,22 @@ describe("mobile friendliness (390px)", () => {
     });
   }
 
-  it("the public quote is mobile friendly too (customers open links on phones)", () => {
+  it("the public Quote + Agreement (incl. the sign pad) is mobile friendly too", () => {
+    // The quote IS the agreement: /q renders the full document and the one
+    // signature ceremony (the old /c page is gone).
     cy.seedQuoteToCash().then(({ quoteId }) => {
       cy.clearCookies();
       cy.setCookie("pm_lang", "en");
       cy.visit(`/q/${quoteId}`);
       cy.wait(500);
       assertNoHorizontalScroll();
-      // Primary CTA reachable.
-      cy.contains("button, a", /accept|sign|aceptar|firmar/i).should("be.visible");
-    });
-  });
-
-  it("the public contract sign flow works at 390px", () => {
-    cy.seedQuoteToCash().then(({ contractId }) => {
-      cy.clearCookies();
-      cy.setCookie("pm_lang", "en");
-      cy.visit(`/c/${contractId}`);
-      cy.wait(500);
-      assertNoHorizontalScroll();
-      cy.contains(/sign/i).should("exist");
+      // Primary action reachable: the signature ceremony's submit button
+      // (its label flips from "Type your name to enable" to "Sign the
+      // contract →" once a name is typed).
+      cy.contains(/sign here/i).should("exist");
+      cy.get("form.ctr__sign-form button[type=submit]")
+        .scrollIntoView()
+        .should("be.visible");
     });
   });
 

@@ -6,9 +6,6 @@
         [CSE] quote
             db:quote.getOwner(GetByIdDto): OwnerDto
               not-found
-        [CSE] contract
-            db:contract.getOwner(GetByIdDto): OwnerDto
-              not-found
         [CSE] invoice
             db:invoice.getOwner(GetByIdDto): OwnerDto
               not-found
@@ -60,8 +57,16 @@
 [REQ] publicDoc.acceptQuote(AcceptQuoteDto): OkResultDto
     db:quote.get(GetByIdDto): QuoteDto
       not-found
+      already-accepted
+      declined
     db:quote.patch(UpdateQuoteDto): QuoteDto
     mq:bus.emit(EventDto): void
+    db:invoice.save(CreateInvoiceDto): InvoiceDto
+    fs:document.build(RenderQuotePdfDto): PdfDto
+    ex:email.send(EmailMessageDto): SendEmailResultDto
+      timeout
+    ex:sms.send(SmsMessageDto): SendSmsResultDto
+      timeout
     [NEW] outcome
     outcome.toDto(): OkResultDto
 
@@ -80,36 +85,16 @@
     [NEW] outcome
     outcome.toDto(): OkResultDto
 
-[REQ] publicDoc.getContractPublic(GetByIdDto): ContractPublicDto
-    db:contract.get(GetByIdDto): ContractDto
+[REQ] publicDoc.getQuotePdf(GetByIdDto): PdfDto
+    db:quote.get(GetByIdDto): QuoteDto
       not-found
-    db:contract.patch(UpdateContractDto): ContractDto
-    mq:bus.emit(EventDto): void
     db:identity.get(OwnerDto): ContractorDto
-    db:quote.get(GetByIdDto): QuoteDto
-    [NEW] page
-    page.toContractPublic(): ContractPublicDto
-
-[REQ] publicDoc.getContractByQuote(QuoteRefDto): ContractByQuoteDto
-    db:quote.get(GetByIdDto): QuoteDto
-      not-found
-    db:contract.listByUser(OwnerDto): ContractListDto
-    [NEW] page
-    page.toContractRef(): ContractByQuoteDto
-
-[REQ] publicDoc.signContract(SignContractDto): OkResultDto
-    db:contract.get(GetByIdDto): ContractDto
-      not-found
-    db:contract.patch(UpdateContractDto): ContractDto
-    mq:bus.emit(EventDto): void
-    [NEW] outcome
-    outcome.toDto(): OkResultDto
+    fs:document.build(RenderQuotePdfDto): PdfDto
 
 [REQ] publicDoc.getInvoicePublic(GetByIdDto): InvoicePublicDto
     db:invoice.get(GetByIdDto): InvoiceDto
       not-found
     db:identity.get(OwnerDto): ContractorDto
-    db:contract.get(GetByIdDto): ContractDto
     db:quote.get(GetByIdDto): QuoteDto
     db:invoice.listByUser(OwnerDto): InvoiceListDto
     [NEW] page
@@ -134,9 +119,7 @@
 [ENT] public.acceptQuote(AcceptQuoteDto): OkResultDto
 [ENT] public.declineQuote(DeclineQuoteDto): OkResultDto
 [ENT] public.inquireQuote(InquireQuoteDto): OkResultDto
-[ENT] public.getContractPublic(GetByIdDto): ContractPublicDto
-[ENT] public.getContractByQuote(QuoteRefDto): ContractByQuoteDto
-[ENT] public.signContract(SignContractDto): OkResultDto
+[ENT] public.getQuotePdf(GetByIdDto): PdfDto
 [ENT] public.getInvoicePublic(GetByIdDto): InvoicePublicDto
 [ENT] public.claimInvoicePayment(ClaimPaymentDto): OkResultDto
 
@@ -162,10 +145,8 @@
     a machine-readable reason code
 [TYP] customerId: string
     a reference to a CRM customer
-[TYP] contractId: string
-    a reference to a contract
 [TYP] quoteId: string
-    a reference to a quote
+    a reference to a quote — the merged Quote + Agreement document
 [TYP] invoiceId: string
     a reference to an invoice
 [TYP] summary: string
@@ -192,6 +173,16 @@
     captured acceptance signature data
 [TYP] acceptedName: string
     name of who accepted the quote
+[TYP] acceptedTinMasked: string
+    masked TIN captured at the signature ceremony, last 4 only
+[TYP] acceptedNotifiedAt: string
+    idempotency stamp: the post-accept billing and confirmation already ran
+[TYP] declineReason: string
+    machine-readable decline reason chip
+[TYP] declineNote: string
+    freetext note left by the declining customer
+[TYP] declinedName: string
+    name of who declined the quote
 [TYP] quantity: number
     a line-item quantity
 [TYP] unit: string
@@ -199,23 +190,23 @@
 [TYP] price: number
     per-unit price in integer cents
 [TYP] effectiveDate: string
-    contract effective date
+    agreement effective date
 [TYP] startDate: string
-    contract start date
+    agreement start date
 [TYP] estimatedCompletionDate: string
     estimated completion date
-[TYP] totalAmount: number
-    contract total in integer cents
+[TYP] agreementTotal: number
+    the full agreement value in integer cents, distinct from a milestone amount
 [TYP] signedAt: string
-    ISO timestamp the contract was signed
+    ISO timestamp the agreement was signed, the quote acceptedAt
+[TYP] signedQuoteUrl: string
+    public path to the signed agreement, /q/<quoteId>
 [TYP] stepId: string
-    wizard step identifier
+    terms-wizard step identifier
 [TYP] label: string
     a human-readable label
 [TYP] value: string
     a resolved agreed value
-[TYP] mood: string
-    derived contract mood badge
 [TYP] dueDate: string
     invoice due date
 [TYP] amount: number
@@ -259,7 +250,7 @@
 [TYP] decidedAt: string
     ISO timestamp the change order was decided
 [TYP] paperworkType: string
-    paperwork kind: quote, contract, or invoice
+    paperwork kind: quote or invoice
 [TYP] paperworkId: string
     id of the viewed paperwork record
 [TYP] viewedAt: string
@@ -279,7 +270,7 @@
 [TYP] code: string
     a shortlink code
 [TYP] kind: string
-    a resource kind discriminator
+    a resource kind discriminator: quote or invoice
 [TYP] question: string
     a customer question on a quote
 [TYP] contactBack: string
@@ -306,8 +297,6 @@
     two-letter state code
 [TYP] hasLogo: boolean
     whether the contractor uploaded a logo
-[TYP] customerSignedName: string
-    the customer's typed legal name on signing
 [TYP] entityType: string
     domain-event entity type
 [TYP] entityId: string
@@ -318,20 +307,26 @@
     whether the quote was already accepted
 [TYP] alreadyDeclined: boolean
     whether the quote was already declined
-[TYP] alreadySigned: boolean
-    whether the contract was already signed
 [TYP] lineItem: LineItemDto
     a nested quote line item
-[TYP] term: ContractTermDto
-    a nested captured contract term
+[TYP] term: QuoteTermDto
+    a nested captured agreement term
 [TYP] reminderHistory: ReminderHistoryEntryDto
     a nested reminder-cadence history row
 [TYP] paymentIntent: PaymentIntentDto
     a nested customer payment claim
-[TYP] contract: ContractDto
-    a nested contract record
+[TYP] signedAgreement: SignedAgreementDto
+    a nested signed-agreement reference
 [TYP] invoice: InvoiceDto
     a nested invoice record
+[TYP] to: string
+    the dispatch recipient address
+[TYP] subject: string
+    the email subject line
+[TYP] sid: string
+    a Twilio message SID
+[TYP] pdf: Uint8Array
+    rendered PDF bytes
 [TYP] contractor: ContractorDto
     a nested public contractor projection
 [TYP] customer: CustomerPublicDto
@@ -345,29 +340,25 @@
 
 [DTO] LineItemDto: description, quantity, unit, price
     a single quote line item
-[DTO] ContractTermDto: stepId, label, value
-    a captured contract wizard answer
+[DTO] QuoteTermDto: stepId, label, value
+    a captured terms-wizard answer, stored in English on the quote
 [DTO] ReminderHistoryEntryDto: day, sentAt, channel(s)
     one reminder-cadence history row
 [DTO] PaymentIntentDto: method, amount, reference?, claimedAt, claimedBy?
     a customer's recorded payment claim
-[DTO] QuoteDto: id, userId, customerId?, summary, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?, createdAt, updatedAt
-    a persisted quote record
-[DTO] UpdateQuoteDto: customerId?, summary?, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?
+[DTO] QuoteDto: id, userId, customerId?, summary, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, term(s), effectiveDate?, startDate?, estimatedCompletionDate?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?, acceptedTinMasked?, acceptedNotifiedAt?, declineReason?, declineNote?, declinedName?, createdAt, updatedAt
+    the persisted Quote + Agreement document record
+[DTO] UpdateQuoteDto: customerId?, summary?, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s), estimatedTotal?, status?, term(s), effectiveDate?, startDate?, estimatedCompletionDate?, sentAt?, acceptedAt?, lostAt?, acceptedSignature?, acceptedName?, acceptedTinMasked?, acceptedNotifiedAt?, declineReason?, declineNote?, declinedName?
     a partial quote patch
-[DTO] ContractDto: id, userId, quoteId, customerId?, status?, effectiveDate?, startDate?, estimatedCompletionDate?, totalAmount?, signedAt?, term(s), mood?, createdAt, updatedAt
-    a persisted contract record
-[DTO] UpdateContractDto: quoteId?, customerId?, status?, effectiveDate?, startDate?, estimatedCompletionDate?, totalAmount?, signedAt?, term(s)
-    a partial contract patch
-[DTO] ContractListDto: contract(s)
-    a list of contracts owned by the user
-[DTO] InvoiceDto: id, userId, contractId?, jobName?, description?, dueDate, customerId?, amount?, discountCents?, discountReason?, issuedDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?, urgency?, createdAt, updatedAt
+[DTO] CreateInvoiceDto: quoteId?, jobName?, description?, dueDate, customerId?, amount?, issuedDate?, status?, scheduledFor?, installmentIndex?, installmentTotal?
+    input to create a milestone invoice from the accepted quote's payment terms
+[DTO] InvoiceDto: id, userId, quoteId?, jobName?, description?, dueDate, customerId?, amount?, discountCents?, discountReason?, issuedDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?, urgency?, createdAt, updatedAt
     a persisted invoice record
-[DTO] UpdateInvoiceDto: contractId?, jobName?, description?, customerId?, amount?, discountCents?, discountReason?, issuedDate?, dueDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?
+[DTO] UpdateInvoiceDto: quoteId?, jobName?, description?, customerId?, amount?, discountCents?, discountReason?, issuedDate?, dueDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?
     a partial invoice patch
 [DTO] InvoiceListDto: invoice(s)
     a list of invoices owned by the user
-[DTO] ChangeOrderDto: id, userId, invoiceId, contractId?, customerId?, description, deltaAmountCents, originalAmountCents?, status, createdAt, updatedAt, decidedAt?
+[DTO] ChangeOrderDto: id, userId, invoiceId, quoteId?, customerId?, description, deltaAmountCents, originalAmountCents?, status, createdAt, updatedAt, decidedAt?
     a persisted change-order record
 [DTO] ChangeOrderPublicDto: id, description, deltaAmountCents, status?, currentAmount?, newAmount?, businessName?, commsLanguage?, decidedAt?
     a customer-facing change-order projection
@@ -379,7 +370,7 @@
     the owning user id wrapper
 [DTO] GetByIdDto: id
     an id lookup wrapper
-[DTO] OkResultDto: ok, reason?, quoteId?, contractId?, invoiceId?, alreadyAccepted?, alreadyDeclined?, alreadySigned?
+[DTO] OkResultDto: ok, reason?, quoteId?, invoiceId?, alreadyAccepted?, alreadyDeclined?
     a public mutation result body
 [DTO] EventDto: userId, entityType, entityId, action
     a domain event envelope
@@ -395,10 +386,8 @@
     raw logo image bytes
 [DTO] SetStatusDto: id, status
     input to set a change-order status
-[DTO] QuoteRefDto: quoteId
-    a quote reference lookup
-[DTO] ContractByQuoteDto: contractId?
-    the contract id bound to a quote, if any
+[DTO] SignedAgreementDto: id, signedAt
+    the accepted quote's signed-agreement reference for the invoice page
 [DTO] ContractorDto: name?, businessName?, phoneNumber?, email?, addressLine?, state?, commsLanguage?, hasLogo?
     a public-safe contractor projection
 [DTO] CustomerPublicDto: name?, phoneNumber?, email?
@@ -406,30 +395,36 @@
 [DTO] JobDetailsDto: summary?, jobName?, description?, descriptionByLang?, jobNameByLang?, summaryByLang?, lineItem(s)
     a public job-details projection
 [DTO] InvoiceSiblingDto: id, amount?, status?, paidAt?, installmentIndex?, installmentTotal?
-    a sibling invoice on the same contract
+    a sibling invoice on the same quote
 [DTO] AcceptedMethodDto: method, handle?
     one enabled accepted-payment method
-[DTO] QuotePublicDto: id, summary?, description?, descriptionByLang?, jobName?, jobNameByLang?, summaryByLang?, customerId?, lineItem(s), estimatedTotal?, status?, createdAt?, contractor?, customer?
-    a customer-facing quote projection
-[DTO] ContractPublicDto: id, quoteId?, customerId?, status?, effectiveDate?, startDate?, estimatedCompletionDate?, totalAmount?, signedAt?, createdAt?, term(s), customerSignedName?, contractor?, customer?, jobDetails?
-    a customer-facing contract projection
-[DTO] InvoicePublicDto: id, contractId?, customerId?, amount?, issuedDate?, dueDate?, status?, paidAt?, createdAt?, installmentIndex?, installmentTotal?, scheduledFor?, paymentIntent?, contractor?, customer?, jobDetails?, sibling(s), acceptedMethod(s)
-    a customer-facing invoice projection
-[DTO] AcceptQuoteDto: id, signature?, name?
-    input to accept a quote
+[DTO] QuotePublicDto: id, summary?, description?, descriptionByLang?, jobName?, jobNameByLang?, summaryByLang?, customerId?, lineItem(s), estimatedTotal?, status?, createdAt?, term(s), effectiveDate?, startDate?, estimatedCompletionDate?, acceptedName?, acceptedAt?, acceptedSignature?, contractor?, customer?
+    the customer-facing Quote + Agreement projection rendered at /q
+[DTO] InvoicePublicDto: id, quoteId?, customerId?, amount?, issuedDate?, dueDate?, status?, paidAt?, createdAt?, installmentIndex?, installmentTotal?, scheduledFor?, paymentIntent?, contractor?, customer?, jobDetails?, sibling(s), acceptedMethod(s), agreementTotal?, effectiveDate?, startDate?, estimatedCompletionDate?, signedQuoteUrl?, signedAgreement?
+    a customer-facing invoice projection with agreement context from its quote
+[DTO] AcceptQuoteDto: id, signature?, name?, tin?
+    input to the single signature ceremony that accepts the quote
 [DTO] DeclineQuoteDto: id, reason?, note?, name?
     input to decline a quote
 [DTO] InquireQuoteDto: id, question, contactBack?, name?
     input to ask a question on a quote
-[DTO] SignContractDto: id, signature, name, tin?
-    input to sign a contract
 [DTO] ClaimPaymentDto: id, method, reference?, claimedBy?
     input to claim payment on an invoice
+[DTO] RenderQuotePdfDto: quoteId
+    input to render the agreement PDF for a quote
+[DTO] PdfDto: pdf
+    rendered PDF bytes wrapper
+[DTO] EmailMessageDto: to, subject
+    an outbound email envelope
+[DTO] SmsMessageDto: to
+    an outbound SMS envelope
+[DTO] SendEmailResultDto: ok, reason?, to, subject
+    result of an email dispatch
+[DTO] SendSmsResultDto: ok, to, sid?, reason?
+    result of an SMS dispatch
 
 [NON] quote
-    a single quote
-[NON] contract
-    a single contract
+    a single quote — the merged Quote + Agreement document
 [NON] invoice
     a single invoice
 [NON] changeOrder
@@ -444,6 +439,12 @@
     the domain event bus
 [NON] logo
     the logo file store
+[NON] document
+    the PDF document builder
+[NON] email
+    the outbound email service
+[NON] sms
+    the outbound SMS service
 [NON] link
     a resolved shortlink
 [NON] order

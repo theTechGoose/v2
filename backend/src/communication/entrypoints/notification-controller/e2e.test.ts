@@ -20,14 +20,21 @@ class CrossModuleApp {}
 
 const PORT = 9080;
 
-async function drain(res: Response) { await res.body?.cancel(); }
+async function drain(res: Response) {
+  await res.body?.cancel();
+}
 
-async function login(port: number, phone = "+15125551234"): Promise<{ sessionId: string; userId: string }> {
-  await drain(await fetch(`http://localhost:${port}/auth/send-otp`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ phoneNumber: phone }),
-  }));
+async function login(
+  port: number,
+  phone = "+15125551234",
+): Promise<{ sessionId: string; userId: string }> {
+  await drain(
+    await fetch(`http://localhost:${port}/auth/send-otp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phoneNumber: phone }),
+    }),
+  );
   const stored = await new OtpStore().get(phone);
   return await fetch(`http://localhost:${port}/auth/verify-otp`, {
     method: "POST",
@@ -45,15 +52,23 @@ Deno.test("notifications e2e: list returns user's notifications newest-first", a
     const session = await login(PORT);
     // Seed via the store directly (the notify-on-event coordinator covers the EventBus integration test).
     const store = new NotificationStore();
-    await store.create({ userId: session.userId, type: "quote_sent", title: "First" });
+    await store.create({
+      userId: session.userId,
+      type: "quote_sent",
+      title: "First",
+    });
     await new Promise((r) => setTimeout(r, 5));
-    await store.create({ userId: session.userId, type: "quote_sent", title: "Second" });
+    await store.create({
+      userId: session.userId,
+      type: "quote_sent",
+      title: "Second",
+    });
 
     const list = await fetch(`http://localhost:${PORT}/notifications`, {
       headers: { "x-session-id": session.sessionId },
     }).then((r) => r.json());
     assertEquals(list.length, 2);
-    assertEquals(list[0].title, "Second");                // newest-first
+    assertEquals(list[0].title, "Second"); // newest-first
     assertEquals(list[1].title, "First");
   } finally {
     await server.stop();
@@ -69,11 +84,22 @@ Deno.test("notifications e2e: GET /unread-count returns the bell number", async 
   try {
     const session = await login(PORT);
     const store = new NotificationStore();
-    await store.create({ userId: session.userId, type: "quote_sent", title: "A" });
-    await store.create({ userId: session.userId, type: "quote_sent", title: "B" });
-    const body = await fetch(`http://localhost:${PORT}/notifications/unread-count`, {
-      headers: { "x-session-id": session.sessionId },
-    }).then((r) => r.json());
+    await store.create({
+      userId: session.userId,
+      type: "quote_sent",
+      title: "A",
+    });
+    await store.create({
+      userId: session.userId,
+      type: "quote_sent",
+      title: "B",
+    });
+    const body = await fetch(
+      `http://localhost:${PORT}/notifications/unread-count`,
+      {
+        headers: { "x-session-id": session.sessionId },
+      },
+    ).then((r) => r.json());
     assertEquals(body, { count: 2 });
   } finally {
     await server.stop();
@@ -89,17 +115,30 @@ Deno.test("notifications e2e: read-all clears unread count", async () => {
   try {
     const session = await login(PORT);
     const store = new NotificationStore();
-    await store.create({ userId: session.userId, type: "quote_sent", title: "A" });
-    await store.create({ userId: session.userId, type: "quote_sent", title: "B" });
+    await store.create({
+      userId: session.userId,
+      type: "quote_sent",
+      title: "A",
+    });
+    await store.create({
+      userId: session.userId,
+      type: "quote_sent",
+      title: "B",
+    });
 
-    await drain(await fetch(`http://localhost:${PORT}/notifications/read-all`, {
-      method: "POST",
-      headers: { "x-session-id": session.sessionId },
-    }));
+    await drain(
+      await fetch(`http://localhost:${PORT}/notifications/read-all`, {
+        method: "POST",
+        headers: { "x-session-id": session.sessionId },
+      }),
+    );
 
-    const after = await fetch(`http://localhost:${PORT}/notifications/unread-count`, {
-      headers: { "x-session-id": session.sessionId },
-    }).then((r) => r.json());
+    const after = await fetch(
+      `http://localhost:${PORT}/notifications/unread-count`,
+      {
+        headers: { "x-session-id": session.sessionId },
+      },
+    ).then((r) => r.json());
     assertEquals(after, { count: 0 });
   } finally {
     await server.stop();
@@ -148,12 +187,17 @@ Deno.test("notifications e2e: GET without session is rejected", async () => {
 
 const X_PORT = 9094;
 
-async function loginXmod(port: number, phone = "+15125551234"): Promise<string> {
-  await drain(await fetch(`http://localhost:${port}/auth/send-otp`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ phoneNumber: phone }),
-  }));
+async function loginXmod(
+  port: number,
+  phone = "+15125551234",
+): Promise<string> {
+  await drain(
+    await fetch(`http://localhost:${port}/auth/send-otp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phoneNumber: phone }),
+    }),
+  );
   const stored = await new OtpStore().get(phone);
   const v = await fetch(`http://localhost:${port}/auth/verify-otp`, {
     method: "POST",
@@ -167,9 +211,14 @@ async function withCrossModuleServer(fn: (port: number) => Promise<void>) {
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("POSTMARK_API_KEY");
   await resetKv();
-  const server = await bootstrapServer(CrossModuleApp, { port: X_PORT, swagger: false });
+  const server = await bootstrapServer(CrossModuleApp, {
+    port: X_PORT,
+    swagger: false,
+  });
   await server.listen();
-  try { await fn(X_PORT); } finally {
+  try {
+    await fn(X_PORT);
+  } finally {
     await server.stop();
     await resetKv();
   }
@@ -185,77 +234,56 @@ Deno.test("cross-module e2e: customer accepts a quote → notification appears i
     // default language happens to be.
     await drain(
       await fetch(`http://localhost:${port}/me`, {
-        method: "PUT", headers: auth, body: JSON.stringify({ language: "en" }),
+        method: "PUT",
+        headers: auth,
+        body: JSON.stringify({ language: "en" }),
       }),
     );
-    await drain(await fetch(`http://localhost:${port}/notifications`, { headers: { "x-session-id": sid } }));
+    await drain(
+      await fetch(`http://localhost:${port}/notifications`, {
+        headers: { "x-session-id": sid },
+      }),
+    );
 
     const customer = await fetch(`http://localhost:${port}/customers`, {
-      method: "POST", headers: auth, body: JSON.stringify({ name: "Acme Roofing" }),
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Acme Roofing" }),
     }).then((r) => r.json());
     const quote = await fetch(`http://localhost:${port}/quotes`, {
-      method: "POST", headers: auth, body: JSON.stringify({
-        customerId: customer.id, summary: "Roof tear-off", lineItems: [], status: "sent", estimatedTotal: 12_500,
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        summary: "Roof tear-off",
+        lineItems: [],
+        status: "sent",
+        estimatedTotal: 12_500,
       }),
     }).then((r) => r.json());
 
-    const accept = await fetch(`http://localhost:${port}/quotes/${quote.id}/accept`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Tom & Linda K.", signature: "data:..." }),
-    }).then((r) => r.json());
+    const accept = await fetch(
+      `http://localhost:${port}/quotes/${quote.id}/accept`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Tom & Linda K.", signature: "data:..." }),
+      },
+    ).then((r) => r.json());
     assertEquals(accept.ok, true);
 
-    const list = await fetch(`http://localhost:${port}/notifications`, { headers: { "x-session-id": sid } }).then((r) => r.json());
+    const list = await fetch(`http://localhost:${port}/notifications`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
     assert(Array.isArray(list));
     const matching = list.filter((n: { type: string; entityId: string }) =>
       n.type === "quote_accepted" && n.entityId === quote.id
     );
     assertEquals(matching.length, 1);
-    assertEquals(matching[0].title, "Acme Roofing accepted your quote");
-  });
-});
-
-Deno.test("cross-module e2e: customer signs a contract → notification appears in /notifications", async () => {
-  await withCrossModuleServer(async (port) => {
-    const sid = await loginXmod(port);
-    const auth = { "content-type": "application/json", "x-session-id": sid };
-    // P-59: pin the viewer's language to English so this test's fixed
-    // assertion strings stay meaningful under the viewer-localized read path.
-    await drain(
-      await fetch(`http://localhost:${port}/me`, {
-        method: "PUT", headers: auth, body: JSON.stringify({ language: "en" }),
-      }),
+    assertEquals(
+      matching[0].title,
+      "Acme Roofing accepted your quote for Roof Tear Off",
     );
-    await drain(await fetch(`http://localhost:${port}/notifications`, { headers: { "x-session-id": sid } }));
-
-    const customer = await fetch(`http://localhost:${port}/customers`, {
-      method: "POST", headers: auth, body: JSON.stringify({ name: "Beta Plumbing" }),
-    }).then((r) => r.json());
-    const quote = await fetch(`http://localhost:${port}/quotes`, {
-      method: "POST", headers: auth, body: JSON.stringify({
-        customerId: customer.id, summary: "Repipe", lineItems: [], status: "accepted",
-      }),
-    }).then((r) => r.json());
-    const contract = await fetch(`http://localhost:${port}/contracts`, {
-      method: "POST", headers: auth, body: JSON.stringify({
-        quoteId: quote.id, customerId: customer.id, totalAmount: 4_000,
-      }),
-    }).then((r) => r.json());
-
-    const sign = await fetch(`http://localhost:${port}/contracts/${contract.id}/sign`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Beta Owner", signature: "data:..." }),
-    }).then((r) => r.json());
-    assertEquals(sign.ok, true);
-
-    const list = await fetch(`http://localhost:${port}/notifications`, { headers: { "x-session-id": sid } }).then((r) => r.json());
-    const matching = list.filter((n: { type: string; entityId: string }) =>
-      n.type === "contract_signed" && n.entityId === contract.id
-    );
-    assertEquals(matching.length, 1);
-    assertEquals(matching[0].title, "Beta Plumbing signed the contract");
   });
 });
 
@@ -265,24 +293,53 @@ Deno.test("cross-module e2e: notification is scoped per-user — contractor B ne
     const sidB = await loginXmod(port, "+15125559999");
     const authA = { "content-type": "application/json", "x-session-id": sidA };
 
-    await drain(await fetch(`http://localhost:${port}/notifications`, { headers: { "x-session-id": sidA } }));
-    await drain(await fetch(`http://localhost:${port}/notifications`, { headers: { "x-session-id": sidB } }));
+    await drain(
+      await fetch(`http://localhost:${port}/notifications`, {
+        headers: { "x-session-id": sidA },
+      }),
+    );
+    await drain(
+      await fetch(`http://localhost:${port}/notifications`, {
+        headers: { "x-session-id": sidB },
+      }),
+    );
 
     const customer = await fetch(`http://localhost:${port}/customers`, {
-      method: "POST", headers: authA, body: JSON.stringify({ name: "A Co" }),
+      method: "POST",
+      headers: authA,
+      body: JSON.stringify({ name: "A Co" }),
     }).then((r) => r.json());
     const quote = await fetch(`http://localhost:${port}/quotes`, {
-      method: "POST", headers: authA, body: JSON.stringify({
-        customerId: customer.id, summary: "x", lineItems: [], status: "sent",
+      method: "POST",
+      headers: authA,
+      body: JSON.stringify({
+        customerId: customer.id,
+        summary: "x",
+        lineItems: [],
+        status: "sent",
       }),
     }).then((r) => r.json());
-    await drain(await fetch(`http://localhost:${port}/quotes/${quote.id}/accept`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}),
-    }));
+    await drain(
+      await fetch(`http://localhost:${port}/quotes/${quote.id}/accept`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    );
 
-    const aList = await fetch(`http://localhost:${port}/notifications`, { headers: { "x-session-id": sidA } }).then((r) => r.json());
-    const bList = await fetch(`http://localhost:${port}/notifications`, { headers: { "x-session-id": sidB } }).then((r) => r.json());
-    assertEquals(aList.filter((n: { type: string }) => n.type === "quote_accepted").length, 1);
-    assertEquals(bList.filter((n: { type: string }) => n.type === "quote_accepted").length, 0);
+    const aList = await fetch(`http://localhost:${port}/notifications`, {
+      headers: { "x-session-id": sidA },
+    }).then((r) => r.json());
+    const bList = await fetch(`http://localhost:${port}/notifications`, {
+      headers: { "x-session-id": sidB },
+    }).then((r) => r.json());
+    assertEquals(
+      aList.filter((n: { type: string }) => n.type === "quote_accepted").length,
+      1,
+    );
+    assertEquals(
+      bList.filter((n: { type: string }) => n.type === "quote_accepted").length,
+      0,
+    );
   });
 });

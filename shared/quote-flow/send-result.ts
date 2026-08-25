@@ -2,8 +2,8 @@
  * Honest send-result interpretation (P-09): the send endpoints report
  * logical failure as HTTP 200 + {ok:false, reason}, so every send surface
  * must interpret the BODY, never just Response.ok. Maps failures to the
- * same lang keys the honest assistant contract-send divider already uses
- * (sendContract.divider.noEmail / sendContract.divider.emailFailed).
+ * same lang keys the honest assistant send divider already uses
+ * (sendQuote.divider.noEmail / sendQuote.divider.emailFailed).
  */
 
 export type SendReason = "noEmail" | "noPhone" | "bounced" | "http" | "unknown";
@@ -42,6 +42,6 @@ export function interpretSendResult(
 export function sendResultLangKey(outcome: SendOutcome): string | null {
   if (outcome.delivered) return null;
   return outcome.reason === "noEmail"
-    ? "sendContract.divider.noEmail"
-    : "sendContract.divider.emailFailed";
+    ? "sendQuote.divider.noEmail"
+    : "sendQuote.divider.emailFailed";
 }

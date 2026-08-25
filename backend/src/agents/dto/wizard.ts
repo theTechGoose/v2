@@ -23,15 +23,15 @@ export interface WizardOption {
 }
 
 export interface WizardStep {
-  id: string;            // e.g. "payment_terms"
-  label: string;         // sidebar label, e.g. "Payment terms"
-  question: string;      // shown as the step's heading
+  id: string; // e.g. "payment_terms"
+  label: string; // sidebar label, e.g. "Payment terms"
+  question: string; // shown as the step's heading
   options: WizardOption[];
   hint?: string;
 }
 
 export interface WizardSpec {
-  id: string;            // e.g. "contract-terms-v1"
+  id: string; // e.g. "terms-v1"
   steps: WizardStep[];
 }
 
@@ -68,12 +68,17 @@ export class WizardAnswerDto {
    *  coordinator does the deeper checks (existence, ownership, required
    *  fields on `create`). */
   @IsOptional()
-  customer?: { id?: string; create?: { name: string; email?: string; phoneNumber?: string } };
+  customer?: {
+    id?: string;
+    create?: { name: string; email?: string; phoneNumber?: string };
+  };
 }
 
 export function parseWizardAnswer(input: unknown): WizardAnswerDto {
   const dto = plainToInstance(WizardAnswerDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid wizard answer: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid wizard answer: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }

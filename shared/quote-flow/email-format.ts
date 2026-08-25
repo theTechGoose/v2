@@ -109,12 +109,12 @@ export function invoiceStatusLabel(status: string, lang: string): string {
   return raw.charAt(0).toLocaleUpperCase(localeOf(lang)) + raw.slice(1);
 }
 
-/** Keep in sync with lang/en.json + lang/es.json "contractDoc.unitEach". */
+/** Keep in sync with lang/en.json + lang/es.json "quoteDoc.unitEach". */
 const UNIT_EACH: Record<string, string> = { en: "ea", es: "c/u" };
 
 /**
  * Localizes the per-line unit. The "ea"/"each" unit (and the missing-unit
- * fallback `li.unit ?? "ea"`) maps to the dict's contractDoc.unitEach;
+ * fallback `li.unit ?? "ea"`) maps to the dict's quoteDoc.unitEach;
  * unknown/custom units pass through unchanged.
  */
 export function unitLabel(unit: string | undefined, lang: string): string {

@@ -8,7 +8,7 @@
  * { details } (multi-line raw input) it returns { items: string[] } — the
  * professional breakdown. The legacy { text } shape keeps working.
  */
-import { contractor, type ApiSession } from "./helpers/api";
+import { type ApiSession, contractor } from "./helpers/api";
 
 describe("POST /agents/job-details/professionalize — multi-line breakdown", () => {
   let s: ApiSession;
@@ -19,9 +19,12 @@ describe("POST /agents/job-details/professionalize — multi-line breakdown", ()
 
   it("returns professionalized line items for raw casual input", async () => {
     const raw = "tear out the old fence\nput up new panels\nhaul away the junk";
-    const { status, body } = await s.post("/agents/job-details/professionalize", {
-      details: raw,
-    });
+    const { status, body } = await s.post(
+      "/agents/job-details/professionalize",
+      {
+        details: raw,
+      },
+    );
     expect(status).toBe(200);
     const items: string[] = body.items ?? [];
     expect(Array.isArray(items)).toBe(true);
@@ -39,13 +42,18 @@ describe("POST /agents/job-details/professionalize — multi-line breakdown", ()
     // Every item must relate to the described work — no invented rooms,
     // trades, or unrelated add-ons.
     expect(items.join(" ")).toMatch(/gate|hinge|latch|hardware|fence/i);
-    expect(items.join(" ")).not.toMatch(/kitchen|roof|plumbing|electrical|painting the house/i);
+    expect(items.join(" ")).not.toMatch(
+      /kitchen|roof|plumbing|electrical|painting the house/i,
+    );
   });
 
   it("the legacy single-bullet shape ({ text } → { text }) keeps working", async () => {
-    const { status, body } = await s.post("/agents/job-details/professionalize", {
-      text: "fix the gate",
-    });
+    const { status, body } = await s.post(
+      "/agents/job-details/professionalize",
+      {
+        text: "fix the gate",
+      },
+    );
     expect(status).toBe(200);
     expect(typeof body.text).toBe("string");
     expect(body.text.trim().length).toBeGreaterThan(0);

@@ -5,18 +5,17 @@ import {
   computePaymentSplit,
   type MilestoneRole,
 } from "../lib/payment-split.ts";
-import { api } from "../lib/api.ts";
+import { api, ApiError } from "../lib/api.ts";
 import {
   assistantClient,
-  type ContractLite,
   type CustomerLite,
   type JobOption,
   type Message,
+  type Quote as AsstQuote,
 } from "../clients/assistant.ts";
 import { filesClient } from "../clients/files.ts";
 import { quotesClient } from "../clients/quotes.ts";
 import { clientsClient } from "../clients/clients.ts";
-import { contractsClient } from "../clients/contracts.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { localizeTermValue } from "../lib/term-i18n.ts";
@@ -73,10 +72,10 @@ interface WizardOption {
 
 /**
  * Term-edit picker fallback: a static map of stepId → preset options for
- * the contract-terms wizard. Used when the term row is being edited
+ * the terms wizard. Used when the term row is being edited
  * inline and no matching wizard message is in chat scope (older threads,
  * or threads where the wizard messages were pruned). Mirrors
- * `CONTRACT_TERMS_WIZARD_V1` in the backend — keep in sync if that spec
+ * `TERMS_WIZARD_V1` in the backend — keep in sync if that spec
  * grows new steps. The `customer` step is intentionally excluded since
  * its picker has its own dedicated panel.
  */
@@ -281,7 +280,7 @@ interface ActionCardLineItem {
 
 interface ActionCardPayload {
   actionType?: string;
-  status?: "draft" | "sent" | "viewed" | "approved" | "void" | string;
+  status?: "draft" | "sent" | "viewed" | "accepted" | "void" | string;
   quoteId?: string;
   customerId?: string;
   /** Polished narrative produced from the user's raw job-details input. */
@@ -318,9 +317,9 @@ function composerPlaceholder(msgs: Message[], lang: Lang): string {
   return tFor(lang, "asstChat.composer.default");
 }
 
-/** Map a Quote/Contract status to the human-facing chip label on the
- *  in-chat Quote+Agreement card. Keeps the chip in sync with the doc's
- *  lifecycle: Draft → Sent → Viewed → Approved. */
+/** Map a quote status to the human-facing chip label on the in-chat
+ *  Quote+Agreement card. Keeps the chip in sync with the doc's
+ *  lifecycle: Draft → Sent → Viewed → Accepted. */
 function statusChipLabel(status: string | undefined, lang: Lang): string {
   switch ((status ?? "draft").toLowerCase()) {
     case "sent":
@@ -330,7 +329,6 @@ function statusChipLabel(status: string | undefined, lang: Lang): string {
       return tFor(lang, "status.viewed");
     case "won":
     case "accepted":
-    case "approved":
     case "signed":
       return tFor(lang, "asstChat.statusChip.approved");
     case "void":
@@ -357,8 +355,8 @@ interface Props {
   initialMessages: Message[];
   /** Customer bound to this conversation (only present in phase 2). */
   initialCustomer?: CustomerLite;
-  /** Contract bound to this conversation (only present once the wizard completes). */
-  initialContract?: ContractLite;
+  /** Quote (the agreement) bound to this conversation. */
+  initialQuote?: AsstQuote;
   /** 1-2 letter user-avatar string. Pre-derived on the server so we don't
    *  flash a stale or default value while hydrating. */
   userInitials?: string;
@@ -446,7 +444,7 @@ function buildPaymentMilestones(
   lang: Lang,
 ): PaymentMilestone[] | null {
   // All money comes from the shared #payment-split source of truth so this
-  // preview matches the signed contract, the PDF, and the actual invoices.
+  // preview matches the signed agreement, the PDF, and the actual invoices.
   // Only the display labels live here.
   const parts = computePaymentSplit(value, totalCents);
   // A single full payment → return null so the caller shows the plain
@@ -469,8 +467,8 @@ function buildPaymentMilestones(
 }
 
 /** Labels for the quote-review PREVIEW language toggle, and Spanish copy for
- *  the card chrome. Mirrors the customer-facing public quote/contract pages
- *  (routes/q/[id].tsx, contract-doc) so the contractor's preview matches what
+ *  the card chrome. Mirrors the customer-facing public quote page
+ *  (routes/q/[id].tsx, quote-doc) so the contractor's preview matches what
  *  the customer actually receives. Free-text the contractor typed (term
  *  values, line-item names) stays verbatim — exactly like the public pages. */
 /** Language endonym labels for the preview toggle. Keyed by send-language
@@ -496,7 +494,7 @@ export default function AsstChat({
   conversationId,
   initialMessages,
   initialCustomer,
-  initialContract,
+  initialQuote,
   userInitials = "?",
   from,
   sendLanguages,
@@ -519,9 +517,6 @@ export default function AsstChat({
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [customer, setCustomer] = useState<CustomerLite | undefined>(
     initialCustomer,
-  );
-  const [contract, setContract] = useState<ContractLite | undefined>(
-    initialContract,
   );
   /** Per-user "see what your customer sees" sample quote URL. Minted
    *  lazily — eagerly fetched on mount when the synthetic onboarding-
@@ -558,16 +553,18 @@ export default function AsstChat({
         price?: number;
       }[];
       estimatedTotal?: number;
-      /** Lifecycle — "approved"/"accepted" once the customer signed on /q
+      /** Lifecycle — "accepted" once the customer signed on /q
        *  (UX-02: the thread must reflect it and stop offering re-sends). */
       status?: string;
       acceptedAt?: string | null;
+      /** Wizard-captured agreement terms — the quote IS the agreement. */
+      terms?: { stepId: string; label: string; value: string }[];
     }
     | undefined
   >();
   /** UX-02: the customer already accepted this deal on /q. */
-  const quoteAccepted = quote?.status === "approved" ||
-    quote?.status === "accepted" || Boolean(quote?.acceptedAt);
+  const quoteAccepted = quote?.status === "accepted" ||
+    Boolean(quote?.acceptedAt);
   const [draft, setDraft] = useState("");
   /** Inline price-capture flow opened by the "I already have my price"
    *  empty-state prompt. When set, renders the MoneyInput card in place
@@ -689,7 +686,7 @@ export default function AsstChat({
    *  done. Set when we intercept it; consumed by applyJobOption. */
   const pendingReviewCtaRef = useRef<string | null>(null);
   /** Inline contact-recovery inputs keyed by the failure phase_divider id.
-   *  When SendContract reports a missing/invalid email or phone, we let
+   *  When SendQuote reports a missing/invalid email or phone, we let
    *  the user type it right under the divider; saving patches the
    *  customer profile so we have it next time too. */
   const [recoveryDraft, setRecoveryDraft] = useState<
@@ -734,9 +731,9 @@ export default function AsstChat({
   /** Honest swap-send outcome (P-09): the invoice endpoints report logical
    *  failure as HTTP 200 + {ok:false, reason}, so the swap panel must read
    *  the BODY — never just Response.ok. When a leg fails this holds the
-   *  divider lang key (sendContract.divider.noEmail / .emailFailed) plus
-   *  the server's reason text, rendered like the honest contract-send
-   *  divider. Null = everything requested was delivered. */
+   *  divider lang key (sendQuote.divider.noEmail / .emailFailed) plus
+   *  the server's reason text, rendered like the honest send divider.
+   *  Null = everything requested was delivered. */
   const [swapSendFail, setSwapSendFail] = useState<
     { key: string; reason: string } | null
   >(null);
@@ -806,11 +803,11 @@ export default function AsstChat({
     "business" | "person" | null
   >(null);
   /**
-   * stepId of the contract term currently being re-edited inline. Driving
+   * stepId of the agreement term currently being re-edited inline. Driving
    * a `null → stepId → null` cycle expands the term row into the wizard's
    * option buttons for that step, lets the user pick a new value, and
-   * collapses back. Picking PUTs the contract directly (no rewinding the
-   * wizard state) — the contract IS the source of truth post-wizard.
+   * collapses back. Picking PUTs the quote directly (no rewinding the
+   * wizard state) — the quote IS the source of truth post-wizard.
    */
   const [editingTermStepId, setEditingTermStepId] = useState<string | null>(
     null,
@@ -825,8 +822,8 @@ export default function AsstChat({
   >(null);
   /**
    * Set when the user clicks "Review" on the wizard's send CTA. Drives the
-   * inline contract preview card (total/customer/dates) so the user can
-   * actually look the contract over before clicking "Send to client".
+   * inline agreement preview card (total/customer/dates) so the user can
+   * actually look the document over before clicking "Send to client".
    */
   const [previewCtaId, setPreviewCtaId] = useState<string | null>(null);
 
@@ -898,7 +895,7 @@ export default function AsstChat({
       optionId: string;
     } | null
   >(null);
-  // wraps "Custom" — structured number + unit picker so the contract gets a
+  // wraps "Custom" — structured number + unit picker so the agreement gets a
   // clean duration string ("3 weeks") without relying on free-text parsing.
   const [customDurationPick, setCustomDurationPick] = useState<
     {
@@ -908,7 +905,7 @@ export default function AsstChat({
   >(null);
   // warranty "Custom" — same two-phase Bossie chat → verify pattern as the
   // duration picker, but tuned for warranty language (months/years/lifetime)
-  // so the contract reads cleanly ("12 months", "2 years", "Lifetime").
+  // so the agreement reads cleanly ("12 months", "2 years", "Lifetime").
   const [customWarrantyPick, setCustomWarrantyPick] = useState<
     {
       messageId: string;
@@ -917,7 +914,7 @@ export default function AsstChat({
   >(null);
   // payment_terms "Custom" — chat-with-verify Bossie flow that produces a
   // clean payment string ("Net 30", "30 / 30 / 40") that buildPaymentMilestones
-  // can parse. Free-text never lands on the contract directly.
+  // can parse. Free-text never lands on the agreement directly.
   const [customPaymentPick, setCustomPaymentPick] = useState<
     {
       messageId: string;
@@ -1091,16 +1088,13 @@ export default function AsstChat({
     setConvoId(conversationId);
     setMessages(initialMessages);
     setCustomer(initialCustomer);
-    setContract(initialContract);
-    // Seed quoteId from the bound contract (when present) so the
+    // Seed the quote from the route's SSR detail (when present) so the
     // quote-fetch effect below kicks in without waiting for a CTA click.
-    const seedQuoteId = (initialContract as { quoteId?: string } | undefined)
-      ?.quoteId;
-    if (seedQuoteId) setQuoteId(seedQuoteId);
+    if (initialQuote?.id) setQuoteId(initialQuote.id);
   }, [conversationId]);
 
   // If we still don't have a quoteId on the route (terms phase but no
-  // contract bound yet — the "I know my price → job details" flow lands
+  // quote bound yet — the "I know my price → job details" flow lands
   // here before the wizard finalizes), pull it from the conversation.
   useEffect(() => {
     if (!convoId || quoteId) return;
@@ -1111,7 +1105,7 @@ export default function AsstChat({
         if (cancelled) return;
         const qId =
           (detail.conversation as { quoteId?: string } | undefined)?.quoteId ??
-            (detail.contract as { quoteId?: string } | undefined)?.quoteId;
+            detail.quote?.id;
         if (qId) setQuoteId(qId);
       })
       .catch(() => {/* preview falls back to action_card */});
@@ -1175,6 +1169,9 @@ export default function AsstChat({
             // customer acceptance and stop offering re-sends.
             status: (q as { status?: string }).status,
             acceptedAt: (q as { acceptedAt?: string | null }).acceptedAt,
+            terms: (q as {
+              terms?: { stepId: string; label: string; value: string }[];
+            }).terms,
           });
         }
       })
@@ -1228,7 +1225,7 @@ export default function AsstChat({
   }, [convoId]);
 
   // ?seed=… pre-fills the composer from a deeplink (e.g. hero CTAs on
-  // /payments / /invoices / /contracts → "Ask Bossie to record a payment").
+  // /payments / /invoices → "Ask Bossie to record a payment").
   // We strip the param after seeding so a refresh doesn't re-seed.
   useEffect(() => {
     if (typeof globalThis.window === "undefined") return;
@@ -1260,10 +1257,9 @@ export default function AsstChat({
         setConvoId(target);
         if (Array.isArray(detail.messages)) setMessages(detail.messages);
         if (detail.customer) setCustomer(detail.customer);
-        if (detail.contract) setContract(detail.contract);
         const qId =
           (detail.conversation as { quoteId?: string } | undefined)?.quoteId ??
-            (detail.contract as { quoteId?: string } | undefined)?.quoteId;
+            detail.quote?.id;
         if (qId) setQuoteId(qId);
       })
       .catch(() => {/* stay on the empty state — back still exits */});
@@ -1294,12 +1290,11 @@ export default function AsstChat({
   // P6.12: keep the chat header fresh while the conversation evolves. The
   // SSR-rendered header on /assistant (no threadId) starts as
   // "New conversation" and never updates. Broadcast a CustomEvent whenever
-  // the bound customer or contract status changes so a sibling island can
+  // the bound customer or quote status changes so a sibling island can
   // swap the title in place — no page reload needed.
   useEffect(() => {
     if (typeof globalThis.window === "undefined") return;
     const client = customer?.name?.trim();
-    const contractStatus = contract?.status;
     // Find the most recent quote action_card to derive a meaningful
     // status. "Drafting…" used to fire as soon as a conversation existed,
     // which mis-labelled the header on the literal first turn (audit #13).
@@ -1313,8 +1308,8 @@ export default function AsstChat({
     )?.status;
     // The most recent phase_divider tells us where the conversation is in
     // the wizard timeline. Phase 2 (terms) lands the moment the user
-    // clicks Continue, BEFORE a contract row exists — without this hook
-    // the header sat at "Quote sent" through the entire wizard, which
+    // clicks Continue, BEFORE the terms land on the quote — without this
+    // hook the header sat at "Quote sent" through the entire wizard, which
     // broke #15 (chip didn't update on transition).
     const lastDivider = [...messages]
       .reverse()
@@ -1325,18 +1320,12 @@ export default function AsstChat({
     // UX-02: the customer's acceptance is the loudest state this thread can
     // reach — it outranks "out for signature", which reads as still-waiting.
     let status = tFor(lang, "asstChat.header.default");
-    if (quoteAccepted && contractStatus !== "signed") {
-      status = tFor(lang, "asstChat.header.contractAccepted");
-    } else if (contractStatus === "signed") {
-      status = tFor(lang, "asstChat.header.contractSigned");
-    } else if (contractStatus === "sent") {
-      status = tFor(lang, "asstChat.header.contractOutForSignature");
-    } else if (contract) {
-      status = tFor(lang, "asstChat.header.contractDrafting");
-    } else if (dividerPhase === 4) {
-      status = tFor(lang, "asstChat.header.contractAccepted");
+    if (quoteAccepted || dividerPhase === 4) {
+      status = tFor(lang, "asstChat.header.quoteAccepted");
+    } else if (quote?.status === "sent" || quote?.status === "viewed") {
+      status = tFor(lang, "asstChat.header.outForSignature");
     } else if (dividerPhase === 3) {
-      status = tFor(lang, "asstChat.header.contractSent");
+      status = tFor(lang, "asstChat.header.quoteSent");
     } else if (dividerPhase === 2) {
       status = tFor(lang, "asstChat.header.gatheringInfo");
     } else if (quoteStatus === "accepted") {
@@ -1359,8 +1348,7 @@ export default function AsstChat({
     );
   }, [
     customer?.name,
-    contract?.id,
-    contract?.status,
+    quote?.id,
     quote?.status,
     quote?.acceptedAt,
     convoId,
@@ -1485,33 +1473,27 @@ export default function AsstChat({
     }
   }, [previewCtaId]);
 
-  // While the inline quote-review preview is open and the bound contract
-  // hasn't reached a terminal state (signed / declined), poll its row
+  // While the inline quote-review preview is open and the bound quote
+  // hasn't reached a terminal state (accepted / declined), poll its row
   // every 8s so the status chip ticks forward as the customer interacts:
-  //   Sent → Viewed (first public GET) → Approved (sign).
+  //   Sent → Viewed (first public GET) → Accepted (sign).
   // No SSE channel exists today; polling here is scoped to the preview
   // surface to keep traffic minimal.
   useEffect(() => {
     if (previewCtaId === null) return;
-    const cid = contract?.id;
-    if (!cid) return;
-    const TERMINAL = new Set([
-      "signed",
-      "accepted",
-      "approved",
-      "declined",
-      "void",
-      "lost",
-    ]);
-    if (TERMINAL.has((contract?.status ?? "").toLowerCase())) return;
+    const qid = quote?.id;
+    if (!qid) return;
+    const TERMINAL = new Set(["accepted", "declined", "void", "lost"]);
+    if (TERMINAL.has((quote?.status ?? "").toLowerCase())) return;
     let cancelled = false;
     const tick = async () => {
       try {
-        const fresh = await contractsClient.get(cid);
+        const fresh = await quotesClient.get(qid);
         if (cancelled) return;
-        setContract((cur) => {
-          if (!cur || cur.id !== cid) return cur;
-          if (cur.status === fresh.status) return cur;
+        setQuote((cur) => {
+          if (!cur || cur.id !== qid) return cur;
+          const freshStatus = (fresh as { status?: string }).status;
+          if (cur.status === freshStatus) return cur;
           return { ...cur, ...fresh } as typeof cur;
         });
       } catch {
@@ -1523,7 +1505,7 @@ export default function AsstChat({
       cancelled = true;
       globalThis.clearInterval(id);
     };
-  }, [previewCtaId, contract?.id, contract?.status]);
+  }, [previewCtaId, quote?.id, quote?.status]);
 
   // Auto-open the editable quote-review when the wizard emits its
   // "Ready to send" CTA. The CTA banner itself is suppressed below
@@ -2564,7 +2546,7 @@ export default function AsstChat({
     if (sending) return;
     const payload = (message.payload ?? {}) as {
       toPhase?: string;
-      contractId?: string;
+      quoteId?: string;
     };
     if (payload.toPhase === "terms") {
       if (!convoId) return;
@@ -2596,28 +2578,26 @@ export default function AsstChat({
     }
     if (payload.toPhase === "send") {
       // Wizard is complete — open the inline preview card so the user can
-      // look the contract over before sending. Hydrate contract+customer
+      // look the agreement over before sending. Hydrate quote+customer
       // state if we don't already have them (mid-session wizard runs land
-      // here without page-load contract data).
-      const contractId = payload.contractId ?? contract?.id;
-      if (!convoId || !contractId) {
-        setError("contract is not ready yet");
+      // here without page-load quote data).
+      const ctaQuoteId = payload.quoteId ?? quote?.id ?? quoteId;
+      if (!convoId || !ctaQuoteId) {
+        setError("quote is not ready yet");
         return;
       }
-      if (!contract || contract.id !== contractId || !customer) {
+      if (!quote || quote.id !== ctaQuoteId || !customer) {
         setError(undefined);
         setSending(true);
         try {
           const detail = await assistantClient.conversation(convoId);
-          if (detail.contract) setContract(detail.contract);
           if (detail.customer) setCustomer(detail.customer);
           const qId = (detail.conversation as { quoteId?: string } | undefined)
-            ?.quoteId ??
-            (detail.contract as { quoteId?: string } | undefined)?.quoteId;
+            ?.quoteId ?? detail.quote?.id ?? ctaQuoteId;
           if (qId) setQuoteId(qId);
         } catch (err) {
           setError(
-            err instanceof Error ? err.message : "couldn't load the contract",
+            err instanceof Error ? err.message : "couldn't load the quote",
           );
           return;
         } finally {
@@ -2638,7 +2618,7 @@ export default function AsstChat({
       return;
     }
     if (payload.toPhase === "invoice") {
-      // Closing handoff: contract is signed, draft + send the invoice.
+      // Closing handoff: quote is accepted, draft + send the invoice.
       // SendInvoice is idempotent server-side, so a double-click just
       // re-renders the same action_card. The CTA stays in the chat
       // history (don't drop it) so the user has a record of the click.
@@ -2666,22 +2646,23 @@ export default function AsstChat({
   }
 
   /**
-   * Dev-only: flip the contract to "accepted" via AcceptContract — the
+   * Dev-only: flip the quote to "accepted" via AcceptQuote — the
    * single customer-facing acceptance event in the chain. The server
-   * appends a phase_divider ("Contract accepted by client") + a
+   * appends a phase_divider ("Accepted by client") + a
    * "Continue to invoice" CTA, sets hasUnreadEvent, and bumps preview;
    * we splice those into the chat in-place so the user can see the
    * progression without a navigation jump.
    */
-  async function simulateCustomerAccept(contractId: string | undefined) {
-    if (sending || !convoId || !contractId) return;
+  async function simulateCustomerAccept(targetQuoteId: string | undefined) {
+    if (sending || !convoId || !targetQuoteId) return;
     setError(undefined);
     setSending(true);
     try {
-      const res = await assistantClient.acceptContract(convoId, contractId);
+      const res = await assistantClient.acceptQuote(convoId, targetQuoteId);
       if (res.newMessages?.length) {
         setMessages((m) => [...m, ...res.newMessages]);
       }
+      setQuote((q) => (q ? { ...q, status: "accepted" } : q));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "couldn't simulate acceptance",
@@ -2693,13 +2674,13 @@ export default function AsstChat({
 
   /**
    * Save inline-typed customer email/phone to the customer profile,
-   * then re-fire SendContract on the same channel so the doc actually
+   * then re-fire SendQuote on the same channel so the doc actually
    * reaches the client. Used by the recovery form rendered below a
    * delivery-failure phase_divider.
    */
   async function saveContactAndRetry(
     dividerId: string,
-    args: { contractId: string; channel: "email" | "sms" | "both" },
+    args: { quoteId: string; channel: "email" | "sms" | "both" },
   ) {
     if (!convoId || !customer?.id) return;
     const draft = recoveryDraft[dividerId] ?? {};
@@ -2720,9 +2701,9 @@ export default function AsstChat({
       // the quote-review hero, etc.). We still trust the server row
       // for canonical values via updated.
       void updated;
-      const res = await assistantClient.sendContract(
+      const res = await assistantClient.sendQuoteFlow(
         convoId,
-        args.contractId,
+        args.quoteId,
         args.channel,
       );
       if (res.newMessages?.length) {
@@ -2742,30 +2723,28 @@ export default function AsstChat({
 
   /**
    * Fire the post-wizard "Ready to send" CTA: dispatches the assembled
-   * contract to the customer via the SendContract coordinator on the
+   * Quote + Agreement to the customer via the SendQuote coordinator on the
    * requested channel (text, email, or both). Idempotent server-side
    * (re-clicks redeliver), so flipping local state optimistically is safe.
    */
-  async function confirmSendContract(
+  async function confirmSendQuote(
     message: Message,
     channel: "email" | "sms" | "both" = "email",
     language?: "en" | "es",
   ) {
     if (sending || !convoId) return;
-    const payload = (message.payload ?? {}) as { contractId?: string };
-    let id = payload.contractId ?? contract?.id;
+    const payload = (message.payload ?? {}) as { quoteId?: string };
+    let id = payload.quoteId ?? quote?.id ?? quoteId;
     setError(undefined);
     setSending(true);
     try {
       if (!id) {
         const detail = await assistantClient.conversation(convoId);
-        id = detail.contract?.id ??
-          (detail.conversation as { contractId?: string } | undefined)
-            ?.contractId;
-        if (detail.contract) setContract(detail.contract);
+        id = detail.quote?.id ??
+          (detail.conversation as { quoteId?: string } | undefined)?.quoteId;
       }
-      if (!id) throw new Error("no contract bound to this conversation");
-      const res = await assistantClient.sendContract(
+      if (!id) throw new Error("no quote bound to this conversation");
+      const res = await assistantClient.sendQuoteFlow(
         convoId,
         id,
         channel,
@@ -2776,14 +2755,14 @@ export default function AsstChat({
         next.add(message.id);
         return next;
       });
-      setContract((c) => (c ? { ...c, status: "sent" } : c));
+      setQuote((q) => (q ? { ...q, status: "sent" } : q));
       setPreviewCtaId(null);
       if (res.newMessages?.length) {
         setMessages((m) => [...m, ...res.newMessages]);
       }
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "couldn't send the contract",
+        err instanceof Error ? err.message : "couldn't send the quote",
       );
     } finally {
       setSending(false);
@@ -2794,19 +2773,18 @@ export default function AsstChat({
    * Save an inline edit to the grand total. The user types a money value
    * into the `.quote-review__total-amt` span; strip non-numeric chars and
    * convert to cents. Persistence:
-   *   - PUT /quotes/:id  — `estimatedTotal` so the canonical record matches
-   *   - PUT /contracts/:id (when a contract exists) — `totalAmount` is what
-   *     the preview reads from (`totalCentsForBreakdown`), so updating it
-   *     refreshes the displayed total + recomputes payment milestones.
-   *   - When no contract is bound, patch the action_card payload's
-   *     `totalCents` so the on-screen total reflects the edit.
+   *   - PUT /quotes/:id  — `estimatedTotal` is the canonical agreement
+   *     total the preview reads from (`totalCentsForBreakdown`), so
+   *     updating it refreshes the displayed total + recomputes payment
+   *     milestones.
+   *   - Also patch the action_card payload's `totalCents` so the
+   *     on-screen total reflects the edit.
    * Line items are NOT touched — the Subtotal row keeps showing the line
    * sum so the user sees the override delta.
    */
   async function onEditTotal(
     quoteId: string | undefined,
     actionCardId: string | undefined,
-    contractId: string | undefined,
     originalCents: number,
     el: HTMLElement,
   ) {
@@ -2832,12 +2810,10 @@ export default function AsstChat({
     }
     try {
       await quotesClient.update(quoteId, { estimatedTotal: nextCents });
-      if (contractId) {
-        await contractsClient.update(contractId, { totalAmount: nextCents });
-        setContract((cur) =>
-          cur ? ({ ...cur, totalAmount: nextCents } as typeof cur) : cur
-        );
-      } else if (actionCardId) {
+      setQuote((cur) =>
+        cur ? ({ ...cur, estimatedTotal: nextCents } as typeof cur) : cur
+      );
+      if (actionCardId) {
         setMessages((msgs) =>
           msgs.map((m) => {
             if (m.id !== actionCardId) return m;
@@ -2899,9 +2875,6 @@ export default function AsstChat({
     try {
       const res = await assistantClient.bindCustomer(convoId, nextCustomer.id);
       setCustomer(res.customer);
-      setContract((
-        c,
-      ) => (c ? ({ ...c, customerId: res.customer.id } as typeof c) : c));
       setCustomerPickerOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "couldn't switch customer");
@@ -2938,34 +2911,35 @@ export default function AsstChat({
   }
 
   // Pick a new option for an already-answered wizard term. Patches the
-  // contract's terms[] entry by stepId and PUTs the contract — does NOT
+  // quote's terms[] entry by stepId and PUTs the quote — does NOT
   // rewind the wizard state. The chat-history wizard answer message stays
-  // as-is (historical record); the contract reflects the latest pick and
-  // the preview reads from contract.terms going forward.
+  // as-is (historical record); the quote reflects the latest pick and
+  // the preview reads from quote.terms going forward.
   async function pickTermOption(
-    contractId: string | undefined,
+    targetQuoteId: string | undefined,
     stepId: string,
     label: string,
     optionLabel: string,
   ) {
-    if (!contractId) return;
+    if (!targetQuoteId) return;
     setEditingTermStepId(null);
     try {
-      const c = await contractsClient.get(contractId);
-      const existing = Array.isArray(c.terms)
-        ? [...(c.terms as { stepId: string; label: string; value: string }[])]
-        : [];
+      const q = await quotesClient.get(targetQuoteId);
+      const rawTerms = (q as unknown as {
+        terms?: { stepId: string; label: string; value: string }[];
+      }).terms;
+      const existing = Array.isArray(rawTerms) ? [...rawTerms] : [];
       const idx = existing.findIndex((t) => t.stepId === stepId);
       const nextTerm = { stepId, label, value: optionLabel };
       const terms = idx === -1
         ? [...existing, nextTerm]
         : existing.map((t, i) => (i === idx ? nextTerm : t));
-      await contractsClient.update(contractId, { terms });
-      // Reflect the pick on local contract state so the preview re-renders
+      await quotesClient.update(targetQuoteId, { terms });
+      // Reflect the pick on local quote state so the preview re-renders
       // without a reload. Don't append a synthetic chat message — that
       // would render as an out-of-order "Payment terms: 50/50 ✓" log
-      // *after* the Contract sent CTA, which looks like a bug.
-      setContract((cur) => (cur ? ({ ...cur, terms } as typeof cur) : cur));
+      // *after* the sent CTA, which looks like a bug.
+      setQuote((cur) => (cur ? ({ ...cur, terms } as typeof cur) : cur));
     } catch (err) {
       setError(err instanceof Error ? err.message : "couldn't save edit");
     }
@@ -3118,8 +3092,36 @@ export default function AsstChat({
         setMessages((m) => [...m, ...res.newMessages]);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "wizard answer failed");
-      setMessages((m) => [...m, message]);
+      // Prefer the server's own message ("customer contact must not match…",
+      // "expected answer for…") over the transport line ("POST … failed: 500")
+      // — this strip is user-facing.
+      const serverMsg = err instanceof ApiError &&
+          err.body && typeof err.body === "object" &&
+          typeof (err.body as { message?: unknown }).message === "string"
+        ? (err.body as { message: string }).message
+        : undefined;
+      setError(
+        serverMsg ??
+          (err instanceof Error ? err.message : "wizard answer failed"),
+      );
+      // Re-sync from the server instead of restoring the local card. The
+      // local wizard card can be STALE (a lost response that actually
+      // landed, a double tap, a second tab) — restoring it traps the user
+      // in a loop where every answer is rejected as out-of-order while the
+      // error stays invisible. The snapshot renders the step the server is
+      // actually on; if the snapshot itself fails (offline), fall back to
+      // restoring the card so the step isn't lost entirely.
+      try {
+        const snap = await assistantClient.conversation(convoId);
+        if (snap && Array.isArray(snap.messages)) {
+          setMessages(snap.messages);
+          if (snap.customer) setCustomer(snap.customer);
+        } else {
+          setMessages((m) => [...m, message]);
+        }
+      } catch {
+        setMessages((m) => [...m, message]);
+      }
     } finally {
       setSending(false);
     }
@@ -3233,7 +3235,7 @@ export default function AsstChat({
       const list = (Array.isArray(cards) ? cards : [])
         .filter((c) => c.isSample !== true)
         .filter((c) =>
-          c.stage === "won" || c.status === "approved" ||
+          c.stage === "won" ||
           c.status === "accepted" || Boolean(c.acceptedAt)
         )
         .slice(0, 3)
@@ -3422,7 +3424,7 @@ export default function AsstChat({
       // P-09: the invoice send endpoints report logical failure as HTTP 200
       // + {ok:false, reason} — interpret the BODY, never just Response.ok
       // (the old `await` chain read every 200 as delivered). A failed leg
-      // surfaces the same honest divider the contract-send path renders.
+      // surfaces the same honest divider the quote-send path renders.
       let fail: { key: string; reason: string } | null = null;
       const interpretLeg = (body: unknown, httpOk: boolean) => {
         const outcome = interpretSendResult({ httpOk, body });
@@ -4886,13 +4888,13 @@ export default function AsstChat({
                 const cand = visible[i];
                 if (cand.kind !== "phase_divider") continue;
                 const cp = (cand.payload ?? {}) as {
-                  contractId?: string;
+                  quoteId?: string;
                   emailedTo?: string;
                   textedTo?: string;
                   emailFailureReason?: string;
                   smsFailureReason?: string;
                 };
-                if (!cp.contractId) continue;
+                if (!cp.quoteId) continue;
                 const eMissing = !cp.emailedTo && !!cp.emailFailureReason &&
                   !customer?.email;
                 const pMissing = !cp.textedTo && !!cp.smsFailureReason &&
@@ -4932,7 +4934,7 @@ export default function AsstChat({
                 if (m.kind === "phase_divider") {
                   const dp = (m.payload ?? {}) as {
                     label?: string;
-                    contractId?: string;
+                    quoteId?: string;
                     channel?: "email" | "sms" | "both";
                     emailedTo?: string;
                     textedTo?: string;
@@ -4941,7 +4943,7 @@ export default function AsstChat({
                   };
                   const label = dp.label ?? m.content;
                   // Show the recovery form when this divider belongs to a
-                  // send-contract attempt that failed (or partially failed)
+                  // send-quote attempt that failed (or partially failed)
                   // due to missing/invalid contact info, AND we still have
                   // a customer bound (we need a row to patch).
                   // Channel may be missing on older threads (pre-channel-
@@ -4962,7 +4964,7 @@ export default function AsstChat({
                   const phoneMissing = !dp.textedTo && !!dp.smsFailureReason &&
                     (!customer?.phoneNumber ||
                       /Invalid|21211/i.test(dp.smsFailureReason));
-                  const needRecovery = !!dp.contractId && !!customer?.id &&
+                  const needRecovery = !!dp.quoteId && !!customer?.id &&
                     !!inferredChannel &&
                     (emailMissing || phoneMissing) &&
                     m.id === lastRecoveryDividerId;
@@ -5054,7 +5056,7 @@ export default function AsstChat({
                                     !draft.phone?.trim())}
                                 onClick={() =>
                                   saveContactAndRetry(m.id, {
-                                    contractId: dp.contractId!,
+                                    quoteId: dp.quoteId!,
                                     channel: inferredChannel ?? "email",
                                   })}
                               >
@@ -5073,13 +5075,13 @@ export default function AsstChat({
                 // Continue-CTA — clickable card that fires phase transition.
                 // For toPhase=send (wizard complete), clicking the Review button
                 // transitions the card itself into a calm "Drafted ✓" state
-                // showing the contract id inline. No popup — the user gets a
+                // showing the document id inline. No popup — the user gets a
                 // visible acknowledgement that the action registered.
                 if (m.kind === "continue_cta") {
                   const payload = (m.payload ?? {}) as {
                     toPhase?: string;
                     summary?: string;
-                    contractId?: string;
+                    quoteId?: string;
                   };
                   const reviewed = (payload.toPhase === "send" ||
                     payload.toPhase === "invoice") &&
@@ -5111,25 +5113,37 @@ export default function AsstChat({
                         np.emailedTo || np.textedTo ||
                         np.emailFailureReason || np.smsFailureReason
                       ) {
+                        // Latest outcome wins (no break): a failed first
+                        // attempt followed by a successful retry must show
+                        // the retry, and vice versa.
                         if (np.emailedTo) {
                           dispatchedTo = np.emailedTo;
                           dispatchedChannel = "email";
                         } else if (np.textedTo) {
                           dispatchedTo = np.textedTo;
                           dispatchedChannel = "sms";
+                        } else {
+                          dispatchedTo = undefined;
+                          dispatchedChannel = undefined;
                         }
                         dispatchFailReason = np.emailFailureReason ??
                           np.smsFailureReason;
-                        break;
                       }
                     }
                   }
+                  // A divider that reports a failure with no successful
+                  // channel means the dispatch did NOT go out — never fall
+                  // back to the customer's email in that case, or the card
+                  // claims "emailed to …" above the very error that says
+                  // it wasn't (e.g. "sender name required").
+                  const dispatchFailed = reviewed && !dispatchedTo &&
+                    !!dispatchFailReason;
                   const sentRecipient = dispatchedTo ??
-                    (reviewed ? customer?.email : undefined);
+                    (reviewed && !dispatchFailed ? customer?.email : undefined);
                   const previewing = payload.toPhase === "send" &&
                     previewCtaId === m.id;
                   if (previewing) {
-                    const contractId = payload.contractId ?? contract?.id ?? "";
+                    const docId = payload.quoteId ?? quote?.id ?? quoteId ?? "";
                     // Pull line items from the most recent locked/sent action_card
                     // (status="sent" is the locked quote; fall back to "draft").
                     const lockedCard = [...messages]
@@ -5173,18 +5187,14 @@ export default function AsstChat({
                     // Wizard terms — every text msg with a wizardStepId is one
                     // answered step ("Start: ASAP", "Wraps: 1 week", ...). Skip
                     // the customer step since we render the customer block below.
-                    // Prefer contract.terms (the source of truth) when present.
+                    // Prefer quote.terms (the source of truth) when present.
                     // Fall back to a chronological walk over wizardStepId-tagged
                     // chat messages (older threads, in-flight wizard runs that
-                    // haven't materialized a contract row yet). Either way, dedupe
-                    // by stepId — a re-edit emits another tagged message but the
-                    // term row should only render once.
-                    const contractTerms = Array.isArray(contract?.terms)
-                      ? (contract!.terms as {
-                        stepId: string;
-                        label: string;
-                        value: string;
-                      }[])
+                    // haven't persisted terms onto the quote yet). Either way,
+                    // dedupe by stepId — a re-edit emits another tagged message
+                    // but the term row should only render once.
+                    const quoteTerms = Array.isArray(quote?.terms)
+                      ? quote!.terms!
                       : null;
                     const termsByStep = new Map<
                       string,
@@ -5195,8 +5205,8 @@ export default function AsstChat({
                         firstIdx: number;
                       }
                     >();
-                    if (contractTerms && contractTerms.length > 0) {
-                      contractTerms.forEach((t, i) => {
+                    if (quoteTerms && quoteTerms.length > 0) {
+                      quoteTerms.forEach((t, i) => {
                         if (!t?.stepId || t.stepId === "customer") return;
                         termsByStep.set(t.stepId, {
                           stepId: t.stepId,
@@ -5236,7 +5246,7 @@ export default function AsstChat({
                       .sort((a, b) => a.firstIdx - b.firstIdx)
                       // Drop warranty row entirely when the contractor picked
                       // "No warranty" — the legal-text warranty clause in the
-                      // contract's Fine Print still applies.
+                      // agreement's Fine Print still applies.
                       .filter(({ stepId, value }) => {
                         if (stepId !== "warranty") return true;
                         const v = value.trim().toLowerCase();
@@ -5275,8 +5285,8 @@ export default function AsstChat({
                         };
                       });
                     const totalCentsForBreakdown =
-                      typeof contract?.totalAmount === "number"
-                        ? contract.totalAmount
+                      typeof quote?.estimatedTotal === "number"
+                        ? quote.estimatedTotal
                         : lineTotalCents;
                     // Two decimals to match the public agreement's
                     // fmtMoneyExact() (lib/format.ts) — the "$" is rendered in
@@ -5308,10 +5318,10 @@ export default function AsstChat({
                               <div class="quote-review__kind">
                                 {tFor(previewLang, "asstChat.preview.kind")}
                               </div>
-                              {contractId
+                              {docId
                                 ? (
                                   <div class="quote-review__num">
-                                    #{contractId.slice(0, 8).toUpperCase()}
+                                    #{docId.slice(0, 8).toUpperCase()}
                                   </div>
                                 )
                                 : null}
@@ -5319,7 +5329,7 @@ export default function AsstChat({
                             <div class="quote-review__head-right">
                               <span class="quote-review__chip">
                                 {statusChipLabel(
-                                  contract?.status ?? lockedPayload.status,
+                                  quote?.status ?? lockedPayload.status,
                                   previewLang,
                                 )}
                               </span>
@@ -5804,9 +5814,9 @@ export default function AsstChat({
                                 </div>
                                 <dl class="quote-review__terms">
                                   {termAnswers.map((t, i) => {
-                                    // contractId from the parent scope defaults to "" via `?? ""`,
-                                    // so use || not ?? to fall back to contract.id when empty.
-                                    const cid = contractId || contract?.id;
+                                    // docId from the parent scope defaults to "" via `?? ""`,
+                                    // so use || not ?? to fall back to quote.id when empty.
+                                    const cid = docId || quote?.id;
                                     const isEditing =
                                       editingTermStepId === t.stepId;
                                     // Find the original wizard message for this stepId
@@ -6107,9 +6117,8 @@ export default function AsstChat({
                                 }}
                                 onBlur={(e) =>
                                   onEditTotal(
-                                    lockedPayload.quoteId,
+                                    lockedPayload.quoteId ?? quote?.id,
                                     lockedCard?.id,
-                                    contractId || contract?.id,
                                     totalCentsForBreakdown,
                                     e.currentTarget as HTMLElement,
                                   )}
@@ -6155,7 +6164,7 @@ export default function AsstChat({
                                     ? (
                                       // P-09: honest outcome — the invoice
                                       // exists but delivery failed; render
-                                      // the same divider chip the contract-
+                                      // the same divider chip the quote-
                                       // send path uses instead of a green
                                       // "sent" banner.
                                       <div class="phase-divider">
@@ -6232,7 +6241,7 @@ export default function AsstChat({
                                           sendChannel,
                                           totalCentsForBreakdown,
                                         )
-                                        : confirmSendContract(
+                                        : confirmSendQuote(
                                           m,
                                           sendChannel,
                                           previewLang,
@@ -6370,12 +6379,11 @@ export default function AsstChat({
                                       role="menuitem"
                                       class="quote-review__send-menu-item"
                                       onClick={async () => {
-                                        const cid = contractId ||
-                                          contract?.id;
+                                        const cid = docId || quote?.id;
                                         if (!cid) return;
                                         try {
                                           await navigator.clipboard.writeText(
-                                            `${globalThis.location.origin}/c/${cid}`,
+                                            `${globalThis.location.origin}/q/${cid}`,
                                           );
                                           setLinkCopied(true);
                                           setTimeout(() => {
@@ -6413,12 +6421,12 @@ export default function AsstChat({
                   // The "Ready to send" banner is intentionally suppressed —
                   // the editable quote-review opens automatically on wizard
                   // completion via the autoOpenedCtasRef effect. The reviewed
-                  // success state ("Contract sent") still renders below.
+                  // success state ("Sent") still renders below.
                   if (payload.toPhase === "send" && !reviewed && !previewing) {
                     return null;
                   }
                   // Per audit #19: surface the upcoming phase label as an eyebrow
-                  // *before* the CTA, so users see "PHASE 2 — CONTRACT TERMS" at
+                  // *before* the CTA, so users see the phase-2 eyebrow at
                   // click time, not as a divider that lands after they've already
                   // clicked through. The backend still emits the divider on
                   // transition; once it lands, the chat shows both.
@@ -6439,12 +6447,16 @@ export default function AsstChat({
                       <div style="flex:1;min-width:0">
                         <div
                           class={`continue-cta ${
-                            reviewed ? "continue-cta--done" : ""
+                            reviewed && !dispatchFailed
+                              ? "continue-cta--done"
+                              : ""
                           }`}
                         >
                           <div class="continue-cta__icon">
                             <I
-                              d={reviewed ? ICN.check : ICN.contract}
+                              d={reviewed && !dispatchFailed
+                                ? ICN.check
+                                : ICN.contract}
                               size={18}
                             />
                           </div>
@@ -6456,9 +6468,11 @@ export default function AsstChat({
                             )}
                             <div class="continue-cta__title">
                               {reviewed
-                                ? payload.toPhase === "invoice"
+                                ? dispatchFailed
+                                  ? tFor(lang, "asstChat.cta.sendFailed")
+                                  : payload.toPhase === "invoice"
                                   ? tFor(lang, "asstChat.cta.invoiceSent")
-                                  : tFor(lang, "asstChat.cta.contractSent")
+                                  : tFor(lang, "asstChat.cta.sent")
                                 : m.content}
                             </div>
                             {reviewed
@@ -6564,9 +6578,11 @@ export default function AsstChat({
                               type="button"
                               class="dev-accept-btn"
                               onClick={() =>
-                                simulateCustomerAccept(payload.contractId)}
+                                simulateCustomerAccept(
+                                  payload.quoteId ?? quote?.id,
+                                )}
                               disabled={sending}
-                              title="Localhost-only: flip contract to accepted, bump conversation, set unread."
+                              title="Localhost-only: flip quote to accepted, bump conversation, set unread."
                             >
                               🔧 {sending
                                 ? "Simulating…"
@@ -6852,7 +6868,7 @@ export default function AsstChat({
                 }
 
                 // Action card — currently the only actionType is "quote", but
-                // the renderer is structured so other types (contract, invoice)
+                // the renderer is structured so other types (invoice, etc.)
                 // can land here later. Buttons short-circuit the LLM by posting
                 // shortcut text into the chat so the model fires lock_quote /
                 // its sibling tools without the user having to type.
@@ -7169,7 +7185,19 @@ export default function AsstChat({
           invoiceCustomerOpen || invoiceReview !== null ||
           invoiceResult !== null ||
           hasUnansweredWizard || previewCtaId !== null;
-        if (composerHidden) return null;
+        // The error strip must survive a hidden composer: wizard-step
+        // failures (customer create rejected, network flake) land in
+        // `error`, and every wizard step hides the composer — swallowing
+        // the banner made those failures read as "the button did nothing".
+        if (composerHidden) {
+          return error
+            ? (
+              <div class="composer">
+                <div class="composer__err">{error}</div>
+              </div>
+            )
+            : null;
+        }
         return (
           <div
             class={`composer${
@@ -7652,7 +7680,7 @@ function CustomerStepPanel(props: {
     // contact the agreement can't be delivered to them.
     const hasContact = trimmedEmail.length > 0 || trimmedPhone.length > 0;
     // Guard: the customer's contact must not be the contractor's own. This is
-    // the root of the "every customer carries my email/phone, and the contract
+    // the root of the "every customer carries my email/phone, and the agreement
     // sends to me" bug.
     const emailIsOwn = !!ownerEmail && trimmedEmail.length > 0 &&
       normEmail(trimmedEmail) === normEmail(ownerEmail);
@@ -8316,7 +8344,7 @@ function parseDurationGuess(text: string): {
 
 /** Inline duration picker for the wraps "Custom" option. Two-phase Bossie
  *  flow: chat-style ask → free-text parse → structured verify form. The
- *  contract value always comes from the verify form so an LLM/parser miss
+ *  agreement value always comes from the verify form so an LLM/parser miss
  *  never propagates — the user has the final word. */
 function CustomDurationPickerForm(props: {
   sending: boolean;
@@ -8326,7 +8354,7 @@ function CustomDurationPickerForm(props: {
 }) {
   const { sending, lang = "en", onSubmit, onCancel } = props;
   // P-25/P-24: "Personalizado" opens the STRUCTURED picker (number + unit +
-  // presets + a live contract preview) straight away. It used to land on a
+  // presets + a live agreement preview) straight away. It used to land on a
   // chat-style free-text ask that popped the keyboard for what is literally
   // a number and a unit; describing it in words is still one tap away via
   // "Probar de otra forma".
@@ -8341,7 +8369,7 @@ function CustomDurationPickerForm(props: {
   const num = Math.max(1, Math.min(99, Number(n) || 0));
   const valid = Number.isFinite(num) && num >= 1 && num <= 99;
   // P-25: the manual duration control used to build the EN string
-  // ("3 weeks") and submit it verbatim into a Spanish contract. Preview AND
+  // ("3 weeks") and submit it verbatim into a Spanish agreement. Preview AND
   // submitted value now go through termLabel, so an ES contractor locks in
   // "3 semanas".
   const preview = valid
@@ -8569,7 +8597,7 @@ function CustomDurationPickerForm(props: {
       </div>
       <div class="dur__preview">
         <span class="dur__preview-label">
-          {tFor(lang, "asstChat.verify.contractReads")}
+          {tFor(lang, "asstChat.verify.agreementReads")}
         </span>
         <span class="dur__preview-val">{preview}</span>
       </div>
@@ -8616,7 +8644,7 @@ function CustomDurationPickerForm(props: {
 }
 
 /** Best-effort warranty-language parser. Recognises months/years and the
- *  "lifetime" / "no warranty" extremes that read naturally on a contract.
+ *  "lifetime" / "no warranty" extremes that read naturally on an agreement.
  *  Returns null when nothing matches — caller falls back to the manual
  *  form. Confidence mirrors the duration parser: "ok" for clean numerics,
  *  "guess" when we leaned on word-numbers or fuzzy phrases. */
@@ -8678,7 +8706,7 @@ function parseWarrantyGuess(text: string): {
   if (/\bcouple\b/.test(t) && n === null) n = 2;
   if (n === null) return null;
 
-  // Normalise unwieldy values to a unit that reads better on a contract:
+  // Normalise unwieldy values to a unit that reads better on an agreement:
   //   "370 days" → "1 year"  (within ±30 days of a whole year)
   //   "180 days" → "6 months"
   //   "24 months" → "2 years" (clean multiples only)
@@ -8711,7 +8739,7 @@ function parseWarrantyGuess(text: string): {
 
 /** Inline warranty picker for the "What warranty do you stand behind?"
  *  step. Same two-phase Bossie pattern as the duration picker — natural
- *  chat, parse, then a structured verify form so the contract value is
+ *  chat, parse, then a structured verify form so the agreement value is
  *  always confirmed by the user. Supports days/months/years plus the
  *  extremes (Lifetime, No warranty) that contractors actually use. */
 function CustomWarrantyPickerForm(props: {
@@ -8737,7 +8765,7 @@ function CustomWarrantyPickerForm(props: {
   const valid = kind !== "term" ||
     (Number.isFinite(num) && num >= 1 && num <= cap);
   // P-25: the fallback used to build "Lifetime" / "No warranty" / "12
-  // months" and submit them verbatim into a Spanish contract. Preview AND
+  // months" and submit them verbatim into a Spanish agreement. Preview AND
   // submitted value now go through termLabel ("De por vida", "Sin
   // garantía", "12 meses").
   const preview = kind === "lifetime"
@@ -9002,7 +9030,7 @@ function CustomWarrantyPickerForm(props: {
       </div>
       <div class="dur__preview">
         <span class="dur__preview-label">
-          {tFor(lang, "asstChat.verify.contractReads")}
+          {tFor(lang, "asstChat.verify.agreementReads")}
         </span>
         <span class="dur__preview-val">{preview}</span>
       </div>
@@ -9119,7 +9147,7 @@ function parsePaymentGuess(text: string): {
 /** Inline payment-terms picker for the payment_terms "Custom" option.
  *  Two-phase Bossie flow mirroring the duration picker: chat-style ask →
  *  deterministic parser → structured verify form (Net days OR milestone
- *  splits). The contract value always comes from the verify form's preview
+ *  splits). The agreement value always comes from the verify form's preview
  *  string so a parser miss never propagates downstream. */
 function CustomPaymentPickerForm(props: {
   sending: boolean;
@@ -9145,7 +9173,7 @@ function CustomPaymentPickerForm(props: {
   const splitsValid = splitNums.length >= 2 && splitSum === 100;
 
   // P-25: the fallback used to build "Net 30" / "Net 0 — due on completion"
-  // and submit them verbatim into a Spanish contract. Preview AND submitted
+  // and submit them verbatim into a Spanish agreement. Preview AND submitted
   // value now go through termLabel ("Neto 30", "Neto 0 — se paga al
   // terminar").
   const preview = mode === "net"
@@ -9531,7 +9559,7 @@ function CustomPaymentPickerForm(props: {
 
       <div class="dur__preview">
         <span class="dur__preview-label">
-          {tFor(lang, "asstChat.verify.contractReads")}
+          {tFor(lang, "asstChat.verify.agreementReads")}
         </span>
         <span class="dur__preview-val">{preview}</span>
       </div>

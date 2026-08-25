@@ -2,22 +2,23 @@ import { assertEquals } from "#std/assert";
 import { ComputeDashboardStats } from "./mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
-const NOW = new Date(Date.UTC(2026, 3, 15));    // Apr 15, 2026
+const NOW = new Date(Date.UTC(2026, 3, 15)); // Apr 15, 2026
 
 function fresh() {
   const customers = new CustomerStore();
-  const quotes    = new QuoteStore();
-  const contracts = new ContractStore();
-  const invoices  = new InvoiceStore();
-  const payments  = new PaymentStore();
+  const quotes = new QuoteStore();
+  const invoices = new InvoiceStore();
+  const payments = new PaymentStore();
   return {
-    customers, quotes, contracts, invoices, payments,
-    flow: new ComputeDashboardStats(customers, quotes, contracts, invoices, payments),
+    customers,
+    quotes,
+    invoices,
+    payments,
+    flow: new ComputeDashboardStats(customers, quotes, invoices, payments),
   };
 }
 
@@ -29,7 +30,12 @@ Deno.test("compute-dashboard-stats integration: empty user → all zeros + 12-bu
   assertEquals(stats.customers, 0);
   assertEquals(stats.quotes, { total: 0, draft: 0, sent: 0, accepted: 0 });
   assertEquals(stats.invoices.overdue, 0);
-  assertEquals(stats.invoices.agingBuckets, { current: 0, aging1_14d: 0, overdue15_30d: 0, overdue30plus: 0 });
+  assertEquals(stats.invoices.agingBuckets, {
+    current: 0,
+    aging1_14d: 0,
+    overdue15_30d: 0,
+    overdue30plus: 0,
+  });
   assertEquals(stats.quotedValueCents, 0);
   assertEquals(stats.revenue.sparkline12mo.length, 12);
   assertEquals(stats.revenue.ytdCents, 0);
@@ -48,23 +54,43 @@ Deno.test("compute-dashboard-stats integration: payment stats roll up YTD, metho
   // Audit1 #3 — invoice/payment amounts are INTEGER CENTS now. The
   // `_00` suffix on each literal makes the dollar intent visible.
   const invA = await invoices.create("u-1", {
-    contractId: "c-1", dueDate: "2026-05-01", amount: 200_00, customerId: acme.id, status: "pending",
+    quoteId: "q-a",
+    dueDate: "2026-05-01",
+    amount: 200_00,
+    customerId: acme.id,
+    status: "pending",
   });
   const invB = await invoices.create("u-1", {
-    contractId: "c-2", dueDate: "2026-05-01", amount: 50_00, customerId: beta.id, status: "pending",
+    quoteId: "q-b",
+    dueDate: "2026-05-01",
+    amount: 50_00,
+    customerId: beta.id,
+    status: "pending",
   });
   await payments.create("u-1", {
-    invoiceId: invA.id, amount: 150_00, method: "cash", receivedAt: "2026-02-10T00:00:00.000Z",
+    invoiceId: invA.id,
+    amount: 150_00,
+    method: "cash",
+    receivedAt: "2026-02-10T00:00:00.000Z",
   });
   await payments.create("u-1", {
-    invoiceId: invA.id, amount: 50_00, method: "card", receivedAt: "2026-03-01T00:00:00.000Z",
+    invoiceId: invA.id,
+    amount: 50_00,
+    method: "card",
+    receivedAt: "2026-03-01T00:00:00.000Z",
   });
   await payments.create("u-1", {
-    invoiceId: invB.id, amount: 50_00, method: "check", receivedAt: "2026-04-05T00:00:00.000Z",
+    invoiceId: invB.id,
+    amount: 50_00,
+    method: "check",
+    receivedAt: "2026-04-05T00:00:00.000Z",
   });
   // Prior-year payment must NOT contribute to YTD.
   await payments.create("u-1", {
-    invoiceId: invA.id, amount: 10_00, method: "cash", receivedAt: "2025-12-15T00:00:00.000Z",
+    invoiceId: invA.id,
+    amount: 10_00,
+    method: "cash",
+    receivedAt: "2025-12-15T00:00:00.000Z",
   });
 
   const stats = await flow.run("u-1", NOW);
@@ -83,32 +109,67 @@ Deno.test("compute-dashboard-stats integration: payment stats roll up YTD, metho
 Deno.test("compute-dashboard-stats integration: counts roll up status filters per-user", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  const { customers, quotes, contracts, invoices, flow } = fresh();
+  const { customers, quotes, invoices, flow } = fresh();
   await customers.create("u-1", { name: "Acme" });
   await customers.create("u-1", { name: "Beta" });
   // Audit1 #3 — money fields are INTEGER CENTS now (`_00` suffix marks dollars).
-  await quotes.create("u-1", { summary: "a", lineItems: [], status: "sent",     estimatedTotal: 1_000_00 });
-  await quotes.create("u-1", { summary: "b", lineItems: [], status: "sent",     estimatedTotal: 2_500_00 });
+  await quotes.create("u-1", {
+    summary: "a",
+    lineItems: [],
+    status: "sent",
+    estimatedTotal: 1_000_00,
+  });
+  await quotes.create("u-1", {
+    summary: "b",
+    lineItems: [],
+    status: "sent",
+    estimatedTotal: 2_500_00,
+  });
   await quotes.create("u-1", { summary: "c", lineItems: [], status: "draft" });
-  await contracts.create("u-1", { quoteId: "x", status: "signed" });
-  await invoices.create("u-1", { contractId: "y", dueDate: "2026-04-30", status: "pending", amount: 100_00 });
-  await invoices.create("u-1", { contractId: "y", dueDate: "2026-03-01", status: "pending", amount: 50_00 });   // overdue (date < today)
-  await invoices.create("u-1", { contractId: "y", dueDate: "2026-04-01", status: "paid", amount: 1_240_00, paidAt: "2026-03-15T00:00:00Z" });
+  await quotes.create("u-1", {
+    summary: "d",
+    lineItems: [],
+    status: "accepted",
+    acceptedAt: "2026-04-01T00:00:00Z",
+  });
+  await invoices.create("u-1", {
+    quoteId: "y",
+    dueDate: "2026-04-30",
+    status: "pending",
+    amount: 100_00,
+  });
+  await invoices.create("u-1", {
+    quoteId: "y",
+    dueDate: "2026-03-01",
+    status: "pending",
+    amount: 50_00,
+  }); // overdue (date < today)
+  await invoices.create("u-1", {
+    quoteId: "y",
+    dueDate: "2026-04-01",
+    status: "paid",
+    amount: 1_240_00,
+    paidAt: "2026-03-15T00:00:00Z",
+  });
 
   // Cross-user noise that MUST NOT contaminate u-1's stats.
-  await quotes.create("u-2", { summary: "noise", lineItems: [], status: "sent", estimatedTotal: 99_999_00 });
+  await quotes.create("u-2", {
+    summary: "noise",
+    lineItems: [],
+    status: "sent",
+    estimatedTotal: 99_999_00,
+  });
 
   const stats = await flow.run("u-1", NOW);
   assertEquals(stats.customers, 2);
-  assertEquals(stats.quotes, { total: 3, draft: 1, sent: 2, accepted: 0 });
-  assertEquals(stats.contracts, { total: 1, draft: 0, signed: 1 });
+  assertEquals(stats.quotes, { total: 4, draft: 1, sent: 2, accepted: 1 });
   assertEquals(stats.invoices.total, 3);
   assertEquals(stats.invoices.pending, 2);
   assertEquals(stats.invoices.paid, 1);
-  assertEquals(stats.invoices.overdue, 1);                   // dueDate 2026-03-01 < today
-  assertEquals(stats.quotedValueCents, 1_000_00 + 2_500_00);   // identity sum of cents-stored estimatedTotals
+  assertEquals(stats.invoices.overdue, 1); // dueDate 2026-03-01 < today
+  assertEquals(stats.quotedValueCents, 1_000_00 + 2_500_00); // identity sum of cents-stored estimatedTotals
   assertEquals(stats.awaitingResponse, 2);
-  assertEquals(stats.revenue.lastMonthCents, 124_000);       // March: $1,240 = 124,000 cents
+  assertEquals(stats.revenue.lastMonthCents, 124_000); // March: $1,240 = 124,000 cents
 
   await resetKv();
 });
@@ -118,16 +179,39 @@ Deno.test("compute-dashboard-stats integration: revenue sparkline only counts pa
   await resetKv();
   const { invoices, flow } = fresh();
   // INTEGER CENTS — `_00` suffix marks the dollar intent.
-  await invoices.create("u-1", { contractId: "x", dueDate: "2026-03-01", status: "paid", amount: 100_00, paidAt: "2026-03-10T00:00:00Z" });
-  await invoices.create("u-1", { contractId: "x", dueDate: "2026-04-01", status: "paid", amount: 200_00, paidAt: "2026-04-12T00:00:00Z" });
-  await invoices.create("u-1", { contractId: "x", dueDate: "2026-05-01", status: "pending", amount: 999_00 });    // unpaid → ignored
-  await invoices.create("u-1", { contractId: "x", dueDate: "2024-04-01", status: "paid", amount: 500_00, paidAt: "2024-04-10T00:00:00Z" });    // >12mo → ignored
+  await invoices.create("u-1", {
+    quoteId: "x",
+    dueDate: "2026-03-01",
+    status: "paid",
+    amount: 100_00,
+    paidAt: "2026-03-10T00:00:00Z",
+  });
+  await invoices.create("u-1", {
+    quoteId: "x",
+    dueDate: "2026-04-01",
+    status: "paid",
+    amount: 200_00,
+    paidAt: "2026-04-12T00:00:00Z",
+  });
+  await invoices.create("u-1", {
+    quoteId: "x",
+    dueDate: "2026-05-01",
+    status: "pending",
+    amount: 999_00,
+  }); // unpaid → ignored
+  await invoices.create("u-1", {
+    quoteId: "x",
+    dueDate: "2024-04-01",
+    status: "paid",
+    amount: 500_00,
+    paidAt: "2024-04-10T00:00:00Z",
+  }); // >12mo → ignored
 
   const stats = await flow.run("u-1", NOW);
   assertEquals(stats.revenue.sparkline12mo.length, 12);
-  assertEquals(stats.revenue.sparkline12mo[10], 10_000);     // March: $100
-  assertEquals(stats.revenue.sparkline12mo[11], 20_000);     // April: $200
-  assertEquals(stats.revenue.ytdCents, 30_000);              // YTD = both 2026 entries
+  assertEquals(stats.revenue.sparkline12mo[10], 10_000); // March: $100
+  assertEquals(stats.revenue.sparkline12mo[11], 20_000); // April: $200
+  assertEquals(stats.revenue.ytdCents, 30_000); // YTD = both 2026 entries
   await resetKv();
 });
 
@@ -136,14 +220,40 @@ Deno.test("compute-dashboard-stats integration: aging buckets group pending invo
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { invoices, flow } = fresh();
-  await invoices.create("u-1", { contractId: "c", dueDate: "2026-05-15", status: "pending" });   // 30d future → current
-  await invoices.create("u-1", { contractId: "c", dueDate: "2026-04-10", status: "pending" });   //  5d overdue → aging1_14d
-  await invoices.create("u-1", { contractId: "c", dueDate: "2026-03-25", status: "pending" });   // 21d overdue → overdue15_30d
-  await invoices.create("u-1", { contractId: "c", dueDate: "2026-01-01", status: "pending" });   // 104d overdue → overdue30plus
-  await invoices.create("u-1", { contractId: "c", dueDate: "2026-03-01", status: "paid", paidAt: "2026-03-15T00:00:00Z" }); // ignored
+  await invoices.create("u-1", {
+    quoteId: "c",
+    dueDate: "2026-05-15",
+    status: "pending",
+  }); // 30d future → current
+  await invoices.create("u-1", {
+    quoteId: "c",
+    dueDate: "2026-04-10",
+    status: "pending",
+  }); //  5d overdue → aging1_14d
+  await invoices.create("u-1", {
+    quoteId: "c",
+    dueDate: "2026-03-25",
+    status: "pending",
+  }); // 21d overdue → overdue15_30d
+  await invoices.create("u-1", {
+    quoteId: "c",
+    dueDate: "2026-01-01",
+    status: "pending",
+  }); // 104d overdue → overdue30plus
+  await invoices.create("u-1", {
+    quoteId: "c",
+    dueDate: "2026-03-01",
+    status: "paid",
+    paidAt: "2026-03-15T00:00:00Z",
+  }); // ignored
 
   const stats = await flow.run("u-1", NOW);
-  assertEquals(stats.invoices.agingBuckets, { current: 1, aging1_14d: 1, overdue15_30d: 1, overdue30plus: 1 });
+  assertEquals(stats.invoices.agingBuckets, {
+    current: 1,
+    aging1_14d: 1,
+    overdue15_30d: 1,
+    overdue30plus: 1,
+  });
   await resetKv();
 });
 
@@ -152,8 +262,20 @@ Deno.test("compute-dashboard-stats integration: month-over-month percentage from
   await resetKv();
   const { invoices, flow } = fresh();
   // Feb: $1,000, Mar: $1,240 → +24%. Stored as INTEGER CENTS.
-  await invoices.create("u-1", { contractId: "x", dueDate: "2026-02-01", status: "paid", amount: 1_000_00, paidAt: "2026-02-10T00:00:00Z" });
-  await invoices.create("u-1", { contractId: "x", dueDate: "2026-03-01", status: "paid", amount: 1_240_00, paidAt: "2026-03-10T00:00:00Z" });
+  await invoices.create("u-1", {
+    quoteId: "x",
+    dueDate: "2026-02-01",
+    status: "paid",
+    amount: 1_000_00,
+    paidAt: "2026-02-10T00:00:00Z",
+  });
+  await invoices.create("u-1", {
+    quoteId: "x",
+    dueDate: "2026-03-01",
+    status: "paid",
+    amount: 1_240_00,
+    paidAt: "2026-03-10T00:00:00Z",
+  });
   const stats = await flow.run("u-1", NOW);
   assertEquals(stats.revenue.monthOverMonthPct, 24);
   await resetKv();
@@ -166,7 +288,9 @@ Deno.test("compute-dashboard-stats integration: the onboarding sample pollutes n
   // Exactly what EnsureSampleQuote persists: summary-tagged, "sent", $3,700.
   await quotes.create("u-1", {
     summary: "onboarding-sample-v1 · Paver Patio Installation",
-    lineItems: [], status: "sent", estimatedTotal: 3_700_00,
+    lineItems: [],
+    status: "sent",
+    estimatedTotal: 3_700_00,
   });
   const stats = await flow.run("u-1", NOW);
   assertEquals(stats.quotes, { total: 0, draft: 0, sent: 0, accepted: 0 });
@@ -178,9 +302,21 @@ Deno.test("compute-dashboard-stats integration: the onboarding sample pollutes n
 Deno.test("compute-dashboard-stats integration: an unsigned agreement leaves the quote awaiting (problems.md P-14)", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  const { quotes, contracts, flow } = fresh();
-  const q = await quotes.create("u-1", { summary: "Fence repair", lineItems: [], status: "sent", estimatedTotal: 850_00 });
-  await contracts.create("u-1", { quoteId: q.id, status: "draft", totalAmount: 850_00 });
+  const { quotes, flow } = fresh();
+  const q = await quotes.create("u-1", {
+    summary: "Fence repair",
+    lineItems: [],
+    status: "sent",
+    estimatedTotal: 850_00,
+  });
+  // Terms drafted onto the quote are NOT a signature — only quote acceptance wins.
+  await quotes.update(q.id, "u-1", {
+    terms: [{
+      stepId: "payment_terms",
+      label: "Payment terms",
+      value: "50 / 50",
+    }],
+  });
   const stats = await flow.run("u-1", NOW);
   assertEquals(stats.quotes, { total: 1, draft: 0, sent: 1, accepted: 0 });
   assertEquals(stats.quotedValueCents, 850_00);

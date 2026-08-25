@@ -4,7 +4,6 @@ import { AgentConversationStore } from "@agents/domain/data/agent-conversation-s
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -59,7 +58,6 @@ function fresh() {
   const messages = new AgentMessageStore();
   const llm = new StubLLMClient();
   const quotes = new QuoteStore();
-  const contracts = new ContractStore();
   const invoices = new InvoiceStore();
   const customers = new CustomerStore();
   const bus = new EventBus();
@@ -73,12 +71,15 @@ function fresh() {
   const identity = new BusinessIdentityStore();
   const emailer = new SendPaperworkEmail(
     quotes,
-    contracts,
     invoices,
     customers,
     users,
-    identity,email,
-    new LogPaperworkMessage(new CommConversationStore(), new CommMessageStore()),
+    identity,
+    email,
+    new LogPaperworkMessage(
+      new CommConversationStore(),
+      new CommMessageStore(),
+    ),
   );
   const files = new FileStore();
   const addresses = new BusinessAddressStore();
@@ -99,7 +100,6 @@ function fresh() {
     messages,
     llm,
     quotes,
-    contracts,
     invoices,
     customers,
     files,

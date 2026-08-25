@@ -13,11 +13,17 @@ surfaces into one bag, and `users` folded the business-profile module back in "t
 cut cross-module wiring overhead" (its own comment). This spec splits both into
 cohesive bounded contexts, each with a single reason to change:
 
-- `paperwork` → **quotes · contracts · billing · public**
+- `paperwork` → **quotes · billing · public**
 - `users` → **identity · profile**
 
-The result is **12 modules / 166 HTTP endpoints**. Every `.rune` passes `rune check`
-(verified, 12/12), and the split is **lossless** — all 166 endpoints are conserved.
+There is deliberately **no `contracts` module**: the Contract entity was merged into
+the Quote — the quote IS the "Quote + Agreement" document (terms, schedule dates,
+acceptance signature), and accepting the quote at `/q` is the one signature ceremony,
+which also triggers milestone billing.
+
+The result is **11 modules / 157 HTTP endpoints**. Every `.rune` passes `rune check`
+(verified, 11/11), and the split is **lossless** — all 157 endpoints of the merged
+backend are conserved.
 
 ## Modules
 
@@ -25,27 +31,27 @@ The result is **12 modules / 166 HTTP endpoints**. Every `.rune` passes `rune ch
 |---|--------|----------:|----:|----:|----:|----:|----------------|
 | 1 | `core` | 0\* | 7 | 17 | 40 | 1 | Shared substrate: KV repository, rate-limit, event bus, i18n, relative-time, sparkline, and the **transcription** client (`[PLY]` whisper/stub). No HTTP surface. |
 | 2 | `identity` | 14 | 14 | 27 | 32 | 0 | **(was users)** Auth: phone-OTP send/verify (Twilio `ex:`), sessions, `/me`, super-admin & impersonation. |
-| 3 | `profile` | 18 | 18 | 33 | 67 | 0 | **(was users)** The contractor's business profile: identity, address, insurance, tax, references, contract-defaults — the data that prints on documents. |
+| 3 | `profile` | 18 | 18 | 33 | 67 | 0 | **(was users)** The contractor's business profile: identity, address, insurance, tax, references, contract-defaults (the agreement defaults that print on the Quote + Agreement) — the data that prints on documents. |
 | 4 | `crm` | 16 | 16 | 17 | 30 | 0 | Customers + the double-entry ledger (accounts, entries, computed balances). |
-| 5 | `quotes` | 12 | 12 | 23 | 45 | 0 | **(was paperwork)** The proposal stage: quotes with nested line-items + document-open engagement tracking. |
-| 6 | `contracts` | 7 | 10 | 18 | 28 | 0 | **(was paperwork)** The agreement stage: contracts, signing, contract-PDF render (`Uint8Array`), signed/accepted alerts. |
-| 7 | `billing` | 31 | 33 | 54 | 81 | 0 | **(was paperwork)** Money in: invoices (aging/forecast/dunning), manual payments, payment-terms, receipts, and `cron` jobs. |
-| 8 | `public` | 14 | 14 | 41 | 101 | 1 | **(was paperwork)** The **unauthenticated** customer surface — view/accept/sign/pay by unguessable shortlink. Redacted projections only. |
-| 9 | `communication` | 18 | 19 | 30 | 43 | 0 | Conversations, messages, notifications, transactional email (Postmark `ex:`), public contact form, voice-stream. |
-| 10 | `agents` | 21 | 21 | 71 | 82 | 6 | The AI assistant: chat, quote wizard, conversations, job-details. The **LLM client** is a `[PLY]` (openai/stub). |
-| 11 | `analytics` | 10 | 10 | 34 | 110 | 1 | Read-only projections: dashboard stats, client/quote cards, win-rate insight (`[PLY]`), active jobs, global search. |
-| 12 | `files` | 5 | 6 | 10 | 21 | 1 | File upload/list/meta/download/delete; internal voice-memo transcription (`[PLY]`). |
+| 5 | `quotes` | 12 | 12 | 24 | 57 | 0 | **(was paperwork)** The proposal **and agreement** stage: the quote IS the Quote + Agreement document — line-items, terms-wizard `terms[]`, schedule dates, acceptance signature — plus document-open engagement tracking. |
+| 6 | `billing` | 31 | 33 | 54 | 81 | 0 | **(was paperwork)** Money in: invoices (aging/forecast/dunning, grouped by `quoteId`), manual payments, payment-terms, receipts, and `cron` jobs. |
+| 7 | `public` | 12 | 12 | 42 | 107 | 1 | **(was paperwork)** The **unauthenticated** customer surface — view/accept (the single signature ceremony, which also bills)/pay by unguessable shortlink, plus the agreement PDF. Redacted projections only. |
+| 8 | `communication` | 18 | 19 | 30 | 43 | 0 | Conversations, messages, notifications, transactional email (Postmark `ex:`), public contact form, voice-stream. |
+| 9 | `agents` | 21 | 21 | 70 | 83 | 6 | The AI assistant: chat, quote wizard, conversations, job-details. The **LLM client** is a `[PLY]` (openai/stub). |
+| 10 | `analytics` | 10 | 10 | 32 | 107 | 1 | Read-only projections: dashboard stats, client/quote cards, win-rate insight (`[PLY]`), active jobs, global search — all quote-anchored. |
+| 11 | `files` | 5 | 6 | 10 | 21 | 1 | File upload/list/meta/download/delete; internal voice-memo transcription (`[PLY]`). |
 
 \* `core` is shared infrastructure with no controllers; its REQs are internal
 (`[ENT]`-less) and consumed by the other modules.
 
-## Why paperwork → 4 and users → 2
+## Why paperwork → 3 and users → 2
 
 A `[MOD]` is **one deployable service area with one reason to change** — not one bag
 per doc-folder. The two monoliths failed that test:
 
-- **`paperwork`** mixed the *sales proposal* (quotes), the *legal agreement*
-  (contracts), *money* (invoices/payments/terms), and the *unauthenticated customer
+- **`paperwork`** mixed the *sales proposal + agreement* (quotes — one merged
+  Quote + Agreement document, since the Contract entity was folded into the Quote),
+  *money* (invoices/payments/terms), and the *unauthenticated customer
   surface* (public). Those have different lifecycles, DTOs, stores, and — critically
   for `public` — a different **trust boundary** (no session; the id *is* the
   capability). Splitting them lets each evolve and deploy on its own.
@@ -57,7 +63,7 @@ per doc-folder. The two monoliths failed that test:
 Two cross-cutting surfaces were assigned deterministically: document-open
 **views** went to `quotes` (their sole purpose is the quote "Viewed" stage / opens
 count), and the **paperwork-email** dispatch routes were split by document type
-(quote→`quotes`, contract→`contracts`, invoice→`billing`).
+(quote→`quotes`, invoice→`billing`).
 
 Modules deliberately **left as-is**: `crm`, `communication`, `agents`, `analytics`,
 `files`, `core` — each is already a single cohesive context.
@@ -91,7 +97,7 @@ Modules deliberately **left as-is**: `crm`, `communication`, `agents`, `analytic
 ## Regenerate
 
 ```sh
-rune check  spec/<module>.rune                    # 0 = clean (all 12 pass)
+rune check  spec/<module>.rune                    # 0 = clean (all 11 pass)
 rune sync   spec/<module>.rune --root <project>   # scaffold into the shared root
 ```
 
@@ -100,7 +106,7 @@ together and the `[TYP:ext] userId` rows auto-bind to `identity`. Then fill the
 generated `mod.ts` stub bodies (create-once, dev-owned), `deno check`, `rune lint`.
 
 Suggested order (substrate & producers first):
-`core → identity → profile → crm → quotes → contracts → billing → public →
+`core → identity → profile → crm → quotes → billing → public →
 communication → agents → analytics → files`.
 
 ## Known modeling simplifications (honest disclosure)

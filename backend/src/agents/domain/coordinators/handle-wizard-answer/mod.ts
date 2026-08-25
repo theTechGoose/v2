@@ -5,9 +5,11 @@ import {
   applyAnswer,
   computeProgress,
 } from "@agents/domain/business/wizard-progress/mod.ts";
-import { CONTRACT_TERMS_WIZARD_V1, localizeOptions } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
+import {
+  localizeOptions,
+  TERMS_WIZARD_V1,
+} from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
@@ -66,7 +68,6 @@ export class HandleWizardAnswer {
     private conversations: AgentConversationStore,
     private messages: AgentMessageStore,
     private quotes: QuoteStore,
-    private contracts: ContractStore,
     private customers: CustomerStore,
     private users: UserStore,
     private bus: EventBus,
@@ -90,6 +91,23 @@ export class HandleWizardAnswer {
       throw new Error("wizard state missing — call transition-to-terms first");
     }
 
+    // Pre-validate the step ordering BEFORE any side effect. applyAnswer
+    // performs the same check, but it runs after handleCustomerStep — and
+    // an out-of-order `create_new` (stale card in a second tab, a double
+    // tap, a lost response followed by a retry) used to materialize an
+    // orphan Customer row on every failed attempt.
+    const activeStep = TERMS_WIZARD_V1.steps[current.activeStepIdx];
+    if (!activeStep) {
+      throw new Error(
+        `wizard already complete (step ${current.activeStepIdx} of ${TERMS_WIZARD_V1.steps.length})`,
+      );
+    }
+    if (activeStep.id !== input.stepId) {
+      throw new Error(
+        `expected answer for "${activeStep.id}", got "${input.stepId}"`,
+      );
+    }
+
     // Customer step needs special handling: the wizard option `create_new`
     // is `isCustom: true` but the frontend sends a structured `customer.create`
     // payload (name/email/phone) instead of a free-text customValue. We
@@ -106,16 +124,14 @@ export class HandleWizardAnswer {
       customerCustomValue = handled.customValue ?? customerCustomValue;
     }
 
-    const next = applyAnswer(CONTRACT_TERMS_WIZARD_V1, current, {
+    const next = applyAnswer(TERMS_WIZARD_V1, current, {
       stepId: input.stepId,
       optionId: input.optionId,
       customValue: customerCustomValue,
     });
     await this.conversations.putWizardState(input.conversationId, next);
 
-    const stepDef = CONTRACT_TERMS_WIZARD_V1.steps.find((s) =>
-      s.id === input.stepId
-    )!;
+    const stepDef = TERMS_WIZARD_V1.steps.find((s) => s.id === input.stepId)!;
     const optionDef = stepDef.options.find((o) => o.id === input.optionId)!;
     // For the customer step, prefer the resolved customer's name so the
     // chat transcript reads "Customer: Jane Doe" rather than "Customer:
@@ -142,7 +158,7 @@ export class HandleWizardAnswer {
     });
 
     const newMessages: AgentMessage[] = [userPick];
-    const progress = computeProgress(CONTRACT_TERMS_WIZARD_V1, next);
+    const progress = computeProgress(TERMS_WIZARD_V1, next);
 
     const convPatch: Partial<AgentConversation> = {
       preview: t(lang, "wizardAnswer.pick.transcript", {
@@ -158,12 +174,12 @@ export class HandleWizardAnswer {
     }
 
     if (progress.isComplete) {
-      // Materialize a real Contract row from the conversation's active quote
-      // + collected wizard answers. Best-effort: if conv.quoteId is missing
-      // or the quote can't be loaded, we still surface the CTA — the user
-      // can pick a quote manually before sending.
-      const contractId = await this.finalizeContract(conv);
-      if (contractId) convPatch.contractId = contractId;
+      // Persist the collected wizard answers onto the conversation's active
+      // quote — the quote IS the agreement, so the terms live on it.
+      // Best-effort: if conv.quoteId is missing or the quote can't be
+      // loaded, we still surface the CTA — the user can pick a quote
+      // manually before sending.
+      const quoteId = await this.finalizeTerms(conv, boundCustomerId);
 
       const cta = await this.messages.append({
         conversationId: input.conversationId,
@@ -173,7 +189,7 @@ export class HandleWizardAnswer {
         payload: {
           toPhase: "send",
           summary: t(lang, "wizardAnswer.cta.readyToSendSummary"),
-          ...(contractId ? { contractId } : {}),
+          ...(quoteId ? { quoteId } : {}),
         },
       });
       newMessages.push(cta);
@@ -185,7 +201,7 @@ export class HandleWizardAnswer {
         kind: "wizard",
         content: t(lang, step.question),
         payload: {
-          specId: CONTRACT_TERMS_WIZARD_V1.id,
+          specId: TERMS_WIZARD_V1.id,
           stepIdx: next.activeStepIdx,
           stepId: step.id,
           options: localizeOptions(step.options, lang),
@@ -287,71 +303,49 @@ export class HandleWizardAnswer {
   }
 
   /**
-   * Create a Contract row when the wizard hits 10/10. Returns the new
-   * (or existing) contract id, or `undefined` if no quote was bound and
-   * we couldn't materialize one. Idempotent: if conv.contractId already
-   * points at a real contract, reuse it.
+   * Persist the wizard's answers onto the quote when the wizard completes.
+   * Returns the quote id, or `undefined` if no quote was bound. Idempotent:
+   * re-running with the same picks writes the same terms.
    */
-  private async finalizeContract(
+  private async finalizeTerms(
     conv: AgentConversation,
+    boundCustomerId: string | undefined,
   ): Promise<string | undefined> {
     // Walk the conversation messages and project the user's wizard picks
     // into a labeled terms array. Each pick lives on a `text` user message
     // with payload.wizardStepId — the chat transcript is the canonical
-    // record. We snapshot it onto the contract so the public page can
+    // record. We snapshot it onto the quote so the public /q page can
     // render the agreed terms without re-loading the conversation.
     const terms = await this.captureTerms(conv.id);
 
-    if (conv.contractId) {
-      try {
-        const existing = await this.contracts.getOwned(
-          conv.contractId,
-          conv.userId,
-        );
-        // If terms aren't already persisted, patch them in. Idempotent on
-        // re-runs (same picks → same terms).
-        if (!Array.isArray(existing.terms) || existing.terms.length === 0) {
-          if (terms.length) {
-            await this.contracts.update(conv.contractId, conv.userId, {
-              terms,
-            });
-          }
-        }
-        return conv.contractId; // already finalized — keep it
-      } catch { /* fall through and try to recreate */ }
-    }
     if (!conv.quoteId) {
       console.error(
-        `[wizard:finalize] conversation ${conv.id} has no quoteId — skipping contract creation`,
+        `[wizard:finalize] conversation ${conv.id} has no quoteId — skipping terms persist`,
       );
       return undefined;
     }
-    let totalAmount: number | undefined;
     try {
+      const customerId = boundCustomerId ?? conv.customerId;
       const quote = await this.quotes.getOwned(conv.quoteId, conv.userId);
-      totalAmount = quote.estimatedTotal;
+      await this.quotes.update(conv.quoteId, conv.userId, {
+        ...(terms.length ? { terms } : {}),
+        ...(customerId && !quote.customerId ? { customerId } : {}),
+      });
     } catch (err) {
       console.error(
-        `[wizard:finalize] failed to load quote ${conv.quoteId}:`,
+        `[wizard:finalize] failed to persist terms onto quote ${conv.quoteId}:`,
         err,
       );
       return undefined;
     }
-    const contract = await this.contracts.create(conv.userId, {
-      quoteId: conv.quoteId,
-      ...(conv.customerId ? { customerId: conv.customerId } : {}),
-      status: "draft",
-      ...(typeof totalAmount === "number" ? { totalAmount } : {}),
-      ...(terms.length ? { terms } : {}),
-    });
     await this.bus.emit({
       userId: conv.userId,
-      entityType: "contract",
-      entityId: contract.id,
-      action: "drafted",
+      entityType: "quote",
+      entityId: conv.quoteId,
+      action: "terms_drafted",
       data: { quoteId: conv.quoteId, customerId: conv.customerId },
     });
-    return contract.id;
+    return conv.quoteId;
   }
 
   /** Project wizard-answer chat messages into a labeled terms array. */
@@ -374,8 +368,8 @@ export class HandleWizardAnswer {
       // target language via termLabels[stepId] + localizeTermValue(). Resolve
       // from the step/option ids on the payload, NOT the transcript text (which
       // is now rendered in the contractor's UI language and would poison the
-      // base — see contract-doc's localizeTermValue, which assumes EN input).
-      const stepDef = CONTRACT_TERMS_WIZARD_V1.steps.find((s) => s.id === stepId);
+      // base — localizeTermValue assumes EN input).
+      const stepDef = TERMS_WIZARD_V1.steps.find((s) => s.id === stepId);
       if (!stepDef) continue;
       const optionDef = stepDef.options.find((o) => o.id === p?.optionId);
       const label = t("en", stepDef.label);

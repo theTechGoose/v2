@@ -697,29 +697,6 @@ body {
   border-top: 1px solid rgba(255, 255, 255, 0.10);
   padding-top: 8px;
 }
-.sb__toggle {
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  border: none;
-  color: rgba(255, 255, 255, 0.65);
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  transition:
-    background 160ms,
-    color 160ms,
-    transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.sb__toggle:hover {
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
-}
-.sb--collapsed .sb__toggle {
-  transform: rotate(180deg);
-}
 /* Collapsed rail: the account card shrinks to just the centered avatar —
    the name/business text and the chevron would otherwise poke out clipped
    at the rail edge. */
@@ -746,13 +723,10 @@ body {
   padding: 0;
   margin-right: 8px;
 }
-/* UX-21: the hamburger belongs to the ≤640px slide-in drawer — on desktop
-   the full sidebar is already on screen, so a second nav system is noise. */
-@media (min-width: 641px) {
-  .topbar__menu {
-    display: none;
-  }
-}
+/* Roadmap p.2/p.4: the hamburger stays on desktop — it is the SINGLE
+   sidebar toggle (the rail's own button was removed as redundant). On
+   desktop it collapses the rail QuickBooks-style; ≤640px it slides the
+   drawer in/out (DashSidebar's pm:sb-toggle handler branches on width). */
 .topbar__menu:hover {
   background: #fff;
   transform: translateY(-1px);

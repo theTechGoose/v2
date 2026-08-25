@@ -59,13 +59,20 @@ function wipe(phone: string) {
 async function freshSpanishUser(phone: string): Promise<ApiSession> {
   wipe(phone);
   const s = new ApiSession();
-  const v = await s.post("/auth/verify", { phoneNumber: phone, code: "000000" });
+  const v = await s.post("/auth/verify", {
+    phoneNumber: phone,
+    code: "000000",
+  });
   if (v.status >= 400) {
-    throw new Error(`verify ${phone} failed: ${v.status} ${JSON.stringify(v.body)}`);
+    throw new Error(
+      `verify ${phone} failed: ${v.status} ${JSON.stringify(v.body)}`,
+    );
   }
   const lang = await s.put("/me", { language: "es" });
   if (lang.status >= 400) {
-    throw new Error(`set language failed: ${lang.status} ${JSON.stringify(lang.body)}`);
+    throw new Error(
+      `set language failed: ${lang.status} ${JSON.stringify(lang.body)}`,
+    );
   }
   return s;
 }
@@ -82,10 +89,14 @@ async function chat(
     kind: "text",
   });
   if (r.status >= 400) {
-    throw new Error(`chat("${content}") failed: ${r.status} ${JSON.stringify(r.body)}`);
+    throw new Error(
+      `chat("${content}") failed: ${r.status} ${JSON.stringify(r.body)}`,
+    );
   }
-  const msgs: Array<{ role?: string; content?: string }> = r.body?.newMessages ?? [];
-  const assistant = [...msgs].reverse().find((m) => m.role === "assistant")?.content ?? "";
+  const msgs: Array<{ role?: string; content?: string }> =
+    r.body?.newMessages ?? [];
+  const assistant =
+    [...msgs].reverse().find((m) => m.role === "assistant")?.content ?? "";
   const cid = r.body?.conversation?.id ?? conversationId ?? "";
   return { assistant, conversationId: cid };
 }

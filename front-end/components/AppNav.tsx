@@ -20,7 +20,6 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", labelKey: "appNav.home", icon: "home" },
   { href: "/assistant", labelKey: "appNav.assistant", icon: "chat" },
   { href: "/quotes", labelKey: "nav.quotes", icon: "doc" },
-  { href: "/contracts", labelKey: "nav.contracts", icon: "file-text" },
   { href: "/invoices", labelKey: "nav.invoices", icon: "receipt" },
   { href: "/customers", labelKey: "appNav.customers", icon: "users" },
   { href: "/settings", labelKey: "appNav.settings", icon: "settings" },

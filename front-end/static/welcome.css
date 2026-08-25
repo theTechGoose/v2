@@ -374,34 +374,6 @@
   pointer-events: none;
 }
 
-/* ---- education: Meet Bossie cards ---- */
-.welcome__cards {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.welcome__card-example {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--brand-green);
-  border-radius: var(--radius-md);
-  background: var(--bg-sunken);
-}
-.welcome__card-label {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--brand-green);
-}
-.welcome__card-text {
-  font-size: 16px;
-  color: var(--fg-strong);
-}
-
 /* ---- sample quote ---- */
 .welcome__btn--outline {
   background: transparent;

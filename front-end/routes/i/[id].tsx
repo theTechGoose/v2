@@ -43,7 +43,7 @@ interface Contractor {
 
 interface InvoicePublic {
   id: string;
-  contractId?: string;
+  quoteId?: string;
   customerId?: string;
   status?: string;
   amount?: number;
@@ -73,7 +73,7 @@ interface InvoicePublic {
     lineItemsByLang?: Record<string, string[]>;
     lineItems?: LineItem[];
   };
-  /** Agreement context mirrored from the linked contract (quote-linked
+  /** Agreement context mirrored from the linked quote (quote-linked
    *  invoices only) — lets the doc show the same itemized job + term grid as
    *  the signed agreement, minus the legal clauses + signature. */
   agreementTotal?: number;
@@ -81,7 +81,7 @@ interface InvoicePublic {
   startDate?: string;
   estimatedCompletionDate?: string;
   effectiveDate?: string;
-  /** "/c/<contractId>" — present only once the linked contract is signed. */
+  /** "/q/<quoteId>" — present only once the linked quote is accepted. */
   signedQuoteUrl?: string;
   signedAgreement?: { id: string; signedAt?: string };
   siblings?: Array<{
@@ -100,7 +100,7 @@ export default define.page(async function PublicInvoice(ctx) {
   const r = await ssrBackendGet<InvoicePublic>(`/invoices/${id}/public`);
   const invoice = r.ok ? r.data : undefined;
   // Chrome language — the visitor's own saved choice (pm_lang cookie) wins over
-  // the document's generation language, exactly like /q and /c (P-12). The
+  // the document's generation language, exactly like /q (P-12). The
   // claim + change-order islands below receive this same resolved language.
   const lang: Lang = resolvePublicLang({
     cookie: ctx.req.headers.get("cookie"),
@@ -182,7 +182,7 @@ function InvoiceDoc(
     .map((s) => ({ amount: s.amount ?? 0, index: s.installmentIndex }));
 
   // Agreement mirror — present only for quote-linked invoices (getInvoicePublic
-  // projects the linked contract's line items, total, and term grid). Standalone
+  // projects the linked quote's line items, total, and term grid). Standalone
   // invoices have none of this and keep the lightweight amount-only document.
   // The itemized job in the BILL's language (descriptions only — the money
   // is language-neutral).
@@ -291,7 +291,7 @@ function InvoiceDoc(
                   phone={invoice.customer?.phoneNumber}
                 />
                 <PartyCard
-                  role={tFor(lang, "contractDoc.from")}
+                  role={tFor(lang, "quoteDoc.from")}
                   name={invoice.contractor?.name}
                   businessName={invoice.contractor?.businessName}
                   email={invoice.contractor?.email}
@@ -395,7 +395,7 @@ function InvoiceDoc(
                 {items.length > 0 && (
                   <JobDetailsSection
                     n={num()}
-                    title={tFor(lang, "contractDoc.jobDetails")}
+                    title={tFor(lang, "quoteDoc.jobDetails")}
                     description={invoice.jobDetails?.descriptionByLang
                       ?.[lang] ??
                       invoice.jobDetails?.description}
@@ -404,20 +404,20 @@ function InvoiceDoc(
                     labels={{
                       tableDescription: tFor(
                         lang,
-                        "contractDoc.tableDescription",
+                        "quoteDoc.tableDescription",
                       ),
-                      tableQty: tFor(lang, "contractDoc.tableQty"),
-                      tableAmount: tFor(lang, "contractDoc.tableAmount"),
-                      unitEach: tFor(lang, "contractDoc.unitEach"),
-                      valueLabel: tFor(lang, "contractDoc.agreementValue"),
-                      valueSub: tFor(lang, "contractDoc.allIn"),
+                      tableQty: tFor(lang, "quoteDoc.tableQty"),
+                      tableAmount: tFor(lang, "quoteDoc.tableAmount"),
+                      unitEach: tFor(lang, "quoteDoc.unitEach"),
+                      valueLabel: tFor(lang, "quoteDoc.agreementValue"),
+                      valueSub: tFor(lang, "quoteDoc.allIn"),
                     }}
                   />
                 )}
                 {milestones.length > 0 && (
                   <PaymentScheduleSection
                     n={num()}
-                    title={tFor(lang, "contractDoc.paymentSchedule")}
+                    title={tFor(lang, "quoteDoc.paymentSchedule")}
                     milestones={milestones}
                   />
                 )}

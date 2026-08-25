@@ -1,12 +1,12 @@
 import { assertEquals, assertThrows } from "#std/assert";
 import { applyAnswer, computeProgress, freshState } from "./mod.ts";
-import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
+import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 
-const spec = CONTRACT_TERMS_WIZARD_V1;
+const spec = TERMS_WIZARD_V1;
 
 // The terms wizard is the current 5-step spec (customer, start_date, wraps,
 // payment_terms, warranty). The earlier 10-step version's extra steps are now
-// baked into the contract templates — see contract-terms-wizard-spec/mod.ts.
+// baked into the agreement templates — see terms-wizard-spec/mod.ts.
 
 Deno.test("freshState: idx 0, no answers, specId pinned", () => {
   const state = freshState(spec);

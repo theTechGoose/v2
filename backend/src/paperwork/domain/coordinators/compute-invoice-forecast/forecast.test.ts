@@ -6,7 +6,7 @@ function inv(overrides: Partial<Invoice>): Invoice {
   return {
     id: "i-1",
     userId: "u-1",
-    contractId: "c-1",
+    quoteId: "q-1",
     dueDate: "2026-05-21",
     amount: 100_00,
     status: "sent",
@@ -30,7 +30,10 @@ Deno.test("settlementOffsetDays: per-method settlement windows", () => {
 });
 
 Deno.test("forecastEntryFor: paid invoice uses paidAt as land date", () => {
-  const e = forecastEntryFor(inv({ status: "paid", paidAt: "2026-05-10T00:00:00Z" }), "Hansen");
+  const e = forecastEntryFor(
+    inv({ status: "paid", paidAt: "2026-05-10T00:00:00Z" }),
+    "Hansen",
+  );
   assertEquals(e?.expectedLandDate, "2026-05-10");
   assertEquals(e?.source, "paid");
 });
@@ -39,7 +42,11 @@ Deno.test("forecastEntryFor: claimed ACH lands claimedAt + 2 days", () => {
   const e = forecastEntryFor(
     inv({
       status: "claimed",
-      paymentIntent: { method: "ach", amount: 100_00, claimedAt: "2026-05-10T00:00:00Z" },
+      paymentIntent: {
+        method: "ach",
+        amount: 100_00,
+        claimedAt: "2026-05-10T00:00:00Z",
+      },
     }),
     "Hansen",
   );
@@ -52,7 +59,11 @@ Deno.test("forecastEntryFor: claimed check lands claimedAt + 5 days", () => {
   const e = forecastEntryFor(
     inv({
       status: "claimed",
-      paymentIntent: { method: "check", amount: 100_00, claimedAt: "2026-05-10T00:00:00Z" },
+      paymentIntent: {
+        method: "check",
+        amount: 100_00,
+        claimedAt: "2026-05-10T00:00:00Z",
+      },
     }),
     "Acme",
   );
@@ -64,7 +75,11 @@ Deno.test("forecastEntryFor: claimed Venmo/Zelle/Cash App same-day land", () => 
   const e = forecastEntryFor(
     inv({
       status: "claimed",
-      paymentIntent: { method: "venmo", amount: 50_00, claimedAt: "2026-05-10T15:00:00Z" },
+      paymentIntent: {
+        method: "venmo",
+        amount: 50_00,
+        claimedAt: "2026-05-10T15:00:00Z",
+      },
     }),
     "Hans",
   );
@@ -72,14 +87,20 @@ Deno.test("forecastEntryFor: claimed Venmo/Zelle/Cash App same-day land", () => 
 });
 
 Deno.test("forecastEntryFor: sent invoices use dueDate, source='sent_due'", () => {
-  const e = forecastEntryFor(inv({ status: "sent", dueDate: "2026-05-21" }), "Hawthorne");
+  const e = forecastEntryFor(
+    inv({ status: "sent", dueDate: "2026-05-21" }),
+    "Hawthorne",
+  );
   assertEquals(e?.expectedLandDate, "2026-05-21");
   assertEquals(e?.source, "sent_due");
 });
 
 Deno.test("forecastEntryFor: scheduled invoices are excluded from forecast", () => {
   // scheduled invoices are placeholder pipeline, not forecast revenue.
-  const e = forecastEntryFor(inv({ status: "scheduled", scheduledFor: "2026-05-15" }), "X");
+  const e = forecastEntryFor(
+    inv({ status: "scheduled", scheduledFor: "2026-05-15" }),
+    "X",
+  );
   assertEquals(e, undefined);
 });
 
@@ -89,5 +110,8 @@ Deno.test("forecastEntryFor: void/draft are excluded", () => {
 });
 
 Deno.test("forecastEntryFor: sent without dueDate is excluded (no land date to forecast)", () => {
-  assertEquals(forecastEntryFor(inv({ status: "sent", dueDate: undefined }), "X"), undefined);
+  assertEquals(
+    forecastEntryFor(inv({ status: "sent", dueDate: undefined }), "X"),
+    undefined,
+  );
 });

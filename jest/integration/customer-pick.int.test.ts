@@ -14,7 +14,7 @@
  *     { customer: { id } } — the pick itself — must bind that customer to
  *     the conversation (the step summary names them).
  */
-import { contractor, seedCustomer, type ApiSession } from "./helpers/api";
+import { type ApiSession, contractor, seedCustomer } from "./helpers/api";
 import { customerStepEntryView } from "../../shared/quote-flow/customer-step";
 
 const PHONE = "+15125550932";
@@ -36,7 +36,10 @@ describe("assistant customer step — pick an existing customer end to end", () 
   it("GET /customers returns the saved customer, and the entry rule lands on the pick list", async () => {
     const list = await s.get("/customers");
     expect(list.status).toBeLessThan(400);
-    const customers = (Array.isArray(list.body) ? list.body : list.body?.items ?? []) as Array<{ id: string; name: string }>;
+    const customers =
+      (Array.isArray(list.body) ? list.body : list.body?.items ?? []) as Array<
+        { id: string; name: string }
+      >;
     expect(customers.some((c) => c.id === customerId)).toBe(true);
 
     // The panel, fed this real list, must open on the pick list — the
@@ -48,17 +51,27 @@ describe("assistant customer step — pick an existing customer end to end", () 
     // The UI's own phase-2 seed sequence (AsstChat.tsx seedPhase2).
     const quote = await s.post("/quotes", {
       summary: "Fence painting — 50 ft",
-      lineItems: [{ description: "Paint 50ft fence", quantity: 1, unit: "ea", price: 50000 }],
+      lineItems: [{
+        description: "Paint 50ft fence",
+        quantity: 1,
+        unit: "ea",
+        price: 50000,
+      }],
       estimatedTotal: 50000,
       status: "sent",
     });
     expect(quote.body?.id).toBeTruthy();
 
-    const conv = await s.post("/agents/conversations", { quoteId: quote.body.id });
+    const conv = await s.post("/agents/conversations", {
+      quoteId: quote.body.id,
+    });
     const convoId = conv.body?.id ?? conv.body?.conversation?.id;
     expect(convoId).toBeTruthy();
 
-    const trans = await s.post(`/agents/conversations/${convoId}/transition-to-terms`, {});
+    const trans = await s.post(
+      `/agents/conversations/${convoId}/transition-to-terms`,
+      {},
+    );
     expect(trans.status).toBeLessThan(400);
 
     const answer = await s.post("/agents/wizard/answer", {

@@ -1,5 +1,5 @@
 /**
- * RED (TDD) — UX-26 over real HTTP: the ASSISTANT's send-contract path must
+ * UX-26 over real HTTP: the ASSISTANT's send-quote path must
  * pass the same sender-identity gate as the paperwork controller routes.
  *
  * Finding (ux-problems.md, verbatim fragment):
@@ -14,22 +14,22 @@
  *   POST /quotes → POST /agents/conversations {quoteId} →
  *   :id/transition-to-terms → POST /agents/wizard/answer ×5 (customer step
  *   creates "Pedro Cliente" with a phone; the 5-step terms wizard is
- *   contract-terms-wizard-spec/mod.ts) → the final answer materializes the
- *   contract (handle-wizard-answer/mod.ts:160-166) →
- *   POST /agents/conversations/:id/send-contract {contractId, channel:"sms"}
- *   (conversations-controller/mod.ts:127-142 → send-contract/mod.ts:100-110
+ *   terms-wizard-spec/mod.ts) → the final answer persists the terms onto
+ *   the quote (handle-wizard-answer finalizeTerms) →
+ *   POST /agents/conversations/:id/send-quote {quoteId, channel:"sms"}
+ *   (conversations-controller → send-quote/mod.ts
  *   → SendPaperworkSms directly — the guard bypass).
  *
  * Observable: GET /messages — every outbound text is recorded in the comms
  * log (send-paperwork-sms/mod.ts:161-171, channel "text", paperworkId =
- * contract id).
+ * quote id).
  *
  * Live probe (2026-08-19, this exact flow, phone +15125556200):
- *   send-contract → 200, divider "Contract texted to +15125556201", and the
+ *   send-quote → 200, divider "texted to +15125556201", and the
  *   logged SMS content was:
  *     "Hi Pedro, this is Nuevo.\n\nYour Quote + Agreement for Pintar la sala
  *      is ready: http://localhost:5280/s/OQmJOC\n\n…"
- *   while POST /contracts/:id/text for the SAME account returns the guarded
+ *   while POST /quotes/:id/text for the SAME account returns the guarded
  *   {ok:false, needsName:true, reason:/name|nombre/i} refusal
  *   (paperwork-email-controller/mod.ts:71-93,185).
  *
@@ -56,7 +56,10 @@ type LoggedMessage = {
   paperworkType?: string;
 };
 
-async function messagesFor(s: ApiSession, id: string): Promise<LoggedMessage[]> {
+async function messagesFor(
+  s: ApiSession,
+  id: string,
+): Promise<LoggedMessage[]> {
   const { body } = await s.get("/messages");
   const all: LoggedMessage[] = Array.isArray(body) ? body : body?.items ?? [];
   return all.filter((m) => JSON.stringify(m).includes(id));
@@ -79,11 +82,10 @@ async function pollTexts(
   return texts;
 }
 
-describe("UX-26: assistant send-contract path passes the sender-identity gate", () => {
+describe("UX-26: assistant send-quote path passes the sender-identity gate", () => {
   let s: ApiSession;
   let quoteId: string;
   let convId: string;
-  let contractId: string | undefined;
   let sendBody: unknown;
 
   beforeAll(async () => {
@@ -102,7 +104,12 @@ describe("UX-26: assistant send-contract path passes the sender-identity gate", 
     const q = await s.post("/quotes", {
       summary: "Pintar la sala",
       jobName: "Pintar la sala",
-      lineItems: [{ description: "Pintura", quantity: 1, unit: "ea", price: 45000 }],
+      lineItems: [{
+        description: "Pintura",
+        quantity: 1,
+        unit: "ea",
+        price: 45000,
+      }],
       estimatedTotal: 45000,
     });
     expect(q.status).toBeLessThan(400);
@@ -114,17 +121,22 @@ describe("UX-26: assistant send-contract path passes the sender-identity gate", 
     convId = conv.body?.id ?? conv.body?.conversation?.id;
     expect(convId).toBeTruthy();
 
-    const tt = await s.post(`/agents/conversations/${convId}/transition-to-terms`, {});
+    const tt = await s.post(
+      `/agents/conversations/${convId}/transition-to-terms`,
+      {},
+    );
     expect(tt.status).toBeLessThan(400);
 
-    // 5-step terms wizard (contract-terms-wizard-spec/mod.ts): customer,
+    // 5-step terms wizard (terms-wizard-spec/mod.ts): customer,
     // start_date, wraps, payment_terms, warranty. The customer step creates
     // the SMS recipient (phone-only, like the audited flow).
     const answers: Array<Record<string, unknown>> = [
       {
         stepId: "customer",
         optionId: "create_new",
-        customer: { create: { name: "Pedro Cliente", phoneNumber: CUSTOMER_PHONE } },
+        customer: {
+          create: { name: "Pedro Cliente", phoneNumber: CUSTOMER_PHONE },
+        },
       },
       { stepId: "start_date", optionId: "asap" },
       { stepId: "wraps", optionId: "1_week" },
@@ -132,28 +144,29 @@ describe("UX-26: assistant send-contract path passes the sender-identity gate", 
       { stepId: "warranty", optionId: "none" },
     ];
     for (const a of answers) {
-      const r = await s.post("/agents/wizard/answer", { conversationId: convId, ...a });
+      const r = await s.post("/agents/wizard/answer", {
+        conversationId: convId,
+        ...a,
+      });
       expect(r.status).toBeLessThan(400);
-      contractId = r.body?.conversation?.contractId ?? contractId;
     }
-    expect(contractId).toBeTruthy();
 
     // The assistant's send CTA — the exact dispatch AsstChat fires
-    // (confirmSendContract → POST :id/send-contract, channel "sms").
-    const send = await s.post(`/agents/conversations/${convId}/send-contract`, {
-      contractId,
+    // (confirmSendQuote → POST :id/send-quote, channel "sms").
+    const send = await s.post(`/agents/conversations/${convId}/send-quote`, {
+      quoteId,
       channel: "sms",
     });
     expect(send.status).toBeLessThan(400);
     sendBody = send.body;
   }, 30_000);
 
-  it("UX-26: no outbound text for this contract carries the placeholder identity", async () => {
+  it("UX-26: no outbound text for this quote carries the placeholder identity", async () => {
     // Desired contract (mirrors the P-06 email/text precedent): EITHER the
     // dispatch was refused with a machine-readable needs-name signal — the
     // divider carries smsFailureReason and nothing celebrates a send — OR
     // the send went out identity-complete. In BOTH green shapes the comms
-    // log contains no placeholder intro for this contract.
+    // log contains no placeholder intro for this quote.
     const divider = (sendBody as {
       newMessages?: Array<{ payload?: Record<string, unknown> }>;
     })?.newMessages?.find((m) => m.payload && "channel" in m.payload);
@@ -161,7 +174,7 @@ describe("UX-26: assistant send-contract path passes the sender-identity gate", 
       !divider.payload?.textedTo &&
       /name|nombre/i.test(String(divider.payload?.smsFailureReason ?? ""));
 
-    const texts = await pollTexts(s, contractId!);
+    const texts = await pollTexts(s, quoteId);
     if (refused) {
       // Refusal path: the gate held — nothing placeholder-branded may have
       // been logged as sent.
@@ -172,8 +185,7 @@ describe("UX-26: assistant send-contract path passes the sender-identity gate", 
     }
 
     // Send path: the SMS reached the log — it must introduce the contractor
-    // with a real identity, never the placeholder. RED today:
-    // "Hi Pedro, this is Nuevo.\n\nYour Quote + Agreement…"
+    // with a real identity, never the placeholder.
     for (const m of texts) {
       const copy = [m.subject, m.content].filter(Boolean).join("\n");
       expect(copy).not.toMatch(PLACEHOLDER);
@@ -183,12 +195,11 @@ describe("UX-26: assistant send-contract path passes the sender-identity gate", 
     }
   });
 
-  it("UX-26: [contract-pin — green today] the controller route refuses the same account (the bypass in one picture)", async () => {
-    // POST /contracts/:id/text carries the P-06 guard
-    // (paperwork-email-controller/mod.ts:185). Same user, same contract,
-    // guarded path → needs-name refusal. This pin documents the asymmetry
-    // the red test above closes: ONE gate, every path.
-    const r = await s.post(`/contracts/${contractId}/text`);
+  it("UX-26: the controller route refuses the same account too (one gate, every path)", async () => {
+    // POST /quotes/:id/text carries the P-06 guard
+    // (paperwork-email-controller). Same user, same quote, guarded path →
+    // needs-name refusal.
+    const r = await s.post(`/quotes/${quoteId}/text`);
     const refused = r.status >= 400 || r.body?.ok === false;
     expect(refused).toBe(true);
     expect(JSON.stringify(r.body ?? {})).toMatch(/name|nombre/i);

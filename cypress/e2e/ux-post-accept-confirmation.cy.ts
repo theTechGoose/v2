@@ -1,55 +1,51 @@
 /// <reference types="cypress" />
 
 /**
- * Post-accept confirmation parity — live-UI RED spec for ux-problems.md:
+ * Post-accept confirmation parity (UX-22, ported to the merged product):
  *
- *   UX-22 "[POST-ACCEPT] The immediate accept confirmation (customer side) is
- *         thinner than the reload. Right after accepting, the card shows only
- *         '✓ Cotización aceptada'; on reload it shows 'Aceptada por María
- *         Nguyen el 18 de agosto de 2026' + ACEPTADA badge. Render the full
- *         evidence immediately."
+ * The quote IS the agreement — accepting on /q via the PublicSignQuote pad
+ * is the one signature ceremony. Right after signing, the customer must see
+ * the full evidence, not a thin acknowledgment: the island shows its
+ * success card ("Firmado y vinculante") and reloads ~900ms later so the
+ * persisted signed state renders — the FIRMADO badge with the date, the
+ * customer-signature card filled with her mark, and the signed strip. A
+ * manual reload must agree with what the ceremony left on screen (P-11).
  *
  * Phones used (block +15125556100-6199):
  *   +15125556130 contractor   +15125556163 its customer (María, phone-only)
  *
- * Grounded selectors / source:
- *   Accept form + immediate success card — front-end/islands/PublicAcceptQuote.tsx:
- *     name input   input[autocomplete=name] (:112-121, placeholder
- *                  publicAcceptQuote.namePlaceholder "Juan Pérez")
- *     submit       button[type=submit] "Aceptar esta cotización →" (:138-149)
- *     success card (:86-101) renders ONLY publicAcceptQuote.success.title
- *                  ("Cotización aceptada") + a contractor-contact sub — no
- *                  acceptor name, no date, no badge. This is the UX-22 gap.
- *   Reload (SSR) accepted state — front-end/routes/q/[id].tsx:
- *     ACEPTADA badge  header <span> tFor("status.accepted") = "Aceptada",
- *                     CSS-uppercased (:202-207)
- *     evidence card   "✓ Cotización aceptada" + publicQuote.acceptedByOn
- *                     "Aceptada por {name} el {date}." (:327-344), date via
- *                     toLocaleDateString("es-MX", long) (:391-399)
- *   The accept island posts /api/quotes/:id/accept and flips ONLY its local
- *   card (PublicAcceptQuote.tsx:52-101); PublicQuoteActions.tsx:74-94 merely
- *   remounts the same success card — neither surfaces the badge/name/date the
- *   SSR page already knows how to render.
+ * Grounded selectors / source (read post-merge):
+ *   Sign pad — front-end/islands/PublicSignQuote.tsx:
+ *     form         form.ctr__sign-form (name input inside it,
+ *                  placeholder publicSign.namePlaceholder "Juan Pérez")
+ *     submit       button[type=submit] "Firmar el acuerdo →"
+ *                  (publicSign.submitEnabled)
+ *     success card publicSign.success.title "Firmado y vinculante"; the
+ *                  island then reloads (~900ms) so the SSR'd island fetch
+ *                  renders the persisted accepted state.
+ *   Signed state — front-end/components/quote-doc.tsx:
+ *     badge pill   quoteDoc.signed "Firmado {date}" (lang-aware fmtDate)
+ *     evidence     quoteDoc.signatureOf "Firma de {name}" + the stored
+ *                  signature image (img[alt=<acceptedName>], P-40)
+ *     strip        quoteDoc.signedBinding "Firmado y vinculante" +
+ *                  quoteDoc.bothCaptured "Ambas firmas capturadas."
  *
- * Language: /q resolves UI chrome from the pm_lang cookie first
- * (routes/q/[id].tsx:62-64), so the spec pins ES deterministically via
+ * Language: /q resolves the document language from the pm_lang cookie first
+ * (routes/q/[id].tsx), so the spec pins ES deterministically via
  * cy.setCookie("pm_lang","es") before visiting.
  */
 
 const MARIA = "María Nguyen";
 
-/** The exact long-form ES date the SSR accepted card renders
- *  (routes/q/[id].tsx:391-399 — es-MX, numeric year, long month). Computed at
- *  assert time; a run crossing midnight could flake by a day (acceptable). */
-function acceptedDateEs(): string {
-  return new Date().toLocaleDateString("es-MX", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
+// The signed ES date rendered by the shared formatter (formatLongDate —
+// UTC-based "20 de agosto de 2026"). Regex rather than a computed string so
+// a run crossing midnight can't flake by a day.
+const FIRMADO_ES = new RegExp(
+  String.raw`Firmado\s+\d{1,2} de \p{L}+ de \d{4}`,
+  "iu",
+);
 
-describe("UX-22 accepting on /q shows the full evidence immediately, not only after reload", () => {
+describe("UX-22 signing on /q shows the full evidence right away, and reload agrees", () => {
   const PHONE = "+15125556130";
   let quoteId: string;
 
@@ -60,9 +56,12 @@ describe("UX-22 accepting on /q shows the full evidence immediately, not only af
     cy.loginAs(PHONE);
     cy.request("POST", "/api/me/onboarded", { skipped: true });
     cy.apiUpdateUser({ name: "Rafa Morales", language: "es" });
-    // Keep the DOC language Spanish too (routes/q/[id].tsx:61 reads
+    // Keep the DOC language Spanish too (QuoteDoc falls back to
     // contractor.commsLanguage for content).
-    cy.apiUpdateProfile({ businessName: "Techos Morales", commsLanguage: "es" });
+    cy.apiUpdateProfile({
+      businessName: "Techos Morales",
+      commsLanguage: "es",
+    });
     cy.apiCreateCustomer({ name: MARIA, phoneNumber: "+15125556163" }).then(
       (customerId: string) => {
         cy.apiCreateQuote({
@@ -85,45 +84,54 @@ describe("UX-22 accepting on /q shows the full evidence immediately, not only af
     );
   });
 
-  it("UX-22 the immediate confirmation carries badge + 'Aceptada por <name>' + date; reload agrees", () => {
+  it("UX-22 the ceremony ends on the full evidence — badge, 'Firma de <name>', signature mark; reload agrees", () => {
     // The customer opens the public link (anonymous, Spanish chrome).
     cy.clearCookies();
     cy.setCookie("pm_lang", "es");
     cy.viewport(390, 844); // the audited mobile customer context
     cy.visit(`/q/${quoteId}`);
 
-    // Drive the REAL accept UI (PublicAcceptQuote.tsx:108-150).
-    cy.get("input[autocomplete=name]", { timeout: 10000 })
+    // Drive the REAL signature ceremony (PublicSignQuote): type the legal
+    // name (the pad drawing is optional) and submit.
+    cy.get("form.ctr__sign-form", { timeout: 10000 })
+      .find("input")
+      .first()
       .should("be.visible")
       .type(MARIA);
-    cy.contains("button[type=submit]", "Aceptar esta cotización")
+    cy.contains("button[type=submit]", "Firmar el acuerdo")
       .should("not.be.disabled")
       .click();
 
-    // Immediate success is acknowledged today (green guard —
-    // publicAcceptQuote.success.title).
-    cy.contains("Cotización aceptada", { timeout: 10000 }).should("be.visible");
+    // Immediate success is acknowledged (publicSign.success.title).
+    cy.contains("Firmado y vinculante", { timeout: 10000 }).should(
+      "be.visible",
+    );
 
-    // ---- The UX-22 reds: WITHOUT reloading, the page must already show the
-    // full evidence the reload shows. Today the card renders only the thin
-    // "✓ Cotización aceptada" + "Rafa se pondrá en contacto…" line.
-    // 1) Who accepted (publicQuote.acceptedByOn with the typed name):
-    cy.contains(`Aceptada por ${MARIA}`).should("be.visible");
-    // 2) When (the same long es-MX date the SSR card renders):
-    cy.contains(acceptedDateEs()).should("be.visible");
-    // 3) The ACEPTADA status badge (routes/q/[id].tsx:202-207 — a standalone
-    //    <span> whose exact text is "Aceptada", uppercased by CSS; no other
-    //    element on the page carries that exact text).
-    cy.contains("span", /^\s*Aceptada\s*$/).should("be.visible");
+    // ---- The full evidence, WITHOUT the customer touching anything else
+    // (the island's own ~900ms reload swaps in the persisted state):
+    // 1) The FIRMADO badge with the ES date (quoteDoc.signed):
+    cy.contains(FIRMADO_ES, { timeout: 15000 }).should("be.visible");
+    // 2) Who signed — the customer card heading (quoteDoc.signatureOf):
+    cy.contains(`Firma de ${MARIA}`).should("be.visible");
+    // 3) Her captured mark (P-40 — the typed-name PNG the island rendered):
+    cy.get(`img[alt="${MARIA}"]`)
+      .should("have.attr", "src")
+      .and("match", /^data:image\/png/);
+    // 4) Both-signatures line + no leftover ceremony chrome.
+    cy.contains("Ambas firmas capturadas.").should("be.visible");
+    cy.get("form.ctr__sign-form").should("not.exist");
 
-    // ---- Parity: reload and assert the SAME evidence (green today — the
-    // persisted P-11 state; pinned so "fixing" the immediate card can never
-    // regress the reload, and both renders stay identical).
+    // ---- Parity: a manual reload shows the SAME evidence (the persisted
+    // P-11 state; pinned so the post-ceremony render and the reload can
+    // never drift apart).
     cy.reload();
-    cy.contains("Cotización aceptada", { timeout: 10000 }).should("be.visible");
-    cy.contains(`Aceptada por ${MARIA}`).should("be.visible");
-    cy.contains(acceptedDateEs()).should("be.visible");
-    cy.contains("span", /^\s*Aceptada\s*$/).should("be.visible");
+    cy.contains(FIRMADO_ES, { timeout: 10000 }).should("be.visible");
+    cy.contains(`Firma de ${MARIA}`).should("be.visible");
+    cy.get(`img[alt="${MARIA}"]`)
+      .should("have.attr", "src")
+      .and("match", /^data:image\/png/);
+    cy.contains("Ambas firmas capturadas.").should("be.visible");
+    cy.get("form.ctr__sign-form").should("not.exist");
   });
 });
 

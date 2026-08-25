@@ -1,9 +1,14 @@
 /**
  * PDF p8 — Job Name: ≤ 3 words, generated from the job details, and
- * CONSISTENT across the platform: the quote, the contract projection and the
+ * CONSISTENT across the platform: the quote, the agreement projection and the
  * invoice must all carry the same jobName.
  */
-import { anonymous, contractor, seedQuote, type ApiSession } from "./helpers/api";
+import {
+  anonymous,
+  type ApiSession,
+  contractor,
+  seedQuote,
+} from "./helpers/api";
 
 const THREE_WORDS_MAX = (s: string) => s.trim().split(/\s+/).length <= 3;
 
@@ -35,7 +40,12 @@ describe("job name generation + platform-wide consistency", () => {
     const quoteId = await seedQuote(s, { jobName: "Backyard Junk Removal" });
     const inv = await s.post("/invoices", {
       quoteId,
-      lineItems: [{ description: "Junk removal", quantity: 1, unit: "job", price: 55000 }],
+      lineItems: [{
+        description: "Junk removal",
+        quantity: 1,
+        unit: "job",
+        price: 55000,
+      }],
       totalCents: 55000,
     });
     expect(inv.status).toBeLessThan(400);

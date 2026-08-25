@@ -13,7 +13,7 @@
  * Green requires: shared/quote-flow/assistant-back.ts, consumed by
  * AsstChat's single header back control.
  */
-import { contractor, type ApiSession } from "./helpers/api";
+import { type ApiSession, contractor } from "./helpers/api";
 import {
   backViewFromMessages,
   resolveAssistantBack,
@@ -50,11 +50,16 @@ describe("assistant back — real conversation at the reviewing stage", () => {
     });
     expect(quote.body?.id).toBeTruthy();
 
-    const conv = await s.post("/agents/conversations", { quoteId: quote.body.id });
+    const conv = await s.post("/agents/conversations", {
+      quoteId: quote.body.id,
+    });
     convoId = conv.body?.id ?? conv.body?.conversation?.id;
     expect(convoId).toBeTruthy();
 
-    const trans = await s.post(`/agents/conversations/${convoId}/transition-to-terms`, {});
+    const trans = await s.post(
+      `/agents/conversations/${convoId}/transition-to-terms`,
+      {},
+    );
     expect(trans.status).toBeLessThan(400);
 
     // Customer step first (create_new + typed name), then answer every
@@ -80,7 +85,8 @@ describe("assistant back — real conversation at the reviewing stage", () => {
         stepId?: string;
         options?: Array<{ id?: string }>;
       };
-      const optionId = payload.options?.find((o) => o.id && o.id !== "custom")?.id;
+      const optionId = payload.options?.find((o) => o.id && o.id !== "custom")
+        ?.id;
       if (!last || !payload.stepId || !optionId) {
         await new Promise((r) => setTimeout(r, 1000));
         continue;

@@ -40,13 +40,13 @@ export interface LockQuoteResult {
  *   4. Append the locked action_card (status=sent) + a continue_cta
  *      to the terms wizard, so the chat advances forward instead of
  *      dead-ending after the click.
- *   5. Set conv.quoteId so the wizard / send-contract know what to
+ *   5. Set conv.quoteId so the wizard / send-quote know what to
  *      operate on.
  *
- * The customer-acceptance event lives on the contract (see
- * AcceptContract), not here — the chain is:
+ * The customer-acceptance event lives on the quote (see
+ * AcceptQuote), not here — the chain is:
  *   draft → lock (phase 1) → wizard (phase 2) → send → customer
- *   signs contract → invoice.
+ *   signs the quote → invoice.
  */
 @Injectable()
 export class LockQuote {
@@ -87,9 +87,15 @@ export class LockQuote {
         action: "sent",
       });
       try {
-        await this.emailer.run(input.userId, { kind: "quote", resourceId: quote.id });
+        await this.emailer.run(input.userId, {
+          kind: "quote",
+          resourceId: quote.id,
+        });
       } catch (err) {
-        console.error(`[lock-quote] email dispatch failed for quote ${quote.id}:`, err);
+        console.error(
+          `[lock-quote] email dispatch failed for quote ${quote.id}:`,
+          err,
+        );
       }
     }
 
@@ -134,7 +140,9 @@ export class LockQuote {
     const updated = await this.conversations.update(conv.id, {
       quoteId: fresh.id,
       quoteStatus: "sent",
-      preview: t(lang, "lockQuote.preview.sent", { summary: fresh.summary ?? fresh.id }),
+      preview: t(lang, "lockQuote.preview.sent", {
+        summary: fresh.summary ?? fresh.id,
+      }),
     });
 
     return { conversation: updated, newMessages: [card, cta] };

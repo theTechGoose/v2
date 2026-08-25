@@ -16,7 +16,7 @@ interface NavEntry {
   href: string;
   countKey?: CountKey;
 }
-type CountKey = "clients" | "quotes" | "contracts" | "invoices";
+type CountKey = "clients" | "quotes" | "invoices";
 
 // Canonical NAV from the reference design (Paperwork Monster Dashboard.html).
 // `countKey` maps a sidebar entry to a derived count from /analytics/dashboard.
@@ -96,7 +96,6 @@ function pickCounts(stats: DashboardStats): Partial<Record<CountKey, number>> {
   return {
     clients: stats.customers,
     quotes: stats.quotes.sent,
-    contracts: stats.contracts.signed,
     invoices: stats.invoices.pending,
   };
 }
@@ -130,10 +129,6 @@ export default function DashSidebar(
     return globalThis.localStorage.getItem("pm:sb-collapsed") === "1";
   });
   const [mobileOpen, setMobileOpen] = useState(false);
-  // Cypress hooks (data-cy) are only attached after hydration so a test
-  // can never click the toggle before its listener is live.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
   // Seed from the shared cache so a navigation between pages renders the
   // last-known counts/identity immediately and the badge doesn't flash
   // empty before the refetch lands.
@@ -248,41 +243,6 @@ export default function DashSidebar(
                 <div class="sb__brand-name">{tFor(lang, "brand.name")}</div>
               </div>
             </a>
-            <button
-              type="button"
-              class="sb__toggle"
-              // QuickBooks-style minimize (roadmap p9), in the QuickBooks
-              // position: the header row beside the brand — not orphaned
-              // between the account card and logout. The same physical
-              // button is the collapse arrow when expanded and the rail
-              // hamburger when collapsed; the hook only appears after
-              // hydration so tests can't click a dead button.
-              data-cy={mounted
-                ? (collapsed ? "sidebar-expand" : "sidebar-collapse")
-                : undefined}
-              onClick={toggle}
-              aria-label={collapsed
-                ? tFor(lang, "sidebar.expand")
-                : tFor(lang, "sidebar.collapse")}
-              title={collapsed
-                ? tFor(lang, "sidebar.expandTitle")
-                : tFor(lang, "sidebar.collapseTitle")}
-            >
-              <I
-                d={
-                  <>
-                    {
-                      /* QuickBooks-style hamburger + arrow — CSS rotates it
-                        180° so the chevron points right when the rail is
-                        collapsed (roadmap p.4). */
-                    }
-                    <path d="M3 6h13M3 12h13M3 18h13" />
-                    <path d="M21 9l-3 3 3 3" />
-                  </>
-                }
-                size={14}
-              />
-            </button>
           </div>
 
           <a

@@ -16,6 +16,11 @@ export interface QuoteLineItem {
   unit?: string;
   price?: number;
 }
+export interface QuoteTerm {
+  stepId: string;
+  label: string;
+  value: string;
+}
 export interface Quote {
   id: string;
   userId: string;
@@ -25,9 +30,22 @@ export interface Quote {
   description?: string;
   lineItems: QuoteLineItem[];
   estimatedTotal: number;
-  status: "draft" | "sent" | "accepted" | "declined" | "expired";
+  status:
+    | "draft"
+    | "sent"
+    | "viewed"
+    | "accepted"
+    | "lost"
+    | "declined"
+    | "expired";
+  /** Wizard-captured agreement terms — the quote IS the agreement. */
+  terms?: QuoteTerm[];
+  sentAt?: string;
+  acceptedAt?: string;
+  acceptedName?: string;
   createdAt: string;
   updatedAt: string;
+  [k: string]: unknown;
 }
 
 /** One of three scope-of-work options returned by generateJobOptions.
@@ -59,7 +77,6 @@ export interface Conversation {
   userId: string;
   customerId?: string;
   quoteId?: string;
-  contractId?: string;
   invoiceId?: string;
   currentPhase: ConversationPhase;
   title?: string;
@@ -67,12 +84,10 @@ export interface Conversation {
   /** Denormalized quote.jobName (UX-14) — titles the thread row. */
   jobName?: string;
   preview?: string;
-  /** Set by accept-contract; cleared by load-conversation on next read. */
+  /** Set by accept-quote; cleared by load-conversation on next read. */
   hasUnreadEvent?: boolean;
   /** Denormalized quote.status — sent / accepted. */
   quoteStatus?: string;
-  /** Denormalized contract.status — drives the sidebar chip without an N+1. */
-  contractStatus?: string;
   /** Denormalized invoice.status — sent / paid. */
   invoiceStatus?: string;
   /** ISO-8601 strings (backend returns `new Date().toISOString()`). */
@@ -109,18 +124,12 @@ export interface CustomerLite {
   [k: string]: unknown;
 }
 
-export interface ContractLite {
-  id: string;
-  status?: string;
-  totalAmount?: number;
-  [k: string]: unknown;
-}
-
 export interface ConversationDetail {
   conversation: Conversation;
   messages: Message[];
   customer?: CustomerLite;
-  contract?: ContractLite;
+  /** Bound quote (the agreement) — populated once a quote is locked. */
+  quote?: Quote;
   [k: string]: unknown;
 }
 
@@ -182,40 +191,40 @@ export const assistantClient = {
       opts,
     ),
 
-  /** Dev-only: simulate the customer signing the contract — the single
-   *  customer-facing acceptance event in the chain. Flips contract→
+  /** Dev-only: simulate the customer signing the quote — the single
+   *  customer-facing acceptance event in the chain. Flips quote→
    *  accepted, emits the chat phase_divider + "Continue to invoice"
    *  CTA, and sets hasUnreadEvent so the threads sidebar bubbles +
    *  badges. */
-  acceptContract: (
+  acceptQuote: (
     conversationId: string,
-    contractId: string,
+    quoteId: string,
     opts: ApiOptions = {},
   ) =>
     api.post<{ conversation: Conversation; newMessages: Message[] }>(
-      `/agents/conversations/${conversationId}/accept-contract`,
-      { contractId },
+      `/agents/conversations/${conversationId}/accept-quote`,
+      { quoteId },
       opts,
     ),
 
-  /** Fire the wizard's "Ready to send" CTA: flips contract→sent and
+  /** Fire the wizard's "Ready to send" CTA: flips quote→sent and
    *  dispatches via the requested channel (email, sms, or both).
    *  Idempotent on state, but dispatch fires every time the user clicks. */
-  sendContract: (
+  sendQuoteFlow: (
     conversationId: string,
-    contractId: string,
+    quoteId: string,
     channel: "email" | "sms" | "both" = "email",
     language?: "en" | "es",
     opts: ApiOptions = {},
   ) =>
     api.post<{ conversation: Conversation; newMessages: Message[] }>(
-      `/agents/conversations/${conversationId}/send-contract`,
-      { contractId, channel, ...(language ? { language } : {}) },
+      `/agents/conversations/${conversationId}/send-quote`,
+      { quoteId, channel, ...(language ? { language } : {}) },
       opts,
     ),
 
-  /** Fire the post-contract-acceptance "Continue to invoice" CTA:
-   *  materializes an Invoice from the bound contract (or reuses an
+  /** Fire the post-acceptance "Continue to invoice" CTA:
+   *  materializes an Invoice from the bound quote (or reuses an
    *  already-bound one), flips status→sent, and dispatches the
    *  customer email. Returns the action_card to append to the chat. */
   sendInvoice: (conversationId: string, opts: ApiOptions = {}) =>
@@ -256,7 +265,7 @@ export const assistantClient = {
       opts,
     ),
 
-  /** Re-point a conversation (and its bound contract, if any) at a
+  /** Re-point a conversation (and its bound quote, if any) at a
    *  different customer the contractor owns. Used by the quote-review
    *  surface's "swap customer" pencil. */
   bindCustomer: (

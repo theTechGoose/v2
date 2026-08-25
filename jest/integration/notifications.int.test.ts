@@ -7,7 +7,12 @@
  * PDF p13 — the email SUBJECT must not contain quotation marks and must use
  * the job name.
  */
-import { anonymous, contractor, seedQuote, type ApiSession } from "./helpers/api";
+import {
+  anonymous,
+  type ApiSession,
+  contractor,
+  seedQuote,
+} from "./helpers/api";
 
 type LoggedMessage = {
   channel?: string; // "email" | "sms"
@@ -19,7 +24,10 @@ type LoggedMessage = {
   quoteId?: string;
 };
 
-async function messagesFor(s: ApiSession, quoteId: string): Promise<LoggedMessage[]> {
+async function messagesFor(
+  s: ApiSession,
+  quoteId: string,
+): Promise<LoggedMessage[]> {
   const { body } = await s.get("/messages");
   const all: LoggedMessage[] = Array.isArray(body) ? body : body?.items ?? [];
   return all.filter((m) => JSON.stringify(m).includes(quoteId));
@@ -48,7 +56,9 @@ describe("completion notifications (text + email)", () => {
 
   it("the quote email subject uses the job name WITHOUT quotation marks", async () => {
     const logged = await messagesFor(s, quoteId);
-    const email = logged.find((m) => (m.channel ?? m.kind) === "email" && m.subject);
+    const email = logged.find((m) =>
+      (m.channel ?? m.kind) === "email" && m.subject
+    );
     expect(email).toBeDefined();
     expect(email!.subject!).toContain("Backyard Junk Removal");
     expect(email!.subject!).not.toMatch(/["“”]/);

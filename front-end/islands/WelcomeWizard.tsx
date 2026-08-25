@@ -28,27 +28,6 @@ import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
 import { api } from "../lib/api.ts";
 import { type AddressSuggestion, suggestAddresses } from "../lib/mapbox.ts";
 
-/** The concrete example prompts shown on the meet-your-assistant cards. Each
- *  mirrors something `handle-chat-message` actually supports (quote / invoice
- *  / follow-up). */
-const EXAMPLE_PROMPTS = [
-  {
-    id: "quote",
-    labelKey: "welcome.examples.quote.label",
-    textKey: "welcome.examples.quote.text",
-  },
-  {
-    id: "invoice",
-    labelKey: "welcome.examples.invoice.label",
-    textKey: "welcome.examples.invoice.text",
-  },
-  {
-    id: "followup",
-    labelKey: "welcome.examples.followup.label",
-    textKey: "welcome.examples.followup.text",
-  },
-] as const;
-
 /** Mark onboarding finished (not skipped) before leaving the wizard. */
 async function markOnboardedFinish(): Promise<void> {
   await fetch("/api/me/onboarded", {
@@ -528,14 +507,18 @@ function AddressStep({ ctx }: { ctx: StepCtx }) {
   function onStreetInput(value: string) {
     setStreet(value);
     clearTimeout(acTimer.current);
-    acAbort.current?.abort();
     if (value.trim().length < 3) {
+      acAbort.current?.abort();
       setSugs([]);
       setAcOpen(false);
       return;
     }
     setAcOpen(true);
     acTimer.current = setTimeout(async () => {
+      // Abort the previous fetch only NOW, when a newer one replaces it.
+      // Aborting on every keystroke starved the list: a steady typist
+      // killed each request mid-flight and never saw a single suggestion.
+      acAbort.current?.abort();
       const ac = new AbortController();
       acAbort.current = ac;
       try {
@@ -944,25 +927,6 @@ function InsuranceStep({ ctx }: { ctx: StepCtx }) {
 // engine below.
 // ---------------------------------------------------------------------------
 
-function MeetBossieStep({ ctx }: { ctx: StepCtx }) {
-  return (
-    <StepBody
-      question={t("welcome.meetBossie.question")}
-      why={t("welcome.meetBossie.why")}
-    >
-      <div class="welcome__cards">
-        {EXAMPLE_PROMPTS.map((ex) => (
-          <div key={ex.id} class="welcome__card-example">
-            <span class="welcome__card-label">{t(ex.labelKey)}</span>
-            <span class="welcome__card-text">"{t(ex.textKey)}"</span>
-          </div>
-        ))}
-      </div>
-      <StepFooter ctx={ctx} valid busy={false} onContinue={ctx.advance} />
-    </StepBody>
-  );
-}
-
 function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
   const [busy, setBusy] = useState(false);
   const quoteId = ctx.sampleQuoteId;
@@ -1086,14 +1050,8 @@ function buildSteps(): StepDef[] {
       Component: InsuranceStep,
     },
     // Education — always shown (isComplete: false) so a data-complete user
-    // still gets the teach screens. The sample-quote step is the last one:
+    // still gets the teach screen. The sample-quote step is the last one:
     // its Continue finishes onboarding and hands off to the assistant chat.
-    {
-      id: "meetBossie",
-      skippable: false,
-      isComplete: () => false,
-      Component: MeetBossieStep,
-    },
     {
       id: "sampleQuote",
       skippable: false,

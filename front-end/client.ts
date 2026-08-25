@@ -26,7 +26,6 @@ const AUTHED_ROUTE_PREFIXES = [
   "/dashboard",
   "/invoices",
   "/quotes",
-  "/contracts",
   "/clients",
   "/payments",
   "/messages",

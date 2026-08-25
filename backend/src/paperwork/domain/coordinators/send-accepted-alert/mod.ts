@@ -25,7 +25,7 @@ const APP_URL = (() => {
 /**
  * SendAcceptedAlert — fires after a customer APPROVES a standalone quote
  * (POST /quotes/:id/accept). Completes the roadmap p.10 "completion Text +
- * Email" loop for the quote path; the contract path is covered by
+ * Email" loop for the quote path; the billing side is covered by
  * SendSignedConfirmation.
  *
  * Recipient is the CONTRACTOR (the customer just clicked the button — they
@@ -96,7 +96,8 @@ export class SendAcceptedAlert {
             userId: quote.userId,
             customerId: quote.customerId,
             channel: "email",
-            content: `quote ${quoteId} approved — completion email to ${contractor.email}`,
+            content:
+              `quote ${quoteId} approved — completion email to ${contractor.email}`,
             subject,
             toAddress: contractor.email.trim(),
           });

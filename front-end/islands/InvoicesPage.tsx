@@ -757,9 +757,11 @@ function InvoicesHero(
             <I d={ICN.plus} size={14} sw={2.5} />{" "}
             {tFor(lang, "invoicesPage.newInvoice")}
           </button>
-          {/* UX-23: nothing to export on an empty account — and when shown,
+          {
+            /* UX-23: nothing to export on an empty account — and when shown,
               the ghost must be legible on the cream page, not the .qph__cta
-              white-on-transparent ghost the audit measured. */}
+              white-on-transparent ghost the audit measured. */
+          }
           {!trulyEmpty && (
             <a
               class="qph__cta qph__cta--ghost"
@@ -1498,12 +1500,12 @@ async function dispatchInvoice(id: string): Promise<DispatchResult> {
 }
 
 /** Honest failure copy when NO channel delivered — the same lang keys the
- *  assistant contract-send divider uses. */
+ *  assistant send divider uses. */
 function dispatchFailureCopy(lang: Lang, d: DispatchResult): string {
   const key = sendResultLangKey(d.email.outcome) ??
-    "sendContract.divider.emailFailed";
-  if (key === "sendContract.divider.noEmail") {
-    return tFor(lang, "sendContract.divider.noEmail");
+    "sendQuote.divider.emailFailed";
+  if (key === "sendQuote.divider.noEmail") {
+    return tFor(lang, "sendQuote.divider.noEmail");
   }
   return tFor(lang, key, {
     reason: d.email.rawReason ?? d.email.outcome.reason ?? "unknown",
@@ -1515,7 +1517,7 @@ function textFailureCopy(lang: Lang, r: ChannelSendResult): string {
   if (r.outcome.reason === "noPhone" || r.outcome.reason === "noEmail") {
     return tFor(lang, "invoicesPage.new.needContact");
   }
-  return tFor(lang, "sendContract.divider.emailFailed", {
+  return tFor(lang, "sendQuote.divider.emailFailed", {
     reason: r.rawReason ?? r.outcome.reason ?? "unknown",
   });
 }
@@ -2325,7 +2327,7 @@ function InvoiceCard(
 
 const NEW_SENTINEL = "__new__";
 
-/** Create a standalone invoice — no quote/contract behind it. Pick (or add)
+/** Create a standalone invoice — no quote behind it. Pick (or add)
  *  a client, set an amount + due date, and it lands as a draft in the
  *  Drafting track. Mirrors the add-client modal pattern on /clients. */
 function NewInvoiceModal(

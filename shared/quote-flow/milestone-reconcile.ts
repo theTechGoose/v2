@@ -1,8 +1,8 @@
 /**
- * Milestone reconciliation (UX-36) — signing the contract after the job was
+ * Milestone reconciliation (UX-36) — accepting the quote after the job was
  * already invoiced (and possibly paid) must never re-bill the customer. The
- * milestone plan is right; billing it twice is the bug: the sign coordinator
- * bills only the unbilled remainder computed here.
+ * milestone plan is right; billing it twice is the bug: the accept
+ * coordinator bills only the unbilled remainder computed here.
  *
  * All amounts are INTEGER CENTS. Pure logic, no side effects.
  */

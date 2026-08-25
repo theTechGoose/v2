@@ -70,15 +70,12 @@ export class ReminderHistoryEntryDto {
 }
 
 export class CreateInvoiceDto {
-  /** The signed contract this invoice bills against. Optional — standalone
-   *  invoices (one-off bills with no quote/contract behind them) are created
-   *  straight from the receivables dashboard and carry only a customer. */
-  @IsOptional() @IsString()
-  contractId?: string;
-
-  /** Derive-from-quote (roadmap p.6): when set, jobName / description /
-   *  customer / line items / amount default from the quote so the invoice
-   *  carries all the quote's information without re-entry. */
+  /** The accepted quote (the agreement) this invoice bills against. Optional
+   *  — standalone invoices (one-off bills with no quote behind them) are
+   *  created straight from the receivables dashboard and carry only a
+   *  customer. When set, jobName / description / customer / line items /
+   *  amount default from the quote so the invoice carries all the quote's
+   *  information without re-entry (roadmap p.6). */
   @IsOptional() @IsString()
   quoteId?: string;
 
@@ -92,12 +89,12 @@ export class CreateInvoiceDto {
     price: number;
   }>;
 
-  /** ≤3-word job title for STANDALONE invoices (roadmap p.10) — contract-
+  /** ≤3-word job title for STANDALONE invoices (roadmap p.10) — quote-
    *  linked invoices resolve theirs from the quote instead. */
   @IsOptional() @IsString()
   jobName?: string;
   /** What the bill covers, one line per item — rendered on the public
-   *  invoice when no quote/contract supplies job details. */
+   *  invoice when no quote supplies job details. */
   @IsOptional() @IsString()
   description?: string;
 
@@ -150,7 +147,7 @@ export class CreateInvoiceDto {
 
 export class UpdateInvoiceDto {
   @IsOptional() @IsString()
-  contractId?: string;
+  quoteId?: string;
   @IsOptional() @IsArray()
   lineItems?: Array<{
     description: string;

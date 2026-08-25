@@ -11,7 +11,7 @@ import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { tFor } from "../../lib/i18n.ts";
 
 interface ShortLinkResolution {
-  kind: "quote" | "contract" | "invoice";
+  kind: "quote" | "invoice";
   id: string;
 }
 
@@ -26,8 +26,6 @@ export const handler = define.handlers({
     }
     const path = r.data.kind === "quote"
       ? `/q/${r.data.id}`
-      : r.data.kind === "contract"
-      ? `/c/${r.data.id}`
       : `/i/${r.data.id}`;
     return new Response(null, { status: 302, headers: { location: path } });
   },

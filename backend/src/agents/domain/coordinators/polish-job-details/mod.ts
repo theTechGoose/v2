@@ -24,11 +24,11 @@ export interface PolishJobDetailsResult {
   summary: string;
   /** Ultra-short label, three words or less, Title Case, used as the
    *  primary human-facing job identifier across the platform: in-chat
-   *  card title, contract hero, email subject, SMS body. Falls back
+   *  card title, agreement hero, email subject, SMS body. Falls back
    *  to `summary` downstream when this is missing. */
   jobName: string;
   /** Polished 1–3 sentence paragraph rendered on the quote, quote email,
-   *  and the contract page's job-details section. */
+   *  and the public quote page's job-details section. */
   description: string;
 }
 
@@ -40,7 +40,7 @@ const SYSTEM_PROMPT = t("en", "prompts.polishJobDetails.system");
  *
  * Used by the "tell me the job details" step after price capture.
  * The result is saved on the quote as `summary` + `description` and
- * surfaces on the quote preview, the quote email, and the contract.
+ * surfaces on the quote preview, the quote email, and the agreement.
  */
 @Injectable()
 export class PolishJobDetails {

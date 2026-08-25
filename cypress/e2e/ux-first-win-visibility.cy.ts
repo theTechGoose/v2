@@ -22,9 +22,11 @@
  * POST /quotes (status "sent", NO customerId — the assistant shape) →
  * POST /agents/conversations {quoteId} → POST …/transition-to-terms →
  * POST /agents/wizard/answer ×5 (customer create_new phone-only → start_date
- * asap → wraps 2_weeks → payment_terms due_now → warranty none; the last
- * response carries continue_cta {toPhase:"send", contractId}) →
- * POST …/send-contract {channel:"sms", language:"es"} → POST /quotes/:id/accept.
+ * asap → wraps 2_weeks → payment_terms due_now → warranty none; the wizard
+ * writes the terms onto the QUOTE and the last response carries
+ * continue_cta {toPhase:"send", quoteId}) →
+ * POST …/send-quote {quoteId, channel:"sms", language:"es"} →
+ * POST /quotes/:id/accept (the one ceremony — it also bills the quote).
  * Verified post-accept truth: GET /jobs → [], quotedValueCents 0, the /quotes
  * card {stage:"won", sentAt:null, customerName:null}.
  *
@@ -49,7 +51,6 @@ const MARIA = "María Nguyen";
 interface SeededWin {
   quoteId?: string;
   conversationId?: string;
-  contractId?: string;
   customerId?: string;
 }
 
@@ -114,26 +115,30 @@ function driveAssistantFirstWin(customerPhone: string, out: SeededWin) {
         // texto" — the audit's no-email María).
         answer("customer", "create_new", {
           customer: {
-            create: { name: MARIA, phoneNumber: customerPhone, isBusiness: false },
+            create: {
+              name: MARIA,
+              phoneNumber: customerPhone,
+              isBusiness: false,
+            },
           },
         });
         answer("start_date", "asap");
         answer("wraps", "2_weeks");
         answer("payment_terms", "due_now");
         answer("warranty", "none").then((wr) => {
-          const msgs =
-            (wr.body as {
-              newMessages?: Array<
-                { kind?: string; payload?: { contractId?: string } }
-              >;
-            }).newMessages ?? [];
+          const msgs = (wr.body as {
+            newMessages?: Array<
+              { kind?: string; payload?: { quoteId?: string } }
+            >;
+          }).newMessages ?? [];
           const cta = msgs.find((m) => m.kind === "continue_cta");
           expect(cta, "wizard completion continue_cta").to.exist;
-          out.contractId = cta!.payload!.contractId!;
+          expect(cta!.payload!.quoteId, "continue_cta carries the quoteId")
+            .to.eq(out.quoteId);
           cy.request(
             "POST",
-            `/api/agents/conversations/${out.conversationId}/send-contract`,
-            { contractId: out.contractId, channel: "sms", language: "es" },
+            `/api/agents/conversations/${out.conversationId}/send-quote`,
+            { quoteId: out.quoteId, channel: "sms", language: "es" },
           );
           cy.apiAcceptQuote(out.quoteId!, { signature: MARIA, name: MARIA })
             .its("body.ok")
@@ -172,8 +177,8 @@ describe("UX-02 the first accepted quote is visible on the ES dashboard", () => 
     // Anchor: the Spanish KPI strip rendered (islands SSR EN then flip).
     // .kpi/.kpi__val — DashSections.tsx:198-226; label kpis.activeJobs.label.
     cy.contains(".kpi", "Trabajos activos", { timeout: 10000 }).within(() => {
-      // RED today: "0" — GET /jobs returns [] for the accepted quote whose
-      // customer link lives on the auto-created draft contract.
+      // The accepted quote (customerId written by the wizard) must surface
+      // as an active job.
       cy.get(".kpi__val").should("not.have.text", "0");
     });
     // RED today: the empty-state copy renders right after María signed one
@@ -272,30 +277,27 @@ describe("UX-02 the assistant's accepted doc reflects acceptance and disables re
 
   beforeEach(() => relogin(PHONE));
 
-  // HONESTY NOTE — narrowed on purpose. The audit lists several thread-level
-  // gaps (header still "Cotización + Acuerdo enviada para firma", thread badge
-  // "Contrato enviado", no acceptance divider, no "Continuar a la factura").
-  // The exact copy/placement of that surface is a design choice, so this spec
-  // pins only the inevitable core: (1) AFTER the customer accepted, the loaded
-  // conversation shows SOME acceptance/approval state (today the contract row
-  // stays status "sent" and nothing in the thread ever says it — the header
-  // derives from contract.status only, AsstChat.tsx:1204-1223); (2) no ACTIVE
-  // "Enviar por texto" remains on the doc (today the persisted continue_cta
-  // toPhase:"send" auto-reopens the review with the enabled send button —
-  // AsstChat.tsx:1406-1418 + 5891-5932 — inviting duplicate sends).
+  // HONESTY NOTE — narrowed on purpose. The exact copy/placement of the
+  // thread surface is a design choice, so this spec pins only the inevitable
+  // core: (1) AFTER the customer accepted, the loaded conversation shows
+  // SOME acceptance state (the acceptance divider acceptQuote.dividerLabel
+  // "Cotización + Acuerdo aceptada por el cliente" and/or the header
+  // asstChat.header.quoteAccepted — the header derives from the QUOTE's
+  // status now); (2) no ACTIVE "Enviar por texto" remains on the doc (the
+  // persisted continue_cta toPhase:"send" must not re-open an enabled send
+  // on an accepted deal — inviting duplicate sends).
   it("UX-02 after acceptance the thread shows the accepted state and no active 'Enviar por texto'", () => {
     cy.visit(`/assistant/${seeded.conversationId}`);
     // Anchor: the conversation loaded — the persisted SMS-send divider
-    // ("Contrato enviado por mensaje de texto a …", stored with language:"es"
-    // by send-contract).
+    // (sendQuote.divider.texted: "Cotización + Acuerdo enviado por mensaje
+    // de texto a …", stored with language:"es" by send-quote).
     cy.contains(/enviado por mensaje de texto/i, { timeout: 20000 }).should(
       "be.visible",
     );
-    // RED today: nothing on the surface reflects the acceptance. Any honest
-    // rendering matches — "aceptada/aceptado/aceptó" (acceptance divider,
-    // header asstChat.header.quoteAccepted/contractAccepted), "aprobado/a"
-    // (asstChat.statusChip.approved), or "firmado/a". None of today's strings
-    // on this page match (header: "…enviada para firma"; chip: "Enviado").
+    // Any honest rendering matches — "aceptada/aceptado/aceptó" (the
+    // acceptance divider acceptQuote.dividerLabel, the header
+    // asstChat.header.quoteAccepted "Cotización aceptada") or "firmado/a"
+    // (the threads chip status.signed "Firmado").
     cy.contains(/aceptad[ao]|aceptó|aprobad[ao]|firmad[ao]/i, {
       timeout: 10000,
     }).should("be.visible");

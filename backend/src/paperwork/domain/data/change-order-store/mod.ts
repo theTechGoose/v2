@@ -20,7 +20,7 @@ export class ChangeOrderStore {
     userId: string,
     invoiceId: string,
     input: CreateChangeOrderDto & {
-      contractId?: string;
+      quoteId?: string;
       customerId?: string;
       originalAmountCents?: number;
     },
@@ -31,7 +31,7 @@ export class ChangeOrderStore {
       id,
       userId,
       invoiceId,
-      ...(input.contractId ? { contractId: input.contractId } : {}),
+      ...(input.quoteId ? { quoteId: input.quoteId } : {}),
       ...(input.customerId ? { customerId: input.customerId } : {}),
       description: input.description.trim(),
       deltaAmountCents: Math.round(input.deltaAmountCents),

@@ -1,7 +1,6 @@
 import { assert, assertEquals, assertStringIncludes } from "#std/assert";
 import { SendPaperworkEmail } from "./mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -13,13 +12,12 @@ import {
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { ConversationStore as CommConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
 import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
-import { resetKv } from "@core/data/kv/mod.ts";
+import { getKv, resetKv } from "@core/data/kv/mod.ts";
 
 interface SetupResult {
   flow: SendPaperworkEmail;
   customers: CustomerStore;
   quotes: QuoteStore;
-  contracts: ContractStore;
   invoices: InvoiceStore;
   email: EmailService;
   sent: SendEmailInput[];
@@ -28,7 +26,6 @@ interface SetupResult {
 function fresh(): SetupResult {
   const customers = new CustomerStore();
   const quotes = new QuoteStore();
-  const contracts = new ContractStore();
   const invoices = new InvoiceStore();
   const email = new EmailService();
   const sent: SendEmailInput[] = [];
@@ -42,20 +39,39 @@ function fresh(): SetupResult {
   void original;
   const flow = new SendPaperworkEmail(
     quotes,
-    contracts,
     invoices,
     customers,
     new UserStore(),
-    new BusinessIdentityStore(),email,
-    new LogPaperworkMessage(new CommConversationStore(), new CommMessageStore()),
+    new BusinessIdentityStore(),
+    email,
+    new LogPaperworkMessage(
+      new CommConversationStore(),
+      new CommMessageStore(),
+    ),
   );
-  return { flow, customers, quotes, contracts, invoices, email, sent };
+  return { flow, customers, quotes, invoices, email, sent };
 }
 
-Deno.test("send-paperwork-email integration: dispatches a quote to the linked customer's email", async () => {
+/** P-06: outbound dispatch refuses without a real contractor name on file.
+ *  UserStore.create() assigns a random id, so write the user row directly. */
+async function seedContractor(userId: string) {
+  const kv = await getKv();
+  const now = new Date().toISOString();
+  await kv.set(["user", userId], {
+    id: userId,
+    phoneNumber: "+15125550000",
+    name: "Test Contractor",
+    email: "me@test.dev",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+Deno.test("send-paperwork-email integration: dispatches a quote to the linked customer's email with the /q accept CTA", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
   const customer = await customers.create("u-1", {
     name: "Acme",
     email: "ops@acme.test",
@@ -80,6 +96,9 @@ Deno.test("send-paperwork-email integration: dispatches a quote to the linked cu
   // (roadmap p.8), and the subject renders the jobName.
   assertStringIncludes(sent[0].subject, "Roof Tear Off");
   assertStringIncludes(sent[0].htmlBody, "Demo");
+  // The quote IS the agreement: the one email carries the review-and-accept
+  // CTA pointing at the public /q page.
+  assertStringIncludes(sent[0].htmlBody, `/q/${quote.id}`);
 
   await resetKv();
 });
@@ -88,6 +107,7 @@ Deno.test("send-paperwork-email integration: explicit `to` overrides the linked 
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
   const customer = await customers.create("u-1", {
     name: "Acme",
     email: "ops@acme.test",
@@ -113,6 +133,7 @@ Deno.test("send-paperwork-email integration: returns ok=false when no recipient 
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { flow, quotes, sent } = fresh();
+  await seedContractor("u-1");
   const quote = await quotes.create("u-1", {
     summary: "Orphan quote",
     lineItems: [],
@@ -126,31 +147,25 @@ Deno.test("send-paperwork-email integration: returns ok=false when no recipient 
   await resetKv();
 });
 
-Deno.test("send-paperwork-email integration: contract dispatch sends a quote-framed email with the value", async () => {
+Deno.test("send-paperwork-email integration: quote dispatch is the review-and-sign email carrying the agreement value", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  const { flow, customers, quotes, contracts, sent } = fresh();
+  const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
   const customer = await customers.create("u-1", {
     name: "Acme",
     email: "ops@acme.test",
   });
-  // The contract email reuses the quote subject + body (a "review & sign"
-  // flow), rendering the bound quote's total — so the quote carries the value.
+  // One document, one dispatch: the quote email IS the "review & sign" flow,
+  // rendering the quote's total (INTEGER CENTS — audit1 #3).
   const quote = await quotes.create("u-1", {
     summary: "Bathroom remodel",
     lineItems: [],
     estimatedTotal: 1_234_00,
     customerId: customer.id,
   });
-  const contract = await contracts.create("u-1", {
-    // Audit1 #3 — INTEGER CENTS.
-    quoteId: quote.id,
-    customerId: customer.id,
-    status: "draft",
-    totalAmount: 1_234_00,
-  });
 
-  await flow.run("u-1", { kind: "contract", resourceId: contract.id });
+  await flow.run("u-1", { kind: "quote", resourceId: quote.id });
   // Quote-framed subject (not "Sign your contract #…") + the agreement value.
   assertStringIncludes(sent[0].subject, "Quote for");
   assertStringIncludes(sent[0].htmlBody, "$1,234.00");
@@ -161,7 +176,8 @@ Deno.test("send-paperwork-email integration: contract dispatch sends a quote-fra
 Deno.test("send-paperwork-email integration: invoice dispatch renders amount + due date", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  const { flow, customers, quotes, contracts, invoices, sent } = fresh();
+  const { flow, customers, quotes, invoices, sent } = fresh();
+  await seedContractor("u-1");
   const customer = await customers.create("u-1", {
     name: "Acme",
     email: "ops@acme.test",
@@ -171,12 +187,8 @@ Deno.test("send-paperwork-email integration: invoice dispatch renders amount + d
     lineItems: [],
     customerId: customer.id,
   });
-  const contract = await contracts.create("u-1", {
-    quoteId: quote.id,
-    customerId: customer.id,
-  });
   const invoice = await invoices.create("u-1", {
-    contractId: contract.id,
+    quoteId: quote.id,
     customerId: customer.id,
     dueDate: "2026-05-01",
     amount: 999_00,
@@ -192,10 +204,44 @@ Deno.test("send-paperwork-email integration: invoice dispatch renders amount + d
   await resetKv();
 });
 
+Deno.test("send-paperwork-email integration: invoice email links the signed agreement at /q/<quoteId> once accepted", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, quotes, invoices, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", {
+    name: "Acme",
+    email: "ops@acme.test",
+  });
+  const quote = await quotes.create("u-1", {
+    summary: "Deck build",
+    lineItems: [],
+    customerId: customer.id,
+    estimatedTotal: 2_000_00,
+    status: "accepted",
+    acceptedAt: "2026-04-01T00:00:00Z",
+  });
+  const invoice = await invoices.create("u-1", {
+    quoteId: quote.id,
+    customerId: customer.id,
+    dueDate: "2026-05-01",
+    amount: 1_000_00,
+    status: "pending",
+  });
+
+  await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(sent.length, 1);
+  // The signed-agreement link resolves through invoice.quoteId — no contract.
+  assertStringIncludes(sent[0].htmlBody, `/q/${quote.id}`);
+
+  await resetKv();
+});
+
 Deno.test("send-paperwork-email integration: quote html escapes user-supplied summary + line items", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
   const customer = await customers.create("u-1", {
     name: "Acme",
     email: "ops@acme.test",
@@ -234,10 +280,11 @@ Deno.test("send-paperwork-email integration: quote html escapes user-supplied su
   await resetKv();
 });
 
-Deno.test("send-paperwork-email integration: contract email does not leak a user-supplied status as raw markup", async () => {
+Deno.test("send-paperwork-email integration: quote email does not leak a user-supplied status as raw markup", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  const { flow, customers, quotes, contracts, sent } = fresh();
+  const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
   const customer = await customers.create("u-1", {
     name: "Acme",
     email: "ops@acme.test",
@@ -246,18 +293,14 @@ Deno.test("send-paperwork-email integration: contract email does not leak a user
     summary: "x",
     lineItems: [],
     customerId: customer.id,
-  });
-  const contract = await contracts.create("u-1", {
-    quoteId: quote.id,
-    customerId: customer.id,
     status: `<img src=x onerror=alert(1)>`,
-    totalAmount: 100,
+    estimatedTotal: 100,
   });
 
-  await flow.run("u-1", { kind: "contract", resourceId: contract.id });
+  await flow.run("u-1", { kind: "quote", resourceId: quote.id });
   const html = sent[0].htmlBody;
-  // The contract email is quote-framed and intentionally does NOT render the
-  // contract status — so a malicious status is never an injection vector.
+  // The quote email intentionally does NOT render the raw status — so a
+  // malicious status is never an injection vector.
   assert(
     !html.includes("<img"),
     "raw <img> tag must not appear in rendered html",
@@ -269,7 +312,8 @@ Deno.test("send-paperwork-email integration: contract email does not leak a user
 Deno.test("send-paperwork-email integration: invoice renders em-dash when amount is missing", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  const { flow, customers, quotes, contracts, invoices, sent } = fresh();
+  const { flow, customers, quotes, invoices, sent } = fresh();
+  await seedContractor("u-1");
   const customer = await customers.create("u-1", {
     name: "Acme",
     email: "ops@acme.test",
@@ -279,13 +323,9 @@ Deno.test("send-paperwork-email integration: invoice renders em-dash when amount
     lineItems: [],
     customerId: customer.id,
   });
-  const contract = await contracts.create("u-1", {
-    quoteId: quote.id,
-    customerId: customer.id,
-  });
   // Omit `amount` — render path uses "—" placeholder when not a number.
   const invoice = await invoices.create("u-1", {
-    contractId: contract.id,
+    quoteId: quote.id,
     customerId: customer.id,
     dueDate: "2026-05-01",
   });
@@ -300,6 +340,8 @@ Deno.test("send-paperwork-email integration: cross-tenant call throws ForbiddenE
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
+  await seedContractor("u-2");
   const customer = await customers.create("u-1", {
     name: "Acme",
     email: "x@y.z",

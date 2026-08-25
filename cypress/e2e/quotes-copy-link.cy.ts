@@ -26,8 +26,14 @@ describe("quote card — Copy link must give the FULL quote", () => {
         customerId,
         summary: "Removing junk from a backyard",
         jobName: "Backyard Junk Removal",
-        description: "Removing junk from a backyard and making sure no trash remains",
-        lineItems: [{ description: "Junk removal", quantity: 1, unit: "job", price: 55000 }],
+        description:
+          "Removing junk from a backyard and making sure no trash remains",
+        lineItems: [{
+          description: "Junk removal",
+          quantity: 1,
+          unit: "job",
+          price: 55000,
+        }],
         estimatedTotal: 55000,
       }).then((id) => {
         quoteId = id;
@@ -73,22 +79,29 @@ describe("quote card — Copy link must give the FULL quote", () => {
       cy.contains(/backyard junk removal/i).should("be.visible"); // job name
       cy.contains(/no trash remains/i).should("be.visible"); // full job details
       cy.contains(/\$?550(\.00)?/).should("be.visible"); // total
-      cy.contains("button, a", /accept|sign/i).should("be.visible"); // CTA
+      // The signature ceremony (the merged doc's accept affordance): the
+      // PublicSignQuote pad + its submit ("Type your name to enable" until
+      // a name is typed, then "Sign the agreement →").
+      cy.get("form.ctr__sign-form").should("be.visible");
+      cy.contains("button", /type your name|sign the agreement/i)
+        .should("be.visible");
     });
   });
 
   it("copy-link and View-as-client land on the same document", () => {
     copiedLink().then((link) => {
-      cy.contains("button, a", /view as client/i).invoke("attr", "href").then((href) => {
-        // Same route target (short link may redirect — follow it via request).
-        cy.request({ url: link, followRedirect: true }).then((resp) => {
-          const finalUrl = resp.redirects?.length
-            ? resp.redirects[resp.redirects.length - 1].replace(/^\d+: /, "")
-            : link;
-          expect(finalUrl).to.include(quoteId.slice(0, 8));
-          expect(href, "view-as-client href").to.include(quoteId.slice(0, 8));
-        });
-      });
+      cy.contains("button, a", /view as client/i).invoke("attr", "href").then(
+        (href) => {
+          // Same route target (short link may redirect — follow it via request).
+          cy.request({ url: link, followRedirect: true }).then((resp) => {
+            const finalUrl = resp.redirects?.length
+              ? resp.redirects[resp.redirects.length - 1].replace(/^\d+: /, "")
+              : link;
+            expect(finalUrl).to.include(quoteId.slice(0, 8));
+            expect(href, "view-as-client href").to.include(quoteId.slice(0, 8));
+          });
+        },
+      );
     });
   });
 });

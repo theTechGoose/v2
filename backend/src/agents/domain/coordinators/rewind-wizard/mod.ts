@@ -1,7 +1,7 @@
 import { Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
-import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
+import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { WizardState } from "@agents/dto/wizard.ts";
 
@@ -56,7 +56,11 @@ export class RewindWizard {
     if (!state) {
       return {
         conversation: conv,
-        wizardState: { specId: CONTRACT_TERMS_WIZARD_V1.id, activeStepIdx: 0, answers: [] },
+        wizardState: {
+          specId: TERMS_WIZARD_V1.id,
+          activeStepIdx: 0,
+          answers: [],
+        },
         activeStepId: null,
         removedMessageIds: [],
       };
@@ -66,7 +70,7 @@ export class RewindWizard {
       return {
         conversation: conv,
         wizardState: state,
-        activeStepId: CONTRACT_TERMS_WIZARD_V1.steps[0]?.id ?? null,
+        activeStepId: TERMS_WIZARD_V1.steps[0]?.id ?? null,
         removedMessageIds: [],
       };
     }
@@ -102,7 +106,7 @@ export class RewindWizard {
     return {
       conversation: conv,
       wizardState: nextState,
-      activeStepId: CONTRACT_TERMS_WIZARD_V1.steps[prevIdx]?.id ?? null,
+      activeStepId: TERMS_WIZARD_V1.steps[prevIdx]?.id ?? null,
       removedMessageIds: removed,
       ...(popped
         ? {

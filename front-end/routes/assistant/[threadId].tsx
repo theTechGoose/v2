@@ -102,15 +102,15 @@ export default define.page(async function AssistantThread(ctx) {
       | 3
       | 4;
   // Hide the progress strip once the user has any real activity in this
-  // thread (quote drafted, customer attached, contract sent). The
+  // thread (quote drafted, customer attached, quote sent). The
   // address question is the only step likely to remain "incomplete"
   // after the user has moved on to real work — showing "One left." on
-  // a thread with a sent contract is just confusing (audit2 N8).
+  // a thread with a sent quote is just confusing (audit2 N8).
   const conversationPhase = detail?.conversation?.currentPhase;
-  // Real activity = a bound customer, a sent contract, or the thread has
+  // Real activity = a bound customer, a bound quote, or the thread has
   // advanced to the terms phase. ("quote" and "terms" are the only phases —
   // see AgentPhase in the backend.)
-  const hasActivity = !!detail?.customer || !!detail?.contract ||
+  const hasActivity = !!detail?.customer || !!detail?.quote ||
     conversationPhase === "terms";
   const showOnboardBanner = isOnboard && initialStep < 4 && !hasActivity;
 
@@ -143,7 +143,7 @@ export default define.page(async function AssistantThread(ctx) {
                   conversationId={threadId}
                   initialMessages={detail?.messages ?? []}
                   initialCustomer={detail?.customer}
-                  initialContract={detail?.contract}
+                  initialQuote={detail?.quote}
                   userInitials={userInitials}
                   from={{
                     business: businessName,

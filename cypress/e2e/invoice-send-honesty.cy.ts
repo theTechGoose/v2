@@ -12,12 +12,12 @@
  *   - doSendText (InvoicesPage.tsx:1551-1564) → `if (r.ok) reload()`
  * A contractor whose customer is unreachable believes the invoice was
  * delivered. Desired: the send surface shows a FAILURE state (the honest
- * "no email on file"-style copy the contract-send divider path uses — lang
- * keys sendContract.divider.noEmail "Contract drafted — no email on file for
- * this customer. Add one to deliver." / sendContract.divider.emailFailed
- * "Contract email failed — {reason}" / invoicesPage.new.needContact "Add an
- * email or phone for this client to send it.") and nothing records the
- * invoice as successfully sent.
+ * "no email on file"-style copy the quote-send divider path uses — lang
+ * keys sendQuote.divider.noEmail "Quote + Agreement drafted — no email on
+ * file for this customer. Add one to deliver." / sendQuote.divider.emailFailed
+ * "Quote + Agreement email failed — {reason}" / invoicesPage.new.needContact
+ * "Add an email or phone for this client to send it.") and nothing records
+ * the invoice as successfully sent.
  *
  * NOTE on the assistant swap-invoice surface (AsstChat.tsx:3043-3049, which
  * ignores the send result entirely): it is not cheaply drivable e2e (it sits

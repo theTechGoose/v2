@@ -1,7 +1,10 @@
 import { Injectable } from "#danet/core";
 import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
 import { NotificationStore } from "@communication/domain/data/notification-store/mod.ts";
-import type { Notification, NotificationType } from "@communication/dto/notification.ts";
+import type {
+  Notification,
+  NotificationType,
+} from "@communication/dto/notification.ts";
 import { type Lang, t, type Vars } from "@core/i18n/mod.ts";
 import { sentenceCase } from "#quote-flow/format-helpers.ts";
 
@@ -41,16 +44,18 @@ export class NotifyOnEvent {
     // stored fallback string — the read path re-renders per viewer.
     const lang = (event.data?.language as Lang | undefined) ?? "en";
     await this.store.create({
-      userId:      event.userId,
-      type:        l.type,
-      title:       renderNotifString(lang, l.titleKey, l.titleParams),
-      body:        l.bodyKey ? renderNotifString(lang, l.bodyKey, l.bodyParams) : l.bodyText,
-      titleKey:    l.titleKey,
+      userId: event.userId,
+      type: l.type,
+      title: renderNotifString(lang, l.titleKey, l.titleParams),
+      body: l.bodyKey
+        ? renderNotifString(lang, l.bodyKey, l.bodyParams)
+        : l.bodyText,
+      titleKey: l.titleKey,
       titleParams: l.titleParams,
-      bodyKey:     l.bodyKey,
-      bodyParams:  l.bodyParams,
-      entityType:  notificationEntityType(event.entityType),
-      entityId:    event.entityId,
+      bodyKey: l.bodyKey,
+      bodyParams: l.bodyParams,
+      entityType: notificationEntityType(event.entityType),
+      entityId: event.entityId,
     });
   }
 }
@@ -60,7 +65,9 @@ export class NotifyOnEvent {
  * payment + message events fan in from CRM/communication but the bell's
  * "open this" link doesn't have a destination for them yet. Drop those.
  */
-function notificationEntityType(t: DomainEvent["entityType"]): "quote" | "contract" | "invoice" | "customer" | "conversation" | undefined {
+function notificationEntityType(
+  t: DomainEvent["entityType"],
+): "quote" | "invoice" | "customer" | "conversation" | undefined {
   if (t === "payment" || t === "message") return undefined;
   return t;
 }
@@ -73,7 +80,10 @@ function notificationEntityType(t: DomainEvent["entityType"]): "quote" | "contra
  * pure `mapEventToNotification` contract keeps its exact prose.
  */
 function renderNotifString(lang: Lang, key: string, params?: Vars): string {
-  return t(lang, key, { name: t(lang, "notify.fallbackClient"), ...(params ?? {}) });
+  return t(lang, key, {
+    name: t(lang, "notify.fallbackClient"),
+    ...(params ?? {}),
+  });
 }
 
 /**
@@ -82,10 +92,17 @@ function renderNotifString(lang: Lang, key: string, params?: Vars): string {
  * legacy / direct-store rows without a key pass through untouched. Titles
  * are sentence-cased so every feed string starts with a capital (P-59).
  */
-export function localizeNotification(n: Notification, lang: Lang): Notification {
+export function localizeNotification(
+  n: Notification,
+  lang: Lang,
+): Notification {
   if (!n.titleKey) return n;
-  const title = sentenceCase(renderNotifString(lang, n.titleKey, n.titleParams));
-  const body = n.bodyKey ? renderNotifString(lang, n.bodyKey, n.bodyParams) : n.body;
+  const title = sentenceCase(
+    renderNotifString(lang, n.titleKey, n.titleParams),
+  );
+  const body = n.bodyKey
+    ? renderNotifString(lang, n.bodyKey, n.bodyParams)
+    : n.body;
   return { ...n, title, body };
 }
 
@@ -114,10 +131,16 @@ export interface NotificationL10n {
  */
 export function notificationL10n(event: DomainEvent): NotificationL10n | null {
   const customerName = event.data?.customerName as string | undefined;
-  const nameParams: Vars | undefined = customerName ? { name: customerName } : undefined;
+  const nameParams: Vars | undefined = customerName
+    ? { name: customerName }
+    : undefined;
 
   if (event.entityType === "quote" && event.action === "sent") {
-    return { type: "quote_sent", titleKey: "notify.quote.sent", titleParams: nameParams };
+    return {
+      type: "quote_sent",
+      titleKey: "notify.quote.sent",
+      titleParams: nameParams,
+    };
   }
   if (event.entityType === "quote" && event.action === "accepted") {
     // UX-20: when the event knows the job, the feed line names it too
@@ -131,20 +154,25 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
         titleParams: { ...(nameParams ?? {}), job: jobName },
       };
     }
-    return { type: "quote_accepted", titleKey: "notify.quote.accepted", titleParams: nameParams };
+    return {
+      type: "quote_accepted",
+      titleKey: "notify.quote.accepted",
+      titleParams: nameParams,
+    };
   }
   if (event.entityType === "quote" && event.action === "declined") {
     const reason = event.data?.reason as string | undefined;
     const note = event.data?.note as string | undefined;
     return {
       type: "generic",
-      titleKey: reason ? "notify.quote.declinedWithReason" : "notify.quote.declined",
-      titleParams: reason ? { ...nameParams, reason: reason.replace(/_/g, " ") } : nameParams,
+      titleKey: reason
+        ? "notify.quote.declinedWithReason"
+        : "notify.quote.declined",
+      titleParams: reason
+        ? { ...nameParams, reason: reason.replace(/_/g, " ") }
+        : nameParams,
       bodyText: note || undefined,
     };
-  }
-  if (event.entityType === "contract" && event.action === "signed") {
-    return { type: "contract_signed", titleKey: "notify.contract.signed", titleParams: nameParams };
   }
   if (event.entityType === "invoice" && event.action === "claimed") {
     const method = event.data?.method as string | undefined;
@@ -166,18 +194,25 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
     };
   }
   if (event.entityType === "invoice" && event.action === "overdue") {
-    return { type: "invoice_overdue", titleKey: "notify.invoice.overdue", titleParams: nameParams };
+    return {
+      type: "invoice_overdue",
+      titleKey: "notify.invoice.overdue",
+      titleParams: nameParams,
+    };
   }
   if (
     event.entityType === "invoice" &&
-    (event.action === "change_order_approved" || event.action === "change_order_declined")
+    (event.action === "change_order_approved" ||
+      event.action === "change_order_declined")
   ) {
     // Customer decided on a change order via the public /co/:id link. The
     // delta arrives pre-formatted ("+$250.00") from the public controller.
     const approved = event.action === "change_order_approved";
     const delta = event.data?.delta as string | undefined;
     const description = event.data?.description as string | undefined;
-    const base = approved ? "notify.invoice.changeOrderApproved" : "notify.invoice.changeOrderDeclined";
+    const base = approved
+      ? "notify.invoice.changeOrderApproved"
+      : "notify.invoice.changeOrderDeclined";
     const withAmount = approved
       ? "notify.invoice.changeOrderApprovedAmount"
       : "notify.invoice.changeOrderDeclinedAmount";
@@ -186,12 +221,18 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
       titleKey: delta ? withAmount : base,
       titleParams: delta ? { ...nameParams, delta } : nameParams,
       bodyText: description
-        ? (description.length > 140 ? `${description.slice(0, 139)}…` : description)
+        ? (description.length > 140
+          ? `${description.slice(0, 139)}…`
+          : description)
         : undefined,
     };
   }
   if (event.entityType === "message" && event.action === "received") {
-    return { type: "customer_replied", titleKey: "notify.message.replied", titleParams: nameParams };
+    return {
+      type: "customer_replied",
+      titleKey: "notify.message.replied",
+      titleParams: nameParams,
+    };
   }
   if (event.entityType === "quote" && event.action === "inquiry") {
     const question = event.data?.question as string | undefined;
@@ -213,7 +254,9 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
  * so existing unit tests + any non-viewer caller still get materialized
  * prose. The live feed uses `notificationL10n` + `localizeNotification`.
  */
-export function mapEventToNotification(event: DomainEvent): NotificationMapping | null {
+export function mapEventToNotification(
+  event: DomainEvent,
+): NotificationMapping | null {
   const l = notificationL10n(event);
   if (!l) return null;
   const lang = (event.data?.language as Lang | undefined) ?? "en";
@@ -221,7 +264,9 @@ export function mapEventToNotification(event: DomainEvent): NotificationMapping 
     type: l.type,
     title: renderNotifString(lang, l.titleKey, l.titleParams),
   };
-  const body = l.bodyKey ? renderNotifString(lang, l.bodyKey, l.bodyParams) : l.bodyText;
+  const body = l.bodyKey
+    ? renderNotifString(lang, l.bodyKey, l.bodyParams)
+    : l.bodyText;
   if (body !== undefined) out.body = body;
   return out;
 }

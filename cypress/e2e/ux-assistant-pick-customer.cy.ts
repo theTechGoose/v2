@@ -63,7 +63,7 @@ describe("assistant — picking an existing customer", () => {
 
     // The step completes with the picked customer bound — their name shows
     // in the answered-step summary, and the wizard moves on
-    // (contractTermsWizard.startDate.question, lang/en.json:953).
+    // (termsWizard.startDate.question, lang/en.json).
     cy.contains(UXPC_CUSTOMER, { timeout: 15_000 }).should("be.visible");
     cy.contains(/when does the job start/i, { timeout: 15_000 })
       .should("be.visible");

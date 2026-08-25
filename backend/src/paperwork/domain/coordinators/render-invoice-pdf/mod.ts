@@ -1,11 +1,10 @@
 import { Injectable } from "#danet/core";
 import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
 import { t } from "@core/i18n/mod.ts";
-import type { Contract, ContractTerm } from "@paperwork/dto/contract.ts";
 import { computePaymentSplit, type MilestoneRole } from "#payment-split";
-import type { Quote } from "@paperwork/dto/quote.ts";
+import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
+import { isAccepted } from "#quote-flow/quote-status.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -26,15 +25,15 @@ const APP_URL = (() => {
 
 /**
  * RenderInvoicePdf — pure-JS server-side PDF of an invoice, sibling of
- * RenderContractPdf. It mirrors the signed-agreement document (business
+ * RenderQuotePdf. It mirrors the signed-agreement document (business
  * header, Bill-to/From, itemized job details, agreement-value total, payment
  * schedule, the wizard-captured term grid) but DROPS the 14 numbered legal
  * clauses and the signature block, and adds the amount due for THIS invoice
  * plus a reference line to the signed agreement when one exists.
  *
- * Loads everything from an invoiceId: invoice → (contractId) contract →
- * (quoteId) quote → contractor (User + BusinessIdentity) + customer.
- * Standalone invoices (no contract/quote) still render a minimal valid PDF
+ * Loads everything from an invoiceId: invoice → (quoteId) quote →
+ * contractor (User + BusinessIdentity) + customer.
+ * Standalone invoices (no quote) still render a minimal valid PDF
  * (header + amount due + jobName/description) rather than throwing.
  *
  * Returns the PDF as Uint8Array bytes.
@@ -43,7 +42,6 @@ const APP_URL = (() => {
 export class RenderInvoicePdf {
   constructor(
     private invoices: InvoiceStore,
-    private contracts: ContractStore,
     private quotes: QuoteStore,
     private customers: CustomerStore,
     private users: UserStore,
@@ -52,16 +50,15 @@ export class RenderInvoicePdf {
 
   async run(invoiceId: string): Promise<Uint8Array> {
     const invoice = await this.invoices.get(invoiceId);
-    // contract → quote is a dependency chain; customer / contractor / ident
-    // depend only on the invoice, so fan them out concurrently with the
-    // contract fetch instead of awaiting all six serially (this is an
-    // uncached, customer-facing "Download PDF" endpoint).
-    const [contract, customer, contractor, ident] = await Promise.all([
-      invoice.contractId
-        ? this.contracts.get(invoice.contractId).catch(() =>
-          undefined as Contract | undefined
+    // customer / contractor / ident depend only on the invoice, so fan them
+    // out concurrently with the quote fetch instead of awaiting serially
+    // (this is an uncached, customer-facing "Download PDF" endpoint).
+    const [quote, customer, contractor, ident] = await Promise.all([
+      invoice.quoteId
+        ? this.quotes.get(invoice.quoteId).catch(() =>
+          undefined as Quote | undefined
         )
-        : Promise.resolve(undefined as Contract | undefined),
+        : Promise.resolve(undefined as Quote | undefined),
       invoice.customerId
         ? this.customers.getOwned(invoice.customerId, invoice.userId).catch(
           () => undefined,
@@ -70,9 +67,6 @@ export class RenderInvoicePdf {
       this.users.get(invoice.userId).catch(() => undefined),
       this.identity.get(invoice.userId).catch(() => null),
     ]);
-    const quote: Quote | undefined = contract?.quoteId
-      ? await this.quotes.get(contract.quoteId).catch(() => undefined)
-      : undefined;
     const businessName = ident?.businessName ?? ident?.legalName;
     const es = ident?.commsLanguage === "es";
     const lang: "en" | "es" = es ? "es" : "en";
@@ -117,9 +111,8 @@ export class RenderInvoicePdf {
     y = H - 8;
 
     // business eyebrow
-    const biz =
-      (businessName ?? contractor?.name ??
-        t(lang, "renderContractPdf.businessFallback")).toUpperCase();
+    const biz = (businessName ?? contractor?.name ??
+      t(lang, "renderQuotePdf.businessFallback")).toUpperCase();
     y -= 32;
     drawCenteredText(page, biz, W, y, bold, 9, PINK_DARK, 0.18);
 
@@ -144,7 +137,7 @@ export class RenderInvoicePdf {
     // Hero title
     y -= 36;
     const heroTitle = (quote?.summaryByLang?.[lang] ?? quote?.summary ??
-      invoice.jobName ?? t(lang, "renderContractPdf.heroFallback"))
+      invoice.jobName ?? t(lang, "renderQuotePdf.heroFallback"))
       .replace(/^\s*quote\s*:\s*/i, "")
       .replace(/\b\w/g, (c) => c.toUpperCase());
     page.drawText(heroTitle, { x: M, y, size: 24, font: bold, color: TEAL });
@@ -179,7 +172,7 @@ export class RenderInvoicePdf {
         font: bold,
         color: MUTED,
       });
-      page.drawText(t(lang, "renderContractPdf.contact.from"), {
+      page.drawText(t(lang, "renderQuotePdf.contact.from"), {
         x: fromX,
         y,
         size: 8,
@@ -238,7 +231,13 @@ export class RenderInvoicePdf {
       const sub = paid
         ? fmtDate(invoice.paidAt)
         : t(lang, "publicInvoice.dueOn", { date: fmtDate(invoice.dueDate) });
-      page.drawText(sub, { x: M + 16, y: y - 36, size: 9, font: reg, color: MUTED });
+      page.drawText(sub, {
+        x: M + 16,
+        y: y - 36,
+        size: 9,
+        font: reg,
+        color: MUTED,
+      });
     }
     const dueStr = fmtUSD(invoice.amount);
     const dueW = bold.widthOfTextAtSize(dueStr, 26);
@@ -251,7 +250,7 @@ export class RenderInvoicePdf {
     });
     y -= 78;
 
-    const agreementTotal = contract?.totalAmount ?? quote?.estimatedTotal ??
+    const agreementTotal = quote?.estimatedTotal ??
       (quote?.lineItems ?? []).reduce(
         (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
         0,
@@ -265,20 +264,20 @@ export class RenderInvoicePdf {
         y,
         M,
         sn(),
-        t(lang, "renderContractPdf.section.jobDetails"),
+        t(lang, "renderQuotePdf.section.jobDetails"),
         bold,
         PINK,
         TEAL,
       );
       y -= 8;
-      page.drawText(t(lang, "renderContractPdf.table.description"), {
+      page.drawText(t(lang, "renderQuotePdf.table.description"), {
         x: M,
         y,
         size: 8,
         font: bold,
         color: MUTED,
       });
-      const amountHdr = t(lang, "renderContractPdf.table.amount");
+      const amountHdr = t(lang, "renderQuotePdf.table.amount");
       page.drawText(amountHdr, {
         x: W - M - bold.widthOfTextAtSize(amountHdr, 8),
         y,
@@ -331,14 +330,14 @@ export class RenderInvoicePdf {
         height: 56,
         color: GREEN_BG,
       });
-      page.drawText(t(lang, "renderContractPdf.total.label"), {
+      page.drawText(t(lang, "renderQuotePdf.total.label"), {
         x: M + 16,
         y: y - 22,
         size: 9,
         font: bold,
         color: GREEN,
       });
-      page.drawText(t(lang, "renderContractPdf.total.subtext"), {
+      page.drawText(t(lang, "renderQuotePdf.total.subtext"), {
         x: M + 16,
         y: y - 36,
         size: 9,
@@ -358,7 +357,7 @@ export class RenderInvoicePdf {
     }
 
     // Section: Payment schedule (derived from the agreement's payment terms).
-    const milestones = computeMilestones(agreementTotal, contract?.terms, lang);
+    const milestones = computeMilestones(agreementTotal, quote?.terms, lang);
     if (milestones.length > 0) {
       addPageIfNeeded(110);
       y = drawSectionHeader(
@@ -366,13 +365,14 @@ export class RenderInvoicePdf {
         y,
         M,
         sn(),
-        t(lang, "renderContractPdf.section.paymentSchedule"),
+        t(lang, "renderQuotePdf.section.paymentSchedule"),
         bold,
         PINK,
         TEAL,
       );
       y -= 12;
-      const colW = (W - 2 * M - (milestones.length - 1) * 8) / milestones.length;
+      const colW = (W - 2 * M - (milestones.length - 1) * 8) /
+        milestones.length;
       for (let i = 0; i < milestones.length; i++) {
         const m = milestones[i];
         const cx = M + i * (colW + 8);
@@ -410,28 +410,28 @@ export class RenderInvoicePdf {
     }
 
     // Section: Schedule (start / estimated completion dates).
-    if (contract?.startDate || contract?.estimatedCompletionDate) {
+    if (quote?.startDate || quote?.estimatedCompletionDate) {
       addPageIfNeeded(60);
       y = drawSectionHeader(
         page,
         y,
         M,
         sn(),
-        t(lang, "renderContractPdf.section.schedule"),
+        t(lang, "renderQuotePdf.section.schedule"),
         bold,
         PINK,
         TEAL,
       );
       y -= 12;
-      if (contract.startDate) {
-        page.drawText(t(lang, "renderContractPdf.schedule.start"), {
+      if (quote.startDate) {
+        page.drawText(t(lang, "renderQuotePdf.schedule.start"), {
           x: M,
           y,
           size: 9,
           font: bold,
           color: MUTED,
         });
-        const v = fmtDate(contract.startDate);
+        const v = fmtDate(quote.startDate);
         page.drawText(v, {
           x: W - M - bold.widthOfTextAtSize(v, 11),
           y,
@@ -441,15 +441,15 @@ export class RenderInvoicePdf {
         });
         y -= 16;
       }
-      if (contract.estimatedCompletionDate) {
-        page.drawText(t(lang, "renderContractPdf.schedule.estimatedCompletion"), {
+      if (quote.estimatedCompletionDate) {
+        page.drawText(t(lang, "renderQuotePdf.schedule.estimatedCompletion"), {
           x: M,
           y,
           size: 9,
           font: bold,
           color: MUTED,
         });
-        const v = fmtDate(contract.estimatedCompletionDate);
+        const v = fmtDate(quote.estimatedCompletionDate);
         page.drawText(v, {
           x: W - M - bold.widthOfTextAtSize(v, 11),
           y,
@@ -463,8 +463,8 @@ export class RenderInvoicePdf {
     }
 
     // Section: Terms (wizard-captured grid; NO legal clauses, NO signature).
-    if (contract?.terms && contract.terms.length > 0) {
-      const visible = contract.terms.filter((term) => term.stepId !== "customer");
+    if (quote?.terms && quote.terms.length > 0) {
+      const visible = quote.terms.filter((term) => term.stepId !== "customer");
       if (visible.length > 0) {
         addPageIfNeeded(120);
         y = drawSectionHeader(
@@ -472,7 +472,7 @@ export class RenderInvoicePdf {
           y,
           M,
           sn(),
-          t(lang, "renderContractPdf.section.terms"),
+          t(lang, "renderQuotePdf.section.terms"),
           bold,
           PINK,
           TEAL,
@@ -497,10 +497,10 @@ export class RenderInvoicePdf {
               borderWidth: 0.5,
             });
             const termLabelKey: Record<string, string> = {
-              start_date: "renderContractPdf.termLabel.startDate",
-              wraps: "renderContractPdf.termLabel.duration",
-              payment_terms: "renderContractPdf.termLabel.paymentTerms",
-              warranty: "renderContractPdf.termLabel.warranty",
+              start_date: "renderQuotePdf.termLabel.startDate",
+              wraps: "renderQuotePdf.termLabel.duration",
+              payment_terms: "renderQuotePdf.termLabel.paymentTerms",
+              warranty: "renderQuotePdf.termLabel.warranty",
             };
             const labelText = es && termLabelKey[term.stepId]
               ? t(lang, termLabelKey[term.stepId])
@@ -514,7 +514,7 @@ export class RenderInvoicePdf {
             });
             const localized = localizeTermValue(term.value, lang);
             const displayValue = term.stepId === "wraps"
-              ? t(lang, "renderContractPdf.term.estimatedPrefix", {
+              ? t(lang, "renderQuotePdf.term.estimatedPrefix", {
                 value: localized,
               })
               : localized;
@@ -531,11 +531,13 @@ export class RenderInvoicePdf {
       }
     }
 
-    // Signed-agreement reference (only when the linked contract is signed).
-    if (contract && contract.status === "signed") {
+    // Signed-agreement reference (only when the linked quote is accepted).
+    if (quote && isAccepted(quote)) {
       addPageIfNeeded(40);
       y -= 4;
-      const ref = `${t(lang, "publicInvoice.viewSignedAgreement")}: ${APP_URL}/c/${contract.id}`;
+      const ref = `${
+        t(lang, "publicInvoice.viewSignedAgreement")
+      }: ${APP_URL}/q/${quote.id}`;
       page.drawText(ref, { x: M, y, size: 9, font: reg, color: TEAL });
       y -= 18;
     }
@@ -551,7 +553,7 @@ export class RenderInvoicePdf {
     y -= 14;
     drawCenteredText(
       page,
-      t(lang, "renderContractPdf.footer", {
+      t(lang, "renderQuotePdf.footer", {
         id: invoice.id.slice(0, 8).toUpperCase(),
         date: fmtDate(new Date().toISOString()),
       }),
@@ -567,7 +569,7 @@ export class RenderInvoicePdf {
   }
 }
 
-/* ---------------- helpers (duplicated from render-contract-pdf; those are
+/* ---------------- helpers (duplicated from render-quote-pdf; those are
    module-private there, and that file is intentionally left untouched) ------ */
 
 // deno-lint-ignore no-explicit-any
@@ -595,7 +597,13 @@ function drawSectionHeader(
     font: bold,
     color: rgb(1, 1, 1),
   });
-  page.drawText(title, { x: m + 30, y: y - 14, size: 14, font: bold, color: teal });
+  page.drawText(title, {
+    x: m + 30,
+    y: y - 14,
+    size: 14,
+    font: bold,
+    color: teal,
+  });
   return y - 26;
 }
 
@@ -681,7 +689,7 @@ function fmtDate(iso: string | undefined): string {
 }
 
 function termValue(
-  terms: ContractTerm[] | undefined,
+  terms: QuoteTerm[] | undefined,
   stepId: string,
 ): string | undefined {
   return terms?.find((t) => t.stepId === stepId)?.value;
@@ -691,16 +699,15 @@ function localizeTermValue(value: string, lang: "en" | "es"): string {
   if (lang === "en") return value;
   const trimmed = (value ?? "").trim();
   const exactKey: Record<string, string> = {
-    "Payment upon completion":
-      "renderContractPdf.termValue.paymentUponCompletion",
-    "Deposit + balance": "renderContractPdf.termValue.depositPlusBalance",
-    "No warranty": "renderContractPdf.termValue.noWarranty",
-    "Right away": "renderContractPdf.termValue.rightAway",
-    "Next week": "renderContractPdf.termValue.nextWeek",
-    "Next Month": "renderContractPdf.termValue.nextMonth",
-    "Next month": "renderContractPdf.termValue.nextMonth",
-    "Job Completed": "renderContractPdf.termValue.jobCompleted",
-    "Due Now": "renderContractPdf.termValue.dueNow",
+    "Payment upon completion": "renderQuotePdf.termValue.paymentUponCompletion",
+    "Deposit + balance": "renderQuotePdf.termValue.depositPlusBalance",
+    "No warranty": "renderQuotePdf.termValue.noWarranty",
+    "Right away": "renderQuotePdf.termValue.rightAway",
+    "Next week": "renderQuotePdf.termValue.nextWeek",
+    "Next Month": "renderQuotePdf.termValue.nextMonth",
+    "Next month": "renderQuotePdf.termValue.nextMonth",
+    "Job Completed": "renderQuotePdf.termValue.jobCompleted",
+    "Due Now": "renderQuotePdf.termValue.dueNow",
   };
   if (exactKey[trimmed]) return t(lang, exactKey[trimmed]);
   return trimmed
@@ -711,19 +718,19 @@ function localizeTermValue(value: string, lang: "en" | "es"): string {
 
 function computeMilestones(
   total: number,
-  terms: ContractTerm[] | undefined,
+  terms: QuoteTerm[] | undefined,
   lang: "en" | "es" = "en",
 ): { label: string; amount: number; when: string }[] {
   if (!total || total <= 0) return [];
   const L = {
-    deposit: t(lang, "renderContractPdf.milestone.deposit"),
-    balance: t(lang, "renderContractPdf.milestone.balance"),
-    midpoint: t(lang, "renderContractPdf.milestone.midpoint"),
-    final: t(lang, "renderContractPdf.milestone.final"),
-    beforeStart: t(lang, "renderContractPdf.milestone.beforeStart"),
-    onCompletion: t(lang, "renderContractPdf.milestone.onCompletion"),
-    atMidpoint: t(lang, "renderContractPdf.milestone.atMidpoint"),
-    onSigning: t(lang, "renderContractPdf.milestone.onSigning"),
+    deposit: t(lang, "renderQuotePdf.milestone.deposit"),
+    balance: t(lang, "renderQuotePdf.milestone.balance"),
+    midpoint: t(lang, "renderQuotePdf.milestone.midpoint"),
+    final: t(lang, "renderQuotePdf.milestone.final"),
+    beforeStart: t(lang, "renderQuotePdf.milestone.beforeStart"),
+    onCompletion: t(lang, "renderQuotePdf.milestone.onCompletion"),
+    atMidpoint: t(lang, "renderQuotePdf.milestone.atMidpoint"),
+    onSigning: t(lang, "renderQuotePdf.milestone.onSigning"),
   };
   const roleLabel: Record<MilestoneRole, { label: string; when: string }> = {
     deposit: { label: L.deposit, when: L.beforeStart },

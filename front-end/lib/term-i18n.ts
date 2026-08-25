@@ -1,9 +1,9 @@
 /**
- * Localize a STORED contract-term value into `lang` for display.
+ * Localize a STORED agreement-term value into `lang` for display.
  *
- * Contract terms are persisted in English (the neutral base — see the backend
+ * Agreement terms are persisted in English (the neutral base — see the backend
  * `captureTerms`). This maps a stored English value to the reader's language.
- * Shared by the public agreement (`components/contract-doc.tsx`) and the in-app
+ * Shared by the public agreement (`components/quote-doc.tsx`) and the in-app
  * Quote+Agreement preview (`islands/AsstChat.tsx`) so the contractor's preview
  * always matches what the customer actually receives.
  *
@@ -16,15 +16,15 @@ export function localizeTermValue(value: string, lang: Lang): string {
   if (lang !== "es") return value;
   const trimmed = (value ?? "").trim();
   const exact: Record<string, string> = {
-    "Payment upon completion": "contractDoc.termValue.paymentUponCompletion",
-    "Deposit + balance": "contractDoc.termValue.depositBalance",
-    "No warranty": "contractDoc.termValue.noWarranty",
-    "Right away": "contractDoc.termValue.rightAway",
-    "Next week": "contractDoc.termValue.nextWeek",
-    "Next Month": "contractDoc.termValue.nextMonth",
-    "Next month": "contractDoc.termValue.nextMonth",
-    "Job Completed": "contractDoc.termValue.jobCompleted",
-    "Due Now": "contractDoc.termValue.dueNow",
+    "Payment upon completion": "quoteDoc.termValue.paymentUponCompletion",
+    "Deposit + balance": "quoteDoc.termValue.depositBalance",
+    "No warranty": "quoteDoc.termValue.noWarranty",
+    "Right away": "quoteDoc.termValue.rightAway",
+    "Next week": "quoteDoc.termValue.nextWeek",
+    "Next Month": "quoteDoc.termValue.nextMonth",
+    "Next month": "quoteDoc.termValue.nextMonth",
+    "Job Completed": "quoteDoc.termValue.jobCompleted",
+    "Due Now": "quoteDoc.termValue.dueNow",
   };
   if (exact[trimmed]) return tFor(lang, exact[trimmed]);
   return trimmed

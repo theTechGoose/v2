@@ -1,9 +1,11 @@
 /// <reference types="cypress" />
 
 /**
- * PDF p10 — the quote badge must walk Draft → Sent → Viewed → Approved:
+ * PDF p10 — the quote badge must walk Draft → Sent → Viewed → Accepted:
  *  "If it is Sent lets have that change to 'Sent' and then 'Viewed' and then
- *   'Approved' once they sign."
+ *   accepted once they sign." (Canonical status value is "accepted" — the
+ *   legacy "approved" is dead; quotesPage.status.accepted renders
+ *   "Accepted".)
  *
  * Contract selector: [data-cy=quote-status-badge] on the quote card/detail.
  * "Viewed" is triggered by the CUSTOMER opening the public quote (a
@@ -27,7 +29,12 @@ describe("quote status badge lifecycle", () => {
         customerId,
         summary: "Removing junk from a backyard",
         jobName: "Backyard Junk Removal",
-        lineItems: [{ description: "Junk removal", quantity: 1, unit: "job", price: 55000 }],
+        lineItems: [{
+          description: "Junk removal",
+          quantity: 1,
+          unit: "job",
+          price: 55000,
+        }],
         estimatedTotal: 55000,
       }).then((id) => {
         quoteId = id;
@@ -44,7 +51,9 @@ describe("quote status badge lifecycle", () => {
 
   function badgeText() {
     cy.visit(`/quotes?open=${quoteId}`);
-    return cy.get("[data-cy=quote-status-badge]", { timeout: 10_000 }).invoke("text");
+    return cy.get("[data-cy=quote-status-badge]", { timeout: 10_000 }).invoke(
+      "text",
+    );
   }
 
   /** Simulate the CUSTOMER opening the public quote: no session cookies. */
@@ -70,13 +79,16 @@ describe("quote status badge lifecycle", () => {
     badgeText().should("match", /viewed/i);
   });
 
-  it("flips to APPROVED once the customer signs", () => {
-    cy.apiAcceptQuote(quoteId, { signature: "Green Goblin", name: "Green Goblin" });
-    badgeText().should("match", /approved/i);
+  it("flips to ACCEPTED once the customer signs", () => {
+    cy.apiAcceptQuote(quoteId, {
+      signature: "Green Goblin",
+      name: "Green Goblin",
+    });
+    badgeText().should("match", /accepted/i);
   });
 
-  it("never regresses after approval — a later view keeps it APPROVED", () => {
+  it("never regresses after acceptance — a later view keeps it ACCEPTED", () => {
     customerOpensQuote();
-    badgeText().should("match", /approved/i);
+    badgeText().should("match", /accepted/i);
   });
 });

@@ -94,16 +94,16 @@ interface State {
 }
 
 /** Lifecycle badge on the open-quote surface (roadmap p.10): the RAW quote
- *  `status` walks draft → sent → viewed → approved on the backend; legacy
- *  rows may carry "accepted" (≡ approved) and "lost" (≡ declined). */
-type BadgeStatus = "draft" | "sent" | "viewed" | "approved" | "declined";
+ *  `status` walks draft → sent → viewed → accepted on the backend;
+ *  "lost" renders as declined. */
+type BadgeStatus = "draft" | "sent" | "viewed" | "accepted" | "declined";
 
 function badgeStatusFor(q: BackendQuoteCard): BadgeStatus {
   const raw = typeof q.status === "string" ? q.status.toLowerCase() : "";
-  // Never regress after signature: approved/accepted (or a recorded
-  // acceptedAt) wins over any later "viewed" bookkeeping.
-  if (raw === "approved" || raw === "accepted" || q.acceptedAt) {
-    return "approved";
+  // Never regress after signature: accepted (or a recorded acceptedAt)
+  // wins over any later "viewed" bookkeeping.
+  if (raw === "accepted" || q.acceptedAt) {
+    return "accepted";
   }
   if (raw === "lost") return "declined";
   if (raw === "viewed") return "viewed";
@@ -200,7 +200,7 @@ function OpenQuotePanel(
             {tFor(lang, "quotesPage.open.viewAsClient")}
           </a>
           {/* UX-02: the won quote's obvious next step — never a dead end. */}
-          {badge === "approved" && (
+          {badge === "accepted" && (
             <a
               class="qopen__btn qopen__btn--primary"
               href={`/invoices?new=1&quoteId=${encodeURIComponent(q.id)}`}
@@ -214,9 +214,9 @@ function OpenQuotePanel(
           )}
         </div>
       </div>
-      {(badge === "approved" || state.receipts.length > 0 || state.viewed) && (
+      {(badge === "accepted" || state.receipts.length > 0 || state.viewed) && (
         <div class="qopen__receipts">
-          {badge === "approved" && (
+          {badge === "accepted" && (
             <div class="qopen__receipt qopen__receipt--signed">
               {tFor(lang, "quotesPage.open.receipt.signed")}
             </div>

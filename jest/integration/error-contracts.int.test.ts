@@ -28,10 +28,10 @@
 import { randomUUID } from "crypto";
 import {
   anonymous,
+  type ApiSession,
   contractor,
   seedCustomer,
   seedInvoice,
-  type ApiSession,
 } from "./helpers/api";
 
 describe("P-35 unauthenticated API fetches return 401 (not 500)", () => {

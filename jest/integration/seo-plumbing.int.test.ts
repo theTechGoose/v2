@@ -127,18 +127,11 @@ describe("P-12 the public invoice SSRs in the customer's pm_lang language", () =
     const s = await contractor("+15125552610");
     const customerId = await seedCustomer(s, { phoneNumber: "+15125552611" });
     const quoteId = await seedQuote(s, { customerId });
-    const contract = await s.post("/contracts", {
-      quoteId,
-      customerId,
-      totalAmount: 55000,
-    });
-    expect(contract.status).toBeLessThan(400);
-    // quoteId + contractId → the rich quote-linked document, which is the
-    // one that renders the "Bill to" party card.
+    // quoteId → the rich quote-linked document, which is the one that
+    // renders the "Bill to" party card.
     invoiceId = await seedInvoice(s, {
       customerId,
       quoteId,
-      contractId: contract.body.id,
       status: "sent",
       installmentIndex: 1,
       installmentTotal: 1,

@@ -1,7 +1,6 @@
 import { Injectable } from "#danet/core";
 import { t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -16,13 +15,12 @@ import {
 } from "#quote-flow/outbound-identity.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
-import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import type { BusinessIdentity } from "@users/dto/business-identity.ts";
 
-export type PaperworkKind = "quote" | "contract" | "invoice";
+export type PaperworkKind = "quote" | "invoice";
 
 export interface SendPaperworkSmsInput {
   kind: PaperworkKind;
@@ -47,7 +45,7 @@ export interface SendPaperworkSmsResult {
 }
 
 /**
- * SendPaperworkSms — render + dispatch a quote/contract/invoice text.
+ * SendPaperworkSms — render + dispatch a quote/invoice text.
  *
  * Mirrors SendPaperworkEmail: resolves the customer phone from the bound
  * resource when `to` is omitted, composes a short SMS body with a public
@@ -61,7 +59,6 @@ export interface SendPaperworkSmsResult {
 export class SendPaperworkSms {
   constructor(
     private quotes: QuoteStore,
-    private contracts: ContractStore,
     private invoices: InvoiceStore,
     private customers: CustomerStore,
     private users: UserStore,
@@ -79,7 +76,7 @@ export class SendPaperworkSms {
     const rawBiz = await this.tryGetBusinessIdentity(userId);
 
     // UX-26: THE one pre-dispatch identity gate. Every SMS dispatch —
-    // controller routes AND the assistant's send-contract path — inherits it
+    // controller routes AND the assistant's send path — inherits it
     // here: no compose, no dispatch, no comms-log with a placeholder identity.
     const refusal = senderIdentityRefusal({
       userName: sender?.name,
@@ -107,7 +104,10 @@ export class SendPaperworkSms {
     }
     // Overriding commsLanguage on the resolved identity lets every
     // downstream body/subject helper honor the resolution without new params.
-    const senderBiz = { ...(rawBiz ?? {}), commsLanguage: lang } as BusinessIdentity;
+    const senderBiz = {
+      ...(rawBiz ?? {}),
+      commsLanguage: lang,
+    } as BusinessIdentity;
 
     let recipient: string | undefined = input.to;
     let body: string;
@@ -118,38 +118,11 @@ export class SendPaperworkSms {
       const customer = await this.tryGetCustomer(userId, quote.customerId);
       customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.phoneNumber ?? undefined;
-      const boundContract = await this.findContractForQuote(userId, quote.id);
-      // Prefer linking customers straight to the contract page when one
-      // exists — same behavior as the email renderer.
-      const linkResource: { kind: "quote" | "contract"; id: string } =
-        boundContract
-          ? { kind: "contract", id: boundContract.id }
-          : { kind: "quote", id: quote.id };
-      const shortUrl = await this.mintShortUrl(userId, linkResource);
-      body = renderQuoteBody(quote, customer, sender, senderBiz, shortUrl);
-    } else if (input.kind === "contract") {
-      const contract = await this.contracts.getOwned(input.resourceId, userId);
-      const customer = await this.tryGetCustomer(userId, contract.customerId);
-      customerIdForLog = customer?.id;
-      if (!recipient) recipient = customer?.phoneNumber ?? undefined;
-      let quoteForBody: Quote | undefined;
-      if (contract.quoteId) {
-        try {
-          quoteForBody = await this.quotes.getOwned(contract.quoteId, userId);
-        } catch { /* fall through */ }
-      }
       const shortUrl = await this.mintShortUrl(userId, {
-        kind: "contract",
-        id: contract.id,
+        kind: "quote",
+        id: quote.id,
       });
-      body = renderContractBody(
-        contract,
-        quoteForBody,
-        customer,
-        sender,
-        senderBiz,
-        shortUrl,
-      );
+      body = renderQuoteBody(quote, customer, sender, senderBiz, shortUrl);
     } else {
       const invoice = await this.invoices.getOwned(input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
@@ -235,28 +208,12 @@ export class SendPaperworkSms {
     }
   }
 
-  private async findContractForQuote(
-    userId: string,
-    quoteId: string,
-  ): Promise<Contract | undefined> {
-    try {
-      const all = await this.contracts.listByUser(userId);
-      return all
-        .filter((c) => c.quoteId === quoteId)
-        .sort((a, b) =>
-          (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
-        )[0];
-    } catch {
-      return undefined;
-    }
-  }
-
   /** Mint (or reuse) a short code for the resource and return the
    *  customer-facing /s/<code> URL. Falls back to the canonical
    *  long URL if the codegen path throws for any reason. */
   private async mintShortUrl(
     userId: string,
-    r: { kind: "quote" | "contract" | "invoice"; id: string },
+    r: { kind: "quote" | "invoice"; id: string },
   ): Promise<string> {
     try {
       const link = await this.shortlinks.findOrCreate(userId, r.kind, r.id);
@@ -269,11 +226,7 @@ export class SendPaperworkSms {
         `[send-paperwork-sms] shortlink mint failed for ${r.kind}:${r.id}; falling back to long URL:`,
         err,
       );
-      const path = r.kind === "quote"
-        ? `/q/${r.id}`
-        : r.kind === "contract"
-        ? `/c/${r.id}`
-        : `/i/${r.id}`;
+      const path = r.kind === "quote" ? `/q/${r.id}` : `/i/${r.id}`;
       return `${APP_URL}${path}`;
     }
   }
@@ -345,32 +298,6 @@ function renderQuoteBody(
     biz,
     jobName,
     url,
-    kind: "quote",
-    lang,
-  });
-}
-
-function renderContractBody(
-  _c: Contract,
-  q: Quote | undefined,
-  cust: Customer | undefined,
-  sender: User | undefined,
-  senderBiz: BusinessIdentity | undefined,
-  url: string,
-): string {
-  const lang = senderBiz?.commsLanguage === "es" ? "es" : "en";
-  const hi = customerFirst(cust);
-  const who = senderFirst(sender);
-  const biz = businessName(senderBiz);
-  // P-27: same localized projection as the quote body.
-  const jobName = smsJobName(q ?? {}, lang);
-  return composeSmsBody({
-    hi,
-    who,
-    biz,
-    jobName,
-    url,
-    kind: "contract",
     lang,
   });
 }
@@ -381,7 +308,6 @@ function composeSmsBody(p: {
   biz: string | undefined;
   jobName: string;
   url: string;
-  kind: "quote" | "contract";
   /** Roadmap p.13: neutral LatAm Spanish when the contractor's language is es. */
   lang?: "en" | "es";
 }): string {
@@ -401,7 +327,7 @@ function composeSmsBody(p: {
     : p.who
     ? t(lang, "paperworkSms.intro.who", { who: p.who })
     : null;
-  // Roadmap p.9: brand the deliverable as "Quote + Agreement" for both kinds.
+  // Roadmap p.9: brand the deliverable as "Quote + Agreement".
   const lines: string[] = [];
   if (intro) lines.push(intro);
   lines.push(

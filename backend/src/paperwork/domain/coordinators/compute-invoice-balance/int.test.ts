@@ -16,10 +16,16 @@ Deno.test("compute-invoice-balance: payment closing the balance flips status to 
   await resetKv();
   const { flow, invoices, payments } = fresh();
   const inv = await invoices.create("u-1", {
-    contractId: "c-1", dueDate: "2026-05-01", amount: 100, status: "pending",
+    quoteId: "c-1",
+    dueDate: "2026-05-01",
+    amount: 100,
+    status: "pending",
   });
   await payments.create("u-1", {
-    invoiceId: inv.id, amount: 100, method: "cash", receivedAt: "2026-04-15T00:00:00.000Z",
+    invoiceId: inv.id,
+    amount: 100,
+    method: "cash",
+    receivedAt: "2026-04-15T00:00:00.000Z",
   });
 
   const result = await flow.run(inv.id, "u-1");
@@ -36,10 +42,16 @@ Deno.test("compute-invoice-balance: partial payment leaves status pending", asyn
   await resetKv();
   const { flow, invoices, payments } = fresh();
   const inv = await invoices.create("u-1", {
-    contractId: "c-1", dueDate: "2026-05-01", amount: 100, status: "pending",
+    quoteId: "c-1",
+    dueDate: "2026-05-01",
+    amount: 100,
+    status: "pending",
   });
   await payments.create("u-1", {
-    invoiceId: inv.id, amount: 30, method: "check", receivedAt: "2026-04-10T00:00:00.000Z",
+    invoiceId: inv.id,
+    amount: 30,
+    method: "check",
+    receivedAt: "2026-04-10T00:00:00.000Z",
   });
 
   const result = await flow.run(inv.id, "u-1");
@@ -54,10 +66,16 @@ Deno.test("compute-invoice-balance: deleting the closing payment reopens the inv
   await resetKv();
   const { flow, invoices, payments } = fresh();
   const inv = await invoices.create("u-1", {
-    contractId: "c-1", dueDate: "2026-05-01", amount: 100, status: "pending",
+    quoteId: "c-1",
+    dueDate: "2026-05-01",
+    amount: 100,
+    status: "pending",
   });
   const p = await payments.create("u-1", {
-    invoiceId: inv.id, amount: 100, method: "card", receivedAt: "2026-04-15T00:00:00.000Z",
+    invoiceId: inv.id,
+    amount: 100,
+    method: "card",
+    receivedAt: "2026-04-15T00:00:00.000Z",
   });
   await flow.run(inv.id, "u-1");
   assertEquals((await invoices.getOwned(inv.id, "u-1")).status, "paid");
@@ -73,13 +91,22 @@ Deno.test("compute-invoice-balance: latest receivedAt wins when multiple payment
   await resetKv();
   const { flow, invoices, payments } = fresh();
   const inv = await invoices.create("u-1", {
-    contractId: "c-1", dueDate: "2026-05-01", amount: 100, status: "pending",
+    quoteId: "c-1",
+    dueDate: "2026-05-01",
+    amount: 100,
+    status: "pending",
   });
   await payments.create("u-1", {
-    invoiceId: inv.id, amount: 40, method: "cash", receivedAt: "2026-04-01T00:00:00.000Z",
+    invoiceId: inv.id,
+    amount: 40,
+    method: "cash",
+    receivedAt: "2026-04-01T00:00:00.000Z",
   });
   await payments.create("u-1", {
-    invoiceId: inv.id, amount: 60, method: "check", receivedAt: "2026-04-10T00:00:00.000Z",
+    invoiceId: inv.id,
+    amount: 60,
+    method: "check",
+    receivedAt: "2026-04-10T00:00:00.000Z",
   });
 
   await flow.run(inv.id, "u-1");

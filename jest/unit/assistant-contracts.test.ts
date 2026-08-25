@@ -26,7 +26,7 @@
  *        out of lang/es.json (asstChat.warranty.lifetime "De por vida";
  *        duration units semana/día/mes; settings.contractDefaults.net "Neto {n}").
  *
- *   P-21 "Terminology whiplash at the send moment." — contractDoc.docTag is
+ *   P-21 "Terminology whiplash at the send moment." — quoteDoc.docTag is
  *        "Quote & Agreement" while every surface brands "Quote + Agreement"
  *        (the deck's PLUS rule); ES drafting header "Redactando contrato" +
  *        confirmation "Contrato enviado para firma" fight the "Cotización +
@@ -85,9 +85,10 @@ describe("P-10 withChatTimeout — bounded LLM chat turn", () => {
   });
 
   it("P-10 resolves with the value when the promise settles before the deadline", async () => {
-    await expect(mod.withChatTimeout(Promise.resolve("ok"), 30_000)).resolves.toBe(
-      "ok",
-    );
+    await expect(mod.withChatTimeout(Promise.resolve("ok"), 30_000)).resolves
+      .toBe(
+        "ok",
+      );
   });
 
   it("P-10 rejects with a typed TimeoutError once the deadline elapses", async () => {
@@ -128,7 +129,12 @@ describe("P-10 withChatTimeout — bounded LLM chat turn", () => {
 // ---------------------------------------------------------------------------
 describe("P-20 starter chips route to distinct, intent-appropriate replies", () => {
   let chips: any;
-  const KEYS = ["knownPrice", "helpPrice", "quickQuote", "invoiceDone"] as const;
+  const KEYS = [
+    "knownPrice",
+    "helpPrice",
+    "quickQuote",
+    "invoiceDone",
+  ] as const;
   beforeAll(() => {
     // RED today: module does not exist.
     chips = require("../../shared/quote-flow/starter-chips");
@@ -169,19 +175,26 @@ describe("P-25 termLabel localizes the SUBMITTED term string", () => {
   });
 
   it("P-25 warranty 'lifetime' is 'De por vida' in ES, not 'Lifetime'", () => {
-    const label = String(terms.termLabel({ kind: "warranty", value: "lifetime" }, "es"));
+    const label = String(
+      terms.termLabel({ kind: "warranty", value: "lifetime" }, "es"),
+    );
     expect(label).toMatch(/de por vida/i);
     expect(label).not.toMatch(/lifetime/i);
   });
 
   it("P-25 warranty 'lifetime' stays 'Lifetime' in EN", () => {
-    const label = String(terms.termLabel({ kind: "warranty", value: "lifetime" }, "en"));
+    const label = String(
+      terms.termLabel({ kind: "warranty", value: "lifetime" }, "en"),
+    );
     expect(label).toMatch(/lifetime/i);
   });
 
   it("P-25 duration '3 weeks' is '3 semanas' in ES, not '3 weeks'", () => {
     const label = String(
-      terms.termLabel({ kind: "duration", value: { n: 3, unit: "weeks" } }, "es"),
+      terms.termLabel(
+        { kind: "duration", value: { n: 3, unit: "weeks" } },
+        "es",
+      ),
     );
     expect(label).toMatch(/3\s*semanas/i);
     expect(label).not.toMatch(/weeks?/i);
@@ -189,13 +202,18 @@ describe("P-25 termLabel localizes the SUBMITTED term string", () => {
 
   it("P-25 duration '3 weeks' stays '3 weeks' in EN", () => {
     const label = String(
-      terms.termLabel({ kind: "duration", value: { n: 3, unit: "weeks" } }, "en"),
+      terms.termLabel(
+        { kind: "duration", value: { n: 3, unit: "weeks" } },
+        "en",
+      ),
     );
     expect(label).toMatch(/3\s*weeks/i);
   });
 
   it("P-25 payment 'Net 30' uses the ES equivalent (Neto), not the EN 'Net 30'", () => {
-    const label = String(terms.termLabel({ kind: "payment", value: { net: 30 } }, "es"));
+    const label = String(
+      terms.termLabel({ kind: "payment", value: { net: 30 } }, "es"),
+    );
     expect(label).toMatch(/neto\s*30/i);
     expect(label).not.toMatch(/net\s*30/i);
   });
@@ -207,24 +225,29 @@ describe("P-25 termLabel localizes the SUBMITTED term string", () => {
 describe("P-21 dictionary brands the deck's PLUS, not an ampersand or 'contrato'", () => {
   it("P-21 no EN value contains 'Quote & Agreement' (the PLUS rule)", () => {
     const offenders = Object.entries(en)
-      .filter(([, v]) => typeof v === "string" && v.includes("Quote & Agreement"))
+      .filter(([, v]) =>
+        typeof v === "string" && v.includes("Quote & Agreement")
+      )
       .map(([k]) => k);
-    expect(offenders).toEqual([]); // today: ["contractDoc.docTag"]
+    expect(offenders).toEqual([]); // today: ["quoteDoc.docTag"]
   });
 
-  it("P-21 contractDoc.docTag brands with a PLUS in both languages", () => {
-    expect(en["contractDoc.docTag"]).toBe("Quote + Agreement");
-    expect(es["contractDoc.docTag"]).toBe("Cotización + Acuerdo");
+  it("P-21 quoteDoc.docTag brands with a PLUS in both languages", () => {
+    expect(en["quoteDoc.docTag"]).toBe("Quote + Agreement");
+    expect(es["quoteDoc.docTag"]).toBe("Cotización + Acuerdo");
   });
 
-  it("P-21 the ES drafting header keeps the 'Cotización' term (not 'Redactando contrato')", () => {
-    // asstChat.header.contractDrafting today: "Redactando contrato"
-    expect(es["asstChat.header.contractDrafting"]).toMatch(/cotizaci[oó]n/i);
+  it("P-21 the ES drafting header keeps the 'Cotización' term (never 'contrato')", () => {
+    // Post-merge key: asstChat.header.quoteDrafted ("Cotización redactada · revisar").
+    expect(es["asstChat.header.quoteDrafted"]).toMatch(/cotizaci[oó]n/i);
+    expect(es["asstChat.header.quoteDrafted"]).not.toMatch(/contrato/i);
   });
 
-  it("P-21 the ES send confirmation keeps the 'Cotización' term (not 'Contrato enviado para firma')", () => {
-    // asstChat.header.contractOutForSignature today: "Contrato enviado para firma"
-    expect(es["asstChat.header.contractOutForSignature"]).toMatch(/cotizaci[oó]n/i);
+  it("P-21 the ES send confirmation never brands 'Contrato' against the 'Cotización + Acuerdo' the user built", () => {
+    // Post-merge key: asstChat.header.outForSignature ("Enviada para firma" —
+    // feminine, agreeing with la Cotización; the whiplash word is gone).
+    expect(typeof es["asstChat.header.outForSignature"]).toBe("string");
+    expect(es["asstChat.header.outForSignature"]).not.toMatch(/contrato/i);
   });
 });
 

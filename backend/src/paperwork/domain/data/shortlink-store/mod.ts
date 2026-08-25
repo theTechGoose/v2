@@ -2,12 +2,12 @@ import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
 
-export type ShortLinkKind = "quote" | "contract" | "invoice";
+export type ShortLinkKind = "quote" | "invoice";
 
 export interface ShortLink {
   code: string;
   kind: ShortLinkKind;
-  /** Resource id this code resolves to (quote/contract/invoice id). */
+  /** Resource id this code resolves to (quote/invoice id). */
   id: string;
   /** Owner; lets us future-prove an analytics surface scoped per-user. */
   userId: string;

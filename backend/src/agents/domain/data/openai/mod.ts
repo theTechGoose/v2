@@ -1,8 +1,18 @@
 import OpenAI from "#openai";
 import { encodeBase64 } from "#std/encoding/base64";
-import type { LLMClient, LLMRequest, LLMResponse } from "@agents/domain/business/llm/base/mod.ts";
-import { TOOL_DEFS, parseToolCall } from "@agents/domain/business/openai-tools/mod.ts";
-import { DEFAULT_CHAT_TIMEOUT_MS, withChatTimeout } from "#quote-flow/chat-timeout.ts";
+import type {
+  LLMClient,
+  LLMRequest,
+  LLMResponse,
+} from "@agents/domain/business/llm/base/mod.ts";
+import {
+  parseToolCall,
+  TOOL_DEFS,
+} from "@agents/domain/business/openai-tools/mod.ts";
+import {
+  DEFAULT_CHAT_TIMEOUT_MS,
+  withChatTimeout,
+} from "#quote-flow/chat-timeout.ts";
 
 const DEFAULT_MODEL = "gpt-4o-mini";
 
@@ -29,7 +39,14 @@ export class OpenAILLMClient implements LLMClient {
   private client: OpenAI;
   private model: string;
 
-  constructor(opts: { apiKey?: string; model?: string; baseURL?: string; fetch?: typeof fetch } = {}) {
+  constructor(
+    opts: {
+      apiKey?: string;
+      model?: string;
+      baseURL?: string;
+      fetch?: typeof fetch;
+    } = {},
+  ) {
     const apiKey = opts.apiKey ?? Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) {
       throw new Error("OPENAI_API_KEY is not set; cannot use OpenAILLMClient");
@@ -37,8 +54,12 @@ export class OpenAILLMClient implements LLMClient {
     // The SDK accepts a `fetch` override — used by smoke tests so they
     // never hit the live API. The SDK's `fetch` type uses URLLike rather
     // than the WHATWG URL, hence the cast.
-    // deno-lint-ignore no-explicit-any
-    this.client = new OpenAI({ apiKey, baseURL: opts.baseURL, fetch: opts.fetch as any });
+    this.client = new OpenAI({
+      apiKey,
+      baseURL: opts.baseURL,
+      // deno-lint-ignore no-explicit-any
+      fetch: opts.fetch as any,
+    });
     this.model = opts.model ?? Deno.env.get("OPENAI_MODEL") ?? DEFAULT_MODEL;
   }
 
@@ -58,11 +79,15 @@ export class OpenAILLMClient implements LLMClient {
     messages: Array<any>,
   ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), DEFAULT_CHAT_TIMEOUT_MS + 1_000);
+    const timer = setTimeout(
+      () => ctl.abort(),
+      DEFAULT_CHAT_TIMEOUT_MS + 1_000,
+    );
     const call = this.client.chat.completions.create({
       model: this.model,
       messages,
-      tools: TOOL_DEFS as unknown as OpenAI.Chat.Completions.ChatCompletionTool[],
+      tools:
+        TOOL_DEFS as unknown as OpenAI.Chat.Completions.ChatCompletionTool[],
       tool_choice: "auto",
       // Keep responses tight — we want one focused step per turn.
       temperature: 0.2,
@@ -80,7 +105,11 @@ export class OpenAILLMClient implements LLMClient {
       { role: "system", content: req.systemPrompt },
     ];
     if (req.businessContext && req.businessContext.length > 0) {
-      messages.push({ role: "system", content: `Business context (refreshed each turn):\n${req.businessContext}` });
+      messages.push({
+        role: "system",
+        content:
+          `Business context (refreshed each turn):\n${req.businessContext}`,
+      });
     }
     for (const m of req.messages) {
       // Vision turn: switch to OpenAI's content-array format with text +
@@ -92,7 +121,9 @@ export class OpenAILLMClient implements LLMClient {
           { type: "text", text: m.content || "(see attached image)" },
         ];
         for (const img of m.images) {
-          const dataUrl = `data:${img.mimeType};base64,${encodeBase64(img.bytes)}`;
+          const dataUrl = `data:${img.mimeType};base64,${
+            encodeBase64(img.bytes)
+          }`;
           parts.push({ type: "image_url", image_url: { url: dataUrl } });
         }
         messages.push({ role: m.role, content: parts });
@@ -109,7 +140,8 @@ export class OpenAILLMClient implements LLMClient {
     let completion = await this.complete(messages);
     let choice = completion.choices[0];
     const isEmpty = (c: typeof choice) =>
-      !((c?.message?.content ?? "").trim()) && (c?.message?.tool_calls ?? []).length === 0;
+      !((c?.message?.content ?? "").trim()) &&
+      (c?.message?.tool_calls ?? []).length === 0;
     if (isEmpty(choice)) {
       console.warn("[openai-llm] empty response on first try; retrying once");
       completion = await this.complete(messages);
@@ -141,9 +173,13 @@ export class OpenAILLMClient implements LLMClient {
  */
 function fallbackTextFor(action: { type: string }): string {
   switch (action.type) {
-    case "create_quote":             return "";
-    case "lock_quote":               return "";
-    case "request_terms_transition": return "Want to wrap the contract terms now?";
-    default:                          return "";
+    case "create_quote":
+      return "";
+    case "lock_quote":
+      return "";
+    case "request_terms_transition":
+      return "Want to wrap the agreement terms now?";
+    default:
+      return "";
   }
 }

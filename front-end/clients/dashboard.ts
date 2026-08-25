@@ -50,12 +50,6 @@ export interface QuoteCounts {
   sent: number;
   accepted: number;
 }
-export interface ContractCounts {
-  total: number;
-  draft: number;
-  signed: number;
-}
-
 export interface RevenueStats {
   ytdCents: number;
   lastMonthCents: number;
@@ -73,7 +67,6 @@ export interface PaymentStats {
 export interface DashboardStats {
   customers: number;
   quotes: QuoteCounts;
-  contracts: ContractCounts;
   invoices: InvoiceCounts;
   /** Sum of estimatedTotal across quotes whose status === 'sent'. CENTS. */
   quotedValueCents: number;
@@ -88,7 +81,6 @@ export interface Notification {
   type:
     | "quote_sent"
     | "quote_accepted"
-    | "contract_signed"
     | "invoice_claimed"
     | "invoice_paid"
     | "invoice_overdue"
@@ -96,7 +88,7 @@ export interface Notification {
     | "generic";
   title: string;
   body?: string;
-  entityType?: "quote" | "contract" | "invoice" | "customer" | "conversation";
+  entityType?: "quote" | "invoice" | "customer" | "conversation";
   entityId?: string;
   read: boolean;
   readAt?: string;
@@ -107,8 +99,8 @@ export interface Invoice {
   id: string;
   userId: string;
   /** Optional — standalone invoices created from the receivables dashboard
-   *  have no contract behind them. */
-  contractId?: string;
+   *  have no quote behind them. */
+  quoteId?: string;
   customerId?: string;
   amount?: number;
   issuedDate?: string;
@@ -166,7 +158,6 @@ export interface Job {
   id: string;
   customer: { id: string; name: string };
   quote: { id: string; summary: string; estimatedTotalCents: number };
-  contract: { id: string; status?: string } | null;
   totalCents: number;
   paidCents: number;
   pctPaid: number;
@@ -193,7 +184,7 @@ export const dashboardClient = {
   invoices: (status?: string, opts: ApiOptions = {}) =>
     api.get<Invoice[]>("/invoices", { ...opts, query: { status } }),
   customers: (opts: ApiOptions = {}) => api.get<Customer[]>("/customers", opts),
-  /** Create a standalone invoice (no contract). `amount` is INTEGER CENTS.
+  /** Create a standalone invoice (no quote). `amount` is INTEGER CENTS.
    *  `jobName`/`description` give the quote-less invoice its own context
    *  (rendered as the hero + note on the public page and email). */
   createInvoice: (

@@ -32,7 +32,7 @@
  *       existing "status.*" family (lang/es.json: "status.sent": "Enviado").
  *   export function unitLabel(unit: string | undefined, lang: string): string
  *     — Localizes the per-line unit; the "ea"/each unit maps to the dicts'
- *       "contractDoc.unitEach" ("ea" en / "c/u" es — unused today by
+ *       "quoteDoc.unitEach" ("ea" en / "c/u" es — unused today by
  *       `${qty} ${escapeHtml(li.unit ?? "ea")}` at send-paperwork-email/mod.ts:653
  *       and :1060). Unknown/custom units pass through unchanged.
  *   export function buildLocalizedQuoteEmailSubject(
@@ -76,7 +76,7 @@ import {
 
 // Ground expectations in the live lang dicts (flat keys) so a fix that keeps
 // using the dict values stays green without editing this file.
-// lang/es.json: "contractDoc.unitEach": "c/u", "status.sent": "Enviado", …
+// lang/es.json: "quoteDoc.unitEach": "c/u", "status.sent": "Enviado", …
 const enDict: Record<string, string> = require("../../lang/en.json");
 const esDict: Record<string, string> = require("../../lang/es.json");
 
@@ -97,7 +97,9 @@ describe("P-07 titleCaseJobName — Unicode-aware hero title-casing", () => {
   });
 
   it("P-07 keeps Spanish stopwords (de/y/en/para/la/el) lowercase mid-title", () => {
-    expect(titleCaseJobName("remodelación de la cocina y el baño en general", "es"))
+    expect(
+      titleCaseJobName("remodelación de la cocina y el baño en general", "es"),
+    )
       .toBe("Remodelación de la Cocina y el Baño en General");
   });
 
@@ -118,7 +120,11 @@ describe("P-28 fmtPaperworkDate — locale + timezone aware document dates", () 
   });
 
   it("P-28 never returns a raw ISO date for a full timestamp", () => {
-    const out = fmtPaperworkDate("2026-09-17T12:00:00Z", "es", "America/Chicago");
+    const out = fmtPaperworkDate(
+      "2026-09-17T12:00:00Z",
+      "es",
+      "America/Chicago",
+    );
     expect(out).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     expect(out).toContain("septiembre");
   });
@@ -155,7 +161,8 @@ describe("P-29 invoiceStatusLabel — localized status, never the raw enum", () 
   });
 
   it("P-29 still yields a non-empty label for an unknown status", () => {
-    expect(invoiceStatusLabel("weird_future_status", "es").length).toBeGreaterThan(0);
+    expect(invoiceStatusLabel("weird_future_status", "es").length)
+      .toBeGreaterThan(0);
   });
 });
 
@@ -168,7 +175,9 @@ describe("P-44 buildLocalizedQuoteEmailSubject — Spanish word order", () => {
 
   it('P-44 es subject leads with "Cotización de {biz} para {customer}"', () => {
     const subject = buildLocalizedQuoteEmailSubject(args, "es");
-    expect(subject.startsWith("Cotización de JEST LLC para Green Goblin")).toBe(true);
+    expect(subject.startsWith("Cotización de JEST LLC para Green Goblin")).toBe(
+      true,
+    );
     expect(subject).toContain("Instalación de baño y cocina");
   });
 
@@ -189,16 +198,16 @@ describe("P-44 buildLocalizedQuoteEmailSubject — Spanish word order", () => {
 });
 
 describe("P-51 unitLabel — localized line-item unit", () => {
-  it('P-51 maps "ea" to the es dict contractDoc.unitEach ("c/u")', () => {
-    expect(unitLabel("ea", "es")).toBe(esDict["contractDoc.unitEach"]);
+  it('P-51 maps "ea" to the es dict quoteDoc.unitEach ("c/u")', () => {
+    expect(unitLabel("ea", "es")).toBe(esDict["quoteDoc.unitEach"]);
   });
 
-  it("P-51 maps a missing unit (the `li.unit ?? \"ea\"` fallback) to the localized each-label", () => {
-    expect(unitLabel(undefined, "es")).toBe(esDict["contractDoc.unitEach"]);
+  it('P-51 maps a missing unit (the `li.unit ?? "ea"` fallback) to the localized each-label', () => {
+    expect(unitLabel(undefined, "es")).toBe(esDict["quoteDoc.unitEach"]);
   });
 
-  it('P-51 keeps "ea" for en (contractDoc.unitEach = "ea")', () => {
-    expect(unitLabel("ea", "en")).toBe(enDict["contractDoc.unitEach"]);
+  it('P-51 keeps "ea" for en (quoteDoc.unitEach = "ea")', () => {
+    expect(unitLabel("ea", "en")).toBe(enDict["quoteDoc.unitEach"]);
   });
 
   it("P-51 passes custom units through unchanged", () => {
@@ -220,20 +229,33 @@ describe("P-06 outbound identity — placeholder names never reach customers", (
   });
 
   it("P-06 outboundSenderName prefers the real user name", () => {
-    expect(outboundSenderName({ userName: "Hans Pedersen", businessName: "ACME LLC" }))
+    expect(
+      outboundSenderName({
+        userName: "Hans Pedersen",
+        businessName: "ACME LLC",
+      }),
+    )
       .toBe("Hans Pedersen");
   });
 
   it("P-06 outboundSenderName falls back to the business name for placeholder users", () => {
-    expect(outboundSenderName({ userName: "Nuevo usuario", businessName: "ACME LLC" }))
+    expect(
+      outboundSenderName({
+        userName: "Nuevo usuario",
+        businessName: "ACME LLC",
+      }),
+    )
       .toBe("ACME LLC");
-    expect(outboundSenderName({ userName: "New user", businessName: "ACME LLC" }))
+    expect(
+      outboundSenderName({ userName: "New user", businessName: "ACME LLC" }),
+    )
       .toBe("ACME LLC");
   });
 
   it("P-06 outboundSenderName returns undefined when nothing safe exists (collect the name)", () => {
     expect(outboundSenderName({ userName: "Nuevo usuario" })).toBeUndefined();
-    expect(outboundSenderName({ userName: "New user", businessName: "  " })).toBeUndefined();
+    expect(outboundSenderName({ userName: "New user", businessName: "  " }))
+      .toBeUndefined();
   });
 
   it("P-06 outboundSenderName NEVER returns a placeholder, whatever the inputs", () => {

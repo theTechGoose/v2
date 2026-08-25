@@ -1,5 +1,4 @@
 import { Injectable } from "#danet/core";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -7,11 +6,11 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
-import { RenderContractPdf } from "@paperwork/domain/coordinators/render-contract-pdf/mod.ts";
+import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { buildSignedConfirmSms, smsJobName } from "#quote-flow/sms-i18n.ts";
 import { reconcileMilestones } from "#quote-flow/milestone-reconcile.ts";
-import type { Contract, ContractTerm } from "@paperwork/dto/contract.ts";
+import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import { computePaymentSplit } from "#payment-split";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import type { User } from "@users/dto/user.ts";
@@ -43,84 +42,71 @@ const APP_URL = (() => {
 })();
 
 /**
- * SendSignedConfirmation — fires after a contract is signed.
+ * SendSignedConfirmation — fires after the customer accepts (signs) the
+ * quote, which IS the agreement (one document, one ceremony).
  *
- *   1. Renders a PDF copy of the signed contract (for the customer's
+ *   1. Renders a PDF copy of the accepted agreement (for the customer's
  *      records and for legal/disputes — pure JS via pdf-lib so it works
  *      on Deno Deploy).
- *   2. Auto-creates the **first invoice** from the contract's payment
- *      schedule (the deposit, if 30/30/40 or 50/50; otherwise the full
- *      net-15 invoice, etc.).
+ *   2. Auto-creates the milestone invoices from the quote's payment terms
+ *      (the deposit, if 30/30/40 or 50/50; otherwise the full net-15
+ *      invoice, etc.). Accept always bills: a quote with no payment terms
+ *      yields ONE full-amount invoice due now.
  *   3. Dispatches a confirmation email to the customer with the PDF
  *      attached and a payment-link button to the new invoice.
  *   4. Sends a completion SMS to the customer (roadmap p.2) — best-effort,
  *      independent of the email.
  *
- * Idempotent: a `signedNotifiedAt` stamp on the contract guards against
- * double-sends if signContract is replayed (Postmark webhooks, retries).
+ * Idempotent: an `acceptedNotifiedAt` stamp on the quote guards against
+ * double-sends if the accept is replayed (Postmark webhooks, retries).
  *
- * Errors here NEVER fail the upstream sign request — they're logged and
- * swallowed. The customer's signature is captured regardless.
+ * Errors here NEVER fail the upstream accept request — they're logged and
+ * swallowed. The customer's acceptance is captured regardless.
  */
 @Injectable()
 export class SendSignedConfirmation {
   constructor(
-    private contracts: ContractStore,
     private quotes: QuoteStore,
     private invoices: InvoiceStore,
     private customers: CustomerStore,
     private users: UserStore,
     private identity: BusinessIdentityStore,
-    private renderPdf: RenderContractPdf,
+    private renderPdf: RenderQuotePdf,
     private email: EmailService,
     private sms: SmsService,
     private commsLog: LogPaperworkMessage,
   ) {}
 
   async run(
-    contractId: string,
+    quoteId: string,
   ): Promise<
     { ok: boolean; reason?: string; messageId?: string; invoiceId?: string }
   > {
-    let contract: Contract;
+    let quote: Quote;
     try {
-      contract = await this.contracts.get(contractId);
+      quote = await this.quotes.get(quoteId);
     } catch (err) {
       return {
         ok: false,
-        reason: `contract not found: ${(err as Error).message}`,
+        reason: `quote not found: ${(err as Error).message}`,
       };
     }
 
     // Idempotency guard.
-    const signedNotifiedAt =
-      (contract as { signedNotifiedAt?: string }).signedNotifiedAt;
-    if (signedNotifiedAt) {
+    if (quote.acceptedNotifiedAt) {
       return { ok: true, reason: "already_notified" };
     }
 
-    const userId = contract.userId;
-    const [contractor, ident, contractCustomer, quote] = await Promise.all([
+    const userId = quote.userId;
+    const [contractor, ident, customer] = await Promise.all([
       this.users.get(userId).catch(() => undefined as User | undefined),
       this.identity.get(userId).catch(() => null),
-      contract.customerId
-        ? this.customers.getOwned(contract.customerId, userId).catch(() =>
+      quote.customerId
+        ? this.customers.getOwned(quote.customerId, userId).catch(() =>
           undefined as Customer | undefined
         )
         : Promise.resolve(undefined as Customer | undefined),
-      contract.quoteId
-        ? this.quotes.getOwned(contract.quoteId, userId).catch(() => undefined)
-        : Promise.resolve(undefined),
     ]);
-
-    // Fall back to the quote's customer if the contract was created
-    // without one bound (e.g., older API-created demo contracts).
-    let customer = contractCustomer;
-    if (!customer && quote?.customerId) {
-      customer = await this.customers.getOwned(quote.customerId, userId).catch(
-        () => undefined,
-      );
-    }
 
     const recipient = customer?.email?.trim();
 
@@ -132,21 +118,22 @@ export class SendSignedConfirmation {
     const lang: Lang = ident?.commsLanguage === "es" ? "es" : "en";
 
     // ---- 1. Create the full milestone set (first invoice sent now,
-    // remaining ones scheduled for equal-spaced dates over the contract's
+    // remaining ones scheduled for equal-spaced dates over the quote's
     // completion window).
-    const total = contract.totalAmount ?? 0;
-    const plannedMilestones = computeMilestoneAmounts(total, contract.terms);
-    // UX-36: bill only the unbilled remainder. A late /c sign on a deal that
+    const total = quote.estimatedTotal ?? 0;
+    const plannedMilestones = computeMilestoneAmounts(total, quote.terms);
+    // UX-36: bill only the unbilled remainder. A late accept on a deal that
     // was already invoiced (or fully paid) must never re-bill the customer —
     // every non-void invoice on the deal counts as committed.
     let milestoneAmounts: number[] = plannedMilestones;
     try {
       const allInvoices = await this.invoices.listByUser(userId);
-      const existing = allInvoices.filter((i) =>
-        i.contractId === contract.id ||
-        (contract.quoteId && i.quoteId === contract.quoteId)
+      const existing = allInvoices.filter((i) => i.quoteId === quote.id);
+      milestoneAmounts = reconcileMilestones(
+        plannedMilestones,
+        total,
+        existing,
       );
-      milestoneAmounts = reconcileMilestones(plannedMilestones, total, existing);
     } catch (err) {
       console.error(
         "[send-signed-confirmation] milestone reconcile failed; billing the full plan:",
@@ -159,16 +146,19 @@ export class SendSignedConfirmation {
       const todayIso = today.toISOString().slice(0, 10);
       const scheduledDates = computeScheduledDates(
         milestoneAmounts.length,
-        contract.startDate,
-        contract.estimatedCompletionDate,
+        quote.startDate,
+        quote.estimatedCompletionDate,
         today,
       );
       const installmentTotal = milestoneAmounts.length;
       // "Due Now" payment terms (roadmap p.6): the single invoice is due the
-      // day of signing, not the usual net-7 grace window.
-      const dueNow = /\bdue now\b/i.test(
-        contract.terms?.find((t) => t.stepId === "payment_terms")?.value ?? "",
-      );
+      // day of signing, not the usual net-7 grace window. A quote with NO
+      // payment terms bills the same way — one full invoice, due now.
+      const paymentTermsValue = quote.terms?.find((t) =>
+        t.stepId === "payment_terms"
+      )?.value;
+      const dueNow = !paymentTermsValue ||
+        /\bdue now\b/i.test(paymentTermsValue);
       for (let i = 0; i < milestoneAmounts.length; i++) {
         const amount = milestoneAmounts[i];
         const isFirst = i === 0;
@@ -180,8 +170,8 @@ export class SendSignedConfirmation {
             ? (dueNow ? todayIso : addDaysIso(today, 7))
             : addDaysIso(parseIsoDate(scheduledDates[i]), 7);
           const invoice = await this.invoices.create(userId, {
-            contractId: contract.id,
-            ...(contract.customerId ? { customerId: contract.customerId } : {}),
+            quoteId: quote.id,
+            ...(quote.customerId ? { customerId: quote.customerId } : {}),
             amount,
             dueDate,
             installmentIndex: i + 1,
@@ -202,22 +192,21 @@ export class SendSignedConfirmation {
       }
     }
 
-    // Stamp signedNotifiedAt immediately after creating the invoices — BEFORE
-    // the slower PDF/email/SMS steps — so the top-of-run idempotency guard
-    // closes the duplicate-invoice window as tightly as possible. signContract
-    // flips status and fires run() non-atomically, so a double-tap / retry can
-    // launch two run()s; stamping here means the second sees the stamp and
-    // returns before creating a second milestone set. Best-effort: a failed
-    // stamp only risks a (rare) duplicate on replay, never a missed invoice.
+    // Stamp acceptedNotifiedAt immediately after creating the invoices —
+    // BEFORE the slower PDF/email/SMS steps — so the top-of-run idempotency
+    // guard closes the duplicate-invoice window as tightly as possible. The
+    // accept endpoint flips status and fires run() non-atomically, so a
+    // double-tap / retry can launch two run()s; stamping here means the
+    // second sees the stamp and returns before creating a second milestone
+    // set. Best-effort: a failed stamp only risks a (rare) duplicate on
+    // replay, never a missed invoice.
     try {
-      await this.contracts.update(contract.id, userId, {
-        ...({ signedNotifiedAt: new Date().toISOString() } as Partial<
-          Contract
-        >),
-      } as Partial<Contract>);
+      await this.quotes.update(quote.id, userId, {
+        acceptedNotifiedAt: new Date().toISOString(),
+      });
     } catch (err) {
       console.error(
-        "[send-signed-confirmation] failed to stamp signedNotifiedAt:",
+        "[send-signed-confirmation] failed to stamp acceptedNotifiedAt:",
         err,
       );
     }
@@ -233,12 +222,11 @@ export class SendSignedConfirmation {
     };
     if (recipient) {
       console.log(
-        `[send-signed-confirmation] dispatching to ${recipient} for contract ${contract.id}`,
+        `[send-signed-confirmation] dispatching to ${recipient} for quote ${quote.id}`,
       );
       let pdfBytes: Uint8Array | undefined;
       try {
         pdfBytes = await this.renderPdf.run({
-          contract,
           quote,
           customer,
           contractor,
@@ -251,10 +239,9 @@ export class SendSignedConfirmation {
         console.error("[send-signed-confirmation] PDF render failed:", err);
       }
       const subject = t(lang, "signedConfirm.email.subject", {
-        summary: quote?.summary ?? t(lang, "signedConfirm.fallback.contract"),
+        summary: quote.summary ?? t(lang, "signedConfirm.fallback.contract"),
       });
       const html = renderSignedConfirmationHtml({
-        contract,
         quote,
         customer,
         contractor,
@@ -263,7 +250,7 @@ export class SendSignedConfirmation {
         invoiceAmount: milestoneAmounts[0] ?? 0,
         lang,
       });
-      const fileName = `Contract-${contract.id.slice(0, 8).toUpperCase()}.pdf`;
+      const fileName = `Agreement-${quote.id.slice(0, 8).toUpperCase()}.pdf`;
       sent = await this.email.send({
         to: recipient,
         subject,
@@ -287,13 +274,16 @@ export class SendSignedConfirmation {
       );
     } else {
       console.warn(
-        `[send-signed-confirmation] contract ${contract.id} has no customer email; created ${milestoneAmounts.length} invoice(s), skipping email`,
+        `[send-signed-confirmation] quote ${quote.id} has no customer email; created ${milestoneAmounts.length} invoice(s), skipping email`,
       );
     }
 
-    // ---- 4. Completion SMS (roadmap p.2: signed quotes get a text too).
-    //      Best-effort and independent of the email; the run-level
-    //      `signedNotifiedAt` guard already prevents double-sends on replay.
+    // ---- 3. Completion SMS (roadmap p.2: signed quotes get a text too;
+    //      deck p.2/p.8 — the CUSTOMER gets a confirmation their acceptance
+    //      registered, and the receipts strip gets an honest customer-facing
+    //      "texted" line, P-32). Best-effort and independent of the email;
+    //      the run-level `acceptedNotifiedAt` guard already prevents
+    //      double-sends on replay.
     try {
       const toSms = normalizeE164(customer?.phoneNumber ?? "");
       if (toSms) {
@@ -305,7 +295,7 @@ export class SendSignedConfirmation {
         const body = buildSignedConfirmSms({
           customerFirstName: first,
           jobName: smsJobName(quote ?? {}, lang),
-          url: `${APP_URL}/c/${contract.id}`,
+          url: `${APP_URL}/q/${quote.id}`,
           businessName,
           lang,
         });
@@ -319,8 +309,8 @@ export class SendSignedConfirmation {
             channel: "text",
             content: body,
             toAddress: toSms,
-            paperworkId: contract.id,
-            paperworkType: "contract",
+            paperworkId: quote.id,
+            paperworkType: "quote",
           });
         }
       }
@@ -334,65 +324,6 @@ export class SendSignedConfirmation {
       ...(sent.messageId ? { messageId: sent.messageId } : {}),
       ...(invoiceId ? { invoiceId } : {}),
     };
-  }
-
-  /**
-   * Quote-accept flavor of the completion text (deck p.2/p.8: "Post
-   * Quotes/Signed Quotes we need to send a completion Text" — the CUSTOMER
-   * gets a confirmation their acceptance registered, and the receipts strip
-   * gets an honest customer-facing "texted" line instead of the contractor
-   * self-alert it used to count, P-32). Email is not duplicated here — the
-   * customer already holds the quote email, and the accepted state renders
-   * on /q/:id itself.
-   *
-   * At-most-once: the accept endpoint 409s on a second accept, so this
-   * fires once per quote lifetime. Best-effort like the contract flavor.
-   */
-  async runForQuote(quoteId: string): Promise<{ ok: boolean }> {
-    try {
-      const quote = await this.quotes.get(quoteId);
-      const userId = quote.userId;
-      const [ident, customer] = await Promise.all([
-        this.identity.get(userId).catch(() => null),
-        quote.customerId
-          ? this.customers.getOwned(quote.customerId, userId).catch(() =>
-            undefined as Customer | undefined
-          )
-          : Promise.resolve(undefined as Customer | undefined),
-      ]);
-      const toSms = normalizeE164(customer?.phoneNumber ?? "");
-      if (!toSms) return { ok: false };
-      const contractor = await this.users.get(userId).catch(() =>
-        undefined as User | undefined
-      );
-      const businessName = ident?.businessName?.trim() ||
-        ident?.legalName?.trim() || contractor?.name?.trim();
-      const lang: Lang = ident?.commsLanguage === "es" ? "es" : "en";
-      const first = (customer?.name ?? "").trim().split(/\s+/)[0] || undefined;
-      const body = buildSignedConfirmSms({
-        customerFirstName: first,
-        jobName: smsJobName(quote ?? {}, lang),
-        url: `${APP_URL}/q/${quote.id}`,
-        businessName,
-        lang,
-      });
-      const res = await this.sms.send({ to: toSms, body });
-      if (res.ok) {
-        await this.commsLog.run({
-          userId,
-          customerId: customer?.id,
-          channel: "text",
-          content: body,
-          toAddress: toSms,
-          paperworkId: quote.id,
-          paperworkType: "quote",
-        });
-      }
-      return { ok: res.ok };
-    } catch (err) {
-      console.error("[send-signed-confirmation] quote completion SMS failed:", err);
-      return { ok: false };
-    }
   }
 }
 
@@ -412,14 +343,19 @@ function normalizeE164(raw: string): string | undefined {
 
 /** Resolve the contractor's chosen payment terms into one amount per
  *  milestone, in INTEGER CENTS, via the shared #payment-split source of truth
- *  so the invoices match the preview, the signed contract, and the PDF. Sum is
- *  always exactly `total` — the last milestone absorbs rounding. */
+ *  so the invoices match the preview, the signed agreement, and the PDF. Sum
+ *  is always exactly `total` — the last milestone absorbs rounding.
+ *
+ *  Accept always bills: with no payment-terms row on the quote, the whole
+ *  total lands as one milestone (due now — the caller handles the due date). */
 export function computeMilestoneAmounts(
   total: number,
-  terms: ContractTerm[] | undefined,
+  terms: QuoteTerm[] | undefined,
 ): number[] {
+  if (!Number.isFinite(total) || total <= 0) return [];
   const v = terms?.find((t) => t.stepId === "payment_terms")?.value;
-  return computePaymentSplit(v, total).map((p) => p.amountCents);
+  const split = computePaymentSplit(v, total).map((p) => p.amountCents);
+  return split.length > 0 ? split : [total];
 }
 
 /** Equal-spaced scheduledFor dates for milestones 2..N. The first
@@ -428,7 +364,7 @@ export function computeMilestoneAmounts(
  *  array shape, but callers should ignore it.
  *
  *  Window math:
- *    - If contract has both startDate and estimatedCompletionDate, span
+ *    - If the quote has both startDate and estimatedCompletionDate, span
  *      that interval.
  *    - Otherwise fall back to a 14-day default window from today.
  *    - Each subsequent milestone gets (i / N) of the window.
@@ -507,9 +443,7 @@ function escapeAttr(s: string): string {
 }
 
 interface SignedHtmlOpts {
-  contract: Contract;
-  // deno-lint-ignore no-explicit-any
-  quote: any;
+  quote: Quote;
   customer: Customer | undefined;
   contractor: User | undefined;
   businessName: string | undefined;
@@ -520,7 +454,6 @@ interface SignedHtmlOpts {
 
 function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
   const {
-    contract,
     quote,
     customer,
     contractor,
@@ -533,14 +466,14 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
   const contractorFirst = contractor?.name?.trim()?.split(/\s+/)[0];
   const biz = businessName ?? contractor?.name ??
     t(lang, "signedConfirm.email.bizFallback");
-  const summary = (quote?.summary ?? t(lang, "signedConfirm.fallback.project"))
+  const summary = (quote.summary ?? t(lang, "signedConfirm.fallback.project"))
     .replace(
       /^\s*quote\s*:\s*/i,
       "",
     );
-  const docNumber = `#${contract.id.slice(0, 8).toUpperCase()}`;
+  const docNumber = `#${quote.id.slice(0, 8).toUpperCase()}`;
   const invoiceUrl = invoiceId ? `${APP_URL}/i/${invoiceId}` : undefined;
-  const contractUrl = `${APP_URL}/c/${contract.id}`;
+  const agreementUrl = `${APP_URL}/q/${quote.id}`;
   const greeting = customerFirst
     ? t(lang, "signedConfirm.email.greeting", {
       name: escapeHtml(customerFirst),
@@ -650,8 +583,8 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
   }</div>
               </td>
               <td style="padding:16px 20px 16px 0;vertical-align:middle">
-                <div style="color:${COLOR_INK};font-weight:800;font-size:14px">Contract-${
-    escapeHtml(contract.id.slice(0, 8).toUpperCase())
+                <div style="color:${COLOR_INK};font-weight:800;font-size:14px">Agreement-${
+    escapeHtml(quote.id.slice(0, 8).toUpperCase())
   }.pdf</div>
                 <div style="margin-top:2px;color:${COLOR_MUTED};font-size:12px">${
     t(lang, "signedConfirm.email.attachmentSub")
@@ -663,7 +596,7 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
 
         <tr><td style="padding:28px 36px 0;text-align:center">
           <a href="${
-    escapeAttr(contractUrl)
+    escapeAttr(agreementUrl)
   }" style="display:inline-block;background:transparent;color:${COLOR_TEAL};text-decoration:none;font-weight:700;font-size:13px;padding:8px 0;border-bottom:1px solid ${COLOR_LINE}">${
     t(lang, "signedConfirm.email.viewOnline")
   } →</a>

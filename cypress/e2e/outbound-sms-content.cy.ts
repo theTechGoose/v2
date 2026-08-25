@@ -18,9 +18,10 @@
  * UI-affordance note (P-27): there is NO plain quote-text button in today's UI —
  * the QuoteCard back-face "Resend" button (front-end/islands/QuoteCard.tsx:186)
  * is a stopPropagation no-op and the only real dispatch path is the assistant
- * wizard's send-contract CTA. So the quote-text test fires the same
+ * wizard's send-quote CTA. So the quote-text test fires the same
  * POST /api/quotes/:id/text the UI issues and asserts through the comms log,
- * while the signed-confirm test (P-30) drives the REAL public signing UI.
+ * while the signed-confirm test (P-30) drives the REAL public signing UI on
+ * /q (accepting the quote IS the signature ceremony).
  */
 describe("outbound SMS content (ES) — P-27 localized job name, P-30 no 'Hola hola'", () => {
   const PHONE = "+15125552350"; // reserved block +15125552300…99
@@ -31,7 +32,6 @@ describe("outbound SMS content (ES) — P-27 localized job name, P-30 no 'Hola h
   const STARTS_CAPITAL = /^(¡|[A-ZÁÉÍÓÚÜÑ])/u;
 
   let quoteId: string;
-  let contractId: string;
 
   before(() => {
     cy.clearCookies();
@@ -52,7 +52,6 @@ describe("outbound SMS content (ES) — P-27 localized job name, P-30 no 'Hola h
       },
     }).then((ids) => {
       quoteId = ids.quoteId;
-      contractId = ids.contractId;
     });
   });
 
@@ -65,47 +64,63 @@ describe("outbound SMS content (ES) — P-27 localized job name, P-30 no 'Hola h
       const texts = (body as Array<Record<string, unknown>>).filter(
         (m) => m.channel === "text" && m.paperworkId === quoteId,
       );
-      expect(texts.length, "quote text recorded in /api/messages").to.be.greaterThan(0);
+      expect(texts.length, "quote text recorded in /api/messages").to.be
+        .greaterThan(0);
       const content = String(texts[texts.length - 1].content ?? "");
       // Desired: the SMS projects jobNameByLang[es] exactly like the email path.
-      expect(content, "SMS body uses the contractor-language job name").to.contain(JOB_ES);
-      expect(content, "raw EN job name must not leak into the ES SMS").not.to.contain(JOB_EN);
+      expect(content, "SMS body uses the contractor-language job name").to
+        .contain(JOB_ES);
+      expect(content, "raw EN job name must not leak into the ES SMS").not.to
+        .contain(JOB_EN);
     });
   });
 
   it("P-30: signing through the public UI sends the unnamed customer a confirm text that never reads 'Hola hola'", () => {
-    // Customer context: anonymous public contract page (test isolation already
-    // cleared cookies). EN page copy pinned like public-contract-signature.cy.ts.
+    // Customer context: anonymous public agreement page (test isolation
+    // already cleared cookies). EN page copy pinned like
+    // public-quote-signature.cy.ts.
     cy.setCookie("pm_lang", "en");
-    cy.visit(`/c/${contractId}`);
-    cy.contains(/sign & type name below/i, { timeout: 10_000 })
-      .parents("section, div")
-      .first()
-      .find("input, [contenteditable]")
+    cy.visit(`/q/${quoteId}`);
+    cy.get("form.ctr__sign-form", { timeout: 10_000 })
+      .find("input")
       .first()
       .type("Cliente Firmante");
     cy.contains("button", /^sign|firmar/i).click();
-    cy.contains(/signed|firmado|thank/i, { timeout: 10_000 }).should("be.visible");
+    cy.contains(/signed|firmado|thank/i, { timeout: 10_000 }).should(
+      "be.visible",
+    );
 
     // Contractor context: the signed-confirm SMS must land in the comms trail
     // (roadmap p.8 — every outbound text queryable per document). The dispatch
     // is fire-and-forget server-side (PDF + first invoice render first), so poll.
     cy.loginAs(PHONE);
-    const findSignedText = (attempt: number): Cypress.Chainable<Record<string, unknown> | undefined> =>
+    const findSignedText = (
+      attempt: number,
+    ): Cypress.Chainable<Record<string, unknown> | undefined> =>
       cy.request("/api/messages").then(({ body }) => {
         const hit = (body as Array<Record<string, unknown>>).find(
-          (m) => m.channel === "text" && JSON.stringify(m).includes(contractId),
+          // The signed-confirm text ("…está firmada — ¡todo listo!…") — not
+          // the P-27 quote-send text, which also carries the /q link.
+          (m) =>
+            m.channel === "text" && JSON.stringify(m).includes(quoteId) &&
+            /firmad|signed/i.test(String(m.content ?? "")),
         );
         if (!hit && attempt < 20) {
-          return cy.wait(500, { log: false }).then(() => findSignedText(attempt + 1));
+          return cy.wait(500, { log: false }).then(() =>
+            findSignedText(attempt + 1)
+          );
         }
         return cy.wrap(hit, { log: false });
       });
     findSignedText(0).then((entry) => {
       expect(entry, "signed-confirm text recorded in /api/messages").to.exist;
       const content = String(entry?.content ?? "");
-      expect(content, "no doubled greeting for unnamed customers").not.to.match(/hola[\s,]+hola/i);
-      expect(content, "greeting starts with a capital").to.match(STARTS_CAPITAL);
+      expect(content, "no doubled greeting for unnamed customers").not.to.match(
+        /hola[\s,]+hola/i,
+      );
+      expect(content, "greeting starts with a capital").to.match(
+        STARTS_CAPITAL,
+      );
     });
   });
 });

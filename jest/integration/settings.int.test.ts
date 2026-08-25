@@ -4,7 +4,7 @@
  *   - Allow for Insurance to be uploaded
  *   - Tax W-9
  */
-import { contractor, type ApiSession } from "./helpers/api";
+import { type ApiSession, contractor } from "./helpers/api";
 
 describe("settings editability", () => {
   let s: ApiSession;

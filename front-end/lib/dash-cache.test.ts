@@ -54,7 +54,6 @@ function uninstallStubStorage() {
 const SAMPLE_STATS: DashboardStats = {
   customers: 1,
   quotes: { total: 0, draft: 0, sent: 0, accepted: 0 },
-  contracts: { total: 0, draft: 0, signed: 0 },
   invoices: {
     total: 0,
     pending: 0,

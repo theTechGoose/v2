@@ -1,24 +1,14 @@
 /**
- * Public document state over the REAL API (dev stack on :5280 → :4280).
+ * Public document state over the REAL API (dev stack on :5280 → :4280) —
+ * merged-world edition. The quote IS the Quote + Agreement, so every public
+ * document guarantee lives on GET /quotes/:id/public + /quotes/:id/pdf.
  *
- *   P-11 "The public quote has no persisted accepted state." — the public
- *        payload must carry who accepted + when, and a second accept must
- *        be rejected with 409 (today it 200s {ok:true,alreadyAccepted:true}).
- *        NOTE decline-after-accept already returns 409 before mutating
- *        (probed) — that guard is green, so it is NOT re-asserted here; the
- *        remaining decline defect is FE-only (errors only after submit).
- *   P-13 "The contract never names the customer: 'Para: —'." — a contract
- *        created without customerId (exactly what the assistant wizard
- *        produces — backend/src/agents/domain/coordinators/
- *        handle-wizard-answer/mod.ts omits it when the conversation has
- *        none) must still expose the customer block on GET
- *        /contracts/:id/public by falling back to the linked quote's
- *        customer. Probed today: the payload has NO customer key at all.
- *   P-40 the signed public payload must carry the stored signature image
- *        (redactContract explicitly omits customerSignature today).
- *   P-63 GET /contracts/:id/pdf must exist for a signed contract — the
- *        invoice precedent GET /invoices/:id/pdf was probed at
- *        200 application/pdf; the contract equivalent 404s today.
+ *   P-11 the public payload carries the persisted accepted state (who +
+ *        when), and a second accept is rejected with 409.
+ *   P-13 the public quote names the customer — the full contact projection
+ *        ({name, phoneNumber, email}) backs the agreement's To/Para card.
+ *   P-40 the accepted public payload carries the stored signature image.
+ *   P-63 GET /quotes/:id/pdf serves the agreement as a PDF (invoice parity).
  */
 import {
   anonymous,
@@ -30,11 +20,11 @@ import {
 
 const CUSTOMER_NAME = "Maria Delgado";
 
-/** Tiny valid 8×8 PNG — same kind of data URL PublicSignContract submits. */
+/** Tiny valid 8×8 PNG — same kind of data URL PublicSignQuote submits. */
 const SIGNATURE_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAF0lEQVR4nGNgYGD4z4AGmNAFRlgIXQAAiMkBB9dzbnMAAAAASUVORK5CYII=";
 
-describe("public doc state (quote accept persistence, contract customer/signature/pdf)", () => {
+describe("public doc state (accept persistence, customer block, signature, pdf)", () => {
   let s: ApiSession;
   let customerId: string;
 
@@ -68,11 +58,8 @@ describe("public doc state (quote accept persistence, contract customer/signatur
         `/quotes/${quoteId}/public`,
       );
       expect(status).toBe(200);
-      // Green today — the terminal status does come through:
-      expect(body.status).toBe("approved");
-      // RED today — the accept handler stores acceptedName + acceptedAt on
-      // the row, but redactQuote drops both, so the page cannot render the
-      // "accepted by X on Y" confirmation:
+      // The one canonical terminal value — "approved" is dead.
+      expect(body.status).toBe("accepted");
       expect(body.acceptedName).toBe(CUSTOMER_NAME);
       expect(typeof body.acceptedAt).toBe("string");
       expect(new Date(body.acceptedAt).toString()).not.toBe("Invalid Date");
@@ -83,88 +70,68 @@ describe("public doc state (quote accept persistence, contract customer/signatur
         name: "Someone Else",
         signature: "Someone Else",
       });
-      // RED today: the endpoint answers 200 {ok:true,alreadyAccepted:true},
-      // which lets the reloaded pristine form "accept" again as if it worked.
       expect(second.status).toBe(409);
+      expect(second.body.reason).toBe("already_accepted");
     });
   });
 
   // -------------------------------------------------------------------------
-  // P-13 — the public contract names the customer
+  // P-13 — the public quote names the customer (the agreement's To card)
   // -------------------------------------------------------------------------
 
-  describe("P-13 public contract carries the customer block", () => {
+  describe("P-13 public quote carries the customer block", () => {
     let quoteId: string;
-    let contractId: string;
 
     beforeAll(async () => {
       quoteId = await seedQuote(s, { customerId });
-      // Created WITHOUT customerId — the shape the assistant wizard's
-      // contract-creation actually produces (it omits customerId when the
-      // conversation has none). The quote it links DOES carry the customer.
-      const r = await s.post("/contracts", { quoteId, totalAmount: 55000 });
-      expect(r.status).toBeLessThan(400);
-      contractId = r.body.id as string;
     });
 
-    it("P-13 GET /contracts/:id/public includes the customer's name (via the linked quote)", async () => {
+    it("P-13 GET /quotes/:id/public includes the customer's contact projection", async () => {
       const { status, body } = await anonymous().get(
-        `/contracts/${contractId}/public`,
+        `/quotes/${quoteId}/public`,
       );
       expect(status).toBe(200);
-      // RED today: the payload has no `customer` key at all for this
-      // contract shape, so the /c page renders "Para: —".
       expect(body.customer).toBeDefined();
       expect(body.customer.name).toBe(CUSTOMER_NAME);
+      // The merged agreement renders a full To/Para contact card, so the
+      // projection is {name, phoneNumber, email} — not name alone.
+      expect(body.customer.phoneNumber).toBe("+15125552541");
+      expect(body.customer.email).toBe(
+        "maria.delgado.jest@blackhole.postmarkapp.com",
+      );
     });
   });
 
   // -------------------------------------------------------------------------
-  // P-40 + P-63 — signed contract: signature image + PDF download
+  // P-40 + P-63 — accepted quote: signature image + PDF download
   // -------------------------------------------------------------------------
 
-  describe("P-40/P-63 signed public contract", () => {
+  describe("P-40/P-63 accepted public quote", () => {
     let quoteId: string;
-    let contractId: string;
 
     beforeAll(async () => {
       quoteId = await seedQuote(s, { customerId });
-      const r = await s.post("/contracts", {
-        quoteId,
-        customerId,
-        totalAmount: 55000,
-      });
-      expect(r.status).toBeLessThan(400);
-      contractId = r.body.id as string;
-      const sign = await anonymous().post(`/contracts/${contractId}/sign`, {
+      const accept = await anonymous().post(`/quotes/${quoteId}/accept`, {
         signature: SIGNATURE_PNG,
         name: CUSTOMER_NAME,
       });
-      expect(sign.status).toBeLessThan(400);
+      expect(accept.status).toBeLessThan(400);
     });
 
-    it("P-40 GET /contracts/:id/public carries the stored signature image after signing", async () => {
+    it("P-40 GET /quotes/:id/public carries the stored signature image after accepting", async () => {
       const { status, body } = await anonymous().get(
-        `/contracts/${contractId}/public`,
+        `/quotes/${quoteId}/public`,
       );
       expect(status).toBe(200);
-      // Green today — the typed legal name survives:
-      expect(body.customerSignedName).toBe(CUSTOMER_NAME);
-      // RED today — redactContract omits the captured PNG, so neither the
-      // signed page nor anything else can ever render the drawn signature.
-      // Accept the data URL itself or a fetchable URL to it.
-      const image = body.customerSignature ?? body.signatureImage ??
-        body.signatureUrl;
-      expect(image).toBeTruthy();
-      expect(String(image)).toMatch(/^data:image\/|^https?:\/\/|^\//);
+      expect(body.acceptedName).toBe(CUSTOMER_NAME);
+      expect(body.acceptedSignature).toBeTruthy();
+      expect(String(body.acceptedSignature)).toMatch(
+        /^data:image\/|^https?:\/\/|^\//,
+      );
     });
 
-    it("P-63 GET /contracts/:id/pdf serves the signed agreement as a PDF (invoice parity)", async () => {
-      // Precedent (probed green): GET /invoices/:id/pdf → 200 application/pdf.
-      // RED today: the contract equivalent 404s.
-      const { status, res } = await anonymous().get(
-        `/contracts/${contractId}/pdf`,
-      );
+    it("P-63 GET /quotes/:id/pdf serves the agreement as a PDF (invoice parity)", async () => {
+      const { status, res } = await anonymous().get(`/quotes/${quoteId}/pdf`);
       expect(status).toBe(200);
       expect(res.headers.get("content-type")).toContain("application/pdf");
     });

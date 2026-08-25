@@ -1,12 +1,12 @@
 /**
  * Shared presentational parts for the public customer documents — the signed
- * agreement (/c/:id, contract-doc.tsx) and the invoice (/i/:id).
+ * agreement (/q/:id, quote-doc.tsx) and the invoice (/i/:id).
  *
- * Extracted from contract-doc.tsx so the invoice can mirror the agreement's
+ * Extracted from quote-doc.tsx so the invoice can mirror the agreement's
  * layout — business header, party cards, itemized job details, payment
  * schedule, term grid — WITHOUT duplicating markup (which would immediately
  * drift). The agreement keeps its 14 legal clauses + signature block locally
- * in contract-doc.tsx; the invoice composes these parts plus its own
+ * in quote-doc.tsx; the invoice composes these parts plus its own
  * amount-due / pay-now flow (and drops clauses + signature). See the invoice
  * feature brief: "all the information as the agreement, minus the 1–14 Terms
  * clauses and the signature block."
@@ -222,10 +222,16 @@ export function PartyCard(props: {
         </div>
       )}
       {props.email && (
-        <div style={`margin-top:2px;font-size:12.5px;line-height:1.35`}>
+        <div
+          style={`margin-top:2px;font-size:12.5px;line-height:1.35;min-width:0;max-width:100%`}
+        >
+          {
+            /* P-58: long emails must break mid-address rather than paint
+              past the 390px card edge. */
+          }
           <a
             href={`mailto:${props.email}`}
-            style={`color:${TEAL};text-decoration:none;font-weight:600`}
+            style={`color:${TEAL};text-decoration:none;font-weight:600;overflow-wrap:anywhere;word-break:break-all`}
           >
             {props.email}
           </a>
@@ -287,15 +293,15 @@ export function expandTermValue(
   const stateName = expandStateName(contractorState);
   if (term.stepId === "wraps") {
     const v = localizeTermValue(term.value, lang);
-    return tFor(lang, "contractDoc.estimated", { value: v });
+    return tFor(lang, "quoteDoc.estimated", { value: v });
   }
   if (term.stepId === "governing_state") {
     if (/use my business|business state/i.test(term.value)) {
       if (!stateName) return term.value;
-      return tFor(lang, "contractDoc.termValue.stateLaw", { state: stateName });
+      return tFor(lang, "quoteDoc.termValue.stateLaw", { state: stateName });
     }
     if (/job\s*site|use the job/i.test(term.value)) {
-      return tFor(lang, "contractDoc.termValue.jobSiteState");
+      return tFor(lang, "quoteDoc.termValue.jobSiteState");
     }
     return expandStateName(term.value) ?? term.value;
   }
@@ -303,16 +309,16 @@ export function expandTermValue(
     const v = term.value.trim().toLowerCase();
     if (v === "yes") {
       return stateName
-        ? tFor(lang, "contractDoc.termValue.stateNoticesYesState", {
+        ? tFor(lang, "quoteDoc.termValue.stateNoticesYesState", {
           state: stateName,
         })
-        : tFor(lang, "contractDoc.termValue.stateNoticesYes");
+        : tFor(lang, "quoteDoc.termValue.stateNoticesYes");
     }
     if (v === "no") {
-      return tFor(lang, "contractDoc.termValue.stateNoticesNo");
+      return tFor(lang, "quoteDoc.termValue.stateNoticesNo");
     }
     if (v.startsWith("review")) {
-      return tFor(lang, "contractDoc.termValue.stateNoticesReview");
+      return tFor(lang, "quoteDoc.termValue.stateNoticesReview");
     }
     return term.value;
   }
@@ -335,14 +341,14 @@ export function computeMilestones(
 ): { label: string; amount: number; when: string }[] {
   if (!total || total <= 0) return [];
   const L = {
-    deposit: tFor(lang, "contractDoc.milestone.deposit"),
-    balance: tFor(lang, "contractDoc.milestone.balance"),
-    midpoint: tFor(lang, "contractDoc.milestone.midpoint"),
-    final: tFor(lang, "contractDoc.milestone.final"),
-    beforeStart: tFor(lang, "contractDoc.milestone.beforeStart"),
-    onCompletion: tFor(lang, "contractDoc.milestone.onCompletion"),
-    atMidpoint: tFor(lang, "contractDoc.milestone.atMidpoint"),
-    onSigning: tFor(lang, "contractDoc.milestone.onSigning"),
+    deposit: tFor(lang, "quoteDoc.milestone.deposit"),
+    balance: tFor(lang, "quoteDoc.milestone.balance"),
+    midpoint: tFor(lang, "quoteDoc.milestone.midpoint"),
+    final: tFor(lang, "quoteDoc.milestone.final"),
+    beforeStart: tFor(lang, "quoteDoc.milestone.beforeStart"),
+    onCompletion: tFor(lang, "quoteDoc.milestone.onCompletion"),
+    atMidpoint: tFor(lang, "quoteDoc.milestone.atMidpoint"),
+    onSigning: tFor(lang, "quoteDoc.milestone.onSigning"),
   };
   const roleLabel: Record<MilestoneRole, { label: string; when: string }> = {
     deposit: { label: L.deposit, when: L.beforeStart },
@@ -424,13 +430,13 @@ export function JobDetailsSection(props: {
               </th>
               {showQty && (
                 <th
-                  style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:right`}
+                  style={`padding:8px 12px 8px 8px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:right`}
                 >
                   {labels.tableQty}
                 </th>
               )}
               <th
-                style={`padding:8px 0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:right`}
+                style={`padding:8px 0 8px 8px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};border-bottom:1px solid ${LINE};text-align:right`}
               >
                 {labels.tableAmount}
               </th>
@@ -448,13 +454,13 @@ export function JobDetailsSection(props: {
                   </td>
                   {showQty && (
                     <td
-                      style={`padding:14px 0;border-bottom:1px solid ${LINE};color:${MUTED};font-size:13px;text-align:right`}
+                      style={`padding:14px 12px 14px 8px;border-bottom:1px solid ${LINE};color:${MUTED};font-size:13px;text-align:right;white-space:nowrap`}
                     >
                       {li.quantity ?? 1} {li.unit ?? labels.unitEach}
                     </td>
                   )}
                   <td
-                    style={`padding:14px 0;border-bottom:1px solid ${LINE};color:${INK};font-size:15px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums`}
+                    style={`padding:14px 0 14px 8px;border-bottom:1px solid ${LINE};color:${INK};font-size:15px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap`}
                   >
                     {fmtMoneyExact(lineTotal)}
                   </td>
@@ -588,7 +594,7 @@ export function TermGrid(props: {
       {(props.terms ?? [])
         .filter((term) =>
           term.stepId !== "customer" && !isEmptyWarranty(term) &&
-          // A concrete start date on the contract supersedes the coarse
+          // A concrete start date on the agreement supersedes the coarse
           // wizard answer — never print both.
           !(term.stepId === "start_date" && !!props.startDate)
         )

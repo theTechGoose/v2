@@ -101,12 +101,10 @@ function jobToRow(j: Job, idx: number, now: Date, lang: Lang): JobRow {
     ? tFor(lang, "dashboardPage.job.amountPaid", {
       amount: `$${Math.round(paid).toLocaleString()}`,
     })
-    : (j.contract?.status === "signed"
-      ? tFor(lang, "dashboardPage.job.deposit")
-      : tFor(lang, "dashboardPage.job.quoted"));
+    : tFor(lang, "dashboardPage.job.deposit");
   const statusKind: JobRow["status"]["kind"] = j.status === "overdue"
     ? "warn"
-    : j.status === "awaiting" || j.status === "awaiting_permit"
+    : j.status === "awaiting_permit"
     ? "warn"
     : j.status === "complete"
     ? "teal"
@@ -216,11 +214,6 @@ const NOTIF_ICON: Record<
     icon: "check",
     bg: "var(--green-50)",
     fg: "var(--green-600)",
-  },
-  contract_signed: {
-    icon: "contract",
-    bg: "var(--teal-50)",
-    fg: "var(--teal-600)",
   },
   invoice_claimed: {
     icon: "card",

@@ -19,7 +19,7 @@ export interface LogPaperworkMessageInput {
 
 /**
  * LogPaperworkMessage — record an outbound paperwork dispatch (quote /
- * contract / invoice email or text) in the customer's communication
+ * invoice email or text) in the customer's communication
  * thread, so the comms trail is queryable (roadmap p.8: completion Text +
  * Email after quotes/signed quotes).
  *

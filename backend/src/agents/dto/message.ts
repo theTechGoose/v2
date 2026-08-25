@@ -1,4 +1,10 @@
-import { IsIn, IsOptional, IsString, MinLength, validateSync } from "#class-validator";
+import {
+  IsIn,
+  IsOptional,
+  IsString,
+  MinLength,
+  validateSync,
+} from "#class-validator";
 import { plainToInstance } from "#class-transformer";
 
 /**
@@ -7,7 +13,7 @@ import { plainToInstance } from "#class-transformer";
  *
  *   text         → plain text bubble (role = 'user' or 'assistant')
  *   voice        → user voice memo (payload = { fileId, durationSec, transcript? })
- *   action_card  → assistant has produced a quote/contract/invoice (payload = ActionPayload)
+ *   action_card  → assistant has produced a quote/invoice (payload = ActionPayload)
  *   wizard       → assistant is presenting an inline wizard step (payload = WizardStepRender)
  *   continue_cta → assistant offers to advance phase (payload = { toPhase, summary })
  *   phase_divider→ visual marker between phases (payload = { phase, label })
@@ -31,7 +37,7 @@ export interface AgentMessage {
   conversationId: string;
   role: MessageRole;
   kind: MessageKind;
-  content: string;                // plain summary; payload carries the structured data
+  content: string; // plain summary; payload carries the structured data
   payload?: Record<string, unknown>;
   createdAt: string;
 }
@@ -39,7 +45,7 @@ export interface AgentMessage {
 export class ChatInputDto {
   @IsOptional()
   @IsString()
-  conversationId?: string;        // omitted on the very first message; server creates one
+  conversationId?: string; // omitted on the very first message; server creates one
 
   /** Optional for kind="voice"|"image": the controller derives content
    *  (transcript for voice, "[photo attached]" for image) before handing
@@ -51,7 +57,7 @@ export class ChatInputDto {
 
   @IsOptional()
   @IsIn(["text", "voice", "image"])
-  kind?: "text" | "voice" | "image";  // voice/image carry an attached fileId in payload
+  kind?: "text" | "voice" | "image"; // voice/image carry an attached fileId in payload
 
   /** Voice/image carries `{ fileId }`. Validation is intentionally loose —
    *  the shape is per-kind and the controller does the deeper checks. */
@@ -62,6 +68,8 @@ export class ChatInputDto {
 export function parseChatInput(input: unknown): ChatInputDto {
   const dto = plainToInstance(ChatInputDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid chat input: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid chat input: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }

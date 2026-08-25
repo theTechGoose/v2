@@ -27,7 +27,9 @@ describe("Spanish localization across the quote flow", () => {
 
   it("the dashboard renders in Spanish", () => {
     cy.visit("/dashboard");
-    cy.contains(/cotizaciones|facturas|clientes/i, { timeout: 10_000 }).should("be.visible");
+    cy.contains(/cotizaciones|facturas|clientes/i, { timeout: 10_000 }).should(
+      "be.visible",
+    );
     assertNoRawI18nKeys();
   });
 
@@ -52,16 +54,19 @@ describe("Spanish localization across the quote flow", () => {
       cy.clearCookies();
       cy.setCookie("pm_lang", "es");
       cy.visit(`/q/${quoteId}`);
-      cy.contains(/aceptar|firmar|cotización/i, { timeout: 10_000 }).should("be.visible");
+      cy.contains(/aceptar|firmar|cotización/i, { timeout: 10_000 }).should(
+        "be.visible",
+      );
       assertNoRawI18nKeys();
     });
   });
 
-  it("the public contract signature section renders in Spanish", () => {
-    cy.seedQuoteToCash().then(({ contractId }) => {
+  it("the public agreement's signature section renders in Spanish", () => {
+    // The quote IS the agreement — the signature ceremony lives on /q now.
+    cy.seedQuoteToCash().then(({ quoteId }) => {
       cy.clearCookies();
       cy.setCookie("pm_lang", "es");
-      cy.visit(`/c/${contractId}`);
+      cy.visit(`/q/${quoteId}`);
       cy.contains(/firma|firmar/i, { timeout: 10_000 }).should("be.visible");
       assertNoRawI18nKeys();
     });
@@ -69,6 +74,9 @@ describe("Spanish localization across the quote flow", () => {
 
   it("neutral Latin-American Spanish: no vosotros forms anywhere", () => {
     cy.visit("/dashboard");
-    cy.get("body").invoke("text").should("not.match", /\bvosotros\b|\bhabéis\b|\bpodéis\b/i);
+    cy.get("body").invoke("text").should(
+      "not.match",
+      /\bvosotros\b|\bhabéis\b|\bpodéis\b/i,
+    );
   });
 });

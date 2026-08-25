@@ -4,11 +4,10 @@ import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-ter
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
-import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
+import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
@@ -16,7 +15,6 @@ function fresh() {
   const conversations = new AgentConversationStore();
   const messages = new AgentMessageStore();
   const quotes = new QuoteStore();
-  const contracts = new ContractStore();
   const customers = new CustomerStore();
   const users = new UserStore();
   const bus = new EventBus();
@@ -25,7 +23,6 @@ function fresh() {
     conversations,
     messages,
     quotes,
-    contracts,
     customers,
     users,
     bus,
@@ -34,7 +31,6 @@ function fresh() {
     conversations,
     messages,
     quotes,
-    contracts,
     customers,
     users,
     bus,
@@ -101,7 +97,7 @@ Deno.test("handle-wizard-answer integration: completing all steps emits a contin
   const { flow, conv, conversations } = await setupTermsConversation();
 
   let lastMessages: AgentMessage[] = [];
-  for (const step of CONTRACT_TERMS_WIZARD_V1.steps) {
+  for (const step of TERMS_WIZARD_V1.steps) {
     const opt = step.options.find((o) => !o.isCustom)!;
     const r = await flow.run({
       userId: "u-1",
@@ -112,7 +108,7 @@ Deno.test("handle-wizard-answer integration: completing all steps emits a contin
     lastMessages = r.newMessages;
   }
 
-  const totalSteps = CONTRACT_TERMS_WIZARD_V1.steps.length;
+  const totalSteps = TERMS_WIZARD_V1.steps.length;
   // Last assistant message must be the continue_cta to send.
   assertEquals(lastMessages[lastMessages.length - 1].kind, "continue_cta");
   const finalState = await conversations.getWizardState(conv.id);
@@ -269,6 +265,45 @@ Deno.test("handle-wizard-answer integration: rejects out-of-order step", async (
   await resetKv();
 });
 
+Deno.test("handle-wizard-answer integration: out-of-order create_new does NOT create an orphan customer", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, conv } = await setupTermsConversation();
+
+  // Answer the customer step for real so the wizard advances to start_date.
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: { create: { name: "Real Cliente", phoneNumber: "+15125550001" } },
+  });
+
+  // A STALE card (second tab, double tap, lost-response retry) re-answers
+  // the customer step. It must be rejected BEFORE the customer is
+  // materialized — the old ordering wrote an orphan Customer row on every
+  // failed attempt.
+  await assertRejects(
+    () =>
+      flow.run({
+        userId: "u-1",
+        conversationId: conv.id,
+        stepId: "customer",
+        optionId: "create_new",
+        customer: {
+          create: { name: "Orphan Cliente", phoneNumber: "+15125550002" },
+        },
+      }),
+    Error,
+    'expected answer for "start_date"',
+  );
+
+  const list = await customers.listByUser("u-1");
+  assertEquals(list.map((c) => c.name), ["Real Cliente"]);
+
+  await resetKv();
+});
+
 Deno.test("handle-wizard-answer integration: forbidden across users", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
@@ -287,14 +322,13 @@ Deno.test("handle-wizard-answer integration: forbidden across users", async () =
   await resetKv();
 });
 
-Deno.test("handle-wizard-answer integration: completing all steps materializes a Contract bound to conv.quoteId", async () => {
+Deno.test("handle-wizard-answer integration: completing all steps writes the terms onto conv.quoteId's quote", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  const { flow, conv, quote, contracts, conversations } =
-    await setupTermsConversationWithQuote();
+  const { flow, conv, quote, quotes } = await setupTermsConversationWithQuote();
 
   let lastResult;
-  for (const step of CONTRACT_TERMS_WIZARD_V1.steps) {
+  for (const step of TERMS_WIZARD_V1.steps) {
     const opt = step.options.find((o) => !o.isCustom)!;
     lastResult = await flow.run({
       userId: "u-1",
@@ -304,38 +338,44 @@ Deno.test("handle-wizard-answer integration: completing all steps materializes a
     });
   }
 
-  // The continue_cta now carries the new contract id.
+  // The continue_cta carries the quote id (the quote IS the agreement).
   const cta = lastResult!.newMessages[lastResult!.newMessages.length - 1];
-  const ctaPayload = cta.payload as { contractId?: string; toPhase: string };
-  assert(
-    typeof ctaPayload.contractId === "string",
-    "continue_cta should carry contractId",
+  const ctaPayload = cta.payload as { quoteId?: string; toPhase: string };
+  assertEquals(
+    ctaPayload.quoteId,
+    quote.id,
+    "continue_cta should carry quoteId",
   );
 
-  // Conversation now points at the new contract.
-  const updatedConv = await conversations.get(conv.id);
-  assertEquals(updatedConv.contractId, ctaPayload.contractId);
-
-  // Contract row exists in the store, owned by u-1, bound to the quote.
-  const contract = await contracts.getOwned(ctaPayload.contractId!, "u-1");
-  assertEquals(contract.quoteId, quote.id);
-  assertEquals(contract.customerId, "cust-1");
-  assertEquals(contract.status, "draft");
-  assertEquals(contract.totalAmount, 12_500);
+  // Terms are persisted onto the quote itself: one row per non-customer step,
+  // stored in English with {stepId, label, value}. (Sorted — same-millisecond
+  // message appends make the captured order non-deterministic.)
+  const reloaded = await quotes.getOwned(quote.id, "u-1");
+  const termStepIds = (reloaded.terms ?? []).map((t) => t.stepId).sort();
+  assertEquals(
+    termStepIds,
+    ["payment_terms", "start_date", "warranty", "wraps"],
+  );
+  for (const term of reloaded.terms ?? []) {
+    assert(term.label.length > 0, `term ${term.stepId} has a label`);
+    assert(term.value.length > 0, `term ${term.stepId} has a value`);
+  }
+  // The conversation's customer is backfilled onto the quote.
+  assertEquals(reloaded.customerId, "cust-1");
 
   await resetKv();
 });
 
-Deno.test("handle-wizard-answer integration: completing the wizard emits a 'drafted' contract DomainEvent", async () => {
+Deno.test("handle-wizard-answer integration: completing the wizard emits a quote 'terms_drafted' DomainEvent", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  const { flow, conv, bus } = await setupTermsConversationWithQuote();
+  const { flow, conv, quote, bus } = await setupTermsConversationWithQuote();
   const seen: DomainEvent[] = [];
   bus.subscribe((e) => {
-    if (e.entityType === "contract") seen.push(e);
+    if (e.entityType === "quote" && e.action === "terms_drafted") seen.push(e);
   });
 
-  for (const step of CONTRACT_TERMS_WIZARD_V1.steps) {
+  for (const step of TERMS_WIZARD_V1.steps) {
     const opt = step.options.find((o) => !o.isCustom)!;
     await flow.run({
       userId: "u-1",
@@ -346,20 +386,22 @@ Deno.test("handle-wizard-answer integration: completing the wizard emits a 'draf
   }
 
   assertEquals(seen.length, 1);
-  assertEquals(seen[0].action, "drafted");
-  assertEquals(seen[0].entityType, "contract");
+  assertEquals(seen[0].entityId, quote.id);
   assertEquals(seen[0].userId, "u-1");
   await resetKv();
 });
 
-Deno.test("handle-wizard-answer integration: completing the wizard without a bound quote does NOT throw and skips contract creation", async () => {
+Deno.test("handle-wizard-answer integration: completing the wizard without a bound quote does NOT throw and skips the terms persist", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  const { flow, conv, conversations, contracts } =
-    await setupTermsConversation(); // no quoteId on conv
+  const { flow, conv, bus } = await setupTermsConversation(); // no quoteId on conv
+  const seen: DomainEvent[] = [];
+  bus.subscribe((e) => {
+    if (e.entityType === "quote" && e.action === "terms_drafted") seen.push(e);
+  });
 
   let lastResult;
-  for (const step of CONTRACT_TERMS_WIZARD_V1.steps) {
+  for (const step of TERMS_WIZARD_V1.steps) {
     const opt = step.options.find((o) => !o.isCustom)!;
     lastResult = await flow.run({
       userId: "u-1",
@@ -371,22 +413,21 @@ Deno.test("handle-wizard-answer integration: completing the wizard without a bou
 
   const cta = lastResult!.newMessages[lastResult!.newMessages.length - 1];
   assertEquals(cta.kind, "continue_cta");
-  // No contractId on the cta payload, no contractId on the conversation.
-  assertEquals((cta.payload as { contractId?: string }).contractId, undefined);
-  assertEquals((await conversations.get(conv.id)).contractId, undefined);
-  assertEquals((await contracts.listByUser("u-1")).length, 0);
+  // No quoteId on the cta payload, and no terms_drafted event fired.
+  assertEquals((cta.payload as { quoteId?: string }).quoteId, undefined);
+  assertEquals(seen.length, 0);
 
   await resetKv();
 });
 
-Deno.test("handle-wizard-answer integration: re-completing an already-finalized conversation reuses the same contract id", async () => {
+Deno.test("handle-wizard-answer integration: re-completing an already-finalized conversation re-writes the same terms idempotently", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  const { flow, conversations, conv, contracts } =
+  const { flow, conversations, conv, quote, quotes } =
     await setupTermsConversationWithQuote();
 
   let lastResult;
-  for (const step of CONTRACT_TERMS_WIZARD_V1.steps) {
+  for (const step of TERMS_WIZARD_V1.steps) {
     const opt = step.options.find((o) => !o.isCustom)!;
     lastResult = await flow.run({
       userId: "u-1",
@@ -395,15 +436,15 @@ Deno.test("handle-wizard-answer integration: re-completing an already-finalized 
       optionId: opt.id,
     });
   }
-  const firstContractId =
-    (lastResult!.newMessages.at(-1)!.payload as { contractId: string })
-      .contractId;
+  const firstQuoteId =
+    (lastResult!.newMessages.at(-1)!.payload as { quoteId: string }).quoteId;
+  const firstTerms = (await quotes.getOwned(quote.id, "u-1")).terms;
 
   // Roll the wizard back to its last step, then re-answer it. The
-  // coordinator should reuse the existing contract rather than creating
-  // a second one.
+  // coordinator should re-finalize onto the SAME quote without
+  // duplicating any terms rows.
   const rolledBackState = await conversations.getWizardState(conv.id);
-  const totalSteps = CONTRACT_TERMS_WIZARD_V1.steps.length;
+  const totalSteps = TERMS_WIZARD_V1.steps.length;
   const lastIdx = totalSteps - 1;
   await conversations.putWizardState(conv.id, {
     ...rolledBackState!,
@@ -411,7 +452,7 @@ Deno.test("handle-wizard-answer integration: re-completing an already-finalized 
     answers: rolledBackState!.answers.slice(0, lastIdx),
   });
 
-  const last = CONTRACT_TERMS_WIZARD_V1.steps[lastIdx];
+  const last = TERMS_WIZARD_V1.steps[lastIdx];
   const opt = last.options.find((o) => !o.isCustom)!;
   const r = await flow.run({
     userId: "u-1",
@@ -419,11 +460,12 @@ Deno.test("handle-wizard-answer integration: re-completing an already-finalized 
     stepId: last.id,
     optionId: opt.id,
   });
-  const secondContractId =
-    (r.newMessages.at(-1)!.payload as { contractId: string }).contractId;
+  const secondQuoteId =
+    (r.newMessages.at(-1)!.payload as { quoteId: string }).quoteId;
 
-  assertEquals(secondContractId, firstContractId);
-  assertEquals((await contracts.listByUser("u-1")).length, 1);
+  assertEquals(secondQuoteId, firstQuoteId);
+  const reloaded = await quotes.getOwned(quote.id, "u-1");
+  assertEquals(reloaded.terms, firstTerms);
 
   await resetKv();
 });

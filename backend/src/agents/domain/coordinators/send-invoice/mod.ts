@@ -1,7 +1,7 @@
 import { Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
+import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
@@ -26,16 +26,16 @@ export interface SendInvoiceResult {
 const DEFAULT_DUE_DAYS = 30;
 
 /**
- * SendInvoice — closes the chain: quote → contract → INVOICE.
+ * SendInvoice — closes the chain: quote → INVOICE.
  *
- * Fires when the user clicks the post-contract-acceptance "Continue to
+ * Fires when the user clicks the post-acceptance "Continue to
  * invoice" CTA. Either materializes the conversation's first invoice
- * from the bound contract (totalAmount, customerId, default 30-day
+ * from the bound quote (estimatedTotal, customerId, default 30-day
  * due date) or re-uses an existing one bound by `conv.invoiceId`.
  *
- *   1. Verify ownership + that conv.contractId is bound.
+ *   1. Verify ownership + that conv.quoteId is bound.
  *   2. Reuse conv.invoiceId if already created; otherwise create one
- *      from the contract.
+ *      from the quote.
  *   3. If invoice.status !== 'sent', flip it and emit `invoice:sent`.
  *   4. Best-effort dispatch the customer email (failure logs but does
  *      not abort — user can retry from the invoice surface).
@@ -48,7 +48,7 @@ export class SendInvoice {
   constructor(
     private conversations: AgentConversationStore,
     private messages: AgentMessageStore,
-    private contracts: ContractStore,
+    private quotes: QuoteStore,
     private invoices: InvoiceStore,
     private bus: EventBus,
     private emailer: SendPaperworkEmail,
@@ -58,20 +58,22 @@ export class SendInvoice {
     const lang = input.language ?? "en";
     const conv = await this.conversations.get(input.conversationId);
     if (conv.userId !== input.userId) throw new Error("forbidden");
-    if (!conv.contractId) {
-      throw new Error("conversation has no bound contract — accept the contract first");
+    if (!conv.quoteId) {
+      throw new Error("conversation has no bound quote — lock a quote first");
     }
 
-    const contract = await this.contracts.getOwned(conv.contractId, input.userId);
+    const quote = await this.quotes.getOwned(conv.quoteId, input.userId);
 
     let invoiceId = conv.invoiceId;
     if (!invoiceId) {
       const dueDate = new Date(Date.now() + DEFAULT_DUE_DAYS * 86_400_000)
         .toISOString().slice(0, 10);
       const created = await this.invoices.create(input.userId, {
-        contractId: contract.id,
-        ...(contract.customerId ? { customerId: contract.customerId } : {}),
-        ...(typeof contract.totalAmount === "number" ? { amount: contract.totalAmount } : {}),
+        quoteId: quote.id,
+        ...(quote.customerId ? { customerId: quote.customerId } : {}),
+        ...(typeof quote.estimatedTotal === "number"
+          ? { amount: quote.estimatedTotal }
+          : {}),
         issuedDate: new Date().toISOString().slice(0, 10),
         dueDate,
         status: "draft",
@@ -99,13 +101,23 @@ export class SendInvoice {
       });
     }
     try {
-      const result = await this.emailer.run(input.userId, { kind: "invoice", resourceId: invoice.id });
+      const result = await this.emailer.run(input.userId, {
+        kind: "invoice",
+        resourceId: invoice.id,
+      });
       if (result.ok) emailedTo = result.to;
       else emailFailureReason = result.reason;
-      console.log(`[send-invoice] invoice=${invoice.id} email ok=${result.ok} to=${result.to ?? "<none>"} reason=${result.reason ?? "ok"}`);
+      console.log(
+        `[send-invoice] invoice=${invoice.id} email ok=${result.ok} to=${
+          result.to ?? "<none>"
+        } reason=${result.reason ?? "ok"}`,
+      );
     } catch (err) {
       emailFailureReason = (err as Error).message ?? "dispatch threw";
-      console.error(`[send-invoice] email dispatch failed for invoice ${invoice.id}:`, err);
+      console.error(
+        `[send-invoice] email dispatch failed for invoice ${invoice.id}:`,
+        err,
+      );
     }
 
     const fresh = await this.invoices.getOwned(invoice.id, input.userId);
@@ -117,16 +129,21 @@ export class SendInvoice {
       role: "assistant",
       kind: "action_card",
       content: emailedTo
-        ? t(lang, "sendInvoice.card.sentTo", { dueDate: fresh.dueDate, email: emailedTo })
+        ? t(lang, "sendInvoice.card.sentTo", {
+          dueDate: fresh.dueDate,
+          email: emailedTo,
+        })
         : t(lang, "sendInvoice.card.noEmail", { dueDate: fresh.dueDate }),
       payload: {
         actionType: "invoice",
         status: "sent",
         invoiceId: fresh.id,
-        contractId: contract.id,
+        quoteId: quote.id,
         ...(fresh.customerId ? { customerId: fresh.customerId } : {}),
         lineItems: [{
-          description: t(lang, "sendInvoice.lineItem.jobTotal", { ref: contract.id.slice(0, 8) }),
+          description: t(lang, "sendInvoice.lineItem.jobTotal", {
+            ref: quote.id.slice(0, 8),
+          }),
           amountCents: totalCents,
         }],
         totalCents,

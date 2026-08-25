@@ -17,6 +17,11 @@ describe("assistant — I know the price, help me draft a quote", () => {
   beforeEach(() => {
     cy.clearCookies();
     cy.loginAs(CONTRACTOR_PHONE);
+    // This spec asserts the ENGLISH empty-state prompts. A fresh master-OTP
+    // user seeds Spanish-first (language:"es"), so pin the language rather
+    // than depend on residual dev-KV state (harness convention: specs that
+    // want Spanish PUT language:"es").
+    cy.request("PUT", "/api/me", { language: "en" });
   });
 
   it("drafts a quote from the price-first empty-state flow", () => {

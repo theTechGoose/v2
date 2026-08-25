@@ -1,15 +1,15 @@
 /**
- * SINGLE SOURCE OF TRUTH for splitting a contract total into payment
+ * SINGLE SOURCE OF TRUTH for splitting an agreement total into payment
  * milestones (deposit / progress / balance), in INTEGER CENTS.
  *
  * Imported by every surface that has to agree on the money:
  *   - the contractor's agreement preview  (front-end/islands/AsstChat.tsx)
- *   - the public contract the customer signs (front-end/components/contract-doc.tsx)
- *   - the contract PDF        (backend .../render-contract-pdf)
+ *   - the public agreement the customer signs (front-end/components/quote-doc.tsx)
+ *   - the agreement PDF       (backend .../render-quote-pdf)
  *   - the generated invoices  (backend .../send-signed-confirmation)
  *
  * These used to each compute the split independently and had drifted apart
- * (the preview billed a 25% deposit while the contract/PDF/invoice used 20%;
+ * (the preview billed a 25% deposit while the agreement/PDF/invoice used 20%;
  * custom terms showed no schedule yet still invoiced a 30% deposit). Routing
  * them all through this one function keeps the preview, the signed document,
  * and the actual bill identical.
@@ -54,7 +54,10 @@ export function computePaymentSplit(
     .split(/[\/,]+/)
     .map((s) => parseFloat(s.trim()))
     .filter((n) => Number.isFinite(n));
-  if (numbers.length >= 2 && Math.abs(numbers.reduce((a, b) => a + b, 0) - 100) <= 1) {
+  if (
+    numbers.length >= 2 &&
+    Math.abs(numbers.reduce((a, b) => a + b, 0) - 100) <= 1
+  ) {
     const parts: PaymentSplitPart[] = numbers.map((pct, i) => ({
       role: roleForIndex(i, numbers.length),
       pct,

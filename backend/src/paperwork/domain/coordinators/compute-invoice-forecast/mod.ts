@@ -1,7 +1,6 @@
 import { Injectable } from "#danet/core";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
 
@@ -61,7 +60,6 @@ export class ComputeInvoiceForecast {
   constructor(
     private invoices: InvoiceStore,
     private customers: CustomerStore,
-    private contracts: ContractStore,
     private quotes: QuoteStore,
   ) {}
 
@@ -76,7 +74,7 @@ export class ComputeInvoiceForecast {
     const atRisk: ForecastEntry[] = [];
 
     const customerCache = new Map<string, string>();
-    const contractCache = new Map<string, string>();
+    const jobNameCache = new Map<string, string>();
 
     for (const inv of all) {
       if (inv.status === "void" || inv.status === "draft") continue;
@@ -88,11 +86,10 @@ export class ComputeInvoiceForecast {
         customerCache,
       );
       const job = await resolveJobName(
-        this.contracts,
         this.quotes,
         userId,
-        inv.contractId,
-        contractCache,
+        inv.quoteId,
+        jobNameCache,
       );
       const labelBase = customer ?? job ?? "Invoice";
 
@@ -245,20 +242,17 @@ async function resolveCustomerName(
 }
 
 async function resolveJobName(
-  contracts: ContractStore,
   quotes: QuoteStore,
   userId: string,
-  contractId: string | undefined,
+  quoteId: string | undefined,
   cache: Map<string, string>,
 ): Promise<string | undefined> {
-  if (!contractId) return undefined;
-  if (cache.has(contractId)) return cache.get(contractId);
+  if (!quoteId) return undefined;
+  if (cache.has(quoteId)) return cache.get(quoteId);
   try {
-    const c = await contracts.getOwned(contractId, userId);
-    if (!c.quoteId) return undefined;
-    const q = await quotes.getOwned(c.quoteId, userId);
+    const q = await quotes.getOwned(quoteId, userId);
     const name = q.jobName?.trim() || q.summary?.trim() || undefined;
-    if (name) cache.set(contractId, name);
+    if (name) cache.set(quoteId, name);
     return name;
   } catch {
     return undefined;

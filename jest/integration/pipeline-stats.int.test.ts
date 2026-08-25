@@ -18,18 +18,24 @@
  *        accepted }, quotedValueCents, awaitingResponse, invoices, revenue,
  *        payments } (all money INTEGER cents).
  *   GET  /analytics/quotes/win-rate?days=90 → { windowDays, decided, won,
- *        lost, winRate } — today ANY contract referencing a quote counts it
+ *        lost, winRate } — nothing may count a quote as decided
  *        as won, signed or not.
  *   GET  /invoices/forecast/this-week → { thisWeekCents, thisWeek, … }.
  *   GET  /jobs → Job[] — today a merely SENT quote with a customer is a job
  *        ("Awaiting signature").
  *   GET  /quotes → QuoteCard[] with derived `stage` — today an unsigned
- *        draft contract flips stage to "won".
+ *        drafted terms flip stage to "won".
  *
  * Fresh phone per describe (reserved block +15125552700-99); each run wipes
  * the user first (GET /me/wipe) so counts stay deterministic across reruns.
  */
-import { anonymous, contractor, seedCustomer, seedQuote, type ApiSession } from "./helpers/api";
+import {
+  anonymous,
+  type ApiSession,
+  contractor,
+  seedCustomer,
+  seedQuote,
+} from "./helpers/api";
 
 /** Login → wipe → login again: a guaranteed-fresh user for stats. */
 async function freshContractor(phone: string): Promise<ApiSession> {
@@ -87,7 +93,8 @@ describe("P-15 the onboarding sample stays out of every pipeline aggregate", () 
     // And no REAL-looking card may leak the internal slug unmarked.
     const leakedUnmarked = cards.filter(
       (c: { summary?: string; isSample?: boolean }) =>
-        String(c.summary ?? "").includes("onboarding-sample") && c.isSample !== true,
+        String(c.summary ?? "").includes("onboarding-sample") &&
+        c.isSample !== true,
     );
     expect(leakedUnmarked).toEqual([]);
   });
@@ -108,27 +115,30 @@ describe("P-14 a sent-but-unsigned quote is awaiting — not won, not an active 
       customerId,
       summary: "Fence repair",
       jobName: "Fence Repair",
-      lineItems: [{ description: "Fence repair", quantity: 1, unit: "job", price: 85_000 }],
+      lineItems: [{
+        description: "Fence repair",
+        quantity: 1,
+        unit: "job",
+        price: 85_000,
+      }],
       estimatedTotal: 85_000, // the audit's $850 quote
     });
     const send = await s.post(`/quotes/${quoteId}/email`);
     expect(send.status).toBeLessThan(400);
-    // Mirror the assistant first-quote flow: a DRAFT agreement referencing
-    // the quote exists, but NOBODY signed. This is what flips today's stats.
-    const contract = await s.post("/contracts", {
-      quoteId,
-      customerId,
-      status: "draft",
-      totalAmount: 85_000,
+    // Sent, with wizard terms drafted onto the quote, but NOBODY signed —
+    // the assistant first-quote state.
+    const patch = await s.put(`/quotes/${quoteId}`, {
+      terms: [
+        { stepId: "payment_terms", label: "Payment terms", value: "Due Now" },
+      ],
     });
-    expect(contract.status).toBeLessThan(400);
+    expect(patch.status).toBeLessThan(400);
   });
 
   it("P-14 win-rate reports 0 decided / 0 won minutes after sending (nobody signed)", async () => {
     const { status, body } = await s.get("/analytics/quotes/win-rate?days=90");
     expect(status).toBe(200);
-    // Today: decided === 1, won === 1 (the unsigned draft agreement counts
-    // as a win). Desired: nothing is decided until the customer signs.
+    // Nothing is decided until the customer accepts (signs).
     expect(body.decided).toBe(0);
     expect(body.won).toBe(0);
     expect(body.lost).toBe(0);
@@ -140,10 +150,7 @@ describe("P-14 a sent-but-unsigned quote is awaiting — not won, not an active 
       (c: { id?: string }) => c.id === quoteId,
     );
     expect(card).toBeTruthy();
-    // Today: stage === "won" (unsigned contract → won), so /quotes shows
-    // "Decididas este mes — 1 ganadas" with "En espera: $0 · 0" while the
-    // dashboard says "1 enviadas · $850". Desired: the freshly sent,
-    // unsigned quote is still in the awaiting track.
+    // The freshly sent, unsigned quote stays in the awaiting track.
     expect(card.stage).toBe("sent");
     // …and the dashboard agrees it is awaiting with its $850:
     const dash = await s.get("/analytics/dashboard");

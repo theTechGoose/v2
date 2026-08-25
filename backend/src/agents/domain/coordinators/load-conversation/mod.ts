@@ -2,14 +2,14 @@ import { Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { computeProgress } from "@agents/domain/business/wizard-progress/mod.ts";
-import { CONTRACT_TERMS_WIZARD_V1 } from "@agents/domain/business/contract-terms-wizard-spec/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
+import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
+import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { WizardState } from "@agents/dto/wizard.ts";
 import type { WizardProgress } from "@agents/domain/business/wizard-progress/mod.ts";
-import type { Contract } from "@paperwork/dto/contract.ts";
+import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 
 export interface ConversationSnapshot {
@@ -17,9 +17,9 @@ export interface ConversationSnapshot {
   messages: AgentMessage[];
   /** Only present when conversation.currentPhase === 'terms'. */
   wizard?: { state: WizardState; progress: WizardProgress };
-  /** Bound contract — populated once the wizard finalizes. */
-  contract?: Contract;
-  /** Bound customer — resolved from conv.customerId or contract.customerId. */
+  /** Bound quote (the agreement) — populated once a quote is locked. */
+  quote?: Quote;
+  /** Bound customer — resolved from conv.customerId or quote.customerId. */
   customer?: Customer;
 }
 
@@ -34,11 +34,13 @@ export class LoadConversation {
   constructor(
     private conversations: AgentConversationStore,
     private messages: AgentMessageStore,
-    private contracts: ContractStore,
+    private quotes: QuoteStore,
     private customers: CustomerStore,
   ) {}
 
-  async run(input: { userId: string; conversationId: string }): Promise<ConversationSnapshot> {
+  async run(
+    input: { userId: string; conversationId: string },
+  ): Promise<ConversationSnapshot> {
     let conv = await this.conversations.get(input.conversationId);
     if (conv.userId !== input.userId) throw new Error("forbidden");
     if (conv.hasUnreadEvent) {
@@ -48,32 +50,36 @@ export class LoadConversation {
 
     let wizard: ConversationSnapshot["wizard"];
     if (conv.currentPhase === "terms") {
-      const state = await this.conversations.getWizardState(input.conversationId);
+      const state = await this.conversations.getWizardState(
+        input.conversationId,
+      );
       if (state) {
-        const progress = computeProgress(CONTRACT_TERMS_WIZARD_V1, state);
+        const progress = computeProgress(TERMS_WIZARD_V1, state);
         wizard = { state, progress };
       }
     }
 
-    let contract: Contract | undefined;
-    if (conv.contractId) {
+    let quote: Quote | undefined;
+    if (conv.quoteId) {
       try {
-        contract = await this.contracts.getOwned(conv.contractId, conv.userId);
-      } catch { /* contract was deleted out from under the conversation — surface conv state without it */ }
+        quote = await this.quotes.getOwned(conv.quoteId, conv.userId);
+      } catch {
+        /* quote was deleted out from under the conversation — surface conv state without it */
+      }
     }
 
     // Bound customer — prefer the conversation's customerId, fall back to
-    // the contract's. Needed so the recovery UI (and any per-customer
+    // the quote's. Needed so the recovery UI (and any per-customer
     // surfaces) can render without a follow-up fetch. Best-effort: a
     // forbidden/missing row just leaves customer undefined.
     let customer: Customer | undefined;
-    const customerId = conv.customerId ?? contract?.customerId;
+    const customerId = conv.customerId ?? quote?.customerId;
     if (customerId) {
       try {
         customer = await this.customers.getOwned(customerId, conv.userId);
       } catch { /* surface the rest of the snapshot without customer */ }
     }
 
-    return { conversation: conv, messages: msgs, wizard, contract, customer };
+    return { conversation: conv, messages: msgs, wizard, quote, customer };
   }
 }

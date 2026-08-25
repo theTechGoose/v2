@@ -13,7 +13,7 @@ export interface ChangeOrder {
   id: string;
   userId: string;
   invoiceId: string;
-  contractId?: string;
+  quoteId?: string;
   customerId?: string;
   /** Plain-English description of what changed ("Add second coat of paint"). */
   description: string;

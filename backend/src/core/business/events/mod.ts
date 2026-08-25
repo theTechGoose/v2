@@ -4,19 +4,25 @@ import { Injectable } from "#danet/core";
  * Domain event the EventBus carries.
  *
  *   userId       — the contractor whose data changed (notifications scope to this)
- *   entityType   — 'quote' | 'contract' | 'invoice' | 'customer' | 'payment'
+ *   entityType   — 'quote' | 'invoice' | 'customer' | 'payment'
  *   entityId     — the record's id (so subscribers can hyperlink)
  *   action       — verb, e.g. 'sent', 'accepted', 'signed', 'paid', 'overdue', 'replied'
  *   data         — optional structured payload for richer notifications (amounts, names…)
  *   timestamp    — ISO; set by emit() if the caller doesn't supply one
  */
 export interface DomainEvent {
-  userId:     string;
-  entityType: "quote" | "contract" | "invoice" | "customer" | "payment" | "conversation" | "message";
-  entityId:   string;
-  action:     string;
-  data?:      Record<string, unknown>;
-  timestamp:  string;
+  userId: string;
+  entityType:
+    | "quote"
+    | "invoice"
+    | "customer"
+    | "payment"
+    | "conversation"
+    | "message";
+  entityId: string;
+  action: string;
+  data?: Record<string, unknown>;
+  timestamp: string;
 }
 
 export type EventListener = (event: DomainEvent) => void | Promise<void>;
@@ -48,9 +54,16 @@ export class EventBus {
     };
   }
 
-  async emit(event: Omit<DomainEvent, "timestamp"> & { timestamp?: string }): Promise<void> {
-    const fullEvent: DomainEvent = { ...event, timestamp: event.timestamp ?? new Date().toISOString() };
-    const results = await Promise.allSettled(this.listeners.map((l) => Promise.resolve().then(() => l(fullEvent))));
+  async emit(
+    event: Omit<DomainEvent, "timestamp"> & { timestamp?: string },
+  ): Promise<void> {
+    const fullEvent: DomainEvent = {
+      ...event,
+      timestamp: event.timestamp ?? new Date().toISOString(),
+    };
+    const results = await Promise.allSettled(
+      this.listeners.map((l) => Promise.resolve().then(() => l(fullEvent))),
+    );
     for (const r of results) {
       if (r.status === "rejected") {
         // Don't crash the publisher. A failing notification listener

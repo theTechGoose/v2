@@ -21,13 +21,6 @@ export interface PipelineQuote {
   [key: string]: unknown;
 }
 
-export interface PipelineContract {
-  quoteId?: string;
-  status?: string;
-  signedAt?: string | null;
-  [key: string]: unknown;
-}
-
 export interface AggregateQuote extends PipelineQuote {
   id: string;
   estimatedTotal?: number | null;
@@ -57,25 +50,16 @@ export interface PipelineAggregate {
 /** EnsureSampleQuote tags its row via this summary prefix (no flag yet). */
 const SAMPLE_SUMMARY_PREFIX = "onboarding-sample";
 
-const WON_STATUSES = new Set(["approved", "accepted", "won"]);
+const WON_STATUSES = new Set(["accepted", "won"]);
 const LOST_STATUSES = new Set(["lost", "declined", "rejected"]);
 
-function contractIsSigned(contract?: PipelineContract | null): boolean {
-  if (!contract) return false;
-  return contract.status === "signed" || Boolean(contract.signedAt);
-}
-
 /**
- * Where a quote sits in the pipeline. Only a signature/acceptance wins;
- * an attached draft/sent agreement leaves a sent quote AWAITING (P-14).
+ * Where a quote sits in the pipeline. Only an acceptance (the one signature
+ * ceremony) wins; a merely-sent agreement stays AWAITING (P-14).
  */
-export function classifyQuoteForPipeline(
-  quote: PipelineQuote,
-  contract?: PipelineContract | null,
-): PipelineClass {
+export function classifyQuoteForPipeline(quote: PipelineQuote): PipelineClass {
   if (quote.acceptedAt) return "won";
   if (WON_STATUSES.has(quote.status ?? "")) return "won";
-  if (contractIsSigned(contract)) return "won";
   if (quote.lostAt) return "lost";
   if (LOST_STATUSES.has(quote.status ?? "")) return "lost";
   if (quote.sentAt || quote.status === "sent" || quote.status === "viewed") {
@@ -96,20 +80,7 @@ export function isSampleQuote(
  * Aggregate the pipeline over real quotes only. Cents are summed as
  * integers — never as floating dollars (P-36's "$0.01" artifact class).
  */
-export function aggregatePipeline(
-  quotes: AggregateQuote[],
-  contracts: PipelineContract[] = [],
-): PipelineAggregate {
-  const contractByQuoteId = new Map<string, PipelineContract>();
-  for (const c of contracts) {
-    if (!c.quoteId) continue;
-    const prev = contractByQuoteId.get(c.quoteId);
-    // A signed contract wins over any other agreement rows for the quote.
-    if (!prev || (!contractIsSigned(prev) && contractIsSigned(c))) {
-      contractByQuoteId.set(c.quoteId, c);
-    }
-  }
-
+export function aggregatePipeline(quotes: AggregateQuote[]): PipelineAggregate {
   const agg: PipelineAggregate = {
     totalQuotes: 0,
     draftCount: 0,
@@ -125,7 +96,7 @@ export function aggregatePipeline(
   for (const q of quotes) {
     if (isSampleQuote(q)) continue; // contributes to NOTHING
     agg.totalQuotes += 1;
-    const cls = classifyQuoteForPipeline(q, contractByQuoteId.get(q.id));
+    const cls = classifyQuoteForPipeline(q);
     if (cls === "draft") agg.draftCount += 1;
     else if (cls === "awaiting") {
       agg.awaitingCount += 1;
@@ -141,16 +112,11 @@ export function aggregatePipeline(
   return agg;
 }
 
-/**
- * The customer a job renders under (UX-02): the quote's own link when
- * present, else the linked agreement's — the assistant flow binds the
- * customer to the CONTRACT only, and that win must still be visible.
- */
+/** The customer a job renders under (UX-02): the quote's own link. */
 export function resolveJobCustomerId(
   quote: { customerId?: string | null },
-  contract?: { customerId?: string | null } | null,
 ): string | null {
-  return quote.customerId || contract?.customerId || null;
+  return quote.customerId || null;
 }
 
 /**

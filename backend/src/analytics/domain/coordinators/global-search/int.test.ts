@@ -2,24 +2,27 @@ import { assertEquals } from "#std/assert";
 import { GlobalSearch } from "./mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
 function fresh() {
   const customers = new CustomerStore();
-  const quotes    = new QuoteStore();
-  const contracts = new ContractStore();
-  const invoices  = new InvoiceStore();
-  return { customers, quotes, contracts, invoices, flow: new GlobalSearch(customers, quotes, contracts, invoices) };
+  const quotes = new QuoteStore();
+  const invoices = new InvoiceStore();
+  return {
+    customers,
+    quotes,
+    invoices,
+    flow: new GlobalSearch(customers, quotes, invoices),
+  };
 }
 
 Deno.test("global-search integration: empty query returns []", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { flow } = fresh();
-  assertEquals(await flow.run("u-1", { q: "" }),    []);
-  assertEquals(await flow.run("u-1", { q: "  " }),  []);
+  assertEquals(await flow.run("u-1", { q: "" }), []);
+  assertEquals(await flow.run("u-1", { q: "  " }), []);
   await resetKv();
 });
 
@@ -27,16 +30,23 @@ Deno.test("global-search integration: substring match across customer fields (ca
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { customers, flow } = fresh();
-  await customers.create("u-1", { name: "Acme Roofing", email: "ops@acme.test", phoneNumber: "555-1234" });
+  await customers.create("u-1", {
+    name: "Acme Roofing",
+    email: "ops@acme.test",
+    phoneNumber: "555-1234",
+  });
   await customers.create("u-1", { name: "Beta Plumbing" });
 
-  const byName  = await flow.run("u-1", { q: "ACME" });
+  const byName = await flow.run("u-1", { q: "ACME" });
   const byEmail = await flow.run("u-1", { q: "ops@" });
   const byPhone = await flow.run("u-1", { q: "1234" });
 
-  assertEquals(byName.length, 1);  assertEquals(byName[0].label,  "Acme Roofing");
-  assertEquals(byEmail.length, 1); assertEquals(byEmail[0].label, "Acme Roofing");
-  assertEquals(byPhone.length, 1); assertEquals(byPhone[0].label, "Acme Roofing");
+  assertEquals(byName.length, 1);
+  assertEquals(byName[0].label, "Acme Roofing");
+  assertEquals(byEmail.length, 1);
+  assertEquals(byEmail[0].label, "Acme Roofing");
+  assertEquals(byPhone.length, 1);
+  assertEquals(byPhone[0].label, "Acme Roofing");
 
   await resetKv();
 });
@@ -46,9 +56,13 @@ Deno.test("global-search integration: type filter narrows the search to a single
   await resetKv();
   const { customers, quotes, flow } = fresh();
   await customers.create("u-1", { name: "Roofing pros" });
-  await quotes.create("u-1",    { summary: "Roofing job",   lineItems: [], status: "sent" });
+  await quotes.create("u-1", {
+    summary: "Roofing job",
+    lineItems: [],
+    status: "sent",
+  });
 
-  const all       = await flow.run("u-1", { q: "roofing" });
+  const all = await flow.run("u-1", { q: "roofing" });
   const onlyQuote = await flow.run("u-1", { q: "roofing", type: "quote" });
   assertEquals(all.length, 2);
   assertEquals(onlyQuote.length, 1);
@@ -75,20 +89,29 @@ Deno.test("global-search integration: limit caps results per type", async () => 
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { customers, flow } = fresh();
-  for (let i = 0; i < 25; i++) await customers.create("u-1", { name: `Acme ${i}` });
+  for (let i = 0; i < 25; i++) {
+    await customers.create("u-1", { name: `Acme ${i}` });
+  }
   const out = await flow.run("u-1", { q: "Acme", limit: 5 });
   assertEquals(out.length, 5);
   await resetKv();
 });
 
-Deno.test("global-search integration: matches quote summary + invoice contract id", async () => {
+Deno.test("global-search integration: matches quote summary + invoice quote id", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { quotes, invoices, flow } = fresh();
-  const q = await quotes.create("u-1", { summary: "Garage epoxy floor", lineItems: [] });
-  const i = await invoices.create("u-1", { contractId: q.id, dueDate: "2026-05-01", status: "pending" });
+  const q = await quotes.create("u-1", {
+    summary: "Garage epoxy floor",
+    lineItems: [],
+  });
+  const i = await invoices.create("u-1", {
+    quoteId: q.id,
+    dueDate: "2026-05-01",
+    status: "pending",
+  });
   const out = await flow.run("u-1", { q: "garage" });
-  // Quote matches "garage", invoice does not (matches by contractId/id only).
+  // Quote matches "garage", invoice does not (matches by quoteId/id only).
   assertEquals(out.find((r) => r.type === "quote")?.id, q.id);
   assertEquals(out.find((r) => r.type === "invoice"), undefined);
   // But searching by the invoice's own id finds it:

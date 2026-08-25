@@ -69,14 +69,27 @@
  * window of the input — the contract the UX findings name verbatim. Rows
  * 5-6 (quote + invoice) involve no LLM on any stack.
  */
-import { anonymous, contractor, type ApiSession } from "./helpers/api";
+import { anonymous, type ApiSession, contractor } from "./helpers/api";
 
 const CONTRACTOR_PHONE = "+15125556300";
 const CUSTOMER_PHONE = "+15125556301";
 
 const ES_STOPWORDS = new Set([
-  "de", "del", "la", "el", "los", "las", "un", "una",
-  "y", "o", "para", "por", "con", "en", "al",
+  "de",
+  "del",
+  "la",
+  "el",
+  "los",
+  "las",
+  "un",
+  "una",
+  "y",
+  "o",
+  "para",
+  "por",
+  "con",
+  "en",
+  "al",
 ]);
 const words = (s: string) => s.trim().split(/\s+/);
 const lastWord = (s: string) => words(s)[words(s).length - 1];
@@ -98,7 +111,9 @@ describe("UX-05/UX-26(c)/UX-29/UX-41: Spanish job-name derivation over HTTP", ()
   });
 
   /** Seed the UX-29 quote: Spanish summary, NO jobName — the server derives it. */
-  async function seedSpanishQuote(): Promise<{ quoteId: string; created: any }> {
+  async function seedSpanishQuote(): Promise<
+    { quoteId: string; created: any }
+  > {
     const cust = await s.post("/customers", {
       name: "María Nguyen",
       phoneNumber: CUSTOMER_PHONE,
@@ -107,9 +122,15 @@ describe("UX-05/UX-26(c)/UX-29/UX-41: Spanish job-name derivation over HTTP", ()
     const q = await s.post("/quotes", {
       customerId: cust.body.id,
       summary: "El patio de adoquines de María Nguyen, $3,700",
-      description: "El patio de adoquines de María Nguyen, $3,700 todo incluido",
+      description:
+        "El patio de adoquines de María Nguyen, $3,700 todo incluido",
       lineItems: [
-        { description: "Patio de adoquines 20x15", quantity: 1, unit: "job", price: 370000 },
+        {
+          description: "Patio de adoquines 20x15",
+          quantity: 1,
+          unit: "job",
+          price: 370000,
+        },
       ],
       estimatedTotal: 370000,
     });
@@ -146,11 +167,15 @@ describe("UX-05/UX-26(c)/UX-29/UX-41: Spanish job-name derivation over HTTP", ()
     expect(status).toBe(200);
     // sanity (green precondition): the es persona gets es cards
     expect(body.langs).toContain("es");
-    const opts = body.options as Array<{ byLang: Record<string, { jobName: string }> }>;
+    const opts = body.options as Array<
+      { byLang: Record<string, { jobName: string }> }
+    >;
     expect(opts.length).toBeGreaterThanOrEqual(3);
     // Probed today: "Cambiar 12 Tablas" / "Cambiar 12 Tablas · Versión breve".
     expect(opts[0].byLang.es.jobName).toBe("Cambiar 12 tablas");
-    expect(opts[1].byLang.es.jobName.startsWith("Cambiar 12 tablas · ")).toBe(true);
+    expect(opts[1].byLang.es.jobName.startsWith("Cambiar 12 tablas · ")).toBe(
+      true,
+    );
   });
 
   it("UX-05: the version-option cards keep ES stopwords lowercase mid-title", async () => {
@@ -158,7 +183,9 @@ describe("UX-05/UX-26(c)/UX-29/UX-41: Spanish job-name derivation over HTTP", ()
       raw: "instalación de patio de adoquines nuevos",
     });
     expect(status).toBe(200);
-    const opts = body.options as Array<{ byLang: Record<string, { jobName: string }> }>;
+    const opts = body.options as Array<
+      { byLang: Record<string, { jobName: string }> }
+    >;
     // Probed today: opt1 "Instalación De Patio".
     expect(opts[0].byLang.es.jobName).toBe("Instalación de patio");
     // No card may Title-Case a Spanish stopword anywhere in its es title
@@ -186,7 +213,9 @@ describe("UX-05/UX-26(c)/UX-29/UX-41: Spanish job-name derivation over HTTP", ()
     expect(pub.body.jobName).toBe("Patio de adoquines");
     // Structural halves of the finding, for diagnosis when the exact pin fails:
     expect(words(pub.body.jobName)[0].toLowerCase()).not.toBe("el");
-    expect(ES_STOPWORDS.has(lastWord(pub.body.jobName).toLowerCase())).toBe(false);
+    expect(ES_STOPWORDS.has(lastWord(pub.body.jobName).toLowerCase())).toBe(
+      false,
+    );
   });
 
   it("UX-29: the invoice raised from that quote inherits the corrected jobName (the /i headline)", async () => {
@@ -201,6 +230,8 @@ describe("UX-05/UX-26(c)/UX-29/UX-41: Spanish job-name derivation over HTTP", ()
     const read = await s.get(`/invoices/${inv.body.id}`);
     expect(read.status).toBe(200);
     expect(read.body.jobName).toBe("Patio de adoquines");
-    expect(ES_STOPWORDS.has(lastWord(read.body.jobName).toLowerCase())).toBe(false);
+    expect(ES_STOPWORDS.has(lastWord(read.body.jobName).toLowerCase())).toBe(
+      false,
+    );
   });
 });

@@ -17,8 +17,8 @@ import { HandleWizardAnswer } from "@agents/domain/coordinators/handle-wizard-an
 import { RewindWizard } from "@agents/domain/coordinators/rewind-wizard/mod.ts";
 import { LoadConversation } from "@agents/domain/coordinators/load-conversation/mod.ts";
 import { LockQuote } from "@agents/domain/coordinators/lock-quote/mod.ts";
-import { AcceptContract } from "@agents/domain/coordinators/accept-contract/mod.ts";
-import { SendContract } from "@agents/domain/coordinators/send-contract/mod.ts";
+import { AcceptQuote } from "@agents/domain/coordinators/accept-quote/mod.ts";
+import { SendQuote } from "@agents/domain/coordinators/send-quote/mod.ts";
 import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
 import { StartOnboardingConversation } from "@agents/domain/coordinators/start-onboarding-conversation/mod.ts";
 import { BindConversationCustomer } from "@agents/domain/coordinators/bind-conversation-customer/mod.ts";
@@ -96,8 +96,8 @@ const LlmClientClass = await selectLLMClass();
     RewindWizard,
     LoadConversation,
     LockQuote,
-    AcceptContract,
-    SendContract,
+    AcceptQuote,
+    SendQuote,
     SendInvoice,
     StartOnboardingConversation,
     BindConversationCustomer,

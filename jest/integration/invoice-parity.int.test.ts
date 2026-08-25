@@ -3,10 +3,15 @@
  *   - carry all the quote's information (job name, description, line items, total)
  *   - NOT include the numbered Terms list
  *   - NOT include any signature block
- *   - link to the signed quote/contract when one exists
+ *   - link to the signed quote (the agreement) once it is accepted
  *   - be editable (PUT /invoices/:id)
  */
-import { anonymous, contractor, seedQuote, type ApiSession } from "./helpers/api";
+import {
+  anonymous,
+  type ApiSession,
+  contractor,
+  seedQuote,
+} from "./helpers/api";
 
 describe("invoice parity with the quote", () => {
   let s: ApiSession;
@@ -18,13 +23,17 @@ describe("invoice parity with the quote", () => {
     quoteId = await seedQuote(s, { jobName: "Backyard Junk Removal" });
     const inv = await s.post("/invoices", { quoteId });
     if (inv.status >= 400 || !inv.body?.id) {
-      throw new Error(`invoice from quote failed: ${inv.status} ${JSON.stringify(inv.body)}`);
+      throw new Error(
+        `invoice from quote failed: ${inv.status} ${JSON.stringify(inv.body)}`,
+      );
     }
     invoiceId = inv.body.id;
   });
 
   it("public invoice carries the quote's info", async () => {
-    const { status, body } = await anonymous().get(`/invoices/${invoiceId}/public`);
+    const { status, body } = await anonymous().get(
+      `/invoices/${invoiceId}/public`,
+    );
     expect(status).toBe(200);
     expect(body.jobName).toBe("Backyard Junk Removal");
     expect(body.lineItems?.length).toBeGreaterThan(0);
@@ -41,25 +50,28 @@ describe("invoice parity with the quote", () => {
     expect(body.customerSignature).toBeUndefined();
   });
 
-  it("links to the signed quote once the contract is signed", async () => {
-    // Sign the chain: contract from quote, customer signs it.
-    const contract = await s.post("/contracts", { quoteId });
-    expect(contract.status).toBeLessThan(400);
-    const sign = await anonymous().post(`/contracts/${contract.body.id}/sign`, {
+  it("links to the signed quote once it is accepted", async () => {
+    // The one ceremony: the customer accept-signs the quote on /q.
+    const accept = await anonymous().post(`/quotes/${quoteId}/accept`, {
       signature: "Green Goblin",
       name: "Green Goblin",
     });
-    expect(sign.status).toBeLessThan(400);
+    expect(accept.status).toBeLessThan(400);
 
     const { body } = await anonymous().get(`/invoices/${invoiceId}/public`);
-    expect(body.signedQuoteUrl ?? body.signedContractUrl).toBeTruthy();
+    expect(body.signedQuoteUrl).toBe(`/q/${quoteId}`);
   });
 
   it("is editable via PUT /invoices/:id", async () => {
     const put = await s.put(`/invoices/${invoiceId}`, {
       lineItems: [
         { description: "Junk removal", quantity: 1, unit: "job", price: 55000 },
-        { description: "Extra debris haul", quantity: 1, unit: "job", price: 5000 },
+        {
+          description: "Extra debris haul",
+          quantity: 1,
+          unit: "job",
+          price: 5000,
+        },
       ],
       amount: 60000,
     });

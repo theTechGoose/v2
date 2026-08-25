@@ -258,32 +258,24 @@ function titleFor(c: Conversation, lang: Lang): string {
 /**
  * Map the most-advanced known status to one of the four chip CSS
  * variants (draft / sent / paid / needs). Walks the chain backwards —
- * invoice → contract → quote — so the chip reflects the latest stage
- * the conversation has reached, not the earliest.
+ * invoice → quote — so the chip reflects the latest stage the
+ * conversation has reached, not the earliest.
  */
 function deriveChip(
   c: Conversation,
   lang: Lang,
 ): { kind: Chip; label: string } {
-  // Walk the chain backwards (latest stage wins). Customer acceptance
-  // is a single event on the contract — quoteStatus only ever reaches
-  // "locked"/"sent" in this flow, so no quote-accepted branch is needed.
+  // Walk the chain backwards (latest stage wins).
   if (c.invoiceStatus === "paid") {
     return { kind: "paid", label: tFor(lang, "status.paid") };
   }
   if (c.invoiceStatus === "sent") {
     return { kind: "sent", label: tFor(lang, "asstThreads.chip.invoiced") };
   }
-  if (c.contractStatus === "accepted") {
+  if (c.quoteStatus === "accepted") {
     return { kind: "paid", label: tFor(lang, "status.signed") };
   }
-  if (c.contractStatus === "sent") {
-    return { kind: "sent", label: tFor(lang, "asstThreads.chip.contractSent") };
-  }
-  if (c.contractStatus === "draft") {
-    return { kind: "needs", label: tFor(lang, "asstThreads.chip.contract") };
-  }
-  if (c.quoteStatus === "sent") {
+  if (c.quoteStatus === "sent" || c.quoteStatus === "viewed") {
     return { kind: "sent", label: tFor(lang, "asstThreads.chip.quoteSent") };
   }
   // Audit2 #5: locking is not sending. A locked quote with no customer bound

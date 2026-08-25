@@ -3,7 +3,6 @@ import type { ExecutionContext } from "#danet/core";
 import { IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { ContractStore } from "@paperwork/domain/data/contract-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -15,13 +14,13 @@ import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
-import { RenderContractPdf } from "@paperwork/domain/coordinators/render-contract-pdf/mod.ts";
+import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
-import type { Contract } from "@paperwork/dto/contract.ts";
 import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
+import { isAccepted } from "#quote-flow/quote-status.ts";
 import { AcceptedPaymentMethods } from "@profile/dto/business-identity.ts";
 
 /**
@@ -41,6 +40,8 @@ class AcceptQuoteDto {
   signature?: string;
   @IsOptional() @IsString()
   name?: string;
+  @IsOptional() @IsString()
+  tin?: string;
 }
 
 class DeclineQuoteDto {
@@ -59,15 +60,6 @@ class InquireQuoteDto {
   contactBack?: string; // phone or email — how the contractor should follow up
   @IsOptional() @IsString()
   name?: string;
-}
-
-class SignContractDto {
-  @IsString()
-  signature!: string;
-  @IsString()
-  name!: string;
-  @IsOptional() @IsString()
-  tin?: string;
 }
 
 function parseAccept(input: unknown): AcceptQuoteDto {
@@ -97,20 +89,11 @@ function parseInquire(input: unknown): InquireQuoteDto {
   return dto;
 }
 
-function parseSign(input: unknown): SignContractDto {
-  const dto = plainToInstance(SignContractDto, input);
-  const errors = validateSync(dto);
-  if (errors.length) {
-    throw new Error(`invalid sign body: ${JSON.stringify(errors)}`);
-  }
-  return dto;
-}
-
 /**
  * Public-facing paperwork endpoints.
  *
  * These are reached by the customer (the recipient of the contractor's
- * quote/contract/invoice email) and are NOT auth-gated. Authorization is
+ * quote/invoice email) and are NOT auth-gated. Authorization is
  * implicit: knowing the unguessable record id is the capability.
  *
  * Each public read returns a "redacted" projection — fields that are safe
@@ -125,7 +108,6 @@ function parseSign(input: unknown): SignContractDto {
 export class PaperworkPublicController {
   constructor(
     private quotes: QuoteStore,
-    private contracts: ContractStore,
     private invoices: InvoiceStore,
     private changeOrders: ChangeOrderStore,
     private customers: CustomerStore,
@@ -139,13 +121,13 @@ export class PaperworkPublicController {
     private shortlinks: ShortLinkStore,
     private files: FileStore,
     private invoicePdf: RenderInvoicePdf,
-    private contractPdf: RenderContractPdf,
+    private quotePdf: RenderQuotePdf,
   ) {}
 
   /**
    * GET /public-logo/:kind/:id — the contractor's business logo for a public
    * document page. Capability model matches the docs themselves: knowing the
-   * unguessable quote/contract/invoice id grants read of THAT contractor's
+   * unguessable quote/invoice id grants read of THAT contractor's
    * logo (an image they already brand their documents with). The file id
    * itself never leaks.
    */
@@ -158,9 +140,7 @@ export class PaperworkPublicController {
     try {
       let ownerId: string;
       if (kind === "quote") ownerId = (await this.quotes.get(id)).userId;
-      else if (kind === "contract") {
-        ownerId = (await this.contracts.get(id)).userId;
-      } else if (kind === "invoice") {
+      else if (kind === "invoice") {
         ownerId = (await this.invoices.get(id)).userId;
       } else return ctx.json({ error: "bad_kind" }, 400);
       const ident = await this.identity.get(ownerId).catch(() => null);
@@ -213,44 +193,30 @@ export class PaperworkPublicController {
   }
 
   /**
-   * GET /contracts/:id/pdf — stream a downloadable PDF of the agreement
+   * GET /quotes/:id/pdf — stream a downloadable PDF of the Quote + Agreement
    * (invoice parity, P-63). Same capability model as GET /invoices/:id/pdf:
-   * knowing the unguessable contract id grants the download. Reuses the
-   * RenderContractPdf coordinator the signed-confirmation email already
+   * knowing the unguessable quote id grants the download. Reuses the
+   * RenderQuotePdf coordinator the signed-confirmation email already
    * attaches, so the download and the attachment never drift.
    */
-  @Get("contracts/:id/pdf")
-  async getContractPdf(
+  @Get("quotes/:id/pdf")
+  async getQuotePdf(
     @Context() ctx: ExecutionContext,
     @Param("id") id: string,
   ) {
     try {
-      const contract = await this.contracts.get(id);
-      const userId = contract.userId;
-      const [contractor, ident, quoteRaw] = await Promise.all([
+      const quote = await this.quotes.get(id);
+      const userId = quote.userId;
+      const [contractor, ident] = await Promise.all([
         this.users.get(userId).catch(() => undefined),
         this.identity.get(userId).catch(() => null),
-        contract.quoteId
-          ? this.quotes.get(contract.quoteId).catch(() => undefined)
-          : Promise.resolve(undefined),
       ]);
-      // All data user-owned: only the owner's quote may feed the render.
-      const quote = quoteRaw && quoteRaw.userId === userId
-        ? quoteRaw
-        : undefined;
-      // Customer off the contract, falling back to the linked quote's
-      // customer (wizard-shaped contracts omit customerId — see P-13).
-      let customer = contract.customerId
-        ? await this.customers.getOwned(contract.customerId, userId)
+      const customer = quote.customerId
+        ? await this.customers.getOwned(quote.customerId, userId)
           .catch(() => undefined)
         : undefined;
-      if (!customer && quote?.customerId) {
-        customer = await this.customers.getOwned(quote.customerId, userId)
-          .catch(() => undefined);
-      }
       const businessName = ident?.businessName ?? ident?.legalName;
-      const bytes = await this.contractPdf.run({
-        contract,
+      const bytes = await this.quotePdf.run({
         quote,
         customer,
         contractor,
@@ -262,7 +228,7 @@ export class PaperworkPublicController {
         headers: {
           "content-type": "application/pdf",
           "content-length": String(bytes.length),
-          "content-disposition": `inline; filename="contract-${
+          "content-disposition": `inline; filename="agreement-${
             id.slice(0, 8).toUpperCase()
           }.pdf"`,
           "cache-control": "no-store",
@@ -441,7 +407,8 @@ export class PaperworkPublicController {
       } catch (err) {
         console.warn(`[quotes/${id}/public] view record failed:`, err);
       }
-      // First open flips sent → viewed (mirrors the contract path below).
+      // First open flips sent → viewed so the contractor's pipeline card
+      // reflects that the link actually landed.
       // Idempotent: subsequent GETs find a non-"sent" status and skip.
       if (q.status === "sent") {
         try {
@@ -458,12 +425,14 @@ export class PaperworkPublicController {
       }
       const [contractor, customer] = await Promise.all([
         loadContractor(this.users, this.identity, this.addresses, q.userId),
-        lookupCustomerName(this.customers, q.customerId, q.userId),
+        // Full public customer projection (name/phone/email) — the /q page
+        // renders the agreement's To/Para contact card (P-13).
+        lookupCustomerPublic(this.customers, q.customerId, q.userId),
       ]);
       return ctx.json({
         ...redactQuote(q),
         contractor,
-        customer: customer ? { name: customer } : undefined,
+        customer,
       });
     } catch (e) {
       return notFoundResponse(ctx, e);
@@ -478,9 +447,9 @@ export class PaperworkPublicController {
   ) {
     const dto = parseAccept(body);
     const existing = await this.quotes.get(id);
-    // "approved" is the canonical signed state (roadmap p.10); "accepted" is
-    // the legacy value from before the rename — treat both as terminal.
-    if (existing.status === "approved" || existing.status === "accepted") {
+    // "accepted" is the terminal signed state (roadmap p.10) — the quote IS
+    // the agreement, and accepting it is the one signature ceremony.
+    if (isAccepted(existing)) {
       // P-11: a second accept is a conflict, not a silent success — a stale
       // pristine form must not "accept" again as if it worked (and must
       // never overwrite who actually accepted).
@@ -496,11 +465,12 @@ export class PaperworkPublicController {
       return ctx.json({ ok: false, reason: "declined" }, 409);
     }
     const updated = await this.quotes.update(id, existing.userId, {
-      status: "approved",
+      status: "accepted",
       // The accept action augments the quote with signature metadata if provided.
       // Stored on the quote itself so the contractor can see who accepted.
       ...(dto.signature ? { acceptedSignature: dto.signature } : {}),
       ...(dto.name ? { acceptedName: dto.name } : {}),
+      ...(dto.tin ? { acceptedTinMasked: maskTin(dto.tin) } : {}),
       acceptedAt: new Date().toISOString(),
     });
 
@@ -530,15 +500,18 @@ export class PaperworkPublicController {
         err,
       );
     });
-    // Completion text to the CUSTOMER (deck p.2/p.8) — their receipt that
-    // the acceptance registered, and the honest "texted" line on the
-    // contractor's receipts strip (the strip no longer counts the
-    // contractor self-alert as a customer send, P-32). Awaited for the
-    // same comms-trail-visibility reason as the alert above; at-most-once
-    // because a second accept 409s before reaching here.
-    await this.signedConfirmation.runForQuote(updated.id).catch((err) => {
+    // The signed-confirmation flow: create the milestone invoices from the
+    // quote's payment terms (accept always bills), render the agreement PDF,
+    // email the customer with the PDF attached + the new invoice's pay link,
+    // and text them their completion receipt (deck p.2/p.8, P-32). Awaited so
+    // the invoices + comms-trail entries exist by the time the accept
+    // response lands (readers poll /messages right after); at-most-once
+    // because a second accept 409s before reaching here, and the coordinator
+    // stamps acceptedNotifiedAt as its own replay guard. Errors MUST NOT
+    // fail the customer's accept — the acceptance is captured regardless.
+    await this.signedConfirmation.run(updated.id).catch((err) => {
       console.error(
-        `[quotes/${updated.id}/accept] customer completion text failed:`,
+        `[quotes/${updated.id}/accept] signed-confirmation failed:`,
         err,
       );
     });
@@ -559,8 +532,8 @@ export class PaperworkPublicController {
   ) {
     const dto = parseDecline(body);
     const existing = await this.quotes.get(id);
-    if (existing.status === "approved" || existing.status === "accepted") {
-      // Already approved — don't let a stale link revoke it.
+    if (isAccepted(existing)) {
+      // Already accepted — don't let a stale link revoke it.
       return ctx.json({ ok: false, reason: "already_accepted" }, 409);
     }
     if (existing.status === "lost") {
@@ -569,13 +542,10 @@ export class PaperworkPublicController {
     const updated = await this.quotes.update(id, existing.userId, {
       status: "lost",
       lostAt: new Date().toISOString(),
-      // Store reason/note loosely on the row — the DTO doesn't expose them
-      // yet, but the FE will display whatever is there. Mirrors the pattern
-      // for customerSignature on contracts.
-      ...(dto.reason ? { declineReason: dto.reason } as Partial<Quote> : {}),
-      ...(dto.note ? { declineNote: dto.note } as Partial<Quote> : {}),
-      ...(dto.name ? { declinedName: dto.name } as Partial<Quote> : {}),
-    } as Partial<Quote>);
+      ...(dto.reason ? { declineReason: dto.reason } : {}),
+      ...(dto.note ? { declineNote: dto.note } : {}),
+      ...(dto.name ? { declinedName: dto.name } : {}),
+    });
 
     const customerName = await lookupCustomerName(
       this.customers,
@@ -633,169 +603,6 @@ export class PaperworkPublicController {
     return ctx.json({ ok: true });
   }
 
-  // ---------- contracts ----------
-
-  @Get("contracts/:id/public")
-  async getContractPublic(
-    @Context() ctx: ExecutionContext,
-    @Param("id") id: string,
-  ) {
-    try {
-      let c = await this.contracts.get(id);
-      // First view by the customer flips the status from sent → viewed so
-      // the contractor's quote-review chip and threads list reflect that
-      // the link actually landed. Idempotent: only fires once (subsequent
-      // GETs find a non-"sent" status and skip).
-      if (c.status === "sent") {
-        try {
-          c = await this.contracts.update(
-            id,
-            c.userId,
-            { status: "viewed" } as Partial<Contract>,
-          );
-          await this.bus.emit({
-            userId: c.userId,
-            entityType: "contract",
-            entityId: c.id,
-            action: "viewed",
-          });
-        } catch (err) {
-          // Don't fail the public render if the bookkeeping write fails —
-          // the customer still needs to see the document.
-          console.warn(`[contracts/${id}/public] mark-viewed failed:`, err);
-        }
-      }
-      const [contractor, customerDirect, quote] = await Promise.all([
-        loadContractor(this.users, this.identity, this.addresses, c.userId),
-        lookupCustomerPublic(this.customers, c.customerId, c.userId),
-        // Public contract page surfaces the linked quote's job details so the
-        // customer sees what they're agreeing to before signing. The
-        // quote read is best-effort; a missing/forbidden quote shouldn't
-        // 404 the contract.
-        c.quoteId
-          ? this.quotes.get(c.quoteId).catch(() => undefined)
-          : Promise.resolve(undefined),
-      ]);
-      // P-13: wizard-shaped contracts are created WITHOUT a customerId —
-      // fall back to the linked quote's customer so the To/Para card can
-      // name them. Owner-scoped: only a quote owned by the same contractor
-      // may resolve the customer (lookupCustomerPublic re-checks ownership).
-      let customer = customerDirect;
-      if (!customer && quote && quote.userId === c.userId) {
-        customer = await lookupCustomerPublic(
-          this.customers,
-          quote.customerId,
-          c.userId,
-        );
-      }
-      const jobDetails = quote
-        ? {
-          summary: quote.summary,
-          jobName: quote.jobName,
-          description: quote.description,
-          descriptionByLang: quote.descriptionByLang,
-          jobNameByLang: quote.jobNameByLang,
-          summaryByLang: quote.summaryByLang,
-          lineItems: quote.lineItems,
-        }
-        : undefined;
-      // UX-37: one deal, one ceremony — surface the linked quote's
-      // acceptance evidence so /c can render "you already accepted this on
-      // <date>" instead of a second independent signing ceremony.
-      const quoteEvidence = quote && quote.userId === c.userId
-        ? {
-          ...(quote.status ? { quoteStatus: quote.status } : {}),
-          ...(quote.acceptedAt ? { quoteAcceptedAt: quote.acceptedAt } : {}),
-          ...(quote.acceptedName
-            ? { quoteAcceptedName: quote.acceptedName }
-            : {}),
-        }
-        : {};
-      return ctx.json({
-        ...redactContract(c),
-        ...quoteEvidence,
-        contractor,
-        customer,
-        jobDetails,
-        terms: c.terms ?? [],
-      });
-    } catch (e) {
-      return notFoundResponse(ctx, e);
-    }
-  }
-
-  @Get("contracts/by-quote/:quoteId/public")
-  async getContractByQuote(
-    @Context() ctx: ExecutionContext,
-    @Param("quoteId") quoteId: string,
-  ) {
-    try {
-      // Cheap scan: the quote's owner is known via quotes.get; we then
-      // search that user's contracts for one with matching quoteId.
-      const quote = await this.quotes.get(quoteId);
-      const all = await this.contracts.listByUser(quote.userId);
-      const found = all.find((c) => c.quoteId === quoteId);
-      return ctx.json({ contractId: found?.id ?? null });
-    } catch (e) {
-      return notFoundResponse(ctx, e);
-    }
-  }
-
-  @Post("contracts/:id/sign")
-  async signContract(
-    @Context() ctx: ExecutionContext,
-    @Param("id") id: string,
-    @Body() body: unknown,
-  ) {
-    const dto = parseSign(body);
-    const existing = await this.contracts.get(id);
-    if (existing.status === "signed") {
-      return ctx.json({ ok: true, alreadySigned: true });
-    }
-    const updated = await this.contracts.update(id, existing.userId, {
-      status: "signed",
-      signedAt: new Date().toISOString(),
-      // Customer signature data; these fields aren't on the current Contract DTO
-      // but will be added when contracts get full payment-terms (see backend.md §7).
-      // Storing as loose fields for now via cast — the DTO will catch up.
-      ...(dto.signature
-        ? { customerSignature: dto.signature } as Partial<Contract>
-        : {}),
-      ...(dto.name
-        ? { customerSignedName: dto.name } as Partial<Contract>
-        : {}),
-      ...(dto.tin
-        ? { customerTinMasked: maskTin(dto.tin) } as Partial<Contract>
-        : {}),
-    } as Partial<Contract>);
-
-    const customerName = await lookupCustomerName(
-      this.customers,
-      updated.customerId,
-      existing.userId,
-    );
-    await this.bus.emit({
-      userId: existing.userId,
-      entityType: "contract",
-      entityId: updated.id,
-      action: "signed",
-      data: { ...(customerName ? { customerName } : {}) },
-    });
-
-    // Fire the signed-confirmation flow: render PDF + create the first
-    // (deposit) invoice + email the customer with the PDF attached and
-    // the new invoice's pay link. Errors here MUST NOT fail the sign
-    // request — the contract is signed regardless of email delivery.
-    this.signedConfirmation.run(updated.id).catch((err) => {
-      console.error(
-        `[contracts/${updated.id}/sign] signed-confirmation failed:`,
-        err,
-      );
-    });
-
-    return ctx.json({ ok: true, contractId: updated.id });
-  }
-
   // ---------- invoices ----------
 
   @Get("invoices/:id/public")
@@ -805,39 +612,25 @@ export class PaperworkPublicController {
   ) {
     try {
       const i = await this.invoices.get(id);
-      const [contractor, customer, contractDirect, siblings] = await Promise
+      const [contractor, customer, quote, siblings] = await Promise
         .all([
           loadContractor(this.users, this.identity, this.addresses, i.userId),
           lookupCustomerPublic(this.customers, i.customerId, i.userId),
-          // The public page surfaces job context (the linked contract's
-          // quote summary + jobName) so the customer sees what they're
-          // paying for. Best-effort — a missing contract shouldn't 404.
-          i.contractId
-            ? this.contracts.get(i.contractId).catch(() => undefined)
+          // The public page surfaces job context (the linked quote's
+          // summary + jobName) so the customer sees what they're
+          // paying for. Best-effort — a missing quote shouldn't 404.
+          i.quoteId
+            ? this.quotes.get(i.quoteId).catch(() => undefined)
             : Promise.resolve(undefined),
-          // Sibling invoices for the same contract — used to render the
+          // Sibling invoices for the same quote — used to render the
           // "Invoice X of Y" framing and the "What you've paid so far"
           // strip on the public page.
-          i.contractId
+          i.quoteId
             ? this.invoices.listByUser(i.userId).then((all) =>
-              all.filter((row) => row.contractId === i.contractId)
+              all.filter((row) => row.quoteId === i.quoteId)
             ).catch(() => [])
             : Promise.resolve([]),
         ]);
-      // Quote-derived invoices may predate their contract (p6: "link to the
-      // signed quote if one exists") — fall back to resolving the newest
-      // contract bound to the invoice's quote.
-      let contract = contractDirect;
-      if (!contract && i.quoteId) {
-        contract = await this.contracts.listByUser(i.userId)
-          .then((all) =>
-            all.filter((c) => c.quoteId === i.quoteId)
-              .sort((a, b) =>
-                (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
-              )[0]
-          )
-          .catch(() => undefined);
-      }
       // Resolve the linked quote for jobName/summary/lineItems projection.
       let jobDetails: {
         summary?: string;
@@ -852,29 +645,24 @@ export class PaperworkPublicController {
       // invoice's `amount`, which may be a single milestone. Lets the public
       // page mirror the signed agreement's itemized total alongside the
       // amount due. Absent for standalone invoices.
-      let agreementTotal: number | undefined = contract?.totalAmount;
-      if (contract?.quoteId) {
-        try {
-          const q = await this.quotes.get(contract.quoteId);
-          jobDetails = {
-            summary: q.summary,
-            jobName: q.jobName,
-            description: q.description,
-            descriptionByLang: q.descriptionByLang,
-            jobNameByLang: q.jobNameByLang,
-            summaryByLang: q.summaryByLang,
-            lineItems: q.lineItems,
-          };
-          if (agreementTotal == null) {
-            agreementTotal = q.estimatedTotal ??
-              ((q.lineItems ?? []).reduce(
-                (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
-                0,
-              ) || undefined);
-          }
-        } catch { /* fall through */ }
+      let agreementTotal: number | undefined;
+      if (quote && quote.userId === i.userId) {
+        jobDetails = {
+          summary: quote.summary,
+          jobName: quote.jobName,
+          description: quote.description,
+          descriptionByLang: quote.descriptionByLang,
+          jobNameByLang: quote.jobNameByLang,
+          summaryByLang: quote.summaryByLang,
+          lineItems: quote.lineItems,
+        };
+        agreementTotal = quote.estimatedTotal ??
+          ((quote.lineItems ?? []).reduce(
+            (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
+            0,
+          ) || undefined);
       }
-      // Standalone invoices (no contract/quote) carry their own jobName +
+      // Standalone invoices (no quote) carry their own jobName +
       // description — the assistant's "Job done, need to invoice." flow and
       // the /invoices "New invoice" modal write them directly (roadmap p.3).
       if (!jobDetails && (i.jobName || i.description)) {
@@ -912,27 +700,27 @@ export class PaperworkPublicController {
         jobDetails,
         siblings: sortedSiblings,
         acceptedMethods,
-        // Agreement context mirrored from the linked contract so the invoice
+        // Agreement context mirrored from the linked quote so the invoice
         // renders the same itemized job + term grid as the signed agreement
         // (minus the legal clauses + signature block). Omitted for standalone
         // invoices, which keep the lightweight amount-only document.
         ...(agreementTotal != null ? { agreementTotal } : {}),
         // Roadmap p.6: the invoice mirrors the quote's information but NOT
         // the numbered Terms (and never a signature block) — those live on
-        // the agreement, which is linked instead once signed.
-        ...(contract
+        // the agreement (the quote), which is linked instead once accepted.
+        ...(quote && quote.userId === i.userId
           ? {
-            startDate: contract.startDate,
-            estimatedCompletionDate: contract.estimatedCompletionDate,
-            effectiveDate: contract.effectiveDate ?? contract.createdAt,
+            startDate: quote.startDate,
+            estimatedCompletionDate: quote.estimatedCompletionDate,
+            effectiveDate: quote.effectiveDate ?? quote.createdAt,
             // "View the signed agreement" link target — only once actually
-            // signed (the user's "link to the signed quote if one exists").
-            ...(contract.status === "signed"
+            // accepted (the user's "link to the signed quote if one exists").
+            ...(isAccepted(quote)
               ? {
-                signedQuoteUrl: `/c/${contract.id}`,
+                signedQuoteUrl: `/q/${quote.id}`,
                 signedAgreement: {
-                  id: contract.id,
-                  signedAt: contract.signedAt,
+                  id: quote.id,
+                  signedAt: quote.acceptedAt,
                 },
               }
               : {}),
@@ -1091,7 +879,7 @@ interface PublicContractor {
    *  the BusinessAddress record. Omitted when the contractor hasn't filled
    *  in any street/city fields. Surfaces under the eyebrow on public docs. */
   addressLine?: string;
-  /** 2-letter state code (e.g. "CA"). Drives the public contract's
+  /** 2-letter state code (e.g. "CA"). Drives the public agreement's
    *  "Governing law" + "State notices" copy. */
   state?: string;
   /** Per-method payment config from business-identity. Used by the
@@ -1199,45 +987,29 @@ function redactQuote(q: Quote) {
     estimatedTotal: q.estimatedTotal,
     status: q.status,
     createdAt: q.createdAt,
+    // The agreement half of the document: the wizard-captured terms + the
+    // schedule dates, rendered as the numbered Terms grid on /q.
+    terms: q.terms ?? [],
+    effectiveDate: q.effectiveDate,
+    startDate: q.startDate,
+    estimatedCompletionDate: q.estimatedCompletionDate,
     // P-11: the persisted accepted state — who accepted and when — so a
     // reloaded /q/:id can render the confirmation without an in-session
-    // acceptance. The raw acceptedSignature stays internal.
+    // acceptance.
     acceptedName: q.acceptedName,
     acceptedAt: q.acceptedAt,
-    // omit: userId, updatedAt, internal acceptedSignature
-  };
-}
-
-function redactContract(c: Contract) {
-  return {
-    id: c.id,
-    quoteId: c.quoteId,
-    customerId: c.customerId,
-    status: c.status,
-    effectiveDate: c.effectiveDate,
-    startDate: c.startDate,
-    estimatedCompletionDate: c.estimatedCompletionDate,
-    totalAmount: c.totalAmount,
-    signedAt: c.signedAt,
-    createdAt: c.createdAt,
-    terms: c.terms,
-    // The typed legal name is safe to surface so the public page can fill
-    // the customer-signature card after signing; the captured PNG and TIN
-    // stay omitted.
-    customerSignedName:
-      (c as { customerSignedName?: string }).customerSignedName,
     // P-40: the captured signature mark (a compact data-URL PNG drawn or
     // typed by the customer themselves) is safe to render back on the
-    // signed public page — it's the customer's own signature.
-    customerSignature: (c as { customerSignature?: string }).customerSignature,
-    // omit: userId, updatedAt, customerTinMasked
+    // accepted public page — it's the customer's own signature.
+    acceptedSignature: q.acceptedSignature,
+    // omit: userId, updatedAt, acceptedTinMasked
   };
 }
 
 function redactInvoice(i: Invoice) {
   return {
     id: i.id,
-    contractId: i.contractId,
+    quoteId: i.quoteId,
     customerId: i.customerId,
     amount: i.amount,
     issuedDate: i.issuedDate,

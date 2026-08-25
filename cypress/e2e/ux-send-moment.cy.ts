@@ -25,21 +25,19 @@
  *    emailFailureReason (never textedTo/smsFailureReason), so an SMS-only
  *    success leaves dispatchedTo undefined; sentRecipient then falls back to
  *    customer.email — undefined for an email-less customer.
- *  - :6118-6155 — the reviewed card titles "Contrato enviado"
- *    (asstChat.cta.contractSent, lang/es.json:175) with a ✓ icon, and the
- *    empty sentRecipient branch renders asstChat.cta.noEmailPre + name +
- *    asstChat.cta.toDeliver: "no hay correo registrado — agrega uno a
- *    <María Nguyen> para enviar" (lang/es.json:181,187) — directly under the
- *    sent-✓ claim, even though the text DID go out (the server divider says
- *    "Contrato enviado por mensaje de texto a …",
- *    sendContract.divider.texted, lang/es.json:2294).
- *  - Term whiplash sources at this moment: header
- *    asstChat.header.contractOutForSignature "Cotización + Acuerdo enviada
- *    para firma" (AsstChat.tsx:1207-1208, rendered in .chat__head-sub via
- *    ChatHeaderLive) vs card title "Contrato enviado" vs divider chip
- *    "Contrato enviado por mensaje de texto…" vs thread badge
- *    asstThreads.chip.contractSent "Contrato enviado"
- *    (AsstThreads.tsx:275-277, .thread__chip).
+ *  - the reviewed card titles asstChat.cta.sent ("Cotización + Acuerdo
+ *    enviada") with a ✓ icon; the empty sentRecipient branch would render
+ *    asstChat.cta.noEmailPre + name + asstChat.cta.toDeliver ("no hay
+ *    correo registrado — agrega uno a <María Nguyen> para enviar") directly
+ *    under the sent-✓ claim, even though the text DID go out (the server
+ *    divider says sendQuote.divider.texted "Cotización + Acuerdo enviado
+ *    por mensaje de texto a …").
+ *  - One-term sources at this moment (post-merge, the renamed keys):
+ *    header asstChat.header.outForSignature "Enviada para firma"
+ *    (.chat__head-sub via ChatHeaderLive) + card title asstChat.cta.sent +
+ *    divider chip sendQuote.divider.texted + thread badge
+ *    asstThreads.chip.quoteSent "Cotización enviada" (.thread__chip). The
+ *    word "Contrato" must never resurface at this moment.
  *
  * Scenario: seeded ES contractor (cy.loginAs + language es, the P-21
  * exemplar), quote to an EMAIL-LESS customer (phone only) through the
@@ -75,7 +73,8 @@ function ux03LoginEs() {
 /** Drive: dev seed → phone-only customer → remaining wizard steps → preview. */
 function ux03DriveToPreview() {
   cy.visit("/assistant?dev");
-  cy.get(".chat__empty-debug-btn", { timeout: 10_000 }).should("be.visible").click();
+  cy.get(".chat__empty-debug-btn", { timeout: 10_000 }).should("be.visible")
+    .click();
   cy.location("pathname", { timeout: 20_000 })
     .should("match", /^\/assistant\/[A-Za-z0-9-]+$/);
 
@@ -113,7 +112,7 @@ describe("UX-03: send moment — truthful confirmation, one document term", () =
     cy.get(".quote-review__send-main").should("be.visible").click();
 
     // Anchor (green today): the send DID happen by text — the server divider
-    // acknowledges the channel (sendContract.divider.texted).
+    // acknowledges the channel (sendQuote.divider.texted).
     cy.get(".chat", { timeout: 20_000 })
       .should(($chat) => {
         expect($chat.text(), "a text-send acknowledgment exists")
@@ -144,16 +143,15 @@ describe("UX-03: send moment — truthful confirmation, one document term", () =
     cy.get(".quote-review__send-main").should("be.visible").click();
     cy.get(".continue-cta--done", { timeout: 20_000 }).should("be.visible");
 
-    // Anchor (green today, P-21's frozen decision): the header brands the
-    // document the user built — "Cotización + Acuerdo enviada para firma".
+    // Anchor: the header reflects the sent-for-signature state
+    // (asstChat.header.outForSignature — ES "Enviada para firma").
     cy.get(".chat__head-sub")
       .invoke("text")
-      .should("match", /cotización/i);
+      .should("match", /enviada para firma/i);
 
-    // RED today: in the SAME viewport the card titles "Contrato enviado"
-    // (asstChat.cta.contractSent) and the divider chip reads "Contrato
-    // enviado por mensaje de texto a …" (sendContract.divider.texted) —
-    // a second term for the same document, at the exact aha moment.
+    // Regression: nothing in the viewport may reintroduce the dead
+    // "Contrato" term — the card titles asstChat.cta.sent ("Cotización +
+    // Acuerdo enviada") and the divider chip reads sendQuote.divider.texted.
     cy.get(".chat").should("not.contain.text", "Contrato enviado");
   });
 
@@ -163,10 +161,10 @@ describe("UX-03: send moment — truthful confirmation, one document term", () =
     cy.get(".continue-cta--done", { timeout: 20_000 }).should("be.visible");
 
     // Reload so the threads sidebar re-renders from the persisted
-    // conversation (contractStatus "sent" ⇒ deriveChip returns
-    // asstThreads.chip.contractSent — AsstThreads.tsx:275-277).
+    // conversation (quoteStatus "sent" ⇒ deriveChip returns
+    // asstThreads.chip.quoteSent "Cotización enviada").
     cy.reload();
-    // RED today: the active thread's badge reads "Contrato enviado".
+    // Regression: the badge must never reintroduce the dead "Contrato" term.
     cy.get(".thread__chip", { timeout: 20_000 })
       .first()
       .invoke("text")

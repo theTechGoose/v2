@@ -39,7 +39,7 @@
     db:conversation.clearUnreadEvent(GetByIdDto): AgentConversationDto
     db:message.listByConversation(GetByIdDto): MessageListDto
     db:conversation.getWizardState(GetByIdDto): WizardStateDto
-    db:contract.getOwned(ContractRefDto): ContractDto
+    db:quote.getOwned(QuoteRefDto): QuoteProjectionDto
     db:customer.getOwned(CustomerRefDto): CustomerDto
     db:conversation.toSnapshot(GetByIdDto): ConversationSnapshotDto
 
@@ -70,36 +70,38 @@
     db:conversation.update(UpdateConversationDto): AgentConversationDto
     db:conversation.toLockResult(GetByIdDto): LockQuoteResultDto
 
-[REQ] conversation.acceptContract(AcceptContractDto): AcceptContractResultDto
+[REQ] conversation.acceptQuote(AcceptQuoteDto): AcceptQuoteResultDto
     db:conversation.getOwned(GetByIdDto): AgentConversationDto
       not-found
       forbidden
-    db:contract.getOwned(ContractRefDto): ContractDto
+    db:quote.getOwned(QuoteRefDto): QuoteProjectionDto
       not-found
-    db:contract.update(ContractRefDto): ContractDto
+    db:quote.update(UpsertQuoteDto): QuoteProjectionDto
+    mq:bus.emit(EventDto): void
     db:message.append(AppendMessageDto): AgentMessageDto
     db:conversation.update(UpdateConversationDto): AgentConversationDto
-    db:conversation.toAcceptResult(GetByIdDto): AcceptContractResultDto
+    db:conversation.toAcceptResult(GetByIdDto): AcceptQuoteResultDto
 
-[REQ] conversation.sendContract(SendContractDto): SendContractResultDto
+[REQ] conversation.sendQuote(SendQuoteDto): SendQuoteResultDto
     db:conversation.getOwned(GetByIdDto): AgentConversationDto
       not-found
       forbidden
-    db:contract.getOwned(ContractRefDto): ContractDto
+    db:quote.getOwned(QuoteRefDto): QuoteProjectionDto
       not-found
-    db:contract.update(ContractRefDto): ContractDto
-    ex:postmark.sendContract(SendDispatchDto): DispatchResultDto
+    db:quote.update(UpsertQuoteDto): QuoteProjectionDto
+    ex:postmark.sendQuote(SendDispatchDto): DispatchResultDto
       timeout
-    ex:twilio.sendContract(SendDispatchDto): DispatchResultDto
+    ex:twilio.sendQuote(SendDispatchDto): DispatchResultDto
       timeout
+    mq:bus.emit(EventDto): void
     db:message.append(AppendMessageDto): AgentMessageDto
-    db:conversation.toSendContractResult(GetByIdDto): SendContractResultDto
+    db:conversation.toSendQuoteResult(GetByIdDto): SendQuoteResultDto
 
 [REQ] conversation.sendInvoice(GetByIdDto): SendInvoiceResultDto
     db:conversation.getOwned(GetByIdDto): AgentConversationDto
       not-found
       forbidden
-    db:contract.getOwned(ContractRefDto): ContractDto
+    db:quote.getOwned(QuoteRefDto): QuoteProjectionDto
       not-found
     db:invoice.create(CreateInvoiceDto): InvoiceProjectionDto
     db:invoice.update(InvoiceRefDto): InvoiceProjectionDto
@@ -120,7 +122,7 @@
       forbidden
     db:customer.getOwned(CustomerRefDto): CustomerDto
       not-found
-    db:contract.update(ContractRefDto): ContractDto
+    db:quote.update(UpsertQuoteDto): QuoteProjectionDto
     db:conversation.update(UpdateConversationDto): AgentConversationDto
     db:conversation.toBindResult(GetByIdDto): BindCustomerResultDto
 
@@ -140,7 +142,8 @@
     db:customer.create(CreateCustomerDto): CustomerDto
     db:conversation.putWizardState(WizardStateDto): WizardStateDto
     db:message.append(AppendMessageDto): AgentMessageDto
-    db:contract.create(CreateContractDto): ContractDto
+    db:quote.update(UpsertQuoteDto): QuoteProjectionDto
+    mq:bus.emit(EventDto): void
     db:conversation.update(UpdateConversationDto): AgentConversationDto
     db:conversation.toWizardResult(GetByIdDto): WizardAnswerResultDto
 
@@ -217,8 +220,8 @@
 [ENT] conversations.phase(GetByIdDto): PhaseStatusDto
 [ENT] conversations.transition(GetByIdDto): TransitionResultDto
 [ENT] conversations.lockQuote(LockQuoteDto): LockQuoteResultDto
-[ENT] conversations.acceptContract(AcceptContractDto): AcceptContractResultDto
-[ENT] conversations.sendContract(SendContractDto): SendContractResultDto
+[ENT] conversations.acceptQuote(AcceptQuoteDto): AcceptQuoteResultDto
+[ENT] conversations.sendQuote(SendQuoteDto): SendQuoteResultDto
 [ENT] conversations.sendInvoice(GetByIdDto): SendInvoiceResultDto
 [ENT] conversations.sampleQuote({}): SampleQuoteDto
 [ENT] conversations.bindCustomer(BindCustomerDto): BindCustomerResultDto
@@ -240,9 +243,7 @@
 [TYP] customerId: string
     a reference to a bound customer record
 [TYP] quoteId: string
-    a reference to a bound quote record
-[TYP] contractId: string
-    a reference to a bound contract record
+    a reference to the bound quote — the merged Quote + Agreement document
 [TYP] invoiceId: string
     a reference to a bound invoice record
 [TYP] currentPhase: string
@@ -254,9 +255,7 @@
 [TYP] hasUnreadEvent: boolean
     whether the thread has an unread customer event badge
 [TYP] quoteStatus: string
-    denormalized quote status for the sidebar chip
-[TYP] contractStatus: string
-    denormalized contract status for the sidebar chip
+    denormalized quote.status for the sidebar chip: draft, sent, viewed, accepted
 [TYP] invoiceStatus: string
     denormalized invoice status for the sidebar chip
 [TYP] createdAt: string
@@ -277,8 +276,6 @@
     a persisted conversation message
 [TYP] wizard: WizardSnapshotDto
     the wizard state plus computed progress
-[TYP] contract: ContractDto
-    a bound contract projection
 [TYP] customer: CustomerDto
     a bound customer projection
 [TYP] canAdvance: boolean
@@ -294,7 +291,7 @@
 [TYP] state: WizardStateDto
     a nested wizard state
 [TYP] specId: string
-    the wizard spec id
+    the wizard spec id, TERMS_WIZARD_V1 is "terms-v1" from terms-wizard-spec
 [TYP:int] activeStepIdx: number
     the index of the active wizard step
 [TYP] answer: WizardAnswerRecordDto
@@ -365,8 +362,6 @@
     the language to render the paperwork in
 [TYP] status: string
     a record lifecycle status
-[TYP:int] totalAmount: number
-    a contract total in integer cents
 [TYP:int] estimatedTotal: number
     a quote estimated total in integer cents
 [TYP:int] amount: number
@@ -395,6 +390,16 @@
     a nested quote projection
 [TYP] to_: string
     the recipient the dispatch was delivered to
+[TYP] value: string
+    the resolved agreed value of a terms-wizard step
+[TYP] term: QuoteTermDto
+    a captured agreement term persisted onto the quote
+[TYP] entityType: string
+    domain-event entity type
+[TYP] entityId: string
+    domain-event entity id
+[TYP] action: string
+    domain-event action verb
 
 [DTO] ChatInputDto: conversationId?, content?, kind?
     the chat turn input from the assistant page
@@ -402,7 +407,7 @@
     input to append a message to a conversation
 [DTO] MessageListDto: message(s)
     the full message history of a conversation
-[DTO] AgentConversationDto: id, userId, customerId?, quoteId?, contractId?, invoiceId?, currentPhase, title?, preview?, hasUnreadEvent?, quoteStatus?, contractStatus?, invoiceStatus?, createdAt, updatedAt
+[DTO] AgentConversationDto: id, userId, customerId?, quoteId?, invoiceId?, currentPhase, title?, preview?, hasUnreadEvent?, quoteStatus?, invoiceStatus?, createdAt, updatedAt
     a persisted agent conversation record
 [DTO] AgentMessageDto: id, conversationId, role, kind, content, createdAt
     a persisted agent message
@@ -424,7 +429,7 @@
     a projection of the business identity
 [DTO] AddressProjectionDto: userId, state?, postal?, createdAt, updatedAt
     a projection of the business address
-[DTO] ConversationSnapshotDto: conversation, message(s), wizard?, contract?, customer?
+[DTO] ConversationSnapshotDto: conversation, message(s), wizard?, quote?, customer?
     the composite read for a single conversation
 [DTO] WizardSnapshotDto: state, progress
     wizard state plus computed progress
@@ -434,19 +439,15 @@
     a single recorded wizard pick
 [DTO] WizardProgressDto: isComplete, fractionDone
     the computed wizard progress view
-[DTO] ContractDto: id, userId, quoteId?, customerId?, status, totalAmount?, createdAt, updatedAt
-    a bound contract projection
-[DTO] ContractRefDto: id, userId, status?, customerId?, totalAmount?
-    a contract reference scoped to its owner
 [DTO] CustomerDto: id, userId, name, email?, phoneNumber?, isBusiness?, businessName?, createdAt, updatedAt
     a bound customer projection
 [DTO] CustomerRefDto: id, userId
     a customer reference scoped to its owner
 [DTO] CreateCustomerDto: userId, name, email?, phoneNumber?, isBusiness?, businessName?
     input to create a customer from the wizard step
-[DTO] PhaseStatusDto: currentPhase, quoteId?, contractId?, canAdvance, nextPhaseHint?
+[DTO] PhaseStatusDto: currentPhase, quoteId?, canAdvance, nextPhaseHint?
     the phase status for the phase endpoint
-[DTO] UpdateConversationDto: id, currentPhase?, quoteId?, contractId?, invoiceId?, customerId?, title?, preview?, hasUnreadEvent?, quoteStatus?, contractStatus?, invoiceStatus?
+[DTO] UpdateConversationDto: id, currentPhase?, quoteId?, invoiceId?, customerId?, title?, preview?, hasUnreadEvent?, quoteStatus?, invoiceStatus?
     a partial conversation patch keyed by id
 [DTO] TransitionResultDto: conversation, newMessage(s)
     the conversation plus the divider and first wizard step
@@ -454,31 +455,35 @@
     input to lock a specific quote on a conversation
 [DTO] LockQuoteResultDto: conversation, newMessage(s)
     the conversation plus the sent card and continue CTA
-[DTO] QuoteProjectionDto: id, userId, status, summary?, estimatedTotal?, customerId?, createdAt, updatedAt
-    a projection of a paperwork quote
+[DTO] QuoteTermDto: stepId, label, value
+    a captured terms-wizard answer persisted onto the quote
+[DTO] QuoteProjectionDto: id, userId, status, summary?, estimatedTotal?, customerId?, term(s), createdAt, updatedAt
+    a projection of the Quote + Agreement document
 [DTO] QuoteRefDto: id, userId
     a quote reference scoped to its owner
 [DTO] QuoteListDto: quote(s)
     a list of quotes owned by the user
-[DTO] UpsertQuoteDto: userId, summary?, status?, customerId?, estimatedTotal?
-    input to create or update a quote from chat
-[DTO] AcceptContractDto: id, contractId
-    input to mark a contract accepted
-[DTO] AcceptContractResultDto: conversation, newMessage(s)
+[DTO] UpsertQuoteDto: userId, summary?, status?, customerId?, estimatedTotal?, term(s)
+    input to create or update a quote from chat or the terms wizard
+[DTO] AcceptQuoteDto: id, quoteId
+    input to mark the bound quote accepted
+[DTO] AcceptQuoteResultDto: conversation, newMessage(s)
     the conversation plus the acceptance divider and CTA
-[DTO] SendContractDto: id, contractId, channel?, language?
-    input to dispatch a contract to the customer
-[DTO] SendContractResultDto: conversation, newMessage(s)
+[DTO] SendQuoteDto: id, quoteId, channel?, language?
+    input to dispatch the Quote + Agreement to the customer
+[DTO] SendQuoteResultDto: conversation, newMessage(s)
     the conversation plus the dispatch status message
-[DTO] SendDispatchDto: userId, kind, contractId?, invoiceId?, quoteId?, language?
-    input to dispatch paperwork over a channel
+[DTO] SendDispatchDto: userId, kind, invoiceId?, quoteId?, language?
+    input to dispatch paperwork over a channel, kind is quote or invoice
+[DTO] EventDto: userId, entityType, entityId, action
+    a domain event envelope
 [DTO] DispatchResultDto: ok, to_?, reason?
     the outcome of a dispatch attempt
 [DTO] SendInvoiceResultDto: conversation, newMessage(s)
     the conversation plus the invoice action card
-[DTO] CreateInvoiceDto: userId, contractId, customerId?, amount?, issuedDate, dueDate, status
-    input to create an invoice from a contract
-[DTO] InvoiceProjectionDto: id, userId, contractId?, customerId?, amount?, status, dueDate?, issuedDate?, createdAt, updatedAt
+[DTO] CreateInvoiceDto: userId, quoteId, customerId?, amount?, issuedDate, dueDate, status
+    input to create an invoice from the bound quote
+[DTO] InvoiceProjectionDto: id, userId, quoteId?, customerId?, amount?, status, dueDate?, issuedDate?, createdAt, updatedAt
     a projection of a paperwork invoice
 [DTO] InvoiceRefDto: id, userId, status?
     an invoice reference scoped to its owner
@@ -496,8 +501,6 @@
     the create-new customer sub-payload
 [DTO] WizardAnswerResultDto: conversation, wizardState, newMessage(s)
     the conversation plus updated wizard state and messages
-[DTO] CreateContractDto: userId, quoteId, customerId?, status, totalAmount?
-    input to finalize a contract from the wizard
 [DTO] BackDto: conversationId
     input to rewind the wizard one step
 [DTO] RewindResultDto: conversation, wizardState, activeStepId, removedMessageId(s), previousAnswer?
@@ -541,6 +544,8 @@
 
 [NON] llm
     the polymorphic LLM client dispatcher
+[NON] bus
+    the domain event bus
 [NON] stub
     the deterministic stub LLM client used in tests
 [NON] phaseStatus

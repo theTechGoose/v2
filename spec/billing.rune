@@ -272,8 +272,8 @@
     a machine-readable reason code
 [TYP] customerId: string
     a reference to a CRM customer
-[TYP] contractId: string
-    a reference to a contract
+[TYP] quoteId: string
+    a reference to the quote this invoice bills — invoices group by quoteId
 [TYP] invoiceId: string
     a reference to an invoice
 [TYP] jobName: string
@@ -421,12 +421,12 @@
     a customer's recorded payment claim
 [DTO] InstallmentDto: percent, dueDate, label?, note?
     one installment in a payment schedule
-[DTO] CreateInvoiceDto: contractId?, jobName?, description?, dueDate, customerId?, amount?, discountCents?, discountReason?, issuedDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?
-    input to create an invoice
-[DTO] UpdateInvoiceDto: contractId?, jobName?, description?, customerId?, amount?, discountCents?, discountReason?, issuedDate?, dueDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?
+[DTO] CreateInvoiceDto: quoteId?, jobName?, description?, dueDate, customerId?, amount?, discountCents?, discountReason?, issuedDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?
+    input to create an invoice, derive-from-quote via quoteId
+[DTO] UpdateInvoiceDto: quoteId?, jobName?, description?, customerId?, amount?, discountCents?, discountReason?, issuedDate?, dueDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?
     a partial invoice patch
-[DTO] InvoiceDto: id, userId, contractId?, jobName?, description?, dueDate, customerId?, amount?, discountCents?, discountReason?, issuedDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?, urgency?, createdAt, updatedAt
-    a persisted invoice record
+[DTO] InvoiceDto: id, userId, quoteId?, jobName?, description?, dueDate, customerId?, amount?, discountCents?, discountReason?, issuedDate?, status?, paidAt?, scheduledFor?, installmentIndex?, installmentTotal?, remindersMuted?, reminderHistory(s), paymentIntent?, urgency?, createdAt, updatedAt
+    a persisted invoice record, quoteId is the grouping FK
 [DTO] InvoiceListDto: invoice(s)
     a list of invoices owned by the user
 [DTO] DiscountInvoiceDto: id, discountCents, reason?
@@ -455,7 +455,7 @@
     installments resolved to concrete amounts
 [DTO] CreateChangeOrderForInvoiceDto: id, description, deltaAmountCents
     input to create a change order against an invoice
-[DTO] ChangeOrderDto: id, userId, invoiceId, contractId?, customerId?, description, deltaAmountCents, originalAmountCents?, status, createdAt, updatedAt, decidedAt?
+[DTO] ChangeOrderDto: id, userId, invoiceId, quoteId?, customerId?, description, deltaAmountCents, originalAmountCents?, status, createdAt, updatedAt, decidedAt?
     a persisted change-order record
 [DTO] ChangeOrderListDto: changeOrder(s)
     a list of change orders for an invoice
