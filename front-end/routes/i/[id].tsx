@@ -11,6 +11,7 @@ import {
   computeMilestones,
   fmtDate,
   GREEN,
+  hasTermGrid,
   INK,
   JobDetailsSection,
   LINE,
@@ -20,9 +21,11 @@ import {
   PaymentScheduleSection,
   PINK,
   PINK_DARK,
+  SectionHeader,
   sumLineTotals,
   TEAL,
   type Term,
+  TermGrid,
 } from "../../components/doc-parts.tsx";
 
 interface Contractor {
@@ -401,6 +404,10 @@ function InvoiceDoc(
                       invoice.jobDetails?.description}
                     items={items}
                     total={agreementTotal ?? sumLineTotals(items)}
+                    // Complete job details: always show the itemized
+                    // DESCRIPTION/AMOUNT table, exactly like the signed
+                    // agreement — a single-line job still gets its row.
+                    forceTable
                     labels={{
                       tableDescription: tFor(
                         lang,
@@ -413,6 +420,44 @@ function InvoiceDoc(
                       valueSub: tFor(lang, "quoteDoc.allIn"),
                     }}
                   />
+                )}
+                {
+                  /* Wizard-captured terms (start / time to complete /
+                    payment / warranty) mirrored from the agreement — the
+                    numbered legal clauses and signatures stay on /q only. */
+                }
+                {hasTermGrid(invoice) && (
+                  <section style="margin-top:36px">
+                    <SectionHeader
+                      n={num()}
+                      title={tFor(lang, "quoteDoc.terms")}
+                    />
+                    <TermGrid
+                      startDate={invoice.startDate}
+                      estimatedCompletionDate={invoice
+                        .estimatedCompletionDate}
+                      terms={invoice.terms}
+                      contractorState={invoice.contractor?.state}
+                      lang={lang}
+                      labels={{
+                        start: tFor(lang, "quoteDoc.start"),
+                        estCompletion: tFor(lang, "quoteDoc.estCompletion"),
+                        termLabels: {
+                          customer: tFor(lang, "quoteDoc.termLabel.customer"),
+                          start_date: tFor(
+                            lang,
+                            "quoteDoc.termLabel.startDate",
+                          ),
+                          wraps: tFor(lang, "quoteDoc.termLabel.wraps"),
+                          payment_terms: tFor(
+                            lang,
+                            "quoteDoc.termLabel.paymentTerms",
+                          ),
+                          warranty: tFor(lang, "quoteDoc.termLabel.warranty"),
+                        },
+                      }}
+                    />
+                  </section>
                 )}
                 {milestones.length > 0 && (
                   <PaymentScheduleSection

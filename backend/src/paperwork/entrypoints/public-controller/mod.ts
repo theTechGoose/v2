@@ -713,6 +713,11 @@ export class PaperworkPublicController {
             startDate: quote.startDate,
             estimatedCompletionDate: quote.estimatedCompletionDate,
             effectiveDate: quote.effectiveDate ?? quote.createdAt,
+            // The wizard-captured term grid (start / time-to-complete /
+            // payment split / warranty) — feeds the invoice's TermGrid and
+            // the payment-schedule milestones. This is NOT the numbered
+            // legal clauses, which stay on the signed agreement only.
+            terms: quote.terms ?? [],
             // "View the signed agreement" link target — only once actually
             // accepted (the user's "link to the signed quote if one exists").
             ...(isAccepted(quote)
