@@ -11,95 +11,76 @@ import frontend from "./front-end/_fresh/server.js";
 (globalThis as { __backendFetch?: typeof backend.fetch }).__backendFetch =
   backend.fetch.bind(backend);
 
-const BACKEND_PREFIXES = [
-  "/agents",
-  "/auth",
-  "/me",
-  "/conversations",
-  "/messages",
-  "/notifications",
-  "/email",
-  "/accounts",
-  "/customers",
-  "/entries",
-  "/quotes",
-  "/invoices",
-  "/contracts",
-  "/payment-terms",
-  "/views",
-  "/profile",
-  "/analytics",
-  "/jobs",
-  "/search",
-  "/files",
-  // Session-gated manual cron triggers (POST /cron/run-reminders etc.) —
-  // an external scheduler calls these at the domain root, so without this
-  // entry the frontend 404s them before they ever reach backend auth.
-  "/cron",
-];
+const frontendFetch = (frontend as unknown as {
+  fetch: (
+    req: Request,
+    info: Deno.ServeHandlerInfo,
+  ) => Response | Promise<Response>;
+}).fetch;
 
-function matchesBackend(pathname: string): boolean {
-  return BACKEND_PREFIXES.some((p) =>
-    pathname === p || pathname.startsWith(p + "/")
-  );
-}
-
-// Path prefixes that the FRONTEND owns even though they overlap a backend
-// route. The backend is still reachable via /api/<path>; we just block
-// direct (non-/api) access so the Fresh page renders for the human.
-const FRONTEND_OVERRIDES = [
-  "/quotes",
-  "/clients",
-  "/customers",
-  "/invoices",
-  "/contracts",
-  "/messages",
-];
-
-function isFrontendOverride(pathname: string): boolean {
-  return FRONTEND_OVERRIDES.some((p) =>
-    pathname === p || pathname.startsWith(p + "/")
-  );
-}
-
+/**
+ * Composed prod router — NO hand-maintained path lists.
+ *
+ * The old BACKEND_PREFIXES / FRONTEND_OVERRIDES pair was a standing bug
+ * class: any frontend page added under a backend-owned prefix was silently
+ * shadowed in prod only (the /customers page rendered locally but dumped
+ * the backend's JSON on paperworkmonster.com), and any backend namespace
+ * missing from the list (e.g. /cron) 404'd for external callers. Dev never
+ * runs this file, so the drift was invisible until production.
+ *
+ * Routing is now structural:
+ *   1. /api/geocode      → frontend (literal Fresh route holding MAPBOX_TOKEN;
+ *                          must not be swallowed by the /api dispatch).
+ *   2. /api/<path>       → backend, with /api stripped. The /api prefix IS
+ *                          the "dispatch to the backend" signal for islands.
+ *   3. everything else   → frontend first; if (and only if) Fresh answers
+ *                          404, retry the backend at the same path; if the
+ *                          backend also 404s, return the frontend's styled
+ *                          404 page. A new frontend page therefore always
+ *                          wins automatically, and every backend route stays
+ *                          reachable at the domain root — no lists to forget.
+ */
 export default {
-  fetch(req: Request, info: Deno.ServeHandlerInfo): Response | Promise<Response> {
+  async fetch(
+    req: Request,
+    info: Deno.ServeHandlerInfo,
+  ): Promise<Response> {
     const url = new URL(req.url);
-    let pathname = url.pathname;
+    const pathname = url.pathname;
 
-    // A few /api/* routes are implemented by the FRONTEND itself (literal
-    // Fresh routes that must not be swallowed by the backend dispatch below
-    // — in dev Vite serves them first, so without this carve-out they work
-    // locally and 404 in prod). /api/geocode is the server-side Mapbox
-    // proxy holding MAPBOX_TOKEN.
+    // Literal frontend /api routes (see routes/api/geocode.ts) — in dev
+    // Vite serves them ahead of the proxy, so without this carve-out they
+    // work locally and 404 in prod.
     if (pathname === "/api/geocode") {
-      return (frontend as unknown as {
-        fetch: (
-          req: Request,
-          info: Deno.ServeHandlerInfo,
-        ) => Response | Promise<Response>;
-      }).fetch(req, info);
+      return await frontendFetch(req, info);
     }
 
-    // Frontend islands call `/api/<backend-path>`; the `/api` prefix IS the
-    // "dispatch to the backend" signal, so strip it and hand EVERY such
-    // request to the in-process backend handler. This used to be gated on
-    // `matchesBackend(stripped)`, which meant any backend namespace missing
-    // from BACKEND_PREFIXES (e.g. /clients, /payments) fell through to the
-    // Fresh dev proxy in routes/api/[...path].ts → fetch(BACKEND_URL) →
-    // http://localhost:3000, which is dead in the composed prod server and
-    // 502s with `backend_unreachable`. Routing all /api/* in-process kills
-    // that footgun; an unknown path simply 404s from the backend router,
-    // which is the correct answer anyway.
+    // Frontend islands call `/api/<backend-path>`; strip the prefix and
+    // dispatch in-process. An unknown path 404s from the backend router,
+    // which is the correct answer for an API miss.
     if (pathname.startsWith("/api/")) {
       const rewritten = new URL(req.url);
       rewritten.pathname = pathname.slice(4);
-      return backend.fetch(new Request(rewritten, req));
+      return await backend.fetch(new Request(rewritten, req));
     }
 
-    if (matchesBackend(pathname) && !isFrontendOverride(pathname)) {
-      return backend.fetch(req);
+    // Frontend-first with backend fallthrough. Requests with a body are
+    // cloned so the backend retry still has one after Fresh consumed (or
+    // ignored) the original.
+    const backendReq = req.body ? req.clone() : req;
+    const fromFrontend = await frontendFetch(req, info);
+    if (fromFrontend.status !== 404) return fromFrontend;
+
+    const fromBackend = await backend.fetch(backendReq);
+    if (fromBackend.status !== 404) {
+      // The frontend 404 response is abandoned — release its body.
+      await fromFrontend.body?.cancel();
+      return fromBackend;
     }
-    return (frontend as unknown as { fetch: (req: Request, info: Deno.ServeHandlerInfo) => Response | Promise<Response> }).fetch(req, info);
+
+    // Neither side knows the path: show the human the styled frontend 404,
+    // never the backend's JSON error.
+    await fromBackend.body?.cancel();
+    return fromFrontend;
   },
 };
