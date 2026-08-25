@@ -381,6 +381,10 @@ export function JobDetailsSection(props: {
    *  The agreement (deck p12) always carries the line-item table; the
    *  invoice keeps the >1 gate (a single line just repeats the total). */
   forceTable?: boolean;
+  /** Hide the gradient total card (default: shown). The invoice passes
+   *  false when the agreement value equals the amount-due card directly
+   *  above — printing the same number twice reads as a design mistake. */
+  showTotal?: boolean;
   labels: {
     tableDescription: string;
     tableQty: string;
@@ -470,26 +474,28 @@ export function JobDetailsSection(props: {
           </tbody>
         </table>
       )}
-      <div
-        style={`margin-top:20px;background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:16px;padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px`}
-      >
-        <div>
-          <div
-            style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}
-          >
-            {labels.valueLabel}
-          </div>
-          <div style={`margin-top:4px;color:${MUTED};font-size:12px`}>
-            {labels.valueSub}
-          </div>
-        </div>
+      {props.showTotal !== false && (
         <div
-          class="ctr__total-amt"
-          style={`font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${TEAL};line-height:1;font-variant-numeric:tabular-nums`}
+          style={`margin-top:20px;background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:16px;padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px`}
         >
-          {fmtMoneyExact(props.total)}
+          <div>
+            <div
+              style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}
+            >
+              {labels.valueLabel}
+            </div>
+            <div style={`margin-top:4px;color:${MUTED};font-size:12px`}>
+              {labels.valueSub}
+            </div>
+          </div>
+          <div
+            class="ctr__total-amt"
+            style={`font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${TEAL};line-height:1;font-variant-numeric:tabular-nums`}
+          >
+            {fmtMoneyExact(props.total)}
+          </div>
         </div>
-      </div>
+      )}
     </section>
   );
 }

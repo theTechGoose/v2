@@ -404,10 +404,13 @@ function InvoiceDoc(
                       invoice.jobDetails?.description}
                     items={items}
                     total={agreementTotal ?? sumLineTotals(items)}
-                    // Complete job details: always show the itemized
-                    // DESCRIPTION/AMOUNT table, exactly like the signed
-                    // agreement — a single-line job still gets its row.
-                    forceTable
+                    // No duplicate numbers: the table renders only for
+                    // multi-line jobs (a single line repeats the amount-due
+                    // card), and the agreement-value card only when it
+                    // DIFFERS from this invoice's amount (i.e. this bill is
+                    // one installment of a larger job).
+                    showTotal={(agreementTotal ?? sumLineTotals(items)) !==
+                      invoice.amount}
                     labels={{
                       tableDescription: tFor(
                         lang,
@@ -459,7 +462,7 @@ function InvoiceDoc(
                     />
                   </section>
                 )}
-                {milestones.length > 0 && (
+                {milestones.length > 1 && (
                   <PaymentScheduleSection
                     n={num()}
                     title={tFor(lang, "quoteDoc.paymentSchedule")}
