@@ -32,6 +32,10 @@ const BACKEND_PREFIXES = [
   "/jobs",
   "/search",
   "/files",
+  // Session-gated manual cron triggers (POST /cron/run-reminders etc.) —
+  // an external scheduler calls these at the domain root, so without this
+  // entry the frontend 404s them before they ever reach backend auth.
+  "/cron",
 ];
 
 function matchesBackend(pathname: string): boolean {
