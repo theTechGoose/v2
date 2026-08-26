@@ -126,7 +126,7 @@ export default define.page(async function AssistantThread(ctx) {
           <DashTopbar
             greetingDate={tFor(lang, "assistantThread.greetingDate")}
             greetingName={greetingName}
-            greetingOverride={tFor(lang, "assistantThread.greetingOverride")}
+            greetingOverrideKey="assistantThread.greetingOverride"
           />
           <div class="asst">
             <AsstThreads initialThreads={initialThreads} activeId={threadId} />

@@ -42,9 +42,11 @@ export default define.page(function Dashboard(ctx) {
     : user?.name?.trim();
   const greetingName = (realName || tFor(lang, "common.thereFallback"))
     .split(" ")[0];
-  const greetingOverride = realName
+  // Passed as a dict KEY so the topbar re-localizes it live when the
+  // language toggle flips (an SSR string would stay frozen).
+  const greetingOverrideKey = realName
     ? undefined
-    : tFor(lang, "dashTopbar.greetingNoName");
+    : "dashTopbar.greetingNoName";
   const now = new Date();
   const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
     tFor(lang, MONTH_KEYS[now.getMonth()])
@@ -72,7 +74,7 @@ export default define.page(function Dashboard(ctx) {
           <DashTopbar
             greetingDate={greetingDate}
             greetingName={greetingName}
-            greetingOverride={greetingOverride}
+            greetingOverrideKey={greetingOverrideKey}
           />
           <div class="content">
             <DashboardPage />

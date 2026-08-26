@@ -1015,6 +1015,7 @@
   "dashSeed.time.yesterday": "Ayer",
   "dashTopbar.greeting": "Hola, {name} 👋",
   "dashTopbar.greetingNoName": "Hola 👋",
+  "dashTopbar.language": "Idioma",
   "dashTopbar.liveActivity": "Actividad en vivo — abrir feed",
   "dashTopbar.timeAgo": "hace {time}",
   "dashTopbar.toggleSidebar": "Alternar barra lateral",

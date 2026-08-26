@@ -1,7 +1,8 @@
 import { useEffect, useState } from "preact/hooks";
 import { I } from "../lib/dash-icons.tsx";
 import { dashboardClient, type Notification } from "../clients/dashboard.ts";
-import { langSignal, tFor } from "../lib/i18n.ts";
+import { langSignal, setLang, tFor } from "../lib/i18n.ts";
+import { profileClient } from "../clients/profile.ts";
 import { capitalizeDateLine } from "../../shared/quote-flow/format-helpers.ts";
 
 interface Props {
@@ -9,8 +10,12 @@ interface Props {
    *  so it re-localizes live on a language change instead of arriving frozen. */
   greetingDate?: string;
   greetingName: string;
-  /** When set, replaces the default "Hey, {name} 👋" line verbatim. Used by the Assistant route. */
+  /** @deprecated SSR-frozen string — it can't re-localize when the topbar
+   *  language toggle flips. Pass `greetingOverrideKey` instead. */
   greetingOverride?: string;
+  /** Dict key that replaces the default "Hey, {name} 👋" line. Resolved
+   *  reactively against the live language so the toggle re-localizes it. */
+  greetingOverrideKey?: string;
   initialUnread?: number;
   initialNotifications?: Notification[];
   lang?: "en" | "es";
@@ -60,6 +65,7 @@ export default function DashTopbar(
   {
     greetingName,
     greetingOverride,
+    greetingOverrideKey,
     initialUnread = 0,
     initialNotifications = [],
   }: Props,
@@ -144,7 +150,9 @@ export default function DashTopbar(
       <div class="topbar__greet">
         <div class="topbar__greet-line">{greetingDate}</div>
         <div class="topbar__greet-name">
-          {greetingOverride ??
+          {(greetingOverrideKey
+            ? tFor(lang, greetingOverrideKey)
+            : greetingOverride) ??
             tFor(lang, "dashTopbar.greeting", { name: greetingName })}
         </div>
       </div>
@@ -184,6 +192,39 @@ export default function DashTopbar(
           </a>
         )
         : null}
+      {
+        /* EN/ES switch — the landing page's toggle, promoted to the app
+          chrome so the language is switchable from every page, not only
+          Settings. Same behavior as Settings' app-language select: flip
+          the signal instantly, persist locally + cookie (setLang), and
+          save the profile so the assistant/doc defaults follow. */
+      }
+      <div
+        class="topbar__lang"
+        role="group"
+        aria-label={tFor(lang, "dashTopbar.language")}
+      >
+        {(["en", "es"] as const).map((code) => (
+          <button
+            key={code}
+            type="button"
+            class={`topbar__lang-btn ${
+              lang === code ? "topbar__lang-btn--on" : ""
+            }`}
+            aria-pressed={lang === code}
+            data-cy={`topbar-lang-${code}`}
+            onClick={() => {
+              if (langSignal.value === code) return;
+              setLang(code);
+              profileClient.updateUser({ language: code }).catch(() => {
+                /* profile save is best-effort — the UI already flipped */
+              });
+            }}
+          >
+            {code.toUpperCase()}
+          </button>
+        ))}
+      </div>
     </header>
   );
 }
