@@ -244,7 +244,9 @@ function renderContractorHtml(opts: {
     escapeHtml(opts.description)
   }</p>
     <p style="margin:14px 0 0;color:#6b7a7e;font-size:14px;line-height:1.55">${
-    escapeHtml(t(lang, "changeOrderAlert.email.body"))
+    escapeHtml(
+      t(lang, "changeOrderAlert.email.body", { name: opts.customerName }),
+    )
   }</p>
     <a href="${
     opts.url
