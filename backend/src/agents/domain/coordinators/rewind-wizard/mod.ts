@@ -84,21 +84,44 @@ export class RewindWizard {
     };
     await this.conversations.putWizardState(input.conversationId, nextState);
 
-    // Find the trailing wizard step message + the last user wizard-pick so
-    // the prior step's wizard message becomes the active one again.
     const msgs = await this.messages.listByConversation(input.conversationId);
     const removed: string[] = [];
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i].kind === "wizard") {
-        removed.push(msgs[i].id);
-        break;
+    const wasComplete =
+      state.activeStepIdx >= TERMS_WIZARD_V1.steps.length;
+    if (wasComplete) {
+      // Rewinding from the REVIEW stage (the send preview is the wizard's
+      // final step). The last wizard question message must survive — it
+      // becomes the active step again — so drop only what completion
+      // appended after it: the final pick and the "ready to send" CTA.
+      let lastWizardAt = -1;
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].kind === "wizard") {
+          lastWizardAt = i;
+          break;
+        }
       }
-    }
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      const m = msgs[i];
-      if (m.role === "user" && m.kind === "text" && m.payload?.wizardStepId) {
-        removed.push(m.id);
-        break;
+      for (const m of msgs.slice(lastWizardAt + 1)) {
+        const isPick = m.role === "user" && m.kind === "text" &&
+          !!m.payload?.wizardStepId;
+        const isSendCta = m.kind === "continue_cta" &&
+          (m.payload as { toPhase?: string } | undefined)?.toPhase === "send";
+        if (isPick || isSendCta) removed.push(m.id);
+      }
+    } else {
+      // Mid-wizard: drop the trailing (unanswered) question + the pick that
+      // advanced to it, so the prior step's message is the active one again.
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].kind === "wizard") {
+          removed.push(msgs[i].id);
+          break;
+        }
+      }
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        const m = msgs[i];
+        if (m.role === "user" && m.kind === "text" && m.payload?.wizardStepId) {
+          removed.push(m.id);
+          break;
+        }
       }
     }
     await this.messages.deleteByIds(input.conversationId, removed);

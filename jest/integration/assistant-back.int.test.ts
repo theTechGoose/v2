@@ -109,17 +109,18 @@ describe("assistant back — real conversation at the reviewing stage", () => {
     expect(cta).toBeTruthy();
   });
 
-  it("fed the REAL message list, the single back button undoes (close-preview) — it must NOT exit to /dashboard", async () => {
+  it("fed the REAL message list, the single back button rewinds to the previous step — it must NOT exit to /dashboard", async () => {
     const msgs = await messagesOf(s, convoId);
     const view = backViewFromMessages(msgs);
 
     // The preview auto-opens for the un-reviewed send CTA…
     expect(view.previewOpen).toBe(true);
 
-    // …so the one back button's action is to close it (undo the last
-    // surface), never the dashboard exit the live app currently does.
+    // …and the preview IS the wizard's send step, so the one back button
+    // steps to the PREVIOUS step (re-ask the last term question) — never
+    // a bare "close" that strands the chat, never the dashboard exit.
     const action = resolveAssistantBack(view);
-    expect(action).toBe("close-preview");
+    expect(action).toBe("rewind-wizard");
     expect(action).not.toBe("exit-dashboard");
   });
 
@@ -141,5 +142,41 @@ describe("assistant back — real conversation at the reviewing stage", () => {
       expect(view.activeWizardStepIdx).toBeNull();
       expect(view.viewStackDepth).toBe(0);
     }
+  });
+
+  // Runs LAST: it mutates the conversation (rewinds it).
+  it("POST /agents/wizard/back from the review stage re-asks the LAST term step: the send CTA is removed, the prior pick is returned, and the chat has an active step again", async () => {
+    const before = await messagesOf(s, convoId);
+    const lastWizard = [...before].reverse().find((m) => m.kind === "wizard");
+    expect(lastWizard).toBeTruthy();
+    const stepId = lastWizard!.payload?.stepId;
+    const stepIdx = lastWizard!.payload?.stepIdx;
+
+    const res = await s.post("/agents/wizard/back", { conversationId: convoId });
+    expect(res.status).toBeLessThan(400);
+    // The last term question is active again, with the user's prior pick
+    // handed back so the UI can pre-highlight it.
+    expect(res.body.activeStepId).toBe(stepId);
+    expect(res.body.previousAnswer?.stepId).toBe(stepId);
+
+    const after = await messagesOf(s, convoId);
+    // Completion artifacts are gone (the send CTA + the final pick)…
+    expect(
+      after.some((m) =>
+        m.kind === "continue_cta" &&
+        (m.payload as { toPhase?: string } | undefined)?.toPhase === "send"
+      ),
+    ).toBe(false);
+    // …and the surviving last message IS the last wizard question (kept,
+    // not deleted — it is the step being re-asked).
+    const last = after[after.length - 1];
+    expect(last.kind).toBe("wizard");
+    expect(last.id).toBe(lastWizard!.id);
+
+    // The resolver now sees a live step — not a preview, not a dead end.
+    const view = backViewFromMessages(after);
+    expect(view.previewOpen).toBe(false);
+    expect(view.activeWizardStepIdx).toBe(stepIdx);
+    expect(resolveAssistantBack(view)).toBe("rewind-wizard");
   });
 });

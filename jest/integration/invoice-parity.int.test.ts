@@ -1,7 +1,10 @@
 /**
  * PDF p6 (Invoice Edits) over the REAL API — the invoice document must:
  *   - carry all the quote's information (job name, description, line items, total)
- *   - NOT include the numbered Terms list
+ *   - carry the wizard-captured term grid (start / time to complete / payment /
+ *     warranty) — product decision 2026-08-25: the invoice mirrors the
+ *     agreement's Términos grid and payment schedule
+ *   - NOT include the numbered legal clauses
  *   - NOT include any signature block
  *   - link to the signed quote (the agreement) once it is accepted
  *   - be editable (PUT /invoices/:id)
@@ -41,9 +44,14 @@ describe("invoice parity with the quote", () => {
     expect(body.description ?? body.jobDetails).toBeTruthy();
   });
 
-  it("public invoice has NO terms list and NO signature block", async () => {
+  it("public invoice carries the wizard term grid but NO legal clauses and NO signature block", async () => {
     const { body } = await anonymous().get(`/invoices/${invoiceId}/public`);
-    expect(body.terms).toBeUndefined();
+    // The wizard-captured terms (start / wraps / payment_terms / warranty)
+    // feed the invoice's Términos grid + payment-schedule milestones.
+    expect(Array.isArray(body.terms)).toBe(true);
+    // The 14 numbered legal clauses live only on the signed agreement.
+    expect(body.clauses).toBeUndefined();
+    expect(body.legalClauses).toBeUndefined();
     expect(body.signature).toBeUndefined();
     expect(body.signatureBlock).toBeUndefined();
     expect(body.contractorSignature).toBeUndefined();

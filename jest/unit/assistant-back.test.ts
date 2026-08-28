@@ -24,9 +24,9 @@ import {
 const base = emptyBackView;
 
 describe("resolveAssistantBack — priority chain", () => {
-  it("quote/agreement preview open → close the preview (the reported bug: must NOT exit to dashboard)", () => {
+  it("quote/agreement preview open → rewind to the last term step (the preview IS the send step; merely closing it stranded the chat)", () => {
     expect(resolveAssistantBack({ ...base(), previewOpen: true }))
-      .toBe("close-preview");
+      .toBe("rewind-wizard");
   });
 
   it("preview wins even when a wizard step or view stack also exists", () => {
@@ -35,7 +35,7 @@ describe("resolveAssistantBack — priority chain", () => {
       previewOpen: true,
       activeWizardStepIdx: 3,
       viewStackDepth: 2,
-    })).toBe("close-preview");
+    })).toBe("rewind-wizard");
   });
 
   it("invoice result (terminal) → exit to dashboard (nothing to undo after the save)", () => {
@@ -144,12 +144,12 @@ describe("activeWizardStepIdx — rewindability comes from the LAST message", ()
 });
 
 describe("backViewFromMessages — real conversation ⇒ the button undoes, never exits", () => {
-  it("at the reviewing stage (open send-CTA) the resolved action is close-preview", () => {
+  it("at the reviewing stage (open send-CTA) the resolved action is rewind-wizard (back to the previous step)", () => {
     const view = backViewFromMessages([
       { id: "m1", kind: "text", payload: {} },
       { id: "m2", kind: "continue_cta", payload: { toPhase: "send" } },
     ]);
     expect(view.previewOpen).toBe(true);
-    expect(resolveAssistantBack(view)).toBe("close-preview");
+    expect(resolveAssistantBack(view)).toBe("rewind-wizard");
   });
 });

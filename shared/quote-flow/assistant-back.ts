@@ -35,7 +35,6 @@ export interface AssistantBackView {
 }
 
 export type AssistantBackAction =
-  | "close-preview"
   | "invoice-review-to-customer"
   | "invoice-customer-to-price"
   | "job-options-to-details"
@@ -64,7 +63,11 @@ export function emptyBackView(): AssistantBackView {
 export function resolveAssistantBack(
   v: AssistantBackView,
 ): AssistantBackAction {
-  if (v.previewOpen) return "close-preview";
+  // The quote + agreement preview IS the wizard's send step, so "back" from
+  // it means the PREVIOUS STEP: re-ask the last term question (rewind).
+  // Merely closing the preview used to strand the chat with no active step
+  // and no way to re-open the review — an invalid state.
+  if (v.previewOpen) return "rewind-wizard";
   if (v.invoiceResultOpen) return "exit-dashboard";
   if (v.invoiceReviewOpen) return "invoice-review-to-customer";
   if (v.invoiceCustomerOpen) return "invoice-customer-to-price";

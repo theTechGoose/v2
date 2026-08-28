@@ -1037,10 +1037,6 @@ export default function AsstChat({
         viewStackDepth: historyStackRef.current.length,
       });
       switch (action) {
-        case "close-preview":
-          // Mirrors the preview's ✕: back to the thread, no backend revert.
-          setPreviewCtaId(null);
-          return;
         case "invoice-review-to-customer":
           setInvoiceReview(null);
           setInvoiceCustomerOpen(true);
@@ -3137,6 +3133,10 @@ export default function AsstChat({
     if (sending || !convoId) return;
     setError(undefined);
     setSending(true);
+    // From the review stage the preview IS the step being left: close it
+    // here (the server deletes its send CTA) so the re-asked last term
+    // question is what the user lands on — never an empty thread.
+    setPreviewCtaId(null);
     try {
       const res = await assistantClient.rewindWizard(convoId);
       // Highlight the user's previous pick on the re-asked step so Back
@@ -5340,7 +5340,11 @@ export default function AsstChat({
                                   previewLang,
                                   "asstChat.preview.closePreview",
                                 )}
-                                onClick={() => setPreviewCtaId(null)}
+                                // Same as the header back: leaving the
+                                // preview re-asks the last term step. Just
+                                // hiding the card stranded the chat with no
+                                // step and no way to re-open the review.
+                                onClick={() => goBackWizard()}
                                 disabled={sending}
                               >
                                 <I d={ICN.x} size={14} sw={2.4} />
