@@ -49,9 +49,17 @@ export class WizardController {
   @Post("back")
   async back(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const conversationId = (body as { conversationId?: string })
-      ?.conversationId;
+    const { conversationId, toStepIdx } = (body ?? {}) as {
+      conversationId?: string;
+      toStepIdx?: number;
+    };
     if (!conversationId) throw new Error("conversationId required");
-    return ctx.json(await this.rewind.run({ userId: user.id, conversationId }));
+    return ctx.json(
+      await this.rewind.run({
+        userId: user.id,
+        conversationId,
+        ...(typeof toStepIdx === "number" ? { toStepIdx } : {}),
+      }),
+    );
   }
 }

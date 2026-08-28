@@ -307,7 +307,12 @@ export const assistantClient = {
   /** Step one wizard question backwards so it can be re-edited
    *  (roadmap p.2). Drops the trailing step + pick server-side and
    *  returns the now-active step id. */
-  rewindWizard: (conversationId: string, opts: ApiOptions = {}) =>
+  rewindWizard: (
+    conversationId: string,
+    opts: ApiOptions = {},
+    /** Rewind TO this step (0-based) in one call; omitted = one step back. */
+    toStepIdx?: number,
+  ) =>
     api.post<{
       conversation: Conversation;
       wizardState?: unknown;
@@ -320,7 +325,14 @@ export const assistantClient = {
         optionId: string;
         customValue?: string;
       };
-    }>("/agents/wizard/back", { conversationId }, opts),
+    }>(
+      "/agents/wizard/back",
+      {
+        conversationId,
+        ...(typeof toStepIdx === "number" ? { toStepIdx } : {}),
+      },
+      opts,
+    ),
 
   /** One-shot LLM pass: turns the user's raw job description into a
    *  polished {summary, jobName, description} triple. Used by the

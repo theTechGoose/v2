@@ -26,6 +26,7 @@ import {
 import {
   activeWizardStepIdx,
   resolveAssistantBack,
+  wizardCursor,
 } from "../../shared/quote-flow/assistant-back.ts";
 import {
   customerStepEntryView,
@@ -972,8 +973,12 @@ export default function AsstChat({
   const moneyBoxRef = useRef<HTMLDivElement | null>(null);
 
   // ── Assistant history stack ──────────────────────────────────────
-  // Snapshots of UI-only state pushed before every user-initiated
-  // view change; the universal back button pops the latest (see onBack).
+  // ONE mechanism for "back": every forward move pushes the state it is
+  // leaving — the client view flags AND the server's wizard cursor — and
+  // the header back pops the latest snapshot and restores it. If the
+  // wizard advanced since that snapshot, the server is rewound to the
+  // snapshot's step in one call. The stack is persisted per conversation
+  // in sessionStorage so a reload keeps the user's path.
   interface ViewSnapshot {
     priceCaptureOpen: boolean;
     awaitingJobDetails: boolean;
@@ -982,10 +987,29 @@ export default function AsstChat({
     pendingPriceCents: number | null;
     priceCents: number | null;
     jobOptionsOpen: boolean;
+    pickerMode: "polish" | "confirm";
+    suggestPricing: boolean;
     writeMyselfOpen: boolean;
     flowChip: ChipKey | null;
+    invoiceCustomerOpen: boolean;
+    invoiceReview: typeof invoiceReview;
+    invoiceResult: typeof invoiceResult;
+    previewCtaId: string | null;
+    /** Server wizard cursor at push time (see wizardCursor). */
+    wizardStepIdx: number | null;
   }
   const historyStackRef = useRef<ViewSnapshot[]>([]);
+  const stackKey = (id: string) => `pm:asst-stack:${id}`;
+
+  function persistStack() {
+    if (!convoId) return;
+    try {
+      globalThis.sessionStorage?.setItem(
+        stackKey(convoId),
+        JSON.stringify(historyStackRef.current),
+      );
+    } catch { /* storage unavailable — the in-memory stack still works */ }
+  }
 
   function pushHistory() {
     historyStackRef.current.push({
@@ -996,14 +1020,26 @@ export default function AsstChat({
       pendingPriceCents,
       priceCents,
       jobOptionsOpen,
+      pickerMode,
+      suggestPricing,
       writeMyselfOpen,
       flowChip,
+      invoiceCustomerOpen,
+      invoiceReview,
+      invoiceResult,
+      previewCtaId,
+      wizardStepIdx: wizardCursor(messages),
     });
+    persistStack();
   }
 
   function popHistory() {
     const snap = historyStackRef.current.pop();
     if (!snap) return;
+    persistStack();
+    // What was typed since the snapshot — kept as the composer prefill when
+    // the snapshot lands on the job-details entry (editable, not blanked).
+    const typedDetails = pendingJobDetailsRaw ?? submittedJobDetails ?? "";
     setPriceCaptureOpen(snap.priceCaptureOpen);
     setAwaitingJobDetails(snap.awaitingJobDetails);
     setSubmittedJobDetails(snap.submittedJobDetails);
@@ -1011,64 +1047,51 @@ export default function AsstChat({
     setPendingPriceCents(snap.pendingPriceCents);
     setPriceCents(snap.priceCents);
     setJobOptionsOpen(snap.jobOptionsOpen);
+    setPickerMode(snap.pickerMode);
+    setSuggestPricing(snap.suggestPricing);
     setWriteMyselfOpen(snap.writeMyselfOpen);
     setFlowChip(snap.flowChip);
+    setInvoiceCustomerOpen(snap.invoiceCustomerOpen);
+    setInvoiceReview(snap.invoiceReview);
+    setInvoiceResult(snap.invoiceResult);
+    setPreviewCtaId(snap.previewCtaId);
+    if (snap.awaitingJobDetails && typedDetails) {
+      setDraft(typedDetails);
+      requestAnimationFrame(() => {
+        taRef.current?.focus();
+        autosize();
+      });
+    }
+    // The server moved past this snapshot's step → rewind it to match.
+    const now = wizardCursor(messages);
+    if (
+      snap.wizardStepIdx !== null && now !== null && now > snap.wizardStepIdx
+    ) {
+      void goBackWizard(snap.wizardStepIdx);
+    }
   }
 
-  // The ONE back button (ChatHeaderLive) dispatches `pm:asst-back`. It
-  // UNDOES the previous action — never a second browser back. The shared
-  // resolver (shared/quote-flow/assistant-back.ts) picks the single undo
-  // that applies, most-immediate surface first; exiting to /dashboard is
-  // the last resort (nothing left to undo) and the terminal invoice card.
+  // The ONE back button (ChatHeaderLive) dispatches `pm:asst-back`. Back =
+  // pop the latest snapshot and restore it (history stack above). The
+  // shared resolver (shared/quote-flow/assistant-back.ts) only decides the
+  // edges: a saved invoice is terminal; an EMPTY stack mid-flow (deep link
+  // or hard reload) asks the server for one step back derived from the
+  // transcript; nothing left exits to /dashboard.
   // No deps array (re-binds each render) so the closure reads current state.
   useEffect(() => {
     function onBack() {
       const action = resolveAssistantBack({
         previewOpen: previewCtaId !== null,
         invoiceResultOpen: invoiceResult !== null,
-        invoiceReviewOpen: invoiceReview !== null,
-        invoiceCustomerOpen,
-        jobOptionsOpen,
-        jobOptionsMode: jobOptionsOpen ? pickerMode : null,
-        priceCaptureOpen,
-        priceAfterConfirm: priceCaptureOpen && suggestPricing &&
-          confirmedOptionRef.current !== null,
         activeWizardStepIdx: activeWizardStepIdx(messages),
         viewStackDepth: historyStackRef.current.length,
       });
       switch (action) {
-        case "invoice-review-to-customer":
-          setInvoiceReview(null);
-          setInvoiceCustomerOpen(true);
-          return;
-        case "invoice-customer-to-price":
-          setInvoiceCustomerOpen(false);
-          setPriceCaptureOpen(true);
-          return;
-        case "job-options-to-details":
-          // Confirm mode (pre-quote): return to the details entry with the
-          // typed text restored so it stays editable.
-          setJobOptionsOpen(false);
-          setPickerMode("polish");
-          setSubmittedJobDetails(null);
-          setAwaitingJobDetails(true);
-          setDraft(pendingJobDetailsRaw ?? "");
-          return;
-        case "close-job-options":
-          // Polish mode: the picker is re-openable from the review CTA, so
-          // backing out just returns to the chat without losing answers.
-          pendingReviewCtaRef.current = null;
-          setJobOptionsOpen(false);
-          return;
-        case "price-to-confirm":
-        case "price-step-back":
-          wizardStepBack();
-          return;
-        case "rewind-wizard":
-          goBackWizard();
-          return;
         case "pop-view":
           popHistory();
+          return;
+        case "rewind-wizard":
+          void goBackWizard();
           return;
         case "exit-dashboard":
           globalThis.location.href = "/dashboard";
@@ -1082,6 +1105,16 @@ export default function AsstChat({
 
   useEffect(() => {
     setConvoId(conversationId);
+    // Restore this conversation's back-stack (persisted per tab) so a
+    // reload doesn't forget the path the user took to get here.
+    try {
+      const raw = conversationId
+        ? globalThis.sessionStorage?.getItem(stackKey(conversationId))
+        : null;
+      historyStackRef.current = raw ? (JSON.parse(raw) as ViewSnapshot[]) : [];
+    } catch {
+      historyStackRef.current = [];
+    }
     setMessages(initialMessages);
     setCustomer(initialCustomer);
     // Seed the quote from the route's SSR detail (when present) so the
@@ -1789,7 +1822,6 @@ export default function AsstChat({
     if (invoiceFlow) {
       // "Job done, need to invoice." — no quote/wizard: go pick the customer
       // and mint the standalone invoice (roadmap p.3).
-      pushHistory();
       openInvoiceCustomerStep();
       return;
     }
@@ -1802,6 +1834,7 @@ export default function AsstChat({
       // via `sending`) so we don't flash the prompts before navigating.
       void startQuoteFromRaw(pendingJobDetailsRaw, cents);
     } else {
+      pushHistory();
       setPriceCaptureOpen(false);
       setAwaitingJobDetails(true);
     }
@@ -1818,6 +1851,7 @@ export default function AsstChat({
   async function openJobPicker() {
     const raw = (jobPolishRawRef.current ?? quote?.description ?? "").trim();
     optionsTouchedRef.current = false;
+    pushHistory();
     setJobOptionsOpen(true);
     setOptionsLoading(false);
     const heuristic = toOptionDrafts(
@@ -2168,6 +2202,8 @@ export default function AsstChat({
         summary,
         bullets: live,
       };
+      // Confirm picker → price capture: snapshot the picker so back reopens it.
+      pushHistory();
       setPendingJobDetailsRaw(description || summary);
       setJobOptionsOpen(false);
       setPickerMode("polish");
@@ -2346,47 +2382,6 @@ export default function AsstChat({
     } else {
       setPriceCaptureOpen(true);
     }
-  }
-
-  /**
-   * Price-capture undo (dispatched from the single header back via the
-   * shared resolver): steps back exactly ONE view using the same snapshots
-   * the universal back pops. When the landing view is the job-details step,
-   * the composer is PREFILLED with the previously typed details so they're
-   * editable — not blanked — and re-sending regenerates the flow with the
-   * edits.
-   */
-  function wizardStepBack() {
-    // "Help me price it": pricing came AFTER the confirm step — back reopens
-    // the confirm picker instead of dumping to the start screen.
-    if (priceCaptureOpen && suggestPricing && confirmedOptionRef.current) {
-      setPriceCaptureOpen(false);
-      setPriceCents(null);
-      setPriceSuggestions(null);
-      setPickerMode("confirm");
-      setJobOptionsOpen(true);
-      return;
-    }
-    const prevDetails = pendingJobDetailsRaw ?? submittedJobDetails ?? "";
-    const landing =
-      historyStackRef.current[historyStackRef.current.length - 1];
-    if (landing) {
-      popHistory();
-      if (landing.awaitingJobDetails && prevDetails) {
-        setDraft(prevDetails);
-        requestAnimationFrame(() => {
-          taRef.current?.focus();
-          autosize();
-        });
-      }
-      return;
-    }
-    // No snapshot to pop (deep-linked mid-flow) — close the capture back to
-    // the empty-state prompts, mirroring the old inline reset.
-    setPriceCaptureOpen(false);
-    setPriceCents(null);
-    setSuggestPricing(false);
-    setPriceSuggestions(null);
   }
 
   /** Opens the "Write it myself" details editor on the job-details step. */
@@ -3055,6 +3050,9 @@ export default function AsstChat({
     setError(undefined);
     setSending(true);
     setRewindAnswer(null);
+    // Leaving this step: snapshot it (view flags + server cursor) so back
+    // restores it — the server is rewound to this step on pop.
+    pushHistory();
     setMessages((m) => m.filter((x) => x.id !== message.id));
     try {
       const res = await assistantClient.answerWizard({
@@ -3129,16 +3127,16 @@ export default function AsstChat({
    * the previous step's wizard card (which the optimistic flow had removed
    * locally) is restored as the active question.
    */
-  async function goBackWizard() {
+  async function goBackWizard(toStepIdx?: number) {
     if (sending || !convoId) return;
     setError(undefined);
     setSending(true);
     // From the review stage the preview IS the step being left: close it
-    // here (the server deletes its send CTA) so the re-asked last term
-    // question is what the user lands on — never an empty thread.
+    // here (the server deletes its send CTA) so the re-asked term question
+    // is what the user lands on — never an empty thread.
     setPreviewCtaId(null);
     try {
-      const res = await assistantClient.rewindWizard(convoId);
+      const res = await assistantClient.rewindWizard(convoId, {}, toStepIdx);
       // Highlight the user's previous pick on the re-asked step so Back
       // "restores the prior step's selections" (roadmap p.8).
       setRewindAnswer(res.previousAnswer ?? null);
@@ -3253,6 +3251,7 @@ export default function AsstChat({
   /** Open the invoice flow's customer step (the standard wizard
    *  CustomerStepPanel — it loads the client list itself). */
   function openInvoiceCustomerStep() {
+    pushHistory();
     setPriceCaptureOpen(false);
     setInvoiceCustomerOpen(true);
   }
@@ -3326,6 +3325,7 @@ export default function AsstChat({
           10,
         ),
       );
+      pushHistory();
       setInvoiceCustomerOpen(false);
       setInvoiceReview({
         customerId: customerId!,

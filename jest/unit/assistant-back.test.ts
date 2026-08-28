@@ -1,15 +1,9 @@
 /**
- * RED (TDD) — the assistant has ONE back button (the chat-header control,
- * a.chat__head-btn) and it UNDOES the previous action; it never acts as a
- * second browser-back. Reported live: on the quote + agreement preview the
- * header back exited to /dashboard instead of undoing (closing the preview).
- *
- * This unit pins the resolver that decides what the single button does:
- * given the assistant's view state, `resolveAssistantBack` returns the ONE
- * undo action, most-immediate surface first. The exit to /dashboard is the
- * LAST resort (nothing left to undo), never the answer while any in-chat
- * surface (preview, invoice review, job options, price capture, wizard,
- * snapshot stack) is still active.
+ * The assistant has ONE back button (the chat-header control,
+ * a.chat__head-btn). Model (2026-08-28): every forward move pushes a
+ * snapshot (client view flags + the server's wizard cursor); back POPS the
+ * latest snapshot and restores it, rewinding the server to the snapshot's
+ * step when the wizard moved on. The resolver only decides the edges.
  *
  * Target: shared/quote-flow/assistant-back.ts
  */
@@ -19,100 +13,63 @@ import {
   emptyBackView,
   firstOpenReviewCta,
   resolveAssistantBack,
+  WIZARD_DONE,
+  wizardCursor,
 } from "../../shared/quote-flow/assistant-back";
 
 const base = emptyBackView;
 
-describe("resolveAssistantBack — priority chain", () => {
-  it("quote/agreement preview open → rewind to the last term step (the preview IS the send step; merely closing it stranded the chat)", () => {
-    expect(resolveAssistantBack({ ...base(), previewOpen: true }))
-      .toBe("rewind-wizard");
-  });
-
-  it("preview wins even when a wizard step or view stack also exists", () => {
-    expect(resolveAssistantBack({
-      ...base(),
-      previewOpen: true,
-      activeWizardStepIdx: 3,
-      viewStackDepth: 2,
-    })).toBe("rewind-wizard");
-  });
-
-  it("invoice result (terminal) → exit to dashboard (nothing to undo after the save)", () => {
-    expect(resolveAssistantBack({ ...base(), invoiceResultOpen: true }))
-      .toBe("exit-dashboard");
-  });
-
-  it("invoice review open → back to the invoice customer step", () => {
-    expect(resolveAssistantBack({ ...base(), invoiceReviewOpen: true }))
-      .toBe("invoice-review-to-customer");
-  });
-
-  it("invoice customer step open → back to the price capture", () => {
-    expect(resolveAssistantBack({ ...base(), invoiceCustomerOpen: true }))
-      .toBe("invoice-customer-to-price");
-  });
-
-  it("job-options picker in confirm mode → back to the editable details entry", () => {
-    expect(resolveAssistantBack({
-      ...base(),
-      jobOptionsOpen: true,
-      jobOptionsMode: "confirm",
-    })).toBe("job-options-to-details");
-  });
-
-  it("job-options picker in polish mode → just close the picker", () => {
-    expect(resolveAssistantBack({
-      ...base(),
-      jobOptionsOpen: true,
-      jobOptionsMode: "polish",
-    })).toBe("close-job-options");
-  });
-
-  it("price capture after the help-me-price confirm step → reopen the confirm picker", () => {
-    expect(resolveAssistantBack({
-      ...base(),
-      priceCaptureOpen: true,
-      priceAfterConfirm: true,
-    })).toBe("price-to-confirm");
-  });
-
-  it("plain price capture → one view-step back (details restored for editing)", () => {
-    expect(resolveAssistantBack({ ...base(), priceCaptureOpen: true }))
-      .toBe("price-step-back");
-  });
-
-  it("active wizard step past the first → rewind one step", () => {
-    expect(resolveAssistantBack({ ...base(), activeWizardStepIdx: 2 }))
-      .toBe("rewind-wizard");
-  });
-
-  it("wizard at its first step falls through to the view stack", () => {
-    expect(resolveAssistantBack({
-      ...base(),
-      activeWizardStepIdx: 0,
-      viewStackDepth: 1,
-    })).toBe("pop-view");
-  });
-
-  it("only snapshots left → pop one view", () => {
+describe("resolveAssistantBack — pop the stack; the rest are edges", () => {
+  it("a snapshot on the stack → pop it (the one normal case)", () => {
     expect(resolveAssistantBack({ ...base(), viewStackDepth: 2 }))
       .toBe("pop-view");
   });
 
-  it("nothing left to undo → exit to the dashboard (the ONLY state that exits)", () => {
+  it("the stack wins over anything derived from the transcript", () => {
+    expect(resolveAssistantBack({
+      ...base(),
+      viewStackDepth: 1,
+      previewOpen: true,
+      activeWizardStepIdx: 3,
+    })).toBe("pop-view");
+  });
+
+  it("empty stack (deep link / reload) but the review preview is open → server rewinds one step", () => {
+    expect(resolveAssistantBack({ ...base(), previewOpen: true }))
+      .toBe("rewind-wizard");
+  });
+
+  it("empty stack but a wizard step past the first is active → server rewinds one step", () => {
+    expect(resolveAssistantBack({ ...base(), activeWizardStepIdx: 2 }))
+      .toBe("rewind-wizard");
+  });
+
+  it("empty stack at the wizard's first step → nothing to rewind → exit", () => {
+    expect(resolveAssistantBack({ ...base(), activeWizardStepIdx: 0 }))
+      .toBe("exit-dashboard");
+  });
+
+  it("saved invoice is terminal → exit, even with snapshots below it", () => {
+    expect(resolveAssistantBack({
+      ...base(),
+      invoiceResultOpen: true,
+      viewStackDepth: 3,
+    })).toBe("exit-dashboard");
+  });
+
+  it("nothing at all → exit to the dashboard", () => {
     expect(resolveAssistantBack(base())).toBe("exit-dashboard");
   });
 });
 
-describe("firstOpenReviewCta — the auto-opened preview the button must close", () => {
+describe("firstOpenReviewCta — the auto-opened preview surface", () => {
   const msgs = [
     { id: "m1", kind: "text", payload: {} },
     { id: "m2", kind: "wizard", payload: { stepIdx: 4 } },
     { id: "m3", kind: "continue_cta", payload: { toPhase: "send" } },
   ];
 
-  it("finds the ready-to-send CTA (the preview surface) in a real message list", () => {
+  it("finds the ready-to-send CTA in a real message list", () => {
     expect(firstOpenReviewCta(msgs)).toBe("m3");
   });
 
@@ -127,7 +84,7 @@ describe("firstOpenReviewCta — the auto-opened preview the button must close",
   });
 });
 
-describe("activeWizardStepIdx — rewindability comes from the LAST message", () => {
+describe("activeWizardStepIdx — the active step comes from the LAST message", () => {
   it("reads stepIdx when the last message is an active wizard step", () => {
     expect(activeWizardStepIdx([
       { id: "a", kind: "text", payload: {} },
@@ -143,8 +100,30 @@ describe("activeWizardStepIdx — rewindability comes from the LAST message", ()
   });
 });
 
-describe("backViewFromMessages — real conversation ⇒ the button undoes, never exits", () => {
-  it("at the reviewing stage (open send-CTA) the resolved action is rewind-wizard (back to the previous step)", () => {
+describe("wizardCursor — what a snapshot records about the server", () => {
+  it("is the active step's index mid-wizard", () => {
+    expect(wizardCursor([{ id: "b", kind: "wizard", payload: { stepIdx: 2 } }]))
+      .toBe(2);
+  });
+
+  it("is WIZARD_DONE once the send CTA exists — open or already reviewed", () => {
+    expect(wizardCursor([
+      { id: "a", kind: "wizard", payload: { stepIdx: 4 } },
+      { id: "b", kind: "continue_cta", payload: { toPhase: "send" } },
+    ])).toBe(WIZARD_DONE);
+  });
+
+  it("is null before the wizard", () => {
+    expect(wizardCursor([{ id: "a", kind: "text", payload: {} }])).toBeNull();
+  });
+
+  it("a completed cursor is later than every step, so popping any wizard snapshot rewinds", () => {
+    expect(WIZARD_DONE > 4).toBe(true);
+  });
+});
+
+describe("backViewFromMessages — real conversation with an empty stack", () => {
+  it("at the reviewing stage (open send-CTA) the fallback is a server rewind, never an exit", () => {
     const view = backViewFromMessages([
       { id: "m1", kind: "text", payload: {} },
       { id: "m2", kind: "continue_cta", payload: { toPhase: "send" } },

@@ -1,60 +1,42 @@
 /**
  * The assistant's SINGLE back button (a.chat__head-btn) — resolver.
  *
- * Product rule (2026-08-19): the chat header carries the ONLY back control
- * in the assistant; no widget or chat-message renders its own. The button
- * UNDOES the previous action — it never acts as a second browser back.
+ * Model (2026-08-28): the assistant keeps a stack of snapshots. Every
+ * forward move pushes the state it is leaving (client view flags + the
+ * server's wizard step cursor); back POPS the latest snapshot and restores
+ * it — rewinding the server to the snapshot's step when the wizard moved
+ * on. No per-surface rules: whatever you did last is what back undoes.
  *
- * `resolveAssistantBack` maps the assistant's current view state to the ONE
- * undo that applies, most-immediate surface first. "exit-dashboard" is the
- * last resort (nothing left to undo) and the invoice-result terminal state
- * (a saved invoice cannot be un-saved).
+ * `resolveAssistantBack` is the tiny remaining decision:
+ *   1. a saved invoice is terminal — nothing above it can be undone;
+ *   2. a snapshot on the stack → pop it;
+ *   3. no snapshot (the stack lives in the tab and is empty after a deep
+ *      link / hard reload) but the server is mid-flow (a wizard step past
+ *      the first, or the review preview) → ask the server for one step
+ *      back, derived from the transcript;
+ *   4. nothing left → exit to /dashboard.
  */
 
 export interface AssistantBackView {
-  /** Quote + agreement preview card open (previewCtaId !== null). */
+  /** Quote + agreement preview open (the wizard's send step). */
   previewOpen: boolean;
   /** Terminal invoice-saved card open — nothing above it is undoable. */
   invoiceResultOpen: boolean;
-  /** Invoice pre-save review open. */
-  invoiceReviewOpen: boolean;
-  /** Invoice flow customer step open. */
-  invoiceCustomerOpen: boolean;
-  /** Job-details option picker open. */
-  jobOptionsOpen: boolean;
-  /** Picker mode when open: "confirm" (pre-quote) or "polish". */
-  jobOptionsMode: "confirm" | "polish" | null;
-  /** Price capture screen open. */
-  priceCaptureOpen: boolean;
-  /** Help-me-price: pricing came after a confirm step it can reopen. */
-  priceAfterConfirm: boolean;
   /** stepIdx of the ACTIVE wizard step (last message), else null. */
   activeWizardStepIdx: number | null;
-  /** Depth of the in-chat view snapshot stack. */
+  /** Depth of the snapshot stack. */
   viewStackDepth: number;
 }
 
 export type AssistantBackAction =
-  | "invoice-review-to-customer"
-  | "invoice-customer-to-price"
-  | "job-options-to-details"
-  | "close-job-options"
-  | "price-to-confirm"
-  | "price-step-back"
-  | "rewind-wizard"
   | "pop-view"
+  | "rewind-wizard"
   | "exit-dashboard";
 
 export function emptyBackView(): AssistantBackView {
   return {
     previewOpen: false,
     invoiceResultOpen: false,
-    invoiceReviewOpen: false,
-    invoiceCustomerOpen: false,
-    jobOptionsOpen: false,
-    jobOptionsMode: null,
-    priceCaptureOpen: false,
-    priceAfterConfirm: false,
     activeWizardStepIdx: null,
     viewStackDepth: 0,
   };
@@ -63,31 +45,18 @@ export function emptyBackView(): AssistantBackView {
 export function resolveAssistantBack(
   v: AssistantBackView,
 ): AssistantBackAction {
-  // The quote + agreement preview IS the wizard's send step, so "back" from
-  // it means the PREVIOUS STEP: re-ask the last term question (rewind).
-  // Merely closing the preview used to strand the chat with no active step
-  // and no way to re-open the review — an invalid state.
-  if (v.previewOpen) return "rewind-wizard";
   if (v.invoiceResultOpen) return "exit-dashboard";
-  if (v.invoiceReviewOpen) return "invoice-review-to-customer";
-  if (v.invoiceCustomerOpen) return "invoice-customer-to-price";
-  if (v.jobOptionsOpen) {
-    return v.jobOptionsMode === "confirm"
-      ? "job-options-to-details"
-      : "close-job-options";
-  }
-  if (v.priceCaptureOpen) {
-    return v.priceAfterConfirm ? "price-to-confirm" : "price-step-back";
-  }
-  if ((v.activeWizardStepIdx ?? 0) > 0) return "rewind-wizard";
   if (v.viewStackDepth > 0) return "pop-view";
+  if (v.previewOpen || (v.activeWizardStepIdx ?? 0) > 0) {
+    return "rewind-wizard";
+  }
   return "exit-dashboard";
 }
 
 // ── message-derived state ──────────────────────────────────────────────
-// The two rules below read the REAL conversation payload shapes the
-// backend emits, so both the island and the integration tests share one
-// source of truth for "what is on screen".
+// The rules below read the REAL conversation payload shapes the backend
+// emits, so both the island and the integration tests share one source of
+// truth for "what is on screen".
 
 export interface AssistantMessageLike {
   id: string;
@@ -121,6 +90,31 @@ export function activeWizardStepIdx(
   if (last?.kind !== "wizard") return null;
   const idx = (last.payload as { stepIdx?: number } | undefined)?.stepIdx;
   return typeof idx === "number" ? idx : null;
+}
+
+/** Sentinel step cursor for "the wizard is complete" (review/send stage). */
+export const WIZARD_DONE = Number.MAX_SAFE_INTEGER;
+
+/**
+ * The server's wizard cursor as seen from the transcript: the active step's
+ * index, WIZARD_DONE once the ready-to-send CTA exists, null before the
+ * wizard. Snapshots record this so popping one knows whether the server
+ * must be rewound too.
+ */
+export function wizardCursor(
+  messages: readonly AssistantMessageLike[],
+): number | null {
+  if (firstOpenReviewCta(messages) !== null) return WIZARD_DONE;
+  // A reviewed (closed) CTA still means the wizard is complete.
+  if (
+    messages.some((m) =>
+      m.kind === "continue_cta" &&
+      (m.payload as { toPhase?: string } | undefined)?.toPhase === "send"
+    )
+  ) {
+    return WIZARD_DONE;
+  }
+  return activeWizardStepIdx(messages);
 }
 
 /** Build the resolver's view from a real message list + client-only flags. */

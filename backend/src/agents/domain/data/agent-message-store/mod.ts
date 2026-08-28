@@ -29,7 +29,23 @@ export class AgentMessageStore {
     payload?: Record<string, unknown>;
   }): Promise<AgentMessage> {
     const id = crypto.randomUUID();
-    const createdAt = new Date().toISOString();
+    const kv = await getKv();
+    // createdAt is the sort key. Two appends in the same millisecond (a
+    // wizard pick + the next question) would tie and fall back to ordering
+    // by random uuid — scrambling the transcript on every reload. Keep
+    // createdAt strictly increasing per conversation instead.
+    let createdAt = new Date().toISOString();
+    for await (
+      const last of kv.list<AgentMessage>(
+        { prefix: [PREFIX, input.conversationId] },
+        { limit: 1, reverse: true },
+      )
+    ) {
+      if (last.value.createdAt >= createdAt) {
+        createdAt = new Date(Date.parse(last.value.createdAt) + 1)
+          .toISOString();
+      }
+    }
     const msg: AgentMessage = {
       id,
       conversationId: input.conversationId,
@@ -39,7 +55,6 @@ export class AgentMessageStore {
       payload: input.payload,
       createdAt,
     };
-    const kv = await getKv();
     await kv.set([PREFIX, input.conversationId, createdAt, id], msg, {
       expireIn: TTL_MS,
     });
