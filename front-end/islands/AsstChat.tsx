@@ -1000,16 +1000,35 @@ export default function AsstChat({
     wizardStepIdx: number | null;
   }
   const historyStackRef = useRef<ViewSnapshot[]>([]);
+  // Before the conversation exists (details / price on the empty state) the
+  // stack lives under "draft"; it is migrated to the real id the moment the
+  // conversation is minted, so the pre-wizard steps stay on the same stack
+  // as the wizard across the navigation into the thread.
   const stackKey = (id: string) => `pm:asst-stack:${id}`;
+  const DRAFT_STACK = "draft";
 
-  function persistStack() {
-    if (!convoId) return;
+  function persistStackAs(id: string) {
     try {
       globalThis.sessionStorage?.setItem(
-        stackKey(convoId),
+        stackKey(id),
         JSON.stringify(historyStackRef.current),
       );
     } catch { /* storage unavailable — the in-memory stack still works */ }
+  }
+
+  function persistStack() {
+    persistStackAs(convoId ?? DRAFT_STACK);
+  }
+
+  /** The conversation just got its id: carry the draft-stage stack over. */
+  function migrateDraftStack(id: string) {
+    try {
+      const raw = globalThis.sessionStorage?.getItem(stackKey(DRAFT_STACK));
+      if (raw) {
+        globalThis.sessionStorage?.setItem(stackKey(id), raw);
+        globalThis.sessionStorage?.removeItem(stackKey(DRAFT_STACK));
+      }
+    } catch { /* noop */ }
   }
 
   function pushHistory() {
@@ -1071,15 +1090,24 @@ export default function AsstChat({
       void goBackWizard(snap.wizardStepIdx);
       return;
     }
-    // Invariant: a snapshot must be a VISIBLE state. With the wizard
-    // complete, "no preview and no panel" renders nothing (the send CTA is
-    // suppressed once closed) — that is not a state, it is the dead end.
-    // Treat it as the last term step: rewind one question.
-    const rendersNothing = snap.wizardStepIdx === WIZARD_DONE &&
-      !snap.previewCtaId && !snap.jobOptionsOpen && !snap.priceCaptureOpen &&
-      !snap.awaitingJobDetails && !snap.invoiceCustomerOpen &&
-      !snap.invoiceReview && !snap.invoiceResult;
-    if (rendersNothing) void goBackWizard();
+    // Invariant: a snapshot must be a VISIBLE state.
+    const noPanel = !snap.previewCtaId && !snap.jobOptionsOpen &&
+      !snap.priceCaptureOpen && !snap.awaitingJobDetails &&
+      !snap.invoiceCustomerOpen && !snap.invoiceReview && !snap.invoiceResult;
+    // With the wizard complete, "no preview and no panel" renders nothing
+    // (the send CTA is suppressed once closed) — that is not a state, it is
+    // the dead end. Treat it as the last term step: rewind one question.
+    if (snap.wizardStepIdx === WIZARD_DONE && noPanel) {
+      void goBackWizard();
+      return;
+    }
+    // The blank starter page (before any flow was chosen) is only a state
+    // while the thread is empty. Once a quote exists, "before the details"
+    // means leaving the assistant — the earliest real step is the details
+    // entry, which was the previous pop.
+    if (snap.wizardStepIdx === null && noPanel && messages.length > 0) {
+      globalThis.location.href = "/dashboard";
+    }
   }
 
   // The ONE back button (ChatHeaderLive) dispatches `pm:asst-back`. Back =
@@ -2101,7 +2129,7 @@ export default function AsstChat({
       // directly while /api/* bounces through the Fresh proxy; mixing the two
       // creates the quote on one backend and reads/updates it on another, so
       // the later GET/PUT /quotes/:id 404s. Keep all quote ops on one path.
-      const quote = await api.post<{ id?: string }>("/quotes", {
+      const quoteFields = {
         summary,
         jobName,
         description: raw.trim(),
@@ -2113,24 +2141,48 @@ export default function AsstChat({
           price: cents,
         }],
         estimatedTotal: cents,
-        status: "sent",
-      });
-      if (!quote?.id) throw new Error("failed to create quote");
+      };
 
-      // P-22: reuse the conversation minted when the details were submitted
-      // (its id is already in the URL) instead of orphaning it behind a
-      // second one. Falls back to creating one when the early mint failed.
-      const conv = convoId
-        ? await api.post<{ id?: string }>(
-          `/agents/conversations/${convoId}/draft`,
-          { quoteId: quote.id },
-        )
-        : await api.post<{ id?: string }>("/agents/conversations", {
-          quoteId: quote.id,
+      let convId: string;
+      if (quoteId && convoId) {
+        // Back brought the user to the price (or details) step of a quote
+        // that already exists: this is an EDIT of that quote, not a second
+        // one. The server stays where it is (terms, first question); the
+        // navigation below re-enters the wizard with the new numbers.
+        await quotesClient.update(quoteId, quoteFields);
+        convId = convoId;
+      } else {
+        const quote = await api.post<{ id?: string }>("/quotes", {
+          ...quoteFields,
+          status: "sent",
         });
-      if (!conv?.id) throw new Error("failed to start conversation");
+        if (!quote?.id) throw new Error("failed to create quote");
 
-      await api.post(`/agents/conversations/${conv.id}/transition-to-terms`);
+        // P-22: reuse the conversation minted when the details were
+        // submitted (its id is already in the URL) instead of orphaning it
+        // behind a second one. Falls back to creating one when the early
+        // mint failed.
+        const conv = convoId
+          ? await api.post<{ id?: string }>(
+            `/agents/conversations/${convoId}/draft`,
+            { quoteId: quote.id },
+          )
+          : await api.post<{ id?: string }>("/agents/conversations", {
+            quoteId: quote.id,
+          });
+        if (!conv?.id) throw new Error("failed to start conversation");
+        if (!convoId) migrateDraftStack(conv.id);
+        convId = conv.id;
+
+        await api.post(`/agents/conversations/${convId}/transition-to-terms`);
+      }
+      const conv = { id: convId };
+
+      // Leaving the price step for the wizard is a forward move like any
+      // other: snapshot it, persisted under the thread id because the
+      // navigation below is a full page load.
+      pushHistory();
+      persistStackAs(convId);
 
       if (!confirmed) {
         try {
@@ -2362,6 +2414,7 @@ export default function AsstChat({
       const id = conv?.id;
       if (!id) return;
       setConvoId(id);
+      migrateDraftStack(id);
       if (typeof globalThis.history !== "undefined") {
         globalThis.history.replaceState(null, "", `/assistant/${id}`);
       }
@@ -3795,11 +3848,16 @@ export default function AsstChat({
   }
 
   const empty = messages.length === 0;
+  // A step panel restored by back (price capture, details entry, picker,
+  // invoice steps) takes over the scroll area even on a thread that already
+  // has messages — otherwise a popped pre-wizard snapshot would show nothing.
+  const panelOpen = priceCaptureOpen || awaitingJobDetails || jobOptionsOpen ||
+    invoiceCustomerOpen || invoiceReview !== null || invoiceResult !== null;
 
   return (
     <>
       <div class="chat__scroll" ref={scrollRef}>
-        {(empty || jobOptionsOpen)
+        {(empty || panelOpen)
           ? (
             <div class="chat__empty">
               {!priceCaptureOpen && !awaitingJobDetails && !jobOptionsOpen &&
@@ -7199,10 +7257,13 @@ export default function AsstChat({
         // Also hide it while the final quote-review card is open (previewCtaId
         // set): that screen is tap-only — the user sends via the card's button,
         // so a text box underneath just invites stray typing.
+        // The details entry restored by back needs the composer even while
+        // the thread still holds an unanswered wizard question underneath.
         const composerHidden = priceCaptureOpen || jobOptionsOpen ||
           invoiceCustomerOpen || invoiceReview !== null ||
           invoiceResult !== null ||
-          hasUnansweredWizard || previewCtaId !== null;
+          (hasUnansweredWizard && !awaitingJobDetails) ||
+          previewCtaId !== null;
         // The error strip must survive a hidden composer: wizard-step
         // failures (customer create rejected, network flake) land in
         // `error`, and every wizard step hides the composer — swallowing
