@@ -26,6 +26,7 @@ import {
 import {
   activeWizardStepIdx,
   resolveAssistantBack,
+  WIZARD_DONE,
   wizardCursor,
 } from "../../shared/quote-flow/assistant-back.ts";
 import {
@@ -1068,7 +1069,17 @@ export default function AsstChat({
       snap.wizardStepIdx !== null && now !== null && now > snap.wizardStepIdx
     ) {
       void goBackWizard(snap.wizardStepIdx);
+      return;
     }
+    // Invariant: a snapshot must be a VISIBLE state. With the wizard
+    // complete, "no preview and no panel" renders nothing (the send CTA is
+    // suppressed once closed) — that is not a state, it is the dead end.
+    // Treat it as the last term step: rewind one question.
+    const rendersNothing = snap.wizardStepIdx === WIZARD_DONE &&
+      !snap.previewCtaId && !snap.jobOptionsOpen && !snap.priceCaptureOpen &&
+      !snap.awaitingJobDetails && !snap.invoiceCustomerOpen &&
+      !snap.invoiceReview && !snap.invoiceResult;
+    if (rendersNothing) void goBackWizard();
   }
 
   // The ONE back button (ChatHeaderLive) dispatches `pm:asst-back`. Back =
@@ -1851,7 +1862,10 @@ export default function AsstChat({
   async function openJobPicker() {
     const raw = (jobPolishRawRef.current ?? quote?.description ?? "").trim();
     optionsTouchedRef.current = false;
-    pushHistory();
+    // No snapshot here: this picker is the end-of-wizard "send step" (it
+    // auto-opens right before the preview), not a state of its own. The
+    // state to return to is the last term question — the snapshot pushed
+    // when it was answered.
     setJobOptionsOpen(true);
     setOptionsLoading(false);
     const heuristic = toOptionDrafts(
