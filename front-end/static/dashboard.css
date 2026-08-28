@@ -743,8 +743,7 @@ body {
   display: flex;
   gap: 2px;
   background: var(--mint-100);
-  /* TEMP debug locator — remove after confirming visibility */
-  border: 3px solid red;
+  border: 1px solid var(--border);
   border-radius: 999px;
   padding: 3px;
   flex-shrink: 0;
