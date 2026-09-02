@@ -30,10 +30,14 @@ const ES_ROTOR_BY_WORD = new Map(
 );
 const esRotor = (word: string) => ES_ROTOR_BY_WORD.get(word) ?? `${word}.`;
 
-/** "$0" / "$99" — the PUBLIC tier prices come from the one plan source
- *  (shared/quote-flow/pricing-plans.ts), never re-typed in the markup (P-08). */
+/** "$0" / "$99" / "$199" — the PUBLIC tier prices come from the one plan source
+ *  (shared/quote-flow/pricing-plans.ts), never re-typed in the markup (P-08).
+ *  Custom-priced plans (Monster Projects) have no entry: their card shows a
+ *  label instead of a figure. */
 const TIER_PRICE: Record<string, string> = Object.fromEntries(
-  PUBLIC_PLANS.map((p) => [p.id, `$${Math.round(p.priceCents / 100)}`]),
+  PUBLIC_PLANS.filter((p) => !p.custom).map((
+    p,
+  ) => [p.id, `$${Math.round(p.priceCents / 100)}`]),
 );
 
 /** The from-price the "{p}" placeholder resolves to, in whole dollars. */
@@ -881,9 +885,10 @@ export default define.page(async function Landing(ctx) {
           </div>
 
           {
-            /* Only the PUBLIC plans (Monster Free, Monster) render here —
-              every Monster Assist tier is a phone/onboarding upsell and is
-              never listed. Both cards read shared/quote-flow/pricing-plans.ts,
+            /* Only the PUBLIC plans (Monster Free, Monster, Monster Assist,
+              Monster Projects) render here — Monster Assist Plus is a
+              phone/onboarding upsell and is never listed. Projects is priced
+              per engagement, so its card says Custom and carries no figure. Both cards read shared/quote-flow/pricing-plans.ts,
               the same list /landing renders. The data-i18n keys stay so the
               client-side language toggle keeps working. */
           }
@@ -954,6 +959,69 @@ export default define.page(async function Landing(ctx) {
                 data-i18n="price.plans.cta"
               >
                 {t("price.plans.cta")}
+              </a>
+            </div>
+
+            <div class="tier" data-cy="pricing-plan">
+              <div
+                class="tier-name"
+                data-i18n="price.t3.name"
+                data-cy="pricing-plan-name"
+              >
+                {t("price.t3.name")}
+              </div>
+              <div class="tier-price">
+                {TIER_PRICE.assist}
+                <span class="permo" data-i18n="price.permo">
+                  {t("price.permo")}
+                </span>
+              </div>
+              <p class="tier-blurb" data-i18n="price.t3.blurb">
+                {t("price.t3.blurb")}
+              </p>
+              <ul class="tier-list">
+                {PUBLIC_PLANS[2].features.map((f, i) => (
+                  <li key={f.id} data-i18n={`price.t3.f${i + 1}`}>
+                    {t(`price.t3.f${i + 1}`)}
+                  </li>
+                ))}
+              </ul>
+              <a
+                href="#contact"
+                class="btn btn-outline tier-cta cta-scroll"
+                data-i18n="price.plans.cta"
+              >
+                {t("price.plans.cta")}
+              </a>
+            </div>
+
+            <div class="tier tier--custom" data-cy="pricing-plan">
+              <div
+                class="tier-name"
+                data-i18n="price.t4.name"
+                data-cy="pricing-plan-name"
+              >
+                {t("price.t4.name")}
+              </div>
+              <div class="tier-price" data-i18n="price.t4.price">
+                {t("price.t4.price")}
+              </div>
+              <p class="tier-blurb" data-i18n="price.t4.blurb">
+                {t("price.t4.blurb")}
+              </p>
+              <ul class="tier-list">
+                {PUBLIC_PLANS[3].features.map((f, i) => (
+                  <li key={f.id} data-i18n={`price.t4.f${i + 1}`}>
+                    {t(`price.t4.f${i + 1}`)}
+                  </li>
+                ))}
+              </ul>
+              <a
+                href="#contact"
+                class="btn btn-outline tier-cta cta-scroll"
+                data-i18n="price.plans.ctaCustom"
+              >
+                {t("price.plans.ctaCustom")}
               </a>
             </div>
           </div>

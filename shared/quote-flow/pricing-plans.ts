@@ -3,18 +3,20 @@
  * August 27-28, 2026" email (sent Aug 31, 2026), which supersedes the
  * raw-plan p20 deck (no free tier, $15 Starter / $99 / $199):
  *
- *   Monster Free         $0/month         max 5 quotes/month, unlimited invoices
+ *   Monster Free         $0/month         unlimited invoices, max 5 quotes/month
  *   Monster              $99/month        the full self-service platform
- *   Monster Assist       $199/month       platform + phone/text/email help  HIDDEN
+ *   Monster Assist       $199/month       platform + phone/text/email help
+ *   Monster Projects     custom           scoped per customer — no number shown
  *   Monster Assist Plus  $399–$599/month  higher-level expert assistance    HIDDEN
  *
  * Only `public` plans render on the pricing sections — the pages iterate
- * `PUBLIC_PLANS`, never `PRICING_PLANS`. Every Monster Assist tier is an
- * onboarding/phone upsell: it stays in this list so sales has ONE source for
- * what it costs and includes, but no page lists it. Monster Projects
- * ($600–$2,000/month of separately scoped work, or 1%–6% of profit on
- * qualifying jobs) is negotiated per customer and is not a membership plan,
- * so it is deliberately not modeled here.
+ * `PUBLIC_PLANS`, never `PRICING_PLANS`. Monster Assist Plus is an
+ * onboarding/phone upsell ("will not be displayed as a standard website
+ * plan"): it stays in this list so sales has ONE source for what it costs and
+ * includes, but no page lists it. Monster Projects IS on the site as the
+ * custom card, but its structure ($600–$2,000/month of scoped work, or 1%–6%
+ * of profit on qualifying jobs) is "discussed directly with customers rather
+ * than displayed" — so the card says Custom and carries no figure.
  *
  * This module is the SINGLE source for what each plan costs AND for what each
  * plan includes. Both live landing pages read it:
@@ -46,6 +48,11 @@ export interface PricingPlan {
   priceCents: number;
   /** High end of a range ("$399–$599/month"). Absent = a single price. */
   priceMaxCents?: number;
+  /**
+   * Priced per engagement: the card shows "Custom" and no figure, and
+   * `priceCents` is 0 only because a number is required.
+   */
+  custom?: boolean;
   period: "monthly" | "yearly" | "one-time";
   /**
    * Listed on the public pricing sections? `false` = sold only as an
@@ -69,21 +76,21 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
     priceCents: 0,
     period: "monthly",
     public: true,
-    blurb:
-      "Legitimize your business for free. Up to 5 quotes a month, unlimited invoices.",
+    // "Monster Free is 'Unlimited invoices'" (Hans, Sep 2): that is the pitch,
+    // so it leads the card; the 5-quote cap is the second line.
+    blurb: "Unlimited invoices, free. Plus up to 5 quotes a month.",
     limits: { quotesPerMonth: 5 },
     features: [
-      {
-        id: "five-quotes",
-        en: "5 quotes a month",
-        es: "5 cotizaciones al mes",
-      },
       {
         id: "unlimited-invoices",
         en: "Unlimited invoices",
         es: "Facturas ilimitadas",
       },
-      { id: "pm-assistant", en: "The PM Assistant", es: "El Asistente PM" },
+      {
+        id: "five-quotes",
+        en: "Up to 5 quotes a month",
+        es: "Hasta 5 cotizaciones al mes",
+      },
       {
         id: "spanish-in-english-out",
         en: "Spanish in, English out",
@@ -126,14 +133,14 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
       { id: "change-orders", en: "Change orders", es: "Órdenes de cambio" },
     ],
   },
-  // ---- Hidden tiers: onboarding/phone upsells, never listed on a page. ----
   {
     id: "assist",
     name: "Monster Assist",
     priceCents: 19900,
     period: "monthly",
-    public: false,
-    blurb: "The platform plus phone, text and email assistance from our team.",
+    public: true,
+    blurb:
+      "Everything in Monster, plus a real person on call by phone, text or email.",
     features: [
       {
         id: "everything-in-monster",
@@ -142,11 +149,44 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
       },
       {
         id: "team-assistance",
-        en: "Phone, text & email assistance from our team",
+        en: "Phone, text & email help from our team",
         es: "Ayuda de nuestro equipo por teléfono, texto y correo",
+      },
+      {
+        id: "hands-on-help",
+        en: "Hands-on help with your quotes, agreements & invoices",
+        es: "Ayuda práctica con tus cotizaciones, acuerdos y facturas",
       },
     ],
   },
+  {
+    id: "projects",
+    name: "Monster Projects",
+    priceCents: 0,
+    custom: true,
+    period: "monthly",
+    public: true,
+    blurb:
+      "For bigger or specialized work outside the standard plans. Scoped directly with you.",
+    features: [
+      {
+        id: "plan-reviews-takeoffs",
+        en: "Large plan reviews & detailed takeoffs",
+        es: "Revisión de planos grandes y cuantificaciones detalladas",
+      },
+      {
+        id: "estimates-bids-proposals",
+        en: "Major estimates, complex bids & proposals",
+        es: "Estimados grandes, licitaciones y propuestas complejas",
+      },
+      {
+        id: "scoped-with-you",
+        en: "Monthly or performance-based — agreed with you",
+        es: "Mensual o por resultados — acordado contigo",
+      },
+    ],
+  },
+  // ---- Hidden tier: onboarding/phone upsell, never listed on a page. ----
   {
     id: "assist-plus",
     name: "Monster Assist Plus",

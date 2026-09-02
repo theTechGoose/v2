@@ -493,7 +493,8 @@
 }
 .pm-plan {
   position: relative;
-  flex: 1 1 260px;
+  /* Four cards fit one row inside .pm-wrap (1040px) at 220px each. */
+  flex: 1 1 220px;
   max-width: 320px;
   display: flex;
   flex-direction: column;
@@ -541,6 +542,11 @@
   color: var(--pm-green);
   line-height: 1;
   margin: 12px 0 4px;
+}
+/* Custom-priced card (Monster Projects): a word where the others show $. */
+.pm-plan--custom .pm-plan__price {
+  font-size: 32px;
+  padding-top: 8px;
 }
 .pm-plan__cadence {
   font-size: 17px;

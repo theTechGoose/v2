@@ -45,7 +45,7 @@ Layers:
 | 22 | 18 | Invoices broken; adjust via **discount** or **change order**; change order triggers a NEW approval link the customer must approve | `invoice-adjustments.test.ts` | `invoice-adjust.int.test.ts` | `invoice-adjustments.cy.ts` |
 | 23 | 19 | Login button at top of landing page → clean login component, same OTP flow | — | — | `auth-landing-login.cy.ts` |
 | 24 | 19 | Spanish l10n across the quote flow (MX/South American/Latino dialects) | — | — | `i18n-spanish.cy.ts` |
-| 25 | 20 | Pricing — **superseded 2026-08-31** by Hans's "PM – Meeting Recap & Action Items August 27-28, 2026": Monster Free $0/mo (max 5 quotes/mo, unlimited invoices), Monster $99/mo; every Monster Assist tier ($199, $399–$599) HIDDEN (phone/onboarding upsell); NO percentage fee | `pricing-plans.test.ts` | — | `landing-pricing.cy.ts` |
+| 25 | 20 | Pricing — **superseded 2026-08-31** by Hans's "PM – Meeting Recap & Action Items August 27-28, 2026": Monster Free $0/mo (unlimited invoices, max 5 quotes/mo), Monster $99/mo, Monster Assist $199/mo, Monster Projects (custom, no figure shown); Monster Assist Plus ($399–$599) HIDDEN (phone/onboarding upsell); NO percentage fee | `pricing-plans.test.ts` | — | `landing-pricing.cy.ts` |
 
 ## Contract selectors the green phase must add (`data-cy`)
 
@@ -98,7 +98,7 @@ Layers:
 - **p20 pricing is superseded** (2026-08-31, Hans's "PM – Meeting Recap &
   Action Items August 27-28, 2026"): every tier bills monthly; the plan list
   lives in `shared/quote-flow/pricing-plans.ts` (`PUBLIC_PLANS` is what the
-  pages render — the Monster Assist tiers are hidden upsells).
+  pages render — Monster Assist Plus is a hidden upsell).
 
 ## Shared modules the green phase must create (`shared/quote-flow/`)
 

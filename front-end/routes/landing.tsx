@@ -14,11 +14,13 @@ import {
   socialMetaTags,
 } from "../../shared/quote-flow/site-meta.ts";
 
-/** "$0" / "$99" — the PUBLIC plan prices come from the one plan source
+/** "$0" / "$99" / "$199" — the PUBLIC plan prices come from the one plan source
  *  (shared/quote-flow/pricing-plans.ts), so this page and "/" quote the same
  *  numbers (P-08). */
 const TIER_PRICE: Record<string, string> = Object.fromEntries(
-  PUBLIC_PLANS.map((p) => [p.id, `$${Math.round(p.priceCents / 100)}`]),
+  PUBLIC_PLANS.filter((p) => !p.custom).map((
+    p,
+  ) => [p.id, `$${Math.round(p.priceCents / 100)}`]),
 );
 
 // Toll-free support line (same number the dashboard "Call support" CTA dials).
@@ -235,9 +237,10 @@ export default define.page(function PromoLanding(ctx) {
             <h2>{t("pricingH2")}</h2>
             <p class="pm-pricing__sub">{t("pricingSub")}</p>
             {
-              /* Only the PUBLIC plans (Monster Free, Monster) render here —
-                every Monster Assist tier is a phone/onboarding upsell and is
-                never listed. Both cards read shared/quote-flow/pricing-plans.ts,
+              /* Only the PUBLIC plans (Monster Free, Monster, Monster Assist,
+                Monster Projects) render here — Monster Assist Plus is a
+                phone/onboarding upsell and is never listed. Projects is priced
+                per engagement: Custom label, no figure, call-us CTA. Both cards read shared/quote-flow/pricing-plans.ts,
                 the same list "/" renders, so the two pages can no longer
                 promise different things at the same price. */
             }
@@ -282,6 +285,48 @@ export default define.page(function PromoLanding(ctx) {
                 </ul>
                 <a href="#trial" class="pm-btn pm-btn--primary pm-plan__cta">
                   {t("pricingCta")}
+                </a>
+              </div>
+
+              <div class="pm-plan" data-cy="pricing-plan">
+                <h3 class="pm-plan__name" data-cy="pricing-plan-name">
+                  {t("pricingAssistName")}
+                </h3>
+                <div class="pm-plan__price">
+                  {TIER_PRICE.assist}
+                  <span class="pm-plan__cadence">{t("pricingPerMonth")}</span>
+                </div>
+                <p class="pm-plan__blurb">{t("pricingAssistBlurb")}</p>
+                <ul class="pm-plan__feats">
+                  {PUBLIC_PLANS[2].features.map((f) => (
+                    <li key={f.id}>
+                      <Check /> {lang === "es" ? f.es : f.en}
+                    </li>
+                  ))}
+                </ul>
+                <a href="#trial" class="pm-btn pm-btn--ghost pm-plan__cta">
+                  {t("pricingCta")}
+                </a>
+              </div>
+
+              <div class="pm-plan pm-plan--custom" data-cy="pricing-plan">
+                <h3 class="pm-plan__name" data-cy="pricing-plan-name">
+                  {t("pricingProjectsName")}
+                </h3>
+                <div class="pm-plan__price">{t("pricingCustom")}</div>
+                <p class="pm-plan__blurb">{t("pricingProjectsBlurb")}</p>
+                <ul class="pm-plan__feats">
+                  {PUBLIC_PLANS[3].features.map((f) => (
+                    <li key={f.id}>
+                      <Check /> {lang === "es" ? f.es : f.en}
+                    </li>
+                  ))}
+                </ul>
+                <a
+                  href={`tel:${SUPPORT_PHONE}`}
+                  class="pm-btn pm-btn--ghost pm-plan__cta"
+                >
+                  {t("pricingCtaCustom")}
                 </a>
               </div>
             </div>

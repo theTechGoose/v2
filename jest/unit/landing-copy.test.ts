@@ -199,11 +199,12 @@ describe("P-60 /landing Spanish copy is correct Spanish", () => {
   it('P-60 says "Legitima", not the invented "Legitimiza" — and both pages agree', () => {
     // Red today: lang/es.json promoLanding.pricingStarterBlurb read
     // "Legitimiza tu negocio por menos de lo que cuesta Netflix…". The
-    // "Legitima" pitch now opens the Monster Free blurb.
+    // Netflix pitch is gone (Free now leads with "Facturas ilimitadas"); the
+    // invented verb must never come back anywhere in the Spanish dict.
     const esRaw = read("lang/es.json");
     expect(esRaw).not.toContain("Legitimiza");
-    expect(esDict()["promoLanding.pricingFreeBlurb"]).toContain(
-      "Legitima tu negocio",
+    expect(esDict()["promoLanding.pricingFreeBlurb"]).toMatch(
+      /^Facturas ilimitadas/,
     );
     // Root dict already says "Legitima tu negocio" — must stay that way.
     expect(read("front-end/static/landing-scripts.js")).not.toContain(

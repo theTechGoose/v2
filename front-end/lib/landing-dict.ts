@@ -132,15 +132,22 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "price.plans.lead":
       "Your whole back office — quotes, agreements, invoices, follow-ups. Free to start; one flat monthly price for the full platform. No setup fees, cancel anytime.",
     "price.plans.cta": "Get started",
+    "price.plans.ctaCustom": "Talk to us",
     "price.plans.trial": "Try Monster free for {d} days. Cancel anytime.",
     "price.permo": "/month",
     "price.t1.name": "Monster Free",
-    "price.t1.blurb":
-      "Legitimize your business for free. Up to 5 quotes a month, unlimited invoices.",
+    "price.t1.blurb": "Unlimited invoices, free. Plus up to 5 quotes a month.",
     "price.t2.name": "Monster",
     "price.t2.badge": "Most popular",
     "price.t2.blurb":
       "The full self-service platform. Win more jobs and get paid faster — without the chasing.",
+    "price.t3.name": "Monster Assist",
+    "price.t3.blurb":
+      "Everything in Monster, plus a real person on call by phone, text or email.",
+    "price.t4.name": "Monster Projects",
+    "price.t4.price": "Custom",
+    "price.t4.blurb":
+      "For bigger or specialized work outside the standard plans. Scoped directly with you.",
     "cta.eyebrow": "Let’s go",
     "cta.h2": "Ready to get the paperwork off your plate?",
     "cta.lead":
@@ -273,16 +280,24 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "price.plans.lead":
       "Toda tu oficina — cotizaciones, acuerdos, facturas, seguimientos. Empieza gratis; la plataforma completa por un precio fijo al mes. Sin cuotas iniciales, cancela cuando quieras.",
     "price.plans.cta": "Empezar",
+    "price.plans.ctaCustom": "Hablemos",
     "price.plans.trial":
       "Prueba Monster gratis por {d} días. Cancela cuando quieras.",
     "price.permo": "/mes",
     "price.t1.name": "Monster Free",
     "price.t1.blurb":
-      "Legitima tu negocio gratis. Hasta 5 cotizaciones al mes y facturas ilimitadas.",
+      "Facturas ilimitadas, gratis. Y hasta 5 cotizaciones al mes.",
     "price.t2.name": "Monster",
     "price.t2.badge": "El más popular",
     "price.t2.blurb":
       "La plataforma completa de autoservicio. Gana más trabajos y cobra más rápido — sin andar persiguiendo pagos.",
+    "price.t3.name": "Monster Assist",
+    "price.t3.blurb":
+      "Todo lo de Monster, más una persona real por teléfono, texto o correo.",
+    "price.t4.name": "Monster Projects",
+    "price.t4.price": "A medida",
+    "price.t4.blurb":
+      "Para trabajos grandes o especializados fuera de los planes estándar. Lo definimos contigo.",
     "cta.eyebrow": "Vamos",
     "cta.h2": "¿Listo para quitarte el papeleo de encima?",
     "cta.lead":
@@ -316,8 +331,8 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
  * `price.t<tier>.f<n>` data-i18n keys this page's markup and client-side
  * language toggle use. `/` and `/landing` sold the same prices with
  * different promises until this became a single list. Only the PUBLIC plans
- * are projected — every Monster Assist tier is a phone/onboarding upsell and
- * never reaches a page.
+ * are projected — Monster Assist Plus is a phone/onboarding upsell and never
+ * reaches a page.
  */
 for (const lang of ["en", "es"] as const) {
   PUBLIC_PLANS.forEach((plan, tier) => {

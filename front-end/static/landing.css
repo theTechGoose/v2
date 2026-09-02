@@ -2184,26 +2184,32 @@ section {
   background: linear-gradient(180deg, transparent 0%, var(--mint-200) 100%);
 }
 
-/* Two PUBLIC tiers (Monster Free, Monster) — every Monster Assist tier is a
-   phone/onboarding upsell and never renders, so the grid is two-up. */
+/* Four PUBLIC tiers (Monster Free, Monster, Monster Assist, Monster Projects)
+   — Monster Assist Plus is a phone/onboarding upsell and never renders. */
 .pricing-tiers {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
   align-items: stretch;
-  max-width: 760px;
+  max-width: 1200px;
   margin: 0 auto;
+}
+/* Custom-priced card: a word where the others show a figure. */
+.tier--custom .tier-price {
+  font-size: 30px;
+  padding-top: 6px;
 }
 
 .tier {
   background: #fff;
   border-radius: var(--radius-2xl);
-  padding: 36px 30px;
+  padding: 32px 24px;
   border: 1px solid var(--border);
   box-shadow: var(--shadow-xl);
   display: flex;
   flex-direction: column;
   position: relative;
+  min-width: 0;
 }
 .tier.featured {
   background: linear-gradient(135deg, var(--green-50) 0%, #fff 100%);
@@ -3037,8 +3043,8 @@ section {
     gap: 40px;
   }
   .pricing-tiers {
-    grid-template-columns: 1fr;
-    max-width: 480px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 720px;
   }
   .contact-card {
     grid-template-columns: 1fr;
@@ -3071,6 +3077,10 @@ section {
    phone scale so it stays one ~60px row.
    ============================================================ */
 @media (max-width: 720px) {
+  .pricing-tiers {
+    grid-template-columns: 1fr;
+    max-width: 480px;
+  }
   .nav {
     flex-wrap: nowrap;
     gap: 10px;
