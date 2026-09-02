@@ -24,7 +24,7 @@
  *   shared/quote-flow/landing-offers.ts
  *     export const LANDING_OFFER: {
  *       trialDays: number;            // ONE trial claim for both pages
- *       priceFromCents: number;       // "from $15/month" — derives from PRICING_PLANS starter
+ *       priceFromCents: number;       // "from $99/month" — derives from the cheapest public paid plan
  *       unlimitedTier: string;        // id of the ONE plan sold as "unlimited" (a real plan id)
  *       socialProof: { contractors: number; docsSent: number };
  *     }
@@ -134,16 +134,17 @@ describe("P-08 single landing-offer source (shared/quote-flow/landing-offers)", 
     expect(LANDING_OFFER.socialProof.docsSent).toBeGreaterThan(0);
   });
 
-  it("P-08 the offer DERIVES from the pricing plans (from-price = Starter; unlimitedTier is a real plan id)", () => {
+  it("P-08 the offer DERIVES from the pricing plans (from-price = cheapest public paid plan; unlimitedTier is a public plan id)", () => {
     const { LANDING_OFFER } = require("../../shared/quote-flow/landing-offers");
-    const { PRICING_PLANS } = require("../../shared/quote-flow/pricing-plans");
-    const starter = PRICING_PLANS.find((p: { id: string }) =>
-      p.id === "starter"
-    );
-    expect(starter).toBeDefined();
-    // Both pages say "from $15/month" / "desde $15" — one number, one source.
-    expect(LANDING_OFFER.priceFromCents).toBe(starter.priceCents);
-    expect(PRICING_PLANS.map((p: { id: string }) => p.id)).toContain(
+    const { PUBLIC_PLANS } = require("../../shared/quote-flow/pricing-plans");
+    type P = { id: string; priceCents: number };
+    const paid = (PUBLIC_PLANS as P[])
+      .filter((p) => p.priceCents > 0)
+      .sort((a, b) => a.priceCents - b.priceCents)[0];
+    expect(paid).toBeDefined();
+    // Both pages say "from $99/month" / "desde $99" — one number, one source.
+    expect(LANDING_OFFER.priceFromCents).toBe(paid.priceCents);
+    expect((PUBLIC_PLANS as P[]).map((p) => p.id)).toContain(
       LANDING_OFFER.unlimitedTier,
     );
   });
@@ -196,11 +197,12 @@ describe("P-60 /landing Spanish copy is correct Spanish", () => {
   });
 
   it('P-60 says "Legitima", not the invented "Legitimiza" — and both pages agree', () => {
-    // Red today: lang/es.json promoLanding.pricingStarterBlurb reads
-    // "Legitimiza tu negocio por menos de lo que cuesta Netflix…".
+    // Red today: lang/es.json promoLanding.pricingStarterBlurb read
+    // "Legitimiza tu negocio por menos de lo que cuesta Netflix…". The
+    // "Legitima" pitch now opens the Monster Free blurb.
     const esRaw = read("lang/es.json");
     expect(esRaw).not.toContain("Legitimiza");
-    expect(esDict()["promoLanding.pricingStarterBlurb"]).toContain(
+    expect(esDict()["promoLanding.pricingFreeBlurb"]).toContain(
       "Legitima tu negocio",
     );
     // Root dict already says "Legitima tu negocio" — must stay that way.

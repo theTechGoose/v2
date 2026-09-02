@@ -127,11 +127,8 @@ const I18N_KEYS = [
   "price.t2.f2",
   "price.t2.f3",
   "price.t2.f4",
-  "price.t3.name",
-  "price.t3.blurb",
-  "price.t3.f1",
-  "price.t3.f2",
-  "price.t3.f3",
+  "price.t2.f5",
+  "price.t2.f6",
   "cta.eyebrow",
   "cta.h2",
   "cta.lead",
@@ -646,7 +643,9 @@ export default function LandingScripts() {
         const original = cta?.innerHTML ?? "";
         if (cta) {
           cta.disabled = true;
-          cta.innerHTML = `<span>${tFor(curLang, "landing.cta.sending")}</span>`;
+          cta.innerHTML = `<span>${
+            tFor(curLang, "landing.cta.sending")
+          }</span>`;
         }
         try {
           await landingClient.sendOtp({ phoneNumber: e164, language: curLang });

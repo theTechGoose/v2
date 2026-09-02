@@ -7,7 +7,7 @@ import {
   formatSocialProof,
   LANDING_OFFER,
 } from "../../shared/quote-flow/landing-offers.ts";
-import { PRICING_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { LANDING_DICT } from "../lib/landing-dict.ts";
 import {
   absoluteUrl,
@@ -30,10 +30,10 @@ const ES_ROTOR_BY_WORD = new Map(
 );
 const esRotor = (word: string) => ES_ROTOR_BY_WORD.get(word) ?? `${word}.`;
 
-/** "$15" / "$99" / "$199" — tier prices come from PRICING_PLANS, never
- *  re-typed in the markup (P-08). */
+/** "$0" / "$99" — the PUBLIC tier prices come from the one plan source
+ *  (shared/quote-flow/pricing-plans.ts), never re-typed in the markup (P-08). */
 const TIER_PRICE: Record<string, string> = Object.fromEntries(
-  PRICING_PLANS.map((p) => [p.id, `$${Math.round(p.priceCents / 100)}`]),
+  PUBLIC_PLANS.map((p) => [p.id, `$${Math.round(p.priceCents / 100)}`]),
 );
 
 /** The from-price the "{p}" placeholder resolves to, in whole dollars. */
@@ -880,13 +880,24 @@ export default define.page(async function Landing(ctx) {
             <p data-i18n="price.plans.trial">{t("price.plans.trial")}</p>
           </div>
 
+          {
+            /* Only the PUBLIC plans (Monster Free, Monster) render here —
+              every Monster Assist tier is a phone/onboarding upsell and is
+              never listed. Both cards read shared/quote-flow/pricing-plans.ts,
+              the same list /landing renders. The data-i18n keys stay so the
+              client-side language toggle keeps working. */
+          }
           <div class="pricing-tiers">
-            <div class="tier">
-              <div class="tier-name" data-i18n="price.t1.name">
+            <div class="tier" data-cy="pricing-plan">
+              <div
+                class="tier-name"
+                data-i18n="price.t1.name"
+                data-cy="pricing-plan-name"
+              >
                 {t("price.t1.name")}
               </div>
               <div class="tier-price">
-                {TIER_PRICE.starter}
+                {TIER_PRICE.free}
                 <span class="permo" data-i18n="price.permo">
                   {t("price.permo")}
                 </span>
@@ -894,14 +905,8 @@ export default define.page(async function Landing(ctx) {
               <p class="tier-blurb" data-i18n="price.t1.blurb">
                 {t("price.t1.blurb")}
               </p>
-              {
-                /* One feature list per tier, from the ONE plan source
-                  (shared/quote-flow/pricing-plans.ts) — the same list
-                  /landing renders. The data-i18n keys stay so the
-                  client-side language toggle keeps working. */
-              }
               <ul class="tier-list">
-                {PRICING_PLANS[0].features.map((f, i) => (
+                {PUBLIC_PLANS[0].features.map((f, i) => (
                   <li key={f.id} data-i18n={`price.t1.f${i + 1}`}>
                     {t(`price.t1.f${i + 1}`)}
                   </li>
@@ -916,15 +921,19 @@ export default define.page(async function Landing(ctx) {
               </a>
             </div>
 
-            <div class="tier featured">
+            <div class="tier featured" data-cy="pricing-plan">
               <span class="tier-badge" data-i18n="price.t2.badge">
                 {t("price.t2.badge")}
               </span>
-              <div class="tier-name" data-i18n="price.t2.name">
+              <div
+                class="tier-name"
+                data-i18n="price.t2.name"
+                data-cy="pricing-plan-name"
+              >
                 {t("price.t2.name")}
               </div>
               <div class="tier-price">
-                {TIER_PRICE.pro}
+                {TIER_PRICE.monster}
                 <span class="permo" data-i18n="price.permo">
                   {t("price.permo")}
                 </span>
@@ -932,14 +941,8 @@ export default define.page(async function Landing(ctx) {
               <p class="tier-blurb" data-i18n="price.t2.blurb">
                 {t("price.t2.blurb")}
               </p>
-              {
-                /* One feature list per tier, from the ONE plan source
-                  (shared/quote-flow/pricing-plans.ts) — the same list
-                  /landing renders. The data-i18n keys stay so the
-                  client-side language toggle keeps working. */
-              }
               <ul class="tier-list">
-                {PRICING_PLANS[1].features.map((f, i) => (
+                {PUBLIC_PLANS[1].features.map((f, i) => (
                   <li key={f.id} data-i18n={`price.t2.f${i + 1}`}>
                     {t(`price.t2.f${i + 1}`)}
                   </li>
@@ -948,41 +951,6 @@ export default define.page(async function Landing(ctx) {
               <a
                 href="#contact"
                 class="btn btn-primary tier-cta cta-scroll"
-                data-i18n="price.plans.cta"
-              >
-                {t("price.plans.cta")}
-              </a>
-            </div>
-
-            <div class="tier">
-              <div class="tier-name" data-i18n="price.t3.name">
-                {t("price.t3.name")}
-              </div>
-              <div class="tier-price">
-                {TIER_PRICE.crew}
-                <span class="permo" data-i18n="price.permo">
-                  {t("price.permo")}
-                </span>
-              </div>
-              <p class="tier-blurb" data-i18n="price.t3.blurb">
-                {t("price.t3.blurb")}
-              </p>
-              {
-                /* One feature list per tier, from the ONE plan source
-                  (shared/quote-flow/pricing-plans.ts) — the same list
-                  /landing renders. The data-i18n keys stay so the
-                  client-side language toggle keeps working. */
-              }
-              <ul class="tier-list">
-                {PRICING_PLANS[2].features.map((f, i) => (
-                  <li key={f.id} data-i18n={`price.t3.f${i + 1}`}>
-                    {t(`price.t3.f${i + 1}`)}
-                  </li>
-                ))}
-              </ul>
-              <a
-                href="#contact"
-                class="btn btn-outline tier-cta cta-scroll"
                 data-i18n="price.plans.cta"
               >
                 {t("price.plans.cta")}

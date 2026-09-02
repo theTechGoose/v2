@@ -48,10 +48,22 @@ async function pageHtml(path: string, lang = "es"): Promise<string> {
 const TRIAL_RE =
   /free trial|free for 30|30 days free|prueba gratis|gratis por 30|30 días gratis/i;
 
+/** "$0" / "$99" / … — every whole-dollar plan price the pages could list,
+ *  from the one plan source, so a showcase-document amount never counts as a
+ *  tier price. */
+const TIER_PRICE_RE = new RegExp(
+  `\\$\\s?(${
+    (require("../../shared/quote-flow/pricing-plans").PRICING_PLANS as {
+      priceCents: number;
+    }[]).map((p) => Math.round(p.priceCents / 100)).join("|")
+  })\\b`,
+  "g",
+);
+
 /**
  * Which priced tier(s) carry the "unlimited" pitch: for every
  * unlimited/ilimitado occurrence, attribute it to the nearest PRECEDING
- * tier price ($15/$99/$199). Occurrences before any price (e.g. the
+ * tier price ($0/$99). Occurrences before any price (e.g. the
  * /landing trial card) are ignored.
  */
 function unlimitedTiers(html: string): number[] {
@@ -60,7 +72,7 @@ function unlimitedTiers(html: string): number[] {
   let m: RegExpExecArray | null;
   while ((m = re.exec(html))) {
     const before = html.slice(0, m.index);
-    const prices = [...before.matchAll(/\$\s?(15|99|199)\b/g)];
+    const prices = [...before.matchAll(TIER_PRICE_RE)];
     if (prices.length) tiers.add(Number(prices[prices.length - 1][1]));
   }
   return [...tiers].sort((a, b) => a - b);

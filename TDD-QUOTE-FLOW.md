@@ -45,7 +45,7 @@ Layers:
 | 22 | 18 | Invoices broken; adjust via **discount** or **change order**; change order triggers a NEW approval link the customer must approve | `invoice-adjustments.test.ts` | `invoice-adjust.int.test.ts` | `invoice-adjustments.cy.ts` |
 | 23 | 19 | Login button at top of landing page → clean login component, same OTP flow | — | — | `auth-landing-login.cy.ts` |
 | 24 | 19 | Spanish l10n across the quote flow (MX/South American/Latino dialects) | — | — | `i18n-spanish.cy.ts` |
-| 25 | 20 | Pricing: NO free tier, NO percentage fee, Starter $15/mo, $99, $199 | `pricing-plans.test.ts` | — | `landing-pricing.cy.ts` |
+| 25 | 20 | Pricing — **superseded 2026-08-31** by Hans's "PM – Meeting Recap & Action Items August 27-28, 2026": Monster Free $0/mo (max 5 quotes/mo, unlimited invoices), Monster $99/mo; every Monster Assist tier ($199, $399–$599) HIDDEN (phone/onboarding upsell); NO percentage fee | `pricing-plans.test.ts` | — | `landing-pricing.cy.ts` |
 
 ## Contract selectors the green phase must add (`data-cy`)
 
@@ -95,8 +95,10 @@ Layers:
   slide-speak, not confirmed site copy; not asserted.
 - **p19 dialect depth**: only a neutral-LatAm guard (no vosotros forms) is
   asserted; nothing distinguishes MX vs. South American vocabulary.
-- **[DECIDE p20]**: billing cadence of the $99/$199 tiers (only Starter says
-  "per month"). Unit test pins amounts, not cadence.
+- **p20 pricing is superseded** (2026-08-31, Hans's "PM – Meeting Recap &
+  Action Items August 27-28, 2026"): every tier bills monthly; the plan list
+  lives in `shared/quote-flow/pricing-plans.ts` (`PUBLIC_PLANS` is what the
+  pages render — the Monster Assist tiers are hidden upsells).
 
 ## Shared modules the green phase must create (`shared/quote-flow/`)
 
@@ -117,4 +119,4 @@ unit tests.
 - **"Unicorn"** (pages 6/18) is read as the customer/client — the party who
   must approve a change order via the new public link.
 - **Page 20 pricing** applies to the plans/pricing surface on the landing
-  page; `$99`/`$199` are read as the two higher monthly tiers.
+  pages; the deck's tiers were replaced on 2026-08-31 (see row 25).

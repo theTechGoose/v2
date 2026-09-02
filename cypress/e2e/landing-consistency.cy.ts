@@ -18,7 +18,7 @@
 const TRIAL_RE =
   /free trial|free for 30|30 days free|prueba gratis|gratis por 30|30 días gratis/i;
 
-/** Price ("15" | "99" | "199") of the first plan element pitching "unlimited", or "none". */
+/** Whole-dollar price ("0" | "99") of the first plan element pitching "unlimited", or "none". */
 function unlimitedPlanPrice(
   els: HTMLElement[],
   priceSelector: string,

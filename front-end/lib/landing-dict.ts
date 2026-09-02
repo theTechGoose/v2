@@ -19,7 +19,7 @@
  *   {d} — the free-trial length in days (LANDING_OFFER.trialDays).
  */
 
-import { PRICING_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 
 export type LandingLang = "en" | "es";
 
@@ -127,27 +127,26 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "demo.online": "Online",
     "demo.message": "Message",
     "price.eyebrow": "Pricing",
-    "price.plans.h2html": "Flat monthly pricing. <em>No surprises.</em>",
+    "price.plans.h2html":
+      "Start free. Flat monthly pricing. <em>No surprises.</em>",
     "price.plans.lead":
-      "Your whole back office — quotes, contracts, invoices, follow-ups — for one flat monthly price. No setup fees, cancel anytime.",
+      "Your whole back office — quotes, agreements, invoices, follow-ups. Free to start; one flat monthly price for the full platform. No setup fees, cancel anytime.",
     "price.plans.cta": "Get started",
-    "price.plans.trial": "Free for {d} days. Cancel anytime.",
+    "price.plans.trial": "Try Monster free for {d} days. Cancel anytime.",
     "price.permo": "/month",
-    "price.t1.name": "Starter",
+    "price.t1.name": "Monster Free",
     "price.t1.blurb":
-      "Legitimize your business for less than an ad-free Netflix subscription.",
-    "price.t2.name": "Pro",
+      "Legitimize your business for free. Up to 5 quotes a month, unlimited invoices.",
+    "price.t2.name": "Monster",
     "price.t2.badge": "Most popular",
     "price.t2.blurb":
-      "Win more jobs and get paid faster — without the chasing.",
-    "price.t3.name": "Crew",
-    "price.t3.blurb": "For crews that run several jobs a week.",
+      "The full self-service platform. Win more jobs and get paid faster — without the chasing.",
     "cta.eyebrow": "Let’s go",
     "cta.h2": "Ready to get the paperwork off your plate?",
     "cta.lead":
       "Drop your number — we’ll text you a 6-digit code. Login or sign up, same form.",
     "cta.b1": "No setup fees, no contracts",
-    "cta.fromPrice": "Plans from ${p}/month",
+    "cta.fromPrice": "Free to start — full platform from ${p}/month",
     "cta.b3": "English & Spanish, every step",
     "cta.label": "Your phone number",
     "cta.btn": "Sign up",
@@ -269,27 +268,27 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "demo.online": "En línea",
     "demo.message": "Mensaje",
     "price.eyebrow": "Precios",
-    "price.plans.h2html": "Precio fijo al mes. <em>Sin sorpresas.</em>",
+    "price.plans.h2html":
+      "Empieza gratis. Precio fijo al mes. <em>Sin sorpresas.</em>",
     "price.plans.lead":
-      "Toda tu oficina — cotizaciones, contratos, facturas, seguimientos — por un precio fijo al mes. Sin cuotas iniciales, cancela cuando quieras.",
+      "Toda tu oficina — cotizaciones, acuerdos, facturas, seguimientos. Empieza gratis; la plataforma completa por un precio fijo al mes. Sin cuotas iniciales, cancela cuando quieras.",
     "price.plans.cta": "Empezar",
-    "price.plans.trial": "Prueba gratis por {d} días. Cancela cuando quieras.",
+    "price.plans.trial":
+      "Prueba Monster gratis por {d} días. Cancela cuando quieras.",
     "price.permo": "/mes",
-    "price.t1.name": "Starter",
+    "price.t1.name": "Monster Free",
     "price.t1.blurb":
-      "Legitima tu negocio por menos de lo que cuesta Netflix sin anuncios.",
-    "price.t2.name": "Pro",
+      "Legitima tu negocio gratis. Hasta 5 cotizaciones al mes y facturas ilimitadas.",
+    "price.t2.name": "Monster",
     "price.t2.badge": "El más popular",
     "price.t2.blurb":
-      "Gana más trabajos y cobra más rápido — sin andar persiguiendo pagos.",
-    "price.t3.name": "Crew",
-    "price.t3.blurb": "Para cuadrillas que manejan varios trabajos por semana.",
+      "La plataforma completa de autoservicio. Gana más trabajos y cobra más rápido — sin andar persiguiendo pagos.",
     "cta.eyebrow": "Vamos",
     "cta.h2": "¿Listo para quitarte el papeleo de encima?",
     "cta.lead":
       "Pon tu número — te enviamos un código de 6 dígitos. Entrar o registrarse, mismo formulario.",
     "cta.b1": "Sin cuotas iniciales, sin contratos",
-    "cta.fromPrice": "Planes desde ${p} al mes",
+    "cta.fromPrice": "Empieza gratis — plataforma completa desde ${p} al mes",
     "cta.b3": "Inglés y español, en cada paso",
     "cta.label": "Tu número de teléfono",
     "cta.btn": "Regístrate",
@@ -315,11 +314,13 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
  * Plan features are NOT written above: they are projected here from the ONE
  * source both landing pages read (shared/quote-flow/pricing-plans.ts) onto the
  * `price.t<tier>.f<n>` data-i18n keys this page's markup and client-side
- * language toggle use. `/` and `/landing` sold the same three prices with
- * different promises until this became a single list.
+ * language toggle use. `/` and `/landing` sold the same prices with
+ * different promises until this became a single list. Only the PUBLIC plans
+ * are projected — every Monster Assist tier is a phone/onboarding upsell and
+ * never reaches a page.
  */
 for (const lang of ["en", "es"] as const) {
-  PRICING_PLANS.forEach((plan, tier) => {
+  PUBLIC_PLANS.forEach((plan, tier) => {
     plan.features.forEach((feature, n) => {
       LANDING_DICT[lang][`price.t${tier + 1}.f${n + 1}`] = lang === "es"
         ? feature.es

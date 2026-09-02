@@ -1,21 +1,21 @@
 /**
  * Single landing-offer source (P-08): both landing pages (routes/index.tsx and
  * routes/landing.tsx) plus static/landing-scripts.js sell ONE offer — one trial
- * claim, one from-price (derived from the Starter plan, never re-typed), one
- * "unlimited" tier, one set of social-proof counters.
+ * claim, one from-price (derived from the cheapest public PAID plan, never
+ * re-typed), one "unlimited" tier, one set of social-proof counters.
  *
  * Wiring sites: index.tsx (hero trust, cf-trust, pricing), landing.tsx (trial +
  * pricing), landing-scripts.js (doc counter), GET /api/admin/landing-offers.
  */
 
-import { PRICING_PLANS } from "./pricing-plans.ts";
+import { PUBLIC_PLANS } from "./pricing-plans.ts";
 
 export interface LandingOffer {
   /** ONE trial claim for both pages (the /landing "30 days free" badge). */
   trialDays: number;
-  /** "from $15/month" — derived from the Starter plan, never re-typed. */
+  /** "from $99/month" — the cheapest public PAID plan, never re-typed. */
   priceFromCents: number;
-  /** Id of the ONE plan sold as "unlimited" (root page's price.t1.f1). */
+  /** Id of the ONE plan sold as "unlimited" (the full platform). */
   unlimitedTier: string;
   /**
    * Social-proof counters. ONE contractor counter for the whole site — the
@@ -26,13 +26,16 @@ export interface LandingOffer {
   socialProof: { contractors: number; docsSent: number };
 }
 
-const STARTER = PRICING_PLANS.find((p) => p.id === "starter");
-if (!STARTER) throw new Error("PRICING_PLANS is missing the starter plan");
+/** Cheapest public plan that costs money — the "from $…/month" number. */
+const FROM_PLAN = [...PUBLIC_PLANS]
+  .filter((p) => p.priceCents > 0)
+  .sort((a, b) => a.priceCents - b.priceCents)[0];
+if (!FROM_PLAN) throw new Error("PUBLIC_PLANS has no paid plan");
 
 export const LANDING_OFFER: LandingOffer = {
   trialDays: 30,
-  priceFromCents: STARTER.priceCents,
-  unlimitedTier: "starter",
+  priceFromCents: FROM_PLAN.priceCents,
+  unlimitedTier: "monster",
   socialProof: { contractors: 1200, docsSent: 48217 },
 };
 

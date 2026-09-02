@@ -8,16 +8,17 @@ import {
   pickLangFromAcceptLanguage,
 } from "../lib/lang.ts";
 import { LANDING_OFFER } from "../../shared/quote-flow/landing-offers.ts";
-import { PRICING_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import {
   absoluteUrl,
   socialMetaTags,
 } from "../../shared/quote-flow/site-meta.ts";
 
-/** "$15" / "$99" / "$199" — the plan prices come from PRICING_PLANS, so this
- *  page and "/" quote the same numbers (P-08). */
+/** "$0" / "$99" — the PUBLIC plan prices come from the one plan source
+ *  (shared/quote-flow/pricing-plans.ts), so this page and "/" quote the same
+ *  numbers (P-08). */
 const TIER_PRICE: Record<string, string> = Object.fromEntries(
-  PRICING_PLANS.map((p) => [p.id, `$${Math.round(p.priceCents / 100)}`]),
+  PUBLIC_PLANS.map((p) => [p.id, `$${Math.round(p.priceCents / 100)}`]),
 );
 
 // Toll-free support line (same number the dashboard "Call support" CTA dials).
@@ -233,79 +234,53 @@ export default define.page(function PromoLanding(ctx) {
           <section class="pm-pricing" id="pricing">
             <h2>{t("pricingH2")}</h2>
             <p class="pm-pricing__sub">{t("pricingSub")}</p>
+            {
+              /* Only the PUBLIC plans (Monster Free, Monster) render here —
+                every Monster Assist tier is a phone/onboarding upsell and is
+                never listed. Both cards read shared/quote-flow/pricing-plans.ts,
+                the same list "/" renders, so the two pages can no longer
+                promise different things at the same price. */
+            }
             <div class="pm-plans">
-              <div class="pm-plan pm-plan--featured" data-cy="pricing-plan">
-                <span class="pm-plan__badge">{t("pricingBadge")}</span>
-                <h3 class="pm-plan__name">{t("pricingStarterName")}</h3>
+              <div class="pm-plan" data-cy="pricing-plan">
+                <h3 class="pm-plan__name" data-cy="pricing-plan-name">
+                  {t("pricingFreeName")}
+                </h3>
                 <div class="pm-plan__price">
-                  {TIER_PRICE.starter}
+                  {TIER_PRICE.free}
                   <span class="pm-plan__cadence">{t("pricingPerMonth")}</span>
                 </div>
-                <p class="pm-plan__blurb">{t("pricingStarterBlurb")}</p>
-                {
-                  /* One feature list per tier, from the ONE plan source
-                    (shared/quote-flow/pricing-plans.ts) — the same list
-                    "/" renders, so the two pages can no longer promise
-                    different things at the same price. */
-                }
+                <p class="pm-plan__blurb">{t("pricingFreeBlurb")}</p>
                 <ul class="pm-plan__feats">
-                  {PRICING_PLANS[0].features.map((f) => (
+                  {PUBLIC_PLANS[0].features.map((f) => (
+                    <li key={f.id}>
+                      <Check /> {lang === "es" ? f.es : f.en}
+                    </li>
+                  ))}
+                </ul>
+                <a href="#trial" class="pm-btn pm-btn--ghost pm-plan__cta">
+                  {t("pricingCta")}
+                </a>
+              </div>
+
+              <div class="pm-plan pm-plan--featured" data-cy="pricing-plan">
+                <span class="pm-plan__badge">{t("pricingBadge")}</span>
+                <h3 class="pm-plan__name" data-cy="pricing-plan-name">
+                  {t("pricingMonsterName")}
+                </h3>
+                <div class="pm-plan__price">
+                  {TIER_PRICE.monster}
+                  <span class="pm-plan__cadence">{t("pricingPerMonth")}</span>
+                </div>
+                <p class="pm-plan__blurb">{t("pricingMonsterBlurb")}</p>
+                <ul class="pm-plan__feats">
+                  {PUBLIC_PLANS[1].features.map((f) => (
                     <li key={f.id}>
                       <Check /> {lang === "es" ? f.es : f.en}
                     </li>
                   ))}
                 </ul>
                 <a href="#trial" class="pm-btn pm-btn--primary pm-plan__cta">
-                  {t("pricingCta")}
-                </a>
-              </div>
-
-              <div class="pm-plan" data-cy="pricing-plan">
-                <h3 class="pm-plan__name">{t("pricingProName")}</h3>
-                <div class="pm-plan__price">
-                  {TIER_PRICE.pro}
-                  <span class="pm-plan__cadence">{t("pricingPerMonth")}</span>
-                </div>
-                <p class="pm-plan__blurb">{t("pricingProBlurb")}</p>
-                {
-                  /* One feature list per tier, from the ONE plan source
-                    (shared/quote-flow/pricing-plans.ts) — the same list
-                    "/" renders, so the two pages can no longer promise
-                    different things at the same price. */
-                }
-                <ul class="pm-plan__feats">
-                  {PRICING_PLANS[1].features.map((f) => (
-                    <li key={f.id}>
-                      <Check /> {lang === "es" ? f.es : f.en}
-                    </li>
-                  ))}
-                </ul>
-                <a href="#trial" class="pm-btn pm-btn--ghost pm-plan__cta">
-                  {t("pricingCta")}
-                </a>
-              </div>
-
-              <div class="pm-plan" data-cy="pricing-plan">
-                <h3 class="pm-plan__name">{t("pricingCrewName")}</h3>
-                <div class="pm-plan__price">
-                  {TIER_PRICE.crew}
-                  <span class="pm-plan__cadence">{t("pricingPerMonth")}</span>
-                </div>
-                <p class="pm-plan__blurb">{t("pricingCrewBlurb")}</p>
-                {
-                  /* One feature list per tier, from the ONE plan source
-                    (shared/quote-flow/pricing-plans.ts) — the same list
-                    "/" renders, so the two pages can no longer promise
-                    different things at the same price. */
-                }
-                <ul class="pm-plan__feats">
-                  {PRICING_PLANS[2].features.map((f) => (
-                    <li key={f.id}>
-                      <Check /> {lang === "es" ? f.es : f.en}
-                    </li>
-                  ))}
-                </ul>
-                <a href="#trial" class="pm-btn pm-btn--ghost pm-plan__cta">
                   {t("pricingCta")}
                 </a>
               </div>
