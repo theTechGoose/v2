@@ -95,6 +95,16 @@ describe("UX-09: dashboard activity panel header at 390px", () => {
     // RED today: link right edge 389.3 vs panel right 368 (overflow:hidden).
     cy.get("#activity").then(($panel) => {
       const panel = $panel[0].getBoundingClientRect();
+      // REQ-040 audit (2026-09-19): the "Registro completo →" control was
+      // removed on purpose — no /activity page exists, and the link 404'd in
+      // prod (DashSections.tsx "No /activity page exists yet"). With no
+      // control there is nothing to clip; the pin stays for the day it
+      // returns.
+      const links = $panel.find(".panel__action");
+      if (links.length === 0) {
+        expect(links.length, "no dead 'Full log' control in the header").to.eq(0);
+        return;
+      }
       cy.get("#activity .panel__action").then(($a) => {
         const link = $a[0];
         const r = link.getBoundingClientRect();

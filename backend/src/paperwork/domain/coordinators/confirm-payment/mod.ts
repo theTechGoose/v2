@@ -8,6 +8,7 @@ import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
+import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
@@ -46,6 +47,7 @@ export class ConfirmPayment {
     private receiptPdf: RenderReceiptPdf,
     private commsLog: LogPaperworkMessage,
     private bus: EventBus,
+    private markPaid: MarkInvoicePaid,
   ) {}
 
   async run(
@@ -79,6 +81,9 @@ export class ConfirmPayment {
       status: "paid",
       paidAt,
     });
+    // REQ-020 (NW-29): the invoice stamped PAID goes to the customer on every
+    // paid path; the receipt below stays on top for the claim path.
+    await this.markPaid.run(userId, invoice.id);
 
     // 3. Best-effort receipt dispatch.
     try {

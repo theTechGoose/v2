@@ -180,3 +180,46 @@ describe("assistant back — real conversation at the reviewing stage", () => {
     expect(resolveAssistantBack(view)).toBe("rewind-wizard");
   });
 });
+
+// ===========================================================================
+// REQ-005 — NW-19 (p13): back from the wizard's FIRST question, reached via
+// chat ("Lock it in" → "Ready" CTA), must return to the action card — not
+// exit. The client asks the server to leave the terms phase with
+// POST /agents/wizard/back { toStepIdx: -1 }.
+// ===========================================================================
+describe("REQ-005 NW-19 back at the first wizard question leaves the terms phase", () => {
+  const PHONE_LEAVE = "+15125550932";
+  let s: ApiSession;
+  let convoId: string;
+
+  beforeAll(async () => {
+    s = await contractor(PHONE_LEAVE);
+    const quote = await s.post("/quotes", {
+      summary: "Replace a toilet",
+      lineItems: [{ description: "Toilet replacement", quantity: 1, unit: "ea", price: 50000 }],
+      estimatedTotal: 50000,
+    });
+    expect(quote.body?.id).toBeTruthy();
+    const conv = await s.post("/agents/conversations", { quoteId: quote.body.id });
+    convoId = conv.body?.id ?? conv.body?.conversation?.id;
+    expect(convoId).toBeTruthy();
+    const trans = await s.post(`/agents/conversations/${convoId}/transition-to-terms`, {});
+    expect(trans.status).toBeLessThan(400);
+  });
+
+  it("REQ-005 NW-19 POST /agents/wizard/back { toStepIdx: -1 } at step 0 → phase 'quote', no wizard/divider messages", async () => {
+    const before = await messagesOf(s, convoId);
+    expect(before.some((m) => m.kind === "wizard")).toBe(true);
+
+    const back = await s.post("/agents/wizard/back", { conversationId: convoId, toStepIdx: -1 });
+    expect(back.status).toBeLessThan(400);
+    expect(back.body?.conversation?.currentPhase).toBe("quote");
+    expect(back.body?.activeStepId).toBeNull();
+
+    const snap = await s.get(`/agents/conversations/${convoId}`);
+    const conv = (snap.body?.conversation ?? snap.body) as { currentPhase?: string };
+    expect(conv.currentPhase).toBe("quote");
+    const after = (snap.body?.messages ?? []) as Msg[];
+    expect(after.some((m) => m.kind === "wizard" || m.kind === "phase_divider")).toBe(false);
+  });
+});

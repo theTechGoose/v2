@@ -1819,6 +1819,15 @@ body {
   font-family: var(--font-heading);
   font-weight: 800;
 }
+/* REQ-031 (NW-26): the event body (a customer's question) in full. */
+.activity-item__body {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--fg, #1c2c30);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .activity-item__time {
   font-size: 11px;
   color: var(--fg-subtle);

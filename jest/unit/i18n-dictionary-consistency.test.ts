@@ -189,3 +189,175 @@ describe("P-65 ES danger-zone keyword + professionalize error", () => {
     expect(es["asstChat.writeSelf.error"]).not.toMatch(/hacer profesional/i);
   });
 });
+
+describe("REQ-009 NW-24 'Job completed' / 'Next month' casing (both dictionaries)", () => {
+  // p23: "Change 'Job Completed' to 'Job completed' (lowercase c)."
+  // p22: "Change 'Next Month' to 'Next month'."
+  const JOB_COMPLETED_KEYS = [
+    "quoteDoc.termValue.jobCompleted",
+    "termsWizard.wraps.jobCompleted",
+    "renderQuotePdf.termValue.jobCompleted",
+  ];
+  it.each(JOB_COMPLETED_KEYS)("REQ-009 %s is 'Job completed' / 'Trabajo terminado'", (key) => {
+    expect(en[key]).toBe("Job completed");
+    expect(es[key]).toBe("Trabajo terminado");
+  });
+
+  it("REQ-009 the start-date step no longer carries a jobCompleted label (option removed)", () => {
+    expect(en["termsWizard.startDate.jobCompleted"]).toBeUndefined();
+    expect(es["termsWizard.startDate.jobCompleted"]).toBeUndefined();
+  });
+
+  it.each(["termsWizard.startDate.nextMonth", "asstChat.terms.startDate.nextMonth"])(
+    "REQ-009 %s is 'Next month' (sentence case)",
+    (key) => {
+      expect(en[key]).toBe("Next month");
+      expect(es[key]).toBe("El próximo mes");
+    },
+  );
+
+  it("REQ-009 no EN value anywhere still says 'Job Completed' or 'Next Month'", () => {
+    const offenders = entries(en).filter(([, v]) => /\bJob Completed\b|\bNext Month\b/.test(v));
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("REQ-010 NW-17 the 'Write it myself.' pill", () => {
+  // p26: the pill under the prompt bubble "needs … a period at the end of
+  // 'myself'". The picker TILE keeps the period-less title.
+  it("REQ-010 NW-17 has its own CTA key ending with a period, in both dictionaries", () => {
+    expect(en["asstChat.jobOpts.customCta"]).toBe("Write it myself.");
+    expect(es["asstChat.jobOpts.customCta"]).toBe("Escribirlo yo mismo.");
+  });
+  it("REQ-010 NW-17 the picker tile title stays without a period", () => {
+    expect(en["asstChat.jobOpts.customTitle"]).toBe("Write it myself");
+    expect(es["asstChat.jobOpts.customTitle"]).toBe("Escribirlo yo mismo");
+  });
+});
+
+describe("REQ-014 NW-54 the clause list is headed 'Terms and Conditions' on web + PDF", () => {
+  // p62: rename "fine print, in plain english" to "Terms and Conditions".
+  it("REQ-014 NW-54 web heading key exists in both dictionaries", () => {
+    expect(en["quoteDoc.termsAndConditions"]).toBe("Terms and Conditions");
+    expect(es["quoteDoc.termsAndConditions"]).toBe("Términos y Condiciones");
+  });
+  it("REQ-014 NW-54 the PDF section heading says the same thing", () => {
+    expect(en["renderQuotePdf.section.finePrint"]).toBe("Terms and Conditions");
+    expect(es["renderQuotePdf.section.finePrint"]).toBe("Términos y Condiciones");
+  });
+});
+
+describe("REQ-015 completed-half copy — governing-law tail, warranty labels, 'Scope of Work'", () => {
+  // p80: "This agreement is governed by the laws of the state where the work
+  // is performed, without regard to conflict of law rules."
+  it.each(["quoteDoc.clause.governingLaw.body", "renderQuotePdf.clause.governingLaw.body"])(
+    "REQ-015 %s carries the conflict-of-law tail (en + es)",
+    (key) => {
+      expect(en[key]).toMatch(/where the work is performed, without regard to conflict of law rules\.$/);
+      expect(es[key]).toMatch(/donde se realiza el trabajo, sin importar las reglas sobre conflicto de leyes\.$/);
+    },
+  );
+
+  // p76-77: Warranty — No warranty / 6 months / 1 year / 2 years / Custom.
+  it.each([
+    ["termsWizard.warranty.twelveMonths", "1 year", "1 año"],
+    ["termsWizard.warranty.twentyFourMonths", "2 years", "2 años"],
+    ["asstChat.warranty.preset.twelveMonths", "1 year", "1 año"],
+    ["asstChat.warranty.preset.twentyFourMonths", "2 years", "2 años"],
+  ])("REQ-015 %s reads %s / %s", (key, enValue, esValue) => {
+    expect(en[key]).toBe(enValue);
+    expect(es[key]).toBe(esValue);
+  });
+
+  // p83: the required notices list titles item 2 "Scope of Work".
+  it("REQ-015 clause 2 is titled 'Scope of Work' on web + PDF", () => {
+    expect(en["quoteDoc.clause.jobDetails.title"]).toBe("Scope of Work");
+    expect(es["quoteDoc.clause.jobDetails.title"]).toBe("Alcance del trabajo");
+    expect(en["renderQuotePdf.clause.jobDetails.title"]).toBe("Scope of Work.");
+    expect(es["renderQuotePdf.clause.jobDetails.title"]).toBe("Alcance del trabajo.");
+  });
+});
+
+describe("REQ-017 pricing tiers — Competitive / Market / Premium, labor AND materials", () => {
+  // p7: "The price tiers cannot be 'Basic / Standard / Premium'…"
+  it("REQ-017 the tier labels are the client's names in both dictionaries", () => {
+    expect(en["suggestPrices.tier.competitive"]).toBe("Competitive");
+    expect(en["suggestPrices.tier.market"]).toBe("Market");
+    expect(en["suggestPrices.tier.premium"]).toBe("Premium");
+    expect(es["suggestPrices.tier.competitive"]).toBe("Competitivo");
+    expect(es["suggestPrices.tier.market"]).toBe("De mercado");
+    expect(es["suggestPrices.tier.premium"]).toBe("Premium");
+    expect(en["suggestPrices.tier.basic"]).toBeUndefined();
+    expect(en["suggestPrices.tier.standard"]).toBeUndefined();
+  });
+  it("REQ-017 the fallback rationales are the client's definitions, never 'basic/minimal'", () => {
+    expect(en["suggestPrices.fallback.competitiveRationale"]).toBe("Straightforward job, priced to win the work");
+    expect(en["suggestPrices.fallback.marketRationale"]).toBe("Typical professional price in your area");
+    expect(en["suggestPrices.fallback.premiumRationale"]).toBe("For urgency, difficult access, or extra complexity");
+    expect(es["suggestPrices.fallback.competitiveRationale"]).toBe("Trabajo sencillo, precio para ganar la obra");
+    expect(es["suggestPrices.fallback.marketRationale"]).toBe("Precio profesional típico en tu zona");
+    expect(es["suggestPrices.fallback.premiumRationale"]).toBe("Para urgencia, acceso difícil o más complejidad");
+  });
+  it("REQ-017 the basis line exists in both dictionaries", () => {
+    expect(en["suggestPrices.basis.laborAndMaterials"]).toBe("Prices include labor and materials");
+    expect(es["suggestPrices.basis.laborAndMaterials"]).toBe("Los precios incluyen mano de obra y materiales");
+  });
+  it("REQ-017 the prompt states the basis, the tier order, the location rule — and is English in both dictionaries", () => {
+    const p = en["prompts.suggestPrices"];
+    expect(p).toContain("labor AND materials");
+    expect(p).toContain("competitive < market < premium");
+    expect(p).toMatch(/location/i);
+    expect(p).not.toMatch(/\bbasic\b.*\bstandard\b/i);
+    expect(es["prompts.suggestPrices"]).toBe(p);
+  });
+});
+
+describe("REQ-028 NW-05 the prompts stop licensing the echo", () => {
+  // p4: "The AI must never echo the user's raw input back as the suggested
+  // description." The options prompt never forbade returning the sentence,
+  // and the polish prompt literally said "mirror it back cleaned-up".
+  it("REQ-028 generateJobOptions forbids returning the contractor's sentence verbatim — same text in both dictionaries", () => {
+    const p = en["prompts.generateJobOptions"];
+    expect(p).toContain("Never return the contractor's sentence verbatim");
+    expect(p).toMatch(/drop prices, "I need to", and questions/);
+    expect(es["prompts.generateJobOptions"]).toBe(p);
+  });
+  it("REQ-028 polishJobDetails no longer says 'mirror it back' — a vague sentence becomes one neutral scope sentence", () => {
+    const p = en["prompts.polishJobDetails.system"];
+    expect(p).not.toMatch(/mirror it back/i);
+    expect(p).toContain("never the contractor's own sentence");
+    expect(es["prompts.polishJobDetails.system"]).toBe(p);
+  });
+});
+
+describe("REQ-035 NW-55 agreement presentation copy", () => {
+  // p63: "Cancelation (either side can cancel with 7-day notice; work
+  // completed will be paid for)" — the clause said only the first half.
+  it("REQ-035 the termination clause ends with the paid-for-work sentence — web and PDF twins, both dictionaries", () => {
+    expect(en["quoteDoc.clause.termination.body"]).toMatch(/Work completed before cancelation will be paid for\.$/);
+    expect(es["quoteDoc.clause.termination.body"]).toMatch(/El trabajo realizado antes de la cancelación se pagará\.$/);
+    expect(en["renderQuotePdf.clause.termination.body"]).toMatch(/Work completed before cancelation will be paid for\.$/);
+    expect(es["renderQuotePdf.clause.termination.body"]).toMatch(/El trabajo realizado antes de la cancelación se pagará\.$/);
+  });
+  it("REQ-035 the Cancelation term row and the send dialog copy exist in both dictionaries", () => {
+    expect(en["quoteDoc.termLabel.cancellation"]).toBe("Cancelation");
+    expect(es["quoteDoc.termLabel.cancellation"]).toBe("Cancelación");
+    expect(en["quoteDoc.termValue.cancellation"]).toBe("7 days' notice");
+    expect(es["quoteDoc.termValue.cancellation"]).toBe("Aviso de 7 días");
+    expect(en["asstChat.send.howTitle"]).toBe("How do you want to send to customer?");
+    expect(es["asstChat.send.howTitle"]).toBe("¿Cómo quieres enviárselo al cliente?");
+    expect(en["asstChat.send.keep"]).toBe("Keep");
+    expect(es["asstChat.send.keep"]).toBe("Guardar");
+    expect(en["asstChat.send.cancel"]).toBe("Cancel");
+    expect(es["asstChat.send.cancel"]).toBe("Cancelar");
+  });
+});
+
+describe("REQ-041 NW-48 the customer SMS puts the link on its own line", () => {
+  // p45 template: "Your Quote + Agreement for [Job Name] is ready:" / "[LINK]" /
+  // "Please let me know…" — the link is its own line, not inline after "ready:".
+  it("REQ-041 paperworkSms.body.ready ends with a newline + {url} in both dictionaries", () => {
+    expect(en["paperworkSms.body.ready"]).toMatch(/:\n\{url\}$/);
+    expect(es["paperworkSms.body.ready"]).toMatch(/:\n\{url\}$/);
+  });
+});

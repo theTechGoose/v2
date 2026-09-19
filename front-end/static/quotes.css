@@ -653,6 +653,15 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
+/* NW-30 (REQ-011): job name on the invoice card, between "client · ref" and
+   the amount. */
+.qcard__job {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg, #1a535c);
+  margin: 2px 0;
+}
+
 .qcard__story {
   font-family: var(--font-body);
   font-size: 14.5px;
@@ -1007,6 +1016,24 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+/* REQ-034 (NW-43f): the panel's close control. */
+.qopen__close {
+  appearance: none;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 4px;
+  margin-left: 4px;
+  border-radius: 8px;
+  color: var(--fg-muted, #6b7560);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.qopen__close:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--fg, #1c2c30);
 }
 .qopen__eyebrow {
   font-family: var(--font-heading);

@@ -697,6 +697,33 @@ body {
   border-top: 1px solid rgba(255, 255, 255, 0.10);
   padding-top: 8px;
 }
+/* REQ-033 (NW-39): the rail's own QuickBooks-style collapse/expand button. */
+.sb__collapse {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 160ms;
+}
+.sb__collapse:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.sb--collapsed .sb__collapse {
+  justify-content: center;
+  padding: 8px 0;
+}
 /* Collapsed rail: the account card shrinks to just the centered avatar —
    the name/business text and the chevron would otherwise poke out clipped
    at the rail edge. */
@@ -2100,6 +2127,15 @@ a.activity-item--link:hover {
 .activity-item__text strong {
   font-family: var(--font-heading);
   font-weight: 800;
+}
+/* REQ-031 (NW-26): the event body (a customer's question) in full. */
+.activity-item__body {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--fg, #1c2c30);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .activity-item__time {
   font-size: 11px;

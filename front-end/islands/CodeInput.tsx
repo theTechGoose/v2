@@ -26,6 +26,10 @@ export default function CodeInput(
   >(null);
   const [shake, setShake] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  /** REQ-039 (NW-52): the number belongs to a closed account — the person
+   *  chooses recover / start fresh; nothing signed in on its own. */
+  const [recovery, setRecovery] = useState<{ token: string } | null>(null);
+  const [recovering, setRecovering] = useState(false);
   const [, force] = useState(0);
 
   useEffect(() => {
@@ -107,6 +111,10 @@ export default function CodeInput(
         phoneNumber,
         code: finalCode,
       });
+      if (result.ok && "recoverable" in result) {
+        setRecovery({ token: result.recoveryToken });
+        return;
+      }
       if (result.ok) {
         // Persist the verified phone for next-visit one-tap login.
         try {
@@ -149,6 +157,24 @@ export default function CodeInput(
     }
   }
 
+  /** REQ-039: recover the closed account, or start fresh on the number. */
+  async function chooseRecovery(mode: "recover" | "fresh") {
+    if (!recovery || recovering) return;
+    setRecovering(true);
+    setErrorKey(null);
+    try {
+      const res = mode === "recover"
+        ? await verifyClient.recover(recovery.token)
+        : await verifyClient.startFresh(recovery.token);
+      globalThis.location.href = res.redirectTo;
+    } catch {
+      setRecovery(null);
+      setErrorKey("verify.errExpired");
+    } finally {
+      setRecovering(false);
+    }
+  }
+
   async function resend() {
     if (cooldown > 0) return;
     setCooldown(30);
@@ -177,6 +203,34 @@ export default function CodeInput(
           />
         ))}
       </div>
+      {recovery
+        ? (
+          <div class="pm-recover" data-cy="recover-choice" role="group">
+            <p class="pm-recover__title">{s["verify.recoverTitle"]}</p>
+            <p class="pm-recover__body">{s["verify.recoverBody"]}</p>
+            <div class="pm-recover__actions">
+              <button
+                type="button"
+                class="btn btn-primary"
+                data-cy="recover-account"
+                disabled={recovering}
+                onClick={() => void chooseRecovery("recover")}
+              >
+                {s["verify.recoverAccount"]}
+              </button>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                data-cy="start-fresh"
+                disabled={recovering}
+                onClick={() => void chooseRecovery("fresh")}
+              >
+                {s["verify.startFresh"]}
+              </button>
+            </div>
+          </div>
+        )
+        : null}
       {errorKey
         ? <p class="error" role="alert">{s[errorKey] as string}</p>
         : null}

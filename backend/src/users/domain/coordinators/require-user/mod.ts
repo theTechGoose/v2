@@ -52,9 +52,13 @@ export async function requireUser(
   if (!sessionId) throw new UnauthorizedError();
   const session = await sessions.get(sessionId);
   if (!session) throw new UnauthorizedError();
+  let user: User;
   try {
-    return await users.get(session.userId);
+    user = await users.get(session.userId);
   } catch {
     throw new UnauthorizedError();
   }
+  // REQ-039 (NW-52): a closed (soft-deleted) account has no live sessions.
+  if (user.deletedAt) throw new UnauthorizedError();
+  return user;
 }

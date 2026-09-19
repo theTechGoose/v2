@@ -567,6 +567,9 @@ export interface ActivityEntry {
   time: string;
   /** UX-20: where tapping the event goes (e.g. /quotes?open=<id>). */
   href?: string;
+  /** REQ-031 (NW-26): the event's body — e.g. the question a customer asked
+   *  — rendered in full under the title, never dropped. */
+  body?: string;
 }
 
 export function Activity(
@@ -601,6 +604,13 @@ export function Activity(
                 // deno-lint-ignore react-no-danger
                 dangerouslySetInnerHTML={{ __html: a.html }}
               />
+              {a.body
+                ? (
+                  <div class="activity-item__body" data-cy="notif-body">
+                    {a.body}
+                  </div>
+                )
+                : null}
               <div class="activity-item__time">{a.time}</div>
             </div>
           </>

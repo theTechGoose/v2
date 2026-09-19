@@ -81,5 +81,9 @@ Cypress.on("uncaught:exception", (err) => {
   // Carve out one known noisy warning from Preact dev that's not a real
   // failure. Anything else surfaces as a test failure.
   if (/Preact: registerComponent/.test(err.message)) return false;
+  // Chromium's benign "ResizeObserver loop completed with undelivered
+  // notifications" — a layout-timing notice, not an application error. It
+  // fires intermittently on the assistant's price step (REQ-017 run).
+  if (/ResizeObserver loop/.test(err.message)) return false;
   return true;
 });

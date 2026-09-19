@@ -174,9 +174,17 @@ export const assistantClient = {
   startConversation: (body: Record<string, unknown>, opts: ApiOptions = {}) =>
     api.post<Conversation>("/agents/conversations", body, opts),
 
-  transitionToTerms: (id: string, opts: ApiOptions = {}) =>
+  /** REQ-024: `docKind: "invoice"` runs the invoice wizard (completion date
+   *  instead of start date + duration). Default: the quote wizard. */
+  transitionToTerms: (
+    id: string,
+    opts: ApiOptions = {},
+    docKind?: "quote" | "invoice",
+  ) =>
     api.post<ConversationDetail>(
-      `/agents/conversations/${id}/transition-to-terms`,
+      `/agents/conversations/${id}/transition-to-terms${
+        docKind ? `?docKind=${docKind}` : ""
+      }`,
       undefined,
       opts,
     ),
@@ -354,7 +362,12 @@ export const assistantClient = {
     priceCents?: number,
     opts: ApiOptions = {},
   ) =>
-    api.post<{ options: JobOption[] }>(
+    api.post<{
+      options: JobOption[];
+      /** REQ-026: true when the server could not use the model and the
+       *  options are its heuristic scope bullets. */
+      degraded?: boolean;
+    }>(
       "/agents/job-details/options",
       { raw, ...(typeof priceCents === "number" ? { priceCents } : {}) },
       opts,
@@ -366,8 +379,10 @@ export const assistantClient = {
     api.post<
       {
         options: Array<
-          { tier: string; label: string; priceCents: number; rationale: string }
+          { tier: "competitive" | "market" | "premium"; label: string; priceCents: number; rationale: string }
         >;
+        /** REQ-017 (NW-12): what the numbers include. */
+        basis?: "labor_and_materials";
       }
     >("/agents/job-details/prices", { raw }, opts),
 

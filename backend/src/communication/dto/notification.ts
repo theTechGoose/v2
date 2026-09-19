@@ -24,6 +24,7 @@ export const NOTIFICATION_TYPES = [
   "invoice_claimed",
   "invoice_paid",
   "invoice_overdue",
+  "invoice_nudge_due",
   "customer_replied",
   "generic",
 ] as const;

@@ -90,7 +90,7 @@ the corresponding unit-file header.
 | UX-28 inconsistent outbound language | ux-comms-language.test.ts | ux-comms-language.int.test.ts | — |
 | UX-29 "El patio de" jobName | ux-job-name-es.test.ts | ux-job-name.int.test.ts | — |
 | UX-30 promised receipt never sent | — | ux-payment-receipt.int.test.ts | — |
-| UX-31 invoice saved without review, due today | — | — | ux-invoice-review.cy.ts |
+| UX-31 invoice saved without review, due today — superseded by REQ-024 (the invoice chip runs the quote wizard and lands on the shared preview; the standalone review/save path was deleted in REQ-025) | — | — | ux-invoice-review.cy.ts ("REQ-024 …") |
 | UX-32 facturar ignores known context | ux-quick-quote-prefill.test.ts | — | ux-assistant-prefill.cy.ts |
 | UX-33 cooldown surfaces as generic failure | ux-otp-cooldown-ux.test.ts | ux-otp-cooldown.int.test.ts | ux-otp-cooldown.cy.ts |
 | UX-34 "Haz clic aquí" dropdown trigger | ux-assistant-i18n.test.ts | — | ux-assistant-i18n.cy.ts |

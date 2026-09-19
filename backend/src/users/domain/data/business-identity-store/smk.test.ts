@@ -67,3 +67,15 @@ Deno.test("business-identity-store smoke: undefined patch values do not erase ex
   assertEquals(out?.logoFileId, "file-x");
   await resetKv();
 });
+
+// REQ-038 (NW-06b): the business website is part of the identity — it
+// round-trips through the store like every other identity field.
+Deno.test("REQ-038 NW-06b business-identity-store: websiteUrl round-trips", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const store = new BusinessIdentityStore();
+  await store.upsert("u-1", { businessName: "HANS LLC", websiteUrl: "https://hans.work" });
+  const fetched = await store.get("u-1");
+  assertEquals(fetched?.websiteUrl, "https://hans.work");
+  await resetKv();
+});

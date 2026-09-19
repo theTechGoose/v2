@@ -18,6 +18,7 @@ import {
   titleCaseJobName,
   unitLabel,
 } from "#quote-flow/email-format.ts";
+import { websiteLabel } from "#quote-flow/format-helpers.ts";
 import {
   isPlaceholderName,
   outboundSenderName,
@@ -40,6 +41,10 @@ export interface SendPaperworkEmailInput {
   /** Per-send language override (the "Send in <lang>" button). When set it
    *  wins over the contractor's stored `commsLanguage` default. */
   language?: "en" | "es";
+  /** REQ-020 (NW-29): `"paid"` emails the invoice STAMPED PAID — subject
+   *  says Paid, the money card reads "PAID <date>" instead of "Amount due".
+   *  Invoices only. */
+  variant?: "paid";
 }
 
 export interface SendPaperworkEmailResult extends SendEmailResult {
@@ -165,13 +170,17 @@ export class SendPaperworkEmail {
           invQuote = await this.quotes.getOwned(invoice.quoteId, userId);
         } catch { /* standalone or missing */ }
       }
-      subject = renderInvoiceSubject(invoice, safeSender, lang);
+      const paid = input.variant === "paid";
+      subject = paid
+        ? renderInvoicePaidSubject(invoice, senderBiz, safeSender, lang)
+        : renderInvoiceSubject(invoice, safeSender, lang);
       htmlBody = renderInvoiceHtml(
         invoice,
         customer,
         safeSender,
         senderBiz,
         invQuote,
+        paid,
       );
     }
 
@@ -220,7 +229,9 @@ export class SendPaperworkEmail {
         userId,
         customerId: customerIdForLog,
         channel: "email",
-        content: `${input.kind} ${input.resourceId} emailed to ${recipient}`,
+        content: `${input.kind} ${input.resourceId}${
+          input.variant === "paid" ? " (paid)" : ""
+        } emailed to ${recipient}`,
         subject,
         // The rendered customer-facing copy — auditable per dispatch (the
         // stub content line above stays as the human-readable summary).
@@ -884,6 +895,15 @@ function renderQuoteHtml(
       }</a></div>`
       : ""
   }
+                ${
+    senderBiz?.websiteUrl?.trim()
+      ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="${
+        escapeAttr(senderBiz.websiteUrl.trim())
+      }" style="color:${COLOR_INK};text-decoration:none">${
+        escapeHtml(websiteLabel(senderBiz.websiteUrl))
+      }</a></div>`
+      : ""
+  }
               </td>
             </tr>
           </table>
@@ -922,6 +942,23 @@ function renderInvoiceSubject(
     : tail;
 }
 
+/** REQ-020 (NW-29): "Paid — invoice #… from <business>" — the invoice
+ *  stamped paid, never a receipt. */
+function renderInvoicePaidSubject(
+  i: Invoice,
+  senderBiz: BusinessIdentity | undefined,
+  sender: User | undefined,
+  lang: Lang,
+): string {
+  const trimmed = sender?.name?.trim();
+  const who = senderBiz?.businessName?.trim() || senderBiz?.legalName?.trim() ||
+    (isPlaceholderName(trimmed) ? undefined : trimmed);
+  const docNumber = i.id.slice(0, 8).toUpperCase();
+  return who
+    ? t(lang, "paperworkEmail.invoicePaid.subject", { docNumber, businessName: who })
+    : t(lang, "paperworkEmail.invoicePaid.subjectNoBiz", { docNumber });
+}
+
 /**
  * Rich invoice email — mirrors the WOW quote email (renderQuoteHtml): pink
  * ribbon, hero, job-details, line items, a prominent amount-due card, and a
@@ -932,12 +969,23 @@ function renderInvoiceSubject(
  * Quote-linked invoices only — a standalone invoice (no linked quote)
  * has no itemized job to show and falls back to renderInvoiceBasicHtml.
  */
+/** REQ-020: the money-card label — "Amount due" on a bill, "PAID <date>"
+ *  on the invoice stamped paid. */
+function invoiceAmountLabel(i: Invoice, lang: Lang, paid: boolean): string {
+  return paid
+    ? t(lang, "paperworkEmail.invoice.paidLabel", {
+      date: fmtDate(i.paidAt ?? new Date().toISOString(), lang),
+    })
+    : t(lang, "paperworkEmail.invoice.amountDueLabel");
+}
+
 function renderInvoiceHtml(
   i: Invoice,
   customer: Customer | undefined,
   sender: User | undefined,
   senderBiz: BusinessIdentity | undefined,
   quote?: Quote,
+  paid = false,
 ): string {
   const es = senderBiz?.commsLanguage === "es";
   const lang: Lang = es ? "es" : "en";
@@ -948,8 +996,9 @@ function renderInvoiceHtml(
       : undefined);
   // Standalone invoice → lightweight amount-only email (unchanged behavior).
   if (items.length === 0 && agreementTotal == null) {
-    return renderInvoiceBasicHtml(i, customer, sender, lang);
+    return renderInvoiceBasicHtml(i, customer, sender, lang, paid);
   }
+  const amountLabel = invoiceAmountLabel(i, lang, paid);
 
   const docNumber = `#${i.id.slice(0, 8).toUpperCase()}`;
   const issued = fmtDate(i.issuedDate ?? i.createdAt, lang);
@@ -967,7 +1016,7 @@ function renderInvoiceHtml(
     jobDetails: t(lang, "paperworkEmail.quote.jobDetails"),
     whatWeHandle: t(lang, "paperworkEmail.quote.whatWeHandle"),
     agreementValue: t(lang, "quoteDoc.agreementValue"),
-    amountDue: t(lang, "paperworkEmail.invoice.amountDueLabel"),
+    amountDue: amountLabel,
     dueLabel: t(lang, "paperworkEmail.invoice.dueLabel"),
     pasteLink: t(lang, "paperworkEmail.pasteLink"),
     cta: t(lang, "paperworkEmail.invoice.cta"),
@@ -1071,7 +1120,8 @@ function renderInvoiceHtml(
     }</p>`;
 
   const greeting = customerGreeting(customer, lang);
-  const dueSub = i.dueDate
+  // REQ-020: a paid invoice has no "due on" line under its PAID card.
+  const dueSub = i.dueDate && !paid
     ? `<div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">${
       escapeHtml(
         t(lang, "publicInvoice.dueOn", { date: fmtDate(i.dueDate, lang) }),
@@ -1189,7 +1239,7 @@ function renderInvoiceHtml(
       : ""
   }
 
-        <!-- amount due card (the money moment) -->
+        <!-- money card (the money moment): the balance due, or PAID once settled -->
         <tr><td style="padding:24px 36px 0">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:18px">
             <tr>
@@ -1277,6 +1327,15 @@ function renderInvoiceHtml(
       }</a></div>`
       : ""
   }
+                ${
+    senderBiz?.websiteUrl?.trim()
+      ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="${
+        escapeAttr(senderBiz.websiteUrl.trim())
+      }" style="color:${COLOR_INK};text-decoration:none">${
+        escapeHtml(websiteLabel(senderBiz.websiteUrl))
+      }</a></div>`
+      : ""
+  }
               </td>
             </tr>
           </table>
@@ -1296,7 +1355,9 @@ function renderInvoiceBasicHtml(
   customer: Customer | undefined,
   sender: User | undefined,
   lang: Lang,
+  paid = false,
 ): string {
+  const amountLabel = invoiceAmountLabel(i, lang, paid);
   const docNumber = `#${i.id.slice(0, 8)}`;
   const drafted = fmtDate(i.issuedDate ?? new Date().toISOString(), lang);
   const amount = i.amount;
@@ -1349,7 +1410,7 @@ function renderInvoiceBasicHtml(
       <tr>
         <td style="padding:18px 20px;">
           <div style="font-size:11px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:${COLOR_GREEN};">${
-    escapeHtml(t(lang, "paperworkEmail.invoice.amountDueLabel"))
+    escapeHtml(amountLabel)
   }</div>
         </td>
         <td style="padding:18px 20px;text-align:right;">

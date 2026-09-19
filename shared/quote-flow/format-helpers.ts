@@ -69,6 +69,22 @@ export function formatPhoneDisplay(raw: string): string {
   return `+1 (${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
 }
 
+/**
+ * As-you-type phone mask (REQ-012 / NW-34): "5125556" → "(512) 555-6",
+ * "5125556999" → "(512) 555-6999". A leading US country code is stripped and
+ * anything past ten digits is dropped, so pasting "+1 512 555 6999" lands on
+ * the same mask. Idempotent on its own output. The backend's phone
+ * normalizer accepts the masked form, so inputs can bind `value` to this
+ * directly and keep their raw `onInput` setters.
+ */
+export function formatPhoneInput(raw: string): string {
+  const d = tenDigits(raw ?? "").slice(0, 10);
+  if (!d) return "";
+  if (d.length < 4) return `(${d}`;
+  if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
+  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+}
+
 /** "5125556999" / "+1 (512) 555-6999" → "tel:+15125556999" (P-64). */
 export function telHref(raw: string): string {
   const digits = tenDigits(raw);
@@ -225,4 +241,21 @@ export function formatShortDate(iso: string, lang: Lang): string {
  */
 export function capitalizeDateLine(line: string, _lang?: Lang): string {
   return sentenceCase(line);
+}
+
+/**
+ * REQ-038 (NW-06b): the business website as the contractor typed it, stored
+ * with a scheme so it links. "hans.work" → "https://hans.work"; an existing
+ * http(s) scheme is kept; blank stays blank.
+ */
+export function normalizeWebsiteUrl(input: string | undefined): string {
+  const s = (input ?? "").trim();
+  if (!s) return "";
+  return /^https?:\/\//i.test(s) ? s : `https://${s.replace(/^\/+/, "")}`;
+}
+
+/** The website as people read it: no scheme, no trailing slash. */
+export function websiteLabel(url: string | undefined): string {
+  const s = (url ?? "").trim();
+  return s.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
 }

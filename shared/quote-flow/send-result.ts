@@ -45,3 +45,29 @@ export function sendResultLangKey(outcome: SendOutcome): string | null {
     ? "sendQuote.divider.noEmail"
     : "sendQuote.divider.emailFailed";
 }
+
+export type DispatchChannel = "email" | "text";
+
+export interface DispatchSummary {
+  /** At least one channel delivered. */
+  delivered: boolean;
+  /** Delivered on one channel but not the other — say so, never reload as
+   *  if everything went (REQ-030 / NW-25). */
+  partial: boolean;
+  failedChannels: DispatchChannel[];
+}
+
+/** REQ-030 (NW-25): the per-channel verdict of a two-channel dispatch. */
+export function summarizeDispatch(
+  input: { email: SendOutcome; text: SendOutcome },
+): DispatchSummary {
+  const failedChannels: DispatchChannel[] = [];
+  if (!input.email.delivered) failedChannels.push("email");
+  if (!input.text.delivered) failedChannels.push("text");
+  const delivered = failedChannels.length < 2;
+  return {
+    delivered,
+    partial: delivered && failedChannels.length > 0,
+    failedChannels,
+  };
+}

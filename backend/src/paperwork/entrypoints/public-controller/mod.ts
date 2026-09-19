@@ -13,6 +13,7 @@ import { EventBus } from "@core/business/events/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
+import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
@@ -117,6 +118,7 @@ export class PaperworkPublicController {
     private bus: EventBus,
     private signedConfirmation: SendSignedConfirmation,
     private acceptedAlert: SendAcceptedAlert,
+    private inquiryAlert: SendInquiryAlert,
     private views: ViewStore,
     private shortlinks: ShortLinkStore,
     private files: FileStore,
@@ -221,6 +223,8 @@ export class PaperworkPublicController {
         customer,
         contractor,
         ...(businessName ? { businessName } : {}),
+        // REQ-038 (NW-06b): the website joins the PDF's From lines.
+        ...(ident?.websiteUrl?.trim() ? { websiteUrl: ident.websiteUrl.trim() } : {}),
         ...(ident?.commsLanguage ? { commsLanguage: ident.commsLanguage } : {}),
       });
       return new Response(bytes as BodyInit, {
@@ -600,6 +604,20 @@ export class PaperworkPublicController {
         quoteId: existing.id,
       },
     });
+    // REQ-031 (NW-26): the contractor gets the full question + contactBack
+    // by email and text (logged in the comms trail). Best-effort — never
+    // fails the customer's request; awaited so the trail exists by the time
+    // the response lands (readers poll /messages right after).
+    await this.inquiryAlert.run(existing.id, {
+      question: dto.question,
+      ...(dto.contactBack ? { contactBack: dto.contactBack } : {}),
+      ...(dto.name ? { name: dto.name } : {}),
+    }).catch((err) => {
+      console.error(
+        `[quotes/${existing.id}/inquiry] inquiry-alert failed:`,
+        err,
+      );
+    });
     return ctx.json({ ok: true });
   }
 
@@ -880,6 +898,8 @@ interface PublicContractor {
   businessName?: string;
   phoneNumber?: string;
   email?: string;
+  /** REQ-038 (NW-06b): the business website, when the contractor gave one. */
+  websiteUrl?: string;
   /** Single-line address ("123 Main St, Austin, TX 78701") composed from
    *  the BusinessAddress record. Omitted when the contractor hasn't filled
    *  in any street/city fields. Surfaces under the eyebrow on public docs. */
@@ -922,6 +942,7 @@ async function loadContractor(
       businessName: ident?.businessName ?? ident?.legalName,
       phoneNumber: user?.phoneNumber,
       email: user?.email,
+      ...(ident?.websiteUrl?.trim() ? { websiteUrl: ident.websiteUrl.trim() } : {}),
       addressLine: composeAddressLine(addr),
       state: addr?.state?.trim() || undefined,
       acceptedPaymentMethods: redactAcceptedMethods(

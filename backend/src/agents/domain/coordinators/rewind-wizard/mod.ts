@@ -1,7 +1,7 @@
 import { Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
-import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
+import { getWizardSpec, TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { WizardState } from "@agents/dto/wizard.ts";
@@ -12,7 +12,12 @@ export interface RewindWizardInput {
   /** Rewind TO this step index (0-based) so it is the active question
    *  again. Omitted → exactly one step back. The client keeps a snapshot
    *  stack of where it was; popping a snapshot restores the server to the
-   *  snapshot's step with one call, however many steps that spans. */
+   *  snapshot's step with one call, however many steps that spans.
+   *  `-1` (REQ-005, NW-19) = back from the FIRST question: leave the terms
+   *  phase entirely — every wizard question, pick and the phase divider are
+   *  dropped, the wizard state is cleared and the conversation returns to
+   *  the quote phase, so the transcript shows the action card / "Ready"
+   *  CTA again and the CTA can re-enter the wizard fresh. */
   toStepIdx?: number;
 }
 
@@ -73,6 +78,7 @@ export class RewindWizard {
       };
     }
 
+    const leaveTerms = input.toStepIdx === LEAVE_TERMS;
     const target = Math.max(
       0,
       Math.min(input.toStepIdx ?? state.activeStepIdx - 1, state.activeStepIdx),
@@ -87,10 +93,38 @@ export class RewindWizard {
       popped = step.popped ?? popped;
     }
 
+    if (leaveTerms) {
+      // REQ-005 (NW-19): back from the first question = undo the
+      // transition into terms. Drop what TransitionToTerms appended (the
+      // divider + the question) and any wizard pick that survived the pops,
+      // clear the wizard state and reopen the quote phase. The action card
+      // and its "Ready" CTA stay, so the chat is exactly where it was.
+      const msgs = await this.messages.listByConversation(input.conversationId);
+      const gone = msgs.filter((m) =>
+        m.kind === "wizard" || m.kind === "phase_divider" || isWizardPick(m)
+      ).map((m) => m.id);
+      await this.messages.deleteByIds(input.conversationId, gone);
+      removed.push(...gone);
+      await this.conversations.deleteWizardState(input.conversationId);
+      const reopened = await this.conversations.update(conv.id, {
+        currentPhase: "quote",
+      });
+      return {
+        conversation: reopened,
+        wizardState: {
+          specId: TERMS_WIZARD_V1.id,
+          activeStepIdx: 0,
+          answers: [],
+        },
+        activeStepId: null,
+        removedMessageIds: removed,
+      };
+    }
+
     return {
       conversation: conv,
       wizardState: current,
-      activeStepId: TERMS_WIZARD_V1.steps[current.activeStepIdx]?.id ?? null,
+      activeStepId: getWizardSpec(current.specId).steps[current.activeStepIdx]?.id ?? null,
       removedMessageIds: removed,
       ...(popped
         ? {
@@ -114,7 +148,7 @@ export class RewindWizard {
     removed: string[];
     popped?: WizardState["answers"][number];
   }> {
-    const wasComplete = state.activeStepIdx >= TERMS_WIZARD_V1.steps.length;
+    const wasComplete = state.activeStepIdx >= getWizardSpec(state.specId).steps.length;
     const popped = state.answers[state.answers.length - 1];
     const next: WizardState = {
       specId: state.specId,
@@ -140,6 +174,9 @@ export class RewindWizard {
     return { state: next, removed, popped };
   }
 }
+
+/** `toStepIdx` sentinel: back from step 0 leaves the terms phase (REQ-005). */
+const LEAVE_TERMS = -1;
 
 function findLastIndex(
   msgs: AgentMessage[],

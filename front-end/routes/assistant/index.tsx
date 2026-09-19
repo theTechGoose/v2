@@ -95,13 +95,23 @@ export default define.page(async function AssistantHome(ctx) {
                   initialStatus={tFor(lang, "assistantPage.assistantHelp")}
                 />
                 <AsstChat
-                initialMessages={[]}
-                userInitials={userInitials}
-                sendLanguages={profile?.identity?.commsLanguages ??
-                  (profile?.identity?.commsLanguage
-                    ? [profile.identity.commsLanguage]
-                    : ["en"])}
-              />
+                  initialMessages={[]}
+                  userInitials={userInitials}
+                  /* NW-06 (REQ-007): the chat path stays on THIS island
+                     (replaceState into the thread URL), so the review card's
+                     From block must be fed here exactly as [threadId].tsx does. */
+                  from={{
+                    business: businessName,
+                    name: user?.name,
+                    phone: user?.phoneNumber,
+                    email: profile?.user?.email,
+                    website: profile?.identity?.websiteUrl,
+                  }}
+                  sendLanguages={profile?.identity?.commsLanguages ??
+                    (profile?.identity?.commsLanguage
+                      ? [profile.identity.commsLanguage]
+                      : ["en"])}
+                />
               </section>
             </div>
           </div>

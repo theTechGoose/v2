@@ -22,11 +22,13 @@ import { SummarizePaperworkViews } from "@paperwork/domain/coordinators/summariz
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
 import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-invoice-balance/mod.ts";
+import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
+import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
 import { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
 import { ConfirmPayment } from "@paperwork/domain/coordinators/confirm-payment/mod.ts";
 import { SendPaymentReminder } from "@paperwork/domain/coordinators/send-payment-reminder/mod.ts";
@@ -57,12 +59,14 @@ import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/recor
     SummarizePaperworkViews,
     SendPaperworkEmail,
     SendPaperworkSms,
+    MarkInvoicePaid,
     ComputeInvoiceBalance,
     RenderQuotePdf,
     RenderReceiptPdf,
     RenderInvoicePdf,
     SendSignedConfirmation,
     SendAcceptedAlert,
+    SendInquiryAlert,
     SendChangeOrderAlert,
     ConfirmPayment,
     SendPaymentReminder,

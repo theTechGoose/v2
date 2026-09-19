@@ -134,3 +134,23 @@ describe("P-66 logo-email.png asset budget", () => {
     expect(bytes).toBeLessThan(300 * 1024);
   });
 });
+
+describe("REQ-012 NW-34 formatPhoneInput — as-you-type mask (555) 123-4567", () => {
+  // p30: "Format phone numbers as (555) 123-4567 as they are typed."
+  const cases: Array<[string, string]> = [
+    ["", ""],
+    ["5", "(5"],
+    ["512", "(512"],
+    ["5125", "(512) 5"],
+    ["5125556", "(512) 555-6"],
+    ["5125556999", "(512) 555-6999"],
+    ["15125556999", "(512) 555-6999"], // leading country code stripped
+    ["512555699912", "(512) 555-6999"], // extra digits dropped
+    ["(512) 555-6999", "(512) 555-6999"], // idempotent on its own output
+    ["512-555-6999", "(512) 555-6999"],
+  ];
+  it.each(cases)("REQ-012 %j → %j", (raw, expected) => {
+    const { formatPhoneInput } = fh();
+    expect(formatPhoneInput(raw)).toBe(expected);
+  });
+});

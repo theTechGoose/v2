@@ -8,6 +8,7 @@ import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
+import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 
 /**
@@ -72,6 +73,7 @@ export class JobDetailsController {
     private users: UserStore,
     private sessions: SessionStore,
     private identity: BusinessIdentityStore,
+    private addresses: BusinessAddressStore,
   ) {}
 
   /**
@@ -89,11 +91,17 @@ export class JobDetailsController {
     if (typeof b.raw !== "string" || !b.raw.trim()) {
       throw new Error("raw is required");
     }
+    // REQ-017 (NW-09): the contractor's saved business address — the model
+    // prices for their city / state / ZIP.
+    const address = await this.addresses.get(user.id)
+      .then((a) => a ? { city: a.city, state: a.state, postal: a.postal } : undefined)
+      .catch(() => undefined);
     return ctx.json(
       await this.prices.run({
         userId: user.id,
         raw: b.raw,
         lang: user.language === "es" ? "es" : "en",
+        address,
       }),
     );
   }

@@ -6,6 +6,8 @@ import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
+import { websiteLabel } from "#quote-flow/format-helpers.ts";
+import { agreementTitle } from "#quote-flow/agreement-title.ts";
 
 export interface RenderQuotePdfInput {
   quote: Quote;
@@ -14,6 +16,8 @@ export interface RenderQuotePdfInput {
   /** Optional override for the contractor's display business name (e.g.
    *  "Riley Roofing Co." pulled from BusinessIdentity). */
   businessName?: string;
+  /** REQ-038 (NW-06b): the business website for the From lines. */
+  websiteUrl?: string;
   /** Outgoing-comms language (roadmap p.13) — the PDF is the customer's
    *  copy, so it renders in their language. Defaults to "en". */
   commsLanguage?: string;
@@ -113,21 +117,33 @@ export class RenderQuotePdf {
       color: GREEN,
     });
 
-    // Hero title
+    // Hero title — REQ-036 (NW-57): "<Customer>'s <Job> Agreement", the
+    // same shared helper the web document uses.
     y -= 36;
-    const heroTitle = (quote.summaryByLang?.[lang] ?? quote.summary ??
-      t(lang, "renderQuotePdf.heroFallback"))
-      .replace(/^\s*quote\s*:\s*/i, "")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+    const cust = customer?.name?.trim() ?? quote.acceptedName?.trim();
+    const pdfJobName = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim();
+    const jobTitle = pdfJobName ||
+      (quote.summaryByLang?.[lang] ?? quote.summary ??
+        t(lang, "renderQuotePdf.heroFallback"))
+        .replace(/^\s*quote\s*:\s*/i, "")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+    const heroTitle = agreementTitle({
+      customer: cust,
+      job: jobTitle,
+      lang,
+      fallback: t(lang, "renderQuotePdf.heroFallback"),
+    });
     page.drawText(heroTitle, { x: M, y, size: 24, font: bold, color: TEAL });
     y -= 22;
 
-    // Recital
-    const cust = customer?.name?.trim() ?? quote.acceptedName?.trim();
+    // Recital — the job name sits between the parties and the date.
     const recital = t(lang, "renderQuotePdf.recital.main", {
       biz: biz.replace(/\.$/, ""),
       cust: cust ?? t(lang, "renderQuotePdf.recital.clientFallback"),
     }) +
+      (pdfJobName
+        ? t(lang, "renderQuotePdf.recital.forJob", { job: pdfJobName })
+        : "") +
       (quote.effectiveDate
         ? t(lang, "renderQuotePdf.recital.effective", {
           date: fmtDate(quote.effectiveDate),
@@ -163,6 +179,8 @@ export class RenderQuotePdf {
         businessName,
         contractor?.phoneNumber,
         contractor?.email,
+        // REQ-038 (NW-06b): the website, as people read it.
+        websiteLabel(input.websiteUrl),
       ].filter((v): v is string => !!v && v.trim().length > 0);
       const rows = Math.max(toLines.length, fromLines.length, 1);
       for (let i = 0; i < rows; i++) {
@@ -416,16 +434,42 @@ export class RenderQuotePdf {
         TEAL,
       );
       y -= 12;
-      const visible = quote.terms.filter((term) => term.stepId !== "customer");
+      const termLabelKey: Record<string, string> = {
+        start_date: "renderQuotePdf.termLabel.startDate",
+        wraps: "renderQuotePdf.termLabel.duration",
+        payment_terms: "renderQuotePdf.termLabel.paymentTerms",
+        warranty: "renderQuotePdf.termLabel.warranty",
+      };
+      const cells = quote.terms
+        .filter((term) => term.stepId !== "customer")
+        .map((term) => {
+          const localized = localizeTermValue(term.value, lang);
+          return {
+            label: es && termLabelKey[term.stepId]
+              ? t(lang, termLabelKey[term.stepId])
+              : term.label.toUpperCase(),
+            value: term.stepId === "wraps"
+              ? t(lang, "renderQuotePdf.term.estimatedPrefix", {
+                value: localized,
+              })
+              : localized,
+          };
+        });
+      // REQ-035 (NW-55): the cancelation notice is a term row on every
+      // agreement, mirroring the web document.
+      cells.push({
+        label: t(lang, "renderQuotePdf.termLabel.cancellation").toUpperCase(),
+        value: t(lang, "renderQuotePdf.termValue.cancellation"),
+      });
       const colCount = 2;
       const gap = 10;
       const cellW = (W - 2 * M - (colCount - 1) * gap) / colCount;
       const rowH = 38;
-      for (let i = 0; i < visible.length; i += colCount) {
+      for (let i = 0; i < cells.length; i += colCount) {
         addPageIfNeeded(rowH + 6);
         for (let c = 0; c < colCount; c++) {
-          const term = visible[i + c];
-          if (!term) break;
+          const cell = cells[i + c];
+          if (!cell) break;
           const cx = M + c * (cellW + gap);
           page.drawRectangle({
             x: cx,
@@ -435,29 +479,14 @@ export class RenderQuotePdf {
             borderColor: LINE,
             borderWidth: 0.5,
           });
-          const termLabelKey: Record<string, string> = {
-            start_date: "renderQuotePdf.termLabel.startDate",
-            wraps: "renderQuotePdf.termLabel.duration",
-            payment_terms: "renderQuotePdf.termLabel.paymentTerms",
-            warranty: "renderQuotePdf.termLabel.warranty",
-          };
-          const labelText = es && termLabelKey[term.stepId]
-            ? t(lang, termLabelKey[term.stepId])
-            : term.label.toUpperCase();
-          page.drawText(labelText, {
+          page.drawText(cell.label, {
             x: cx + 10,
             y: y - 14,
             size: 7.5,
             font: bold,
             color: MUTED,
           });
-          const localized = localizeTermValue(term.value, lang);
-          const displayValue = term.stepId === "wraps"
-            ? t(lang, "renderQuotePdf.term.estimatedPrefix", {
-              value: localized,
-            })
-            : localized;
-          page.drawText(displayValue, {
+          page.drawText(cell.value, {
             x: cx + 10,
             y: y - 28,
             size: 10.5,
@@ -542,7 +571,7 @@ export class RenderQuotePdf {
     }
 
     // Section: Signatures
-    addPageIfNeeded(180);
+    addPageIfNeeded(200);
     y -= 8;
     y = drawSectionHeader(
       page,
@@ -555,6 +584,17 @@ export class RenderQuotePdf {
       TEAL,
     );
     y -= 16;
+    // REQ-032 (NW-28): the same "By signing below, <client> agrees to
+    // everything above." sentence the web document shows — named when a
+    // name is known (the bound customer, or whoever signed).
+    const signerName = customer?.name?.trim() || quote.acceptedName?.trim();
+    page.drawText(
+      signerName
+        ? t(lang, "renderQuotePdf.sig.bySigningNamed", { name: signerName })
+        : t(lang, "renderQuotePdf.sig.bySigning"),
+      { x: M, y: y - 4, size: 9.5, font: reg, color: INK },
+    );
+    y -= 22;
     const halfW = (W - 2 * M - 16) / 2;
     const sigBoxH = 90;
 
@@ -568,7 +608,7 @@ export class RenderQuotePdf {
       borderWidth: 0.6,
     });
     // Roadmap p.8: CONTRACTOR / {business} / cursive signature / By: {name} / Date.
-    page.drawText(t(lang, "renderQuotePdf.sig.contractor"), {
+    page.drawText(t(lang, "renderQuotePdf.sig.contractorSignature"), {
       x: M + 12,
       y: y - 14,
       size: 8,
@@ -624,7 +664,7 @@ export class RenderQuotePdf {
       borderColor: LINE,
       borderWidth: 0.6,
     });
-    page.drawText(t(lang, "renderQuotePdf.sig.clientSigned"), {
+    page.drawText(t(lang, "renderQuotePdf.sig.yourSignature"), {
       x: cx + 12,
       y: y - 16,
       size: 8,
@@ -850,7 +890,7 @@ function termValue(
  *  known preset option labels to Spanish and converts numeric durations
  *  ("12 months" → "12 meses"); custom free-text and universal ratios
  *  ("50/50") pass through unchanged. */
-function localizeTermValue(value: string, lang: "en" | "es"): string {
+export function localizeTermValue(value: string, lang: "en" | "es"): string {
   if (lang === "en") return value;
   const trimmed = (value ?? "").trim();
   // Map known wizard preset labels to localized i18n keys.
@@ -863,10 +903,15 @@ function localizeTermValue(value: string, lang: "en" | "es"): string {
     "Next Month": "renderQuotePdf.termValue.nextMonth",
     "Next month": "renderQuotePdf.termValue.nextMonth",
     "Job Completed": "renderQuotePdf.termValue.jobCompleted",
+    // NW-24 (REQ-009): new quotes persist the sentence-case value; the
+    // line above keeps quotes saved before the casing change localizing.
+    "Job completed": "renderQuotePdf.termValue.jobCompleted",
     "Due Now": "renderQuotePdf.termValue.dueNow",
   };
   if (exactKey[trimmed]) return t(lang, exactKey[trimmed]);
   return trimmed
+    // REQ-015: warranty presets persist "1 year" / "2 years".
+    .replace(/\byears\b/gi, "años").replace(/\byear\b/gi, "año")
     .replace(/\bmonths\b/gi, "meses").replace(/\bmonth\b/gi, "mes")
     .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
     .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");

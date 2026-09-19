@@ -165,12 +165,44 @@ export class UserStore {
     return updated;
   }
 
+  /** REQ-039 (NW-52): closing an account flags it — the record AND the
+   *  phone index stay, so a later sign-in on the number can offer to
+   *  recover it. `GET /me/wipe` is the only hard delete. */
   async delete(id: string): Promise<void> {
     const user = await this.get(id);
+    const now = new Date().toISOString();
     const kv = await getKv();
-    await kv.atomic()
-      .delete(["user", id])
-      .delete(["user_by_phone", user.phoneNumber])
-      .commit();
+    await kv.set(["user", id], { ...user, deletedAt: now, updatedAt: now });
+  }
+
+  /** REQ-039: "recover the old one" — the flag comes off, nothing else moves. */
+  async restore(id: string): Promise<User> {
+    const user = await this.get(id);
+    const { deletedAt: _gone, ...rest } = user;
+    const restored = { ...rest, updatedAt: new Date().toISOString() } as User;
+    const kv = await getKv();
+    await kv.set(["user", id], restored);
+    return withHardcodedSuperAdmin(restored);
+  }
+
+  /** REQ-039: "create a new account" — the closed account keeps its data
+   *  under an archived phone ("<phone>#archived-<ts>") and the number is
+   *  freed for a fresh account. */
+  async archivePhone(id: string): Promise<User> {
+    const user = await this.get(id);
+    const archived = `${user.phoneNumber}#archived-${Date.now()}`;
+    const updated = {
+      ...user,
+      phoneNumber: archived,
+      updatedAt: new Date().toISOString(),
+    } as User;
+    const kv = await getKv();
+    const idx = await kv.get<string>(["user_by_phone", user.phoneNumber]);
+    let atomic = kv.atomic()
+      .set(["user", id], updated)
+      .set(["user_by_phone", archived], id);
+    if (idx.value === id) atomic = atomic.delete(["user_by_phone", user.phoneNumber]);
+    await atomic.commit();
+    return updated;
   }
 }
