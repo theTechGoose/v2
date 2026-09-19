@@ -242,7 +242,6 @@
   "asstChat.invoiceFlow.thisInvoice": "Esta factura ($)",
   "asstChat.invoiceFlow.terms": "Términos",
   "asstChat.invoiceFlow.goToInvoices": "Ir a Facturas →",
-  "asstChat.invoiceFlow.needCustomer": "Elige un cliente o escribe un nombre.",
   "asstChat.invoiceFlow.noAmount": "Primero define el monto.",
   "asstChat.invoiceFlow.noContact": "Este cliente no tiene correo ni teléfono registrado — copia el enlace y compártelo.",
   "asstChat.invoiceFlow.readySub": "Quedó guardada en Facturas. Envíala ahora o comparte el enlace tú mismo.",

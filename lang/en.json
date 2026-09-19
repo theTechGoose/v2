@@ -242,7 +242,6 @@
   "asstChat.invoiceFlow.thisInvoice": "This invoice ($)",
   "asstChat.invoiceFlow.terms": "Terms",
   "asstChat.invoiceFlow.goToInvoices": "Go to Invoices →",
-  "asstChat.invoiceFlow.needCustomer": "Pick a client or type a name.",
   "asstChat.invoiceFlow.noAmount": "Set the amount first.",
   "asstChat.invoiceFlow.noContact": "This client has no email or phone on file — copy the link instead.",
   "asstChat.invoiceFlow.readySub": "It's saved under Invoices. Send it now or share the link yourself.",

@@ -778,11 +778,11 @@ export default function AsstChat({
   const swapInvoiceIdRef = useRef<string | null>(null);
   const [swapLinkCopied, setSwapLinkCopied] = useState(false);
   /** "Job done, need to invoice." starter (roadmap p.3): marks the pre-quote
-   *  details→price capture as invoice-bound, then collects the customer
-   *  through the standard wizard CustomerStepPanel and creates a standalone
-   *  invoice. */
+   *  details→price capture as invoice-bound. REQ-024: from the price screen
+   *  it transitions with docKind=invoice and runs the SAME wizard as a quote
+   *  (customer → completion date → payment terms → warranty) to the shared
+   *  preview in invoice mode. */
   const [invoiceFlow, setInvoiceFlow] = useState(false);
-  const [invoiceCustomerOpen, setInvoiceCustomerOpen] = useState(false);
   /** UX-31: the facturar flow REVIEWS before it saves — customer resolved,
    *  waiting on the contractor to confirm amount + an editable due date.
    *  Nothing is persisted until they confirm. */
@@ -1049,7 +1049,6 @@ export default function AsstChat({
     suggestPricing: boolean;
     writeMyselfOpen: boolean;
     flowChip: ChipKey | null;
-    invoiceCustomerOpen: boolean;
     invoiceReview: typeof invoiceReview;
     invoiceResult: typeof invoiceResult;
     previewCtaId: string | null;
@@ -1101,7 +1100,6 @@ export default function AsstChat({
       suggestPricing,
       writeMyselfOpen,
       flowChip,
-      invoiceCustomerOpen,
       invoiceReview,
       invoiceResult,
       previewCtaId,
@@ -1128,7 +1126,6 @@ export default function AsstChat({
     setSuggestPricing(snap.suggestPricing);
     setWriteMyselfOpen(snap.writeMyselfOpen);
     setFlowChip(snap.flowChip);
-    setInvoiceCustomerOpen(snap.invoiceCustomerOpen);
     setInvoiceReview(snap.invoiceReview);
     setInvoiceResult(snap.invoiceResult);
     setPreviewCtaId(snap.previewCtaId);
@@ -1150,7 +1147,7 @@ export default function AsstChat({
     // Invariant: a snapshot must be a VISIBLE state.
     const noPanel = !snap.previewCtaId && !snap.jobOptionsOpen &&
       !snap.priceCaptureOpen && !snap.awaitingJobDetails &&
-      !snap.invoiceCustomerOpen && !snap.invoiceReview && !snap.invoiceResult;
+      !snap.invoiceReview && !snap.invoiceResult;
     // With the wizard complete, "no preview and no panel" renders nothing
     // (the send CTA is suppressed once closed) — that is not a state, it is
     // the dead end. Treat it as the last term step: rewind one question.
@@ -3397,100 +3394,6 @@ export default function AsstChat({
     taRef.current?.focus();
   }
 
-  /** Open the invoice flow's customer step (the standard wizard
-   *  CustomerStepPanel — it loads the client list itself). */
-  function openInvoiceCustomerStep() {
-    pushHistory();
-    setPriceCaptureOpen(false);
-    setInvoiceCustomerOpen(true);
-  }
-
-  /**
-   * Final step of the "Job done, need to invoice." flow — fired by the
-   * wizard CustomerStepPanel's pick/create. Resolves the customer (creating
-   * the client when needed), then mints a standalone invoice for the
-   * captured amount, due on receipt. Lands on a success card with the
-   * public /i/:id link + send actions.
-   */
-  async function createInvoiceFromFlow(
-    optionId: "use_active" | "pick_existing" | "create_new",
-    body?: {
-      customer?: {
-        id?: string;
-        create?: {
-          name: string;
-          email?: string;
-          phoneNumber?: string;
-          isBusiness?: boolean;
-          businessName?: string;
-        };
-      };
-    },
-  ) {
-    if (sending) return;
-    const cents = pendingPriceCents ?? 0;
-    if (cents <= 0) {
-      setError(tFor(lang, "asstChat.invoiceFlow.noAmount"));
-      return;
-    }
-    setError(undefined);
-    setSending(true);
-    try {
-      let customerId: string | undefined;
-      let custEmail: string | undefined;
-      let custPhone: string | undefined;
-      if (optionId === "create_new" && body?.customer?.create) {
-        const c = body.customer.create;
-        const created = await clientsClient.create({
-          name: c.name,
-          ...(c.phoneNumber ? { phoneNumber: c.phoneNumber } : {}),
-          ...(c.email ? { email: c.email } : {}),
-          ...(c.businessName ? { businessName: c.businessName } : {}),
-        });
-        customerId = created.id;
-        custEmail = created.email;
-        custPhone = created.phoneNumber;
-      } else if (optionId === "pick_existing" && body?.customer?.id) {
-        customerId = body.customer.id;
-        const picked = await clientsClient.list().then((cs) =>
-          cs.find((c) => c.id === customerId)
-        ).catch(() => undefined);
-        custEmail = picked?.email;
-        custPhone = picked?.phoneNumber;
-      } else {
-        setError(tFor(lang, "asstChat.invoiceFlow.needCustomer"));
-        return;
-      }
-      // UX-31: don't mint anything yet — land on a review step where the
-      // due date is visible and editable (defaulting to the same +30-day
-      // window the /invoices modal uses), and only save on confirm. The old
-      // path silently persisted an invoice due the day it was created.
-      const customerName = optionId === "create_new"
-        ? body?.customer?.create?.name
-        : undefined;
-      setInvoiceDueDate(
-        new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(
-          0,
-          10,
-        ),
-      );
-      pushHistory();
-      setInvoiceCustomerOpen(false);
-      setInvoiceReview({
-        customerId: customerId!,
-        ...(customerName ? { customerName } : {}),
-        ...(custEmail ? { custEmail } : {}),
-        ...(custPhone ? { custPhone } : {}),
-      });
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "couldn't create the invoice",
-      );
-    } finally {
-      setSending(false);
-    }
-  }
-
   /** UX-31: the reviewed save — fires only after the contractor confirmed
    *  the amount + due date on the review step. */
   /**
@@ -4048,7 +3951,7 @@ export default function AsstChat({
   // invoice steps) takes over the scroll area even on a thread that already
   // has messages — otherwise a popped pre-wizard snapshot would show nothing.
   const panelOpen = priceCaptureOpen || awaitingJobDetails || jobOptionsOpen ||
-    invoiceCustomerOpen || invoiceReview !== null || invoiceResult !== null;
+    invoiceReview !== null || invoiceResult !== null;
 
   return (
     <>
@@ -4057,7 +3960,7 @@ export default function AsstChat({
           ? (
             <div class="chat__empty">
               {!priceCaptureOpen && !awaitingJobDetails && !jobOptionsOpen &&
-                !invoiceCustomerOpen && !invoiceReview && !invoiceResult && (
+                !invoiceReview && !invoiceResult && (
                 <>
                   <div class="chat__empty-icon">
                     <img src="/logo-monster.png" alt="" />
@@ -4995,25 +4898,6 @@ export default function AsstChat({
                         )
                         : tFor(lang, "asstChat.invoiceFlow.saveCta")}
                     </button>
-                  </div>
-                )
-                : invoiceCustomerOpen
-                ? (
-                  // Customer step of the invoice flow — the SAME wizard
-                  // customer panel used in phase 2 (existing-customers
-                  // dropdown + "+ New Customer" form), so the assistant has
-                  // one customer-pick interaction everywhere.
-                  <div class="chat__price-capture">
-                    {/* Single-back rule: the header back undoes this view
-                      (invoice customer step → price capture). */}
-                    <CustomerStepPanel
-                      ownerEmail={from?.email}
-                      ownerPhone={from?.phone}
-                      initialName={prefillCustomerName ?? undefined}
-                      sending={sending}
-                      lang={lang}
-                      onSubmit={createInvoiceFromFlow}
-                    />
                   </div>
                 )
                 : priceCaptureOpen
@@ -7597,8 +7481,7 @@ export default function AsstChat({
         // The details entry restored by back needs the composer even while
         // the thread still holds an unanswered wizard question underneath.
         const composerHidden = priceCaptureOpen || jobOptionsOpen ||
-          invoiceCustomerOpen || invoiceReview !== null ||
-          invoiceResult !== null ||
+          invoiceReview !== null || invoiceResult !== null ||
           (hasUnansweredWizard && !awaitingJobDetails) ||
           previewCtaId !== null;
         // The error strip must survive a hidden composer: wizard-step
