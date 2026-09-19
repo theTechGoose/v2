@@ -542,7 +542,7 @@ export class RenderQuotePdf {
     }
 
     // Section: Signatures
-    addPageIfNeeded(180);
+    addPageIfNeeded(200);
     y -= 8;
     y = drawSectionHeader(
       page,
@@ -555,6 +555,17 @@ export class RenderQuotePdf {
       TEAL,
     );
     y -= 16;
+    // REQ-032 (NW-28): the same "By signing below, <client> agrees to
+    // everything above." sentence the web document shows — named when a
+    // name is known (the bound customer, or whoever signed).
+    const signerName = customer?.name?.trim() || quote.acceptedName?.trim();
+    page.drawText(
+      signerName
+        ? t(lang, "renderQuotePdf.sig.bySigningNamed", { name: signerName })
+        : t(lang, "renderQuotePdf.sig.bySigning"),
+      { x: M, y: y - 4, size: 9.5, font: reg, color: INK },
+    );
+    y -= 22;
     const halfW = (W - 2 * M - 16) / 2;
     const sigBoxH = 90;
 
@@ -568,7 +579,7 @@ export class RenderQuotePdf {
       borderWidth: 0.6,
     });
     // Roadmap p.8: CONTRACTOR / {business} / cursive signature / By: {name} / Date.
-    page.drawText(t(lang, "renderQuotePdf.sig.contractor"), {
+    page.drawText(t(lang, "renderQuotePdf.sig.contractorSignature"), {
       x: M + 12,
       y: y - 14,
       size: 8,
@@ -624,7 +635,7 @@ export class RenderQuotePdf {
       borderColor: LINE,
       borderWidth: 0.6,
     });
-    page.drawText(t(lang, "renderQuotePdf.sig.clientSigned"), {
+    page.drawText(t(lang, "renderQuotePdf.sig.yourSignature"), {
       x: cx + 12,
       y: y - 16,
       size: 8,

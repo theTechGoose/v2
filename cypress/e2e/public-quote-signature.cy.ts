@@ -123,6 +123,24 @@ describe("public quote — agreement anatomy + signature ceremony", () => {
       });
   });
 
+  // REQ-032 — NW-28 (p19): "By signing below, Thing agrees to everything
+  // above." in BOTH languages from the one shared block; the EN named
+  // instruction carries the "↓" the ES view already had.
+  it("REQ-032 NW-28 the EN named instruction ends with ↓ (parity with the ES view)", () => {
+    cy.contains(/sign & type name below\s*↓/i, { timeout: 10_000 }).should("be.visible");
+  });
+
+  it("REQ-032 NW-28 the Spanish view names the client in the agreement line and uses Por: / Fecha:", () => {
+    cy.clearCookies();
+    cy.setCookie("pm_lang", "es");
+    cy.visit(`/q/${quoteId}`);
+    cy.contains(/al firmar abajo,\s*green goblin acepta todo lo anterior\./i, { timeout: 10_000 })
+      .should("be.visible");
+    cy.contains(/por:\s*hans pedersen/i).should("be.visible");
+    cy.contains(/fecha:\s*\d+ de \w+ de \d{4}/i).should("be.visible");
+    cy.contains(/firma y escribe tu nombre abajo\s*↓/i).should("be.visible");
+  });
+
   it("keeps the signature aids — Undo and Clear — from the current design (p14: 'Everything else the same')", () => {
     cy.contains(/sign & type name below/i)
       .parents("section, div")

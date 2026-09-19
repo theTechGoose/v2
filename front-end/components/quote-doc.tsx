@@ -220,7 +220,10 @@ export function QuoteDoc(
   const signed = view.mode === "accepted";
   const declined = view.mode === "declined";
   const total = quote.estimatedTotal ?? sumLineTotals(quote.lineItems);
-  const customerName = quote.customer?.name?.trim();
+  // REQ-032 (NW-28): the signer's typed name is a name too — the named
+  // sentence must not fall back to "you agree" once someone has signed.
+  const customerName = quote.customer?.name?.trim() ||
+    quote.acceptedName?.trim() || undefined;
   const contractor = quote.contractor;
   const lang: Lang = langOverride ??
     (contractor?.commsLanguage === "es" ? "es" : "en");
@@ -247,29 +250,24 @@ export function QuoteDoc(
 
   // Signature-block copy (deck p14) — shared with the backend renderers via
   // the pure module so the web page, the PDF, and the email never drift.
-  // The module speaks English; the ES page mirrors it through i18n.
+  // REQ-032 (NW-28): the module speaks both languages — no EN-only fork.
   const sig = customerName
     ? buildSignatureBlock({
       clientName: customerName,
       contractorName: contractorName ?? businessLabel,
       businessName: contractor?.businessName,
       signedDateISO: effective ?? new Date().toISOString(),
+      lang,
     })
     : undefined;
-  const agreementLine = lang === "en" && sig
-    ? sig.agreementLine
-    : t.bySigning(customerName);
+  const agreementLine = sig ? sig.agreementLine : t.bySigning(undefined);
   const contractorByLine = contractorName
-    ? (lang === "en" && sig
-      ? sig.contractor.byLine
-      : `${t.by} ${contractorName}`)
+    ? (sig ? sig.contractor.byLine : `${t.by} ${contractorName}`)
     : undefined;
-  const contractorDateLine = lang === "en" && sig
+  const contractorDateLine = sig
     ? sig.contractor.dateLine
     : `${t.date} ${effective ? fmtDate(effective, lang) : t.today}`;
-  const customerInstruction = lang === "en" && sig
-    ? sig.customer.instruction
-    : t.signTypeBelow;
+  const customerInstruction = sig ? sig.customer.instruction : t.signTypeBelow;
 
   // Sequential section numbers. Sections are conditionally rendered, so
   // hardcoding 01/02/03 leaves gaps (01,03,…) when one is absent — which
