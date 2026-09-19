@@ -112,3 +112,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-31 (PDF p28), 2026-09-18
 **Requirement (client's words):** "Upcoming — needs a 'send it later' button with a date picker (if there is no start date, how do they know when to send the invoice?). Or a reminder text and email to the Dragon to approve that the job is done and send the final invoice." — a new invoice can be given a "send on" date (it lands in Upcoming), the date can be changed from the card, and on/after that date the contractor is nudged (a notification, once per day) to approve the job is done and send it.
 **Tests:** unit `n/a — page wiring + one event mapping` · integration `jest/integration/invoice-schedule.int.test.ts` · e2e `cypress/e2e/invoice-schedule.cy.ts`
+
+## REQ-023 — 4.1 NW-14 + NW-15 Picking an accepted job skips to a seeded review
+**Source:** new-working-issues.md NW-14 (PDF p10) + NW-15 (PDF p11), 2026-09-18
+**Requirement (client's words):** "If you select the invoice of an existing client, the next page must show what they paid, what they owe, the terms, etc." / "If I select an existing quote it should already know who the customer is. (Screenshot: it asks 'What's the price?' again.)" — picking an accepted job in "Job done, need to invoice" never asks for the price or the customer again: it lands on a review seeded from the quote (job, customer, line items, terms, billed so far, paid so far, an editable amount) and the saved invoice is linked to the quote.
+**Tests:** unit `jest/unit/invoice-from-quote.test.ts` ("REQ-023 …") · integration `jest/integration/invoice-parity.int.test.ts` ("REQ-023 …", derive-from-quote pin) · e2e `cypress/e2e/ux-invoice-review.cy.ts` ("REQ-023 …")

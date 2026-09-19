@@ -221,3 +221,65 @@ describe("UX-23: empty-state 'Exportar CSV' is not a near-invisible ghost", () =
 // Module scope: keeps top-level declarations out of the shared global
 // script scope the spec files otherwise compile into.
 export {};
+
+// ===========================================================================
+// REQ-023 — NW-14 / NW-15 (p10, p11): "If you select the invoice of an
+// existing client, the next page must show what they paid, what they owe,
+// the terms, etc." / "If I select an existing quote it should already know
+// who the customer is." Picking an accepted job must skip the price and
+// customer questions and land on a review seeded from the quote; the saved
+// invoice links the quote.
+// ===========================================================================
+describe("REQ-023 NW-14/15 invoice from an accepted quote", () => {
+  const PHONE = "+15125556513";
+  const JOB = "Patio de adoquines";
+
+  beforeEach(() => loginEsFresh(PHONE));
+
+  it("REQ-023 the accepted-job chip skips price + customer and lands on a seeded review; the saved invoice links the quote", () => {
+    cy.apiCreateCustomer({
+      name: "María Nguyen",
+      email: "maria.req023@blackhole.postmarkapp.com",
+      phoneNumber: "+15125556514",
+    }).then((customerId: string) => {
+      cy.apiCreateQuote({
+        customerId,
+        summary: JOB,
+        jobName: JOB,
+        description: "Nivelar, colocar adoquines y sellar",
+        lineItems: [{ description: "Adoquines", quantity: 1, unit: "job", price: 120000 }],
+        estimatedTotal: 120000,
+        terms: [{ stepId: "payment_terms", label: "Términos de pago", value: "50 / 50" }],
+      }).then((quoteId: string) => {
+        cy.apiAcceptQuote(quoteId, { signature: "María Nguyen", name: "María Nguyen" });
+        cy.wrap(quoteId).as("quoteId");
+      });
+    });
+
+    cy.visit("/assistant");
+    cy.contains("button.chat__empty-prompt", CHIP_INVOICE_DONE).should("be.visible").click();
+    cy.get(".chat__accepted-job", { timeout: 15_000 }).first().click();
+
+    // Never asks for the price or the customer again.
+    cy.contains("¿Cuál es el precio?").should("not.exist");
+    cy.get(".cust-create, .cust-pick").should("not.exist");
+
+    // The review already knows the job, the customer, the total, and the money so far.
+    cy.get("[data-cy=invoice-quote-summary]", { timeout: 15_000 })
+      .should("be.visible")
+      .and("contain.text", JOB)
+      .and("contain.text", "María Nguyen")
+      .and("contain.text", "1,200");
+    cy.get("[data-cy=invoice-billed-so-far]").should("exist");
+    cy.get("[data-cy=invoice-paid-so-far]").should("exist");
+
+    cy.get("[data-cy=invoice-flow-save]").click();
+    cy.get("@quoteId").then((quoteId) => {
+      cy.request("/api/invoices").its("body").should((rows: Array<{ quoteId?: string; createdAt?: string; lineItems?: unknown[] }>) => {
+        const newest = [...rows].sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")))[0];
+        expect(newest.quoteId, "invoice linked to the accepted quote").to.eq(String(quoteId));
+        expect(newest.lineItems?.length ?? 0, "line items carried over").to.be.greaterThan(0);
+      });
+    });
+  });
+});

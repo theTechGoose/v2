@@ -86,3 +86,24 @@ describe("buildInvoiceFromQuote", () => {
     expect(inv.signedQuoteUrl).toBeUndefined();
   });
 });
+
+describe("REQ-023 NW-14/15 buildInvoiceFromQuote output is a ready POST /invoices body", () => {
+  // p11: "If I select an existing quote it should already know who the
+  // customer is." The derived invoice must carry the quote's customerId so
+  // the assistant never asks for the customer again.
+  it("REQ-023 emits quoteId, customerId and lineItems", () => {
+    const out = buildInvoiceFromQuote({
+      id: "q-1",
+      status: "accepted",
+      acceptedAt: "2026-09-01T00:00:00Z",
+      jobName: "Deck Staining",
+      customerId: "c-9",
+      lineItems: [{ description: "Deck", quantity: 1, unit: "job", price: 45000 }],
+      estimatedTotal: 45000,
+    } as Parameters<typeof buildInvoiceFromQuote>[0]);
+    expect(out.quoteId).toBe("q-1");
+    expect(out.customerId).toBe("c-9");
+    expect(out.lineItems).toHaveLength(1);
+    expect(out.jobName).toBe("Deck Staining");
+  });
+});

@@ -14,7 +14,8 @@ import {
   type Quote as AsstQuote,
 } from "../clients/assistant.ts";
 import { filesClient } from "../clients/files.ts";
-import { quotesClient } from "../clients/quotes.ts";
+import { type QuoteCard, quotesClient } from "../clients/quotes.ts";
+import { billedTotalCents } from "../../shared/quote-flow/milestone-reconcile.ts";
 import { clientsClient } from "../clients/clients.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
@@ -759,12 +760,25 @@ export default function AsstChat({
       customerName?: string;
       custEmail?: string;
       custPhone?: string;
+      /** REQ-023 (NW-14/15): set when the invoice is derived from an
+       *  accepted quote — the review is seeded, never asked. */
+      quoteId?: string;
+      jobName?: string;
+      description?: string;
+      lineItems?: Array<{ description: string; quantity?: number; unit?: string; price?: number }>;
+      terms?: Array<{ stepId: string; label: string; value: string }>;
+      agreementTotalCents?: number;
+      billedCents?: number;
+      paidCents?: number;
     } | null
   >(null);
   const [invoiceDueDate, setInvoiceDueDate] = useState<string>("");
   /** UX-32: the just-accepted job(s) offered as one-tap facturar chips. */
   const [acceptedJobChips, setAcceptedJobChips] = useState<
     Array<{
+      /** REQ-023: the quote id + customer travel with the chip. */
+      id: string;
+      customerId?: string;
       jobName: string;
       customerName?: string | null;
       totalCents: number;
@@ -3305,6 +3319,7 @@ export default function AsstChat({
     void api.get<
       Array<{
         id?: string;
+        customerId?: string | null;
         jobName?: string | null;
         summary?: string | null;
         customerName?: string | null;
@@ -3321,8 +3336,11 @@ export default function AsstChat({
           c.stage === "won" ||
           c.status === "accepted" || Boolean(c.acceptedAt)
         )
+        .filter((c) => typeof c.id === "string" && c.id.length > 0)
         .slice(0, 3)
         .map((c) => ({
+          id: c.id as string,
+          ...(c.customerId ? { customerId: c.customerId } : {}),
           jobName: (c.jobName ?? c.summary ?? "").trim(),
           customerName: c.customerName ?? null,
           totalCents: c.estimatedTotal ?? 0,
@@ -3429,6 +3447,81 @@ export default function AsstChat({
 
   /** UX-31: the reviewed save — fires only after the contractor confirmed
    *  the amount + due date on the review step. */
+  /**
+   * REQ-023 (NW-14 / NW-15): picking an accepted job never asks for the
+   * price or the customer again. Seed the review straight from the quote —
+   * customer, line items, terms, agreement total — plus what has already
+   * been billed and paid against it, with THIS invoice's amount editable
+   * (default: the unbilled remainder).
+   */
+  async function openInvoiceFromAcceptedQuote(j: {
+    id: string;
+    customerId?: string;
+    jobName: string;
+    customerName?: string | null;
+    totalCents: number;
+  }) {
+    if (sending) return;
+    pushHistory();
+    setError(undefined);
+    setSending(true);
+    try {
+      const q = await quotesClient.get(j.id) as QuoteCard & {
+        terms?: Array<{ stepId: string; label: string; value: string }>;
+      };
+      const customerId = q.customerId ?? j.customerId;
+      let customerName = q.customerName ?? j.customerName ?? undefined;
+      let custEmail: string | undefined;
+      let custPhone: string | undefined;
+      if (customerId) {
+        const picked = await clientsClient.list()
+          .then((cs) => cs.find((c) => c.id === customerId))
+          .catch(() => undefined);
+        custEmail = picked?.email ?? undefined;
+        custPhone = picked?.phoneNumber ?? undefined;
+        customerName = picked?.name ?? customerName;
+      }
+      const existing = await api
+        .get<Array<{ quoteId?: string; amount?: number; status?: string }>>("/invoices")
+        .catch(() => []);
+      const siblings = (Array.isArray(existing) ? existing : [])
+        .filter((i) => i.quoteId === q.id);
+      const billed = billedTotalCents(siblings);
+      const paid = siblings
+        .filter((i) => i.status === "paid")
+        .reduce((sum, i) => sum + Math.round(i.amount ?? 0), 0);
+      const agreementTotal = q.estimatedTotal ?? j.totalCents;
+      const remaining = Math.max(agreementTotal - billed, 0);
+      const jobName = q.jobName ?? j.jobName;
+      setSubmittedJobDetails(jobName);
+      setPendingJobDetailsRaw(q.description ?? jobName);
+      setAwaitingJobDetails(false);
+      setPriceCaptureOpen(false);
+      setPendingPriceCents(remaining > 0 ? remaining : agreementTotal);
+      setInvoiceDueDate(
+        new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10),
+      );
+      setInvoiceReview({
+        customerId: customerId ?? "",
+        ...(customerName ? { customerName } : {}),
+        ...(custEmail ? { custEmail } : {}),
+        ...(custPhone ? { custPhone } : {}),
+        quoteId: q.id,
+        jobName,
+        ...(q.description ? { description: q.description } : {}),
+        ...(q.lineItems ? { lineItems: q.lineItems } : {}),
+        ...(q.terms ? { terms: q.terms } : {}),
+        agreementTotalCents: agreementTotal,
+        billedCents: billed,
+        paidCents: paid,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "couldn't load the quote");
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function saveInvoiceFromReview() {
     if (sending || !invoiceReview) return;
     const cents = pendingPriceCents ?? 0;
@@ -3446,14 +3539,34 @@ export default function AsstChat({
         ? summarizeJobName(raw.split("\n")[0] ?? raw, lang)
         : "") || tFor(lang, "asstChat.newJob");
       const today = new Date().toISOString().slice(0, 10);
+      // REQ-023: an invoice derived from an accepted quote carries the link
+      // (quoteId) plus the quote's line items and job details, so /i/:id
+      // renders the terms and the signed-agreement link.
+      const fromQuote = invoiceReview.quoteId
+        ? {
+          quoteId: invoiceReview.quoteId,
+          ...(invoiceReview.lineItems && invoiceReview.lineItems.length > 0
+            ? { lineItems: invoiceReview.lineItems }
+            : {}),
+        }
+        : {};
       const inv = await api.post<{ id?: string }>("/invoices", {
-        customerId: invoiceReview.customerId,
+        ...(invoiceReview.customerId
+          ? { customerId: invoiceReview.customerId }
+          : {}),
+        ...fromQuote,
         amount: cents,
         ...(invoiceDueDate ? { dueDate: invoiceDueDate } : {}),
         issuedDate: today,
+        // The invoice send endpoints do not stamp invoice status (unlike the
+        // quote send path), so the flow marks it sent up front as before.
         status: "sent",
-        jobName,
-        ...(raw ? { description: raw } : {}),
+        jobName: invoiceReview.jobName ?? jobName,
+        ...(invoiceReview.description
+          ? { description: invoiceReview.description }
+          : raw
+          ? { description: raw }
+          : {}),
       });
       if (!inv?.id) throw new Error("failed to create invoice");
       setInvoiceReview(null);
@@ -3495,6 +3608,11 @@ export default function AsstChat({
         const today = new Date().toISOString().slice(0, 10);
         const inv = await api.post<{ id?: string }>("/invoices", {
           ...(customer?.id ? { customerId: customer.id } : {}),
+          // REQ-023: the swapped invoice is derived from the reviewed quote.
+          ...(quote?.id ? { quoteId: quote.id } : {}),
+          ...(quote?.lineItems && quote.lineItems.length > 0
+            ? { lineItems: quote.lineItems }
+            : {}),
           amount: totalCents,
           dueDate: today,
           issuedDate: today,
@@ -4397,17 +4515,7 @@ export default function AsstChat({
                             type="button"
                             key={`${j.jobName}-${i}`}
                             class="chat__empty-prompt chat__accepted-job"
-                            onClick={() => {
-                              pushHistory();
-                              setPendingJobDetailsRaw(j.jobName);
-                              setSubmittedJobDetails(j.jobName);
-                              setAwaitingJobDetails(false);
-                              if (j.totalCents > 0) {
-                                setPriceCents(j.totalCents);
-                              }
-                              setPrefillCustomerName(j.customerName ?? null);
-                              setPriceCaptureOpen(true);
-                            }}
+                            onClick={() => void openInvoiceFromAcceptedQuote(j)}
                           >
                             {acceptedJobChipLabel(j, lang)}
                           </button>
@@ -4705,17 +4813,98 @@ export default function AsstChat({
                     <h3 class="chat__price-title">
                       {tFor(lang, "asstChat.invoiceFlow.reviewTitle")}
                     </h3>
-                    <div style="margin:10px 0;font-size:14px;line-height:1.6">
-                      <div>
-                        <strong>
-                          ${((pendingPriceCents ?? 0) / 100).toLocaleString(
-                            "en-US",
-                          )}
-                        </strong>
-                        {invoiceReview.customerName
-                          ? ` — ${invoiceReview.customerName}`
-                          : ""}
+                    {/* REQ-023 (NW-14/15): derived from an accepted quote —
+                        the review already knows the job, the customer, the
+                        terms, and the money so far. */}
+                    {invoiceReview.quoteId && (
+                      <div
+                        data-cy="invoice-quote-summary"
+                        style="margin:10px 0 0;padding:12px 14px;border:1px solid var(--border,#d8dcd5);border-radius:12px;background:rgba(0,0,0,0.02);font-size:13.5px;line-height:1.6"
+                      >
+                        <div style="font-weight:800;font-size:15px;color:var(--fg,#144852)">
+                          {invoiceReview.jobName}
+                        </div>
+                        {invoiceReview.customerName && (
+                          <div>
+                            {tFor(lang, "asstChat.preview.for")}: {invoiceReview.customerName}
+                          </div>
+                        )}
+                        {(invoiceReview.lineItems ?? []).length > 0 && (
+                          <ul style="margin:6px 0 0;padding-left:18px">
+                            {(invoiceReview.lineItems ?? []).map((li, i) => (
+                              <li key={i}>
+                                {li.description}
+                                {" — $"}
+                                {(((li.price ?? 0) * (li.quantity ?? 1)) / 100)
+                                  .toLocaleString("en-US")}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {(invoiceReview.terms ?? []).filter((t) => t.stepId !== "customer").length > 0 && (
+                          <div style="margin-top:6px">
+                            <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-muted,#6b7560)">
+                              {tFor(lang, "asstChat.invoiceFlow.terms")}
+                            </div>
+                            {(invoiceReview.terms ?? [])
+                              .filter((t) => t.stepId !== "customer")
+                              .map((t) => (
+                                <div key={t.stepId}>
+                                  {t.label}: {localizeTermValue(t.value, lang)}
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                        <div style="margin-top:6px;border-top:1px solid var(--border,#d8dcd5);padding-top:6px">
+                          <div>
+                            {tFor(lang, "asstChat.invoiceFlow.agreementTotal")}:{" "}
+                            <strong>
+                              ${((invoiceReview.agreementTotalCents ?? 0) / 100).toLocaleString("en-US")}
+                            </strong>
+                          </div>
+                          <div data-cy="invoice-billed-so-far">
+                            {tFor(lang, "asstChat.invoiceFlow.billedSoFar")}:{" "}
+                            ${((invoiceReview.billedCents ?? 0) / 100).toLocaleString("en-US")}
+                          </div>
+                          <div data-cy="invoice-paid-so-far">
+                            {tFor(lang, "asstChat.invoiceFlow.paidSoFar")}:{" "}
+                            ${((invoiceReview.paidCents ?? 0) / 100).toLocaleString("en-US")}
+                          </div>
+                        </div>
                       </div>
+                    )}
+                    <div style="margin:10px 0;font-size:14px;line-height:1.6">
+                      {invoiceReview.quoteId
+                        ? (
+                          <label style="display:block;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
+                            {tFor(lang, "asstChat.invoiceFlow.thisInvoice")}
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              inputMode="decimal"
+                              data-cy="invoice-flow-amount"
+                              value={String((pendingPriceCents ?? 0) / 100)}
+                              onInput={(e) => {
+                                const n = Number((e.target as HTMLInputElement).value);
+                                setPendingPriceCents(Number.isFinite(n) ? Math.round(n * 100) : 0);
+                              }}
+                              style="display:block;margin-top:6px;padding:10px 12px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:16px;font-weight:800;width:100%;box-sizing:border-box"
+                            />
+                          </label>
+                        )
+                        : (
+                          <div>
+                            <strong>
+                              ${((pendingPriceCents ?? 0) / 100).toLocaleString(
+                                "en-US",
+                              )}
+                            </strong>
+                            {invoiceReview.customerName
+                              ? ` — ${invoiceReview.customerName}`
+                              : ""}
+                          </div>
+                        )}
                       <label style="display:block;margin-top:10px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
                         {tFor(lang, "asstChat.invoiceFlow.dueDateLabel")}
                         <input
