@@ -121,7 +121,7 @@ export class HandleWizardAnswer {
     let boundCustomerId = conv.customerId;
     let boundCustomerName: string | undefined;
     if (input.stepId === "customer") {
-      const handled = await this.handleCustomerStep(conv.id, input);
+      const handled = await this.handleCustomerStep(conv.id, input, lang);
       boundCustomerId = handled.customerId ?? boundCustomerId;
       boundCustomerName = handled.customerName;
       customerCustomValue = handled.customValue ?? customerCustomValue;
@@ -237,6 +237,7 @@ export class HandleWizardAnswer {
   private async handleCustomerStep(
     _conversationId: string,
     input: WizardAnswerInput,
+    lang: "en" | "es",
   ): Promise<
     { customerId?: string; customerName?: string; customValue?: string }
   > {
@@ -271,9 +272,9 @@ export class HandleWizardAnswer {
           (phone && creator?.phoneNumber &&
             normPhone(phone) === normPhone(creator.phoneNumber))
         ) {
-          throw new Error(
-            "customer contact must not match the contractor's own email or phone number",
-          );
+          // REQ-029 (NW-22): the contractor reads this — dictionary copy in
+          // their language, never a raw developer string.
+          throw new Error(t(lang, "termsWizard.customer.ownContact"));
         }
       }
       const created = await this.customers.create(input.userId, {

@@ -8014,11 +8014,13 @@ function CustomerStepPanel(props: {
       normEmail(trimmedEmail) === normEmail(ownerEmail);
     const phoneIsOwn = !!ownerPhone && trimmedPhone.length > 0 &&
       normPhone(trimmedPhone) === normPhone(ownerPhone);
+    // REQ-029 (NW-22): the missing-contact reason is visible from the start
+    // — a silently disabled Next read as "it did not save".
     const contactErr = emailIsOwn
       ? tFor(lang, "asstChat.customerStep.ownEmail")
       : phoneIsOwn
       ? tFor(lang, "asstChat.customerStep.ownPhone")
-      : !hasContact && trimmedName.length > 0
+      : !hasContact
       ? tFor(lang, "asstChat.customerStep.needContact")
       : undefined;
     const submitDisabled = sending || trimmedName.length === 0 ||
@@ -8073,7 +8075,11 @@ function CustomerStepPanel(props: {
             />
           </div>
           {localErr ?? contactErr
-            ? <div class="cust-pick__err">{localErr ?? contactErr}</div>
+            ? (
+              <div class="cust-pick__err" data-cy="cust-contact-hint">
+                {localErr ?? contactErr}
+              </div>
+            )
             : null}
           <div class="cust-create__actions">
             <button
@@ -8226,6 +8232,29 @@ function CustomerStepPanel(props: {
                       ? (
                         <div class="cust-pick__empty">
                           {tFor(lang, "common.noMatches")}
+                          {/* REQ-029 (NW-22 / NW-35): the search box is a
+                              filter — a no-match must not be a dead end.
+                              Offer to create exactly what was typed. */}
+                          {search.trim().length > 0
+                            ? (
+                              <button
+                                type="button"
+                                class="cust-pick__row cust-pick__row--create"
+                                data-cy="cust-create-from-search"
+                                disabled={sending}
+                                onClick={() => {
+                                  setCreateName(search.trim());
+                                  setSearch("");
+                                  setPickerOpen(false);
+                                  openCreate();
+                                }}
+                              >
+                                {tFor(lang, "asstChat.customerStep.createNamed", {
+                                  name: search.trim(),
+                                })}
+                              </button>
+                            )
+                            : null}
                         </div>
                       )
                       : (

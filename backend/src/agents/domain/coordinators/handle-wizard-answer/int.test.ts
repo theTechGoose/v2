@@ -1,4 +1,5 @@
 import { assert, assertEquals, assertRejects } from "#std/assert";
+import { t } from "@core/i18n/mod.ts";
 import { HandleWizardAnswer } from "./mod.ts";
 import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
@@ -144,11 +145,14 @@ Deno.test("handle-wizard-answer integration: custom option records customValue i
 /** Seed a real contractor User (so `users.get(userId)` resolves) and a terms
  *  conversation owned by them. */
 async function setupTermsForRealUser(
-  contact: { phoneNumber: string; email?: string },
+  contact: { phoneNumber: string; email?: string; language?: "en" | "es" },
 ) {
   const ctx = fresh();
   const user = await ctx.users.create({ phoneNumber: contact.phoneNumber });
   if (contact.email) await ctx.users.update(user.id, { email: contact.email });
+  if (contact.language) {
+    await ctx.users.update(user.id, { language: contact.language });
+  }
   const conv = await ctx.conversations.create({ userId: user.id });
   await ctx.transitionFlow.run({ userId: user.id, conversationId: conv.id });
   return { ...ctx, user, conv };
@@ -174,7 +178,7 @@ Deno.test("handle-wizard-answer #1: rejects create_new whose email is the contra
         },
       }),
     Error,
-    "contractor's own",
+    t("en", "termsWizard.customer.ownContact"),
   );
   await resetKv();
 });
@@ -198,7 +202,7 @@ Deno.test("handle-wizard-answer #1: rejects create_new whose phone is the contra
         },
       }),
     Error,
-    "contractor's own",
+    t("en", "termsWizard.customer.ownContact"),
   );
   await resetKv();
 });
@@ -510,5 +514,56 @@ Deno.test("REQ-024 handle-wizard-answer integration: the invoice wizard walks cu
   assert(terms.some((t) => t.stepId === "completion_date"), "completion_date persisted as a term");
   assert(terms.some((t) => t.stepId === "payment_terms" && t.value === "Due Now"));
   assert(!terms.some((t) => t.stepId === "wraps"));
+  await resetKv();
+});
+
+// REQ-029 (NW-22 / NW-35): the own-contact rejection is the contractor's
+// dictionary copy, not a raw English developer string.
+Deno.test("REQ-029 NW-22 own-contact create_new rejects with the Spanish dictionary copy for an es contractor", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, conv } = await setupTermsForRealUser({
+    phoneNumber: "+15403331334",
+    language: "es",
+  });
+  await assertRejects(
+    () =>
+      flow.run({
+        userId: user.id,
+        conversationId: conv.id,
+        stepId: "customer",
+        optionId: "create_new",
+        customer: {
+          create: { name: "Jane Doe", phoneNumber: "(540) 333-1334" },
+        },
+      }),
+    Error,
+    t("es", "termsWizard.customer.ownContact"),
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-029 NW-22 own-contact create_new rejects with the English dictionary copy for an en contractor", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, conv } = await setupTermsForRealUser({
+    phoneNumber: "+15403331334",
+    email: "hans@example.com",
+    language: "en",
+  });
+  await assertRejects(
+    () =>
+      flow.run({
+        userId: user.id,
+        conversationId: conv.id,
+        stepId: "customer",
+        optionId: "create_new",
+        customer: {
+          create: { name: "Jane Doe", email: "hans@example.com" },
+        },
+      }),
+    Error,
+    t("en", "termsWizard.customer.ownContact"),
+  );
   await resetKv();
 });

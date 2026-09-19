@@ -148,3 +148,20 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Tests:** unit `jest/unit/i18n-dictionary-consistency.test.ts` ("REQ-028 …") · integration `n/a — prompt text; the model's behaviour is checked by a live probe recorded below` · e2e `n/a`
 **Live probe (gpt-4o-mini, dev server, "I need to replace a toile for $500"):** before JSON mode the options call fell to the (honest) fallback 4 of 5 times — the model's reply was syntactically broken JSON (a missing brace between the es/en byLang blocks, captured by the new `[generate-job-options] reply not usable` warning). With `responseFormat: "json"` (OpenAI JSON mode, no chat tools on the one-shot calls) 6 of 6 probes returned three rewritten options ("Reemplazo de Inodoro" / "Instalación de Inodoro" / "Cambio de Inodoro", bullets like "Retirar inodoro existente", "Instalar inodoro nuevo", "Conectar fontanería"); polish → "Toilet Replacement", degraded:false.
 **Tests (addendum):** integration (Deno) `generate-job-options/int.test.ts` + `polish-job-details/int.test.ts` ("REQ-026 … (b)"/"… passes through": the stub sees `responseFormat === "json"`) · `backend/src/agents/domain/data/openai/smk.test.ts` unchanged and green.
+
+## Decisions pending (plan Phase 6, folders 28–36) — not started, by the plan's own rule
+_2026-09-19 — "Do not start these tasks until the answer is back." Each is one client answer away; the work each answer unlocks is scoped in `plan/28…36/context.md`._
+- **28 NW-02** whose contact goes in the customer-doc footer: house (`hello@paperworkmonster.com` / 866-767-8399, p24) or the contractor's (p61, shipped).
+- **29 NW-03/NW-38** remove the "Just give me a quick quote" chip (byte-identical to "I know my price"; p35 says REMOVE) — recommended: remove.
+- **30 NW-04/NW-07** on the job-details step keep the composer or the "Write it myself" box — recommended: composer (Option A).
+- **31 NW-37** pricing page: the shipped 2026-08-31 recap (Free $0 / $99 / $199 / custom) or p34 ($15 Starter, no Free).
+- **32 NW-44** badge wording "Accepted" (ships) vs "Approved" (p41).
+- **33 NW-57/p57** "01 The deal in plain English": rename to "Quick Summary" or delete the section.
+- **34 NW-55** a real per-contractor invoice number sequence, or keep the derived `#{id.slice(0,8)}`.
+- **35** missing artefacts: the "Yam" screenshot/sentence (NW-21), the new logo (NW-53c), the empty "Quote and Agreement change" bullet (NW-53g), the "Contract for new job" screenshot (NW-57), "Quote & Agreement - Final.docx" (NW-46).
+- **36** scope calls: neutral-LatAm Spanish as the one dialect (NW-51c), "the quote is the contract" (NW-56), competitor feature list + import (NW-58).
+
+## REQ-029 — 7.1 NW-22 + NW-35 Create a customer straight from the assistant dropdown; never a silently disabled Next
+**Source:** new-working-issues.md NW-22 (PDF p15) + NW-35 (PDF p30), 2026-09-18
+**Requirement (client's words):** "I created a new customer ('Incredible Hulk', business 'Green Machine') and it did not save." / "You can create customers from the Customers page but not from My Assistant, yet the new-customer input shows up in the My Assistant dropdown." — typing a name with no match in the assistant's customer dropdown offers `Create "<name>"`, which opens the create form with the name prefilled and saves to the same Customers list; when the form has no phone or email the reason is shown (not just a disabled Next); the server's own-contact rejection is the contractor's dictionary copy in their language.
+**Tests:** unit `n/a — panel wiring` · integration (Deno) `backend/src/agents/domain/coordinators/handle-wizard-answer/int.test.ts` ("REQ-029 …" es + en dictionary copy) · e2e `cypress/e2e/ux-assistant-pick-customer.cy.ts` ("REQ-029 …": create from search → on /api/customers; name-only → visible hint)
