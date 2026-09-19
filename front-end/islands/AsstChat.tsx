@@ -1106,6 +1106,17 @@ export default function AsstChat({
     // means leaving the assistant — the earliest real step is the details
     // entry, which was the previous pop.
     if (snap.wizardStepIdx === null && noPanel && messages.length > 0) {
+      // NW-19 (REQ-005): the snapshot is the CHAT state (action card /
+      // "Ready" CTA) and the server sits on the wizard's first question —
+      // undo the transition into terms so the card is visible again,
+      // instead of leaving the assistant.
+      const chatSurface = messages.some((m) =>
+        m.kind === "action_card" || m.kind === "continue_cta"
+      );
+      if (chatSurface && wizardCursor(messages) === 0) {
+        void goBackWizard(-1);
+        return;
+      }
       globalThis.location.href = "/dashboard";
     }
   }
@@ -1760,6 +1771,9 @@ export default function AsstChat({
     }
     setDraft("");
     autosize();
+    // NW-19 (REQ-005): a chat turn is a forward move like any other —
+    // snapshot the state it leaves so back can return here.
+    pushHistory();
     await submitTurn(
       { role: "user", kind: "text", content: trimmed },
       () =>
@@ -2607,6 +2621,7 @@ export default function AsstChat({
     };
     if (payload.toPhase === "terms") {
       if (!convoId) return;
+      pushHistory(); // NW-19 (REQ-005): entering the wizard is a forward move.
       // Stash the kind picked on the CTA so CustomerStepPanel can skip its
       // own kind picker. Cleared when the panel consumes it.
       if (kind) setPrecommittedKind(kind);
@@ -3011,6 +3026,7 @@ export default function AsstChat({
    */
   async function lockActionCard(message: Message, payload: ActionCardPayload) {
     if (sending || !convoId || !payload.quoteId) return;
+    pushHistory(); // NW-19 (REQ-005): "Lock it in" is a forward move.
     setError(undefined);
     setSending(true);
     try {
