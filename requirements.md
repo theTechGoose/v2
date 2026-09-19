@@ -76,3 +76,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md "COMPLETED" half (PDF p76-77, p80, p83), 2026-09-18
 **Requirement (client's words):** "Warranty. No warranty / 6 months / 1 year / 2 years / Custom." · "Fixed language: 'This agreement is governed by the laws of the state where the work is performed, without regard to conflict of law rules.'" · required notices list item "Scope of Work" — and a persisted "1 year"/"2 years" warranty still localizes to Spanish on web + PDF.
 **Tests:** unit `jest/unit/i18n-dictionary-consistency.test.ts` ("REQ-015 …") + Deno `backend/src/paperwork/domain/coordinators/render-quote-pdf/term-i18n.test.ts` ("REQ-015 …") · integration `n/a — copy + localization maps` · e2e `cypress/e2e/public-quote-signature.cy.ts` (REQ-014 describe extended for REQ-015)
+
+## REQ-016 — 1.15 NW-14 side-find — Customer balance counts every unpaid invoice status
+**Source:** new-working-issues.md NW-14 side-find (PDF p10), 2026-09-18
+**Requirement (client's words):** "…the next page must show what they paid, what they owe…" — a customer's balance on /clients counts every invoice that is still owed (pending, sent, viewed, claimed), not only "pending"; paid, void, scheduled and draft invoices are not owed.
+**Tests:** unit/integration (Deno) `backend/src/analytics/domain/coordinators/build-customer-cards/int.test.ts` ("REQ-016 …") · jest/e2e `n/a — backend aggregation`
