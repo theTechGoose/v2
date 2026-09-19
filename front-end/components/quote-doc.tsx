@@ -137,7 +137,8 @@ function cstr(lang: Lang) {
     contractValue: tFor(lang, "quoteDoc.contractValue"),
     allIn: tFor(lang, "quoteDoc.allIn"),
     paymentSchedule: tFor(lang, "quoteDoc.paymentSchedule"),
-    terms: tFor(lang, "quoteDoc.terms"),
+    // NW-54 (REQ-014): the clause list is "Terms and Conditions" on web + PDF.
+    terms: tFor(lang, "quoteDoc.termsAndConditions"),
     start: tFor(lang, "quoteDoc.start"),
     startTbd: tFor(lang, "quoteDoc.startTbd"),
     estCompletion: tFor(lang, "quoteDoc.estCompletion"),

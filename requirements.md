@@ -66,3 +66,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-36 (PDF p32), 2026-09-18
 **Requirement (client's words):** "Customers tab: remove the 'Who's on your books' chart (Property mgmt / Homeowners / Small biz / HOAs / Unsorted). We do not collect this data."
 **Tests:** unit `n/a — removal of a component; dictionary parity is enforced by jest/unit/i18n-dictionary-consistency.test.ts` · integration `n/a — the backend endpoint stays (own e2e test)` · e2e `cypress/e2e/clients-page-quality.cy.ts` ("REQ-013 …")
+
+## REQ-014 — 1.13 NW-54 "Terms and Conditions" heading on web + PDF
+**Source:** new-working-issues.md NW-54 (PDF p62), 2026-09-18
+**Requirement (client's words):** "Quote sent from the link: rename 'fine print, in plain english' to 'Terms and Conditions'." — the clause list is headed "Terms and Conditions" / "Términos y Condiciones" on the public quote page and on the PDF.
+**Tests:** unit `jest/unit/i18n-dictionary-consistency.test.ts` ("REQ-014 …") · integration `n/a — copy` · e2e `cypress/e2e/public-quote-signature.cy.ts` ("REQ-014 …")

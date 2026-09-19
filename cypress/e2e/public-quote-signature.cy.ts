@@ -190,3 +190,42 @@ describe("public quote — agreement anatomy + signature ceremony", () => {
     });
   });
 });
+
+// ===========================================================================
+// REQ-014 — NW-54 (p62): rename "fine print, in plain english" to
+// "Terms and Conditions" — the web page headed the clause list "Terms".
+// ===========================================================================
+describe("REQ-014 NW-54 the public quote heads its clauses 'Terms and Conditions'", () => {
+  const PHONE = "+15125550938";
+  let quoteId = "";
+
+  beforeEach(() => {
+    cy.clearCookies();
+    cy.setCookie("pm_lang", "en");
+    cy.loginAs(PHONE);
+    cy.apiUpdateUser({ language: "en", name: "Terms Contractor" });
+    cy.apiCreateCustomer({
+      name: "Terms Customer",
+      email: "terms.customer@blackhole.postmarkapp.com",
+      phoneNumber: "+15125550939",
+    }).then((customerId) => {
+      cy.apiCreateQuote({
+        customerId,
+        summary: "Fence repair",
+        jobName: "Fence Repair",
+        lineItems: [{ description: "Fence repair", quantity: 1, unit: "job", price: 50000 }],
+        estimatedTotal: 50000,
+      }).then((id) => {
+        quoteId = id;
+        cy.clearCookies();
+        cy.setCookie("pm_lang", "en");
+        cy.visit(`/q/${quoteId}`);
+      });
+    });
+  });
+
+  it("REQ-014 NW-54 the clause section is headed 'Terms and Conditions', not 'Terms' or 'Fine print'", () => {
+    cy.contains("Terms and Conditions", { timeout: 20_000 }).should("be.visible");
+    cy.contains(/fine print/i).should("not.exist");
+  });
+});

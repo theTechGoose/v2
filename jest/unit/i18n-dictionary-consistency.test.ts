@@ -234,3 +234,15 @@ describe("REQ-010 NW-17 the 'Write it myself.' pill", () => {
     expect(es["asstChat.jobOpts.customTitle"]).toBe("Escribirlo yo mismo");
   });
 });
+
+describe("REQ-014 NW-54 the clause list is headed 'Terms and Conditions' on web + PDF", () => {
+  // p62: rename "fine print, in plain english" to "Terms and Conditions".
+  it("REQ-014 NW-54 web heading key exists in both dictionaries", () => {
+    expect(en["quoteDoc.termsAndConditions"]).toBe("Terms and Conditions");
+    expect(es["quoteDoc.termsAndConditions"]).toBe("Términos y Condiciones");
+  });
+  it("REQ-014 NW-54 the PDF section heading says the same thing", () => {
+    expect(en["renderQuotePdf.section.finePrint"]).toBe("Terms and Conditions");
+    expect(es["renderQuotePdf.section.finePrint"]).toBe("Términos y Condiciones");
+  });
+});
