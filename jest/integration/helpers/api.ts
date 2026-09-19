@@ -17,6 +17,12 @@ export class ApiSession {
     return [...this.cookies.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
   }
 
+  /** The session's Cookie header value — for fetching SSR PAGES (not /api)
+   *  as this logged-in contractor. */
+  cookieHeaderValue(): string {
+    return this.cookieHeader();
+  }
+
   private storeCookies(res: Response) {
     const any = res.headers as unknown as { getSetCookie?: () => string[] };
     const set = any.getSetCookie?.() ??

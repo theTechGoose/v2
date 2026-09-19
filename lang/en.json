@@ -307,6 +307,7 @@
   "asstChat.preview.for": "For",
   "asstChat.preview.from": "From",
   "asstChat.preview.fromNeedsName": "Add your name in Settings so this sends with your real identity",
+  "asstChat.preview.fromNeedsEmail": "Add your email in Settings so customers can reply",
   "asstChat.preview.invoiceModeNote": "Invoice mode: your customer gets a payable bill — same job details, totals, and terms, but no signature and none of the legal clauses. Flip back to Quote + Agreement any time before sending.",
   "asstChat.preview.invoiceSent": "Invoice sent 🎉 — it's tracked under Invoices.",
   "asstChat.preview.jobDetails": "Job details",

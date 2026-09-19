@@ -31,3 +31,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-19 (PDF p13) + "Make the Toilet Replacement job editable" (p56), 2026-09-18
 **Requirement (client's words):** "Job Details is not editable on the review card, so they need a back button." / "Make the Toilet Replacement job editable." — the review card's Job Details section gets an edit control that reopens the job picker; the pick updates the card.
 **Tests:** unit `n/a — component wiring; the picker itself is covered by quotes-professionalize.cy.ts` · integration `n/a — browser state` · e2e `cypress/e2e/ux-doc-preview.cy.ts` ("REQ-006 NW-19b …")
+
+## REQ-007 — 1.6 NW-06 `/assistant` passes the `from` prop
+**Source:** new-working-issues.md NW-06 (PDF p5), 2026-09-18
+**Requirement (client's words):** "Make sure the 'From' block includes email and website when the Dragon has provided them. (Screenshot shows only name and phone.)" — a conversation started at the bare `/assistant` route shows the From block (business, name, phone, email) on the review card. Website is its own task (7.10).
+**Tests:** unit `n/a — SSR prop plumbing` · integration `jest/integration/assistant-from-prop.int.test.ts` · e2e `cypress/e2e/ux-doc-preview.cy.ts` ("REQ-007 NW-06 …", live-LLM chat path)

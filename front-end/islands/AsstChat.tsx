@@ -5612,6 +5612,23 @@ export default function AsstChat({
                                     )}
                                   </a>
                                 )}
+                                {/* NW-06 (REQ-007): the client expects the
+                                    email on the From block — when Settings
+                                    has none, say so instead of silently
+                                    rendering nothing. */}
+                                {!from.email?.trim() && (
+                                  <a
+                                    href="/settings"
+                                    class="quote-review__from-warn"
+                                    data-cy="review-from-needs-email"
+                                    style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:700;color:var(--pink-700,#d94e4e);text-decoration:none"
+                                  >
+                                    ⚠ {tFor(
+                                      previewLang,
+                                      "asstChat.preview.fromNeedsEmail",
+                                    )}
+                                  </a>
+                                )}
                                 <div class="quote-review__hero-meta">
                                   {from.name && from.business
                                     ? <span>{from.name}</span>

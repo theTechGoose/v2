@@ -180,3 +180,66 @@ describe("REQ-006 NW-19b Job Details is editable on the review card", () => {
       });
   });
 });
+
+// ===========================================================================
+// REQ-007 — NW-06 (p5): "Make sure the 'From' block includes email and
+// website when the Dragon has provided them. (Screenshot shows only name and
+// phone.)" The chat path stays on the island mounted by the bare /assistant
+// route (history.replaceState), which mounted <AsstChat> without `from`, so
+// the review card dropped the whole From block.
+//
+// This walk needs the LIVE LLM (the action card comes from the model; the
+// dev server sets AGENTS_LLM_CLIENT=openai) — generous timeouts on purpose.
+// ===========================================================================
+describe("REQ-007 NW-06 a conversation started at /assistant shows the From block", () => {
+  const FROM_PHONE = "+15125556552";
+  const FROM_EMAIL = "from.block@blackhole.postmarkapp.com";
+  const FROM_CUSTOMER_PHONE = "5125556553";
+
+  beforeEach(() => {
+    cy.clearCookies();
+    cy.setCookie("pm_lang", "en");
+    cy.loginAs(FROM_PHONE);
+    cy.request({ url: "/api/me/wipe", failOnStatusCode: false });
+    cy.loginAs(FROM_PHONE);
+    cy.request("POST", "/api/me/onboarded", { skipped: true });
+    cy.apiUpdateUser({
+      language: "en",
+      name: "From Block Contractor",
+      email: FROM_EMAIL,
+    });
+    cy.setCookie("pm_lang", "en");
+  });
+
+  it("REQ-007 NW-06 chat → Lock it in → Person → wizard → review card renders From with the contractor's email", () => {
+    cy.visit("/assistant"); // the BARE route — not a thread URL
+    cy.get("textarea.composer__input", { timeout: 10_000 })
+      .should("be.visible")
+      .type("Replace a toilet for $500 for Sam Rivera");
+    cy.get("button.composer__send").click();
+    // The island stays mounted: the URL flips via replaceState, no reload.
+    cy.location("pathname", { timeout: 30_000 })
+      .should("match", /^\/assistant\/[A-Za-z0-9_-]+$/);
+    cy.contains("button", "Lock it in", { timeout: 90_000 })
+      .should("be.visible")
+      .click();
+    cy.contains("button", "Person", { timeout: 30_000 })
+      .should("be.visible")
+      .click();
+    cy.get(".cust-create input.cust-pick__search", { timeout: 20_000 })
+      .first()
+      .type("Sam Rivera");
+    cy.get(".cust-create input[type=tel]").type(FROM_CUSTOMER_PHONE);
+    cy.get(".cust-create__btn--primary").should("not.be.disabled").click();
+    pickFirstOption();
+    pickFirstOption();
+    pickFirstOption();
+    pickFirstOption();
+    cy.get(".quote-review", { timeout: 20_000 }).should("be.visible");
+
+    // Still the same island, still no reload.
+    cy.location("pathname").should("match", /^\/assistant\/[A-Za-z0-9_-]+$/);
+    cy.contains(".quote-review__hero-label", /^From$/i).should("be.visible");
+    cy.get(".quote-review__hero").first().should("contain", FROM_EMAIL);
+  });
+});

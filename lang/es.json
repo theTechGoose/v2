@@ -307,6 +307,7 @@
   "asstChat.preview.for": "Para",
   "asstChat.preview.from": "De",
   "asstChat.preview.fromNeedsName": "Agrega tu nombre en Configuración para enviar con tu identidad real",
+  "asstChat.preview.fromNeedsEmail": "Agrega tu correo en Configuración para que los clientes puedan responder",
   "asstChat.preview.invoiceModeNote": "Modo factura: tu cliente recibe una factura por cobrar — los mismos detalles del trabajo, totales y términos, pero sin firma ni cláusulas legales. Puedes volver a Cotización + Acuerdo antes de enviar.",
   "asstChat.preview.invoiceSent": "¡Factura enviada! 🎉 — la encuentras en Facturas.",
   "asstChat.preview.jobDetails": "Detalles del trabajo",
