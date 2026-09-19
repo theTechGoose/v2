@@ -4421,7 +4421,10 @@ export default function AsstChat({
                           class="chat__details-writeself"
                           onClick={openWriteMyself}
                         >
-                          ✎ {tFor(lang, "asstChat.jobOpts.customTitle")}
+                          {/* NW-17 (REQ-010): the pill is a sentence under the
+                              prompt bubble — it ends with a period. The picker
+                              tile keeps the period-less customTitle. */}
+                          ✎ {tFor(lang, "asstChat.jobOpts.customCta")}
                         </button>
                       )
                       : null}

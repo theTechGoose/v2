@@ -95,3 +95,37 @@ describe("UX-41 help-me-price version-confirm step", () => {
     cy.get("[data-cy=wizard-back]").should("not.exist");
   });
 });
+
+// ===========================================================================
+// REQ-010 — NW-17 (p26): "The chip at the bottom reads 'I know the job, help
+// me price it.Write it myself'. Needs a space after the period and a period
+// at the end of 'myself'." The pill ends with a period and sits on its own
+// line, with a visible gap under the prompt bubble.
+// ===========================================================================
+describe("REQ-010 NW-17 the 'Write it myself.' pill", () => {
+  const PHONE = "+15125556431";
+
+  beforeEach(() => {
+    loginEs(PHONE);
+    cy.visit("/assistant");
+    cy.contains("button.chat__empty-prompt", HELP_PRICE_CHIP)
+      .should("be.visible")
+      .click();
+    cy.get(".chat__details-prompt-bubble", { timeout: 10_000 }).should("be.visible");
+  });
+
+  it("REQ-010 NW-17 ends with a period and has breathing room under the bubble", () => {
+    cy.get(".chat__details-writeself").should("be.visible").invoke("text").then((raw) => {
+      const text = String(raw).replace(/\s+/g, " ").trim();
+      expect(text, "pill copy").to.match(/Escribirlo yo mismo\.$/);
+    });
+    cy.get(".chat__details-prompt-bubble").then(($bubble) => {
+      const bubble = $bubble[0].getBoundingClientRect();
+      cy.get(".chat__details-writeself").then(($pill) => {
+        const pill = $pill[0].getBoundingClientRect();
+        expect(pill.top, "pill starts below the bubble").to.be.at.least(bubble.bottom);
+        expect(pill.top - bubble.bottom, "gap under the bubble (px)").to.be.at.least(8);
+      });
+    });
+  });
+});

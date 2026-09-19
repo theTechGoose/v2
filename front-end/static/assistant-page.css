@@ -8224,6 +8224,9 @@ body {
 /* "Write it myself" trigger on the job-details step (roadmap p.5). */
 .chat__details-writeself {
   align-self: flex-start;
+  /* NW-17 (REQ-010): breathing room under the prompt bubble, so the two never
+     read as one run-on line ("…help me price it.Write it myself"). */
+  margin-top: 8px;
   appearance: none;
   border: 1px dashed var(--line, #d8e0d4);
   background: #fff;

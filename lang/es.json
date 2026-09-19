@@ -254,6 +254,7 @@
   "asstChat.jobOpts.customHint": "Escribe los detalles del trabajo tú mismo.",
   "asstChat.jobOpts.customPlaceholder": "Describe el trabajo — un punto por línea.",
   "asstChat.jobOpts.customTitle": "Escribirlo yo mismo",
+  "asstChat.jobOpts.customCta": "Escribirlo yo mismo.",
   "asstChat.jobOpts.deleteBullet": "Eliminar punto",
   "asstChat.jobOpts.editTitle": "Editar título",
   "asstChat.jobOpts.heading": "Detalles del trabajo",

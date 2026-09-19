@@ -221,3 +221,16 @@ describe("REQ-009 NW-24 'Job completed' / 'Next month' casing (both dictionaries
     expect(offenders).toEqual([]);
   });
 });
+
+describe("REQ-010 NW-17 the 'Write it myself.' pill", () => {
+  // p26: the pill under the prompt bubble "needs … a period at the end of
+  // 'myself'". The picker TILE keeps the period-less title.
+  it("REQ-010 NW-17 has its own CTA key ending with a period, in both dictionaries", () => {
+    expect(en["asstChat.jobOpts.customCta"]).toBe("Write it myself.");
+    expect(es["asstChat.jobOpts.customCta"]).toBe("Escribirlo yo mismo.");
+  });
+  it("REQ-010 NW-17 the picker tile title stays without a period", () => {
+    expect(en["asstChat.jobOpts.customTitle"]).toBe("Write it myself");
+    expect(es["asstChat.jobOpts.customTitle"]).toBe("Escribirlo yo mismo");
+  });
+});

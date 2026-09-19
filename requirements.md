@@ -46,3 +46,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-23 (PDF p22) + NW-24 (PDF p23), 2026-09-18
 **Requirement (client's words):** "'When does the job start?' has a 'Job Completed' option. Remove it and put 'Pick a date' in its place. Change 'Next Month' to 'Next month'." / "Change 'Job Completed' to 'Job completed' (lowercase c)." — old quotes that persisted "Job Completed" keep localizing correctly.
 **Tests:** unit (Deno) `backend/src/agents/domain/business/terms-wizard-spec/test.ts` ("REQ-009 …") + jest `jest/unit/i18n-dictionary-consistency.test.ts` ("REQ-009 …") + Deno `backend/src/paperwork/domain/coordinators/render-quote-pdf/term-i18n.test.ts` (both PDF maps) · integration `n/a — the public quote page is client-rendered; the wizard payload is derived from the spec` · e2e `cypress/e2e/quotes-wizard-navigation.cy.ts` ("REQ-009 …") + `cypress/e2e/public-quote-term-casing.cy.ts` (old + new spelling on /q)
+
+## REQ-010 — 1.9 NW-17 "Write it myself." gets its period and breathing room
+**Source:** new-working-issues.md NW-17 (PDF p26), 2026-09-18
+**Requirement (client's words):** "The chip at the bottom reads 'I know the job, help me price it.Write it myself'. Needs a space after the period and a period at the end of 'myself'." — the pill reads "✎ Write it myself." on its own line under the bubble.
+**Tests:** unit `jest/unit/i18n-dictionary-consistency.test.ts` ("REQ-010 …") · integration `n/a — copy + CSS` · e2e `cypress/e2e/ux-help-me-price.cy.ts` ("REQ-010 …")

@@ -254,6 +254,7 @@
   "asstChat.jobOpts.customHint": "Write the job details yourself.",
   "asstChat.jobOpts.customPlaceholder": "Describe the job — one item per line.",
   "asstChat.jobOpts.customTitle": "Write it myself",
+  "asstChat.jobOpts.customCta": "Write it myself.",
   "asstChat.jobOpts.deleteBullet": "Delete bullet",
   "asstChat.jobOpts.editTitle": "Edit title",
   "asstChat.jobOpts.heading": "Job Details",
