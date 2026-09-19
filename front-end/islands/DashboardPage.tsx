@@ -260,6 +260,8 @@ function notifToActivity(
     html: escapeHtml(n.title),
     time: fmtRel(n.createdAt, now, lang),
     ...(href ? { href } : {}),
+    // REQ-031 (NW-26): a customer's question is readable in the feed.
+    ...(n.body?.trim() ? { body: n.body.trim() } : {}),
   };
 }
 

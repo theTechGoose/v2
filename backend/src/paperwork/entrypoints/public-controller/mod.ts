@@ -13,6 +13,7 @@ import { EventBus } from "@core/business/events/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
+import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
@@ -117,6 +118,7 @@ export class PaperworkPublicController {
     private bus: EventBus,
     private signedConfirmation: SendSignedConfirmation,
     private acceptedAlert: SendAcceptedAlert,
+    private inquiryAlert: SendInquiryAlert,
     private views: ViewStore,
     private shortlinks: ShortLinkStore,
     private files: FileStore,
@@ -599,6 +601,20 @@ export class PaperworkPublicController {
         ...(dto.name ? { askName: dto.name } : {}),
         quoteId: existing.id,
       },
+    });
+    // REQ-031 (NW-26): the contractor gets the full question + contactBack
+    // by email and text (logged in the comms trail). Best-effort — never
+    // fails the customer's request; awaited so the trail exists by the time
+    // the response lands (readers poll /messages right after).
+    await this.inquiryAlert.run(existing.id, {
+      question: dto.question,
+      ...(dto.contactBack ? { contactBack: dto.contactBack } : {}),
+      ...(dto.name ? { name: dto.name } : {}),
+    }).catch((err) => {
+      console.error(
+        `[quotes/${existing.id}/inquiry] inquiry-alert failed:`,
+        err,
+      );
     });
     return ctx.json({ ok: true });
   }
