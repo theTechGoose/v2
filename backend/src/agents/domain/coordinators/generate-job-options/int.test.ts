@@ -55,8 +55,12 @@ Deno.test("REQ-026 NW-05 (a) llm throws → honest bullets, no echo, no price, d
 
 Deno.test("REQ-026 NW-05 (b) a valid model reply passes through, degraded false", async () => {
   const { llm, coord } = fresh();
-  llm.setHandler(() => ({
-    text: JSON.stringify({
+  let seenFormat: string | undefined;
+  // REQ-028: the call asks the model for JSON mode — a syntactically valid
+  // object every time (live probes fell to the fallback 4 of 5 times on a
+  // missing brace in the byLang structure).
+  llm.setHandler((req) => ({
+    text: ((seenFormat = req.responseFormat), JSON.stringify({
       options: [
         {
           byLang: {
@@ -77,9 +81,10 @@ Deno.test("REQ-026 NW-05 (b) a valid model reply passes through, degraded false"
           },
         },
       ],
-    }),
+    })),
   }));
   const res = await coord.run({ userId: "u1", raw: RAW, langs: ["en"] });
+  assertEquals(seenFormat, "json");
   assertEquals(res.degraded, false);
   assertEquals(res.options.length, 2);
   assertEquals(res.options[0].bullets, [

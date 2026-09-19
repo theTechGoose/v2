@@ -118,6 +118,7 @@ export class GenerateJobOptions {
           }${priceLine}${multiLangLine}`,
         }],
         userId: input.userId,
+        responseFormat: "json",
       });
       text = res.text ?? "";
     } catch (err) {
@@ -128,6 +129,11 @@ export class GenerateJobOptions {
     const parsed = tryParseJson(text);
     const options = normalizeOptions(parsed?.options, langs, primary);
     if (options.length > 0) return { options, langs, degraded: false };
+    // REQ-026: a degraded answer must be diagnosable — say what came back.
+    console.warn(
+      "[generate-job-options] reply not usable, using honest fallback:",
+      JSON.stringify(text.slice(0, 400)),
+    );
     return { options: fallbackOptions(raw, langs), langs, degraded: true };
   }
 }

@@ -83,6 +83,7 @@ export class PolishJobDetails {
           }\n${raw}${priceLine}${langLine}`,
         }],
         userId: input.userId,
+        responseFormat: "json",
       });
       text = res.text ?? "";
     } catch (err) {

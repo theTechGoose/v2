@@ -42,15 +42,21 @@ Deno.test("REQ-026 NW-05 polish fallback: multi-line raw → one bullet per line
 
 Deno.test("REQ-026 NW-05 polish: a valid model reply passes through, degraded false", async () => {
   const llm = new StubLLMClient();
-  llm.setHandler(() => ({
-    text: JSON.stringify({
-      summary: "Toilet replacement",
-      jobName: "Toilet replacement",
-      description: "We will remove the old toilet and install a new one.",
-    }),
-  }));
+  let seenFormat: string | undefined;
+  // REQ-028: JSON mode requested, same as generate-job-options.
+  llm.setHandler((req) => {
+    seenFormat = req.responseFormat;
+    return {
+      text: JSON.stringify({
+        summary: "Toilet replacement",
+        jobName: "Toilet replacement",
+        description: "We will remove the old toilet and install a new one.",
+      }),
+    };
+  });
   const coord = new PolishJobDetails(llm);
   const res = await coord.run({ userId: "u1", raw: RAW });
+  assertEquals(seenFormat, "json");
   assertEquals(res.degraded, false);
   assertEquals(
     res.description,

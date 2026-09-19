@@ -311,3 +311,21 @@ describe("REQ-017 pricing tiers — Competitive / Market / Premium, labor AND ma
     expect(es["prompts.suggestPrices"]).toBe(p);
   });
 });
+
+describe("REQ-028 NW-05 the prompts stop licensing the echo", () => {
+  // p4: "The AI must never echo the user's raw input back as the suggested
+  // description." The options prompt never forbade returning the sentence,
+  // and the polish prompt literally said "mirror it back cleaned-up".
+  it("REQ-028 generateJobOptions forbids returning the contractor's sentence verbatim — same text in both dictionaries", () => {
+    const p = en["prompts.generateJobOptions"];
+    expect(p).toContain("Never return the contractor's sentence verbatim");
+    expect(p).toMatch(/drop prices, "I need to", and questions/);
+    expect(es["prompts.generateJobOptions"]).toBe(p);
+  });
+  it("REQ-028 polishJobDetails no longer says 'mirror it back' — a vague sentence becomes one neutral scope sentence", () => {
+    const p = en["prompts.polishJobDetails.system"];
+    expect(p).not.toMatch(/mirror it back/i);
+    expect(p).toContain("never the contractor's own sentence");
+    expect(es["prompts.polishJobDetails.system"]).toBe(p);
+  });
+});

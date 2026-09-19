@@ -78,18 +78,27 @@ export class OpenAILLMClient implements LLMClient {
     // deno-lint-ignore no-explicit-any
     messages: Array<any>,
     model: string = this.model,
+    responseFormat?: "json",
   ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
     const ctl = new AbortController();
     const timer = setTimeout(
       () => ctl.abort(),
       DEFAULT_CHAT_TIMEOUT_MS + 1_000,
     );
+    // REQ-028: a JSON-mode call is a one-shot structured answer — no chat
+    // tools (they could only divert the reply into a tool call) and the
+    // provider guarantees a syntactically valid object.
+    const toolParams = responseFormat === "json"
+      ? { response_format: { type: "json_object" as const } }
+      : {
+        tools:
+          TOOL_DEFS as unknown as OpenAI.Chat.Completions.ChatCompletionTool[],
+        tool_choice: "auto" as const,
+      };
     const call = this.client.chat.completions.create({
       model,
       messages,
-      tools:
-        TOOL_DEFS as unknown as OpenAI.Chat.Completions.ChatCompletionTool[],
-      tool_choice: "auto",
+      ...toolParams,
       // Keep responses tight — we want one focused step per turn.
       temperature: 0.2,
     }, { signal: ctl.signal, maxRetries: 1 });
@@ -140,14 +149,14 @@ export class OpenAILLMClient implements LLMClient {
     // worth the latency cost (~1s when it triggers).
     // REQ-017: a coordinator may ask for a specific model for this call.
     const model = req.model?.trim() || this.model;
-    let completion = await this.complete(messages, model);
+    let completion = await this.complete(messages, model, req.responseFormat);
     let choice = completion.choices[0];
     const isEmpty = (c: typeof choice) =>
       !((c?.message?.content ?? "").trim()) &&
       (c?.message?.tool_calls ?? []).length === 0;
     if (isEmpty(choice)) {
       console.warn("[openai-llm] empty response on first try; retrying once");
-      completion = await this.complete(messages, model);
+      completion = await this.complete(messages, model, req.responseFormat);
       choice = completion.choices[0];
     }
 

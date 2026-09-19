@@ -51,6 +51,13 @@ export interface LLMRequest {
    * the stub.
    */
   model?: string;
+  /**
+   * REQ-028 (NW-05): ask the provider for JSON mode — a syntactically valid
+   * object every time. Set by the one-shot JSON coordinators (job options,
+   * polish); live probes on gpt-4o-mini fell to the fallback 4 of 5 times on
+   * a missing brace. The stub ignores it.
+   */
+  responseFormat?: "json";
 }
 
 /**
