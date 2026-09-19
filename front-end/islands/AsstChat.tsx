@@ -2152,10 +2152,9 @@ export default function AsstChat({
         await quotesClient.update(quoteId, quoteFields);
         convId = convoId;
       } else {
-        const quote = await api.post<{ id?: string }>("/quotes", {
-          ...quoteFields,
-          status: "sent",
-        });
+        // NW-10 (REQ-003): a quote is BORN a draft — the store defaults
+        // status to "draft"; only a real dispatch (send-quote) flips it.
+        const quote = await api.post<{ id?: string }>("/quotes", quoteFields);
         if (!quote?.id) throw new Error("failed to create quote");
 
         // P-22: reuse the conversation minted when the details were

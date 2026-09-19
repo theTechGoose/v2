@@ -112,9 +112,11 @@ export class SendPaperworkSms {
     let recipient: string | undefined = input.to;
     let body: string;
     let customerIdForLog: string | undefined;
+    let quoteForStamp: Quote | undefined;
 
     if (input.kind === "quote") {
       const quote = await this.quotes.getOwned(input.resourceId, userId);
+      quoteForStamp = quote;
       const customer = await this.tryGetCustomer(userId, quote.customerId);
       customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.phoneNumber ?? undefined;
@@ -160,6 +162,17 @@ export class SendPaperworkSms {
     }
 
     const result = await this.sms.send({ to: e164, body });
+
+    // NW-10 (REQ-003): stamp the quote's lifecycle on the first successful
+    // text — status→"sent" + sentAt→now, idempotent, mirroring
+    // SendPaperworkEmail. Without this an SMS-only send left the quote
+    // "draft" forever (the /quotes stage derivation reads sentAt).
+    if (result.ok && input.kind === "quote" && quoteForStamp && !quoteForStamp.sentAt) {
+      await this.quotes.update(input.resourceId, userId, {
+        status: "sent",
+        sentAt: new Date().toISOString(),
+      });
+    }
 
     // Comms trail (roadmap p.8): record the dispatch in the customer's
     // thread so every outbound text is queryable per document.
