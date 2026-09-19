@@ -321,6 +321,12 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
 
   useEffect(() => {
     let alive = true;
+    // REQ-022 (NW-31c): sweep the scheduled invoices whose send date is here
+    // so the contractor gets the "job done? send it" nudge. Idempotent
+    // server-side (one notification per invoice per day). A real scheduler
+    // is a deploy decision — see plan §8.
+    fetch("/api/cron/run-nudges", { method: "POST", credentials: "include" })
+      .catch(() => {/* best-effort */});
     Promise.all([
       dashboardClient.invoices(undefined).catch(() => [] as Invoice[]),
       dashboardClient.customers().catch(() => [] as Customer[]),
@@ -1592,6 +1598,26 @@ function InvoiceCard(
   // REQ-021: inline confirmation after a nudge (no reload — nothing on the
   // card changes except that the reminder went out).
   const [sendNote, setSendNote] = useState<string | null>(null);
+  // REQ-022 (NW-31c): inline "Change date" editor on an Upcoming card.
+  const [dateEdit, setDateEdit] = useState<string | null>(null);
+  async function doSaveScheduledFor(e: Event) {
+    e.stopPropagation();
+    if (busy || !dateEdit) return;
+    setBusy(true);
+    setSendFail(null);
+    try {
+      const r = await fetch(`/api/invoices/${inv.id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scheduledFor: dateEdit }),
+      });
+      if (r.ok) globalThis.location.reload();
+      else setSendFail(tFor(lang, "invoicesPage.back.changeDateFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
   // Roadmap p.12: in-card discount + change-order controls.
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [discountDollars, setDiscountDollars] = useState("");
@@ -2367,6 +2393,30 @@ function InvoiceCard(
             </div>
           )}
         </div>
+        {dateEdit !== null && (
+          <div
+            data-cy="invoice-change-date-form"
+            style="display:flex;gap:8px;align-items:center;padding:0 0 10px"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              type="date"
+              data-cy="invoice-change-date-input"
+              value={dateEdit}
+              disabled={busy}
+              onInput={(e) => setDateEdit((e.target as HTMLInputElement).value)}
+              style="padding:7px 9px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13px"
+            />
+            <button
+              type="button"
+              data-cy="invoice-change-date-save"
+              onClick={doSaveScheduledFor}
+              disabled={busy || !dateEdit}
+            >
+              {tFor(lang, "invoicesPage.back.changeDateSave")}
+            </button>
+          </div>
+        )}
         <div class="qcard__back-foot">
           {
             /* Design rule: exactly ONE solid primary per action row — the
@@ -2404,6 +2454,19 @@ function InvoiceCard(
               title={tFor(lang, "invoicesPage.back.rejectTitle")}
             >
               {tFor(lang, "invoicesPage.back.reject")}
+            </button>
+          )}
+          {inv.stage === "scheduled" && (
+            <button
+              type="button"
+              data-cy="invoice-change-date"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDateEdit((v) => v === null ? (inv.scheduledFor ?? "") : null);
+              }}
+              disabled={busy}
+            >
+              {tFor(lang, "invoicesPage.back.changeDate")}
             </button>
           )}
           {(inv.stage === "overdue" || inv.stage === "out") && (
@@ -2462,6 +2525,9 @@ function NewInvoiceModal(
   const [newPhone, setNewPhone] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [amount, setAmount] = useState("");
+  // REQ-022 (NW-31c): "Send on" — optional; when set the invoice is created
+  // scheduled (Upcoming) instead of drafted/sent.
+  const [scheduledFor, setScheduledFor] = useState("");
   const [dueDate, setDueDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 30);
@@ -2521,8 +2587,10 @@ function NewInvoiceModal(
         dueDate,
         issuedDate: new Date().toISOString().slice(0, 10),
         // Send → mark it sent up front (the send coordinators don't stamp
-        // invoice status); draft → lands in the Drafting track to send later.
-        status: send ? "sent" : "draft",
+        // invoice status); draft → lands in the Drafting track to send later;
+        // a "Send on" date (REQ-022) → scheduled, in the Upcoming track.
+        status: send ? "sent" : scheduledFor ? "scheduled" : "draft",
+        ...(!send && scheduledFor ? { scheduledFor } : {}),
         ...(jobName.trim() ? { jobName: jobName.trim() } : {}),
         ...(description.trim() ? { description: description.trim() } : {}),
       });
@@ -2531,8 +2599,11 @@ function NewInvoiceModal(
       if (send && invoice?.id) {
         await dispatchInvoice(invoice.id);
       }
-      // Reload so the new invoice enriches into the right track.
-      globalThis.location.reload();
+      // Reload so the new invoice enriches into the right track — without the
+      // ?new=1 deep link, or the modal would reopen over the fresh card.
+      const back = new URL(globalThis.location.href);
+      back.searchParams.delete("new");
+      globalThis.location.assign(back.toString());
     } catch (err) {
       setError(
         err instanceof Error
@@ -2681,6 +2752,18 @@ function NewInvoiceModal(
           />
         </label>
 
+        <label style={labelStyle}>
+          {tFor(lang, "invoicesPage.new.sendOn")}
+          <input
+            type="date"
+            data-cy="invoice-schedule-date"
+            value={scheduledFor}
+            disabled={busy}
+            onInput={(e) => setScheduledFor((e.target as HTMLInputElement).value)}
+            style={inputStyle}
+          />
+        </label>
+
         {error && (
           <p
             role="alert"
@@ -2706,7 +2789,7 @@ function NewInvoiceModal(
             onClick={() => submit(false)}
             style="padding:10px 16px;border:1px solid var(--brand-green,#519843);border-radius:10px;background:#fff;color:var(--brand-green,#519843);font:inherit;font-weight:800;cursor:pointer"
           >
-            {tFor(lang, "invoicesPage.new.saveDraft")}
+            {scheduledFor ? tFor(lang, "invoicesPage.new.schedule") : tFor(lang, "invoicesPage.new.saveDraft")}
           </button>
           <button
             type="submit"

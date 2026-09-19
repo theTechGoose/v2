@@ -84,6 +84,7 @@ export interface Notification {
     | "invoice_claimed"
     | "invoice_paid"
     | "invoice_overdue"
+    | "invoice_nudge_due"
     | "customer_replied"
     | "generic";
   title: string;

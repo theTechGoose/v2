@@ -107,3 +107,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-31 (PDF p28), 2026-09-18
 **Requirement (client's words):** "Awaiting confirmation — has an 'Ok I got it' button, but also needs a nudge button, because 'Ok I got it' marks it as paid." — the awaiting-confirmation card offers "Send a nudge", and both it and the overdue card's "Send nudge" post to the reminder cadence (`POST /cron/invoice-reminder`, day 3/7/14/30 by days overdue) instead of re-texting the whole invoice.
 **Tests:** unit `n/a — page wiring over an existing backend cadence` · integration `jest/integration/invoice-nudge.int.test.ts` (backend contract pin — green on arrival) · e2e `cypress/e2e/invoice-detail-panel.cy.ts` ("REQ-021 …")
+
+## REQ-022 — 3.5 NW-31c Upcoming invoices: pick a send date; nudge the Dragon when it is due
+**Source:** new-working-issues.md NW-31 (PDF p28), 2026-09-18
+**Requirement (client's words):** "Upcoming — needs a 'send it later' button with a date picker (if there is no start date, how do they know when to send the invoice?). Or a reminder text and email to the Dragon to approve that the job is done and send the final invoice." — a new invoice can be given a "send on" date (it lands in Upcoming), the date can be changed from the card, and on/after that date the contractor is nudged (a notification, once per day) to approve the job is done and send it.
+**Tests:** unit `n/a — page wiring + one event mapping` · integration `jest/integration/invoice-schedule.int.test.ts` · e2e `cypress/e2e/invoice-schedule.cy.ts`

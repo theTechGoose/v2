@@ -226,6 +226,12 @@ const NOTIF_ICON: Record<
     bg: "var(--pink-50)",
     fg: "var(--pink-700)",
   },
+  // REQ-022 (NW-31c): a scheduled invoice's send date is here.
+  invoice_nudge_due: {
+    icon: "invoice",
+    bg: "var(--teal-50)",
+    fg: "var(--teal-600)",
+  },
   customer_replied: {
     icon: "msg",
     bg: "var(--coffee-50)",
