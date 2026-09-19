@@ -7,6 +7,7 @@ import { type Lang, t } from "@core/i18n/mod.ts";
 import { disambiguateTitle, versionTitle } from "#quote-flow/version-titles.ts";
 import { summarizeJobName } from "#quote-flow/job-name.ts";
 import { clampSummary } from "#quote-flow/summary-clamp.ts";
+import { scopeBulletsFromRaw } from "#quote-flow/scope-from-raw.ts";
 
 export interface GenerateJobOptionsInput {
   userId: string;
@@ -48,6 +49,10 @@ export interface GenerateJobOptionsResult {
   options: JobOption[];
   /** The languages each option carries, primary first. */
   langs: string[];
+  /** REQ-026 (NW-05): true when the model could not be used (call failed
+   *  or unparseable reply) and the options are the heuristic scope bullets
+   *  — never the contractor's sentence echoed back. */
+  degraded: boolean;
 }
 
 const SYSTEM_PROMPT = t("en", "prompts.generateJobOptions");
@@ -117,13 +122,13 @@ export class GenerateJobOptions {
       text = res.text ?? "";
     } catch (err) {
       console.error("[generate-job-options] llm call failed:", err);
-      return { options: fallbackOptions(raw, langs), langs };
+      return { options: fallbackOptions(raw, langs), langs, degraded: true };
     }
 
     const parsed = tryParseJson(text);
     const options = normalizeOptions(parsed?.options, langs, primary);
-    if (options.length > 0) return { options, langs };
-    return { options: fallbackOptions(raw, langs), langs };
+    if (options.length > 0) return { options, langs, degraded: false };
+    return { options: fallbackOptions(raw, langs), langs, degraded: true };
   }
 }
 
@@ -230,18 +235,20 @@ function titleCaseWord(w: string): string {
 
 /**
  * Heuristic fallback when the LLM is unavailable or returns garbage.
- * Splits the raw text into bullet-ish lines and produces three light
- * variations (in each requested language) so the picker still functions.
+ * REQ-026 (NW-05): the bullets are honest scope lines derived from the raw
+ * text — intent opener ("I need to"), price clause ("for $500") and pricing
+ * question stripped — never the sentence echoed back (which also titled the
+ * cards "I Need To"). When nothing scope-like survives, the one bullet is the
+ * localized "New job". Three light variations per requested language keep the
+ * picker functional.
  */
 function fallbackOptions(raw: string, langs: Lang[]): JobOption[] {
-  const lines = raw
-    .split(/[\n.;]+/)
-    .map((l) => l.trim().replace(/\s+/g, " "))
-    .filter((l) => l.length > 0);
-  const base = (lines.length > 0 ? lines : [raw.trim()]).slice(0, 4);
+  const scoped = scopeBulletsFromRaw(raw, langs[0]);
+  const scopeBase = scoped.degraded ? null : scoped.bullets.slice(0, 4);
 
   const perLang = (lang: Lang, variant: 0 | 1 | 2): JobOptionLang => {
-    const summary = clampSummary(base[0] || t(lang, "generateJobOptions.newJob"));
+    const base = scopeBase ?? [t(lang, "generateJobOptions.newJob")];
+    const summary = clampSummary(base[0]);
     const jobName = deriveJobName(summary, lang);
     const bullets = variant === 0
       ? base
