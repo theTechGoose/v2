@@ -140,6 +140,13 @@ All problem suites pass. Final boards on the merged main:
   assertions that are unfalsifiable under the stub LLM (their behavior is covered by the
   unit + e2e layers).
 - **Cypress**: all 39 specs, 200 passing / 1 intentional pending / 0 failing.
+  *(2026-09-19, REQ-040 mobile audit — 67 specs exist now. Live run of the responsive
+  set against the dev server: `responsive-mobile.cy.ts` 8/8, `landing-mobile-390.cy.ts`
+  6/6, `ux-landing-mobile.cy.ts` 6/6, `ux-dashboard-mobile-390.cy.ts` 4/4 — 24 passing /
+  0 failing. The single red on first pass was a stale pin, not a mobile defect: UX-09's
+  "Registro completo →" link check targeted a control the dashboard removed on purpose
+  (no /activity page exists; the link 404'd in prod — DashSections.tsx), so the pin now
+  asserts the control's absence and keeps its geometry checks for the day it returns.)*
 
 Environment notes:
 
