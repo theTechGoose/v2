@@ -71,3 +71,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-54 (PDF p62), 2026-09-18
 **Requirement (client's words):** "Quote sent from the link: rename 'fine print, in plain english' to 'Terms and Conditions'." — the clause list is headed "Terms and Conditions" / "Términos y Condiciones" on the public quote page and on the PDF.
 **Tests:** unit `jest/unit/i18n-dictionary-consistency.test.ts` ("REQ-014 …") · integration `n/a — copy` · e2e `cypress/e2e/public-quote-signature.cy.ts` ("REQ-014 …")
+
+## REQ-015 — 1.14 Copy fixes from the "COMPLETED" half: governing-law tail, warranty labels, "Scope of Work"
+**Source:** new-working-issues.md "COMPLETED" half (PDF p76-77, p80, p83), 2026-09-18
+**Requirement (client's words):** "Warranty. No warranty / 6 months / 1 year / 2 years / Custom." · "Fixed language: 'This agreement is governed by the laws of the state where the work is performed, without regard to conflict of law rules.'" · required notices list item "Scope of Work" — and a persisted "1 year"/"2 years" warranty still localizes to Spanish on web + PDF.
+**Tests:** unit `jest/unit/i18n-dictionary-consistency.test.ts` ("REQ-015 …") + Deno `backend/src/paperwork/domain/coordinators/render-quote-pdf/term-i18n.test.ts` ("REQ-015 …") · integration `n/a — copy + localization maps` · e2e `cypress/e2e/public-quote-signature.cy.ts` (REQ-014 describe extended for REQ-015)

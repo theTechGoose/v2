@@ -246,3 +246,34 @@ describe("REQ-014 NW-54 the clause list is headed 'Terms and Conditions' on web 
     expect(es["renderQuotePdf.section.finePrint"]).toBe("Términos y Condiciones");
   });
 });
+
+describe("REQ-015 completed-half copy — governing-law tail, warranty labels, 'Scope of Work'", () => {
+  // p80: "This agreement is governed by the laws of the state where the work
+  // is performed, without regard to conflict of law rules."
+  it.each(["quoteDoc.clause.governingLaw.body", "renderQuotePdf.clause.governingLaw.body"])(
+    "REQ-015 %s carries the conflict-of-law tail (en + es)",
+    (key) => {
+      expect(en[key]).toMatch(/where the work is performed, without regard to conflict of law rules\.$/);
+      expect(es[key]).toMatch(/donde se realiza el trabajo, sin importar las reglas sobre conflicto de leyes\.$/);
+    },
+  );
+
+  // p76-77: Warranty — No warranty / 6 months / 1 year / 2 years / Custom.
+  it.each([
+    ["termsWizard.warranty.twelveMonths", "1 year", "1 año"],
+    ["termsWizard.warranty.twentyFourMonths", "2 years", "2 años"],
+    ["asstChat.warranty.preset.twelveMonths", "1 year", "1 año"],
+    ["asstChat.warranty.preset.twentyFourMonths", "2 years", "2 años"],
+  ])("REQ-015 %s reads %s / %s", (key, enValue, esValue) => {
+    expect(en[key]).toBe(enValue);
+    expect(es[key]).toBe(esValue);
+  });
+
+  // p83: the required notices list titles item 2 "Scope of Work".
+  it("REQ-015 clause 2 is titled 'Scope of Work' on web + PDF", () => {
+    expect(en["quoteDoc.clause.jobDetails.title"]).toBe("Scope of Work");
+    expect(es["quoteDoc.clause.jobDetails.title"]).toBe("Alcance del trabajo");
+    expect(en["renderQuotePdf.clause.jobDetails.title"]).toBe("Scope of Work.");
+    expect(es["renderQuotePdf.clause.jobDetails.title"]).toBe("Alcance del trabajo.");
+  });
+});

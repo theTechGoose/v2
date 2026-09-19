@@ -228,4 +228,11 @@ describe("REQ-014 NW-54 the public quote heads its clauses 'Terms and Conditions
     cy.contains("Terms and Conditions", { timeout: 20_000 }).should("be.visible");
     cy.contains(/fine print/i).should("not.exist");
   });
+
+  it("REQ-015 clause 1 carries the conflict-of-law tail and clause 2 is 'Scope of Work' (p80, p83)", () => {
+    cy.contains("Terms and Conditions", { timeout: 20_000 }).should("be.visible");
+    cy.contains("without regard to conflict of law rules").should("be.visible");
+    cy.contains("ol li", "Scope of Work").should("be.visible");
+    cy.contains("ol li", "Job Details").should("not.exist");
+  });
 });

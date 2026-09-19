@@ -31,6 +31,8 @@ export function localizeTermValue(value: string, lang: Lang): string {
   };
   if (exact[trimmed]) return tFor(lang, exact[trimmed]);
   return trimmed
+    // REQ-015: warranty presets persist "1 year" / "2 years".
+    .replace(/\byears\b/gi, "años").replace(/\byear\b/gi, "año")
     .replace(/\bmonths\b/gi, "meses").replace(/\bmonth\b/gi, "mes")
     .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
     .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");

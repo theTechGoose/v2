@@ -16,3 +16,13 @@ for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] 
     assertEquals(fn("Next Month", "es"), "El próximo mes");
   });
 }
+
+// REQ-015 (p76-77): warranty presets now persist "1 year" / "2 years" — the
+// Spanish PDFs must localize the year words like they do months/weeks/days.
+for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] as const) {
+  Deno.test(`REQ-015 ${name}: '1 year' / '2 years' localize to '1 año' / '2 años'`, () => {
+    assertEquals(fn("1 year", "es"), "1 año");
+    assertEquals(fn("2 years", "es"), "2 años");
+    assertEquals(fn("2 years", "en"), "2 years");
+  });
+}
