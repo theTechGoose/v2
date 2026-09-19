@@ -12,12 +12,15 @@ export interface SuggestPricesInput {
   /** Contractor UI language (roadmap p.13) — these tiers are shown to the
    *  contractor while pricing, so label/rationale follow their language. */
   lang?: string;
+  /** REQ-017 (NW-09): the contractor's saved business location — the model
+   *  prices for THIS market, never a national average. */
+  address?: { city?: string; state?: string; postal?: string };
 }
 
 export interface PriceOption {
-  /** Stable tier id. */
-  tier: "basic" | "standard" | "premium";
-  /** Short customer-facing label ("Standard"). */
+  /** Stable tier id — the client's three tiers (REQ-017 / NW-08). */
+  tier: "competitive" | "market" | "premium";
+  /** Fixed, localized label ("Market"). Never the model's own wording. */
   label: string;
   /** Suggested price in INTEGER CENTS. */
   priceCents: number;
@@ -27,9 +30,19 @@ export interface PriceOption {
 
 export interface SuggestPricesResult {
   options: PriceOption[];
+  /** REQ-017 (NW-12): what the numbers include — stated to the model and
+   *  shown on the tier cards. */
+  basis: "labor_and_materials";
 }
 
+const BASIS = "labor_and_materials" as const;
+
 const SYSTEM_PROMPT = t("en", "prompts.suggestPrices");
+
+/** REQ-017 (NW-12): gpt-4o-mini priced the client's 2,000 sq ft repaint at
+ *  $3k–$6k against a $6.5k–$16k Claude/ChatGPT comparison; this one call asks
+ *  for a stronger model. Override with SUGGEST_PRICES_MODEL. */
+const PRICING_MODEL = Deno.env.get("SUGGEST_PRICES_MODEL")?.trim() || "gpt-4o";
 
 /**
  * SuggestPrices — one-shot LLM pass behind the "I know the job, help me
@@ -51,34 +64,45 @@ export class SuggestPrices {
       ? t("en", "prompts.suggestPricesSpanishDirective")
       : "";
 
+    // REQ-017 (NW-09): price for the contractor's market. The line is
+    // omitted entirely when no address is saved.
+    const a = input.address ?? {};
+    const cityState = [a.city?.trim(), a.state?.trim()].filter(Boolean).join(", ");
+    const location = `${cityState} ${a.postal?.trim() ?? ""}`.trim();
+    const locationLine = location ? `\n\nContractor location: ${location}` : "";
+
     let text: string;
     try {
       const res = await this.llm.respond({
         systemPrompt: SYSTEM_PROMPT,
         messages: [{
           role: "user",
-          content: `Raw job description:\n${raw}${langLine}`,
+          content: `Raw job description:\n${raw}${locationLine}${langLine}`,
         }],
         userId: input.userId,
+        model: PRICING_MODEL,
       });
       text = res.text ?? "";
     } catch (err) {
       console.error("[suggest-prices] llm call failed:", err);
-      return { options: fallbackTiers(lang) };
+      return { options: fallbackTiers(lang), basis: BASIS };
     }
 
     const parsed = tryParseJson(text);
     const options = normalize(parsed?.options, lang);
-    return { options: options.length === 3 ? options : fallbackTiers(lang) };
+    return {
+      options: options.length === 3 ? options : fallbackTiers(lang),
+      basis: BASIS,
+    };
   }
 }
 
 function normalize(raw: unknown, lang: "en" | "es"): PriceOption[] {
   if (!Array.isArray(raw)) return [];
-  const tiers: PriceOption["tier"][] = ["basic", "standard", "premium"];
+  const tiers: PriceOption["tier"][] = ["competitive", "market", "premium"];
   const labels = [
-    t(lang, "suggestPrices.tier.basic"),
-    t(lang, "suggestPrices.tier.standard"),
+    t(lang, "suggestPrices.tier.competitive"),
+    t(lang, "suggestPrices.tier.market"),
     t(lang, "suggestPrices.tier.premium"),
   ];
   const out: PriceOption[] = [];
@@ -93,9 +117,9 @@ function normalize(raw: unknown, lang: "en" | "es"): PriceOption[] {
     if (!Number.isFinite(cents) || cents <= 0) continue;
     out.push({
       tier: tiers[out.length],
-      label: typeof o?.label === "string" && o.label.trim()
-        ? o.label.trim()
-        : labels[out.length],
+      // REQ-017: the fixed label IS the product ("Basic" from the model was
+      // the p7 complaint); the model contributes numbers + rationale only.
+      label: labels[out.length],
       priceCents: cents,
       rationale: typeof o?.rationale === "string" ? o.rationale.trim() : "",
     });
@@ -126,16 +150,16 @@ function tryParseJson(s: string): { options?: unknown } | undefined {
 function fallbackTiers(lang: "en" | "es"): PriceOption[] {
   return [
     {
-      tier: "basic",
-      label: t(lang, "suggestPrices.tier.basic"),
+      tier: "competitive",
+      label: t(lang, "suggestPrices.tier.competitive"),
       priceCents: 50000,
-      rationale: t(lang, "suggestPrices.fallback.basicRationale"),
+      rationale: t(lang, "suggestPrices.fallback.competitiveRationale"),
     },
     {
-      tier: "standard",
-      label: t(lang, "suggestPrices.tier.standard"),
+      tier: "market",
+      label: t(lang, "suggestPrices.tier.market"),
       priceCents: 85000,
-      rationale: t(lang, "suggestPrices.fallback.standardRationale"),
+      rationale: t(lang, "suggestPrices.fallback.marketRationale"),
     },
     {
       tier: "premium",

@@ -618,7 +618,7 @@ export default function AsstChat({
   const [suggestPricing, setSuggestPricing] = useState(false);
   const [priceSuggestions, setPriceSuggestions] = useState<
     Array<
-      { tier: string; label: string; priceCents: number; rationale: string }
+      { tier: "competitive" | "market" | "premium"; label: string; priceCents: number; rationale: string }
     > | null
   >(null);
   const [optionsLoading, setOptionsLoading] = useState(false);
@@ -4805,6 +4805,14 @@ export default function AsstChat({
                         class="chat__price-tiers"
                         style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"
                       >
+                        {/* REQ-017 (NW-12): say what the numbers include. */}
+                        <div
+                          data-cy="pricing-basis"
+                          class="chat__price-basis"
+                          style="font-size:12px;color:var(--fg-muted,#6b7560);padding:0 2px"
+                        >
+                          {tFor(lang, "suggestPrices.basis.laborAndMaterials")}
+                        </div>
                         {priceSuggestions === null
                           ? (
                             <div style="font-size:13px;color:var(--fg-muted,#6b7560);padding:6px 2px">

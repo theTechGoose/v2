@@ -44,6 +44,13 @@ export interface LLMRequest {
    * Coordinators build this; the LLM client just appends it to the prompt.
    */
   businessContext?: string;
+  /**
+   * Per-call model override (REQ-017 / NW-12). Most turns run on the
+   * client's default (OPENAI_MODEL, gpt-4o-mini); pricing asks for a
+   * stronger model because the small one under-prices real jobs. Ignored by
+   * the stub.
+   */
+  model?: string;
 }
 
 /**

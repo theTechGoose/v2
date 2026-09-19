@@ -277,3 +277,37 @@ describe("REQ-015 completed-half copy — governing-law tail, warranty labels, '
     expect(es["renderQuotePdf.clause.jobDetails.title"]).toBe("Alcance del trabajo.");
   });
 });
+
+describe("REQ-017 pricing tiers — Competitive / Market / Premium, labor AND materials", () => {
+  // p7: "The price tiers cannot be 'Basic / Standard / Premium'…"
+  it("REQ-017 the tier labels are the client's names in both dictionaries", () => {
+    expect(en["suggestPrices.tier.competitive"]).toBe("Competitive");
+    expect(en["suggestPrices.tier.market"]).toBe("Market");
+    expect(en["suggestPrices.tier.premium"]).toBe("Premium");
+    expect(es["suggestPrices.tier.competitive"]).toBe("Competitivo");
+    expect(es["suggestPrices.tier.market"]).toBe("De mercado");
+    expect(es["suggestPrices.tier.premium"]).toBe("Premium");
+    expect(en["suggestPrices.tier.basic"]).toBeUndefined();
+    expect(en["suggestPrices.tier.standard"]).toBeUndefined();
+  });
+  it("REQ-017 the fallback rationales are the client's definitions, never 'basic/minimal'", () => {
+    expect(en["suggestPrices.fallback.competitiveRationale"]).toBe("Straightforward job, priced to win the work");
+    expect(en["suggestPrices.fallback.marketRationale"]).toBe("Typical professional price in your area");
+    expect(en["suggestPrices.fallback.premiumRationale"]).toBe("For urgency, difficult access, or extra complexity");
+    expect(es["suggestPrices.fallback.competitiveRationale"]).toBe("Trabajo sencillo, precio para ganar la obra");
+    expect(es["suggestPrices.fallback.marketRationale"]).toBe("Precio profesional típico en tu zona");
+    expect(es["suggestPrices.fallback.premiumRationale"]).toBe("Para urgencia, acceso difícil o más complejidad");
+  });
+  it("REQ-017 the basis line exists in both dictionaries", () => {
+    expect(en["suggestPrices.basis.laborAndMaterials"]).toBe("Prices include labor and materials");
+    expect(es["suggestPrices.basis.laborAndMaterials"]).toBe("Los precios incluyen mano de obra y materiales");
+  });
+  it("REQ-017 the prompt states the basis, the tier order, the location rule — and is English in both dictionaries", () => {
+    const p = en["prompts.suggestPrices"];
+    expect(p).toContain("labor AND materials");
+    expect(p).toContain("competitive < market < premium");
+    expect(p).toMatch(/location/i);
+    expect(p).not.toMatch(/\bbasic\b.*\bstandard\b/i);
+    expect(es["prompts.suggestPrices"]).toBe(p);
+  });
+});

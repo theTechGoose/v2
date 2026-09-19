@@ -366,8 +366,10 @@ export const assistantClient = {
     api.post<
       {
         options: Array<
-          { tier: string; label: string; priceCents: number; rationale: string }
+          { tier: "competitive" | "market" | "premium"; label: string; priceCents: number; rationale: string }
         >;
+        /** REQ-017 (NW-12): what the numbers include. */
+        basis?: "labor_and_materials";
       }
     >("/agents/job-details/prices", { raw }, opts),
 

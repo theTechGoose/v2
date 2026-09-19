@@ -77,6 +77,7 @@ export class OpenAILLMClient implements LLMClient {
   private complete(
     // deno-lint-ignore no-explicit-any
     messages: Array<any>,
+    model: string = this.model,
   ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
     const ctl = new AbortController();
     const timer = setTimeout(
@@ -84,7 +85,7 @@ export class OpenAILLMClient implements LLMClient {
       DEFAULT_CHAT_TIMEOUT_MS + 1_000,
     );
     const call = this.client.chat.completions.create({
-      model: this.model,
+      model,
       messages,
       tools:
         TOOL_DEFS as unknown as OpenAI.Chat.Completions.ChatCompletionTool[],
@@ -137,14 +138,16 @@ export class OpenAILLMClient implements LLMClient {
     // call output is truncated; the user sees zero assistant messages,
     // which reads as a broken UI. The retry is deterministic enough to be
     // worth the latency cost (~1s when it triggers).
-    let completion = await this.complete(messages);
+    // REQ-017: a coordinator may ask for a specific model for this call.
+    const model = req.model?.trim() || this.model;
+    let completion = await this.complete(messages, model);
     let choice = completion.choices[0];
     const isEmpty = (c: typeof choice) =>
       !((c?.message?.content ?? "").trim()) &&
       (c?.message?.tool_calls ?? []).length === 0;
     if (isEmpty(choice)) {
       console.warn("[openai-llm] empty response on first try; retrying once");
-      completion = await this.complete(messages);
+      completion = await this.complete(messages, model);
       choice = completion.choices[0];
     }
 

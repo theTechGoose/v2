@@ -83,3 +83,40 @@ describe("assistant — Just give me a quick quote", () => {
     // Intentionally unimplemented.
   });
 });
+
+// ===========================================================================
+// REQ-017 — NW-08 / NW-12 (p7, p21): the three cards are Competitive /
+// Market / Premium (never "Basic … minimal prep"), and the screen says the
+// prices include labor and materials.
+// ===========================================================================
+describe("REQ-017 help-me-price — Competitive / Market / Premium + materials basis", () => {
+  const PHONE = "+15125550944";
+  const DETAILS = "Replace 6 fence panels along the south side";
+
+  beforeEach(() => {
+    cy.clearCookies();
+    cy.setCookie("pm_lang", "en");
+    cy.loginAs(PHONE);
+    cy.apiUpdateUser({ language: "en" });
+    cy.request("POST", "/api/me/onboarded", { skipped: true });
+    cy.setCookie("pm_lang", "en");
+    cy.visit("/assistant");
+    cy.contains("button.chat__empty-prompt", "I know the job, help me price it.")
+      .should("be.visible")
+      .click();
+    cy.get("textarea.composer__input").should("be.visible").type(DETAILS);
+    cy.get("button.composer__send").click();
+    cy.get("[data-cy=confirm-details]", { timeout: 20_000 }).should("be.visible").click();
+  });
+
+  it("REQ-017 the three cards read Competitive / Market / Premium and the basis line is visible", () => {
+    cy.get("[data-cy=pricing-option]", { timeout: 30_000 }).should("have.length", 3);
+    cy.get("[data-cy=pricing-option]").eq(0).should("contain.text", "Competitive");
+    cy.get("[data-cy=pricing-option]").eq(1).should("contain.text", "Market");
+    cy.get("[data-cy=pricing-option]").eq(2).should("contain.text", "Premium");
+    cy.get("[data-cy=pricing-option]").each(($el) => {
+      expect($el.text(), "no disparaging tier copy").to.not.match(/\bbasic\b|minimal|cheap/i);
+    });
+    cy.get("[data-cy=pricing-basis]").should("be.visible").and("contain.text", "labor and materials");
+  });
+});
