@@ -3,7 +3,7 @@
   "nodeModulesDir": "manual",
   "tasks": {
     "build": "cd front-end && PATH=\"$PWD/../node_modules/.bin:$PATH\" deno task build",
-    "start": "deno serve -A --unstable-kv mod.ts",
+    "start": "AGENTS_LLM_CLIENT=openai TRANSCRIPTION_CLIENT=openai deno serve -A --unstable-kv mod.ts",
     "start:local": "deno serve -A --unstable-kv --env-file=.env mod.ts",
     "serve": "deno run -A --unstable-kv serve.ts",
     "install:all": "deno run -A scripts/install-all-platforms.ts",
