@@ -40,7 +40,10 @@ import {
   acceptedJobChipLabel,
   extractQuickQuotePrefill,
 } from "../../shared/quote-flow/quick-quote-prefill.ts";
-import { formatPhoneDisplay } from "../../shared/quote-flow/format-helpers.ts";
+import {
+  formatPhoneDisplay,
+  formatPhoneInput,
+} from "../../shared/quote-flow/format-helpers.ts";
 import { summarizeJobName } from "../../shared/quote-flow/job-name.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import {
@@ -5121,7 +5124,7 @@ export default function AsstChat({
                                       lang,
                                       "asstChat.recovery.phonePlaceholder",
                                     )}
-                                    value={draft.phone ?? ""}
+                                    value={formatPhoneInput(draft.phone ?? "")} /* NW-34 (REQ-012) */
                                     disabled={saving}
                                     onInput={(e) => {
                                       const v =
@@ -7887,7 +7890,7 @@ function CustomerStepPanel(props: {
               type="tel"
               class="cust-pick__search"
               placeholder={tFor(lang, "asstChat.customerStep.phonePlaceholder")}
-              value={createPhone}
+              value={formatPhoneInput(createPhone)} /* NW-34 (REQ-012) */
               onInput={(e) =>
                 setCreatePhone((e.target as HTMLInputElement).value)}
             />

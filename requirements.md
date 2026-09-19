@@ -56,3 +56,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-30 (PDF p28), 2026-09-18
 **Requirement (client's words):** "There is no real way to tell invoices apart other than customer name and price. There is a lot of wasted space that could show the job description." — each invoice card on /invoices shows the job name.
 **Tests:** unit `n/a — projection of a field the API already returns` · integration `n/a — the API row is pinned by invoice-parity.int.test.ts` · e2e `cypress/e2e/invoice-card-job-name.cy.ts`
+
+## REQ-012 — 1.11 NW-34 Phone numbers format as `(555) 123-4567` while typing
+**Source:** new-working-issues.md NW-34 (PDF p30), 2026-09-18
+**Requirement (client's words):** "Format phone numbers as (555) 123-4567 as they are typed. That is sexy." — every customer phone input (clients page, assistant customer step, assistant recovery card, invoices new-customer modal) masks as you type, with one shared formatter also used by the login/landing inputs.
+**Tests:** unit `jest/unit/format-helpers.test.ts` ("REQ-012 …") · integration `n/a — pure front-end input formatting; the backend already accepts the masked form` · e2e `cypress/e2e/clients-page-quality.cy.ts` ("REQ-012 …")

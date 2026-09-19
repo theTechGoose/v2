@@ -4,6 +4,7 @@
  * backend on mount and renders the editorial board.
  */
 import { useEffect, useState } from "preact/hooks";
+import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import {
   clientsClient,
   type ClientSegmentsResponse,
@@ -197,7 +198,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
               {tFor(lang, "settings.phone")}
               <input
                 type="tel"
-                value={addPhone}
+                value={formatPhoneInput(addPhone)} /* NW-34 (REQ-012): (555) 123-4567 as you type */
                 onInput={(e) =>
                   setAddPhone((e.target as HTMLInputElement).value)}
                 style="padding:11px 13px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)"

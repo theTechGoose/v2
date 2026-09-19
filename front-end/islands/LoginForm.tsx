@@ -1,4 +1,6 @@
 import { useState } from "preact/hooks";
+// NW-34 (REQ-012): ONE as-you-type phone mask, shared with every customer input.
+import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import { langSignal } from "../lib/lang.ts";
 import { t } from "../lib/i18n.ts";
 import { landingClient } from "../clients/landing.ts";
@@ -9,13 +11,6 @@ import { ApiError } from "../lib/api.ts";
  * (roadmap p.13). Reuses the exact same OTP flow as the landing contact
  * form: send a code, then hand off to /verify for the 6-digit step.
  */
-function formatPhoneDisplay(raw: string): string {
-  const digits = raw.replace(/\D/g, "").slice(0, 10);
-  const a = digits.slice(0, 3), b = digits.slice(3, 6), c = digits.slice(6);
-  if (digits.length <= 3) return a;
-  if (digits.length <= 6) return `(${a}) ${b}`;
-  return `(${a}) ${b}-${c}`;
-}
 
 function toE164(raw: string): string {
   const digits = raw.replace(/\D/g, "");
@@ -72,7 +67,7 @@ export default function LoginForm() {
           inputMode="numeric"
           autoComplete="tel"
           autoFocus
-          value={formatPhoneDisplay(phone)}
+          value={formatPhoneInput(phone)}
           onInput={(e) => setPhone((e.target as HTMLInputElement).value)}
           placeholder={t("loginForm.phonePlaceholder")}
           required

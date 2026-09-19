@@ -31,7 +31,10 @@ import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 import { isChangeOrderMutable } from "../../shared/quote-flow/adjustment-guards.ts";
-import { formatShortDate } from "../../shared/quote-flow/format-helpers.ts";
+import {
+  formatPhoneInput,
+  formatShortDate,
+} from "../../shared/quote-flow/format-helpers.ts";
 import {
   interpretSendResult,
   type SendOutcome,
@@ -2489,7 +2492,7 @@ function NewInvoiceModal(
               {tFor(lang, "settings.phone")}
               <input
                 type="tel"
-                value={newPhone}
+                value={formatPhoneInput(newPhone)} /* NW-34 (REQ-012) */
                 disabled={busy}
                 onInput={(e) =>
                   setNewPhone((e.target as HTMLInputElement).value)}

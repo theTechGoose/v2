@@ -119,3 +119,30 @@ describe("clients page naming — one EN term across page and nav (P-46)", () =>
     });
   });
 });
+
+// ===========================================================================
+// REQ-012 — NW-34 (p30): "Format phone numbers as (555) 123-4567 as they are
+// typed. That is sexy."
+// ===========================================================================
+describe("REQ-012 NW-34 the add-customer phone field masks as you type", () => {
+  const PHONE = "+15125553112";
+
+  beforeEach(() => {
+    cy.clearCookies();
+    cy.loginAs(PHONE);
+    cy.request("POST", "/api/me/onboarded", { skipped: true });
+    cy.apiUpdateUser({ language: "es" });
+    cy.clearCookie("pm_lang");
+    cy.visit("/clients");
+    cy.contains(".ph2__cta", "Nuevo cliente", { timeout: 10_000 }).should("be.visible").click();
+  });
+
+  it("REQ-012 NW-34 typing 5125556999 renders (512) 555-6999 while typing", () => {
+    cy.get("input[type=tel]").should("be.visible").type("512");
+    cy.get("input[type=tel]").should("have.value", "(512");
+    cy.get("input[type=tel]").type("5556");
+    cy.get("input[type=tel]").should("have.value", "(512) 555-6");
+    cy.get("input[type=tel]").type("999");
+    cy.get("input[type=tel]").should("have.value", "(512) 555-6999");
+  });
+});
