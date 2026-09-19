@@ -1589,6 +1589,9 @@ function InvoiceCard(
   // P-09: honest send state — set when a dispatch delivered on NO channel,
   // rendered on the card instead of the old silent reload-as-success.
   const [sendFail, setSendFail] = useState<string | null>(null);
+  // REQ-021: inline confirmation after a nudge (no reload — nothing on the
+  // card changes except that the reminder went out).
+  const [sendNote, setSendNote] = useState<string | null>(null);
   // Roadmap p.12: in-card discount + change-order controls.
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [discountDollars, setDiscountDollars] = useState("");
@@ -1770,10 +1773,45 @@ function InvoiceCard(
     e.stopPropagation();
     globalThis.location.assign(`/invoices?open=${inv.id}&pay=1`);
   }
+  /** REQ-021 (NW-31a): a nudge is the reminder CADENCE (day 3 / 7 / 14 / 30
+   *  by how overdue the invoice is), never the full invoice re-texted. */
+  async function doSendNudge(e: Event) {
+    e.stopPropagation();
+    if (busy) return;
+    const d = inv.daysOverdue;
+    const day = d <= 3 ? 3 : d <= 7 ? 7 : d <= 14 ? 14 : 30;
+    setBusy(true);
+    setSendFail(null);
+    setSendNote(null);
+    try {
+      const res = await fetch("/api/cron/invoice-reminder", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ invoiceId: inv.id, day }),
+      });
+      const body = res.ok
+        ? (await res.json().catch(() => ({}))) as { channels?: string[] }
+        : null;
+      if (body && Array.isArray(body.channels) && body.channels.length > 0) {
+        setSendNote(tFor(lang, "invoicesPage.nudge.sent"));
+      } else if (body) {
+        // 200 with no channel = the cadence already fired this rung today,
+        // or reminders are muted for this invoice.
+        setSendNote(tFor(lang, "invoicesPage.nudge.alreadySent"));
+      } else {
+        setSendFail(tFor(lang, "invoicesPage.nudge.failed"));
+      }
+    } catch {
+      setSendFail(tFor(lang, "invoicesPage.nudge.failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
   function ctaAction(e: Event) {
     if (inv.stage === "claimed") return doConfirmReceived(e);
     if (inv.stage === "out") return doPaymentReceived(e);
-    if (inv.stage === "overdue") return doSendText(e);
+    if (inv.stage === "overdue") return doSendNudge(e);
     if (inv.stage === "scheduled") return doSendNow(e);
     if (inv.stage === "drafting") return doFinishDraft(e);
     return doOpenInvoice(e);
@@ -2008,6 +2046,16 @@ function InvoiceCard(
       {sendFail && (
         <p class="qcard__sendfail" role="alert" data-cy="invoice-send-failure">
           {sendFail}
+        </p>
+      )}
+      {sendNote && (
+        <p
+          class="qcard__sendfail"
+          role="status"
+          data-cy="invoice-send-note"
+          style="color:var(--brand-green,#519843)"
+        >
+          {sendNote}
         </p>
       )}
 
@@ -2337,6 +2385,16 @@ function InvoiceCard(
           <button type="button" onClick={doOpenInvoice}>
             {tFor(lang, "invoicesPage.back.open")}
           </button>
+          {inv.stage === "claimed" && (
+            <button
+              type="button"
+              data-cy="invoice-nudge"
+              onClick={doSendNudge}
+              disabled={busy}
+            >
+              {tFor(lang, "invoicesPage.back.nudge")}
+            </button>
+          )}
           {inv.stage === "claimed" && (
             <button
               type="button"

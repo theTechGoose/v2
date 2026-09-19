@@ -317,3 +317,59 @@ describe("REQ-018 NW-27 payment received on an Out-for-payment invoice", () => {
     cy.contains(/zelle/i, { timeout: 15_000 }).should("be.visible");
   });
 });
+
+// ===========================================================================
+// REQ-021 — NW-31a (p28): "Awaiting confirmation — has an 'Ok I got it'
+// button, but also needs a nudge button, because 'Ok I got it' marks it as
+// paid." Both nudges post to the reminder cadence (POST
+// /api/cron/invoice-reminder), never the full-invoice re-text.
+// ===========================================================================
+describe("REQ-021 NW-31a nudges go through the reminder cadence", () => {
+  const PHONE = "+15125552837";
+
+  beforeEach(() => {
+    cy.viewport(1440, 900);
+    cy.clearCookies();
+    cy.setCookie("pm_lang", "en");
+    cy.loginAs(PHONE);
+    cy.request({ url: "/api/me/wipe", failOnStatusCode: false });
+    cy.loginAs(PHONE);
+    cy.apiUpdateUser({ language: "en", name: "Nudge Contractor" });
+    cy.request({ method: "POST", url: "/api/me/onboarded", body: { skipped: true }, failOnStatusCode: false });
+    cy.setCookie("pm_lang", "en");
+    cy.intercept("POST", "/api/cron/invoice-reminder").as("nudge");
+    cy.intercept("POST", "/api/invoices/*/text").as("retext");
+  });
+
+  it("REQ-021 the Awaiting-confirmation card back offers 'Send a nudge' and it posts to the cadence", () => {
+    cy.seedQuoteToCash({ invoice: { amount: 320000 } }).then((seeded) => {
+      cy.apiClaimPayment(seeded.invoiceId, { method: "zelle", claimedBy: "Asha Patel" });
+    });
+    cy.visit("/invoices");
+    cy.get("[data-cy=awaiting-confirmation-track] .qcard", { timeout: 15_000 }).first().as("card");
+    cy.get("@card").find(".qcard__title").scrollIntoView().click();
+    cy.get("@card").should("have.class", "qcard--flipped");
+    cy.get("@card").find("[data-cy=invoice-nudge]").should("be.visible").click();
+    cy.wait("@nudge").its("request.body").should("deep.include", { day: 3 });
+    cy.get("@nudge.all").should("have.length", 1);
+    cy.get("@retext.all").should("have.length", 0);
+  });
+
+  it("REQ-021 the Overdue card's 'Send nudge' posts to the cadence with the day matching how overdue it is", () => {
+    const issued = new Date(Date.now() - 12 * 86_400_000).toISOString().slice(0, 10);
+    const due = new Date(Date.now() - 10 * 86_400_000).toISOString().slice(0, 10);
+    cy.apiCreateCustomer({
+      name: "Late Customer",
+      email: "late.customer@blackhole.postmarkapp.com",
+      phoneNumber: "+15125552838",
+    }).then((customerId) => {
+      cy.apiCreateInvoice({ customerId, amount: 45000, jobName: "Late Deck Job", status: "sent", issuedDate: issued, dueDate: due });
+    });
+    cy.visit("/invoices");
+    cy.contains(".qcard", "Late Deck Job", { timeout: 15_000 }).as("card");
+    cy.get("@card").find("[data-cy=invoice-cta-overdue]").scrollIntoView().click();
+    // 10 days overdue → the day-14 rung.
+    cy.wait("@nudge").its("request.body").should("deep.include", { day: 14 });
+    cy.get("@retext.all").should("have.length", 0);
+  });
+});

@@ -102,3 +102,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-29 (PDF p28), 2026-09-18
 **Requirement (client's words):** "When an invoice is paid it must also be emailed to the Unicorn with 'Paid' on it so everyone is on the same page." — every path that flips an invoice to paid (a recorded payment closing the balance, or confirming a customer claim) emails the customer the invoice stamped PAID (subject says Paid, no "Amount due"), logged in the comms trail.
 **Tests:** unit `n/a` · integration (Deno) `backend/src/paperwork/domain/coordinators/send-paperwork-email/int.test.ts` + `compute-invoice-balance/int.test.ts` ("REQ-020 …") + jest `jest/integration/paid-invoice-email.int.test.ts` · e2e `n/a — email content`
+
+## REQ-021 — 3.4 NW-31a "Awaiting confirmation" gets a real nudge; "Send nudge" uses the reminder cadence
+**Source:** new-working-issues.md NW-31 (PDF p28), 2026-09-18
+**Requirement (client's words):** "Awaiting confirmation — has an 'Ok I got it' button, but also needs a nudge button, because 'Ok I got it' marks it as paid." — the awaiting-confirmation card offers "Send a nudge", and both it and the overdue card's "Send nudge" post to the reminder cadence (`POST /cron/invoice-reminder`, day 3/7/14/30 by days overdue) instead of re-texting the whole invoice.
+**Tests:** unit `n/a — page wiring over an existing backend cadence` · integration `jest/integration/invoice-nudge.int.test.ts` (backend contract pin — green on arrival) · e2e `cypress/e2e/invoice-detail-panel.cy.ts` ("REQ-021 …")
