@@ -1,13 +1,10 @@
 /**
  * Server-rendered sections for /clients: editorial header, today's loop strip,
- * leaderboard, and segment-mix bar. Pure presentation — feed them backend data.
+ * and leaderboard. Pure presentation — feed them backend data. (The segment-mix
+ * bar was removed — NW-36 / REQ-013: the app never collects a segment.)
  */
 import { I, ICN } from "../lib/dash-icons.tsx";
-import type {
-  ClientSegmentRow,
-  CustomerCard,
-  TopClient,
-} from "../clients/clients.ts";
+import type { CustomerCard, TopClient } from "../clients/clients.ts";
 import { dollars, initialsOf, numberWord } from "../lib/clients-display.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 
@@ -231,59 +228,6 @@ export function TopClients({ rows, lang = "en" }: TopClientsProps) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-interface ClientsSegmentsProps {
-  rows: ClientSegmentRow[];
-  lang?: Lang;
-}
-
-const SEGMENT_COLOR: Record<string, string> = {
-  property_mgmt: "var(--brand-green)",
-  homeowner: "var(--brand-pink)",
-  small_biz: "var(--brand-teal)",
-  hoa: "var(--coffee-500)",
-  unsorted: "var(--coffee-300)",
-};
-
-export function ClientsSegments({ rows, lang = "en" }: ClientsSegmentsProps) {
-  if (rows.length === 0) {
-    return (
-      <div class="csegment2">
-        <div class="csegment2__title">
-          {tFor(lang, "clientsSegments.title")}
-        </div>
-        <div class="csegment2__empty">{tFor(lang, "clientsSegments.empty")}</div>
-      </div>
-    );
-  }
-  // Plural-ize labels for the section
-  const PLURAL: Record<string, string> = {
-    "property_mgmt": tFor(lang, "clientsSegments.label.property_mgmt"),
-    "homeowner": tFor(lang, "clientsSegments.label.homeowner"),
-    "small_biz": tFor(lang, "clientsSegments.label.small_biz"),
-    "hoa": tFor(lang, "clientsSegments.label.hoa"),
-    "unsorted": tFor(lang, "clientsSegments.label.unsorted"),
-  };
-  return (
-    <div class="csegment2">
-      <div class="csegment2__title">{tFor(lang, "clientsSegments.title")}</div>
-      {rows.map((s) => (
-        <div class="cseg2-row" key={s.key}>
-          <div class="cseg2-row__lbl">{PLURAL[s.key] ?? s.label}</div>
-          <div class="cseg2-row__bar">
-            <div
-              class="cseg2-row__fill"
-              style={`width:${s.pct}%; background:${
-                SEGMENT_COLOR[s.key] ?? "var(--coffee-300)"
-              }`}
-            />
-          </div>
-          <div class="cseg2-row__num">{s.count}</div>
-        </div>
-      ))}
     </div>
   );
 }

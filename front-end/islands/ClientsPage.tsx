@@ -7,13 +7,11 @@ import { useEffect, useState } from "preact/hooks";
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import {
   clientsClient,
-  type ClientSegmentsResponse,
   type CustomerCard,
   type TopClientsResponse,
 } from "../clients/clients.ts";
 import {
   ClientsHero,
-  ClientsSegments,
   LoopBar,
   TopClients,
 } from "../components/ClientsSections.tsx";
@@ -30,7 +28,6 @@ interface State {
   error: string | null;
   cards: CustomerCard[];
   top: TopClientsResponse;
-  segments: ClientSegmentsResponse;
 }
 
 const INITIAL: State = {
@@ -38,7 +35,6 @@ const INITIAL: State = {
   error: null,
   cards: [],
   top: { results: [] },
-  segments: { segments: [] },
 };
 
 function pickLoop(cards: CustomerCard[]): CustomerCard[] {
@@ -99,12 +95,9 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
     Promise.all([
       clientsClient.list().catch(() => [] as CustomerCard[]),
       clientsClient.top(5).catch(() => ({ results: [] } as TopClientsResponse)),
-      clientsClient.segments().catch(
-        () => ({ segments: [] } as ClientSegmentsResponse),
-      ),
-    ]).then(([cards, top, segments]) => {
+    ]).then(([cards, top]) => {
       if (!alive) return;
-      setS({ loading: false, error: null, cards, top, segments });
+      setS({ loading: false, error: null, cards, top });
     }).catch((err: Error) => {
       if (!alive) return;
       setS({ ...INITIAL, loading: false, error: err.message });
@@ -131,7 +124,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
     );
   }
 
-  const { cards: rawCards, top, segments } = s;
+  const { cards: rawCards, top } = s;
   const cards = Array.isArray(rawCards) ? rawCards : [];
   const activeJobs = cards.filter((c) => c.status === "active").length;
   const owedTotal = cards.reduce(
@@ -157,7 +150,8 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
       <LoopBar picks={loopPicks} lang={lang} />
       <ClientsBoard cards={cards} lang={lang}>
         <TopClients rows={top.results} lang={lang} />
-        <ClientsSegments rows={segments.segments} lang={lang} />
+        {/* NW-36 (REQ-013): the "Who's on your books" segments chart is gone —
+            no part of the app ever collects a customer segment. */}
       </ClientsBoard>
 
       {addOpen && (

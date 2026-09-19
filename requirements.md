@@ -61,3 +61,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-34 (PDF p30), 2026-09-18
 **Requirement (client's words):** "Format phone numbers as (555) 123-4567 as they are typed. That is sexy." — every customer phone input (clients page, assistant customer step, assistant recovery card, invoices new-customer modal) masks as you type, with one shared formatter also used by the login/landing inputs.
 **Tests:** unit `jest/unit/format-helpers.test.ts` ("REQ-012 …") · integration `n/a — pure front-end input formatting; the backend already accepts the masked form` · e2e `cypress/e2e/clients-page-quality.cy.ts` ("REQ-012 …")
+
+## REQ-013 — 1.12 NW-36 Remove the "Who's on your books" chart
+**Source:** new-working-issues.md NW-36 (PDF p32), 2026-09-18
+**Requirement (client's words):** "Customers tab: remove the 'Who's on your books' chart (Property mgmt / Homeowners / Small biz / HOAs / Unsorted). We do not collect this data."
+**Tests:** unit `n/a — removal of a component; dictionary parity is enforced by jest/unit/i18n-dictionary-consistency.test.ts` · integration `n/a — the backend endpoint stays (own e2e test)` · e2e `cypress/e2e/clients-page-quality.cy.ts` ("REQ-013 …")

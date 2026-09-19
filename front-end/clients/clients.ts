@@ -5,7 +5,6 @@
  *  - analytics/.../clients-controller/mod.ts
  *      GET /clients                     → CustomerCard[]
  *      GET /analytics/clients/top       → TopClientsResponse
- *      GET /analytics/clients/segments  → ClientSegmentsResponse
  */
 import { api, type ApiOptions } from "../lib/api.ts";
 
@@ -57,17 +56,6 @@ export interface TopClientsResponse {
   results: TopClient[];
 }
 
-export interface ClientSegmentRow {
-  key: ClientSegmentKey;
-  label: string;
-  count: number;
-  pct: number;
-}
-
-export interface ClientSegmentsResponse {
-  segments: ClientSegmentRow[];
-}
-
 export const clientsClient = {
   list: (opts: ApiOptions = {}) => api.get<CustomerCard[]>("/clients", opts),
   top: (limit = 5, opts: ApiOptions = {}) =>
@@ -75,8 +63,6 @@ export const clientsClient = {
       ...opts,
       query: { limit },
     }),
-  segments: (opts: ApiOptions = {}) =>
-    api.get<ClientSegmentsResponse>("/analytics/clients/segments", opts),
   update: (id: string, patch: Record<string, unknown>, opts: ApiOptions = {}) =>
     api.put<CustomerCard>(`/customers/${id}`, patch, opts),
   create: (
