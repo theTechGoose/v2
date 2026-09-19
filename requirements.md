@@ -188,3 +188,8 @@ _2026-09-19 — "Do not start these tasks until the answer is back." Each is one
 **Source:** new-working-issues.md NW-39 (PDF p36), 2026-09-18
 **Requirement (client's words):** "Sidebar collapse: the arrow between HANS LLC and Settings that minimizes the sidebar should work like QuickBooks, showing the hamburger plus an arrow to minimize. Use the same pattern for the PM Assistant conversations panel and remove the existing button." — the rail carries its own one-button control (hamburger + arrow when open, hamburger when collapsed, the same pattern the conversations panel already has), the choice persists across reloads, and the topbar hamburger keeps working.
 **Tests:** unit `n/a — island wiring` · integration `n/a` · e2e `cypress/e2e/dashboard-assistant-access.cy.ts` ("REQ-033 …")
+
+## REQ-034 — 7.6 NW-43f The `/quotes?open=` panel gets a close control
+**Source:** new-working-issues.md NW-43f (PDF p40), 2026-09-18
+**Requirement (client's words):** "There is no back button for the steps. Needs a back button throughout so they can easily be edited." — the quote detail panel opened by `/quotes?open=<id>` (or tapping a row) has an X that closes it and removes `open` from the URL without leaving the page, like the invoice panel.
+**Tests:** unit `n/a — island wiring` · integration `n/a` · e2e `cypress/e2e/quotes-open-panel.cy.ts` ("REQ-034 …")

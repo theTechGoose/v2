@@ -11,6 +11,7 @@ import {
   type WinRate,
 } from "../clients/quotes.ts";
 import { api } from "../lib/api.ts";
+import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoney } from "../lib/format.ts";
 import {
   DecidedRow,
@@ -125,7 +126,12 @@ interface OpenQuoteState {
  *  full-quote actions, and the "emailed to … / texted to …" receipt strip
  *  built from the per-document comms trail (roadmap p.8). */
 function OpenQuotePanel(
-  { lang, state }: { lang: "en" | "es"; state: OpenQuoteState },
+  { lang, state, onClose }: {
+    lang: "en" | "es";
+    state: OpenQuoteState;
+    /** REQ-034 (NW-43f): the panel can be closed — X strips ?open=. */
+    onClose: () => void;
+  },
 ) {
   const [copied, setCopied] = useState(false);
 
@@ -174,6 +180,17 @@ function OpenQuotePanel(
         >
           {tFor(lang, `quotesPage.status.${badge}`)}
         </span>
+        {/* REQ-034 (NW-43f): a way back — the same X the invoice panel has. */}
+        <button
+          type="button"
+          class="qopen__close"
+          data-cy="quote-panel-close"
+          onClick={onClose}
+          aria-label={tFor(lang, "common.close")}
+          title={tFor(lang, "common.close")}
+        >
+          <I d={ICN.x} size={16} sw={2.5} />
+        </button>
       </div>
       {q.summary && q.jobName?.trim() && (
         <p class="qopen__summary">{q.summary}</p>
@@ -449,7 +466,20 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         lostCount={lost}
         winRate={winRatePct}
       />
-      {openId && <OpenQuotePanel lang={lang} state={openQ} />}
+      {openId && (
+        <OpenQuotePanel
+          lang={lang}
+          state={openQ}
+          onClose={() => {
+            setOpenId(null);
+            try {
+              const url = new URL(globalThis.location.href);
+              url.searchParams.delete("open");
+              globalThis.history.replaceState(null, "", url.toString());
+            } catch { /* history unavailable — the panel still closes */ }
+          }}
+        />
+      )}
       <div class="qlay">
         <div>
           <QuoteTrack
