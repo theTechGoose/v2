@@ -183,3 +183,8 @@ _2026-09-19 — "Do not start these tasks until the answer is back." Each is one
 **Tests:** unit `jest/unit/signature-block.test.ts` ("REQ-032 …") · integration `n/a — PDF text checked by rendering + pdftotext (recorded below)` · e2e `cypress/e2e/public-quote-signature.cy.ts` ("REQ-032 …")
 **PDF probe (dev API, EN contractor, customer "Green Goblin"):** `GET /api/quotes/:id/pdf` text streams contain "By signing below, Green Goblin agrees to everything above.", "CONTRACTOR SIGNATURE" and "YOUR SIGNATURE"; "CLIENT SIGNED" is gone (checked by inflating the content streams and decoding the Tj hex strings — no pdftotext on the box).
 **Note:** `public-quote-signature.cy.ts`'s ceremony test fails identically before and after this work (documented P-40: the signed page never renders the captured signature image; the retry then reloads an already-signed quote and reports the sign form missing).
+
+## REQ-033 — 7.5 NW-39 QuickBooks-style collapse control inside the sidebar
+**Source:** new-working-issues.md NW-39 (PDF p36), 2026-09-18
+**Requirement (client's words):** "Sidebar collapse: the arrow between HANS LLC and Settings that minimizes the sidebar should work like QuickBooks, showing the hamburger plus an arrow to minimize. Use the same pattern for the PM Assistant conversations panel and remove the existing button." — the rail carries its own one-button control (hamburger + arrow when open, hamburger when collapsed, the same pattern the conversations panel already has), the choice persists across reloads, and the topbar hamburger keeps working.
+**Tests:** unit `n/a — island wiring` · integration `n/a` · e2e `cypress/e2e/dashboard-assistant-access.cy.ts` ("REQ-033 …")

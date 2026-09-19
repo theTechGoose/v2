@@ -1023,6 +1023,8 @@
   "dashSeed.time.2MinAgo": "hace 2 min",
   "dashSeed.time.3HrAgo": "hace 3 h",
   "dashSeed.time.yesterday": "Ayer",
+  "dashSidebar.collapse": "Contraer el menú",
+  "dashSidebar.expand": "Expandir el menú",
   "dashTopbar.greeting": "Hola, {name} 👋",
   "dashTopbar.greetingNoName": "Hola 👋",
   "dashTopbar.language": "Idioma",
