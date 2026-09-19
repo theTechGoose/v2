@@ -54,6 +54,8 @@ interface Contractor {
   businessName?: string;
   phoneNumber?: string;
   email?: string;
+  /** REQ-038 (NW-06b): the business website, when provided. */
+  websiteUrl?: string;
   addressLine?: string;
   state?: string;
   /** Outgoing-comms language (roadmap p.13) — drives this page's copy. */
@@ -423,6 +425,7 @@ export function QuoteDoc(
               businessName={contractor?.businessName?.trim()}
               email={contractor?.email}
               phone={contractor?.phoneNumber}
+              website={contractor?.websiteUrl}
               address={contractor?.addressLine}
             />
           </section>

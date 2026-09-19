@@ -6,6 +6,7 @@ import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
+import { websiteLabel } from "#quote-flow/format-helpers.ts";
 import { agreementTitle } from "#quote-flow/agreement-title.ts";
 
 export interface RenderQuotePdfInput {
@@ -15,6 +16,8 @@ export interface RenderQuotePdfInput {
   /** Optional override for the contractor's display business name (e.g.
    *  "Riley Roofing Co." pulled from BusinessIdentity). */
   businessName?: string;
+  /** REQ-038 (NW-06b): the business website for the From lines. */
+  websiteUrl?: string;
   /** Outgoing-comms language (roadmap p.13) — the PDF is the customer's
    *  copy, so it renders in their language. Defaults to "en". */
   commsLanguage?: string;
@@ -176,6 +179,8 @@ export class RenderQuotePdf {
         businessName,
         contractor?.phoneNumber,
         contractor?.email,
+        // REQ-038 (NW-06b): the website, as people read it.
+        websiteLabel(input.websiteUrl),
       ].filter((v): v is string => !!v && v.trim().length > 0);
       const rows = Math.max(toLines.length, fromLines.length, 1);
       for (let i = 0; i < rows; i++) {

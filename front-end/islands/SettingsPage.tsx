@@ -15,6 +15,7 @@ import { filesClient } from "../clients/files.ts";
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { type Lang, langSignal, setLang, tFor } from "../lib/i18n.ts";
+import { normalizeWebsiteUrl } from "../../shared/quote-flow/format-helpers.ts";
 import {
   CardGridSkeleton,
   PageHeaderSkeleton,
@@ -108,6 +109,7 @@ function tr(es: boolean) {
     legalName: tFor(lang, "settings.legalName"),
     license: tFor(lang, "settings.license"),
     businessName: tFor(lang, "settings.businessName"),
+    website: tFor(lang, "settings.website"),
     // Address
     saveAddress: tFor(lang, "settings.saveAddress"),
     street: tFor(lang, "settings.street"),
@@ -172,6 +174,7 @@ function tr(es: boolean) {
     ariaEditName: tFor(lang, "settings.aria.editName"),
     ariaEditEmail: tFor(lang, "settings.aria.editEmail"),
     ariaEditBusinessName: tFor(lang, "settings.aria.editBusinessName"),
+    ariaEditWebsite: tFor(lang, "settings.aria.editWebsite"),
     ariaUploadLogo: tFor(lang, "settings.aria.uploadLogo"),
     ariaLogoFile: tFor(lang, "settings.aria.logoFile"),
     ariaInsuranceCertFile: tFor(lang, "settings.aria.insuranceCertFile"),
@@ -284,6 +287,8 @@ function EditCard(
   const [name, setName] = useState(snapshot.user.name ?? "");
   const [email, setEmail] = useState(snapshot.user.email ?? "");
   const [biz, setBiz] = useState(snapshot.identity?.businessName ?? "");
+  // REQ-038 (NW-06b): the business website — surfaces on every From block.
+  const [site, setSite] = useState(snapshot.identity?.websiteUrl ?? "");
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
@@ -385,6 +390,27 @@ function EditCard(
               biz.trim() !== (snapshot.identity?.businessName ?? "") &&
               saveIdentity({ businessName: biz.trim() })}
             aria-label={t.ariaEditBusinessName}
+          />
+        </label>
+        <label style="display:block;grid-column:1 / -1">
+          <span style={labelStyle}>{t.website}</span>
+          <input
+            type="url"
+            class="settings-edit__input"
+            style={inputStyle}
+            data-cy="settings-website"
+            value={site}
+            placeholder="https://"
+            disabled={busy === "identity"}
+            onInput={(e) => setSite((e.target as HTMLInputElement).value)}
+            onBlur={() => {
+              const next = normalizeWebsiteUrl(site);
+              if (next !== site) setSite(next);
+              if (next !== (snapshot.identity?.websiteUrl ?? "")) {
+                saveIdentity({ websiteUrl: next });
+              }
+            }}
+            aria-label={t.ariaEditWebsite}
           />
         </label>
         <div style="grid-column:1 / -1;display:flex;align-items:center;gap:12px">

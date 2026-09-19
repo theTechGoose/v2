@@ -218,3 +218,9 @@ _2026-09-19 — "Do not start these tasks until the answer is back." Each is one
 **Source:** new-working-issues.md NW-43b (PDF p40), 2026-09-18
 **Requirement (client's words):** "After quotes and signed quotes, send a completion text and email." — when the chosen channel needs a contact the customer lacks (Text + Email with no email or no phone on file), the send dialog shows an inline "Add an email to also email it" / "Add a phone to also text it" field; filling it saves the contact to the customer and the send goes out on both channels (and every later alert — accepted, signed, receipts — has both channels to use).
 **Tests:** unit `n/a — island wiring over the existing customer PUT` · integration `n/a` · e2e `cypress/e2e/ux-send-moment.cy.ts` ("REQ-037 …")
+
+## REQ-038 — 7.10 NW-06b Business website on the From block
+**Source:** new-working-issues.md NW-06 (PDF p5), 2026-09-18
+**Requirement (client's words):** "Make sure the 'From' block includes email and website when the Dragon has provided them." — the business identity has a website (Settings input, saved through the identity endpoint; a bare domain is stored with https://), and every From surface shows it when present: the public agreement's From card, the assistant preview's From hero, the PDF From lines and the email's sender block.
+**Tests:** unit (Deno) `backend/src/users/domain/data/business-identity-store/smk.test.ts` ("REQ-038 …") · integration (jest) `jest/integration/business-website.int.test.ts` ("REQ-038 …") · e2e `cypress/e2e/settings-editable.cy.ts` + `cypress/e2e/public-quote-signature.cy.ts` ("REQ-038 …")
+**Probes:** `PUT /profile/identity {websiteUrl:"https://hans.work"}` → `GET /quotes/:id/public` `contractor.websiteUrl` present; `GET /quotes/:id/pdf` From lines carry "hans.work".

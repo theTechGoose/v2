@@ -35,7 +35,7 @@ describe("public quote — agreement anatomy + signature ceremony", () => {
     cy.setCookie("pm_lang", "en");
     cy.loginAs(PHONE);
     cy.apiUpdateUser({ language: "en" }); // fresh users default to es; EN copy asserted
-    cy.apiUpdateProfile({ businessName: "HANS LLC" });
+    cy.apiUpdateProfile({ businessName: "HANS LLC", websiteUrl: "https://hans.work" });
     cy.apiUpdateUser({ name: "Hans Pedersen" });
     cy.apiCreateCustomer({
       name: "Green Goblin",
@@ -85,6 +85,16 @@ describe("public quote — agreement anatomy + signature ceremony", () => {
       .should("have.text", "Green Goblin's Backyard Junk Removal Agreement");
     cy.contains(/between .*hans llc.*contractor.*green goblin.*client.*for.*backyard junk removal/i)
       .should("be.visible");
+  });
+
+  // REQ-038 — NW-06b (p5): "Make sure the 'From' block includes email and
+  // website when the Dragon has provided them."
+  it("REQ-038 NW-06b the From card shows the business website", () => {
+    cy.contains(/^from$/i, { timeout: 10_000 })
+      .parent()
+      .within(() => {
+        cy.get("a[href='https://hans.work']").should("be.visible").and("contain.text", "hans.work");
+      });
   });
 
   it("carries the parties + effective-date line and the line-item table (p12 anatomy)", () => {

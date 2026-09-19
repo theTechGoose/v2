@@ -20,6 +20,20 @@ describe("settings — mailing address, insurance, W-9 are editable", () => {
     cy.visit("/settings");
   });
 
+  // REQ-038 — NW-06b (p5): the From block must carry the website when the
+  // contractor has one — so Settings needs somewhere to enter it.
+  it("REQ-038 NW-06b the business website is editable and persists across reload", () => {
+    cy.get("[data-cy=settings-website]", { timeout: 10_000 })
+      .should("be.visible")
+      .clear()
+      .type("hans.work")
+      .blur();
+    cy.wait(800);
+    cy.reload();
+    cy.get("[data-cy=settings-website]", { timeout: 10_000 })
+      .should("have.value", "https://hans.work");
+  });
+
   it("mailing address is editable and persists across reload", () => {
     cy.get("[data-cy=settings-mailing-address]", { timeout: 10_000 })
       .scrollIntoView()

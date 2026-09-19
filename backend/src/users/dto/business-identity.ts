@@ -108,6 +108,8 @@ export class AcceptedPaymentMethods {
 export interface BusinessIdentity {
   userId: string;
   businessName?: string;
+  /** REQ-038 (NW-06b): the business website (with scheme), when provided. */
+  websiteUrl?: string;
   legalName?: string;
   businessLicense?: string;
   logoFileId?: string;
@@ -135,6 +137,9 @@ export interface BusinessIdentity {
 }
 
 export class UpdateBusinessIdentityDto {
+  /** REQ-038 (NW-06b): the business website — surfaces on every From block. */
+  @IsOptional() @IsString()
+  websiteUrl?: string;
   @IsOptional()
   @IsString()
   businessName?: string;

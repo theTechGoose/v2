@@ -18,6 +18,7 @@ import {
   titleCaseJobName,
   unitLabel,
 } from "#quote-flow/email-format.ts";
+import { websiteLabel } from "#quote-flow/format-helpers.ts";
 import {
   isPlaceholderName,
   outboundSenderName,
@@ -894,6 +895,15 @@ function renderQuoteHtml(
       }</a></div>`
       : ""
   }
+                ${
+    senderBiz?.websiteUrl?.trim()
+      ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="${
+        escapeAttr(senderBiz.websiteUrl.trim())
+      }" style="color:${COLOR_INK};text-decoration:none">${
+        escapeHtml(websiteLabel(senderBiz.websiteUrl))
+      }</a></div>`
+      : ""
+  }
               </td>
             </tr>
           </table>
@@ -1314,6 +1324,15 @@ function renderInvoiceHtml(
         escapeAttr(sender.email)
       }" style="color:${COLOR_INK};text-decoration:none">${
         escapeHtml(sender.email)
+      }</a></div>`
+      : ""
+  }
+                ${
+    senderBiz?.websiteUrl?.trim()
+      ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="${
+        escapeAttr(senderBiz.websiteUrl.trim())
+      }" style="color:${COLOR_INK};text-decoration:none">${
+        escapeHtml(websiteLabel(senderBiz.websiteUrl))
       }</a></div>`
       : ""
   }

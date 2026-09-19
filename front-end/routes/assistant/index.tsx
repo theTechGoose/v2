@@ -105,6 +105,7 @@ export default define.page(async function AssistantHome(ctx) {
                     name: user?.name,
                     phone: user?.phoneNumber,
                     email: profile?.user?.email,
+                    website: profile?.identity?.websiteUrl,
                   }}
                   sendLanguages={profile?.identity?.commsLanguages ??
                     (profile?.identity?.commsLanguage

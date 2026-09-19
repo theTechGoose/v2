@@ -223,6 +223,8 @@ export class PaperworkPublicController {
         customer,
         contractor,
         ...(businessName ? { businessName } : {}),
+        // REQ-038 (NW-06b): the website joins the PDF's From lines.
+        ...(ident?.websiteUrl?.trim() ? { websiteUrl: ident.websiteUrl.trim() } : {}),
         ...(ident?.commsLanguage ? { commsLanguage: ident.commsLanguage } : {}),
       });
       return new Response(bytes as BodyInit, {
@@ -896,6 +898,8 @@ interface PublicContractor {
   businessName?: string;
   phoneNumber?: string;
   email?: string;
+  /** REQ-038 (NW-06b): the business website, when the contractor gave one. */
+  websiteUrl?: string;
   /** Single-line address ("123 Main St, Austin, TX 78701") composed from
    *  the BusinessAddress record. Omitted when the contractor hasn't filled
    *  in any street/city fields. Surfaces under the eyebrow on public docs. */
@@ -938,6 +942,7 @@ async function loadContractor(
       businessName: ident?.businessName ?? ident?.legalName,
       phoneNumber: user?.phoneNumber,
       email: user?.email,
+      ...(ident?.websiteUrl?.trim() ? { websiteUrl: ident.websiteUrl.trim() } : {}),
       addressLine: composeAddressLine(addr),
       state: addr?.state?.trim() || undefined,
       acceptedPaymentMethods: redactAcceptedMethods(

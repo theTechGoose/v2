@@ -242,3 +242,20 @@ export function formatShortDate(iso: string, lang: Lang): string {
 export function capitalizeDateLine(line: string, _lang?: Lang): string {
   return sentenceCase(line);
 }
+
+/**
+ * REQ-038 (NW-06b): the business website as the contractor typed it, stored
+ * with a scheme so it links. "hans.work" → "https://hans.work"; an existing
+ * http(s) scheme is kept; blank stays blank.
+ */
+export function normalizeWebsiteUrl(input: string | undefined): string {
+  const s = (input ?? "").trim();
+  if (!s) return "";
+  return /^https?:\/\//i.test(s) ? s : `https://${s.replace(/^\/+/, "")}`;
+}
+
+/** The website as people read it: no scheme, no trailing slash. */
+export function websiteLabel(url: string | undefined): string {
+  const s = (url ?? "").trim();
+  return s.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+}

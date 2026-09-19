@@ -45,6 +45,7 @@ import {
 import {
   formatPhoneDisplay,
   formatPhoneInput,
+  websiteLabel,
 } from "../../shared/quote-flow/format-helpers.ts";
 import { summarizeJobName } from "../../shared/quote-flow/job-name.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
@@ -410,6 +411,8 @@ interface Props {
     name?: string;
     phone?: string;
     email?: string;
+    /** REQ-038 (NW-06b): the business website, when provided. */
+    website?: string;
   };
   /** Languages the contractor can send in (from Settings checkboxes). Drives
    *  the quote-review "Preview in" language toggle. Defaults to ["en"]. */
@@ -5881,6 +5884,16 @@ export default function AsstChat({
                                       <>
                                         <span class="quote-review__dot">·</span>
                                         <span>{from.email}</span>
+                                      </>
+                                    )
+                                    : null}
+                                  {from.website?.trim()
+                                    ? (
+                                      <>
+                                        <span class="quote-review__dot">·</span>
+                                        <span data-cy="review-from-website">
+                                          {websiteLabel(from.website)}
+                                        </span>
                                       </>
                                     )
                                     : null}
