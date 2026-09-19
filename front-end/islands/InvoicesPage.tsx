@@ -35,6 +35,7 @@ import {
   formatPhoneInput,
   formatShortDate,
 } from "../../shared/quote-flow/format-helpers.ts";
+import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 import {
   interpretSendResult,
   type SendOutcome,
@@ -423,6 +424,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             setOpenId(null);
             const url = new URL(globalThis.location.href);
             url.searchParams.delete("open");
+            url.searchParams.delete("pay");
             history.replaceState(null, "", url.toString());
           }}
           onChanged={refreshInvoices}
@@ -978,8 +980,14 @@ function InvoiceDetail(
     onChanged: () => void | Promise<void>;
   },
 ) {
-  type Mode = "none" | "edit" | "discount" | "co";
-  const [mode, setMode] = useState<Mode>("none");
+  type Mode = "none" | "edit" | "discount" | "co" | "pay";
+  // REQ-018: /invoices?open=<id>&pay=1 lands straight on "Payment received".
+  const [mode, setMode] = useState<Mode>(() =>
+    typeof globalThis.location !== "undefined" &&
+      new URLSearchParams(globalThis.location.search).get("pay") === "1"
+      ? "pay"
+      : "none"
+  );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -1180,7 +1188,35 @@ function InvoiceDetail(
         >
           {tFor(lang, "invoicesPage.detail.changeOrderBtn")}
         </button>
+        {/* REQ-018 (NW-27): the contractor can say "payment received" on
+            anything the customer still owes — no customer claim required. */}
+        {(inv.stage === "out" || inv.stage === "overdue" ||
+          inv.stage === "claimed") && (
+          <button
+            type="button"
+            data-cy="invoice-payment-received"
+            onClick={() => switchMode("pay")}
+            style={secondaryBtn}
+          >
+            {tFor(lang, "invoicesPage.detail.paymentReceivedBtn")}
+          </button>
+        )}
       </div>
+
+      {mode === "pay" && (
+        <div style={formBox} data-cy="invoice-pay-form">
+          <PaymentReceivedForm
+            invoiceId={inv.id}
+            amountCents={inv.amount}
+            lang={lang}
+            onSaved={async () => {
+              await onChanged();
+              onClose();
+            }}
+            onCancel={() => setMode("none")}
+          />
+        </div>
+      )}
 
       {mode === "edit" && (
         <div style={formBox} data-cy="invoice-edit-form">
@@ -1583,7 +1619,9 @@ function InvoiceCard(
     : inv.stage === "scheduled"
     ? tFor(lang, "invoicesPage.cta.scheduled")
     : inv.stage === "out"
-    ? tFor(lang, "invoicesPage.cta.out")
+    // REQ-018 (NW-27): the receipt is the out-for-payment card's next step;
+    // "View invoice" stays on the card back ("Open").
+    ? tFor(lang, "invoicesPage.cta.outReceived")
     : inv.stage === "drafting"
     ? tFor(lang, "invoicesPage.cta.drafting")
     : tFor(lang, "invoicesPage.cta.paid");
@@ -1726,8 +1764,15 @@ function InvoiceCard(
       setBusy(false);
     }
   }
+  /** REQ-018 (NW-27): open this invoice's detail panel in "Payment received"
+   *  mode via the deep link the panel already honours. */
+  function doPaymentReceived(e: Event) {
+    e.stopPropagation();
+    globalThis.location.assign(`/invoices?open=${inv.id}&pay=1`);
+  }
   function ctaAction(e: Event) {
     if (inv.stage === "claimed") return doConfirmReceived(e);
+    if (inv.stage === "out") return doPaymentReceived(e);
     if (inv.stage === "overdue") return doSendText(e);
     if (inv.stage === "scheduled") return doSendNow(e);
     if (inv.stage === "drafting") return doFinishDraft(e);
@@ -2301,6 +2346,16 @@ function InvoiceCard(
               title={tFor(lang, "invoicesPage.back.rejectTitle")}
             >
               {tFor(lang, "invoicesPage.back.reject")}
+            </button>
+          )}
+          {(inv.stage === "overdue" || inv.stage === "out") && (
+            <button
+              type="button"
+              data-cy="invoice-payment-received"
+              onClick={doPaymentReceived}
+              disabled={busy}
+            >
+              {tFor(lang, "invoicesPage.detail.paymentReceivedBtn")}
             </button>
           )}
           {(inv.stage === "overdue" || inv.stage === "out")
