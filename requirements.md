@@ -16,3 +16,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-10 (PDF p8), 2026-09-18
 **Requirement (client's words):** "The Quote + Agreement card shows a 'SENT' badge in the top right before I have actually sent it." — a quote is created as a draft; only an actual dispatch (email, text, or the assistant's send) flips it to sent and stamps `sentAt`.
 **Tests:** unit `n/a — no pure logic; jest/unit/quote-status.test.ts already pins the lifecycle` · integration `jest/integration/quote-lifecycle.int.test.ts` ("REQ-003 NW-10 …") + backend `backend/src/paperwork/entrypoints/paperwork-email-controller/e2e.test.ts` ("REQ-003 … /text stamps") · e2e `cypress/e2e/quotes-status-badges.cy.ts` ("REQ-003 NW-10 the price flow creates a draft")
+
+## REQ-004 — 1.3 NW-20 Back from the customer step returns to the price step
+**Source:** new-working-issues.md NW-20 (PDF p31), 2026-09-18
+**Requirement (client's words):** "Back button fails after you enter the price and go to the customer step. Hitting back takes you to the dashboard." — on the price-panel path, the header back at the customer step rewinds to the price step.
+**Tests:** unit `n/a — resolver contract unchanged (jest/unit/assistant-back.test.ts)` · integration `n/a — browser state` · e2e `cypress/e2e/ux-assistant-single-back.cy.ts` ("REQ-004 NW-20 …")
