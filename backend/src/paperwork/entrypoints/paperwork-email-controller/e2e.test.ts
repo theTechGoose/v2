@@ -369,7 +369,7 @@ Deno.test("REQ-003 NW-10 paperwork-sms e2e: POST /quotes/:id/text stamps quote.s
     const customer = await fetch(`http://localhost:${PORT}/customers`, {
       method: "POST",
       headers: auth,
-      body: JSON.stringify({ name: "Acme", phoneNumber: "+15125550111" }),
+      body: JSON.stringify({ name: "Acme", phoneNumber: "+15125556111" }),
     }).then((r) => r.json());
     const quote = await fetch(`http://localhost:${PORT}/quotes`, {
       method: "POST",

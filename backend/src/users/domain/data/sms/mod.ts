@@ -9,9 +9,23 @@ export interface SendSmsResult {
   ok: boolean;
   /** Twilio message SID, when the dispatch happened. */
   sid?: string;
-  /** Reason if it failed (or 'dev_mode_no_dispatch'). */
+  /** Reason if it failed (or 'dev_mode_no_dispatch'). REQ-030 (NW-25): a
+   *  recognised Twilio rejection is a lang key (sms.invalidNumber /
+   *  sms.optedOut / sms.notMobile) the send surfaces translate. */
   reason?: string;
+  /** Twilio error code, when the provider rejected the message. */
+  code?: number;
+  /** The provider's raw error text — for logs, never for the contractor. */
+  detail?: string;
 }
+
+/** REQ-030: Twilio error codes that mean "this number can't take this text",
+ *  each mapped to dictionary copy. */
+const TWILIO_REASON_KEYS: Record<number, string> = {
+  21211: "sms.invalidNumber",
+  21610: "sms.optedOut",
+  21614: "sms.notMobile",
+};
 
 /**
  * SmsService — Twilio Messages API wrapper.
@@ -92,9 +106,18 @@ export class SmsService {
       );
       if (!res.ok) {
         const text = await res.text().catch(() => "");
+        const detail = `twilio ${res.status}: ${text.slice(0, 200)}`;
+        let code: number | undefined;
+        try {
+          const parsed = JSON.parse(text) as { code?: unknown };
+          if (typeof parsed.code === "number") code = parsed.code;
+        } catch { /* not JSON — keep the raw text as the reason */ }
+        const key = code !== undefined ? TWILIO_REASON_KEYS[code] : undefined;
         return {
           ok: false,
-          reason: `twilio ${res.status}: ${text.slice(0, 200)}`,
+          reason: key ?? detail,
+          ...(code !== undefined ? { code } : {}),
+          detail,
         };
       }
       const body = await res.json() as { sid?: string };

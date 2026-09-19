@@ -40,6 +40,8 @@ import {
   interpretSendResult,
   type SendOutcome,
   sendResultLangKey,
+  summarizeDispatch,
+  type DispatchChannel,
 } from "../../shared/quote-flow/send-result.ts";
 
 interface State {
@@ -287,6 +289,9 @@ interface ForecastResult {
   asOf: string;
 }
 
+/** REQ-030: sessionStorage key carrying a send outcome across the reload. */
+const SEND_FLASH_KEY = "pm:invoice-send-flash";
+
 export default function InvoicesPage(_props: { lang?: Lang }) {
   // Self-source the reactive UI language. Reading langSignal.value during
   // render makes this island re-render live when SettingsPage flips the
@@ -296,6 +301,21 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   const [forecast, setForecast] = useState<ForecastResult | undefined>(
     undefined,
   );
+  /** REQ-030 (NW-25): the "Create & send" modal navigates away after
+   *  dispatching — a half-delivered or failed send is carried across the
+   *  reload (sessionStorage) and shown here instead of being dropped. */
+  const [sendFlash, setSendFlash] = useState<
+    { text: string; partial: boolean } | null
+  >(() => {
+    try {
+      const raw = globalThis.sessionStorage?.getItem(SEND_FLASH_KEY);
+      if (!raw) return null;
+      globalThis.sessionStorage.removeItem(SEND_FLASH_KEY);
+      return JSON.parse(raw) as { text: string; partial: boolean };
+    } catch {
+      return null;
+    }
+  });
   // UX-02: /invoices?new=1 (the won-quote "Crear la factura" CTA) opens the
   // new-invoice modal directly.
   const [newOpen, setNewOpen] = useState(() =>
@@ -418,6 +438,15 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
 
   return (
     <>
+      {sendFlash && (
+        <p
+          class="qcard__sendfail"
+          role="alert"
+          data-cy={sendFlash.partial ? "send-partial" : "invoice-send-failure"}
+        >
+          {sendFlash.text}
+        </p>
+      )}
       {
         /* Rendered FIRST (above the hero) so the detail is what the
           contractor lands on when following an ?open= deep link. */
@@ -1494,6 +1523,9 @@ interface ChannelSendResult {
  *  `delivered` is true when AT LEAST one channel actually delivered. */
 interface DispatchResult {
   delivered: boolean;
+  /** REQ-030 (NW-25): one channel went, the other did not. */
+  partial: boolean;
+  failedChannels: DispatchChannel[];
   email: ChannelSendResult;
   text: ChannelSendResult;
 }
@@ -1538,10 +1570,24 @@ async function dispatchInvoice(id: string): Promise<DispatchResult> {
   ]);
   const [email, text] = await Promise.all(settled.map(interpretSettledSend));
   return {
-    delivered: email.outcome.delivered || text.outcome.delivered,
+    ...summarizeDispatch({ email: email.outcome, text: text.outcome }),
     email,
     text,
   };
+}
+
+/** REQ-030 (NW-25): honest copy for a HALF-delivered send — which channel
+ *  went, which did not, and why (the backend's translated reason). */
+function partialDispatchCopy(lang: Lang, d: DispatchResult): string {
+  const textFailed = d.failedChannels.includes("text");
+  const failed = textFailed ? d.text : d.email;
+  return tFor(
+    lang,
+    textFailed
+      ? "invoicesPage.send.partialTextFailed"
+      : "invoicesPage.send.partialEmailFailed",
+    { reason: failed.rawReason ?? failed.outcome.reason ?? "unknown" },
+  );
 }
 
 /** Honest failure copy when NO channel delivered — the same lang keys the
@@ -1552,9 +1598,16 @@ function dispatchFailureCopy(lang: Lang, d: DispatchResult): string {
   if (key === "sendQuote.divider.noEmail") {
     return tFor(lang, "sendQuote.divider.noEmail");
   }
-  return tFor(lang, key, {
+  const emailCopy = tFor(lang, key, {
     reason: d.email.rawReason ?? d.email.outcome.reason ?? "unknown",
   });
+  // REQ-030: the text channel's reason is reported too, never dropped.
+  const textReason = d.text.rawReason ?? d.text.outcome.reason;
+  return textReason && d.text.outcome.reason !== "noPhone"
+    ? `${emailCopy} · ${
+      tFor(lang, "sendQuote.divider.textFailed", { reason: textReason })
+    }`
+    : emailCopy;
 }
 
 /** Honest failure copy for the single-channel "Text client" action. */
@@ -1595,6 +1648,8 @@ function InvoiceCard(
   // P-09: honest send state — set when a dispatch delivered on NO channel,
   // rendered on the card instead of the old silent reload-as-success.
   const [sendFail, setSendFail] = useState<string | null>(null);
+  /** REQ-030: one channel delivered, the other did not. */
+  const [sendPartial, setSendPartial] = useState<string | null>(null);
   // REQ-021: inline confirmation after a nudge (no reload — nothing on the
   // card changes except that the reminder went out).
   const [sendNote, setSendNote] = useState<string | null>(null);
@@ -1754,7 +1809,10 @@ function InvoiceCard(
       // success when at least one channel actually delivered; otherwise the
       // failure is surfaced on the card and nothing pretends it was sent.
       const d = await dispatchInvoice(inv.id);
-      if (d.delivered) globalThis.location.reload();
+      // REQ-030 (NW-25): reload only when NOTHING failed; a half-delivered
+      // send says which channel went and which did not.
+      if (d.delivered && !d.partial) globalThis.location.reload();
+      else if (d.delivered) setSendPartial(partialDispatchCopy(lang, d));
       else setSendFail(dispatchFailureCopy(lang, d));
     } finally {
       setBusy(false);
@@ -1787,7 +1845,10 @@ function InvoiceCard(
       // way, but a delivery failure is SURFACED (P-09) — the contractor must
       // never walk away believing an undeliverable invoice reached anyone.
       const d = await dispatchInvoice(inv.id);
-      if (d.delivered) globalThis.location.reload();
+      // REQ-030 (NW-25): reload only when NOTHING failed; a half-delivered
+      // send says which channel went and which did not.
+      if (d.delivered && !d.partial) globalThis.location.reload();
+      else if (d.delivered) setSendPartial(partialDispatchCopy(lang, d));
       else setSendFail(dispatchFailureCopy(lang, d));
     } finally {
       setBusy(false);
@@ -2072,6 +2133,11 @@ function InvoiceCard(
       {sendFail && (
         <p class="qcard__sendfail" role="alert" data-cy="invoice-send-failure">
           {sendFail}
+        </p>
+      )}
+      {sendPartial && (
+        <p class="qcard__sendfail" role="alert" data-cy="send-partial">
+          {sendPartial}
         </p>
       )}
       {sendNote && (
@@ -2597,7 +2663,22 @@ function NewInvoiceModal(
       // One-step send: dispatch the pay link over both channels. The backend
       // handles "no email/phone on file" gracefully.
       if (send && invoice?.id) {
-        await dispatchInvoice(invoice.id);
+        const d = await dispatchInvoice(invoice.id);
+        // REQ-030 (NW-25): never drop a channel failure on the way to the
+        // reload — the page shows it after navigating.
+        if (!d.delivered || d.partial) {
+          try {
+            globalThis.sessionStorage?.setItem(
+              SEND_FLASH_KEY,
+              JSON.stringify({
+                text: d.delivered
+                  ? partialDispatchCopy(lang, d)
+                  : dispatchFailureCopy(lang, d),
+                partial: d.delivered,
+              }),
+            );
+          } catch { /* storage unavailable — the reload still happens */ }
+        }
       }
       // Reload so the new invoice enriches into the right track — without the
       // ?new=1 deep link, or the modal would reopen over the fresh card.
