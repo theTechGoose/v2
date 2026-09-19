@@ -123,6 +123,24 @@ describe("QuickBooks-style sidebar minimize (p9)", () => {
     assertNavLabelGone(/customers/i);
   });
 
+  // REQ-033 — NW-39 (p36): "the arrow between HANS LLC and Settings that
+  // minimizes the sidebar should work like QuickBooks, showing the hamburger
+  // plus an arrow to minimize." The rail could collapse (topbar hamburger)
+  // but had no control of its own — and no expand control once collapsed.
+  it("REQ-033 NW-39 the rail carries its own QuickBooks-style collapse/expand control, and the choice survives a reload", () => {
+    cy.viewport(1280, 800);
+    cy.get("[data-cy=sidebar-collapse]", { timeout: 10_000 }).should("be.visible").click();
+    cy.get(".sb").should("have.class", "sb--collapsed");
+    assertNavLabelGone(/customers/i);
+    cy.get("[data-cy=sidebar-expand]").should("be.visible");
+    cy.reload();
+    cy.get(".sb", { timeout: 10_000 }).should("have.class", "sb--collapsed");
+    cy.get("[data-cy=sidebar-expand]", { timeout: 10_000 }).should("be.visible").click();
+    cy.get(".sb").should("not.have.class", "sb--collapsed");
+    cy.contains("a", /customers/i).should("be.visible");
+    cy.get("[data-cy=sidebar-collapse]").should("be.visible");
+  });
+
   it("the PM Assistant conversations panel collapses and expands with the same pattern", () => {
     cy.visit("/assistant");
     // Measure via the DOM directly — the island re-renders while its list

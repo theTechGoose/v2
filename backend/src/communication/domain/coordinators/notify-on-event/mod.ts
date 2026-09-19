@@ -39,6 +39,19 @@ export class NotifyOnEvent {
   private async handle(event: DomainEvent): Promise<void> {
     const l = notificationL10n(event);
     if (!l) return;
+    // REQ-022 (NW-31c): the scheduled-invoice nudge is re-emitted by every
+    // /cron/run-nudges sweep (the /invoices page fires one per load) — keep
+    // ONE notification per invoice per day.
+    if (l.type === "invoice_nudge_due" && event.entityId) {
+      const day = (event.data?.dayBucket as string | undefined) ??
+        new Date().toISOString().slice(0, 10);
+      const existing = await this.store.listByUser(event.userId, { limit: 500 });
+      const dup = existing.some((n) =>
+        n.type === "invoice_nudge_due" && n.entityId === event.entityId &&
+        n.createdAt.slice(0, 10) === day
+      );
+      if (dup) return;
+    }
     // The language the event happened to carry (contractor-initiated events
     // set it; customer-initiated public actions don't). Used only for the
     // stored fallback string — the read path re-renders per viewer.
@@ -198,6 +211,17 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
       type: "invoice_overdue",
       titleKey: "notify.invoice.overdue",
       titleParams: nameParams,
+    };
+  }
+  // REQ-022 (NW-31c): a scheduled invoice's send date is here — nudge the
+  // contractor to confirm the job is done and send the final invoice.
+  if (event.entityType === "invoice" && event.action === "nudge_due") {
+    const date = (event.data?.scheduledFor as string | undefined) ?? "";
+    return {
+      type: "invoice_nudge_due",
+      titleKey: "notify.invoice.nudgeDue",
+      titleParams: { date },
+      bodyKey: "notify.invoice.nudgeDueBody",
     };
   }
   if (

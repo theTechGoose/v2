@@ -38,6 +38,7 @@ import {
   ONBOARDING_ASK_TEXT,
   type ParsedAddress,
   stateFromPhone,
+  isStarterChipText,
 } from "@agents/domain/business/onboarding/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
@@ -227,7 +228,14 @@ export class HandleChatMessage {
         const justAskedBiz = lastAskInfo.business;
         const justAskedState = lastAskInfo.state;
         const justAskedAddress = lastAskInfo.address;
-        const userVolunteered = isFirstTurn && extractNameAndBusiness(text);
+        // REQ-008 (NW-47): a first turn that IS a starter chip ("I know the
+        // job, help me price it.") is a flow choice, never a "Name, Business"
+        // reply — however comma-shaped. (looksLikeJobRequest is too broad
+        // here: "Diego, Riley Roofing Co." carries a trade word and is a
+        // legitimate volunteer; the extractor's own stop-list rejects
+        // sentences that open with a pronoun/verb.)
+        const userVolunteered = isFirstTurn && !isStarterChipText(text) &&
+          extractNameAndBusiness(text);
         const firstNameOf = (n: string | undefined): string =>
           n?.trim().split(/\s+/)[0] ?? "there";
 

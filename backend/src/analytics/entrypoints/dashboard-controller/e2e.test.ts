@@ -61,12 +61,20 @@ Deno.test("analytics e2e: GET /analytics/dashboard rolls up after creating quote
       method: "POST", headers: auth, body: JSON.stringify({ name: "Acme" }),
     }));
     // Audit1 #3 — money fields are INTEGER CENTS (`_00` marks dollar intent).
-    await drain(await fetch(`http://localhost:${PORT}/quotes`, {
-      method: "POST", headers: auth, body: JSON.stringify({ summary: "x", lineItems: [], status: "sent", estimatedTotal: 1_000_00 }),
-    }));
-    await drain(await fetch(`http://localhost:${PORT}/quotes`, {
-      method: "POST", headers: auth, body: JSON.stringify({ summary: "y", lineItems: [], status: "sent", estimatedTotal: 2_500_00 }),
-    }));
+    // REQ-003 (NW-10): a quote is BORN a draft — status on the create body is
+    // ignored. Flip each one the way the send coordinators do (status + sentAt).
+    for (const seed of [
+      { summary: "x", lineItems: [], estimatedTotal: 1_000_00 },
+      { summary: "y", lineItems: [], estimatedTotal: 2_500_00 },
+    ]) {
+      const q = await fetch(`http://localhost:${PORT}/quotes`, {
+        method: "POST", headers: auth, body: JSON.stringify(seed),
+      }).then((r) => r.json());
+      await drain(await fetch(`http://localhost:${PORT}/quotes/${q.id}`, {
+        method: "PUT", headers: auth,
+        body: JSON.stringify({ status: "sent", sentAt: new Date().toISOString() }),
+      }));
+    }
 
     const stats = await fetch(`http://localhost:${PORT}/analytics/dashboard`, {
       headers: { "x-session-id": sid },

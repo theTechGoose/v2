@@ -24,10 +24,15 @@ export function localizeTermValue(value: string, lang: Lang): string {
     "Next Month": "quoteDoc.termValue.nextMonth",
     "Next month": "quoteDoc.termValue.nextMonth",
     "Job Completed": "quoteDoc.termValue.jobCompleted",
+    // NW-24 (REQ-009): new quotes persist the sentence-case value; the
+    // line above keeps quotes saved before the casing change localizing.
+    "Job completed": "quoteDoc.termValue.jobCompleted",
     "Due Now": "quoteDoc.termValue.dueNow",
   };
   if (exact[trimmed]) return tFor(lang, exact[trimmed]);
   return trimmed
+    // REQ-015: warranty presets persist "1 year" / "2 years".
+    .replace(/\byears\b/gi, "años").replace(/\byear\b/gi, "año")
     .replace(/\bmonths\b/gi, "meses").replace(/\bmonth\b/gi, "mes")
     .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
     .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");

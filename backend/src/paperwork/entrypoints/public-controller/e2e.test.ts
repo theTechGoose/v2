@@ -204,6 +204,14 @@ Deno.test("public e2e: POST /quotes/:id/inquiry returns 200 and does NOT change 
       headers: { "content-type": "application/json", "x-session-id": sid },
       body: JSON.stringify({ summary: "Job", lineItems: [], status: "sent" }),
     }).then((r) => r.json());
+    // REQ-003 (NW-10): a quote is BORN a draft — the status on the create
+    // body is ignored. The customer can only inquire about a quote that was
+    // sent to them, so flip the lifecycle the way the send coordinators do.
+    await fetch(`http://localhost:${PORT}/quotes/${q.id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ status: "sent", sentAt: new Date().toISOString() }),
+    }).then((r) => r.body?.cancel());
 
     const out = await fetch(`http://localhost:${PORT}/quotes/${q.id}/inquiry`, {
       method: "POST",

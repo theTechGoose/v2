@@ -25,6 +25,16 @@ describe("quote status lifecycle (draft → sent → viewed → accepted)", () =
     expect(body.status).toBe("draft");
   });
 
+  it("REQ-003 NW-10 POST /quotes with status:'sent' is still born a draft", async () => {
+    // NW-10 (p8): "The Quote + Agreement card shows a 'SENT' badge … before I
+    // have actually sent it." A quote is born draft; only a real dispatch
+    // (email / text / the assistant's send-quote) may flip it to sent.
+    const id = await seedQuote(s, { status: "sent" });
+    const { body } = await s.get(`/quotes/${id}`);
+    expect(body.status).toBe("draft");
+    expect(body.sentAt).toBeUndefined();
+  });
+
   it("sending the quote flips status to 'sent'", async () => {
     const send = await s.post(`/quotes/${quoteId}/email`);
     expect(send.status).toBeLessThan(400);

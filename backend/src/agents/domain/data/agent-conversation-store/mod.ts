@@ -133,4 +133,11 @@ export class AgentConversationStore {
     await kv.set([WIZARD_PREFIX, conversationId], state, { expireIn: TTL_MS });
     return state;
   }
+
+  /** REQ-005 (NW-19): leaving the terms phase drops the wizard state so a
+   *  later transition-to-terms starts the wizard fresh. */
+  async deleteWizardState(conversationId: string): Promise<void> {
+    const kv = await getKv();
+    await kv.delete([WIZARD_PREFIX, conversationId]);
+  }
 }

@@ -87,3 +87,62 @@ describe("assistant — picking an existing customer", () => {
     cy.get(".cust-dd__trigger").should("be.visible");
   });
 });
+
+// ===========================================================================
+// REQ-029 — NW-22 / NW-35 (p15, p30): "I created a new customer ('Incredible
+// Hulk') and it did not save." / "You can create customers from the Customers
+// page but not from My Assistant." The dropdown's text box is a search filter
+// whose no-match state was a dead end, and Next was silently disabled without
+// a contact. Now: no match → "Create "<name>"" opens the form prefilled; the
+// missing-contact reason is visible, not just a disabled button.
+// ===========================================================================
+describe("REQ-029 NW-22/35 create a customer straight from the assistant dropdown", () => {
+  const PHONE = "+15125556254";
+  const HULK = "Incredible Hulk";
+
+  beforeEach(() => {
+    cy.viewport(1280, 800);
+    cy.clearCookies();
+    cy.setCookie("pm_lang", "en");
+    cy.loginAs(PHONE);
+    cy.apiUpdateUser({ language: "en", name: "Picker Contractor" });
+    cy.request("POST", "/api/me/onboarded", { skipped: true });
+    // One saved customer so the step opens on the pick list.
+    cy.request("POST", "/api/customers", {
+      name: "Existing Eddie",
+      phoneNumber: "+15125556253",
+    });
+    cy.visit("/assistant?dev");
+    cy.get(".chat__empty-debug-btn", { timeout: 10_000 }).should("be.visible").click();
+    cy.location("pathname", { timeout: 20_000 }).should("match", /^\/assistant\/[A-Za-z0-9-]+$/);
+    cy.get(".cust-dd__trigger", { timeout: 20_000 }).should("be.visible").click();
+    cy.get(".cust-pick__search").should("be.visible");
+  });
+
+  it("REQ-029 a no-match search offers Create \"<name>\" → the form opens prefilled → Next saves the customer", () => {
+    cy.get(".cust-pick__search").type(HULK);
+    cy.get("[data-cy=cust-create-from-search]")
+      .should("be.visible")
+      .and("contain.text", `Create "${HULK}"`)
+      .click();
+    cy.get(".cust-create").should("be.visible");
+    cy.get(".cust-create input").first().should("have.value", HULK);
+    cy.get(".cust-create input[placeholder='Phone Number']").type("5125556299");
+    cy.get(".cust-create").contains("button", /^Next$/).should("not.be.disabled").click();
+    // The step completes with the new customer bound and the wizard moves on.
+    cy.contains(HULK, { timeout: 15_000 }).should("be.visible");
+    cy.contains(/when does the job start/i, { timeout: 15_000 }).should("be.visible");
+    cy.request("/api/customers").its("body").should((rows: Array<{ name: string }>) => {
+      expect(rows.map((r) => r.name), "the assistant-created customer is on the Customers list").to.include(HULK);
+    });
+  });
+
+  it("REQ-029 name only, no contact → the reason is visible, not just a disabled Next", () => {
+    cy.contains("button", "+ New customer").click();
+    cy.get(".cust-create").should("be.visible");
+    cy.get(".cust-create input").first().type("Green Machine");
+    cy.get("[data-cy=cust-contact-hint]")
+      .should("be.visible")
+      .and("contain.text", "Add a phone number or email");
+  });
+});

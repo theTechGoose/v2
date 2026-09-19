@@ -91,47 +91,81 @@ function driveFacturarToCustomerSubmit() {
   cy.get(".cust-create__btn--primary").should("not.be.disabled").click();
 }
 
-describe("UX-31: the facturar flow reviews before it saves", () => {
+// ===========================================================================
+// REQ-024 — NW-13 / NW-16 / NW-18 (p9, p12, p27): "if there is no quote to
+// select, go through the same questions as the quote (skip how long it took,
+// but ask for the completion date). Right now there is no preview, just
+// 'Invoice ready 🎉 … Send it now'." Supersedes UX-31 (its editable-due-date
+// review): the wizard's completion date + payment terms now DRIVE the due
+// date, and the shared preview replaces the three-field card.
+// ===========================================================================
+describe("REQ-024 NW-13/18 a brand-new invoice runs the wizard and lands on the shared preview", () => {
   beforeEach(() => loginEsFresh(FLOW_PHONE));
 
-  it("UX-31: an editable due date appears before the saved confirmation", () => {
-    driveFacturarToCustomerSubmit();
-    // RED today: createInvoiceFromFlow POSTs immediately (AsstChat.tsx:3140)
-    // and the success card "¡Factura lista! 🎉" renders — no review surface,
-    // no due-date control anywhere in the flow. Desired: between the customer
-    // pick and the save there is a review step with an editable due date
-    // (an <input type=date>, like the /invoices modal's
-    // [data-cy=new-invoice-due]).
-    cy.get("input[type=date]", { timeout: 10_000 }).should("be.visible");
-  });
+  function pickFirstOption() {
+    cy.get(".wiz__opts .wiz-opt:not(.wiz-opt--custom)", { timeout: 15_000 })
+      .filter(":visible")
+      .first()
+      .click();
+  }
 
-  it("UX-31: no invoice is persisted due on its own creation day", () => {
-    driveFacturarToCustomerSubmit();
-    // Let the CURRENT flow's POST /invoices land (today it fires immediately
-    // on the customer submit; a fixed wait keeps this green-agent-friendly —
-    // a fixed flow that holds at a review step simply creates nothing yet,
-    // which also satisfies the invariant below).
-    // eslint-disable-next-line cypress/no-unnecessary-waiting
-    cy.wait(4000);
-    const todayIso = new Date().toISOString().slice(0, 10);
-    cy.request("/api/invoices").then((res) => {
-      const invoices = res.body as Array<{
-        id: string;
-        dueDate?: string;
-        createdAt?: string;
-      }>;
-      const dueOnCreationDay = invoices.filter((inv) =>
-        (inv.createdAt ?? "").slice(0, 10) === todayIso &&
-        inv.dueDate === todayIso
-      );
-      // RED today: the facturar flow just minted exactly such an invoice
-      // (dueDate: today, AsstChat.tsx:3139-3143).
-      expect(
-        dueOnCreationDay.length,
-        `invoices created today that are already due today: ${
-          JSON.stringify(dueOnCreationDay.map((i) => i.id))
-        }`,
-      ).to.eq(0);
+  it("REQ-024 customer → completion date → payment → warranty → invoice preview → sent invoice linked to the agreement", () => {
+    cy.visit("/assistant");
+    cy.contains("button.chat__empty-prompt", CHIP_INVOICE_DONE).should("be.visible").click();
+    cy.get("textarea.composer__input", { timeout: 10_000 }).should("be.visible").type(JOB_DETAILS);
+    cy.get("button.composer__send").click();
+    cy.get(".chat__price-capture", { timeout: 10_000 }).should("be.visible");
+    cy.get("input.mi__input").type("3700");
+    cy.get(".chat__price-continue").should("not.be.disabled").click();
+
+    // Customer step (wiped account → the create form).
+    cy.get(".cust-create input.cust-pick__search", { timeout: 20_000 }).first().type("María Nguyen");
+    cy.get(".cust-create input[type=tel]").type(FLOW_CUSTOMER_PHONE);
+    cy.get(".cust-create__btn--primary").should("not.be.disabled").click();
+
+    // Completion date — instead of "how long will the job take?".
+    cy.contains(/cuándo se terminó el trabajo/i, { timeout: 20_000 }).should("be.visible");
+    cy.contains(/cuánto tiempo tomará/i).should("not.exist");
+    cy.get(".wiz__opts .wiz-opt").filter(":visible").then(($opts) => {
+      const texts = [...$opts].map((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim());
+      expect(texts, "completion-date options").to.deep.equal(["Hoy", "Ayer", "La semana pasada", "Elegir una fecha"]);
+    });
+    cy.contains(".wiz-opt", /^Hoy$/).click();
+
+    // Payment terms — "Pago inmediato" (Due Now) → due on the completion date.
+    cy.contains(".wiz-opt", /pago inmediato/i, { timeout: 15_000 }).click();
+    // Warranty — any.
+    pickFirstOption();
+
+    // Same as the quote path: the end-of-wizard Job Details picker may open
+    // first (three versions of the details) — apply it, then the preview.
+    cy.get(".chat__jobopts, .quote-review", { timeout: 30_000 }).should("exist");
+    cy.get("body").then(($b) => {
+      if ($b.find(".chat__jobopts").length) {
+        cy.get(".chat__jobopts .chat__price-continue").should("not.be.disabled").click();
+      }
+    });
+
+    // The SHARED preview, in invoice mode.
+    cy.get(".quote-review", { timeout: 20_000 }).should("be.visible");
+    cy.get(".quote-review__langpill.is-active").should("contain.text", "Factura");
+    cy.contains(/factura lista/i).should("not.exist");
+
+    // Send it (email) from the preview.
+    cy.contains("button", /enviar la factura/i, { timeout: 10_000 }).click();
+    cy.get("[data-cy=send-keep]", { timeout: 10_000 }).click(); // REQ-035: Keep is the send
+
+    const today = new Date().toISOString().slice(0, 10);
+    cy.request("/api/invoices").its("body").then((rows: Array<{ id: string; quoteId?: string; dueDate?: string; createdAt?: string; lineItems?: unknown[] }>) => {
+      const newest = [...rows].sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")))[0];
+      expect(newest?.quoteId, "invoice linked to the agreement").to.be.a("string").and.not.empty;
+      expect(newest?.dueDate, "Due Now + completed today → due today").to.eq(today);
+      cy.wrap(newest.id).as("invoiceId");
+    });
+    cy.get("@invoiceId").then((id) => {
+      cy.clearCookies();
+      cy.visit(`/i/${id}`);
+      cy.get(".ctr__terms-grid", { timeout: 20_000 }).should("exist");
     });
   });
 });
@@ -221,3 +255,65 @@ describe("UX-23: empty-state 'Exportar CSV' is not a near-invisible ghost", () =
 // Module scope: keeps top-level declarations out of the shared global
 // script scope the spec files otherwise compile into.
 export {};
+
+// ===========================================================================
+// REQ-023 — NW-14 / NW-15 (p10, p11): "If you select the invoice of an
+// existing client, the next page must show what they paid, what they owe,
+// the terms, etc." / "If I select an existing quote it should already know
+// who the customer is." Picking an accepted job must skip the price and
+// customer questions and land on a review seeded from the quote; the saved
+// invoice links the quote.
+// ===========================================================================
+describe("REQ-023 NW-14/15 invoice from an accepted quote", () => {
+  const PHONE = "+15125556513";
+  const JOB = "Patio de adoquines";
+
+  beforeEach(() => loginEsFresh(PHONE));
+
+  it("REQ-023 the accepted-job chip skips price + customer and lands on a seeded review; the saved invoice links the quote", () => {
+    cy.apiCreateCustomer({
+      name: "María Nguyen",
+      email: "maria.req023@blackhole.postmarkapp.com",
+      phoneNumber: "+15125556514",
+    }).then((customerId: string) => {
+      cy.apiCreateQuote({
+        customerId,
+        summary: JOB,
+        jobName: JOB,
+        description: "Nivelar, colocar adoquines y sellar",
+        lineItems: [{ description: "Adoquines", quantity: 1, unit: "job", price: 120000 }],
+        estimatedTotal: 120000,
+        terms: [{ stepId: "payment_terms", label: "Términos de pago", value: "50 / 50" }],
+      }).then((quoteId: string) => {
+        cy.apiAcceptQuote(quoteId, { signature: "María Nguyen", name: "María Nguyen" });
+        cy.wrap(quoteId).as("quoteId");
+      });
+    });
+
+    cy.visit("/assistant");
+    cy.contains("button.chat__empty-prompt", CHIP_INVOICE_DONE).should("be.visible").click();
+    cy.get(".chat__accepted-job", { timeout: 15_000 }).first().click();
+
+    // Never asks for the price or the customer again.
+    cy.contains("¿Cuál es el precio?").should("not.exist");
+    cy.get(".cust-create, .cust-pick").should("not.exist");
+
+    // The review already knows the job, the customer, the total, and the money so far.
+    cy.get("[data-cy=invoice-quote-summary]", { timeout: 15_000 })
+      .should("be.visible")
+      .and("contain.text", JOB)
+      .and("contain.text", "María Nguyen")
+      .and("contain.text", "1,200");
+    cy.get("[data-cy=invoice-billed-so-far]").should("exist");
+    cy.get("[data-cy=invoice-paid-so-far]").should("exist");
+
+    cy.get("[data-cy=invoice-flow-save]").click();
+    cy.get("@quoteId").then((quoteId) => {
+      cy.request("/api/invoices").its("body").should((rows: Array<{ quoteId?: string; createdAt?: string; lineItems?: unknown[] }>) => {
+        const newest = [...rows].sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")))[0];
+        expect(newest.quoteId, "invoice linked to the accepted quote").to.eq(String(quoteId));
+        expect(newest.lineItems?.length ?? 0, "line items carried over").to.be.greaterThan(0);
+      });
+    });
+  });
+});

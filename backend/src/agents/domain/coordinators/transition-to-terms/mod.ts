@@ -4,8 +4,9 @@ import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.t
 import { transitionPhase } from "@agents/domain/business/derive-phase/mod.ts";
 import { freshState } from "@agents/domain/business/wizard-progress/mod.ts";
 import {
+  getWizardSpec,
   localizeOptions,
-  TERMS_WIZARD_V1,
+  wizardSpecFor,
 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
@@ -40,7 +41,14 @@ export class TransitionToTerms {
   ) {}
 
   async run(
-    input: { userId: string; conversationId: string; lang?: "en" | "es" },
+    input: {
+      userId: string;
+      conversationId: string;
+      lang?: "en" | "es";
+      /** REQ-024: "invoice" runs the invoice wizard (completion date instead
+       *  of start date + duration). Default: the quote wizard. */
+      docKind?: "quote" | "invoice";
+    },
   ): Promise<TransitionToTermsResult> {
     // Chat copy is rendered to the contractor in their own UI language; default to "en".
     const lang = input.lang === "es" ? "es" : "en";
@@ -50,7 +58,8 @@ export class TransitionToTerms {
       // Already transitioned — just re-emit the current step (no divider duplicate).
       const state = await this.conversations.getWizardState(conv.id);
       const stepIdx = state?.activeStepIdx ?? 0;
-      const step = TERMS_WIZARD_V1.steps[stepIdx];
+      const spec = state ? getWizardSpec(state.specId) : wizardSpecFor(conv.docKind);
+      const step = spec.steps[stepIdx];
       const wizardMsg = await this.messages.append({
         conversationId: conv.id,
         role: "assistant",
@@ -59,7 +68,7 @@ export class TransitionToTerms {
           ? t(lang, step.question)
           : t(lang, "transitionToTerms.allTermsAnswered"),
         payload: {
-          specId: TERMS_WIZARD_V1.id,
+          specId: spec.id,
           stepIdx,
           stepId: step?.id,
           options: step ? localizeOptions(step.options, lang) : undefined,
@@ -68,12 +77,15 @@ export class TransitionToTerms {
       return { conversation: conv, newMessages: [wizardMsg] };
     }
 
+    const docKind = input.docKind ?? conv.docKind ?? "quote";
+    const spec = wizardSpecFor(docKind);
     const transitioned = transitionPhase(conv, "terms");
     const updated = await this.conversations.update(transitioned.id, {
       currentPhase: "terms",
+      docKind,
     });
 
-    const state = freshState(TERMS_WIZARD_V1);
+    const state = freshState(spec);
     await this.conversations.putWizardState(conv.id, state);
 
     const newMessages: AgentMessage[] = [];
@@ -86,14 +98,14 @@ export class TransitionToTerms {
       payload: { phase: 2, label: t(lang, "transitionToTerms.phaseDivider") },
     });
 
-    const firstStep = TERMS_WIZARD_V1.steps[0];
+    const firstStep = spec.steps[0];
     const wizardMsg = await this.messages.append({
       conversationId: conv.id,
       role: "assistant",
       kind: "wizard",
       content: t(lang, firstStep.question),
       payload: {
-        specId: TERMS_WIZARD_V1.id,
+        specId: spec.id,
         stepIdx: 0,
         stepId: firstStep.id,
         options: localizeOptions(firstStep.options, lang),

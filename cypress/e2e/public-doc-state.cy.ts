@@ -332,4 +332,24 @@ describe("P-63 signed-agreement affordances + open-quote question flow", () => {
     cy.get("form.ctr__sign-form").should("exist");
     cy.contains("button", /^(Decline|Rechazar)$/).should("exist");
   });
+
+  // REQ-031 — NW-26 (p17): "I filled in the 'Ask a question' box … but I
+  // never received the question. Where does it go?" The dashboard feed used
+  // to show only "<name> asked a question" — never the question itself.
+  it("REQ-031 NW-26 the question the customer asked is readable on the contractor's dashboard feed", () => {
+    const question = `Can you start before the 15th? ${Date.now()}`;
+    cy.visit(`/q/${openQuoteId}`);
+    cy.contains(/backyard junk removal/i, { timeout: 10_000 }).should("be.visible");
+    cy.contains("button", "Ask a question").click();
+    cy.get("textarea").first().type(question);
+    cy.contains("button", "Send question").click();
+    cy.contains("Question sent", { timeout: 10_000 }).should("be.visible");
+
+    // The contractor's side.
+    cy.loginAs(PHONE);
+    cy.apiUpdateUser({ language: "en" });
+    cy.visit("/dashboard");
+    cy.get("[data-cy=notif-body]", { timeout: 15_000 })
+      .should("contain.text", question);
+  });
 });

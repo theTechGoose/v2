@@ -20,6 +20,9 @@ export interface AgentConversation {
   customerId?: string; // bound once the agent identifies the customer
   quoteId?: string; // bound once a quote is locked (phase 1 → 2 trigger)
   invoiceId?: string; // bound once the post-acceptance invoice is created/sent
+  /** REQ-024: which document the terms wizard is collecting for — drives
+   *  the wizard spec ("terms-v1" vs "invoice-v1") and presets the review. */
+  docKind?: "quote" | "invoice";
   currentPhase: AgentPhase;
   title?: string; // first user message, truncated
   preview?: string; // last meaningful message snippet

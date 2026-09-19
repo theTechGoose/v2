@@ -695,7 +695,7 @@ function termValue(
   return terms?.find((t) => t.stepId === stepId)?.value;
 }
 
-function localizeTermValue(value: string, lang: "en" | "es"): string {
+export function localizeTermValue(value: string, lang: "en" | "es"): string {
   if (lang === "en") return value;
   const trimmed = (value ?? "").trim();
   const exactKey: Record<string, string> = {
@@ -707,10 +707,15 @@ function localizeTermValue(value: string, lang: "en" | "es"): string {
     "Next Month": "renderQuotePdf.termValue.nextMonth",
     "Next month": "renderQuotePdf.termValue.nextMonth",
     "Job Completed": "renderQuotePdf.termValue.jobCompleted",
+    // NW-24 (REQ-009): new quotes persist the sentence-case value; the
+    // line above keeps quotes saved before the casing change localizing.
+    "Job completed": "renderQuotePdf.termValue.jobCompleted",
     "Due Now": "renderQuotePdf.termValue.dueNow",
   };
   if (exactKey[trimmed]) return t(lang, exactKey[trimmed]);
   return trimmed
+    // REQ-015: warranty presets persist "1 year" / "2 years".
+    .replace(/\byears\b/gi, "años").replace(/\byear\b/gi, "año")
     .replace(/\bmonths\b/gi, "meses").replace(/\bmonth\b/gi, "mes")
     .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
     .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");

@@ -6,6 +6,9 @@ export type Language = "en" | "es";
 export interface User {
   id: string;
   phoneNumber: string;
+  /** REQ-039 (NW-52): set when the account was closed — the row and the
+   *  phone index stay so the person can recover it later. */
+  deletedAt?: string;
   name?: string;
   email?: string;
   language?: Language;

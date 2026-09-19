@@ -44,3 +44,28 @@ Deno.test("normalizePhone: too short throws", () => {
 Deno.test("normalizePhone: too long throws", () => {
   assertThrows(() => normalizePhone("+1234567890123456"));
 });
+
+// REQ-030 (NW-25): isFictionalUsNumber is the pure predicate the customer
+// SMS send path uses to refuse a fictional number BEFORE Twilio (which would
+// answer 21211 and the contractor only saw a raw JSON blob). The reserved
+// fictional block is 555-01XX; area code 555 is not assignable. The rest of
+// the 555 exchange stays accepted (real 555-XXXX lines outside 01XX exist).
+// normalizePhone itself — the login/OTP path — keeps accepting them: dev and
+// test personas log in with 555 numbers under the master OTP.
+Deno.test("REQ-030 NW-25 isFictionalUsNumber: the reserved 555-01XX block and area code 555", async () => {
+  const { isFictionalUsNumber } = await import("./mod.ts");
+  assertEquals(isFictionalUsNumber("+15125550100"), true);
+  assertEquals(isFictionalUsNumber("+15125550123"), true);
+  assertEquals(isFictionalUsNumber("+15555551234"), true);
+});
+
+Deno.test("REQ-030 NW-25 isFictionalUsNumber: a real exchange, a 555-6xxx line and a non-US number are not fictional", async () => {
+  const { isFictionalUsNumber } = await import("./mod.ts");
+  assertEquals(isFictionalUsNumber("+15126550123"), false);
+  assertEquals(isFictionalUsNumber("+15125556252"), false);
+  assertEquals(isFictionalUsNumber("+442079460958"), false);
+});
+
+Deno.test("REQ-030 NW-25 normalizePhone (login path) still normalizes a 555-01XX number — the guard lives on the send path", () => {
+  assertEquals(normalizePhone("(512) 555-0123"), "+15125550123");
+});

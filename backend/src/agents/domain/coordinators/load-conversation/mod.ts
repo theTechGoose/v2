@@ -2,7 +2,7 @@ import { Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { computeProgress } from "@agents/domain/business/wizard-progress/mod.ts";
-import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
+import { getWizardSpec } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
@@ -54,7 +54,7 @@ export class LoadConversation {
         input.conversationId,
       );
       if (state) {
-        const progress = computeProgress(TERMS_WIZARD_V1, state);
+        const progress = computeProgress(getWizardSpec(state.specId), state);
         wizard = { state, progress };
       }
     }

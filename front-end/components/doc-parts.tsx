@@ -24,6 +24,7 @@ import {
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { localizeTermValue } from "../lib/term-i18n.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
+import { websiteLabel } from "../../shared/quote-flow/format-helpers.ts";
 
 /* ---------- palette ---------- */
 export const PINK = "#FF6B6B";
@@ -181,6 +182,8 @@ export function KV({ k, v }: { k: string; v: string }) {
 }
 
 export function PartyCard(props: {
+  /** REQ-038 (NW-06b): the business website (with scheme). */
+  website?: string;
   role: string;
   name?: string;
   businessName?: string;
@@ -234,6 +237,18 @@ export function PartyCard(props: {
             style={`color:${TEAL};text-decoration:none;font-weight:600;overflow-wrap:anywhere;word-break:break-all`}
           >
             {props.email}
+          </a>
+        </div>
+      )}
+      {props.website?.trim() && (
+        <div style={`margin-top:2px;font-size:12.5px;line-height:1.35`}>
+          <a
+            href={props.website.trim()}
+            target="_blank"
+            rel="noopener"
+            style={`color:${TEAL};text-decoration:none;font-weight:600;overflow-wrap:anywhere`}
+          >
+            {websiteLabel(props.website)}
           </a>
         </div>
       )}
@@ -565,6 +580,8 @@ export function TermGrid(props: {
     estCompletion: string;
     termLabels: Record<string, string>;
   };
+  /** REQ-035 (NW-55): fixed rows every agreement states (Cancelation). */
+  extraRows?: Array<{ k: string; v: string }>;
 }) {
   // Audit2 #24 — the agreement printed TWO contradictory start rows:
   // "INICIO / Por agendar" (this fallback) directly above "FECHA DE INICIO /
@@ -611,6 +628,9 @@ export function TermGrid(props: {
             v={expandTermValue(term, props.contractorState, props.lang)}
           />
         ))}
+      {(props.extraRows ?? []).map((row) => (
+        <KV key={row.k} k={row.k} v={row.v} />
+      ))}
     </div>
   );
 }

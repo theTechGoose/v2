@@ -9,6 +9,7 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { SendOtp } from "@users/domain/coordinators/send-otp/mod.ts";
 import { VerifyOtp } from "@users/domain/coordinators/verify-otp/mod.ts";
+import { AccountRecovery } from "@users/domain/coordinators/account-recovery/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
 import { WipeAccount } from "@users/domain/coordinators/wipe-account/mod.ts";
 import { Impersonate } from "@users/domain/coordinators/impersonate/mod.ts";
@@ -73,6 +74,7 @@ import { LoadProfile } from "@profile/domain/coordinators/load-profile/mod.ts";
     OtpStore,
     SendOtp,
     VerifyOtp,
+    AccountRecovery,
     Logout,
     WipeAccount,
     Impersonate,

@@ -53,3 +53,46 @@ describe("buildSignatureBlock", () => {
     expect(solo.contractor.heading).toBe("Hans Pedersen");
   });
 });
+
+// REQ-032 — NW-28 (p19): the block speaks BOTH languages from the one
+// shared module (the ES page used to mirror it through separate i18n
+// strings — two code paths for one block), and the EN named instruction
+// carries the same "↓" the dictionary copy has.
+describe("REQ-032 NW-28 buildSignatureBlock speaks Spanish too", () => {
+  const es = buildSignatureBlock({
+    clientName: "Green Goblin",
+    contractorName: "Hans Pedersen",
+    businessName: "HANS LLC",
+    signedDateISO: "2026-05-23",
+    lang: "es",
+  });
+
+  it("REQ-032 ES agreement line names the client", () => {
+    expect(es.agreementLine).toBe(
+      "Al firmar abajo, Green Goblin acepta todo lo anterior.",
+    );
+  });
+
+  it("REQ-032 ES contractor column: 'Por:' and 'Fecha:' with a Spanish long date", () => {
+    expect(es.contractor.byLine).toBe("Por: Hans Pedersen");
+    expect(es.contractor.dateLine).toBe("Fecha: 23 de mayo de 2026");
+  });
+
+  it("REQ-032 ES customer column: 'Tu firma' / 'Firma y escribe tu nombre abajo ↓'", () => {
+    expect(es.customer.heading).toBe("Tu firma");
+    expect(es.customer.instruction).toBe("Firma y escribe tu nombre abajo ↓");
+  });
+
+  it("REQ-032 EN named instruction ends with the same ↓ as the dictionary copy", () => {
+    const en = buildSignatureBlock({
+      clientName: "Green Goblin",
+      contractorName: "Hans Pedersen",
+      signedDateISO: "2026-05-23",
+      lang: "en",
+    });
+    expect(en.customer.instruction).toBe("Sign & type name below ↓");
+    expect(en.agreementLine).toBe(
+      "By signing below, Green Goblin agrees to everything above.",
+    );
+  });
+});

@@ -122,6 +122,15 @@ describe("P-19 / SSR is already Spanish when pm_lang=es (no wrong-language first
     expect(html).toMatch(/<html[^>]*\blang="es"/);
   });
 
+  it("REQ-002 NW-01 the Spanish toggle button precedes the English one", () => {
+    // NW-01 (p2): "Yo hablo Espanol | I speak English" — Spanish first.
+    const es = html.indexOf('data-lang="es"');
+    const en = html.indexOf('data-lang="en"');
+    expect(es).toBeGreaterThan(-1);
+    expect(en).toBeGreaterThan(-1);
+    expect(es).toBeLessThan(en);
+  });
+
   it("P-19 hero copy is server-rendered in Spanish, not EN-with-a-Spanish-title", () => {
     // Red today: the <title> is Spanish but the body says
     // "You communicate with us in Spanish…" (hero.lead EN).

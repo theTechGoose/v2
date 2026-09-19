@@ -25,7 +25,7 @@ Layers:
 | 2 | 3 | Once the invoice exists (flow complete), Go Back exits to the Dashboard | `wizard-nav.test.ts` | — | `quotes-wizard-navigation.cy.ts` |
 | 3 | 4 | "Why is contracts back?" — no separate Contracts nav section (folded into Quote + Agreement) | — | — | `dashboard-navigation.cy.ts` |
 | 4 | 5 | "Write it myself" needs a **Professionalize that** button; result must be reviewable (accept or edit), never auto-applied | `professionalize.test.ts` | `professionalize.int.test.ts` | `quotes-professionalize.cy.ts` |
-| 5 | 6 | Invoice parity: all quote info except the Terms list; **no signature block**; link to the signed quote when one exists; editable | `invoice-from-quote.test.ts` | `invoice-parity.int.test.ts` | `invoice-parity.cy.ts` |
+| 5 | 6 | Invoice parity: all quote info except the Terms list; **no signature block**; link to the signed quote when one exists; editable. The assistant's "Job done, need to invoice" runs the quote wizard (completion date in place of duration) and mints with `quoteId` (REQ-024) | `invoice-from-quote.test.ts`, `terms-wizard-spec/test.ts` (REQ-024) | `invoice-parity.int.test.ts`, `transition-to-terms/int.test.ts` + `handle-wizard-answer/int.test.ts` (REQ-024) | `invoice-parity.cy.ts`, `ux-invoice-review.cy.ts` (REQ-023 / REQ-024) |
 | 6 | 7 | Business name field on the wizard "Who is this for?" step | `wizard-steps.test.ts` | — | `quotes-wizard-navigation.cy.ts` |
 | 7 | 8 | "My Assistant" reachable at top of dashboard on mobile WITHOUT the hamburger | — | — | `dashboard-assistant-access.cy.ts` |
 | 8 | 8 | Completion Text + Email after quote sent / signed | — | `notifications.int.test.ts` | `public-completion-notify.cy.ts` |

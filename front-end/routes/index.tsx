@@ -288,15 +288,8 @@ export default define.page(async function Landing(ctx) {
               sentence for assistive tech at every width. */
           }
           <div class="lang-toggle" role="tablist" aria-label="Language">
-            <button
-              class={lang === "en" ? "on" : ""}
-              type="button"
-              data-lang="en"
-              aria-label="I speak English"
-            >
-              <span class="lang-toggle__full">I speak English</span>
-              <span class="lang-toggle__abbr" aria-hidden="true">EN</span>
-            </button>
+            {/* NW-01 (REQ-002): Spanish first — it is the default and the
+               client asked for "Yo hablo Español | I speak English". */}
             <button
               class={lang === "es" ? "on" : ""}
               type="button"
@@ -305,6 +298,15 @@ export default define.page(async function Landing(ctx) {
             >
               <span class="lang-toggle__full">Yo hablo Español</span>
               <span class="lang-toggle__abbr" aria-hidden="true">ES</span>
+            </button>
+            <button
+              class={lang === "en" ? "on" : ""}
+              type="button"
+              data-lang="en"
+              aria-label="I speak English"
+            >
+              <span class="lang-toggle__full">I speak English</span>
+              <span class="lang-toggle__abbr" aria-hidden="true">EN</span>
             </button>
           </div>
 

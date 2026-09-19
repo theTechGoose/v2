@@ -110,6 +110,7 @@ describe("UX-03: send moment — truthful confirmation, one document term", () =
     // Phone-only customer ⇒ sendChannel auto-defaults to "sms"
     // (AsstChat.tsx:1043-1052) — this click is the "Enviar por texto" send.
     cy.get(".quote-review__send-main").should("be.visible").click();
+    cy.get("[data-cy=send-keep]").click(); // REQ-035: Keep is the send
 
     // Anchor (green today): the send DID happen by text — the server divider
     // acknowledges the channel (sendQuote.divider.texted).
@@ -141,6 +142,7 @@ describe("UX-03: send moment — truthful confirmation, one document term", () =
   it("UX-03: header, card and divider chip speak ONE term at the send moment", () => {
     ux03DriveToPreview();
     cy.get(".quote-review__send-main").should("be.visible").click();
+    cy.get("[data-cy=send-keep]").click(); // REQ-035: Keep is the send
     cy.get(".continue-cta--done", { timeout: 20_000 }).should("be.visible");
 
     // Anchor: the header reflects the sent-for-signature state
@@ -158,6 +160,7 @@ describe("UX-03: send moment — truthful confirmation, one document term", () =
   it("UX-03: the thread badge keeps the same term after the send", () => {
     ux03DriveToPreview();
     cy.get(".quote-review__send-main").should("be.visible").click();
+    cy.get("[data-cy=send-keep]").click(); // REQ-035: Keep is the send
     cy.get(".continue-cta--done", { timeout: 20_000 }).should("be.visible");
 
     // Reload so the threads sidebar re-renders from the persisted
@@ -172,5 +175,80 @@ describe("UX-03: send moment — truthful confirmation, one document term", () =
         expect(text, "thread badge must not introduce the 'Contrato' term")
           .not.to.match(/contrato/i);
       });
+  });
+});
+
+// ===========================================================================
+// REQ-035 — NW-55 (p63): "'Send to client' opens 'How do you want to send to
+// customer?' with Text / Email / Text + Email and Keep / Cancel." The send
+// channels were a caret dropdown with no title and no Keep/Cancel; the main
+// button sent immediately.
+// ===========================================================================
+describe("REQ-035 NW-55 send dialog — how do you want to send, Keep / Cancel", () => {
+  beforeEach(() => {
+    cy.viewport(1280, 800);
+    ux03LoginEs();
+  });
+
+  it("REQ-035 Send opens the dialog; Cancel closes it without sending; Keep sends on the chosen channel", () => {
+    ux03DriveToPreview();
+    cy.get(".quote-review__send-main").should("be.visible").click();
+    cy.get("[data-cy=send-dialog]", { timeout: 10_000 })
+      .should("be.visible")
+      .and("contain.text", "¿Cómo quieres enviárselo al cliente?");
+    cy.get("[data-cy=send-option-both]").should("be.visible");
+    cy.get("[data-cy=send-option-sms]").should("be.visible");
+    cy.get("[data-cy=send-option-email]").should("be.visible");
+    cy.get("[data-cy=send-cancel]").should("contain.text", "Cancelar").click();
+    cy.get("[data-cy=send-dialog]").should("not.exist");
+    cy.get(".continue-cta--done").should("not.exist");
+    cy.get(".chat").should(($chat) => {
+      expect($chat.text(), "nothing was sent on Cancel").not.to.match(/mensaje de texto|texted to/i);
+    });
+
+    cy.get(".quote-review__send-main").should("be.visible").click();
+    cy.get("[data-cy=send-option-sms]").click();
+    cy.get("[data-cy=send-keep]").should("contain.text", "Guardar").click();
+    cy.get("[data-cy=send-dialog]").should("not.exist");
+    cy.get(".chat", { timeout: 20_000 }).should(($chat) => {
+      expect($chat.text(), "sent by text after Keep").to.match(/mensaje de texto|texted to/i);
+    });
+  });
+});
+
+// ===========================================================================
+// REQ-037 — NW-43b (p40): "After quotes and signed quotes, send a completion
+// text and email." Channels used to depend on what the customer happened to
+// have on file. The send dialog now collects the missing contact inline
+// ("Add an email to also email it" / "Add a phone to also text it"), saves it
+// to the customer, and sends on both channels.
+// ===========================================================================
+describe("REQ-037 NW-43b both channels — the send dialog collects the missing contact", () => {
+  beforeEach(() => {
+    cy.viewport(1280, 800);
+    ux03LoginEs();
+  });
+
+  it("REQ-037 phone-only customer → choosing Text + Email offers an inline email field → Keep saves it and sends both", () => {
+    ux03DriveToPreview();
+    cy.get(".quote-review__send-main").should("be.visible").click();
+    cy.get("[data-cy=send-dialog]", { timeout: 10_000 }).should("be.visible");
+    cy.get("[data-cy=send-option-both]").click();
+    cy.get("[data-cy=send-add-email]")
+      .should("be.visible")
+      .and("contain.text", "Agrega un correo");
+    const email = `maria.both.${Date.now()}@blackhole.postmarkapp.com`;
+    cy.get("[data-cy=send-add-email] input").type(email);
+    cy.get("[data-cy=send-keep]").click();
+    cy.get("[data-cy=send-dialog]").should("not.exist");
+    // Both channels went: the divider names the email AND the text.
+    cy.get(".chat", { timeout: 25_000 }).should(($chat) => {
+      expect($chat.text(), "emailed and texted").to.match(/enviado por correo a .* y por mensaje de texto a|emailed to .* and texted to/i);
+    });
+    // The email is now on the customer record.
+    cy.request("/api/customers").its("body").should((rows: Array<{ name: string; email?: string }>) => {
+      const maria = rows.find((r) => r.name === "María Nguyen" && r.email === email);
+      expect(maria, "customer saved with the new email").to.exist;
+    });
   });
 });

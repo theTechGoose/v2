@@ -49,6 +49,14 @@ describe("resolveAssistantBack — pop the stack; the rest are edges", () => {
       .toBe("exit-dashboard");
   });
 
+  it("REQ-005 NW-19 a snapshot below the wizard's first step → pop it (why the chat-path forward moves must push)", () => {
+    // NW-19: chip/chat → "Lock it in" → "Ready" CTA → first question. Each of
+    // those forward moves pushes a snapshot, so back at step 0 pops instead
+    // of exiting to the dashboard.
+    expect(resolveAssistantBack({ ...base(), activeWizardStepIdx: 0, viewStackDepth: 1 }))
+      .toBe("pop-view");
+  });
+
   it("saved invoice is terminal → exit, even with snapshots below it", () => {
     expect(resolveAssistantBack({
       ...base(),

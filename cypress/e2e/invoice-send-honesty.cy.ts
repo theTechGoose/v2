@@ -125,3 +125,56 @@ describe("P-09 invoice send surfaces report failure honestly (customer with no e
     });
   });
 });
+
+// ===========================================================================
+// REQ-030 — NW-25 (p16): "On 'send': the email went out but the text failed
+// with Twilio 400, error 21211 'Invalid To Phone Number: +1555555XXXX'."
+// A 555 number is rejected BEFORE Twilio with a translated reason, and the
+// invoice page reports each channel: the email went, the text did not —
+// instead of a silent reload that read as "everything was delivered".
+// ===========================================================================
+describe("REQ-030 NW-25 a half-delivered invoice send is reported per channel", () => {
+  const PHONE = "+15125552411";
+
+  beforeEach(() => {
+    cy.clearCookies();
+    cy.setCookie("pm_lang", "en");
+    cy.loginAs(PHONE);
+    cy.request("POST", "/api/me/onboarded", { skipped: true });
+    cy.apiUpdateUser({ language: "en" });
+  });
+
+  it("REQ-030 'Finish + send' to a customer with a real email and a fictional 555 phone → emailed, text failed, no silent reload", () => {
+    const clientName = `Partial Pat ${Date.now()}`;
+    cy.apiCreateCustomer({
+      name: clientName,
+      email: "partial.pat@blackhole.postmarkapp.com",
+      phoneNumber: "+15125550100",
+    }).then((customerId: string) => {
+      cy.apiCreateInvoice({
+        customerId,
+        jobName: "Half Delivered Job",
+        amount: 32100,
+        dueDate: "2099-01-01",
+        status: "draft",
+      }).then((invoiceId: string) => {
+        cy.visit("/invoices");
+        cy.contains(".qcard", clientName, { timeout: 10_000 })
+          .scrollIntoView()
+          .find("[data-cy=invoice-cta-drafting]")
+          .click();
+        cy.get("[data-cy=send-partial]", { timeout: 15_000 })
+          .should("be.visible")
+          .invoke("text")
+          .should((txt) => {
+            expect(txt, "says the email went and the text did not").to.match(/emailed/i);
+            expect(txt, "names the text failure").to.match(/text/i);
+            expect(txt, "explains the 555 number").to.match(/555|fictional/i);
+            expect(txt, "never the raw Twilio JSON").not.to.match(/"code"|more_info/);
+          });
+        // The email channel did deliver: the invoice is out.
+        cy.request(`/api/invoices/${invoiceId}`).its("body.status").should("eq", "sent");
+      });
+    });
+  });
+});

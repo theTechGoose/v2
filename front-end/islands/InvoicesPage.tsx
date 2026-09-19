@@ -31,11 +31,17 @@ import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 import { isChangeOrderMutable } from "../../shared/quote-flow/adjustment-guards.ts";
-import { formatShortDate } from "../../shared/quote-flow/format-helpers.ts";
+import {
+  formatPhoneInput,
+  formatShortDate,
+} from "../../shared/quote-flow/format-helpers.ts";
+import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 import {
   interpretSendResult,
   type SendOutcome,
   sendResultLangKey,
+  summarizeDispatch,
+  type DispatchChannel,
 } from "../../shared/quote-flow/send-result.ts";
 
 interface State {
@@ -283,6 +289,9 @@ interface ForecastResult {
   asOf: string;
 }
 
+/** REQ-030: sessionStorage key carrying a send outcome across the reload. */
+const SEND_FLASH_KEY = "pm:invoice-send-flash";
+
 export default function InvoicesPage(_props: { lang?: Lang }) {
   // Self-source the reactive UI language. Reading langSignal.value during
   // render makes this island re-render live when SettingsPage flips the
@@ -292,6 +301,21 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   const [forecast, setForecast] = useState<ForecastResult | undefined>(
     undefined,
   );
+  /** REQ-030 (NW-25): the "Create & send" modal navigates away after
+   *  dispatching — a half-delivered or failed send is carried across the
+   *  reload (sessionStorage) and shown here instead of being dropped. */
+  const [sendFlash, setSendFlash] = useState<
+    { text: string; partial: boolean } | null
+  >(() => {
+    try {
+      const raw = globalThis.sessionStorage?.getItem(SEND_FLASH_KEY);
+      if (!raw) return null;
+      globalThis.sessionStorage.removeItem(SEND_FLASH_KEY);
+      return JSON.parse(raw) as { text: string; partial: boolean };
+    } catch {
+      return null;
+    }
+  });
   // UX-02: /invoices?new=1 (the won-quote "Crear la factura" CTA) opens the
   // new-invoice modal directly.
   const [newOpen, setNewOpen] = useState(() =>
@@ -317,6 +341,12 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
 
   useEffect(() => {
     let alive = true;
+    // REQ-022 (NW-31c): sweep the scheduled invoices whose send date is here
+    // so the contractor gets the "job done? send it" nudge. Idempotent
+    // server-side (one notification per invoice per day). A real scheduler
+    // is a deploy decision — see plan §8.
+    fetch("/api/cron/run-nudges", { method: "POST", credentials: "include" })
+      .catch(() => {/* best-effort */});
     Promise.all([
       dashboardClient.invoices(undefined).catch(() => [] as Invoice[]),
       dashboardClient.customers().catch(() => [] as Customer[]),
@@ -408,6 +438,15 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
 
   return (
     <>
+      {sendFlash && (
+        <p
+          class="qcard__sendfail"
+          role="alert"
+          data-cy={sendFlash.partial ? "send-partial" : "invoice-send-failure"}
+        >
+          {sendFlash.text}
+        </p>
+      )}
       {
         /* Rendered FIRST (above the hero) so the detail is what the
           contractor lands on when following an ?open= deep link. */
@@ -420,6 +459,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             setOpenId(null);
             const url = new URL(globalThis.location.href);
             url.searchParams.delete("open");
+            url.searchParams.delete("pay");
             history.replaceState(null, "", url.toString());
           }}
           onChanged={refreshInvoices}
@@ -975,8 +1015,14 @@ function InvoiceDetail(
     onChanged: () => void | Promise<void>;
   },
 ) {
-  type Mode = "none" | "edit" | "discount" | "co";
-  const [mode, setMode] = useState<Mode>("none");
+  type Mode = "none" | "edit" | "discount" | "co" | "pay";
+  // REQ-018: /invoices?open=<id>&pay=1 lands straight on "Payment received".
+  const [mode, setMode] = useState<Mode>(() =>
+    typeof globalThis.location !== "undefined" &&
+      new URLSearchParams(globalThis.location.search).get("pay") === "1"
+      ? "pay"
+      : "none"
+  );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -1177,7 +1223,35 @@ function InvoiceDetail(
         >
           {tFor(lang, "invoicesPage.detail.changeOrderBtn")}
         </button>
+        {/* REQ-018 (NW-27): the contractor can say "payment received" on
+            anything the customer still owes — no customer claim required. */}
+        {(inv.stage === "out" || inv.stage === "overdue" ||
+          inv.stage === "claimed") && (
+          <button
+            type="button"
+            data-cy="invoice-payment-received"
+            onClick={() => switchMode("pay")}
+            style={secondaryBtn}
+          >
+            {tFor(lang, "invoicesPage.detail.paymentReceivedBtn")}
+          </button>
+        )}
       </div>
+
+      {mode === "pay" && (
+        <div style={formBox} data-cy="invoice-pay-form">
+          <PaymentReceivedForm
+            invoiceId={inv.id}
+            amountCents={inv.amount}
+            lang={lang}
+            onSaved={async () => {
+              await onChanged();
+              onClose();
+            }}
+            onCancel={() => setMode("none")}
+          />
+        </div>
+      )}
 
       {mode === "edit" && (
         <div style={formBox} data-cy="invoice-edit-form">
@@ -1449,6 +1523,9 @@ interface ChannelSendResult {
  *  `delivered` is true when AT LEAST one channel actually delivered. */
 interface DispatchResult {
   delivered: boolean;
+  /** REQ-030 (NW-25): one channel went, the other did not. */
+  partial: boolean;
+  failedChannels: DispatchChannel[];
   email: ChannelSendResult;
   text: ChannelSendResult;
 }
@@ -1493,10 +1570,24 @@ async function dispatchInvoice(id: string): Promise<DispatchResult> {
   ]);
   const [email, text] = await Promise.all(settled.map(interpretSettledSend));
   return {
-    delivered: email.outcome.delivered || text.outcome.delivered,
+    ...summarizeDispatch({ email: email.outcome, text: text.outcome }),
     email,
     text,
   };
+}
+
+/** REQ-030 (NW-25): honest copy for a HALF-delivered send — which channel
+ *  went, which did not, and why (the backend's translated reason). */
+function partialDispatchCopy(lang: Lang, d: DispatchResult): string {
+  const textFailed = d.failedChannels.includes("text");
+  const failed = textFailed ? d.text : d.email;
+  return tFor(
+    lang,
+    textFailed
+      ? "invoicesPage.send.partialTextFailed"
+      : "invoicesPage.send.partialEmailFailed",
+    { reason: failed.rawReason ?? failed.outcome.reason ?? "unknown" },
+  );
 }
 
 /** Honest failure copy when NO channel delivered — the same lang keys the
@@ -1507,9 +1598,16 @@ function dispatchFailureCopy(lang: Lang, d: DispatchResult): string {
   if (key === "sendQuote.divider.noEmail") {
     return tFor(lang, "sendQuote.divider.noEmail");
   }
-  return tFor(lang, key, {
+  const emailCopy = tFor(lang, key, {
     reason: d.email.rawReason ?? d.email.outcome.reason ?? "unknown",
   });
+  // REQ-030: the text channel's reason is reported too, never dropped.
+  const textReason = d.text.rawReason ?? d.text.outcome.reason;
+  return textReason && d.text.outcome.reason !== "noPhone"
+    ? `${emailCopy} · ${
+      tFor(lang, "sendQuote.divider.textFailed", { reason: textReason })
+    }`
+    : emailCopy;
 }
 
 /** Honest failure copy for the single-channel "Text client" action. */
@@ -1550,6 +1648,31 @@ function InvoiceCard(
   // P-09: honest send state — set when a dispatch delivered on NO channel,
   // rendered on the card instead of the old silent reload-as-success.
   const [sendFail, setSendFail] = useState<string | null>(null);
+  /** REQ-030: one channel delivered, the other did not. */
+  const [sendPartial, setSendPartial] = useState<string | null>(null);
+  // REQ-021: inline confirmation after a nudge (no reload — nothing on the
+  // card changes except that the reminder went out).
+  const [sendNote, setSendNote] = useState<string | null>(null);
+  // REQ-022 (NW-31c): inline "Change date" editor on an Upcoming card.
+  const [dateEdit, setDateEdit] = useState<string | null>(null);
+  async function doSaveScheduledFor(e: Event) {
+    e.stopPropagation();
+    if (busy || !dateEdit) return;
+    setBusy(true);
+    setSendFail(null);
+    try {
+      const r = await fetch(`/api/invoices/${inv.id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scheduledFor: dateEdit }),
+      });
+      if (r.ok) globalThis.location.reload();
+      else setSendFail(tFor(lang, "invoicesPage.back.changeDateFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
   // Roadmap p.12: in-card discount + change-order controls.
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [discountDollars, setDiscountDollars] = useState("");
@@ -1580,7 +1703,9 @@ function InvoiceCard(
     : inv.stage === "scheduled"
     ? tFor(lang, "invoicesPage.cta.scheduled")
     : inv.stage === "out"
-    ? tFor(lang, "invoicesPage.cta.out")
+    // REQ-018 (NW-27): the receipt is the out-for-payment card's next step;
+    // "View invoice" stays on the card back ("Open").
+    ? tFor(lang, "invoicesPage.cta.outReceived")
     : inv.stage === "drafting"
     ? tFor(lang, "invoicesPage.cta.drafting")
     : tFor(lang, "invoicesPage.cta.paid");
@@ -1684,7 +1809,10 @@ function InvoiceCard(
       // success when at least one channel actually delivered; otherwise the
       // failure is surfaced on the card and nothing pretends it was sent.
       const d = await dispatchInvoice(inv.id);
-      if (d.delivered) globalThis.location.reload();
+      // REQ-030 (NW-25): reload only when NOTHING failed; a half-delivered
+      // send says which channel went and which did not.
+      if (d.delivered && !d.partial) globalThis.location.reload();
+      else if (d.delivered) setSendPartial(partialDispatchCopy(lang, d));
       else setSendFail(dispatchFailureCopy(lang, d));
     } finally {
       setBusy(false);
@@ -1717,15 +1845,60 @@ function InvoiceCard(
       // way, but a delivery failure is SURFACED (P-09) — the contractor must
       // never walk away believing an undeliverable invoice reached anyone.
       const d = await dispatchInvoice(inv.id);
-      if (d.delivered) globalThis.location.reload();
+      // REQ-030 (NW-25): reload only when NOTHING failed; a half-delivered
+      // send says which channel went and which did not.
+      if (d.delivered && !d.partial) globalThis.location.reload();
+      else if (d.delivered) setSendPartial(partialDispatchCopy(lang, d));
       else setSendFail(dispatchFailureCopy(lang, d));
+    } finally {
+      setBusy(false);
+    }
+  }
+  /** REQ-018 (NW-27): open this invoice's detail panel in "Payment received"
+   *  mode via the deep link the panel already honours. */
+  function doPaymentReceived(e: Event) {
+    e.stopPropagation();
+    globalThis.location.assign(`/invoices?open=${inv.id}&pay=1`);
+  }
+  /** REQ-021 (NW-31a): a nudge is the reminder CADENCE (day 3 / 7 / 14 / 30
+   *  by how overdue the invoice is), never the full invoice re-texted. */
+  async function doSendNudge(e: Event) {
+    e.stopPropagation();
+    if (busy) return;
+    const d = inv.daysOverdue;
+    const day = d <= 3 ? 3 : d <= 7 ? 7 : d <= 14 ? 14 : 30;
+    setBusy(true);
+    setSendFail(null);
+    setSendNote(null);
+    try {
+      const res = await fetch("/api/cron/invoice-reminder", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ invoiceId: inv.id, day }),
+      });
+      const body = res.ok
+        ? (await res.json().catch(() => ({}))) as { channels?: string[] }
+        : null;
+      if (body && Array.isArray(body.channels) && body.channels.length > 0) {
+        setSendNote(tFor(lang, "invoicesPage.nudge.sent"));
+      } else if (body) {
+        // 200 with no channel = the cadence already fired this rung today,
+        // or reminders are muted for this invoice.
+        setSendNote(tFor(lang, "invoicesPage.nudge.alreadySent"));
+      } else {
+        setSendFail(tFor(lang, "invoicesPage.nudge.failed"));
+      }
+    } catch {
+      setSendFail(tFor(lang, "invoicesPage.nudge.failed"));
     } finally {
       setBusy(false);
     }
   }
   function ctaAction(e: Event) {
     if (inv.stage === "claimed") return doConfirmReceived(e);
-    if (inv.stage === "overdue") return doSendText(e);
+    if (inv.stage === "out") return doPaymentReceived(e);
+    if (inv.stage === "overdue") return doSendNudge(e);
     if (inv.stage === "scheduled") return doSendNow(e);
     if (inv.stage === "drafting") return doFinishDraft(e);
     return doOpenInvoice(e);
@@ -1923,6 +2096,10 @@ function InvoiceCard(
       <div class="qcard__av">{inv.initials}</div>
       <div class="qcard__body">
         <div class="qcard__client-name">{inv.client} · {inv.invoiceRef}</div>
+        {/* NW-30 (REQ-011): the job name tells invoices apart. */}
+        {inv.jobName
+          ? <div class="qcard__job" data-cy="invoice-card-job">{inv.jobName}</div>
+          : null}
         <h3 class="qcard__title">{fmtMoney(inv.amount)}</h3>
         <p class="qcard__story">{subline}</p>
       </div>
@@ -1956,6 +2133,21 @@ function InvoiceCard(
       {sendFail && (
         <p class="qcard__sendfail" role="alert" data-cy="invoice-send-failure">
           {sendFail}
+        </p>
+      )}
+      {sendPartial && (
+        <p class="qcard__sendfail" role="alert" data-cy="send-partial">
+          {sendPartial}
+        </p>
+      )}
+      {sendNote && (
+        <p
+          class="qcard__sendfail"
+          role="status"
+          data-cy="invoice-send-note"
+          style="color:var(--brand-green,#519843)"
+        >
+          {sendNote}
         </p>
       )}
 
@@ -2267,6 +2459,30 @@ function InvoiceCard(
             </div>
           )}
         </div>
+        {dateEdit !== null && (
+          <div
+            data-cy="invoice-change-date-form"
+            style="display:flex;gap:8px;align-items:center;padding:0 0 10px"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              type="date"
+              data-cy="invoice-change-date-input"
+              value={dateEdit}
+              disabled={busy}
+              onInput={(e) => setDateEdit((e.target as HTMLInputElement).value)}
+              style="padding:7px 9px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13px"
+            />
+            <button
+              type="button"
+              data-cy="invoice-change-date-save"
+              onClick={doSaveScheduledFor}
+              disabled={busy || !dateEdit}
+            >
+              {tFor(lang, "invoicesPage.back.changeDateSave")}
+            </button>
+          </div>
+        )}
         <div class="qcard__back-foot">
           {
             /* Design rule: exactly ONE solid primary per action row — the
@@ -2288,12 +2504,45 @@ function InvoiceCard(
           {inv.stage === "claimed" && (
             <button
               type="button"
+              data-cy="invoice-nudge"
+              onClick={doSendNudge}
+              disabled={busy}
+            >
+              {tFor(lang, "invoicesPage.back.nudge")}
+            </button>
+          )}
+          {inv.stage === "claimed" && (
+            <button
+              type="button"
               onClick={doRejectClaim}
               disabled={busy}
               data-cy="invoice-reject-claim"
               title={tFor(lang, "invoicesPage.back.rejectTitle")}
             >
               {tFor(lang, "invoicesPage.back.reject")}
+            </button>
+          )}
+          {inv.stage === "scheduled" && (
+            <button
+              type="button"
+              data-cy="invoice-change-date"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDateEdit((v) => v === null ? (inv.scheduledFor ?? "") : null);
+              }}
+              disabled={busy}
+            >
+              {tFor(lang, "invoicesPage.back.changeDate")}
+            </button>
+          )}
+          {(inv.stage === "overdue" || inv.stage === "out") && (
+            <button
+              type="button"
+              data-cy="invoice-payment-received"
+              onClick={doPaymentReceived}
+              disabled={busy}
+            >
+              {tFor(lang, "invoicesPage.detail.paymentReceivedBtn")}
             </button>
           )}
           {(inv.stage === "overdue" || inv.stage === "out")
@@ -2342,6 +2591,9 @@ function NewInvoiceModal(
   const [newPhone, setNewPhone] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [amount, setAmount] = useState("");
+  // REQ-022 (NW-31c): "Send on" — optional; when set the invoice is created
+  // scheduled (Upcoming) instead of drafted/sent.
+  const [scheduledFor, setScheduledFor] = useState("");
   const [dueDate, setDueDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 30);
@@ -2401,18 +2653,38 @@ function NewInvoiceModal(
         dueDate,
         issuedDate: new Date().toISOString().slice(0, 10),
         // Send → mark it sent up front (the send coordinators don't stamp
-        // invoice status); draft → lands in the Drafting track to send later.
-        status: send ? "sent" : "draft",
+        // invoice status); draft → lands in the Drafting track to send later;
+        // a "Send on" date (REQ-022) → scheduled, in the Upcoming track.
+        status: send ? "sent" : scheduledFor ? "scheduled" : "draft",
+        ...(!send && scheduledFor ? { scheduledFor } : {}),
         ...(jobName.trim() ? { jobName: jobName.trim() } : {}),
         ...(description.trim() ? { description: description.trim() } : {}),
       });
       // One-step send: dispatch the pay link over both channels. The backend
       // handles "no email/phone on file" gracefully.
       if (send && invoice?.id) {
-        await dispatchInvoice(invoice.id);
+        const d = await dispatchInvoice(invoice.id);
+        // REQ-030 (NW-25): never drop a channel failure on the way to the
+        // reload — the page shows it after navigating.
+        if (!d.delivered || d.partial) {
+          try {
+            globalThis.sessionStorage?.setItem(
+              SEND_FLASH_KEY,
+              JSON.stringify({
+                text: d.delivered
+                  ? partialDispatchCopy(lang, d)
+                  : dispatchFailureCopy(lang, d),
+                partial: d.delivered,
+              }),
+            );
+          } catch { /* storage unavailable — the reload still happens */ }
+        }
       }
-      // Reload so the new invoice enriches into the right track.
-      globalThis.location.reload();
+      // Reload so the new invoice enriches into the right track — without the
+      // ?new=1 deep link, or the modal would reopen over the fresh card.
+      const back = new URL(globalThis.location.href);
+      back.searchParams.delete("new");
+      globalThis.location.assign(back.toString());
     } catch (err) {
       setError(
         err instanceof Error
@@ -2485,7 +2757,7 @@ function NewInvoiceModal(
               {tFor(lang, "settings.phone")}
               <input
                 type="tel"
-                value={newPhone}
+                value={formatPhoneInput(newPhone)} /* NW-34 (REQ-012) */
                 disabled={busy}
                 onInput={(e) =>
                   setNewPhone((e.target as HTMLInputElement).value)}
@@ -2561,6 +2833,18 @@ function NewInvoiceModal(
           />
         </label>
 
+        <label style={labelStyle}>
+          {tFor(lang, "invoicesPage.new.sendOn")}
+          <input
+            type="date"
+            data-cy="invoice-schedule-date"
+            value={scheduledFor}
+            disabled={busy}
+            onInput={(e) => setScheduledFor((e.target as HTMLInputElement).value)}
+            style={inputStyle}
+          />
+        </label>
+
         {error && (
           <p
             role="alert"
@@ -2586,7 +2870,7 @@ function NewInvoiceModal(
             onClick={() => submit(false)}
             style="padding:10px 16px;border:1px solid var(--brand-green,#519843);border-radius:10px;background:#fff;color:var(--brand-green,#519843);font:inherit;font-weight:800;cursor:pointer"
           >
-            {tFor(lang, "invoicesPage.new.saveDraft")}
+            {scheduledFor ? tFor(lang, "invoicesPage.new.schedule") : tFor(lang, "invoicesPage.new.saveDraft")}
           </button>
           <button
             type="submit"

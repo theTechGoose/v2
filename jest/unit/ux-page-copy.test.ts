@@ -234,3 +234,36 @@ describe("UX-35: /q intro sentence agrees in number for both plural forms", () =
     expect(s).not.toMatch(/desglosadas\b/);
   });
 });
+
+// ===========================================================================
+// REQ-036 — NW-57 (p82): "'New Job' → 'Godzilla's Concrete Patio Agreement'".
+// The hero title was the bare job name (or "New job"); one pure helper now
+// names the agreement after the customer and the job, in both languages.
+// ===========================================================================
+describe("REQ-036 NW-57 agreementTitle", () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { agreementTitle } = require("../../shared/quote-flow/agreement-title");
+
+  it("REQ-036 EN: <Customer>'s <Job> Agreement", () => {
+    expect(agreementTitle({ customer: "Godzilla", job: "Concrete Patio", lang: "en" }))
+      .toBe("Godzilla's Concrete Patio Agreement");
+  });
+
+  it("REQ-036 ES: Acuerdo de <Job> de <Customer>", () => {
+    expect(agreementTitle({ customer: "Godzilla", job: "Concrete Patio", lang: "es" }))
+      .toBe("Acuerdo de Concrete Patio de Godzilla");
+  });
+
+  it("REQ-036 a placeholder job ('New job' / 'Nuevo trabajo') never leaks into the title", () => {
+    expect(agreementTitle({ customer: "Godzilla", job: "New job", lang: "en" }))
+      .toBe("Godzilla's Agreement");
+    expect(agreementTitle({ customer: "Godzilla", job: "Nuevo trabajo", lang: "es" }))
+      .toBe("Acuerdo de Godzilla");
+  });
+
+  it("REQ-036 without a customer the title is the job (or the fallback)", () => {
+    expect(agreementTitle({ job: "Concrete Patio", lang: "en" })).toBe("Concrete Patio");
+    expect(agreementTitle({ job: "New job", lang: "en", fallback: "Service Agreement" }))
+      .toBe("Service Agreement");
+  });
+});

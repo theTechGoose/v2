@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { isFictionalUsNumber } from "@users/domain/business/normalize-phone/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -40,6 +41,8 @@ export interface SendPaperworkSmsResult {
   sid?: string;
   /** Reason if it failed (or 'dev_mode_no_dispatch'). */
   reason?: string;
+  /** REQ-030: the provider's raw error text, for logs. */
+  detail?: string;
   /** P-06/UX-26 machine-readable needs-name refusal marker. */
   needsName?: boolean;
 }
@@ -112,9 +115,11 @@ export class SendPaperworkSms {
     let recipient: string | undefined = input.to;
     let body: string;
     let customerIdForLog: string | undefined;
+    let quoteForStamp: Quote | undefined;
 
     if (input.kind === "quote") {
       const quote = await this.quotes.getOwned(input.resourceId, userId);
+      quoteForStamp = quote;
       const customer = await this.tryGetCustomer(userId, quote.customerId);
       customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.phoneNumber ?? undefined;
@@ -158,8 +163,35 @@ export class SendPaperworkSms {
         to: recipient,
       };
     }
+    // REQ-030 (NW-25): the contractor reads the reason — their UI language.
+    const uiLang: "en" | "es" = sender?.language === "es" ? "es" : "en";
+    // A fictional 555 number never reaches Twilio (it would answer 21211);
+    // say so in words instead of a raw provider error.
+    if (isFictionalUsNumber(e164)) {
+      return {
+        ok: false,
+        reason: t(uiLang, "sms.fictionalNumber"),
+        detail: `fictional number: ${e164}`,
+        to: e164,
+      };
+    }
 
-    const result = await this.sms.send({ to: e164, body });
+    const sent = await this.sms.send({ to: e164, body });
+    // A recognised Twilio rejection arrives as a lang key — translate it.
+    const result = !sent.ok && sent.reason && /^sms\./.test(sent.reason)
+      ? { ...sent, reason: t(uiLang, sent.reason) }
+      : sent;
+
+    // NW-10 (REQ-003): stamp the quote's lifecycle on the first successful
+    // text — status→"sent" + sentAt→now, idempotent, mirroring
+    // SendPaperworkEmail. Without this an SMS-only send left the quote
+    // "draft" forever (the /quotes stage derivation reads sentAt).
+    if (result.ok && input.kind === "quote" && quoteForStamp && !quoteForStamp.sentAt) {
+      await this.quotes.update(input.resourceId, userId, {
+        status: "sent",
+        sentAt: new Date().toISOString(),
+      });
+    }
 
     // Comms trail (roadmap p.8): record the dispatch in the customer's
     // thread so every outbound text is queryable per document.

@@ -353,3 +353,50 @@ Deno.test("paperwork-email e2e: unauthenticated POST rejected", async () => {
     await resetKv();
   }
 });
+
+Deno.test("REQ-003 NW-10 paperwork-sms e2e: POST /quotes/:id/text stamps quote.sentAt + status='sent'", async () => {
+  // An SMS-only send from /quotes must leave the same lifecycle trail as an
+  // email send — otherwise the quote stays "draft" after the customer got it.
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("POSTMARK_API_KEY");
+  Deno.env.delete("TWILIO_ACCOUNT_SID");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const auth = { "content-type": "application/json", "x-session-id": sid };
+    const customer = await fetch(`http://localhost:${PORT}/customers`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Acme", phoneNumber: "+15125556111" }),
+    }).then((r) => r.json());
+    const quote = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        summary: "Roof",
+        lineItems: [],
+      }),
+    }).then((r) => r.json());
+    assertEquals(quote.status, "draft");
+    assertEquals(quote.sentAt, undefined);
+
+    const sent = await fetch(`http://localhost:${PORT}/quotes/${quote.id}/text`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({}),
+    }).then((r) => r.json());
+    assertEquals(sent.ok, true, JSON.stringify(sent));
+
+    const after = await fetch(`http://localhost:${PORT}/quotes/${quote.id}`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assert(typeof after.sentAt === "string" && after.sentAt.length > 0, "sentAt stamped");
+    assertEquals(after.status, "sent");
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});

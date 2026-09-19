@@ -15,6 +15,9 @@ import type { View } from "@paperwork/dto/view.ts";
 import { relativeTime } from "#quote-flow/format-helpers.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 
+/** Invoice statuses that still count as owed (REQ-016). */
+const OWED_STATUSES = new Set(["pending", "sent", "viewed", "claimed"]);
+
 const JOBS_SUB_KEY: Record<
   "overdue" | "active" | "scheduled" | "none",
   string
@@ -104,13 +107,17 @@ function buildOne(
     : "cold";
 
   // ---------------- balance ----------------
-  // pending invoices owed → positive cents; overpaid/credits → negative.
-  // Treat "deposit"/"credit" status as negative balance, "paid" as zero, "pending" as owed.
+  // Invoices still owed → positive cents; overpaid/credits → negative.
+  // REQ-016 (NW-14 side-find): the invoice lifecycle is
+  // scheduled|draft|sent|viewed|claimed|paid|void — every status between
+  // "delivered to the customer" and "paid" is owed, not only the legacy
+  // "pending". A sent invoice used to show $0 owed on /clients.
+  // "deposit"/"credit" reduce the balance; "paid"/"void"/unsent are zero.
   let balanceCents = 0;
   for (const i of myInvoices) {
     // Audit1 #3 — invoice.amount is INTEGER CENTS now (no × 100).
     const cents = i.amount ?? 0;
-    if (i.status === "pending") balanceCents += cents;
+    if (OWED_STATUSES.has(i.status ?? "")) balanceCents += cents;
     else if (i.status === "credit" || i.status === "deposit") {
       balanceCents -= cents;
     }

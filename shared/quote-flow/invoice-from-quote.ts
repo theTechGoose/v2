@@ -10,6 +10,8 @@ export interface QuoteLike {
   id: string;
   status?: string;
   acceptedAt?: string | null;
+  /** REQ-023 (NW-15): the customer travels with the derived invoice. */
+  customerId?: string;
   jobName?: string;
   summary?: string;
   description?: string;
@@ -21,6 +23,7 @@ export interface QuoteLike {
 
 export interface InvoiceFromQuote {
   quoteId: string;
+  customerId?: string;
   jobName?: string;
   description?: string;
   customer?: unknown;
@@ -32,6 +35,7 @@ export interface InvoiceFromQuote {
 export function buildInvoiceFromQuote(quote: QuoteLike): InvoiceFromQuote {
   const invoice: InvoiceFromQuote = {
     quoteId: quote.id,
+    ...(quote.customerId ? { customerId: quote.customerId } : {}),
     jobName: quote.jobName ?? quote.summary,
     description: quote.description,
     customer: quote.customer,

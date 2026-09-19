@@ -44,6 +44,19 @@ export const handler = define.handlers({
     const upstreamCookie = res.headers.get("set-cookie");
     if (upstreamCookie) headers.set("set-cookie", upstreamCookie);
 
+    // REQ-039 (NW-52): a closed account — no session; the caller must offer
+    // recover / start fresh. 409 keeps scripted logins loud.
+    if (res.ok && parsed.recoverable === true) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "account_closed",
+          recoverable: true,
+          recoveryToken: parsed.recoveryToken,
+        }),
+        { status: 409, headers },
+      );
+    }
     if (res.ok && typeof parsed.sessionId === "string") {
       const isNewUser = parsed.isNewUser === true;
       // New users go to the first-sign-in wizard at /welcome; returning users

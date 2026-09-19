@@ -80,6 +80,8 @@ export class UpdateCustomerDto {
 }
 
 export interface Customer extends CreateCustomerDto {
+  /** REQ-039 (NW-52): flagged, never erased — lists exclude it. */
+  deletedAt?: string;
   id: string;
   /** Owner. Populated server-side from the auth context — never accept from request body. */
   userId: string;

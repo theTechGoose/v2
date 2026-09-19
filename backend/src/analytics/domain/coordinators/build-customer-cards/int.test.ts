@@ -270,3 +270,43 @@ Deno.test("daysSinceContact: rounds down (36h → 1)", async () => {
     assertEquals(card.daysSinceContact, 1);
   });
 });
+
+// REQ-016 — NW-14 side-find: invoices live in
+// scheduled|draft|sent|viewed|claimed|paid|void, but the balance only counted
+// "pending", so a customer with a SENT invoice showed $0 owed on /clients.
+for (const status of ["pending", "sent", "viewed", "claimed"]) {
+  Deno.test(`REQ-016 balanceCents: a ${status} invoice is owed`, async () => {
+    await withKv(async () => {
+      const { customers, invoices, flow } = fresh();
+      const c = await customers.create("u-1", { name: "Acme" });
+      await invoices.create("u-1", {
+        quoteId: "k",
+        customerId: c.id,
+        dueDate: "2026-04-30",
+        status,
+        amount: 500_00,
+      });
+      const [card] = await flow.run("u-1", NOW_FIXED);
+      assertEquals(card.balanceCents, 500_00);
+      assertEquals(card.status, "owes");
+    });
+  });
+}
+
+for (const status of ["paid", "void", "scheduled", "draft"]) {
+  Deno.test(`REQ-016 balanceCents: a ${status} invoice is not owed`, async () => {
+    await withKv(async () => {
+      const { customers, invoices, flow } = fresh();
+      const c = await customers.create("u-1", { name: "Acme" });
+      await invoices.create("u-1", {
+        quoteId: "k",
+        customerId: c.id,
+        dueDate: "2026-04-30",
+        status,
+        amount: 500_00,
+      });
+      const [card] = await flow.run("u-1", NOW_FIXED);
+      assertEquals(card.balanceCents, 0);
+    });
+  });
+}

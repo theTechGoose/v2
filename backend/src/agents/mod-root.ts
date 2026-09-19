@@ -31,6 +31,7 @@ import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
 import type { LLMClient } from "@agents/domain/business/llm/base/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
+import { selectLlmClientName } from "@agents/domain/business/llm/select/mod.ts";
 
 /**
  * Pick the LLM client CLASS at module-load time:
@@ -42,6 +43,11 @@ import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/
  * `dev` deno tasks set `AGENTS_LLM_CLIENT=openai` so the production
  * server uses the real client.
  *
+ * REQ-001: in production (DENO_DEPLOYMENT_ID set) an unset/other value
+ * THROWS at boot instead of silently binding the stub — the stub's
+ * "(stub) <text>" echo is what produced the verbatim job descriptions
+ * the client screenshotted (NW-05 / NW-11). See `llm/select/mod.ts`.
+ *
  * Returns a CLASS (not an instance). Danet's `useClass` injector will
  * call `new ClientClass()` once per app boot — both classes have a
  * zero-arg constructor (StubLLMClient is empty; OpenAILLMClient reads
@@ -51,7 +57,11 @@ import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/
  * npm:openai dep doesn't load when the stub is selected.
  */
 async function selectLLMClass(): Promise<new () => LLMClient> {
-  if (Deno.env.get("AGENTS_LLM_CLIENT") === "openai") {
+  const which = selectLlmClientName({
+    AGENTS_LLM_CLIENT: Deno.env.get("AGENTS_LLM_CLIENT"),
+    DENO_DEPLOYMENT_ID: Deno.env.get("DENO_DEPLOYMENT_ID"),
+  });
+  if (which === "openai") {
     const { OpenAILLMClient } = await import(
       "@agents/domain/data/openai/mod.ts"
     );

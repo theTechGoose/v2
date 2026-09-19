@@ -83,7 +83,9 @@ interface CardProps {
 function ClientCard({ c, idx, isOpen, onOpen, onClose, lang }: CardProps) {
   const mood = moodFor(c, lang);
   const initials = initialsOf(c.name);
-  const seg = segmentLabel(c.segment, lang);
+  // NW-36 (REQ-013): the app never collects a customer segment, so no
+  // "Unsorted" placeholder — the label renders only when a real one exists.
+  const seg = c.segment ? segmentLabel(c.segment, lang) : null;
   const story = storyLineFor(c, lang);
   const cta = ctaFor(c, lang);
   const balance = balanceDisplay(c, lang);
@@ -126,8 +128,12 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose, lang }: CardProps) {
         <h3 class="ccard2__name">{c.name}</h3>
         {c.businessName && <div class="ccard2__biz">{c.businessName}</div>}
         <div class="ccard2__seg">
-          <span>{seg}</span>
-          <span class="ccard2__seg-dot" />
+          {seg && (
+            <>
+              <span>{seg}</span>
+              <span class="ccard2__seg-dot" />
+            </>
+          )}
           <span>{c.lastWhenRel}</span>
         </div>
         <p class="ccard2__story">{story}</p>
@@ -150,7 +156,10 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose, lang }: CardProps) {
             {c.businessName && (
               <div class="ccard2__panel-biz">{c.businessName}</div>
             )}
-            <div class="ccard2__panel-seg">{seg} · {mood.label}</div>
+            <div class="ccard2__panel-seg">
+              {seg ? `${seg} · ` : ""}
+              {mood.label}
+            </div>
           </div>
           <button
             class="ccard2__panel-x"

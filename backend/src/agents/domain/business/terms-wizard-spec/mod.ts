@@ -41,11 +41,9 @@ export const TERMS_WIZARD_V1: WizardSpec = {
         { id: "asap", label: "termsWizard.startDate.asap" },
         { id: "next_week", label: "termsWizard.startDate.nextWeek" },
         { id: "next_month", label: "termsWizard.startDate.nextMonth" },
-        {
-          // Roadmap p.4/5: paperwork written AFTER the work happened.
-          id: "job_completed",
-          label: "termsWizard.startDate.jobCompleted",
-        },
+        // NW-23 (REQ-009): "Job completed" is NOT a start date — the client
+        // asked for Right away / Next week / Next month / Pick a date. The
+        // duration (wraps) step keeps its own job_completed option.
         { id: "custom", label: "termsWizard.startDate.custom", isCustom: true },
       ],
     },
@@ -124,10 +122,58 @@ export const TERMS_WIZARD_V1: WizardSpec = {
   ],
 };
 
-/** Shorthand to fetch the spec by id (future multi-wizard support). */
+/** One shared step by id — the invoice wizard reuses the quote wizard's
+ *  step OBJECTS so every option, label and custom-value rule stays identical. */
+function sharedStep(id: string) {
+  const step = TERMS_WIZARD_V1.steps.find((s) => s.id === id);
+  if (!step) throw new Error(`terms wizard has no step "${id}"`);
+  return step;
+}
+
+/**
+ * REQ-024 (NW-13 / NW-18): "Job done, need to invoice" without an accepted
+ * quote runs the SAME wizard as a quote — minus start date and duration,
+ * plus the completion date ("skip how long it took, but ask for the
+ * completion date"). The answers land on the agreement row the invoice is
+ * derived from, so /i/:id shows the terms and the job details.
+ */
+export const INVOICE_WIZARD_V1: WizardSpec = {
+  id: "invoice-v1",
+  steps: [
+    sharedStep("customer"),
+    {
+      id: "completion_date",
+      label: "termsWizard.completionDate.label",
+      question: "termsWizard.completionDate.question",
+      options: [
+        { id: "today", label: "termsWizard.completionDate.today" },
+        { id: "yesterday", label: "termsWizard.completionDate.yesterday" },
+        { id: "last_week", label: "termsWizard.completionDate.lastWeek" },
+        { id: "custom", label: "termsWizard.completionDate.custom", isCustom: true },
+      ],
+    },
+    sharedStep("payment_terms"),
+    sharedStep("warranty"),
+  ],
+};
+
+/** Every wizard this module knows, by id. */
+export const WIZARD_SPECS: Record<string, WizardSpec> = {
+  [TERMS_WIZARD_V1.id]: TERMS_WIZARD_V1,
+  [INVOICE_WIZARD_V1.id]: INVOICE_WIZARD_V1,
+};
+
+/** Fetch a spec by id — the quote wizard ("terms-v1") or the invoice
+ *  wizard ("invoice-v1", REQ-024). */
 export function getWizardSpec(specId: string): WizardSpec {
-  if (specId === TERMS_WIZARD_V1.id) return TERMS_WIZARD_V1;
+  const spec = WIZARD_SPECS[specId];
+  if (spec) return spec;
   throw new Error(`unknown wizard spec: ${specId}`);
+}
+
+/** The wizard for a document kind (REQ-024). */
+export function wizardSpecFor(docKind: "quote" | "invoice" | undefined): WizardSpec {
+  return docKind === "invoice" ? INVOICE_WIZARD_V1 : TERMS_WIZARD_V1;
 }
 
 /**

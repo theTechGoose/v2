@@ -7,7 +7,7 @@ import {
 } from "@agents/domain/business/wizard-progress/mod.ts";
 import {
   localizeOptions,
-  TERMS_WIZARD_V1,
+  getWizardSpec,
 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -16,7 +16,7 @@ import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
-import type { WizardState } from "@agents/dto/wizard.ts";
+import type { WizardAnswer, WizardSpec, WizardState } from "@agents/dto/wizard.ts";
 
 export interface WizardAnswerInput {
   userId: string;
@@ -96,10 +96,13 @@ export class HandleWizardAnswer {
     // an out-of-order `create_new` (stale card in a second tab, a double
     // tap, a lost response followed by a retry) used to materialize an
     // orphan Customer row on every failed attempt.
-    const activeStep = TERMS_WIZARD_V1.steps[current.activeStepIdx];
+    // REQ-024: the spec comes from the persisted state — the quote wizard
+    // or the invoice wizard.
+    const spec = getWizardSpec(current.specId);
+    const activeStep = spec.steps[current.activeStepIdx];
     if (!activeStep) {
       throw new Error(
-        `wizard already complete (step ${current.activeStepIdx} of ${TERMS_WIZARD_V1.steps.length})`,
+        `wizard already complete (step ${current.activeStepIdx} of ${spec.steps.length})`,
       );
     }
     if (activeStep.id !== input.stepId) {
@@ -118,20 +121,20 @@ export class HandleWizardAnswer {
     let boundCustomerId = conv.customerId;
     let boundCustomerName: string | undefined;
     if (input.stepId === "customer") {
-      const handled = await this.handleCustomerStep(conv.id, input);
+      const handled = await this.handleCustomerStep(conv.id, input, lang);
       boundCustomerId = handled.customerId ?? boundCustomerId;
       boundCustomerName = handled.customerName;
       customerCustomValue = handled.customValue ?? customerCustomValue;
     }
 
-    const next = applyAnswer(TERMS_WIZARD_V1, current, {
+    const next = applyAnswer(spec, current, {
       stepId: input.stepId,
       optionId: input.optionId,
       customValue: customerCustomValue,
     });
     await this.conversations.putWizardState(input.conversationId, next);
 
-    const stepDef = TERMS_WIZARD_V1.steps.find((s) => s.id === input.stepId)!;
+    const stepDef = spec.steps.find((s) => s.id === input.stepId)!;
     const optionDef = stepDef.options.find((o) => o.id === input.optionId)!;
     // For the customer step, prefer the resolved customer's name so the
     // chat transcript reads "Customer: Jane Doe" rather than "Customer:
@@ -158,7 +161,7 @@ export class HandleWizardAnswer {
     });
 
     const newMessages: AgentMessage[] = [userPick];
-    const progress = computeProgress(TERMS_WIZARD_V1, next);
+    const progress = computeProgress(spec, next);
 
     const convPatch: Partial<AgentConversation> = {
       preview: t(lang, "wizardAnswer.pick.transcript", {
@@ -179,7 +182,7 @@ export class HandleWizardAnswer {
       // Best-effort: if conv.quoteId is missing or the quote can't be
       // loaded, we still surface the CTA — the user can pick a quote
       // manually before sending.
-      const quoteId = await this.finalizeTerms(conv, boundCustomerId);
+      const quoteId = await this.finalizeTerms(conv, boundCustomerId, spec, next);
 
       const cta = await this.messages.append({
         conversationId: input.conversationId,
@@ -190,6 +193,8 @@ export class HandleWizardAnswer {
           toPhase: "send",
           summary: t(lang, "wizardAnswer.cta.readyToSendSummary"),
           ...(quoteId ? { quoteId } : {}),
+          // REQ-024: the review opens in invoice mode for the invoice wizard.
+          ...(conv.docKind ? { docKind: conv.docKind } : {}),
         },
       });
       newMessages.push(cta);
@@ -201,7 +206,7 @@ export class HandleWizardAnswer {
         kind: "wizard",
         content: t(lang, step.question),
         payload: {
-          specId: TERMS_WIZARD_V1.id,
+          specId: spec.id,
           stepIdx: next.activeStepIdx,
           stepId: step.id,
           options: localizeOptions(step.options, lang),
@@ -232,6 +237,7 @@ export class HandleWizardAnswer {
   private async handleCustomerStep(
     _conversationId: string,
     input: WizardAnswerInput,
+    lang: "en" | "es",
   ): Promise<
     { customerId?: string; customerName?: string; customValue?: string }
   > {
@@ -266,9 +272,9 @@ export class HandleWizardAnswer {
           (phone && creator?.phoneNumber &&
             normPhone(phone) === normPhone(creator.phoneNumber))
         ) {
-          throw new Error(
-            "customer contact must not match the contractor's own email or phone number",
-          );
+          // REQ-029 (NW-22): the contractor reads this — dictionary copy in
+          // their language, never a raw developer string.
+          throw new Error(t(lang, "termsWizard.customer.ownContact"));
         }
       }
       const created = await this.customers.create(input.userId, {
@@ -310,13 +316,19 @@ export class HandleWizardAnswer {
   private async finalizeTerms(
     conv: AgentConversation,
     boundCustomerId: string | undefined,
+    spec: WizardSpec,
+    state: WizardState,
   ): Promise<string | undefined> {
     // Walk the conversation messages and project the user's wizard picks
     // into a labeled terms array. Each pick lives on a `text` user message
     // with payload.wizardStepId — the chat transcript is the canonical
     // record. We snapshot it onto the quote so the public /q page can
     // render the agreed terms without re-loading the conversation.
-    const terms = await this.captureTerms(conv.id);
+    const terms = await this.captureTerms(conv.id, spec);
+    // REQ-024 (NW-18): the invoice wizard's completion date lands on the
+    // agreement as estimatedCompletionDate — the invoice's due date derives
+    // from it (Due Now → the same day; net terms → +N days).
+    const completed = completionDateFromAnswers(state.answers);
 
     if (!conv.quoteId) {
       console.error(
@@ -330,6 +342,7 @@ export class HandleWizardAnswer {
       await this.quotes.update(conv.quoteId, conv.userId, {
         ...(terms.length ? { terms } : {}),
         ...(customerId && !quote.customerId ? { customerId } : {}),
+        ...(completed ? { estimatedCompletionDate: completed } : {}),
       });
     } catch (err) {
       console.error(
@@ -351,6 +364,7 @@ export class HandleWizardAnswer {
   /** Project wizard-answer chat messages into a labeled terms array. */
   private async captureTerms(
     conversationId: string,
+    spec: WizardSpec,
   ): Promise<{ stepId: string; label: string; value: string }[]> {
     const msgs = await this.messages.listByConversation(conversationId);
     const picks: { stepId: string; label: string; value: string }[] = [];
@@ -369,7 +383,7 @@ export class HandleWizardAnswer {
       // from the step/option ids on the payload, NOT the transcript text (which
       // is now rendered in the contractor's UI language and would poison the
       // base — localizeTermValue assumes EN input).
-      const stepDef = TERMS_WIZARD_V1.steps.find((s) => s.id === stepId);
+      const stepDef = spec.steps.find((s) => s.id === stepId);
       if (!stepDef) continue;
       const optionDef = stepDef.options.find((o) => o.id === p?.optionId);
       const label = t("en", stepDef.label);
@@ -381,4 +395,20 @@ export class HandleWizardAnswer {
     }
     return picks;
   }
+}
+
+/** REQ-024: the invoice wizard's completion_date answer as YYYY-MM-DD —
+ *  today / yesterday / last_week relative to now; a custom pick must be an
+ *  ISO date, anything else falls back to today. Undefined when the wizard
+ *  had no completion step (the quote wizard). */
+function completionDateFromAnswers(answers: WizardAnswer[]): string | undefined {
+  const a = answers.find((x) => x.stepId === "completion_date");
+  if (!a) return undefined;
+  const iso = (offsetDays: number) =>
+    new Date(Date.now() - offsetDays * 86_400_000).toISOString().slice(0, 10);
+  if (a.optionId === "today") return iso(0);
+  if (a.optionId === "yesterday") return iso(1);
+  if (a.optionId === "last_week") return iso(7);
+  const custom = (a.customValue ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(custom) ? custom : iso(0);
 }

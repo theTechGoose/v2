@@ -119,3 +119,59 @@ describe("clients page naming — one EN term across page and nav (P-46)", () =>
     });
   });
 });
+
+// ===========================================================================
+// REQ-012 — NW-34 (p30): "Format phone numbers as (555) 123-4567 as they are
+// typed. That is sexy."
+// ===========================================================================
+describe("REQ-012 NW-34 the add-customer phone field masks as you type", () => {
+  const PHONE = "+15125553112";
+
+  beforeEach(() => {
+    cy.clearCookies();
+    cy.loginAs(PHONE);
+    cy.request("POST", "/api/me/onboarded", { skipped: true });
+    cy.apiUpdateUser({ language: "es" });
+    cy.clearCookie("pm_lang");
+    cy.visit("/clients");
+    cy.contains(".ph2__cta", "Nuevo cliente", { timeout: 10_000 }).should("be.visible").click();
+  });
+
+  it("REQ-012 NW-34 typing 5125556999 renders (512) 555-6999 while typing", () => {
+    cy.get("input[type=tel]").should("be.visible").type("512");
+    cy.get("input[type=tel]").should("have.value", "(512");
+    cy.get("input[type=tel]").type("5556");
+    cy.get("input[type=tel]").should("have.value", "(512) 555-6");
+    cy.get("input[type=tel]").type("999");
+    cy.get("input[type=tel]").should("have.value", "(512) 555-6999");
+  });
+});
+
+// ===========================================================================
+// REQ-013 — NW-36 (p32): "Customers tab: remove the 'Who's on your books'
+// chart (Property mgmt / Homeowners / Small biz / HOAs / Unsorted). We do not
+// collect this data."
+// ===========================================================================
+describe("REQ-013 NW-36 no segments chart on the customers page", () => {
+  const PHONE = "+15125553113";
+
+  beforeEach(() => {
+    cy.clearCookies();
+    cy.loginAs(PHONE);
+    cy.request("POST", "/api/me/onboarded", { skipped: true });
+    cy.apiUpdateUser({ language: "en" });
+    cy.apiCreateCustomer({
+      name: "Books Customer",
+      email: "books.customer@blackhole.postmarkapp.com",
+      phoneNumber: "+15125553114",
+    });
+    cy.visit("/clients");
+    cy.get(".ccard2", { timeout: 10_000 }).should("have.length.at.least", 1);
+  });
+
+  it("REQ-013 NW-36 the 'Who's on your books' chart is gone", () => {
+    cy.get(".csegment2").should("not.exist");
+    cy.contains(/who's on your books/i).should("not.exist");
+    cy.contains(/unsorted/i).should("not.exist");
+  });
+});

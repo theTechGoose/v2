@@ -8,6 +8,7 @@ import {
   type TranscriptionClient,
 } from "@core/business/transcription/base/mod.ts";
 import { StubTranscriptionClient } from "@core/business/transcription/implementations/stub/mod.ts";
+import { selectLlmClientName } from "@agents/domain/business/llm/select/mod.ts";
 
 /**
  * Pick the TranscriptionClient class at module-load time.
@@ -19,11 +20,18 @@ import { StubTranscriptionClient } from "@core/business/transcription/implementa
  * task sets `TRANSCRIPTION_CLIENT=openai` for production; tests leave it
  * unset so they get the deterministic stub.
  *
+ * REQ-001: in production (DENO_DEPLOYMENT_ID set) an unset/other value
+ * throws at boot instead of silently binding the stub.
+ *
  * The OpenAI module is dynamically imported so the live SDK doesn't load
  * when the stub is selected.
  */
 async function selectTranscriptionClass(): Promise<new () => TranscriptionClient> {
-  if (Deno.env.get("TRANSCRIPTION_CLIENT") === "openai") {
+  const which = selectLlmClientName({
+    TRANSCRIPTION_CLIENT: Deno.env.get("TRANSCRIPTION_CLIENT"),
+    DENO_DEPLOYMENT_ID: Deno.env.get("DENO_DEPLOYMENT_ID"),
+  }, "TRANSCRIPTION_CLIENT");
+  if (which === "openai") {
     const { OpenAIWhisperClient } = await import(
       "@core/business/transcription/implementations/openai-whisper/mod.ts"
     );

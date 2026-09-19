@@ -134,3 +134,39 @@ describe("P-09 sendResultLangKey — maps failures to the honest divider lang ke
     expect(en["sendQuote.divider.noEmail"]).toContain("no email on file");
   });
 });
+
+// REQ-030 — NW-25 (p16): "the email went out but the text failed with
+// Twilio 400, error 21211". The invoice page collapsed two channels into one
+// boolean and reported only the email reason, so a half-delivered send
+// reloaded as success. summarizeDispatch is the pure per-channel verdict.
+describe("REQ-030 NW-25 summarizeDispatch — per-channel honesty", () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const mod = require("../../shared/quote-flow/send-result");
+
+  it("REQ-030 email delivered + text failed → delivered, partial, failedChannels ['text']", () => {
+    expect(
+      mod.summarizeDispatch({
+        email: { delivered: true },
+        text: { delivered: false, reason: "sms.invalidNumber" },
+      }),
+    ).toEqual({ delivered: true, partial: true, failedChannels: ["text"] });
+  });
+
+  it("REQ-030 both delivered → not partial, nothing failed", () => {
+    expect(
+      mod.summarizeDispatch({
+        email: { delivered: true },
+        text: { delivered: true },
+      }),
+    ).toEqual({ delivered: true, partial: false, failedChannels: [] });
+  });
+
+  it("REQ-030 nothing delivered → not delivered, not partial, both channels failed", () => {
+    expect(
+      mod.summarizeDispatch({
+        email: { delivered: false, reason: "noEmail" },
+        text: { delivered: false, reason: "noPhone" },
+      }),
+    ).toEqual({ delivered: false, partial: false, failedChannels: ["email", "text"] });
+  });
+});

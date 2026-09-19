@@ -2,6 +2,7 @@ import { Injectable } from "#danet/core";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import { balanceDue } from "@paperwork/domain/business/invoice-balance/mod.ts";
+import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
 
 export interface InvoiceBalanceResult {
   invoiceId: string;
@@ -29,6 +30,7 @@ export class ComputeInvoiceBalance {
   constructor(
     private invoices: InvoiceStore,
     private payments: PaymentStore,
+    private markPaid: MarkInvoicePaid,
   ) {}
 
   async run(invoiceId: string, userId: string): Promise<InvoiceBalanceResult> {
@@ -48,6 +50,12 @@ export class ComputeInvoiceBalance {
         status: desiredStatus,
         paidAt: desiredPaidAt,
       });
+    }
+    // REQ-020 (NW-29): the moment the balance closes, the customer gets the
+    // invoice stamped PAID — once per flip, never on a re-run of an
+    // already-paid invoice.
+    if (desiredStatus === "paid" && invoice.status !== "paid") {
+      await this.markPaid.run(userId, invoiceId);
     }
 
     return { invoiceId, amount, paidTotal, balance, status: desiredStatus };

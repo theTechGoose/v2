@@ -92,3 +92,46 @@ describe("quote status badge lifecycle", () => {
     badgeText().should("match", /accepted/i);
   });
 });
+
+// ===========================================================================
+// REQ-003 — NW-10 (p8): "The Quote + Agreement card shows a 'SENT' badge in
+// the top right before I have actually sent it." The price flow must create
+// the quote as a DRAFT; only a real dispatch flips it to sent.
+// ===========================================================================
+describe("REQ-003 NW-10 the price flow creates a draft", () => {
+  const PHONE = "+15125550926";
+  const KNOWN_PRICE_CHIP = "Sé mi precio, redáctalo.";
+
+  beforeEach(() => {
+    cy.clearCookies();
+    cy.loginAs(PHONE);
+    cy.apiUpdateUser({ language: "es" });
+    cy.clearCookie("pm_lang");
+    cy.request("POST", "/api/me/onboarded", { skipped: true });
+  });
+
+  it("REQ-003 NW-10 after Continue on the price step the newest quote is 'draft', not 'sent'", () => {
+    cy.visit("/assistant");
+    cy.contains("button.chat__empty-prompt", KNOWN_PRICE_CHIP)
+      .should("be.visible")
+      .click();
+    cy.get("textarea.composer__input", { timeout: 10_000 })
+      .should("be.visible")
+      .type("Pintar una cerca de madera de 50 pies");
+    cy.get("button.composer__send").click();
+    cy.get(".chat__price-capture", { timeout: 10_000 }).should("be.visible");
+    cy.get(".chat__price-capture input.mi__input").type("500");
+    cy.get("button.chat__price-continue").should("not.be.disabled").click();
+    cy.location("pathname", { timeout: 20_000 }).should("match", /^\/assistant\/.+/);
+
+    cy.request("/api/quotes").then((res) => {
+      const rows = res.body as Array<{ status?: string; createdAt?: string; sentAt?: string }>;
+      expect(rows.length, "a quote was created").to.be.greaterThan(0);
+      const newest = [...rows].sort((a, b) =>
+        String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""))
+      )[0];
+      expect(newest.status, `newest quote status`).to.eq("draft");
+      expect(newest.sentAt, "sentAt").to.be.undefined;
+    });
+  });
+});

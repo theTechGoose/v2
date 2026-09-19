@@ -44,15 +44,26 @@ export class CustomerStore {
     return customer;
   }
 
-  async get(id: string): Promise<Customer> {
+  /** REQ-039 (NW-52): a deleted customer reads as not-found unless the
+   *  caller asks for it (`includeDeleted`) — the row is never erased. */
+  async get(
+    id: string,
+    opts: { includeDeleted?: boolean } = {},
+  ): Promise<Customer> {
     const kv = await getKv();
     const result = await kv.get<Customer>([PREFIX, id]);
-    if (!result.value) throw new NotFoundError(PREFIX, id);
+    if (!result.value || (result.value.deletedAt && !opts.includeDeleted)) {
+      throw new NotFoundError(PREFIX, id);
+    }
     return result.value;
   }
 
-  async getOwned(id: string, userId: string): Promise<Customer> {
-    const customer = await this.get(id);
+  async getOwned(
+    id: string,
+    userId: string,
+    opts: { includeDeleted?: boolean } = {},
+  ): Promise<Customer> {
+    const customer = await this.get(id, opts);
     if (customer.userId !== userId) throw new ForbiddenError(PREFIX, id);
     return customer;
   }
@@ -62,7 +73,7 @@ export class CustomerStore {
     const out: Customer[] = [];
     for await (const entry of kv.list<string>({ prefix: [INDEX_PREFIX, userId] })) {
       const result = await kv.get<Customer>([PREFIX, entry.value]);
-      if (result.value) out.push(result.value);
+      if (result.value && !result.value.deletedAt) out.push(result.value);
     }
     return out;
   }
@@ -85,12 +96,11 @@ export class CustomerStore {
     return updated;
   }
 
+  /** REQ-039 (NW-52): soft delete — flagged, never erased. */
   async delete(id: string, userId: string): Promise<void> {
     const existing = await this.getOwned(id, userId);
+    const now = new Date().toISOString();
     const kv = await getKv();
-    await kv.atomic()
-      .delete([PREFIX, id])
-      .delete([INDEX_PREFIX, existing.userId, id])
-      .commit();
+    await kv.set([PREFIX, id], { ...existing, deletedAt: now, updatedAt: now });
   }
 }

@@ -187,6 +187,11 @@ describe("P-41 adjustment integrity in the invoice UI", () => {
     cy.clearCookies();
     cy.setCookie("pm_lang", "en");
     cy.loginAs(PHONE);
+    // Start from a clean account: the first case finds "the" out-for-payment
+    // card, so seeds from earlier runs must not pile up as extra cards.
+    cy.request({ url: "/api/me/wipe", failOnStatusCode: false });
+    cy.loginAs(PHONE);
+    cy.setCookie("pm_lang", "en");
     cy.apiUpdateUser({ language: "en" });
     cy.request({
       method: "POST",
@@ -243,5 +248,128 @@ describe("P-41 adjustment integrity in the invoice UI", () => {
     // BLOCKED, so the total is NOT silently reduced from $3,200.
     cy.wait(500);
     cy.request(`/api/invoices/${invoiceId}`).its("body.amount").should("eq", 320000);
+  });
+});
+
+// ===========================================================================
+// REQ-018 — NW-27 / NW-32 (p18, p29): "How do you mark an invoice paid? We
+// are not taking payments, so the client has to tell us payment has been
+// received." / "If the Dragon marks an invoice as paid it should show up
+// here [/payments]." A contractor-initiated "Payment received" on an
+// Out-for-payment invoice: pick the method, record it, the invoice lands in
+// Paid and the payment appears on /payments.
+// ===========================================================================
+describe("REQ-018 NW-27 payment received on an Out-for-payment invoice", () => {
+  const PHONE = "+15125552835";
+  const JOB = "Zelle Fence Job";
+  let invoiceId = "";
+
+  beforeEach(() => {
+    cy.viewport(1440, 900);
+    cy.clearCookies();
+    cy.setCookie("pm_lang", "en");
+    cy.loginAs(PHONE);
+    cy.request({ url: "/api/me/wipe", failOnStatusCode: false });
+    cy.loginAs(PHONE);
+    cy.apiUpdateUser({ language: "en" });
+    cy.request({ method: "POST", url: "/api/me/onboarded", body: { skipped: true }, failOnStatusCode: false });
+    cy.setCookie("pm_lang", "en");
+    const today = new Date().toISOString().slice(0, 10);
+    const due = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+    cy.apiCreateCustomer({
+      name: "Zelle Customer",
+      email: "zelle.customer@blackhole.postmarkapp.com",
+      phoneNumber: "+15125552836",
+    }).then((customerId) => {
+      cy.apiCreateInvoice({
+        customerId,
+        amount: 50000,
+        jobName: JOB,
+        status: "sent",
+        issuedDate: today,
+        dueDate: due,
+      }).then((id) => {
+        invoiceId = id;
+      });
+    });
+  });
+
+  it("REQ-018 NW-27 the Out-for-payment card offers 'Payment received'; recording Zelle pays the invoice and lists it on /payments", () => {
+    cy.visit("/invoices");
+    cy.contains(".qcard", JOB, { timeout: 15_000 }).as("card");
+    // The front CTA on an out-for-payment card is the receipt, not "View invoice".
+    cy.get("@card").find("[data-cy=invoice-cta-out]").should("contain.text", "Payment received");
+    cy.get("@card").find(".qcard__title").scrollIntoView().click();
+    cy.get("@card").should("have.class", "qcard--flipped");
+    cy.get("@card").find("[data-cy=invoice-payment-received]").click();
+
+    // The method picker: all nine methods; Zelle it is. Amount is prefilled.
+    cy.get("[data-cy=pay-method-zelle]", { timeout: 15_000 }).should("be.visible").click();
+    cy.get("[data-cy=pay-received-amount]").should("have.value", "500");
+    cy.get("[data-cy=pay-received-submit]").click();
+
+    // Paid: the card's back CTA is now the paid one.
+    cy.contains(".qcard", JOB, { timeout: 15_000 }).find("[data-cy=invoice-back-cta-paid]").should("exist");
+    cy.request(`/api/invoices/${invoiceId}`).its("body.status").should("eq", "paid");
+
+    // …and it shows up on /payments with its method.
+    cy.visit("/payments");
+    cy.contains(/zelle/i, { timeout: 15_000 }).should("be.visible");
+  });
+});
+
+// ===========================================================================
+// REQ-021 — NW-31a (p28): "Awaiting confirmation — has an 'Ok I got it'
+// button, but also needs a nudge button, because 'Ok I got it' marks it as
+// paid." Both nudges post to the reminder cadence (POST
+// /api/cron/invoice-reminder), never the full-invoice re-text.
+// ===========================================================================
+describe("REQ-021 NW-31a nudges go through the reminder cadence", () => {
+  const PHONE = "+15125552837";
+
+  beforeEach(() => {
+    cy.viewport(1440, 900);
+    cy.clearCookies();
+    cy.setCookie("pm_lang", "en");
+    cy.loginAs(PHONE);
+    cy.request({ url: "/api/me/wipe", failOnStatusCode: false });
+    cy.loginAs(PHONE);
+    cy.apiUpdateUser({ language: "en", name: "Nudge Contractor" });
+    cy.request({ method: "POST", url: "/api/me/onboarded", body: { skipped: true }, failOnStatusCode: false });
+    cy.setCookie("pm_lang", "en");
+    cy.intercept("POST", "/api/cron/invoice-reminder").as("nudge");
+    cy.intercept("POST", "/api/invoices/*/text").as("retext");
+  });
+
+  it("REQ-021 the Awaiting-confirmation card back offers 'Send a nudge' and it posts to the cadence", () => {
+    cy.seedQuoteToCash({ invoice: { amount: 320000 } }).then((seeded) => {
+      cy.apiClaimPayment(seeded.invoiceId, { method: "zelle", claimedBy: "Asha Patel" });
+    });
+    cy.visit("/invoices");
+    cy.get("[data-cy=awaiting-confirmation-track] .qcard", { timeout: 15_000 }).first().as("card");
+    cy.get("@card").find(".qcard__title").scrollIntoView().click();
+    cy.get("@card").should("have.class", "qcard--flipped");
+    cy.get("@card").find("[data-cy=invoice-nudge]").should("be.visible").click();
+    cy.wait("@nudge").its("request.body").should("deep.include", { day: 3 });
+    cy.get("@nudge.all").should("have.length", 1);
+    cy.get("@retext.all").should("have.length", 0);
+  });
+
+  it("REQ-021 the Overdue card's 'Send nudge' posts to the cadence with the day matching how overdue it is", () => {
+    const issued = new Date(Date.now() - 12 * 86_400_000).toISOString().slice(0, 10);
+    const due = new Date(Date.now() - 10 * 86_400_000).toISOString().slice(0, 10);
+    cy.apiCreateCustomer({
+      name: "Late Customer",
+      email: "late.customer@blackhole.postmarkapp.com",
+      phoneNumber: "+15125552838",
+    }).then((customerId) => {
+      cy.apiCreateInvoice({ customerId, amount: 45000, jobName: "Late Deck Job", status: "sent", issuedDate: issued, dueDate: due });
+    });
+    cy.visit("/invoices");
+    cy.contains(".qcard", "Late Deck Job", { timeout: 15_000 }).as("card");
+    cy.get("@card").find("[data-cy=invoice-cta-overdue]").scrollIntoView().click();
+    // 10 days overdue → the day-14 rung.
+    cy.wait("@nudge").its("request.body").should("deep.include", { day: 14 });
+    cy.get("@retext.all").should("have.length", 0);
   });
 });

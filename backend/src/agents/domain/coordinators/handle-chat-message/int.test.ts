@@ -570,3 +570,29 @@ Deno.test("handle-chat-message integration: P1.1 onboarding — quote-shaped fir
   assertEquals(after.name, undefined);
   await resetKv();
 });
+
+Deno.test("REQ-008 NW-47 handle-chat-message integration: a first turn that is the starter-chip sentence never becomes the contractor's name/business", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, users, identity, flow } = fresh();
+  llm.setScript([{ text: "Got it — tell me about the job." }]);
+
+  await users.create({ phoneNumber: "+15125550100" });
+  const me = await users.findByPhone("+15125550100");
+  assert(me);
+  const conv = await conversations.create({ userId: me!.id });
+
+  // p44 screenshot: "this is I from help me price it" — the flow label had
+  // been captured as name "I know the job" + business "help me price it".
+  await flow.run({
+    userId: me!.id,
+    conversationId: conv.id,
+    content: "I know the job, help me price it.",
+  });
+
+  const after = await users.get(me!.id);
+  assertEquals(after.name ?? undefined, undefined);
+  const ident = await identity.get(me!.id);
+  assertEquals(ident?.businessName ?? undefined, undefined);
+  await resetKv();
+});

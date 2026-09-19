@@ -3,11 +3,15 @@ import { ComputeInvoiceBalance } from "./mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
 
 function fresh() {
   const invoices = new InvoiceStore();
   const payments = new PaymentStore();
-  const flow = new ComputeInvoiceBalance(invoices, payments);
+  // REQ-020: the paid-invoice email hook is a no-op here — these cases pin
+  // the balance math; the dispatch has its own case below.
+  const markPaid = { run: () => Promise.resolve() } as unknown as MarkInvoicePaid;
+  const flow = new ComputeInvoiceBalance(invoices, payments, markPaid);
   return { flow, invoices, payments };
 }
 
@@ -113,5 +117,49 @@ Deno.test("compute-invoice-balance: latest receivedAt wins when multiple payment
   const after = await invoices.getOwned(inv.id, "u-1");
   assertEquals(after.status, "paid");
   assertEquals(after.paidAt, "2026-04-10T00:00:00.000Z");
+  await resetKv();
+});
+
+// REQ-020 — NW-29: the balance flip to "paid" is the moment the customer
+// gets the invoice stamped PAID (via MarkInvoicePaid), once per flip.
+
+Deno.test("REQ-020 NW-29 compute-invoice-balance: flipping to paid hands the invoice to MarkInvoicePaid exactly once", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const invoices = new InvoiceStore();
+  const payments = new PaymentStore();
+  const marked: string[] = [];
+  const markPaid = {
+    run: (_userId: string, invoiceId: string) => {
+      marked.push(invoiceId);
+      return Promise.resolve();
+    },
+  } as unknown as MarkInvoicePaid;
+  const flow = new ComputeInvoiceBalance(invoices, payments, markPaid);
+  const inv = await invoices.create("u-1", {
+    quoteId: "c-1",
+    dueDate: "2026-05-01",
+    amount: 100,
+    status: "pending",
+  });
+  await payments.create("u-1", {
+    invoiceId: inv.id,
+    amount: 40,
+    method: "cash",
+    receivedAt: "2026-04-10T00:00:00.000Z",
+  });
+  await flow.run(inv.id, "u-1"); // partial → still pending
+  assertEquals(marked, []);
+
+  await payments.create("u-1", {
+    invoiceId: inv.id,
+    amount: 60,
+    method: "cash",
+    receivedAt: "2026-04-15T00:00:00.000Z",
+  });
+  await flow.run(inv.id, "u-1"); // closes the balance → paid → email
+  assertEquals(marked, [inv.id]);
+  await flow.run(inv.id, "u-1"); // re-running on an already-paid invoice does not re-send
+  assertEquals(marked, [inv.id]);
   await resetKv();
 });

@@ -84,6 +84,7 @@ export interface Notification {
     | "invoice_claimed"
     | "invoice_paid"
     | "invoice_overdue"
+    | "invoice_nudge_due"
     | "customer_replied"
     | "generic";
   title: string;
@@ -102,6 +103,11 @@ export interface Invoice {
    *  have no quote behind them. */
   quoteId?: string;
   customerId?: string;
+  /** NW-30 (REQ-011): the job this bill is for — shown on the card so two
+   *  invoices for the same customer and amount can be told apart. */
+  jobName?: string;
+  /** What the bill covers, one line per item. */
+  description?: string;
   amount?: number;
   issuedDate?: string;
   dueDate: string;

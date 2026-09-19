@@ -100,3 +100,18 @@ Deno.test("customer-store smoke: delete removes record + index", async () => {
   assertEquals((await store.listByUser("u-1")).length, 0);
   await resetKv();
 });
+
+// REQ-039 (NW-52): customers are flagged, never erased.
+Deno.test("REQ-039 NW-52 customer-store: delete flags deletedAt and keeps the row for includeDeleted", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const store = new CustomerStore();
+  const created = await store.create("u-1", { name: "Acme" });
+  await store.delete(created.id, "u-1");
+  await assertRejects(() => store.get(created.id), NotFoundError);
+  assertEquals((await store.listByUser("u-1")).length, 0);
+  const kept = await store.get(created.id, { includeDeleted: true });
+  assertEquals(typeof kept.deletedAt, "string");
+  assertEquals(kept.name, "Acme");
+  await resetKv();
+});

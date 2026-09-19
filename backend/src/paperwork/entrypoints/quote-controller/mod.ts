@@ -17,8 +17,13 @@ export class QuoteController {
   @Post()
   async create(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
+    const dto = parseCreateQuote(body);
+    // NW-10 (REQ-003): a quote is born a draft. "sent"/"viewed" describe a
+    // dispatch that has not happened at creation time, so the API refuses to
+    // record them here — the send coordinators stamp status + sentAt.
+    if (dto.status === "sent" || dto.status === "viewed") dto.status = "draft";
     // UX-29: derive a missing jobName in the owner's language.
-    return await this.store.create(user.id, parseCreateQuote(body), {
+    return await this.store.create(user.id, dto, {
       jobNameLang: user.language === "es" ? "es" : "en",
     });
   }

@@ -37,6 +37,7 @@ import {
 } from "../components/Skeletons.tsx";
 import { fmtMoney } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
+import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 
 /** Plural helper bound to an explicit language (the reactive `tn` reads the
  *  global lang signal; the logged-in app threads `lang` explicitly). */
@@ -266,16 +267,19 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
   const lang = langSignal.value;
   const [s, setS] = useState<State>(INITIAL);
 
-  useEffect(() => {
-    let alive = true;
-    Promise.all([
+  // One loader for mount AND the refresh after "Record a payment" (REQ-019).
+  async function load(): Promise<void> {
+    const [payments, invoices, customers] = await Promise.all([
       paymentsClient.list().catch(() => [] as Payment[]),
       dashboardClient.invoices(undefined).catch(() => [] as Invoice[]),
       dashboardClient.customers().catch(() => [] as Customer[]),
-    ]).then(([payments, invoices, customers]) => {
-      if (!alive) return;
-      setS({ loading: false, error: null, payments, invoices, customers });
-    }).catch((err: Error) => {
+    ]);
+    setS({ loading: false, error: null, payments, invoices, customers });
+  }
+
+  useEffect(() => {
+    let alive = true;
+    load().catch((err: Error) => {
       if (!alive) return;
       setS({ ...INITIAL, loading: false, error: err.message });
     });
@@ -364,6 +368,16 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
         transitTotal={transitTotal}
         attentionCount={attention.length}
         stubs={stubs}
+        recordOptions={(Array.isArray(s.invoices) ? s.invoices : [])
+          .filter((i) => i.status !== "paid" && i.status !== "void")
+          .map((i) => ({
+            id: i.id,
+            amountCents: i.amount,
+            label: `${(i as { jobName?: string }).jobName ?? "Invoice"} · ${
+              customerNames.get(i.customerId ?? "") ?? "—"
+            } · ${fmtMoney(i.amount ?? 0)}`,
+          }))}
+        onRecorded={load}
       />
       <PaymentsKpis
         lang={lang}
@@ -461,14 +475,23 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
 /* ---------------- Hero ---------------- */
 
 function PaymentsHero(
-  { lang, monthTotal, transitTotal, attentionCount, stubs }: {
+  { lang, monthTotal, transitTotal, attentionCount, stubs, recordOptions, onRecorded }: {
     lang: Lang;
     monthTotal: number;
     transitTotal: number;
     attentionCount: number;
     stubs: EnrichedPayment[];
+    /** REQ-019 (NW-33): unpaid invoices the contractor can record against. */
+    recordOptions: Array<{ id: string; label: string; amountCents?: number }>;
+    onRecorded: () => Promise<void>;
   },
 ) {
+  // REQ-019 (NW-33): "Record a payment" is an in-page picker, not a chat seed.
+  const [recordOpen, setRecordOpen] = useState(false);
+  const [recordId, setRecordId] = useState("");
+  const recordInvoice = recordOptions.find((o) => o.id === recordId);
+  const today = new Date();
+  const exportHref = `/api/invoices/export.csv?year=${today.getFullYear()}&month=${today.getMonth() + 1}`;
   // UX-35: the hero chip month renders in the page language ("PAGOS ·
   // AGOSTO"), never the en-US month inside the Spanish UI.
   const MONTH_KEYS = [
@@ -555,25 +578,76 @@ function PaymentsHero(
             )}
         </p>
         <div class="pph__cta-row">
-          <a
+          <button
+            type="button"
             class="pph__cta"
-            href={`/assistant?seed=${
-              encodeURIComponent(tFor(lang, "paymentsPage.hero.recordSeed"))
-            }`}
+            data-cy="payments-record"
+            onClick={() => setRecordOpen(true)}
           >
             <I d={ICN.plus} size={14} sw={2.5} />{" "}
             {tFor(lang, "paymentsPage.hero.recordCta")}
-          </a>
+          </button>
           <a
             class="pph__ghost"
-            href={`/assistant?seed=${
-              encodeURIComponent(tFor(lang, "paymentsPage.hero.exportSeed"))
-            }`}
+            data-cy="payments-export"
+            href={exportHref}
+            download
           >
             <I d={ICN.arrow} size={13} sw={2.5} />{" "}
             {tFor(lang, "paymentsPage.hero.exportCta")}
           </a>
         </div>
+        {recordOpen && (
+          <div
+            data-cy="payments-record-modal"
+            style="position:fixed;inset:0;z-index:60;background:rgba(20,72,82,0.35);display:flex;align-items:center;justify-content:center;padding:20px"
+            onClick={() => setRecordOpen(false)}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              style="background:#fff;border-radius:16px;padding:20px 22px;width:min(560px,100%);box-shadow:0 20px 60px rgba(20,72,82,0.25);display:flex;flex-direction:column;gap:12px;text-align:left"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style="font-size:18px;font-weight:800;color:var(--fg,#144852)">
+                {tFor(lang, "paymentsPage.record.title")}
+              </div>
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
+                {tFor(lang, "paymentsPage.record.invoiceLabel")}
+                <select
+                  data-cy="payments-record-invoice"
+                  value={recordId}
+                  onChange={(e) => setRecordId((e.target as HTMLSelectElement).value)}
+                  style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px;background:#fff"
+                >
+                  <option value="">{tFor(lang, "paymentsPage.record.pick")}</option>
+                  {recordOptions.map((o) => (
+                    <option key={o.id} value={o.id}>{o.label}</option>
+                  ))}
+                </select>
+              </label>
+              {recordOptions.length === 0 && (
+                <div style="font-size:13px;color:var(--fg-muted,#6b7560)">
+                  {tFor(lang, "paymentsPage.record.noneUnpaid")}
+                </div>
+              )}
+              {recordInvoice && (
+                <PaymentReceivedForm
+                  key={recordInvoice.id}
+                  invoiceId={recordInvoice.id}
+                  amountCents={recordInvoice.amountCents}
+                  lang={lang}
+                  onSaved={async () => {
+                    await onRecorded();
+                    setRecordOpen(false);
+                    setRecordId("");
+                  }}
+                  onCancel={() => setRecordOpen(false)}
+                />
+              )}
+            </div>
+          </div>
+        )}
       </div>
       <div class="pph__stack" aria-hidden="true">
         {stubs.map((p, i) => (

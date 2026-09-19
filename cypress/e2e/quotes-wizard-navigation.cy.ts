@@ -111,3 +111,52 @@ describe("quote wizard — back navigation through the steps", () => {
     cy.location("pathname").should("eq", "/dashboard");
   });
 });
+
+// ===========================================================================
+// REQ-009 — NW-23 (p22): "'When does the job start?' has a 'Job Completed'
+// option. Remove it and put 'Pick a date' in its place. Change 'Next Month'
+// to 'Next month'."
+// ===========================================================================
+describe("REQ-009 NW-23 the start-date step offers exactly four options", () => {
+  const PHONE = "+15125550927";
+
+  beforeEach(() => {
+    cy.clearCookies();
+    cy.setCookie("pm_lang", "en");
+    cy.loginAs(PHONE);
+    cy.request({ url: "/api/me/wipe", failOnStatusCode: false });
+    cy.loginAs(PHONE);
+    cy.apiUpdateUser({ language: "en" });
+    cy.request("POST", "/api/me/onboarded", { skipped: true });
+    cy.setCookie("pm_lang", "en");
+    cy.visit("/assistant");
+    cy.contains("button.chat__empty-prompt", "I know my price, write it up.").click();
+    cy.get("textarea.composer__input").should("be.visible")
+      .type("Remove old toilet, install new toilet, test for leaks");
+    cy.get("button.composer__send").click();
+    cy.get(".chat__price-capture", { timeout: 10_000 }).should("be.visible");
+    cy.get(".chat__price-capture input").first().type("500{enter}");
+    cy.location("pathname", { timeout: 20_000 }).should("match", /^\/assistant\/.+/);
+    // Wiped account → the customer step opens on the create form.
+    cy.get(".cust-create input.cust-pick__search", { timeout: 20_000 })
+      .first()
+      .type("Start Date Customer");
+    cy.get(".cust-create input[type=tel]").type("5125550928");
+    cy.get(".cust-create__btn--primary").should("not.be.disabled").click();
+    cy.contains(/when does the job start/i, { timeout: 20_000 }).should("be.visible");
+  });
+
+  it("REQ-009 NW-23 Right away / Next week / Next month / Pick a date — and no 'Job Completed'", () => {
+    cy.get(".wiz__opts .wiz-opt").filter(":visible").then(($opts) => {
+      const texts = [...$opts].map((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim());
+      expect(texts, "start-date options").to.deep.equal([
+        "Right away",
+        "Next week",
+        "Next month",
+        "Pick a date",
+      ]);
+    });
+    cy.contains("Job Completed").should("not.exist");
+    cy.contains("Next Month").should("not.exist");
+  });
+});

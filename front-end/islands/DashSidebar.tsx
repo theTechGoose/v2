@@ -129,6 +129,11 @@ export default function DashSidebar(
     return globalThis.localStorage.getItem("pm:sb-collapsed") === "1";
   });
   const [mobileOpen, setMobileOpen] = useState(false);
+  // REQ-033 (NW-39): the rail's own collapse control gets its data-cy only
+  // after hydration (same guard as the topbar hamburger) so a test can never
+  // click it before toggle() is live.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   // Seed from the shared cache so a navigation between pages renders the
   // last-known counts/identity immediately and the badge doesn't flash
   // empty before the refetch lands.
@@ -316,6 +321,45 @@ export default function DashSidebar(
           )}
 
           <div class="sb__bottom">
+            {/* REQ-033 (NW-39): QuickBooks-style control IN the rail — one
+                physical button: hamburger + collapse arrow when open, a
+                hamburger when collapsed (the same pattern as the
+                conversations panel). The topbar hamburger keeps working. */}
+            <button
+              type="button"
+              class="sb__collapse"
+              data-cy={mounted
+                ? (collapsed ? "sidebar-expand" : "sidebar-collapse")
+                : undefined}
+              onClick={toggle}
+              aria-label={collapsed
+                ? tFor(s.lang, "dashSidebar.expand")
+                : tFor(s.lang, "dashSidebar.collapse")}
+              title={collapsed
+                ? tFor(s.lang, "dashSidebar.expand")
+                : tFor(s.lang, "dashSidebar.collapse")}
+            >
+              <I
+                d={collapsed
+                  ? (
+                    <>
+                      <path d="M3 6h18M3 12h18M3 18h18" />
+                    </>
+                  )
+                  : (
+                    <>
+                      <path d="M3 6h13M3 12h13M3 18h13" />
+                      <path d="M21 9l-3 3 3 3" />
+                    </>
+                  )}
+                size={16}
+              />
+              {!collapsed && (
+                <span class="sb__collapse-label">
+                  {tFor(s.lang, "dashSidebar.collapse")}
+                </span>
+              )}
+            </button>
             {s.identity && (
               <a
                 href="/settings"

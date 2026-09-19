@@ -363,3 +363,57 @@ Deno.test("send-paperwork-email integration: cross-tenant call throws ForbiddenE
 
   await resetKv();
 });
+
+// REQ-020 — NW-29 (p28): "When an invoice is paid it must also be emailed to
+// the Unicorn with 'Paid' on it so everyone is on the same page."
+Deno.test("REQ-020 NW-29 send-paperwork-email integration: variant 'paid' emails the invoice stamped PAID — subject says Paid, money card is not AMOUNT DUE", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, quotes, invoices, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Acme", email: "ops@acme.test" });
+  const quote = await quotes.create("u-1", {
+    summary: "Patio",
+    lineItems: [{ description: "Patio pavers", quantity: 1, unit: "job", price: 999_00 }],
+    estimatedTotal: 999_00,
+    customerId: customer.id,
+  });
+  const invoice = await invoices.create("u-1", {
+    quoteId: quote.id,
+    customerId: customer.id,
+    dueDate: "2026-05-01",
+    amount: 999_00,
+    status: "paid",
+    paidAt: "2026-04-20T12:00:00.000Z",
+  });
+
+  const res = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id, variant: "paid" });
+  assertEquals(res.ok, true);
+  assertStringIncludes(res.subject, "Paid");
+  assertStringIncludes(sent[0].subject, "Paid");
+  assertStringIncludes(sent[0].htmlBody, "PAID");
+  assert(!sent[0].htmlBody.includes("AMOUNT DUE"), "no AMOUNT DUE on a paid invoice");
+  assert(!/amount due/i.test(sent[0].htmlBody), "no 'Amount due' label on a paid invoice");
+  assertStringIncludes(sent[0].htmlBody, "$999.00");
+  await resetKv();
+});
+
+Deno.test("REQ-020 NW-29 send-paperwork-email integration: the paid variant of a standalone (no-quote) invoice also says Paid", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Acme", email: "ops@acme.test" });
+  const invoice = await invoices.create("u-1", {
+    customerId: customer.id,
+    dueDate: "2026-05-01",
+    amount: 450_00,
+    status: "paid",
+    paidAt: "2026-04-20T12:00:00.000Z",
+  });
+  await flow.run("u-1", { kind: "invoice", resourceId: invoice.id, variant: "paid" });
+  assertStringIncludes(sent[0].subject, "Paid");
+  assert(!/amount due/i.test(sent[0].htmlBody), "no 'Amount due' label on a paid invoice");
+  assertStringIncludes(sent[0].htmlBody, "PAID");
+  await resetKv();
+});

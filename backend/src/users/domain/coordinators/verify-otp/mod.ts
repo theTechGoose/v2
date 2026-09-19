@@ -7,6 +7,20 @@ import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import { deriveLanguageOnVerify } from "@users/domain/business/derive-language/mod.ts";
 import type { Language, User } from "@users/dto/user.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
+import { issueRecoveryToken } from "@users/domain/data/recovery-token-store/mod.ts";
+
+/**
+ * REQ-039 (NW-52): the verified phone belongs to a CLOSED account. No
+ * session is opened and no account is created — the caller offers
+ * "recover" / "start fresh" with the one-shot token.
+ */
+export class AccountClosedError extends Error {
+  readonly status = 409;
+  constructor(public readonly userId: string, public readonly recoveryToken: string) {
+    super("account_closed");
+    this.name = "AccountClosedError";
+  }
+}
 
 const MAX_ATTEMPTS = 5;
 
@@ -33,7 +47,7 @@ function signupNotifyRecipients(): string[] {
  *  exists. Without a name a fresh user literally cannot open Settings. The
  *  placeholder is freely overwritable in Settings or via the assistant. */
 const PLACEHOLDER_NAMES = { en: "New user", es: "Nuevo usuario" } as const;
-function placeholderNameFor(language: Language | undefined): string {
+export function placeholderNameFor(language: Language | undefined): string {
   return language === "es" ? PLACEHOLDER_NAMES.es : PLACEHOLDER_NAMES.en;
 }
 /** True when `name` is empty or still the seeded placeholder — i.e. the user
@@ -130,6 +144,9 @@ export class VerifyOtp {
 
     if (!IS_PROD && input.code === DEV_MASTER_CODE) {
       const existing = await this.users.findByPhone(phone);
+    if (existing?.deletedAt) {
+      throw new AccountClosedError(existing.id, await issueRecoveryToken(existing.id));
+    }
       // Honor the language the landing toggle sent via send-otp, even on the
       // master-OTP bypass: a brand-new user inherits the OTP record's language
       // (so dev signups with 000000 still respect the EN/ES toggle).
@@ -178,6 +195,9 @@ export class VerifyOtp {
     await this.otps.clear(phone);
 
     const existing = await this.users.findByPhone(phone);
+    if (existing?.deletedAt) {
+      throw new AccountClosedError(existing.id, await issueRecoveryToken(existing.id));
+    }
     const language = deriveLanguageOnVerify(existing, otp.language);
     const user = existing
       ? (language && language !== existing.language

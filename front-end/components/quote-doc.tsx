@@ -19,6 +19,7 @@
 import PublicSignQuote from "../islands/PublicSignQuote.tsx";
 import PublicQuoteActions from "../islands/PublicQuoteActions.tsx";
 import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
+import { agreementTitle } from "../../shared/quote-flow/agreement-title.ts";
 import { deriveQuoteView } from "../../shared/quote-flow/public-doc-state.ts";
 import { fmtPhone, telHref } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
@@ -53,6 +54,8 @@ interface Contractor {
   businessName?: string;
   phoneNumber?: string;
   email?: string;
+  /** REQ-038 (NW-06b): the business website, when provided. */
+  websiteUrl?: string;
   addressLine?: string;
   state?: string;
   /** Outgoing-comms language (roadmap p.13) — drives this page's copy. */
@@ -122,6 +125,7 @@ function cstr(lang: Lang) {
     contractorTag: tFor(lang, "quoteDoc.contractorTag"),
     clientTag: tFor(lang, "quoteDoc.clientTag"),
     effective: tFor(lang, "quoteDoc.effective"),
+    forJob: tFor(lang, "quoteDoc.forJob"),
     plainEnglish: tFor(lang, "quoteDoc.plainEnglish"),
     plainEnglishBody: (contractor: string, customer?: string) =>
       customer
@@ -137,7 +141,12 @@ function cstr(lang: Lang) {
     contractValue: tFor(lang, "quoteDoc.contractValue"),
     allIn: tFor(lang, "quoteDoc.allIn"),
     paymentSchedule: tFor(lang, "quoteDoc.paymentSchedule"),
+    // NW-54 (REQ-014): the clause list is "Terms and Conditions" on web + PDF.
+    // REQ-035 (NW-55): the grid section is "Terms"; the 14 notices sit
+    // collapsed under a "Terms and Conditions" summary (NW-54's name).
     terms: tFor(lang, "quoteDoc.terms"),
+    termsAndConditions: tFor(lang, "quoteDoc.termsAndConditions"),
+    cancellationValue: tFor(lang, "quoteDoc.termValue.cancellation"),
     start: tFor(lang, "quoteDoc.start"),
     startTbd: tFor(lang, "quoteDoc.startTbd"),
     estCompletion: tFor(lang, "quoteDoc.estCompletion"),
@@ -174,6 +183,7 @@ function cstr(lang: Lang) {
       wraps: tFor(lang, "quoteDoc.termLabel.wraps"),
       payment_terms: tFor(lang, "quoteDoc.termLabel.paymentTerms"),
       warranty: tFor(lang, "quoteDoc.termLabel.warranty"),
+      cancellation: tFor(lang, "quoteDoc.termLabel.cancellation"),
     } as Record<string, string>,
     clauses: clauseKeys.map((k) =>
       [
@@ -219,7 +229,10 @@ export function QuoteDoc(
   const signed = view.mode === "accepted";
   const declined = view.mode === "declined";
   const total = quote.estimatedTotal ?? sumLineTotals(quote.lineItems);
-  const customerName = quote.customer?.name?.trim();
+  // REQ-032 (NW-28): the signer's typed name is a name too — the named
+  // sentence must not fall back to "you agree" once someone has signed.
+  const customerName = quote.customer?.name?.trim() ||
+    quote.acceptedName?.trim() || undefined;
   const contractor = quote.contractor;
   const lang: Lang = langOverride ??
     (contractor?.commsLanguage === "es" ? "es" : "en");
@@ -237,38 +250,41 @@ export function QuoteDoc(
     tFor(lang, "quoteDoc.serviceAgreement"))
     .replace(/^\s*quote\s*:\s*/i, "").trim();
   const jobNameRaw = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim();
-  const heroTitle = (jobNameRaw && jobNameRaw.length > 0)
+  const jobTitle = (jobNameRaw && jobNameRaw.length > 0)
     ? jobNameRaw
     : summary.replace(/\b\w/g, (c) => c.toUpperCase());
+  // REQ-036 (NW-57): "<Customer>'s <Job> Agreement" — never a bare job name
+  // (or a leaked "New job") once a customer is known.
+  const heroTitle = agreementTitle({
+    customer: customerName,
+    job: jobTitle,
+    lang,
+    fallback: tFor(lang, "quoteDoc.serviceAgreement"),
+  });
 
   const effective = quote.effectiveDate ?? quote.createdAt;
   const milestones = computeMilestones(total, quote.terms, lang);
 
   // Signature-block copy (deck p14) — shared with the backend renderers via
   // the pure module so the web page, the PDF, and the email never drift.
-  // The module speaks English; the ES page mirrors it through i18n.
+  // REQ-032 (NW-28): the module speaks both languages — no EN-only fork.
   const sig = customerName
     ? buildSignatureBlock({
       clientName: customerName,
       contractorName: contractorName ?? businessLabel,
       businessName: contractor?.businessName,
       signedDateISO: effective ?? new Date().toISOString(),
+      lang,
     })
     : undefined;
-  const agreementLine = lang === "en" && sig
-    ? sig.agreementLine
-    : t.bySigning(customerName);
+  const agreementLine = sig ? sig.agreementLine : t.bySigning(undefined);
   const contractorByLine = contractorName
-    ? (lang === "en" && sig
-      ? sig.contractor.byLine
-      : `${t.by} ${contractorName}`)
+    ? (sig ? sig.contractor.byLine : `${t.by} ${contractorName}`)
     : undefined;
-  const contractorDateLine = lang === "en" && sig
+  const contractorDateLine = sig
     ? sig.contractor.dateLine
     : `${t.date} ${effective ? fmtDate(effective, lang) : t.today}`;
-  const customerInstruction = lang === "en" && sig
-    ? sig.customer.instruction
-    : t.signTypeBelow;
+  const customerInstruction = sig ? sig.customer.instruction : t.signTypeBelow;
 
   // Sequential section numbers. Sections are conditionally rendered, so
   // hardcoding 01/02/03 leaves gaps (01,03,…) when one is absent — which
@@ -365,6 +381,16 @@ export function QuoteDoc(
               {t.contractorTag} {t.and}{" "}
               <strong style={`color:${INK}`}>{customerName}</strong>{" "}
               {t.clientTag}
+              {/* REQ-036 (NW-57): the job name sits between the parties
+                  and the effective date. */}
+              {jobNameRaw
+                ? (
+                  <>
+                    {" "}{t.forJob}{" "}
+                    <strong style={`color:${INK}`}>{jobNameRaw}</strong>
+                  </>
+                )
+                : null}
               {effective
                 ? (
                   <>
@@ -399,6 +425,7 @@ export function QuoteDoc(
               businessName={contractor?.businessName?.trim()}
               email={contractor?.email}
               phone={contractor?.phoneNumber}
+              website={contractor?.websiteUrl}
               address={contractor?.addressLine}
             />
           </section>
@@ -472,17 +499,33 @@ export function QuoteDoc(
                     estCompletion: t.estCompletion,
                     termLabels: t.termLabels,
                   }}
+                  // REQ-035 (NW-55): every agreement states the cancelation
+                  // notice as a term row, not only inside clause 10.
+                  extraRows={[{
+                    k: t.termLabels.cancellation,
+                    v: t.cancellationValue,
+                  }]}
                 />
                 <div style={`margin-top:22px;height:1px;background:${LINE}`} />
-                <ol
-                  style={`margin:22px 0 0;padding-left:20px;color:${INK};font-size:14px;line-height:1.65`}
-                >
-                  {t.clauses.map(([title, body]) => (
-                    <li key={title}>
-                      <strong>{title}.</strong> {body}
-                    </li>
-                  ))}
-                </ol>
+                {/* REQ-035 (NW-55): the 14 notices are an expandable
+                    "Terms and Conditions" at the bottom — collapsed on load,
+                    one tap to read them all. The PDF stays flat. */}
+                <details class="ctr__terms-details" data-cy="terms-details">
+                  <summary
+                    style={`margin-top:18px;cursor:pointer;font-weight:800;font-size:14px;color:${INK}`}
+                  >
+                    {t.termsAndConditions}
+                  </summary>
+                  <ol
+                    style={`margin:16px 0 0;padding-left:20px;color:${INK};font-size:14px;line-height:1.65`}
+                  >
+                    {t.clauses.map(([title, body]) => (
+                      <li key={title}>
+                        <strong>{title}.</strong> {body}
+                      </li>
+                    ))}
+                  </ol>
+                </details>
               </section>
             );
           })()}

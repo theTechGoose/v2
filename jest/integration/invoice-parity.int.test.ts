@@ -89,3 +89,21 @@ describe("invoice parity with the quote", () => {
     expect(body.amount).toBe(60000);
   });
 });
+
+// REQ-023 — NW-14 / NW-15: the backend already derives an invoice from a
+// quote when the body carries quoteId; the assistant never sent it. Pin the
+// derivation the seeded review relies on (green on arrival).
+describe("REQ-023 NW-14/15 POST /invoices with only quoteId derives the bill from the quote", () => {
+  it("REQ-023 amount, customer, jobName and lineItems come from the quote", async () => {
+    const s = await contractor("+15125550969");
+    const quoteId = await seedQuote(s, { jobName: "Deck Staining" });
+    const quote = await s.get(`/quotes/${quoteId}`);
+    const inv = await s.post("/invoices", { quoteId });
+    expect(inv.status).toBeLessThan(400);
+    expect(inv.body?.quoteId).toBe(quoteId);
+    expect(inv.body?.customerId).toBe(quote.body?.customerId);
+    expect(inv.body?.jobName).toBe("Deck Staining");
+    expect(inv.body?.amount).toBe(55000);
+    expect(inv.body?.lineItems?.length).toBeGreaterThan(0);
+  });
+});

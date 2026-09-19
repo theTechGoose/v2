@@ -129,3 +129,44 @@ Deno.test("SmsService smoke: fetch throwing is caught and surfaced", async () =>
     Deno.env.delete("TWILIO_FROM");
   }
 });
+
+// REQ-030 (NW-25): a Twilio rejection becomes a lang key the send surfaces
+// can translate — never the raw JSON blob the contractor saw ("Twilio 400,
+// error 21211 Invalid 'To' Phone Number").
+for (
+  const [code, key] of [
+    [21211, "sms.invalidNumber"],
+    [21610, "sms.optedOut"],
+    [21614, "sms.notMobile"],
+  ] as const
+) {
+  Deno.test(`REQ-030 NW-25 SmsService maps Twilio ${code} → ${key}`, async () => {
+    Deno.env.set("TWILIO_ACCOUNT_SID", "AC-x");
+    Deno.env.set("TWILIO_AUTH_TOKEN", "tok");
+    Deno.env.set("TWILIO_FROM", "+18665550100");
+    try {
+      const mock = makeMockFetch(() =>
+        new Response(
+          JSON.stringify({
+            code,
+            message: `Twilio error ${code}`,
+            more_info: `https://www.twilio.com/docs/errors/${code}`,
+            status: 400,
+          }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        )
+      );
+      const svc = new SmsService();
+      svc.fetchOverride = mock.fetch;
+      const out = await svc.send({ to: "+15125550100", body: "x" });
+      assertEquals(out.ok, false);
+      assertEquals(out.reason, key);
+      assertEquals(out.code, code);
+      assert((out.detail ?? "").includes(String(code)));
+    } finally {
+      Deno.env.delete("TWILIO_ACCOUNT_SID");
+      Deno.env.delete("TWILIO_AUTH_TOKEN");
+      Deno.env.delete("TWILIO_FROM");
+    }
+  });
+}

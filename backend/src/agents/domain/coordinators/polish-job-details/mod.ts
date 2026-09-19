@@ -6,6 +6,7 @@ import {
 import { t } from "@core/i18n/mod.ts";
 import { summarizeJobName } from "#quote-flow/job-name.ts";
 import { clampSummary } from "#quote-flow/summary-clamp.ts";
+import { scopeBulletsFromRaw } from "#quote-flow/scope-from-raw.ts";
 
 export interface PolishJobDetailsInput {
   userId: string;
@@ -30,6 +31,9 @@ export interface PolishJobDetailsResult {
   /** Polished 1–3 sentence paragraph rendered on the quote, quote email,
    *  and the public quote page's job-details section. */
   description: string;
+  /** REQ-026 (NW-05): true when the model could not be used and the copy is
+   *  the heuristic scope (one line per bullet) — never the raw sentence. */
+  degraded: boolean;
 }
 
 const SYSTEM_PROMPT = t("en", "prompts.polishJobDetails.system");
@@ -79,6 +83,7 @@ export class PolishJobDetails {
           }\n${raw}${priceLine}${langLine}`,
         }],
         userId: input.userId,
+        responseFormat: "json",
       });
       text = res.text ?? "";
     } catch (err) {
@@ -100,6 +105,7 @@ export class PolishJobDetails {
         summary,
         jobName,
         description: parsed.description.trim(),
+        degraded: false,
       };
     }
     return fallback(raw, lang);
@@ -149,13 +155,18 @@ function titleCaseWord(w: string): string {
   return w[0].toUpperCase() + w.slice(1).toLowerCase();
 }
 
+/** REQ-026 (NW-05): the fallback copy is the honest scope — intent opener
+ *  and price clause stripped, one line per bullet — never `raw` echoed back
+ *  (which also titled the job "I Need To"). */
 function fallback(raw: string, lang: "en" | "es"): PolishJobDetailsResult {
-  const firstLine = raw.split(/\n/)[0].trim();
-  const summaryWords = clampSummary(firstLine);
-  const summary = summaryWords || t(lang, "polishJobDetails.fallbackSummary");
+  const scoped = scopeBulletsFromRaw(raw, lang);
+  const summary = scoped.bullets[0]
+    ? clampSummary(scoped.bullets[0])
+    : t(lang, "polishJobDetails.fallbackSummary");
   return {
     summary,
     jobName: deriveJobName(summary, lang),
-    description: raw,
+    description: scoped.bullets.join("\n") || raw,
+    degraded: true,
   };
 }

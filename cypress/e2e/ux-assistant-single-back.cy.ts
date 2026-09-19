@@ -104,4 +104,31 @@ describe("assistant — a single undo-style back button", () => {
     cy.get(".quote-review").should("not.exist");
     cy.location("pathname").should("match", /^\/assistant\/[A-Za-z0-9-]+$/);
   });
+
+  it("REQ-004 NW-20 back at the customer step returns to the price step — never /dashboard", () => {
+    // NW-20 (p31): "Back button fails after you enter the price and go to the
+    // customer step. Hitting back takes you to the dashboard."
+    cy.visit("/assistant");
+    cy.contains("button.chat__empty-prompt", "I know my price, write it up.")
+      .should("be.visible")
+      .click();
+    cy.get("textarea.composer__input")
+      .should("be.visible")
+      .type("Paint a 50ft wooden fence");
+    cy.get("button.composer__send").click();
+    cy.get(".chat__price-capture", { timeout: 10_000 }).should("be.visible");
+    cy.get(".chat__price-capture input.mi__input").type("500");
+    cy.get("button.chat__price-continue").should("not.be.disabled").click();
+    cy.location("pathname", { timeout: 20_000 })
+      .should("match", /^\/assistant\/[A-Za-z0-9-]+$/);
+
+    // The customer step (wizard step 0) is up.
+    cy.get(".cust-create, .cust-pick, .wiz", { timeout: 20_000 }).should("exist");
+    assertSingleBackControl();
+
+    // THE reported bug: back here must rewind to the price step, not exit.
+    cy.get("a.chat__head-btn").click();
+    cy.get(".chat__price-capture", { timeout: 10_000 }).should("be.visible");
+    cy.location("pathname").should("match", /^\/assistant\//);
+  });
 });

@@ -106,13 +106,33 @@ Deno.test("user-store smoke: markOnboarded is idempotent — second call keeps t
   await resetKv();
 });
 
-Deno.test("user-store smoke: delete removes both record and phone index", async () => {
+// REQ-039 (NW-52, p58): "do not delete data, flag it as 'deleted'. When
+// someone signs up with the same phone number, offer to create a new account
+// or recover the old one." So the phone index must SURVIVE a delete.
+Deno.test("REQ-039 NW-52 user-store: delete flags deletedAt and keeps the record + phone index", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const store = new UserStore();
   const created = await store.create({ phoneNumber: "+15125551234" });
   await store.delete(created.id);
-  await assertRejects(() => store.get(created.id), NotFoundError);
+  const kept = await store.get(created.id);
+  assertEquals(typeof kept.deletedAt, "string");
+  const byPhone = await store.findByPhone("+15125551234");
+  assertEquals(byPhone?.id, created.id);
+  assertEquals(typeof byPhone?.deletedAt, "string");
+  await resetKv();
+});
+
+Deno.test("REQ-039 NW-52 user-store: archivePhone frees the number for a fresh account", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const store = new UserStore();
+  const old = await store.create({ phoneNumber: "+15125551234" });
+  await store.delete(old.id);
+  await store.archivePhone(old.id);
   assertEquals(await store.findByPhone("+15125551234"), null);
+  const fresh = await store.create({ phoneNumber: "+15125551234" });
+  assertEquals(fresh.phoneNumber, "+15125551234");
+  assertEquals((await store.get(old.id)).phoneNumber.startsWith("+15125551234#archived"), true);
   await resetKv();
 });
