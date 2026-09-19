@@ -469,3 +469,46 @@ Deno.test("handle-wizard-answer integration: re-completing an already-finalized 
 
   await resetKv();
 });
+
+// REQ-024 — NW-13 / NW-18: walking the four invoice steps lands on the send
+// CTA with the quote linked and the kind, the completion date on the quote.
+Deno.test("REQ-024 handle-wizard-answer integration: the invoice wizard walks customer → completion_date → payment → warranty and finalizes onto the quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  const quote = await ctx.quotes.create("u-1", {
+    summary: "Water heater",
+    lineItems: [],
+    estimatedTotal: 90_000,
+  });
+  const conv = await ctx.conversations.create({ userId: "u-1", quoteId: quote.id, customerId: "cust-1" });
+  await ctx.transitionFlow.run({ userId: "u-1", conversationId: conv.id, docKind: "invoice" });
+
+  const answer = (stepId: string, optionId: string) =>
+    ctx.flow.run({ userId: "u-1", conversationId: conv.id, stepId, optionId });
+
+  await answer("customer", "use_active");
+  const afterCustomer = await ctx.messages.listByConversation(conv.id);
+  const nextStep = [...afterCustomer].reverse().find((m) => m.kind === "wizard")!;
+  assertEquals((nextStep.payload as { stepId: string }).stepId, "completion_date");
+  assertEquals((nextStep.payload as { specId: string }).specId, "invoice-v1");
+
+  await answer("completion_date", "today");
+  await answer("payment_terms", "due_now");
+  const last = await answer("warranty", "none");
+
+  const cta = last.newMessages.find((m) => m.kind === "continue_cta")!;
+  const payload = cta.payload as { toPhase: string; quoteId?: string; docKind?: string };
+  assertEquals(payload.toPhase, "send");
+  assertEquals(payload.quoteId, quote.id);
+  assertEquals(payload.docKind, "invoice");
+
+  const q = await ctx.quotes.getOwned(quote.id, "u-1");
+  const today = new Date().toISOString().slice(0, 10);
+  assertEquals(q.estimatedCompletionDate, today);
+  const terms = q.terms ?? [];
+  assert(terms.some((t) => t.stepId === "completion_date"), "completion_date persisted as a term");
+  assert(terms.some((t) => t.stepId === "payment_terms" && t.value === "Due Now"));
+  assert(!terms.some((t) => t.stepId === "wraps"));
+  await resetKv();
+});

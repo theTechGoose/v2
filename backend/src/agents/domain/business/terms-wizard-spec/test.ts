@@ -57,3 +57,32 @@ Deno.test("REQ-009 NW-23 terms-wizard-spec: the duration (wraps) step keeps its 
   const wraps = TERMS_WIZARD_V1.steps.find((s) => s.id === "wraps")!;
   assert(wraps.options.some((o) => o.id === "job_completed"));
 });
+
+// REQ-024 — NW-13 / NW-18 (p9, p27): "if there is no quote to select, go
+// through the same questions as the quote (skip how long it took, but ask
+// for the completion date)." A second spec for the invoice path.
+import { INVOICE_WIZARD_V1 } from "./mod.ts";
+
+Deno.test("REQ-024 NW-13/18 INVOICE_WIZARD_V1: customer → completion_date → payment_terms → warranty (no start_date, no wraps)", () => {
+  assertEquals(INVOICE_WIZARD_V1.id, "invoice-v1");
+  assertEquals(INVOICE_WIZARD_V1.steps.map((s) => s.id), [
+    "customer",
+    "completion_date",
+    "payment_terms",
+    "warranty",
+  ]);
+  const completion = INVOICE_WIZARD_V1.steps.find((s) => s.id === "completion_date")!;
+  assertEquals(completion.options.map((o) => o.id), ["today", "yesterday", "last_week", "custom"]);
+  assertEquals(completion.options.at(-1)?.isCustom, true);
+  // The shared steps are the SAME objects as the quote wizard's.
+  const q = (id: string) => TERMS_WIZARD_V1.steps.find((s) => s.id === id)!;
+  const i = (id: string) => INVOICE_WIZARD_V1.steps.find((s) => s.id === id)!;
+  assertEquals(i("customer").options, q("customer").options);
+  assertEquals(i("payment_terms").options, q("payment_terms").options);
+  assertEquals(i("warranty").options, q("warranty").options);
+});
+
+Deno.test("REQ-024 getWizardSpec resolves both wizards by id", () => {
+  assertEquals(getWizardSpec("invoice-v1"), INVOICE_WIZARD_V1);
+  assertEquals(getWizardSpec("terms-v1"), TERMS_WIZARD_V1);
+});

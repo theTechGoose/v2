@@ -57,6 +57,38 @@ import {
 } from "../../shared/quote-flow/send-result.ts";
 import MoneyInput from "./MoneyInput.tsx";
 
+/**
+ * REQ-024 (NW-18): the invoice's due date derives from the agreement the
+ * wizard produced — the completion date (or today when the quote has none)
+ * plus the payment terms: "Due Now" → the same day, "Payment upon
+ * completion" → +15 days, anything else → +30 days.
+ */
+function invoiceDueDateFromQuote(
+  quote:
+    | {
+      estimatedCompletionDate?: string;
+      terms?: Array<{ stepId: string; value: string }>;
+    }
+    | null
+    | undefined,
+  today: string,
+): string {
+  const base = quote?.estimatedCompletionDate &&
+      /^\d{4}-\d{2}-\d{2}$/.test(quote.estimatedCompletionDate)
+    ? quote.estimatedCompletionDate
+    : today;
+  const pay = (quote?.terms ?? []).find((t) => t.stepId === "payment_terms")
+    ?.value?.toLowerCase() ?? "";
+  const days = /due now|pago inmediato/.test(pay)
+    ? 0
+    : /upon completion|al finalizar/.test(pay)
+    ? 15
+    : 30;
+  const d = new Date(`${base}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 type WizardFieldType = "percent" | "number" | "currency" | "days" | "text";
 
 interface WizardFollowUpField {
@@ -845,6 +877,14 @@ export default function AsstChat({
    * actually look the document over before clicking "Send to client".
    */
   const [previewCtaId, setPreviewCtaId] = useState<string | null>(null);
+  // REQ-024: after a reload the open CTA still says which wizard produced
+  // it — keep the preview in invoice mode for the invoice wizard.
+  useEffect(() => {
+    if (!previewCtaId) return;
+    const cta = messages.find((m) => m.id === previewCtaId);
+    const kind = (cta?.payload as { docKind?: string } | undefined)?.docKind;
+    if (kind === "invoice") setReviewDocType("invoice");
+  }, [previewCtaId, messages]);
 
   // Lazily fill quote.descriptionByLang[lang] so the preview (and the sent
   // agreement, which reads the same field) render the job-details description
@@ -1889,12 +1929,9 @@ export default function AsstChat({
     if (sending || cents <= 0) return;
     setError(undefined);
     setPendingPriceCents(cents);
-    if (invoiceFlow) {
-      // "Job done, need to invoice." — no quote/wizard: go pick the customer
-      // and mint the standalone invoice (roadmap p.3).
-      openInvoiceCustomerStep();
-      return;
-    }
+    // REQ-024 (NW-13/18): "Job done, need to invoice." runs the SAME wizard
+    // as a quote (completion date instead of start date + duration) and
+    // lands on the shared preview in invoice mode — no standalone card.
     if (pendingJobDetailsRaw && pendingJobDetailsRaw.trim().length > 0) {
       // Price + details in hand → create the quote now and hand off into the
       // terms wizard. The Job Details picker is deferred to the END of phase
@@ -2204,7 +2241,12 @@ export default function AsstChat({
         if (!convoId) migrateDraftStack(conv.id);
         convId = conv.id;
 
-        await api.post(`/agents/conversations/${convId}/transition-to-terms`);
+        // REQ-024: the invoice starter runs the invoice wizard.
+        await api.post(
+          `/agents/conversations/${convId}/transition-to-terms?docKind=${
+            invoiceFlow ? "invoice" : "quote"
+          }`,
+        );
       }
       const conv = { id: convId };
 
@@ -2698,6 +2740,10 @@ export default function AsstChat({
       // picker first (its options were generated in the background while the
       // user answered wizard questions). applyJobOption patches the quote and
       // then re-fires the review for this CTA.
+      // REQ-024: an invoice wizard's CTA opens the preview in invoice mode.
+      if ((payload as { docKind?: string }).docKind === "invoice") {
+        setReviewDocType("invoice");
+      }
       if (needsJobPolish) {
         pendingReviewCtaRef.current = message.id;
         void openJobPicker();
@@ -3606,19 +3652,33 @@ export default function AsstChat({
       let invId = swapInvoiceIdRef.current;
       if (!invId) {
         const today = new Date().toISOString().slice(0, 10);
+        // REQ-024: the wizard just wrote the terms + completion date onto the
+        // quote — read the LIVE row, never the copy loaded before the last step.
+        const live = quote?.id
+          ? await quotesClient.get(quote.id).catch(() => quote)
+          : quote;
+        const q = live as
+          | (typeof quote & {
+            estimatedCompletionDate?: string;
+            terms?: Array<{ stepId: string; value: string }>;
+          })
+          | null;
         const inv = await api.post<{ id?: string }>("/invoices", {
           ...(customer?.id ? { customerId: customer.id } : {}),
           // REQ-023: the swapped invoice is derived from the reviewed quote.
-          ...(quote?.id ? { quoteId: quote.id } : {}),
-          ...(quote?.lineItems && quote.lineItems.length > 0
-            ? { lineItems: quote.lineItems }
+          ...(q?.id ? { quoteId: q.id } : {}),
+          ...(q?.lineItems && q.lineItems.length > 0
+            ? { lineItems: q.lineItems }
             : {}),
           amount: totalCents,
-          dueDate: today,
+          // REQ-024: due date from the wizard — completion date + payment
+          // terms (Due Now → that day; payment upon completion → +15;
+          // anything else → +30). Never "today" by default.
+          dueDate: invoiceDueDateFromQuote(q, today),
           issuedDate: today,
           status: "sent",
-          ...(quote?.jobName ? { jobName: quote.jobName } : {}),
-          ...(quote?.description ? { description: quote.description } : {}),
+          ...(q?.jobName ? { jobName: q.jobName } : {}),
+          ...(q?.description ? { description: q.description } : {}),
         });
         if (!inv?.id) throw new Error("couldn't create the invoice");
         invId = inv.id;

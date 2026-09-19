@@ -139,16 +139,24 @@ export class ConversationsController {
   }
 
   @Post(":id/transition-to-terms")
-  async transition(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+  async transition(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Query("docKind") docKindQ?: string,
+  ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     // UX-12: the phase divider is STORED — it must be written in the
     // contractor's own language, never frozen English into a Spanish chat.
     const lang = user.language === "es" ? "es" : "en";
+    // REQ-024: ?docKind=invoice runs the invoice wizard. A query param, not a
+    // body: this POST is sent body-less by the app and the e2e alike.
+    const docKind = docKindQ === "invoice" ? "invoice" : docKindQ === "quote" ? "quote" : undefined;
     return ctx.json(
       await this.transitionFlow.run({
         userId: user.id,
         conversationId: id,
         lang,
+        ...(docKind ? { docKind } : {}),
       }),
     );
   }

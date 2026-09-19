@@ -87,7 +87,7 @@ Deno.test("REQ-005 NW-19 rewind-wizard integration: toStepIdx -1 from a later st
   await toTerms.run({ userId: "u-1", conversationId: conv.id });
   // Simulate one answered step: the pick + the next question.
   await conversations.putWizardState(conv.id, {
-    specId: "terms_v1",
+    specId: "terms-v1",
     activeStepIdx: 1,
     answers: [{ stepId: "customer", optionId: "create_new", answeredAt: new Date().toISOString() }],
   });
@@ -103,7 +103,7 @@ Deno.test("REQ-005 NW-19 rewind-wizard integration: toStepIdx -1 from a later st
     role: "assistant",
     kind: "wizard",
     content: "When does the job start?",
-    payload: { specId: "terms_v1", stepIdx: 1, stepId: "start_date", options: [] },
+    payload: { specId: "terms-v1", stepIdx: 1, stepId: "start_date", options: [] },
   });
 
   const res = await rewind.run({ userId: "u-1", conversationId: conv.id, toStepIdx: -1 });

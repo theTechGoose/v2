@@ -174,9 +174,17 @@ export const assistantClient = {
   startConversation: (body: Record<string, unknown>, opts: ApiOptions = {}) =>
     api.post<Conversation>("/agents/conversations", body, opts),
 
-  transitionToTerms: (id: string, opts: ApiOptions = {}) =>
+  /** REQ-024: `docKind: "invoice"` runs the invoice wizard (completion date
+   *  instead of start date + duration). Default: the quote wizard. */
+  transitionToTerms: (
+    id: string,
+    opts: ApiOptions = {},
+    docKind?: "quote" | "invoice",
+  ) =>
     api.post<ConversationDetail>(
-      `/agents/conversations/${id}/transition-to-terms`,
+      `/agents/conversations/${id}/transition-to-terms${
+        docKind ? `?docKind=${docKind}` : ""
+      }`,
       undefined,
       opts,
     ),

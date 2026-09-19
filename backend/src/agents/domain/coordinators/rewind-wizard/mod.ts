@@ -1,7 +1,7 @@
 import { Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
-import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
+import { getWizardSpec, TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { WizardState } from "@agents/dto/wizard.ts";
@@ -124,7 +124,7 @@ export class RewindWizard {
     return {
       conversation: conv,
       wizardState: current,
-      activeStepId: TERMS_WIZARD_V1.steps[current.activeStepIdx]?.id ?? null,
+      activeStepId: getWizardSpec(current.specId).steps[current.activeStepIdx]?.id ?? null,
       removedMessageIds: removed,
       ...(popped
         ? {
@@ -148,7 +148,7 @@ export class RewindWizard {
     removed: string[];
     popped?: WizardState["answers"][number];
   }> {
-    const wasComplete = state.activeStepIdx >= TERMS_WIZARD_V1.steps.length;
+    const wasComplete = state.activeStepIdx >= getWizardSpec(state.specId).steps.length;
     const popped = state.answers[state.answers.length - 1];
     const next: WizardState = {
       specId: state.specId,

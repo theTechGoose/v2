@@ -70,3 +70,33 @@ Deno.test("transition-to-terms integration: re-calling on already-terms conversa
 
   await resetKv();
 });
+
+// REQ-024 — NW-13 / NW-18: the invoice path runs the invoice wizard.
+Deno.test("REQ-024 transition-to-terms integration: docKind 'invoice' seeds the invoice wizard and records the kind on the conversation", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, flow } = fresh();
+  const conv = await conversations.create({ userId: "u-1", quoteId: "q-1" });
+
+  const result = await flow.run({ userId: "u-1", conversationId: conv.id, docKind: "invoice" });
+
+  assertEquals(result.conversation.currentPhase, "terms");
+  assertEquals(result.conversation.docKind, "invoice");
+  const state = await conversations.getWizardState(conv.id);
+  assertEquals(state?.specId, "invoice-v1");
+  const wizardPayload = result.newMessages[1].payload as { specId: string; stepId: string };
+  assertEquals(wizardPayload.specId, "invoice-v1");
+  assertEquals(wizardPayload.stepId, "customer");
+  await resetKv();
+});
+
+Deno.test("REQ-024 transition-to-terms integration: the default stays the quote wizard", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, flow } = fresh();
+  const conv = await conversations.create({ userId: "u-1", quoteId: "q-1" });
+  await flow.run({ userId: "u-1", conversationId: conv.id });
+  const state = await conversations.getWizardState(conv.id);
+  assertEquals(state?.specId, "terms-v1");
+  await resetKv();
+});
