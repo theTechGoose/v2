@@ -362,7 +362,12 @@ export const assistantClient = {
     priceCents?: number,
     opts: ApiOptions = {},
   ) =>
-    api.post<{ options: JobOption[] }>(
+    api.post<{
+      options: JobOption[];
+      /** REQ-026: true when the server could not use the model and the
+       *  options are its heuristic scope bullets. */
+      degraded?: boolean;
+    }>(
       "/agents/job-details/options",
       { raw, ...(typeof priceCents === "number" ? { priceCents } : {}) },
       opts,

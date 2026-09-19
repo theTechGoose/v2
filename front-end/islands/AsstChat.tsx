@@ -37,6 +37,7 @@ import {
 } from "../../shared/quote-flow/customer-step.ts";
 import { termLabel } from "../../shared/quote-flow/terms-i18n.ts";
 import { versionTitle } from "../../shared/quote-flow/version-titles.ts";
+import { scopeBulletsFromRaw } from "../../shared/quote-flow/scope-from-raw.ts";
 import {
   acceptedJobChipLabel,
   extractQuickQuotePrefill,
@@ -253,23 +254,26 @@ function toOptionDrafts(options: JobOption[]): JobOptionDraft[] {
 }
 
 /** Client-side last resort if the options endpoint itself errors (network
- *  / 4xx). The backend already returns a heuristic fallback on LLM failure,
- *  so this only fires when the request never completed. Mirrors that
- *  heuristic so the picker still renders three usable options. */
-function localFallbackOptions(raw: string, lang: Lang): JobOption[] {
-  const lines = raw
-    .split(/[\n.;]+/)
-    .map((l) => l.trim().replace(/\s+/g, " "))
-    .filter(Boolean);
-  const base = (lines.length > 0 ? lines : [raw.trim()]).slice(0, 4);
-  const summary = base[0]?.split(/\s+/).slice(0, 8).join(" ") ||
-    tFor(lang, "asstChat.newJob");
+ *  / 5xx) — an ERROR path, never painted ahead of the request (REQ-027).
+ *  REQ-026 (NW-05): the bullets are honest scope lines from the shared
+ *  helper (intent opener and price clause stripped), never the typed
+ *  sentence; `degraded` is true when nothing scope-like survived and the one
+ *  bullet is the localized "New job". */
+function localFallbackOptions(
+  raw: string,
+  lang: Lang,
+): { options: JobOption[]; degraded: boolean } {
+  const scoped = scopeBulletsFromRaw(raw, lang);
+  const base = scoped.degraded
+    ? [tFor(lang, "asstChat.newJob")]
+    : scoped.bullets.slice(0, 4);
+  const summary = base[0].split(/\s+/).slice(0, 8).join(" ");
   const jobName = summary.split(/\s+/).slice(0, 3).join(" ");
   // P-24: the three versions must be distinguishable at a glance. They used
   // to share one jobName verbatim (and the server's old scheme numbered the
   // collisions "(2)" / "(3)"), so the picker looked like the same job three
   // times. Each variant now carries the qualifier that describes what it IS.
-  return [
+  const options: JobOption[] = [
     { id: "opt1", jobName, summary, bullets: base },
     {
       id: "opt2",
@@ -285,6 +289,7 @@ function localFallbackOptions(raw: string, lang: Lang): JobOption[] {
         .slice(0, 4),
     },
   ];
+  return { options, degraded: scoped.degraded };
 }
 
 /** P-26: the preview's send button brands the ACTION ("Send by Text +
@@ -655,6 +660,9 @@ export default function AsstChat({
     > | null
   >(null);
   const [optionsLoading, setOptionsLoading] = useState(false);
+  /** REQ-027 (NW-11): the model could not draft the options — the cards
+   *  are heuristic scope bullets and the picker says so. */
+  const [optionsDegraded, setOptionsDegraded] = useState(false);
   const [jobOptions, setJobOptions] = useState<JobOptionDraft[] | null>(null);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   /** Which bullet is open for inline edit, keyed by option+bullet id. */
@@ -1948,9 +1956,9 @@ export default function AsstChat({
    * Opens the "Job Details" picker at the end of phase 2. The generation
    * was kicked off on phase-2 mount and has been running the whole time the
    * user answered wizard questions, so it's almost always already resolved
-   * → the picker opens instantly. We still render a local heuristic first
-   * (so the screen is never blank) and silently swap in the LLM options when
-   * they land, unless the user has already started editing.
+   * → the picker opens instantly. REQ-027 (NW-11): until it resolves the
+   * picker shows the honest "Writing up your options…" wait — never a
+   * client-side echo of the sentence that the model's cards then replace.
    */
   async function openJobPicker() {
     const raw = (jobPolishRawRef.current ?? quote?.description ?? "").trim();
@@ -1960,33 +1968,56 @@ export default function AsstChat({
     // state to return to is the last term question — the snapshot pushed
     // when it was answered.
     setJobOptionsOpen(true);
-    setOptionsLoading(false);
-    const heuristic = toOptionDrafts(
-      localFallbackOptions(raw || tFor(lang, "asstChat.newJob"), lang),
-    );
-    setJobOptions(heuristic);
-    setSelectedOptionId(heuristic[0]?.id ?? null);
-
+    beginJobOptionsWait();
     const inflight = optionsInFlightRef.current ?? assistantClient
       .generateJobOptions(raw)
       .catch((err) => {
         console.warn(
-          "[asst] job-options generation failed, keeping heuristic:",
+          "[asst] job-options generation failed, using honest fallback:",
           err,
         );
         return null;
       });
     optionsInFlightRef.current = null;
     const res = await inflight;
-    if (res?.options && res.options.length > 0 && !optionsTouchedRef.current) {
-      const drafts = toOptionDrafts(res.options);
-      setJobOptions(drafts);
-      setSelectedOptionId((prev) =>
-        prev && drafts.some((d) => d.id === prev)
-          ? prev
-          : (drafts[0]?.id ?? null)
-      );
-    }
+    settleJobOptions(raw, res);
+  }
+
+  /** REQ-027 (NW-11): the picker opens on the wait state — dots and
+   *  "Writing up your options…" — with no card painted. */
+  function beginJobOptionsWait() {
+    setOptionsLoading(true);
+    setJobOptions(null);
+    setOptionsDegraded(false);
+    setSelectedOptionId(null);
+  }
+
+  /**
+   * REQ-027 (NW-11): settle the picker from a job-options response. A usable
+   * answer paints the model's cards. A failed request, or a server answer
+   * flagged `degraded` (REQ-026), paints honest scope bullets — never the
+   * typed sentence — under a visible note, with the contractor's own words
+   * waiting in the "Write it myself" tile. The honest cards stay the default
+   * selection (a bare Continue must never submit the raw sentence); the tile
+   * is pre-selected only when nothing scope-like survived their text.
+   */
+  function settleJobOptions(
+    raw: string,
+    res: { options: JobOption[]; degraded?: boolean } | null,
+  ) {
+    const usable = res?.options && res.options.length > 0 ? res.options : null;
+    const drafts = toOptionDrafts(
+      usable ??
+        localFallbackOptions(raw || tFor(lang, "asstChat.newJob"), lang)
+          .options,
+    );
+    const degraded = !usable || res?.degraded === true;
+    const noScope = degraded && scopeBulletsFromRaw(raw, lang).degraded;
+    if (degraded) customDraftRef.current = raw;
+    setOptionsDegraded(degraded);
+    setJobOptions(drafts);
+    setSelectedOptionId(noScope ? CUSTOM_OPTION_ID : (drafts[0]?.id ?? null));
+    setOptionsLoading(false);
   }
 
   /**
@@ -1999,28 +2030,15 @@ export default function AsstChat({
     setPickerMode("confirm");
     optionsTouchedRef.current = false;
     setJobOptionsOpen(true);
-    setOptionsLoading(false);
-    const heuristic = toOptionDrafts(
-      localFallbackOptions(raw || tFor(lang, "asstChat.newJob"), lang),
-    );
-    setJobOptions(heuristic);
-    setSelectedOptionId(heuristic[0]?.id ?? null);
+    beginJobOptionsWait();
     const res = await assistantClient.generateJobOptions(raw).catch((err) => {
       console.warn(
-        "[asst] confirm-step option generation failed, keeping heuristic:",
+        "[asst] confirm-step option generation failed, using honest fallback:",
         err,
       );
       return null;
     });
-    if (res?.options && res.options.length > 0 && !optionsTouchedRef.current) {
-      const drafts = toOptionDrafts(res.options);
-      setJobOptions(drafts);
-      setSelectedOptionId((prev) =>
-        prev && drafts.some((d) => d.id === prev)
-          ? prev
-          : (drafts[0]?.id ?? null)
-      );
-    }
+    settleJobOptions(raw, res);
   }
 
   // ── Job Details picker handlers ──────────────────────────────────
@@ -4005,6 +4023,17 @@ export default function AsstChat({
                       )
                       : (
                         <>
+                          {optionsDegraded
+                            ? (
+                              <p
+                                class="chat__jobopts-degraded"
+                                data-cy="jobopts-degraded"
+                                role="status"
+                              >
+                                {tFor(lang, "asstChat.jobOpts.degraded")}
+                              </p>
+                            )
+                            : null}
                           <div class="chat__jobopts-list">
                             {jobOptions.map((opt, i) => {
                               const selected = selectedOptionId === opt.id;

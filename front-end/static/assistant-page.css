@@ -8510,6 +8510,18 @@ body {
   color: var(--fg-muted, #6b7560);
   padding: 12px 2px;
 }
+/* REQ-027 (NW-11): the honest "couldn't draft" note above the heuristic
+   cards — the model was unavailable, the bullets are derived scope. */
+.chat__jobopts-degraded {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #7a5a00;
+  background: #fff6d6;
+  border: 1px solid #f2dc9a;
+}
 .chat__jobopts-list {
   display: flex;
   flex-direction: column;

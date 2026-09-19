@@ -129,3 +129,69 @@ describe("REQ-010 NW-17 the 'Write it myself.' pill", () => {
     });
   });
 });
+
+// ===========================================================================
+// REQ-027 — NW-11 (p20): "Confirm the 'Confirm your job details' page is
+// working correctly. (Screenshot: the three options are the raw text
+// verbatim.)" The picker used to paint a client-side echo of the sentence
+// BEFORE the request and silently swap in the model's cards. Now it waits
+// with the "Writing up your options…" dots, and a failed request lands on
+// honest scope bullets (never the sentence), a visible "couldn't draft" note,
+// and the "Write it myself" tile prefilled with the contractor's own words.
+// ===========================================================================
+describe("REQ-027 NW-11 the picker waits for the model and never paints the sentence", () => {
+  const PHONE = "+15125556432";
+  const SENTENCE = "Necesito cambiar 12 tablas del deck por $900";
+  const OPTIONS_URL = "/api/agents/job-details/options";
+
+  function startHelpMePrice() {
+    cy.visit("/assistant");
+    cy.contains("button.chat__empty-prompt", HELP_PRICE_CHIP)
+      .should("be.visible")
+      .click();
+    cy.get("textarea.composer__input", { timeout: 10_000 })
+      .should("be.visible")
+      .type(SENTENCE);
+    cy.get("button.composer__send").click();
+  }
+
+  beforeEach(() => {
+    loginEs(PHONE);
+  });
+
+  it("REQ-027 (a) the dots show first — no card is painted before the model answers", () => {
+    cy.intercept("POST", OPTIONS_URL, (req) => {
+      req.continue((res) => {
+        res.setDelay(1500);
+      });
+    }).as("options");
+    startHelpMePrice();
+    // While the request is in flight: the honest wait, and no card at all.
+    cy.get(".chat__jobopts-loading").should("be.visible");
+    cy.get(".chat__jobopt").should("not.exist");
+    cy.wait("@options");
+    cy.get("[data-cy=confirm-details]", { timeout: 20_000 }).should("be.visible");
+    cy.get(".chat__jobopts-loading").should("not.exist");
+  });
+
+  it("REQ-027 (b) a failed request → honest bullets, a visible note, 'Write it myself' prefilled — never the sentence", () => {
+    cy.intercept("POST", OPTIONS_URL, { statusCode: 500, body: { error: "boom" } }).as("options");
+    startHelpMePrice();
+    cy.wait("@options");
+    cy.get("[data-cy=jobopts-degraded]", { timeout: 10_000 })
+      .should("be.visible")
+      .and("contain.text", "No pude redactar esto");
+    // Three cards, none of them the typed sentence; the scope is derived.
+    cy.get(".chat__jobopt").should("have.length", 3);
+    cy.get(".chat__jobopt-bullet").should("have.length.at.least", 3).each(($li) => {
+      expect($li.text(), "a bullet echoes the sentence").not.to.include(SENTENCE);
+      expect($li.text(), "a bullet carries the price").not.to.include("$900");
+    });
+    cy.get(".chat__jobopt").first().should("contain.text", "Cambiar 12 tablas del deck");
+    cy.get(".chat__jobopt-name").first().should("not.match", /^Necesito/);
+    // The contractor's own words wait in the "Write it myself" tile.
+    cy.get(".chat__jobopt-custom").click();
+    cy.get(".chat__jobopt-custom-area").should("have.value", SENTENCE);
+    cy.get("[data-cy=confirm-details]").should("be.visible");
+  });
+});

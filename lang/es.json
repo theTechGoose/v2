@@ -259,6 +259,7 @@
   "asstChat.jobOpts.customPlaceholder": "Describe el trabajo — un punto por línea.",
   "asstChat.jobOpts.customTitle": "Escribirlo yo mismo",
   "asstChat.jobOpts.customCta": "Escribirlo yo mismo.",
+  "asstChat.jobOpts.degraded": "No pude redactar esto — edita los puntos o escríbelo tú mismo.",
   "asstChat.jobOpts.deleteBullet": "Eliminar punto",
   "asstChat.jobOpts.editTitle": "Editar título",
   "asstChat.jobOpts.heading": "Detalles del trabajo",

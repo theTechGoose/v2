@@ -259,6 +259,7 @@
   "asstChat.jobOpts.customPlaceholder": "Describe the job — one item per line.",
   "asstChat.jobOpts.customTitle": "Write it myself",
   "asstChat.jobOpts.customCta": "Write it myself.",
+  "asstChat.jobOpts.degraded": "I couldn't draft this one — edit the bullets or write it yourself.",
   "asstChat.jobOpts.deleteBullet": "Delete bullet",
   "asstChat.jobOpts.editTitle": "Edit title",
   "asstChat.jobOpts.heading": "Job Details",
