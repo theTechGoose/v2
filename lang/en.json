@@ -1643,7 +1643,7 @@
   "paperworkEmail.subject.jobFallback": "Project",
   "paperworkSms.body.closing": "Please let me know if you have any questions. I look forward to working with you!",
   "paperworkSms.body.jobNameFallback": "your project",
-  "paperworkSms.body.ready": "Your Quote + Agreement for {jobName} is ready: {url}",
+  "paperworkSms.body.ready": "Your Quote + Agreement for {jobName} is ready:\n{url}",
   "paperworkSms.intro.hi": "Hi {hi}.",
   "paperworkSms.intro.hiWho": "Hi {hi}, this is {who}.",
   "paperworkSms.intro.hiWhoBiz": "Hi {hi}, this is {who} from {biz}.",

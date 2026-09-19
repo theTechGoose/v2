@@ -237,3 +237,8 @@ _2026-09-19 — "Do not start these tasks until the answer is back." Each is one
 **Requirement (client's words):** "Make it mobile-friendly." / "Flawless mobile view with the same perfect UX translated to small screens." — the plan's sizing step: run the responsive specs live and turn each red into its own task.
 **Result (2026-09-19):** `responsive-mobile` 8/8, `landing-mobile-390` 6/6, `ux-landing-mobile` 6/6, `ux-dashboard-mobile-390` 4/4 after one stale pin was corrected (UX-09's "Registro completo →" check targeted a control removed on purpose — no `/activity` page exists, the link 404'd in prod; the pin now asserts its absence and keeps the clip-geometry checks for when it returns). **No mobile red survived the run → no follow-up task folders.** The board in `TESTS-PROBLEMS.md` carries the numbers.
 **Tests:** `no new tests — audit`; the four responsive specs above are the evidence (e2e).
+
+## REQ-041 — 7.13 NW-53f + NW-53b + NW-48 Three polish items from the "COMPLETED" half
+**Source:** new-working-issues.md NW-53f, NW-53b (PDF p60), NW-48 (PDF p45), 2026-09-18
+**Requirement (client's words):** "Pricing: auto-focus the number field, and pressing Enter on the price should click Continue." (also in help-me-price) / "If they are tapping options there should be no input field." / the p45 text template puts "[LINK]" on its own line after "…is ready:".
+**Tests:** unit `jest/unit/i18n-dictionary-consistency.test.ts` ("REQ-041 …", `{url}` after a newline in both dictionaries) · integration (Deno) `send-paperwork-sms` suite (green on arrival) · e2e `cypress/e2e/quotes-help-me-price.cy.ts` ("REQ-041 NW-53f …" autofocus RED→GREEN; "REQ-041 NW-53b …" composer-absent pin, green on arrival as the plan predicted)

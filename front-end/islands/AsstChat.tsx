@@ -5091,7 +5091,9 @@ export default function AsstChat({
                         // a re-entered flow never shows a stale value.
                         key={pendingJobDetailsRaw ?? "blank"}
                         initialCents={priceCents ?? 0}
-                        autoFocus={!suggestPricing}
+                        // REQ-041 (NW-53f): the number field is focused in
+                        // the help-me-price flow too.
+                        autoFocus
                         onChange={setPriceCents}
                         onSubmit={(cents) => {
                           if (sending) return;
