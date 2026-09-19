@@ -97,3 +97,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-33 (PDF p29), 2026-09-18
 **Requirement (client's words):** "'Record a payment' takes you to the quote/invoice chat. What is that button for?" — on /payments, "Record a payment" opens an in-page picker (unpaid invoice → how they paid → amount → date) that records the payment without leaving the page, and "Export this month" downloads this month's payments as a CSV.
 **Tests:** unit `n/a — page wiring` · integration `jest/integration/invoice-export-month.int.test.ts` (month filter) · e2e `cypress/e2e/payments-record.cy.ts`
+
+## REQ-020 — 3.3 NW-29 When an invoice becomes paid, the customer gets the invoice marked PAID
+**Source:** new-working-issues.md NW-29 (PDF p28), 2026-09-18
+**Requirement (client's words):** "When an invoice is paid it must also be emailed to the Unicorn with 'Paid' on it so everyone is on the same page." — every path that flips an invoice to paid (a recorded payment closing the balance, or confirming a customer claim) emails the customer the invoice stamped PAID (subject says Paid, no "Amount due"), logged in the comms trail.
+**Tests:** unit `n/a` · integration (Deno) `backend/src/paperwork/domain/coordinators/send-paperwork-email/int.test.ts` + `compute-invoice-balance/int.test.ts` ("REQ-020 …") + jest `jest/integration/paid-invoice-email.int.test.ts` · e2e `n/a — email content`
