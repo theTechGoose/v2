@@ -5867,14 +5867,47 @@ export default function AsstChat({
 
                           {(() => {
                             const lines = detailLines(polishedDescription);
-                            if (lines.length === 0) return null;
+                            // NW-19b (REQ-006): Job Details is editable on the
+                            // review card like every other field — the pencil
+                            // reopens the job picker on the CURRENT details and
+                            // applyJobOption lands the pick back here. The
+                            // section renders even with no details yet, so
+                            // they can be added from the card.
+                            const editJobDetails = () => {
+                              if (sending) return;
+                              // The state to return to is this review card:
+                              // snapshot it so the header back closes the picker.
+                              pushHistory();
+                              pendingReviewCtaRef.current = previewCtaId ?? m.id;
+                              jobPolishRawRef.current = lines.length > 0
+                                ? lines.join("\n")
+                                : (quote?.summary ?? quote?.jobName ?? "");
+                              void openJobPicker();
+                            };
                             return (
                               <section class="quote-review__section">
-                                <div class="quote-review__section-label">
+                                <div class="quote-review__section-label quote-review__section-label--editable">
                                   {tFor(
                                     previewLang,
                                     "asstChat.preview.jobDetails",
                                   )}
+                                  <button
+                                    type="button"
+                                    class="quote-review__term-edit"
+                                    data-cy="review-job-details-edit"
+                                    disabled={sending || !quoteId}
+                                    title={tFor(
+                                      previewLang,
+                                      "asstChat.preview.editJobDetails",
+                                    )}
+                                    aria-label={tFor(
+                                      previewLang,
+                                      "asstChat.preview.editJobDetails",
+                                    )}
+                                    onClick={editJobDetails}
+                                  >
+                                    ✎
+                                  </button>
                                 </div>
                                 {lines.length > 1
                                   ? (
@@ -5884,9 +5917,18 @@ export default function AsstChat({
                                       ))}
                                     </ul>
                                   )
-                                  : (
+                                  : lines.length === 1
+                                  ? (
                                     <p class="quote-review__details-text">
                                       {lines[0]}
+                                    </p>
+                                  )
+                                  : (
+                                    <p class="quote-review__details-text quote-review__details-text--empty">
+                                      {tFor(
+                                        previewLang,
+                                        "asstChat.preview.jobDetailsEmpty",
+                                      )}
                                     </p>
                                   )}
                               </section>

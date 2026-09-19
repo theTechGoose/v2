@@ -26,3 +26,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-19 (PDF p13), 2026-09-18
 **Requirement (client's words):** "Fix the Go Back button for all of the tasks." — from the wizard's first question reached via chat ("Lock it in" → "Ready" CTA), back returns to the action card instead of exiting to the dashboard.
 **Tests:** unit `jest/unit/assistant-back.test.ts` ("REQ-005 …") · integration backend `backend/src/agents/domain/coordinators/rewind-wizard/int.test.ts` + `jest/integration/assistant-back.int.test.ts` ("REQ-005 …") · e2e `n/a — the action card only comes from the live LLM; not deterministic under the stub. Verified by hand with a real key (see commit).`
+
+## REQ-006 — 1.5 NW-19b Job Details is editable on the review card
+**Source:** new-working-issues.md NW-19 (PDF p13) + "Make the Toilet Replacement job editable" (p56), 2026-09-18
+**Requirement (client's words):** "Job Details is not editable on the review card, so they need a back button." / "Make the Toilet Replacement job editable." — the review card's Job Details section gets an edit control that reopens the job picker; the pick updates the card.
+**Tests:** unit `n/a — component wiring; the picker itself is covered by quotes-professionalize.cy.ts` · integration `n/a — browser state` · e2e `cypress/e2e/ux-doc-preview.cy.ts` ("REQ-006 NW-19b …")

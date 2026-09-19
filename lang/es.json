@@ -310,6 +310,8 @@
   "asstChat.preview.invoiceModeNote": "Modo factura: tu cliente recibe una factura por cobrar — los mismos detalles del trabajo, totales y términos, pero sin firma ni cláusulas legales. Puedes volver a Cotización + Acuerdo antes de enviar.",
   "asstChat.preview.invoiceSent": "¡Factura enviada! 🎉 — la encuentras en Facturas.",
   "asstChat.preview.jobDetails": "Detalles del trabajo",
+  "asstChat.preview.editJobDetails": "Editar detalles del trabajo",
+  "asstChat.preview.jobDetailsEmpty": "Agrega los detalles del trabajo",
   "asstChat.preview.kind": "Cotización + Acuerdo",
   "asstChat.preview.languageGroup": "Idioma de la vista previa",
   "asstChat.preview.linkCopied": "¡Enlace copiado!",

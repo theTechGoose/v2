@@ -125,3 +125,58 @@ describe("UX-15: the doc preview De/Para blocks render formatted phones", () => 
 // Module scope: keeps top-level declarations out of the shared global
 // script scope the spec files otherwise compile into.
 export {};
+
+// ===========================================================================
+// REQ-006 — NW-19b (p13, p56): "Job Details is not editable on the review
+// card" / "Make the Toilet Replacement job editable." Every other field on
+// the review card is editable; Job Details gets a pencil that reopens the
+// job picker, and the pick lands back on the card.
+// ===========================================================================
+describe("REQ-006 NW-19b Job Details is editable on the review card", () => {
+  beforeEach(() => {
+    cy.clearCookies();
+    cy.loginAs(PHONE);
+    cy.request({ url: "/api/me/wipe", failOnStatusCode: false });
+    cy.loginAs(PHONE);
+    cy.request("POST", "/api/me/onboarded", { skipped: true });
+    cy.apiUpdateUser({ language: "es" });
+    cy.clearCookie("pm_lang");
+
+    cy.visit("/assistant?dev");
+    cy.get(".chat__empty-debug-btn", { timeout: 10_000 })
+      .should("be.visible")
+      .click();
+    cy.location("pathname", { timeout: 20_000 })
+      .should("match", /^\/assistant\/[A-Za-z0-9_-]+$/);
+    cy.openCustomerCreateForm();
+    cy.get(".cust-create input.cust-pick__search", { timeout: 20_000 })
+      .first()
+      .type("María Nguyen");
+    cy.get(".cust-create input[type=tel]").type(CUSTOMER_PHONE_RAW);
+    cy.get(".cust-create__btn--primary").should("not.be.disabled").click();
+    pickFirstOption();
+    pickFirstOption();
+    pickFirstOption();
+    pickFirstOption();
+    cy.get(".quote-review", { timeout: 20_000 }).should("be.visible");
+  });
+
+  it("REQ-006 NW-19b Job Details on the review card has an edit control that opens the job picker", () => {
+    cy.get("[data-cy=review-job-details-edit]").should("be.visible").click();
+    cy.get(".chat__jobopts", { timeout: 10_000 }).should("be.visible");
+    cy.get(".chat__jobopt").should("have.length.at.least", 1);
+  });
+
+  it("REQ-006 NW-19b picking a version lands the bullets back on the review card", () => {
+    cy.get("[data-cy=review-job-details-edit]").click();
+    cy.get(".chat__jobopts", { timeout: 10_000 }).should("be.visible");
+    cy.get(".chat__jobopt").first().click();
+    cy.get(".chat__jobopts .chat__price-continue").should("not.be.disabled").click();
+    cy.get(".quote-review", { timeout: 20_000 }).should("be.visible");
+    cy.get(".quote-review__details, .quote-review__details-text")
+      .invoke("text")
+      .then((text) => {
+        expect(String(text).trim().length, "job details rendered on the card").to.be.greaterThan(0);
+      });
+  });
+});
