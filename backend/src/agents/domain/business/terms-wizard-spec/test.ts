@@ -44,3 +44,16 @@ Deno.test("getWizardSpec: returns the canonical spec by id", () => {
 Deno.test("getWizardSpec: unknown id throws", () => {
   assertThrows(() => getWizardSpec("nope"));
 });
+
+// REQ-009 — NW-23 (p22): "'When does the job start?' has a 'Job Completed'
+// option. Remove it and put 'Pick a date' in its place."
+Deno.test("REQ-009 NW-23 terms-wizard-spec: start_date offers asap / next_week / next_month / custom — no job_completed", () => {
+  const start = TERMS_WIZARD_V1.steps.find((s) => s.id === "start_date")!;
+  assertEquals(start.options.map((o) => o.id), ["asap", "next_week", "next_month", "custom"]);
+  assertEquals(start.options.at(-1)?.isCustom, true, "'Pick a date' is the last option");
+});
+
+Deno.test("REQ-009 NW-23 terms-wizard-spec: the duration (wraps) step keeps its own job_completed", () => {
+  const wraps = TERMS_WIZARD_V1.steps.find((s) => s.id === "wraps")!;
+  assert(wraps.options.some((o) => o.id === "job_completed"));
+});

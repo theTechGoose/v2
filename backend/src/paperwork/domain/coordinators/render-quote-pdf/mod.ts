@@ -850,7 +850,7 @@ function termValue(
  *  known preset option labels to Spanish and converts numeric durations
  *  ("12 months" → "12 meses"); custom free-text and universal ratios
  *  ("50/50") pass through unchanged. */
-function localizeTermValue(value: string, lang: "en" | "es"): string {
+export function localizeTermValue(value: string, lang: "en" | "es"): string {
   if (lang === "en") return value;
   const trimmed = (value ?? "").trim();
   // Map known wizard preset labels to localized i18n keys.
@@ -863,6 +863,9 @@ function localizeTermValue(value: string, lang: "en" | "es"): string {
     "Next Month": "renderQuotePdf.termValue.nextMonth",
     "Next month": "renderQuotePdf.termValue.nextMonth",
     "Job Completed": "renderQuotePdf.termValue.jobCompleted",
+    // NW-24 (REQ-009): new quotes persist the sentence-case value; the
+    // line above keeps quotes saved before the casing change localizing.
+    "Job completed": "renderQuotePdf.termValue.jobCompleted",
     "Due Now": "renderQuotePdf.termValue.dueNow",
   };
   if (exactKey[trimmed]) return t(lang, exactKey[trimmed]);

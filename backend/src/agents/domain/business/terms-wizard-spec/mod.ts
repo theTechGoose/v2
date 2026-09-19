@@ -41,11 +41,9 @@ export const TERMS_WIZARD_V1: WizardSpec = {
         { id: "asap", label: "termsWizard.startDate.asap" },
         { id: "next_week", label: "termsWizard.startDate.nextWeek" },
         { id: "next_month", label: "termsWizard.startDate.nextMonth" },
-        {
-          // Roadmap p.4/5: paperwork written AFTER the work happened.
-          id: "job_completed",
-          label: "termsWizard.startDate.jobCompleted",
-        },
+        // NW-23 (REQ-009): "Job completed" is NOT a start date — the client
+        // asked for Right away / Next week / Next month / Pick a date. The
+        // duration (wraps) step keeps its own job_completed option.
         { id: "custom", label: "termsWizard.startDate.custom", isCustom: true },
       ],
     },

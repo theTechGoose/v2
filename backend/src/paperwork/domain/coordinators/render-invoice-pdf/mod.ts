@@ -695,7 +695,7 @@ function termValue(
   return terms?.find((t) => t.stepId === stepId)?.value;
 }
 
-function localizeTermValue(value: string, lang: "en" | "es"): string {
+export function localizeTermValue(value: string, lang: "en" | "es"): string {
   if (lang === "en") return value;
   const trimmed = (value ?? "").trim();
   const exactKey: Record<string, string> = {
@@ -707,6 +707,9 @@ function localizeTermValue(value: string, lang: "en" | "es"): string {
     "Next Month": "renderQuotePdf.termValue.nextMonth",
     "Next month": "renderQuotePdf.termValue.nextMonth",
     "Job Completed": "renderQuotePdf.termValue.jobCompleted",
+    // NW-24 (REQ-009): new quotes persist the sentence-case value; the
+    // line above keeps quotes saved before the casing change localizing.
+    "Job completed": "renderQuotePdf.termValue.jobCompleted",
     "Due Now": "renderQuotePdf.termValue.dueNow",
   };
   if (exactKey[trimmed]) return t(lang, exactKey[trimmed]);

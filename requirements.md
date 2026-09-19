@@ -41,3 +41,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-47 (PDF p44), 2026-09-18
 **Requirement (client's words):** (Screenshot shows the contractor name rendered as "I" / "I know the job" / "I from help me price it." — the flow label is being used as the sender name.) — emails/SMS never say "this is I from help me price it"; a first-turn message that reads as a job request / starter chip is never parsed as name + business.
 **Tests:** unit (Deno) `backend/src/agents/domain/business/onboarding/test.ts` · integration (Deno) `backend/src/agents/domain/coordinators/handle-chat-message/int.test.ts` ("REQ-008 …") · e2e `n/a — backend-only logic; the outbound name gate is pinned by jest/unit/ux-outbound-gate.test.ts`
+
+## REQ-009 — 1.8 NW-23 + NW-24 Start-date options and "Job completed" casing
+**Source:** new-working-issues.md NW-23 (PDF p22) + NW-24 (PDF p23), 2026-09-18
+**Requirement (client's words):** "'When does the job start?' has a 'Job Completed' option. Remove it and put 'Pick a date' in its place. Change 'Next Month' to 'Next month'." / "Change 'Job Completed' to 'Job completed' (lowercase c)." — old quotes that persisted "Job Completed" keep localizing correctly.
+**Tests:** unit (Deno) `backend/src/agents/domain/business/terms-wizard-spec/test.ts` ("REQ-009 …") + jest `jest/unit/i18n-dictionary-consistency.test.ts` ("REQ-009 …") + Deno `backend/src/paperwork/domain/coordinators/render-quote-pdf/term-i18n.test.ts` (both PDF maps) · integration `n/a — the public quote page is client-rendered; the wizard payload is derived from the spec` · e2e `cypress/e2e/quotes-wizard-navigation.cy.ts` ("REQ-009 …") + `cypress/e2e/public-quote-term-casing.cy.ts` (old + new spelling on /q)

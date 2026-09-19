@@ -24,6 +24,9 @@ export function localizeTermValue(value: string, lang: Lang): string {
     "Next Month": "quoteDoc.termValue.nextMonth",
     "Next month": "quoteDoc.termValue.nextMonth",
     "Job Completed": "quoteDoc.termValue.jobCompleted",
+    // NW-24 (REQ-009): new quotes persist the sentence-case value; the
+    // line above keeps quotes saved before the casing change localizing.
+    "Job completed": "quoteDoc.termValue.jobCompleted",
     "Due Now": "quoteDoc.termValue.dueNow",
   };
   if (exact[trimmed]) return tFor(lang, exact[trimmed]);

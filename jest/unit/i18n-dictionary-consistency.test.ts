@@ -189,3 +189,35 @@ describe("P-65 ES danger-zone keyword + professionalize error", () => {
     expect(es["asstChat.writeSelf.error"]).not.toMatch(/hacer profesional/i);
   });
 });
+
+describe("REQ-009 NW-24 'Job completed' / 'Next month' casing (both dictionaries)", () => {
+  // p23: "Change 'Job Completed' to 'Job completed' (lowercase c)."
+  // p22: "Change 'Next Month' to 'Next month'."
+  const JOB_COMPLETED_KEYS = [
+    "quoteDoc.termValue.jobCompleted",
+    "termsWizard.wraps.jobCompleted",
+    "renderQuotePdf.termValue.jobCompleted",
+  ];
+  it.each(JOB_COMPLETED_KEYS)("REQ-009 %s is 'Job completed' / 'Trabajo terminado'", (key) => {
+    expect(en[key]).toBe("Job completed");
+    expect(es[key]).toBe("Trabajo terminado");
+  });
+
+  it("REQ-009 the start-date step no longer carries a jobCompleted label (option removed)", () => {
+    expect(en["termsWizard.startDate.jobCompleted"]).toBeUndefined();
+    expect(es["termsWizard.startDate.jobCompleted"]).toBeUndefined();
+  });
+
+  it.each(["termsWizard.startDate.nextMonth", "asstChat.terms.startDate.nextMonth"])(
+    "REQ-009 %s is 'Next month' (sentence case)",
+    (key) => {
+      expect(en[key]).toBe("Next month");
+      expect(es[key]).toBe("El próximo mes");
+    },
+  );
+
+  it("REQ-009 no EN value anywhere still says 'Job Completed' or 'Next Month'", () => {
+    const offenders = entries(en).filter(([, v]) => /\bJob Completed\b|\bNext Month\b/.test(v));
+    expect(offenders).toEqual([]);
+  });
+});
