@@ -51,3 +51,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-17 (PDF p26), 2026-09-18
 **Requirement (client's words):** "The chip at the bottom reads 'I know the job, help me price it.Write it myself'. Needs a space after the period and a period at the end of 'myself'." — the pill reads "✎ Write it myself." on its own line under the bubble.
 **Tests:** unit `jest/unit/i18n-dictionary-consistency.test.ts` ("REQ-010 …") · integration `n/a — copy + CSS` · e2e `cypress/e2e/ux-help-me-price.cy.ts` ("REQ-010 …")
+
+## REQ-011 — 1.10 NW-30 Invoice cards show the job name
+**Source:** new-working-issues.md NW-30 (PDF p28), 2026-09-18
+**Requirement (client's words):** "There is no real way to tell invoices apart other than customer name and price. There is a lot of wasted space that could show the job description." — each invoice card on /invoices shows the job name.
+**Tests:** unit `n/a — projection of a field the API already returns` · integration `n/a — the API row is pinned by invoice-parity.int.test.ts` · e2e `cypress/e2e/invoice-card-job-name.cy.ts`

@@ -1923,6 +1923,10 @@ function InvoiceCard(
       <div class="qcard__av">{inv.initials}</div>
       <div class="qcard__body">
         <div class="qcard__client-name">{inv.client} · {inv.invoiceRef}</div>
+        {/* NW-30 (REQ-011): the job name tells invoices apart. */}
+        {inv.jobName
+          ? <div class="qcard__job" data-cy="invoice-card-job">{inv.jobName}</div>
+          : null}
         <h3 class="qcard__title">{fmtMoney(inv.amount)}</h3>
         <p class="qcard__story">{subline}</p>
       </div>

@@ -653,6 +653,15 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
+/* NW-30 (REQ-011): job name on the invoice card, between "client · ref" and
+   the amount. */
+.qcard__job {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg, #1a535c);
+  margin: 2px 0;
+}
+
 .qcard__story {
   font-family: var(--font-body);
   font-size: 14.5px;
