@@ -19,6 +19,7 @@
 import PublicSignQuote from "../islands/PublicSignQuote.tsx";
 import PublicQuoteActions from "../islands/PublicQuoteActions.tsx";
 import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
+import { agreementTitle } from "../../shared/quote-flow/agreement-title.ts";
 import { deriveQuoteView } from "../../shared/quote-flow/public-doc-state.ts";
 import { fmtPhone, telHref } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
@@ -122,6 +123,7 @@ function cstr(lang: Lang) {
     contractorTag: tFor(lang, "quoteDoc.contractorTag"),
     clientTag: tFor(lang, "quoteDoc.clientTag"),
     effective: tFor(lang, "quoteDoc.effective"),
+    forJob: tFor(lang, "quoteDoc.forJob"),
     plainEnglish: tFor(lang, "quoteDoc.plainEnglish"),
     plainEnglishBody: (contractor: string, customer?: string) =>
       customer
@@ -246,9 +248,17 @@ export function QuoteDoc(
     tFor(lang, "quoteDoc.serviceAgreement"))
     .replace(/^\s*quote\s*:\s*/i, "").trim();
   const jobNameRaw = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim();
-  const heroTitle = (jobNameRaw && jobNameRaw.length > 0)
+  const jobTitle = (jobNameRaw && jobNameRaw.length > 0)
     ? jobNameRaw
     : summary.replace(/\b\w/g, (c) => c.toUpperCase());
+  // REQ-036 (NW-57): "<Customer>'s <Job> Agreement" — never a bare job name
+  // (or a leaked "New job") once a customer is known.
+  const heroTitle = agreementTitle({
+    customer: customerName,
+    job: jobTitle,
+    lang,
+    fallback: tFor(lang, "quoteDoc.serviceAgreement"),
+  });
 
   const effective = quote.effectiveDate ?? quote.createdAt;
   const milestones = computeMilestones(total, quote.terms, lang);
@@ -369,6 +379,16 @@ export function QuoteDoc(
               {t.contractorTag} {t.and}{" "}
               <strong style={`color:${INK}`}>{customerName}</strong>{" "}
               {t.clientTag}
+              {/* REQ-036 (NW-57): the job name sits between the parties
+                  and the effective date. */}
+              {jobNameRaw
+                ? (
+                  <>
+                    {" "}{t.forJob}{" "}
+                    <strong style={`color:${INK}`}>{jobNameRaw}</strong>
+                  </>
+                )
+                : null}
               {effective
                 ? (
                   <>

@@ -71,10 +71,20 @@ describe("public quote — agreement anatomy + signature ceremony", () => {
 
   it("heads with the job name and shows the plain-English + value sections (p12)", () => {
     cy.contains(/backyard junk removal/i, { timeout: 10_000 }).should("be.visible");
-    cy.contains(/plain english/i).should("be.visible");
+    // REQ-036 (NW-57): "The Deal in Plain English" → "Quick Summary".
+    cy.contains(/quick summary/i).should("be.visible");
     cy.contains(/job details/i).should("be.visible");
     // quoteDoc.contractValue now reads "Agreement value".
     cy.contains(/agreement value/i).should("be.visible");
+  });
+
+  // REQ-036 — NW-57 (p82): "'New Job' → 'Godzilla's Concrete Patio
+  // Agreement'"; "The job name goes between Contractor name and Client."
+  it("REQ-036 NW-57 the hero title names the agreement after the customer and the job, and the parties line carries the job", () => {
+    cy.get("h1.ctr__title", { timeout: 10_000 })
+      .should("have.text", "Green Goblin's Backyard Junk Removal Agreement");
+    cy.contains(/between .*hans llc.*contractor.*green goblin.*client.*for.*backyard junk removal/i)
+      .should("be.visible");
   });
 
   it("carries the parties + effective-date line and the line-item table (p12 anatomy)", () => {

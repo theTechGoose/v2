@@ -6,6 +6,7 @@ import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
+import { agreementTitle } from "#quote-flow/agreement-title.ts";
 
 export interface RenderQuotePdfInput {
   quote: Quote;
@@ -113,21 +114,33 @@ export class RenderQuotePdf {
       color: GREEN,
     });
 
-    // Hero title
+    // Hero title — REQ-036 (NW-57): "<Customer>'s <Job> Agreement", the
+    // same shared helper the web document uses.
     y -= 36;
-    const heroTitle = (quote.summaryByLang?.[lang] ?? quote.summary ??
-      t(lang, "renderQuotePdf.heroFallback"))
-      .replace(/^\s*quote\s*:\s*/i, "")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+    const cust = customer?.name?.trim() ?? quote.acceptedName?.trim();
+    const pdfJobName = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim();
+    const jobTitle = pdfJobName ||
+      (quote.summaryByLang?.[lang] ?? quote.summary ??
+        t(lang, "renderQuotePdf.heroFallback"))
+        .replace(/^\s*quote\s*:\s*/i, "")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+    const heroTitle = agreementTitle({
+      customer: cust,
+      job: jobTitle,
+      lang,
+      fallback: t(lang, "renderQuotePdf.heroFallback"),
+    });
     page.drawText(heroTitle, { x: M, y, size: 24, font: bold, color: TEAL });
     y -= 22;
 
-    // Recital
-    const cust = customer?.name?.trim() ?? quote.acceptedName?.trim();
+    // Recital — the job name sits between the parties and the date.
     const recital = t(lang, "renderQuotePdf.recital.main", {
       biz: biz.replace(/\.$/, ""),
       cust: cust ?? t(lang, "renderQuotePdf.recital.clientFallback"),
     }) +
+      (pdfJobName
+        ? t(lang, "renderQuotePdf.recital.forJob", { job: pdfJobName })
+        : "") +
       (quote.effectiveDate
         ? t(lang, "renderQuotePdf.recital.effective", {
           date: fmtDate(quote.effectiveDate),
