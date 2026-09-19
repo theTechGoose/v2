@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "#std/assert";
 import {
   VerifyOtp,
+  AccountClosedError,
   InvalidCodeError,
   ExpiredCodeError,
   RateLimitedError,
@@ -161,5 +162,28 @@ Deno.test("verify-otp integration: phone is normalized before lookup", async () 
   const result = await flow.run({ phoneNumber: "(512) 555-1234", code: "123456" });
   assertEquals(typeof result.sessionId, "string");
 
+  await resetKv();
+});
+
+// REQ-039 (NW-52, p58): a verified OTP on a phone that belongs to a CLOSED
+// account never silently reopens it and never creates a duplicate — it hands
+// back a recovery token so the person can choose.
+Deno.test("REQ-039 NW-52 verify-otp: a deleted account is recoverable — no session, no new user", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { otps, users, flow } = freshFlow();
+  const old = await users.create({ phoneNumber: "+15125551234", language: "en", name: "Old Owner" });
+  await users.delete(old.id);
+  await otps.put({ phoneNumber: "+15125551234", code: "222222", language: "en" });
+
+  const err = await assertRejects(
+    () => flow.run({ phoneNumber: "+15125551234", code: "222222" }),
+    AccountClosedError,
+  );
+  assertEquals(err.userId, old.id);
+  assertEquals(typeof err.recoveryToken, "string");
+  // Nothing was created behind the person's back.
+  const stillOld = await users.findByPhone("+15125551234");
+  assertEquals(stillOld?.id, old.id);
   await resetKv();
 });

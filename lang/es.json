@@ -1099,7 +1099,7 @@
   "date.weekday.tuesday": "martes",
   "date.weekday.wednesday": "miércoles",
   "deleteQuoteButton.ariaLabel": "Eliminar cotización",
-  "deleteQuoteButton.confirm": "¿Eliminar esta cotización? Esta acción no se puede deshacer.",
+  "deleteQuoteButton.confirm": "¿Eliminar esta cotización? Queda marcada como eliminada — soporte puede recuperarla.",
   "deleteQuoteButton.deleting": "Eliminando…",
   "deleteQuoteButton.error": "No se pudo eliminar la cotización: {message}",
   "deleteQuoteButton.label": "Eliminar",

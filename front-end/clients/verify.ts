@@ -26,7 +26,18 @@ export type VerifyOtpResult =
     isNewUser: boolean;
     redirectTo: string;
   }
+  /** REQ-039 (NW-52): the number belongs to a CLOSED account — nothing was
+   *  signed in; the person chooses recover / start fresh with the token. */
+  | { ok: true; recoverable: true; recoveryToken: string }
   | { ok: false; error: VerifyOtpError };
+
+export interface RecoveryResult {
+  ok: true;
+  sessionId: string;
+  userId: string;
+  isNewUser: boolean;
+  redirectTo: string;
+}
 
 export interface ResendOtpInput {
   phoneNumber: string;
@@ -54,8 +65,17 @@ export const verifyClient = {
   ): Promise<VerifyOtpResult> {
     try {
       const raw = await api.post<
-        { sessionId?: string; userId?: string; isNewUser?: boolean }
+        {
+          sessionId?: string;
+          userId?: string;
+          isNewUser?: boolean;
+          recoverable?: boolean;
+          recoveryToken?: string;
+        }
       >("/auth/verify-otp", input, opts);
+      if (raw.recoverable === true && typeof raw.recoveryToken === "string") {
+        return { ok: true, recoverable: true, recoveryToken: raw.recoveryToken };
+      }
       if (typeof raw.sessionId === "string" && typeof raw.userId === "string") {
         const isNewUser = raw.isNewUser === true;
         const redirectTo = isNewUser
@@ -79,6 +99,20 @@ export const verifyClient = {
   },
 
   /** POST /api/auth/send-otp — resend the OTP code. */
+  /** REQ-039: bring the closed account back exactly as it was. Lands where
+   *  a returning user lands. */
+  async recover(token: string, opts: ApiOptions = {}): Promise<RecoveryResult> {
+    const raw = await api.post<RecoveryResult>("/auth/recover", { token }, opts);
+    return { ...raw, redirectTo: "/dashboard?welcome=back" };
+  },
+
+  /** REQ-039: a brand-new account on the number; the old one keeps its data.
+   *  Lands where a brand-new user lands. */
+  async startFresh(token: string, opts: ApiOptions = {}): Promise<RecoveryResult> {
+    const raw = await api.post<RecoveryResult>("/auth/start-fresh", { token }, opts);
+    return { ...raw, redirectTo: "/assistant?onboard=1" };
+  },
+
   resendOtp(
     input: ResendOtpInput,
     opts: ApiOptions = {},

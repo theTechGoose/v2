@@ -43,15 +43,26 @@ export class QuoteStore {
     return quote;
   }
 
-  async get(id: string): Promise<Quote> {
+  /** REQ-039 (NW-52): a deleted quote reads as not-found unless the caller
+   *  asks for it (`includeDeleted`) — the row itself is never erased. */
+  async get(
+    id: string,
+    opts: { includeDeleted?: boolean } = {},
+  ): Promise<Quote> {
     const kv = await getKv();
     const r = await kv.get<Quote>([PREFIX, id]);
-    if (!r.value) throw new NotFoundError(PREFIX, id);
+    if (!r.value || (r.value.deletedAt && !opts.includeDeleted)) {
+      throw new NotFoundError(PREFIX, id);
+    }
     return r.value;
   }
 
-  async getOwned(id: string, userId: string): Promise<Quote> {
-    const q = await this.get(id);
+  async getOwned(
+    id: string,
+    userId: string,
+    opts: { includeDeleted?: boolean } = {},
+  ): Promise<Quote> {
+    const q = await this.get(id, opts);
     if (q.userId !== userId) throw new ForbiddenError(PREFIX, id);
     return q;
   }
@@ -61,7 +72,7 @@ export class QuoteStore {
     const out: Quote[] = [];
     for await (const e of kv.list<string>({ prefix: [INDEX_PREFIX, userId] })) {
       const r = await kv.get<Quote>([PREFIX, e.value]);
-      if (r.value) out.push(r.value);
+      if (r.value && !r.value.deletedAt) out.push(r.value);
     }
     return out;
   }
@@ -90,12 +101,12 @@ export class QuoteStore {
     return updated;
   }
 
+  /** REQ-039 (NW-52): "do not delete data, flag it" — soft delete. The
+   *  row and the owner index stay; reads and lists hide it. */
   async delete(id: string, userId: string): Promise<void> {
     const existing = await this.getOwned(id, userId);
+    const now = new Date().toISOString();
     const kv = await getKv();
-    await kv.atomic()
-      .delete([PREFIX, id])
-      .delete([INDEX_PREFIX, existing.userId, id])
-      .commit();
+    await kv.set([PREFIX, id], { ...existing, deletedAt: now, updatedAt: now });
   }
 }

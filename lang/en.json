@@ -1099,7 +1099,7 @@
   "date.weekday.tuesday": "Tuesday",
   "date.weekday.wednesday": "Wednesday",
   "deleteQuoteButton.ariaLabel": "Delete quote",
-  "deleteQuoteButton.confirm": "Delete this quote? This cannot be undone.",
+  "deleteQuoteButton.confirm": "Delete this quote? It is flagged as deleted — support can recover it.",
   "deleteQuoteButton.deleting": "Deleting…",
   "deleteQuoteButton.error": "Couldn't delete quote: {message}",
   "deleteQuoteButton.label": "Delete",

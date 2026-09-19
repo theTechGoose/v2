@@ -9,8 +9,11 @@ import {
   InvalidCodeError,
   RateLimitedError,
   VerifyOtp,
+  AccountClosedError,
 } from "@users/domain/coordinators/verify-otp/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
+import { AccountRecovery } from "@users/domain/coordinators/account-recovery/mod.ts";
+import { InvalidRecoveryTokenError } from "@users/domain/data/recovery-token-store/mod.ts";
 import { parseSendOtp, parseVerifyOtp } from "@users/dto/auth.ts";
 import { readSessionId } from "@users/domain/coordinators/require-user/mod.ts";
 import {
@@ -18,13 +21,75 @@ import {
   clearSessionCookie,
 } from "@users/domain/business/session-cookie/mod.ts";
 
+function readToken(body: unknown): string {
+  const t = (body as { token?: unknown } | null)?.token;
+  if (typeof t !== "string" || !t.trim()) throw new Error("token is required");
+  return t.trim();
+}
+
+/**
+ * REQ-039 (NW-52): the verified phone belongs to a closed account — no
+ * session, no new account; the client offers recover / start fresh. (A
+ * module function: Danet registers EVERY prototype method as a route, so
+ * controllers carry no helper methods.)
+ */
+function closedResponse(err: AccountClosedError) {
+  return { ok: true, recoverable: true, recoveryToken: err.recoveryToken };
+}
+
 @Controller("auth")
 export class AuthController {
   constructor(
     private sendOtp: SendOtp,
     private verifyOtp: VerifyOtp,
     private logout: Logout,
+    private recovery: AccountRecovery,
   ) {}
+
+  /** POST /auth/recover { token } — the closed account comes back as it was. */
+  @Post("recover")
+  async recover(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const token = readToken(body);
+    try {
+      const result = await this.recovery.recover(token);
+      ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
+      return {
+        ok: true,
+        sessionId: result.sessionId,
+        userId: result.userId,
+        isNewUser: false,
+        redirectTo: "/dashboard?welcome=back",
+      };
+    } catch (err) {
+      if (err instanceof InvalidRecoveryTokenError) {
+        return jsonResponse({ ok: false, error: "invalid_token" }, 401);
+      }
+      throw err;
+    }
+  }
+
+  /** POST /auth/start-fresh { token } — a new account on the number; the old
+   *  one keeps its data under an archived phone. */
+  @Post("start-fresh")
+  async startFresh(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const token = readToken(body);
+    try {
+      const result = await this.recovery.startFresh(token);
+      ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
+      return {
+        ok: true,
+        sessionId: result.sessionId,
+        userId: result.userId,
+        isNewUser: true,
+        redirectTo: "/welcome",
+      };
+    } catch (err) {
+      if (err instanceof InvalidRecoveryTokenError) {
+        return jsonResponse({ ok: false, error: "invalid_token" }, 401);
+      }
+      throw err;
+    }
+  }
 
   /**
    * POST /auth/send-otp
@@ -91,6 +156,7 @@ export class AuthController {
         redirectTo: result.isNewUser ? "/welcome" : "/dashboard?welcome=back",
       };
     } catch (err) {
+      if (err instanceof AccountClosedError) return closedResponse(err);
       const mapped = mapVerifyError(err);
       if (mapped) return jsonResponse({ ok: false, error: mapped.error }, mapped.status);
       throw err;
@@ -126,6 +192,9 @@ export class AuthController {
         isNewUser: result.isNewUser,
       };
     } catch (err) {
+      if (err instanceof AccountClosedError) {
+        return { recoverable: true, recoveryToken: err.recoveryToken };
+      }
       if (err instanceof InvalidCodeError) {
         return errorBody("invalid_code", 401);
       }

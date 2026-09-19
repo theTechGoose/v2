@@ -74,6 +74,28 @@ describe("assistant — I know the job, help me price it", () => {
 
     cy.contains(/who is this for/i, { timeout: 15_000 }).should("be.visible");
   });
+
+  // REQ-041 — NW-53f (p60): "Pricing: auto-focus the number field" — in the
+  // help-me-price flow too (it was deliberately off there).
+  it("REQ-041 NW-53f the money input is focused as soon as the price step opens", () => {
+    cy.get("textarea.composer__input").type(DETAILS);
+    cy.get("button.composer__send").click();
+    cy.get("[data-cy=confirm-details]", { timeout: 20_000 }).should("be.visible").click();
+    cy.get("[data-cy=pricing-option]", { timeout: 20_000 }).should("have.length", 3);
+    cy.focused().should("have.attr", "inputmode", "decimal");
+  });
+
+  // REQ-041 — NW-53b (p60): "If they are tapping options there should be no
+  // input field." The composer is ABSENT on the picker and price steps.
+  it("REQ-041 NW-53b the composer is absent on the confirm-details and price steps", () => {
+    cy.get("textarea.composer__input").type(DETAILS);
+    cy.get("button.composer__send").click();
+    cy.get("[data-cy=confirm-details]", { timeout: 20_000 }).should("be.visible");
+    cy.get("textarea.composer__input").should("not.exist");
+    cy.get("[data-cy=confirm-details]").click();
+    cy.get("[data-cy=pricing-option]", { timeout: 20_000 }).should("have.length", 3);
+    cy.get("textarea.composer__input").should("not.exist");
+  });
 });
 
 describe("assistant — Just give me a quick quote", () => {

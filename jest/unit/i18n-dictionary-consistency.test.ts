@@ -352,3 +352,12 @@ describe("REQ-035 NW-55 agreement presentation copy", () => {
     expect(es["asstChat.send.cancel"]).toBe("Cancelar");
   });
 });
+
+describe("REQ-041 NW-48 the customer SMS puts the link on its own line", () => {
+  // p45 template: "Your Quote + Agreement for [Job Name] is ready:" / "[LINK]" /
+  // "Please let me know…" — the link is its own line, not inline after "ready:".
+  it("REQ-041 paperworkSms.body.ready ends with a newline + {url} in both dictionaries", () => {
+    expect(en["paperworkSms.body.ready"]).toMatch(/:\n\{url\}$/);
+    expect(es["paperworkSms.body.ready"]).toMatch(/:\n\{url\}$/);
+  });
+});

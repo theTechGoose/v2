@@ -152,6 +152,10 @@ interface Strings {
   "verify.resend": string;
   "verify.resendIn": string;
   "verify.errInvalid": string;
+  "verify.recoverTitle": string;
+  "verify.recoverBody": string;
+  "verify.recoverAccount": string;
+  "verify.startFresh": string;
   "verify.errExpired": string;
   "verify.errRate": string;
   "welcome.back": string;
@@ -262,6 +266,10 @@ export const STRINGS: Record<Lang, Strings> = {
     "verify.resend": "Resend code",
     "verify.resendIn": "Resend in {n}s",
     "verify.errInvalid": "That code didn't match. Try again.",
+    "verify.recoverTitle": "This number belonged to a closed account.",
+    "verify.recoverBody": "Recover it with everything as you left it, or start fresh with a new account.",
+    "verify.recoverAccount": "Recover my account",
+    "verify.startFresh": "Start fresh",
     "verify.errExpired": "Code expired — request a new one.",
     "verify.errRate": "Too many tries. Wait a minute and try again.",
     "welcome.back": "Welcome back, {firstName}.",
@@ -360,6 +368,10 @@ export const STRINGS: Record<Lang, Strings> = {
     "verify.resend": "Reenviar código",
     "verify.resendIn": "Reenviar en {n}s",
     "verify.errInvalid": "Ese código no coincide. Intenta de nuevo.",
+    "verify.recoverTitle": "Este número pertenecía a una cuenta cerrada.",
+    "verify.recoverBody": "Recupérala tal como la dejaste, o empieza de cero con una cuenta nueva.",
+    "verify.recoverAccount": "Recuperar mi cuenta",
+    "verify.startFresh": "Empezar de cero",
     "verify.errExpired": "El código expiró. Pide uno nuevo.",
     "verify.errRate": "Demasiados intentos. Espera un minuto.",
     "welcome.back": "Bienvenido de nuevo, {firstName}.",
