@@ -213,3 +213,8 @@ _2026-09-19 — "Do not start these tasks until the answer is back." Each is one
 **Note (decision 33):** the plan sequences this after the client's answer on the plain-English section (rename vs delete); p82 is the later, explicit instruction ("→ Quick Summary"), so the rename ships now and a delete would be a small follow-up.
 **Tests:** unit `jest/unit/ux-page-copy.test.ts` ("REQ-036 …", pure `shared/quote-flow/agreement-title.ts`) · integration `n/a — PDF checked by the rendering probe below` · e2e `cypress/e2e/public-quote-signature.cy.ts` ("REQ-036 …" + the Quick Summary pin)
 **PDF probe (dev API, EN, customer Godzilla, job Concrete Patio):** the PDF hero reads "Godzilla's Concrete Patio Agreement" and the recital "Between HANS PEDERSEN ("Contractor") and Godzilla ("Client") for Concrete Patio".
+
+## REQ-037 — 7.9 NW-43b Completion text AND email after send/sign — the send dialog collects the missing contact
+**Source:** new-working-issues.md NW-43b (PDF p40), 2026-09-18
+**Requirement (client's words):** "After quotes and signed quotes, send a completion text and email." — when the chosen channel needs a contact the customer lacks (Text + Email with no email or no phone on file), the send dialog shows an inline "Add an email to also email it" / "Add a phone to also text it" field; filling it saves the contact to the customer and the send goes out on both channels (and every later alert — accepted, signed, receipts — has both channels to use).
+**Tests:** unit `n/a — island wiring over the existing customer PUT` · integration `n/a` · e2e `cypress/e2e/ux-send-moment.cy.ts` ("REQ-037 …")

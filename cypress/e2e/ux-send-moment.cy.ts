@@ -215,3 +215,40 @@ describe("REQ-035 NW-55 send dialog — how do you want to send, Keep / Cancel",
     });
   });
 });
+
+// ===========================================================================
+// REQ-037 — NW-43b (p40): "After quotes and signed quotes, send a completion
+// text and email." Channels used to depend on what the customer happened to
+// have on file. The send dialog now collects the missing contact inline
+// ("Add an email to also email it" / "Add a phone to also text it"), saves it
+// to the customer, and sends on both channels.
+// ===========================================================================
+describe("REQ-037 NW-43b both channels — the send dialog collects the missing contact", () => {
+  beforeEach(() => {
+    cy.viewport(1280, 800);
+    ux03LoginEs();
+  });
+
+  it("REQ-037 phone-only customer → choosing Text + Email offers an inline email field → Keep saves it and sends both", () => {
+    ux03DriveToPreview();
+    cy.get(".quote-review__send-main").should("be.visible").click();
+    cy.get("[data-cy=send-dialog]", { timeout: 10_000 }).should("be.visible");
+    cy.get("[data-cy=send-option-both]").click();
+    cy.get("[data-cy=send-add-email]")
+      .should("be.visible")
+      .and("contain.text", "Agrega un correo");
+    const email = `maria.both.${Date.now()}@blackhole.postmarkapp.com`;
+    cy.get("[data-cy=send-add-email] input").type(email);
+    cy.get("[data-cy=send-keep]").click();
+    cy.get("[data-cy=send-dialog]").should("not.exist");
+    // Both channels went: the divider names the email AND the text.
+    cy.get(".chat", { timeout: 25_000 }).should(($chat) => {
+      expect($chat.text(), "emailed and texted").to.match(/enviado por correo a .* y por mensaje de texto a|emailed to .* and texted to/i);
+    });
+    // The email is now on the customer record.
+    cy.request("/api/customers").its("body").should((rows: Array<{ name: string; email?: string }>) => {
+      const maria = rows.find((r) => r.name === "María Nguyen" && r.email === email);
+      expect(maria, "customer saved with the new email").to.exist;
+    });
+  });
+});

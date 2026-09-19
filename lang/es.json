@@ -380,6 +380,8 @@
   "asstChat.recovery.savedHint": "Guardado en {name} para la próxima vez.",
   "asstChat.recovery.saving": "Guardando…",
   "asstChat.searchNCustomers": "Buscar {n} clientes…",
+  "asstChat.send.addEmail": "Agrega un correo para también enviarlo por correo",
+  "asstChat.send.addPhone": "Agrega un teléfono para también enviarlo por texto",
   "asstChat.send.cancel": "Cancelar",
   "asstChat.send.howTitle": "¿Cómo quieres enviárselo al cliente?",
   "asstChat.send.keep": "Guardar",

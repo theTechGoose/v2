@@ -9104,3 +9104,13 @@ body {
   opacity: 0.6;
   cursor: default;
 }
+
+/* REQ-037 (NW-43b): inline "add the missing contact" field in the dialog. */
+.send-dialog__add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg, #1c2c30);
+}

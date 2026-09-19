@@ -753,6 +753,12 @@ export default function AsstChat({
   const [dialogChannel, setDialogChannel] = useState<"email" | "sms" | "both">(
     "both",
   );
+  /** REQ-037 (NW-43b): the contact the chosen channel still lacks, typed
+   *  inline in the dialog — saved to the customer on Keep, then both
+   *  channels go out. */
+  const [dialogEmail, setDialogEmail] = useState("");
+  const [dialogPhone, setDialogPhone] = useState("");
+  const [dialogErr, setDialogErr] = useState<string | undefined>(undefined);
   /** Transient "Link copied!" feedback for the send menu's copy-link action
    *  (roadmap: copy link alongside email / text / text+email). */
   const [linkCopied, setLinkCopied] = useState(false);
@@ -3064,6 +3070,48 @@ export default function AsstChat({
     } catch (err) {
       el.innerText = prev;
       setError(err instanceof Error ? err.message : "couldn't save edit");
+    }
+  }
+
+  /**
+   * REQ-037 (NW-43b): the send dialog's Keep. Saves any contact typed inline
+   * to the customer (so this send AND every later alert have both channels),
+   * refuses to send a channel the customer still can't receive, then sends
+   * on the chosen channel.
+   */
+  async function keepAndSend(
+    m: Parameters<typeof confirmSendQuote>[0],
+    previewLang: Lang,
+    totalCents: number,
+  ) {
+    const ch = dialogChannel;
+    const email = dialogEmail.trim();
+    const phone = dialogPhone.trim();
+    const needsEmail = ch !== "sms" && !customer?.email;
+    const needsPhone = ch !== "email" && !customer?.phoneNumber;
+    if ((needsEmail && !email) || (needsPhone && !phone)) {
+      setDialogErr(tFor(previewLang, "asstChat.customerStep.needContact"));
+      return;
+    }
+    if (customer?.id && (email || phone)) {
+      try {
+        const patch: Record<string, unknown> = {
+          ...(needsEmail && email ? { email } : {}),
+          ...(needsPhone && phone ? { phoneNumber: phone } : {}),
+        };
+        await clientsClient.update(customer.id, patch);
+        setCustomer((c) => c ? { ...c, ...patch } as typeof c : c);
+      } catch (err) {
+        setDialogErr(err instanceof Error ? err.message : "couldn't save");
+        return;
+      }
+    }
+    setSendChannel(ch);
+    setSendDialogOpen(false);
+    if (reviewDocType === "invoice") {
+      void confirmSendInvoiceSwap(ch, totalCents);
+    } else {
+      void confirmSendQuote(m, ch, previewLang);
     }
   }
 
@@ -6630,6 +6678,64 @@ export default function AsstChat({
                                               </button>
                                             ))}
                                           </div>
+                                          {/* REQ-037 (NW-43b): "both, always" —
+                                              collect what the chosen channel
+                                              still lacks, right here. */}
+                                          {(dialogChannel !== "sms") &&
+                                              !customer?.email
+                                            ? (
+                                              <label
+                                                class="send-dialog__add"
+                                                data-cy="send-add-email"
+                                              >
+                                                <span>
+                                                  {tFor(previewLang, "asstChat.send.addEmail")}
+                                                </span>
+                                                <input
+                                                  type="email"
+                                                  class="cust-pick__search"
+                                                  placeholder={tFor(
+                                                    previewLang,
+                                                    "asstChat.customerStep.emailPlaceholder",
+                                                  )}
+                                                  value={dialogEmail}
+                                                  onInput={(e) =>
+                                                    setDialogEmail(
+                                                      (e.currentTarget as HTMLInputElement).value,
+                                                    )}
+                                                />
+                                              </label>
+                                            )
+                                            : null}
+                                          {(dialogChannel !== "email") &&
+                                              !customer?.phoneNumber
+                                            ? (
+                                              <label
+                                                class="send-dialog__add"
+                                                data-cy="send-add-phone"
+                                              >
+                                                <span>
+                                                  {tFor(previewLang, "asstChat.send.addPhone")}
+                                                </span>
+                                                <input
+                                                  type="tel"
+                                                  class="cust-pick__search"
+                                                  placeholder={tFor(
+                                                    previewLang,
+                                                    "asstChat.customerStep.phonePlaceholder",
+                                                  )}
+                                                  value={formatPhoneInput(dialogPhone)}
+                                                  onInput={(e) =>
+                                                    setDialogPhone(
+                                                      (e.currentTarget as HTMLInputElement).value,
+                                                    )}
+                                                />
+                                              </label>
+                                            )
+                                            : null}
+                                          {dialogErr
+                                            ? <div class="cust-pick__err">{dialogErr}</div>
+                                            : null}
                                           <div class="send-dialog__actions">
                                             <button
                                               type="button"
@@ -6646,21 +6752,11 @@ export default function AsstChat({
                                               data-cy="send-keep"
                                               disabled={sending}
                                               onClick={() => {
-                                                const ch = dialogChannel;
-                                                setSendChannel(ch);
-                                                setSendDialogOpen(false);
-                                                if (reviewDocType === "invoice") {
-                                                  void confirmSendInvoiceSwap(
-                                                    ch,
-                                                    totalCentsForBreakdown,
-                                                  );
-                                                } else {
-                                                  void confirmSendQuote(
-                                                    m,
-                                                    ch,
-                                                    previewLang,
-                                                  );
-                                                }
+                                                void keepAndSend(
+                                                  m,
+                                                  previewLang,
+                                                  totalCentsForBreakdown,
+                                                );
                                               }}
                                             >
                                               {tFor(previewLang, "asstChat.send.keep")}
@@ -6675,6 +6771,9 @@ export default function AsstChat({
                                     class="quote-review__send-main"
                                     onClick={() => {
                                       setDialogChannel(sendChannel);
+                                      setDialogEmail("");
+                                      setDialogPhone("");
+                                      setDialogErr(undefined);
                                       setChannelMenuOpen(false);
                                       setSendDialogOpen(true);
                                     }}
