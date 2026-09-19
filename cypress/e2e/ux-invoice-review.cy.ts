@@ -153,6 +153,7 @@ describe("REQ-024 NW-13/18 a brand-new invoice runs the wizard and lands on the 
 
     // Send it (email) from the preview.
     cy.contains("button", /enviar la factura/i, { timeout: 10_000 }).click();
+    cy.get("[data-cy=send-keep]", { timeout: 10_000 }).click(); // REQ-035: Keep is the send
 
     const today = new Date().toISOString().slice(0, 10);
     cy.request("/api/invoices").its("body").then((rows: Array<{ id: string; quoteId?: string; dueDate?: string; createdAt?: string; lineItems?: unknown[] }>) => {

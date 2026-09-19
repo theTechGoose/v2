@@ -102,10 +102,17 @@ export class GenerateJobOptions {
       es: "neutral Latin-American Spanish",
     };
     const langList = langs.map((l) => `"${l}" (${langNames[l]})`).join(", ");
+    // REQ-028 (NW-05): one flat object per option keyed by language — the
+    // extra "byLang" nesting made gpt-4o-mini emit ONE option carrying three
+    // duplicate "byLang" keys (JSON.parse keeps the last → one card). The
+    // example spells out all three options; nothing is left to "...".
+    const optionShape = `{ ${
+      langs.map((l) =>
+        `"${l}": { "jobName": "...", "summary": "...", "bullets": ["...", "...", "..."] }`
+      ).join(", ")
+    } }`;
     const multiLangLine =
-      `\n\nOUTPUT STRUCTURE OVERRIDE: return JSON { "options": [ { "byLang": { ${
-        langs.map((l) => `"${l}": { "jobName": "...", "summary": "...", "bullets": ["...", "..."] }`).join(", ")
-      } } }, ... ] } — exactly these language keys: ${langList}. Within an option, the bullets in each language MUST be 1:1 translations of the same scope (same count and order). jobName/summary/bullets follow all the rules above, in each language.`;
+      `\n\nOUTPUT STRUCTURE OVERRIDE: return JSON { "options": [ ${optionShape}, ${optionShape}, ${optionShape} ] } — an ARRAY of exactly 3 option objects; each option object has exactly these language keys: ${langList}. Within an option, the bullets in each language MUST be 1:1 translations of the same scope (same count and order). jobName/summary/bullets follow all the rules above, in each language.`;
 
     let text: string;
     try {
@@ -128,7 +135,17 @@ export class GenerateJobOptions {
 
     const parsed = tryParseJson(text);
     const options = normalizeOptions(parsed?.options, langs, primary);
-    if (options.length > 0) return { options, langs, degraded: false };
+    if (options.length > 0 && options.length < 3) {
+      // The picker promises three versions (P-24); a short answer is worth
+      // a look in the logs even though it is usable.
+      console.warn(
+        `[generate-job-options] model returned ${options.length} option(s):`,
+        JSON.stringify(text.slice(0, 600)),
+      );
+    }
+    if (options.length > 0) {
+      return { options: padToThree(options, langs), langs, degraded: false };
+    }
     // REQ-026: a degraded answer must be diagnosable — say what came back.
     console.warn(
       "[generate-job-options] reply not usable, using honest fallback:",
@@ -138,20 +155,34 @@ export class GenerateJobOptions {
   }
 }
 
+/** A prompt-example placeholder echoed back ("...", "…", "<scope line>") —
+ *  never real scope. The dev stub echoes the whole prompt, and the
+ *  structure example inside it is valid JSON. */
+const PLACEHOLDER = /^(?:\.{3}|…|<[^>]*>)$/;
+
+function realText(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const s = v.trim();
+  return s && !PLACEHOLDER.test(s) ? s : undefined;
+}
+
 function normalizeOneLang(o: unknown, lang: Lang): JobOptionLang | null {
   const obj = o as { jobName?: unknown; summary?: unknown; bullets?: unknown };
   const bullets = Array.isArray(obj?.bullets)
     ? obj.bullets
-      .filter((b): b is string => typeof b === "string" && b.trim().length > 0)
-      .map((b) => b.trim().replace(/\s+/g, " ").replace(/[.;]+$/, ""))
+      .map((b) => realText(b))
+      .filter((b): b is string => !!b)
+      .map((b) => b.replace(/\s+/g, " ").replace(/[.;]+$/, ""))
       .slice(0, 4)
     : [];
   if (bullets.length === 0) return null;
-  const summary = typeof obj?.summary === "string" && obj.summary.trim()
-    ? clampSummary(obj.summary)
+  const summaryText = realText(obj?.summary);
+  const summary = summaryText
+    ? clampSummary(summaryText)
     : clampSummary(bullets[0]);
-  const jobName = typeof obj?.jobName === "string" && obj.jobName.trim()
-    ? clampJobName(obj.jobName, lang)
+  const jobNameText = realText(obj?.jobName);
+  const jobName = jobNameText
+    ? clampJobName(jobNameText, lang)
     : deriveJobName(summary, lang);
   return { jobName, summary, bullets };
 }
@@ -237,6 +268,45 @@ function deriveJobName(summary: string, lang: Lang): string {
 function titleCaseWord(w: string): string {
   if (!w) return w;
   return w[0].toUpperCase() + w.slice(1).toLowerCase();
+}
+
+/**
+ * REQ-028 (P-24): the picker promises three versions. A usable but short
+ * model answer (1–2 options) is padded with honest variants of the first
+ * option — "· Short version" (fewer bullets) and "· Wider scope" (+ jobsite
+ * cleanup) — exactly the way the heuristic fallback builds its three.
+ */
+function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
+  if (options.length >= 3) return options;
+  const primary = langs[0];
+  const base = options[0];
+  const variants: Array<"short" | "wider"> = ["short", "wider"];
+  const out = [...options];
+  const seen = new Set(out.map((o) => o.jobName.toLowerCase()));
+  for (const variant of variants) {
+    if (out.length >= 3) break;
+    const byLang: Record<string, JobOptionLang> = {};
+    for (const l of langs) {
+      const src = base.byLang[l] ?? base.byLang[primary];
+      const bullets = variant === "short"
+        ? src.bullets.slice(0, Math.max(1, src.bullets.length - 1))
+        : [...src.bullets.slice(0, 3), t(l, "generateJobOptions.jobsiteCleanup")]
+          .slice(0, 4);
+      byLang[l] = {
+        jobName: versionTitle(src.jobName, variant, l),
+        summary: src.summary,
+        bullets,
+      };
+    }
+    let name = byLang[primary].jobName;
+    if (seen.has(name.toLowerCase())) {
+      name = disambiguateTitle(name, seen, primary);
+      byLang[primary] = { ...byLang[primary], jobName: name };
+    }
+    seen.add(name.toLowerCase());
+    out.push({ id: `opt${out.length + 1}`, ...byLang[primary], byLang });
+  }
+  return out;
 }
 
 /**

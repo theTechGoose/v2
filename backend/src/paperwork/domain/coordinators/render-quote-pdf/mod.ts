@@ -416,16 +416,42 @@ export class RenderQuotePdf {
         TEAL,
       );
       y -= 12;
-      const visible = quote.terms.filter((term) => term.stepId !== "customer");
+      const termLabelKey: Record<string, string> = {
+        start_date: "renderQuotePdf.termLabel.startDate",
+        wraps: "renderQuotePdf.termLabel.duration",
+        payment_terms: "renderQuotePdf.termLabel.paymentTerms",
+        warranty: "renderQuotePdf.termLabel.warranty",
+      };
+      const cells = quote.terms
+        .filter((term) => term.stepId !== "customer")
+        .map((term) => {
+          const localized = localizeTermValue(term.value, lang);
+          return {
+            label: es && termLabelKey[term.stepId]
+              ? t(lang, termLabelKey[term.stepId])
+              : term.label.toUpperCase(),
+            value: term.stepId === "wraps"
+              ? t(lang, "renderQuotePdf.term.estimatedPrefix", {
+                value: localized,
+              })
+              : localized,
+          };
+        });
+      // REQ-035 (NW-55): the cancelation notice is a term row on every
+      // agreement, mirroring the web document.
+      cells.push({
+        label: t(lang, "renderQuotePdf.termLabel.cancellation").toUpperCase(),
+        value: t(lang, "renderQuotePdf.termValue.cancellation"),
+      });
       const colCount = 2;
       const gap = 10;
       const cellW = (W - 2 * M - (colCount - 1) * gap) / colCount;
       const rowH = 38;
-      for (let i = 0; i < visible.length; i += colCount) {
+      for (let i = 0; i < cells.length; i += colCount) {
         addPageIfNeeded(rowH + 6);
         for (let c = 0; c < colCount; c++) {
-          const term = visible[i + c];
-          if (!term) break;
+          const cell = cells[i + c];
+          if (!cell) break;
           const cx = M + c * (cellW + gap);
           page.drawRectangle({
             x: cx,
@@ -435,29 +461,14 @@ export class RenderQuotePdf {
             borderColor: LINE,
             borderWidth: 0.5,
           });
-          const termLabelKey: Record<string, string> = {
-            start_date: "renderQuotePdf.termLabel.startDate",
-            wraps: "renderQuotePdf.termLabel.duration",
-            payment_terms: "renderQuotePdf.termLabel.paymentTerms",
-            warranty: "renderQuotePdf.termLabel.warranty",
-          };
-          const labelText = es && termLabelKey[term.stepId]
-            ? t(lang, termLabelKey[term.stepId])
-            : term.label.toUpperCase();
-          page.drawText(labelText, {
+          page.drawText(cell.label, {
             x: cx + 10,
             y: y - 14,
             size: 7.5,
             font: bold,
             color: MUTED,
           });
-          const localized = localizeTermValue(term.value, lang);
-          const displayValue = term.stepId === "wraps"
-            ? t(lang, "renderQuotePdf.term.estimatedPrefix", {
-              value: localized,
-            })
-            : localized;
-          page.drawText(displayValue, {
+          page.drawText(cell.value, {
             x: cx + 10,
             y: y - 28,
             size: 10.5,

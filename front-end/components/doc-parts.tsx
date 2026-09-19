@@ -565,6 +565,8 @@ export function TermGrid(props: {
     estCompletion: string;
     termLabels: Record<string, string>;
   };
+  /** REQ-035 (NW-55): fixed rows every agreement states (Cancelation). */
+  extraRows?: Array<{ k: string; v: string }>;
 }) {
   // Audit2 #24 — the agreement printed TWO contradictory start rows:
   // "INICIO / Por agendar" (this fallback) directly above "FECHA DE INICIO /
@@ -611,6 +613,9 @@ export function TermGrid(props: {
             v={expandTermValue(term, props.contractorState, props.lang)}
           />
         ))}
+      {(props.extraRows ?? []).map((row) => (
+        <KV key={row.k} k={row.k} v={row.v} />
+      ))}
     </div>
   );
 }

@@ -138,7 +138,11 @@ function cstr(lang: Lang) {
     allIn: tFor(lang, "quoteDoc.allIn"),
     paymentSchedule: tFor(lang, "quoteDoc.paymentSchedule"),
     // NW-54 (REQ-014): the clause list is "Terms and Conditions" on web + PDF.
-    terms: tFor(lang, "quoteDoc.termsAndConditions"),
+    // REQ-035 (NW-55): the grid section is "Terms"; the 14 notices sit
+    // collapsed under a "Terms and Conditions" summary (NW-54's name).
+    terms: tFor(lang, "quoteDoc.terms"),
+    termsAndConditions: tFor(lang, "quoteDoc.termsAndConditions"),
+    cancellationValue: tFor(lang, "quoteDoc.termValue.cancellation"),
     start: tFor(lang, "quoteDoc.start"),
     startTbd: tFor(lang, "quoteDoc.startTbd"),
     estCompletion: tFor(lang, "quoteDoc.estCompletion"),
@@ -175,6 +179,7 @@ function cstr(lang: Lang) {
       wraps: tFor(lang, "quoteDoc.termLabel.wraps"),
       payment_terms: tFor(lang, "quoteDoc.termLabel.paymentTerms"),
       warranty: tFor(lang, "quoteDoc.termLabel.warranty"),
+      cancellation: tFor(lang, "quoteDoc.termLabel.cancellation"),
     } as Record<string, string>,
     clauses: clauseKeys.map((k) =>
       [
@@ -471,17 +476,33 @@ export function QuoteDoc(
                     estCompletion: t.estCompletion,
                     termLabels: t.termLabels,
                   }}
+                  // REQ-035 (NW-55): every agreement states the cancelation
+                  // notice as a term row, not only inside clause 10.
+                  extraRows={[{
+                    k: t.termLabels.cancellation,
+                    v: t.cancellationValue,
+                  }]}
                 />
                 <div style={`margin-top:22px;height:1px;background:${LINE}`} />
-                <ol
-                  style={`margin:22px 0 0;padding-left:20px;color:${INK};font-size:14px;line-height:1.65`}
-                >
-                  {t.clauses.map(([title, body]) => (
-                    <li key={title}>
-                      <strong>{title}.</strong> {body}
-                    </li>
-                  ))}
-                </ol>
+                {/* REQ-035 (NW-55): the 14 notices are an expandable
+                    "Terms and Conditions" at the bottom — collapsed on load,
+                    one tap to read them all. The PDF stays flat. */}
+                <details class="ctr__terms-details" data-cy="terms-details">
+                  <summary
+                    style={`margin-top:18px;cursor:pointer;font-weight:800;font-size:14px;color:${INK}`}
+                  >
+                    {t.termsAndConditions}
+                  </summary>
+                  <ol
+                    style={`margin:16px 0 0;padding-left:20px;color:${INK};font-size:14px;line-height:1.65`}
+                  >
+                    {t.clauses.map(([title, body]) => (
+                      <li key={title}>
+                        <strong>{title}.</strong> {body}
+                      </li>
+                    ))}
+                  </ol>
+                </details>
               </section>
             );
           })()}

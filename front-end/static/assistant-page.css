@@ -9022,3 +9022,85 @@ body {
   padding: 14px 8px 12px;
   border-bottom: none;
 }
+
+/* REQ-035 (NW-55): "How do you want to send to customer?" dialog. */
+.send-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(20, 44, 48, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.send-dialog {
+  width: min(420px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px 20px 16px;
+  box-shadow: 0 24px 60px -18px rgba(20, 72, 82, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+.send-dialog__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--brand-teal, #144852);
+}
+.send-dialog__options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.send-dialog__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid rgba(20, 72, 82, 0.15);
+  border-radius: 10px;
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--fg, #1c2c30);
+  cursor: pointer;
+  text-align: left;
+}
+.send-dialog__option.is-current {
+  border-color: var(--brand-green, #519843);
+  background: var(--green-50, #eef6ea);
+}
+.send-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.send-dialog__cancel,
+.send-dialog__keep {
+  padding: 10px 18px;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+}
+.send-dialog__cancel {
+  border: 1.5px solid rgba(20, 72, 82, 0.18);
+  background: #fff;
+  color: var(--fg, #1c2c30);
+}
+.send-dialog__keep {
+  border: 0;
+  background: var(--brand-green, #519843);
+  color: #fff;
+}
+.send-dialog__keep:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

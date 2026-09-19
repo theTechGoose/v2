@@ -98,6 +98,28 @@ describe("public quote — agreement anatomy + signature ceremony", () => {
     cy.contains("50 / 50").should("exist");
   });
 
+  // REQ-035 — NW-55 (p63): "At the bottom, an expandable 'Terms &
+  // Conditions' containing all the required notices" and a "Cancelation
+  // (either side can cancel with 7-day notice; work completed will be paid
+  // for)" row. The 14 clauses were an always-open list; no Cancelation row.
+  it("REQ-035 NW-55 the Terms and Conditions are collapsed behind a summary and open to the 14 clauses", () => {
+    cy.get("details[data-cy=terms-details]", { timeout: 10_000 })
+      .should("exist")
+      .and("not.have.attr", "open");
+    cy.get("details[data-cy=terms-details] > summary")
+      .should("contain.text", "Terms and Conditions")
+      .click();
+    cy.get("details[data-cy=terms-details]").should("have.attr", "open");
+    cy.get("details[data-cy=terms-details] ol > li").should("have.length", 14);
+    cy.get("details[data-cy=terms-details]").should("contain.text", "Work completed before cancelation will be paid for.");
+  });
+
+  it("REQ-035 NW-55 the term grid carries a Cancelation row with the 7-day notice", () => {
+    cy.get(".ctr__terms-grid", { timeout: 10_000 })
+      .should("contain.text", "Cancelation")
+      .and("contain.text", "7 days");
+  });
+
   it("states 'By signing below, <client> agrees to everything above.' (p14)", () => {
     cy.contains(/by signing below,\s*green goblin agrees to everything above\./i)
       .should("be.visible");
@@ -249,6 +271,8 @@ describe("REQ-014 NW-54 the public quote heads its clauses 'Terms and Conditions
 
   it("REQ-015 clause 1 carries the conflict-of-law tail and clause 2 is 'Scope of Work' (p80, p83)", () => {
     cy.contains("Terms and Conditions", { timeout: 20_000 }).should("be.visible");
+    // REQ-035: the notices sit collapsed under the summary — open them.
+    cy.get("details[data-cy=terms-details] > summary").click();
     cy.contains("without regard to conflict of law rules").should("be.visible");
     cy.contains("ol li", "Scope of Work").should("be.visible");
     cy.contains("ol li", "Job Details").should("not.exist");

@@ -329,3 +329,26 @@ describe("REQ-028 NW-05 the prompts stop licensing the echo", () => {
     expect(es["prompts.polishJobDetails.system"]).toBe(p);
   });
 });
+
+describe("REQ-035 NW-55 agreement presentation copy", () => {
+  // p63: "Cancelation (either side can cancel with 7-day notice; work
+  // completed will be paid for)" — the clause said only the first half.
+  it("REQ-035 the termination clause ends with the paid-for-work sentence — web and PDF twins, both dictionaries", () => {
+    expect(en["quoteDoc.clause.termination.body"]).toMatch(/Work completed before cancelation will be paid for\.$/);
+    expect(es["quoteDoc.clause.termination.body"]).toMatch(/El trabajo realizado antes de la cancelación se pagará\.$/);
+    expect(en["renderQuotePdf.clause.termination.body"]).toMatch(/Work completed before cancelation will be paid for\.$/);
+    expect(es["renderQuotePdf.clause.termination.body"]).toMatch(/El trabajo realizado antes de la cancelación se pagará\.$/);
+  });
+  it("REQ-035 the Cancelation term row and the send dialog copy exist in both dictionaries", () => {
+    expect(en["quoteDoc.termLabel.cancellation"]).toBe("Cancelation");
+    expect(es["quoteDoc.termLabel.cancellation"]).toBe("Cancelación");
+    expect(en["quoteDoc.termValue.cancellation"]).toBe("7 days' notice");
+    expect(es["quoteDoc.termValue.cancellation"]).toBe("Aviso de 7 días");
+    expect(en["asstChat.send.howTitle"]).toBe("How do you want to send to customer?");
+    expect(es["asstChat.send.howTitle"]).toBe("¿Cómo quieres enviárselo al cliente?");
+    expect(en["asstChat.send.keep"]).toBe("Keep");
+    expect(es["asstChat.send.keep"]).toBe("Guardar");
+    expect(en["asstChat.send.cancel"]).toBe("Cancel");
+    expect(es["asstChat.send.cancel"]).toBe("Cancelar");
+  });
+});

@@ -86,11 +86,30 @@ Deno.test("REQ-026 NW-05 (b) a valid model reply passes through, degraded false"
   const res = await coord.run({ userId: "u1", raw: RAW, langs: ["en"] });
   assertEquals(seenFormat, "json");
   assertEquals(res.degraded, false);
-  assertEquals(res.options.length, 2);
+  // Two usable options pass through; the third is an honest variant of the
+  // first (REQ-028 amendment — the picker promises three versions).
+  assertEquals(res.options.length, 3);
   assertEquals(res.options[0].bullets, [
     "Remove the old toilet",
     "Install a new toilet",
   ]);
+  assertEquals(res.options[1].jobName, "Toilet Swap");
+  assert(res.options[2].jobName.startsWith("Toilet Replacement · "), res.options[2].jobName);
+});
+
+Deno.test("REQ-028 NW-05 a reply that echoes the prompt's placeholders is not usable → honest fallback", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [
+        { en: { jobName: "...", summary: "...", bullets: ["...", "...", "..."] } },
+        { en: { jobName: "<3 words>", summary: "…", bullets: ["<scope line>"] } },
+      ],
+    }),
+  }));
+  const res = await coord.run({ userId: "u1", raw: RAW, langs: ["en"] });
+  assertEquals(res.degraded, true);
+  assertEquals(res.options[0].bullets, ["Replace a toile"]);
 });
 
 Deno.test("REQ-026 NW-05 (c) the default '(stub) …' echo takes the same honest fallback", async () => {
@@ -110,4 +129,38 @@ Deno.test("REQ-026 NW-05 nothing scope-like ('ok') → the localized 'New job' b
   const res = await coord.run({ userId: "u1", raw: "ok", langs: ["es"] });
   assertEquals(res.degraded, true);
   assertEquals(res.options[0].byLang.es.bullets, ["Nuevo trabajo"]);
+});
+
+// REQ-028 amendment (NW-05 / P-24): the picker promises three versions.
+// Live: gpt-4o-mini answered one option object carrying three duplicate
+// "byLang" keys (JSON.parse keeps the last) → one card. A short but usable
+// answer is padded to three distinct variants of the first option.
+Deno.test("REQ-028 NW-05 a usable one-option reply is padded to three distinct versions", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [{
+        es: {
+          jobName: "Reparación de Cerca",
+          summary: "Reparar la cerca del patio",
+          bullets: ["Reemplazar tres postes", "Ajustar la estructura", "Pintar la madera"],
+        },
+        en: {
+          jobName: "Fence Repair",
+          summary: "Repair the backyard fence",
+          bullets: ["Replace three posts", "Adjust the structure", "Paint the wood"],
+        },
+      }],
+    }),
+  }));
+  const res = await coord.run({ userId: "u1", raw: "Reparar la cerca", langs: ["es", "en"] });
+  assertEquals(res.degraded, false);
+  assertEquals(res.options.length, 3);
+  const names = res.options.map((o) => o.jobName);
+  assertEquals(new Set(names).size, 3, `distinct titles: ${names}`);
+  assertEquals(res.options[0].bullets, ["Reemplazar tres postes", "Ajustar la estructura", "Pintar la madera"]);
+  assertEquals(res.options[1].bullets.length, 2);
+  assertEquals(res.options[2].bullets.length, 4);
+  assertEquals(res.options[2].byLang.en.bullets[3], "Jobsite cleanup");
+  assertEquals(res.options.map((o) => o.id), ["opt1", "opt2", "opt3"]);
 });

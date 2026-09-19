@@ -363,6 +363,7 @@ describe("P-21 send moment keeps one term, no shouting, full email", () => {
 
     // Send it.
     cy.get(".quote-review__send-main").should("be.visible").click();
+    cy.get("[data-cy=send-keep]").click(); // REQ-035: Keep is the send
 
     // RED today: confirmation reads "Contrato enviado para firma".
     cy.get(".chat", { timeout: 20_000 })

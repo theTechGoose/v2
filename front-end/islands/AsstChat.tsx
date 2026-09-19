@@ -746,6 +746,13 @@ export default function AsstChat({
     "both",
   );
   const [channelMenuOpen, setChannelMenuOpen] = useState(false);
+  /** REQ-035 (NW-55): "Send to client" opens "How do you want to send to
+   *  customer?" — Text / Email / Text + Email with Keep / Cancel. The draft
+   *  choice lives here until Keep commits it (and sends). */
+  const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [dialogChannel, setDialogChannel] = useState<"email" | "sms" | "both">(
+    "both",
+  );
   /** Transient "Link copied!" feedback for the send menu's copy-link action
    *  (roadmap: copy link alongside email / text / text+email). */
   const [linkCopied, setLinkCopied] = useState(false);
@@ -6558,20 +6565,119 @@ export default function AsstChat({
                               )
                               : (
                                 <div class="quote-review__send-split">
+                                  {/* REQ-035 (NW-55): Send asks HOW first —
+                                      the dialog's Keep is the actual send. */}
+                                  {sendDialogOpen
+                                    ? (
+                                      <div
+                                        class="send-dialog__backdrop"
+                                        onClick={() => setSendDialogOpen(false)}
+                                      >
+                                        <div
+                                          class="send-dialog"
+                                          role="dialog"
+                                          aria-modal="true"
+                                          aria-labelledby="send-dialog-title"
+                                          data-cy="send-dialog"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          <h4
+                                            id="send-dialog-title"
+                                            class="send-dialog__title"
+                                          >
+                                            {tFor(
+                                              previewLang,
+                                              "asstChat.send.howTitle",
+                                            )}
+                                          </h4>
+                                          <div
+                                            class="send-dialog__options"
+                                            role="radiogroup"
+                                          >
+                                            {([
+                                              ["both", "asstChat.preview.menuBoth", ICN.send],
+                                              ["sms", "asstChat.preview.menuSms", ICN.phone],
+                                              ["email", "asstChat.preview.menuEmail", ICN.mail],
+                                            ] as const).map(([ch, key, icon]) => (
+                                              <button
+                                                key={ch}
+                                                type="button"
+                                                role="radio"
+                                                aria-checked={dialogChannel === ch
+                                                  ? "true"
+                                                  : "false"}
+                                                data-cy={`send-option-${ch}`}
+                                                class={`send-dialog__option${
+                                                  dialogChannel === ch
+                                                    ? " is-current"
+                                                    : ""
+                                                }`}
+                                                onClick={() =>
+                                                  setDialogChannel(ch)}
+                                              >
+                                                <I d={icon} size={13} sw={2.4} />
+                                                <span>{tFor(previewLang, key)}</span>
+                                                {ch === "both"
+                                                  ? (
+                                                    <span class="quote-review__send-menu-tag">
+                                                      {tFor(
+                                                        previewLang,
+                                                        "asstChat.preview.recommended",
+                                                      )}
+                                                    </span>
+                                                  )
+                                                  : null}
+                                              </button>
+                                            ))}
+                                          </div>
+                                          <div class="send-dialog__actions">
+                                            <button
+                                              type="button"
+                                              class="send-dialog__cancel"
+                                              data-cy="send-cancel"
+                                              onClick={() =>
+                                                setSendDialogOpen(false)}
+                                            >
+                                              {tFor(previewLang, "asstChat.send.cancel")}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              class="send-dialog__keep"
+                                              data-cy="send-keep"
+                                              disabled={sending}
+                                              onClick={() => {
+                                                const ch = dialogChannel;
+                                                setSendChannel(ch);
+                                                setSendDialogOpen(false);
+                                                if (reviewDocType === "invoice") {
+                                                  void confirmSendInvoiceSwap(
+                                                    ch,
+                                                    totalCentsForBreakdown,
+                                                  );
+                                                } else {
+                                                  void confirmSendQuote(
+                                                    m,
+                                                    ch,
+                                                    previewLang,
+                                                  );
+                                                }
+                                              }}
+                                            >
+                                              {tFor(previewLang, "asstChat.send.keep")}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )
+                                    : null}
                                   <button
                                     type="button"
                                     class="quote-review__send-main"
-                                    onClick={() =>
-                                      reviewDocType === "invoice"
-                                        ? confirmSendInvoiceSwap(
-                                          sendChannel,
-                                          totalCentsForBreakdown,
-                                        )
-                                        : confirmSendQuote(
-                                          m,
-                                          sendChannel,
-                                          previewLang,
-                                        )}
+                                    onClick={() => {
+                                      setDialogChannel(sendChannel);
+                                      setChannelMenuOpen(false);
+                                      setSendDialogOpen(true);
+                                    }}
                                     // UX-02: an accepted deal offers no live
                                     // re-send of the same agreement.
                                     disabled={sending ||
