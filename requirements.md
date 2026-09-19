@@ -92,3 +92,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-27 (PDF p18) + NW-32 (PDF p29), 2026-09-18
 **Requirement (client's words):** "How do you mark an invoice paid? We are not taking payments, so the client has to tell us payment has been received." / "If the Dragon marks an invoice as paid it should show up here. This is how payments are recorded." — an Out-for-payment / Overdue / Awaiting invoice offers "Payment received" → pick how they paid (all nine methods), amount (prefilled), date, optional reference → the invoice lands in Paid and the payment appears on /payments.
 **Tests:** unit `n/a — UI wiring over an existing backend contract` · integration `jest/integration/payment-received.int.test.ts` (backend contract pin — green on arrival) · e2e `cypress/e2e/invoice-detail-panel.cy.ts` ("REQ-018 NW-27 …")
+
+## REQ-019 — 3.2 NW-33 "Record a payment" and "Export" on /payments do real things
+**Source:** new-working-issues.md NW-33 (PDF p29), 2026-09-18
+**Requirement (client's words):** "'Record a payment' takes you to the quote/invoice chat. What is that button for?" — on /payments, "Record a payment" opens an in-page picker (unpaid invoice → how they paid → amount → date) that records the payment without leaving the page, and "Export this month" downloads this month's payments as a CSV.
+**Tests:** unit `n/a — page wiring` · integration `jest/integration/invoice-export-month.int.test.ts` (month filter) · e2e `cypress/e2e/payments-record.cy.ts`

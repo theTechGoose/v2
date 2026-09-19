@@ -244,6 +244,81 @@ export class InvoiceController {
     return list.map((i) => project(i, now));
   }
 
+  /** Tax-time CSV export. Streams CSV bytes for the given year — and, with
+   *  ?month=1..12 (REQ-019 / NW-33 "Export this month"), only the invoices
+   *  paid in that month. Declared BEFORE the `:id` route: Danet matches in
+   *  declaration order and `:id` used to swallow "export.csv" as an invoice
+   *  id (404). */
+  @Get("export.csv")
+  async exportCsv(
+    @Context() ctx: ExecutionContext,
+    @Query("year") yearQ?: string,
+    @Query("month") monthQ?: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const year = yearQ ? Number(yearQ) : new Date().getUTCFullYear();
+    const month = monthQ ? Number(monthQ) : undefined;
+    if (month !== undefined && !(Number.isInteger(month) && month >= 1 && month <= 12)) {
+      throw new Error("month must be 1..12");
+    }
+    const all = await this.store.listByUser(user.id);
+    const paid = all.filter((i) => {
+      if (i.status !== "paid" || !i.paidAt) return false;
+      const d = new Date(i.paidAt);
+      if (d.getUTCFullYear() !== year) return false;
+      return month === undefined || d.getUTCMonth() + 1 === month;
+    });
+    // Hydrate customer + job context for the export rows. Best-effort.
+    const customerCache = new Map<string, string>();
+    const jobNameCache = new Map<string, string>();
+    const rows: string[][] = [[
+      "Date",
+      "Customer",
+      "Job",
+      "Amount",
+      "Method",
+      "Reference",
+    ]];
+    for (const inv of paid) {
+      const customerName = await resolveName(
+        this.customers,
+        user.id,
+        inv.customerId,
+        customerCache,
+      );
+      const jobName = await resolveJobName(
+        this.quotes,
+        user.id,
+        inv.quoteId,
+        jobNameCache,
+      );
+      // Payment intent at the moment-of-paid carries the method/reference.
+      // After confirm clears the intent, we lose this — for v1 we mirror
+      // it into the row at confirm-time (already happens via the Payment
+      // entity, but listing payments per invoice would require a join we
+      // skip here; fall back to the intent if still present).
+      const method = inv.paymentIntent?.method ?? "—";
+      const reference = inv.paymentIntent?.reference ?? "";
+      rows.push([
+        inv.paidAt!.slice(0, 10),
+        customerName ?? "—",
+        jobName ?? "—",
+        ((inv.amount ?? 0) / 100).toFixed(2),
+        method,
+        reference,
+      ]);
+    }
+    const csv = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
+    return new Response(csv, {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="invoices-${year}${
+          month !== undefined ? `-${String(month).padStart(2, "0")}` : ""
+        }.csv"`,
+      },
+    });
+  }
+
   @Get(":id")
   async get(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
@@ -307,69 +382,6 @@ export class InvoiceController {
   async forecastThisWeek(@Context() ctx: ExecutionContext) {
     const user = await requireUser(ctx, this.sessions, this.users);
     return ctx.json(await this.forecast.run(user.id, new Date()));
-  }
-
-  /** Tax-time CSV export. Streams CSV bytes for the given year. */
-  @Get("export.csv")
-  async exportCsv(
-    @Context() ctx: ExecutionContext,
-    @Query("year") yearQ?: string,
-  ) {
-    const user = await requireUser(ctx, this.sessions, this.users);
-    const year = yearQ ? Number(yearQ) : new Date().getUTCFullYear();
-    const all = await this.store.listByUser(user.id);
-    const paid = all.filter((i) => {
-      if (i.status !== "paid" || !i.paidAt) return false;
-      const d = new Date(i.paidAt);
-      return d.getUTCFullYear() === year;
-    });
-    // Hydrate customer + job context for the export rows. Best-effort.
-    const customerCache = new Map<string, string>();
-    const jobNameCache = new Map<string, string>();
-    const rows: string[][] = [[
-      "Date",
-      "Customer",
-      "Job",
-      "Amount",
-      "Method",
-      "Reference",
-    ]];
-    for (const inv of paid) {
-      const customerName = await resolveName(
-        this.customers,
-        user.id,
-        inv.customerId,
-        customerCache,
-      );
-      const jobName = await resolveJobName(
-        this.quotes,
-        user.id,
-        inv.quoteId,
-        jobNameCache,
-      );
-      // Payment intent at the moment-of-paid carries the method/reference.
-      // After confirm clears the intent, we lose this — for v1 we mirror
-      // it into the row at confirm-time (already happens via the Payment
-      // entity, but listing payments per invoice would require a join we
-      // skip here; fall back to the intent if still present).
-      const method = inv.paymentIntent?.method ?? "—";
-      const reference = inv.paymentIntent?.reference ?? "";
-      rows.push([
-        inv.paidAt!.slice(0, 10),
-        customerName ?? "—",
-        jobName ?? "—",
-        ((inv.amount ?? 0) / 100).toFixed(2),
-        method,
-        reference,
-      ]);
-    }
-    const csv = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
-    return new Response(csv, {
-      headers: {
-        "content-type": "text/csv; charset=utf-8",
-        "content-disposition": `attachment; filename="invoices-${year}.csv"`,
-      },
-    });
   }
 
   /** Voice-driven payment recording: contractor's transcript → matched
