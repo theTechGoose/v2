@@ -48,6 +48,23 @@ const QUOTE_SIGNAL_RE =
  * Words that look name-shaped (capitalised, single token) but obviously
  * aren't names. The extractor would otherwise greedily lock these in.
  */
+/**
+ * REQ-008 (NW-47): first tokens that mark a SENTENCE (pronoun / verb /
+ * article), never a name. Checked on the name part regardless of length, so
+ * the four starter-chip strings ("I know the job, …", "Job done, …",
+ * "Sé mi precio, …", "Trabajo terminado, …") can never be locked in as the
+ * contractor's identity.
+ */
+const FIRST_WORD_STOP = new Set([
+  // en
+  "i", "we", "you", "it", "my", "our", "the", "this", "that", "just", "job",
+  "need", "want", "know", "have", "help", "give", "please", "can", "could",
+  "make", "write", "send",
+  // es
+  "yo", "necesito", "quiero", "tengo", "dame", "trabajo", "sé", "se", "solo",
+  "sólo", "conozco", "hazme", "quiero", "ayúdame", "mi", "el", "la", "un", "una",
+]);
+
 const STOP_WORDS = new Set([
   "hey",
   "hi",
@@ -107,6 +124,33 @@ export function isSkipReply(text: string): boolean {
  */
 const TRADE_RE =
   /\b(?:fence|deck|roof(?:ing)?|gutter|paint(?:ing)?|epoxy|floor(?:ing)?|garage|kitchen|bath(?:room)?|patio|driveway|tile|plumb(?:ing)?|electric(?:al|ian)?|hvac|window|door|siding|drywall|insulat(?:e|ion)|landscap(?:e|ing)|concrete|carpentr?y|repair|install(?:ation)?|remodel|renovat(?:e|ion)|backsplash|shingle|stucco|trim)\b/i;
+/** The four starter chips on the assistant's empty state, in both UI
+ *  languages (asstChat.prompt.*). Typed or pasted as a first turn they are a
+ *  flow choice, never an onboarding "Name, Business" reply (REQ-008 / NW-47). */
+const STARTER_CHIP_KEYS = [
+  "asstChat.prompt.helpPrice",
+  "asstChat.prompt.invoiceDone",
+  "asstChat.prompt.knownPrice",
+  "asstChat.prompt.quickQuote",
+] as const;
+
+function normalizeChipText(text: string): string {
+  return text.toLowerCase().replace(/[.!?¡¿,;:]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+const STARTER_CHIP_TEXTS: ReadonlySet<string> = new Set(
+  (["en", "es"] as Lang[]).flatMap((l) =>
+    STARTER_CHIP_KEYS.map((k) => normalizeChipText(t(l, k)))
+  ).filter((v) => v.length > 0),
+);
+
+/** True when `text` is one of the starter-chip sentences (EN or ES),
+ *  ignoring case and punctuation. */
+export function isStarterChipText(text: string): boolean {
+  if (!text) return false;
+  return STARTER_CHIP_TEXTS.has(normalizeChipText(text));
+}
+
 export function looksLikeJobRequest(text: string): boolean {
   if (!text) return false;
   if (QUOTE_SIGNAL_RE.test(text)) return true;
@@ -163,6 +207,11 @@ export function extractNameAndBusiness(
   if (nameWords.length === 0 || nameWords.length > 4) return undefined;
   if (/\d/.test(namePart)) return undefined;
   if (!/^[A-Za-z]/.test(nameWords[0])) return undefined;
+  // REQ-008 (NW-47): a sentence that OPENS with a pronoun/verb is a request,
+  // not a name — "I know the job, help me price it" used to become name
+  // "I know the job" + business "help me price it" (the p44 screenshot's
+  // "this is I from help me price it"). Names never start with these.
+  if (FIRST_WORD_STOP.has(nameWords[0].toLowerCase())) return undefined;
   // Single-token replies that match a stoplist word ("Hey", "ok",
   // "thanks") aren't names — bail. Multi-token names are fine.
   if (nameWords.length === 1 && STOP_WORDS.has(nameWords[0].toLowerCase())) {

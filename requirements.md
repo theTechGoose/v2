@@ -36,3 +36,8 @@ Append-only. One entry per requirement; ids come from `~/.claude/tools/req-next`
 **Source:** new-working-issues.md NW-06 (PDF p5), 2026-09-18
 **Requirement (client's words):** "Make sure the 'From' block includes email and website when the Dragon has provided them. (Screenshot shows only name and phone.)" — a conversation started at the bare `/assistant` route shows the From block (business, name, phone, email) on the review card. Website is its own task (7.10).
 **Tests:** unit `n/a — SSR prop plumbing` · integration `jest/integration/assistant-from-prop.int.test.ts` · e2e `cypress/e2e/ux-doc-preview.cy.ts` ("REQ-007 NW-06 …", live-LLM chat path)
+
+## REQ-008 — 1.7 NW-47 The starter chip text is never captured as the contractor's name
+**Source:** new-working-issues.md NW-47 (PDF p44), 2026-09-18
+**Requirement (client's words):** (Screenshot shows the contractor name rendered as "I" / "I know the job" / "I from help me price it." — the flow label is being used as the sender name.) — emails/SMS never say "this is I from help me price it"; a first-turn message that reads as a job request / starter chip is never parsed as name + business.
+**Tests:** unit (Deno) `backend/src/agents/domain/business/onboarding/test.ts` · integration (Deno) `backend/src/agents/domain/coordinators/handle-chat-message/int.test.ts` ("REQ-008 …") · e2e `n/a — backend-only logic; the outbound name gate is pinned by jest/unit/ux-outbound-gate.test.ts`
