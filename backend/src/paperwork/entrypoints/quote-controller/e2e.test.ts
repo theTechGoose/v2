@@ -71,10 +71,12 @@ Deno.test("quote e2e: GET /quotes?status=sent filters", async () => {
     const b = await fetch(`http://localhost:${PORT}/quotes`, {
       method: "POST", headers: auth, body: JSON.stringify({ summary: "B", lineItems: [], status: "sent" }),
     }).then((r) => r.json());
-    // Stamp sentAt so the derivation lands B in stage="sent" — the new
-    // ?status= param filters on the derived stage now.
+    // REQ-003 (NW-10): a quote is BORN a draft — the status:"sent" on the
+    // create body above is ignored. Flip the lifecycle the way the send
+    // coordinators do (status + sentAt) so the derivation lands B in
+    // stage="sent" — the ?status= param filters on the derived stage.
     await drain(await fetch(`http://localhost:${PORT}/quotes/${b.id}`, {
-      method: "PUT", headers: auth, body: JSON.stringify({ sentAt: new Date().toISOString() }),
+      method: "PUT", headers: auth, body: JSON.stringify({ status: "sent", sentAt: new Date().toISOString() }),
     }));
     const sent = await fetch(`http://localhost:${PORT}/quotes?status=sent`, {
       headers: { "x-session-id": sid },
