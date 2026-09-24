@@ -327,7 +327,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
           "Antes de iniciar un arbitraje, la parte que plantee una disputa debe dar aviso por escrito describiendo la naturaleza de la disputa y la resolución solicitada. Las partes harán esfuerzos razonables y de buena fe para resolver la disputa de manera informal durante al menos 30 días después de recibido el aviso, antes de iniciar el arbitraje.",
         ),
         p(
-          "Los avisos a Paperwork Monster deben enviarse a: Paperwork Monster Inc., Atención: Legal, [INSERTAR DIRECCIÓN POSTAL DE LA EMPRESA], [INSERTAR CORREO LEGAL/DE SOPORTE].",
+          "Los avisos a Paperwork Monster deben enviarse a: Paperwork Monster Inc., Atención: Legal, 4505 Socastee Blvd, Myrtle Beach, SC 29588, [INSERTAR CORREO LEGAL/DE SOPORTE].",
         ),
       ],
     },
@@ -384,7 +384,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Contáctenos",
       blocks: [
         p(
-          "Las preguntas sobre estos Términos pueden dirigirse a: Paperwork Monster Inc., [INSERTAR DIRECCIÓN POSTAL DE LA EMPRESA], [INSERTAR CORREO DE SOPORTE/LEGAL].",
+          "Las preguntas sobre estos Términos pueden dirigirse a: Paperwork Monster Inc., 4505 Socastee Blvd, Myrtle Beach, SC 29588, [INSERTAR CORREO DE SOPORTE/LEGAL].",
         ),
       ],
     },
@@ -512,7 +512,7 @@ export const REFUND_POLICY_ES: LegalDoc = {
       heading: "Cómo solicitar ayuda con un problema de facturación",
       blocks: [
         p(
-          "Las preguntas sobre cancelaciones, cargos de suscripción, reembolsos o errores de facturación pueden enviarse a Paperwork Monster Inc. a [INSERTAR CORREO DE SOPORTE] o a [INSERTAR DIRECCIÓN POSTAL DE LA EMPRESA]. Incluya información suficiente para que podamos identificar la cuenta y la transacción correspondientes. No envíe por correo electrónico números completos de tarjetas de pago ni otra información de pago sensible innecesaria.",
+          "Las preguntas sobre cancelaciones, cargos de suscripción, reembolsos o errores de facturación pueden enviarse a Paperwork Monster Inc. a [INSERTAR CORREO DE SOPORTE] o a 4505 Socastee Blvd, Myrtle Beach, SC 29588. Incluya información suficiente para que podamos identificar la cuenta y la transacción correspondientes. No envíe por correo electrónico números completos de tarjetas de pago ni otra información de pago sensible innecesaria.",
         ),
       ],
     },
@@ -754,7 +754,7 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
       heading: "Contáctenos",
       blocks: [
         p(
-          "Para preguntas sobre esta Política de privacidad o las prácticas de privacidad de Paperwork Monster, contacte a: Paperwork Monster Inc., Atención: Privacidad, [INSERTAR DIRECCIÓN POSTAL DE LA EMPRESA], [INSERTAR CORREO DE PRIVACIDAD/SOPORTE].",
+          "Para preguntas sobre esta Política de privacidad o las prácticas de privacidad de Paperwork Monster, contacte a: Paperwork Monster Inc., Atención: Privacidad, 4505 Socastee Blvd, Myrtle Beach, SC 29588, [INSERTAR CORREO DE PRIVACIDAD/SOPORTE].",
         ),
       ],
     },
