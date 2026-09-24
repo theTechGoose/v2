@@ -288,8 +288,10 @@ export default define.page(async function Landing(ctx) {
               sentence for assistive tech at every width. */
           }
           <div class="lang-toggle" role="tablist" aria-label="Language">
-            {/* NW-01 (REQ-002): Spanish first — it is the default and the
-               client asked for "Yo hablo Español | I speak English". */}
+            {
+              /* NW-01 (REQ-002): Spanish first — it is the default and the
+               client asked for "Yo hablo Español | I speak English". */
+            }
             <button
               class={lang === "es" ? "on" : ""}
               type="button"
@@ -1217,6 +1219,9 @@ export default define.page(async function Landing(ctx) {
             <a href="#pricing" data-i18n="nav.pricing">{t("nav.pricing")}</a>
             <a href="/contact" data-i18n="footer.contact">
               {t("footer.contact")}
+            </a>
+            <a href="/terms" data-terms-link data-i18n="footer.terms">
+              {t("footer.terms")}
             </a>
           </div>
           <a class="footer-phone" href="tel:+18667678399">(866) 767-8399</a>

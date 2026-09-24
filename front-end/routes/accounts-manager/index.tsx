@@ -1,5 +1,6 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
@@ -15,8 +16,9 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 export default define.page(function AccountsManager(ctx) {
   const user = ctx.state.user;
   const lang = user?.language === "es" ? "es" : "en";
-  const greetingName = (user?.name?.trim() || tFor(lang, "common.thereFallback"))
-    .split(" ")[0];
+  const greetingName =
+    (user?.name?.trim() || tFor(lang, "common.thereFallback"))
+      .split(" ")[0];
 
   return (
     <>
@@ -31,6 +33,7 @@ export default define.page(function AccountsManager(ctx) {
           <DashTopbar greetingName={greetingName} />
           <div class="content">
             {/* Blank slate — build the accounts-manager view here. */}
+            <SiteFooter lang={lang} />
           </div>
         </main>
       </div>

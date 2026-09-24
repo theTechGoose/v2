@@ -1,5 +1,6 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import SiteFooter from "../../components/SiteFooter.tsx";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import { resolvePublicLang } from "../../../shared/quote-flow/public-lang.ts";
@@ -115,9 +116,11 @@ export default define.page(async function PublicChangeOrder(ctx) {
                         ? (
                           <div style="display:flex;justify-content:space-between">
                             <span style={`color:${MUTED}`}>
-                              {/* After approval the live invoice already
+                              {
+                                /* After approval the live invoice already
                                   includes the delta, so the snapshot reads
-                                  as the *previous* total. */}
+                                  as the *previous* total. */
+                              }
                               {tFor(
                                 lang,
                                 co.status === "approved"
@@ -148,8 +151,10 @@ export default define.page(async function PublicChangeOrder(ctx) {
                         ? (
                           <div style="display:flex;justify-content:space-between;font-weight:800;color:#1c2c30;font-size:16px;margin-top:4px">
                             <span>
-                              {/* A declined order's "new total" never took
-                                  effect — frame it as a proposal. */}
+                              {
+                                /* A declined order's "new total" never took
+                                  effect — frame it as a proposal. */
+                              }
                               {tFor(
                                 lang,
                                 co.status === "declined"
@@ -179,6 +184,7 @@ export default define.page(async function PublicChangeOrder(ctx) {
               </article>
             )}
         </div>
+        <SiteFooter lang={lang} style="margin-top:24px" />
       </div>
     </>
   );

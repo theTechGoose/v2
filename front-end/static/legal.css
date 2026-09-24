@@ -1,0 +1,156 @@
+/* /terms — the Terms of Service, Refund & Cancellation Policy and Privacy
+   Policy (REQ-043). Plain reading page, no islands. */
+.legal {
+  min-height: 100dvh;
+  background: #f7f6f1;
+  color: #1c2c30;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  padding: 24px 16px 8px;
+}
+.legal__wrap {
+  max-width: 760px;
+  margin: 0 auto;
+}
+.legal__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(20, 72, 82, 0.14);
+}
+.legal__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: #144852;
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+.legal__brand img {
+  height: 34px;
+  width: auto;
+  display: block;
+}
+.legal__brand em {
+  font-style: normal;
+  color: #519843;
+}
+.legal__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 14px;
+}
+.legal__nav a {
+  /* 24px+ tap box (hit-target audit). */
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 2px 4px;
+  color: #144852;
+  font-weight: 700;
+  text-decoration: none;
+}
+.legal__nav a:hover {
+  text-decoration: underline;
+}
+.legal__doc {
+  padding: 36px 0 12px;
+  scroll-margin-top: 16px;
+}
+.legal__doc + .legal__doc {
+  border-top: 1px solid rgba(20, 72, 82, 0.14);
+}
+.legal__doc h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: #144852;
+  text-transform: uppercase;
+}
+.legal__effective {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #6b7a7e;
+}
+.legal__notice {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-left: 4px solid #519843;
+  background: rgba(81, 152, 67, 0.08);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.legal__doc p {
+  margin: 14px 0 0;
+  font-size: 15px;
+  line-height: 1.65;
+}
+.legal__doc h2 {
+  margin: 30px 0 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #144852;
+  letter-spacing: -0.01em;
+}
+.legal__doc ul {
+  margin: 10px 0 0;
+  padding-left: 22px;
+  font-size: 15px;
+  line-height: 1.65;
+}
+.legal__doc li + li {
+  margin-top: 4px;
+}
+.legal__label {
+  display: block;
+  margin-top: 16px;
+  font-weight: 800;
+  font-size: 15px;
+  color: #1c2c30;
+}
+.legal__label + p {
+  margin-top: 4px;
+}
+.legal__doc a {
+  color: #144852;
+}
+@media (max-width: 560px) {
+  .legal__doc h1 {
+    font-size: 24px;
+  }
+}
+
+/* EN / ES toggle (REQ-043 amendment — the documents render in both). */
+.legal__lang {
+  display: inline-flex;
+  gap: 12px;
+  margin-left: auto;
+}
+.legal__lang a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px solid rgba(20, 72, 82, 0.25);
+  border-radius: 999px;
+  color: #144852;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.legal__lang a.on {
+  background: #144852;
+  color: #fff;
+}
+.legal__nav {
+  flex-basis: 100%;
+}

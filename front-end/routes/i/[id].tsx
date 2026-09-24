@@ -1,5 +1,6 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import SiteFooter from "../../components/SiteFooter.tsx";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
@@ -131,6 +132,7 @@ export default define.page(async function PublicInvoice(ctx) {
             )
             : <InvoiceDoc invoice={invoice} lang={lang} />}
         </div>
+        <SiteFooter lang={lang} style="margin-top:24px" />
       </div>
     </>
   );
