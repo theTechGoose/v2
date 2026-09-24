@@ -9,7 +9,7 @@ import { resetKv } from "@core/data/kv/mod.ts";
 @Module({ imports: [AnalyticsModule] })
 class TestApp {}
 
-const PORT = 9094;
+const PORT = 9091; // was 9094 — shared with notification-controller/e2e.test.ts, AddrInUse under --parallel
 
 async function drain(res: Response) {
   await res.body?.cancel();
