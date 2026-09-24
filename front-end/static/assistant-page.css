@@ -7825,7 +7825,10 @@ body {
   justify-content: stretch;
   /* --app-vh mirrors visualViewport.height (MobileViewport island) so the
      shell tracks the keyboard on iOS; falls back to 100dvh without JS. */
-  height: calc(var(--app-vh, 100dvh) - 60px - 30px); /* 30px = the SiteFooter under it (REQ-043) */
+  /* Fills what the .main column leaves after the SiteFooter under it (REQ-043),
+     whatever height that footer wraps to (REQ-044: phone + address). */
+  flex: 1 1 auto;
+  height: auto; /* overrides the older calc() rule above */
   min-height: 720px;
   padding: 0;
   gap: 0;

@@ -3314,3 +3314,15 @@ section {
     transform: rotate(360deg);
   }
 }
+
+/* REQ-044: the phone + mailing address, kept together. */
+.footer-contact {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.footer-address {
+  font-size: 13px;
+  color: var(--fg-muted);
+}
