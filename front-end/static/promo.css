@@ -643,6 +643,10 @@
   font-size: 13px;
   color: var(--pm-fg-subtle);
 }
+.pm-footer__terms {
+  font-size: 13px;
+  color: var(--pm-fg-subtle);
+}
 
 /* ---------- responsive ---------- */
 @media (max-width: 720px) {

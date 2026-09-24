@@ -1,5 +1,6 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
@@ -53,6 +54,7 @@ export default define.page(function InvoicesRoute(ctx) {
           <DashTopbar greetingDate={greetingDate} greetingName={greetingName} />
           <div class="content">
             <InvoicesPage />
+            <SiteFooter lang={lang} />
           </div>
         </main>
       </div>

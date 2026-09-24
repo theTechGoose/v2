@@ -1,5 +1,6 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import SiteFooter from "../../components/SiteFooter.tsx";
 import { getSessionId } from "../../lib/auth.ts";
 import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
@@ -115,6 +116,7 @@ export default define.page(async function AssistantHome(ctx) {
               </section>
             </div>
           </div>
+          <SiteFooter lang={lang} />
         </main>
       </div>
     </>
