@@ -3,7 +3,7 @@
  * client's text (effective September 24, 2026). Pure data, no imports, so the
  * jest unit test and the Fresh route read the same source.
  *
- * The `[INSERT …]` placeholders (mailing address, legal/support/privacy
+ * The `[INSERT …]` placeholders (legal/support/privacy
  * email) are the client's own to-fill markers and are kept as written.
  */
 
@@ -349,7 +349,7 @@ export const TERMS_OF_SERVICE: LegalDoc = {
           "Before initiating arbitration, the party asserting a dispute must provide written notice describing the nature of the dispute and the requested resolution. The parties will make reasonable, good-faith efforts to resolve the dispute informally for at least 30 days after receipt of the notice before commencing arbitration.",
         ),
         p(
-          "Notices to Paperwork Monster should be sent to: Paperwork Monster Inc., Attn: Legal, [INSERT BUSINESS MAILING ADDRESS], [INSERT LEGAL/SUPPORT EMAIL].",
+          "Notices to Paperwork Monster should be sent to: Paperwork Monster Inc., Attn: Legal, 4505 Socastee Blvd, Myrtle Beach, SC 29588, [INSERT LEGAL/SUPPORT EMAIL].",
         ),
       ],
     },
@@ -406,7 +406,7 @@ export const TERMS_OF_SERVICE: LegalDoc = {
       heading: "Contact Us",
       blocks: [
         p(
-          "Questions concerning these Terms may be directed to: Paperwork Monster Inc., [INSERT BUSINESS MAILING ADDRESS], [INSERT SUPPORT/LEGAL EMAIL].",
+          "Questions concerning these Terms may be directed to: Paperwork Monster Inc., 4505 Socastee Blvd, Myrtle Beach, SC 29588, [INSERT SUPPORT/LEGAL EMAIL].",
         ),
       ],
     },
@@ -534,7 +534,7 @@ export const REFUND_POLICY: LegalDoc = {
       heading: "How to Request Help With a Billing Issue",
       blocks: [
         p(
-          "Questions regarding cancellation, subscription charges, refunds, or billing errors may be sent to Paperwork Monster Inc. at [INSERT SUPPORT EMAIL] or [INSERT BUSINESS MAILING ADDRESS]. Please include enough information for us to identify the applicable account and transaction. Do not email complete payment-card numbers or other unnecessary sensitive payment information.",
+          "Questions regarding cancellation, subscription charges, refunds, or billing errors may be sent to Paperwork Monster Inc. at [INSERT SUPPORT EMAIL] or 4505 Socastee Blvd, Myrtle Beach, SC 29588. Please include enough information for us to identify the applicable account and transaction. Do not email complete payment-card numbers or other unnecessary sensitive payment information.",
         ),
       ],
     },
@@ -776,7 +776,7 @@ export const PRIVACY_POLICY: LegalDoc = {
       heading: "Contact Us",
       blocks: [
         p(
-          "For questions about this Privacy Policy or Paperwork Monster's privacy practices, contact: Paperwork Monster Inc., Attn: Privacy, [INSERT BUSINESS MAILING ADDRESS], [INSERT PRIVACY/SUPPORT EMAIL].",
+          "For questions about this Privacy Policy or Paperwork Monster's privacy practices, contact: Paperwork Monster Inc., Attn: Privacy, 4505 Socastee Blvd, Myrtle Beach, SC 29588, [INSERT PRIVACY/SUPPORT EMAIL].",
         ),
       ],
     },
