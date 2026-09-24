@@ -1,4 +1,9 @@
 import { Head } from "fresh/runtime";
+import {
+  BUSINESS_ADDRESS,
+  SUPPORT_PHONE_DISPLAY,
+  SUPPORT_PHONE_HREF,
+} from "../../shared/legal/contact.ts";
 import { define } from "../utils.ts";
 import { loadUser } from "../lib/auth.ts";
 import { tFor } from "../lib/i18n.ts";
@@ -1224,7 +1229,14 @@ export default define.page(async function Landing(ctx) {
               {t("footer.terms")}
             </a>
           </div>
-          <a class="footer-phone" href="tel:+18667678399">(866) 767-8399</a>
+          <div class="footer-contact">
+            <a class="footer-phone" href={SUPPORT_PHONE_HREF} data-site-phone>
+              {SUPPORT_PHONE_DISPLAY}
+            </a>
+            <span class="footer-address" data-site-address>
+              {BUSINESS_ADDRESS}
+            </span>
+          </div>
           <div class="copy" data-i18n="footer.copy">{t("footer.copy")}</div>
         </div>
       </footer>

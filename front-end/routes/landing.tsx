@@ -23,9 +23,12 @@ const TIER_PRICE: Record<string, string> = Object.fromEntries(
   ) => [p.id, `$${Math.round(p.priceCents / 100)}`]),
 );
 
-// Toll-free support line (same number the dashboard "Call support" CTA dials).
-const SUPPORT_PHONE = "+18667678399";
-const SUPPORT_PHONE_DISPLAY = "(866) 767-8399";
+// Toll-free support line + mailing address (REQ-044): one shared source.
+import {
+  BUSINESS_ADDRESS,
+  SUPPORT_PHONE_DISPLAY,
+  SUPPORT_PHONE_HREF,
+} from "../../shared/legal/contact.ts";
 
 function Check() {
   return (
@@ -192,7 +195,7 @@ export default define.page(function PromoLanding(ctx) {
 
               <div class="pm-call">
                 <p class="pm-call__q">{t("callQ")}</p>
-                <a class="pm-call__num" href={`tel:${SUPPORT_PHONE}`}>
+                <a class="pm-call__num" href={SUPPORT_PHONE_HREF}>
                   <svg
                     width="20"
                     height="20"
@@ -323,7 +326,7 @@ export default define.page(function PromoLanding(ctx) {
                   ))}
                 </ul>
                 <a
-                  href={`tel:${SUPPORT_PHONE}`}
+                  href={SUPPORT_PHONE_HREF}
                   class="pm-btn pm-btn--ghost pm-plan__cta"
                 >
                   {t("pricingCtaCustom")}
@@ -355,9 +358,18 @@ export default define.page(function PromoLanding(ctx) {
                 Paperwork <em>Monster</em>
               </span>
             </a>
-            <a class="pm-footer__phone" href={`tel:${SUPPORT_PHONE}`}>
-              {SUPPORT_PHONE_DISPLAY}
-            </a>
+            <div class="pm-footer__contact">
+              <a
+                class="pm-footer__phone"
+                href={SUPPORT_PHONE_HREF}
+                data-site-phone
+              >
+                {SUPPORT_PHONE_DISPLAY}
+              </a>
+              <span class="pm-footer__address" data-site-address>
+                {BUSINESS_ADDRESS}
+              </span>
+            </div>
             <a class="pm-footer__terms" href="/terms" data-terms-link>
               {t("footerTerms")}
             </a>

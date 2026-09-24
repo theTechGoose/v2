@@ -9,10 +9,12 @@ import {
 import { tFor } from "../lib/i18n.ts";
 import ContactForm from "../islands/ContactForm.tsx";
 
-// Toll-free support line (TWILIO_SUPPORT_NUMBER) — the same public number the
-// dashboard's "Call support" CTA dials. Safe to ship.
-const SUPPORT_PHONE = "+18667678399";
-const SUPPORT_PHONE_DISPLAY = "(866) 767-8399";
+// Toll-free support line — the same public number the dashboard's "Call
+// support" CTA and the site footer dial (REQ-044: one shared source).
+import {
+  SUPPORT_PHONE_DISPLAY,
+  SUPPORT_PHONE_HREF,
+} from "../../shared/legal/contact.ts";
 
 /**
  * /contact — public inquiry page. Renders a name/email/subject/message form
@@ -77,7 +79,7 @@ export default define.page(function Contact(ctx) {
           <p style="color:var(--fg-muted);font-size:14px;margin:2px 0 0;text-align:center">
             {tFor(lang, "contactPage.callPrefix")}{" "}
             <a
-              href={`tel:${SUPPORT_PHONE}`}
+              href={SUPPORT_PHONE_HREF}
               style="color:var(--brand-green);font-weight:800;text-decoration:none"
             >
               {SUPPORT_PHONE_DISPLAY}
