@@ -792,3 +792,11 @@ export const LEGAL_DOCS: readonly LegalDoc[] = [
 
 /** Every page's footer links here (REQ-043). */
 export const TERMS_PATH = "/terms";
+
+/** REQ-043 amendment ("it should be both"): the documents in the visitor's
+ *  language. Imports the Spanish module lazily-by-position (bottom of file) so
+ *  the English data above stays import-free. */
+import { LEGAL_DOCS_ES } from "./terms.es.ts";
+export function legalDocsFor(lang: "en" | "es"): readonly LegalDoc[] {
+  return lang === "es" ? LEGAL_DOCS_ES : LEGAL_DOCS;
+}

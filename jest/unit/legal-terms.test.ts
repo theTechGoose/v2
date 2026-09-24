@@ -126,3 +126,54 @@ describe("REQ-043 the legal data module carries the three documents verbatim", (
     expect(es["promoLanding.footerTerms"]).toBe("Términos de servicio");
   });
 });
+
+// REQ-043 amendment: "this is in english only. it should be both"
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { LEGAL_DOCS_ES } from "../../shared/legal/terms.es";
+import { legalDocsFor } from "../../shared/legal/terms";
+
+describe("REQ-043 the Spanish documents mirror the English structure", () => {
+  it("REQ-043 same three documents, ids, titles in Spanish, effective date in Spanish", () => {
+    expect(LEGAL_DOCS_ES.map((d) => d.id)).toEqual(["terms", "refunds", "privacy"]);
+    expect(LEGAL_DOCS_ES.map((d) => d.title)).toEqual([
+      "Términos de servicio",
+      "Política de reembolsos y cancelaciones",
+      "Política de privacidad",
+    ]);
+    for (const d of LEGAL_DOCS_ES) expect(d.effectiveDate).toBe("24 de septiembre de 2026");
+    expect(LEGAL_DOCS_ES[0].notice).toMatch(/^ESTE ACUERDO ESTÁ SUJETO A ARBITRAJE/);
+    expect(LEGAL_DOCS_ES[1].notice).toBeUndefined();
+  });
+
+  it("REQ-043 every section, block kind, list length and labeled block matches the English one-to-one", () => {
+    for (let d = 0; d < LEGAL_DOCS.length; d++) {
+      const en = LEGAL_DOCS[d];
+      const es = LEGAL_DOCS_ES[d];
+      expect(es.intro.length).toBe(en.intro.length);
+      expect(es.sections.map((s) => s.n)).toEqual(en.sections.map((s) => s.n));
+      for (let i = 0; i < en.sections.length; i++) {
+        const a = en.sections[i];
+        const b = es.sections[i];
+        expect(b.heading.trim().length).toBeGreaterThan(0);
+        expect(b.blocks.map((x) => x.kind)).toEqual(a.blocks.map((x) => x.kind));
+        for (let k = 0; k < a.blocks.length; k++) {
+          const x = a.blocks[k];
+          const y = b.blocks[k];
+          if (x.kind === "list" && y.kind === "list") {
+            expect(y.items.length).toBe(x.items.length);
+          } else if (x.kind !== "list" && y.kind !== "list") {
+            expect(y.text.trim().length).toBeGreaterThan(0);
+            expect(y.text).not.toBe(x.text);
+          }
+        }
+      }
+    }
+  });
+
+  it("REQ-043 legalDocsFor picks the language; the page chrome has both labels", () => {
+    expect(legalDocsFor("en")).toBe(LEGAL_DOCS);
+    expect(legalDocsFor("es")).toBe(LEGAL_DOCS_ES);
+    expect(en["legal.effectiveDate"]).toBe("Effective Date");
+    expect(es["legal.effectiveDate"]).toBe("Fecha de vigencia");
+  });
+});

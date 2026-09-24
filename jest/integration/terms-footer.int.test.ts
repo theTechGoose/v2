@@ -100,3 +100,42 @@ describe("REQ-043 GET /terms renders the three documents", () => {
     expect(html).toContain("Account and Business Information");
   });
 });
+
+describe("REQ-043 GET /terms renders in Spanish for a Spanish visitor", () => {
+  async function raw(path: string, cookie?: string) {
+    const res = await fetch(`${FRONT}${path}`, { headers: cookie ? { cookie } : {}, redirect: "manual" });
+    return { status: res.status, html: await res.text(), setCookie: res.headers.get("set-cookie") ?? "" };
+  }
+  it("REQ-043 pm_lang=es → the three documents in Spanish, English absent", async () => {
+    const r = await raw("/terms", "pm_lang=es");
+    expect(r.status).toBe(200);
+    expect(r.html).toContain("Términos de servicio");
+    expect(r.html).toContain("Política de reembolsos y cancelaciones");
+    expect(r.html).toContain("Política de privacidad");
+    expect((r.html.match(/Fecha de vigencia: 24 de septiembre de 2026/g) ?? []).length).toBe(3);
+    expect(r.html).toContain("ESTE ACUERDO ESTÁ SUJETO A ARBITRAJE CONFORME A LA LEY UNIFORME DE ARBITRAJE DE CAROLINA DEL SUR.");
+    expect(r.html).toContain("1. Servicio de empresa a empresa");
+    expect(r.html).toContain("31. Contáctenos");
+    expect(r.html).toContain("13. Cómo solicitar ayuda con un problema de facturación");
+    expect(r.html).toContain("18. Contáctenos");
+    expect(r.html).not.toContain("1. Business-to-Business Service");
+    expect(r.html).toContain('data-legal-doc="es"');
+  });
+  it("REQ-043 ?lang=en over a Spanish cookie → English, and the pick is persisted", async () => {
+    const r = await raw("/terms?lang=en", "pm_lang=es");
+    expect(r.status).toBe(200);
+    expect(r.html).toContain("1. Business-to-Business Service");
+    expect(r.html).not.toContain("1. Servicio de empresa a empresa");
+    expect(r.setCookie).toMatch(/pm_lang=en/);
+  });
+  it("REQ-043 ?lang=es → Spanish, and the pick is persisted", async () => {
+    const r = await raw("/terms?lang=es", "pm_lang=en");
+    expect(r.html).toContain("1. Servicio de empresa a empresa");
+    expect(r.setCookie).toMatch(/pm_lang=es/);
+  });
+  it("REQ-043 the page carries the EN/ES toggle", async () => {
+    const r = await raw("/terms");
+    expect(r.html).toMatch(/<a[^>]*href="\/terms\?lang=en"[^>]*data-legal-lang="en"/);
+    expect(r.html).toMatch(/<a[^>]*href="\/terms\?lang=es"[^>]*data-legal-lang="es"/);
+  });
+});

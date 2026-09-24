@@ -125,3 +125,26 @@ describe("REQ-043 footer Terms of Service link on every page", () => {
     cy.get("a[data-terms-link]").should("be.visible");
   });
 });
+
+describe("REQ-043 the terms page shows both languages through its EN/ES toggle", () => {
+  it("REQ-043 the terms page shows both languages through its EN/ES toggle", () => {
+    cy.clearCookies();
+    cy.setCookie("pm_lang", "en");
+    cy.visit("/terms");
+    cy.contains("h1", "Terms of Service").should("be.visible");
+    cy.contains("h2", "1. Business-to-Business Service").should("exist");
+    cy.get("a[data-legal-lang=es]").click();
+    cy.location("search").should("eq", "?lang=es");
+    cy.contains("h1", "Términos de servicio").should("be.visible");
+    cy.contains("Fecha de vigencia: 24 de septiembre de 2026").should("be.visible");
+    cy.contains("h2", "1. Servicio de empresa a empresa").should("exist");
+    cy.get("#refunds").contains("h1", "Política de reembolsos y cancelaciones").should("exist");
+    cy.get("#privacy").contains("h2", "18. Contáctenos").should("exist");
+    cy.contains("h2", "1. Business-to-Business Service").should("not.exist");
+    // The pick persists: a plain /terms visit now stays Spanish.
+    cy.visit("/terms");
+    cy.contains("h1", "Términos de servicio").should("be.visible");
+    cy.get("a[data-legal-lang=en]").click();
+    cy.contains("h1", "Terms of Service").should("be.visible");
+  });
+});
