@@ -58,9 +58,9 @@ describe("REQ-043 the legal data module carries the three documents verbatim", (
       expect(first.kind).toBe("p");
       if (first.kind === "p") expect(first.text).toBe(first.text.toUpperCase());
     }
-    // The client's own to-fill placeholders stay as written (§26, §31).
+    // The mailing address is filled in (§26); the email placeholders stay as written.
     const s26 = TERMS_OF_SERVICE.sections[25].blocks[1];
-    expect(s26.kind === "p" && s26.text).toContain("[INSERT BUSINESS MAILING ADDRESS]");
+    expect(s26.kind === "p" && s26.text).toContain("4505 Socastee Blvd, Myrtle Beach, SC 29588");
   });
 
   it("REQ-043 Refund & Cancellation Policy: 13 numbered sections", () => {
