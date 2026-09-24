@@ -352,7 +352,7 @@ section {
 .lang-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px; /* hit-target audit: the two buttons must not touch */
+  gap: 12px; /* hit-target audit: 12px between the two buttons, as on /terms */
   background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
