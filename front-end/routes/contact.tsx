@@ -1,5 +1,6 @@
 import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
+import SiteFooter from "../components/SiteFooter.tsx";
 import {
   type Lang,
   langFromCookie,
@@ -67,17 +68,13 @@ export default define.page(function Contact(ctx) {
           <h1 style="font-size:30px;margin:6px 0 0;text-align:center">
             {tFor(lang, "contactPage.heading")}
           </h1>
-          <p
-            style="color:var(--fg-muted);font-size:16px;margin:0 0 6px;text-align:center"
-          >
+          <p style="color:var(--fg-muted);font-size:16px;margin:0 0 6px;text-align:center">
             {tFor(lang, "contactPage.subtitle")}
           </p>
 
           <ContactForm labels={labels} />
 
-          <p
-            style="color:var(--fg-muted);font-size:14px;margin:2px 0 0;text-align:center"
-          >
+          <p style="color:var(--fg-muted);font-size:14px;margin:2px 0 0;text-align:center">
             {tFor(lang, "contactPage.callPrefix")}{" "}
             <a
               href={`tel:${SUPPORT_PHONE}`}
@@ -92,6 +89,7 @@ export default define.page(function Contact(ctx) {
           >
             {tFor(lang, "contactPage.back")}
           </a>
+          <SiteFooter lang={lang} />
         </div>
       </div>
     </>

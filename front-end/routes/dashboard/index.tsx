@@ -1,5 +1,6 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
 import { isPlaceholderName } from "../../../shared/quote-flow/outbound-identity.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
@@ -78,6 +79,7 @@ export default define.page(function Dashboard(ctx) {
           />
           <div class="content">
             <DashboardPage />
+            <SiteFooter lang={lang} />
           </div>
         </main>
         <DashSidebar active="home" />

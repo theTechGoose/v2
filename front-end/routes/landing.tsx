@@ -358,6 +358,9 @@ export default define.page(function PromoLanding(ctx) {
             <a class="pm-footer__phone" href={`tel:${SUPPORT_PHONE}`}>
               {SUPPORT_PHONE_DISPLAY}
             </a>
+            <a class="pm-footer__terms" href="/terms" data-terms-link>
+              {t("footerTerms")}
+            </a>
             <div class="pm-footer__copy">{t("footerCopy")}</div>
           </footer>
         </div>

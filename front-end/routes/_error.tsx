@@ -1,5 +1,6 @@
 import { HttpError } from "fresh";
 import { define } from "../utils.ts";
+import SiteFooter from "../components/SiteFooter.tsx";
 import { tFor } from "../lib/i18n.ts";
 import { resolvePublicLang } from "../../shared/quote-flow/public-lang.ts";
 
@@ -62,6 +63,7 @@ export default define.page((ctx) => {
         >
           {homeCta}
         </a>
+        <SiteFooter lang={lang} style="margin-top:28px" />
       </div>
     </div>
   );

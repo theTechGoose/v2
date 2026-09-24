@@ -1,5 +1,6 @@
 import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
+import SiteFooter from "../components/SiteFooter.tsx";
 import { getSessionId, loadUser } from "../lib/auth.ts";
 import {
   type Lang,
@@ -93,6 +94,7 @@ export default define.page(async function Welcome(ctx) {
               {tFor(lang, "welcome.loadError")}
             </p>
           )}
+        <SiteFooter lang={lang} style="margin-top:auto" />
       </div>
     </>
   );

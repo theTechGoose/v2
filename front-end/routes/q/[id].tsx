@@ -1,5 +1,6 @@
 import { Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import SiteFooter from "../../components/SiteFooter.tsx";
 import PublicQuoteView from "../../islands/PublicQuoteView.tsx";
 import { BG, INK } from "../../components/quote-doc.tsx";
 import { langFromCookie } from "../../lib/lang.ts";
@@ -40,6 +41,7 @@ export default define.page(function PublicQuote(ctx) {
         <div style="max-width:760px;margin:0 auto">
           <PublicQuoteView id={id} lang={lang} />
         </div>
+        <SiteFooter lang={lang ?? "en"} style="margin-top:24px" />
       </div>
     </>
   );

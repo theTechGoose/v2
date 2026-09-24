@@ -1,5 +1,6 @@
 import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
+import SiteFooter from "../components/SiteFooter.tsx";
 import { loadUser } from "../lib/auth.ts";
 import {
   type Lang,
@@ -58,6 +59,7 @@ export default define.page(async function Login(ctx) {
             {tFor(lang, "loginPage.subtitle")}
           </p>
           <LoginForm />
+          <SiteFooter lang={lang} />
         </div>
       </div>
     </>

@@ -1,5 +1,6 @@
 import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
+import SiteFooter from "../components/SiteFooter.tsx";
 import { loadUser } from "../lib/auth.ts";
 import {
   type Lang,
@@ -95,6 +96,7 @@ export default define.page(async function Verify(ctx) {
             initialLang={lang}
             editHref={editHref}
           />
+          <SiteFooter lang={lang} />
         </div>
       </div>
     </>
