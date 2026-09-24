@@ -352,6 +352,7 @@ section {
 .lang-toggle {
   display: inline-flex;
   align-items: center;
+  gap: 12px; /* hit-target audit: 12px between the two buttons, as on /terms */
   background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
@@ -2976,6 +2977,12 @@ section {
   font-size: 13px;
   color: var(--fg-muted);
 }
+/* hit-target audit: every footer link is at least a 24px-tall tap box. */
+.footer-row .links a {
+  display: inline-block;
+  min-height: 24px;
+  line-height: 24px;
+}
 .footer-row .links a:hover {
   color: var(--brand-pink);
 }
@@ -2985,6 +2992,9 @@ section {
   color: var(--brand-green);
   text-decoration: none;
   white-space: nowrap;
+  display: inline-block;
+  min-height: 24px;
+  line-height: 24px;
 }
 .footer-phone:hover {
   color: var(--brand-pink);
@@ -3313,4 +3323,16 @@ section {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* REQ-044: the phone + mailing address, kept together. */
+.footer-contact {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.footer-address {
+  font-size: 13px;
+  color: var(--fg-muted);
 }

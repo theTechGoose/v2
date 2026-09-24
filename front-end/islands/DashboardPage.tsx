@@ -33,11 +33,13 @@ import { ShimmerStyle, SkelBlock } from "../components/Skeletons.tsx";
 import SetupChecklist from "./SetupChecklist.tsx";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 
-// Toll-free support line (TWILIO_SUPPORT_NUMBER). Public number, safe to ship.
-// A call here hits the Twilio Studio Flow that texts a heads-up, plays a brief
-// hold, then forwards to the support cell.
-const SUPPORT_PHONE = "+18667678399";
-const SUPPORT_PHONE_DISPLAY = "(866) 767-8399";
+// Toll-free support line (REQ-044: one shared source with the site footer,
+// the landings and /contact). A call here hits the Twilio Studio Flow that
+// texts a heads-up, plays a brief hold, then forwards to the support cell.
+import {
+  SUPPORT_PHONE_DISPLAY,
+  SUPPORT_PHONE_HREF,
+} from "../../shared/legal/contact.ts";
 
 function shortMonth(lang: Lang, monthIdx: number): string {
   return tFor(lang, `common.monthShort.${monthIdx}`);
@@ -467,7 +469,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
             {tFor(lang, "dashHero.cta.assistant")}
             <I d={ICN.arrow} size={16} />
           </a>
-          <a class="assistant-cta__call" href={`tel:${SUPPORT_PHONE}`}>
+          <a class="assistant-cta__call" href={SUPPORT_PHONE_HREF}>
             <I d={ICN.phone} size={15} />
             <span class="assistant-cta__call-label">
               {tFor(lang, "dashAssistantCta.callSupport")}

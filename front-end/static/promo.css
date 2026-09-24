@@ -643,6 +643,17 @@
   font-size: 13px;
   color: var(--pm-fg-subtle);
 }
+/* REQ-044: the phone + mailing address, kept together. */
+.pm-footer__contact {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.pm-footer__address {
+  font-size: 13px;
+  color: var(--pm-fg-subtle);
+}
 .pm-footer__terms {
   font-size: 13px;
   color: var(--pm-fg-subtle);
