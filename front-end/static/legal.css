@@ -132,7 +132,7 @@
 /* EN / ES toggle (REQ-043 amendment — the documents render in both). */
 .legal__lang {
   display: inline-flex;
-  gap: 4px;
+  gap: 12px;
   margin-left: auto;
 }
 .legal__lang a {
