@@ -28,7 +28,7 @@ async function page(path: string, cookie?: string) {
 /** The footer link as the SiteFooter component emits it. */
 const LINK = /<a[^>]*data-terms-link[^>]*href="\/terms"[^>]*>Terms of Service<\/a>|<a[^>]*href="\/terms"[^>]*data-terms-link[^>]*>Terms of Service<\/a>/;
 
-describe("REQ-043 every SSR page carries the footer \"Terms of Service\" link to /terms", () => {
+describe("REQ-043 every SSR page carries the footer Terms of Service link to /terms", () => {
   const ANON = ["/?lang=en", "/landing?lang=en", "/login", "/contact", "/terms", "/verify?phone=%2B15125550930"];
   for (const path of ANON) {
     it(`REQ-043 anonymous ${path} → footer link`, async () => {
