@@ -7818,26 +7818,33 @@ body {
    1fr 1fr while hiding threads, leaving the chat in a single cell that
    followed the original 320px column. The shell now keeps the full
    3-column layout until the docpane truly can't fit (~1100px).  */
+/* REQ-045: the assistant shell is pinned to the viewport exactly like the
+   dashboard shell (dashboard.css .app), so .main and the .asst grid below
+   have a definite height and the conversations column (.threads__list) and
+   the transcript (.chat__scroll) are the scrollers. Without this the shell
+   grew to the conversation list's content height, the chat column stretched
+   with it, and the composer sat thousands of pixels below the fold once a
+   contractor had a few dozen conversations. --app-vh mirrors
+   visualViewport.height (MobileViewport island); falls back to 100dvh. */
+.app {
+  height: var(--app-vh, 100dvh);
+}
 .asst {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 360px;
   align-items: stretch;
   justify-content: stretch;
-  /* --app-vh mirrors visualViewport.height (MobileViewport island) so the
-     shell tracks the keyboard on iOS; falls back to 100dvh without JS. */
   /* Fills what the .main column leaves after the SiteFooter under it (REQ-043),
      whatever height that footer wraps to (REQ-044: phone + address). */
   flex: 1 1 auto;
   height: auto; /* overrides the older calc() rule above */
-  min-height: 720px;
+  /* No height floor (REQ-045): under .main's overflow:hidden a floor taller
+     than the window clipped the composer on a 1280×720 laptop; the two inner
+     scrollers absorb whatever height the viewport leaves. */
+  min-height: 0;
   padding: 0;
   gap: 0;
   overflow: hidden;
-}
-@media (max-width: 768px) {
-  .asst {
-    min-height: 0;
-  }
 }
 /* Collapse the right column when there's no docpane to fill it (most
    threads, until the user is in a quote/contract context). Otherwise
