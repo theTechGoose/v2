@@ -8,6 +8,8 @@
  *   deno task serve     (from v2/)
  */
 
+import { gateKvDir, gateKvPath } from "./scripts/gate-kv-path.ts";
+
 const ROOT = new URL(".", import.meta.url).pathname;
 const BACKEND_DIR = `${ROOT}backend`;
 const FRONTEND_DIR = `${ROOT}front-end`;
@@ -28,11 +30,28 @@ const FRONTEND_PORT = Number(
 const BACKEND_PORT = Number(
   Deno.env.get("BACKEND_PORT") ?? (PORT_GIVEN ? FRONTEND_PORT + 1 : 4280),
 );
-// Under the gate (WT_GATE=1) the backend gets its own empty Deno KV file, so
-// the gate's run starts clean and never shares a store with the dev stack.
-const GATE_KV_PATH = Deno.env.get("WT_GATE") && !Deno.env.get("KV_PATH")
-  ? `${Deno.makeTempDirSync({ prefix: "wt-gate-kv-" })}/kv.sqlite`
+// Under the merge gate (WT_GATE=1) the backend runs on its FAKES (REQ-318:
+// the gate never touches the real services): no AGENTS_LLM_CLIENT /
+// TRANSCRIPTION_CLIENT → the deterministic stub LLM client (the assistant
+// flows' fallback paths are what the specs pin), no --watch, and its own
+// empty KV file — at the path the e2e lane derives from the same PORT
+// (scripts/gate-kv-path.ts), so the specs' per-phone wipe scrubs THIS store.
+// By hand, `deno task dev` as always — the real OpenAI client, the dev KV.
+const UNDER_GATE = !!Deno.env.get("WT_GATE");
+const GATE_KV_PATH = UNDER_GATE && !Deno.env.get("KV_PATH")
+  ? freshGateKv(FRONTEND_PORT)
   : undefined;
+
+function freshGateKv(port: number): string {
+  const dir = gateKvDir(port);
+  try {
+    Deno.removeSync(dir, { recursive: true });
+  } catch {
+    // nothing from an earlier run
+  }
+  Deno.mkdirSync(dir, { recursive: true });
+  return gateKvPath(port);
+}
 
 interface ChildSpec {
   name: string;
@@ -43,12 +62,6 @@ interface ChildSpec {
   color: string;
 }
 
-// Under the merge gate (WT_GATE=1) the backend runs on its FAKES (REQ-318:
-// the gate never touches the real services): no AGENTS_LLM_CLIENT /
-// TRANSCRIPTION_CLIENT → the deterministic stub LLM client (the assistant
-// flows' fallback paths are what the specs pin), no --watch, and its own
-// empty KV file. By hand, `deno task dev` as always — the real OpenAI client.
-const UNDER_GATE = !!Deno.env.get("WT_GATE");
 
 const children: ChildSpec[] = [
   {

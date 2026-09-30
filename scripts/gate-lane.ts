@@ -17,6 +17,8 @@
  * `--plan` prints the lane's files, one repo-relative path per line, and runs
  * nothing (what wt-gate reads to check every file's kind before it runs).
  */
+import { gateKvPath } from "./gate-kv-path.ts";
+
 const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 const lane = Deno.args[0];
 const plan = Deno.args.includes("--plan");
@@ -94,13 +96,23 @@ if (lane === "unit") {
   codes.push(await run("backend int + e2e", "deno", [...DENO_TEST, ...paths.map(inBackend)], `${ROOT}/backend`));
 } else {
   // The served app: the gate exports BASE_URL (REQ-278); by hand, the dev stack.
-  const baseUrl = (Deno.env.get("BASE_URL") ?? "http://localhost:5280").replace(/\/$/, "");
-  console.log(`gate-lane[e2e]: BASE_URL=${baseUrl}`);
+  // wt-gate names the host 127.0.0.1; the specs drive it as `localhost`, the
+  // hostname the app's dev-only affordances key on (`/assistant?dev`'s seed
+  // button renders on localhost only).
+  const baseUrl = (Deno.env.get("BASE_URL") ?? "http://localhost:5280")
+    .replace(/\/$/, "")
+    .replace(/^(https?:\/\/)127\.0\.0\.1(?=[:/]|$)/, "$1localhost");
+  // Under the gate the backend's KV file is derived from the served port
+  // (scripts/gate-kv-path.ts) so the specs' per-phone wipe scrubs that store.
+  const kvPath = Deno.env.get("KV_PATH") ??
+    (Deno.env.get("WT_GATE") ? gateKvPath(Number(new URL(baseUrl).port)) : undefined);
+  console.log(`gate-lane[e2e]: BASE_URL=${baseUrl}${kvPath ? ` KV_PATH=${kvPath}` : ""}`);
   const env = {
     BASE_URL: baseUrl,
     API_BASE_URL: `${baseUrl}/api`,
     FRONTEND_BASE_URL: baseUrl,
     CYPRESS_BASE_URL: baseUrl,
+    ...(kvPath ? { KV_PATH: kvPath } : {}),
   };
   codes.push(await run("jest integration", "npx", ["jest", "--selectProjects", "integration"], `${ROOT}/jest`, env));
   codes.push(await run("cypress", "npx", ["cypress", "run"], `${ROOT}/cypress`, env));
