@@ -861,6 +861,7 @@
   "quoteDoc.estimated": "Estimado {value}",
   "quoteDoc.from": "De",
   "quoteDoc.jobDetails": "Detalles del trabajo",
+  "quoteDoc.langToggleAria": "Idioma",
   "quoteDoc.lookForward": "! Espero poder trabajar contigo.",
   "quoteDoc.milestone.atMidpoint": "A mitad del trabajo",
   "quoteDoc.milestone.balance": "Saldo",

@@ -95,9 +95,8 @@ export interface QuotePublic {
   createdAt?: string;
 }
 
-/** Roadmap p.13: the public agreement is customer-facing, so it renders in
- *  the contractor's OUTGOING-COMMS language (default en). One table so the
- *  whole document flips together. */
+/** The public agreement's copy table — one table so the whole document
+ *  flips together when the viewer toggles EN | ES (REQ-048). */
 function cstr(lang: Lang) {
   const clauseKeys = [
     "governingLaw",
@@ -215,11 +214,12 @@ export function ErrorCard(
 }
 
 export function QuoteDoc(
-  { quote, lang: langOverride }: {
+  { quote, lang }: {
     quote: QuotePublic;
-    /** Customer's own language (pm_lang cookie, resolved by the /q route).
-     *  Wins over the contractor's outgoing-comms language when present. */
-    lang?: Lang;
+    /** REQ-048: the viewer's language — English first, or their own pick /
+     *  toggle (PublicQuoteView owns it). The contractor's outgoing-comms
+     *  language no longer decides what the customer sees first. */
+    lang: Lang;
   },
 ) {
   // Shared view derivation (P-11/P-13/P-40/P-63) — accepted state, the
@@ -234,8 +234,6 @@ export function QuoteDoc(
   const customerName = quote.customer?.name?.trim() ||
     quote.acceptedName?.trim() || undefined;
   const contractor = quote.contractor;
-  const lang: Lang = langOverride ??
-    (contractor?.commsLanguage === "es" ? "es" : "en");
   const t = cstr(lang);
   const businessLabel = contractor?.businessName?.trim() ||
     contractor?.name?.trim() || tFor(lang, "brand.name");

@@ -3,7 +3,7 @@ import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import PublicQuoteView from "../../islands/PublicQuoteView.tsx";
 import { BG, INK } from "../../components/quote-doc.tsx";
-import { langFromCookie } from "../../lib/lang.ts";
+import { resolveContractLang } from "../../../shared/quote-flow/public-lang.ts";
 import { tFor } from "../../lib/i18n.ts";
 
 /**
@@ -16,15 +16,19 @@ import { tFor } from "../../lib/i18n.ts";
  */
 export default define.page(function PublicQuote(ctx) {
   const id = ctx.params.id;
-  // The customer's own language choice (pm_lang cookie) wins; when absent the
-  // document falls back to the contractor's outgoing-comms language.
-  const lang = langFromCookie(ctx.req.headers.get("cookie")) ?? undefined;
+  // REQ-048: English first. Only the visitor's own pick — ?lang= on the
+  // link, then their pm_lang cookie — opens the contract in Spanish; the
+  // island's EN | ES toggle flips it in place from there.
+  const lang = resolveContractLang({
+    query: new URL(ctx.req.url).searchParams.get("lang"),
+    cookie: ctx.req.headers.get("cookie"),
+  });
 
   return (
     <>
       <Head>
         {/* UX-40: localized like /i and /co (tFor docTitle). */}
-        <title>{tFor(lang ?? "en", "quoteDoc.docTitle")}</title>
+        <title>{tFor(lang, "quoteDoc.docTitle")}</title>
         <link rel="stylesheet" href="/landing.css" />
         {
           /* P-62: the phone-layout + @media print rules live in a LINKED
@@ -41,7 +45,7 @@ export default define.page(function PublicQuote(ctx) {
         <div style="max-width:760px;margin:0 auto">
           <PublicQuoteView id={id} lang={lang} />
         </div>
-        <SiteFooter lang={lang ?? "en"} style="margin-top:24px" />
+        <SiteFooter lang={lang} style="margin-top:24px" />
       </div>
     </>
   );
