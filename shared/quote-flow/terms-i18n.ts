@@ -64,3 +64,20 @@ export function termLabel(term: Term, lang: Lang): string {
     }
   }
 }
+
+/**
+ * REQ-046 / REQ-047: the stored (English, neutral-base) value of the terms
+ * wizard's "TBD" pick on the start-date and duration steps. Every reader
+ * localizes it like any other preset ("Por definir" in Spanish).
+ */
+export const TERM_VALUE_TBD = "TBD";
+
+/**
+ * True when a stored term value is the TBD pick. A TBD duration is not an
+ * estimate: the web agreement, the in-app preview and both PDFs skip their
+ * "Estimated …" wrapper for it — "Time to complete: TBD", never
+ * "Estimated TBD" (REQ-047).
+ */
+export function isTbdTermValue(value: string | undefined): boolean {
+  return (value ?? "").trim().toUpperCase() === TERM_VALUE_TBD;
+}

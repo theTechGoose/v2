@@ -25,6 +25,7 @@ import { type Lang, tFor } from "../lib/i18n.ts";
 import { localizeTermValue } from "../lib/term-i18n.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import { websiteLabel } from "../../shared/quote-flow/format-helpers.ts";
+import { isTbdTermValue } from "../../shared/quote-flow/terms-i18n.ts";
 
 /* ---------- palette ---------- */
 export const PINK = "#FF6B6B";
@@ -308,6 +309,8 @@ export function expandTermValue(
   const stateName = expandStateName(contractorState);
   if (term.stepId === "wraps") {
     const v = localizeTermValue(term.value, lang);
+    // REQ-047: a TBD duration is not an estimate — print it bare.
+    if (isTbdTermValue(term.value)) return v;
     return tFor(lang, "quoteDoc.estimated", { value: v });
   }
   if (term.stepId === "governing_state") {
