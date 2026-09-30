@@ -132,7 +132,7 @@ describe("P-11 public quote — persisted accepted state on reload", () => {
 });
 
 // ---------------------------------------------------------------------------
-// P-13 / P-40 / P-63 — /q/:id customer naming, signature image, signed
+// P-13 / P-40 / P-63 — /q/:id customer naming, signer card, signed
 // affordances. One agreement (quote) shared in file order.
 // ---------------------------------------------------------------------------
 
@@ -212,7 +212,7 @@ describe("P-13 public agreement — names the customer in the To/Para card", () 
   });
 });
 
-describe("P-40 public agreement — signed page renders the drawn signature", () => {
+describe("P-40 public agreement — signed page names the signer", () => {
   before(() => {
     // Guard only: ensure accepted even if P-13's flow didn't get there. A
     // second accept 409s (already_accepted) — either way the quote is
@@ -232,21 +232,15 @@ describe("P-40 public agreement — signed page renders the drawn signature", ()
     );
   });
 
-  it("P-40 the signed agreement shows the captured signature image", () => {
-    // The stored PNG (a data URL today; a fetchable URL is also acceptable)
-    // must actually render — the consent copy calls the drawing part of the
-    // signature, so it cannot vanish after submit.
-    cy.get(
-      'img[src^="data:image"], img[src*="signature"]',
-      { timeout: 10_000 },
-    )
-      .should("exist")
-      .first()
-      .should(($img) => {
-        const img = $img[0] as HTMLImageElement;
-        expect(img.naturalWidth, "signature image decoded (naturalWidth)").to
-          .be.greaterThan(0);
-      });
+  it("P-40 the signed agreement names the signer on the customer card", () => {
+    // Since 1a520814 the signed customer column reads like the contractor's
+    // (bold name, cursive typed name, By:/Date:) — the drawn mark is no longer
+    // rendered as an <img>. The evidence the ceremony happened is the card
+    // headed "<name> Signature" (quoteDoc.signatureOf).
+    cy.contains(new RegExp(`${CUSTOMER_NAME} signature`, "i"), {
+      timeout: 10_000,
+    }).should("be.visible");
+    cy.get("form.ctr__sign-form").should("not.exist");
   });
 });
 

@@ -43,19 +43,28 @@ interface ChildSpec {
   color: string;
 }
 
+// Under the merge gate (WT_GATE=1) the backend runs on its FAKES (REQ-318:
+// the gate never touches the real services): no AGENTS_LLM_CLIENT /
+// TRANSCRIPTION_CLIENT → the deterministic stub LLM client (the assistant
+// flows' fallback paths are what the specs pin), no --watch, and its own
+// empty KV file. By hand, `deno task dev` as always — the real OpenAI client.
+const UNDER_GATE = !!Deno.env.get("WT_GATE");
+
 const children: ChildSpec[] = [
   {
     name: "backend",
     cwd: BACKEND_DIR,
     cmd: "deno",
-    args: ["task", "dev"],
+    args: UNDER_GATE
+      ? ["run", "-A", "--env-file=../.env", "--unstable-kv", "bootstrap/mod.ts"]
+      : ["task", "dev"],
     // APP_URL is passed so paperwork email/SMS coordinators emit links
     // that resolve to *this* dev frontend (port matches FRONTEND_PORT)
     // instead of the hardcoded :5173 fallback. Without it, dev links in
     // outbound paperwork open a dead port.
     env: {
       PORT: String(BACKEND_PORT),
-      AGENTS_LLM_CLIENT: "openai",
+      ...(UNDER_GATE ? {} : { AGENTS_LLM_CLIENT: "openai" }),
       APP_URL: `http://localhost:${FRONTEND_PORT}`,
       ...(GATE_KV_PATH ? { KV_PATH: GATE_KV_PATH } : {}),
     },

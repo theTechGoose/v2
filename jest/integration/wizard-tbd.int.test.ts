@@ -26,6 +26,11 @@ describe("REQ-046/047 terms wizard — TBD on start date and duration", () => {
 
   beforeAll(async () => {
     const s = await contractor(PHONE);
+    // The wizard's option labels resolve in the contractor's language; this
+    // spec asserts the ENGLISH labels, so pin it (another spec on the same
+    // dev stack may have flipped an account to Spanish).
+    const me = await s.put("/me", { language: "en" });
+    expect(me.status).toBeLessThan(400);
     quoteId = await seedQuote(s);
     const conv = await s.post("/agents/conversations", { quoteId });
     const conversationId: string = conv.body?.id ?? conv.body?.conversation?.id;
