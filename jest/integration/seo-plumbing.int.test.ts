@@ -26,7 +26,7 @@ import {
   seedQuote,
 } from "./helpers/api";
 
-const FE = "http://localhost:5280";
+const FE = process.env.FRONTEND_BASE_URL ?? "http://localhost:5280";
 
 async function page(
   path: string,

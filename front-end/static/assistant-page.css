@@ -7871,6 +7871,13 @@ body {
   min-height: 0;
   overflow-y: auto;
 }
+/* UX-35: a short transcript anchors its last message — the wizard step card,
+   the price capture — near the composer instead of floating mid-panel over a
+   large dead band. The auto margin only absorbs FREE space: once the
+   transcript is taller than the panel it is 0 and the chat scrolls as before. */
+.asst__chat-wrap .chat__scroll > .msg:last-child {
+  margin-top: auto;
+}
 @media (max-width: 1099px) {
   .asst {
     grid-template-columns: 260px minmax(0, 1fr);

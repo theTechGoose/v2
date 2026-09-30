@@ -6,8 +6,19 @@
     "start": "AGENTS_LLM_CLIENT=openai TRANSCRIPTION_CLIENT=openai deno serve -A --unstable-kv mod.ts",
     "start:local": "deno serve -A --unstable-kv --env-file=.env mod.ts",
     "serve": "deno run -A --unstable-kv serve.ts",
+    "test:unit": {
+      "description": "parallel: backend `deno test --parallel` on its unit files, then jest on jest/unit (parallel by default) — REQ-278/316, see scripts/gate-lane.ts",
+      "command": "deno run -A scripts/gate-lane.ts unit"
+    },
+    "test:int": {
+      "description": "parallel: backend `deno test --parallel` on its int.test.ts + e2e.test.ts (in-process servers, nothing to serve) — see scripts/gate-lane.ts",
+      "command": "deno run -A scripts/gate-lane.ts int"
+    },
+    "test:e2e": {
+      "description": "parallel: the lane runs alongside unit and int against the served BASE_URL; inside it jest/integration (parallel by default) then cypress, whose specs run one browser at a time (Cypress has no workers outside Cypress Cloud) — see scripts/gate-lane.ts",
+      "command": "deno run -A scripts/gate-lane.ts e2e"
+    },
     "install:all": "deno run -A scripts/install-all-platforms.ts",
-    "test:e2e": "deno run -A --unstable-kv tests/e2e.ts",
     "wipe": "cd backend && deno task wipe"
   },
   "compilerOptions": {

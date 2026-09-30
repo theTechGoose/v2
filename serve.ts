@@ -15,8 +15,24 @@ const FRONTEND_DIR = `${ROOT}front-end`;
 // Dev-only defaults bumped off 3000/5173 because too many other random
 // projects squat on those ports. Override via BACKEND_PORT / FRONTEND_PORT
 // if you really need the classic values.
-const BACKEND_PORT = Number(Deno.env.get("BACKEND_PORT") ?? 4280);
-const FRONTEND_PORT = Number(Deno.env.get("FRONTEND_PORT") ?? 5280);
+//
+// PORT is the port a caller hands this launcher — the merge gate (wt-gate,
+// REQ-278: `serve` on a free PORT, BASE_URL exported to the e2e lane) and
+// pin-link both export it. It is the FRONTEND port (that is the URL the
+// tests drive); the backend then takes the next one so a second stack can
+// run beside the pinned dev stack on 4280/5280.
+const PORT_GIVEN = Deno.env.get("PORT");
+const FRONTEND_PORT = Number(
+  Deno.env.get("FRONTEND_PORT") ?? PORT_GIVEN ?? 5280,
+);
+const BACKEND_PORT = Number(
+  Deno.env.get("BACKEND_PORT") ?? (PORT_GIVEN ? FRONTEND_PORT + 1 : 4280),
+);
+// Under the gate (WT_GATE=1) the backend gets its own empty Deno KV file, so
+// the gate's run starts clean and never shares a store with the dev stack.
+const GATE_KV_PATH = Deno.env.get("WT_GATE") && !Deno.env.get("KV_PATH")
+  ? `${Deno.makeTempDirSync({ prefix: "wt-gate-kv-" })}/kv.sqlite`
+  : undefined;
 
 interface ChildSpec {
   name: string;
@@ -41,6 +57,7 @@ const children: ChildSpec[] = [
       PORT: String(BACKEND_PORT),
       AGENTS_LLM_CLIENT: "openai",
       APP_URL: `http://localhost:${FRONTEND_PORT}`,
+      ...(GATE_KV_PATH ? { KV_PATH: GATE_KV_PATH } : {}),
     },
     color: "\x1b[36m", // cyan
   },

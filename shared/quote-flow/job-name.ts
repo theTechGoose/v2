@@ -93,10 +93,13 @@ function summarizeJobNameEs(words: string[]): string {
   if (window.length === 0 && words.length > 0) {
     window = [words[0]];
   }
+  // Sentence case: only the first word keeps a capital. The LLM's polish
+  // step hands this a Title-Cased name ("Instalación De Patio"), and passing
+  // its mid-name capitals through printed "Instalación de Patio" on the
+  // customer's SMS and agreement (UX-05 / UX-26c over HTTP).
   const cased = window.map((w, i) => {
     if (i === 0) return capitalizeFirst(w);
-    if (ES_STOPWORDS.has(w.toLowerCase())) return w.toLowerCase();
-    return w;
+    return w.toLowerCase();
   });
   return cased.join(" ");
 }

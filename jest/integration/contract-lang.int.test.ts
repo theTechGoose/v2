@@ -10,8 +10,10 @@
  */
 import { contractor, seedQuote } from "./helpers/api";
 
+const FRONT = process.env.FRONTEND_BASE_URL ?? "http://localhost:5280";
+
 async function page(path: string, cookie?: string) {
-  const res = await fetch(`http://localhost:5280${path}`, {
+  const res = await fetch(`${FRONT}${path}`, {
     headers: cookie ? { cookie } : {},
   });
   return { status: res.status, html: await res.text() };

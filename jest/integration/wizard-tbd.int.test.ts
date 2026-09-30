@@ -11,6 +11,8 @@
  */
 import { anonymous, contractor, seedQuote } from "./helpers/api";
 
+const API = process.env.API_BASE_URL ?? "http://localhost:5280/api";
+
 type WizardMsg = {
   kind: string;
   payload?: { stepId?: string; options?: Array<{ id: string; label: string; isCustom?: boolean }> };
@@ -93,7 +95,7 @@ describe("REQ-046/047 terms wizard — TBD on start date and duration", () => {
     for (const commsLanguage of ["en", "es"] as const) {
       const ident = await s.put("/profile/identity", { commsLanguage });
       expect(ident.status).toBeLessThan(400);
-      const res = await fetch(`http://localhost:5280/api/quotes/${quoteId}/pdf`);
+      const res = await fetch(`${API}/quotes/${quoteId}/pdf`);
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toMatch(/application\/pdf/);
       const bytes = new Uint8Array(await res.arrayBuffer());
