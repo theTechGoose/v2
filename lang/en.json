@@ -1033,8 +1033,6 @@
   "dashSeed.time.2MinAgo": "2 min ago",
   "dashSeed.time.3HrAgo": "3 hr ago",
   "dashSeed.time.yesterday": "Yesterday",
-  "dashSidebar.collapse": "Collapse sidebar",
-  "dashSidebar.expand": "Expand sidebar",
   "dashTopbar.greeting": "Hey, {name} 👋",
   "dashTopbar.greetingNoName": "Hey 👋",
   "dashTopbar.language": "Language",

@@ -321,45 +321,6 @@ export default function DashSidebar(
           )}
 
           <div class="sb__bottom">
-            {/* REQ-033 (NW-39): QuickBooks-style control IN the rail — one
-                physical button: hamburger + collapse arrow when open, a
-                hamburger when collapsed (the same pattern as the
-                conversations panel). The topbar hamburger keeps working. */}
-            <button
-              type="button"
-              class="sb__collapse"
-              data-cy={mounted
-                ? (collapsed ? "sidebar-expand" : "sidebar-collapse")
-                : undefined}
-              onClick={toggle}
-              aria-label={collapsed
-                ? tFor(s.lang, "dashSidebar.expand")
-                : tFor(s.lang, "dashSidebar.collapse")}
-              title={collapsed
-                ? tFor(s.lang, "dashSidebar.expand")
-                : tFor(s.lang, "dashSidebar.collapse")}
-            >
-              <I
-                d={collapsed
-                  ? (
-                    <>
-                      <path d="M3 6h18M3 12h18M3 18h18" />
-                    </>
-                  )
-                  : (
-                    <>
-                      <path d="M3 6h13M3 12h13M3 18h13" />
-                      <path d="M21 9l-3 3 3 3" />
-                    </>
-                  )}
-                size={16}
-              />
-              {!collapsed && (
-                <span class="sb__collapse-label">
-                  {tFor(s.lang, "dashSidebar.collapse")}
-                </span>
-              )}
-            </button>
             {s.identity && (
               <a
                 href="/settings"
