@@ -14,9 +14,15 @@ const FRONTEND_DIR = `${ROOT}front-end`;
 
 // Dev-only defaults bumped off 3000/5173 because too many other random
 // projects squat on those ports. Override via BACKEND_PORT / FRONTEND_PORT
-// if you really need the classic values.
-const BACKEND_PORT = Number(Deno.env.get("BACKEND_PORT") ?? 4280);
-const FRONTEND_PORT = Number(Deno.env.get("FRONTEND_PORT") ?? 5280);
+// if you really need the classic values. A bare PORT (what the merge gate
+// and `pin-link --serve` hand a `serve` task, REQ-051/278) is the frontend —
+// the URL a browser opens — and puts the backend on the next port, so a
+// gate run never collides with a pinned dev server on 5280/4280.
+const GATE_PORT = Deno.env.get("PORT");
+const FRONTEND_PORT = Number(Deno.env.get("FRONTEND_PORT") ?? GATE_PORT ?? 5280);
+const BACKEND_PORT = Number(
+  Deno.env.get("BACKEND_PORT") ?? (GATE_PORT ? Number(GATE_PORT) + 1 : 4280),
+);
 
 interface ChildSpec {
   name: string;
