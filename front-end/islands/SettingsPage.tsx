@@ -1514,18 +1514,18 @@ function PlanCard({ snapshot, onSaved }: { snapshot: ProfileSnapshot; onSaved: (
               </button>
             </div>
           )
-          : (
-            <div style="display:grid;gap:10px">
-              <PlanCards
-                plans={paid.filter((p) => !(plan?.status === "active" && plan.planId === p.id))}
-                lang={lang}
-                featuredId="monster"
-                disabled={() => busy || !hasEmail}
-                onPick={pick}
-              />
-              {!hasEmail ? <span style="color:var(--fg-muted, #6b7560)">{tFor(lang, "plan.emailFirstSettings")}</span> : null}
-            </div>
-          )}
+          : null}
+        {/* the other paid plans stay cards — while one is pending too, a change of mind opens ITS pay page */}
+        <div style="display:grid;gap:10px">
+          <PlanCards
+            plans={paid.filter((p) => !(plan && plan.status !== "free" && plan.planId === p.id))}
+            lang={lang}
+            featuredId="monster"
+            disabled={() => busy || !hasEmail}
+            onPick={pick}
+          />
+          {!hasEmail ? <span style="color:var(--fg-muted, #6b7560)">{tFor(lang, "plan.emailFirstSettings")}</span> : null}
+        </div>
         {msg ? <div role="status">{msg}</div> : null}
         {err ? <div role="alert" style="color:var(--danger, #b42318)">{err}</div> : null}
       </div>

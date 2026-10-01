@@ -142,6 +142,10 @@ Deno.test("REQ-055: on settings the paid plans are cards and picking one opens t
     await expect.see("Waiting for the payment");
     const href = await page.locator("[data-cy='plan-pay-link']").getAttribute("href");
     expect.eq(href, opened, "the card's link reopens the same pay page");
+    // while it waits the other paid plan is still a card (a change of mind opens ITS pay page);
+    // the plan being paid for is the pending line, not a card
+    expect.eq(await page.locator("[data-cy='plan-pick-assist']").count(), 1, "Monster Assist is still a card while Monster is pending");
+    expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 0, "no card for the plan being paid for");
     // paid on that page (the fake's remote control), checked here
     const paid = await http("/api/me/plan/fake-paid", { method: "POST", headers: auth });
     expect(paid.status === 200, `fake-paid answers 200 (got ${paid.status})`);

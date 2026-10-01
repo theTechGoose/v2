@@ -25,7 +25,7 @@ export default define.page(function PublicQuote(ctx) {
       <Head>
         {/* UX-40: localized like /i and /co (tFor docTitle). */}
         <title>{tFor(lang ?? "en", "quoteDoc.docTitle")}</title>
-        <link rel="stylesheet" href="/landing.css" />
+        <link key="css-landing" rel="stylesheet" href="/landing.css" />
         {
           /* P-62: the phone-layout + @media print rules live in a LINKED
             stylesheet, not an inline <style> — Fresh emits a Head <style>
@@ -33,7 +33,7 @@ export default define.page(function PublicQuote(ctx) {
             hydration, so print styles silently never applied in a real
             browser (see front-end/static/public-contract.css). */
         }
-        <link rel="stylesheet" href="/public-contract.css" />
+        <link key="css-public-contract" rel="stylesheet" href="/public-contract.css" />
       </Head>
       <div
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};padding:32px 16px calc(64px + var(--kb-inset, 0px));scroll-padding-bottom:var(--kb-inset, 0px)`}
