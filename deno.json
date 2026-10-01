@@ -1,5 +1,8 @@
 {
-  "workspace": ["./backend", "./front-end"],
+  "workspace": [
+    "./backend",
+    "./front-end"
+  ],
   "nodeModulesDir": "manual",
   "tasks": {
     "build": "cd front-end && PATH=\"$PWD/../node_modules/.bin:$PATH\" deno task build",
@@ -7,7 +10,24 @@
     "start:local": "deno serve -A --unstable-kv --env-file=.env mod.ts",
     "serve": "deno run -A --unstable-kv serve.ts",
     "install:all": "deno run -A scripts/install-all-platforms.ts",
-    "test:e2e": "deno run -A --unstable-kv tests/e2e.ts",
+    "test:unit": {
+      "command": "deno run -A scripts/test-lane.ts unit",
+      "description": "parallel: deno test --parallel over the backend's unit files, then jest's own workers over jest/unit; answers --plan with the files (REQ-051)"
+    },
+    "test:int": {
+      "command": "deno run -A scripts/test-lane.ts int",
+      "description": "parallel: deno test --parallel over the backend's int.test.ts files; answers --plan with the files (REQ-051)"
+    },
+    "test:e2e": {
+      "command": "shots run -- --no-check",
+      "description": "parallel: shots run is parallel by default (deno test --parallel underneath). --no-check: shots-lib's npm:playwright fallback does not resolve under this repo's nodeModulesDir manual (coms claude-tools 20261001T105058Z-w4-12721); the pages the stories drive are type-checked by the front-end's own deno check (REQ-051)"
+    },
+    "test:smoke": {
+      "command": "deno run -A scripts/test-lane.ts smoke",
+      "description": "parallel: deno test --parallel over the backend's smk.test.ts files — on demand, never in the gate (REQ-051)"
+    },
+    "test:int:live": "cd jest && npm run test:integration",
+    "test:e2e:cypress": "cd cypress && npm run run",
     "wipe": "cd backend && deno task wipe"
   },
   "compilerOptions": {

@@ -372,7 +372,11 @@ body {
 }
 
 .app {
-  flex: 1;
+  /* REQ-052: the shell IS the window — the dashboard's rule. 100vh is mobile
+     Safari's *large* viewport; --app-vh tracks the visual one (MobileViewport
+     island) and shrinks for the soft keyboard; falls back to 100dvh without JS. */
+  height: 100vh;
+  height: var(--app-vh, 100dvh);
   display: flex;
   min-height: 0;
   overflow: hidden;
@@ -792,31 +796,6 @@ body {
   color: var(--fg-subtle);
   font-family: var(--font-mono, ui-monospace, monospace);
   letter-spacing: 0;
-}
-.__unused__ {
-  position: absolute;
-  top: 26px;
-  right: -12px;
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: #fff;
-  border: 1px solid var(--border);
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  color: var(--brand-teal);
-  box-shadow: 0 4px 10px rgba(100, 69, 54, 0.20);
-  z-index: 5;
-  transition: transform 200ms, background 160ms;
-  padding: 0;
-}
-.sb__collapse:hover {
-  transform: scale(1.12);
-  background: var(--mint-200);
-}
-.sb__collapse svg {
-  display: block;
 }
 
 /* ------ Main column ------ */
@@ -2586,7 +2565,11 @@ body {
 }
 
 .app {
-  flex: 1;
+  /* REQ-052: the shell IS the window — the dashboard's rule. 100vh is mobile
+     Safari's *large* viewport; --app-vh tracks the visual one (MobileViewport
+     island) and shrinks for the soft keyboard; falls back to 100dvh without JS. */
+  height: 100vh;
+  height: var(--app-vh, 100dvh);
   display: flex;
   min-height: 0;
   overflow: hidden;
@@ -3006,31 +2989,6 @@ body {
   color: var(--fg-subtle);
   font-family: var(--font-mono, ui-monospace, monospace);
   letter-spacing: 0;
-}
-.__unused__ {
-  position: absolute;
-  top: 26px;
-  right: -12px;
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: #fff;
-  border: 1px solid var(--border);
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  color: var(--brand-teal);
-  box-shadow: 0 4px 10px rgba(100, 69, 54, 0.20);
-  z-index: 5;
-  transition: transform 200ms, background 160ms;
-  padding: 0;
-}
-.sb__collapse:hover {
-  transform: scale(1.12);
-  background: var(--mint-200);
-}
-.sb__collapse svg {
-  display: block;
 }
 
 /* ------ Main column ------ */
@@ -7829,15 +7787,12 @@ body {
      whatever height that footer wraps to (REQ-044: phone + address). */
   flex: 1 1 auto;
   height: auto; /* overrides the older calc() rule above */
-  min-height: 720px;
+  /* REQ-052: no fixed minimum — on a short window the shell still ends at the
+     window's bottom and the chat scrolls inside (.chat__scroll). */
+  min-height: 0;
   padding: 0;
   gap: 0;
   overflow: hidden;
-}
-@media (max-width: 768px) {
-  .asst {
-    min-height: 0;
-  }
 }
 /* Collapse the right column when there's no docpane to fill it (most
    threads, until the user is in a quote/contract context). Otherwise

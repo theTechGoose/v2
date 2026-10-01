@@ -12,9 +12,20 @@ import {
   AccountClosedError,
 } from "@users/domain/coordinators/verify-otp/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
+import {
+  ClosedAccountError,
+  InvalidEmailError,
+  SendEmailOtp,
+} from "@users/domain/coordinators/send-email-otp/mod.ts";
+import { VerifyEmailOtp } from "@users/domain/coordinators/verify-email-otp/mod.ts";
 import { AccountRecovery } from "@users/domain/coordinators/account-recovery/mod.ts";
 import { InvalidRecoveryTokenError } from "@users/domain/data/recovery-token-store/mod.ts";
-import { parseSendOtp, parseVerifyOtp } from "@users/dto/auth.ts";
+import {
+  parseSendEmailOtp,
+  parseSendOtp,
+  parseVerifyEmailOtp,
+  parseVerifyOtp,
+} from "@users/dto/auth.ts";
 import { readSessionId } from "@users/domain/coordinators/require-user/mod.ts";
 import {
   buildSessionCookie,
@@ -44,7 +55,68 @@ export class AuthController {
     private verifyOtp: VerifyOtp,
     private logout: Logout,
     private recovery: AccountRecovery,
+    private sendEmailOtp: SendEmailOtp,
+    private verifyEmailOtp: VerifyEmailOtp,
   ) {}
+
+  /**
+   * POST /auth/send-email-otp — REQ-050 (/login-internal): mail a 6-digit
+   * code to any well-formed address; the account is found-or-created when
+   * the code comes back, like the phone flow.
+   * body: { email, language? }
+   *   - 200 { sent:true }
+   *   - 400 { ok:false, error:"invalid_email" }
+   *   - 409 { ok:false, error:"account_closed" }
+   *   - 429 { ok:false, error:"cooldown", retryAfterSeconds } + Retry-After
+   */
+  @Post("send-email-otp")
+  async sendEmail(@Body() body: unknown) {
+    const dto = parseSendEmailOtp(body);
+    try {
+      await this.sendEmailOtp.run({ email: dto.email, language: dto.language });
+    } catch (err) {
+      const mapped = mapEmailError(err);
+      if (mapped) return jsonResponse({ ok: false, error: mapped.error }, mapped.status);
+      if (err instanceof SendOtpCooldownError) {
+        return jsonResponse(
+          { ok: false, error: "cooldown", retryAfterSeconds: err.retryAfterSeconds },
+          429,
+          { "retry-after": String(err.retryAfterSeconds) },
+        );
+      }
+      throw err;
+    }
+    return { sent: true };
+  }
+
+  /**
+   * POST /auth/verify-email-otp — REQ-050: the emailed code opens the
+   * session of the account that carries the address, creating it when none
+   * does. Same envelope and statuses as /auth/verify, plus the email-only
+   * answers:
+   *   - 200 { ok:true, sessionId, userId, isNewUser, redirectTo } + cookie
+   *   - 401 invalid_code · 410 expired · 429 rate_limited
+   *   - 400 invalid_email · 409 account_closed
+   */
+  @Post("verify-email-otp")
+  async verifyEmail(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const dto = parseVerifyEmailOtp(body);
+    try {
+      const result = await this.verifyEmailOtp.run({ email: dto.email, code: dto.code });
+      ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
+      return {
+        ok: true,
+        sessionId: result.sessionId,
+        userId: result.userId,
+        isNewUser: result.isNewUser,
+        redirectTo: result.isNewUser ? "/welcome" : "/dashboard?welcome=back",
+      };
+    } catch (err) {
+      const mapped = mapEmailError(err) ?? mapVerifyError(err);
+      if (mapped) return jsonResponse({ ok: false, error: mapped.error }, mapped.status);
+      throw err;
+    }
+  }
 
   /** POST /auth/recover { token } — the closed account comes back as it was. */
   @Post("recover")
@@ -236,6 +308,16 @@ function mapVerifyError(
   if (err instanceof InvalidCodeError) return { error: "invalid_code", status: 401 };
   if (err instanceof ExpiredCodeError) return { error: "expired", status: 410 };
   if (err instanceof RateLimitedError) return { error: "rate_limited", status: 429 };
+  return null;
+}
+
+/** REQ-050: the email-login answers → { error, status }. Module-level like
+ *  mapVerifyError (a controller method would register as a route). */
+function mapEmailError(
+  err: unknown,
+): { error: string; status: number } | null {
+  if (err instanceof InvalidEmailError) return { error: "invalid_email", status: 400 };
+  if (err instanceof ClosedAccountError) return { error: "account_closed", status: 409 };
   return null;
 }
 
