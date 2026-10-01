@@ -129,11 +129,6 @@ export default function DashSidebar(
     return globalThis.localStorage.getItem("pm:sb-collapsed") === "1";
   });
   const [mobileOpen, setMobileOpen] = useState(false);
-  // REQ-033 (NW-39): the rail's own collapse control gets its data-cy only
-  // after hydration (same guard as the topbar hamburger) so a test can never
-  // click it before toggle() is live.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
   // Seed from the shared cache so a navigation between pages renders the
   // last-known counts/identity immediately and the badge doesn't flash
   // empty before the refetch lands.
