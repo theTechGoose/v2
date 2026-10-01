@@ -21,15 +21,12 @@ import { SUPPORT_PHONE_DISPLAY } from "../../shared/legal/contact.ts";
 import {
   type BusinessAddress,
   type BusinessIdentity,
-  type PlanId,
-  planClient,
   profileClient,
   type ProfileSnapshot,
-  type UserPlan,
 } from "../clients/profile.ts";
 import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
-import { openBlankTab, pickPlan } from "../lib/plan-pick.ts";
+import { pickErrorOf, resumesAfterPlan } from "../lib/plan-return.ts";
 import { filesClient } from "../clients/files.ts";
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
 import { api } from "../lib/api.ts";
@@ -1003,54 +1000,23 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
 
 
 // REQ-054 — "in onboarding a user can pick their plan": the public monthly plans of the one
-// pricing module, as the cards /settings shows too (PlanCards). Free is stored and the wizard
-// moves on; a paid pick goes through the CRM's link builder and opens that pay page itself
-// (REQ-055) — the step then shows the link to reopen it and a "Check payment" button, and the
-// plan is pending until the due settles there. Skippable: no pick reads as free.
+// pricing module, as the cards /settings shows too (PlanCards). A card is a form (REQ-059): a
+// paid pick is REDIRECTED to the CRM's pay page in this tab — the receipt brings the person back
+// to /plan/return, which reads the plan active, and the wizard resumes past this step; free is
+// stored and the wizard resumes at the next step. A pick still waiting on its page resumes
+// here, with the way back to it. Skippable: no pick reads as free.
 function PlanStep({ ctx }: { ctx: StepCtx }) {
-  const [plan, setPlan] = useState<UserPlan | null>(ctx.snap.plan ?? null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [err, setErr] = useState("");
+  const plan = ctx.snap.plan ?? null;
   const lang = langSignal.value;
   const hasEmail = Boolean(ctx.snap.user.email?.trim());
   const plans = PUBLIC_PLANS.filter((p) => !p.custom && p.period === "monthly");
   const nameOf = (id: string) => PUBLIC_PLANS.find((p) => p.id === id)?.name ?? id;
-
-  async function pick(planId: PlanId) {
-    if (busy) return;
-    setBusy(true);
-    setErr("");
-    setMsg("");
-    try {
-      // REQ-055 — a paid pick opens the pay page itself: the tab is opened inside this click,
-      // before the mint (front-end/lib/plan-pick.ts)
-      const next = await pickPlan(planId, planClient.choose, openBlankTab);
-      setPlan(next);
-      ctx.patchSnap({ plan: next });
-      if (next.status === "free") ctx.advance();
-    } catch {
-      setErr(t("plan.error"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function check() {
-    if (busy) return;
-    setBusy(true);
-    setErr("");
-    try {
-      const next = await planClient.refresh();
-      setPlan(next);
-      ctx.patchSnap({ plan: next });
-      setMsg(next.status === "active" ? "" : t("plan.notYet"));
-    } catch {
-      setErr(t("plan.error"));
-    } finally {
-      setBusy(false);
-    }
-  }
+  // a pick the backend refused came back here saying why (/plan/pick)
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    const why = pickErrorOf(location.search);
+    if (why) setErr(t(why === "email-required" ? "welcome.plan.emailFirst" : "plan.error"));
+  }, []);
 
   const settled = plan?.status === "active" || plan?.status === "free";
 
@@ -1069,26 +1035,10 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
               <b>{nameOf(plan.planId)}</b> · {t("plan.pending")}
             </p>
             <div class="welcome__plan-actions">
-              <a
-                class="welcome__btn welcome__btn--primary"
-                data-cy="plan-pay-link"
-                href={plan.payUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {t("plan.openPay")} ↗
+              <a class="welcome__btn welcome__btn--primary" data-cy="plan-pay-link" href={plan.payUrl}>
+                {t("plan.resume")} →
               </a>
-              <button
-                type="button"
-                class="welcome__btn welcome__btn--outline"
-                data-cy="plan-check-paid"
-                onClick={check}
-                disabled={busy}
-              >
-                {t("plan.check")}
-              </button>
             </div>
-            {msg ? <p class="welcome__plan-note" role="status">{msg}</p> : null}
           </div>
         )
         : (
@@ -1097,15 +1047,15 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
               plans={plans}
               lang={lang}
               featuredId="monster"
-              disabled={(p) => busy || (p.priceCents > 0 && !hasEmail)}
-              onPick={(id) => pick(id as PlanId)}
+              disabled={(p) => p.priceCents > 0 && !hasEmail}
+              back="/welcome"
             />
             <p class="welcome__plan-custom">{t("welcome.plan.custom", { phone: SUPPORT_PHONE_DISPLAY })}</p>
             {!hasEmail ? <p class="welcome__plan-note">{t("welcome.plan.emailFirst")}</p> : null}
           </div>
         )}
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
-      <StepFooter ctx={ctx} valid={settled} busy={busy} onContinue={ctx.advance} />
+      <StepFooter ctx={ctx} valid={settled} busy={false} onContinue={ctx.advance} />
     </StepBody>
   );
 }
@@ -1136,10 +1086,12 @@ function buildSteps(): StepDef[] {
       Component: EmailStep,
     },
     {
-      // REQ-054 — the plan, right after the email a paid pick needs
+      // REQ-054 — the plan, right after the email a paid pick needs. REQ-059: a pick still
+      // waiting on its pay page resumes HERE (the way back to the page); once the receipt has
+      // brought the person back with the plan active, the wizard moves on
       id: "plan",
       skippable: true,
-      isComplete: (s) => Boolean(s.plan),
+      isComplete: (s) => Boolean(s.plan) && s.plan?.status !== "pending",
       Component: PlanStep,
     },
     {
@@ -1200,7 +1152,13 @@ export default function WelcomeWizard(
 ) {
   const steps = useMemo(() => buildSteps(), []);
   const [snap, setSnap] = useState<ProfileSnapshot>(snapshot);
-  const [index, setIndex] = useState(() => firstIncomplete(steps, snapshot));
+  // REQ-059 — back from a pick (free stored, or the receipt with the plan active): resume PAST
+  // the plan step, not at the first step the person skipped on the way to it
+  const [index, setIndex] = useState(() =>
+    typeof location !== "undefined" && resumesAfterPlan(location.search)
+      ? Math.min(steps.findIndex((step) => step.id === "plan") + 1, steps.length - 1)
+      : firstIncomplete(steps, snapshot)
+  );
   const [, force] = useState(0);
 
   // Pre-generate the sample quote while the user fills the form so the

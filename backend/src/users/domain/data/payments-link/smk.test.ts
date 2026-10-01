@@ -14,7 +14,8 @@ Deno.test({
     const link = new PaymentsLink();
     assertEquals(link.isFake(), false, "both keys set → the real client");
     const stamp = Date.now();
-    const { customerId } = await link.createCustomer({ customerName: `Smoke ${stamp}`, customerEmail: `smoke-${stamp}@blackhole.postmarkapp.com` });
+    const { customerId } = await link.createCustomer({ customerName: `Smoke ${stamp}`, customerEmail: `smoke-${stamp}@blackhole.postmarkapp.com`, customerPhone: "+15125550100", externalRef: `pm:smoke-${stamp}` });
+    assertEquals((await link.findCustomer(`pm:smoke-${stamp}`))?.customerId, customerId, "REQ-058: the customer reads back by this app's ref");
     assert(customerId, "the CRM answered a customerId");
     const { dueId } = await link.raiseDue({ customerId, amountCents: 9900, memo: "Monster — first month (smoke)" });
     assert(dueId, "the CRM answered a dueId");

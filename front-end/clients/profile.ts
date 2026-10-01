@@ -169,11 +169,22 @@ export const profileClient = {
     api.get<{ ok: true; deleted: number }>("/me/wipe", opts),
 };
 
-/** REQ-054 — the plan: pick one, and ask whether a pending one's payment landed. */
+/** REQ-058 — the CRM customer this account is (null before the first sync). Mirrors the backend's CrmCustomer. */
+export interface CrmCustomer {
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  externalRef?: string;
+}
+
+/** REQ-054 — the plan: pick one; REQ-059 — /plan/return refreshes a pending one on the way back. */
 export const planClient = {
   get: (opts: ApiOptions = {}) => api.get<UserPlan | null>("/me/plan", opts),
   choose: (planId: PlanId, opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan", { planId }, opts),
   refresh: (opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan/refresh", undefined, opts),
+  /** REQ-058 — what the CRM holds for this account */
+  crmCustomer: (opts: ApiOptions = {}) => api.get<CrmCustomer | null>("/me/crm-customer", opts),
   /** REQ-057 — what the app's stand-in pay page presses: settles the due on the fake (404 on the real client) */
   fakePaid: (opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan/fake-paid", undefined, opts),
 };

@@ -2,27 +2,48 @@
 // the pay link that collects it, and whether the due still reads open. Real against ppwk-crm's
 // payments API when PPWK_PAYMENTS_URL + PPWK_PAYMENTS_TOKEN are set; otherwise the in-process
 // fake the gate's lanes run on (the same way EmailService runs without a Postmark key).
+// REQ-058 — a customer carries this app's ref: the CRM upserts by it (ppwk-crm REQ-076), so
+// sign-up, onboarding and every later edit talk about ONE record, read back with findCustomer.
+// REQ-059 — a pay link carries the address the receipt brings the person back to (REQ-077 there).
 import { Injectable } from "#danet/core";
 import { type PaymentsLinkName, selectPaymentsLinkName } from "@users/domain/business/payments-link-select/mod.ts";
 
 export interface NewCustomer {
   customerName: string;
+  /** "" when the account has none yet — allowed with an externalRef (the CRM's REQ-076) */
   customerEmail: string;
+  customerPhone?: string;
+  /** this app's ref for the account (externalRefFor): the CRM upserts by it */
+  externalRef?: string;
+}
+/** what the CRM holds for a customer, as this app reads it back */
+export interface CrmCustomer extends NewCustomer {
+  customerId: string;
 }
 export interface NewDue {
   customerId: string;
   amountCents: number;
   memo: string;
 }
+export interface NewPayLink {
+  customerId: string;
+  dueId: string;
+  /** REQ-059 — where the receipt goes back to, and what it calls that place */
+  returnUrl?: string;
+  returnLabel?: string;
+}
 export interface PaymentsLinkPort {
+  /** make the customer — or, with an externalRef the CRM already knows, revise that one */
   createCustomer(input: NewCustomer): Promise<{ customerId: string }>;
+  /** the customer carrying this ref; null when the CRM has none */
+  findCustomer(externalRef: string): Promise<CrmCustomer | null>;
   raiseDue(input: NewDue): Promise<{ dueId: string }>;
-  mintPayLink(input: { customerId: string; dueId: string }): Promise<{ payUrl: string }>;
+  mintPayLink(input: NewPayLink): Promise<{ payUrl: string }>;
   /** does the CRM's ledger still say something is outstanding on this due */
   dueOpen(dueId: string): Promise<boolean>;
 }
 
-/** the CRM's doors this client knocks on (ppwk-crm payments, REQ-057 there) */
+/** the CRM's doors this client knocks on (ppwk-crm payments, REQ-057/076/077 there) */
 const CUSTOMERS = "/api/payments/customers";
 const DUES = "/api/payments/dues";
 const PAY_LINKS = "/api/payments/pay-links";
@@ -40,10 +61,9 @@ class PaymentsUnavailableError extends Error {
 class CrmPaymentsLink implements PaymentsLinkPort {
   constructor(private readonly origin: string, private readonly token: string, private readonly f: typeof fetch = globalThis.fetch) {}
 
-  private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    let res: Response;
+  private async send(method: string, path: string, body?: unknown): Promise<Response> {
     try {
-      res = await this.f(`${this.origin}${path}`, {
+      return await this.f(`${this.origin}${path}`, {
         method,
         headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -51,6 +71,9 @@ class CrmPaymentsLink implements PaymentsLinkPort {
     } catch (e) {
       throw new PaymentsUnavailableError(`${method} ${path}: ${String(e)}`);
     }
+  }
+  private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const res = await this.send(method, path, body);
     const text = await res.text();
     if (!res.ok) throw new PaymentsUnavailableError(`${method} ${path} answered ${res.status}: ${text.slice(0, 200)}`);
     return JSON.parse(text) as T;
@@ -60,11 +83,19 @@ class CrmPaymentsLink implements PaymentsLinkPort {
     const c = await this.call<{ customerId: string }>("POST", CUSTOMERS, input);
     return { customerId: c.customerId };
   }
+  async findCustomer(externalRef: string) {
+    const res = await this.send("GET", `${CUSTOMERS}/by-external/${encodeURIComponent(externalRef)}`);
+    const text = await res.text();
+    if (res.status === 404) return null;
+    if (!res.ok) throw new PaymentsUnavailableError(`GET customers/by-external answered ${res.status}: ${text.slice(0, 200)}`);
+    const c = JSON.parse(text) as CrmCustomer;
+    return { customerId: c.customerId, customerName: c.customerName, customerEmail: c.customerEmail, customerPhone: c.customerPhone, externalRef: c.externalRef };
+  }
   async raiseDue(input: NewDue) {
     const d = await this.call<{ dueId: string }>("POST", DUES, { ...input, categoryCode: CATEGORY });
     return { dueId: d.dueId };
   }
-  async mintPayLink(input: { customerId: string; dueId: string }) {
+  async mintPayLink(input: NewPayLink) {
     const l = await this.call<{ chargeUrl: string }>("POST", PAY_LINKS, { ...input, brandId: "" });
     return { payUrl: `${this.origin}${l.chargeUrl}` };
   }
@@ -76,9 +107,9 @@ class CrmPaymentsLink implements PaymentsLinkPort {
 
 /** the fake's world — what a story or an int test reads back and settles */
 class FakePaymentsWorld {
-  customers: Array<NewCustomer & { customerId: string }> = [];
+  customers: CrmCustomer[] = [];
   dues: Array<NewDue & { dueId: string; open: boolean }> = [];
-  links: Array<{ customerId: string; dueId: string; payUrl: string }> = [];
+  links: Array<NewPayLink & { payUrl: string }> = [];
   reset() {
     this.customers = [];
     this.dues = [];
@@ -96,31 +127,53 @@ export function fakePaymentsWorld(): FakePaymentsWorld {
   return WORLD;
 }
 
-/** where the fake's pay page lives: the app itself (the same rule the alert links use) */
-function fakePayPageOrigin(): string {
+/** the app's own url: APP_URL (the launcher's frontend; the public origin in production), the
+ *  dev default otherwise — the same rule the alert links use */
+export function appOrigin(): string {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
-  if (explicit && /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(explicit)) return explicit.replace(/\/+$/, "");
-  return "http://localhost:5280";
+  return (explicit ?? "http://localhost:5280").replace(/\/+$/, "");
+}
+
+/** where the fake's pay page lives: the app itself — only ever a local one (the fake never runs
+ *  in production, REQ-054) */
+function fakePayPageOrigin(): string {
+  const origin = appOrigin();
+  return /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(origin) ? origin : "http://localhost:5280";
 }
 
 class FakePaymentsLink implements PaymentsLinkPort {
   constructor(private readonly world = WORLD) {}
   createCustomer(input: NewCustomer) {
+    // REQ-058 — the CRM's upsert (its REQ-076): a ref it knows revises that customer in place
+    const ref = input.externalRef?.trim() ?? "";
+    const known = ref ? this.world.customers.find((c) => c.externalRef === ref) : undefined;
+    if (known) {
+      Object.assign(known, { ...input, customerId: known.customerId });
+      return Promise.resolve({ customerId: known.customerId });
+    }
     const customerId = crypto.randomUUID();
     this.world.customers.push({ ...input, customerId });
     return Promise.resolve({ customerId });
+  }
+  findCustomer(externalRef: string) {
+    const found = this.world.customers.find((c) => c.externalRef === externalRef);
+    return Promise.resolve(found ? { ...found } : null);
   }
   raiseDue(input: NewDue) {
     const dueId = crypto.randomUUID();
     this.world.dues.push({ ...input, dueId, open: true });
     return Promise.resolve({ dueId });
   }
-  mintPayLink(input: { customerId: string; dueId: string }) {
+  mintPayLink(input: NewPayLink) {
     // REQ-057 — the app's own stand-in pay page (front-end/routes/pay/fake.tsx), the shape the
-    // real link builder makes: a page carrying the customer's ref and the due. At the app's url
-    // (APP_URL is the launcher's frontend; the dev default otherwise) — never a host that
-    // resolves nowhere.
-    const payUrl = `${fakePayPageOrigin()}/pay/fake?customer=${input.customerId}&due=${input.dueId}`;
+    // real link builder makes: a page carrying the customer's ref and the due, at the app's url.
+    // REQ-059 — and the return address the receipt follows, as the real page's does.
+    const q = new URLSearchParams({ customer: input.customerId, due: input.dueId });
+    if (input.returnUrl) {
+      q.set("return", input.returnUrl);
+      q.set("label", input.returnLabel ?? "");
+    }
+    const payUrl = `${fakePayPageOrigin()}/pay/fake?${q}`;
     this.world.links.push({ ...input, payUrl });
     return Promise.resolve({ payUrl });
   }
@@ -162,10 +215,13 @@ export class PaymentsLink implements PaymentsLinkPort {
   createCustomer(input: NewCustomer) {
     return this.port().createCustomer(input);
   }
+  findCustomer(externalRef: string) {
+    return this.port().findCustomer(externalRef);
+  }
   raiseDue(input: NewDue) {
     return this.port().raiseDue(input);
   }
-  mintPayLink(input: { customerId: string; dueId: string }) {
+  mintPayLink(input: NewPayLink) {
     return this.port().mintPayLink(input);
   }
   dueOpen(dueId: string) {

@@ -6,6 +6,10 @@
   gap: 10px;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
+/* each card is its own form (REQ-059); the grid lays out the cards, not the forms */
+.plan-card-form {
+  display: contents;
+}
 .plan-card {
   font-family: var(--font-body, inherit);
   text-align: left;

@@ -7,6 +7,7 @@ import { WipeAccount } from "@users/domain/coordinators/wipe-account/mod.ts";
 import { parseUpdateUser } from "@users/dto/user.ts";
 import { requireUser, readSessionId, UnauthorizedError } from "@users/domain/coordinators/require-user/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
+import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { fakePaymentsWorld, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { parseChoosePlan } from "@users/dto/plan.ts";
 
@@ -25,6 +26,7 @@ export class MeController {
     private wipeCoord: WipeAccount,
     private choosePlan: ChoosePlan,
     private paymentsLink: PaymentsLink,
+    private crm: CrmCustomerSync,
   ) {}
 
   /** REQ-054 — the plan this account picked; null until a pick (read as free) */
@@ -38,11 +40,18 @@ export class MeController {
   @Post("plan")
   async pickPlan(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const { planId } = parseChoosePlan(body);
-    return await this.choosePlan.choose(user.id, planId);
+    const { planId, back } = parseChoosePlan(body);
+    return await this.choosePlan.choose(user.id, planId, back);
   }
 
-  /** REQ-054 — "Check payment": a pending plan asks the CRM whether its due settled */
+  /** REQ-058 — the CRM customer this account is: made at sign-up, filled in by onboarding */
+  @Get("crm-customer")
+  async crmCustomer(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return ctx.json(await this.crm.read(user.id)); // null before the first sync, as a body
+  }
+
+  /** REQ-054/059 — a pending plan asks the CRM whether its due settled (what /plan/return presses) */
   @Post("plan/refresh")
   async refreshPlan(@Context() ctx: ExecutionContext) {
     const user = await requireUser(ctx, this.sessions, this.users);
@@ -73,7 +82,9 @@ export class MeController {
   async update(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const patch = parseUpdateUser(body);
-    return await this.users.update(user.id, patch);
+    const updated = await this.users.update(user.id, patch);
+    await this.crm.sync(user.id); // REQ-058 — the name and email reach the CRM customer
+    return updated;
   }
 
   /**
@@ -87,7 +98,9 @@ export class MeController {
   async onboarded(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const skipped = Boolean((body as { skipped?: unknown } | null)?.skipped);
-    return await this.users.markOnboarded(user.id, skipped);
+    const marked = await this.users.markOnboarded(user.id, skipped);
+    await this.crm.sync(user.id); // REQ-058 — onboarding done: the CRM customer reads what it entered
+    return marked;
   }
 
   @Delete()

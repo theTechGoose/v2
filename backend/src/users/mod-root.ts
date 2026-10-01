@@ -41,6 +41,7 @@ import { LoadProfile } from "@profile/domain/coordinators/load-profile/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
+import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 
 /**
  * UsersModule — owns the full user identity surface:
@@ -99,6 +100,7 @@ import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
     // REQ-054 — the plan
     PlanStore,
     PaymentsLink,
+    CrmCustomerSync, // REQ-058
     ChoosePlan,
   ],
 })

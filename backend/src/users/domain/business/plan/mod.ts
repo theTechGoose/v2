@@ -22,12 +22,36 @@ export function firstMonthMemo(plan: PricingPlan): string {
   return `${plan.name} — first month`;
 }
 
-/** the CRM customer is the business, else the person, else the email */
+/** the CRM customer is the business, else the person, else the email, else the phone (REQ-058:
+ *  at sign-up that is all the account has — the name arrives with onboarding) */
 export function customerNameFor(
-  user: { name?: string; email?: string },
+  user: { name?: string; email?: string; phoneNumber?: string },
   identity: { businessName?: string } | null,
 ): string {
-  return identity?.businessName?.trim() || user.name?.trim() || user.email?.trim() || "";
+  return identity?.businessName?.trim() || user.name?.trim() || user.email?.trim() || user.phoneNumber?.trim() || "";
+}
+
+/** REQ-058 — the ref this app's account carries on its CRM customer: ONE customer per account,
+ *  made at sign-up and revised by every later write (the CRM upserts by it, ppwk-crm REQ-076) */
+export function externalRefFor(userId: string): string {
+  return `pm:${userId}`;
+}
+
+/** REQ-059 — what the pay page's receipt calls this app on its way back */
+export const RETURN_LABEL = "Paperwork Monster";
+
+/** the pages that show the plan cards — the only places a pick comes back to */
+export const PICK_BACKS = ["/welcome", "/settings"] as const;
+export type PickBack = typeof PICK_BACKS[number];
+export function pickBackOf(raw: unknown): PickBack {
+  return (PICK_BACKS as readonly unknown[]).includes(raw) ? raw as PickBack : "/settings";
+}
+
+/** REQ-059 — where the receipt brings the person back: the app's return page, naming the due it
+ *  settled and the page the pick came from, so the plan is read active on arrival and the person
+ *  continues where they were — no "Check payment" */
+export function returnUrlFor(appOrigin: string, dueId: string, back: PickBack): string {
+  return `${appOrigin.replace(/\/+$/, "")}/plan/return?${new URLSearchParams({ due: dueId, back })}`;
 }
 
 export interface PayLinkInfo {

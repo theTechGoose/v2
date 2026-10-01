@@ -10,13 +10,10 @@
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import { profileClient,
-  type PlanId,
-  planClient,
-  type UserPlan, type ProfileSnapshot } from "../clients/profile.ts";
+import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
 import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
-import { openBlankTab, pickPlan } from "../lib/plan-pick.ts";
+import { pickErrorOf } from "../lib/plan-return.ts";
 import { filesClient } from "../clients/files.ts";
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
@@ -1454,39 +1451,21 @@ function ContractDefaultsEditCard(
 // REQ-054 — "later can upgrade to paid in the settings panel": the current plan, the paid plans
 // as the same cards onboarding shows (REQ-055 — a card is the pick, and it opens the CRM's pay
 // page itself), and for a pending one the link to reopen that page + check.
-function PlanCard({ snapshot, onSaved }: { snapshot: ProfileSnapshot; onSaved: (next: Partial<ProfileSnapshot>) => void }) {
+function PlanCard({ snapshot }: { snapshot: ProfileSnapshot }) {
   const lang: Lang = snapshot.user.language === "es" ? "es" : "en";
-  const [plan, setPlan] = useState<UserPlan | null>(snapshot.plan ?? null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [err, setErr] = useState("");
+  const plan = snapshot.plan ?? null;
   const nameOf = (id: string) => PUBLIC_PLANS.find((p) => p.id === id)?.name ?? id;
   // REQ-056 — every selectable plan but the current one is a card: Monster Free among them on a
   // paid plan, so going back to free is the same one click as going up
   const selectable = PUBLIC_PLANS.filter((p) => !p.custom && p.period === "monthly");
   const currentId = plan && plan.status !== "free" ? plan.planId : "free";
   const hasEmail = Boolean(snapshot.user.email?.trim());
-
-  async function run(fn: () => Promise<UserPlan>, after?: (p: UserPlan) => void) {
-    if (busy) return;
-    setBusy(true);
-    setErr("");
-    setMsg("");
-    try {
-      const next = await fn();
-      setPlan(next);
-      onSaved({ plan: next });
-      after?.(next);
-    } catch {
-      setErr(tFor(lang, "plan.error"));
-    } finally {
-      setBusy(false);
-    }
-  }
-  // REQ-055 — the card is the pick, and a paid pick opens the pay page itself (the tab is opened
-  // inside the click, before the mint; see front-end/lib/plan-pick.ts)
-  const pick = (id: string) => run(() => pickPlan(id as PlanId, planClient.choose, openBlankTab));
-  const check = () => run(() => planClient.refresh(), (p) => setMsg(p.status === "active" ? "" : tFor(lang, "plan.notYet")));
+  // REQ-059 — a pick the backend refused came back here saying why (/plan/pick)
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    const why = pickErrorOf(location.search);
+    if (why) setErr(tFor(lang, why === "email-required" ? "plan.emailFirstSettings" : "plan.error"));
+  }, []);
 
   const currentName = plan ? nameOf(plan.planId) : nameOf("free");
   const status = !plan || plan.status === "free"
@@ -1508,28 +1487,26 @@ function PlanCard({ snapshot, onSaved }: { snapshot: ProfileSnapshot; onSaved: (
         </div>
         {plan?.status === "pending"
           ? (
+            // REQ-059 — the pay page again, in this tab; the receipt brings the person back here
             <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-              <a class="btn btn--accent" data-cy="plan-pay-link" href={plan.payUrl} target="_blank" rel="noopener noreferrer">
-                {tFor(lang, "plan.openPay")} ↗
+              <a class="btn btn--accent" data-cy="plan-pay-link" href={plan.payUrl}>
+                {tFor(lang, "plan.resume")} →
               </a>
-              <button type="button" class="btn btn--ghost" data-cy="plan-check-paid" onClick={check} disabled={busy}>
-                {tFor(lang, "plan.check")}
-              </button>
             </div>
           )
           : null}
-        {/* the other plans stay cards — while one is pending too, a change of mind opens ITS pay page (or stores free) */}
+        {/* the other plans stay cards — while one is pending too, a change of mind goes to ITS pay page (or stores free).
+            REQ-055/059: a card is a form; the pick is a redirect to the pay page, in this tab */}
         <div style="display:grid;gap:10px">
           <PlanCards
             plans={selectable.filter((p) => p.id !== currentId)}
             lang={lang}
             featuredId="monster"
-            disabled={(p) => busy || (p.priceCents > 0 && !hasEmail)}
-            onPick={pick}
+            disabled={(p) => p.priceCents > 0 && !hasEmail}
+            back="/settings"
           />
           {!hasEmail ? <span style="color:var(--fg-muted, #6b7560)">{tFor(lang, "plan.emailFirstSettings")}</span> : null}
         </div>
-        {msg ? <div role="status">{msg}</div> : null}
         {err ? <div role="alert" style="color:var(--danger, #b42318)">{err}</div> : null}
       </div>
     </div>
@@ -1666,7 +1643,7 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <PlanCard snapshot={p} onSaved={onSaved} />
+      <PlanCard snapshot={p} />
 
       <div class="grid">
         <Card

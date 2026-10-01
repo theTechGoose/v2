@@ -9,14 +9,18 @@ import FakePayPage from "../../islands/FakePayPage.tsx";
  * /pay/fake (REQ-057) — the stand-in for the CRM's pay page while the app runs on fakes: the
  * fake link builder mints this url for a paid pick (backend users/domain/data/payments-link).
  * It names the customer and the due the link carries, shows the sandbox test card, and its
- * one Pay button settles the due the way a card on the real page does. Production never
- * mints it (the fake is refused at boot there, REQ-054), so it is unlinked and noindex.
+ * one Pay button settles the due the way a card on the real page does, then goes back where the
+ * link said (REQ-059). Production never mints it (the fake is refused at boot there, REQ-054),
+ * so it is unlinked and noindex.
  */
 export default define.page(function PayFake(ctx) {
   const lang: Lang = langFromCookie(ctx.req.headers.get("cookie")) ??
     pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
   const customer = ctx.url.searchParams.get("customer") ?? "";
   const due = ctx.url.searchParams.get("due") ?? "";
+  // REQ-059 — the way back the link carried (the fake mints it like the CRM does), if any
+  const returnUrl = ctx.url.searchParams.get("return") ?? "";
+  const returnLabel = ctx.url.searchParams.get("label") ?? "";
   return (
     <>
       <Head>
@@ -37,7 +41,7 @@ export default define.page(function PayFake(ctx) {
           <p class="muted" style="color:var(--fg-muted);font-size:15px;margin-bottom:16px">
             {tFor(lang, "payFake.lede", { customer: customer.slice(0, 8), due: due.slice(0, 8) })}
           </p>
-          <FakePayPage customer={customer} due={due} />
+          <FakePayPage lang={lang} customer={customer} due={due} returnUrl={returnUrl} returnLabel={returnLabel} />
           <SiteFooter lang={lang} />
         </div>
       </div>

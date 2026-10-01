@@ -5,6 +5,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { parseUpdateBusinessIdentity } from "@profile/dto/business-identity.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 
 @Controller("profile/identity")
 export class BusinessIdentityController {
@@ -12,6 +13,7 @@ export class BusinessIdentityController {
     private store: BusinessIdentityStore,
     private users: UserStore,
     private sessions: SessionStore,
+    private crm: CrmCustomerSync,
   ) {}
 
   @Get()
@@ -25,6 +27,8 @@ export class BusinessIdentityController {
   async upsert(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const patch = parseUpdateBusinessIdentity(body);
-    return await this.store.upsert(user.id, patch);
+    const saved = await this.store.upsert(user.id, patch);
+    await this.crm.sync(user.id); // REQ-058 — the business name is the CRM customer's name
+    return saved;
   }
 }

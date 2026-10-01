@@ -6,6 +6,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { fakePaymentsWorld, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
+import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { ChoosePlan } from "./mod.ts";
 
 async function fresh() {
@@ -18,8 +19,9 @@ async function fresh() {
   const identity = new BusinessIdentityStore();
   const plans = new PlanStore();
   const link = new PaymentsLink();
-  const flow = new ChoosePlan(users, identity, plans, link);
-  return { users, identity, plans, link, flow };
+  const crm = new CrmCustomerSync(users, identity, link);
+  const flow = new ChoosePlan(users, plans, link, crm);
+  return { users, identity, plans, link, crm, flow };
 }
 
 Deno.test("REQ-054 choose-plan — nobody has a plan until they pick one; free is stored as free", async () => {
@@ -47,6 +49,35 @@ Deno.test("REQ-054 choose-plan — a paid plan makes the CRM customer, raises th
   assertEquals(plan.payUrl, world.links[0].payUrl);
   // the fake mints the app's own stand-in page (REQ-057); the real client's is /ui/payments/charge (smk.test.ts)
   assertEquals(plan.payUrl?.includes(`/pay/fake?customer=${plan.customerId}&due=${plan.dueId}`), true, "the pay page the link builder makes");
+});
+
+Deno.test("REQ-058 choose-plan — the paid pick reuses the customer sign-up made, revised with the account's details: one record, carrying this app's ref", async () => {
+  const { users, identity, crm, flow } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125550107", language: "en", name: "New user" });
+  const atSignUp = await crm.sync(user.id);
+  await users.update(user.id, { email: "e@roof.test", name: "Eli" });
+  await identity.upsert(user.id, { businessName: "Eli Decks" });
+  const plan = await flow.choose(user.id, "monster");
+  const world = fakePaymentsWorld();
+  assertEquals(world.customers.length, 1, "the pick revised the sign-up customer, never a second one");
+  assertEquals(plan.customerId, atSignUp!.customerId);
+  assertEquals([world.customers[0].customerName, world.customers[0].customerEmail, world.customers[0].customerPhone, world.customers[0].externalRef], ["Eli Decks", "e@roof.test", "+15125550107", `pm:${user.id}`]);
+});
+
+Deno.test("REQ-059 choose-plan — the pay link carries the way back: the app's /plan/return naming the due, under this app's name", async () => {
+  const { users, flow } = await fresh();
+  const before = Deno.env.get("APP_URL");
+  Deno.env.set("APP_URL", "http://localhost:13170");
+  try {
+    const user = await users.create({ phoneNumber: "+15125550108", email: "f@roof.test" });
+    const plan = await flow.choose(user.id, "assist", "/welcome");
+    const link = fakePaymentsWorld().links[0];
+    assertEquals(link.returnUrl, `http://localhost:13170/plan/return?due=${plan.dueId}&back=%2Fwelcome`);
+    assertEquals(link.returnLabel, "Paperwork Monster");
+    assertEquals(new URL(plan.payUrl!).searchParams.get("return"), link.returnUrl);
+  } finally {
+    before === undefined ? Deno.env.delete("APP_URL") : Deno.env.set("APP_URL", before);
+  }
 });
 
 Deno.test("REQ-054 choose-plan — a paid plan needs an email on the account; the CRM customer is never invented", async () => {

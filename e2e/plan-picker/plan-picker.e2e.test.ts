@@ -2,12 +2,16 @@
  * REQ-054 — "we want to use the link builder so in onboarding a user can pick their plan. they
  * can pick free but later can upgrade to paid in the settings panel."
  * REQ-055 — "upgrade to monster 99 ect should just be cards and open the payment page."
+ * REQ-058 — "when someone signs up it should build them as a customer then add their info when
+ * they finish the onboarding"
+ * REQ-059 — "v2 should redirect to the ui … the payments should be seamless between both apps."
  *
- * The pages: the /welcome wizard's plan step (front-end/islands/WelcomeWizard.tsx) and the Plan
- * card on /settings (front-end/islands/SettingsPage.tsx), both rendering the one PlanCards
- * component. The gate runs on the fakes: the CRM behind the pay link is the in-process fake
- * (PPWK_PAYMENTS_URL unset), and its one remote control, POST /api/me/plan/fake-paid, is what
- * settles the due the way a card on the real pay page would.
+ * The pages: the /welcome wizard (front-end/islands/WelcomeWizard.tsx) and the Plan card on
+ * /settings (front-end/islands/SettingsPage.tsx), both rendering the one PlanCards component.
+ * The gate runs on the fakes: the CRM behind the pay link is the in-process fake (PPWK_PAYMENTS_URL
+ * unset) — it upserts customers by this app's ref and mints the app's own /pay/fake page
+ * (REQ-057) carrying the return address, the way the real link builder does — and that page's
+ * one Pay button settles the due the way a card on the real pay page would.
  */
 import { story, type StoryTools } from "#shots";
 
@@ -32,72 +36,125 @@ async function signIn(http: StoryTools["http"], page: StoryTools["page"], baseUr
   await me.body?.cancel();
   const [name, value] = cookie.split("=");
   // the served app answers as 127.0.0.1 (the gate's BASE_URL) AND as localhost (APP_URL, the
-  // launcher's frontend — the host the fake's pay page is minted on, REQ-057): one app, both names
+  // launcher's frontend — the host the fake's pay page and the return address are minted on,
+  // REQ-057/059): one app, both names
   const hosts = new Set([new URL(baseUrl).hostname, "localhost", "127.0.0.1"]);
   await page.context().addCookies([...hosts].flatMap((domain) => [
     { name, value, domain, path: "/" },
     { name: "pm_lang", value: "en", domain, path: "/" },
   ]));
-  return auth;
+  return { auth, phone, userId: body.userId as string };
 }
 
-/** REQ-055 — click a plan card, wait for the tab it opens to land on the pay page — on fakes the
- *  app's own /pay/fake (REQ-057) — and hand back that url (the tab is closed again: the story
- *  stays on the app's page). */
-async function pickOpensPayPage(page: StoryTools["page"], card: string): Promise<string> {
-  const [tab] = await Promise.all([
-    page.waitForEvent("popup", { timeout: 60_000 }),
-    page.locator(`[data-cy='${card}']`).click(),
-  ]);
-  await tab.waitForURL((u: URL) => u.pathname === "/pay/fake" && u.searchParams.has("customer") && u.searchParams.has("due"), { timeout: 60_000 });
-  const url = tab.url();
-  await tab.close();
-  return url;
+/** what the CRM holds for the signed-in account (REQ-058) */
+async function crmCustomer(http: StoryTools["http"], auth: Record<string, string>) {
+  return await (await http("/api/me/crm-customer", { headers: auth })).json();
 }
 
-Deno.test("REQ-054: in onboarding the person picks a paid plan, pays on the link builder's page, and the plan is active", (t) =>
+/** REQ-059 — click a plan card (a form: the pick is a redirect): THIS tab goes to the pay page —
+ *  on fakes the app's own /pay/fake (REQ-057), carrying the customer, the due and the way back.
+ *  Hands back that url. */
+async function pickGoesToPayPage(page: StoryTools["page"], card: string): Promise<URL> {
+  await page.locator(`[data-cy='${card}']`).click();
+  await page.waitForURL((u: URL) => u.pathname === "/pay/fake" && u.searchParams.has("customer") && u.searchParams.has("due"), { timeout: 60_000 });
+  return new URL(page.url());
+}
+
+/** a wizard text step: the island may still be hydrating when the input appears (a value typed
+ *  before that leaves Continue disabled), so the fill is repeated until Continue takes it */
+async function fillStep(page: StoryTools["page"], selector: string, value: string): Promise<void> {
+  const input = page.locator(selector);
+  await input.waitFor({ timeout: 60_000 });
+  for (let attempt = 0; attempt < 8; attempt++) {
+    await input.fill(value);
+    try {
+      await page.locator("[data-cy='welcome-continue']:not([disabled])").waitFor({ timeout: 1500 });
+      return;
+    } catch { /* not hydrated yet — fill again */ }
+  }
+  throw new Error(`the wizard never took "${value}" at ${selector}`);
+}
+
+/** REQ-059 — pay on the page (the test card) and follow the receipt's "Back to Paperwork Monster" */
+async function payAndGoBack(page: StoryTools["page"], expect: StoryTools["expect"]): Promise<void> {
+  await expect.see("Test pay page");
+  await expect.see("4111 1111 1111 1111");
+  await page.locator("[data-cy='fake-pay']").click();
+  await expect.see("Paid.");
+  await expect.see("Back to Paperwork Monster");
+  await page.locator("[data-cy='fake-pay-back']").click();
+}
+
+Deno.test("REQ-058: a sign-up is a CRM customer at once — the phone and this app's ref — and onboarding fills the name and email in", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth, phone, userId } = await signIn(http, page, baseUrl, {});
+    // the moment the account exists the CRM has its customer: nothing but the phone to go on yet
+    let customer = await crmCustomer(http, auth);
+    expect(customer && customer.customerName === phone, `the customer is named by the phone (${JSON.stringify(customer)})`);
+    expect(customer.externalRef === `pm:${userId}`, `it carries this app's ref (${customer.externalRef})`);
+    expect(customer.customerEmail === "", "no email invented");
+    const customerId = customer.customerId as string;
+    // onboarding: the person's name …
+    await page.goto("/welcome");
+    await fillStep(page, "input.welcome__input", "Story Person");
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("business called");
+    customer = await crmCustomer(http, auth);
+    expect(customer.customerName === "Story Person", `the name is the customer's name now (${customer.customerName})`);
+    expect(customer.customerId === customerId, "the same customer, revised — never a second one");
+    // … the business name, which takes over …
+    await fillStep(page, "input.welcome__input", "Story Roofing LLC");
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("best email");
+    customer = await crmCustomer(http, auth);
+    expect(customer.customerName === "Story Roofing LLC", `the business is the customer's name (${customer.customerName})`);
+    // … and the email
+    const email = `story-${digits()}@blackhole.postmarkapp.com`;
+    await fillStep(page, "input[type='email']", email);
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("Pick your plan");
+    customer = await crmCustomer(http, auth);
+    expect(customer.customerEmail === email, `the email reached the customer (${customer.customerEmail})`);
+    expect(customer.customerPhone === phone && customer.customerId === customerId, "phone kept, same record");
+  }));
+
+Deno.test("REQ-054: in onboarding the person picks a paid plan, pays on the link builder's page, and comes back with the plan active", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     // the person starts on the site's front page, where the same plans are priced
     await page.goto("/");
     await expect.see("Monster Free");
     await expect.see("Monster Assist");
-    const auth = await signIn(http, page, baseUrl, { name: "Plan Story", email: `plan-${digits()}@blackhole.postmarkapp.com` });
+    const { auth } = await signIn(http, page, baseUrl, { name: "Plan Story", email: `plan-${digits()}@blackhole.postmarkapp.com` });
     await page.goto("/welcome");
-    // the wizard resumes at the first incomplete step: the business name — skip it; the email is
-    // on file, so its step is prefilled — continue; then the plan
-    await page.locator("[data-cy='welcome-skip']").waitFor({ timeout: 60_000 });
-    await page.locator("[data-cy='welcome-skip']").click();
+    // the wizard resumes at the first incomplete step: the business name; the email is on file,
+    // so its step is prefilled — continue; then the plan
+    await fillStep(page, "input.welcome__input", "Plan Story Builders");
+    await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("best email");
     await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("Pick your plan");
     await expect.see("Monster Free");
     await expect.see("$99");
     await expect.see("$199");
-    // the paid pick opens the CRM's pay page — the link builder's link — itself (REQ-055)
-    const opened = await pickOpensPayPage(page, "plan-pick-monster");
-    expect(opened.includes("/pay/fake?customer="), `the tab opened on the pay page (${opened})`);
-    await expect.see("Waiting for the payment");
-    const href = await page.locator("[data-cy='plan-pay-link']").getAttribute("href");
-    expect.eq(href, opened, "the card's link reopens the same pay page");
-    // nothing paid yet: checking keeps it pending
-    await page.locator("[data-cy='plan-check-paid']").click();
-    await expect.see("not landed yet");
-    // the person pays on the pay page (the fake's remote control stands in for the card)
-    const paid = await http("/api/me/plan/fake-paid", { method: "POST", headers: auth });
-    expect(paid.status === 200, `fake-paid answers 200 (got ${paid.status})`);
-    await paid.body?.cancel();
-    await page.locator("[data-cy='plan-check-paid']").click();
-    await expect.see("Monster is active");
+    // the paid pick GOES to the pay page — the link builder's link — in this tab (REQ-055/059)
+    const payPage = await pickGoesToPayPage(page, "plan-pick-monster");
+    expect(payPage.searchParams.get("return")?.includes("/plan/return?due="), `the link carries the way back (${payPage.searchParams.get("return")})`);
+    // the person pays on the pay page; the receipt brings them back — to the wizard, which has
+    // moved past the plan: nothing to check, nothing to press
+    await payAndGoBack(page, expect);
+    await page.waitForURL((u: URL) => u.pathname === "/welcome", { timeout: 60_000 });
+    await expect.see("Which state");
     const plan = await (await http("/api/me/plan", { headers: auth })).json();
     expect(plan.planId === "monster" && plan.status === "active", `the record says monster · active (${JSON.stringify(plan)})`);
-    // and the wizard moves on
-    await page.locator("[data-cy='welcome-continue']").click();
-    await expect.see("Which state");
+    // and the CRM customer the payment was taken on is the one sign-up made for this account
+    const customer = await crmCustomer(http, auth);
+    expect(customer.customerId === plan.customerId, `the due was raised on the account's own customer (${customer.customerId} vs ${plan.customerId})`);
+    expect(customer.customerName === "Plan Story Builders", `named by the business entered in onboarding (${customer.customerName})`);
   }));
 
 Deno.test("REQ-054: free in onboarding, then upgraded to a paid plan from the settings panel", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
-    const auth = await signIn(http, page, baseUrl, { name: "Free Story", email: `free-${digits()}@blackhole.postmarkapp.com` });
+    const { auth } = await signIn(http, page, baseUrl, { name: "Free Story", email: `free-${digits()}@blackhole.postmarkapp.com` });
     await page.goto("/welcome");
     await page.locator("[data-cy='welcome-skip']").waitFor({ timeout: 60_000 });
     await page.locator("[data-cy='welcome-skip']").click();
@@ -109,24 +166,23 @@ Deno.test("REQ-054: free in onboarding, then upgraded to a paid plan from the se
     let plan = await (await http("/api/me/plan", { headers: auth })).json();
     expect(plan.planId === "free" && plan.status === "free", `free is stored as free (${JSON.stringify(plan)})`);
 
-    // later, the settings panel: the paid plans are cards, and the pick opens the pay page (REQ-055)
+    // later, the settings panel: the paid plans are cards, and the pick goes to the pay page (REQ-055/059)
     await page.goto("/settings");
     await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
     await expect.see("Monster Free");
-    const opened = await pickOpensPayPage(page, "plan-pick-assist");
-    expect(opened.includes("/pay/fake?customer="), `the tab opened on the pay page (${opened})`);
-    await expect.see("Waiting for the payment");
-    const paid = await http("/api/me/plan/fake-paid", { method: "POST", headers: auth });
-    await paid.body?.cancel();
-    await page.locator("[data-cy='plan-check-paid']").click();
+    await pickGoesToPayPage(page, "plan-pick-assist");
+    await payAndGoBack(page, expect);
+    // the receipt brings the person back to settings, where the plan already reads active
+    await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
     await expect.see("Monster Assist is active");
     plan = await (await http("/api/me/plan", { headers: auth })).json();
     expect(plan.planId === "assist" && plan.status === "active", `assist · active (${JSON.stringify(plan)})`);
   }));
 
-Deno.test("REQ-055: on settings the paid plans are cards and picking one opens the payment page", (t) =>
+Deno.test("REQ-055 + REQ-059: on settings the paid plans are cards; a pick goes to the payment page in this tab, and the receipt brings the person back with the plan active — no check button", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
-    const auth = await signIn(http, page, baseUrl, { name: "Cards Story", email: `cards-${digits()}@blackhole.postmarkapp.com` });
+    const { auth } = await signIn(http, page, baseUrl, { name: "Cards Story", email: `cards-${digits()}@blackhole.postmarkapp.com` });
     await page.goto("/settings");
     await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
     // the current plan, then the two paid plans as the same cards onboarding shows: name, price, features
@@ -138,30 +194,24 @@ Deno.test("REQ-055: on settings the paid plans are cards and picking one opens t
     await expect.see("Phone, text & email help from our team");
     expect.eq(await page.locator("[data-cy^='plan-pick-']").count(), 2, "two cards: Monster and Monster Assist");
     await expect.notSee("Upgrade to Monster");
-    // the card is the pick AND the way to the pay page: one click opens it
-    const opened = await pickOpensPayPage(page, "plan-pick-monster");
-    expect(opened.includes("/pay/fake?customer="), `the tab opened on the pay page (${opened})`);
+    // the card is the pick AND the way to the pay page: one click, this tab
+    const payPage = await pickGoesToPayPage(page, "plan-pick-monster");
+    // a change of mind before paying: back on settings the pick waits, with the way back to its
+    // page — and nothing to "check"
+    await page.goto("/settings");
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
     await expect.see("Waiting for the payment");
-    const href = await page.locator("[data-cy='plan-pay-link']").getAttribute("href");
-    expect.eq(href, opened, "the card's link reopens the same pay page");
-    // while it waits the other paid plan is still a card (a change of mind opens ITS pay page);
-    // the plan being paid for is the pending line, not a card
+    await expect.see("Resume payment");
+    expect.eq(await page.locator("[data-cy='plan-pay-link']").getAttribute("href"), payPage.toString(), "the link resumes the same pay page");
+    expect.eq(await page.locator("[data-cy='plan-check-paid']").count(), 0, "no 'Check payment' button: the receipt brings the person back");
     expect.eq(await page.locator("[data-cy='plan-pick-assist']").count(), 1, "Monster Assist is still a card while Monster is pending");
     expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 0, "no card for the plan being paid for");
-    // the person pays ON that page (REQ-057: the app's stand-in for the CRM's charge page — the
-    // test card and one Pay button), then checks on settings
-    // the pay page is on APP_URL's host (localhost) while the story's app is 127.0.0.1: the
-    // island's language comes from that origin's localStorage (lang.ts), empty here, so the
-    // page is asked for English the way the EN/ES switch does — ?lang=
-    await page.goto(opened + "&lang=en");
-    await expect.see("Test pay page");
-    await expect.see("4111 1111 1111 1111");
-    await page.locator("[data-cy='fake-pay']").click();
-    await expect.see("Paid. Go back to the app");
-    await page.locator("[data-cy='fake-pay-back']").click();
+    // resume: the page again, in this tab; pay; the receipt brings the person back to settings
+    await page.locator("[data-cy='plan-pay-link']").click();
+    await page.waitForURL((u: URL) => u.pathname === "/pay/fake", { timeout: 60_000 });
+    await payAndGoBack(page, expect);
+    await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
     await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
-    // the fake settles the due the moment the card lands, so settings already reads active
-    // (on the real CRM the person presses "Check payment" here)
     await expect.see("Monster is active");
     // the active plan's card is gone; the other paid plan is still a card
     expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 0, "no card for the plan that is active");
@@ -172,7 +222,7 @@ Deno.test("REQ-055: on settings the paid plans are cards and picking one opens t
 
 Deno.test("REQ-056: a paid plan goes back to free from the settings cards", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
-    const auth = await signIn(http, page, baseUrl, { name: "Downgrade Story", email: `down-${digits()}@blackhole.postmarkapp.com` });
+    const { auth } = await signIn(http, page, baseUrl, { name: "Downgrade Story", email: `down-${digits()}@blackhole.postmarkapp.com` });
     // on Monster, paid and active
     const picked = await http("/api/me/plan", { method: "POST", headers: auth, body: JSON.stringify({ planId: "monster" }) });
     await picked.body?.cancel();
@@ -187,7 +237,7 @@ Deno.test("REQ-056: a paid plan goes back to free from the settings cards", (t) 
     expect.eq(await page.locator("[data-cy='plan-pick-free']").count(), 1, "Monster Free is a card on a paid plan");
     expect.eq(await page.locator("[data-cy='plan-pick-assist']").count(), 1, "Monster Assist is a card");
     expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 0, "no card for the active plan");
-    // one click: free, nothing to pay, no tab
+    // one click: free, nothing to pay, no page to go to
     await page.locator("[data-cy='plan-pick-free']").click();
     await expect.see("Free — upgrade any time.");
     expect.eq(await page.locator("[data-cy='plan-pick-free']").count(), 0, "the free card is gone once free is current");

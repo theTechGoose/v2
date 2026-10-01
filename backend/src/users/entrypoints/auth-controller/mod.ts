@@ -18,6 +18,7 @@ import {
   SendEmailOtp,
 } from "@users/domain/coordinators/send-email-otp/mod.ts";
 import { VerifyEmailOtp } from "@users/domain/coordinators/verify-email-otp/mod.ts";
+import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { AccountRecovery } from "@users/domain/coordinators/account-recovery/mod.ts";
 import { InvalidRecoveryTokenError } from "@users/domain/data/recovery-token-store/mod.ts";
 import {
@@ -57,6 +58,8 @@ export class AuthController {
     private recovery: AccountRecovery,
     private sendEmailOtp: SendEmailOtp,
     private verifyEmailOtp: VerifyEmailOtp,
+    /** REQ-058 — a new account is a CRM customer from its first sign-in */
+    private crm: CrmCustomerSync,
   ) {}
 
   /**
@@ -103,6 +106,7 @@ export class AuthController {
     const dto = parseVerifyEmailOtp(body);
     try {
       const result = await this.verifyEmailOtp.run({ email: dto.email, code: dto.code });
+      if (result.isNewUser) await this.crm.sync(result.userId);
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         ok: true,
@@ -147,6 +151,7 @@ export class AuthController {
     const token = readToken(body);
     try {
       const result = await this.recovery.startFresh(token);
+      await this.crm.sync(result.userId);
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         ok: true,
@@ -219,6 +224,7 @@ export class AuthController {
         phoneNumber: dto.phoneNumber,
         code: dto.code,
       });
+      if (result.isNewUser) await this.crm.sync(result.userId);
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         ok: true,
@@ -257,6 +263,7 @@ export class AuthController {
         phoneNumber: dto.phoneNumber,
         code: dto.code,
       });
+      if (result.isNewUser) await this.crm.sync(result.userId);
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         sessionId: result.sessionId,

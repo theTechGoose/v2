@@ -4,9 +4,13 @@ import { assertEquals, assertThrows } from "#std/assert";
 import {
   chosen,
   customerNameFor,
+  externalRefFor,
   firstMonthMemo,
   isSelectable,
+  pickBackOf,
   planOf,
+  RETURN_LABEL,
+  returnUrlFor,
   SELECTABLE_PLAN_IDS,
   settle,
 } from "./mod.ts";
@@ -67,4 +71,28 @@ Deno.test("REQ-054 plan — free is free, a paid pick is pending until its due s
 
 Deno.test("REQ-054 plan — a paid pick without the CRM's customer, due and pay page is refused", () => {
   assertThrows(() => chosen("u1", "monster", NOW), Error, "pay-link-missing");
+});
+
+Deno.test("REQ-058 plan — a brand-new account's CRM customer is named by its phone until onboarding brings a name", () => {
+  assertEquals(customerNameFor({ phoneNumber: "+15125550101" }, null), "+15125550101");
+  assertEquals(customerNameFor({ name: "Ana", phoneNumber: "+15125550101" }, null), "Ana");
+  assertEquals(customerNameFor({ name: "Ana", phoneNumber: "+15125550101" }, { businessName: "Ana Roofing" }), "Ana Roofing");
+  assertEquals(customerNameFor({}, null), "");
+});
+
+Deno.test("REQ-058 plan — the account's ref on the CRM customer is pm:<userId>", () => {
+  assertEquals(externalRefFor("u-1"), "pm:u-1");
+});
+
+Deno.test("REQ-059 plan — the return address is the app's /plan/return naming the due and the page the pick came from, whatever slash the origin ends with", () => {
+  assertEquals(returnUrlFor("http://localhost:5280", "due-1", "/settings"), "http://localhost:5280/plan/return?due=due-1&back=%2Fsettings");
+  assertEquals(returnUrlFor("https://app.paperworkmonster.com/", "a b", "/welcome"), "https://app.paperworkmonster.com/plan/return?due=a+b&back=%2Fwelcome");
+  assertEquals(RETURN_LABEL, "Paperwork Monster");
+});
+
+Deno.test("REQ-059 plan — a pick comes back only to the pages that show the cards; anything else is settings", () => {
+  assertEquals(pickBackOf("/welcome"), "/welcome");
+  assertEquals(pickBackOf("/settings"), "/settings");
+  assertEquals(pickBackOf("https://evil.example/"), "/settings");
+  assertEquals(pickBackOf(undefined), "/settings");
 });

@@ -1,13 +1,15 @@
 // REQ-054 — picking a plan. Free is stored as free. A paid pick goes through the CRM's link
-// builder: the customer (the business, else the person; the account's email — never invented),
-// the first month as a due, the pay link that collects it; the plan is pending until the due
-// settles on that pay page, then active. `refresh` is what "Check payment" presses.
+// builder: the account's CRM customer (REQ-058: the one made at sign-up, revised with what the
+// account says now; the account's email — never invented), the first month as a due, the pay
+// link that collects it; the plan is pending until the due settles on that pay page, then
+// active. REQ-059: the link carries the way back — the app's /plan/return, which calls
+// `refresh` on arrival, so the plan reads active without a "Check payment".
 import { Injectable } from "#danet/core";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
-import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
-import { PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
-import { chosen, customerNameFor, firstMonthMemo, planOf, settle } from "@users/domain/business/plan/mod.ts";
+import { appOrigin, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
+import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
+import { chosen, firstMonthMemo, type PickBack, planOf, RETURN_LABEL, returnUrlFor, settle } from "@users/domain/business/plan/mod.ts";
 import type { UserPlan } from "@users/dto/plan.ts";
 
 class EmailRequiredError extends Error {
@@ -22,9 +24,9 @@ class EmailRequiredError extends Error {
 export class ChoosePlan {
   constructor(
     private users: UserStore,
-    private identity: BusinessIdentityStore,
     private plans: PlanStore,
     private link: PaymentsLink,
+    private crm: CrmCustomerSync,
   ) {}
 
   current(userId: string): Promise<UserPlan | null> {
@@ -36,22 +38,22 @@ export class ChoosePlan {
    * @throws email-required — a paid pick with no email on the account
    * @throws payments-unavailable — the CRM did not answer
    */
-  async choose(userId: string, planId: string): Promise<UserPlan> {
+  async choose(userId: string, planId: string, back: PickBack = "/settings"): Promise<UserPlan> {
     const plan = planOf(planId);
     const now = new Date().toISOString();
     if (plan.id === "free") return this.plans.put(chosen(userId, "free", now));
 
-    const [user, identity] = await Promise.all([this.users.get(userId), this.identity.get(userId)]);
-    const email = user.email?.trim() ?? "";
-    if (!email) throw new EmailRequiredError();
+    const user = await this.users.get(userId);
+    if (!user.email?.trim()) throw new EmailRequiredError();
 
-    const { customerId } = await this.link.createCustomer({ customerName: customerNameFor(user, identity), customerEmail: email });
+    const { customerId } = await this.crm.ensure(userId);
     const { dueId } = await this.link.raiseDue({ customerId, amountCents: plan.priceCents, memo: firstMonthMemo(plan) });
-    const { payUrl } = await this.link.mintPayLink({ customerId, dueId });
+    const { payUrl } = await this.link.mintPayLink({ customerId, dueId, returnUrl: returnUrlFor(appOrigin(), dueId, back), returnLabel: RETURN_LABEL });
     return this.plans.put(chosen(userId, plan.id as "monster" | "assist", now, { customerId, dueId, payUrl }));
   }
 
-  /** a pending plan asks the CRM whether its due settled; anything else is answered as stored */
+  /** a pending plan asks the CRM whether its due settled (what /plan/return does on arrival,
+   *  REQ-059); anything else is answered as stored */
   async refresh(userId: string): Promise<UserPlan> {
     const plan = await this.plans.get(userId);
     if (!plan) throw Object.assign(new Error("plan-missing: nothing picked yet"), { status: 404 });
