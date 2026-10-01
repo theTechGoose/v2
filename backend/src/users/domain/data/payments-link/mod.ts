@@ -96,6 +96,13 @@ export function fakePaymentsWorld(): FakePaymentsWorld {
   return WORLD;
 }
 
+/** where the fake's pay page lives: the app itself (the same rule the alert links use) */
+function fakePayPageOrigin(): string {
+  const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
+  if (explicit && /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(explicit)) return explicit.replace(/\/+$/, "");
+  return "http://localhost:5280";
+}
+
 class FakePaymentsLink implements PaymentsLinkPort {
   constructor(private readonly world = WORLD) {}
   createCustomer(input: NewCustomer) {
@@ -109,8 +116,11 @@ class FakePaymentsLink implements PaymentsLinkPort {
     return Promise.resolve({ dueId });
   }
   mintPayLink(input: { customerId: string; dueId: string }) {
-    // the shape the real link builder makes: the charge page carrying the customer's ref
-    const payUrl = `https://payments.fake/ui/payments/charge?customer=${input.customerId}&due=${input.dueId}`;
+    // REQ-057 — the app's own stand-in pay page (front-end/routes/pay/fake.tsx), the shape the
+    // real link builder makes: a page carrying the customer's ref and the due. At the app's url
+    // (APP_URL is the launcher's frontend; the dev default otherwise) — never a host that
+    // resolves nowhere.
+    const payUrl = `${fakePayPageOrigin()}/pay/fake?customer=${input.customerId}&due=${input.dueId}`;
     this.world.links.push({ ...input, payUrl });
     return Promise.resolve({ payUrl });
   }

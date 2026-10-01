@@ -2552,5 +2552,14 @@
   "plan.current": "Plan actual",
   "plan.error": "No se pudo actualizar el plan — revisa tu conexión e intenta de nuevo.",
   "plan.emailFirstSettings": "Primero agrega un correo a la cuenta — un plan de pago lo necesita.",
+  "payFake.title": "Página de pago de prueba",
+  "payFake.heading": "Página de pago de prueba",
+  "payFake.lede": "Esta página sustituye a la página de pago del CRM mientras la app corre con simulaciones. Cliente {customer} · cobro {due}.",
+  "payFake.card": "Tarjeta de prueba: 4111 1111 1111 1111 · cualquier vencimiento futuro · 3 dígitos cualesquiera",
+  "payFake.pay": "Pagar con la tarjeta de prueba",
+  "payFake.paying": "Pagando…",
+  "payFake.paid": "Pagado. Vuelve a la app y pulsa Verificar el pago.",
+  "payFake.back": "Volver a configuración",
+  "payFake.error": "El pago no se completó — primero inicia sesión en la app en este navegador.",
   "settings.plan": "Plan"
 }

@@ -2552,5 +2552,14 @@
   "plan.current": "Current plan",
   "plan.error": "Could not update the plan — check your connection and try again.",
   "plan.emailFirstSettings": "Add an email to the account first — a paid plan needs one.",
+  "payFake.title": "Test pay page",
+  "payFake.heading": "Test pay page",
+  "payFake.lede": "This stands in for the CRM's pay page while the app runs on fakes. Customer {customer} · due {due}.",
+  "payFake.card": "Test card: 4111 1111 1111 1111 · any future expiry · any 3 digits",
+  "payFake.pay": "Pay with the test card",
+  "payFake.paying": "Paying…",
+  "payFake.paid": "Paid. Go back to the app and press Check payment.",
+  "payFake.back": "Back to settings",
+  "payFake.error": "The payment did not go through — sign in to the app on this browser first.",
   "settings.plan": "Plan"
 }

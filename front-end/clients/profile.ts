@@ -174,4 +174,6 @@ export const planClient = {
   get: (opts: ApiOptions = {}) => api.get<UserPlan | null>("/me/plan", opts),
   choose: (planId: PlanId, opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan", { planId }, opts),
   refresh: (opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan/refresh", undefined, opts),
+  /** REQ-057 — what the app's stand-in pay page presses: settles the due on the fake (404 on the real client) */
+  fakePaid: (opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan/fake-paid", undefined, opts),
 };

@@ -45,7 +45,8 @@ Deno.test("REQ-054 choose-plan — a paid plan makes the CRM customer, raises th
   assertEquals(world.dues.map((d) => [d.customerId, d.amountCents, d.memo, d.open]), [[plan.customerId, 9900, "Monster — first month", true]]);
   assertEquals(world.links.map((l) => [l.customerId, l.dueId]), [[plan.customerId, plan.dueId]]);
   assertEquals(plan.payUrl, world.links[0].payUrl);
-  assertEquals(plan.payUrl?.includes("/ui/payments/charge?customer="), true, "the pay page the CRM's link builder makes");
+  // the fake mints the app's own stand-in page (REQ-057); the real client's is /ui/payments/charge (smk.test.ts)
+  assertEquals(plan.payUrl?.includes(`/pay/fake?customer=${plan.customerId}&due=${plan.dueId}`), true, "the pay page the link builder makes");
 });
 
 Deno.test("REQ-054 choose-plan — a paid plan needs an email on the account; the CRM customer is never invented", async () => {
