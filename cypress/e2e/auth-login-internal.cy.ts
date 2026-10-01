@@ -5,8 +5,9 @@
  * log in with email."
  *
  * /login-internal takes an email; the code goes to the address on an
- * EXISTING account; /verify-internal takes the code (the dev master code
- * 000000 here) and opens the session. An unknown address is told so.
+ * address (any well-formed one); /verify-internal takes the code (the dev
+ * master code 000000 here) and opens the session — the account that carries
+ * the address, or a brand-new one.
  */
 const PHONE = "+15125550981";
 const EMAIL = "login-internal.cypress@blackhole.postmarkapp.com";
@@ -54,13 +55,26 @@ describe("REQ-050 /login-internal — log in with email", () => {
     cy.request("/api/me").its("body.email").should("eq", EMAIL);
   });
 
-  it("REQ-050 an email no account carries is told so and never logs in", () => {
+  it("REQ-050 an email no account has yet just creates the account and signs in", () => {
+    const email = `new-${Date.now()}@blackhole.postmarkapp.com`;
     cy.visit("/login-internal");
-    cy.get("[data-cy=internal-email]").type(`nobody-${Date.now()}@example.com`);
+    cy.get("[data-cy=internal-email]").type(email);
     cy.get("[data-cy=internal-submit]").click();
-    cy.get("[data-cy=internal-error]").should("be.visible");
-    cy.location("pathname").should("eq", "/login-internal");
-    cy.request({ url: "/api/me", failOnStatusCode: false }).its("status")
-      .should("be.oneOf", [401, 403, 500]);
+    cy.location("pathname", { timeout: 15_000 }).should(
+      "eq",
+      "/verify-internal",
+    );
+    cy.get("input[inputmode=numeric]", { timeout: 10_000 }).should(
+      "have.length",
+      6,
+    );
+    for (let i = 0; i < 6; i++) {
+      cy.get("input[inputmode=numeric]").eq(i).type("0", { force: true });
+    }
+    cy.location("pathname", { timeout: 20_000 }).should("eq", "/welcome");
+    cy.request("/api/me").then((r) => {
+      expect(r.body.email).to.eq(email);
+      expect(r.body.phoneNumber, "no made-up phone").to.eq("");
+    });
   });
 });

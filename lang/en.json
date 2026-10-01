@@ -1478,7 +1478,6 @@
   "loginInternal.submit": "Email me a code",
   "loginInternal.subtitle": "Sign in with the email on your account.",
   "loginInternal.title": "Internal sign-in",
-  "loginInternal.unknownEmail": "No account has that email. Sign in with your phone, or add the email in Settings first.",
   "loginInternal.accountClosed": "That account is closed. Sign in with your phone to recover it.",
   "loginInternal.cooldown": "A code was just sent — wait a moment before asking for another.",
   "loginPage.heading": "Welcome back",

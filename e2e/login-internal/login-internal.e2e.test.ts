@@ -5,7 +5,8 @@
  * The pages: front-end/routes/login-internal.tsx and verify-internal.tsx.
  * The stories the judge reviews: the page asks for an email, an account with
  * that email on file logs in with the emailed code (the dev master code
- * 000000 — the gate runs off Deno Deploy), and an unknown address is told so.
+ * 000000 — the gate runs off Deno Deploy), and an email no account has yet
+ * just creates one and lands in onboarding.
  * The account is seeded through the API the way every account is made: the
  * phone flow, then the email goes on the record through PUT /me.
  */
@@ -113,24 +114,29 @@ Deno.test("REQ-050: an account with that email on file logs in with the emailed 
     );
   }));
 
-Deno.test("REQ-050: an email no account carries is told so and never logs in", (t) =>
-  story(t, async ({ page, expect }) => {
+Deno.test("REQ-050: an email no account has yet just creates the account and signs in", (t) =>
+  story(t, async ({ page, expect, http }) => {
+    // Unique per run — the dev KV persists, and a second run must be a NEW account again.
+    const email = `new-${Date.now()}@blackhole.postmarkapp.com`;
     await page.goto("/login-internal");
-    await page.fill(
-      "[data-cy=internal-email]",
-      `nobody-${Date.now()}@example.com`,
-    );
+    await page.fill("[data-cy=internal-email]", email);
     await page.click("[data-cy=internal-submit]");
-    const err = page.locator("[data-cy=internal-error]");
-    await err.waitFor({ state: "visible" });
+    await page.waitForURL(/\/verify-internal\?/);
+    const slots = page.locator("input[inputmode=numeric]");
+    await slots.first().waitFor({ state: "visible" });
+    for (let i = 0; i < 6; i++) await slots.nth(i).fill("0");
+
+    await page.waitForURL(/\/welcome/, { timeout: 20_000 });
     expect(
-      (await err.textContent() ?? "").trim().length > 0,
-      "an error line names the problem",
+      page.url().includes("/welcome"),
+      "a brand-new account lands in onboarding",
     );
-    expect(
-      new URL(page.url()).pathname === "/login-internal",
-      "still on the login page — nothing signed in",
-    );
+    const me = await http("/api/me", {
+      headers: { cookie: await sessionCookie(page) },
+    });
+    const who = await me.json();
+    expect.eq(who.email, email, "the account was created on the address typed");
+    expect.eq(who.phoneNumber, "", "with no made-up phone");
   }));
 
 async function sessionCookie(page: StoryTools["page"]): Promise<string> {

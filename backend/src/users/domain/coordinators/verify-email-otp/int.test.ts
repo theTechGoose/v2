@@ -2,12 +2,9 @@
  * REQ-050 — "/login-internal … log in with email": the emailed code opens a
  * session for the account that carries the address — and only that.
  */
-import { assertEquals, assertRejects } from "#std/assert";
+import { assert, assertEquals, assertRejects } from "#std/assert";
 import { VerifyEmailOtp } from "./mod.ts";
-import {
-  ClosedAccountError,
-  UnknownEmailError,
-} from "@users/domain/coordinators/send-email-otp/mod.ts";
+import { ClosedAccountError } from "@users/domain/coordinators/send-email-otp/mod.ts";
 import {
   ExpiredCodeError,
   InvalidCodeError,
@@ -94,35 +91,66 @@ Deno.test("REQ-050 verify-email-otp: no pending code is ExpiredCodeError", async
   }
 });
 
-Deno.test("REQ-050 verify-email-otp: an address no account carries never logs in — not even with the dev master code", async () => {
-  const { otps, users, flow } = await fresh();
+Deno.test("REQ-050 verify-email-otp: an address no account has yet creates the account — the email, the OTP's language, a placeholder name, NO phone", async () => {
+  const { otps, users, sessions, flow } = await fresh();
   try {
-    await otps.put({ phoneNumber: "email:ghost@example.com", code: "123456" });
-    await assertRejects(
-      () => flow.run({ email: "ghost@example.com", code: "123456" }),
-      UnknownEmailError,
-    );
-    await assertRejects(
-      () => flow.run({ email: "ghost@example.com", code: "000000" }),
-      UnknownEmailError,
-    );
+    await otps.put({
+      phoneNumber: "email:rafac@monsterrg.com",
+      code: "123456",
+      language: "en",
+    });
+    const result = await flow.run({
+      email: "Rafac@MonsterRG.com",
+      code: "123456",
+    });
+    assertEquals(result.isNewUser, true);
+    const user = await users.get(result.userId);
+    assertEquals(user.email, "rafac@monsterrg.com");
+    assertEquals(user.language, "en");
+    assertEquals(user.name, "New user");
     assertEquals(
-      await users.findByEmail("ghost@example.com"),
-      null,
-      "no account was created",
+      user.phoneNumber,
+      "",
+      "no made-up phone — documents and alerts read this field",
+    );
+    assertEquals((await sessions.get(result.sessionId))?.userId, user.id);
+    assertEquals((await users.findByEmail("rafac@monsterrg.com"))?.id, user.id);
+
+    // The second sign-in finds that same account.
+    await otps.put({
+      phoneNumber: "email:rafac@monsterrg.com",
+      code: "654321",
+    });
+    const again = await flow.run({
+      email: "rafac@monsterrg.com",
+      code: "654321",
+    });
+    assertEquals(again.userId, user.id);
+    assertEquals(again.isNewUser, false);
+    assert(
+      await users.findByEmail("rafac@monsterrg.com"),
+      "still one account on the address",
     );
   } finally {
     await resetKv();
   }
 });
 
-Deno.test("REQ-050 verify-email-otp: off Deno Deploy the master code 000000 logs the existing account in without a record", async () => {
+Deno.test("REQ-050 verify-email-otp: off Deno Deploy the master code 000000 logs in without a record — the existing account, or a new one", async () => {
   const { users, sessions, flow } = await fresh();
   try {
     const u = await userWithEmail(users, "+15125550963", "dev@example.com");
     const result = await flow.run({ email: "dev@example.com", code: "000000" });
     assertEquals(result.userId, u.id);
+    assertEquals(result.isNewUser, false);
     assertEquals((await sessions.get(result.sessionId))?.userId, u.id);
+
+    const made = await flow.run({
+      email: "brand-new@example.com",
+      code: "000000",
+    });
+    assertEquals(made.isNewUser, true);
+    assertEquals((await users.get(made.userId)).email, "brand-new@example.com");
   } finally {
     await resetKv();
   }

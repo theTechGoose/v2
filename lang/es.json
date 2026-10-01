@@ -1478,7 +1478,6 @@
   "loginInternal.submit": "Enviar código por correo",
   "loginInternal.subtitle": "Entra con el correo de tu cuenta.",
   "loginInternal.title": "Acceso interno",
-  "loginInternal.unknownEmail": "Ninguna cuenta tiene ese correo. Entra con tu celular o agrega el correo en Ajustes.",
   "loginInternal.accountClosed": "Esa cuenta está cerrada. Entra con tu celular para recuperarla.",
   "loginInternal.cooldown": "Acabamos de enviar un código — espera un momento antes de pedir otro.",
   "loginPage.heading": "Iniciar sesión",

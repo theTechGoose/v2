@@ -20,9 +20,7 @@ export type VerifyOtpError =
   | "invalid_code"
   | "expired"
   | "rate_limited"
-  /** REQ-050 (email login only): the address stopped matching a live account
-   *  between send and verify. */
-  | "unknown_email"
+  /** REQ-050 (email login only): the account on the address is closed. */
   | "account_closed";
 
 export type VerifyOtpResult =
@@ -61,7 +59,6 @@ const KNOWN_ERRORS: ReadonlySet<string> = new Set([
   "invalid_code",
   "expired",
   "rate_limited",
-  "unknown_email",
   "account_closed",
 ]);
 
@@ -114,8 +111,9 @@ export const verifyClient = {
   },
 
   /** REQ-050: POST /auth/verify-email-otp — the emailed code opens the
-   *  session of the account that carries the address. The backend answers
-   *  the `{ ok, redirectTo }` envelope with real statuses, so a failure is an
+   *  session of the account that carries the address (created when none
+   *  does: isNewUser, redirectTo /welcome). The backend answers the
+   *  `{ ok, redirectTo }` envelope with real statuses, so a failure is an
    *  ApiError whose body names the error. */
   async verifyEmailOtp(
     input: VerifyEmailOtpInput,
@@ -123,15 +121,16 @@ export const verifyClient = {
   ): Promise<VerifyOtpResult> {
     try {
       const raw = await api.post<
-        { ok?: boolean; sessionId?: string; userId?: string; redirectTo?: string }
+        { ok?: boolean; sessionId?: string; userId?: string; isNewUser?: boolean; redirectTo?: string }
       >("/auth/verify-email-otp", input, opts);
       if (raw.ok === true && typeof raw.sessionId === "string" && typeof raw.userId === "string") {
+        const isNewUser = raw.isNewUser === true;
         return {
           ok: true,
           sessionId: raw.sessionId,
           userId: raw.userId,
-          isNewUser: false,
-          redirectTo: raw.redirectTo ?? "/dashboard?welcome=back",
+          isNewUser,
+          redirectTo: raw.redirectTo ?? (isNewUser ? "/welcome" : "/dashboard?welcome=back"),
         };
       }
       return { ok: false, error: "invalid_code" };

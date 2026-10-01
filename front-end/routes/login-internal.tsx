@@ -11,8 +11,8 @@ import { tFor } from "../lib/i18n.ts";
 import LoginInternalForm from "../islands/LoginInternalForm.tsx";
 
 /**
- * /login-internal (REQ-050) — sign in with the email on your account instead
- * of a phone. Unlinked on purpose (an internal entry); the same card as
+ * /login-internal (REQ-050) — sign in with an email instead of a phone; an
+ * email no account has yet just creates one. Unlinked on purpose (an internal entry); the same card as
  * /login with an email field, then /verify-internal for the code.
  * Already-authenticated visitors are bounced to the dashboard.
  */

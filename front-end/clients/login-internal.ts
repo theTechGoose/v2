@@ -13,7 +13,7 @@ interface SendEmailOtpInput {
 export const loginInternalClient = {
   /** POST /auth/send-email-otp — mail a code to the address on an existing
    *  account. Errors arrive as ApiError with the backend's `{ error }` body
-   *  (invalid_email 400, unknown_email 404, account_closed 409, cooldown 429). */
+   *  (invalid_email 400, account_closed 409, cooldown 429). */
   sendEmailOtp(
     input: SendEmailOtpInput,
     opts: ApiOptions = {},

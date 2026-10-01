@@ -16,7 +16,6 @@ import {
   ClosedAccountError,
   InvalidEmailError,
   SendEmailOtp,
-  UnknownEmailError,
 } from "@users/domain/coordinators/send-email-otp/mod.ts";
 import { VerifyEmailOtp } from "@users/domain/coordinators/verify-email-otp/mod.ts";
 import { AccountRecovery } from "@users/domain/coordinators/account-recovery/mod.ts";
@@ -62,11 +61,11 @@ export class AuthController {
 
   /**
    * POST /auth/send-email-otp — REQ-050 (/login-internal): mail a 6-digit
-   * code to the address on an EXISTING account.
+   * code to any well-formed address; the account is found-or-created when
+   * the code comes back, like the phone flow.
    * body: { email, language? }
    *   - 200 { sent:true }
    *   - 400 { ok:false, error:"invalid_email" }
-   *   - 404 { ok:false, error:"unknown_email" }   (never creates an account)
    *   - 409 { ok:false, error:"account_closed" }
    *   - 429 { ok:false, error:"cooldown", retryAfterSeconds } + Retry-After
    */
@@ -92,11 +91,12 @@ export class AuthController {
 
   /**
    * POST /auth/verify-email-otp — REQ-050: the emailed code opens the
-   * session of the account that carries the address. Same envelope and
-   * statuses as /auth/verify, plus the email-only answers:
-   *   - 200 { ok:true, sessionId, userId, isNewUser:false, redirectTo } + cookie
+   * session of the account that carries the address, creating it when none
+   * does. Same envelope and statuses as /auth/verify, plus the email-only
+   * answers:
+   *   - 200 { ok:true, sessionId, userId, isNewUser, redirectTo } + cookie
    *   - 401 invalid_code · 410 expired · 429 rate_limited
-   *   - 400 invalid_email · 404 unknown_email · 409 account_closed
+   *   - 400 invalid_email · 409 account_closed
    */
   @Post("verify-email-otp")
   async verifyEmail(@Context() ctx: ExecutionContext, @Body() body: unknown) {
@@ -108,8 +108,8 @@ export class AuthController {
         ok: true,
         sessionId: result.sessionId,
         userId: result.userId,
-        isNewUser: false,
-        redirectTo: "/dashboard?welcome=back",
+        isNewUser: result.isNewUser,
+        redirectTo: result.isNewUser ? "/welcome" : "/dashboard?welcome=back",
       };
     } catch (err) {
       const mapped = mapEmailError(err) ?? mapVerifyError(err);
@@ -317,7 +317,6 @@ function mapEmailError(
   err: unknown,
 ): { error: string; status: number } | null {
   if (err instanceof InvalidEmailError) return { error: "invalid_email", status: 400 };
-  if (err instanceof UnknownEmailError) return { error: "unknown_email", status: 404 };
   if (err instanceof ClosedAccountError) return { error: "account_closed", status: 409 };
   return null;
 }

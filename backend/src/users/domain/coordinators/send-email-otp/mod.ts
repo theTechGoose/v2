@@ -16,13 +16,6 @@ export class InvalidEmailError extends Error {
     this.name = "InvalidEmailError";
   }
 }
-/** REQ-050: no account carries this email — email login never creates one. */
-export class UnknownEmailError extends Error {
-  constructor() {
-    super("unknown_email");
-    this.name = "UnknownEmailError";
-  }
-}
 /** REQ-050: the account with this email is closed (REQ-039); recovery is the
  *  phone flow's, so email login just says so. */
 export class ClosedAccountError extends Error {
@@ -49,9 +42,11 @@ interface SendEmailOtpResult {
 }
 
 /**
- * SendEmailOtp (REQ-050) — normalize the address, find the EXISTING account
- * that carries it, generate a 6-digit code under the same cooldown / attempts
- * discipline as the SMS code, and mail it.
+ * SendEmailOtp (REQ-050) — normalize the address, generate a 6-digit code
+ * under the same cooldown / attempts discipline as the SMS code, and mail it.
+ * Any well-formed address gets a code, like any phone does: the account is
+ * found-or-created when the code comes back (VerifyEmailOtp). The one refusal
+ * is a closed account on the address — recovery is the phone flow's.
  *
  * Like SMS, a mail-dispatch failure is logged and does not fail the request:
  * the record exists and "Resend" works once mail recovers.
@@ -70,8 +65,7 @@ export class SendEmailOtp {
     if (!normalizedEmail) throw new InvalidEmailError();
 
     const user = await this.users.findByEmail(normalizedEmail);
-    if (!user) throw new UnknownEmailError();
-    if (user.deletedAt) throw new ClosedAccountError();
+    if (user?.deletedAt) throw new ClosedAccountError();
 
     const key = emailOtpKey(normalizedEmail);
     const existing = await this.otps.get(key);
@@ -82,7 +76,7 @@ export class SendEmailOtp {
     });
     if (!gate.allowed) throw new SendOtpCooldownError(gate.retryAfterSeconds);
 
-    const language: Language = input.language ?? user.language ?? "es";
+    const language: Language = input.language ?? user?.language ?? "es";
     const code = generateOtpCode();
     await this.otps.put({ phoneNumber: key, code, language });
 

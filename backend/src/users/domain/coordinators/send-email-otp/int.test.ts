@@ -3,12 +3,7 @@
  * address on an EXISTING account, under the same OTP discipline as SMS.
  */
 import { assert, assertEquals, assertRejects } from "#std/assert";
-import {
-  ClosedAccountError,
-  InvalidEmailError,
-  SendEmailOtp,
-  UnknownEmailError,
-} from "./mod.ts";
+import { ClosedAccountError, InvalidEmailError, SendEmailOtp } from "./mod.ts";
 import { SendOtpCooldownError } from "@users/domain/coordinators/send-otp/mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -76,16 +71,25 @@ Deno.test("REQ-050 send-email-otp: the account with that email gets a 6-digit co
   }
 });
 
-Deno.test("REQ-050 send-email-otp: an address no account carries is UnknownEmailError — nothing stored, nothing sent", async () => {
+Deno.test("REQ-050 send-email-otp: an address no account has yet still gets a code — the account is made when it comes back", async () => {
   const { otps, flow } = await fresh();
   const sent = capturePostmark(flow);
   try {
-    await assertRejects(
-      () => flow.run({ email: "nobody@example.com" }),
-      UnknownEmailError,
+    const result = await flow.run({
+      email: "Rafac@MonsterRG.com",
+      language: "en",
+    });
+    assertEquals(result, {
+      sent: true,
+      normalizedEmail: "rafac@monsterrg.com",
+    });
+    const stored = await otps.get("email:rafac@monsterrg.com");
+    assert(
+      stored && /^\d{6}$/.test(stored.code),
+      "a code is pending for the new address",
     );
-    assertEquals(await otps.get("email:nobody@example.com"), null);
-    assertEquals(sent.length, 0);
+    assertEquals(sent.length, 1);
+    assertEquals(sent[0].To, "rafac@monsterrg.com");
   } finally {
     restorePostmark();
     await resetKv();

@@ -7,14 +7,13 @@ import { ApiError } from "../lib/api.ts";
 
 /**
  * LoginInternalForm (REQ-050) — the email entry of /login-internal: send a
- * code to the address on an existing account, then hand off to
- * /verify-internal for the 6-digit step. The backend's answers are shown by
- * name (unknown address, closed account, cooldown) — an internal page is
- * allowed to be loud.
+ * code to the address (any well-formed one — the account is found or
+ * created when the code comes back), then hand off to /verify-internal for
+ * the 6-digit step. The backend's answers are shown by name (closed
+ * account, cooldown) — an internal page is allowed to be loud.
  */
 const ERROR_KEYS: Record<string, string> = {
   invalid_email: "loginInternal.emailInvalid",
-  unknown_email: "loginInternal.unknownEmail",
   account_closed: "loginInternal.accountClosed",
   cooldown: "loginInternal.cooldown",
 };

@@ -270,16 +270,26 @@ Deno.test("REQ-050 auth e2e: send-email-otp → verify-email-otp opens the sessi
   });
 });
 
-Deno.test("REQ-050 auth e2e: an email no account carries is 404 unknown_email on send and on verify — no account is created", async () => {
+Deno.test("REQ-050 auth e2e: an email no account has yet — rafac@monsterrg.com — just creates the account and signs it in (/welcome)", async () => {
   await withServer(async (port) => {
-    const sent = await postJson(`http://localhost:${port}/auth/send-email-otp`, { email: "nobody@example.com" });
-    assertEquals(sent.status, 404);
-    assertEquals(await sent.json(), { ok: false, error: "unknown_email" });
+    const sent = await postJson(`http://localhost:${port}/auth/send-email-otp`, { email: "rafac@monsterrg.com", language: "en" });
+    assertEquals(sent.status, 200);
+    assertEquals(await sent.json(), { sent: true });
 
-    const verify = await postJson(`http://localhost:${port}/auth/verify-email-otp`, { email: "nobody@example.com", code: "000000" });
-    assertEquals(verify.status, 404);
-    assertEquals(await verify.json(), { ok: false, error: "unknown_email" });
-    assertEquals(verify.headers.get("set-cookie"), null);
+    const otp = await new OtpStore().get("email:rafac@monsterrg.com");
+    const verify = await postJson(`http://localhost:${port}/auth/verify-email-otp`, { email: "rafac@monsterrg.com", code: otp!.code });
+    assertEquals(verify.status, 200);
+    const setCookie = verify.headers.get("set-cookie") ?? "";
+    assert(setCookie.startsWith("pm_session="), "the session cookie is set");
+    const body = await verify.json();
+    assertEquals(body.ok, true);
+    assertEquals(body.isNewUser, true);
+    assertEquals(body.redirectTo, "/welcome");
+
+    const me = await fetch(`http://localhost:${port}/me`, { headers: { cookie: setCookie.split(";")[0] } }).then((r) => r.json());
+    assertEquals(me.id, body.userId);
+    assertEquals(me.email, "rafac@monsterrg.com");
+    assertEquals(me.phoneNumber, "", "an email-born account has no phone yet");
   });
 });
 

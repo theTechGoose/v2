@@ -33,7 +33,6 @@ export default function CodeInput(
     | "verify.errInvalid"
     | "verify.errExpired"
     | "verify.errRate"
-    | "loginInternal.unknownEmail"
     | "loginInternal.accountClosed"
     | null
   >(null);
@@ -161,7 +160,6 @@ export default function CodeInput(
         invalid_code: "verify.errInvalid",
         expired: "verify.errExpired",
         rate_limited: "verify.errRate",
-        unknown_email: "loginInternal.unknownEmail",
         account_closed: "loginInternal.accountClosed",
       } as const;
       setErrorKey(map[result.error]);

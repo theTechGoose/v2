@@ -6,21 +6,20 @@ import {
   ClosedAccountError,
   emailOtpKey,
   InvalidEmailError,
-  UnknownEmailError,
 } from "@users/domain/coordinators/send-email-otp/mod.ts";
 import {
   ExpiredCodeError,
   InvalidCodeError,
+  placeholderNameFor,
   RateLimitedError,
 } from "@users/domain/coordinators/verify-otp/mod.ts";
 import { normalizeEmail } from "#quote-flow/normalize-email.ts";
-import type { User } from "@users/dto/user.ts";
+import type { Language, User } from "@users/dto/user.ts";
 
 const MAX_ATTEMPTS = 5;
 
 /** The same universal dev/CI bypass as the phone flow: off Deno Deploy, the
- *  master code logs the EXISTING account in without a record. It never
- *  creates an account — email login has no signup. */
+ *  master code logs in (finding or creating the account) without a record. */
 const DEV_MASTER_CODE = "000000";
 const IS_PROD = typeof Deno !== "undefined" &&
   Deno.env.get("DENO_DEPLOYMENT_ID") !== undefined;
@@ -32,20 +31,19 @@ interface VerifyEmailOtpInput {
 interface VerifyEmailOtpResult {
   sessionId: string;
   userId: string;
-  /** Always false: email login only ever opens an existing account. */
-  isNewUser: false;
+  isNewUser: boolean;
 }
 
 /**
- * VerifyEmailOtp (REQ-050) — confirm the emailed code and mint a session for
- * the account that carries the address.
+ * VerifyEmailOtp (REQ-050) — confirm the emailed code, find-or-create the
+ * account that carries the address, mint a session. Mirrors VerifyOtp:
  *
- *   1. Normalize the address; find the account (unknown → UnknownEmailError,
- *      closed → ClosedAccountError — never a new account).
- *   2. Dev master code off Deno Deploy → session, no record needed.
+ *   1. Normalize the address; a closed account on it → ClosedAccountError.
+ *   2. Dev master code off Deno Deploy → find-or-create, no record needed.
  *   3. Otherwise the record under `email:<address>`: missing → expired, too
  *      many attempts → rate-limited, mismatch → attempt++ and invalid.
- *   4. Match: clear the record, open the session.
+ *   4. Match: clear the record; find the account or create it (the email,
+ *      the OTP's language, the placeholder name, NO phone); open the session.
  */
 @Injectable()
 export class VerifyEmailOtp {
@@ -59,15 +57,17 @@ export class VerifyEmailOtp {
     const email = normalizeEmail(input.email);
     if (!email) throw new InvalidEmailError();
 
-    const user = await this.users.findByEmail(email);
-    if (!user) throw new UnknownEmailError();
-    if (user.deletedAt) throw new ClosedAccountError();
-
-    if (!IS_PROD && input.code === DEV_MASTER_CODE) {
-      return await this.open(user);
-    }
+    const existing = await this.users.findByEmail(email);
+    if (existing?.deletedAt) throw new ClosedAccountError();
 
     const key = emailOtpKey(email);
+    if (!IS_PROD && input.code === DEV_MASTER_CODE) {
+      const otpLang = existing
+        ? undefined
+        : (await this.otps.get(key))?.language;
+      return await this.open(existing, email, otpLang);
+    }
+
     const otp = await this.otps.get(key);
     if (!otp) throw new ExpiredCodeError();
     if (otp.attempts >= MAX_ATTEMPTS) throw new RateLimitedError();
@@ -76,11 +76,24 @@ export class VerifyEmailOtp {
       throw new InvalidCodeError();
     }
     await this.otps.clear(key);
-    return await this.open(user);
+    return await this.open(existing, email, otp.language);
   }
 
-  private async open(user: User): Promise<VerifyEmailOtpResult> {
+  /** The existing account, or a new one on the address (the email, the
+   *  OTP's language, the placeholder name — and NO phone). */
+  private async open(
+    existing: User | null,
+    email: string,
+    otpLanguage: Language | undefined,
+  ): Promise<VerifyEmailOtpResult> {
+    const language: Language = otpLanguage ?? "es";
+    const user = existing ??
+      await this.users.create({
+        email,
+        language,
+        name: placeholderNameFor(language),
+      });
     const session = await this.sessions.create(user.id);
-    return { sessionId: session.id, userId: user.id, isNewUser: false };
+    return { sessionId: session.id, userId: user.id, isNewUser: !existing };
   }
 }
