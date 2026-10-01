@@ -158,3 +158,29 @@ Deno.test("REQ-055: on settings the paid plans are cards and picking one opens t
     const plan = await (await http("/api/me/plan", { headers: auth })).json();
     expect(plan.planId === "monster" && plan.status === "active", `monster · active (${JSON.stringify(plan)})`);
   }));
+
+Deno.test("REQ-056: a paid plan goes back to free from the settings cards", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl, { name: "Downgrade Story", email: `down-${digits()}@blackhole.postmarkapp.com` });
+    // on Monster, paid and active
+    const picked = await http("/api/me/plan", { method: "POST", headers: auth, body: JSON.stringify({ planId: "monster" }) });
+    await picked.body?.cancel();
+    const paid = await http("/api/me/plan/fake-paid", { method: "POST", headers: auth });
+    await paid.body?.cancel();
+    const refreshed = await http("/api/me/plan/refresh", { method: "POST", headers: auth });
+    await refreshed.body?.cancel();
+    await page.goto("/settings");
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await expect.see("Monster is active");
+    // every other plan is a card — Monster Free among them
+    expect.eq(await page.locator("[data-cy='plan-pick-free']").count(), 1, "Monster Free is a card on a paid plan");
+    expect.eq(await page.locator("[data-cy='plan-pick-assist']").count(), 1, "Monster Assist is a card");
+    expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 0, "no card for the active plan");
+    // one click: free, nothing to pay, no tab
+    await page.locator("[data-cy='plan-pick-free']").click();
+    await expect.see("Free — upgrade any time.");
+    expect.eq(await page.locator("[data-cy='plan-pick-free']").count(), 0, "the free card is gone once free is current");
+    expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 1, "Monster is a card again");
+    const plan = await (await http("/api/me/plan", { headers: auth })).json();
+    expect(plan.planId === "free" && plan.status === "free", `free · free (${JSON.stringify(plan)})`);
+  }));

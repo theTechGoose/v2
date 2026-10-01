@@ -1461,7 +1461,10 @@ function PlanCard({ snapshot, onSaved }: { snapshot: ProfileSnapshot; onSaved: (
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const nameOf = (id: string) => PUBLIC_PLANS.find((p) => p.id === id)?.name ?? id;
-  const paid = PUBLIC_PLANS.filter((p) => !p.custom && p.period === "monthly" && p.priceCents > 0);
+  // REQ-056 — every selectable plan but the current one is a card: Monster Free among them on a
+  // paid plan, so going back to free is the same one click as going up
+  const selectable = PUBLIC_PLANS.filter((p) => !p.custom && p.period === "monthly");
+  const currentId = plan && plan.status !== "free" ? plan.planId : "free";
   const hasEmail = Boolean(snapshot.user.email?.trim());
 
   async function run(fn: () => Promise<UserPlan>, after?: (p: UserPlan) => void) {
@@ -1515,13 +1518,13 @@ function PlanCard({ snapshot, onSaved }: { snapshot: ProfileSnapshot; onSaved: (
             </div>
           )
           : null}
-        {/* the other paid plans stay cards — while one is pending too, a change of mind opens ITS pay page */}
+        {/* the other plans stay cards — while one is pending too, a change of mind opens ITS pay page (or stores free) */}
         <div style="display:grid;gap:10px">
           <PlanCards
-            plans={paid.filter((p) => !(plan && plan.status !== "free" && plan.planId === p.id))}
+            plans={selectable.filter((p) => p.id !== currentId)}
             lang={lang}
             featuredId="monster"
-            disabled={() => busy || !hasEmail}
+            disabled={(p) => busy || (p.priceCents > 0 && !hasEmail)}
             onPick={pick}
           />
           {!hasEmail ? <span style="color:var(--fg-muted, #6b7560)">{tFor(lang, "plan.emailFirstSettings")}</span> : null}
