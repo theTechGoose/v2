@@ -8,6 +8,7 @@ import { BusinessInsuranceStore } from "@profile/domain/data/business-insurance-
 import { TaxIdentityStore } from "@profile/domain/data/tax-identity-store/mod.ts";
 import { ReferenceStore } from "@profile/domain/data/reference-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 
 function freshFlow() {
   const users     = new UserStore();
@@ -19,7 +20,7 @@ function freshFlow() {
   const refs      = new ReferenceStore();
   return {
     users, identity, address, insurance, tax, defaults, refs,
-    flow: new LoadProfile(users, identity, address, insurance, tax, defaults, refs),
+    flow: new LoadProfile(users, identity, address, insurance, tax, defaults, refs, new PlanStore()),
   };
 }
 

@@ -106,6 +106,22 @@ export interface ProfileUser {
   updatedAt: number;
 }
 
+/** REQ-054 — the plan picked in onboarding or settings. Mirrors backend users/dto/plan.ts. */
+export type PlanId = "free" | "monster" | "assist";
+export interface UserPlan {
+  userId: string;
+  planId: PlanId;
+  /** free — stored free; pending — a paid pick waiting on its pay page; active — the due settled */
+  status: "free" | "pending" | "active";
+  chosenAt: string;
+  activatedAt?: string;
+  customerId?: string;
+  dueId?: string;
+  /** the CRM's pay page for the first month — the link builder's link */
+  payUrl?: string;
+  updatedAt: string;
+}
+
 export interface ProfileSnapshot {
   user: ProfileUser;
   identity: BusinessIdentity | null;
@@ -114,6 +130,8 @@ export interface ProfileSnapshot {
   tax: { tinMasked?: string; w9FileId?: string; w9UploadedAt?: string } | null;
   contractDefaults: ContractDefaults | null;
   references: unknown[];
+  /** REQ-054 — null until a pick (read as free) */
+  plan?: UserPlan | null;
   initials: string;
   /** Phone-area-code guess for the business state — present only when we
    *  have a guess AND no address state is set yet. Drives the /welcome
@@ -149,4 +167,11 @@ export const profileClient = {
    *  Hits GET /me/wipe (scoped to the caller's session) and logs them out. */
   wipeAccount: (opts: ApiOptions = {}) =>
     api.get<{ ok: true; deleted: number }>("/me/wipe", opts),
+};
+
+/** REQ-054 — the plan: pick one, and ask whether a pending one's payment landed. */
+export const planClient = {
+  get: (opts: ApiOptions = {}) => api.get<UserPlan | null>("/me/plan", opts),
+  choose: (planId: PlanId, opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan", { planId }, opts),
+  refresh: (opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan/refresh", undefined, opts),
 };

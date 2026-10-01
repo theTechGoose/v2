@@ -17,12 +17,17 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, persistLang } from "../lib/lang.ts";
 import { t } from "../lib/i18n.ts";
+import { SUPPORT_PHONE_DISPLAY } from "../../shared/legal/contact.ts";
 import {
   type BusinessAddress,
   type BusinessIdentity,
+  type PlanId,
+  planClient,
   profileClient,
   type ProfileSnapshot,
+  type UserPlan,
 } from "../clients/profile.ts";
+import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { filesClient } from "../clients/files.ts";
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
 import { api } from "../lib/api.ts";
@@ -161,6 +166,7 @@ function StepFooter(
             <button
               type="button"
               class="welcome__btn welcome__btn--ghost"
+              data-cy="welcome-skip"
               onClick={ctx.advance}
               disabled={busy}
             >
@@ -172,6 +178,7 @@ function StepFooter(
           <button
             type="button"
             class="welcome__btn welcome__btn--primary"
+            data-cy="welcome-continue"
             onClick={() => onContinue()}
             disabled={!valid || busy}
           >
@@ -992,6 +999,128 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
   );
 }
 
+
+// REQ-054 — "in onboarding a user can pick their plan": the public monthly plans of the one
+// pricing module. Free is stored and the wizard moves on; a paid pick goes through the CRM's
+// link builder — the step hands the person that pay page and a "Check payment" button, and the
+// plan is pending until the due settles there. Skippable: no pick reads as free.
+function dollars(cents: number): string {
+  return `$${Math.round(cents / 100)}`;
+}
+
+function PlanStep({ ctx }: { ctx: StepCtx }) {
+  const [plan, setPlan] = useState<UserPlan | null>(ctx.snap.plan ?? null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const lang = langSignal.value;
+  const hasEmail = Boolean(ctx.snap.user.email?.trim());
+  const plans = PUBLIC_PLANS.filter((p) => !p.custom && p.period === "monthly");
+  const nameOf = (id: string) => PUBLIC_PLANS.find((p) => p.id === id)?.name ?? id;
+
+  async function pick(planId: PlanId) {
+    if (busy) return;
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const next = await planClient.choose(planId);
+      setPlan(next);
+      ctx.patchSnap({ plan: next });
+      if (next.status === "free") ctx.advance();
+    } catch {
+      setErr(t("plan.error"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function check() {
+    if (busy) return;
+    setBusy(true);
+    setErr("");
+    try {
+      const next = await planClient.refresh();
+      setPlan(next);
+      ctx.patchSnap({ plan: next });
+      setMsg(next.status === "active" ? "" : t("plan.notYet"));
+    } catch {
+      setErr(t("plan.error"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const settled = plan?.status === "active" || plan?.status === "free";
+
+  return (
+    <StepBody question={t("welcome.plan.question")} why={t("welcome.plan.why")}>
+      {plan?.status === "active"
+        ? (
+          <p class="welcome__plan-active" data-cy="plan-active" role="status">
+            ✓ {t("plan.active", { name: nameOf(plan.planId) })}
+          </p>
+        )
+        : plan?.status === "pending"
+        ? (
+          <div class="welcome__plan-pending" data-cy="plan-pending">
+            <p class="welcome__plan-pending-lede">
+              <b>{nameOf(plan.planId)}</b> · {t("plan.pending")}
+            </p>
+            <div class="welcome__plan-actions">
+              <a
+                class="welcome__btn welcome__btn--primary"
+                data-cy="plan-pay-link"
+                href={plan.payUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t("plan.openPay")} ↗
+              </a>
+              <button
+                type="button"
+                class="welcome__btn welcome__btn--outline"
+                data-cy="plan-check-paid"
+                onClick={check}
+                disabled={busy}
+              >
+                {t("plan.check")}
+              </button>
+            </div>
+            {msg ? <p class="welcome__plan-note" role="status">{msg}</p> : null}
+          </div>
+        )
+        : (
+          <div class="welcome__plans">
+            {plans.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                class={`welcome__plan${p.id === "monster" ? " welcome__plan--featured" : ""}`}
+                data-cy={`plan-pick-${p.id}`}
+                onClick={() => pick(p.id as PlanId)}
+                disabled={busy || (p.priceCents > 0 && !hasEmail)}
+              >
+                <span class="welcome__plan-name">{p.name}</span>
+                <span class="welcome__plan-price">
+                  {p.priceCents === 0 ? t("welcome.plan.free") : dollars(p.priceCents)}
+                  {p.priceCents > 0 ? <small>{t("welcome.plan.perMonth")}</small> : null}
+                </span>
+                <ul class="welcome__plan-features">
+                  {p.features.slice(0, 3).map((f) => <li key={f.id}>{lang === "es" ? f.es : f.en}</li>)}
+                </ul>
+              </button>
+            ))}
+            <p class="welcome__plan-custom">{t("welcome.plan.custom", { phone: SUPPORT_PHONE_DISPLAY })}</p>
+            {!hasEmail ? <p class="welcome__plan-note">{t("welcome.plan.emailFirst")}</p> : null}
+          </div>
+        )}
+      {err ? <p class="welcome__error" role="alert">{err}</p> : null}
+      <StepFooter ctx={ctx} valid={settled} busy={busy} onContinue={ctx.advance} />
+    </StepBody>
+  );
+}
+
 function paymentComplete(identity: BusinessIdentity | null): boolean {
   const m = identity?.acceptedPaymentMethods ?? {};
   return Object.values(m).some((v) => v?.enabled);
@@ -1016,6 +1145,13 @@ function buildSteps(): StepDef[] {
       skippable: true,
       isComplete: (s) => Boolean(s.user.email?.trim()),
       Component: EmailStep,
+    },
+    {
+      // REQ-054 — the plan, right after the email a paid pick needs
+      id: "plan",
+      skippable: true,
+      isComplete: (s) => Boolean(s.plan),
+      Component: PlanStep,
     },
     {
       id: "state",

@@ -10,7 +10,11 @@
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
+import { profileClient,
+  type PlanId,
+  planClient,
+  type UserPlan, type ProfileSnapshot } from "../clients/profile.ts";
+import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { filesClient } from "../clients/files.ts";
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
@@ -1444,6 +1448,91 @@ function ContractDefaultsEditCard(
 /** DangerZoneCard — irreversible account wipe. Type-to-confirm gate, then a
  *  single destructive button hits GET /me/wipe and bounces to the login page
  *  (the wipe drops every session, so the app is logged out anyway). */
+
+// REQ-054 — "later can upgrade to paid in the settings panel": the current plan, the paid plans
+// as upgrades (the same CRM pay link as onboarding), and for a pending one the pay page + check.
+function PlanCard({ snapshot, onSaved }: { snapshot: ProfileSnapshot; onSaved: (next: Partial<ProfileSnapshot>) => void }) {
+  const lang: Lang = snapshot.user.language === "es" ? "es" : "en";
+  const [plan, setPlan] = useState<UserPlan | null>(snapshot.plan ?? null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const nameOf = (id: string) => PUBLIC_PLANS.find((p) => p.id === id)?.name ?? id;
+  const paid = PUBLIC_PLANS.filter((p) => !p.custom && p.period === "monthly" && p.priceCents > 0);
+  const hasEmail = Boolean(snapshot.user.email?.trim());
+
+  async function run(fn: () => Promise<UserPlan>, after?: (p: UserPlan) => void) {
+    if (busy) return;
+    setBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const next = await fn();
+      setPlan(next);
+      onSaved({ plan: next });
+      after?.(next);
+    } catch {
+      setErr(tFor(lang, "plan.error"));
+    } finally {
+      setBusy(false);
+    }
+  }
+  const upgrade = (id: PlanId) => run(() => planClient.choose(id));
+  const check = () => run(() => planClient.refresh(), (p) => setMsg(p.status === "active" ? "" : tFor(lang, "plan.notYet")));
+
+  const currentName = plan ? nameOf(plan.planId) : nameOf("free");
+  const status = !plan || plan.status === "free"
+    ? tFor(lang, "plan.statusFree")
+    : plan.status === "active"
+    ? tFor(lang, "plan.activeSince", { name: currentName, date: (plan.activatedAt ?? plan.updatedAt).slice(0, 10) })
+    : tFor(lang, "plan.pending");
+
+  return (
+    <div class="panel" style="padding:18px 20px" data-cy="plan-card">
+      <div class="panel__head" style="margin-bottom:12px">
+        <h3 class="panel__title">{tFor(lang, "settings.plan")}</h3>
+      </div>
+      <div style="display:grid;gap:10px;font-size:13.5px">
+        <div>
+          <div style="color:var(--fg-muted, #6b7560)">{tFor(lang, "plan.current")}</div>
+          <div style="font-weight:700;font-size:16px" data-cy="plan-current">{currentName}</div>
+          <div data-cy="plan-status">{status}</div>
+        </div>
+        {plan?.status === "pending"
+          ? (
+            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+              <a class="btn btn--accent" data-cy="plan-pay-link" href={plan.payUrl} target="_blank" rel="noopener noreferrer">
+                {tFor(lang, "plan.openPay")} ↗
+              </a>
+              <button type="button" class="btn btn--ghost" data-cy="plan-check-paid" onClick={check} disabled={busy}>
+                {tFor(lang, "plan.check")}
+              </button>
+            </div>
+          )
+          : (
+            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+              {paid.filter((p) => !(plan?.status === "active" && plan.planId === p.id)).map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  class="btn btn--accent"
+                  data-cy={`plan-upgrade-${p.id}`}
+                  onClick={() => upgrade(p.id as PlanId)}
+                  disabled={busy || !hasEmail}
+                >
+                  {tFor(lang, "plan.upgrade", { name: p.name })} · ${Math.round(p.priceCents / 100)}{tFor(lang, "welcome.plan.perMonth")}
+                </button>
+              ))}
+              {!hasEmail ? <span style="color:var(--fg-muted, #6b7560)">{tFor(lang, "plan.emailFirstSettings")}</span> : null}
+            </div>
+          )}
+        {msg ? <div role="status">{msg}</div> : null}
+        {err ? <div role="alert" style="color:var(--danger, #b42318)">{err}</div> : null}
+      </div>
+    </div>
+  );
+}
+
 function DangerZoneCard(_props: { snapshot: ProfileSnapshot }) {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1573,6 +1662,8 @@ export default function SettingsPage() {
           <p class="hero__sub">{t.heroSub}</p>
         </div>
       </section>
+
+      <PlanCard snapshot={p} onSaved={onSaved} />
 
       <div class="grid">
         <Card
