@@ -65,6 +65,7 @@ export default define.page(async function Welcome(ctx) {
           {tFor(lang, "welcome.docTitle")} · {tFor(lang, "brand.name")}
         </title>
         <link rel="stylesheet" href="/welcome.css" />
+        <link rel="stylesheet" href="/plan-cards.css" />
       </Head>
       <div class="welcome-shell">
         <a

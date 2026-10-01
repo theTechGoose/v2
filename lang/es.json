@@ -2542,7 +2542,7 @@
   "welcome.plan.perMonth": "/mes",
   "welcome.plan.custom": "Monster Projects — a la medida, según cada cliente. Llama al {phone}.",
   "welcome.plan.emailFirst": "Un plan de pago necesita un correo en la cuenta — regresa un paso y agrégalo.",
-  "plan.pending": "Esperando el pago — abre la página de pago, paga con tu tarjeta y luego verifica.",
+  "plan.pending": "Esperando el pago — paga con tu tarjeta en la página que se abrió y luego verifica aquí.",
   "plan.openPay": "Abrir la página de pago",
   "plan.check": "Verificar el pago",
   "plan.notYet": "El pago aún no llega — termínalo en la página de pago y verifica de nuevo.",
@@ -2550,7 +2550,6 @@
   "plan.activeSince": "{name} está activo desde {date}",
   "plan.statusFree": "Gratis — cambia cuando quieras.",
   "plan.current": "Plan actual",
-  "plan.upgrade": "Cambiar a {name}",
   "plan.error": "No se pudo actualizar el plan — revisa tu conexión e intenta de nuevo.",
   "plan.emailFirstSettings": "Primero agrega un correo a la cuenta — un plan de pago lo necesita.",
   "settings.plan": "Plan"

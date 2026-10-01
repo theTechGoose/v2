@@ -28,6 +28,8 @@ import {
   type UserPlan,
 } from "../clients/profile.ts";
 import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import { PlanCards } from "../components/PlanCards.tsx";
+import { openBlankTab, pickPlan } from "../lib/plan-pick.ts";
 import { filesClient } from "../clients/files.ts";
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
 import { api } from "../lib/api.ts";
@@ -1001,13 +1003,10 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
 
 
 // REQ-054 — "in onboarding a user can pick their plan": the public monthly plans of the one
-// pricing module. Free is stored and the wizard moves on; a paid pick goes through the CRM's
-// link builder — the step hands the person that pay page and a "Check payment" button, and the
+// pricing module, as the cards /settings shows too (PlanCards). Free is stored and the wizard
+// moves on; a paid pick goes through the CRM's link builder and opens that pay page itself
+// (REQ-055) — the step then shows the link to reopen it and a "Check payment" button, and the
 // plan is pending until the due settles there. Skippable: no pick reads as free.
-function dollars(cents: number): string {
-  return `$${Math.round(cents / 100)}`;
-}
-
 function PlanStep({ ctx }: { ctx: StepCtx }) {
   const [plan, setPlan] = useState<UserPlan | null>(ctx.snap.plan ?? null);
   const [busy, setBusy] = useState(false);
@@ -1024,7 +1023,9 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
     setErr("");
     setMsg("");
     try {
-      const next = await planClient.choose(planId);
+      // REQ-055 — a paid pick opens the pay page itself: the tab is opened inside this click,
+      // before the mint (front-end/lib/plan-pick.ts)
+      const next = await pickPlan(planId, planClient.choose, openBlankTab);
       setPlan(next);
       ctx.patchSnap({ plan: next });
       if (next.status === "free") ctx.advance();
@@ -1091,26 +1092,14 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
           </div>
         )
         : (
-          <div class="welcome__plans">
-            {plans.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                class={`welcome__plan${p.id === "monster" ? " welcome__plan--featured" : ""}`}
-                data-cy={`plan-pick-${p.id}`}
-                onClick={() => pick(p.id as PlanId)}
-                disabled={busy || (p.priceCents > 0 && !hasEmail)}
-              >
-                <span class="welcome__plan-name">{p.name}</span>
-                <span class="welcome__plan-price">
-                  {p.priceCents === 0 ? t("welcome.plan.free") : dollars(p.priceCents)}
-                  {p.priceCents > 0 ? <small>{t("welcome.plan.perMonth")}</small> : null}
-                </span>
-                <ul class="welcome__plan-features">
-                  {p.features.slice(0, 3).map((f) => <li key={f.id}>{lang === "es" ? f.es : f.en}</li>)}
-                </ul>
-              </button>
-            ))}
+          <div class="welcome__plan-step">
+            <PlanCards
+              plans={plans}
+              lang={lang}
+              featuredId="monster"
+              disabled={(p) => busy || (p.priceCents > 0 && !hasEmail)}
+              onPick={(id) => pick(id as PlanId)}
+            />
             <p class="welcome__plan-custom">{t("welcome.plan.custom", { phone: SUPPORT_PHONE_DISPLAY })}</p>
             {!hasEmail ? <p class="welcome__plan-note">{t("welcome.plan.emailFirst")}</p> : null}
           </div>

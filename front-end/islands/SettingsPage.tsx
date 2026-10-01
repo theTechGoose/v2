@@ -15,6 +15,8 @@ import { profileClient,
   planClient,
   type UserPlan, type ProfileSnapshot } from "../clients/profile.ts";
 import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import { PlanCards } from "../components/PlanCards.tsx";
+import { openBlankTab, pickPlan } from "../lib/plan-pick.ts";
 import { filesClient } from "../clients/files.ts";
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
@@ -1450,7 +1452,8 @@ function ContractDefaultsEditCard(
  *  (the wipe drops every session, so the app is logged out anyway). */
 
 // REQ-054 — "later can upgrade to paid in the settings panel": the current plan, the paid plans
-// as upgrades (the same CRM pay link as onboarding), and for a pending one the pay page + check.
+// as the same cards onboarding shows (REQ-055 — a card is the pick, and it opens the CRM's pay
+// page itself), and for a pending one the link to reopen that page + check.
 function PlanCard({ snapshot, onSaved }: { snapshot: ProfileSnapshot; onSaved: (next: Partial<ProfileSnapshot>) => void }) {
   const lang: Lang = snapshot.user.language === "es" ? "es" : "en";
   const [plan, setPlan] = useState<UserPlan | null>(snapshot.plan ?? null);
@@ -1477,7 +1480,9 @@ function PlanCard({ snapshot, onSaved }: { snapshot: ProfileSnapshot; onSaved: (
       setBusy(false);
     }
   }
-  const upgrade = (id: PlanId) => run(() => planClient.choose(id));
+  // REQ-055 — the card is the pick, and a paid pick opens the pay page itself (the tab is opened
+  // inside the click, before the mint; see front-end/lib/plan-pick.ts)
+  const pick = (id: string) => run(() => pickPlan(id as PlanId, planClient.choose, openBlankTab));
   const check = () => run(() => planClient.refresh(), (p) => setMsg(p.status === "active" ? "" : tFor(lang, "plan.notYet")));
 
   const currentName = plan ? nameOf(plan.planId) : nameOf("free");
@@ -1510,19 +1515,14 @@ function PlanCard({ snapshot, onSaved }: { snapshot: ProfileSnapshot; onSaved: (
             </div>
           )
           : (
-            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-              {paid.filter((p) => !(plan?.status === "active" && plan.planId === p.id)).map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  class="btn btn--accent"
-                  data-cy={`plan-upgrade-${p.id}`}
-                  onClick={() => upgrade(p.id as PlanId)}
-                  disabled={busy || !hasEmail}
-                >
-                  {tFor(lang, "plan.upgrade", { name: p.name })} · ${Math.round(p.priceCents / 100)}{tFor(lang, "welcome.plan.perMonth")}
-                </button>
-              ))}
+            <div style="display:grid;gap:10px">
+              <PlanCards
+                plans={paid.filter((p) => !(plan?.status === "active" && plan.planId === p.id))}
+                lang={lang}
+                featuredId="monster"
+                disabled={() => busy || !hasEmail}
+                onPick={pick}
+              />
               {!hasEmail ? <span style="color:var(--fg-muted, #6b7560)">{tFor(lang, "plan.emailFirstSettings")}</span> : null}
             </div>
           )}

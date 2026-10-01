@@ -428,23 +428,9 @@
 }
 
 /* ---- REQ-054: the plan step ---- */
-.welcome__plans { display: grid; gap: 10px; }
-@media (min-width: 640px) { .welcome__plans { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-.welcome__plan {
-  font-family: var(--font-body); text-align: left; cursor: pointer;
-  display: flex; flex-direction: column; gap: 6px; padding: 14px;
-  color: var(--fg); background: var(--bg-alt);
-  border: 1.5px solid var(--border-strong); border-radius: 12px;
-}
-.welcome__plan:hover:not(:disabled), .welcome__plan:focus-visible { border-color: var(--brand-green); }
-.welcome__plan:disabled { opacity: 0.55; cursor: not-allowed; }
-.welcome__plan--featured { border-color: var(--brand-green); box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand-green) 25%, transparent); }
-.welcome__plan-name { font-weight: 700; font-size: 15px; }
-.welcome__plan-price { font-weight: 800; font-size: 22px; line-height: 1.1; }
-.welcome__plan-price small { font-weight: 500; font-size: 12px; opacity: 0.7; margin-left: 2px; }
-.welcome__plan-features { margin: 4px 0 0; padding-left: 16px; font-size: 13px; line-height: 1.4; opacity: 0.85; }
-.welcome__plan-custom, .welcome__plan-note { font-size: 13px; opacity: 0.8; margin: 2px 0 0; }
-@media (min-width: 640px) { .welcome__plan-custom, .welcome__plan-note { grid-column: 1 / -1; } }
+/* the cards themselves: /plan-cards.css (REQ-055, shared with /settings) */
+.welcome__plan-step { display: grid; gap: 10px; }
+.welcome__plan-custom, .welcome__plan-note { font-size: 13px; opacity: 0.8; margin: 0; }
 .welcome__plan-pending { display: grid; gap: 12px; padding: 14px; border: 1.5px solid var(--border-strong); border-radius: 12px; background: var(--bg-alt); }
 .welcome__plan-pending-lede { margin: 0; font-size: 14px; line-height: 1.45; }
 .welcome__plan-actions { display: flex; flex-wrap: wrap; gap: 10px; }

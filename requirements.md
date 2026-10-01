@@ -315,3 +315,9 @@ key still selects the fake (the gate's lanes, a dev box).
 - smoke (never in the gate, `deno task test:smoke` with both keys pointing at a running ppwk-crm):
   `backend/src/users/domain/data/payments-link/smk.test.ts` — the real client makes the customer,
   raises the first month, mints the link on the CRM's charge page and reads the due open.
+
+## REQ-055 — The paid plans are cards in settings too, and a paid pick opens the payment page itself
+**Source:** Raphael, 2026-10-01, looking at the Plan card on /settings (the show-v2-payments pin)
+**Requirement (client's words):** "upgrade to monster 99 ect should just be cards and open the payment page."
+**Read as:** the settings Plan card lists the paid plans the way the onboarding step does — one card per plan (name, price, its first three features), the ONE component both pages render (`front-end/components/PlanCards.tsx`, styled by `front-end/static/plan-cards.css`) — instead of "Upgrade to Monster · $99/month" buttons. And a paid pick, on either page, opens the CRM's pay page itself: the tab is opened IN the click (a tab opened after the mint's await is a popup the browser blocks) and pointed at the minted link when it arrives (`front-end/lib/plan-pick.ts`); the card then reads pending with "Check payment" and the link to reopen the page — the way back when the person closed the tab, and the fallback when the browser refused it. A mint that fails closes the tab and shows the error. Free is unchanged: stored, no tab, the wizard moves on. The "Upgrade to {name}" buttons and their dictionary key are gone.
+**Tests:** unit `jest/unit/plan-pick.test.ts` ("REQ-055 …", 5) · integration `n/a — no backend change; the pick is REQ-054's POST /me/plan, pinned by choose-plan/int.test.ts` · e2e `e2e/plan-picker/plan-picker.e2e.test.ts` ("REQ-055: on settings the paid plans are cards and picking one opens the payment page"; the two REQ-054 stories now watch the tab open)

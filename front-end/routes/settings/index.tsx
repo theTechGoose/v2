@@ -45,6 +45,7 @@ export default define.page(function SettingsRoute(ctx) {
       <Head>
         <title>{tFor(lang, "settingsRoute.docTitle")}</title>
         <link rel="stylesheet" href="/dashboard.css" />
+        <link rel="stylesheet" href="/plan-cards.css" />
       </Head>
       <div class="app">
         <DashSidebar active="settings" />
