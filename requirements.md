@@ -303,3 +303,15 @@ The merge judge's hit-target audit on `/login-internal` flagged the footer's "T�
 **Requirement (client's words):** "we want to use the link builder so in onboarding a user can pick their plan. they can pick free but later can upgrade to paid in the settings panel."
 **Read as:** the /welcome wizard gets a plan step right after the email step: Monster Free, Monster ($99/month) and Monster Assist ($199/month) — the public monthly plans of `shared/quote-flow/pricing-plans.ts`; Monster Projects stays "call us". Free is stored as free and the wizard moves on. A paid pick asks the CRM (ppwk-crm payments, operator token) to create the customer (business name, else the person's name; the account's email — a paid pick with no email is refused, never an invented address), raise the first month as a due and mint a pay link; the step shows that pay page link ("Open the payment page") and a "Check payment" button; the plan is `pending` until the due reads settled, then `active`. The settings panel gets a Plan card at the top: the current plan, upgrade buttons for the paid plans (the same mint), and for a pending plan the pay link and the check. The plan rides on `GET /profile` as `plan`. The CRM client is real when `PPWK_PAYMENTS_URL` + `PPWK_PAYMENTS_TOKEN` are set and an in-process fake otherwise (the gate's lanes), whose one remote control, `POST /api/me/plan/fake-paid`, settles the due the way a card on the real pay page does — like the dev master OTP code, it does not exist on the real client.
 **Tests:** unit `backend/src/users/domain/business/plan/test.ts` ("REQ-054 plan — …", 6) · integration `backend/src/users/domain/coordinators/choose-plan/int.test.ts` ("REQ-054 choose-plan — …", 6) · e2e `e2e/plan-picker/plan-picker.e2e.test.ts` ("REQ-054: in onboarding the person picks a paid plan, pays on the link builder's page, and the plan is active"; "REQ-054: free in onboarding, then upgraded to a paid plan from the settings panel")
+
+### REQ-054 — note: production refuses the fake link builder; the real client has a smoke test
+
+In production (`DENO_DEPLOYMENT_ID` set) a missing `PPWK_PAYMENTS_URL` or `PPWK_PAYMENTS_TOKEN`
+throws at boot instead of binding the fake — the REQ-001 rule, because the fake's one remote
+control (`POST /me/plan/fake-paid`) would make every paid plan free. Outside production a missing
+key still selects the fake (the gate's lanes, a dev box).
+
+- unit: `backend/src/users/domain/business/payments-link-select/test.ts` (REQ-054 selectPaymentsLinkName ×3)
+- smoke (never in the gate, `deno task test:smoke` with both keys pointing at a running ppwk-crm):
+  `backend/src/users/domain/data/payments-link/smk.test.ts` — the real client makes the customer,
+  raises the first month, mints the link on the CRM's charge page and reads the due open.

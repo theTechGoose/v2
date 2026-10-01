@@ -3,6 +3,7 @@
 // payments API when PPWK_PAYMENTS_URL + PPWK_PAYMENTS_TOKEN are set; otherwise the in-process
 // fake the gate's lanes run on (the same way EmailService runs without a Postmark key).
 import { Injectable } from "#danet/core";
+import { type PaymentsLinkName, selectPaymentsLinkName } from "@users/domain/business/payments-link-select/mod.ts";
 
 export interface NewCustomer {
   customerName: string;
@@ -119,19 +120,33 @@ class FakePaymentsLink implements PaymentsLinkPort {
   }
 }
 
-/** real when both env keys are set, the fake otherwise — decided per call, so a test can flip it */
+/**
+ * real when both env keys are set, the fake otherwise — decided per call, so a test can flip it.
+ * In production (DENO_DEPLOYMENT_ID set) a missing key throws at boot instead of binding the
+ * fake, the REQ-001 rule: selectPaymentsLinkName.
+ */
 @Injectable()
 export class PaymentsLink implements PaymentsLinkPort {
   /** test seam for the real client's HTTP, like EmailService.fetchOverride */
   fetchOverride: typeof fetch | null = null;
 
+  constructor() {
+    this.which();
+  }
+  private which(): PaymentsLinkName {
+    return selectPaymentsLinkName({
+      PPWK_PAYMENTS_URL: Deno.env.get("PPWK_PAYMENTS_URL"),
+      PPWK_PAYMENTS_TOKEN: Deno.env.get("PPWK_PAYMENTS_TOKEN"),
+      DENO_DEPLOYMENT_ID: Deno.env.get("DENO_DEPLOYMENT_ID"),
+    });
+  }
   isFake(): boolean {
-    return !(Deno.env.get("PPWK_PAYMENTS_URL") && Deno.env.get("PPWK_PAYMENTS_TOKEN"));
+    return this.which() === "fake";
   }
   private port(): PaymentsLinkPort {
-    const origin = (Deno.env.get("PPWK_PAYMENTS_URL") ?? "").replace(/\/+$/, "");
-    const token = Deno.env.get("PPWK_PAYMENTS_TOKEN") ?? "";
-    if (!origin || !token) return new FakePaymentsLink();
+    if (this.which() === "fake") return new FakePaymentsLink();
+    const origin = (Deno.env.get("PPWK_PAYMENTS_URL") ?? "").trim().replace(/\/+$/, "");
+    const token = (Deno.env.get("PPWK_PAYMENTS_TOKEN") ?? "").trim();
     return new CrmPaymentsLink(origin, token, this.fetchOverride ?? globalThis.fetch);
   }
   createCustomer(input: NewCustomer) {
