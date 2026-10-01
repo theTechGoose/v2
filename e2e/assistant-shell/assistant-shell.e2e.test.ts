@@ -15,7 +15,11 @@ const PHONE = "+15125550991";
 const JSON_HEADERS = { "content-type": "application/json" };
 
 /** A signed-in, onboarded account on the page's browser context. */
-async function signIn(http: StoryTools["http"], page: StoryTools["page"]) {
+async function signIn(
+  http: StoryTools["http"],
+  page: StoryTools["page"],
+  baseUrl: string,
+) {
   const r = await http("/api/auth/verify", {
     method: "POST",
     headers: JSON_HEADERS,
@@ -47,9 +51,10 @@ async function signIn(http: StoryTools["http"], page: StoryTools["page"]) {
     await res.body?.cancel();
   }
   const [name, value] = cookie.split("=");
-  const host =
-    new URL(page.url() === "about:blank" ? "http://localhost" : page.url())
-      .hostname;
+  // The cookie must be set for the host the runner actually serves on — the
+  // gate uses 127.0.0.1, a pin uses localhost; a cookie for the wrong one
+  // leaves the page signed out.
+  const host = new URL(baseUrl).hostname;
   await page.context().addCookies([
     { name, value, domain: host, path: "/" },
     { name: "pm_lang", value: "es", domain: host, path: "/" },
@@ -75,8 +80,8 @@ function measure(page: StoryTools["page"]): Promise<ShellMetrics> {
 }
 
 Deno.test("REQ-052: the assistant shell is exactly the viewport, tall or short", (t) =>
-  story(t, async ({ page, expect, http }) => {
-    await signIn(http, page);
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
     for (const height of [1000, 760]) {
       await page.setViewportSize({ width: 1440, height });
       await page.goto("/assistant");
@@ -96,8 +101,8 @@ Deno.test("REQ-052: the assistant shell is exactly the viewport, tall or short",
   }));
 
 Deno.test("REQ-053: the sidebar has no collapse button on any page; the topbar hamburger still collapses it", (t) =>
-  story(t, async ({ page, expect, http }) => {
-    await signIn(http, page);
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
     await page.setViewportSize({ width: 1440, height: 900 });
     for (const path of ["/assistant", "/dashboard"]) {
       await page.goto(path);
