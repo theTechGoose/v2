@@ -17,7 +17,7 @@ function walk(dir: string): string[] {
 }
 
 describe("REQ-055 every stylesheet link in a route's Head carries its own key", () => {
-  it("REQ-055 a route with several <link rel=\"stylesheet\"> keys each one, or Fresh keeps only the last", () => {
+  it("REQ-055 a route with several stylesheet links keys each one, or Fresh keeps only the last", () => {
     const offenders: string[] = [];
     for (const file of walk(ROUTES)) {
       const src = fs.readFileSync(file, "utf8");
