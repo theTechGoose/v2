@@ -10,7 +10,7 @@ import { PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { chosen, customerNameFor, firstMonthMemo, planOf, settle } from "@users/domain/business/plan/mod.ts";
 import type { UserPlan } from "@users/dto/plan.ts";
 
-export class EmailRequiredError extends Error {
+class EmailRequiredError extends Error {
   readonly status = 409;
   constructor() {
     super("email-required: a paid plan needs an email on the account");

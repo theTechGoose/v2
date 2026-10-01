@@ -27,7 +27,7 @@ const DUES = "/api/payments/dues";
 const PAY_LINKS = "/api/payments/pay-links";
 const CATEGORY = "sales";
 
-export class PaymentsUnavailableError extends Error {
+class PaymentsUnavailableError extends Error {
   readonly status = 502;
   constructor(detail: string) {
     super(`payments-unavailable: ${detail}`);
@@ -36,7 +36,7 @@ export class PaymentsUnavailableError extends Error {
 }
 
 /** the real one: ppwk-crm's payments API behind the operator token */
-export class CrmPaymentsLink implements PaymentsLinkPort {
+class CrmPaymentsLink implements PaymentsLinkPort {
   constructor(private readonly origin: string, private readonly token: string, private readonly f: typeof fetch = globalThis.fetch) {}
 
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -74,7 +74,7 @@ export class CrmPaymentsLink implements PaymentsLinkPort {
 }
 
 /** the fake's world — what a story or an int test reads back and settles */
-export class FakePaymentsWorld {
+class FakePaymentsWorld {
   customers: Array<NewCustomer & { customerId: string }> = [];
   dues: Array<NewDue & { dueId: string; open: boolean }> = [];
   links: Array<{ customerId: string; dueId: string; payUrl: string }> = [];
@@ -95,7 +95,7 @@ export function fakePaymentsWorld(): FakePaymentsWorld {
   return WORLD;
 }
 
-export class FakePaymentsLink implements PaymentsLinkPort {
+class FakePaymentsLink implements PaymentsLinkPort {
   constructor(private readonly world = WORLD) {}
   createCustomer(input: NewCustomer) {
     const customerId = crypto.randomUUID();
