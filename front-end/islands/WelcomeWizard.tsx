@@ -17,6 +17,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, persistLang } from "../lib/lang.ts";
 import { t } from "../lib/i18n.ts";
+import { SUPPORT_PHONE_DISPLAY } from "../../shared/legal/contact.ts";
 import {
   type BusinessAddress,
   type BusinessIdentity,
@@ -1110,7 +1111,7 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
                 </ul>
               </button>
             ))}
-            <p class="welcome__plan-custom">{t("welcome.plan.custom")}</p>
+            <p class="welcome__plan-custom">{t("welcome.plan.custom", { phone: SUPPORT_PHONE_DISPLAY })}</p>
             {!hasEmail ? <p class="welcome__plan-note">{t("welcome.plan.emailFirst")}</p> : null}
           </div>
         )}

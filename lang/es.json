@@ -2540,7 +2540,7 @@
   "welcome.plan.why": "Empieza gratis o pasa a pago hoy — puedes cambiar cuando quieras desde Configuración.",
   "welcome.plan.free": "Gratis",
   "welcome.plan.perMonth": "/mes",
-  "welcome.plan.custom": "Monster Projects — a la medida, según cada cliente. Llama al 855-362-8666.",
+  "welcome.plan.custom": "Monster Projects — a la medida, según cada cliente. Llama al {phone}.",
   "welcome.plan.emailFirst": "Un plan de pago necesita un correo en la cuenta — regresa un paso y agrégalo.",
   "plan.pending": "Esperando el pago — abre la página de pago, paga con tu tarjeta y luego verifica.",
   "plan.openPay": "Abrir la página de pago",
