@@ -76,6 +76,26 @@ export class UserStore {
   }
 
   /**
+   * REQ-050 (email login): the account that carries `email` — compared in the
+   * normalized form (trimmed, lowercased; see shared/quote-flow/normalize-
+   * email.ts), so the case a person typed never matters. Scans the ["user", *]
+   * prefix like `searchByPhone` does — there is no email index, and the
+   * single-tenant KV is small. A closed account is returned as-is (its
+   * `deletedAt` set) so the caller can say "closed" rather than "unknown".
+   */
+  async findByEmail(email: string): Promise<User | null> {
+    const kv = await getKv();
+    const needle = email.trim().toLowerCase();
+    if (!needle) return null;
+    for await (const entry of kv.list<User>({ prefix: ["user"] })) {
+      const user = entry.value;
+      if (!user || typeof user !== "object" || typeof user.email !== "string") continue;
+      if (user.email.trim().toLowerCase() === needle) return withHardcodedSuperAdmin(user);
+    }
+    return null;
+  }
+
+  /**
    * Search users by phone number (partial, digits-only match). Backs the
    * admin user-lookup table. An empty query lists users (capped at `limit`).
    *

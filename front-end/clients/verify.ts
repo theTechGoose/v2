@@ -16,7 +16,14 @@ export interface VerifyOtpInput {
   code: string;
 }
 
-export type VerifyOtpError = "invalid_code" | "expired" | "rate_limited";
+export type VerifyOtpError =
+  | "invalid_code"
+  | "expired"
+  | "rate_limited"
+  /** REQ-050 (email login only): the address stopped matching a live account
+   *  between send and verify. */
+  | "unknown_email"
+  | "account_closed";
 
 export type VerifyOtpResult =
   | {
@@ -44,10 +51,18 @@ export interface ResendOtpInput {
   language?: Lang;
 }
 
+/** REQ-050: the email counterpart of VerifyOtpInput. */
+interface VerifyEmailOtpInput {
+  email: string;
+  code: string;
+}
+
 const KNOWN_ERRORS: ReadonlySet<string> = new Set([
   "invalid_code",
   "expired",
   "rate_limited",
+  "unknown_email",
+  "account_closed",
 ]);
 
 function asError(raw: unknown): VerifyOtpError {
@@ -98,7 +113,44 @@ export const verifyClient = {
     }
   },
 
-  /** POST /api/auth/send-otp — resend the OTP code. */
+  /** REQ-050: POST /auth/verify-email-otp — the emailed code opens the
+   *  session of the account that carries the address. The backend answers
+   *  the `{ ok, redirectTo }` envelope with real statuses, so a failure is an
+   *  ApiError whose body names the error. */
+  async verifyEmailOtp(
+    input: VerifyEmailOtpInput,
+    opts: ApiOptions = {},
+  ): Promise<VerifyOtpResult> {
+    try {
+      const raw = await api.post<
+        { ok?: boolean; sessionId?: string; userId?: string; redirectTo?: string }
+      >("/auth/verify-email-otp", input, opts);
+      if (raw.ok === true && typeof raw.sessionId === "string" && typeof raw.userId === "string") {
+        return {
+          ok: true,
+          sessionId: raw.sessionId,
+          userId: raw.userId,
+          isNewUser: false,
+          redirectTo: raw.redirectTo ?? "/dashboard?welcome=back",
+        };
+      }
+      return { ok: false, error: "invalid_code" };
+    } catch (err) {
+      if (err instanceof ApiError) {
+        return { ok: false, error: asError(err.body) };
+      }
+      throw err;
+    }
+  },
+
+  /** REQ-050: POST /auth/send-email-otp — resend the emailed code. */
+  resendEmailOtp(
+    input: { email: string; language?: Lang },
+    opts: ApiOptions = {},
+  ): Promise<{ sent: true }> {
+    return api.post<{ sent: true }>("/auth/send-email-otp", input, opts);
+  },
+
   /** REQ-039: bring the closed account back exactly as it was. Lands where
    *  a returning user lands. */
   async recover(token: string, opts: ApiOptions = {}): Promise<RecoveryResult> {

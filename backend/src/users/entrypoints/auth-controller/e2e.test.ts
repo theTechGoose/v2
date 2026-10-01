@@ -223,3 +223,86 @@ Deno.test("auth e2e: logout clears the pm_session cookie", async () => {
     await drain(res);
   });
 });
+
+// ── REQ-050: /login-internal — log in with email ────────────────────────────
+
+/** A live account with `email` on file, created through the phone flow the
+ *  way every real account is. Returns its session cookie + id. */
+async function accountWithEmail(port: number, phone: string, email: string) {
+  await drain(await postJson(`http://localhost:${port}/auth/send-otp`, { phoneNumber: phone }));
+  const otp = await new OtpStore().get(phone);
+  const verify = await postJson(`http://localhost:${port}/auth/verify-otp`, { phoneNumber: phone, code: otp!.code });
+  const cookie = verify.headers.get("set-cookie")!.split(";")[0];
+  const { userId } = await verify.json();
+  const put = await fetch(`http://localhost:${port}/me`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ email }),
+  });
+  await drain(put);
+  return { cookie, userId: userId as string };
+}
+
+Deno.test("REQ-050 auth e2e: send-email-otp → verify-email-otp opens the session of the account with that email (cookie + redirectTo)", async () => {
+  await withServer(async (port) => {
+    const { userId } = await accountWithEmail(port, "+15125550970", "Raphael@Example.com");
+
+    const sent = await postJson(`http://localhost:${port}/auth/send-email-otp`, { email: " raphael@example.COM ", language: "en" });
+    assertEquals(sent.status, 200);
+    assertEquals(await sent.json(), { sent: true });
+
+    const otp = await new OtpStore().get("email:raphael@example.com");
+    assert(otp && /^\d{6}$/.test(otp.code), "a 6-digit code is pending under the email key");
+
+    const verify = await postJson(`http://localhost:${port}/auth/verify-email-otp`, { email: "raphael@example.com", code: otp.code });
+    assertEquals(verify.status, 200);
+    const setCookie = verify.headers.get("set-cookie") ?? "";
+    assert(setCookie.startsWith("pm_session="), "the session cookie is set");
+    const body = await verify.json();
+    assertEquals(body.ok, true);
+    assertEquals(body.userId, userId);
+    assertEquals(body.isNewUser, false);
+    assertEquals(body.redirectTo, "/dashboard?welcome=back");
+    assertEquals(await new OtpStore().get("email:raphael@example.com"), null, "the code is single-use");
+
+    const me = await fetch(`http://localhost:${port}/me`, { headers: { cookie: setCookie.split(";")[0] } }).then((r) => r.json());
+    assertEquals(me.id, userId);
+  });
+});
+
+Deno.test("REQ-050 auth e2e: an email no account carries is 404 unknown_email on send and on verify — no account is created", async () => {
+  await withServer(async (port) => {
+    const sent = await postJson(`http://localhost:${port}/auth/send-email-otp`, { email: "nobody@example.com" });
+    assertEquals(sent.status, 404);
+    assertEquals(await sent.json(), { ok: false, error: "unknown_email" });
+
+    const verify = await postJson(`http://localhost:${port}/auth/verify-email-otp`, { email: "nobody@example.com", code: "000000" });
+    assertEquals(verify.status, 404);
+    assertEquals(await verify.json(), { ok: false, error: "unknown_email" });
+    assertEquals(verify.headers.get("set-cookie"), null);
+  });
+});
+
+Deno.test("REQ-050 auth e2e: a malformed address is 400 invalid_email", async () => {
+  await withServer(async (port) => {
+    const sent = await postJson(`http://localhost:${port}/auth/send-email-otp`, { email: "not-an-address" });
+    assertEquals(sent.status, 400);
+    assertEquals(await sent.json(), { ok: false, error: "invalid_email" });
+  });
+});
+
+Deno.test("REQ-050 auth e2e: a wrong code is 401 invalid_code; no code pending is 410 expired", async () => {
+  await withServer(async (port) => {
+    await accountWithEmail(port, "+15125550971", "wrong@example.com");
+    const expired = await postJson(`http://localhost:${port}/auth/verify-email-otp`, { email: "wrong@example.com", code: "123456" });
+    assertEquals(expired.status, 410);
+    assertEquals(await expired.json(), { ok: false, error: "expired" });
+
+    await drain(await postJson(`http://localhost:${port}/auth/send-email-otp`, { email: "wrong@example.com" }));
+    const real = (await new OtpStore().get("email:wrong@example.com"))!.code;
+    const wrong = real === "111111" ? "222222" : "111111";
+    const res = await postJson(`http://localhost:${port}/auth/verify-email-otp`, { email: "wrong@example.com", code: wrong });
+    assertEquals(res.status, 401);
+    assertEquals(await res.json(), { ok: false, error: "invalid_code" });
+  });
+});
