@@ -16,7 +16,27 @@ const PHONE = "+15125550980";
 /** Postmark's documented blackhole: accepted and discarded — a dev box with
  *  a live Postmark key never mails a stranger. */
 const EMAIL = "login-internal.story@blackhole.postmarkapp.com";
+/** The address Raphael named — created fresh by the third story on every run. */
+const RAFAC = "rafac@monsterrg.com";
 const JSON_HEADERS = { "content-type": "application/json" };
+
+/** Hard-delete whatever account carries `email` (sign in with the dev master
+ *  code — which finds or creates it — then GET /me/wipe on that session). */
+async function wipeAccountOn(http: StoryTools["http"], email: string) {
+  const r = await http("/api/auth/verify-email-otp", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ email, code: "000000" }),
+  });
+  const cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
+  await r.body?.cancel();
+  if (!cookie) {
+    throw new Error(`wipe: could not sign in as ${email} (${r.status})`);
+  }
+  const w = await http("/api/me/wipe", { headers: { cookie } });
+  if (!w.ok) throw new Error(`wipe: GET /me/wipe → ${w.status}`);
+  await w.body?.cancel();
+}
 
 async function seedAccount(http: StoryTools["http"]) {
   const r = await http("/api/auth/verify", {
@@ -103,6 +123,12 @@ Deno.test("REQ-050: an account with that email on file logs in with the emailed 
       page.url().includes("/dashboard"),
       "signed in — landed on the dashboard",
     );
+    // The frame the reviewer sees: the dashboard, still signed in on reload.
+    await page.goto("/dashboard");
+    expect(
+      new URL(page.url()).pathname === "/dashboard",
+      "stays signed in on the dashboard",
+    );
     const me = await http("/api/me", {
       headers: { cookie: await sessionCookie(page) },
     });
@@ -116,10 +142,14 @@ Deno.test("REQ-050: an account with that email on file logs in with the emailed 
 
 Deno.test("REQ-050: an email no account has yet just creates the account and signs in", (t) =>
   story(t, async ({ page, expect, http }) => {
-    // Unique per run — the dev KV persists, and a second run must be a NEW account again.
-    const email = `new-${Date.now()}@blackhole.postmarkapp.com`;
+    // Raphael's words: "it needs to just create an account. rafac@monsterrg.com".
+    // The dev KV persists across runs, so any account already on the address
+    // is hard-deleted first (its own session, GET /me/wipe) — the page then
+    // creates it anew, every run.
+    await wipeAccountOn(http, RAFAC);
+
     await page.goto("/login-internal");
-    await page.fill("[data-cy=internal-email]", email);
+    await page.fill("[data-cy=internal-email]", RAFAC);
     await page.click("[data-cy=internal-submit]");
     await page.waitForURL(/\/verify-internal\?/);
     const slots = page.locator("input[inputmode=numeric]");
@@ -131,11 +161,22 @@ Deno.test("REQ-050: an email no account has yet just creates the account and sig
       page.url().includes("/welcome"),
       "a brand-new account lands in onboarding",
     );
+    // The frame the reviewer sees: onboarding, still signed in on reload (a
+    // signed-out visitor would be bounced off /welcome).
+    await page.goto("/welcome");
+    expect(
+      new URL(page.url()).pathname === "/welcome",
+      "stays signed in, in onboarding",
+    );
     const me = await http("/api/me", {
       headers: { cookie: await sessionCookie(page) },
     });
     const who = await me.json();
-    expect.eq(who.email, email, "the account was created on the address typed");
+    expect.eq(
+      who.email,
+      RAFAC,
+      "the account was created on rafac@monsterrg.com",
+    );
     expect.eq(who.phoneNumber, "", "with no made-up phone");
   }));
 
