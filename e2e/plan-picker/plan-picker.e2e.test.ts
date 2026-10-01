@@ -37,6 +37,10 @@ async function signIn(http: StoryTools["http"], page: StoryTools["page"], baseUr
 
 Deno.test("REQ-054: in onboarding the person picks a paid plan, pays on the link builder's page, and the plan is active", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
+    // the person starts on the site's front page, where the same plans are priced
+    await page.goto("/");
+    await expect.see("Monster Free");
+    await expect.see("Monster Assist");
     const auth = await signIn(http, page, baseUrl, { name: "Plan Story", email: `plan-${digits()}@blackhole.postmarkapp.com` });
     await page.goto("/welcome");
     // the wizard resumes at the first incomplete step: the business name — skip it; the email is
