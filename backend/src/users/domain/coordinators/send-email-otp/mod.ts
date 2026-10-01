@@ -57,8 +57,10 @@ export class SendEmailOtp {
 
   /** EmailService is stateless and lives in CommunicationModule (which imports
    *  UsersModule, not the reverse), so it is instantiated here — the same seam
-   *  VerifyOtp uses for the signup alert. Public so tests can capture the send. */
-  readonly email = new EmailService();
+   *  VerifyOtp uses for the signup alert. Assignable so a test can hand in a
+   *  fake sender instead of steering the real one through process env (which
+   *  `deno test --parallel` shares across modules). */
+  email: Pick<EmailService, "send"> = new EmailService();
 
   async run(input: SendEmailOtpInput): Promise<SendEmailOtpResult> {
     const normalizedEmail = normalizeEmail(input.email);

@@ -6,6 +6,7 @@ import { assert, assertEquals, assertRejects } from "#std/assert";
 import { ClosedAccountError, InvalidEmailError, SendEmailOtp } from "./mod.ts";
 import { SendOtpCooldownError } from "@users/domain/coordinators/send-otp/mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
+import type { SendEmailInput } from "@communication/domain/data/email-service/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
@@ -17,28 +18,21 @@ async function fresh() {
   return { otps, users, flow: new SendEmailOtp(users, otps) };
 }
 
-/** Postmark on: the dispatch is captured instead of sent. */
-function capturePostmark(flow: SendEmailOtp) {
-  Deno.env.set("POSTMARK_API_KEY", "test-key");
-  Deno.env.set("POSTMARK_FROM", "hello@paperworkmonster.com");
-  const sent: Record<string, unknown>[] = [];
-  flow.email.fetchOverride =
-    ((_url: string | URL | Request, init?: RequestInit) => {
-      sent.push(JSON.parse(String(init?.body)));
-      return Promise.resolve(
-        new Response(JSON.stringify({ MessageID: "m-1" }), { status: 200 }),
-      );
-    }) as typeof fetch;
+/** A fake sender in place of Postmark: every send is captured, none goes out. */
+function captureSends(flow: SendEmailOtp) {
+  const sent: SendEmailInput[] = [];
+  flow.email = {
+    send(input: SendEmailInput) {
+      sent.push(input);
+      return Promise.resolve({ ok: true, messageId: "m-1" });
+    },
+  };
   return sent;
-}
-function restorePostmark() {
-  Deno.env.delete("POSTMARK_API_KEY");
-  Deno.env.delete("POSTMARK_FROM");
 }
 
 Deno.test("REQ-050 send-email-otp: the account with that email gets a 6-digit code, stored under email:<address>, mailed in its language", async () => {
   const { otps, users, flow } = await fresh();
-  const sent = capturePostmark(flow);
+  const sent = captureSends(flow);
   try {
     const u = await users.create({
       phoneNumber: "+15125550950",
@@ -59,21 +53,20 @@ Deno.test("REQ-050 send-email-otp: the account with that email gets a 6-digit co
     assertEquals(stored.language, "en");
 
     assertEquals(sent.length, 1);
-    assertEquals(sent[0].To, "raphael@example.com");
+    assertEquals(sent[0].to, "raphael@example.com");
+    assert(sent[0].htmlBody.includes(stored.code), "the mail carries the code");
     assert(
-      String(sent[0].HtmlBody).includes(stored.code),
-      "the mail carries the code",
+      sent[0].subject.includes(stored.code),
+      "the subject carries the code too",
     );
-    assert(String(sent[0].Subject).length > 0);
   } finally {
-    restorePostmark();
     await resetKv();
   }
 });
 
 Deno.test("REQ-050 send-email-otp: an address no account has yet still gets a code — the account is made when it comes back", async () => {
   const { otps, flow } = await fresh();
-  const sent = capturePostmark(flow);
+  const sent = captureSends(flow);
   try {
     const result = await flow.run({
       email: "Rafac@MonsterRG.com",
@@ -89,9 +82,8 @@ Deno.test("REQ-050 send-email-otp: an address no account has yet still gets a co
       "a code is pending for the new address",
     );
     assertEquals(sent.length, 1);
-    assertEquals(sent[0].To, "rafac@monsterrg.com");
+    assertEquals(sent[0].to, "rafac@monsterrg.com");
   } finally {
-    restorePostmark();
     await resetKv();
   }
 });
