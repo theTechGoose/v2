@@ -15,7 +15,8 @@ import {
  * page) without touching their stylesheets.
  *
  * Height: one 30px line (3px + a 24px tap box + 3px) wherever the three
- * items fit side by side; on narrow screens they wrap to more lines, so the
+ * items fit side by side (12px apart — the hit-target audit's 8px minimum
+ * between controls, with room to spare); on narrow screens they wrap to more lines, so the
  * assistant shell's `.asst` sizes itself to the space left (flex), not to a
  * fixed 30px (assistant-page.css).
  */
@@ -28,7 +29,7 @@ export default function SiteFooter(
     <footer
       class="site-footer"
       data-site-footer
-      style={`display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:0 4px;text-align:center;font-size:12px;line-height:18px;padding:3px 12px;color:#8a9699;flex-shrink:0;${style}`}
+      style={`display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:0 12px;text-align:center;font-size:12px;line-height:18px;padding:3px 12px;color:#8a9699;flex-shrink:0;${style}`}
     >
       <a
         href={TERMS_PATH}

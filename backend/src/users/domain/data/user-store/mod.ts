@@ -35,27 +35,38 @@ function withHardcodedSuperAdmin(user: User): User {
  */
 @Injectable()
 export class UserStore {
+  /**
+   * REQ-050: an account born from an email login has no phone yet — its
+   * `phoneNumber` is "" (never a made-up value: the user's phone is printed
+   * on documents and texted by the alerts) and it gets no phone index.
+   */
   async create(
-    input: { phoneNumber: string; language?: Language; name?: string },
+    input: { phoneNumber?: string; email?: string; language?: Language; name?: string },
   ): Promise<User> {
     const kv = await getKv();
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
+    const phoneNumber = input.phoneNumber ?? "";
     const user: User = {
       id,
-      phoneNumber: input.phoneNumber,
+      phoneNumber,
+      email: input.email,
       name: input.name,
       language: input.language,
       createdAt: now,
       updatedAt: now,
     };
+    if (!phoneNumber) {
+      await kv.set(["user", id], user);
+      return user;
+    }
     const result = await kv.atomic()
-      .check({ key: ["user_by_phone", input.phoneNumber], versionstamp: null })
+      .check({ key: ["user_by_phone", phoneNumber], versionstamp: null })
       .set(["user", id], user)
-      .set(["user_by_phone", input.phoneNumber], id)
+      .set(["user_by_phone", phoneNumber], id)
       .commit();
     if (!result.ok) {
-      throw new Error(`user with phone ${input.phoneNumber} already exists`);
+      throw new Error(`user with phone ${phoneNumber} already exists`);
     }
     return user;
   }
@@ -73,6 +84,27 @@ export class UserStore {
     if (!idResult.value) return null;
     const userResult = await kv.get<User>(["user", idResult.value]);
     return userResult.value ? withHardcodedSuperAdmin(userResult.value) : null;
+  }
+
+  /**
+   * REQ-050 (email login): the account that carries `email` — compared in the
+   * normalized form (trimmed, lowercased; see shared/quote-flow/normalize-
+   * email.ts), so the case a person typed never matters. Scans the ["user", *]
+   * prefix like `searchByPhone` does — there is no email index, and the
+   * single-tenant KV is small. A closed account is returned as-is (its
+   * `deletedAt` set) so the caller can say "closed" rather than create a
+   * second account on the address.
+   */
+  async findByEmail(email: string): Promise<User | null> {
+    const kv = await getKv();
+    const needle = email.trim().toLowerCase();
+    if (!needle) return null;
+    for await (const entry of kv.list<User>({ prefix: ["user"] })) {
+      const user = entry.value;
+      if (!user || typeof user !== "object" || typeof user.email !== "string") continue;
+      if (user.email.trim().toLowerCase() === needle) return withHardcodedSuperAdmin(user);
+    }
+    return null;
   }
 
   /**

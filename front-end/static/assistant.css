@@ -822,31 +822,6 @@ body {
   font-family: var(--font-mono, ui-monospace, monospace);
   letter-spacing: 0;
 }
-.__unused__ {
-  position: absolute;
-  top: 26px;
-  right: -12px;
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: #fff;
-  border: 1px solid var(--border);
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  color: var(--brand-teal);
-  box-shadow: 0 4px 10px rgba(100, 69, 54, 0.20);
-  z-index: 5;
-  transition: transform 200ms, background 160ms;
-  padding: 0;
-}
-.sb__collapse:hover {
-  transform: scale(1.12);
-  background: var(--mint-200);
-}
-.sb__collapse svg {
-  display: block;
-}
 
 /* ------ Main column ------ */
 .main {

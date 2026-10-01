@@ -59,7 +59,9 @@ describe("PM Assistant hamburger works on mobile (p8 bug)", () => {
 
   it("the hamburger icon opens the navigation menu", () => {
     // The mobile menu toggle must exist and actually reveal the nav.
-    cy.get("[data-cy=mobile-menu], button[aria-label*=menu i], .hamburger, [class*=hamburger]")
+    cy.get(
+      "[data-cy=mobile-menu], button[aria-label*=menu i], .hamburger, [class*=hamburger]",
+    )
       .filter(":visible")
       .first()
       .click();
@@ -67,7 +69,9 @@ describe("PM Assistant hamburger works on mobile (p8 bug)", () => {
   });
 
   it("the opened menu can be closed again", () => {
-    cy.get("[data-cy=mobile-menu], button[aria-label*=menu i], .hamburger, [class*=hamburger]")
+    cy.get(
+      "[data-cy=mobile-menu], button[aria-label*=menu i], .hamburger, [class*=hamburger]",
+    )
       .filter(":visible")
       .first()
       .click();
@@ -94,7 +98,9 @@ describe("QuickBooks-style sidebar minimize (p9)", () => {
   /** Label may be hidden OR removed entirely (icon-rail) — both count as collapsed. */
   function assertNavLabelGone(label: RegExp) {
     cy.get("body").then(($body) => {
-      const el = $body.find("a").filter((_, a) => label.test(a.textContent ?? ""));
+      const el = $body.find("a").filter((_, a) =>
+        label.test(a.textContent ?? "")
+      );
       const visible = el.filter(":visible");
       expect(visible.length, `nav label ${label} hidden or removed`).to.eq(0);
     });
@@ -123,22 +129,22 @@ describe("QuickBooks-style sidebar minimize (p9)", () => {
     assertNavLabelGone(/customers/i);
   });
 
-  // REQ-033 — NW-39 (p36): "the arrow between HANS LLC and Settings that
-  // minimizes the sidebar should work like QuickBooks, showing the hamburger
-  // plus an arrow to minimize." The rail could collapse (topbar hamburger)
-  // but had no control of its own — and no expand control once collapsed.
-  it("REQ-033 NW-39 the rail carries its own QuickBooks-style collapse/expand control, and the choice survives a reload", () => {
+  // REQ-053 — "remove whatever the hell this is": the rail's own collapse
+  // button (REQ-033 / NW-39, now superseded) is gone on every page. The
+  // topbar hamburger (the cases above) still collapses and restores the rail.
+  it("REQ-053 the sidebar rail carries no collapse/expand button of its own — on the dashboard or the assistant", () => {
     cy.viewport(1280, 800);
-    cy.get("[data-cy=sidebar-collapse]", { timeout: 10_000 }).should("be.visible").click();
-    cy.get(".sb").should("have.class", "sb--collapsed");
-    assertNavLabelGone(/customers/i);
-    cy.get("[data-cy=sidebar-expand]").should("be.visible");
-    cy.reload();
-    cy.get(".sb", { timeout: 10_000 }).should("have.class", "sb--collapsed");
-    cy.get("[data-cy=sidebar-expand]", { timeout: 10_000 }).should("be.visible").click();
-    cy.get(".sb").should("not.have.class", "sb--collapsed");
-    cy.contains("a", /customers/i).should("be.visible");
-    cy.get("[data-cy=sidebar-collapse]").should("be.visible");
+    cy.get(".sb", { timeout: 10_000 }).should("be.visible");
+    cy.get(".sb__collapse").should("not.exist");
+    cy.get("[data-cy=sidebar-collapse], [data-cy=sidebar-expand]").should(
+      "not.exist",
+    );
+    cy.visit("/assistant");
+    cy.get(".sb", { timeout: 10_000 }).should("be.visible");
+    cy.get(".sb__collapse").should("not.exist");
+    cy.get("[data-cy=sidebar-collapse], [data-cy=sidebar-expand]").should(
+      "not.exist",
+    );
   });
 
   it("the PM Assistant conversations panel collapses and expands with the same pattern", () => {
@@ -146,16 +152,22 @@ describe("QuickBooks-style sidebar minimize (p9)", () => {
     // Measure via the DOM directly — the island re-renders while its list
     // loads, so element subjects detach; widths are read fresh each check.
     const panelWidth = (win: Window) => {
-      const panel = win.document.querySelector(".threads, [data-cy=asst-threads]") as HTMLElement | null;
+      const panel = win.document.querySelector(
+        ".threads, [data-cy=asst-threads]",
+      ) as HTMLElement | null;
       return panel ? panel.getBoundingClientRect().width : 0;
     };
-    cy.get("[data-cy=asst-threads-collapse]", { timeout: 10_000 }).should("be.visible");
+    cy.get("[data-cy=asst-threads-collapse]", { timeout: 10_000 }).should(
+      "be.visible",
+    );
     cy.window().then((win) => {
       const before = panelWidth(win);
       expect(before, "panel starts expanded").to.be.greaterThan(100);
       cy.get("[data-cy=asst-threads-collapse]").click();
       cy.window().should((w2) => {
-        expect(panelWidth(w2), "threads panel minimized").to.be.lessThan(before / 2);
+        expect(panelWidth(w2), "threads panel minimized").to.be.lessThan(
+          before / 2,
+        );
       });
       // The chat itself survives, and an expand control restores the panel.
       cy.get("textarea.composer__input, .chat__head").should("be.visible");

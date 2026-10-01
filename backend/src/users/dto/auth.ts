@@ -21,6 +21,27 @@ export class VerifyOtpDto {
   code!: string;
 }
 
+/** REQ-050: POST /auth/send-email-otp { email, language? } */
+class SendEmailOtpDto {
+  @IsString()
+  email!: string;
+
+  @IsOptional()
+  @IsIn(["en", "es"])
+  language?: Language;
+}
+
+/** REQ-050: POST /auth/verify-email-otp { email, code } */
+class VerifyEmailOtpDto {
+  @IsString()
+  email!: string;
+
+  @IsString()
+  @MinLength(6)
+  @MaxLength(6)
+  code!: string;
+}
+
 export function parseSendOtp(input: unknown): SendOtpDto {
   const dto = plainToInstance(SendOtpDto, input);
   const errors = validateSync(dto);
@@ -32,5 +53,19 @@ export function parseVerifyOtp(input: unknown): VerifyOtpDto {
   const dto = plainToInstance(VerifyOtpDto, input);
   const errors = validateSync(dto);
   if (errors.length) throw new Error(`invalid verify-otp: ${JSON.stringify(errors)}`);
+  return dto;
+}
+
+export function parseSendEmailOtp(input: unknown): SendEmailOtpDto {
+  const dto = plainToInstance(SendEmailOtpDto, input);
+  const errors = validateSync(dto);
+  if (errors.length) throw new Error(`invalid send-email-otp: ${JSON.stringify(errors)}`);
+  return dto;
+}
+
+export function parseVerifyEmailOtp(input: unknown): VerifyEmailOtpDto {
+  const dto = plainToInstance(VerifyEmailOtpDto, input);
+  const errors = validateSync(dto);
+  if (errors.length) throw new Error(`invalid verify-email-otp: ${JSON.stringify(errors)}`);
   return dto;
 }

@@ -9,6 +9,8 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { SendOtp } from "@users/domain/coordinators/send-otp/mod.ts";
 import { VerifyOtp } from "@users/domain/coordinators/verify-otp/mod.ts";
+import { SendEmailOtp } from "@users/domain/coordinators/send-email-otp/mod.ts";
+import { VerifyEmailOtp } from "@users/domain/coordinators/verify-email-otp/mod.ts";
 import { AccountRecovery } from "@users/domain/coordinators/account-recovery/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
 import { WipeAccount } from "@users/domain/coordinators/wipe-account/mod.ts";
@@ -40,7 +42,7 @@ import { LoadProfile } from "@profile/domain/coordinators/load-profile/mod.ts";
 /**
  * UsersModule — owns the full user identity surface:
  *
- *   - AUTH       /auth/{send-otp, verify-otp, logout}
+ *   - AUTH       /auth/{send-otp, verify-otp, send-email-otp, verify-email-otp, logout}
  *   - SELF       GET/PUT/DELETE /me
  *   - PROFILE    /profile (composite read)
  *                /profile/{identity, address, insurance, tax, references, contract-defaults}
@@ -74,6 +76,8 @@ import { LoadProfile } from "@profile/domain/coordinators/load-profile/mod.ts";
     OtpStore,
     SendOtp,
     VerifyOtp,
+    SendEmailOtp,
+    VerifyEmailOtp,
     AccountRecovery,
     Logout,
     WipeAccount,

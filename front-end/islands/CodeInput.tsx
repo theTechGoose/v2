@@ -4,25 +4,37 @@ import { t } from "../lib/i18n.ts";
 import { verifyClient } from "../clients/verify.ts";
 
 interface Props {
-  phoneNumber: string;
+  /** The phone the code was texted to — the /verify flow. */
+  phoneNumber?: string;
+  /** REQ-050: the address the code was emailed to — the /verify-internal
+   *  flow. When set, the code is checked against /auth/verify-email-otp and
+   *  "Resend" mails it again. */
+  email?: string;
   initialLang?: Lang;
   /** P-39: where "Wrong number? Edit" returns to — the phone form the user
    *  actually came from (e.g. "/landing#trial"). Defaults to "/". */
   editHref?: string;
+  /** The edit link's label; defaults to the phone wording. */
+  editLabel?: string;
 }
 
 const SLOT_COUNT = 6;
 
 export default function CodeInput(
-  { phoneNumber, initialLang, editHref }: Props,
+  { phoneNumber, email, initialLang, editHref, editLabel }: Props,
 ) {
+  const byEmail = typeof email === "string";
   // Single ref holding the slot inputs (a callback ref fills the array) —
   // calling useRef inside a loop would violate the rules of hooks.
   const refs = useRef<(HTMLInputElement | null)[]>([]);
   const [digits, setDigits] = useState<string[]>(Array(SLOT_COUNT).fill(""));
   const [submitting, setSubmitting] = useState(false);
   const [errorKey, setErrorKey] = useState<
-    "verify.errInvalid" | "verify.errExpired" | "verify.errRate" | null
+    | "verify.errInvalid"
+    | "verify.errExpired"
+    | "verify.errRate"
+    | "loginInternal.accountClosed"
+    | null
   >(null);
   const [shake, setShake] = useState(false);
   const [cooldown, setCooldown] = useState(0);
@@ -107,19 +119,23 @@ export default function CodeInput(
     setSubmitting(true);
     setErrorKey(null);
     try {
-      const result = await verifyClient.verifyOtp({
-        phoneNumber,
-        code: finalCode,
-      });
+      const result = byEmail
+        ? await verifyClient.verifyEmailOtp({ email, code: finalCode })
+        : await verifyClient.verifyOtp({
+          phoneNumber: phoneNumber ?? "",
+          code: finalCode,
+        });
       if (result.ok && "recoverable" in result) {
         setRecovery({ token: result.recoveryToken });
         return;
       }
       if (result.ok) {
         // Persist the verified phone for next-visit one-tap login.
-        try {
-          globalThis.localStorage?.setItem("pm:last-phone", phoneNumber);
-        } catch { /* SSR-safe */ }
+        if (phoneNumber) {
+          try {
+            globalThis.localStorage?.setItem("pm:last-phone", phoneNumber);
+          } catch { /* SSR-safe */ }
+        }
         // Animate Step 3 ("You're in") fill before navigating — visual
         // continuity with the landing-page progress bar.
         const codeStep = document.getElementById("pm-step-code");
@@ -144,6 +160,7 @@ export default function CodeInput(
         invalid_code: "verify.errInvalid",
         expired: "verify.errExpired",
         rate_limited: "verify.errRate",
+        account_closed: "loginInternal.accountClosed",
       } as const;
       setErrorKey(map[result.error]);
       setShake(true);
@@ -180,7 +197,8 @@ export default function CodeInput(
     setCooldown(30);
     setErrorKey(null);
     try {
-      await verifyClient.resendOtp({ phoneNumber, language: lang });
+      if (byEmail) await verifyClient.resendEmailOtp({ email, language: lang });
+      else await verifyClient.resendOtp({ phoneNumber: phoneNumber ?? "", language: lang });
     } catch { /* keep cooldown */ }
   }
 
@@ -232,7 +250,11 @@ export default function CodeInput(
         )
         : null}
       {errorKey
-        ? <p class="error" role="alert">{s[errorKey] as string}</p>
+        ? (
+          <p class="error" role="alert">
+            {errorKey.startsWith("loginInternal.") ? t(errorKey) : s[errorKey as keyof typeof s] as string}
+          </p>
+        )
         : null}
       <button
         class="btn btn-primary btn-lg"
@@ -243,7 +265,7 @@ export default function CodeInput(
         {submitting ? t("verify.busy") : s["verify.cta"]}
       </button>
       <div class="meta">
-        <a href={editHref ?? "/"}>{s["verify.editPhone"]}</a>
+        <a href={editHref ?? "/"}>{editLabel ?? s["verify.editPhone"]}</a>
         <button type="button" onClick={resend} disabled={cooldown > 0}>
           {cooldown > 0
             ? s["verify.resendIn"].replace("{n}", String(cooldown))
