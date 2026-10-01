@@ -6,6 +6,9 @@ import { Logout } from "@users/domain/coordinators/logout/mod.ts";
 import { WipeAccount } from "@users/domain/coordinators/wipe-account/mod.ts";
 import { parseUpdateUser } from "@users/dto/user.ts";
 import { requireUser, readSessionId, UnauthorizedError } from "@users/domain/coordinators/require-user/mod.ts";
+import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
+import { fakePaymentsWorld, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
+import { parseChoosePlan } from "@users/dto/plan.ts";
 
 /**
  * /me — endpoints that act on the currently-authenticated User.
@@ -20,7 +23,46 @@ export class MeController {
     private sessions: SessionStore,
     private logoutCoord: Logout,
     private wipeCoord: WipeAccount,
+    private choosePlan: ChoosePlan,
+    private paymentsLink: PaymentsLink,
   ) {}
+
+  /** REQ-054 — the plan this account picked; null until a pick (read as free) */
+  @Get("plan")
+  async plan(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return await this.choosePlan.current(user.id);
+  }
+
+  /** REQ-054 — pick a plan: free is stored; a paid pick mints the CRM pay link (pending) */
+  @Post("plan")
+  async pickPlan(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const { planId } = parseChoosePlan(body);
+    return await this.choosePlan.choose(user.id, planId);
+  }
+
+  /** REQ-054 — "Check payment": a pending plan asks the CRM whether its due settled */
+  @Post("plan/refresh")
+  async refreshPlan(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return await this.choosePlan.refresh(user.id);
+  }
+
+  /**
+   * REQ-054 — the FAKE's remote control: settles the pending due the way a card on the real
+   * pay page does. Exists only while the CRM client is the fake (PPWK_PAYMENTS_URL unset) —
+   * the gate's lanes and a dev box — like the dev master OTP code; 404 against the real one.
+   */
+  @Post("plan/fake-paid")
+  async fakePaid(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    if (!this.paymentsLink.isFake()) throw Object.assign(new Error("not-found: the fake is not in use"), { status: 404 });
+    const plan = await this.choosePlan.current(user.id);
+    if (!plan?.dueId) throw Object.assign(new Error("plan-missing: nothing to pay"), { status: 404 });
+    fakePaymentsWorld().settle(plan.dueId);
+    return await this.choosePlan.refresh(user.id);
+  }
 
   @Get()
   async me(@Context() ctx: ExecutionContext) {
