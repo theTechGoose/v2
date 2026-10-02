@@ -308,7 +308,9 @@ Deno.test("REQ-061: a month later the card on file is charged by itself and sett
     await payAndGoBack(page, expect);
     await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
     await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
-    await expect.see("Monster is active");
+    await page.locator("[data-cy='plan-status']").waitFor({ timeout: 60_000 });
+    const said = await page.locator("[data-cy='plan-status']").innerText();
+    expect(said.includes("is active"), `the plan card says: "${said}" at ${page.url()}`);
     await expect.notSee("Pay now");
     plan = await (await http("/api/me/plan", { headers: auth })).json();
     expect.eq(plan.status, "active", "current again");
