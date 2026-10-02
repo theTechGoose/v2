@@ -318,14 +318,15 @@ class FakePaymentsLink implements PaymentsLinkPort {
   }
   // REQ-061 — the CRM's subscriptions, as the fake (its clock is world.bill)
   startSubscription(input: NewSubscription) {
+    // the card the pay page just put on file is the one the months will go to (the CRM says so from the start)
+    const card = this.world.cards.get(input.customerId) ?? { cardBrand: "", cardLast4: "" };
     const sub: FakeSubscription = {
       ...input,
       subscriptionId: crypto.randomUUID(),
       status: "active",
       nextBillAt: new Date(input.firstBillAt).toISOString(),
       lastBilledAt: "",
-      cardBrand: "",
-      cardLast4: "",
+      ...card,
       failures: 0,
       payUrl: "",
     };

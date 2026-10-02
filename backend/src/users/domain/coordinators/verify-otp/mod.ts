@@ -5,7 +5,7 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import { deriveLanguageOnVerify } from "@users/domain/business/derive-language/mod.ts";
-import type { Language, User } from "@users/dto/user.ts";
+import type { User } from "@users/dto/user.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { issueRecoveryToken } from "@users/domain/data/recovery-token-store/mod.ts";
 import { isPlaceholderName, placeholderNameFor } from "@users/domain/business/placeholder-name/mod.ts";
