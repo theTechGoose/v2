@@ -245,3 +245,69 @@ Deno.test("REQ-056: a paid plan goes back to free from the settings cards", (t) 
     const plan = await (await http("/api/me/plan", { headers: auth })).json();
     expect(plan.planId === "free" && plan.status === "free", `free · free (${JSON.stringify(plan)})`);
   }));
+
+Deno.test("REQ-060: the phone typed into login is a CRM customer before any code is entered; the sign-up with that phone becomes the same customer", (t) =>
+  story(t, async ({ page, expect, http }) => {
+    const phone = `+1512${digits()}`;
+    await page.goto("/?lang=en");
+    const box = page.getByRole("textbox", { name: /phone/i });
+    await box.waitFor({ timeout: 60_000 });
+    await box.fill(phone.slice(2));
+    await box.press("Enter");
+    await page.waitForURL((u: URL) => u.pathname === "/verify", { timeout: 60_000 });
+    await expect.see("Check your phone");
+    // and that is all this person does — no code, no onboarding. The CRM already has them.
+    const left = new Date().toISOString();
+    await page.waitForTimeout(1500);
+    // later, the same phone signs up: the lead is claimed, not duplicated
+    const r = await http("/api/auth/verify", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ phoneNumber: phone, code: "000000" }) });
+    const body = await r.json();
+    const auth = { ...JSON_HEADERS, cookie: (r.headers.get("set-cookie") ?? "").split(";")[0] };
+    const crm = await crmCustomer(http, auth);
+    expect(crm !== null, "the CRM knows the account");
+    expect.eq(crm.customerPhone, phone, "by its phone");
+    expect.eq(crm.externalRef, `pm:${body.userId}`, "now carrying this app's ref");
+    expect(typeof crm.createdAt === "string" && crm.createdAt < left, `made when the phone was typed, before the person left (${crm.createdAt} < ${left})`);
+  }));
+
+Deno.test("REQ-061: a month later the card on file is charged by itself and settings shows the next bill; with the card gone the month is past due — Pay now opens the page, and paying it makes the plan current again", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl, { name: "Monthly Story", email: `monthly-${digits()}@blackhole.postmarkapp.com` });
+    await page.goto("/settings");
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await pickGoesToPayPage(page, "plan-pick-monster");
+    await payAndGoBack(page, expect);
+    await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await expect.see("Monster is active");
+    await expect.see("next bill");
+    await expect.see("•••• 1111");
+    let plan = await (await http("/api/me/plan", { headers: auth })).json();
+    expect(typeof plan.subscriptionId === "string" && plan.subscriptionId.length > 0, `the billing started (${JSON.stringify(plan)})`);
+    const firstNext = plan.nextBillAt as string;
+    expect(firstNext > plan.activatedAt, "the first recurring month is after activation");
+    // the clock, a month on: the card on file is charged and the next bill moves a month
+    plan = await (await http("/api/me/plan/fake-bill", { method: "POST", headers: auth, body: JSON.stringify({ now: firstNext }) })).json();
+    expect.eq(plan.status, "active", "still current");
+    expect(plan.nextBillAt > firstNext, "the next bill is the month after");
+    await page.goto("/settings");
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await expect.see(`next bill ${String(plan.nextBillAt).slice(0, 10)}`);
+    // the card is gone: the month after cannot be collected — past due, with Pay now
+    plan = await (await http("/api/me/plan/fake-bill", { method: "POST", headers: auth, body: JSON.stringify({ now: plan.nextBillAt, cardGone: true }) })).json();
+    expect.eq(plan.status, "past_due", "the month is past due");
+    await page.goto("/settings");
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await expect.see("didn't go through");
+    await expect.see("Pay now");
+    expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 0, "Monster is still the plan");
+    await page.locator("[data-cy='plan-pay-link']").click();
+    await page.waitForURL((u: URL) => u.pathname === "/pay/fake", { timeout: 60_000 });
+    await payAndGoBack(page, expect);
+    await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await expect.see("Monster is active");
+    await expect.notSee("Pay now");
+    plan = await (await http("/api/me/plan", { headers: auth })).json();
+    expect.eq(plan.status, "active", "current again");
+  }));

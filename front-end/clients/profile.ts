@@ -111,14 +111,20 @@ export type PlanId = "free" | "monster" | "assist";
 export interface UserPlan {
   userId: string;
   planId: PlanId;
-  /** free — stored free; pending — a paid pick waiting on its pay page; active — the due settled */
-  status: "free" | "pending" | "active";
+  /** free — stored free; pending — a paid pick waiting on its pay page; active — the due settled;
+   *  past_due — REQ-061: the latest month could not be collected, its pay page is payUrl */
+  status: "free" | "pending" | "active" | "past_due";
   chosenAt: string;
   activatedAt?: string;
   customerId?: string;
   dueId?: string;
-  /** the CRM's pay page for the first month — the link builder's link */
+  /** the CRM's pay page: the first month's while pending, the past-due month's while past due */
   payUrl?: string;
+  /** REQ-061 — the CRM's monthly billing behind an active plan */
+  subscriptionId?: string;
+  nextBillAt?: string;
+  cardBrand?: string;
+  cardLast4?: string;
   updatedAt: string;
 }
 

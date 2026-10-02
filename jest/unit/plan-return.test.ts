@@ -43,3 +43,10 @@ describe("REQ-059 plan-return", () => {
     expect(fakeReturnHref("", "d-3")).toBe("/settings");
   });
 });
+
+describe("REQ-061 plan-return — a past-due month", () => {
+  test("REQ-061 a past-due month goes to its pay page the way a pending pick does", () => {
+    expect(payPageOf({ status: "past_due", payUrl: "http://crm/ui/payments/charge?customer=c&due=d-dec" })).toBe("http://crm/ui/payments/charge?customer=c&due=d-dec");
+    expect(payPageOf({ status: "past_due" })).toBeNull();
+  });
+});

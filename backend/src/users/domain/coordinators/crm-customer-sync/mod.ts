@@ -10,6 +10,7 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { type CrmCustomer, type NewCustomer, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { customerNameFor, externalRefFor } from "@users/domain/business/plan/mod.ts";
 import { isPlaceholderName } from "@users/domain/business/placeholder-name/mod.ts";
+import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import type { User } from "@users/dto/user.ts";
 
 /** pure: the CRM customer an account reads as, right now */
@@ -47,6 +48,21 @@ export class CrmCustomerSync {
       return await this.ensure(userId);
     } catch (e) {
       console.warn(`[crm-customer-sync] ${userId}: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    }
+  }
+
+  /**
+   * REQ-060 — the number typed into login, before any code is entered: a lead on the CRM, its
+   * name the phone (the CRM's REQ-082). Best effort, like sync. The sign-up with that phone
+   * then claims it through sync's ref.
+   */
+  async capture(phoneNumber: string): Promise<{ customerId: string } | null> {
+    const phone = normalizePhone(phoneNumber);
+    try {
+      return await this.link.createCustomer({ customerName: phone, customerEmail: "", customerPhone: phone });
+    } catch (e) {
+      console.warn(`[crm-customer-sync] lead ${phone}: ${e instanceof Error ? e.message : String(e)}`);
       return null;
     }
   }

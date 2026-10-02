@@ -73,6 +73,23 @@ export class MeController {
     return await this.choosePlan.refresh(user.id);
   }
 
+  /**
+   * REQ-061 — the FAKE's clock: bills the account's subscription as of `now` the way the CRM's
+   * hourly clock does (its REQ-081); `cardGone` first drops the card on file, so the month
+   * cannot be collected. Fake only, like fake-paid; 404 against the real CRM.
+   */
+  @Post("plan/fake-bill")
+  async fakeBill(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    if (!this.paymentsLink.isFake()) throw Object.assign(new Error("not-found: the fake is not in use"), { status: 404 });
+    const plan = await this.choosePlan.current(user.id);
+    if (!plan?.customerId) throw Object.assign(new Error("plan-missing: nothing billed"), { status: 404 });
+    const b = (body ?? {}) as { now?: unknown; cardGone?: unknown };
+    if (b.cardGone === true) fakePaymentsWorld().dropCard(plan.customerId);
+    fakePaymentsWorld().bill(typeof b.now === "string" && b.now ? new Date(b.now).toISOString() : new Date().toISOString());
+    return await this.choosePlan.current(user.id);
+  }
+
   @Get()
   async me(@Context() ctx: ExecutionContext) {
     return await requireUser(ctx, this.sessions, this.users);

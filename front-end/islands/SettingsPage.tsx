@@ -1468,10 +1468,17 @@ function PlanCard({ snapshot }: { snapshot: ProfileSnapshot }) {
   }, []);
 
   const currentName = plan ? nameOf(plan.planId) : nameOf("free");
+  // REQ-061 — an active plan says when the next month is billed and to which card; a month the
+  // CRM could not collect says so, with the way to pay it
+  const since = (plan?.activatedAt ?? plan?.updatedAt ?? "").slice(0, 10);
   const status = !plan || plan.status === "free"
     ? tFor(lang, "plan.statusFree")
     : plan.status === "active"
-    ? tFor(lang, "plan.activeSince", { name: currentName, date: (plan.activatedAt ?? plan.updatedAt).slice(0, 10) })
+    ? (plan.nextBillAt
+      ? tFor(lang, "plan.activeNext", { name: currentName, date: since, next: plan.nextBillAt.slice(0, 10) })
+      : tFor(lang, "plan.activeSince", { name: currentName, date: since }))
+    : plan.status === "past_due"
+    ? tFor(lang, "plan.pastDue", { name: currentName })
     : tFor(lang, "plan.pending");
 
   return (
@@ -1484,13 +1491,17 @@ function PlanCard({ snapshot }: { snapshot: ProfileSnapshot }) {
           <div style="color:var(--fg-muted, #6b7560)">{tFor(lang, "plan.current")}</div>
           <div style="font-weight:700;font-size:16px" data-cy="plan-current">{currentName}</div>
           <div data-cy="plan-status">{status}</div>
+          {plan?.cardLast4
+            ? <div data-cy="plan-card-on-file">{tFor(lang, "plan.cardOnFile", { brand: plan.cardBrand || "card", last4: plan.cardLast4 })}</div>
+            : null}
         </div>
-        {plan?.status === "pending"
+        {plan?.status === "pending" || plan?.status === "past_due"
           ? (
-            // REQ-059 — the pay page again, in this tab; the receipt brings the person back here
+            // REQ-059 — the pay page again, in this tab; the receipt brings the person back here.
+            // REQ-061 — the past-due month's page, the same way
             <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
               <a class="btn btn--accent" data-cy="plan-pay-link" href={plan.payUrl}>
-                {tFor(lang, "plan.resume")} →
+                {tFor(lang, plan.status === "past_due" ? "plan.payNow" : "plan.resume")} →
               </a>
             </div>
           )

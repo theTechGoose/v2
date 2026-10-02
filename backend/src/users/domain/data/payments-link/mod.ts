@@ -7,6 +7,7 @@
 // REQ-059 — a pay link carries the address the receipt brings the person back to (REQ-077 there).
 import { Injectable } from "#danet/core";
 import { type PaymentsLinkName, selectPaymentsLinkName } from "@users/domain/business/payments-link-select/mod.ts";
+import { addMonth, monthLabel } from "@users/domain/business/plan/mod.ts";
 
 export interface NewCustomer {
   customerName: string;
@@ -19,6 +20,8 @@ export interface NewCustomer {
 /** what the CRM holds for a customer, as this app reads it back */
 export interface CrmCustomer extends NewCustomer {
   customerId: string;
+  /** when the CRM made the record (REQ-060: a lead captured at login is older than its sign-up) */
+  createdAt?: string;
 }
 export interface NewDue {
   customerId: string;
@@ -32,6 +35,30 @@ export interface NewPayLink {
   returnUrl?: string;
   returnLabel?: string;
 }
+/** REQ-061 — a monthly billing on the CRM (its REQ-081): the amount, what it is for, this app's
+ *  handle, when the first recurring month falls due, and where a recovery link brings the person back */
+export interface NewSubscription {
+  customerId: string;
+  amountCents: number;
+  memo: string;
+  externalRef: string;
+  firstBillAt: string;
+  returnUrl?: string;
+  returnLabel?: string;
+}
+export type SubscriptionStatus = "active" | "past_due" | "canceled";
+export interface SubscriptionInfo {
+  subscriptionId: string;
+  status: SubscriptionStatus;
+  /** when the next month falls due; the month being retried while past due */
+  nextBillAt: string;
+  lastBilledAt: string;
+  cardBrand: string;
+  cardLast4: string;
+  failures: number;
+  /** while past due: the pay page for the month (absolute); "" otherwise */
+  payUrl: string;
+}
 export interface PaymentsLinkPort {
   /** make the customer — or, with an externalRef the CRM already knows, revise that one */
   createCustomer(input: NewCustomer): Promise<{ customerId: string }>;
@@ -41,12 +68,21 @@ export interface PaymentsLinkPort {
   mintPayLink(input: NewPayLink): Promise<{ payUrl: string }>;
   /** does the CRM's ledger still say something is outstanding on this due */
   dueOpen(dueId: string): Promise<boolean>;
+  /** REQ-061 — start billing monthly; the CRM's clock does the rest */
+  startSubscription(input: NewSubscription): Promise<{ subscriptionId: string }>;
+  /** the newest subscription under this app's handle; null when none */
+  findSubscription(externalRef: string): Promise<SubscriptionInfo | null>;
+  /** one subscription as it stands; null when the CRM has none by that id */
+  subscription(subscriptionId: string): Promise<SubscriptionInfo | null>;
+  /** stop billing (a downgrade, a switch of plan) */
+  cancelSubscription(subscriptionId: string, reason: string): Promise<void>;
 }
 
 /** the CRM's doors this client knocks on (ppwk-crm payments, REQ-057/076/077 there) */
 const CUSTOMERS = "/api/payments/customers";
 const DUES = "/api/payments/dues";
 const PAY_LINKS = "/api/payments/pay-links";
+const SUBSCRIPTIONS = "/api/payments/subscriptions";
 const CATEGORY = "sales";
 
 class PaymentsUnavailableError extends Error {
@@ -89,7 +125,7 @@ class CrmPaymentsLink implements PaymentsLinkPort {
     if (res.status === 404) return null;
     if (!res.ok) throw new PaymentsUnavailableError(`GET customers/by-external answered ${res.status}: ${text.slice(0, 200)}`);
     const c = JSON.parse(text) as CrmCustomer;
-    return { customerId: c.customerId, customerName: c.customerName, customerEmail: c.customerEmail, customerPhone: c.customerPhone, externalRef: c.externalRef };
+    return { customerId: c.customerId, customerName: c.customerName, customerEmail: c.customerEmail, customerPhone: c.customerPhone, externalRef: c.externalRef, ...(c.createdAt ? { createdAt: c.createdAt } : {}) };
   }
   async raiseDue(input: NewDue) {
     const d = await this.call<{ dueId: string }>("POST", DUES, { ...input, categoryCode: CATEGORY });
@@ -103,23 +139,111 @@ class CrmPaymentsLink implements PaymentsLinkPort {
     const d = await this.call<{ open: boolean }>("GET", `${DUES}/${encodeURIComponent(dueId)}`);
     return d.open === true;
   }
+  // REQ-061 — the CRM's subscriptions (its REQ-081); its payUrl is a path on its origin
+  async startSubscription(input: NewSubscription) {
+    const s = await this.call<{ subscriptionId: string }>("POST", SUBSCRIPTIONS, {
+      customerId: input.customerId,
+      amountCents: input.amountCents,
+      categoryCode: CATEGORY,
+      memo: input.memo,
+      externalRef: input.externalRef,
+      firstBillAt: input.firstBillAt,
+      brandId: "",
+      returnUrl: input.returnUrl ?? "",
+      returnLabel: input.returnLabel ?? "",
+    });
+    return { subscriptionId: s.subscriptionId };
+  }
+  async findSubscription(externalRef: string) {
+    return await this.readSubscription(`${SUBSCRIPTIONS}/by-external/${encodeURIComponent(externalRef)}`);
+  }
+  async subscription(subscriptionId: string) {
+    return await this.readSubscription(`${SUBSCRIPTIONS}/${encodeURIComponent(subscriptionId)}`);
+  }
+  async cancelSubscription(subscriptionId: string, reason: string) {
+    await this.call("POST", `${SUBSCRIPTIONS}/${encodeURIComponent(subscriptionId)}/cancel`, { subscriptionId, reason });
+  }
+  private async readSubscription(path: string): Promise<SubscriptionInfo | null> {
+    const res = await this.send("GET", path);
+    const text = await res.text();
+    if (res.status === 404) return null;
+    if (!res.ok) throw new PaymentsUnavailableError(`GET ${path} answered ${res.status}: ${text.slice(0, 200)}`);
+    const s = JSON.parse(text) as SubscriptionInfo;
+    return {
+      subscriptionId: s.subscriptionId,
+      status: s.status,
+      nextBillAt: s.nextBillAt,
+      lastBilledAt: s.lastBilledAt,
+      cardBrand: s.cardBrand,
+      cardLast4: s.cardLast4,
+      failures: s.failures,
+      payUrl: s.payUrl ? `${this.origin}${s.payUrl}` : "",
+    };
+  }
 }
 
 /** the fake's world — what a story or an int test reads back and settles */
+export interface FakeSubscription extends NewSubscription, SubscriptionInfo {}
+
 class FakePaymentsWorld {
   customers: CrmCustomer[] = [];
   dues: Array<NewDue & { dueId: string; open: boolean }> = [];
   links: Array<NewPayLink & { payUrl: string }> = [];
+  /** REQ-061 — the CRM's subscriptions, and the card its pay page put on file per customer */
+  subscriptions: FakeSubscription[] = [];
+  cards = new Map<string, { cardBrand: string; cardLast4: string }>();
   reset() {
     this.customers = [];
     this.dues = [];
     this.links = [];
+    this.subscriptions = [];
+    this.cards.clear();
   }
-  /** the card landed: what the real pay page does to the due */
+  /** the card landed: what the real pay page does to the due — and the card is on file now;
+   *  a past-due month paid this way makes its subscription current again (the CRM's REQ-081) */
   settle(dueId: string) {
     const due = this.dues.find((d) => d.dueId === dueId);
     if (!due) throw Object.assign(new Error(`due-missing: ${dueId}`), { status: 404 });
     due.open = false;
+    this.cards.set(due.customerId, { cardBrand: "visa", cardLast4: "1111" });
+    const now = new Date().toISOString();
+    for (const s of this.subscriptions) {
+      if (s.status === "past_due" && s.payUrl.includes(`due=${dueId}`)) {
+        Object.assign(s, { status: "active", nextBillAt: addMonth(s.nextBillAt), lastBilledAt: now, payUrl: "", failures: 0, ...this.cards.get(s.customerId) });
+      }
+    }
+  }
+  /** the card is gone (expired, revoked): the next month cannot be collected */
+  dropCard(customerId: string) {
+    this.cards.delete(customerId);
+  }
+  /**
+   * REQ-061 — the CRM's clock (its REQ-081), as the fake: every subscription whose month has come
+   * is charged to the card on file and moves on a month; with no card the month is past due,
+   * with a pay page for it (the app's own stand-in) that returns where the subscription says.
+   */
+  bill(now: string) {
+    for (const s of this.subscriptions) {
+      if (s.status === "canceled") continue;
+      if (s.status === "active" && s.nextBillAt > now) continue;
+      const card = this.cards.get(s.customerId);
+      if (card) {
+        Object.assign(s, { status: "active", nextBillAt: addMonth(s.nextBillAt), lastBilledAt: now, payUrl: "", failures: 0, ...card });
+        continue;
+      }
+      if (s.status !== "past_due") {
+        const dueId = crypto.randomUUID();
+        this.dues.push({ customerId: s.customerId, amountCents: s.amountCents, memo: `${s.memo} — ${monthLabel(s.nextBillAt)}`, dueId, open: true });
+        const q = new URLSearchParams({ customer: s.customerId, due: dueId });
+        if (s.returnUrl) {
+          q.set("return", s.returnUrl);
+          q.set("label", s.returnLabel ?? "");
+        }
+        s.payUrl = `${fakePayPageOrigin()}/pay/fake?${q}`;
+      }
+      s.status = "past_due";
+      s.failures += 1;
+    }
   }
 }
 const WORLD = new FakePaymentsWorld();
@@ -148,11 +272,22 @@ class FakePaymentsLink implements PaymentsLinkPort {
     const ref = input.externalRef?.trim() ?? "";
     const known = ref ? this.world.customers.find((c) => c.externalRef === ref) : undefined;
     if (known) {
-      Object.assign(known, { ...input, customerId: known.customerId });
+      Object.assign(known, { ...input, customerId: known.customerId, createdAt: known.createdAt });
       return Promise.resolve({ customerId: known.customerId });
     }
+    // REQ-060 — the CRM's lead rule (its REQ-082): a phone alone is a lead; the ref that later
+    // arrives with the same phone CLAIMS it; a bare phone post for a phone already here changes nothing
+    const phone = input.customerPhone?.trim() ?? "";
+    const byPhone = phone ? this.world.customers.find((c) => c.customerPhone === phone) : undefined;
+    if (byPhone) {
+      if (ref === "") return Promise.resolve({ customerId: byPhone.customerId });
+      if (!byPhone.externalRef) {
+        Object.assign(byPhone, { ...input, customerId: byPhone.customerId, createdAt: byPhone.createdAt });
+        return Promise.resolve({ customerId: byPhone.customerId });
+      }
+    }
     const customerId = crypto.randomUUID();
-    this.world.customers.push({ ...input, customerId });
+    this.world.customers.push({ ...input, customerId, createdAt: new Date().toISOString() });
     return Promise.resolve({ customerId });
   }
   findCustomer(externalRef: string) {
@@ -181,6 +316,41 @@ class FakePaymentsLink implements PaymentsLinkPort {
     const due = this.world.dues.find((d) => d.dueId === dueId);
     return Promise.resolve(due ? due.open : false);
   }
+  // REQ-061 — the CRM's subscriptions, as the fake (its clock is world.bill)
+  startSubscription(input: NewSubscription) {
+    const sub: FakeSubscription = {
+      ...input,
+      subscriptionId: crypto.randomUUID(),
+      status: "active",
+      nextBillAt: new Date(input.firstBillAt).toISOString(),
+      lastBilledAt: "",
+      cardBrand: "",
+      cardLast4: "",
+      failures: 0,
+      payUrl: "",
+    };
+    this.world.subscriptions.push(sub);
+    return Promise.resolve({ subscriptionId: sub.subscriptionId });
+  }
+  findSubscription(externalRef: string) {
+    const mine = this.world.subscriptions.filter((s) => s.externalRef === externalRef);
+    return Promise.resolve(mine.length ? info(mine[mine.length - 1]) : null);
+  }
+  subscription(subscriptionId: string) {
+    const found = this.world.subscriptions.find((s) => s.subscriptionId === subscriptionId);
+    return Promise.resolve(found ? info(found) : null);
+  }
+  cancelSubscription(subscriptionId: string, _reason: string) {
+    const found = this.world.subscriptions.find((s) => s.subscriptionId === subscriptionId);
+    if (!found) throw Object.assign(new Error(`subscription-missing: ${subscriptionId}`), { status: 404 });
+    found.status = "canceled";
+    found.payUrl = "";
+    return Promise.resolve();
+  }
+}
+
+function info(s: FakeSubscription): SubscriptionInfo {
+  return { subscriptionId: s.subscriptionId, status: s.status, nextBillAt: s.nextBillAt, lastBilledAt: s.lastBilledAt, cardBrand: s.cardBrand, cardLast4: s.cardLast4, failures: s.failures, payUrl: s.payUrl };
 }
 
 /**
@@ -226,5 +396,17 @@ export class PaymentsLink implements PaymentsLinkPort {
   }
   dueOpen(dueId: string) {
     return this.port().dueOpen(dueId);
+  }
+  startSubscription(input: NewSubscription) {
+    return this.port().startSubscription(input);
+  }
+  findSubscription(externalRef: string) {
+    return this.port().findSubscription(externalRef);
+  }
+  subscription(subscriptionId: string) {
+    return this.port().subscription(subscriptionId);
+  }
+  cancelSubscription(subscriptionId: string, reason: string) {
+    return this.port().cancelSubscription(subscriptionId, reason);
   }
 }

@@ -10,7 +10,8 @@ import type { UserPlan } from "../clients/profile.ts";
 
 /** where a pick sends the browser: the pay page for a paid pick, nowhere (null) for free */
 export function payPageOf(plan: Pick<UserPlan, "status" | "payUrl">): string | null {
-  return plan.status === "pending" && plan.payUrl ? plan.payUrl : null;
+  // REQ-061 — a past-due month has a pay page of its own, the same way
+  return (plan.status === "pending" || plan.status === "past_due") && plan.payUrl ? plan.payUrl : null;
 }
 
 /** the pages that show the cards — the only places a pick goes back to */

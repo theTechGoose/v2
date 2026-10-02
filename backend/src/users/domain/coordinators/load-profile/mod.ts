@@ -7,7 +7,7 @@ import { BusinessAddressStore } from "@profile/domain/data/business-address-stor
 import { BusinessInsuranceStore } from "@profile/domain/data/business-insurance-store/mod.ts";
 import { TaxIdentityStore } from "@profile/domain/data/tax-identity-store/mod.ts";
 import { ReferenceStore } from "@profile/domain/data/reference-store/mod.ts";
-import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
+import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { computeInitials } from "@profile/domain/business/initials/mod.ts";
 import {
   type PublicBusinessIdentity,
@@ -77,7 +77,7 @@ export class LoadProfile {
     private tax:       TaxIdentityStore,
     private defaults:  ContractDefaultsStore,
     private refs:      ReferenceStore,
-    private plans:     PlanStore,
+    private choosePlan: ChoosePlan,
   ) {}
 
   async load(userId: string): Promise<ProfileSnapshot> {
@@ -89,7 +89,7 @@ export class LoadProfile {
       this.tax.get(userId),
       this.defaults.get(userId),
       this.refs.listByUser(userId),
-      this.plans.get(userId),
+      this.choosePlan.current(userId), // REQ-061: as the CRM's billing says it stands
     ]);
     const suggestedState = address?.state
       ? undefined

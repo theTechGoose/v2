@@ -2,7 +2,8 @@
 // month's due settles on the CRM's pay page, then active.
 import { type PickBack, pickBackOf } from "@users/domain/business/plan/mod.ts";
 export type PlanId = "free" | "monster" | "assist";
-export type PlanStatus = "free" | "pending" | "active";
+/** past_due — REQ-061: the CRM could not collect the latest month; the person pays it on the pay page */
+export type PlanStatus = "free" | "pending" | "active" | "past_due";
 
 export interface UserPlan {
   userId: string;
@@ -15,7 +16,15 @@ export interface UserPlan {
   /** the CRM's customer and due behind a paid pick, and the pay page the person opens */
   customerId?: string;
   dueId?: string;
+  /** the pay page: the first month's while pending; the past-due month's while past due */
   payUrl?: string;
+  /** REQ-061 — the CRM's monthly billing behind an active plan, and what it says */
+  subscriptionId?: string;
+  nextBillAt?: string;
+  cardBrand?: string;
+  cardLast4?: string;
+  /** the billing a paid pick replaces (a switch of plan): canceled once the new one is live */
+  previousSubscriptionId?: string;
   updatedAt: string;
 }
 

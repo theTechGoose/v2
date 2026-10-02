@@ -27,7 +27,9 @@ Deno.test("REQ-058 crm-customer-sync — a sign-up makes the customer with what 
   const made = await sync.sync(user.id);
   const world = fakePaymentsWorld();
   assertEquals(world.customers.length, 1);
-  assertEquals(world.customers[0], {
+  const { createdAt, ...born } = world.customers[0];
+  assertEquals(typeof createdAt, "string");
+  assertEquals(born, {
     customerId: made!.customerId,
     customerName: "+15125550201",
     customerEmail: "",
@@ -68,4 +70,25 @@ Deno.test("REQ-058 crm-customer-sync — the CRM being down never fails the acco
   }
   assertEquals(warned.length, 1);
   assertEquals(warned[0].includes("payments-unavailable"), true, warned[0]);
+});
+
+Deno.test("REQ-060 crm-customer-sync — the phone typed into login is a CRM lead at once; the sign-up with it claims that lead; the lead never overwrites the account", async () => {
+  const { users, sync } = await fresh();
+  const captured = await sync.capture("(512) 555-0199");
+  const world = fakePaymentsWorld();
+  assertEquals(world.customers.length, 1);
+  assertEquals([world.customers[0].customerName, world.customers[0].customerPhone, world.customers[0].customerEmail, world.customers[0].externalRef], ["+15125550199", "+15125550199", "", undefined]);
+  assertEquals(captured?.customerId, world.customers[0].customerId);
+  // no code entered, no onboarding — the lead stands. Later the same phone signs up:
+  const user = await users.create({ phoneNumber: "+15125550199", language: "en", name: placeholderNameFor("en") });
+  const made = await sync.sync(user.id);
+  assertEquals(made?.customerId, captured?.customerId, "the account IS the lead");
+  assertEquals(world.customers.length, 1);
+  assertEquals((await sync.read(user.id))?.externalRef, `pm:${user.id}`);
+  // onboarding fills the name in; a second lead capture for the same phone (a re-login) changes nothing
+  await users.update(user.id, { name: "Rosa Demo" });
+  await sync.sync(user.id);
+  await sync.capture("+15125550199");
+  assertEquals((await sync.read(user.id))?.customerName, "Rosa Demo");
+  assertEquals(world.customers.length, 1);
 });

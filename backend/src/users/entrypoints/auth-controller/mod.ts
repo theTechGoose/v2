@@ -189,6 +189,8 @@ export class AuthController {
         phoneNumber: dto.phoneNumber,
         language: dto.language,
       });
+      // REQ-060 — the phone is a CRM lead the moment the code goes out, code entered or not
+      await this.crm.capture(dto.phoneNumber);
     } catch (err) {
       if (err instanceof SendOtpCooldownError) {
         return jsonResponse(
