@@ -14,7 +14,7 @@ import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import type { User } from "@users/dto/user.ts";
 
 /** pure: the CRM customer an account reads as, right now */
-export function customerFor(user: User, identity: { businessName?: string } | null): NewCustomer {
+function customerFor(user: User, identity: { businessName?: string } | null): NewCustomer {
   const name = isPlaceholderName(user.name) ? undefined : user.name;
   return {
     customerName: customerNameFor({ name, email: user.email, phoneNumber: user.phoneNumber }, identity),

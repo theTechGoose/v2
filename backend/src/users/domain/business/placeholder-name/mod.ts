@@ -13,7 +13,7 @@ export function placeholderNameFor(language: Language | undefined): string {
 }
 
 /** True when `name` is empty or still the seeded placeholder — i.e. the user
- *  hasn't set a real name yet. Lets the legacy dev seeder overwrite the
+ *  hasn't set a real name yet. Lets the dev seeder overwrite the
  *  placeholder without clobbering a genuinely-onboarded user's name, and keeps
  *  the placeholder off the CRM customer (REQ-058). */
 export function isPlaceholderName(name: string | undefined): boolean {

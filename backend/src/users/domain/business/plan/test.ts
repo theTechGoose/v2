@@ -18,6 +18,7 @@ import {
   SELECTABLE_PLAN_IDS,
   settle,
   subscriptionRefFor,
+  type SubscriptionView,
   withSubscription,
 } from "./mod.ts";
 
@@ -106,7 +107,7 @@ Deno.test("REQ-059 plan — a pick comes back only to the pages that show the ca
 // REQ-061 — monthly billing: the CRM's subscription behind an active plan
 
 const ACTIVE = (): UserPlan => ({ userId: "u-1", planId: "monster", status: "active", chosenAt: "2026-10-02T00:00:00.000Z", activatedAt: "2026-10-02T01:11:06.740Z", customerId: "c-1", dueId: "d-1", payUrl: "http://crm/first", updatedAt: "2026-10-02T01:11:06.740Z" });
-const SUB = (over: Partial<Parameters<typeof withSubscription>[1] & {}> = {}) => ({ subscriptionId: "s-1", status: "active" as const, nextBillAt: "2026-11-02T01:11:06.740Z", cardBrand: "visa", cardLast4: "1111", payUrl: "", ...over });
+const SUB = (over: Partial<SubscriptionView> = {}) => ({ subscriptionId: "s-1", status: "active" as const, nextBillAt: "2026-11-02T01:11:06.740Z", cardBrand: "visa", cardLast4: "1111", payUrl: "", ...over });
 
 Deno.test("REQ-061 plan — a calendar month later, same time; a short month lands on its last day; the month is named", () => {
   assertEquals(addMonth("2026-10-02T01:11:06.740Z"), "2026-11-02T01:11:06.740Z");

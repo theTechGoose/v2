@@ -7,7 +7,9 @@
  * REQ-059 — "v2 should redirect to the ui … the payments should be seamless between both apps."
  *
  * The pages: the /welcome wizard (front-end/islands/WelcomeWizard.tsx) and the Plan card on
- * /settings (front-end/islands/SettingsPage.tsx), both rendering the one PlanCards component.
+ * /settings (front-end/islands/SettingsPage.tsx), both rendering the one PlanCards component;
+ * a card posts to the Fresh route front-end/routes/plan/pick.tsx (the redirect to the pay page)
+ * and the receipt comes back through front-end/routes/plan/return.tsx (REQ-059).
  * The gate runs on the fakes: the CRM behind the pay link is the in-process fake (PPWK_PAYMENTS_URL
  * unset) — it upserts customers by this app's ref and mints the app's own /pay/fake page
  * (REQ-057) carrying the return address, the way the real link builder does — and that page's

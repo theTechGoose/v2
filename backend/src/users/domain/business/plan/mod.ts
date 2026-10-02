@@ -41,7 +41,7 @@ export function externalRefFor(userId: string): string {
 export const RETURN_LABEL = "Paperwork Monster";
 
 /** the pages that show the plan cards — the only places a pick comes back to */
-export const PICK_BACKS = ["/welcome", "/settings"] as const;
+const PICK_BACKS = ["/welcome", "/settings"] as const;
 export type PickBack = typeof PICK_BACKS[number];
 export function pickBackOf(raw: unknown): PickBack {
   return (PICK_BACKS as readonly unknown[]).includes(raw) ? raw as PickBack : "/settings";
