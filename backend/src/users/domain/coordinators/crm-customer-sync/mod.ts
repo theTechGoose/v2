@@ -7,20 +7,24 @@
 import { Injectable } from "#danet/core";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
+import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { type CrmCustomer, type NewCustomer, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
-import { customerNameFor, externalRefFor } from "@users/domain/business/plan/mod.ts";
+import { customerNameFor, externalRefFor, LEAD_TIER, tierFor, UNNAMED_CUSTOMER } from "@users/domain/business/plan/mod.ts";
 import { isPlaceholderName } from "@users/domain/business/placeholder-name/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
+import type { UserPlan } from "@users/dto/plan.ts";
 import type { User } from "@users/dto/user.ts";
 
-/** pure: the CRM customer an account reads as, right now */
-function customerFor(user: User, identity: { businessName?: string } | null): NewCustomer {
+/** pure: the CRM customer an account reads as, right now — REQ-062: named "unknown dragon
+ *  mcdragonson" until the person says who they are, its tier the plan's (Lead until paid) */
+function customerFor(user: User, identity: { businessName?: string } | null, plan: UserPlan | null): NewCustomer {
   const name = isPlaceholderName(user.name) ? undefined : user.name;
   return {
     customerName: customerNameFor({ name, email: user.email, phoneNumber: user.phoneNumber }, identity),
     customerEmail: user.email?.trim() ?? "",
     customerPhone: user.phoneNumber?.trim() || undefined,
     externalRef: externalRefFor(user.id),
+    tier: tierFor(plan),
   };
 }
 
@@ -30,6 +34,7 @@ export class CrmCustomerSync {
     private users: UserStore,
     private identity: BusinessIdentityStore,
     private link: PaymentsLink,
+    private plans: PlanStore,
   ) {}
 
   /**
@@ -37,8 +42,8 @@ export class CrmCustomerSync {
    * @throws payments-unavailable — the CRM did not answer
    */
   async ensure(userId: string): Promise<{ customerId: string }> {
-    const [user, identity] = await Promise.all([this.users.get(userId), this.identity.get(userId)]);
-    return await this.link.createCustomer(customerFor(user, identity));
+    const [user, identity, plan] = await Promise.all([this.users.get(userId), this.identity.get(userId), this.plans.get(userId)]);
+    return await this.link.createCustomer(customerFor(user, identity, plan));
   }
 
   /** the same, best effort: a sign-up or a profile edit never fails because the CRM is down —
@@ -53,14 +58,14 @@ export class CrmCustomerSync {
   }
 
   /**
-   * REQ-060 — the number typed into login, before any code is entered: a lead on the CRM, its
-   * name the phone (the CRM's REQ-082). Best effort, like sync. The sign-up with that phone
-   * then claims it through sync's ref.
+   * REQ-060 — the number typed into login, before any code is entered: a lead on the CRM (its
+   * REQ-082), named "unknown dragon mcdragonson" and tiered Lead (REQ-062). Best effort, like
+   * sync. The sign-up with that phone then claims it through sync's ref.
    */
   async capture(phoneNumber: string): Promise<{ customerId: string } | null> {
     const phone = normalizePhone(phoneNumber);
     try {
-      return await this.link.createCustomer({ customerName: phone, customerEmail: "", customerPhone: phone });
+      return await this.link.createCustomer({ customerName: UNNAMED_CUSTOMER, customerEmail: "", customerPhone: phone, tier: LEAD_TIER });
     } catch (e) {
       console.warn(`[crm-customer-sync] lead ${phone}: ${e instanceof Error ? e.message : String(e)}`);
       return null;

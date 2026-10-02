@@ -6,6 +6,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { fakePaymentsWorld, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { placeholderNameFor } from "@users/domain/business/placeholder-name/mod.ts";
+import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { CrmCustomerSync } from "./mod.ts";
 
 async function fresh() {
@@ -17,10 +18,11 @@ async function fresh() {
   const users = new UserStore();
   const identity = new BusinessIdentityStore();
   const link = new PaymentsLink();
-  return { users, identity, link, sync: new CrmCustomerSync(users, identity, link) };
+  const plans = new PlanStore();
+  return { users, identity, link, plans, sync: new CrmCustomerSync(users, identity, link, plans) };
 }
 
-Deno.test("REQ-058 crm-customer-sync — a sign-up makes the customer with what there is: the phone as its name, no email, this app's ref", async () => {
+Deno.test("REQ-058 crm-customer-sync — a sign-up makes the customer with what there is: no name yet (REQ-062: 'unknown dragon mcdragonson'), the phone, no email, this app's ref", async () => {
   const { users, sync } = await fresh();
   const user = await users.create({ phoneNumber: "+15125550201", language: "en", name: placeholderNameFor("en") });
   assertEquals(await sync.read(user.id), null, "nothing on the CRM before the first sync");
@@ -31,10 +33,11 @@ Deno.test("REQ-058 crm-customer-sync — a sign-up makes the customer with what 
   assertEquals(typeof createdAt, "string");
   assertEquals(born, {
     customerId: made!.customerId,
-    customerName: "+15125550201",
+    customerName: "unknown dragon mcdragonson",
     customerEmail: "",
     customerPhone: "+15125550201",
     externalRef: `pm:${user.id}`,
+    tier: "Lead",
   });
   assertEquals((await sync.read(user.id))?.customerId, made!.customerId);
 });
@@ -77,7 +80,7 @@ Deno.test("REQ-060 crm-customer-sync — the phone typed into login is a CRM lea
   const captured = await sync.capture("(512) 555-0199");
   const world = fakePaymentsWorld();
   assertEquals(world.customers.length, 1);
-  assertEquals([world.customers[0].customerName, world.customers[0].customerPhone, world.customers[0].customerEmail, world.customers[0].externalRef], ["+15125550199", "+15125550199", "", undefined]);
+  assertEquals([world.customers[0].customerName, world.customers[0].customerPhone, world.customers[0].customerEmail, world.customers[0].externalRef, world.customers[0].tier], ["unknown dragon mcdragonson", "+15125550199", "", undefined, "Lead"]);
   assertEquals(captured?.customerId, world.customers[0].customerId);
   // no code entered, no onboarding — the lead stands. Later the same phone signs up:
   const user = await users.create({ phoneNumber: "+15125550199", language: "en", name: placeholderNameFor("en") });
@@ -91,4 +94,30 @@ Deno.test("REQ-060 crm-customer-sync — the phone typed into login is a CRM lea
   await sync.capture("+15125550199");
   assertEquals((await sync.read(user.id))?.customerName, "Rosa Demo");
   assertEquals(world.customers.length, 1);
+});
+
+// REQ-062 — "sign up free, close the browser before finishing sign up: customer phone number in
+// quickbase as 'unknown dragon mcdragonson'" … "sign up paid … guest info updated in quickbase with tier"
+Deno.test("REQ-062 crm-customer-sync — the lead and the half-finished account are 'unknown dragon mcdragonson', tier Lead; the tier follows the plan once it is paid, and comes back to Lead on free", async () => {
+  const { users, plans, sync } = await fresh();
+  await sync.capture("+15125550777");
+  const world = fakePaymentsWorld();
+  assertEquals([world.customers[0].customerName, world.customers[0].tier], ["unknown dragon mcdragonson", "Lead"]);
+  const user = await users.create({ phoneNumber: "+15125550777", language: "es", name: placeholderNameFor("es") });
+  await sync.sync(user.id);
+  let crm = await sync.read(user.id);
+  assertEquals([crm?.customerName, crm?.tier, crm?.customerPhone], ["unknown dragon mcdragonson", "Lead", "+15125550777"], "the placeholder is not a name");
+  const now = new Date().toISOString();
+  await plans.put({ userId: user.id, planId: "monster", status: "pending", chosenAt: now, updatedAt: now });
+  await sync.sync(user.id);
+  assertEquals((await sync.read(user.id))?.tier, "Lead", "not paid yet");
+  await plans.put({ userId: user.id, planId: "monster", status: "active", chosenAt: now, activatedAt: now, updatedAt: now });
+  await users.update(user.id, { name: "Rosa Demo" });
+  await sync.sync(user.id);
+  crm = await sync.read(user.id);
+  assertEquals([crm?.customerName, crm?.tier], ["Rosa Demo", "Monster"]);
+  await plans.put({ userId: user.id, planId: "free", status: "free", chosenAt: now, updatedAt: now });
+  await sync.sync(user.id);
+  assertEquals((await sync.read(user.id))?.tier, "Lead");
+  assertEquals(world.customers.length, 1, "one record throughout");
 });

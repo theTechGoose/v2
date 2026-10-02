@@ -48,7 +48,9 @@ export class ChoosePlan {
     if (plan.id === "free") {
       // REQ-061 — back to free stops the billing; the CRM has to take that, or the plan stays
       if (billing) await this.link.cancelSubscription(billing, "downgraded to free");
-      return this.plans.put(chosen(userId, "free", now));
+      const free = await this.plans.put(chosen(userId, "free", now));
+      await this.crm.sync(userId); // REQ-062 — the CRM's tier is Lead again
+      return free;
     }
 
     const user = await this.users.get(userId);
@@ -70,7 +72,9 @@ export class ChoosePlan {
     const open = await this.link.dueOpen(plan.dueId);
     const next = settle(plan, open, new Date().toISOString());
     if (next === plan) return plan;
-    return await this.projected(await this.plans.put(next));
+    const active = await this.projected(await this.plans.put(next));
+    await this.crm.sync(userId); // REQ-062 — a paying customer: the CRM's tier is the plan's name
+    return active;
   }
 
   /**
@@ -84,7 +88,10 @@ export class ChoosePlan {
     try {
       const sub = plan.subscriptionId ? await this.link.subscription(plan.subscriptionId) : await this.ensureSubscription(plan);
       const next = withSubscription(plan, sub, new Date().toISOString());
-      return next === plan ? plan : await this.plans.put(next);
+      if (next === plan) return plan;
+      const stored = await this.plans.put(next);
+      if (next.status !== plan.status) await this.crm.sync(plan.userId); // REQ-062 — a billing canceled on the CRM drops the tier
+      return stored;
     } catch (e) {
       console.warn(`[choose-plan] ${plan.userId}: the billing was not read: ${e instanceof Error ? e.message : String(e)}`);
       return plan;

@@ -26,7 +26,7 @@ function freshFlow() {
     flow: new LoadProfile(
       users, identity, address, insurance, tax, defaults, refs,
       // REQ-061 — the plan is read through ChoosePlan, as the CRM's billing says it stands
-      new ChoosePlan(users, new PlanStore(), new PaymentsLink(), new CrmCustomerSync(users, identity, new PaymentsLink())),
+      new ChoosePlan(users, new PlanStore(), new PaymentsLink(), new CrmCustomerSync(users, identity, new PaymentsLink(), new PlanStore())),
     ),
   };
 }

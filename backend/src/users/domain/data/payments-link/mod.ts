@@ -16,6 +16,8 @@ export interface NewCustomer {
   customerPhone?: string;
   /** this app's ref for the account (externalRefFor): the CRM upserts by it */
   externalRef?: string;
+  /** REQ-062 — the CRM's tier for this person (its Quickbase Customers.Tier): Lead, or the plan's name */
+  tier?: string;
 }
 /** what the CRM holds for a customer, as this app reads it back */
 export interface CrmCustomer extends NewCustomer {
@@ -125,7 +127,7 @@ class CrmPaymentsLink implements PaymentsLinkPort {
     if (res.status === 404) return null;
     if (!res.ok) throw new PaymentsUnavailableError(`GET customers/by-external answered ${res.status}: ${text.slice(0, 200)}`);
     const c = JSON.parse(text) as CrmCustomer;
-    return { customerId: c.customerId, customerName: c.customerName, customerEmail: c.customerEmail, customerPhone: c.customerPhone, externalRef: c.externalRef, ...(c.createdAt ? { createdAt: c.createdAt } : {}) };
+    return { customerId: c.customerId, customerName: c.customerName, customerEmail: c.customerEmail, customerPhone: c.customerPhone, externalRef: c.externalRef, ...(c.tier ? { tier: c.tier } : {}), ...(c.createdAt ? { createdAt: c.createdAt } : {}) };
   }
   async raiseDue(input: NewDue) {
     const d = await this.call<{ dueId: string }>("POST", DUES, { ...input, categoryCode: CATEGORY });

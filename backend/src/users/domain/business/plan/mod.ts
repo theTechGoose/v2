@@ -22,13 +22,28 @@ export function firstMonthMemo(plan: PricingPlan): string {
   return `${plan.name} — first month`;
 }
 
-/** the CRM customer is the business, else the person, else the email, else the phone (REQ-058:
- *  at sign-up that is all the account has — the name arrives with onboarding) */
+/** REQ-062 — what the CRM calls a person who has not said who they are: a phone typed into login,
+ *  a sign-up that stopped before the name. Raphael's words; the phone on the record is the key. */
+export const UNNAMED_CUSTOMER = "unknown dragon mcdragonson";
+
+/** the CRM customer is the business, else the person, else the unnamed one (REQ-058: at sign-up
+ *  that is all the account has — the name arrives with onboarding; REQ-062) */
 export function customerNameFor(
   user: { name?: string; email?: string; phoneNumber?: string },
   identity: { businessName?: string } | null,
 ): string {
-  return identity?.businessName?.trim() || user.name?.trim() || user.email?.trim() || user.phoneNumber?.trim() || "";
+  return identity?.businessName?.trim() || user.name?.trim() || UNNAMED_CUSTOMER;
+}
+
+/** REQ-062 — the CRM's tier for an account that has never paid (the CRM's dial-list tier) */
+export const LEAD_TIER = "Lead";
+
+/** REQ-062 — the tier the CRM customer wears: a paid plan that is current (or a month being
+ *  retried) is the plan's name; anything else — nothing picked, free, a pick not paid yet — is Lead */
+export function tierFor(plan: UserPlan | null): string {
+  if (!plan || plan.planId === "free") return LEAD_TIER;
+  if (plan.status !== "active" && plan.status !== "past_due") return LEAD_TIER;
+  return planOf(plan.planId).name;
 }
 
 /** REQ-058 — the ref this app's account carries on its CRM customer: ONE customer per account,

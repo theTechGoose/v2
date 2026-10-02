@@ -6,6 +6,9 @@ import {
   addMonth,
   chosen,
   customerNameFor,
+  LEAD_TIER,
+  tierFor,
+  UNNAMED_CUSTOMER,
   externalRefFor,
   firstMonthMemo,
   isSelectable,
@@ -46,11 +49,11 @@ Deno.test("REQ-054 plan — the first month's due names the plan", () => {
   assertEquals(firstMonthMemo(planOf("assist")), "Monster Assist — first month");
 });
 
-Deno.test("REQ-054 plan — the CRM customer is the business, else the person, else the email", () => {
+Deno.test("REQ-054 plan — the CRM customer is the business, else the person (REQ-062: never the email)", () => {
   const user = { id: "u1", email: "a@b.test", name: "Ana" };
   assertEquals(customerNameFor(user, { businessName: "Ana Roofing" }), "Ana Roofing");
   assertEquals(customerNameFor(user, { businessName: "  " }), "Ana");
-  assertEquals(customerNameFor({ ...user, name: "" }, null), "a@b.test");
+  assertEquals(customerNameFor({ ...user, name: "" }, null), UNNAMED_CUSTOMER);
 });
 
 Deno.test("REQ-054 plan — free is free, a paid pick is pending until its due settles, then active", () => {
@@ -80,11 +83,11 @@ Deno.test("REQ-054 plan — a paid pick without the CRM's customer, due and pay 
   assertThrows(() => chosen("u1", "monster", NOW), Error, "pay-link-missing");
 });
 
-Deno.test("REQ-058 plan — a brand-new account's CRM customer is named by its phone until onboarding brings a name", () => {
-  assertEquals(customerNameFor({ phoneNumber: "+15125550101" }, null), "+15125550101");
+Deno.test("REQ-058 plan — a brand-new account's CRM customer is the unnamed one (REQ-062) until onboarding brings a name; the phone is the record's key, not its name", () => {
+  assertEquals(customerNameFor({ phoneNumber: "+15125550101" }, null), UNNAMED_CUSTOMER);
   assertEquals(customerNameFor({ name: "Ana", phoneNumber: "+15125550101" }, null), "Ana");
   assertEquals(customerNameFor({ name: "Ana", phoneNumber: "+15125550101" }, { businessName: "Ana Roofing" }), "Ana Roofing");
-  assertEquals(customerNameFor({}, null), "");
+  assertEquals(customerNameFor({}, null), UNNAMED_CUSTOMER);
 });
 
 Deno.test("REQ-058 plan — the account's ref on the CRM customer is pm:<userId>", () => {
@@ -147,4 +150,26 @@ Deno.test("REQ-061 plan — a paid pick over a paid plan remembers the billing i
   const link = { customerId: "c-1", dueId: "d-2", payUrl: "http://crm/second" };
   assertEquals(chosen("u-1", "assist", "2026-11-01T00:00:00.000Z", link, "s-1").previousSubscriptionId, "s-1");
   assertEquals("previousSubscriptionId" in chosen("u-1", "assist", "2026-11-01T00:00:00.000Z", link), false);
+});
+
+// REQ-062 — "customer phone number in quickbase as 'unknown dragon mcdragonson'" / "all financial
+// info and guest info updated in quickbase with tier"
+Deno.test("REQ-062 plan — a person who has given no name is 'unknown dragon mcdragonson' on the CRM; a business or a name takes over", () => {
+  assertEquals(UNNAMED_CUSTOMER, "unknown dragon mcdragonson");
+  assertEquals(customerNameFor({ phoneNumber: "+15125550100" }, null), UNNAMED_CUSTOMER);
+  assertEquals(customerNameFor({ email: "rosa@roof.test", phoneNumber: "+15125550100" }, null), UNNAMED_CUSTOMER, "an email is not a name");
+  assertEquals(customerNameFor({ name: "  " }, { businessName: "" }), UNNAMED_CUSTOMER);
+  assertEquals(customerNameFor({ name: "Rosa" }, null), "Rosa");
+  assertEquals(customerNameFor({ name: "Rosa" }, { businessName: "Rosa Roofing" }), "Rosa Roofing");
+});
+
+Deno.test("REQ-062 plan — the CRM tier is Lead until a paid plan is current, then the plan's name; a month past due keeps it", () => {
+  const base = { userId: "u-1", chosenAt: "2026-10-02T00:00:00.000Z", updatedAt: "2026-10-02T00:00:00.000Z" };
+  assertEquals(LEAD_TIER, "Lead");
+  assertEquals(tierFor(null), "Lead", "nothing picked yet");
+  assertEquals(tierFor({ ...base, planId: "free", status: "free" }), "Lead");
+  assertEquals(tierFor({ ...base, planId: "monster", status: "pending" }), "Lead", "not paid yet");
+  assertEquals(tierFor({ ...base, planId: "monster", status: "active" }), "Monster");
+  assertEquals(tierFor({ ...base, planId: "assist", status: "active" }), "Monster Assist");
+  assertEquals(tierFor({ ...base, planId: "monster", status: "past_due" }), "Monster", "still a customer while the month is retried");
 });

@@ -5,6 +5,8 @@
  * REQ-058 — "when someone signs up it should build them as a customer then add their info when
  * they finish the onboarding"
  * REQ-059 — "v2 should redirect to the ui … the payments should be seamless between both apps."
+ * REQ-062 — "sign up free, close the browser before finishing sign up. customer phone number in
+ * quickbase as 'unknown dragon mcdragonson' … sign up paid … guest info updated in quickbase with tier"
  *
  * The pages: the /welcome wizard (front-end/islands/WelcomeWizard.tsx) and the Plan card on
  * /settings (front-end/islands/SettingsPage.tsx), both rendering the one PlanCards component;
@@ -92,7 +94,8 @@ Deno.test("REQ-058: a sign-up is a CRM customer at once — the phone and this a
     const { auth, phone, userId } = await signIn(http, page, baseUrl, {});
     // the moment the account exists the CRM has its customer: nothing but the phone to go on yet
     let customer = await crmCustomer(http, auth);
-    expect(customer && customer.customerName === phone, `the customer is named by the phone (${JSON.stringify(customer)})`);
+    // REQ-062 — a person who has given no name is "unknown dragon mcdragonson", by phone
+    expect(customer && customer.customerName === "unknown dragon mcdragonson", `the customer is the unnamed one (${JSON.stringify(customer)})`);
     expect(customer.externalRef === `pm:${userId}`, `it carries this app's ref (${customer.externalRef})`);
     expect(customer.customerEmail === "", "no email invented");
     const customerId = customer.customerId as string;
@@ -314,4 +317,46 @@ Deno.test("REQ-061: a month later the card on file is charged by itself and sett
     await expect.notSee("Pay now");
     plan = await (await http("/api/me/plan", { headers: auth })).json();
     expect.eq(plan.status, "active", "current again");
+  }));
+
+Deno.test("REQ-062: a person who never finishes is 'unknown dragon mcdragonson' on the CRM, tier Lead; once the first month is paid the tier is the plan's name", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    // 1) the phone goes into login and the person closes the browser: a lead, by phone, unnamed
+    const phone = `+1512${digits()}`;
+    await page.goto("/?lang=en");
+    const box = page.getByRole("textbox", { name: /phone/i });
+    await box.waitFor({ timeout: 60_000 });
+    await box.fill(phone.slice(2));
+    await box.press("Enter");
+    await page.waitForURL((u: URL) => u.pathname === "/verify", { timeout: 60_000 });
+    await expect.see("Check your phone");
+    // the same phone signs up later, still without a name: the lead is claimed, the name stays
+    const r = await http("/api/auth/verify", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ phoneNumber: phone, code: "000000" }) });
+    const body = await r.json();
+    const cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
+    const auth = { ...JSON_HEADERS, cookie };
+    let crm = await crmCustomer(http, auth);
+    expect.eq(crm?.customerName, "unknown dragon mcdragonson", "the unfinished sign-up is the unnamed dragon");
+    expect.eq(crm?.customerPhone, phone, "by phone");
+    expect.eq(crm?.tier, "Lead", "a lead on the CRM");
+    expect.eq(crm?.externalRef, `pm:${body.userId}`, "claimed by this account");
+    // 2) the sign-up finished: name, business and email reach the record (REQ-058)
+    const me = await http("/api/me", { method: "PUT", headers: auth, body: JSON.stringify({ language: "en", name: "Dragon Story", email: `dragon-${digits()}@blackhole.postmarkapp.com` }) });
+    await me.body?.cancel();
+    crm = await crmCustomer(http, auth);
+    expect.eq(crm?.customerName, "Dragon Story", "named once the person says who they are");
+    expect.eq(crm?.tier, "Lead", "still a lead: nothing paid");
+    // 3) the paid pick, the card on the page, the receipt back: the tier is the plan
+    const [name, value] = cookie.split("=");
+    const hosts = new Set([new URL(baseUrl).hostname, "localhost", "127.0.0.1"]);
+    await page.context().addCookies([...hosts].flatMap((domain) => [{ name, value, domain, path: "/" }, { name: "pm_lang", value: "en", domain, path: "/" }]));
+    await page.goto("/settings");
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await pickGoesToPayPage(page, "plan-pick-monster");
+    await payAndGoBack(page, expect);
+    await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
+    await expect.see("Monster is active");
+    crm = await crmCustomer(http, auth);
+    expect.eq(crm?.tier, "Monster", "a paying customer carries the plan as its tier");
+    expect.eq(crm?.customerName, "Dragon Story", "the same record");
   }));

@@ -19,7 +19,7 @@ async function fresh() {
   const identity = new BusinessIdentityStore();
   const plans = new PlanStore();
   const link = new PaymentsLink();
-  const crm = new CrmCustomerSync(users, identity, link);
+  const crm = new CrmCustomerSync(users, identity, link, plans);
   const flow = new ChoosePlan(users, plans, link, crm);
   return { users, identity, plans, link, crm, flow };
 }
@@ -32,7 +32,9 @@ Deno.test("REQ-054 choose-plan — nobody has a plan until they pick one; free i
   assertEquals(plan.planId, "free");
   assertEquals(plan.status, "free");
   assertEquals((await flow.current(user.id))?.status, "free");
-  assertEquals(fakePaymentsWorld().customers.length, 0, "a free plan never touches the CRM");
+  // REQ-062 — a free pick tells the CRM its tier (Lead) on the account's one customer; no due, no link
+  const world = fakePaymentsWorld();
+  assertEquals([world.customers.length, world.customers[0]?.tier, world.dues.length, world.links.length], [1, "Lead", 0, 0], "a free plan raises nothing on the CRM");
 });
 
 Deno.test("REQ-054 choose-plan — a paid plan makes the CRM customer, raises the first month as a due and mints its pay link", async () => {
@@ -194,4 +196,17 @@ Deno.test("REQ-061 choose-plan — back to free cancels the billing (and refuses
   fakePaymentsWorld().subscriptions.length = 0; // the CRM has lost it: cancel answers subscription-missing
   await assertRejects(() => flow2.choose(second.user.id, "free"));
   assertEquals((await plans2.get(second.user.id))?.status, "active", "the plan stands until the billing is stopped");
+});
+
+// REQ-062 — "all financial info and guest info updated in quickbase with tier": the CRM hears
+// about the plan the moment it changes, not on the next profile edit
+Deno.test("REQ-062 choose-plan — the CRM's tier follows the plan: Monster the moment the first month settles, Lead again on the way back to free", async () => {
+  const { users, flow } = await fresh();
+  const { user } = await paidAndActive(flow, users, "+15125550601");
+  const world = fakePaymentsWorld();
+  const mine = () => world.customers.find((c) => c.externalRef === `pm:${user.id}`);
+  assertEquals(mine()?.tier, "Monster", "told the CRM when the due settled");
+  await flow.choose(user.id, "free");
+  assertEquals(mine()?.tier, "Lead", "told the CRM on the downgrade");
+  assertEquals(world.customers.length, 1);
 });

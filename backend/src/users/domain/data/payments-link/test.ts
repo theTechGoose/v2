@@ -145,3 +145,25 @@ Deno.test("REQ-061 payments-link real — subscriptions go to the CRM's routes; 
     await link.cancelSubscription("s-1", "downgraded to free");
     assertEquals(calls.at(-1), { method: "POST", url: "http://crm.test/api/payments/subscriptions/s-1/cancel", body: { subscriptionId: "s-1", reason: "downgraded to free" } });
   }));
+
+// REQ-062 — the tier travels with the customer: sent on every write, read back with the record
+Deno.test("REQ-062 payments-link real — a customer goes to the CRM with its tier and comes back with it", () =>
+  withEnv({ PPWK_PAYMENTS_URL: "http://crm.test", PPWK_PAYMENTS_TOKEN: "t", DENO_DEPLOYMENT_ID: undefined }, async () => {
+    const calls: Array<{ method: string; url: string; body: unknown }> = [];
+    const link = new PaymentsLink();
+    link.fetchOverride = (input, init) => {
+      const url = String(input);
+      calls.push({ method: init?.method ?? "GET", url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (url.includes("/customers/by-external/")) {
+        return Promise.resolve(Response.json({ customerId: "c-1", customerName: "unknown dragon mcdragonson", customerEmail: "", customerPhone: "+15125550100", externalRef: "pm:u-1", tier: "Monster", createdAt: "2026-10-02T00:00:00.000Z" }));
+      }
+      return Promise.resolve(Response.json({ customerId: "c-1" }));
+    };
+    await link.createCustomer({ customerName: "unknown dragon mcdragonson", customerEmail: "", customerPhone: "+15125550100", tier: "Lead" });
+    assertEquals(calls[0].method, "POST");
+    assertStringIncludes(calls[0].url, "/api/payments/customers");
+    assertEquals((calls[0].body as { tier: string }).tier, "Lead");
+    const found = await link.findCustomer("pm:u-1");
+    assertEquals(found?.tier, "Monster");
+    assertEquals(found?.customerName, "unknown dragon mcdragonson");
+  }));
