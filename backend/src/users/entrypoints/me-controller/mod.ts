@@ -64,12 +64,16 @@ export class MeController {
    * the gate's lanes and a dev box — like the dev master OTP code; 404 against the real one.
    */
   @Post("plan/fake-paid")
-  async fakePaid(@Context() ctx: ExecutionContext) {
+  async fakePaid(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
     if (!this.paymentsLink.isFake()) throw Object.assign(new Error("not-found: the fake is not in use"), { status: 404 });
     const plan = await this.choosePlan.current(user.id);
     if (!plan?.dueId) throw Object.assign(new Error("plan-missing: nothing to pay"), { status: 404 });
-    fakePaymentsWorld().settle(plan.dueId);
+    // REQ-061 — the page names the due it was opened for (a past-due month's); the plan's first month otherwise
+    const named = (body as { dueId?: unknown } | null)?.dueId;
+    const world = fakePaymentsWorld();
+    const dueId = typeof named === "string" && world.dues.some((d) => d.dueId === named && d.customerId === plan.customerId) ? named : plan.dueId;
+    world.settle(dueId);
     return await this.choosePlan.refresh(user.id);
   }
 

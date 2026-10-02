@@ -192,5 +192,5 @@ export const planClient = {
   /** REQ-058 — what the CRM holds for this account */
   crmCustomer: (opts: ApiOptions = {}) => api.get<CrmCustomer | null>("/me/crm-customer", opts),
   /** REQ-057 — what the app's stand-in pay page presses: settles the due on the fake (404 on the real client) */
-  fakePaid: (opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan/fake-paid", undefined, opts),
+  fakePaid: (dueId: string, opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan/fake-paid", { dueId }, opts),
 };

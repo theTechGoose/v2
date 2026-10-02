@@ -24,7 +24,7 @@ export default function FakePayPage(
     if (state === "paying" || state === "paid") return;
     setState("paying");
     try {
-      await planClient.fakePaid();
+      await planClient.fakePaid(due);
       setState("paid");
     } catch {
       setState("error");
