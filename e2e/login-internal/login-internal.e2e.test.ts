@@ -201,6 +201,9 @@ Deno.test("REQ-063: hans@documonster.com signs in by email and is a super-admin 
     for (let i = 0; i < 6; i++) await slots.nth(i).fill("0");
     await page.waitForURL(/\/(welcome|home|settings|dashboard)/, { timeout: 20_000 });
     const cookie = await sessionCookie(page);
+    // English on the account: the settings page reads the user's language first (the site defaults to Spanish, REQ-002)
+    const lang = await http("/api/me", { method: "PUT", headers: { ...JSON_HEADERS, cookie }, body: JSON.stringify({ language: "en" }) });
+    await lang.body?.cancel();
     const who = await (await http("/api/me", { headers: { cookie } })).json();
     expect.eq(who.email, HANS, "signed in on the address");
     expect(who.superAdmin === true, `whoami says super-admin (${JSON.stringify(who)})`);

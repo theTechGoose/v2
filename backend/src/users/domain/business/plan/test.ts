@@ -30,8 +30,8 @@ import {
 const NOW = "2026-10-01T15:00:00.000Z";
 const LATER = "2026-10-01T15:05:00.000Z";
 
-Deno.test("REQ-054 plan — the selectable plans are the public monthly ones: free, monster, assist; projects is custom and not pickable", () => {
-  assertEquals([...SELECTABLE_PLAN_IDS], ["free", "monster", "assist"]);
+Deno.test("REQ-054 + REQ-064 plan — the selectable plans are the public monthly ones (free, monster, assist) plus the hidden one-time test plan; projects is custom and not pickable", () => {
+  assertEquals([...SELECTABLE_PLAN_IDS], ["free", "monster", "assist", "test"]);
   assertEquals(isSelectable("free"), true);
   assertEquals(isSelectable("projects"), false);
   assertEquals(isSelectable("assist-plus"), false);
