@@ -24,7 +24,7 @@ import {
   profileClient,
   type ProfileSnapshot,
 } from "../clients/profile.ts";
-import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import { PRICING_PLANS, PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
 import { pickErrorOf, resumesAfterPlan } from "../lib/plan-return.ts";
 import { filesClient } from "../clients/files.ts";
@@ -1010,7 +1010,7 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
   const lang = langSignal.value;
   const hasEmail = Boolean(ctx.snap.user.email?.trim());
   const plans = PUBLIC_PLANS.filter((p) => !p.custom && p.period === "monthly");
-  const nameOf = (id: string) => PUBLIC_PLANS.find((p) => p.id === id)?.name ?? id;
+  const nameOf = (id: string) => PRICING_PLANS.find((p) => p.id === id)?.name ?? id; // REQ-064 — the test tier has a name too
   // a pick the backend refused came back here saying why (/plan/pick)
   const [err, setErr] = useState("");
   useEffect(() => {

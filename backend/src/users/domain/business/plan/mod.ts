@@ -3,8 +3,9 @@
 import { PRICING_PLANS, type PricingPlan } from "#quote-flow/pricing-plans.ts";
 import type { PlanId, UserPlan } from "@users/dto/plan.ts";
 
-/** the plans a person can pick: the public monthly ones; Projects is custom — "call us" */
-export const SELECTABLE_PLAN_IDS: readonly PlanId[] = ["free", "monster", "assist"];
+/** the plans a person can pick: the public monthly ones; Projects is custom — "call us";
+ *  test — REQ-064: the hidden $1 one-time tier, picked only from /plan/test */
+export const SELECTABLE_PLAN_IDS: readonly PlanId[] = ["free", "monster", "assist", "test"];
 
 export function isSelectable(id: string): id is PlanId {
   return (SELECTABLE_PLAN_IDS as readonly string[]).includes(id);
@@ -17,9 +18,27 @@ export function planOf(id: string): PricingPlan {
   return plan;
 }
 
-/** the memo on the first month's due — what the person reads on the pay page */
+/** REQ-064 — a plan charged once, never monthly (the test tier) */
+export function isOneTime(plan: PricingPlan): boolean {
+  return plan.period === "one-time";
+}
+
+/** REQ-064 — the merchant account a pick names: a slug (lowercase letters, digits, dashes, up to
+ *  40), trimmed and lowercased; nothing = "" (the CRM's default); anything else is refused by name
+ *  @throws merchant-invalid (400) */
+export function merchantOf(raw: unknown): string {
+  if (raw === undefined || raw === null || raw === "") return "";
+  const v = typeof raw === "string" ? raw.trim().toLowerCase() : "\u0000";
+  if (!/^[a-z0-9-]{1,40}$/.test(v)) {
+    throw Object.assign(new Error("merchant-invalid: a merchant is lowercase letters, digits and dashes"), { status: 400 });
+  }
+  return v;
+}
+
+/** the memo on the first month's due — what the person reads on the pay page; a one-time
+ *  charge (REQ-064) is not a first month */
 export function firstMonthMemo(plan: PricingPlan): string {
-  return `${plan.name} — first month`;
+  return isOneTime(plan) ? `${plan.name} — one-time test charge` : `${plan.name} — first month`;
 }
 
 /** REQ-062 — what the CRM calls a person who has not said who they are: a phone typed into login,
@@ -43,7 +62,9 @@ export const LEAD_TIER = "Lead";
 export function tierFor(plan: UserPlan | null): string {
   if (!plan || plan.planId === "free") return LEAD_TIER;
   if (plan.status !== "active" && plan.status !== "past_due") return LEAD_TIER;
-  return planOf(plan.planId).name;
+  const pricing = planOf(plan.planId);
+  if (isOneTime(pricing)) return LEAD_TIER; // REQ-064 — a test charge is not a membership
+  return pricing.name;
 }
 
 /** REQ-058 — the ref this app's account carries on its CRM customer: ONE customer per account,
@@ -73,6 +94,8 @@ export interface PayLinkInfo {
   customerId: string;
   dueId: string;
   payUrl: string;
+  /** REQ-064 — the merchant account the pick named; absent = the CRM's default */
+  merchant?: string;
 }
 
 /**

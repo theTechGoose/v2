@@ -2,7 +2,7 @@ import { define } from "../../utils.ts";
 import { getSessionId, loadUser } from "../../lib/auth.ts";
 import { ssrBackendPostAuthed } from "../../lib/backend-fetch.ts";
 import type { UserPlan } from "../../clients/profile.ts";
-import { backOf, pageAfterPick, payPageOf, pickErrorQuery } from "../../lib/plan-return.ts";
+import { backOf, merchantOf, pageAfterPick, payPageOf, pickErrorQuery } from "../../lib/plan-return.ts";
 
 /**
  * POST /plan/pick (REQ-055/059) — a plan card is a form that posts here (`planId`, `back`), and
@@ -17,9 +17,11 @@ export const handler = define.handlers({
     const form = await ctx.req.formData();
     const planId = String(form.get("planId") ?? "");
     const back = backOf(String(form.get("back") ?? ""));
+    // REQ-064 — the merchant account the card named (the test page's query param)
+    const merchant = merchantOf(String(form.get("merchant") ?? ""));
     const user = await loadUser(ctx.req);
     if (!user) return redirect("/");
-    const r = await ssrBackendPostAuthed<UserPlan>("/me/plan", { planId, back }, getSessionId(ctx.req))
+    const r = await ssrBackendPostAuthed<UserPlan>("/me/plan", { planId, back, ...(merchant ? { merchant } : {}) }, getSessionId(ctx.req))
       .catch(() => ({ ok: false as const, status: 0 }));
     if (!r.ok || !r.data) return redirect(`${back}${pickErrorQuery(r.status)}`);
     return redirect(payPageOf(r.data) ?? pageAfterPick(back));

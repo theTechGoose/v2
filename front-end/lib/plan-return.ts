@@ -47,6 +47,13 @@ export function pickErrorOf(search: string): PickError | null {
  * the stand-in pay page's way back (REQ-057's /pay/fake): the return address the link carried,
  * with the charge and the due on it the way the CRM's receipt does; settings when there is none
  */
+/** REQ-064 — the merchant account named on /plan/test?merchant=<name>: a slug (lowercase letters,
+ *  digits, dashes, up to 40), lowercased; anything else reads as none (the CRM's default) */
+export function merchantOf(raw: string): string {
+  const v = raw.trim().toLowerCase();
+  return /^[a-z0-9-]{1,40}$/.test(v) ? v : "";
+}
+
 export function fakeReturnHref(returnUrl: string, dueId: string): string {
   if (!returnUrl) return "/settings";
   const url = new URL(returnUrl);

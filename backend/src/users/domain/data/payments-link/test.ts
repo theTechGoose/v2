@@ -167,3 +167,41 @@ Deno.test("REQ-062 payments-link real — a customer goes to the CRM with its ti
     assertEquals(found?.tier, "Monster");
     assertEquals(found?.customerName, "unknown dragon mcdragonson");
   }));
+
+// REQ-064 — the merchant account a pick names rides on the link the CRM mints and on the billing
+Deno.test("REQ-064 payments-link fake — the link and the billing carry the merchant; none named = none sent", () =>
+  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, DENO_DEPLOYMENT_ID: undefined, APP_URL: "http://localhost:13170" }, async () => {
+    const link = new PaymentsLink();
+    const world = fakePaymentsWorld();
+    world.reset();
+    const { customerId } = await link.createCustomer({ customerName: "Merchant Test", customerEmail: "m@roof.test", externalRef: "pm:u-64", tier: "Lead" });
+    const { dueId } = await link.raiseDue({ customerId, amountCents: 100, memo: "Monster Test — one-time test charge" });
+    const named = await link.mintPayLink({ customerId, dueId, merchant: "alpha" });
+    assertStringIncludes(named.payUrl, "merchant=alpha");
+    assertEquals(world.links[0].merchant, "alpha");
+    const plain = await link.mintPayLink({ customerId, dueId });
+    assertEquals(new URL(plain.payUrl).searchParams.has("merchant"), false, "no merchant named = none on the page");
+    const { subscriptionId } = await link.startSubscription({ customerId, amountCents: 9900, memo: "Monster", externalRef: "pm:u-64:monster", firstBillAt: "2026-11-03T00:00:00.000Z", merchant: "alpha" });
+    assertEquals(world.subscriptions.find((s) => s.subscriptionId === subscriptionId)?.merchant, "alpha");
+  }));
+
+Deno.test("REQ-064 payments-link real — the merchant goes to the CRM's mint and subscription, and is left out when none is named", () =>
+  withEnv({ PPWK_PAYMENTS_URL: "http://crm.test", PPWK_PAYMENTS_TOKEN: "t", DENO_DEPLOYMENT_ID: undefined }, async () => {
+    const calls: Array<{ method: string; url: string; body: Record<string, unknown> }> = [];
+    const link = new PaymentsLink();
+    link.fetchOverride = (input, init) => {
+      const url = String(input);
+      calls.push({ method: init?.method ?? "GET", url, body: init?.body ? JSON.parse(String(init.body)) : {} });
+      if (url.endsWith("/api/payments/pay-links")) return Promise.resolve(Response.json({ chargeUrl: "/ui/payments/charge?customer=x&due=d-1&merchant=alpha" }));
+      return Promise.resolve(Response.json({ subscriptionId: "s-1" }));
+    };
+    const minted = await link.mintPayLink({ customerId: "c-1", dueId: "d-1", merchant: "alpha" });
+    assertEquals(calls[0].body.merchant, "alpha");
+    assertEquals(minted.payUrl, "http://crm.test/ui/payments/charge?customer=x&due=d-1&merchant=alpha");
+    await link.mintPayLink({ customerId: "c-1", dueId: "d-1" });
+    assertEquals("merchant" in calls[1].body, false, "nothing named, nothing sent");
+    await link.startSubscription({ customerId: "c-1", amountCents: 9900, memo: "Monster", externalRef: "pm:u:monster", firstBillAt: "2026-11-03T00:00:00.000Z", merchant: "alpha" });
+    assertEquals(calls[2].body.merchant, "alpha");
+    await link.startSubscription({ customerId: "c-1", amountCents: 9900, memo: "Monster", externalRef: "pm:u:monster", firstBillAt: "2026-11-03T00:00:00.000Z" });
+    assertEquals("merchant" in calls[3].body, false);
+  }));

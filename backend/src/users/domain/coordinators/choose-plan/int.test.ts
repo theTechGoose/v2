@@ -1,6 +1,6 @@
 // REQ-054 — choosing a plan end to end on the fakes: the KV plan store and the fake payments
 // link (what the real one does against the CRM: customer → due → pay link → due settled).
-import { assertEquals, assertRejects } from "#std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "#std/assert";
 import { resetKv } from "@core/data/kv/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -209,4 +209,41 @@ Deno.test("REQ-062 choose-plan — the CRM's tier follows the plan: Monster the 
   await flow.choose(user.id, "free");
   assertEquals(mine()?.tier, "Lead", "told the CRM on the downgrade");
   assertEquals(world.customers.length, 1);
+});
+
+// REQ-064 — the hidden $1 one-time test tier, and the merchant account a pick names
+Deno.test("REQ-064 choose-plan — the test tier is a $1 one-time due with the merchant on its link; paid, it is active with no billing and the CRM tier stays Lead", async () => {
+  const { users, flow } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125550164", email: "tester@roof.test", name: "Tess" });
+  const plan = await flow.choose(user.id, "test", "/settings", "alpha");
+  assertEquals([plan.planId, plan.status, plan.merchant], ["test", "pending", "alpha"]);
+  const world = fakePaymentsWorld();
+  assertEquals(world.dues.map((d) => [d.amountCents, d.memo, d.open]), [[100, "Monster Test — one-time test charge", true]]);
+  assertEquals(world.links[0].merchant, "alpha");
+  assertStringIncludes(plan.payUrl ?? "", "merchant=alpha");
+  world.settle(plan.dueId!); // the $1 lands on the page; /plan/return refreshes
+  const active = await flow.refresh(user.id);
+  assertEquals(active.status, "active");
+  assertEquals(active.subscriptionId, undefined, "a one-time charge starts no billing");
+  assertEquals(world.subscriptions.length, 0);
+  assertEquals(world.customers[0].tier, "Lead", "a test charge is not a membership");
+  assertEquals((await flow.current(user.id))?.status, "active");
+  assertEquals(world.subscriptions.length, 0, "and reading it again starts none either");
+});
+
+Deno.test("REQ-064 choose-plan — a monthly plan picked with a merchant starts its billing on that merchant; none named = none sent", async () => {
+  const { users, flow } = await fresh();
+  const world = fakePaymentsWorld();
+  const named = await users.create({ phoneNumber: "+15125550165", email: "m@roof.test", name: "Mo" });
+  const pending = await flow.choose(named.id, "monster", "/settings", "alpha");
+  assertEquals(pending.merchant, "alpha");
+  world.settle(pending.dueId!);
+  assertEquals((await flow.refresh(named.id)).status, "active");
+  assertEquals(world.subscriptions.map((s) => [s.externalRef, s.merchant]), [[`pm:${named.id}:monster`, "alpha"]]);
+  const plain = await users.create({ phoneNumber: "+15125550166", email: "p@roof.test", name: "Pat" });
+  const p2 = await flow.choose(plain.id, "monster");
+  assertEquals("merchant" in p2, false);
+  world.settle(p2.dueId!);
+  assertEquals((await flow.refresh(plain.id)).status, "active");
+  assertEquals("merchant" in world.subscriptions[1], false, "nothing named, nothing sent");
 });

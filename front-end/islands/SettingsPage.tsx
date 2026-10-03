@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
-import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import { PRICING_PLANS, PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
 import { pickErrorOf } from "../lib/plan-return.ts";
 import { filesClient } from "../clients/files.ts";
@@ -1454,7 +1454,9 @@ function ContractDefaultsEditCard(
 function PlanCard({ snapshot }: { snapshot: ProfileSnapshot }) {
   const lang: Lang = snapshot.user.language === "es" ? "es" : "en";
   const plan = snapshot.plan ?? null;
-  const nameOf = (id: string) => PUBLIC_PLANS.find((p) => p.id === id)?.name ?? id;
+  // REQ-064 — the hidden test tier has a name too, though it is never a card
+  const nameOf = (id: string) => PRICING_PLANS.find((p) => p.id === id)?.name ?? id;
+  const oneTime = (id: string) => PRICING_PLANS.find((p) => p.id === id)?.period === "one-time";
   // REQ-056 — every selectable plan but the current one is a card: Monster Free among them on a
   // paid plan, so going back to free is the same one click as going up
   const selectable = PUBLIC_PLANS.filter((p) => !p.custom && p.period === "monthly");
@@ -1473,6 +1475,8 @@ function PlanCard({ snapshot }: { snapshot: ProfileSnapshot }) {
   const since = (plan?.activatedAt ?? plan?.updatedAt ?? "").slice(0, 10);
   const status = !plan || plan.status === "free"
     ? tFor(lang, "plan.statusFree")
+    : plan.status === "active" && oneTime(plan.planId)
+    ? tFor(lang, "plan.paidOnce", { name: currentName, date: since }) // REQ-064 — no monthly billing behind it
     : plan.status === "active"
     ? (plan.nextBillAt
       ? tFor(lang, "plan.activeNext", { name: currentName, date: since, next: plan.nextBillAt.slice(0, 10) })

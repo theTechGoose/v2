@@ -3,7 +3,7 @@
  * same tab for a paid pick, back to the page for free; the stand-in page's way back is the
  * address the link carried, with charge and due on it like the CRM's receipt.
  */
-import { backOf, fakeReturnHref, pageAfterPick, payPageOf, pickErrorOf, pickErrorQuery, resumesAfterPlan } from "../../front-end/lib/plan-return";
+import { backOf, fakeReturnHref, merchantOf, pageAfterPick, payPageOf, pickErrorOf, pickErrorQuery, resumesAfterPlan } from "../../front-end/lib/plan-return";
 
 describe("REQ-059 plan-return", () => {
   test("REQ-059 a pending paid pick goes to its pay page; free and active go nowhere", () => {
@@ -48,5 +48,15 @@ describe("REQ-061 plan-return — a past-due month", () => {
   test("REQ-061 a past-due month goes to its pay page the way a pending pick does", () => {
     expect(payPageOf({ status: "past_due", payUrl: "http://crm/ui/payments/charge?customer=c&due=d-dec" })).toBe("http://crm/ui/payments/charge?customer=c&due=d-dec");
     expect(payPageOf({ status: "past_due" })).toBeNull();
+  });
+});
+
+// REQ-064 — the merchant account named on /plan/test?merchant=<name> rides on the card's form
+describe("REQ-064 merchant", () => {
+  test("REQ-064 a merchant name is a slug or nothing", () => {
+    expect(merchantOf("")).toBe("");
+    expect(merchantOf("  Alpha-1 ")).toBe("alpha-1");
+    expect(merchantOf("bad key")).toBe("");
+    expect(merchantOf("x".repeat(41))).toBe("");
   });
 });

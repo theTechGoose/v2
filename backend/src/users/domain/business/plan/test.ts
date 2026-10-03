@@ -7,10 +7,12 @@ import {
   chosen,
   customerNameFor,
   LEAD_TIER,
+  merchantOf,
   tierFor,
   UNNAMED_CUSTOMER,
   externalRefFor,
   firstMonthMemo,
+  isOneTime,
   isSelectable,
   monthLabel,
   monthlyMemo,
@@ -172,4 +174,37 @@ Deno.test("REQ-062 plan — the CRM tier is Lead until a paid plan is current, t
   assertEquals(tierFor({ ...base, planId: "monster", status: "active" }), "Monster");
   assertEquals(tierFor({ ...base, planId: "assist", status: "active" }), "Monster Assist");
   assertEquals(tierFor({ ...base, planId: "monster", status: "past_due" }), "Monster", "still a customer while the month is retried");
+});
+
+// REQ-064 — the hidden $1 one-time test tier, and the merchant a pick names
+Deno.test("REQ-064 plan — the test tier is selectable, one-time, $1 and never public", () => {
+  assertEquals(SELECTABLE_PLAN_IDS.includes("test"), true);
+  const plan = planOf("test");
+  assertEquals([plan.name, plan.priceCents, plan.period, plan.public], ["Monster Test", 100, "one-time", false]);
+  assertEquals(isOneTime(plan), true);
+  assertEquals(isOneTime(planOf("monster")), false);
+  assertEquals(firstMonthMemo(plan), "Monster Test — one-time test charge", "a one-time charge is not a first month");
+  assertEquals(firstMonthMemo(planOf("monster")), "Monster — first month");
+});
+
+Deno.test("REQ-064 plan — a paid test tier keeps the CRM tier Lead: a test charge is not a membership", () => {
+  const base = { userId: "u-1", chosenAt: NOW, updatedAt: NOW };
+  assertEquals(tierFor({ ...base, planId: "test", status: "active" }), LEAD_TIER);
+  assertEquals(tierFor({ ...base, planId: "test", status: "pending" }), LEAD_TIER);
+});
+
+Deno.test("REQ-064 plan — a pick carries the merchant it was made with, and only then", () => {
+  const link = { customerId: "c-1", dueId: "d-1", payUrl: "http://crm/ui/payments/charge?customer=x&due=d-1&merchant=alpha" };
+  assertEquals(chosen("u-1", "test", NOW, { ...link, merchant: "alpha" }).merchant, "alpha");
+  assertEquals("merchant" in chosen("u-1", "monster", NOW, link), false, "no merchant named = none stored");
+});
+
+Deno.test("REQ-064 plan — a merchant name is a slug or nothing; anything else is refused by name", () => {
+  assertEquals(merchantOf(undefined), "");
+  assertEquals(merchantOf(""), "");
+  assertEquals(merchantOf("  Alpha-1 "), "alpha-1", "trimmed and lowercased");
+  for (const bad of ["bad key", "a/b", "x".repeat(41), 42]) {
+    const e = assertThrows(() => merchantOf(bad), Error, "merchant-invalid");
+    assertEquals((e as Error & { status?: number }).status, 400);
+  }
 });

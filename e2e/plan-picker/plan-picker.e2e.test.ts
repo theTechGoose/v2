@@ -360,3 +360,32 @@ Deno.test("REQ-062: a person who never finishes is 'unknown dragon mcdragonson' 
     expect.eq(crm?.tier, "Monster", "a paying customer carries the plan as its tier");
     expect.eq(crm?.customerName, "Dragon Story", "the same record");
   }));
+
+Deno.test("REQ-064: the test tier is nowhere on the site; /plan/test?merchant=alpha shows its one $1 card, the pay page carries the merchant, and settings reads it paid once with no billing", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.goto("/?lang=en");
+    await expect.see("Monster Free");
+    expect.eq(await page.getByText("Monster Test").count(), 0, "not priced on the front page");
+    const { auth } = await signIn(http, page, baseUrl, { name: "Test Tier Story", email: `tier-${digits()}@blackhole.postmarkapp.com` });
+    await page.goto("/settings");
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    expect.eq(await page.locator("[data-cy='plan-pick-test']").count(), 0, "no test card in settings");
+    expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 1, "the real plans are");
+    // the one page that offers it, with the merchant account as its query param
+    await page.goto("/plan/test?merchant=alpha");
+    await expect.see("Monster Test");
+    await expect.see("$1");
+    const payPage = await pickGoesToPayPage(page, "plan-pick-test");
+    expect.eq(payPage.searchParams.get("merchant"), "alpha", "the merchant rides on the pay page's url");
+    await payAndGoBack(page, expect);
+    await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await expect.see("Monster Test");
+    await expect.see("paid once");
+    expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 1, "the real plans stay cards");
+    expect.eq(await page.locator("[data-cy='plan-pick-test']").count(), 0, "still no test card");
+    const plan = await (await http("/api/me/plan", { headers: auth })).json();
+    expect(plan.planId === "test" && plan.status === "active" && plan.merchant === "alpha" && !plan.subscriptionId, `test · active · alpha, no billing (${JSON.stringify(plan)})`);
+    const customer = await crmCustomer(http, auth);
+    expect(customer.tier === "Lead", `the CRM tier stays Lead (${customer.tier})`);
+  }));

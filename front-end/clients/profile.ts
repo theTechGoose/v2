@@ -107,7 +107,7 @@ export interface ProfileUser {
 }
 
 /** REQ-054 — the plan picked in onboarding or settings. Mirrors backend users/dto/plan.ts. */
-export type PlanId = "free" | "monster" | "assist";
+export type PlanId = "free" | "monster" | "assist" | "test";
 export interface UserPlan {
   userId: string;
   planId: PlanId;
@@ -125,6 +125,8 @@ export interface UserPlan {
   nextBillAt?: string;
   cardBrand?: string;
   cardLast4?: string;
+  /** REQ-064 — the merchant account the pick named; absent = the CRM's default */
+  merchant?: string;
   updatedAt: string;
 }
 

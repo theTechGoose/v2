@@ -185,3 +185,37 @@ async function sessionCookie(page: StoryTools["page"]): Promise<string> {
   const c = cookies.find((k: { name: string }) => k.name === "pm_session");
   return c ? `pm_session=${c.value}` : "";
 }
+
+/** REQ-063 — hans@documonster.com is always a super-admin, by address: signed in by email, the
+ *  admin routes answer; anyone else on the same flow is refused. */
+const HANS = "hans@documonster.com";
+
+Deno.test("REQ-063: hans@documonster.com signs in by email and is a super-admin — the admin routes answer; a stranger is refused", (t) =>
+  story(t, async ({ page, expect, http }) => {
+    await page.goto("/login-internal");
+    await page.fill("[data-cy=internal-email]", HANS);
+    await page.click("[data-cy=internal-submit]");
+    await page.waitForURL(/\/verify-internal\?/);
+    const slots = page.locator("input[inputmode=numeric]");
+    await slots.first().waitFor({ state: "visible" });
+    for (let i = 0; i < 6; i++) await slots.nth(i).fill("0");
+    await page.waitForURL(/\/(welcome|home|settings|dashboard)/, { timeout: 20_000 });
+    const cookie = await sessionCookie(page);
+    const who = await (await http("/api/me", { headers: { cookie } })).json();
+    expect.eq(who.email, HANS, "signed in on the address");
+    expect(who.superAdmin === true, `whoami says super-admin (${JSON.stringify(who)})`);
+    const admin = await http("/api/admin/users?q=", { headers: { cookie } });
+    expect.eq(admin.status, 200, "the admin search answers hans");
+    await admin.body?.cancel();
+    // the frame the reviewer sees: settings, signed in as hans
+    await page.goto("/settings?lang=en");
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await expect.see("Current plan");
+    // a stranger on the same flow has no admin
+    const s = await http("/api/auth/verify-email-otp", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ email: `stranger-${Date.now()}@blackhole.postmarkapp.com`, code: "000000" }) });
+    const strangerCookie = (s.headers.get("set-cookie") ?? "").split(";")[0];
+    await s.body?.cancel();
+    const refused = await http("/api/admin/users?q=", { headers: { cookie: strangerCookie } });
+    expect.eq(refused.status, 403, "a stranger is refused");
+    await refused.body?.cancel();
+  }));

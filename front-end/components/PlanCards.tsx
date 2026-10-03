@@ -13,7 +13,7 @@ export function dollars(cents: number): string {
   return `$${Math.round(cents / 100)}`;
 }
 
-export function PlanCards({ plans, lang, featuredId, disabled, back }: {
+export function PlanCards({ plans, lang, featuredId, disabled, back, merchant }: {
   plans: readonly PricingPlan[];
   lang: Lang;
   /** the card drawn as the recommended one */
@@ -21,6 +21,8 @@ export function PlanCards({ plans, lang, featuredId, disabled, back }: {
   disabled: (plan: PricingPlan) => boolean;
   /** the page showing the cards — where a free pick (or a refused one) comes back to */
   back: PickBack;
+  /** REQ-064 — the merchant account the pick names (the test page's query param); "" = none */
+  merchant?: string;
 }) {
   return (
     <div class="plan-cards">
@@ -28,6 +30,7 @@ export function PlanCards({ plans, lang, featuredId, disabled, back }: {
         <form key={p.id} method="post" action="/plan/pick" class="plan-card-form">
           <input type="hidden" name="planId" value={p.id} />
           <input type="hidden" name="back" value={back} />
+          {merchant ? <input type="hidden" name="merchant" value={merchant} /> : null}
           <button
             type="submit"
             class={`plan-card${p.id === featuredId ? " plan-card--featured" : ""}`}
@@ -37,7 +40,7 @@ export function PlanCards({ plans, lang, featuredId, disabled, back }: {
             <span class="plan-card__name">{p.name}</span>
             <span class="plan-card__price">
               {p.priceCents === 0 ? tFor(lang, "welcome.plan.free") : dollars(p.priceCents)}
-              {p.priceCents > 0 ? <small>{tFor(lang, "welcome.plan.perMonth")}</small> : null}
+              {p.priceCents > 0 ? <small>{tFor(lang, p.period === "one-time" ? "welcome.plan.oneTime" : "welcome.plan.perMonth")}</small> : null}
             </span>
             <ul class="plan-card__features">
               {p.features.slice(0, 3).map((f) => <li key={f.id}>{lang === "es" ? f.es : f.en}</li>)}

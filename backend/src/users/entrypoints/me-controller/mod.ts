@@ -40,8 +40,8 @@ export class MeController {
   @Post("plan")
   async pickPlan(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const { planId, back } = parseChoosePlan(body);
-    return await this.choosePlan.choose(user.id, planId, back);
+    const { planId, back, merchant } = parseChoosePlan(body);
+    return await this.choosePlan.choose(user.id, planId, back, merchant);
   }
 
   /** REQ-058 — the CRM customer this account is: made at sign-up, filled in by onboarding */

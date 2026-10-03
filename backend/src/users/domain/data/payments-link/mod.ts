@@ -36,6 +36,8 @@ export interface NewPayLink {
   /** REQ-059 — where the receipt goes back to, and what it calls that place */
   returnUrl?: string;
   returnLabel?: string;
+  /** REQ-064 — the merchant account the charge goes through (ppwk-crm REQ-084); absent = the CRM's default */
+  merchant?: string;
 }
 /** REQ-061 — a monthly billing on the CRM (its REQ-081): the amount, what it is for, this app's
  *  handle, when the first recurring month falls due, and where a recovery link brings the person back */
@@ -47,6 +49,8 @@ export interface NewSubscription {
   firstBillAt: string;
   returnUrl?: string;
   returnLabel?: string;
+  /** REQ-064 — the merchant account the months go through; absent = the CRM's default */
+  merchant?: string;
 }
 export type SubscriptionStatus = "active" | "past_due" | "canceled";
 export interface SubscriptionInfo {
@@ -153,6 +157,7 @@ class CrmPaymentsLink implements PaymentsLinkPort {
       brandId: "",
       returnUrl: input.returnUrl ?? "",
       returnLabel: input.returnLabel ?? "",
+      ...(input.merchant ? { merchant: input.merchant } : {}), // REQ-064 — named only when named
     });
     return { subscriptionId: s.subscriptionId };
   }
@@ -310,6 +315,7 @@ class FakePaymentsLink implements PaymentsLinkPort {
       q.set("return", input.returnUrl);
       q.set("label", input.returnLabel ?? "");
     }
+    if (input.merchant) q.set("merchant", input.merchant); // REQ-064 — on the page's url, as the CRM's link carries it
     const payUrl = `${fakePayPageOrigin()}/pay/fake?${q}`;
     this.world.links.push({ ...input, payUrl });
     return Promise.resolve({ payUrl });

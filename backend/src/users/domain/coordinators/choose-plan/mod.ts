@@ -9,7 +9,8 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { appOrigin, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
-import { addMonth, chosen, firstMonthMemo, monthlyMemo, type PickBack, planOf, RETURN_LABEL, returnUrlFor, settle, subscriptionRefFor, type SubscriptionView, withSubscription } from "@users/domain/business/plan/mod.ts";
+import { addMonth, chosen, firstMonthMemo, isOneTime, monthlyMemo, type PickBack, planOf, RETURN_LABEL, returnUrlFor, settle, subscriptionRefFor, type SubscriptionView, withSubscription } from "@users/domain/business/plan/mod.ts";
+import type { PlanId } from "@users/dto/plan.ts";
 import type { UserPlan } from "@users/dto/plan.ts";
 
 class EmailRequiredError extends Error {
@@ -40,7 +41,9 @@ export class ChoosePlan {
    * @throws email-required — a paid pick with no email on the account
    * @throws payments-unavailable — the CRM did not answer
    */
-  async choose(userId: string, planId: string, back: PickBack = "/settings"): Promise<UserPlan> {
+  /** REQ-064 — `merchant`: the merchant account the pick named ("" = the CRM's default); it rides
+   *  on the pay link and is remembered on the plan for the billing it starts */
+  async choose(userId: string, planId: string, back: PickBack = "/settings", merchant = ""): Promise<UserPlan> {
     const plan = planOf(planId);
     const now = new Date().toISOString();
     const before = await this.plans.get(userId);
@@ -58,9 +61,10 @@ export class ChoosePlan {
 
     const { customerId } = await this.crm.ensure(userId);
     const { dueId } = await this.link.raiseDue({ customerId, amountCents: plan.priceCents, memo: firstMonthMemo(plan) });
-    const { payUrl } = await this.link.mintPayLink({ customerId, dueId, returnUrl: returnUrlFor(appOrigin(), dueId, back), returnLabel: RETURN_LABEL });
+    const named = merchant ? { merchant } : {};
+    const { payUrl } = await this.link.mintPayLink({ customerId, dueId, returnUrl: returnUrlFor(appOrigin(), dueId, back), returnLabel: RETURN_LABEL, ...named });
     // a switch of paid plan: the billing in force is canceled once the new one is live
-    return this.plans.put(chosen(userId, plan.id as "monster" | "assist", now, { customerId, dueId, payUrl }, billing));
+    return this.plans.put(chosen(userId, plan.id as PlanId, now, { customerId, dueId, payUrl, ...named }, billing));
   }
 
   /** a pending plan asks the CRM whether its due settled (what /plan/return does on arrival,
@@ -85,6 +89,7 @@ export class ChoosePlan {
    */
   private async projected(plan: UserPlan): Promise<UserPlan> {
     if (plan.planId === "free" || (plan.status !== "active" && plan.status !== "past_due")) return plan;
+    if (isOneTime(planOf(plan.planId))) return plan; // REQ-064 — a one-time charge starts no billing
     try {
       const sub = plan.subscriptionId ? await this.link.subscription(plan.subscriptionId) : await this.ensureSubscription(plan);
       const next = withSubscription(plan, sub, new Date().toISOString());
@@ -112,6 +117,7 @@ export class ChoosePlan {
       firstBillAt: addMonth(plan.activatedAt ?? plan.updatedAt),
       returnUrl: returnUrlFor(appOrigin(), "", "/settings"),
       returnLabel: RETURN_LABEL,
+      ...(plan.merchant ? { merchant: plan.merchant } : {}), // REQ-064 — the same merchant the pick named
     });
     if (plan.previousSubscriptionId && plan.previousSubscriptionId !== subscriptionId) {
       try {
