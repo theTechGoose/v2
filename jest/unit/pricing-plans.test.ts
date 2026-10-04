@@ -86,8 +86,10 @@ describe("PRICING_PLANS", () => {
     expect(plus.priceCents).toBe(39900);
     expect(plus.priceMaxCents).toBe(59900);
     expect(plus.public).toBe(false);
+    // REQ-064 — the $1 test tier is hidden too
     expect(PRICING_PLANS.filter((p) => !p.public).map((p) => p.id)).toEqual([
       "assist-plus",
+      "test",
     ]);
   });
 
@@ -106,7 +108,16 @@ describe("PRICING_PLANS", () => {
     ).toBe(false);
   });
 
-  it("every plan bills monthly", () => {
-    expect(PRICING_PLANS.every((p) => p.period === "monthly")).toBe(true);
+  // REQ-064 AMENDMENT — every PUBLIC plan bills monthly; the hidden test tier is one-time
+  it("every public plan bills monthly", () => {
+    expect(PUBLIC_PLANS.every((p) => p.period === "monthly")).toBe(true);
+  });
+  it("REQ-064 the test tier is $1, one-time and hidden — on no page, in no public list", () => {
+    const test = planById("test");
+    expect(test.name).toBe("Monster Test");
+    expect(test.priceCents).toBe(100);
+    expect(test.period).toBe("one-time");
+    expect(test.public).toBe(false);
+    expect(PUBLIC_PLANS.some((p) => p.id === "test")).toBe(false);
   });
 });

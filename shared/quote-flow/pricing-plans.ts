@@ -208,6 +208,24 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
       },
     ],
   },
+  // ---- REQ-064: the test tier. A $1 one-time charge through the real pay page, for testing
+  // the card flow (and a merchant account) end to end. Never on a page: not priced on the
+  // landing pages, not a card in onboarding or settings — picked only from /plan/test. ----
+  {
+    id: "test",
+    name: "Monster Test",
+    priceCents: 100,
+    period: "one-time",
+    public: false,
+    blurb: "A $1 one-time test charge. Not a membership.",
+    features: [
+      {
+        id: "one-dollar-test",
+        en: "A $1 one-time test charge",
+        es: "Un cobro de prueba único de $1",
+      },
+    ],
+  },
 ];
 
 /** The plans the pricing sections list, in display order. */

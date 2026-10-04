@@ -44,7 +44,8 @@ export default define.page(function SettingsRoute(ctx) {
     <>
       <Head>
         <title>{tFor(lang, "settingsRoute.docTitle")}</title>
-        <link rel="stylesheet" href="/dashboard.css" />
+        <link key="css-dashboard" rel="stylesheet" href="/dashboard.css" />
+        <link key="css-plan-cards" rel="stylesheet" href="/plan-cards.css" />
       </Head>
       <div class="app">
         <DashSidebar active="settings" />
