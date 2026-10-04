@@ -7,6 +7,7 @@ import { BusinessAddressStore } from "@profile/domain/data/business-address-stor
 import { BusinessInsuranceStore } from "@profile/domain/data/business-insurance-store/mod.ts";
 import { TaxIdentityStore } from "@profile/domain/data/tax-identity-store/mod.ts";
 import { ReferenceStore } from "@profile/domain/data/reference-store/mod.ts";
+import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { computeInitials } from "@profile/domain/business/initials/mod.ts";
 import {
   type PublicBusinessIdentity,
@@ -19,6 +20,7 @@ import type { BusinessAddress } from "@profile/dto/business-address.ts";
 import type { BusinessInsurance } from "@profile/dto/business-insurance.ts";
 import type { TaxIdentity } from "@profile/dto/tax-identity.ts";
 import type { Reference } from "@profile/dto/reference.ts";
+import type { UserPlan } from "@users/dto/plan.ts";
 
 /** Owner-side projection of TaxIdentity — never returns the salt or hash. */
 export interface OwnerTaxIdentity {
@@ -38,6 +40,8 @@ export interface ProfileSnapshot {
   tax:              OwnerTaxIdentity   | null;
   contractDefaults: ContractDefaults   | null;
   references:       Reference[];
+  /** REQ-054 — the plan picked in onboarding or settings; null until a pick (read as free) */
+  plan:             UserPlan | null;
   /** Convenience derived field — sidebar avatar initials. */
   initials: string;
   /**
@@ -73,10 +77,11 @@ export class LoadProfile {
     private tax:       TaxIdentityStore,
     private defaults:  ContractDefaultsStore,
     private refs:      ReferenceStore,
+    private plans:     PlanStore,
   ) {}
 
   async load(userId: string): Promise<ProfileSnapshot> {
-    const [user, identity, address, insurance, tax, contractDefaults, references] = await Promise.all([
+    const [user, identity, address, insurance, tax, contractDefaults, references, plan] = await Promise.all([
       this.users.get(userId),
       this.identity.get(userId),
       this.address.get(userId),
@@ -84,6 +89,7 @@ export class LoadProfile {
       this.tax.get(userId),
       this.defaults.get(userId),
       this.refs.listByUser(userId),
+      this.plans.get(userId),
     ]);
     const suggestedState = address?.state
       ? undefined
@@ -96,6 +102,7 @@ export class LoadProfile {
       tax: redactTaxForOwner(tax),
       contractDefaults,
       references,
+      plan,
       initials: computeInitials(user.name, identity?.businessName),
       ...(suggestedState ? { suggestedState } : {}),
     };
