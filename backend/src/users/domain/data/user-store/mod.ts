@@ -11,6 +11,10 @@ import type { Language, User } from "@users/dto/user.ts";
  * profile/whoami projection, and admin search all agree.
  */
 const HARDCODED_SUPER_ADMIN_PHONES = ["8438557133"];
+/** REQ-063 — always a super-admin, by address (Raphael, 2026-10-03: "hans@documonster.com
+ *  should always be an admin"): the same read-time overlay as the phone, so no revoke, grant or
+ *  profile write can take it, and a fresh KV needs no bootstrap for it */
+const HARDCODED_SUPER_ADMIN_EMAILS = ["hans@documonster.com"];
 function isHardcodedSuperAdmin(phone: string | undefined): boolean {
   const last10 = (phone ?? "").replace(/\D/g, "").slice(-10);
   return last10.length === 10 &&
@@ -18,10 +22,15 @@ function isHardcodedSuperAdmin(phone: string | undefined): boolean {
       (p) => p.replace(/\D/g, "").slice(-10) === last10,
     );
 }
+/** the overlay's rule, pure: the hardcoded phone, or (REQ-063) the hardcoded address — trimmed,
+ *  case-insensitive, so however the person typed it at sign-up */
+export function isAlwaysSuperAdmin(user: { phoneNumber?: string; email?: string }): boolean {
+  if (isHardcodedSuperAdmin(user.phoneNumber)) return true;
+  const email = (user.email ?? "").trim().toLowerCase();
+  return email !== "" && HARDCODED_SUPER_ADMIN_EMAILS.includes(email);
+}
 function withHardcodedSuperAdmin(user: User): User {
-  return isHardcodedSuperAdmin(user.phoneNumber)
-    ? { ...user, superAdmin: true }
-    : user;
+  return isAlwaysSuperAdmin(user) ? { ...user, superAdmin: true } : user;
 }
 
 /**

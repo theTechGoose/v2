@@ -9,6 +9,9 @@ import { TaxIdentityStore } from "@profile/domain/data/tax-identity-store/mod.ts
 import { ReferenceStore } from "@profile/domain/data/reference-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
+import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
+import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
+import { PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 
 function freshFlow() {
   const users     = new UserStore();
@@ -20,7 +23,11 @@ function freshFlow() {
   const refs      = new ReferenceStore();
   return {
     users, identity, address, insurance, tax, defaults, refs,
-    flow: new LoadProfile(users, identity, address, insurance, tax, defaults, refs, new PlanStore()),
+    flow: new LoadProfile(
+      users, identity, address, insurance, tax, defaults, refs,
+      // REQ-061 — the plan is read through ChoosePlan, as the CRM's billing says it stands
+      new ChoosePlan(users, new PlanStore(), new PaymentsLink(), new CrmCustomerSync(users, identity, new PaymentsLink(), new PlanStore())),
+    ),
   };
 }
 

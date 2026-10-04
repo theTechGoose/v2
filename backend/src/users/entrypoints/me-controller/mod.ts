@@ -7,6 +7,7 @@ import { WipeAccount } from "@users/domain/coordinators/wipe-account/mod.ts";
 import { parseUpdateUser } from "@users/dto/user.ts";
 import { requireUser, readSessionId, UnauthorizedError } from "@users/domain/coordinators/require-user/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
+import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { fakePaymentsWorld, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { parseChoosePlan } from "@users/dto/plan.ts";
 
@@ -25,6 +26,7 @@ export class MeController {
     private wipeCoord: WipeAccount,
     private choosePlan: ChoosePlan,
     private paymentsLink: PaymentsLink,
+    private crm: CrmCustomerSync,
   ) {}
 
   /** REQ-054 — the plan this account picked; null until a pick (read as free) */
@@ -38,11 +40,18 @@ export class MeController {
   @Post("plan")
   async pickPlan(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const { planId } = parseChoosePlan(body);
-    return await this.choosePlan.choose(user.id, planId);
+    const { planId, back, merchant } = parseChoosePlan(body);
+    return await this.choosePlan.choose(user.id, planId, back, merchant);
   }
 
-  /** REQ-054 — "Check payment": a pending plan asks the CRM whether its due settled */
+  /** REQ-058 — the CRM customer this account is: made at sign-up, filled in by onboarding */
+  @Get("crm-customer")
+  async crmCustomer(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return ctx.json(await this.crm.read(user.id)); // null before the first sync, as a body
+  }
+
+  /** REQ-054/059 — a pending plan asks the CRM whether its due settled (what /plan/return presses) */
   @Post("plan/refresh")
   async refreshPlan(@Context() ctx: ExecutionContext) {
     const user = await requireUser(ctx, this.sessions, this.users);
@@ -60,8 +69,31 @@ export class MeController {
     if (!this.paymentsLink.isFake()) throw Object.assign(new Error("not-found: the fake is not in use"), { status: 404 });
     const plan = await this.choosePlan.current(user.id);
     if (!plan?.dueId) throw Object.assign(new Error("plan-missing: nothing to pay"), { status: 404 });
-    fakePaymentsWorld().settle(plan.dueId);
+    // REQ-061 — the page names the due it was opened for (a past-due month's); the plan's first month otherwise.
+    // The body is optional (the older callers send none), so it is read by hand.
+    const named = (await optionalBody(ctx) as { dueId?: unknown } | null)?.dueId;
+    const world = fakePaymentsWorld();
+    const dueId = typeof named === "string" && world.dues.some((d) => d.dueId === named && d.customerId === plan.customerId) ? named : plan.dueId;
+    world.settle(dueId);
     return await this.choosePlan.refresh(user.id);
+  }
+
+  /**
+   * REQ-061 — the FAKE's clock: bills the account's subscription as of `now` the way the CRM's
+   * hourly clock does (its REQ-081); `cardGone` first drops the card on file, so the month
+   * cannot be collected. Fake only, like fake-paid; 404 against the real CRM.
+   */
+  @Post("plan/fake-bill")
+  async fakeBill(@Context() ctx: ExecutionContext) {
+    const body = await optionalBody(ctx);
+    const user = await requireUser(ctx, this.sessions, this.users);
+    if (!this.paymentsLink.isFake()) throw Object.assign(new Error("not-found: the fake is not in use"), { status: 404 });
+    const plan = await this.choosePlan.current(user.id);
+    if (!plan?.customerId) throw Object.assign(new Error("plan-missing: nothing billed"), { status: 404 });
+    const b = (body ?? {}) as { now?: unknown; cardGone?: unknown };
+    if (b.cardGone === true) fakePaymentsWorld().dropCard(plan.customerId);
+    fakePaymentsWorld().bill(typeof b.now === "string" && b.now ? new Date(b.now).toISOString() : new Date().toISOString());
+    return await this.choosePlan.current(user.id);
   }
 
   @Get()
@@ -73,7 +105,9 @@ export class MeController {
   async update(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const patch = parseUpdateUser(body);
-    return await this.users.update(user.id, patch);
+    const updated = await this.users.update(user.id, patch);
+    await this.crm.sync(user.id); // REQ-058 — the name and email reach the CRM customer
+    return updated;
   }
 
   /**
@@ -87,7 +121,9 @@ export class MeController {
   async onboarded(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const skipped = Boolean((body as { skipped?: unknown } | null)?.skipped);
-    return await this.users.markOnboarded(user.id, skipped);
+    const marked = await this.users.markOnboarded(user.id, skipped);
+    await this.crm.sync(user.id); // REQ-058 — onboarding done: the CRM customer reads what it entered
+    return marked;
   }
 
   @Delete()
@@ -172,3 +208,15 @@ function normalizeE164(raw: string): string {
   if (d.length === 11 && d.startsWith("1")) return `+${d}`;
   return "";
 }
+
+/** a JSON body when one was sent, {} when the request carried none (a bare POST is a 500 through @Body) */
+async function optionalBody(ctx: ExecutionContext): Promise<unknown> {
+  const raw = await ctx.req.text().catch(() => "");
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+

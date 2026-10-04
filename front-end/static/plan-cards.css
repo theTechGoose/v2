@@ -1,0 +1,59 @@
+/* REQ-054/055 — the plan cards. /welcome's plan step and the Plan card on /settings render the
+   same ones (front-end/components/PlanCards.tsx); each page links this sheet after its own, so
+   the variables are the page's and the fallbacks are the brand's. */
+.plan-cards {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+/* each card is its own form (REQ-059); the grid lays out the cards, not the forms */
+.plan-card-form {
+  display: contents;
+}
+.plan-card {
+  font-family: var(--font-body, inherit);
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  color: var(--fg, #1a535c);
+  background: var(--bg-alt, #fff);
+  border: 1.5px solid var(--border-strong, rgba(100, 69, 54, 0.32));
+  border-radius: 12px;
+}
+.plan-card:hover:not(:disabled),
+.plan-card:focus-visible {
+  border-color: var(--brand-green, #519843);
+}
+.plan-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.plan-card--featured {
+  border-color: var(--brand-green, #519843);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand-green, #519843) 25%, transparent);
+}
+.plan-card__name {
+  font-weight: 700;
+  font-size: 15px;
+}
+.plan-card__price {
+  font-weight: 800;
+  font-size: 22px;
+  line-height: 1.1;
+}
+.plan-card__price small {
+  font-weight: 500;
+  font-size: 12px;
+  opacity: 0.7;
+  margin-left: 2px;
+}
+.plan-card__features {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 13px;
+  line-height: 1.4;
+  opacity: 0.85;
+}

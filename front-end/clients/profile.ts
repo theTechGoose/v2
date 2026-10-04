@@ -107,18 +107,26 @@ export interface ProfileUser {
 }
 
 /** REQ-054 — the plan picked in onboarding or settings. Mirrors backend users/dto/plan.ts. */
-export type PlanId = "free" | "monster" | "assist";
+export type PlanId = "free" | "monster" | "assist" | "test";
 export interface UserPlan {
   userId: string;
   planId: PlanId;
-  /** free — stored free; pending — a paid pick waiting on its pay page; active — the due settled */
-  status: "free" | "pending" | "active";
+  /** free — stored free; pending — a paid pick waiting on its pay page; active — the due settled;
+   *  past_due — REQ-061: the latest month could not be collected, its pay page is payUrl */
+  status: "free" | "pending" | "active" | "past_due";
   chosenAt: string;
   activatedAt?: string;
   customerId?: string;
   dueId?: string;
-  /** the CRM's pay page for the first month — the link builder's link */
+  /** the CRM's pay page: the first month's while pending, the past-due month's while past due */
   payUrl?: string;
+  /** REQ-061 — the CRM's monthly billing behind an active plan */
+  subscriptionId?: string;
+  nextBillAt?: string;
+  cardBrand?: string;
+  cardLast4?: string;
+  /** REQ-064 — the merchant account the pick named; absent = the CRM's default */
+  merchant?: string;
   updatedAt: string;
 }
 
@@ -169,9 +177,22 @@ export const profileClient = {
     api.get<{ ok: true; deleted: number }>("/me/wipe", opts),
 };
 
-/** REQ-054 — the plan: pick one, and ask whether a pending one's payment landed. */
+/** REQ-058 — the CRM customer this account is (null before the first sync). Mirrors the backend's CrmCustomer. */
+export interface CrmCustomer {
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  externalRef?: string;
+}
+
+/** REQ-054 — the plan: pick one; REQ-059 — /plan/return refreshes a pending one on the way back. */
 export const planClient = {
   get: (opts: ApiOptions = {}) => api.get<UserPlan | null>("/me/plan", opts),
   choose: (planId: PlanId, opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan", { planId }, opts),
   refresh: (opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan/refresh", undefined, opts),
+  /** REQ-058 — what the CRM holds for this account */
+  crmCustomer: (opts: ApiOptions = {}) => api.get<CrmCustomer | null>("/me/crm-customer", opts),
+  /** REQ-057 — what the app's stand-in pay page presses: settles the due on the fake (404 on the real client) */
+  fakePaid: (dueId: string, opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan/fake-paid", { dueId }, opts),
 };
