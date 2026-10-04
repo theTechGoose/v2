@@ -245,6 +245,8 @@ Deno.test("REQ-056: a paid plan goes back to free from the settings cards", (t) 
     // one click: free, nothing to pay, no page to go to
     await page.locator("[data-cy='plan-pick-free']").click();
     await expect.see("Free — upgrade any time.");
+    // the frame the reviewer sees: the settled screen, free current and Monster a card again
+    await page.locator("body").press("End");
     expect.eq(await page.locator("[data-cy='plan-pick-free']").count(), 0, "the free card is gone once free is current");
     expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 1, "Monster is a card again");
     const plan = await (await http("/api/me/plan", { headers: auth })).json();
