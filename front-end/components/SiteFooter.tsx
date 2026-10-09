@@ -17,9 +17,12 @@ import {
  * documents, the assistant page, the error page, the legal pages) without
  * touching their stylesheets.
  *
- * Height: 30px lines (3px + a 24px tap box + 3px) with the items 12px apart
- * (the hit-target audit's 8px minimum between controls, with room to spare);
- * on narrow screens they wrap to more lines, so the assistant shell's `.asst`
+ * Height: a strip of 24px rows (each item a 24px tap box, no vertical
+ * padding, 10px apart — the hit-target audit's 8px minimum between controls)
+ * that wraps where it must: one row on a wide shell, two or three in the
+ * 480px login/contact card, never one item per line (every item stays on
+ * one line). Raphael, 2026-10-09: "the blue part has expanded into a huge
+ * thing, its supposed to be a small thing." The assistant shell's `.asst`
  * sizes itself to the space left (flex), not to a fixed height
  * (assistant-page.css).
  */
@@ -27,12 +30,12 @@ export default function SiteFooter(
   { lang = "en", style = "" }: { lang?: Lang; style?: string },
 ) {
   const item =
-    "display:inline-block;min-height:24px;padding:5px 8px;line-height:14px;color:inherit;";
+    "display:inline-block;min-height:24px;padding:0 3px;line-height:24px;white-space:nowrap;color:inherit;";
   return (
     <footer
       class="site-footer"
       data-site-footer
-      style={`display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:0 12px;text-align:center;font-size:12px;line-height:18px;padding:3px 12px;color:#8a9699;flex-shrink:0;${style}`}
+      style={`display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:0 10px;text-align:center;font-size:12px;line-height:24px;padding:2px 10px;color:#8a9699;flex-shrink:0;${style}`}
     >
       {LEGAL_LINKS.map((l) => (
         <a
@@ -48,7 +51,7 @@ export default function SiteFooter(
       <a
         href={SUPPORT_PHONE_HREF}
         data-site-phone
-        style={`${item}text-decoration:none;font-weight:700;white-space:nowrap`}
+        style={`${item}text-decoration:none;font-weight:700`}
       >
         {SUPPORT_PHONE_DISPLAY}
       </a>

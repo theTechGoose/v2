@@ -164,3 +164,36 @@ Deno.test("REQ-068: the contact form carries a phone and an unchecked SMS consen
     await page.locator("button[type='submit']").click();
     await expect.see("Thanks — we got your message and we'll be in touch soon.");
   }));
+
+// Raphael, 2026-10-09, on the first pin: "this looks like crap … the blue part has expanded
+// into a huge thing, its spoosed to be a small thing." The blue part is the site footer inside
+// the contact card (verify.css paints a footer teal): with four links it had grown to six rows
+// on a phone; and the website's footer links, eight now, overflowed the phone's screen word by word.
+Deno.test("REQ-067: the footers stay small — the contact card's strip is a few rows, and the website's links wrap instead of running off a phone", (t) =>
+  story(t, async ({ page, expect, baseUrl }) => {
+    await english(page, baseUrl);
+    // desktop: the strip under the contact form is three rows at most (24px each, plus 4px)
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/contact");
+    const strip = page.locator("[data-site-footer]");
+    await strip.waitFor({ timeout: 15000 });
+    let box = (await strip.boundingBox())!;
+    expect(box.height <= 80, `desktop contact footer strip is ${box.height}px tall (≤ 80)`);
+    // phone: five rows at most, every item on one line
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/contact");
+    await strip.waitFor({ timeout: 15000 });
+    box = (await strip.boundingBox())!;
+    expect(box.height <= 130, `phone contact footer strip is ${box.height}px tall (≤ 130)`);
+    const rows = await strip.locator("a, span").evaluateAll((els: Element[]) => els.map((e) => (e as HTMLElement).getBoundingClientRect().height));
+    expect(rows.every((h: number) => h <= 26), `every footer item is one line (${rows.join(",")})`);
+    // the website on a phone: the footer links wrap between links; nothing runs off the screen
+    await page.goto("/");
+    const links = page.locator("footer.footer .links");
+    await links.waitFor({ timeout: 15000 });
+    const over = await links.evaluate((el: Element) => ({ scroll: el.scrollWidth, client: el.clientWidth, page: document.documentElement.scrollWidth, vw: window.innerWidth }));
+    expect(over.scroll <= over.client, `the links do not overflow their row (${over.scroll} > ${over.client})`);
+    expect(over.page <= over.vw, `the page does not scroll sideways (${over.page} > ${over.vw})`);
+    const heights = await links.locator("a").evaluateAll((els: Element[]) => els.map((e) => (e as HTMLElement).getBoundingClientRect().height));
+    expect(heights.length === 8 && heights.every((h: number) => h <= 26), `each of the 8 links is one line (${heights.join(",")})`);
+  }));
