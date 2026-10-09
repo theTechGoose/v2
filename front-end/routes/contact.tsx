@@ -15,12 +15,14 @@ import {
   SUPPORT_PHONE_DISPLAY,
   SUPPORT_PHONE_HREF,
 } from "../../shared/legal/contact.ts";
+import { legalPathFor } from "../../shared/legal/terms.ts";
 
 /**
- * /contact — public inquiry page. Renders a name/email/subject/message form
- * that posts to the backend ContactPublicController (POST /contact). Reachable
- * from the landing footer's "Contact" link. Language is resolved server-side
- * (cookie → Accept-Language), mirroring the /login pattern.
+ * /contact — public inquiry page. Renders a name/email/phone/subject/message
+ * form with the SMS consent box (REQ-068, Hans's example) that posts to the
+ * backend ContactPublicController (POST /contact). Reachable from the landing
+ * footer's "Contact" link. Language is resolved server-side (cookie →
+ * Accept-Language), mirroring the /login pattern.
  */
 export default define.page(function Contact(ctx) {
   const lang: Lang = langFromCookie(ctx.req.headers.get("cookie")) ??
@@ -31,10 +33,20 @@ export default define.page(function Contact(ctx) {
     namePh: tFor(lang, "contactPage.namePh"),
     email: tFor(lang, "contactPage.email"),
     emailPh: tFor(lang, "contactPage.emailPh"),
+    phone: tFor(lang, "contactPage.phone"),
+    phonePh: tFor(lang, "contactPage.phonePh"),
     subject: tFor(lang, "contactPage.subject"),
     subjectPh: tFor(lang, "contactPage.subjectPh"),
     message: tFor(lang, "contactPage.message"),
     messagePh: tFor(lang, "contactPage.messagePh"),
+    // REQ-068 — the consent text names the support line the SMS Terms give for HELP
+    smsConsent: tFor(lang, "contactPage.smsConsent", {
+      phone: SUPPORT_PHONE_DISPLAY,
+    }),
+    smsPrivacy: tFor(lang, "contactPage.smsPrivacy"),
+    smsAnd: tFor(lang, "contactPage.smsAnd"),
+    smsTerms: tFor(lang, "contactPage.smsTerms"),
+    smsEnd: tFor(lang, "contactPage.smsEnd"),
     submit: tFor(lang, "contactPage.submit"),
     sending: tFor(lang, "contactPage.sending"),
     success: tFor(lang, "contactPage.success"),
@@ -74,7 +86,13 @@ export default define.page(function Contact(ctx) {
             {tFor(lang, "contactPage.subtitle")}
           </p>
 
-          <ContactForm labels={labels} />
+          <ContactForm
+            labels={labels}
+            links={{
+              privacy: legalPathFor("privacy"),
+              sms: legalPathFor("sms"),
+            }}
+          />
 
           <p style="color:var(--fg-muted);font-size:14px;margin:2px 0 0;text-align:center">
             {tFor(lang, "contactPage.callPrefix")}{" "}

@@ -1,5 +1,5 @@
 import { type Lang, tFor } from "../lib/i18n.ts";
-import { TERMS_PATH } from "../../shared/legal/terms.ts";
+import { LEGAL_FOOTER_LINK } from "../../shared/legal/terms.ts";
 import {
   BUSINESS_ADDRESS,
   SUPPORT_PHONE_DISPLAY,
@@ -7,41 +7,47 @@ import {
 } from "../../shared/legal/contact.ts";
 
 /**
- * REQ-043 — the site footer every page ends with: a "Terms of Service" link
- * to /terms. REQ-044 adds the support phone (a `tel:` link) and the business
- * mailing address on the same line. Styled inline so it drops into every
- * shell (the landing footers, the login/verify card, the dashboard
- * `.content` scroll, the public documents, the assistant page, the error
- * page) without touching their stylesheets.
+ * REQ-043 — the site footer every page ends with. REQ-067 (Hans's four
+ * policies; Raphael, 2026-10-09: "it needs to be one link with a page that
+ * has multiple tabs") — ONE "Terms & Policies" link to the policies page,
+ * whose tabs are the four documents (REQ-066). REQ-044 adds the support
+ * phone (a `tel:` link) and the business mailing address. Styled inline so
+ * it drops into every shell (the landing footers, the login/verify/contact
+ * card, the dashboard `.content` scroll, the public documents, the assistant
+ * page, the error page, the legal pages) without touching their stylesheets.
  *
- * Height: one 30px line (3px + a 24px tap box + 3px) wherever the three
- * items fit side by side (12px apart — the hit-target audit's 8px minimum
- * between controls, with room to spare); on narrow screens they wrap to more lines, so the
+ * Height: a strip of 24px rows (each item a 24px tap box, no vertical
+ * padding, 10px apart — the hit-target audit's 8px minimum between
+ * controls) that wraps where it must, every item on one line: one row on a
+ * wide shell, two or three in the 480px login/contact card ("the blue part
+ * … its supposed to be a small thing"). Rounded with the app's --radius-lg
+ * (16px) so the teal strip the card paints speaks the design language. The
  * assistant shell's `.asst` sizes itself to the space left (flex), not to a
- * fixed 30px (assistant-page.css).
+ * fixed height (assistant-page.css).
  */
 export default function SiteFooter(
   { lang = "en", style = "" }: { lang?: Lang; style?: string },
 ) {
   const item =
-    "display:inline-block;min-height:24px;padding:5px 8px;line-height:14px;color:inherit;";
+    "display:inline-block;min-height:24px;padding:0 3px;line-height:24px;white-space:nowrap;color:inherit;";
   return (
     <footer
       class="site-footer"
       data-site-footer
-      style={`display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:0 12px;text-align:center;font-size:12px;line-height:18px;padding:3px 12px;color:#8a9699;flex-shrink:0;${style}`}
+      style={`display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:0 10px;text-align:center;font-size:12px;line-height:24px;padding:4px 12px;border-radius:var(--radius-lg,16px);color:#8a9699;flex-shrink:0;${style}`}
     >
       <a
-        href={TERMS_PATH}
+        href={LEGAL_FOOTER_LINK.path}
+        data-legal-footer-link
         data-terms-link
         style={`${item}text-decoration:underline;text-underline-offset:2px`}
       >
-        {tFor(lang, "siteFooter.terms")}
+        {tFor(lang, LEGAL_FOOTER_LINK.labelKey)}
       </a>
       <a
         href={SUPPORT_PHONE_HREF}
         data-site-phone
-        style={`${item}text-decoration:none;font-weight:700;white-space:nowrap`}
+        style={`${item}text-decoration:none;font-weight:700`}
       >
         {SUPPORT_PHONE_DISPLAY}
       </a>

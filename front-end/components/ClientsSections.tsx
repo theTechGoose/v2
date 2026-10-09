@@ -49,9 +49,11 @@ export function ClientsHero(
           )
           : (
             <>
-              {/* Grammatical number drives the WHOLE headline, not just the
+              {
+                /* Grammatical number drives the WHOLE headline, not just the
                   noun: ES needs "La persona que mantiene…" for one and
-                  "Las personas que mantienen…" for many (P-34). */}
+                  "Las personas que mantienen…" for many (P-34). */
+              }
               <h1 class="ph2__title">
                 {tFor(
                   lang,
@@ -62,7 +64,9 @@ export function ClientsHero(
                 <em>
                   {tFor(
                     lang,
-                    `clientsHero.people.${totalClients === 1 ? "one" : "other"}`,
+                    `clientsHero.people.${
+                      totalClients === 1 ? "one" : "other"
+                    }`,
                     { word: numberWord(totalClients, lang) },
                   )}
                 </em>
@@ -84,11 +88,13 @@ export function ClientsHero(
                     { n: activeJobs },
                   )}
                 </strong>{" "}
-                · <strong>${owedFmt}</strong>{" "}
-                {tFor(lang, "clientsHero.owed")} ·{" "}
-                {/* count + noun in ONE key so ES keeps noun-then-adjective
+                · <strong>${owedFmt}</strong> {tFor(lang, "clientsHero.owed")} ·
+                {" "}
+                {
+                  /* count + noun in ONE key so ES keeps noun-then-adjective
                     order ("2 clientes sin contacto"), never the EN calque
-                    "sin contacto clientes" (P-34). */}
+                    "sin contacto clientes" (P-34). */
+                }
                 <strong>
                   {tFor(
                     lang,
@@ -174,8 +180,7 @@ export function LoopBar({ picks, lang = "en" }: LoopBarProps) {
           <strong>
             {tFor(lang, "loopBar.seconds", { n: picks.length * 30 })}
           </strong>{" "}
-          {tFor(lang, "loopBar.toSend")}{" "}
-          {picks.length === 1
+          {tFor(lang, "loopBar.toSend")} {picks.length === 1
             ? tFor(lang, "loopBar.sendIt")
             : tFor(lang, "loopBar.sendAll", {
               word: numberWord(picks.length, lang),

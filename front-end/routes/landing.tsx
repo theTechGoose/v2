@@ -29,6 +29,7 @@ import {
   SUPPORT_PHONE_DISPLAY,
   SUPPORT_PHONE_HREF,
 } from "../../shared/legal/contact.ts";
+import { LEGAL_FOOTER_LINK } from "../../shared/legal/terms.ts";
 
 function Check() {
   return (
@@ -370,8 +371,14 @@ export default define.page(function PromoLanding(ctx) {
                 {BUSINESS_ADDRESS}
               </span>
             </div>
-            <a class="pm-footer__terms" href="/terms" data-terms-link>
-              {t("footerTerms")}
+            {/* REQ-067 — one link to the policies page (its tabs are the four) */}
+            <a
+              class="pm-footer__terms"
+              href={LEGAL_FOOTER_LINK.path}
+              data-legal-footer-link
+              data-terms-link
+            >
+              {t("footerLegal")}
             </a>
             <div class="pm-footer__copy">{t("footerCopy")}</div>
           </footer>

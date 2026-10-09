@@ -1,77 +1,102 @@
-/* /terms — the Terms of Service, Refund & Cancellation Policy and Privacy
-   Policy (REQ-043). Plain reading page, no islands. */
+/* The legal pages — /terms, /refund-policy, /privacy, /sms-terms (REQ-066):
+   one document each under the website's own header (landing.css renders
+   that; this file styles what is below it). Plain reading pages, no islands.
+   REQ-043: the documents; REQ-065: the October 6, 2026 text. */
 .legal {
-  min-height: 100dvh;
-  background: #f7f6f1;
-  color: #1c2c30;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
-  padding: 24px 16px 8px;
+  min-height: 60dvh;
+  background: var(--bg);
+  color: var(--fg);
+  padding: 20px 16px 8px;
 }
 .legal__wrap {
   max-width: 760px;
   margin: 0 auto;
 }
-.legal__top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 20px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid rgba(20, 72, 82, 0.14);
-}
-.legal__brand {
+/* The website's toggle is two buttons; here it is two links to ?lang=, in the
+   same pill (landing.css .lang-toggle styles the pill and swaps the full
+   sentence for EN/ES below 720px). */
+.lang-toggle a {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  min-height: 24px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  color: var(--fg-muted);
   text-decoration: none;
-  color: #144852;
-  font-weight: 800;
-  font-size: 18px;
-  letter-spacing: -0.01em;
+  transition: all 200ms var(--ease-bounce);
 }
-.legal__brand img {
-  height: 34px;
-  width: auto;
-  display: block;
+.lang-toggle a.on {
+  background: var(--brand-teal);
+  color: #fff;
 }
-.legal__brand em {
-  font-style: normal;
-  color: #519843;
-}
-.legal__nav {
+/* The four documents as tabs — a segmented pill like the header's language
+   toggle (REQ-066; Raphael: "one link with a page that has multiple tabs").
+   Wide screens: one centred row. Under 900px (the Spanish labels no longer
+   fit a row): a two-column grid; under 560px (a phone): one column. Every
+   tab is always fully in view — never wrapped into a ragged second row,
+   never clipped at the edge, nothing to scroll ("why cant you think about
+   the ux"). Each tab is a 36px+ tap box, 4px apart; the current one is
+   filled teal; a long label wraps inside its own cell. */
+.legal__tabsbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  font-size: 14px;
+  justify-content: center;
+  margin-bottom: 20px;
 }
-.legal__nav a {
-  /* 24px+ tap box (hit-target audit). */
+.legal__tabs {
   display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 2px 4px;
-  color: #144852;
+  gap: 4px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-heading);
+  font-size: 13px;
   font-weight: 700;
-  text-decoration: none;
 }
-.legal__nav a:hover {
-  text-decoration: underline;
+.legal__tabs a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 200ms var(--ease-bounce);
+}
+.legal__tabs a:hover {
+  color: var(--brand-teal);
+}
+.legal__tabs a.on {
+  background: var(--brand-teal);
+  color: #fff;
+}
+@media (max-width: 900px) {
+  .legal__tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+  .legal__tabs a {
+    white-space: normal;
+  }
+}
+@media (max-width: 560px) {
+  .legal__tabs {
+    grid-template-columns: 1fr;
+  }
 }
 .legal__doc {
-  padding: 36px 0 12px;
-  scroll-margin-top: 16px;
-}
-.legal__doc + .legal__doc {
-  border-top: 1px solid rgba(20, 72, 82, 0.14);
+  padding: 28px 0 12px;
 }
 .legal__doc h1 {
   margin: 0;
   font-size: 30px;
   font-weight: 900;
   letter-spacing: -0.02em;
-  color: #144852;
+  color: var(--brand-teal);
   text-transform: uppercase;
 }
 .legal__effective {
@@ -98,7 +123,7 @@
   margin: 30px 0 0;
   font-size: 18px;
   font-weight: 800;
-  color: #144852;
+  color: var(--brand-teal);
   letter-spacing: -0.01em;
 }
 .legal__doc ul {
@@ -115,42 +140,16 @@
   margin-top: 16px;
   font-weight: 800;
   font-size: 15px;
-  color: #1c2c30;
+  color: var(--fg);
 }
 .legal__label + p {
   margin-top: 4px;
 }
 .legal__doc a {
-  color: #144852;
+  color: var(--brand-teal);
 }
 @media (max-width: 560px) {
   .legal__doc h1 {
     font-size: 24px;
   }
-}
-
-/* EN / ES toggle (REQ-043 amendment — the documents render in both). */
-.legal__lang {
-  display: inline-flex;
-  gap: 12px;
-  margin-left: auto;
-}
-.legal__lang a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 2px 10px;
-  border: 1px solid rgba(20, 72, 82, 0.25);
-  border-radius: 999px;
-  color: #144852;
-  font-size: 13px;
-  font-weight: 800;
-  text-decoration: none;
-}
-.legal__lang a.on {
-  background: #144852;
-  color: #fff;
-}
-.legal__nav {
-  flex-basis: 100%;
 }

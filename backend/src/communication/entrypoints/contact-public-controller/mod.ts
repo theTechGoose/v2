@@ -1,6 +1,14 @@
 import { Body, Context, Controller, Post } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
-import { IsEmail, IsString, MaxLength, MinLength, validateSync } from "#class-validator";
+import {
+  IsBoolean,
+  IsEmail,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+  validateSync,
+} from "#class-validator";
 import { plainToInstance } from "#class-transformer";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { RateLimiter } from "@core/data/rate-limit/mod.ts";
@@ -13,19 +21,32 @@ const WINDOW_MS = 60 * 60 * 1000;
  * accepts a comma-separated `To`, so all three receive the message. Override
  * with the CONTACT_INBOX env (also comma-separated) if the list ever changes.
  */
-const DEFAULT_CONTACT_INBOX = "hp@hans.work, rafac@monsterrg.com, amcgill@monsterrg.com";
+const DEFAULT_CONTACT_INBOX =
+  "hp@hans.work, rafac@monsterrg.com, amcgill@monsterrg.com";
 
 class ContactDto {
-  @IsString() @MinLength(1) @MaxLength(120) name!: string;
-  @IsEmail() email!: string;
-  @IsString() @MinLength(1) @MaxLength(200) subject!: string;
-  @IsString() @MinLength(1) @MaxLength(5000) message!: string;
+  @IsString() @MinLength(1) @MaxLength(120)
+  name!: string;
+  @IsEmail()
+  email!: string;
+  /** REQ-068 — the number the person may be texted on; optional. */
+  @IsOptional() @IsString() @MaxLength(40)
+  phone?: string;
+  @IsString() @MinLength(1) @MaxLength(200)
+  subject!: string;
+  @IsString() @MinLength(1) @MaxLength(5000)
+  message!: string;
+  /** REQ-068 — the SMS consent box: a yes or a no, on record with the inquiry. */
+  @IsOptional() @IsBoolean()
+  smsConsent?: boolean;
 }
 
 function parseContact(input: unknown): ContactDto {
   const dto = plainToInstance(ContactDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid contact: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid contact: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }
 
@@ -58,7 +79,11 @@ export class ContactPublicController {
       WINDOW_MS,
     );
     if (!decision.allowed) {
-      return ctx.json({ ok: false, reason: "too_many_attempts", retryAfterMs: decision.resetMs });
+      return ctx.json({
+        ok: false,
+        reason: "too_many_attempts",
+        retryAfterMs: decision.resetMs,
+      });
     }
 
     const subject = `[contact] ${dto.subject}`;
@@ -73,24 +98,43 @@ export class ContactPublicController {
   }
 }
 
+/**
+ * REQ-068 — the phone (when given) and the SMS consent are printed with the
+ * inquiry, so the team's inbox is the record of who agreed to be texted.
+ */
 function renderContactHtml(c: ContactDto): string {
+  const phone = c.phone?.trim();
   return `
 <h2>New contact-form submission</h2>
-<p><strong>From:</strong> ${escapeHtml(c.name)} &lt;${escapeHtml(c.email)}&gt;</p>
+<p><strong>From:</strong> ${escapeHtml(c.name)} &lt;${
+    escapeHtml(c.email)
+  }&gt;</p>
+${
+    phone
+      ? `<p><strong>Phone:</strong> ${escapeHtml(phone)}</p>\n`
+      : ""
+  }<p><strong>SMS consent:</strong> ${c.smsConsent === true ? "yes" : "no"}</p>
 <p><strong>Subject:</strong> ${escapeHtml(c.subject)}</p>
 <hr/>
-<pre style="white-space: pre-wrap; font-family: inherit;">${escapeHtml(c.message)}</pre>
+<pre style="white-space: pre-wrap; font-family: inherit;">${
+    escapeHtml(c.message)
+  }</pre>
 `.trim();
 }
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => {
     switch (c) {
-      case "&": return "&amp;";
-      case "<": return "&lt;";
-      case ">": return "&gt;";
-      case '"': return "&quot;";
-      default:  return "&#39;";
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      default:
+        return "&#39;";
     }
   });
 }

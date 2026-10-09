@@ -19,8 +19,12 @@ export interface SendOtpResult {
 export interface ContactInput {
   name: string;
   email: string;
+  /** REQ-068 — optional; the number the person may be texted on. */
+  phone?: string;
   subject: string;
   message: string;
+  /** REQ-068 — the SMS consent box, unchecked by default, never required. */
+  smsConsent: boolean;
 }
 
 export interface ContactResult {
