@@ -393,7 +393,11 @@ section {
   font-size: 14px;
   color: var(--brand-teal);
 }
+/* hit-target audit: each nav link is at least a 24px-tall tap box. */
 .nav-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
   transition: color 200ms;
 }
 .nav-links a:hover {
