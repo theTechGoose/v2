@@ -31,24 +31,19 @@
 }
 /* The four documents as tabs — a segmented pill like the header's language
    toggle (REQ-066; Raphael: "one link with a page that has multiple tabs").
-   ONE row: the bar spans the page, the pill sits centred in it when it fits
-   and scrolls sideways (scrollbar hidden) when the labels are wider than the
-   window — the Spanish ones are. Each tab is a 32px tap box, 4px apart; the
-   current one is filled teal. */
+   Wide screens: one centred row. Under 900px (the Spanish labels no longer
+   fit a row): a two-column grid; under 560px (a phone): one column. Every
+   tab is always fully in view — never wrapped into a ragged second row,
+   never clipped at the edge, nothing to scroll ("why cant you think about
+   the ux"). Each tab is a 36px+ tap box, 4px apart; the current one is
+   filled teal; a long label wraps inside its own cell. */
 .legal__tabsbar {
   display: flex;
-  overflow-x: auto;
-  scrollbar-width: none;
-  margin: 0 -16px 20px;
-  padding: 2px 16px;
-}
-.legal__tabsbar::-webkit-scrollbar {
-  display: none;
+  justify-content: center;
+  margin-bottom: 20px;
 }
 .legal__tabs {
   display: inline-flex;
-  flex: none;
-  margin: 0 auto; /* centred when narrower than the bar; flush left (scrollable) when wider */
   gap: 4px;
   padding: 4px;
   background: #fff;
@@ -61,10 +56,12 @@
 .legal__tabs a {
   display: inline-flex;
   align-items: center;
-  min-height: 32px;
-  padding: 0 14px;
+  justify-content: center;
+  min-height: 36px;
+  padding: 6px 14px;
   border-radius: var(--radius-md);
   color: var(--fg-muted);
+  text-align: center;
   text-decoration: none;
   white-space: nowrap;
   transition: all 200ms var(--ease-bounce);
@@ -75,6 +72,21 @@
 .legal__tabs a.on {
   background: var(--brand-teal);
   color: #fff;
+}
+@media (max-width: 900px) {
+  .legal__tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+  .legal__tabs a {
+    white-space: normal;
+  }
+}
+@media (max-width: 560px) {
+  .legal__tabs {
+    grid-template-columns: 1fr;
+  }
 }
 .legal__doc {
   padding: 28px 0 12px;

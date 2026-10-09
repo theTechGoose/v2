@@ -85,10 +85,11 @@ export default function LegalPage(
 
       <div class="legal">
         {
-          /* the tabs: ONE row, centred when it fits the window, scrolling
-            sideways when it does not (the Spanish labels are long), the
-            current tab scrolled into view (Raphael, 2026-10-09: the pill
-            wrapping onto a second row — "can you do this?") */
+          /* the tabs: one centred row on a wide screen; a two-column grid on
+            a narrow one and a single column on a phone — every tab always
+            fully in view, nothing clipped, nothing to scroll (Raphael,
+            2026-10-09: the pill wrapping, then the pill cut off at the edge
+            of a phone — "why cant you think about the ux") */
         }
         <div class="legal__tabsbar">
           <nav
@@ -109,12 +110,6 @@ export default function LegalPage(
             ))}
           </nav>
         </div>
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "document.querySelector('[data-legal-nav] a.on')?.scrollIntoView({inline:'center',block:'nearest'})",
-          }}
-        />
         <div class="legal__wrap">
           <article
             id={doc.id}

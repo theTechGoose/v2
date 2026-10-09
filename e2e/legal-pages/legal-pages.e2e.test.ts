@@ -119,18 +119,23 @@ Deno.test("REQ-066: each policy is its own page with the website's header, and t
     await expect.see("Última actualización: 6 de octubre de 2026");
     await page.goto("/privacy");
     await expect.see("Política de privacidad");
-    // the tabs are ONE row — in Spanish (the long labels), on a desktop and on a phone — and the
-    // page never scrolls sideways; the current tab is in view ("can you do this?" — the pill
-    // wrapped onto a second row)
-    for (const [w, h] of [[1440, 900], [830, 900], [390, 844]] as const) {
+    // the tabs in Spanish (the long labels), wide and narrow: one row on a desktop, a 2×2 grid on
+    // a narrow window, one column on a phone — every tab FULLY in view, nothing clipped, nothing
+    // to scroll, the current one filled ("can you do this?" — the pill wrapped; then "why cant
+    // you think about the ux" — the pill cut off at the edge of a phone)
+    for (const [w, h, rows] of [[1440, 900, 1], [830, 900, 2], [390, 844, 4]] as const) {
       await page.setViewportSize({ width: w, height: h });
       await page.goto("/sms-terms");
-      const tops = await page.locator("[data-legal-nav] a").evaluateAll((els: Element[]) => els.map((e) => Math.round((e as HTMLElement).getBoundingClientRect().top)));
-      expect(tops.length === 4 && tops.every((t: number) => t === tops[0]), `${w}px: the four tabs sit on one row (tops ${tops.join(",")})`);
+      const boxes = await page.locator("[data-legal-nav] a").evaluateAll((els: Element[]) => els.map((e) => { const r = (e as HTMLElement).getBoundingClientRect(); return { top: Math.round(r.top), left: Math.round(r.left), right: Math.round(r.right), w: window.innerWidth }; }));
+      expect(boxes.length === 4, `${w}px: four tabs`);
+      expect.eq(new Set(boxes.map((b: { top: number }) => b.top)).size, rows, `${w}px: the tabs sit in ${rows} row(s)`);
+      expect(boxes.every((b: { left: number; right: number; w: number }) => b.left >= 0 && b.right <= b.w), `${w}px: every tab is fully inside the window (${JSON.stringify(boxes)})`);
       const over = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
       expect(over, `${w}px: the page does not scroll sideways`);
-      const cur = await page.locator("[data-legal-nav] a.on").evaluate((e: Element) => { const r = e.getBoundingClientRect(); return r.left >= 0 && r.right <= window.innerWidth; });
-      expect(cur, `${w}px: the current tab is in view`);
+      const bar = await page.locator("[data-legal-nav]").evaluate((e: Element) => e.scrollWidth <= e.clientWidth + 1);
+      expect(bar, `${w}px: the tab bar itself has nothing hidden to scroll to`);
+      const fill = await page.locator("[data-legal-nav] a.on").evaluate((e: Element) => getComputedStyle(e).backgroundColor);
+      expect(fill === "rgb(26, 83, 92)", `${w}px: the current tab is filled teal (${fill})`);
     }
   }));
 
