@@ -17,10 +17,10 @@ describe("REQ-043 footer Terms of Service link on every page", () => {
   function assertFooterLink(scroller: string | null = null) {
     if (scroller) cy.get(scroller).scrollTo("bottom", { ensureScrollable: false });
     else cy.scrollTo("bottom", { ensureScrollable: false });
-    cy.get("a[data-terms-link]")
+    cy.get("a[data-legal-footer-link]")
       .should("be.visible")
       .and("have.attr", "href", "/terms")
-      .and("contain.text", "Terms of Service");
+      .and("contain.text", "Terms & Policies");
   }
 
   describe("REQ-043 every page family shows the Terms of Service link at the bottom of the page", () => {
@@ -111,7 +111,7 @@ describe("REQ-043 footer Terms of Service link on every page", () => {
     ).should("exist");
     cy.contains("h2", "1. Business-to-Business Service").should("exist");
     cy.contains("h2", "31. Contact Us").should("exist");
-    // the website's header, and the row naming the four documents
+    // the website's header, and the four documents as tabs
     cy.get(".nav-wrap .brand").should("be.visible");
     cy.get("[data-legal-nav] a").should("have.length", 4);
     cy.get("[data-legal-nav] a[aria-current=page]").should("have.attr", "href", "/terms");
@@ -129,9 +129,9 @@ describe("REQ-043 footer Terms of Service link on every page", () => {
     cy.location("pathname").should("eq", "/sms-terms");
     cy.contains("h1", "SMS Terms & Conditions").should("be.visible");
     cy.contains("h2", "5. Message Frequency, Charges, STOP, and HELP").should("exist");
-    // a legal page is a page too — it gets the footer's four links.
+    // a legal page is a page too — it gets the footer's policies link.
     cy.scrollTo("bottom");
-    cy.get("[data-site-footer] a[data-legal-link]").should("have.length", 4);
+    cy.get("[data-site-footer] a[data-legal-footer-link]").should("have.length", 1);
   });
 });
 

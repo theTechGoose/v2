@@ -29,32 +29,39 @@
   background: var(--brand-teal);
   color: #fff;
 }
-/* The row naming the four documents, the current one marked (REQ-066). */
-.legal__nav {
-  display: flex;
+/* The four documents as tabs — a segmented pill like the header's language
+   toggle (REQ-066; Raphael: "one link with a page that has multiple tabs").
+   Each tab is a 28px+ tap box, 4px apart inside the pill; the current one is
+   filled teal. On a phone the pill wraps to two rows. */
+.legal__tabs {
+  display: inline-flex;
   flex-wrap: wrap;
-  gap: 6px 16px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border);
-  font-size: 14px;
+  gap: 4px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 700;
 }
-.legal__nav a {
-  /* 24px+ tap box (hit-target audit). */
+.legal__tabs a {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 2px 4px;
-  color: var(--brand-teal);
-  font-weight: 700;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
   text-decoration: none;
-  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: all 200ms var(--ease-bounce);
 }
-.legal__nav a:hover {
-  text-decoration: underline;
+.legal__tabs a:hover {
+  color: var(--brand-teal);
 }
-.legal__nav a.on {
-  border-bottom-color: var(--brand-green);
-  color: var(--brand-green);
+.legal__tabs a.on {
+  background: var(--brand-teal);
+  color: #fff;
 }
 .legal__doc {
   padding: 28px 0 12px;

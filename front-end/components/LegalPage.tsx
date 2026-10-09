@@ -16,10 +16,11 @@ import {
  * I speak English toggle, the What We Do / How It Works / Pricing links and
  * the Log in button, in the website's stylesheet (landing.css). Hans:
  * "Make the page that houses this information make the header look the
- * same as the rest of the website please." Then a row naming the four
- * documents (this one marked current), the document (REQ-065: the October
- * 6, 2026 text, in the visitor's language), and the site footer with the
- * four links (REQ-067).
+ * same as the rest of the website please." Then the four documents as TABS
+ * (Raphael: "one link with a page that has multiple tabs" — each tab is a
+ * page of its own, so a policy keeps a URL the consent text can link), the
+ * document (REQ-065: the October 6, 2026 text, in the visitor's language),
+ * and the site footer with its one policies link (REQ-067).
  *
  * The toggle here is two links (?lang=) — the website's is scripted
  * (landing-scripts.js) because that page swaps copy in place; this page is
@@ -85,7 +86,7 @@ export default function LegalPage(
       <div class="legal">
         <div class="legal__wrap">
           <nav
-            class="legal__nav"
+            class="legal__tabs"
             data-legal-nav
             aria-label={tFor(lang, "legal.docsAria")}
           >

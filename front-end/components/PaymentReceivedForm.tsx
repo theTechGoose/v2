@@ -99,7 +99,11 @@ export default function PaymentReceivedForm(
   }
 
   return (
-    <form onSubmit={submit} data-cy="pay-received-form" style="display:flex;flex-direction:column;gap:10px">
+    <form
+      onSubmit={submit}
+      data-cy="pay-received-form"
+      style="display:flex;flex-direction:column;gap:10px"
+    >
       <div style={`font-size:14px;font-weight:800;color:${INK}`}>
         {tFor(lang, "invoicesPage.pay.title")}
       </div>
@@ -160,7 +164,10 @@ export default function PaymentReceivedForm(
         />
       </label>
       {err && (
-        <div data-cy="pay-received-error" style="font-size:12.5px;font-weight:700;color:var(--pink-700,#d94e4e)">
+        <div
+          data-cy="pay-received-error"
+          style="font-size:12.5px;font-weight:700;color:var(--pink-700,#d94e4e)"
+        >
           {err}
         </div>
       )}

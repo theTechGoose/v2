@@ -172,11 +172,8 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "cta.errSend": "We couldn’t send the code. Try again.",
     "cta.trustRest": "already on Paperwork Monster",
     "footer.contact": "Contact",
-    // REQ-067 — the four policy links (shared/legal/terms.ts LEGAL_LINKS)
-    "footer.terms": "Terms of Service",
-    "footer.refunds": "Refund & Cancellation Policy",
-    "footer.privacy": "Privacy Policy",
-    "footer.sms": "SMS Terms & Conditions",
+    // REQ-067 — the one link to the policies page (shared/legal/terms.ts LEGAL_FOOTER_LINK)
+    "footer.legal": "Terms & Policies",
     "footer.copy": "© 2026 Paperwork Monster. All rights reserved.",
   },
   es: {
@@ -326,11 +323,8 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "cta.errSend": "No pudimos enviar el código. Intenta otra vez.",
     "cta.trustRest": "ya en Paperwork Monster",
     "footer.contact": "Contacto",
-    // REQ-067 — the four policy links (shared/legal/terms.ts LEGAL_LINKS)
-    "footer.terms": "Términos de servicio",
-    "footer.refunds": "Política de reembolsos y cancelaciones",
-    "footer.privacy": "Política de privacidad",
-    "footer.sms": "Términos y condiciones de SMS",
+    // REQ-067 — the one link to the policies page (shared/legal/terms.ts LEGAL_FOOTER_LINK)
+    "footer.legal": "Términos y políticas",
     "footer.copy": "© 2026 Paperwork Monster. Todos los derechos reservados.",
   },
 };

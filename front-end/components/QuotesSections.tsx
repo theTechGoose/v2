@@ -249,8 +249,10 @@ export function QSideBig({ open, lang = "en" }: QSideBigProps) {
         </div>
       </div>
       <div class="qbig">
-        {/* UX-20: an empty pipeline explains itself instead of rendering a
-            bare shell under the header. */}
+        {
+          /* UX-20: an empty pipeline explains itself instead of rendering a
+            bare shell under the header. */
+        }
         {top4.length === 0 && (
           <div
             class="qbig__empty"

@@ -938,6 +938,14 @@ export function legalPathFor(id: LegalDocId): string {
 /** The Terms of Service page (REQ-043). */
 export const TERMS_PATH = legalPathFor("terms");
 
+/** REQ-067 amendment (Raphael, 2026-10-09: "it needs to be one link with a
+ *  page that has multiple tabs") — every footer carries THIS one link, to
+ *  the policies page, whose tabs are LEGAL_LINKS. */
+export const LEGAL_FOOTER_LINK = {
+  path: TERMS_PATH,
+  labelKey: "siteFooter.legal",
+} as const;
+
 /** REQ-043 amendment ("it should be both"): the documents in the visitor's
  *  language. Imports the Spanish module lazily-by-position (bottom of file) so
  *  the English data above stays import-free. */

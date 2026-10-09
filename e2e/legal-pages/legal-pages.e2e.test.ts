@@ -6,7 +6,9 @@
  * page that houses this information make the header look the same as the rest of the website".
  * REQ-067 — "we need these hyper links: Terms of Service | Refund & Cancellation Policy |
  * Privacy Policy | SMS Terms & Conditions — Every page of the websites · On the Contact us page
- * inquiry page · Footer of DocuMonster software".
+ * inquiry page · Footer of DocuMonster software" — and Raphael, 2026-10-09: "it needs to be one
+ * link with a page that has multiple tabs": every footer carries ONE "Terms & Policies" link to
+ * the policies page, whose tabs are the four.
  * REQ-068 — "Attached is the example for the contact us page as well" — the unchecked SMS
  * consent box with STOP / HELP and the policy links.
  *
@@ -61,20 +63,25 @@ async function signIn(http: StoryTools["http"], page: StoryTools["page"], baseUr
   ]);
 }
 
-/** the four policy links inside one footer, in order: [href, label] */
-async function footerLinks(page: StoryTools["page"], footer: string): Promise<[string, string][]> {
-  const links = page.locator(`${footer} a[data-legal-link]`);
-  await links.first().waitFor({ timeout: 15000 });
-  const n = await links.count();
-  const out: [string, string][] = [];
-  for (let i = 0; i < n; i++) {
-    out.push([(await links.nth(i).getAttribute("href")) ?? "", ((await links.nth(i).innerText()) ?? "").trim()]);
-  }
-  return out;
+/** the ONE policies link inside a footer: [href, label] — and there is exactly one */
+async function footerLegalLink(page: StoryTools["page"], footer: string): Promise<[string, string, number]> {
+  const link = page.locator(`${footer} a[data-legal-footer-link]`);
+  await link.first().waitFor({ timeout: 15000 });
+  return [(await link.first().getAttribute("href")) ?? "", ((await link.first().innerText()) ?? "").trim(), await link.count()];
 }
 
-function expectFourLinks(expect: StoryTools["expect"], where: string, links: [string, string][]) {
-  expect.eq(JSON.stringify(links), JSON.stringify(PAGES.map((p) => [p.path, p.title])), `${where}: the four policy links, in Hans's order`);
+function expectOneLink(expect: StoryTools["expect"], where: string, link: [string, string, number]) {
+  expect.eq(JSON.stringify(link), JSON.stringify(["/terms", "Terms & Policies", 1]), `${where}: one "Terms & Policies" link to the policies page`);
+}
+
+/** the four tabs on the policies page, in order: [href, label] */
+async function tabs(page: StoryTools["page"]): Promise<[string, string][]> {
+  const t = page.locator("[data-legal-nav] a[data-legal-link]");
+  await t.first().waitFor({ timeout: 15000 });
+  const n = await t.count();
+  const out: [string, string][] = [];
+  for (let i = 0; i < n; i++) out.push([(await t.nth(i).getAttribute("href")) ?? "", ((await t.nth(i).innerText()) ?? "").trim()]);
+  return out;
 }
 
 Deno.test("REQ-066: each policy is its own page with the website's header, and the pages link to each other", (t) =>
@@ -94,14 +101,13 @@ Deno.test("REQ-066: each policy is its own page with the website's header, and t
       expect.eq((await page.locator(".legal__doc h1").allTextContents()).join("|"), p.title, `${p.path}: one document, its own`);
       await expect.see("Last Updated: October 6, 2026");
       if (p.path !== "/refund-policy") await expect.see("doing business as DocuMonster Powered by Paperwork Monster");
-      // the row of the four documents, this one current
-      const nav = page.locator("[data-legal-nav] a");
-      expect.eq(await nav.count(), 4, `${p.path}: the four documents named`);
-      expect.eq(await page.locator(`[data-legal-nav] a[aria-current="page"]`).getAttribute("href"), p.path, `${p.path}: marked current`);
-      // and the site footer with the four links
-      expectFourLinks(expect, p.path, await footerLinks(page, "[data-site-footer]"));
+      // the four documents as tabs, this one current
+      expect.eq(JSON.stringify(await tabs(page)), JSON.stringify(PAGES.map((q) => [q.path, q.title])), `${p.path}: the four tabs, in Hans's order`);
+      expect.eq(await page.locator(`[data-legal-nav] a[aria-current="page"]`).getAttribute("href"), p.path, `${p.path}: the current tab`);
+      // and the site footer with its one policies link
+      expectOneLink(expect, p.path, await footerLegalLink(page, "[data-site-footer]"));
     }
-    // the row walks to the next document
+    // a tab opens the next document
     await page.goto("/terms");
     await page.locator("[data-legal-nav] a[data-legal-link='sms']").click();
     await page.waitForURL((u: URL) => u.pathname === "/sms-terms", { timeout: 15000 });
@@ -115,28 +121,30 @@ Deno.test("REQ-066: each policy is its own page with the website's header, and t
     await expect.see("Política de privacidad");
   }));
 
-Deno.test("REQ-067: the four policy links are in the footer of both websites, the contact page, and the DocuMonster software", (t) =>
+Deno.test("REQ-067: one policies link in the footer of both websites, the contact page, and the DocuMonster software, to the page whose tabs are the four", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await english(page, baseUrl);
     // the website
     await page.goto("/");
-    expectFourLinks(expect, "/", await footerLinks(page, "footer.footer"));
+    expectOneLink(expect, "/", await footerLegalLink(page, "footer.footer"));
     // the promo website
     await page.goto("/landing");
-    expectFourLinks(expect, "/landing", await footerLinks(page, "footer.pm-footer"));
+    expectOneLink(expect, "/landing", await footerLegalLink(page, "footer.pm-footer"));
     // the contact page
     await page.goto("/contact");
-    expectFourLinks(expect, "/contact", await footerLinks(page, "[data-site-footer]"));
+    expectOneLink(expect, "/contact", await footerLegalLink(page, "[data-site-footer]"));
     // the DocuMonster software: signed in, the dashboard and the settings page
     await signIn(http, page, baseUrl);
     await page.goto("/dashboard");
-    expectFourLinks(expect, "/dashboard", await footerLinks(page, "[data-site-footer]"));
+    expectOneLink(expect, "/dashboard", await footerLegalLink(page, "[data-site-footer]"));
     await page.goto("/settings");
-    expectFourLinks(expect, "/settings", await footerLinks(page, "[data-site-footer]"));
-    // a link is a link: the software's footer opens the refund policy
-    await page.locator("[data-site-footer] a[data-legal-link='refunds']").click();
+    expectOneLink(expect, "/settings", await footerLegalLink(page, "[data-site-footer]"));
+    // the link opens the policies page, and its tabs are Hans's four
+    await page.locator("[data-site-footer] a[data-legal-footer-link]").click();
+    await page.waitForURL((u: URL) => u.pathname === "/terms", { timeout: 15000 });
+    expect.eq(JSON.stringify(await tabs(page)), JSON.stringify(PAGES.map((q) => [q.path, q.title])), "the four tabs, in Hans's order");
+    await page.locator("[data-legal-nav] a[data-legal-link='refunds']").click();
     await page.waitForURL((u: URL) => u.pathname === "/refund-policy", { timeout: 15000 });
-    await expect.see("Refund & Cancellation Policy");
     await expect.see("No Prorated Refunds");
   }));
 
@@ -169,7 +177,7 @@ Deno.test("REQ-068: the contact form carries a phone and an unchecked SMS consen
 // into a huge thing, its spoosed to be a small thing." The blue part is the site footer inside
 // the contact card (verify.css paints a footer teal): with four links it had grown to six rows
 // on a phone; and the website's footer links, eight now, overflowed the phone's screen word by word.
-Deno.test("REQ-067: the footers stay small — the contact card's strip is a few rows, and the website's links wrap instead of running off a phone", (t) =>
+Deno.test("REQ-067: the footers stay small and rounded — the contact card's strip is a few rows, and the website's links wrap instead of running off a phone", (t) =>
   story(t, async ({ page, expect, baseUrl }) => {
     await english(page, baseUrl);
     // desktop: the strip under the contact form is three rows at most (24px each, plus 4px)
@@ -178,13 +186,16 @@ Deno.test("REQ-067: the footers stay small — the contact card's strip is a few
     const strip = page.locator("[data-site-footer]");
     await strip.waitFor({ timeout: 15000 });
     let box = (await strip.boundingBox())!;
-    expect(box.height <= 80, `desktop contact footer strip is ${box.height}px tall (≤ 80)`);
+    expect(box.height <= 60, `desktop contact footer strip is ${box.height}px tall (≤ 60: two rows)`);
+    // rounded like the card ("rounded corners to speak the design language of the app")
+    const radius = await strip.evaluate((el: Element) => getComputedStyle(el).borderTopLeftRadius);
+    expect.eq(radius, "16px", "the strip's corners are the app's --radius-lg");
     // phone: five rows at most, every item on one line
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/contact");
     await strip.waitFor({ timeout: 15000 });
     box = (await strip.boundingBox())!;
-    expect(box.height <= 130, `phone contact footer strip is ${box.height}px tall (≤ 130)`);
+    expect(box.height <= 90, `phone contact footer strip is ${box.height}px tall (≤ 90: three rows)`);
     const rows = await strip.locator("a, span").evaluateAll((els: Element[]) => els.map((e) => (e as HTMLElement).getBoundingClientRect().height));
     expect(rows.every((h: number) => h <= 26), `every footer item is one line (${rows.join(",")})`);
     // the website on a phone: the footer links wrap between links; nothing runs off the screen
@@ -195,5 +206,5 @@ Deno.test("REQ-067: the footers stay small — the contact card's strip is a few
     expect(over.scroll <= over.client, `the links do not overflow their row (${over.scroll} > ${over.client})`);
     expect(over.page <= over.vw, `the page does not scroll sideways (${over.page} > ${over.vw})`);
     const heights = await links.locator("a").evaluateAll((els: Element[]) => els.map((e) => (e as HTMLElement).getBoundingClientRect().height));
-    expect(heights.length === 8 && heights.every((h: number) => h <= 26), `each of the 8 links is one line (${heights.join(",")})`);
+    expect(heights.length === 5 && heights.every((h: number) => h <= 26), `each of the 5 links is one line (${heights.join(",")})`);
   }));
