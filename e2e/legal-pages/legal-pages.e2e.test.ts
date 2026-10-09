@@ -119,6 +119,19 @@ Deno.test("REQ-066: each policy is its own page with the website's header, and t
     await expect.see("Última actualización: 6 de octubre de 2026");
     await page.goto("/privacy");
     await expect.see("Política de privacidad");
+    // the tabs are ONE row — in Spanish (the long labels), on a desktop and on a phone — and the
+    // page never scrolls sideways; the current tab is in view ("can you do this?" — the pill
+    // wrapped onto a second row)
+    for (const [w, h] of [[1440, 900], [830, 900], [390, 844]] as const) {
+      await page.setViewportSize({ width: w, height: h });
+      await page.goto("/sms-terms");
+      const tops = await page.locator("[data-legal-nav] a").evaluateAll((els: Element[]) => els.map((e) => Math.round((e as HTMLElement).getBoundingClientRect().top)));
+      expect(tops.length === 4 && tops.every((t: number) => t === tops[0]), `${w}px: the four tabs sit on one row (tops ${tops.join(",")})`);
+      const over = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+      expect(over, `${w}px: the page does not scroll sideways`);
+      const cur = await page.locator("[data-legal-nav] a.on").evaluate((e: Element) => { const r = e.getBoundingClientRect(); return r.left >= 0 && r.right <= window.innerWidth; });
+      expect(cur, `${w}px: the current tab is in view`);
+    }
   }));
 
 Deno.test("REQ-067: one policies link in the footer of both websites, the contact page, and the DocuMonster software, to the page whose tabs are the four", (t) =>

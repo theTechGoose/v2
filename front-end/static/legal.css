@@ -31,11 +31,24 @@
 }
 /* The four documents as tabs — a segmented pill like the header's language
    toggle (REQ-066; Raphael: "one link with a page that has multiple tabs").
-   Each tab is a 28px+ tap box, 4px apart inside the pill; the current one is
-   filled teal. On a phone the pill wraps to two rows. */
+   ONE row: the bar spans the page, the pill sits centred in it when it fits
+   and scrolls sideways (scrollbar hidden) when the labels are wider than the
+   window — the Spanish ones are. Each tab is a 32px tap box, 4px apart; the
+   current one is filled teal. */
+.legal__tabsbar {
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -16px 20px;
+  padding: 2px 16px;
+}
+.legal__tabsbar::-webkit-scrollbar {
+  display: none;
+}
 .legal__tabs {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex: none;
+  margin: 0 auto; /* centred when narrower than the bar; flush left (scrollable) when wider */
   gap: 4px;
   padding: 4px;
   background: #fff;

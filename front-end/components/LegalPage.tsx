@@ -84,7 +84,13 @@ export default function LegalPage(
       </div>
 
       <div class="legal">
-        <div class="legal__wrap">
+        {
+          /* the tabs: ONE row, centred when it fits the window, scrolling
+            sideways when it does not (the Spanish labels are long), the
+            current tab scrolled into view (Raphael, 2026-10-09: the pill
+            wrapping onto a second row — "can you do this?") */
+        }
+        <div class="legal__tabsbar">
           <nav
             class="legal__tabs"
             data-legal-nav
@@ -102,7 +108,14 @@ export default function LegalPage(
               </a>
             ))}
           </nav>
-
+        </div>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "document.querySelector('[data-legal-nav] a.on')?.scrollIntoView({inline:'center',block:'nearest'})",
+          }}
+        />
+        <div class="legal__wrap">
           <article
             id={doc.id}
             class="legal__doc"
