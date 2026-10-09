@@ -761,7 +761,7 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
 };
 
 /** The three documents in Spanish, in the order /terms renders them. */
-export const SMS_TERMS_ES: LegalDoc = {
+const SMS_TERMS_ES: LegalDoc = {
   id: "sms",
   title: "Términos y condiciones de SMS",
   lastUpdated: LEGAL_LAST_UPDATED_ES,
