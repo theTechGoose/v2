@@ -83,6 +83,11 @@ describe("REQ-067 every footer carries the one policies link, and the page's tab
     expect(LANDING_DICT.es["footer.legal"]).toBe("Términos y políticas");
     expect(en["promoLanding.footerLegal"]).toBe("Terms & Policies");
     expect(es["promoLanding.footerLegal"]).toBe("Términos y políticas");
+    // the website's client-side language swap (islands/LandingScripts.tsx) reads "landing.*"
+    expect(en["landing.footer.legal"]).toBe("Terms & Policies");
+    expect(es["landing.footer.legal"]).toBe("Términos y políticas");
+    expect(read("front-end/islands/LandingScripts.tsx")).toMatch(/"footer\.legal"/);
+    expect(read("front-end/islands/LandingScripts.tsx")).not.toMatch(/"footer\.terms"/);
     // the four tabs' labels
     for (const l of LEGAL_LINKS) {
       expect(en[l.labelKey]).toBeTruthy();
@@ -92,8 +97,9 @@ describe("REQ-067 every footer carries the one policies link, and the page's tab
     for (const k of ["footer.terms", "footer.refunds", "footer.privacy", "footer.sms"]) {
       expect(LANDING_DICT.en[k]).toBeUndefined();
     }
-    for (const k of ["promoLanding.footerRefunds", "promoLanding.footerPrivacy", "promoLanding.footerSms"]) {
+    for (const k of ["promoLanding.footerTerms", "promoLanding.footerRefunds", "promoLanding.footerPrivacy", "promoLanding.footerSms", "landing.footer.terms"]) {
       expect(en[k]).toBeUndefined();
+      expect(es[k]).toBeUndefined();
     }
   });
 });
