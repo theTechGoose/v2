@@ -97,7 +97,7 @@ describe("REQ-043 footer Terms of Service link on every page", () => {
     });
   });
 
-  it("REQ-043 clicking the footer link opens /terms with all three documents", () => {
+  it("REQ-043 clicking the footer link opens /terms — its own page (REQ-066), the October 6 text (REQ-065)", () => {
     cy.clearCookies();
     cy.setCookie("pm_lang", "en");
     cy.visit("/login");
@@ -105,29 +105,38 @@ describe("REQ-043 footer Terms of Service link on every page", () => {
     cy.get("a[data-terms-link]").click();
     cy.location("pathname").should("eq", "/terms");
     cy.contains("h1", "Terms of Service").should("be.visible");
-    cy.contains("Effective Date: September 24, 2026").should("be.visible");
+    cy.contains("Last Updated: October 6, 2026").should("be.visible");
     cy.contains(
       "THIS AGREEMENT IS SUBJECT TO ARBITRATION PURSUANT TO THE SOUTH CAROLINA UNIFORM ARBITRATION ACT.",
     ).should("exist");
     cy.contains("h2", "1. Business-to-Business Service").should("exist");
     cy.contains("h2", "31. Contact Us").should("exist");
-    cy.get("#refunds").within(() => {
-      cy.contains("h1", "Refund & Cancellation Policy").should("exist");
-      cy.contains("h2", "13. How to Request Help With a Billing Issue").should("exist");
-    });
-    cy.get("#privacy").within(() => {
-      cy.contains("h1", "Privacy Policy").should("exist");
-      cy.contains("h2", "18. Contact Us").should("exist");
-      cy.contains("li", "create and administer accounts;").should("exist");
-    });
-    // /terms itself is a page too — it gets the footer link.
+    // the website's header, and the row naming the four documents
+    cy.get(".nav-wrap .brand").should("be.visible");
+    cy.get("[data-legal-nav] a").should("have.length", 4);
+    cy.get("[data-legal-nav] a[aria-current=page]").should("have.attr", "href", "/terms");
+    // the other documents are their own pages
+    cy.get("[data-legal-nav] a[data-legal-link=refunds]").click();
+    cy.location("pathname").should("eq", "/refund-policy");
+    cy.contains("h1", "Refund & Cancellation Policy").should("be.visible");
+    cy.contains("h2", "13. How to Request Help With a Billing Issue").should("exist");
+    cy.get("[data-legal-nav] a[data-legal-link=privacy]").click();
+    cy.location("pathname").should("eq", "/privacy");
+    cy.contains("h1", "Privacy Policy").should("be.visible");
+    cy.contains("h2", "18. Contact Us").should("exist");
+    cy.contains("li", "create and administer accounts;").should("exist");
+    cy.get("[data-legal-nav] a[data-legal-link=sms]").click();
+    cy.location("pathname").should("eq", "/sms-terms");
+    cy.contains("h1", "SMS Terms & Conditions").should("be.visible");
+    cy.contains("h2", "5. Message Frequency, Charges, STOP, and HELP").should("exist");
+    // a legal page is a page too — it gets the footer's four links.
     cy.scrollTo("bottom");
-    cy.get("a[data-terms-link]").should("be.visible");
+    cy.get("[data-site-footer] a[data-legal-link]").should("have.length", 4);
   });
 });
 
-describe("REQ-043 the terms page shows both languages through its EN/ES toggle", () => {
-  it("REQ-043 the terms page shows both languages through its EN/ES toggle", () => {
+describe("REQ-043 the legal pages show both languages through the header's toggle", () => {
+  it("REQ-043 the legal pages show both languages through the header's toggle", () => {
     cy.clearCookies();
     cy.setCookie("pm_lang", "en");
     cy.visit("/terms");
@@ -136,15 +145,13 @@ describe("REQ-043 the terms page shows both languages through its EN/ES toggle",
     cy.get("a[data-legal-lang=es]").click();
     cy.location("search").should("eq", "?lang=es");
     cy.contains("h1", "Términos de servicio").should("be.visible");
-    cy.contains("Fecha de vigencia: 24 de septiembre de 2026").should("be.visible");
+    cy.contains("Última actualización: 6 de octubre de 2026").should("be.visible");
     cy.contains("h2", "1. Servicio de empresa a empresa").should("exist");
-    cy.get("#refunds").contains("h1", "Política de reembolsos y cancelaciones").should("exist");
-    cy.get("#privacy").contains("h2", "18. Contáctenos").should("exist");
     cy.contains("h2", "1. Business-to-Business Service").should("not.exist");
-    // The pick persists: a plain /terms visit now stays Spanish.
-    cy.visit("/terms");
-    cy.contains("h1", "Términos de servicio").should("be.visible");
+    // The pick persists: a plain visit to another legal page stays Spanish.
+    cy.visit("/sms-terms");
+    cy.contains("h1", "Términos y condiciones de SMS").should("be.visible");
     cy.get("a[data-legal-lang=en]").click();
-    cy.contains("h1", "Terms of Service").should("be.visible");
+    cy.contains("h1", "SMS Terms & Conditions").should("be.visible");
   });
 });

@@ -29,6 +29,15 @@ import {
   SUPPORT_PHONE_DISPLAY,
   SUPPORT_PHONE_HREF,
 } from "../../shared/legal/contact.ts";
+import { LEGAL_LINKS, type LegalDocId } from "../../shared/legal/terms.ts";
+
+/** REQ-067 — this page's dictionary key for each policy link's label. */
+const PROMO_FOOTER_KEY: Record<LegalDocId, string> = {
+  terms: "footerTerms",
+  refunds: "footerRefunds",
+  privacy: "footerPrivacy",
+  sms: "footerSms",
+};
 
 function Check() {
   return (
@@ -370,9 +379,20 @@ export default define.page(function PromoLanding(ctx) {
                 {BUSINESS_ADDRESS}
               </span>
             </div>
-            <a class="pm-footer__terms" href="/terms" data-terms-link>
-              {t("footerTerms")}
-            </a>
+            {/* REQ-067 — the four policy links, from the one list */}
+            <nav class="pm-footer__legal" aria-label={t("footerLegalAria")}>
+              {LEGAL_LINKS.map((l) => (
+                <a
+                  key={l.id}
+                  class="pm-footer__terms"
+                  href={l.path}
+                  data-legal-link={l.id}
+                  data-terms-link={l.id === "terms" ? "" : undefined}
+                >
+                  {t(PROMO_FOOTER_KEY[l.id])}
+                </a>
+              ))}
+            </nav>
             <div class="pm-footer__copy">{t("footerCopy")}</div>
           </footer>
         </div>

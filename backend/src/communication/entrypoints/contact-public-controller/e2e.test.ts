@@ -10,9 +10,15 @@ class TestApp {}
 
 const PORT = 9032;
 
-async function drain(res: Response) { await res.body?.cancel(); }
+async function drain(res: Response) {
+  await res.body?.cancel();
+}
 
-const valid = (overrides: Partial<{ name: string; email: string; subject: string; message: string }> = {}) => ({
+const valid = (
+  overrides: Partial<
+    { name: string; email: string; subject: string; message: string }
+  > = {},
+) => ({
   name: "Lead",
   email: "lead@example.test",
   subject: "Need a quote",
@@ -53,10 +59,12 @@ Deno.test("contact e2e: rate limit kicks in after 5 submissions per email per ho
     const payload = JSON.stringify(valid({ email: "spammer@example.test" }));
 
     for (let i = 0; i < 5; i++) {
-      const r = await fetch(url, { method: "POST", headers, body: payload }).then((r) => r.json());
+      const r = await fetch(url, { method: "POST", headers, body: payload })
+        .then((r) => r.json());
       assertEquals(r.ok, true);
     }
-    const blocked = await fetch(url, { method: "POST", headers, body: payload }).then((r) => r.json());
+    const blocked = await fetch(url, { method: "POST", headers, body: payload })
+      .then((r) => r.json());
     assertEquals(blocked.ok, false);
     assertEquals(blocked.reason, "too_many_attempts");
   } finally {
@@ -80,6 +88,58 @@ Deno.test("contact e2e: invalid email rejected before rate limiter consumes a sl
     });
     assertEquals(res.status >= 400, true);
     await drain(res);
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+// REQ-068 — Hans's contact-page example: a phone and an SMS consent box ride
+// along with the inquiry; both are optional, and what arrives is validated.
+Deno.test("REQ-068 contact: a phone and sms consent are accepted; a bad phone is refused", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.set("POSTMARK_FROM", "ops@example.test");
+  Deno.env.delete("POSTMARK_API_KEY");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const url = `http://localhost:${PORT}/contact`;
+    const headers = { "content-type": "application/json" };
+    const ok = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ...valid({ email: "texts@example.test" }),
+        phone: "540-333-1334",
+        smsConsent: true,
+      }),
+    }).then((r) => r.json());
+    assertEquals(ok.ok, true);
+
+    // a phone that is not a phone (far too long) is refused before anything is sent
+    const longPhone = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ...valid({ email: "texts@example.test" }),
+        phone: "5".repeat(80),
+      }),
+    });
+    assertEquals(longPhone.status >= 400, true);
+    await drain(longPhone);
+
+    // consent is a yes or a no, never a string
+    const notBool = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ...valid({ email: "texts@example.test" }),
+        smsConsent: "yes",
+      }),
+    });
+    assertEquals(notBool.status >= 400, true);
+    await drain(notBool);
   } finally {
     await server.stop();
     await resetKv();

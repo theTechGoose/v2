@@ -1,15 +1,16 @@
 /**
- * REQ-043 (amendment "it should be both") — the Spanish rendering of the three
- * legal documents. Mirrors shared/legal/terms.ts EXACTLY in structure (same
- * ids, section numbers, block kinds and list lengths — the unit test pins
- * that), so /terms can swap languages without touching layout.
+ * REQ-043 (amendment "it should be both") / REQ-065 — the Spanish rendering
+ * of the four legal documents (the October 6, 2026 text). Mirrors
+ * shared/legal/terms.ts EXACTLY in structure (same ids, section numbers,
+ * block kinds and list lengths — the unit test pins that), so the legal pages
+ * can swap languages without touching layout.
  *
  * This is a translation made in-repo, not an attorney-reviewed Spanish
- * version; the `[INSERTAR …]` placeholders mirror the English `[INSERT …]`.
+ * version.
  */
 import { type LegalBlock, type LegalDoc } from "./terms.ts";
 
-export const LEGAL_EFFECTIVE_DATE_ES = "24 de septiembre de 2026";
+export const LEGAL_LAST_UPDATED_ES = "6 de octubre de 2026";
 
 const p = (text: string): LegalBlock => ({ kind: "p", text });
 const list = (...items: string[]): LegalBlock => ({ kind: "list", items });
@@ -22,11 +23,11 @@ const labeled = (label: string, text: string): LegalBlock => ({
 export const TERMS_OF_SERVICE_ES: LegalDoc = {
   id: "terms",
   title: "Términos de servicio",
-  effectiveDate: LEGAL_EFFECTIVE_DATE_ES,
+  lastUpdated: LEGAL_LAST_UPDATED_ES,
   notice:
     "ESTE ACUERDO ESTÁ SUJETO A ARBITRAJE CONFORME A LA LEY UNIFORME DE ARBITRAJE DE CAROLINA DEL SUR.",
   intro: [
-    'Estos Términos de servicio ("Términos") constituyen un acuerdo legalmente vinculante entre usted y Paperwork Monster Inc., que opera como Paperwork Monster ("Paperwork Monster," "la Compañía," "nosotros," "nos" o "nuestro"), y rigen su acceso y uso de nuestros sitios web, aplicaciones, software, herramientas de comunicación, funciones habilitadas con inteligencia artificial y demás productos y servicios relacionados (en conjunto, los "Servicios").',
+    'Estos Términos de servicio ("Términos") constituyen un acuerdo legalmente vinculante entre usted y Paperwork Monster Inc., que opera como DocuMonster Powered by Paperwork Monster ("DocuMonster," "nosotros," "nos" o "nuestro"), y rigen su acceso y uso de nuestros sitios web, aplicaciones, software, herramientas de comunicación, funciones habilitadas con inteligencia artificial y demás productos y servicios relacionados (en conjunto, los "Servicios").',
     "Al crear una cuenta, comprar una suscripción, marcar una casilla que indique su aceptación, o de cualquier otra forma acceder a los Servicios o usarlos, usted acepta quedar obligado por estos Términos, nuestra Política de reembolsos y cancelaciones y nuestra Política de privacidad. Si no está de acuerdo, no acceda a los Servicios ni los use.",
   ],
   sections: [
@@ -35,7 +36,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Servicio de empresa a empresa",
       blocks: [
         p(
-          "Paperwork Monster ofrece software y servicios relacionados destinados a ayudar a las empresas a administrar aspectos de sus operaciones, que pueden incluir clientes, prospectos, proyectos, estimados, cotizaciones, facturas, documentos, comunicaciones, flujos de trabajo, registros comerciales, reportes y otras funciones administrativas.",
+          "DocuMonster ofrece software y servicios relacionados destinados a ayudar a las empresas a administrar aspectos de sus operaciones, que pueden incluir clientes, prospectos, proyectos, estimados, cotizaciones, facturas, documentos, comunicaciones, flujos de trabajo, registros comerciales, reportes y otras funciones administrativas.",
         ),
         p(
           'Los Servicios están destinados a un uso empresarial y profesional, y no a un uso personal, familiar o doméstico. Usted declara que tiene al menos 18 años y que cuenta con autoridad para celebrar estos Términos a título personal o en nombre de la empresa u organización que representa. Si usa los Servicios en nombre de una entidad, "usted" y "Cliente" incluyen a esa entidad.',
@@ -59,7 +60,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Servicios y funciones",
       blocks: [
         p(
-          "Las funciones disponibles para usted dependen de su plan de suscripción, de la configuración de su cuenta y de cualquier servicio adicional que compre. Paperwork Monster puede agregar, modificar, mejorar, descontinuar o reemplazar funciones de vez en cuando. Haremos esfuerzos comercialmente razonables para evitar reducir de forma sustancial la funcionalidad principal de una suscripción de pago durante un período de suscripción ya pagado por adelantado.",
+          "Las funciones disponibles para usted dependen de su plan de suscripción, de la configuración de su cuenta y de cualquier servicio adicional que compre. DocuMonster puede agregar, modificar, mejorar, descontinuar o reemplazar funciones de vez en cuando. Haremos esfuerzos comercialmente razonables para evitar reducir de forma sustancial la funcionalidad principal de una suscripción de pago durante un período de suscripción ya pagado por adelantado.",
         ),
         p(
           "Ciertas funciones pueden identificarse como beta, vista previa, experimentales o de acceso anticipado. Dichas funciones pueden cambiarse o descontinuarse en cualquier momento y pueden ser menos confiables que las funciones de disponibilidad general.",
@@ -71,10 +72,10 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Monster Free y pruebas gratuitas",
       blocks: [
         p(
-          "Paperwork Monster puede ofrecer un nivel de suscripción gratuito conocido actualmente como Monster Free. Monster Free está pensado para seguir disponible sin cuota de suscripción, sujeto a las funciones, límites de uso, límites de almacenamiento, límites de comunicaciones y demás restricciones divulgadas para ese plan. Paperwork Monster puede cambiar las funciones o los límites de un plan gratuito de forma prospectiva.",
+          "DocuMonster puede ofrecer un nivel de suscripción gratuito conocido actualmente como Monster Free. Monster Free está pensado para seguir disponible sin cuota de suscripción, sujeto a las funciones, límites de uso, límites de almacenamiento, límites de comunicaciones y demás restricciones divulgadas para ese plan. DocuMonster puede cambiar las funciones o los límites de un plan gratuito de forma prospectiva.",
         ),
         p(
-          "Paperwork Monster también puede ofrecer pruebas gratuitas de planes de suscripción de pago, incluidas pruebas de hasta 30 días u otro período divulgado al registrarse. Los términos presentados con una prueba en particular rigen esa prueba.",
+          "DocuMonster también puede ofrecer pruebas gratuitas de planes de suscripción de pago, incluidas pruebas de hasta 30 días u otro período divulgado al registrarse. Los términos presentados con una prueba en particular rigen esa prueba.",
         ),
         p(
           "Si una prueba requiere un método de pago y se divulga que se convierte automáticamente en una suscripción de pago, la suscripción de pago comenzará y el método de pago podrá cobrarse cuando termine la prueba, a menos que usted cancele antes de la fecha límite divulgada. La información de precios y renovación se divulgará antes de iniciar un cobro.",
@@ -89,7 +90,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
           "Las suscripciones de pago pueden ofrecerse con un ciclo de facturación mensual, anual u otro divulgado. Salvo que se indique lo contrario al momento de la compra, las suscripciones mensuales se renuevan automáticamente cada mes, las suscripciones anuales se renuevan automáticamente cada año y las cuotas de suscripción aplicables se cobran por adelantado para el período de suscripción siguiente.",
         ),
         p(
-          "Al comprar una suscripción recurrente, usted autoriza a Paperwork Monster y a sus proveedores de procesamiento de pagos o servicios comerciales a cobrar a su método de pago seleccionado las cuotas de suscripción aplicables, los impuestos y los demás cargos que usted autorice. Su suscripción continúa hasta que se cancele conforme a estos Términos y a la Política de reembolsos y cancelaciones.",
+          "Al comprar una suscripción recurrente, usted autoriza a DocuMonster y a sus proveedores de procesamiento de pagos o servicios comerciales a cobrar a su método de pago seleccionado las cuotas de suscripción aplicables, los impuestos y los demás cargos que usted autorice. Su suscripción continúa hasta que se cancele conforme a estos Términos y a la Política de reembolsos y cancelaciones.",
         ),
       ],
     },
@@ -98,7 +99,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Cuotas y pago",
       blocks: [
         p(
-          "Usted acepta pagar todas las cuotas que se le divulguen al comprar o usar Servicios de pago. Los pagos pueden ser procesados por procesadores de pago o proveedores de servicios comerciales externos. Paperwork Monster puede recibir información relacionada con los pagos de esos proveedores, pero puede no recibir ni almacenar directamente las credenciales completas de la tarjeta de pago.",
+          "Usted acepta pagar todas las cuotas que se le divulguen al comprar o usar Servicios de pago. Los pagos pueden ser procesados por procesadores de pago o proveedores de servicios comerciales externos. DocuMonster puede recibir información relacionada con los pagos de esos proveedores, pero puede no recibir ni almacenar directamente las credenciales completas de la tarjeta de pago.",
         ),
         p(
           "Usted es responsable de mantener un método de pago válido. Si un pago no puede completarse, podemos reintentar el cobro, solicitar otro método de pago, restringir la funcionalidad de pago, suspender la cuenta o dar por terminados los Servicios de pago. Usted sigue siendo responsable de los montos debidamente incurridos antes de la suspensión o terminación.",
@@ -110,7 +111,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Cambios de precio",
       blocks: [
         p(
-          "Paperwork Monster puede modificar los precios o las estructuras de precios de las suscripciones de vez en cuando. Salvo que se divulgue lo contrario o lo exija la ley, un cambio de precio que afecte a una suscripción de pago existente se aplicará de forma prospectiva en una renovación futura y no de forma retroactiva a un período de suscripción que ya se haya pagado. Daremos un aviso razonable de los cambios de precio sustanciales antes de que entren en vigor para una suscripción existente. Si no desea continuar con el nuevo precio, puede cancelar antes de la fecha de renovación aplicable.",
+          "DocuMonster puede modificar los precios o las estructuras de precios de las suscripciones de vez en cuando. Salvo que se divulgue lo contrario o lo exija la ley, un cambio de precio que afecte a una suscripción de pago existente se aplicará de forma prospectiva en una renovación futura y no de forma retroactiva a un período de suscripción que ya se haya pagado. Daremos un aviso razonable de los cambios de precio sustanciales antes de que entren en vigor para una suscripción existente. Si no desea continuar con el nuevo precio, puede cancelar antes de la fecha de renovación aplicable.",
         ),
       ],
     },
@@ -122,7 +123,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
           "Puede cancelar una suscripción de pago en cualquier momento a través del proceso de administración de cuenta disponible o comunicándose con nosotros por un canal de soporte autorizado. Salvo que se indique expresamente lo contrario, la cancelación entra en vigor al final del período de suscripción pagado en curso, usted conserva el acceso a los Servicios de pago aplicables hasta el final de ese período y la cancelación evita la siguiente renovación automática.",
         ),
         p(
-          "Los pagos de suscripción generalmente no son reembolsables, las porciones no utilizadas de los períodos de suscripción mensuales o anuales no se prorratean ni se reembolsan, y las cuotas de suscripción anuales generalmente no son reembolsables después de la compra, salvo que se indique expresamente lo contrario o lo exija la ley. Paperwork Monster puede emitir reembolsos, créditos o ajustes de facturación a su discreción por errores de facturación, cobros duplicados, problemas del servicio o circunstancias excepcionales. Encontrará más detalles en nuestra Política de reembolsos y cancelaciones, que se incorpora a estos Términos.",
+          "Los pagos de suscripción generalmente no son reembolsables, las porciones no utilizadas de los períodos de suscripción mensuales o anuales no se prorratean ni se reembolsan, y las cuotas de suscripción anuales generalmente no son reembolsables después de la compra, salvo que se indique expresamente lo contrario o lo exija la ley. DocuMonster puede emitir reembolsos, créditos o ajustes de facturación a su discreción por errores de facturación, cobros duplicados, problemas del servicio o circunstancias excepcionales. Encontrará más detalles en nuestra Política de reembolsos y cancelaciones, que se incorpora a estos Términos.",
         ),
       ],
     },
@@ -131,10 +132,10 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Datos del Cliente",
       blocks: [
         p(
-          'Entre usted y Paperwork Monster, usted conserva la propiedad de la información, los registros, los documentos, las imágenes, la información de clientes, los estimados, las facturas, la información de proyectos y demás contenido que usted o sus usuarios autorizados envíen a los Servicios ("Datos del Cliente").',
+          'Entre usted y DocuMonster, usted conserva la propiedad de la información, los registros, los documentos, las imágenes, la información de clientes, los estimados, las facturas, la información de proyectos y demás contenido que usted o sus usuarios autorizados envíen a los Servicios ("Datos del Cliente").',
         ),
         p(
-          "Usted otorga a Paperwork Monster una licencia no exclusiva y mundial para alojar, almacenar, reproducir, procesar, transmitir, mostrar, analizar y de otro modo usar los Datos del Cliente según sea razonablemente necesario para prestar y proteger los Servicios, realizar las acciones que usted solicite, dar soporte a su cuenta, mantener y mejorar los Servicios, detectar fraude, abuso o amenazas de seguridad, cumplir con la ley y cumplir los fines descritos en nuestra Política de privacidad.",
+          "Usted otorga a DocuMonster una licencia no exclusiva y mundial para alojar, almacenar, reproducir, procesar, transmitir, mostrar, analizar y de otro modo usar los Datos del Cliente según sea razonablemente necesario para prestar y proteger los Servicios, realizar las acciones que usted solicite, dar soporte a su cuenta, mantener y mejorar los Servicios, detectar fraude, abuso o amenazas de seguridad, cumplir con la ley y cumplir los fines descritos en nuestra Política de privacidad.",
         ),
         p(
           "Usted declara que cuenta con los derechos y permisos necesarios para proporcionarnos los Datos del Cliente y para indicarnos que los procesemos.",
@@ -146,7 +147,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Información sobre sus clientes, empleados y otros contactos",
       blocks: [
         p(
-          "Los Servicios pueden permitirle almacenar o procesar información sobre sus clientes, prospectos, empleados, subcontratistas, proveedores y otros terceros. Usted es responsable de determinar si cuenta con una base legal y con todos los avisos, permisos, autorizaciones o consentimientos necesarios para recopilar, cargar, almacenar, usar y comunicarse usando esa información. Paperwork Monster actúa como proveedor de tecnología y no establece de forma independiente la relación comercial entre usted y sus clientes.",
+          "Los Servicios pueden permitirle almacenar o procesar información sobre sus clientes, prospectos, empleados, subcontratistas, proveedores y otros terceros. Usted es responsable de determinar si cuenta con una base legal y con todos los avisos, permisos, autorizaciones o consentimientos necesarios para recopilar, cargar, almacenar, usar y comunicarse usando esa información. DocuMonster actúa como proveedor de tecnología y no establece de forma independiente la relación comercial entre usted y sus clientes.",
         ),
       ],
     },
@@ -156,19 +157,10 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
         "Mensajes de texto, llamadas, correos electrónicos y comunicaciones con clientes",
       blocks: [
         p(
-          "Los Servicios pueden permitirle comunicarse con clientes, prospectos, empleados, proveedores u otras personas mediante mensajes de texto SMS o MMS, teléfono, correo electrónico u otros canales de comunicación.",
+          "Los Servicios pueden permitirle comunicarse con clientes, prospectos, empleados, proveedores u otras personas mediante mensajes de texto SMS o MMS, teléfono, correo electrónico u otros canales de comunicación. Cuando usted inicia, programa, autoriza o configura una comunicación a través de los Servicios, usted es responsable de esa comunicación y de contar con una base legal para enviarla, salvo cuando DocuMonster se comunique por separado en su propio nombre.",
         ),
         p(
-          "Cuando usted inicia, programa, autoriza o configura una comunicación a través de los Servicios, usted es responsable de esa comunicación y de la base legal que la permite, salvo cuando Paperwork Monster se comunique por separado en su propio nombre.",
-        ),
-        p(
-          "Antes de enviar comunicaciones a través de los Servicios, debe obtener y mantener todos los consentimientos y autorizaciones legalmente requeridos de cada destinatario. Cuando corresponda, esto incluye el consentimiento expreso previo para mensajes informativos y el consentimiento expreso previo por escrito para mensajes de marketing o promocionales. El consentimiento debe ser lo suficientemente específico para identificar al remitente y el tema de las comunicaciones, y no debe transferirse desde otra empresa a menos que la ley aplicable y las reglas del proveedor de mensajería lo permitan expresamente.",
-        ),
-        p(
-          "Usted acepta mantener evidencia apropiada del consentimiento, incluidos la fecha, el método, la fuente, el alcance y el destinatario del consentimiento cuando sea razonablemente requerido. Debe atender con prontitud las solicitudes de exclusión, cancelación de suscripción, STOP, revocación y similares, y no debe reanudar las comunicaciones a menos que el destinatario vuelva a otorgar un consentimiento válido.",
-        ),
-        p(
-          "No puede usar los Servicios para enviar comunicaciones no solicitadas, engañosas, ilegales, abusivas o prohibidas. Paperwork Monster puede bloquear, filtrar, suspender, limitar o dar por terminada la funcionalidad de mensajería o llamadas cuando sea razonablemente necesario para cumplir con la ley aplicable, las reglas de las operadoras, los requisitos de los proveedores, las políticas de las plataformas o los requisitos de prevención de abuso.",
+          "Usted debe obtener y mantener cualquier consentimiento o autorización que exija la ley aplicable, atender las solicitudes de exclusión y revocación, y cumplir con la ley aplicable, las reglas de las operadoras y los requisitos de los proveedores de mensajería. Las reglas adicionales que rigen las comunicaciones por SMS se establecen en nuestros Términos y condiciones de SMS, que se incorporan a estos Términos por referencia.",
         ),
       ],
     },
@@ -177,7 +169,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Contratos con clientes, cotizaciones, estimados y facturas",
       blocks: [
         p(
-          "Los Servicios pueden permitirle crear o entregar cotizaciones, estimados, propuestas, facturas, contratos, acuses de recibo o documentos relacionados. Paperwork Monster no es parte de los acuerdos entre usted y sus clientes por el simple hecho de que esos acuerdos o documentos se creen, entreguen, aprueben, firmen o almacenen usando los Servicios.",
+          "Los Servicios pueden permitirle crear o entregar cotizaciones, estimados, propuestas, facturas, contratos, acuses de recibo o documentos relacionados. DocuMonster no es parte de los acuerdos entre usted y sus clientes por el simple hecho de que esos acuerdos o documentos se creen, entreguen, aprueben, firmen o almacenen usando los Servicios.",
         ),
         p(
           "Usted es responsable de determinar los términos apropiados para su trabajo, incluidos precios, alcance, depósitos, requisitos de pago, garantías, derechos de cancelación, divulgaciones de licencias, avisos al consumidor, requisitos de contratos de construcción y demás términos aplicables a su negocio. Las plantillas, cláusulas de ejemplo, sugerencias automatizadas u otra información disponible a través de los Servicios se ofrecen por conveniencia y no constituyen asesoría legal.",
@@ -192,7 +184,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
           "Algunos Servicios pueden usar inteligencia artificial, aprendizaje automático, procesamiento automatizado o tecnologías similares. Las funciones habilitadas con IA pueden ayudar con redacción, resúmenes, recomendaciones, organización de datos, estimados, descripciones, cálculos, comunicaciones u otras funciones comerciales.",
         ),
         p(
-          "Los resultados generados por IA o automatizados pueden ser incompletos, inexactos, inapropiados o no adecuados para sus circunstancias. Usted es responsable de revisar los resultados antes de confiar en ellos, enviarlos, publicarlos o usarlos. Paperwork Monster no declara que la información generada por IA constituya asesoría legal, contable, fiscal, de ingeniería, financiera, laboral, de seguros, de construcción, de licencias ni de otro tipo profesional. Usted sigue siendo responsable de las decisiones que tome usando los Servicios.",
+          "Los resultados generados por IA o automatizados pueden ser incompletos, inexactos, inapropiados o no adecuados para sus circunstancias. Usted es responsable de revisar los resultados antes de confiar en ellos, enviarlos, publicarlos o usarlos. DocuMonster no declara que la información generada por IA constituya asesoría legal, contable, fiscal, de ingeniería, financiera, laboral, de seguros, de construcción, de licencias ni de otro tipo profesional. Usted sigue siendo responsable de las decisiones que tome usando los Servicios.",
         ),
       ],
     },
@@ -201,7 +193,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Documentos comerciales sensibles",
       blocks: [
         p(
-          "Si está habilitado, los Servicios pueden permitir a los clientes cargar documentos comerciales como certificados de seguro, formularios fiscales, formularios W-9, información de identificación fiscal, licencias, permisos o registros comerciales similares. Debe cargar dicha información solo cuando sea razonablemente necesario para fines comerciales legítimos y solo si tiene autoridad para hacerlo. Paperwork Monster puede aplicar restricciones o requisitos de seguridad adicionales a las funciones de documentos sensibles.",
+          "Si está habilitado, los Servicios pueden permitir a los clientes cargar documentos comerciales como certificados de seguro, formularios fiscales, formularios W-9, información de identificación fiscal, licencias, permisos o registros comerciales similares. Debe cargar dicha información solo cuando sea razonablemente necesario para fines comerciales legítimos y solo si tiene autoridad para hacerlo. DocuMonster puede aplicar restricciones o requisitos de seguridad adicionales a las funciones de documentos sensibles.",
         ),
       ],
     },
@@ -222,7 +214,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
           "realizar ingeniería inversa o intentar derivar el código fuente, salvo cuando dicha restricción esté prohibida por la ley;",
           "eludir controles de suscripción, uso, seguridad o acceso;",
           "usar los Servicios para facilitar discriminación ilegal, acoso, amenazas o abuso; o",
-          "usar los Servicios de una manera que cree un riesgo irrazonable para Paperwork Monster, sus proveedores de servicios, clientes o terceros.",
+          "usar los Servicios de una manera que cree un riesgo irrazonable para DocuMonster, sus proveedores de servicios, clientes o terceros.",
         ),
       ],
     },
@@ -231,7 +223,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Nuestra propiedad intelectual",
       blocks: [
         p(
-          "Paperwork Monster y sus licenciantes conservan todos los derechos sobre los Servicios, incluidos el software, las interfaces, los diseños, los flujos de trabajo, las marcas comerciales, los logotipos, la documentación, las bases de datos, la tecnología y demás materiales propietarios, excluidos los Datos del Cliente. Sujeto a estos Términos y al pago de las cuotas aplicables, Paperwork Monster le otorga un derecho limitado, no exclusivo, intransferible y revocable para acceder a los Servicios y usarlos para sus fines comerciales internos durante el período de suscripción aplicable. No se le transfiere ningún derecho de propiedad.",
+          "DocuMonster y sus licenciantes conservan todos los derechos sobre los Servicios, incluidos el software, las interfaces, los diseños, los flujos de trabajo, las marcas comerciales, los logotipos, la documentación, las bases de datos, la tecnología y demás materiales propietarios, excluidos los Datos del Cliente. Sujeto a estos Términos y al pago de las cuotas aplicables, DocuMonster le otorga un derecho limitado, no exclusivo, intransferible y revocable para acceder a los Servicios y usarlos para sus fines comerciales internos durante el período de suscripción aplicable. No se le transfiere ningún derecho de propiedad.",
         ),
       ],
     },
@@ -240,7 +232,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Comentarios",
       blocks: [
         p(
-          "Si nos proporciona sugerencias, ideas, solicitudes de funciones o comentarios sobre los Servicios, usted permite a Paperwork Monster usar esos comentarios sin restricción ni compensación para usted, siempre que esto no transfiera la propiedad de sus Datos del Cliente.",
+          "Si nos proporciona sugerencias, ideas, solicitudes de funciones o comentarios sobre los Servicios, usted permite a DocuMonster usar esos comentarios sin restricción ni compensación para usted, siempre que esto no transfiera la propiedad de sus Datos del Cliente.",
         ),
       ],
     },
@@ -249,7 +241,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Servicios de terceros",
       blocks: [
         p(
-          "Los Servicios pueden integrarse con servicios de terceros o depender de ellos, incluidos proveedores de comunicaciones, procesadores de pagos, empresas de alojamiento, proveedores de análisis, proveedores de inteligencia artificial, plataformas de contabilidad, proveedores de telecomunicaciones y otros proveedores de tecnología. Los servicios de terceros pueden regirse por términos y políticas de privacidad separados. Paperwork Monster no es responsable de los servicios de terceros que estén fuera de nuestro control razonable.",
+          "Los Servicios pueden integrarse con servicios de terceros o depender de ellos, incluidos proveedores de comunicaciones, procesadores de pagos, empresas de alojamiento, proveedores de análisis, proveedores de inteligencia artificial, plataformas de contabilidad, proveedores de telecomunicaciones y otros proveedores de tecnología. Los servicios de terceros pueden regirse por términos y políticas de privacidad separados. DocuMonster no es responsable de los servicios de terceros que estén fuera de nuestro control razonable.",
         ),
       ],
     },
@@ -267,7 +259,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Suspensión y terminación",
       blocks: [
         p(
-          "Paperwork Monster puede suspender o dar por terminada una cuenta o una funcionalidad en particular si determinamos razonablemente que un pago está vencido; que la cuenta se está usando de forma fraudulenta; que el uso viola estos Términos, la ley aplicable o los requisitos de plataformas de terceros; que la actividad crea una amenaza de seguridad; que la actividad podría dañar sustancialmente a Paperwork Monster o a otros; o que la suspensión es razonablemente necesaria para proteger la integridad de los Servicios. Cuando sea razonablemente posible, podemos dar aviso y una oportunidad de resolver el problema. La terminación no elimina las obligaciones ni responsabilidades surgidas antes de la terminación.",
+          "DocuMonster puede suspender o dar por terminada una cuenta o una funcionalidad en particular si determinamos razonablemente que un pago está vencido; que la cuenta se está usando de forma fraudulenta; que el uso viola estos Términos, la ley aplicable o los requisitos de plataformas de terceros; que la actividad crea una amenaza de seguridad; que la actividad podría dañar sustancialmente a DocuMonster o a otros; o que la suspensión es razonablemente necesaria para proteger la integridad de los Servicios. Cuando sea razonablemente posible, podemos dar aviso y una oportunidad de resolver el problema. La terminación no elimina las obligaciones ni responsabilidades surgidas antes de la terminación.",
         ),
       ],
     },
@@ -276,7 +268,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Datos después de la cancelación",
       blocks: [
         p(
-          "Después de la terminación o cancelación de una cuenta de pago, Paperwork Monster puede poner los Datos del Cliente a disposición para su exportación durante un máximo de 30 días, sujeto al estado de la cuenta, la disponibilidad técnica, los requisitos legales y la funcionalidad aplicable del producto. Después de ese período, Paperwork Monster puede eliminar, anonimizar, archivar o de otro modo disponer de los Datos del Cliente conforme a sus prácticas de retención y obligaciones legales. Usted es responsable de exportar la información que desee conservar. Podemos conservar la información por más tiempo cuando sea necesario por motivos legales, de seguridad, prevención de fraude, respaldo, contabilidad, resolución de disputas o cumplimiento.",
+          "Después de la terminación o cancelación de una cuenta de pago, DocuMonster puede poner los Datos del Cliente a disposición para su exportación durante un máximo de 30 días, sujeto al estado de la cuenta, la disponibilidad técnica, los requisitos legales y la funcionalidad aplicable del producto. Después de ese período, DocuMonster puede eliminar, anonimizar, archivar o de otro modo disponer de los Datos del Cliente conforme a sus prácticas de retención y obligaciones legales. Usted es responsable de exportar la información que desee conservar. Podemos conservar la información por más tiempo cuando sea necesario por motivos legales, de seguridad, prevención de fraude, respaldo, contabilidad, resolución de disputas o cumplimiento.",
         ),
       ],
     },
@@ -306,7 +298,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Indemnización",
       blocks: [
         p(
-          "En la medida permitida por la ley, usted acepta defender, indemnizar y mantener indemne a Paperwork Monster y a sus directivos, directores, empleados, afiliados y agentes frente a reclamaciones de terceros, daños, responsabilidades, sanciones, sentencias y costos razonables que surjan de sus Datos del Cliente o se relacionen con ellos; de su violación de estos Términos o de la ley aplicable; de sus productos o servicios; de su relación o disputa con sus clientes; de las comunicaciones iniciadas o autorizadas a través de su cuenta; de su falta de obtención del consentimiento de comunicación legalmente requerido; o de la infracción o violación de derechos de terceros causada por la información o los materiales que usted proporcione.",
+          "En la medida permitida por la ley, usted acepta defender, indemnizar y mantener indemne a DocuMonster y a sus directivos, directores, empleados, afiliados y agentes frente a reclamaciones de terceros, daños, responsabilidades, sanciones, sentencias y costos razonables que surjan de sus Datos del Cliente o se relacionen con ellos; de su violación de estos Términos o de la ley aplicable; de sus productos o servicios; de su relación o disputa con sus clientes; de las comunicaciones iniciadas o autorizadas a través de su cuenta; de su falta de obtención del consentimiento de comunicación legalmente requerido; o de la infracción o violación de derechos de terceros causada por la información o los materiales que usted proporcione.",
         ),
       ],
     },
@@ -327,7 +319,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
           "Antes de iniciar un arbitraje, la parte que plantee una disputa debe dar aviso por escrito describiendo la naturaleza de la disputa y la resolución solicitada. Las partes harán esfuerzos razonables y de buena fe para resolver la disputa de manera informal durante al menos 30 días después de recibido el aviso, antes de iniciar el arbitraje.",
         ),
         p(
-          "Los avisos a Paperwork Monster deben enviarse a: Paperwork Monster Inc., Atención: Legal, 4505 Socastee Blvd, Myrtle Beach, SC 29588, [INSERTAR CORREO LEGAL/DE SOPORTE].",
+          "Los avisos a DocuMonster deben enviarse a: DocuMonster, 4505 Socastee Blvd, Myrtle Beach, SC 29588; correo electrónico: hello@documonster.com.",
         ),
       ],
     },
@@ -336,7 +328,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Arbitraje vinculante",
       blocks: [
         p(
-          "Salvo lo dispuesto a continuación, toda disputa, reclamación o controversia que surja de estos Términos, de los Servicios o de la relación entre usted y Paperwork Monster, o que se relacione con ellos, y que no pueda resolverse mediante el proceso informal anterior, se resolverá mediante arbitraje final y vinculante de forma individual.",
+          "Salvo lo dispuesto a continuación, toda disputa, reclamación o controversia que surja de estos Términos, de los Servicios o de la relación entre usted y DocuMonster, o que se relacione con ellos, y que no pueda resolverse mediante el proceso informal anterior, se resolverá mediante arbitraje final y vinculante de forma individual.",
         ),
         p(
           'El arbitraje será administrado por la American Arbitration Association ("AAA") conforme a sus Reglas de Arbitraje Comercial aplicables, a menos que la ley exija otro conjunto de reglas de la AAA. El arbitraje podrá llevarse a cabo de forma remota, a menos que el árbitro determine que es apropiada una audiencia presencial. Cada parte será responsable de las tarifas del arbitraje según lo dispuesto por las reglas de la AAA y la ley aplicables.',
@@ -363,7 +355,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Cambios a estos Términos",
       blocks: [
         p(
-          "Podemos actualizar estos Términos de vez en cuando. Si hacemos cambios sustanciales, daremos un aviso razonable a través de los Servicios, por correo electrónico, en el sitio web o por otro medio apropiado. Los Términos actualizados indicarán su fecha de vigencia. Cuando la ley aplicable exija la aceptación afirmativa de un cambio, solicitaremos esa aceptación.",
+          "Podemos actualizar estos Términos de vez en cuando. Si hacemos cambios sustanciales, daremos un aviso razonable a través de los Servicios, por correo electrónico, en el sitio web o por otro medio apropiado. Los Términos actualizados indicarán su fecha de última actualización. Cuando la ley aplicable exija la aceptación afirmativa de un cambio, solicitaremos esa aceptación.",
         ),
       ],
     },
@@ -375,7 +367,7 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
           "Estos Términos, junto con los formularios de pedido aplicables, la Política de reembolsos y cancelaciones, la Política de privacidad y cualquier término adicional expresamente incorporado, constituyen el acuerdo que rige los Servicios. Si una disposición no es exigible, las demás disposiciones permanecen en vigor en la máxima medida permitida por la ley. Que no hagamos valer una disposición no constituye una renuncia.",
         ),
         p(
-          "Usted no puede ceder estos Términos sin nuestro consentimiento, salvo como parte de una transferencia lícita de la totalidad o de una parte sustancial de su negocio o activos, sujeto a la ley aplicable. Paperwork Monster puede ceder estos Términos en relación con una fusión, adquisición, reorganización corporativa, financiamiento o venta de activos. Las disposiciones que por su naturaleza deban sobrevivir a la terminación sobrevivirán, incluidas las relativas a obligaciones de pago, propiedad, exclusiones de garantía, limitaciones de responsabilidad, indemnización, resolución de disputas y arbitraje.",
+          "Usted no puede ceder estos Términos sin nuestro consentimiento, salvo como parte de una transferencia lícita de la totalidad o de una parte sustancial de su negocio o activos, sujeto a la ley aplicable. DocuMonster puede ceder estos Términos en relación con una fusión, adquisición, reorganización corporativa, financiamiento o venta de activos. Las disposiciones que por su naturaleza deban sobrevivir a la terminación sobrevivirán, incluidas las relativas a obligaciones de pago, propiedad, exclusiones de garantía, limitaciones de responsabilidad, indemnización, resolución de disputas y arbitraje.",
         ),
       ],
     },
@@ -384,7 +376,10 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
       heading: "Contáctenos",
       blocks: [
         p(
-          "Las preguntas sobre estos Términos pueden dirigirse a: Paperwork Monster Inc., 4505 Socastee Blvd, Myrtle Beach, SC 29588, [INSERTAR CORREO DE SOPORTE/LEGAL].",
+          "Las preguntas sobre estos Términos pueden dirigirse a: DocuMonster Inc., 4505 Socastee Blvd, Myrtle Beach, SC 29588, hello@documonster.com.",
+        ),
+        p(
+          "Las preguntas sobre estos Términos pueden dirigirse a DocuMonster a hello@documonster.com, 855-DOCUMON (855-362-8666), o 4505 Socastee Blvd, Myrtle Beach, SC 29588. Sitio web: www.DocuMonster.com.",
         ),
       ],
     },
@@ -394,9 +389,9 @@ export const TERMS_OF_SERVICE_ES: LegalDoc = {
 export const REFUND_POLICY_ES: LegalDoc = {
   id: "refunds",
   title: "Política de reembolsos y cancelaciones",
-  effectiveDate: LEGAL_EFFECTIVE_DATE_ES,
+  lastUpdated: LEGAL_LAST_UPDATED_ES,
   intro: [
-    'Esta Política de reembolsos y cancelaciones se aplica a las suscripciones y servicios de pago comprados a Paperwork Monster Inc., que opera como Paperwork Monster ("Paperwork Monster," "nosotros," "nos" o "nuestro"). Esta Política forma parte de nuestros Términos de servicio.',
+    'Esta Política de reembolsos y cancelaciones se aplica a las suscripciones y servicios de pago comprados a Paperwork Monster Inc., que opera como DocuMonster Powered by Paperwork Monster ("DocuMonster," "nosotros," "nos" o "nuestro"). Esta Política forma parte de nuestros Términos de servicio.',
   ],
   sections: [
     {
@@ -404,7 +399,7 @@ export const REFUND_POLICY_ES: LegalDoc = {
       heading: "Suscripciones recurrentes",
       blocks: [
         p(
-          "Paperwork Monster puede ofrecer planes de suscripción mensuales, anuales u otros planes recurrentes. Salvo que se indique lo contrario al comprar un plan, las suscripciones mensuales se renuevan automáticamente cada mes, las suscripciones anuales se renuevan automáticamente cada año y los cargos de suscripción se facturan por adelantado para el período de suscripción aplicable. Su suscripción permanece activa hasta que se cancele.",
+          "DocuMonster puede ofrecer planes de suscripción mensuales, anuales u otros planes recurrentes. Salvo que se indique lo contrario al comprar un plan, las suscripciones mensuales se renuevan automáticamente cada mes, las suscripciones anuales se renuevan automáticamente cada año y los cargos de suscripción se facturan por adelantado para el período de suscripción aplicable. Su suscripción permanece activa hasta que se cancele.",
         ),
       ],
     },
@@ -413,7 +408,7 @@ export const REFUND_POLICY_ES: LegalDoc = {
       heading: "Cancelación",
       blocks: [
         p(
-          "Puede cancelar su suscripción de pago en cualquier momento mediante la funcionalidad de cancelación disponible en su cuenta o comunicándose con Paperwork Monster por un canal de soporte autorizado. La cancelación evita que la suscripción se renueve por otro período de facturación. Salvo que se indique lo contrario, la cancelación no termina de inmediato el acceso a los Servicios que ya ha pagado; puede seguir usando las funciones de pago aplicables hasta el final de su período de suscripción pagado en curso.",
+          "Puede cancelar su suscripción de pago en cualquier momento mediante la funcionalidad de cancelación disponible en su cuenta o comunicándose con DocuMonster por un canal de soporte autorizado. La cancelación evita que la suscripción se renueve por otro período de facturación. Salvo que se indique lo contrario, la cancelación no termina de inmediato el acceso a los Servicios que ya ha pagado; puede seguir usando las funciones de pago aplicables hasta el final de su período de suscripción pagado en curso.",
         ),
       ],
     },
@@ -440,7 +435,7 @@ export const REFUND_POLICY_ES: LegalDoc = {
       heading: "Planes gratuitos",
       blocks: [
         p(
-          "Paperwork Monster puede ofrecer un nivel de suscripción gratuito, incluido Monster Free. Una cuenta gratuita no genera un cargo de suscripción a menos que usted decida pasar a un plan de pago o se inscriba en otro servicio de pago. Las funciones y los límites de uso aplicables a los planes gratuitos pueden diferir de los planes de pago y pueden cambiar de forma prospectiva.",
+          "DocuMonster puede ofrecer un nivel de suscripción gratuito, incluido Monster Free. Una cuenta gratuita no genera un cargo de suscripción a menos que usted decida pasar a un plan de pago o se inscriba en otro servicio de pago. Las funciones y los límites de uso aplicables a los planes gratuitos pueden diferir de los planes de pago y pueden cambiar de forma prospectiva.",
         ),
       ],
     },
@@ -449,7 +444,7 @@ export const REFUND_POLICY_ES: LegalDoc = {
       heading: "Pruebas gratuitas",
       blocks: [
         p(
-          "Paperwork Monster puede ofrecer pruebas gratuitas de planes de suscripción de pago. La duración de la prueba y los términos de conversión se divulgarán con la oferta aplicable. Si una prueba gratuita se ofrece sin requerir información de pago, el acceso a las funciones de pago puede terminar o volver a un plan gratuito cuando la prueba expire, a menos que compre una suscripción de pago. Si una prueba requiere información de pago y se divulga que se convierte automáticamente en una suscripción de pago, debe cancelar antes de la fecha límite de la prueba divulgada para evitar el primer cargo de suscripción. Una vez que se procesa un cargo de suscripción tras una conversión de prueba debidamente divulgada, se aplican las disposiciones ordinarias de reembolso de esta Política.",
+          "DocuMonster puede ofrecer pruebas gratuitas de planes de suscripción de pago. La duración de la prueba y los términos de conversión se divulgarán con la oferta aplicable. Si una prueba gratuita se ofrece sin requerir información de pago, el acceso a las funciones de pago puede terminar o volver a un plan gratuito cuando la prueba expire, a menos que compre una suscripción de pago. Si una prueba requiere información de pago y se divulga que se convierte automáticamente en una suscripción de pago, debe cancelar antes de la fecha límite de la prueba divulgada para evitar el primer cargo de suscripción. Una vez que se procesa un cargo de suscripción tras una conversión de prueba debidamente divulgada, se aplican las disposiciones ordinarias de reembolso de esta Política.",
         ),
       ],
     },
@@ -458,7 +453,7 @@ export const REFUND_POLICY_ES: LegalDoc = {
       heading: "Sin reembolsos prorrateados",
       blocks: [
         p(
-          "Salvo que lo exija la ley o Paperwork Monster lo disponga expresamente, las cuotas de suscripción no son reembolsables por el simple hecho de que usted no haya usado los Servicios, los haya usado menos de lo esperado, haya dejado de usarlos antes de que terminara el período de suscripción, un empleado o usuario autorizado haya dejado de usar la cuenta, sus circunstancias comerciales hayan cambiado o haya cancelado después de que un período de suscripción ya hubiera comenzado.",
+          "Salvo que lo exija la ley o DocuMonster lo disponga expresamente, las cuotas de suscripción no son reembolsables por el simple hecho de que usted no haya usado los Servicios, los haya usado menos de lo esperado, haya dejado de usarlos antes de que terminara el período de suscripción, un empleado o usuario autorizado haya dejado de usar la cuenta, sus circunstancias comerciales hayan cambiado o haya cancelado después de que un período de suscripción ya hubiera comenzado.",
         ),
       ],
     },
@@ -467,7 +462,7 @@ export const REFUND_POLICY_ES: LegalDoc = {
       heading: "Errores de facturación y cobros duplicados",
       blocks: [
         p(
-          "Si cree que se le cobró de forma incorrecta, comuníquese con Paperwork Monster con prontitud. Si confirmamos un error de facturación, un cobro duplicado o un cobro no autorizado del que Paperwork Monster sea responsable, podemos revertir el cobro, emitir un reembolso o aplicar un crédito a la cuenta según corresponda.",
+          "Si cree que se le cobró de forma incorrecta, comuníquese con DocuMonster con prontitud. Si confirmamos un error de facturación, un cobro duplicado o un cobro no autorizado del que DocuMonster sea responsable, podemos revertir el cobro, emitir un reembolso o aplicar un crédito a la cuenta según corresponda.",
         ),
       ],
     },
@@ -476,7 +471,7 @@ export const REFUND_POLICY_ES: LegalDoc = {
       heading: "Reembolsos y créditos discrecionales",
       blocks: [
         p(
-          "Paperwork Monster puede, a su discreción, emitir reembolsos o créditos de servicio en circunstancias excepcionales. Emitir un reembolso o crédito en una situación no crea la obligación de ofrecer el mismo remedio en otra situación y no modifica esta Política.",
+          "DocuMonster puede, a su discreción, emitir reembolsos o créditos de servicio en circunstancias excepcionales. Emitir un reembolso o crédito en una situación no crea la obligación de ofrecer el mismo remedio en otra situación y no modifica esta Política.",
         ),
       ],
     },
@@ -494,7 +489,7 @@ export const REFUND_POLICY_ES: LegalDoc = {
       heading: "Suspensión o terminación por infracción",
       blocks: [
         p(
-          "Si Paperwork Monster suspende o da por terminada una cuenta por falta de pago, fraude, actividad ilegal, abuso, problemas de seguridad, violación de nuestros Términos de servicio o conductas indebidas similares, las cuotas de suscripción previamente pagadas generalmente no son reembolsables. Usted sigue siendo responsable de los cargos legítimos incurridos antes de la terminación.",
+          "Si DocuMonster suspende o da por terminada una cuenta por falta de pago, fraude, actividad ilegal, abuso, problemas de seguridad, violación de nuestros Términos de servicio o conductas indebidas similares, las cuotas de suscripción previamente pagadas generalmente no son reembolsables. Usted sigue siendo responsable de los cargos legítimos incurridos antes de la terminación.",
         ),
       ],
     },
@@ -503,7 +498,7 @@ export const REFUND_POLICY_ES: LegalDoc = {
       heading: "Datos después de la cancelación",
       blocks: [
         p(
-          "Después de la cancelación o terminación, Paperwork Monster puede poner los datos de la cuenta a disposición para su exportación durante un máximo de 30 días, sujeto a la funcionalidad del producto, el estado de la cuenta, los requisitos legales y la disponibilidad técnica. Después de ese período, los datos pueden eliminarse, anonimizarse, archivarse o conservarse conforme a nuestras prácticas de retención de datos y obligaciones legales. Los clientes son responsables de exportar la información que deseen conservar.",
+          "Después de la cancelación o terminación, DocuMonster puede poner los datos de la cuenta a disposición para su exportación durante un máximo de 30 días, sujeto a la funcionalidad del producto, el estado de la cuenta, los requisitos legales y la disponibilidad técnica. Después de ese período, los datos pueden eliminarse, anonimizarse, archivarse o conservarse conforme a nuestras prácticas de retención de datos y obligaciones legales. Los clientes son responsables de exportar la información que deseen conservar.",
         ),
       ],
     },
@@ -512,7 +507,10 @@ export const REFUND_POLICY_ES: LegalDoc = {
       heading: "Cómo solicitar ayuda con un problema de facturación",
       blocks: [
         p(
-          "Las preguntas sobre cancelaciones, cargos de suscripción, reembolsos o errores de facturación pueden enviarse a Paperwork Monster Inc. a [INSERTAR CORREO DE SOPORTE] o a 4505 Socastee Blvd, Myrtle Beach, SC 29588. Incluya información suficiente para que podamos identificar la cuenta y la transacción correspondientes. No envíe por correo electrónico números completos de tarjetas de pago ni otra información de pago sensible innecesaria.",
+          "Las preguntas sobre cancelaciones, cargos de suscripción, reembolsos o errores de facturación pueden enviarse a DocuMonster Inc. a hello@documonster.com o a 4505 Socastee Blvd, Myrtle Beach, SC 29588. Incluya información suficiente para que podamos identificar la cuenta y la transacción correspondientes. No envíe por correo electrónico números completos de tarjetas de pago ni otra información de pago sensible innecesaria.",
+        ),
+        p(
+          "Las preguntas sobre cancelaciones, cargos de suscripción, reembolsos o errores de facturación pueden enviarse a DocuMonster a hello@documonster.com, 855-DOCUMON (855-362-8666), o 4505 Socastee Blvd, Myrtle Beach, SC 29588. Sitio web: www.DocuMonster.com. Incluya información suficiente para que podamos identificar la cuenta y la transacción correspondientes. No envíe por correo electrónico números completos de tarjetas de pago ni otra información de pago sensible innecesaria.",
         ),
       ],
     },
@@ -522,9 +520,9 @@ export const REFUND_POLICY_ES: LegalDoc = {
 export const PRIVACY_POLICY_ES: LegalDoc = {
   id: "privacy",
   title: "Política de privacidad",
-  effectiveDate: LEGAL_EFFECTIVE_DATE_ES,
+  lastUpdated: LEGAL_LAST_UPDATED_ES,
   intro: [
-    'Esta Política de privacidad explica cómo Paperwork Monster Inc., que opera como Paperwork Monster ("Paperwork Monster," "nosotros," "nos" o "nuestro"), recopila, usa, divulga y protege la información cuando las personas visitan nuestros sitios web, crean o usan una cuenta, interactúan con nuestros Servicios, se comunican con nosotros o interactúan de otro modo con Paperwork Monster. Nuestros Servicios están diseñados principalmente para empresas.',
+    'Esta Política de privacidad explica cómo Paperwork Monster Inc., que opera como DocuMonster Powered by Paperwork Monster ("DocuMonster," "nosotros," "nos" o "nuestro"), recopila, usa, divulga y protege la información cuando las personas visitan www.DocuMonster.com, crean o usan una cuenta, interactúan con nuestros Servicios, se comunican con nosotros o interactúan de otro modo con DocuMonster. Nuestros Servicios están diseñados principalmente para empresas.',
   ],
   sections: [
     {
@@ -537,11 +535,11 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
         ),
         labeled(
           "Información de facturación y transacciones",
-          "Si compra Servicios de pago, nosotros y nuestros proveedores de procesamiento de pagos o servicios comerciales podemos recopilar la información necesaria para procesar la transacción, como el nombre y la dirección de facturación, el tipo de método de pago, el monto de la transacción, la fecha de la transacción, el estado del pago y los identificadores asociados a la transacción. La información de la tarjeta de pago puede ser manejada directamente por los procesadores de pago o proveedores de servicios comerciales en lugar de almacenarse directamente en Paperwork Monster.",
+          "Si compra Servicios de pago, nosotros y nuestros proveedores de procesamiento de pagos o servicios comerciales podemos recopilar la información necesaria para procesar la transacción, como el nombre y la dirección de facturación, el tipo de método de pago, el monto de la transacción, la fecha de la transacción, el estado del pago y los identificadores asociados a la transacción. La información de la tarjeta de pago puede ser manejada directamente por los procesadores de pago o proveedores de servicios comerciales en lugar de almacenarse directamente en DocuMonster.",
         ),
         labeled(
           "Información de clientes y CRM",
-          "Los clientes pueden cargar o ingresar información sobre sus propios clientes, prospectos, empleados, subcontratistas, proveedores, trabajos o proyectos. Esta información puede incluir nombres, números de teléfono, correos electrónicos, direcciones de servicio, notas sobre clientes, información de citas, información de proyectos, estimados y cotizaciones, facturas, fotos, comunicaciones, registros de transacciones y demás información que el cliente decida almacenar a través de los Servicios. Paperwork Monster procesa esta información principalmente para prestar Servicios al cliente empresarial correspondiente.",
+          "Los clientes pueden cargar o ingresar información sobre sus propios clientes, prospectos, empleados, subcontratistas, proveedores, trabajos o proyectos. Esta información puede incluir nombres, números de teléfono, correos electrónicos, direcciones de servicio, notas sobre clientes, información de citas, información de proyectos, estimados y cotizaciones, facturas, fotos, comunicaciones, registros de transacciones y demás información que el cliente decida almacenar a través de los Servicios. DocuMonster procesa esta información principalmente para prestar Servicios al cliente empresarial correspondiente.",
         ),
         labeled(
           "Documentos comerciales",
@@ -549,7 +547,7 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
         ),
         labeled(
           "Comunicaciones",
-          "Podemos recopilar las comunicaciones enviadas a través de Paperwork Monster o dirigidas a Paperwork Monster, incluidas solicitudes de soporte, correos electrónicos, mensajes de chat, comunicaciones telefónicas, mensajes de texto, comentarios de clientes y comunicaciones transmitidas mediante la funcionalidad de la plataforma. Cuando la ley lo permita y se divulgue apropiadamente, las llamadas u otras interacciones con Paperwork Monster pueden grabarse o analizarse con fines de control de calidad, seguridad, soporte, capacitación o mejora del servicio.",
+          "Podemos recopilar las comunicaciones enviadas a través de DocuMonster o dirigidas a DocuMonster, incluidas solicitudes de soporte, correos electrónicos, mensajes de chat, comunicaciones telefónicas, mensajes de texto, comentarios de clientes y comunicaciones transmitidas mediante la funcionalidad de la plataforma. Cuando la ley lo permita y se divulgue apropiadamente, las llamadas u otras interacciones con DocuMonster pueden grabarse o analizarse con fines de control de calidad, seguridad, soporte, capacitación o mejora del servicio.",
         ),
         labeled(
           "Información del dispositivo y de uso",
@@ -591,7 +589,7 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
       heading: "Inteligencia artificial y procesamiento automatizado",
       blocks: [
         p(
-          "Ciertas funciones pueden usar inteligencia artificial, aprendizaje automático o tecnologías automatizadas. La información enviada a estas funciones puede ser procesada por Paperwork Monster o por los proveedores de servicios que respaldan esas tecnologías con fines como generar los resultados solicitados, mejorar flujos de trabajo, resumir información, organizar información o realizar otras funciones solicitadas. Podemos establecer restricciones adicionales sobre la información que puede enviarse a las funciones habilitadas con IA. Los clientes no deben enviar información personal sensible innecesaria a las funciones de IA.",
+          "Ciertas funciones pueden usar inteligencia artificial, aprendizaje automático o tecnologías automatizadas. La información enviada a estas funciones puede ser procesada por DocuMonster o por los proveedores de servicios que respaldan esas tecnologías con fines como generar los resultados solicitados, mejorar flujos de trabajo, resumir información, organizar información o realizar otras funciones solicitadas. Podemos establecer restricciones adicionales sobre la información que puede enviarse a las funciones habilitadas con IA. Los clientes no deben enviar información personal sensible innecesaria a las funciones de IA.",
         ),
       ],
     },
@@ -600,25 +598,26 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
       heading: "Información sobre los clientes de nuestros clientes",
       blocks: [
         p(
-          "Las empresas que usan Paperwork Monster pueden proporcionarnos información personal sobre sus clientes, prospectos, empleados, subcontratistas u otros contactos. En muchas circunstancias, Paperwork Monster procesa esta información en nombre del cliente empresarial que la ingresó en los Servicios. Esa empresa determina por qué se recopila la información, qué información se ingresa y cómo se usa a través de su cuenta.",
+          "Las empresas que usan DocuMonster pueden proporcionarnos información personal sobre sus clientes, prospectos, empleados, subcontratistas u otros contactos. En muchas circunstancias, DocuMonster procesa esta información en nombre del cliente empresarial que la ingresó en los Servicios. Esa empresa determina por qué se recopila la información, qué información se ingresa y cómo se usa a través de su cuenta.",
         ),
         p(
-          "Si usted es cliente de una empresa que usa Paperwork Monster y tiene preguntas sobre la información que esa empresa mantiene sobre usted, en general debe comunicarse directamente con esa empresa. Podemos ayudar a nuestros clientes empresariales a responder a las solicitudes de privacidad apropiadas.",
+          "Si usted es cliente de una empresa que usa DocuMonster y tiene preguntas sobre la información que esa empresa mantiene sobre usted, en general debe comunicarse directamente con esa empresa. Podemos ayudar a nuestros clientes empresariales a responder a las solicitudes de privacidad apropiadas.",
         ),
       ],
     },
     {
       n: 5,
-      heading: "Mensajes de texto, llamadas telefónicas y correo electrónico",
+      heading:
+        "SMS, información móvil, llamadas telefónicas y correo electrónico",
       blocks: [
         p(
-          "Los Servicios pueden permitir a nuestros clientes empresariales comunicarse con sus clientes u otros contactos mediante mensajes de texto, llamadas telefónicas y correo electrónico. Cuando un cliente empresarial inicia estas comunicaciones a través de Paperwork Monster, esa empresa es responsable de obtener el consentimiento legalmente requerido y de atender las solicitudes de exclusión o revocación.",
+          "Los Servicios pueden permitir a nuestros clientes empresariales comunicarse con sus clientes u otros contactos mediante mensajes de texto, teléfono y correo electrónico. DocuMonster puede procesar la información de los destinatarios, los registros de consentimiento y los metadatos de las comunicaciones según sea necesario para transmitir, enrutar, proteger, diagnosticar, documentar y dar soporte a esas comunicaciones.",
         ),
         p(
-          "Paperwork Monster y sus proveedores de servicios de comunicaciones pueden procesar la información de los destinatarios, los registros de consentimiento y los metadatos de las comunicaciones para transmitir, enrutar, proteger, diagnosticar, mantener y documentar estas comunicaciones. La información de suscripción móvil y los registros de consentimiento no se venden, alquilan ni transfieren a terceros para sus propios fines de marketing o promoción.",
+          "La información de suscripción móvil y el consentimiento para SMS no se venden, alquilan, ceden ni comparten con terceros o afiliados para sus propios fines de marketing o promoción. Podemos proporcionar dicha información a proveedores de comunicaciones y otros proveedores de servicios únicamente en la medida razonablemente necesaria para entregar mensajes, operar y proteger los Servicios, cumplir con la ley, prevenir abusos o ejecutar las instrucciones del cliente empresarial correspondiente. DocuMonster no usa la lista de clientes, la información de suscripción móvil ni el consentimiento para SMS de un cliente empresarial para promocionar productos o servicios de DocuMonster a los contactos de ese cliente empresarial, a menos que la persona establezca por separado una relación directa con DocuMonster y otorgue su consentimiento de forma independiente.",
         ),
         p(
-          "Los destinatarios pueden darse de baja de las comunicaciones por mensaje de texto siguiendo las instrucciones proporcionadas con el programa de mensajería aplicable, incluidas palabras clave estándar como STOP cuando estén disponibles. Un destinatario que se haya dado de baja no debería recibir más mensajes a través del programa de mensajería aplicable, a menos que después otorgue un consentimiento válido para reanudarlos.",
+          "Los destinatarios pueden darse de baja de los programas de mensajes de texto aplicables siguiendo las instrucciones proporcionadas con esos mensajes, incluido responder STOP cuando esté disponible. Darse de baja de los mensajes promocionales no impide las comunicaciones que no sean por SMS legalmente permitidas ni las comunicaciones que de otro modo sean necesarias para completar una transacción o brindar el soporte solicitado.",
         ),
       ],
     },
@@ -628,7 +627,7 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
       blocks: [
         labeled(
           "Proveedores de servicios",
-          "Podemos usar empresas que prestan servicios como alojamiento en la nube, infraestructura de comunicaciones, servicios de telefonía y SMS, entrega de correo electrónico, procesamiento de pagos, ciberseguridad, análisis, soporte al cliente, inteligencia artificial, desarrollo de software, almacenamiento de datos y servicios profesionales. Estos proveedores pueden procesar información según sea necesario para prestarnos servicios y Paperwork Monster no los autoriza a usar la información personal de los clientes para fines no relacionados.",
+          "Podemos usar empresas que prestan servicios como alojamiento en la nube, infraestructura de comunicaciones, servicios de telefonía y SMS, entrega de correo electrónico, procesamiento de pagos, ciberseguridad, análisis, soporte al cliente, inteligencia artificial, desarrollo de software, almacenamiento de datos y servicios profesionales. Estos proveedores pueden procesar información según sea necesario para prestarnos servicios y DocuMonster no los autoriza a usar la información personal de los clientes para fines no relacionados.",
         ),
         labeled(
           "Por indicación suya",
@@ -640,7 +639,7 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
         ),
         labeled(
           "Fines legales y de seguridad",
-          "Podemos divulgar información cuando creamos razonablemente que es necesario para cumplir con la ley aplicable, responder a un proceso legal válido, proteger los derechos o la propiedad de Paperwork Monster o de otros, investigar fraude o conductas ilegales, atender amenazas de seguridad, hacer cumplir nuestros acuerdos o proteger la seguridad de las personas.",
+          "Podemos divulgar información cuando creamos razonablemente que es necesario para cumplir con la ley aplicable, responder a un proceso legal válido, proteger los derechos o la propiedad de DocuMonster o de otros, investigar fraude o conductas ilegales, atender amenazas de seguridad, hacer cumplir nuestros acuerdos o proteger la seguridad de las personas.",
         ),
       ],
     },
@@ -649,7 +648,7 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
       heading: "No vendemos información personal",
       blocks: [
         p(
-          'Paperwork Monster no vende información personal a cambio de una contraprestación monetaria y no opera un modelo de negocio en el que la información de contacto de los clientes se venda a intermediarios de datos o a terceros no relacionados. Algunas leyes de privacidad usan definiciones más amplias de "venta", "compartir" o publicidad dirigida. Si nuestras prácticas futuras constituyen venta o compartición conforme a una ley de privacidad aplicable, proporcionaremos los avisos y las opciones que esa ley exija.',
+          'DocuMonster no vende información personal a cambio de una contraprestación monetaria y no opera un modelo de negocio en el que la información de contacto de los clientes se venda a intermediarios de datos o a terceros no relacionados. Algunas leyes de privacidad usan definiciones más amplias de "venta", "compartir" o publicidad dirigida. Si nuestras prácticas futuras constituyen venta o compartición conforme a una ley de privacidad aplicable, proporcionaremos los avisos y las opciones que esa ley exija.',
         ),
       ],
     },
@@ -658,7 +657,7 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
       heading: "Marketing",
       blocks: [
         p(
-          "Podemos usar la información de contacto comercial para comunicarnos sobre productos, funciones, promociones, materiales educativos o eventos de Paperwork Monster cuando la ley lo permita. Puede darse de baja de las comunicaciones promocionales por correo electrónico usando el enlace para cancelar la suscripción incluido en esos correos. Darse de baja del marketing no nos impide enviar las comunicaciones transaccionales, de seguridad, facturación, cuenta o servicio que sean necesarias.",
+          "Podemos usar la información de contacto recopilada directamente por DocuMonster para comunicarnos sobre productos, funciones, promociones, materiales educativos o eventos de DocuMonster cuando la ley lo permita. No usamos la lista de clientes de un cliente empresarial ni la información de contacto de sus clientes para promocionar productos o servicios de DocuMonster a esas personas, a menos que establezcan por separado una relación directa con DocuMonster y otorguen su consentimiento de forma independiente. Puede darse de baja de las comunicaciones promocionales por correo electrónico usando el enlace para cancelar la suscripción incluido en esos correos. Darse de baja del marketing no nos impide enviar las comunicaciones transaccionales, de seguridad, facturación, cuenta o servicio que sean necesarias.",
         ),
       ],
     },
@@ -697,10 +696,10 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
       heading: "Sus opciones de privacidad",
       blocks: [
         p(
-          "Según su relación con Paperwork Monster y la ley aplicable, puede tener derechos sobre su información personal, que pueden incluir el derecho a solicitar el acceso, la corrección, la eliminación o una copia de cierta información; restringir u oponerse a cierto procesamiento; retirar el consentimiento cuando el procesamiento se base en el consentimiento; o excluirse de ciertos usos de la información. Estos derechos están sujetos a las excepciones y requisitos de verificación aplicables.",
+          "Según su relación con DocuMonster y la ley aplicable, puede tener derechos sobre su información personal, que pueden incluir el derecho a solicitar el acceso, la corrección, la eliminación o una copia de cierta información; restringir u oponerse a cierto procesamiento; retirar el consentimiento cuando el procesamiento se base en el consentimiento; o excluirse de ciertos usos de la información. Estos derechos están sujetos a las excepciones y requisitos de verificación aplicables.",
         ),
         p(
-          "Si Paperwork Monster procesa la información únicamente en nombre de uno de nuestros clientes empresariales, podemos dirigir su solicitud a ese cliente. Las solicitudes pueden enviarse a [INSERTAR CORREO DE PRIVACIDAD]. Podemos solicitar la información razonablemente necesaria para verificar su identidad o su autoridad para presentar una solicitud.",
+          "Si DocuMonster procesa la información únicamente en nombre de uno de nuestros clientes empresariales, podemos dirigir su solicitud a ese cliente. Las solicitudes pueden enviarse a hello@documonster.com. Podemos solicitar la información razonablemente necesaria para verificar su identidad o su autoridad para presentar una solicitud.",
         ),
       ],
     },
@@ -709,7 +708,7 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
       heading: "Derechos de privacidad estatales",
       blocks: [
         p(
-          "Los residentes de ciertos estados de EE. UU. pueden tener derechos de privacidad adicionales conforme a la ley estatal aplicable. Cuando dichas leyes se apliquen al procesamiento de Paperwork Monster, respetaremos los derechos legalmente requeridos, que pueden incluir acceso, corrección, eliminación, portabilidad de datos y derechos relativos a ciertas ventas, comparticiones o publicidad dirigida. No discriminaremos ilegalmente a una persona por ejercer un derecho de privacidad aplicable. Un agente autorizado puede presentar una solicitud cuando la ley lo permita y sujeto a la verificación apropiada.",
+          "Los residentes de ciertos estados de EE. UU. pueden tener derechos de privacidad adicionales conforme a la ley estatal aplicable. Cuando dichas leyes se apliquen al procesamiento de DocuMonster, respetaremos los derechos legalmente requeridos, que pueden incluir acceso, corrección, eliminación, portabilidad de datos y derechos relativos a ciertas ventas, comparticiones o publicidad dirigida. No discriminaremos ilegalmente a una persona por ejercer un derecho de privacidad aplicable. Un agente autorizado puede presentar una solicitud cuando la ley lo permita y sujeto a la verificación apropiada.",
         ),
       ],
     },
@@ -727,7 +726,7 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
       heading: "Usuarios internacionales",
       blocks: [
         p(
-          "Paperwork Monster opera principalmente en los Estados Unidos. Si la información se envía desde fuera de los Estados Unidos, puede procesarse y almacenarse en los Estados Unidos o en otras ubicaciones en las que operen nuestros proveedores de servicios. Pueden proporcionarse términos o divulgaciones adicionales si Paperwork Monster amplía sustancialmente los Servicios a jurisdicciones con requisitos de privacidad internacionales específicos.",
+          "DocuMonster opera principalmente en los Estados Unidos. Si la información se envía desde fuera de los Estados Unidos, puede procesarse y almacenarse en los Estados Unidos o en otras ubicaciones en las que operen nuestros proveedores de servicios. Pueden proporcionarse términos o divulgaciones adicionales si DocuMonster amplía sustancialmente los Servicios a jurisdicciones con requisitos de privacidad internacionales específicos.",
         ),
       ],
     },
@@ -736,7 +735,7 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
       heading: "Servicios e integraciones de terceros",
       blocks: [
         p(
-          "Los Servicios pueden contener integraciones, enlaces o funcionalidad proporcionados por terceros. La información que usted decida enviar a un servicio de terceros también está sujeta a las prácticas de privacidad de ese tercero. Paperwork Monster no es responsable de las prácticas de privacidad independientes de terceros.",
+          "Los Servicios pueden contener integraciones, enlaces o funcionalidad proporcionados por terceros. La información que usted decida enviar a un servicio de terceros también está sujeta a las prácticas de privacidad de ese tercero. DocuMonster no es responsable de las prácticas de privacidad independientes de terceros.",
         ),
       ],
     },
@@ -745,7 +744,7 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
       heading: "Cambios a esta Política de privacidad",
       blocks: [
         p(
-          "Podemos actualizar esta Política de privacidad de vez en cuando. La Política revisada indicará su fecha de vigencia. Si hacemos cambios sustanciales, podemos dar un aviso adicional a través de nuestro sitio web, los Servicios, el correo electrónico u otro método de comunicación apropiado.",
+          "Podemos actualizar esta Política de privacidad de vez en cuando. La Política revisada indicará su fecha de última actualización. Si hacemos cambios sustanciales, podemos dar un aviso adicional a través de nuestro sitio web, los Servicios, el correo electrónico u otro método de comunicación apropiado.",
         ),
       ],
     },
@@ -754,7 +753,7 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
       heading: "Contáctenos",
       blocks: [
         p(
-          "Para preguntas sobre esta Política de privacidad o las prácticas de privacidad de Paperwork Monster, contacte a: Paperwork Monster Inc., Atención: Privacidad, 4505 Socastee Blvd, Myrtle Beach, SC 29588, [INSERTAR CORREO DE PRIVACIDAD/SOPORTE].",
+          "Para preguntas sobre esta Política de privacidad o las prácticas de privacidad de DocuMonster, contacte a DocuMonster en hello@documonster.com, 855-DOCUMON (855-362-8666), o 4505 Socastee Blvd, Myrtle Beach, SC 29588. Sitio web: www.DocuMonster.com.",
         ),
       ],
     },
@@ -762,8 +761,130 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
 };
 
 /** The three documents in Spanish, in the order /terms renders them. */
+export const SMS_TERMS_ES: LegalDoc = {
+  id: "sms",
+  title: "Términos y condiciones de SMS",
+  lastUpdated: LEGAL_LAST_UPDATED_ES,
+  intro: [
+    'Estos Términos y condiciones de SMS ("Términos de SMS") describen las reglas que se aplican a los mensajes de texto enviados por Paperwork Monster Inc., que opera como DocuMonster Powered by Paperwork Monster ("DocuMonster," "nosotros," "nos" o "nuestro"), y a la funcionalidad de SMS disponible a través de nuestros Servicios. Estos Términos de SMS complementan nuestros Términos de servicio y nuestra Política de privacidad.',
+  ],
+  sections: [
+    {
+      n: 1,
+      heading: "Descripción del programa de SMS",
+      blocks: [
+        p(
+          "DocuMonster puede usar mensajes de texto SMS o MMS para comunicarse con sus propios clientes empresariales, usuarios, prospectos y otras personas que hayan otorgado el consentimiento apropiado. Nuestros Servicios también pueden permitir a los clientes empresariales enviar mensajes de texto a sus propios clientes, prospectos, empleados, proveedores u otros contactos. Cuando un cliente empresarial envía un mensaje a través de los Servicios, ese cliente empresarial es generalmente el remitente y es responsable del contenido del mensaje, del consentimiento y de las obligaciones de cumplimiento.",
+        ),
+      ],
+    },
+    {
+      n: 2,
+      heading: "Consentimiento para comunicaciones por SMS",
+      blocks: [
+        p(
+          "Los mensajes de texto recurrentes o únicos solo pueden enviarse cuando el destinatario haya otorgado el consentimiento requerido para el tipo de mensaje correspondiente. Proporcionar un número de teléfono por sí solo no autoriza todo tipo de comunicación por SMS. El consentimiento debe ser apropiado para el tipo de mensaje, el remitente y la ley aplicable.",
+        ),
+        p(
+          "Según la interacción y el programa de mensajería, el consentimiento puede obtenerse mediante una casilla opcional sin marcar en línea; un acuerdo escrito o electrónico; una palabra clave u otra aceptación afirmativa; o un consentimiento verbal cuando la ley lo permita y esté debidamente documentado. Los mensajes promocionales o de marketing requieren el nivel de consentimiento por escrito que exijan la ley aplicable y las reglas de las operadoras. El consentimiento para recibir mensajes de texto de marketing no es una condición para comprar los Servicios de DocuMonster.",
+        ),
+      ],
+    },
+    {
+      n: 3,
+      heading: "Tipos de comunicaciones por SMS",
+      blocks: [
+        p(
+          "Si ha dado su consentimiento para recibir mensajes de texto, los mensajes pueden incluir, según corresponda:",
+        ),
+        list(
+          "mensajes de cuenta, incorporación, verificación o soporte;",
+          "recordatorios de citas y actualizaciones de programación;",
+          "notificaciones de cotizaciones, estimados, propuestas, contratos, facturas, pagos o facturación;",
+          "actualizaciones de proyectos, servicios, entregas o estado;",
+          "mensajes de seguimiento y respuestas a consultas;",
+          "avisos de seguridad, prevención de fraude o relacionados con el servicio; y",
+          "mensajes promocionales enviados por el cliente empresarial correspondiente a sus propios contactos, únicamente cuando se haya obtenido el consentimiento requerido.",
+        ),
+      ],
+    },
+    {
+      n: 4,
+      heading: "Métodos de aceptación",
+      blocks: [
+        p(
+          "El método de aceptación disponible puede variar según el programa de mensajería. Cuando se ofrezca, un destinatario puede aceptar marcando afirmativamente una casilla de consentimiento opcional y sin marcar en un sitio web o formulario, enviando un consentimiento escrito o electrónico, respondiendo con una palabra clave designada, iniciando un intercambio conversacional elegible, o dando un consentimiento verbal cuando ese método esté legalmente permitido y debidamente documentado. La divulgación presentada en el momento de la aceptación determina el alcance del consentimiento.",
+        ),
+      ],
+    },
+    {
+      n: 5,
+      heading: "Frecuencia de mensajes, cargos, STOP y HELP",
+      blocks: [
+        p(
+          "La frecuencia de los mensajes varía según la relación del destinatario con el remitente, las funciones usadas y las comunicaciones solicitadas. Pueden aplicarse tarifas de mensajes y datos según el plan inalámbrico y la operadora del destinatario.",
+        ),
+        p(
+          "Un destinatario puede darse de baja de un programa de SMS aplicable en cualquier momento respondiendo STOP. Después de procesarse una solicitud STOP válida, no deben enviarse más mensajes a través de ese programa de mensajería a menos que el destinatario otorgue después un consentimiento válido para reanudar los mensajes. Para obtener ayuda, responda HELP cuando esté disponible, llame al 855-DOCUMON (855-362-8666) o escriba a hello@documonster.com.",
+        ),
+      ],
+    },
+    {
+      n: 6,
+      heading:
+        "Privacidad del consentimiento para SMS y de la información móvil",
+      blocks: [
+        p(
+          "El consentimiento para SMS y la información de suscripción móvil no se venden, alquilan ni comparten con terceros o afiliados para sus propios fines de marketing o promoción. La información puede proporcionarse a proveedores de comunicaciones y otros proveedores de servicios únicamente en la medida razonablemente necesaria para entregar mensajes, operar y proteger los Servicios, cumplir con la ley, prevenir abusos o ejecutar las instrucciones del cliente empresarial correspondiente. DocuMonster no usa la lista de clientes ni el consentimiento para SMS de un cliente empresarial para promocionar productos o servicios de DocuMonster a los contactos de ese cliente empresarial, a menos que la persona establezca por separado una relación directa con DocuMonster y otorgue su consentimiento de forma independiente. Encontrará información adicional en nuestra Política de privacidad.",
+        ),
+      ],
+    },
+    {
+      n: 7,
+      heading: "Clientes empresariales que usan la mensajería de DocuMonster",
+      blocks: [
+        p(
+          "Un cliente empresarial que usa DocuMonster para enviar mensajes de texto es responsable de obtener y mantener todo el consentimiento requerido de sus destinatarios, de conservar evidencia apropiada de ese consentimiento, de usar la información de los destinatarios únicamente con fines lícitos y de atender con prontitud las solicitudes de exclusión o revocación. Los clientes empresariales no pueden usar los Servicios para enviar mensajes no solicitados, engañosos, ilegales, abusivos o prohibidos.",
+        ),
+        p(
+          "Si recibe un mensaje de texto enviado a través de DocuMonster en nombre de uno de nuestros clientes empresariales, ese cliente empresarial es generalmente el remitente. Las preguntas sobre el servicio, la transacción, la cita, el estimado, la factura o la relación de marketing subyacentes deben dirigirse normalmente a esa empresa.",
+        ),
+      ],
+    },
+    {
+      n: 8,
+      heading: "Entrega y disponibilidad de las operadoras",
+      blocks: [
+        p(
+          "La entrega de mensajes de texto está sujeta a la disponibilidad de las operadoras inalámbricas, las condiciones de la red, la configuración del dispositivo y los proveedores de comunicaciones externos. La entrega no está garantizada, y DocuMonster no es responsable de retrasos o fallas causados por circunstancias fuera de nuestro control razonable.",
+        ),
+      ],
+    },
+    {
+      n: 9,
+      heading: "Cambios a estos Términos de SMS",
+      blocks: [
+        p(
+          "Podemos actualizar estos Términos de SMS de vez en cuando. La versión revisada indicará su fecha de última actualización. Los cambios sustanciales pueden comunicarse a través de nuestro sitio web, los Servicios, el correo electrónico, mensajes de texto u otro método apropiado cuando sea requerido.",
+        ),
+      ],
+    },
+    {
+      n: 10,
+      heading: "Contáctenos",
+      blocks: [
+        p(
+          "Las preguntas sobre estos Términos de SMS pueden dirigirse a DocuMonster a hello@documonster.com, 855-DOCUMON (855-362-8666), o 4505 Socastee Blvd, Myrtle Beach, SC 29588. Sitio web: www.DocuMonster.com.",
+        ),
+      ],
+    },
+  ],
+};
+
+/** The four documents in Hans's order, in Spanish. */
 export const LEGAL_DOCS_ES: readonly LegalDoc[] = [
   TERMS_OF_SERVICE_ES,
   REFUND_POLICY_ES,
   PRIVACY_POLICY_ES,
+  SMS_TERMS_ES,
 ];

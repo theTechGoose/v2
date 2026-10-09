@@ -1,11 +1,12 @@
 /**
  * REQ-043 — "to the bottom of every page in the footer, put a link to 'terms
  * of service' and then link it to html that renders something like this".
+ * REQ-065/066 — the October 6, 2026 text, each document its own page.
  *
  * Fetches every SSR page family from the dev front-end (:5280) — anonymous
  * pages, the logged-in app shell, the public customer documents, the branded
  * 404 — and asserts each carries the site footer's Terms of Service link;
- * then GETs /terms and asserts the three documents render.
+ * then GETs the four legal pages and asserts each document renders.
  */
 import { contractor, seedInvoice, seedQuote } from "./helpers/api";
 
@@ -29,7 +30,7 @@ async function page(path: string, cookie?: string) {
 const LINK = /<a[^>]*data-terms-link[^>]*href="\/terms"[^>]*>Terms of Service<\/a>|<a[^>]*href="\/terms"[^>]*data-terms-link[^>]*>Terms of Service<\/a>/;
 
 describe("REQ-043 every SSR page carries the footer Terms of Service link to /terms", () => {
-  const ANON = ["/?lang=en", "/landing?lang=en", "/login", "/contact", "/terms", "/verify?phone=%2B15125550930"];
+  const ANON = ["/?lang=en", "/landing?lang=en", "/login", "/contact", "/terms", "/refund-policy", "/privacy", "/sms-terms", "/verify?phone=%2B15125550930"];
   for (const path of ANON) {
     it(`REQ-043 anonymous ${path} → footer link`, async () => {
       const r = await page(path);
@@ -79,47 +80,63 @@ describe("REQ-043 every SSR page carries the footer Terms of Service link to /te
   });
 });
 
-describe("REQ-043 GET /terms renders the three documents", () => {
-  it("REQ-043 titles, effective date, arbitration notice, first and last sections", async () => {
-    const r = await page("/terms");
-    expect(r.status).toBe(200);
-    const html = r.html;
-    for (const title of ["Terms of Service", "Refund &amp; Cancellation Policy", "Privacy Policy"]) {
-      expect(html).toContain(title);
-    }
-    expect(html).toContain('id="terms"');
-    expect(html).toContain('id="refunds"');
-    expect(html).toContain('id="privacy"');
-    expect((html.match(/Effective Date: September 24, 2026/g) ?? []).length).toBe(3);
+/** REQ-066 — each document its own page (Hans: "each one on its own separate page"). */
+const PAGES = [
+  ["/terms", "Terms of Service", "1. Business-to-Business Service", "31. Contact Us"],
+  ["/refund-policy", "Refund &amp; Cancellation Policy", "1. Recurring Subscriptions", "13. How to Request Help With a Billing Issue"],
+  ["/privacy", "Privacy Policy", "1. Information We Collect", "18. Contact Us"],
+  ["/sms-terms", "SMS Terms &amp; Conditions", "1. SMS Program Overview", "10. Contact Us"],
+] as const;
+
+describe("REQ-066 each policy page renders its one document under the website's header", () => {
+  for (const [path, title, first, last] of PAGES) {
+    it(`REQ-066 GET ${path} → ${title}`, async () => {
+      const r = await page(path);
+      expect(r.status).toBe(200);
+      const html = r.html;
+      expect(html).toContain(`<h1>${title}</h1>`);
+      expect((html.match(/<h1>/g) ?? []).length).toBe(1);
+      // REQ-065: the October 6, 2026 text
+      expect((html.match(/Last Updated: October 6, 2026/g) ?? []).length).toBe(1);
+      expect(html).not.toContain("Effective Date");
+      expect(html).toContain(first);
+      expect(html).toContain(last);
+      // the website's header, then the row of the four documents with this one current
+      expect(html).toMatch(/<div class="nav-wrap">/);
+      expect(html).toMatch(/<a href="\/login" class="btn btn-outline">/);
+      expect(html).toMatch(new RegExp(`<a href="${path}" data-legal-link="[a-z]+" class="on" aria-current="page">`));
+      for (const [other] of PAGES) expect(html).toMatch(new RegExp(`data-legal-nav[^]*?<a href="${other}"`));
+    });
+  }
+  it("REQ-065 /terms: the arbitration notice, the brand line, the acceptable-use list", async () => {
+    const html = (await page("/terms")).html;
     expect(html).toContain("THIS AGREEMENT IS SUBJECT TO ARBITRATION PURSUANT TO THE SOUTH CAROLINA UNIFORM ARBITRATION ACT.");
-    expect(html).toContain("1. Business-to-Business Service");
-    expect(html).toContain("31. Contact Us");
-    expect(html).toContain("13. How to Request Help With a Billing Issue");
-    expect(html).toContain("18. Contact Us");
+    expect(html).toContain("doing business as DocuMonster Powered by Paperwork Monster");
     expect(html).toMatch(/<li[^>]*>violate applicable law or regulation;<\/li>/);
-    expect(html).toContain("Account and Business Information");
+  });
+  it("REQ-065 /privacy: the labeled blocks", async () => {
+    expect((await page("/privacy")).html).toContain("Account and Business Information");
   });
 });
 
-describe("REQ-043 GET /terms renders in Spanish for a Spanish visitor", () => {
+describe("REQ-043 the legal pages render in Spanish for a Spanish visitor", () => {
   async function raw(path: string, cookie?: string) {
     const res = await fetch(`${FRONT}${path}`, { headers: cookie ? { cookie } : {}, redirect: "manual" });
     return { status: res.status, html: await res.text(), setCookie: res.headers.get("set-cookie") ?? "" };
   }
-  it("REQ-043 pm_lang=es → the three documents in Spanish, English absent", async () => {
+  it("REQ-043 pm_lang=es → the document in Spanish, English absent", async () => {
     const r = await raw("/terms", "pm_lang=es");
     expect(r.status).toBe(200);
-    expect(r.html).toContain("Términos de servicio");
-    expect(r.html).toContain("Política de reembolsos y cancelaciones");
-    expect(r.html).toContain("Política de privacidad");
-    expect((r.html.match(/Fecha de vigencia: 24 de septiembre de 2026/g) ?? []).length).toBe(3);
+    expect(r.html).toContain("<h1>Términos de servicio</h1>");
+    expect((r.html.match(/Última actualización: 6 de octubre de 2026/g) ?? []).length).toBe(1);
     expect(r.html).toContain("ESTE ACUERDO ESTÁ SUJETO A ARBITRAJE CONFORME A LA LEY UNIFORME DE ARBITRAJE DE CAROLINA DEL SUR.");
     expect(r.html).toContain("1. Servicio de empresa a empresa");
     expect(r.html).toContain("31. Contáctenos");
-    expect(r.html).toContain("13. Cómo solicitar ayuda con un problema de facturación");
-    expect(r.html).toContain("18. Contáctenos");
     expect(r.html).not.toContain("1. Business-to-Business Service");
     expect(r.html).toContain('data-legal-doc="es"');
+    const sms = await raw("/sms-terms", "pm_lang=es");
+    expect(sms.html).toContain("<h1>Términos y condiciones de SMS</h1>");
+    expect(sms.html).toContain("1. Descripción del programa de SMS");
   });
   it("REQ-043 ?lang=en over a Spanish cookie → English, and the pick is persisted", async () => {
     const r = await raw("/terms?lang=en", "pm_lang=es");
@@ -129,13 +146,13 @@ describe("REQ-043 GET /terms renders in Spanish for a Spanish visitor", () => {
     expect(r.setCookie).toMatch(/pm_lang=en/);
   });
   it("REQ-043 ?lang=es → Spanish, and the pick is persisted", async () => {
-    const r = await raw("/terms?lang=es", "pm_lang=en");
-    expect(r.html).toContain("1. Servicio de empresa a empresa");
+    const r = await raw("/refund-policy?lang=es", "pm_lang=en");
+    expect(r.html).toContain("1. Suscripciones recurrentes");
     expect(r.setCookie).toMatch(/pm_lang=es/);
   });
-  it("REQ-043 the page carries the EN/ES toggle", async () => {
-    const r = await raw("/terms");
-    expect(r.html).toMatch(/<a[^>]*href="\/terms\?lang=en"[^>]*data-legal-lang="en"/);
-    expect(r.html).toMatch(/<a[^>]*href="\/terms\?lang=es"[^>]*data-legal-lang="es"/);
+  it("REQ-043 the page carries the EN/ES toggle, in the website's header", async () => {
+    const r = await raw("/privacy");
+    expect(r.html).toMatch(/<a href="\/privacy\?lang=en" data-legal-lang="en"/);
+    expect(r.html).toMatch(/<a href="\/privacy\?lang=es" data-legal-lang="es"/);
   });
 });
