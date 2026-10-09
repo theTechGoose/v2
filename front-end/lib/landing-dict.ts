@@ -172,7 +172,8 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "cta.errSend": "We couldn’t send the code. Try again.",
     "cta.trustRest": "already on Paperwork Monster",
     "footer.contact": "Contact",
-    "footer.terms": "Terms of Service",
+    // REQ-067 — the one link to the policies page (shared/legal/terms.ts LEGAL_FOOTER_LINK)
+    "footer.legal": "Terms & Policies",
     "footer.copy": "© 2026 Paperwork Monster. All rights reserved.",
   },
   es: {
@@ -322,7 +323,8 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "cta.errSend": "No pudimos enviar el código. Intenta otra vez.",
     "cta.trustRest": "ya en Paperwork Monster",
     "footer.contact": "Contacto",
-    "footer.terms": "Términos de servicio",
+    // REQ-067 — the one link to the policies page (shared/legal/terms.ts LEGAL_FOOTER_LINK)
+    "footer.legal": "Términos y políticas",
     "footer.copy": "© 2026 Paperwork Monster. Todos los derechos reservados.",
   },
 };

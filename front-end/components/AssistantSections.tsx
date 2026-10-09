@@ -183,7 +183,9 @@ export function ChatScroll({ lang = "en" }: { lang?: Lang } = {}) {
               <li>{tFor(lang, "assistantDemo.chat.checkTopcoat")}</li>
             </ul>
           </div>
-          <div class="msg__time">{tFor(lang, "assistantDemo.chat.time842")}</div>
+          <div class="msg__time">
+            {tFor(lang, "assistantDemo.chat.time842")}
+          </div>
         </div>
       </div>
 
@@ -205,7 +207,9 @@ export function ChatScroll({ lang = "en" }: { lang?: Lang } = {}) {
               </div>
             </div>
           </div>
-          <div class="msg__time">{tFor(lang, "assistantDemo.chat.time843")}</div>
+          <div class="msg__time">
+            {tFor(lang, "assistantDemo.chat.time843")}
+          </div>
         </div>
       </div>
 
@@ -217,7 +221,8 @@ export function ChatScroll({ lang = "en" }: { lang?: Lang } = {}) {
         <div style="flex:1;min-width:0">
           <div class="msg__bubble">
             {tFor(lang, "assistantDemo.chat.onItPre")}
-            <strong>{tFor(lang, "assistantDemo.chat.templateName")}</strong>{" "}
+            <strong>{tFor(lang, "assistantDemo.chat.templateName")}</strong>
+            {" "}
             {tFor(lang, "assistantDemo.chat.onItPost")}
           </div>
 
@@ -234,7 +239,9 @@ export function ChatScroll({ lang = "en" }: { lang?: Lang } = {}) {
                   {tFor(lang, "assistantDemo.actionCard.sub")}
                 </div>
               </div>
-              <span class="action-card__chip">{tFor(lang, "status.draft")}</span>
+              <span class="action-card__chip">
+                {tFor(lang, "status.draft")}
+              </span>
             </div>
             <div class="action-card__body">
               <div class="action-card__row">
@@ -282,7 +289,9 @@ export function ChatScroll({ lang = "en" }: { lang?: Lang } = {}) {
           <div class="msg__bubble">
             {tFor(lang, "assistantDemo.chat.lockItIn")}
           </div>
-          <div class="msg__time">{tFor(lang, "assistantDemo.chat.time844")}</div>
+          <div class="msg__time">
+            {tFor(lang, "assistantDemo.chat.time844")}
+          </div>
         </div>
       </div>
 
@@ -314,7 +323,9 @@ export function ChatScroll({ lang = "en" }: { lang?: Lang } = {}) {
               <I d={ICN.arrow} size={11} sw={2.5} />
             </button>
           </div>
-          <div class="msg__time">{tFor(lang, "assistantDemo.chat.time844")}</div>
+          <div class="msg__time">
+            {tFor(lang, "assistantDemo.chat.time844")}
+          </div>
         </div>
       </div>
 
@@ -408,7 +419,9 @@ export function ChatScroll({ lang = "en" }: { lang?: Lang } = {}) {
               <div class="wiz__step-num">
                 {tFor(lang, "assistantDemo.wiz.stepNum")}
               </div>
-              <h3 class="wiz__step-q">{tFor(lang, "assistantDemo.wiz.stepQ")}</h3>
+              <h3 class="wiz__step-q">
+                {tFor(lang, "assistantDemo.wiz.stepQ")}
+              </h3>
               <div class="wiz__opts">
                 <button type="button" class="wiz-opt">
                   {tFor(lang, "assistantDemo.wiz.optCompletion")}
@@ -501,8 +514,7 @@ export function Suggestions({ lang = "en" }: { lang?: Lang } = {}) {
         {tFor(lang, "assistantDemo.suggest.orType")}
       </span>
       <button type="button" class="suggest__chip">
-        <I d={ICN.bolt} size={11} />{" "}
-        {tFor(lang, "assistantDemo.suggest.net30")}
+        <I d={ICN.bolt} size={11} /> {tFor(lang, "assistantDemo.suggest.net30")}
       </button>
       <button type="button" class="suggest__chip">
         <I d={ICN.refresh} size={11} />{" "}

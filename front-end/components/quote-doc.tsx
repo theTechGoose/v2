@@ -381,12 +381,15 @@ export function QuoteDoc(
               {t.contractorTag} {t.and}{" "}
               <strong style={`color:${INK}`}>{customerName}</strong>{" "}
               {t.clientTag}
-              {/* REQ-036 (NW-57): the job name sits between the parties
-                  and the effective date. */}
+              {
+                /* REQ-036 (NW-57): the job name sits between the parties
+                  and the effective date. */
+              }
               {jobNameRaw
                 ? (
                   <>
-                    {" "}{t.forJob}{" "}
+                    {" "}
+                    {t.forJob}{" "}
                     <strong style={`color:${INK}`}>{jobNameRaw}</strong>
                   </>
                 )
@@ -507,9 +510,11 @@ export function QuoteDoc(
                   }]}
                 />
                 <div style={`margin-top:22px;height:1px;background:${LINE}`} />
-                {/* REQ-035 (NW-55): the 14 notices are an expandable
+                {
+                  /* REQ-035 (NW-55): the 14 notices are an expandable
                     "Terms and Conditions" at the bottom — collapsed on load,
-                    one tap to read them all. The PDF stays flat. */}
+                    one tap to read them all. The PDF stays flat. */
+                }
                 <details class="ctr__terms-details" data-cy="terms-details">
                   <summary
                     style={`margin-top:18px;cursor:pointer;font-weight:800;font-size:14px;color:${INK}`}
@@ -609,8 +614,7 @@ export function QuoteDoc(
                       <div
                         style={`margin-top:2px;font-size:11px;color:${MUTED}`}
                       >
-                        {t.date}{" "}
-                        {view.acceptedAt
+                        {t.date} {view.acceptedAt
                           ? fmtDate(view.acceptedAt, lang)
                           : t.today}
                       </div>

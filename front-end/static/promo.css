@@ -654,7 +654,11 @@
   font-size: 13px;
   color: var(--pm-fg-subtle);
 }
+/* REQ-067: the policies link — a 24px tap box (hit-target audit). */
 .pm-footer__terms {
+  display: inline-block;
+  min-height: 24px;
+  line-height: 24px;
   font-size: 13px;
   color: var(--pm-fg-subtle);
 }

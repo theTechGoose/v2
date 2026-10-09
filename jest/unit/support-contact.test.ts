@@ -60,8 +60,11 @@ describe("REQ-044 one shared contact module carries 855-362-8666 and its tel: hr
   it("REQ-044 the shared module is the only site source that spells the number out", () => {
     const spelled = siteFiles()
       .filter((f) => NEW_NUMBER.test(fs.readFileSync(f, "utf8")))
-      .map((f) => path.relative(ROOT, f));
-    expect(spelled).toEqual(["shared/legal/contact.ts"]);
+      .map((f) => path.relative(ROOT, f))
+      .sort();
+    // REQ-065: the October 6, 2026 legal documents quote the line verbatim
+    // ("855-DOCUMON (855-362-8666)") — the client's own text, in both languages.
+    expect(spelled).toEqual(["shared/legal/contact.ts", "shared/legal/terms.es.ts", "shared/legal/terms.ts"]);
   });
 });
 

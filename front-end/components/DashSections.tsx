@@ -585,9 +585,11 @@ export function Activity(
             ? tFor(lang, "activity.emptySub")
             : tFor(lang, "activity.busySub")}
         </span>
-        {/* No /activity page exists yet — don't advertise a dead control
+        {
+          /* No /activity page exists yet — don't advertise a dead control
             (a "Full log" link here 404'd in prod). Re-add when the full
-            activity-log page ships. */}
+            activity-log page ships. */
+        }
       </div>
       {items.map((a, i) => {
         const body = (
