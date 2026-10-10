@@ -13,6 +13,7 @@ async function fresh() {
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("PPWK_PAYMENTS_URL");
   Deno.env.delete("PPWK_PAYMENTS_TOKEN");
+  Deno.env.delete("PPWK_PAYMENTS_ACCOUNT");
   await resetKv();
   fakePaymentsWorld().reset();
   const users = new UserStore();
@@ -60,6 +61,7 @@ Deno.test("REQ-058 crm-customer-sync — the CRM being down never fails the acco
   const user = await users.create({ phoneNumber: "+15125550203" });
   Deno.env.set("PPWK_PAYMENTS_URL", "http://crm.test");
   Deno.env.set("PPWK_PAYMENTS_TOKEN", "t");
+  Deno.env.set("PPWK_PAYMENTS_ACCOUNT", "primary"); // REQ-069
   link.fetchOverride = () => Promise.reject(new TypeError("connection refused"));
   const warned: string[] = [];
   const warn = console.warn;
@@ -70,6 +72,8 @@ Deno.test("REQ-058 crm-customer-sync — the CRM being down never fails the acco
     console.warn = warn;
     Deno.env.delete("PPWK_PAYMENTS_URL");
     Deno.env.delete("PPWK_PAYMENTS_TOKEN");
+    Deno.env.delete("PPWK_PAYMENTS_ACCOUNT");
+  Deno.env.delete("PPWK_PAYMENTS_ACCOUNT");
   }
   assertEquals(warned.length, 1);
   assertEquals(warned[0].includes("payments-unavailable"), true, warned[0]);
