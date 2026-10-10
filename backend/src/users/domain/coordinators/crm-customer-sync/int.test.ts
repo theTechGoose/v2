@@ -7,7 +7,8 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { fakePaymentsWorld, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { placeholderNameFor } from "@users/domain/business/placeholder-name/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
-import { CrmCustomerSync } from "./mod.ts";
+import { BusinessAddressStore } from "@users/domain/data/business-address-store/mod.ts";
+import { CrmCustomerSync, customerFor, LEAD_SOURCE } from "./mod.ts";
 
 async function fresh() {
   Deno.env.set("KV_PATH", ":memory:");
@@ -20,8 +21,33 @@ async function fresh() {
   const identity = new BusinessIdentityStore();
   const link = new PaymentsLink();
   const plans = new PlanStore();
-  return { users, identity, link, plans, sync: new CrmCustomerSync(users, identity, link, plans) };
+  const address = new BusinessAddressStore();
+  return { users, identity, link, plans, address, sync: new CrmCustomerSync(users, identity, link, plans, address) };
 }
+
+// REQ-070 — what onboarding knows rides to the CRM's lead columns (its REQ-098)
+Deno.test("REQ-070 crm-customer-sync — the person, the business's city and state, its website and this app's name ride with every sync; a lead has only the source", async () => {
+  const { users, identity, address, sync } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125550270", language: "es", name: placeholderNameFor("es") });
+  await sync.sync(user.id);
+  const lead = fakePaymentsWorld().customers[0];
+  assertEquals([lead.contact, lead.city, lead.state, lead.website, lead.leadSource], [undefined, undefined, undefined, undefined, LEAD_SOURCE], "a placeholder is never the contact");
+  await users.update(user.id, { name: "María Ejemplo", email: "maria@pintura.test" });
+  await identity.upsert(user.id, { businessName: "Pintura Ejemplo LLC", websiteUrl: "https://pintura-ejemplo.test" });
+  await address.upsert(user.id, { street: "456 Oak Ave", city: "Dallas", state: "tx", postal: "75201" });
+  await sync.sync(user.id);
+  const filled = fakePaymentsWorld().customers[0];
+  assertEquals([filled.customerName, filled.contact, filled.city, filled.state, filled.website, filled.leadSource], ["Pintura Ejemplo LLC", "María Ejemplo", "Dallas", "TX", "https://pintura-ejemplo.test", LEAD_SOURCE]);
+  assertEquals(fakePaymentsWorld().customers.length, 1, "the same record");
+});
+
+Deno.test("REQ-070 customerFor — pure: blanks are left out so the CRM keeps what it has; the state is upper-cased", () => {
+  const user = { id: "u-70", name: "Ana", email: "a@b.test", phoneNumber: "+15125550271" } as unknown as Parameters<typeof customerFor>[0];
+  const c = customerFor(user, { businessName: "Ana Roofing", websiteUrl: "  " }, null, { city: " Austin ", state: "tx" });
+  assertEquals([c.contact, c.city, c.state, "website" in c, c.leadSource], ["Ana", "Austin", "TX", false, LEAD_SOURCE]);
+  const bare = customerFor(user, null, null, null);
+  assertEquals(["city" in bare, "state" in bare, bare.contact], [false, false, "Ana"]);
+});
 
 Deno.test("REQ-058 crm-customer-sync — a sign-up makes the customer with what there is: no name yet (REQ-062: 'unknown dragon mcdragonson'), the phone, no email, this app's ref", async () => {
   const { users, sync } = await fresh();
@@ -35,6 +61,7 @@ Deno.test("REQ-058 crm-customer-sync — a sign-up makes the customer with what 
   assertEquals(born, {
     customerId: made!.customerId,
     customerName: "unknown dragon mcdragonson",
+    leadSource: LEAD_SOURCE, // REQ-070 — a lead says where it came from, nothing else
     customerEmail: "",
     customerPhone: "+15125550201",
     externalRef: `pm:${user.id}`,

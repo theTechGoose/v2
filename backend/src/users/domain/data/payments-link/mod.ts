@@ -23,6 +23,13 @@ export interface NewCustomer {
   externalRef?: string;
   /** REQ-062 — the CRM's tier for this person (its Quickbase Customers.Tier): Lead, or the plan's name */
   tier?: string;
+  /** REQ-070 — the profile the CRM's lead columns show (its REQ-098): the person, the business's city and
+   *  state, its website, and where they came from; each only when the account has it */
+  contact?: string;
+  city?: string;
+  state?: string;
+  website?: string;
+  leadSource?: string;
 }
 /** what the CRM holds for a customer, as this app reads it back */
 export interface CrmCustomer extends NewCustomer {
