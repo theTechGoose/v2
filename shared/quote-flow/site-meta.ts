@@ -16,7 +16,7 @@
 export const SITE_ORIGIN = "https://paperworkmonster.com";
 
 /** Brand name, as it should appear in og:site_name. */
-export const SITE_NAME = "DocuMonster";
+const SITE_NAME = "DocuMonster";
 
 /** The share card: static/og-card.png, 1200x630 (Facebook's large format). */
 export const OG_IMAGE = {

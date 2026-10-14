@@ -14,7 +14,7 @@ export interface PendingCapture {
   leaseUntil?: string;
 }
 
-export const FIRST_BACKOFF_MS = 5_000;
+const FIRST_BACKOFF_MS = 5_000;
 export const MAX_BACKOFF_MS = 5 * 60_000;
 /** how long one sweep may hold a record before another may take it over */
 export const LEASE_MS = 90_000;
