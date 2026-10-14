@@ -79,13 +79,13 @@ async function fillStep(page: StoryTools["page"], selector: string, value: strin
   throw new Error(`the wizard never took "${value}" at ${selector}`);
 }
 
-/** REQ-059 — pay on the page (the test card) and follow the receipt's "Back to Paperwork Monster" */
+/** REQ-059 — pay on the page (the test card) and follow the receipt's "Back to DocuMonster" */
 async function payAndGoBack(page: StoryTools["page"], expect: StoryTools["expect"]): Promise<void> {
   await expect.see("Test pay page");
   await expect.see("4111 1111 1111 1111");
   await page.locator("[data-cy='fake-pay']").click();
   await expect.see("Paid.");
-  await expect.see("Back to Paperwork Monster");
+  await expect.see("Back to DocuMonster");
   await page.locator("[data-cy='fake-pay-back']").click();
 }
 

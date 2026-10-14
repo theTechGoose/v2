@@ -21,7 +21,7 @@ _Packaged 2026-09-18 from `new-working-issues-plan.md` (### 7.8) against worktre
 - **Agreement header edits** [p82]
   - The job name goes between Contractor name and Client.
   - "New Job" → "Godzilla's Concrete Patio Agreement".
-  - "Between Paperwork Monster and Godzilla effective May 7, 2026".
+  - "Between DocuMonster and Godzilla effective May 7, 2026".
   - "The Deal in Plain English" → "Quick Summary".
   - "Contract for new job" → should be the job name (we have no job details at that point).
   - **NW-57 ◩ 1 of 5 done.** Effort M.

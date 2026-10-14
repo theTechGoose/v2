@@ -41,7 +41,7 @@ shell at `z-index:9999`.
 
 ## `<Head>`
 - **Title:** `tFor(lang, "dashboardPage.docTitle", { brand })` → `Dashboard ·
-  Paperwork Monster` (es: localized).
+  DocuMonster` (es: localized).
 - **CSS:** `<link rel="stylesheet" href="/dashboard.css">` — the single feature
   stylesheet (`static/dashboard.css`, ~2600 lines). It also defines the
   sidebar/topbar/phone-preview classes (shared specs own those). Tokens come

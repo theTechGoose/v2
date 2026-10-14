@@ -1,6 +1,6 @@
 {
-  "name": "Paperwork Monster",
-  "short_name": "Paperwork Monster",
+  "name": "DocuMonster",
+  "short_name": "DocuMonster",
   "description": "Quotes, contracts, and invoices for contractors — handled by text.",
   "id": "/",
   "start_url": "/",

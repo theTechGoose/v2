@@ -75,7 +75,7 @@ Deno.test("REQ-059 choose-plan — the pay link carries the way back: the app's 
     const plan = await flow.choose(user.id, "assist", "/welcome");
     const link = fakePaymentsWorld().links[0];
     assertEquals(link.returnUrl, `http://localhost:13170/plan/return?due=${plan.dueId}&back=%2Fwelcome`);
-    assertEquals(link.returnLabel, "Paperwork Monster");
+    assertEquals(link.returnLabel, "DocuMonster");
     assertEquals(new URL(plan.payUrl!).searchParams.get("return"), link.returnUrl);
   } finally {
     before === undefined ? Deno.env.delete("APP_URL") : Deno.env.set("APP_URL", before);
@@ -141,7 +141,7 @@ Deno.test("REQ-061 choose-plan — the first settled month starts the billing on
   assertEquals([sub.customerId, sub.amountCents, sub.memo, sub.externalRef], [active.customerId, 9900, "Monster", `pm:${user.id}:monster`]);
   assertEquals(sub.firstBillAt, addMonth(active.activatedAt!), "the first recurring month is a month after activation");
   assertEquals(sub.returnUrl?.includes("/plan/return?"), true);
-  assertEquals(sub.returnLabel, "Paperwork Monster");
+  assertEquals(sub.returnLabel, "DocuMonster");
   assertEquals(active.subscriptionId, sub.subscriptionId);
   assertEquals(active.nextBillAt, sub.nextBillAt);
   // read again: found by its handle, never started twice
@@ -246,4 +246,11 @@ Deno.test("REQ-064 choose-plan — a monthly plan picked with a merchant starts 
   world.settle(p2.dueId!);
   assertEquals((await flow.refresh(plain.id)).status, "active");
   assertEquals("merchant" in world.subscriptions[1], false, "nothing named, nothing sent");
+});
+
+Deno.test("REQ-071 choose-plan — the pay link's way back is under DocuMonster", async () => {
+  const { users, flow } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125550171", email: "g@roof.test" });
+  await flow.choose(user.id, "assist", "/welcome");
+  assertEquals(fakePaymentsWorld().links[0].returnLabel, "DocuMonster");
 });

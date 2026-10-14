@@ -1,7 +1,6 @@
 /**
  * Hans Pedersen's request (email of 2026-10-05, forwarded by Raphael):
- * REQ-065 — "we have updated everything in this document to DocuMosnter Powered by Paperwork
- * Monster … See attached" — the October 6, 2026 text, with the SMS Terms & Conditions.
+ * REQ-065 — "we have updated everything in this document to DocuMosnter Powered by Paperwork Monster … See attached" — the October 6, 2026 text, with the SMS Terms & Conditions.
  * REQ-066 — "each one on its own separate page and linked in the footer" (Sep 24) and "Make the
  * page that houses this information make the header look the same as the rest of the website".
  * REQ-067 — "we need these hyper links: Terms of Service | Refund & Cancellation Policy |
@@ -98,7 +97,7 @@ Deno.test("REQ-066: each policy is its own page with the website's header, and t
       // the website's header: the brand, the language toggle, the nav links and the Log in button
       const header = page.locator(".nav-wrap .nav");
       await header.waitFor({ timeout: 15000 });
-      expect((await header.locator(".brand").innerText()).replace(/\s+/g, " ").trim() === "Paperwork Monster", `${p.path}: the brand in the header`);
+      expect((await header.locator(".brand").innerText()).replace(/\s+/g, " ").trim() === "DocuMonster", `${p.path}: the brand in the header`);
       expect(await header.locator(".lang-toggle").count() === 1, `${p.path}: the language toggle in the header`);
       expect.eq((await header.locator(".nav-links a").allInnerTexts()).join("|"), "What We Do|How It Works|Pricing", `${p.path}: the website's nav links`);
       expect.eq(await header.locator("a.btn-outline").getAttribute("href"), "/login", `${p.path}: the Log in button`);

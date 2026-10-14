@@ -18,7 +18,7 @@ interface NavEntry {
 }
 type CountKey = "clients" | "quotes" | "contracts" | "invoices";
 
-// Canonical NAV from the reference design (Paperwork Monster Dashboard.html).
+// Canonical NAV from the reference design (DocuMonster Dashboard.html).
 // `countKey` maps a sidebar entry to a derived count from /analytics/dashboard.
 // We never seed counts client-side — if the fetch fails or returns 0, the
 // badge is omitted (rendering an empty pill on a fresh account looks broken).

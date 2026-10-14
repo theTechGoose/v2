@@ -8,8 +8,7 @@
  *   the ?open=<id> deep-link renders the panel below the hero + 4 KPI cards
  *   without scrolling it into view. The decided row also shows '—' where the
  *   customer name belongs."
- * UX-16 [I18N] "/quotes browser-tab title is English ('Quotes · Paperwork
- *   Monster') in the ES UI."
+ * UX-16 [I18N] "/quotes browser-tab title is English ('Quotes · DocuMonster') in the ES UI."
  * UX-17 [QUOTES] "Sample-quote presentation confuses the numbers story. KPI
  *   says '0 cotizaciones en espera' while the track header says '… · 1
  *   cotización' (the visible-but-excluded MUESTRA card); the sample card
@@ -159,7 +158,7 @@ describe("UX-16: ES /quotes browser-tab title is localized", () => {
     // Fix-independent ES marker so the assertion never races the ES flip.
     cy.contains(/cotizaci/i, { timeout: 10_000 }).should("be.visible");
     // RED today: front-end/routes/quotes/index.tsx:19 hardcodes
-    // "Quotes · Paperwork Monster" (dashboard/invoices use tFor docTitle).
+    // "Quotes · DocuMonster" (dashboard/invoices use tFor docTitle).
     cy.title().should("contain", "Cotizaciones");
   });
 });

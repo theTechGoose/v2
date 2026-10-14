@@ -703,7 +703,7 @@ Page 33 is a divider reading "COMPLETED TASKS". Only some pages after it are act
     - **NW-53c ⚠** no new asset in the repo; `front-end/static/logo-monster.png` last changed `8d7d222` (2026-08-18).
       `components/ui/Brand.tsx` renders a text "P" mark, not the image — already out of step. `format-helpers.test.ts` caps
       `logo-email.png` < 300 KB (now 229 KB). Needs the artwork.
-  - "Paperwork Monsters" → "Paperwork Monster" (drop the s).
+  - "DocuMonsters" → "DocuMonster" (drop the s).
     - **NW-53d ✅ in shipped code** (`lang/*.json:473` `brand.name`, `site-meta.ts:19`, `manifest.webmanifest`, `verify-otp:108,119`,
       `send-paperwork-email:422`); 4 stragglers only in the non-served `front-end/ui-breakdown/pages/landing/js/landing-scripts.js:140,147,279,287`.
   - Starting a new conversation with "have price, need job details" should auto-focus the input.
@@ -754,7 +754,7 @@ Page 33 is a divider reading "COMPLETED TASKS". Only some pages after it are act
 - **Agreement header edits** [p82]
   - The job name goes between Contractor name and Client.
   - "New Job" → "Godzilla's Concrete Patio Agreement".
-  - "Between Paperwork Monster and Godzilla effective May 7, 2026".
+  - "Between DocuMonster and Godzilla effective May 7, 2026".
   - "The Deal in Plain English" → "Quick Summary".
   - "Contract for new job" → should be the job name (we have no job details at that point).
   - **NW-57 ◩ 1 of 5 done.** Effort M.

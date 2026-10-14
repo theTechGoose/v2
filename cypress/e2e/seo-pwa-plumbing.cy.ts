@@ -219,7 +219,7 @@ describe("public surface plumbing (mobile layout, print, 404, PWA)", () => {
       // text/plain ("Not Found"), which is exactly the P-56 defect — a paid
       // visitor gets a plaintext dump instead of an HTML page.
       cy.visit("/definitely-not-a-page-xyz", { failOnStatusCode: false });
-      cy.contains(/paperwork monster/i, { timeout: 10_000 }).should(
+      cy.contains(/documonster/i, { timeout: 10_000 }).should(
         "be.visible",
       );
       cy.get('a[href="/"]').first().should("be.visible").click();

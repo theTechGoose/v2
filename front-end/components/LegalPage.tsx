@@ -46,11 +46,11 @@ export default function LegalPage(
       <div class="nav-wrap">
         <div class="container nav">
           <a href="/" class="brand">
-            <img src="/logo-monster.png" alt="Paperwork Monster" />
-            <span>{site.brand1}</span>
-            <em style="font-style:normal;color:var(--brand-green)">
-              {site.brand2}
-            </em>
+            <img src="/logo-monster.png" alt="DocuMonster" />
+            <span>
+              {site.brand1}
+              <em style="font-style:normal;color:var(--brand-green)">{site.brand2}</em>
+            </span>
           </a>
           <div class="lang-toggle" role="group" aria-label="Language">
             <a
