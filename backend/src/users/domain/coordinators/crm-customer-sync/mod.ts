@@ -62,18 +62,9 @@ export class CrmCustomerSync {
    * REQ-082), named "unknown dragon mcdragonson" and tiered Lead (REQ-062). Best effort, like
    * sync. The sign-up with that phone then claims it through sync's ref.
    */
-  async capture(phoneNumber: string): Promise<{ customerId: string } | null> {
-    const phone = normalizePhone(phoneNumber);
-    try {
-      return await this.captureOrThrow(phone);
-    } catch (e) {
-      console.warn(`[crm-customer-sync] lead ${phone}: ${e instanceof Error ? e.message : String(e)}`);
-      return null;
-    }
-  }
-
-  /** REQ-072 — the lead, and the CRM's refusal as thrown: the outbox sweep decides the retry */
-  captureOrThrow(phoneNumber: string): Promise<{ customerId: string }> {
+  /** REQ-060 — the phone typed into login is a CRM lead at once, unnamed, no email, no ref;
+   *  REQ-072 — the CRM's refusal is thrown: the outbox sweep (CrmLeadCapture) decides the retry */
+  capture(phoneNumber: string): Promise<{ customerId: string }> {
     const phone = normalizePhone(phoneNumber);
     return this.link.createCustomer({ customerName: UNNAMED_CUSTOMER, customerEmail: "", customerPhone: phone, tier: LEAD_TIER });
   }

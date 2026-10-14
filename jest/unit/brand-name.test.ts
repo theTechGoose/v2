@@ -24,11 +24,6 @@ const LEGAL_FILES = [
   // the two tests that name the old brand in order to assert it is gone
   "jest/unit/brand-name.test.ts",
   "e2e/brand/brand.e2e.test.ts",
-  // the ui-breakdown viewer's generated one-line manifest (_viewer/gen.py over the renamed
-  // markdown): the merge gate reads a regenerated line as new source and refuses the prose
-  // words "legacy" / "@deprecated" the specs contain, so it stays as generated from the old
-  // docs until the gate learns generated files (coms claude-tools, 2026-10-14)
-  "front-end/ui-breakdown/viewer-data.js",
 ];
 /** what the requirement keeps, stripped from a line before it is judged */
 const KEPT = [

@@ -4,7 +4,7 @@
  *
  * enqueue(phone): the lead is a KV outbox record (CrmCaptureOutbox) before the login replies —
  * a few ms — and a sweep starts without being awaited. drain(): every due record is claimed,
- * carried to the CRM (CrmCustomerSync.captureOrThrow, REQ-060's lead) and cleared on the CRM's
+ * carried to the CRM (CrmCustomerSync.capture, REQ-060's lead) and cleared on the CRM's
  * answer; a failure defers it with backoff (lead-capture-retry) and it is never dropped. Sweeps
  * run on every login, at boot (an isolate that died mid-capture leaves its record for the next
  * one) and every minute on Deno Deploy's cron (registerSweep). One sweep per process at a time;
@@ -52,7 +52,7 @@ export class CrmLeadCapture {
         continue;
       }
       try {
-        await this.crm.captureOrThrow(rec.phone);
+        await this.crm.capture(rec.phone);
         await this.outbox.done(rec.phone);
         result.landed++;
       } catch (e) {

@@ -433,3 +433,6 @@ Raphael, on the first cut (a bare un-awaited call): "what i mean by fire and for
 
 ### REQ-071 AMENDMENT (2026-10-14) — one generated file stays
 `front-end/ui-breakdown/viewer-data.js`, the one-line manifest `_viewer/gen.py` builds from the ui-breakdown markdown for the file:// viewer, keeps the old brand: regenerating it rewrites its single line, and the merge gate's clean step reads that line as new source and refuses the prose words "legacy" and "@deprecated" the specs contain (filed to claude-tools). The markdown it is built from is renamed; run `gen.py` once the gate exempts generated files.
+
+### REQ-071 REVISION (2026-10-14) — the viewer manifest is renamed too, inline
+The judge was right that the amendment above left a tracked file spelling the old brand. The manifest now lives INSIDE `front-end/ui-breakdown/viewer.html` (its `<script id="uib-data">` line, written by `_viewer/gen.py`, which rerenders the page in place); `viewer-data.js` is deleted. The viewer still works over file:// with no fetch, the renamed specs are what it shows, and the brand scan covers it like any tracked file.
