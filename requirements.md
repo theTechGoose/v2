@@ -436,3 +436,6 @@ Raphael, on the first cut (a bare un-awaited call): "what i mean by fire and for
 
 ### REQ-071 REVISION (2026-10-14) — the viewer manifest is renamed too, inline
 The judge was right that the amendment above left a tracked file spelling the old brand. The manifest now lives INSIDE `front-end/ui-breakdown/viewer.html` (its `<script id="uib-data">` line, written by `_viewer/gen.py`, which rerenders the page in place); `viewer-data.js` is deleted. The viewer still works over file:// with no fetch, the renamed specs are what it shows, and the brand scan covers it like any tracked file.
+
+### REQ-060/062 AMENDMENT (2026-10-14) — the two login stories submit from the keyboard
+The plan-picker stories "REQ-060: the phone typed into login is a CRM customer before any code is entered …" and "REQ-062: a person who never finishes …" pressed Enter on the phone box through the locator; the story runner stamps a frame after every locator press, and on Playwright 1.63 that screenshot hangs 90 s when the page is already navigating to /verify (the REQ-068 note; three gate runs in a row today; filed as coms claude-tools 20261014T223413Z-w11-64121). They now press Enter from the keyboard (not stamped); the fill frame and the /verify page that follows are their evidence. No product change.
