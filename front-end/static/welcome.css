@@ -1,5 +1,5 @@
 /* =========================================================================
-   Paperwork Monster — /welcome first-sign-in wizard.
+   DocuMonster — /welcome first-sign-in wizard.
    Pulls the global tokens + reset + webfonts from verify.css, then layers
    the focused single-question wizard shell on top. Mobile-first.
    ========================================================================= */

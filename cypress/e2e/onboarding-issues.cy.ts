@@ -75,7 +75,7 @@ describe("Onboarding — reconciled audit", () => {
     cy.get('input[aria-label="Digit 6"]').should("have.value", "6");
   });
 
-  it("#9 brand reads singular 'Paperwork Monster' on landing + verify (no 'Monsters' plural)", () => {
+  it("#9 brand reads singular 'DocuMonster' on landing + verify (no 'Monsters' plural)", () => {
     cy.visit("/");
     cy.get("header, body").first().within(() => {
       cy.contains(/Paperwork\s+Monsters\b/).should("not.exist");

@@ -28,7 +28,7 @@ in `js/index.tsx`, `js/landing-scripts.js`, `css/landing.css`.
 - The route uses `tFor("en", …)` only for the `<title>` + meta description.
 
 ## `<Head>`
-- `<title>` = `tFor("en","landing.head.title")` = "Paperwork Monster — You do
+- `<title>` = `tFor("en","landing.head.title")` = "DocuMonster — You do
   the work. We handle the paperwork."
 - `<meta name="description">` = `landing.head.metaDescription`.
 - `<link rel="stylesheet" href="/landing.css">`.

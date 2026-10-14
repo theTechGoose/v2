@@ -79,13 +79,13 @@ async function fillStep(page: StoryTools["page"], selector: string, value: strin
   throw new Error(`the wizard never took "${value}" at ${selector}`);
 }
 
-/** REQ-059 — pay on the page (the test card) and follow the receipt's "Back to Paperwork Monster" */
+/** REQ-059 — pay on the page (the test card) and follow the receipt's "Back to DocuMonster" */
 async function payAndGoBack(page: StoryTools["page"], expect: StoryTools["expect"]): Promise<void> {
   await expect.see("Test pay page");
   await expect.see("4111 1111 1111 1111");
   await page.locator("[data-cy='fake-pay']").click();
   await expect.see("Paid.");
-  await expect.see("Back to Paperwork Monster");
+  await expect.see("Back to DocuMonster");
   await page.locator("[data-cy='fake-pay-back']").click();
 }
 
@@ -260,7 +260,11 @@ Deno.test("REQ-060: the phone typed into login is a CRM customer before any code
     const box = page.getByRole("textbox", { name: /phone/i });
     await box.waitFor({ timeout: 60_000 });
     await box.fill(phone.slice(2));
-    await box.press("Enter");
+    // Enter from the keyboard, not the locator: the runner stamps a frame after a locator press,
+    // and that screenshot hangs 90 s when the page is already navigating to /verify (Playwright
+    // 1.63; coms claude-tools 20261014T223413Z-w11-64121). The fill frame and the /verify page
+    // that follows are the evidence.
+    await page.keyboard.press("Enter");
     await page.waitForURL((u: URL) => u.pathname === "/verify", { timeout: 60_000 });
     await expect.see("Check your phone");
     // and that is all this person does — no code, no onboarding. The CRM already has them.
@@ -329,7 +333,11 @@ Deno.test("REQ-062: a person who never finishes is 'unknown dragon mcdragonson' 
     const box = page.getByRole("textbox", { name: /phone/i });
     await box.waitFor({ timeout: 60_000 });
     await box.fill(phone.slice(2));
-    await box.press("Enter");
+    // Enter from the keyboard, not the locator: the runner stamps a frame after a locator press,
+    // and that screenshot hangs 90 s when the page is already navigating to /verify (Playwright
+    // 1.63; coms claude-tools 20261014T223413Z-w11-64121). The fill frame and the /verify page
+    // that follows are the evidence.
+    await page.keyboard.press("Enter");
     await page.waitForURL((u: URL) => u.pathname === "/verify", { timeout: 60_000 });
     await expect.see("Check your phone");
     // the same phone signs up later, still without a name: the lead is claimed, the name stays

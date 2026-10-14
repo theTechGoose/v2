@@ -22,7 +22,7 @@ import {
   storyLineFor,
 } from "../lib/clients-display.ts";
 
-// Chip set matches the canonical reference (Paperwork Monster Clients.html)
+// Chip set matches the canonical reference (DocuMonster Clients.html)
 // — six entries with the exact labels from the design source. URL
 // bookmarking via ?segment= is additive: it doesn't change the visual
 // chip set, just lets a filtered view be reloaded / shared / back-buttoned.

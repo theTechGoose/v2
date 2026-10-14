@@ -117,7 +117,7 @@ a **⌘N** hint inside the MOBILE drawer (desktop-keyboard hint on a phone, P-53
 "+15125554001", Para-block "5125554002" while the rest of the app formats
 "(512) 555-4001". One formatter everywhere (shared/quote-flow/format-helpers exists).
 
-**UX-16 [I18N] `/quotes` browser-tab title is English ("Quotes · Paperwork Monster") in
+**UX-16 [I18N] `/quotes` browser-tab title is English ("Quotes · DocuMonster") in
 the ES UI** — dashboard ("Panel") and invoices ("Facturas") are localized.
 
 **UX-17 [QUOTES] Sample-quote presentation confuses the numbers story.** KPI says
@@ -299,8 +299,7 @@ text-only). Adapt the copy to the channels that actually exist.
 
 ## 🟡 MINOR
 
-**UX-40 [I18N] /c browser-tab title is English** ("Quote + Agreement · Paperwork
-Monster") on the Spanish customer-facing contract (same class as UX-16, but
+**UX-40 [I18N] /c browser-tab title is English** ("Quote + Agreement · DocuMonster") on the Spanish customer-facing contract (same class as UX-16, but
 customer-visible).
 
 **UX-41 [ASSISTANT] Help-me-price step nits.** The version-confirm step's ONLY advance

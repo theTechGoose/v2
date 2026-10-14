@@ -62,7 +62,7 @@ Deno.test("send-otp integration: defaults to Spanish copy when language omitted 
   await resetKv();
   const { smsCalls, flow } = freshFlow();
   await flow.run({ phoneNumber: "+15125551234" });
-  assert(smsCalls[0].body.startsWith("Tu código de Paperwork Monster:"));
+  assert(smsCalls[0].body.startsWith("Tu código de DocuMonster:"));
   await resetKv();
 });
 
@@ -143,5 +143,17 @@ Deno.test("send-otp integration: invalid phone propagates (and SMS is NOT attemp
   }
   assertEquals(threw, true);
   assertEquals(smsCalls.length, 0);
+  await resetKv();
+});
+
+Deno.test("REQ-071 send-otp — the code SMS names DocuMonster, in both languages", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { smsCalls, flow } = freshFlow();
+  await flow.run({ phoneNumber: "+15125550711", language: "en" });
+  await flow.run({ phoneNumber: "+15125550712", language: "es" });
+  assert(smsCalls[0].body.startsWith("Your DocuMonster code:"), `en: ${smsCalls[0].body}`);
+  assert(smsCalls[1].body.startsWith("Tu código de DocuMonster:"), `es: ${smsCalls[1].body}`);
+  for (const call of smsCalls) assert(!/paperwork\s*monster/i.test(call.body), `the old brand is gone: ${call.body}`);
   await resetKv();
 });

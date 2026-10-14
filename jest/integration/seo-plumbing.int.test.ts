@@ -80,7 +80,7 @@ describe("P-56 custom branded 404 page", () => {
     expect(r.type).toMatch(/text\/html/);
     // …but a branded page (app name from lang/en.json brand.name) with a
     // way back home.
-    expect(r.body).toContain("Paperwork Monster");
+    expect(r.body).toContain("DocuMonster");
     expect(r.body).toMatch(/href="\/"/);
   });
 });

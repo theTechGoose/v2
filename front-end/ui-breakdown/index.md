@@ -1,4 +1,4 @@
-# Paperwork Monster — UI breakdown / build spec
+# DocuMonster — UI breakdown / build spec
 
 Reverse-documentation of the existing **Fresh 2 (Preact + Tailwind 4)** app at
 `front-end/`, decomposed into a build spec a later session can rebuild from

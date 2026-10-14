@@ -1,6 +1,6 @@
 /**
  * /invoices island — receivables view matching the canonical reference
- * (reference/extracted/Paperwork Monster Invoices.html). Despite the URL
+ * (reference/extracted/DocuMonster Invoices.html). Despite the URL
  * saying "Invoices", the components share the Quotes code path with copy +
  * stage names swapped — that's why the classes are `.qph__*` / `.qkpi__*` /
  * `.qtrack__*` / `.qcard__*` (loaded from quotes.css).

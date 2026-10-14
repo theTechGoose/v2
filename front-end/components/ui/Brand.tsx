@@ -12,7 +12,7 @@ export function Brand({ size = "md", inverse = false }: Props) {
     >
       <span class="brand__mark">P</span>
       <span style={size === "sm" ? "font-size:16px" : undefined}>
-        Paperwork Monster
+        DocuMonster
       </span>
     </a>
   );

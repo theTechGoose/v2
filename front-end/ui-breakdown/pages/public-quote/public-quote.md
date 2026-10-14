@@ -53,7 +53,7 @@ part of this page:
 
 | fn | role | tier |
 |---|---|---|
-| `PublicShell({children,brand,address,logoUrl,lang})` | warm-paper outer frame: `min-height:100dvh;background:#f7f6f1`, centered `max-width:640px` column, optional logo `<img>` (≤48px tall, from `/api/public-logo/quote/:id` when `contractor.hasLogo`), green eyebrow headline (businessName→name→`publicQuote.contractorFallback`), optional address line, the `{children}` slot, and a `powered by Paperwork Monster` footer. | page-composition |
+| `PublicShell({children,brand,address,logoUrl,lang})` | warm-paper outer frame: `min-height:100dvh;background:#f7f6f1`, centered `max-width:640px` column, optional logo `<img>` (≤48px tall, from `/api/public-logo/quote/:id` when `contractor.hasLogo`), green eyebrow headline (businessName→name→`publicQuote.contractorFallback`), optional address line, the `{children}` slot, and a `powered by DocuMonster` footer. | page-composition |
 | `QuoteCard({quote})` | the white `border-radius:18px` document card: header (eyebrow "Quote" + hero `<h1>` + optional sub-summary + `#id8` + accepted/declined status pill), optional greeting, job-details paragraph/bullets, **line-item table (only when `lineItems.length > 1`)**, estimated-total band, the mounted `PublicQuoteActions` island (only when not accepted/declined), and a contractor contact footer (tel/mailto). | page-composition |
 | `ErrorCard({message,lang})` | white card, `publicQuote.errorHeading` + message. Shown on expired/unavailable. | page-composition |
 | `jobDetailsBlurb(summary)` | helper: lower-cases + strips a leading `"Quote: "` so the derived job-details sentence reads naturally. | (pure fn) |

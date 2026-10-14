@@ -28,7 +28,7 @@
  *               Spanish", hs-doc__tag>Quote, "Signed ✓", "Online • SMS",
  *               "Unlimited quotes & agreements" under $15, "1,200+ contractors",
  *               "34 contractors … signed up this week"), NO trial claim.
- *   /landing  → Spanish body: "Prueba Paperwork Monster GRATIS por 30 días",
+ *   /landing  → Spanish body: "Prueba DocuMonster GRATIS por 30 días",
  *               "30 días gratis", "Papeleo ilimitado" as the $99 Pro blurb.
  */
 import { contractor } from "./helpers/api";
@@ -89,7 +89,7 @@ describe("P-08 the two landing pages sell ONE offer", () => {
 
   it("P-08 both pages make the same free-trial claim (both or neither)", () => {
     // Red today: / has no trial anywhere; /landing headlines
-    // "Prueba Paperwork Monster GRATIS por 30 días" + "30 días gratis".
+    // "Prueba DocuMonster GRATIS por 30 días" + "30 días gratis".
     expect({ rootHasTrial: TRIAL_RE.test(root) }).toEqual({
       rootHasTrial: TRIAL_RE.test(landing),
     });
