@@ -1,67 +1,77 @@
 /**
  * REQ-072 — Raphael, 2026-10-14, on prod's login sitting on "…" for 22–31 s: "yeah fire and
- * forget." The lead capture the REQ-060 send-otp makes on the CRM (Quickbase behind it, 10 s per
- * 429) is started after the code goes out and never awaited: the reply comes back at once, and
- * the capture still reaches the CRM.
+ * forget. … it passes it to the backend and it does not block the user. it MUST be guaranteed to
+ * go in the crm this is mission critical." The lead capture the REQ-060 send-otp makes on the CRM
+ * (Quickbase behind it, 10 s per 429) is an outbox record before the reply and is carried by the
+ * sweep after it: the reply comes back while the CRM still holds the capture, the capture reaches
+ * the CRM, and the record is cleared only on the CRM's answer.
  *
- * The in-process app (UsersModule) against a stub CRM on localhost that holds the customers POST
- * for 2.5 s. The real CrmPaymentsLink is selected by PPWK_PAYMENTS_URL + PPWK_PAYMENTS_TOKEN
- * (payments-link-select); SMS stays in dev mode (no TWILIO_ACCOUNT_SID), so nothing leaves the box.
+ * The in-process app (UsersModule) with its CRM door (the DI'd PaymentsLink) given a stub port
+ * that holds the customers POST until the test lets it go — no env, no network: the real client's
+ * selection is process-wide and the int lane runs files in parallel.
  */
 import "#reflect-metadata";
-import { assert, assertEquals } from "#std/assert";
-import { Module } from "#danet/core";
-import { bootstrapServer } from "#mrg-keystone/danet";
+import { assertEquals } from "#std/assert";
+import { DanetApplication, Module } from "#danet/core";
 import { UsersModule } from "@users/mod-root.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { PaymentsLink, type PaymentsLinkPort } from "@users/domain/data/payments-link/mod.ts";
+import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 
 @Module({ imports: [UsersModule] })
 class TestApp {}
 
-const PORT = 9072;
-const CRM_HOLD_MS = 2500;
+const PORT = 9172;
+
+function timeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([p, new Promise<T>((_, reject) => (t = setTimeout(() => reject(new Error(`${what}: not within ${ms}ms`)), ms)))]).finally(() => clearTimeout(t));
+}
 
 Deno.test("REQ-072 send-otp answers before the CRM capture finishes, and the capture still reaches the CRM", async () => {
-  const seen: { path: string; phone: string; at: number }[] = [];
+  const seen: { phone: string }[] = [];
+  let received: () => void = () => {};
+  const receivedP = new Promise<void>((r) => (received = r));
   let release: () => void = () => {};
-  const captured = new Promise<void>((r) => (release = r));
-  // the stub CRM: every customers POST is held CRM_HOLD_MS, as Quickbase's 429 waits hold the real one
-  const crm = Deno.serve({ port: 0, onListen() {} }, async (req) => {
-    const path = new URL(req.url).pathname;
-    const body = req.method === "POST" ? await req.json() : {};
-    seen.push({ path, phone: body.customerPhone ?? "", at: Date.now() });
-    await new Promise((r) => setTimeout(r, CRM_HOLD_MS));
-    release();
-    return Response.json({ customerId: "c-lead-1" }, { status: 201 });
-  });
-  const env = ["PPWK_PAYMENTS_URL", "PPWK_PAYMENTS_TOKEN", "PPWK_PAYMENTS_ACCOUNT", "TWILIO_ACCOUNT_SID", "KV_PATH"].map((k) => [k, Deno.env.get(k)] as const);
+  const held = new Promise<void>((r) => (release = r));
+  // the stub CRM door: the customer create is held until the test lets it go — as Quickbase's 429 waits hold the real one
+  const door = {
+    async createCustomer(input: { customerPhone?: string }) {
+      seen.push({ phone: input.customerPhone ?? "" });
+      received();
+      await held;
+      return { customerId: "c-lead-1" };
+    },
+  } as unknown as PaymentsLinkPort;
+  const twilio = Deno.env.get("TWILIO_ACCOUNT_SID");
   Deno.env.set("KV_PATH", ":memory:");
-  Deno.env.set("PPWK_PAYMENTS_URL", `http://127.0.0.1:${crm.addr.port}`);
-  Deno.env.set("PPWK_PAYMENTS_TOKEN", "test-token");
-  Deno.env.set("PPWK_PAYMENTS_ACCOUNT", "primary");
-  Deno.env.delete("TWILIO_ACCOUNT_SID");
+  Deno.env.delete("TWILIO_ACCOUNT_SID"); // SMS in dev mode: nothing leaves the box
   await resetKv();
-  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
-  await server.listen();
+  const app = new DanetApplication();
+  await app.init(TestApp);
+  app.get(PaymentsLink).portOverride = door;
+  await app.listen(PORT);
   try {
-    const t0 = Date.now();
     const res = await fetch(`http://localhost:${PORT}/auth/send-otp`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ phoneNumber: "+15125550072", language: "en" }),
     });
     const body = await res.json();
-    const elapsed = Date.now() - t0;
-    assertEquals(body, { sent: true });
-    assert(elapsed < 1000, `send-otp answered in ${elapsed}ms — it waited on the CRM (held ${CRM_HOLD_MS}ms)`);
-    // the capture still happens: the stub has the phone, and the held call completes after the reply
-    await captured;
-    assertEquals(seen.map((s) => [s.path, s.phone]), [["/api/payments/customers", "+15125550072"]]);
-    assert(seen[0].at - t0 < 1000, "the capture was started with the send, not after the reply");
+    assertEquals(body, { sent: true }, "the reply came while the CRM still holds the capture");
+    // the capture still happens, and the reply did not wait for it: the CRM is holding it now
+    await timeout(receivedP, 5000, "the capture reaching the CRM");
+    assertEquals(seen, [{ phone: "+15125550072" }]);
+    const outbox = new CrmCaptureOutbox();
+    assertEquals((await outbox.list()).map((r) => r.phone), ["+15125550072"], "pending in KV until the CRM answers");
+    release();
+    // and once the CRM answers, the record is cleared — the capture is done, not pending
+    const t0 = Date.now();
+    while ((await outbox.list()).length > 0 && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 20));
+    assertEquals(await outbox.list(), [], "landed → cleared");
   } finally {
-    await server.stop();
-    await crm.shutdown();
-    for (const [k, v] of env) v === undefined ? Deno.env.delete(k) : Deno.env.set(k, v);
+    await app.close();
+    twilio === undefined ? Deno.env.delete("TWILIO_ACCOUNT_SID") : Deno.env.set("TWILIO_ACCOUNT_SID", twilio);
     await resetKv();
   }
 });

@@ -65,11 +65,17 @@ export class CrmCustomerSync {
   async capture(phoneNumber: string): Promise<{ customerId: string } | null> {
     const phone = normalizePhone(phoneNumber);
     try {
-      return await this.link.createCustomer({ customerName: UNNAMED_CUSTOMER, customerEmail: "", customerPhone: phone, tier: LEAD_TIER });
+      return await this.captureOrThrow(phone);
     } catch (e) {
       console.warn(`[crm-customer-sync] lead ${phone}: ${e instanceof Error ? e.message : String(e)}`);
       return null;
     }
+  }
+
+  /** REQ-072 — the lead, and the CRM's refusal as thrown: the outbox sweep decides the retry */
+  captureOrThrow(phoneNumber: string): Promise<{ customerId: string }> {
+    const phone = normalizePhone(phoneNumber);
+    return this.link.createCustomer({ customerName: UNNAMED_CUSTOMER, customerEmail: "", customerPhone: phone, tier: LEAD_TIER });
   }
 
   /** what the CRM holds for this account; null before its first sync */
