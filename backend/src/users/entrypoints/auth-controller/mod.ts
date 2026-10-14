@@ -189,8 +189,11 @@ export class AuthController {
         phoneNumber: dto.phoneNumber,
         language: dto.language,
       });
-      // REQ-060 — the phone is a CRM lead the moment the code goes out, code entered or not
-      await this.crm.capture(dto.phoneNumber);
+      // REQ-060 — the phone is a CRM lead the moment the code goes out, code entered or not.
+      // REQ-072 — fire and forget: the CRM's customer capture runs Quickbase calls that wait
+      // 10 s per 429, and the login sat on "…" for 22–31 s while this was awaited. capture()
+      // swallows and logs its own failures, so nothing here is left unhandled.
+      void this.crm.capture(dto.phoneNumber);
     } catch (err) {
       if (err instanceof SendOtpCooldownError) {
         return jsonResponse(

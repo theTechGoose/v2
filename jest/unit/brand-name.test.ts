@@ -21,10 +21,14 @@ const LEGAL_FILES = [
   "shared/legal/terms.es.ts",
   "jest/unit/legal-terms.test.ts",
   "requirements.md",
+  // the two tests that name the old brand in order to assert it is gone
+  "jest/unit/brand-name.test.ts",
+  "e2e/brand/brand.e2e.test.ts",
 ];
 /** what the requirement keeps, stripped from a line before it is judged */
 const KEPT = [
   /DocuMonster Powered by Paperwork Monster/g,
+  /DocuMosnter Powered by Paperwork Monster/g, // Hans's email, quoted as written
   /Paperwork Monster Inc\.?/g,
   /paperworkmonster\.com/gi,
   /reference\/paperwork-monsters\//g,
