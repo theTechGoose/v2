@@ -43,7 +43,7 @@ export default function TrialSignup({ lang = "es" }: { lang?: Lang }) {
       // instead of the main "/" landing.
       globalThis.location.href = `/verify?phone=${
         encodeURIComponent(e164)
-      }&lang=${lang}&from=landing`;
+      }&lang=${lang}&from=landing&px=lead`;
     } catch (_error) {
       setErr(t("formError"));
     } finally {

@@ -696,6 +696,9 @@ export const PRIVACY_POLICY: LegalDoc = {
         p(
           "We may use cookies and similar technologies to maintain sessions, remember preferences, authenticate accounts, detect fraud, measure website traffic, understand product usage, improve performance, and evaluate marketing effectiveness. Browser controls may allow you to limit certain cookies, although disabling necessary cookies may affect functionality.",
         ),
+        p(
+          "Our marketing and sign-up pages use the Meta Pixel, a measurement tool provided by Meta Platforms, Inc., to measure the effectiveness of our advertising on Facebook and Instagram. The Meta Pixel may set cookies (such as _fbp) and shares limited event data with Meta — for example, that a page was viewed, that a verification code was requested, that an account was created, or that a plan was purchased — together with standard browser information. We do not send Meta your phone number, email address, or the contents of your documents. You can limit how Meta uses this information through your Facebook ad preferences, and browser controls may allow you to block these cookies.",
+        ),
       ],
     },
     {

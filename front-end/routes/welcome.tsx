@@ -11,6 +11,11 @@ import { tFor } from "../lib/i18n.ts";
 import { type ProfileSnapshot } from "../clients/profile.ts";
 import { ssrBackendGetAuthed } from "../lib/backend-fetch.ts";
 import WelcomeWizard from "../islands/WelcomeWizard.tsx";
+import { MetaPixelEvent } from "../components/MetaPixel.tsx";
+import {
+  registrationEvent,
+  subscribeEventFrom,
+} from "../../shared/meta-pixel/pixel.ts";
 
 /**
  * /welcome — the first-sign-in onboarding wizard.
@@ -52,6 +57,8 @@ export default define.page(async function Welcome(ctx) {
     });
   }
 
+  const subscribed = subscribeEventFrom(ctx.url.searchParams.get("px"));
+
   const lang: Lang = (snapshot?.user?.language === "es" ||
       snapshot?.user?.language === "en")
     ? snapshot.user.language
@@ -66,6 +73,13 @@ export default define.page(async function Welcome(ctx) {
         </title>
         <link key="css-welcome" rel="stylesheet" href="/welcome.css" />
         <link key="css-plan-cards" rel="stylesheet" href="/plan-cards.css" />
+        {
+          /* REQ-080: a new account on the wizard is a CompleteRegistration
+            for the ads (once per account on this browser); the receipt's way
+            back (/plan/return ?px=sub:…) is a Subscribe with the plan's price. */
+        }
+        <MetaPixelEvent event={registrationEvent(user.id)} />
+        {subscribed ? <MetaPixelEvent event={subscribed} /> : null}
       </Head>
       <div class="welcome-shell">
         <a
