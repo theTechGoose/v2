@@ -655,13 +655,13 @@
   color: var(--pm-fg-subtle);
 }
 /* REQ-067/076: the four policy links, kept together; 24px tap boxes 16px
-   apart (hit-target audit). */
+   apart, rows 8px apart (hit-target audit). */
 .pm-footer__legal {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 4px 16px;
+  gap: 8px 16px;
 }
 .pm-footer__terms {
   display: inline-block;
