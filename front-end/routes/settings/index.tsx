@@ -5,6 +5,8 @@ import { type Lang, tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import SettingsPage from "../../islands/SettingsPage.tsx";
+import { MetaPixelEvent } from "../../components/MetaPixel.tsx";
+import { subscribeEventFrom } from "../../../shared/meta-pixel/pixel.ts";
 
 const WEEKDAY_KEYS = [
   "date.weekday.sunday",
@@ -39,6 +41,8 @@ export default define.page(function SettingsRoute(ctx) {
   const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
     tFor(lang, MONTH_KEYS[now.getMonth()])
   } ${now.getDate()}`;
+  // REQ-080: the receipt of an upgrade comes back here (/plan/return ?px=sub:…) — a Subscribe for the ads
+  const subscribed = subscribeEventFrom(ctx.url.searchParams.get("px"));
 
   return (
     <>
@@ -46,6 +50,7 @@ export default define.page(function SettingsRoute(ctx) {
         <title>{tFor(lang, "settingsRoute.docTitle")}</title>
         <link key="css-dashboard" rel="stylesheet" href="/dashboard.css" />
         <link key="css-plan-cards" rel="stylesheet" href="/plan-cards.css" />
+        {subscribed ? <MetaPixelEvent event={subscribed} /> : null}
       </Head>
       <div class="app">
         <DashSidebar active="settings" />

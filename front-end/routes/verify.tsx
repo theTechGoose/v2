@@ -10,6 +10,8 @@ import {
 } from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
 import CodeInput from "../islands/CodeInput.tsx";
+import { MetaPixelEvent } from "../components/MetaPixel.tsx";
+import { leadEvent } from "../../shared/meta-pixel/pixel.ts";
 
 function formatPhoneDisplay(e164: string): string {
   const digits = e164.replace(/\D/g, "").slice(-10);
@@ -54,6 +56,14 @@ export default define.page(async function Verify(ctx) {
       <Head>
         <title>{s["verify.h1"]} · {tFor(lang, "brand.name")}</title>
         <link rel="stylesheet" href="/verify.css" />
+        {
+          /* REQ-080: reached by sending the code from a landing page (the
+            landings add ?px=lead; the login page does not) — a Lead for the
+            ads, once per phone on this browser. */
+        }
+        {url.searchParams.get("px") === "lead"
+          ? <MetaPixelEvent event={leadEvent(phone)} />
+          : null}
       </Head>
       <div class="verify-shell">
         <div class="verify-card">
