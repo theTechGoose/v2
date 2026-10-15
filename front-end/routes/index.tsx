@@ -4,7 +4,7 @@ import {
   SUPPORT_PHONE_DISPLAY,
   SUPPORT_PHONE_HREF,
 } from "../../shared/legal/contact.ts";
-import { LEGAL_FOOTER_LINK } from "../../shared/legal/terms.ts";
+import { LEGAL_LINKS } from "../../shared/legal/terms.ts";
 import { define } from "../utils.ts";
 import { loadUser } from "../lib/auth.ts";
 import { tFor } from "../lib/i18n.ts";
@@ -1227,15 +1227,18 @@ export default define.page(async function Landing(ctx) {
             <a href="/contact" data-i18n="footer.contact">
               {t("footer.contact")}
             </a>
-            {/* REQ-067 — one link to the policies page (its tabs are the four) */}
-            <a
-              href={LEGAL_FOOTER_LINK.path}
-              data-legal-footer-link
-              data-terms-link
-              data-i18n="footer.legal"
-            >
-              {t("footer.legal")}
-            </a>
+            {/* REQ-067/076 — the four policy links, broken out, from the one list */}
+            {LEGAL_LINKS.map((l) => (
+              <a
+                key={l.id}
+                href={l.path}
+                data-legal-link={l.id}
+                data-terms-link={l.id === "terms" ? "" : undefined}
+                data-i18n={`footer.${l.id}`}
+              >
+                {t(`footer.${l.id}`)}
+              </a>
+            ))}
           </div>
           <div class="footer-contact">
             <a class="footer-phone" href={SUPPORT_PHONE_HREF} data-site-phone>

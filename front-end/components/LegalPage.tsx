@@ -3,7 +3,6 @@ import { type Lang, tFor } from "../lib/i18n.ts";
 import { LANDING_DICT } from "../lib/landing-dict.ts";
 import SiteFooter from "./SiteFooter.tsx";
 import {
-  LEGAL_LINKS,
   type LegalBlock,
   legalDocFor,
   type LegalDocId,
@@ -16,11 +15,12 @@ import {
  * I speak English toggle, the What We Do / How It Works / Pricing links and
  * the Log in button, in the website's stylesheet (landing.css). Hans:
  * "Make the page that houses this information make the header look the
- * same as the rest of the website please." Then the four documents as TABS
- * (Raphael: "one link with a page that has multiple tabs" — each tab is a
- * page of its own, so a policy keeps a URL the consent text can link), the
- * document (REQ-065: the October 6, 2026 text, in the visitor's language),
- * and the site footer with its one policies link (REQ-067).
+ * same as the rest of the website please." Then the document itself —
+ * nothing between the header and the title: no tabs, no row of the other
+ * documents (REQ-076, Raphael, 2026-10-15, on RingCentral's reviewer not
+ * seeing "an actual privacy policy": "cant have it tabbed") — REQ-065's
+ * October 6, 2026 text in the visitor's language, and the site footer with
+ * the four policy links (REQ-067), which is how the pages link each other.
  *
  * The toggle here is two links (?lang=) — the website's is scripted
  * (landing-scripts.js) because that page swaps copy in place; this page is
@@ -84,32 +84,6 @@ export default function LegalPage(
       </div>
 
       <div class="legal">
-        {
-          /* the tabs: one centred row on a wide screen; a two-column grid on
-            a narrow one and a single column on a phone — every tab always
-            fully in view, nothing clipped, nothing to scroll (Raphael,
-            2026-10-09: the pill wrapping, then the pill cut off at the edge
-            of a phone — "why cant you think about the ux") */
-        }
-        <div class="legal__tabsbar">
-          <nav
-            class="legal__tabs"
-            data-legal-nav
-            aria-label={tFor(lang, "legal.docsAria")}
-          >
-            {LEGAL_LINKS.map((l) => (
-              <a
-                key={l.id}
-                href={l.path}
-                data-legal-link={l.id}
-                class={l.id === id ? "on" : ""}
-                aria-current={l.id === id ? "page" : undefined}
-              >
-                {tFor(lang, l.labelKey)}
-              </a>
-            ))}
-          </nav>
-        </div>
         <div class="legal__wrap">
           <article
             id={doc.id}

@@ -16,7 +16,6 @@ front-end/_fresh/
 
 # Local screenshots / scratch
 .playwright-mcp/
-*.png
 *.pdf
 
 # Local Claude Code worktrees + per-machine settings (never commit these)
