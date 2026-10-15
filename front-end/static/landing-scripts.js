@@ -838,7 +838,7 @@
             localStorage.setItem("pm:last-phone", e164);
           } catch { /* ignore */ }
           location.href = "/verify?phone=" + encodeURIComponent(e164) +
-            "&lang=" + curLang;
+            "&lang=" + curLang + "&px=lead";
           return;
         }
         if (!res.ok) throw new Error("send failed " + res.status);
@@ -849,7 +849,7 @@
           localStorage.setItem("pm:last-phone", e164);
         } catch { /* ignore */ }
         location.href = "/verify?phone=" + encodeURIComponent(e164) +
-          "&lang=" + curLang;
+          "&lang=" + curLang + "&px=lead";
       } catch {
         if (cta) {
           cta.disabled = false;

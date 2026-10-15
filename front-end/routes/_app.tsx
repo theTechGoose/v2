@@ -2,6 +2,7 @@ import { define } from "../utils.ts";
 import MobileViewport from "../islands/MobileViewport.tsx";
 import ImpersonationBanner from "../islands/ImpersonationBanner.tsx";
 import HtmlLang from "../islands/HtmlLang.tsx";
+import MetaPixel from "../components/MetaPixel.tsx";
 import { readSessionCookie } from "../lib/api.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { langFromCookie } from "../lib/lang.ts";
@@ -77,6 +78,14 @@ export default define.page(function App(ctx) {
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/logo.png" />
         <title>{tFor(lang, "brand.name")}</title>
+        {
+          /* REQ-080: the Meta Pixel, on the ad funnel's pages only (the two
+            landings, the code page, the welcome wizard, the plan pages,
+            settings, login) — Meta's loader on the real deploy with
+            META_PIXEL_ID set, the app's own fake on the gate and a dev box,
+            nothing on the real deploy without an id. */
+        }
+        <MetaPixel path={url.pathname} />
         {bootScript
           ? (
             <script

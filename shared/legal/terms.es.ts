@@ -668,6 +668,9 @@ export const PRIVACY_POLICY_ES: LegalDoc = {
         p(
           "Podemos usar cookies y tecnologías similares para mantener sesiones, recordar preferencias, autenticar cuentas, detectar fraude, medir el tráfico del sitio web, entender el uso del producto, mejorar el rendimiento y evaluar la eficacia del marketing. Los controles del navegador pueden permitirle limitar ciertas cookies, aunque desactivar las cookies necesarias puede afectar la funcionalidad.",
         ),
+        p(
+          "Nuestras páginas de marketing y de registro usan el Meta Pixel, una herramienta de medición de Meta Platforms, Inc., para medir la eficacia de nuestra publicidad en Facebook e Instagram. El Meta Pixel puede instalar cookies (como _fbp) y comparte con Meta datos limitados de eventos — por ejemplo, que se vio una página, que se solicitó un código de verificación, que se creó una cuenta o que se compró un plan — junto con información estándar del navegador. No enviamos a Meta su número de teléfono, su correo electrónico ni el contenido de sus documentos. Puede limitar cómo Meta usa esta información en sus preferencias de anuncios de Facebook, y los controles del navegador pueden permitirle bloquear estas cookies.",
+        ),
       ],
     },
     {
