@@ -13,6 +13,7 @@ async function fresh() {
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("PPWK_PAYMENTS_URL");
   Deno.env.delete("PPWK_PAYMENTS_TOKEN");
+  Deno.env.delete("PPWK_PAYMENTS_ACCOUNT");
   await resetKv();
   fakePaymentsWorld().reset();
   const users = new UserStore();

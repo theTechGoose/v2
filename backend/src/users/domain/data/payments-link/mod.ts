@@ -1,7 +1,12 @@
 // REQ-054 — the CRM's link builder, from this app's side: a customer, the first month as a due,
 // the pay link that collects it, and whether the due still reads open. Real against ppwk-crm's
-// payments API when PPWK_PAYMENTS_URL + PPWK_PAYMENTS_TOKEN are set; otherwise the in-process
-// fake the gate's lanes run on (the same way EmailService runs without a Postmark key).
+// payments API when PPWK_PAYMENTS_URL + PPWK_PAYMENTS_TOKEN + PPWK_PAYMENTS_ACCOUNT are set;
+// otherwise the in-process fake the gate's lanes run on (the same way EmailService runs without
+// a Postmark key).
+// REQ-069 — the CRM (its REQ-091) takes the merchant account as the `x-account` request header
+// on every mint and every subscription, required: PPWK_PAYMENTS_ACCOUNT names it, and a pick
+// that names its own merchant (REQ-064) rides that header instead. Nothing about the account is
+// in the body any more.
 // REQ-058 — a customer carries this app's ref: the CRM upserts by it (ppwk-crm REQ-076), so
 // sign-up, onboarding and every later edit talk about ONE record, read back with findCustomer.
 // REQ-059 — a pay link carries the address the receipt brings the person back to (REQ-077 there).
@@ -18,6 +23,13 @@ export interface NewCustomer {
   externalRef?: string;
   /** REQ-062 — the CRM's tier for this person (its Quickbase Customers.Tier): Lead, or the plan's name */
   tier?: string;
+  /** REQ-070 — the profile the CRM's lead columns show (its REQ-098): the person, the business's city and
+   *  state, its website, and where they came from; each only when the account has it */
+  contact?: string;
+  city?: string;
+  state?: string;
+  website?: string;
+  leadSource?: string;
 }
 /** what the CRM holds for a customer, as this app reads it back */
 export interface CrmCustomer extends NewCustomer {
@@ -36,7 +48,7 @@ export interface NewPayLink {
   /** REQ-059 — where the receipt goes back to, and what it calls that place */
   returnUrl?: string;
   returnLabel?: string;
-  /** REQ-064 — the merchant account the charge goes through (ppwk-crm REQ-084); absent = the CRM's default */
+  /** REQ-064 — the merchant account the charge goes through (the CRM's `x-account`, REQ-069); absent = PPWK_PAYMENTS_ACCOUNT */
   merchant?: string;
 }
 /** REQ-061 — a monthly billing on the CRM (its REQ-081): the amount, what it is for, this app's
@@ -49,7 +61,7 @@ export interface NewSubscription {
   firstBillAt: string;
   returnUrl?: string;
   returnLabel?: string;
-  /** REQ-064 — the merchant account the months go through; absent = the CRM's default */
+  /** REQ-064 — the merchant account the months go through (the CRM's `x-account`, REQ-069); absent = PPWK_PAYMENTS_ACCOUNT */
   merchant?: string;
 }
 export type SubscriptionStatus = "active" | "past_due" | "canceled";
@@ -99,23 +111,28 @@ class PaymentsUnavailableError extends Error {
   }
 }
 
-/** the real one: ppwk-crm's payments API behind the operator token */
+/** the real one: ppwk-crm's payments API behind the operator token; `account` is the merchant
+ *  account (PPWK_PAYMENTS_ACCOUNT) every charge goes through unless a call names its own (REQ-069) */
 class CrmPaymentsLink implements PaymentsLinkPort {
-  constructor(private readonly origin: string, private readonly token: string, private readonly f: typeof fetch = globalThis.fetch) {}
+  constructor(private readonly origin: string, private readonly token: string, private readonly account: string, private readonly f: typeof fetch = globalThis.fetch) {}
 
-  private async send(method: string, path: string, body?: unknown): Promise<Response> {
+  private async send(method: string, path: string, body?: unknown, account?: string): Promise<Response> {
     try {
       return await this.f(`${this.origin}${path}`, {
         method,
-        headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
+        headers: {
+          authorization: `Bearer ${this.token}`,
+          "content-type": "application/json",
+          ...(account ? { "x-account": account } : {}), // REQ-069 — the CRM's merchant account, on the calls that charge
+        },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (e) {
       throw new PaymentsUnavailableError(`${method} ${path}: ${String(e)}`);
     }
   }
-  private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await this.send(method, path, body);
+  private async call<T>(method: string, path: string, body?: unknown, account?: string): Promise<T> {
+    const res = await this.send(method, path, body, account);
     const text = await res.text();
     if (!res.ok) throw new PaymentsUnavailableError(`${method} ${path} answered ${res.status}: ${text.slice(0, 200)}`);
     return JSON.parse(text) as T;
@@ -138,7 +155,8 @@ class CrmPaymentsLink implements PaymentsLinkPort {
     return { dueId: d.dueId };
   }
   async mintPayLink(input: NewPayLink) {
-    const l = await this.call<{ chargeUrl: string }>("POST", PAY_LINKS, { ...input, brandId: "" });
+    const { merchant, ...link } = input;
+    const l = await this.call<{ chargeUrl: string }>("POST", PAY_LINKS, { ...link, brandId: "" }, merchant || this.account);
     return { payUrl: `${this.origin}${l.chargeUrl}` };
   }
   async dueOpen(dueId: string) {
@@ -157,8 +175,7 @@ class CrmPaymentsLink implements PaymentsLinkPort {
       brandId: "",
       returnUrl: input.returnUrl ?? "",
       returnLabel: input.returnLabel ?? "",
-      ...(input.merchant ? { merchant: input.merchant } : {}), // REQ-064 — named only when named
-    });
+    }, input.merchant || this.account); // REQ-064/069 — the pick's merchant, else the configured account
     return { subscriptionId: s.subscriptionId };
   }
   async findSubscription(externalRef: string) {
@@ -382,6 +399,7 @@ export class PaymentsLink implements PaymentsLinkPort {
     return selectPaymentsLinkName({
       PPWK_PAYMENTS_URL: Deno.env.get("PPWK_PAYMENTS_URL"),
       PPWK_PAYMENTS_TOKEN: Deno.env.get("PPWK_PAYMENTS_TOKEN"),
+      PPWK_PAYMENTS_ACCOUNT: Deno.env.get("PPWK_PAYMENTS_ACCOUNT"),
       DENO_DEPLOYMENT_ID: Deno.env.get("DENO_DEPLOYMENT_ID"),
     });
   }
@@ -393,7 +411,8 @@ export class PaymentsLink implements PaymentsLinkPort {
     if (this.which() === "fake") return new FakePaymentsLink();
     const origin = (Deno.env.get("PPWK_PAYMENTS_URL") ?? "").trim().replace(/\/+$/, "");
     const token = (Deno.env.get("PPWK_PAYMENTS_TOKEN") ?? "").trim();
-    return new CrmPaymentsLink(origin, token, this.fetchOverride ?? globalThis.fetch);
+    const account = (Deno.env.get("PPWK_PAYMENTS_ACCOUNT") ?? "").trim();
+    return new CrmPaymentsLink(origin, token, account, this.fetchOverride ?? globalThis.fetch);
   }
   createCustomer(input: NewCustomer) {
     return this.port().createCustomer(input);

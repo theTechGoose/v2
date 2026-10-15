@@ -17,7 +17,7 @@ function withEnv(vars: Record<string, string | undefined>, fn: () => Promise<voi
 }
 
 Deno.test("REQ-057 payments-link fake — the pay link is the app's own /pay/fake page carrying customer and due", () =>
-  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, DENO_DEPLOYMENT_ID: undefined, APP_URL: "http://localhost:13170" }, async () => {
+  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, PPWK_PAYMENTS_ACCOUNT: undefined, DENO_DEPLOYMENT_ID: undefined, APP_URL: "http://localhost:13170" }, async () => {
     const link = new PaymentsLink();
     assertEquals(link.isFake(), true);
     const { payUrl } = await link.mintPayLink({ customerId: "cust-1", dueId: "due-1" });
@@ -25,14 +25,14 @@ Deno.test("REQ-057 payments-link fake — the pay link is the app's own /pay/fak
   }));
 
 Deno.test("REQ-057 payments-link fake — without APP_URL the page is at the dev default, never a dead host", () =>
-  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, DENO_DEPLOYMENT_ID: undefined, APP_URL: undefined }, async () => {
+  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, PPWK_PAYMENTS_ACCOUNT: undefined, DENO_DEPLOYMENT_ID: undefined, APP_URL: undefined }, async () => {
     const { payUrl } = await new PaymentsLink().mintPayLink({ customerId: "c", dueId: "d" });
     assertStringIncludes(payUrl, "http://localhost:5280/pay/fake?customer=c&due=d");
     assertEquals(payUrl.includes("payments.fake"), false);
   }));
 
 Deno.test("REQ-058 payments-link fake — a customer with a ref the fake knows is revised, never a second one; findCustomer reads it back", () =>
-  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, DENO_DEPLOYMENT_ID: undefined }, async () => {
+  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, PPWK_PAYMENTS_ACCOUNT: undefined, DENO_DEPLOYMENT_ID: undefined }, async () => {
     fakePaymentsWorld().reset();
     const link = new PaymentsLink();
     const first = await link.createCustomer({ customerName: "+15125550101", customerEmail: "", customerPhone: "+15125550101", externalRef: "pm:u-1" });
@@ -46,7 +46,7 @@ Deno.test("REQ-058 payments-link fake — a customer with a ref the fake knows i
   }));
 
 Deno.test("REQ-059 payments-link fake — a link minted with a return address carries it to the stand-in page", () =>
-  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, DENO_DEPLOYMENT_ID: undefined, APP_URL: "http://localhost:13170" }, async () => {
+  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, PPWK_PAYMENTS_ACCOUNT: undefined, DENO_DEPLOYMENT_ID: undefined, APP_URL: "http://localhost:13170" }, async () => {
     const { payUrl } = await new PaymentsLink().mintPayLink({ customerId: "c", dueId: "d", returnUrl: "http://localhost:13170/plan/return?due=d", returnLabel: "DocuMonster" });
     const u = new URL(payUrl);
     assertEquals(u.pathname, "/pay/fake");
@@ -55,7 +55,7 @@ Deno.test("REQ-059 payments-link fake — a link minted with a return address ca
   }));
 
 Deno.test("REQ-058 payments-link real — the customer goes to the CRM with its phone and ref; a ref the CRM does not know reads null", () =>
-  withEnv({ PPWK_PAYMENTS_URL: "http://crm.test", PPWK_PAYMENTS_TOKEN: "t", DENO_DEPLOYMENT_ID: undefined }, async () => {
+  withEnv({ PPWK_PAYMENTS_URL: "http://crm.test", PPWK_PAYMENTS_TOKEN: "t", PPWK_PAYMENTS_ACCOUNT: "primary", DENO_DEPLOYMENT_ID: undefined }, async () => {
     const calls: Array<{ method: string; url: string; body: unknown }> = [];
     const link = new PaymentsLink();
     link.fetchOverride = (input, init) => {
@@ -74,7 +74,7 @@ Deno.test("REQ-058 payments-link real — the customer goes to the CRM with its 
   }));
 
 Deno.test("REQ-060 payments-link fake — a phone alone is a lead; the ref that arrives with that phone claims it; a bare phone post changes nothing (the CRM's REQ-082)", () =>
-  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, DENO_DEPLOYMENT_ID: undefined }, async () => {
+  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, PPWK_PAYMENTS_ACCOUNT: undefined, DENO_DEPLOYMENT_ID: undefined }, async () => {
     fakePaymentsWorld().reset();
     const link = new PaymentsLink();
     const lead = await link.createCustomer({ customerName: "+15125550199", customerEmail: "", customerPhone: "+15125550199" });
@@ -91,7 +91,7 @@ Deno.test("REQ-060 payments-link fake — a phone alone is a lead; the ref that 
   }));
 
 Deno.test("REQ-061 payments-link fake — the clock: a month on, the card on file is charged and the next bill moves; no card → past due with the month's page; paid there → current; canceled → never again", () =>
-  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, DENO_DEPLOYMENT_ID: undefined, APP_URL: "http://localhost:13170" }, async () => {
+  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, PPWK_PAYMENTS_ACCOUNT: undefined, DENO_DEPLOYMENT_ID: undefined, APP_URL: "http://localhost:13170" }, async () => {
     const world = fakePaymentsWorld();
     world.reset();
     const link = new PaymentsLink();
@@ -124,7 +124,7 @@ Deno.test("REQ-061 payments-link fake — the clock: a month on, the card on fil
   }));
 
 Deno.test("REQ-061 payments-link real — subscriptions go to the CRM's routes; its pay page path comes back absolute; 404 is null", () =>
-  withEnv({ PPWK_PAYMENTS_URL: "http://crm.test", PPWK_PAYMENTS_TOKEN: "t", DENO_DEPLOYMENT_ID: undefined }, async () => {
+  withEnv({ PPWK_PAYMENTS_URL: "http://crm.test", PPWK_PAYMENTS_TOKEN: "t", PPWK_PAYMENTS_ACCOUNT: "primary", DENO_DEPLOYMENT_ID: undefined }, async () => {
     const calls: Array<{ method: string; url: string; body: unknown }> = [];
     const link = new PaymentsLink();
     link.fetchOverride = (input, init) => {
@@ -148,7 +148,7 @@ Deno.test("REQ-061 payments-link real — subscriptions go to the CRM's routes; 
 
 // REQ-062 — the tier travels with the customer: sent on every write, read back with the record
 Deno.test("REQ-062 payments-link real — a customer goes to the CRM with its tier and comes back with it", () =>
-  withEnv({ PPWK_PAYMENTS_URL: "http://crm.test", PPWK_PAYMENTS_TOKEN: "t", DENO_DEPLOYMENT_ID: undefined }, async () => {
+  withEnv({ PPWK_PAYMENTS_URL: "http://crm.test", PPWK_PAYMENTS_TOKEN: "t", PPWK_PAYMENTS_ACCOUNT: "primary", DENO_DEPLOYMENT_ID: undefined }, async () => {
     const calls: Array<{ method: string; url: string; body: unknown }> = [];
     const link = new PaymentsLink();
     link.fetchOverride = (input, init) => {
@@ -170,7 +170,7 @@ Deno.test("REQ-062 payments-link real — a customer goes to the CRM with its ti
 
 // REQ-064 — the merchant account a pick names rides on the link the CRM mints and on the billing
 Deno.test("REQ-064 payments-link fake — the link and the billing carry the merchant; none named = none sent", () =>
-  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, DENO_DEPLOYMENT_ID: undefined, APP_URL: "http://localhost:13170" }, async () => {
+  withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, PPWK_PAYMENTS_ACCOUNT: undefined, DENO_DEPLOYMENT_ID: undefined, APP_URL: "http://localhost:13170" }, async () => {
     const link = new PaymentsLink();
     const world = fakePaymentsWorld();
     world.reset();
@@ -185,23 +185,28 @@ Deno.test("REQ-064 payments-link fake — the link and the billing carry the mer
     assertEquals(world.subscriptions.find((s) => s.subscriptionId === subscriptionId)?.merchant, "alpha");
   }));
 
-Deno.test("REQ-064 payments-link real — the merchant goes to the CRM's mint and subscription, and is left out when none is named", () =>
-  withEnv({ PPWK_PAYMENTS_URL: "http://crm.test", PPWK_PAYMENTS_TOKEN: "t", DENO_DEPLOYMENT_ID: undefined }, async () => {
-    const calls: Array<{ method: string; url: string; body: Record<string, unknown> }> = [];
+Deno.test("REQ-069 payments-link real — every mint and subscription carries the CRM's `x-account` header: the pick's merchant, else PPWK_PAYMENTS_ACCOUNT; the body never names it", () =>
+  withEnv({ PPWK_PAYMENTS_URL: "http://crm.test", PPWK_PAYMENTS_TOKEN: "t", PPWK_PAYMENTS_ACCOUNT: "primary", DENO_DEPLOYMENT_ID: undefined }, async () => {
+    const calls: Array<{ method: string; url: string; body: Record<string, unknown>; account: string | null }> = [];
     const link = new PaymentsLink();
     link.fetchOverride = (input, init) => {
       const url = String(input);
-      calls.push({ method: init?.method ?? "GET", url, body: init?.body ? JSON.parse(String(init.body)) : {} });
-      if (url.endsWith("/api/payments/pay-links")) return Promise.resolve(Response.json({ chargeUrl: "/ui/payments/charge?customer=x&due=d-1&merchant=alpha" }));
+      calls.push({ method: init?.method ?? "GET", url, body: init?.body ? JSON.parse(String(init.body)) : {}, account: new Headers(init?.headers).get("x-account") });
+      if (url.endsWith("/api/payments/pay-links")) return Promise.resolve(Response.json({ chargeUrl: "/ui/payments/charge?customer=x&due=d-1&account=alpha" }));
       return Promise.resolve(Response.json({ subscriptionId: "s-1" }));
     };
     const minted = await link.mintPayLink({ customerId: "c-1", dueId: "d-1", merchant: "alpha" });
-    assertEquals(calls[0].body.merchant, "alpha");
-    assertEquals(minted.payUrl, "http://crm.test/ui/payments/charge?customer=x&due=d-1&merchant=alpha");
+    assertEquals(calls[0].account, "alpha", "the pick's merchant rides the header");
+    assertEquals("merchant" in calls[0].body, false, "and never the body");
+    assertEquals(minted.payUrl, "http://crm.test/ui/payments/charge?customer=x&due=d-1&account=alpha");
     await link.mintPayLink({ customerId: "c-1", dueId: "d-1" });
-    assertEquals("merchant" in calls[1].body, false, "nothing named, nothing sent");
+    assertEquals(calls[1].account, "primary", "nothing named = the configured account");
     await link.startSubscription({ customerId: "c-1", amountCents: 9900, memo: "Monster", externalRef: "pm:u:monster", firstBillAt: "2026-11-03T00:00:00.000Z", merchant: "alpha" });
-    assertEquals(calls[2].body.merchant, "alpha");
+    assertEquals(calls[2].account, "alpha");
+    assertEquals("merchant" in calls[2].body, false);
     await link.startSubscription({ customerId: "c-1", amountCents: 9900, memo: "Monster", externalRef: "pm:u:monster", firstBillAt: "2026-11-03T00:00:00.000Z" });
-    assertEquals("merchant" in calls[3].body, false);
+    assertEquals(calls[3].account, "primary");
+    const customer = await link.createCustomer({ customerName: "Ana", customerEmail: "a@b.c" }).catch(() => null);
+    assertEquals(calls[4].account, null, "a call that does not charge carries no account");
+    void customer;
   }));
