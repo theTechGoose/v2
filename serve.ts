@@ -8,6 +8,8 @@
  *   deno task serve     (from v2/)
  */
 
+import { kvPathFor } from "./scripts/serve-kv.ts";
+
 const ROOT = new URL(".", import.meta.url).pathname;
 const BACKEND_DIR = `${ROOT}backend`;
 const FRONTEND_DIR = `${ROOT}front-end`;
@@ -22,6 +24,15 @@ const GATE_PORT = Deno.env.get("PORT");
 const FRONTEND_PORT = Number(Deno.env.get("FRONTEND_PORT") ?? GATE_PORT ?? 5280);
 const BACKEND_PORT = Number(
   Deno.env.get("BACKEND_PORT") ?? (GATE_PORT ? Number(GATE_PORT) + 1 : 4280),
+);
+// REQ-077 — a server started on a bare PORT (the gate's, a pin's) runs on its
+// own fresh KV file, never the checkout's one default KV that every other run
+// and the dev server share (the previous run's 30 s OTP cooldown on a story's
+// fixed address answered 429 and the login story waited out its 90 s). An
+// explicit KV_PATH always wins; no PORT keeps the developer's persistent data.
+const KV_PATH = kvPathFor(
+  { PORT: GATE_PORT, KV_PATH: Deno.env.get("KV_PATH") },
+  () => Deno.makeTempDirSync({ prefix: "v2-kv-" }),
 );
 
 interface ChildSpec {
@@ -47,6 +58,7 @@ const children: ChildSpec[] = [
       PORT: String(BACKEND_PORT),
       AGENTS_LLM_CLIENT: "openai",
       APP_URL: `http://localhost:${FRONTEND_PORT}`,
+      ...(KV_PATH ? { KV_PATH } : {}),
     },
     color: "\x1b[36m", // cyan
   },
@@ -145,7 +157,9 @@ async function spawn(spec: ChildSpec): Promise<number> {
 
 // deno-lint-ignore no-console
 console.log(
-  `[serve] backend → http://localhost:${BACKEND_PORT}\n[serve] frontend → http://localhost:${FRONTEND_PORT}`,
+  `[serve] backend → http://localhost:${BACKEND_PORT}\n[serve] frontend → http://localhost:${FRONTEND_PORT}\n[serve] kv → ${
+    KV_PATH ?? "the platform default"
+  }`,
 );
 
 const codes = await Promise.all(children.map(spawn));
