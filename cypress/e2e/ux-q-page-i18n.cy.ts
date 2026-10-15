@@ -21,7 +21,7 @@
  * Selector grounding (read post-merge):
  *   - /q route: front-end/routes/q/[id].tsx — lang from the pm_lang cookie;
  *     tab title via tFor(lang, "quoteDoc.docTitle") (ES: "Cotización +
- *     Acuerdo · Paperwork Monster").
+ *     Acuerdo · DocuMonster").
  *   - /q dates: front-end/components/quote-doc.tsx renders every date via
  *     the lang-aware doc-parts fmtDate — the "vigente" between-parties line,
  *     the "Fecha:" contractor-signature line, the "Firmado {date}" pill, and
@@ -206,9 +206,9 @@ describe("UX-38/39/40 — Spanish /q agreement page + ES /invoices hero", () => 
     cy.setCookie("pm_lang", "es");
     cy.visit(`/q/${quoteId}`);
     // routes/q/[id].tsx localizes via tFor(lang, "quoteDoc.docTitle") —
-    // ES: "Cotización + Acuerdo · Paperwork Monster".
+    // ES: "Cotización + Acuerdo · DocuMonster".
     cy.title().should((title: string) => {
-      expect(title).not.to.eq("Quote + Agreement · Paperwork Monster");
+      expect(title).not.to.eq("Quote + Agreement · DocuMonster");
       expect(title, "Spanish document title").to.match(
         /cotización|acuerdo|contrato/i,
       );

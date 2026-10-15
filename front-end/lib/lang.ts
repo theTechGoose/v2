@@ -235,8 +235,8 @@ export const STRINGS: Record<Lang, Strings> = {
     "demo.title": "It feels like texting your best foreman",
     "pricing.eyebrow": "Pricing",
     "pricing.title": "Pay for what works",
-    "pricing.without": "Without Paperwork Monster",
-    "pricing.with": "With Paperwork Monster",
+    "pricing.without": "Without DocuMonster",
+    "pricing.with": "With DocuMonster",
     "pricing.withoutPrice": "$0/mo",
     "pricing.withPrice": "$49/mo",
     "pricing.withoutNotes": [
@@ -258,7 +258,7 @@ export const STRINGS: Record<Lang, Strings> = {
     "contact.cta": "Text me the code",
     "contact.placeholder": "(512) 555-1234",
     "footer.tagline":
-      "Paperwork Monster — built for contractors who'd rather be on the truck.",
+      "DocuMonster — built for contractors who'd rather be on the truck.",
     "verify.h1": "Check your phone",
     "verify.lede": "We just texted a 6-digit code to",
     "verify.cta": "Verify",
@@ -338,8 +338,8 @@ export const STRINGS: Record<Lang, Strings> = {
     "demo.title": "Se siente como mensajear con tu mejor capataz",
     "pricing.eyebrow": "Precios",
     "pricing.title": "Paga por lo que funciona",
-    "pricing.without": "Sin Paperwork Monster",
-    "pricing.with": "Con Paperwork Monster",
+    "pricing.without": "Sin DocuMonster",
+    "pricing.with": "Con DocuMonster",
     "pricing.withoutPrice": "$0/mes",
     "pricing.withPrice": "$49/mes",
     "pricing.withoutNotes": [
@@ -360,7 +360,7 @@ export const STRINGS: Record<Lang, Strings> = {
     "contact.cta": "Enviarme el código",
     "contact.placeholder": "(512) 555-1234",
     "footer.tagline":
-      "Paperwork Monster — para los contratistas que prefieren estar en obra.",
+      "DocuMonster — para los contratistas que prefieren estar en obra.",
     "verify.h1": "Revisa tu celular",
     "verify.lede": "Te enviamos un código de 6 dígitos a",
     "verify.cta": "Verificar",

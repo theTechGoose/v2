@@ -124,7 +124,7 @@ const DEMO_QUOTE_ES: QuoteCopy = {
 
 /**
  * Landing route — server-renders the prototype's HTML structure (verbatim from
- * Paperwork Monster Landing.html) with `data-i18n` attributes the
+ * DocuMonster Landing.html) with `data-i18n` attributes the
  * <LandingScripts> island substitutes on hydration. Styling lives in
  * /static/landing.css.
  */
@@ -153,8 +153,8 @@ export default define.page(async function Landing(ctx) {
       <div class="nav-wrap">
         <div class="container nav">
           <a href="#" class="brand">
-            <img src="/logo-monster.png" alt="Paperwork Monster" />
-            <span data-i18n="brand1">Paperwork</span>
+            <img src="/logo-monster.png" alt="DocuMonster" />
+            <span data-i18n="brand1">Docu</span>
             <em
               data-i18n="brand2"
               style="font-style:normal;color:var(--brand-green)"
@@ -361,7 +361,7 @@ export default define.page(async function Landing(ctx) {
                   <div class="hs-chat__hdr">
                     <span class="hs-chat__avatar">PM</span>
                     <span class="hs-chat__name">
-                      <strong>Paperwork Monster</strong>
+                      <strong>DocuMonster</strong>
                       <em>Online • SMS</em>
                     </span>
                   </div>
@@ -957,7 +957,7 @@ export default define.page(async function Landing(ctx) {
                 <div class="cf-phone__hdr">
                   <span class="cf-phone__avatar">PM</span>
                   <span class="cf-phone__name">
-                    <strong>Paperwork Monster</strong>
+                    <strong>DocuMonster</strong>
                     <em>
                       Online <span class="cf-phone__live"></span>
                     </em>
@@ -981,12 +981,12 @@ export default define.page(async function Landing(ctx) {
                 <div class="cf-phone__body" id="cf-phone-body">
                   <div class="cf-bubble cf-bubble--them">
                     <span>
-                      👋 Welcome to <strong>Paperwork Monster</strong>.
+                      👋 Welcome to <strong>DocuMonster</strong>.
                     </span>
                   </div>
                   <div class="cf-bubble cf-bubble--them" id="cf-bubble-sms">
                     <span data-i18n="cta.smsPreview">
-                      Paperwork Monster: Your code is 482-913. Don't share it.
+                      DocuMonster: Your code is 482-913. Don't share it.
                     </span>
                   </div>
                   <div class="cf-meta" id="cf-meta">
@@ -1112,8 +1112,10 @@ export default define.page(async function Landing(ctx) {
         <div class="container footer-row">
           <a href="#" class="brand">
             <img src="/logo-monster.png" alt="" />
-            <span>Paperwork</span>
-            <em style="font-style:normal;color:var(--brand-green)">Monster</em>
+            <span>
+              Docu
+              <em style="font-style:normal;color:var(--brand-green)">Monster</em>
+            </span>
           </a>
           <div class="links">
             <a href="#features" data-i18n="nav.features">What We Do</a>
@@ -1122,7 +1124,7 @@ export default define.page(async function Landing(ctx) {
             <a href="#contact" data-i18n="footer.contact">Contact</a>
           </div>
           <div class="copy" data-i18n="footer.copy">
-            © 2026 Paperwork Monster. All rights reserved.
+            © 2026 DocuMonster. All rights reserved.
           </div>
         </div>
       </footer>

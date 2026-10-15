@@ -1,6 +1,6 @@
 # ui/Brand
 
-Wordmark: a pink rounded "P" mark + the text "Paperwork Monster", linking to
+Wordmark: a pink rounded "P" mark + the text "DocuMonster", linking to
 `/dashboard`.
 
 ## 1. Classification & behavior
@@ -9,7 +9,7 @@ Wordmark: a pink rounded "P" mark + the text "Paperwork Monster", linking to
   only, no state/events/fetch.
 - **Data source / liveness / mutations:** none. **Anti-patterns:** none.
 - **Data-shape hazards:**
-  - The wordmark text "Paperwork Monster" is a **hard-coded literal** in the
+  - The wordmark text "DocuMonster" is a **hard-coded literal** in the
     component — NOT i18n'd (unlike `DashSidebar`, which uses `brand.name`). If
     the rebuild wants localization, swap to `tFor(lang,"brand.name")`.
   - Styling depends on the page having loaded **verify.css** (only that file
@@ -20,7 +20,7 @@ Wordmark: a pink rounded "P" mark + the text "Paperwork Monster", linking to
 ```
 <a class="brand" href="/dashboard" [style="color:#fff" when inverse]>
   <span class="brand__mark">P</span>                       ← pink 32x32 rounded tile, white "P"
-  <span [style="font-size:16px" when size==="sm"]>Paperwork Monster</span>
+  <span [style="font-size:16px" when size==="sm"]>DocuMonster</span>
 </a>
 ```
 - **Slots/children:** none.
@@ -53,7 +53,7 @@ Wordmark: a pink rounded "P" mark + the text "Paperwork Monster", linking to
 
 ## 8. A11y
 - Real `<a>` — focusable, keyboard-activatable. The "P" mark span has no
-  `aria-hidden`; SR reads "P Paperwork Monster". Minor: add `aria-hidden="true"`
+  `aria-hidden`; SR reads "P DocuMonster". Minor: add `aria-hidden="true"`
   to `.brand__mark` so the mark isn't announced as a stray letter. No explicit
   `aria-label` (link text suffices).
 

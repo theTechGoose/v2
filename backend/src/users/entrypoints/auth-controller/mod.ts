@@ -19,6 +19,7 @@ import {
 } from "@users/domain/coordinators/send-email-otp/mod.ts";
 import { VerifyEmailOtp } from "@users/domain/coordinators/verify-email-otp/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
+import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { AccountRecovery } from "@users/domain/coordinators/account-recovery/mod.ts";
 import { InvalidRecoveryTokenError } from "@users/domain/data/recovery-token-store/mod.ts";
 import {
@@ -60,6 +61,8 @@ export class AuthController {
     private verifyEmailOtp: VerifyEmailOtp,
     /** REQ-058 — a new account is a CRM customer from its first sign-in */
     private crm: CrmCustomerSync,
+    /** REQ-072 — the login's lead capture: durable, never awaited by the request */
+    private leads: CrmLeadCapture,
   ) {}
 
   /**
@@ -189,8 +192,11 @@ export class AuthController {
         phoneNumber: dto.phoneNumber,
         language: dto.language,
       });
-      // REQ-060 — the phone is a CRM lead the moment the code goes out, code entered or not
-      await this.crm.capture(dto.phoneNumber);
+      // REQ-060 — the phone is a CRM lead the moment the code goes out, code entered or not.
+      // REQ-072 — fire and forget, guaranteed: the lead is a KV outbox record before this
+      // replies (ms), and the sweep carries it to the CRM and retries until the CRM confirms.
+      // The CRM's Quickbase calls wait 10 s per 429; the login sat on "…" 22–31 s awaiting them.
+      await this.leads.enqueue(dto.phoneNumber);
     } catch (err) {
       if (err instanceof SendOtpCooldownError) {
         return jsonResponse(

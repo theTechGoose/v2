@@ -3,8 +3,7 @@
  * Phones used in assertions: +15125556550 / 5125556551 (slice F block
  * +15125556500–6599; no live users are touched — this file is pure).
  *
- * UX-16 [I18N] `/quotes` browser-tab title is English ("Quotes · Paperwork
- *   Monster") in the ES UI while dashboard/invoices/settings/payments/clients
+ * UX-16 [I18N] `/quotes` browser-tab title is English ("Quotes · DocuMonster") in the ES UI while dashboard/invoices/settings/payments/clients
  *   are localized.
  *   Mechanism note (read before pinning): shared/quote-flow/site-meta.ts is
  *   the MARKETING social-meta contract (og:/twitter: for "/" + "/landing") —
@@ -16,7 +15,7 @@
  *     front-end/routes/payments/index.tsx:45   tFor(lang,"paymentsRoute.docTitle")
  *     front-end/routes/clients/index.tsx:45    tFor(lang,"clientsRoute.docTitle")
  *   The offender hardcodes English instead:
- *     front-end/routes/quotes/index.tsx:19     <title>Quotes · Paperwork Monster</title>
+ *     front-end/routes/quotes/index.tsx:19     <title>Quotes · DocuMonster</title>
  *   Contract pinned here: a `quotesPage.docTitle` key must exist in BOTH
  *   dictionaries (ES value contains "Cotizaciones"), and the green agent must
  *   wire front-end/routes/quotes/index.tsx:19 through tFor exactly like the
@@ -112,8 +111,8 @@ describe("UX-16: /quotes doc title is dictionary-driven like dashboard/invoices"
   });
 
   it("UX-16: the ES title says 'Cotizaciones', branded like its siblings", () => {
-    // Siblings for shape reference (all live): "Facturas · Paperwork Monster",
-    // "Pagos · Paperwork Monster", "Configuración · Paperwork Monster".
+    // Siblings for shape reference (all live): "Facturas · DocuMonster",
+    // "Pagos · DocuMonster", "Configuración · DocuMonster".
     expect(es["quotesPage.docTitle"] ?? "").toContain("Cotizaciones");
     expect(en["quotesPage.docTitle"] ?? "").toContain("Quotes");
   });

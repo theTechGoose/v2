@@ -44,10 +44,10 @@ export default define.page(async function LoginInternal(ctx) {
               alt={tFor(lang, "brand.name")}
               style="width:38px;height:38px;flex-shrink:0"
             />
-            <span>{tFor(lang, "brand.namePrefix")}</span>
-            <em style="font-style:normal;color:var(--brand-green)">
-              {tFor(lang, "brand.nameSuffix")}
-            </em>
+            <span>
+              {tFor(lang, "brand.namePrefix")}
+              <em style="font-style:normal;color:var(--brand-green)">{tFor(lang, "brand.nameSuffix")}</em>
+            </span>
           </a>
           <h1 style="font-size:32px;margin-top:6px">
             {tFor(lang, "loginInternal.heading")}

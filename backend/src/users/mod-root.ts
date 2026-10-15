@@ -42,6 +42,8 @@ import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
+import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
+import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 
 /**
  * UsersModule — owns the full user identity surface:
@@ -101,6 +103,8 @@ import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mo
     PlanStore,
     PaymentsLink,
     CrmCustomerSync, // REQ-058
+    CrmCaptureOutbox, // REQ-072
+    CrmLeadCapture, // REQ-072
     ChoosePlan,
   ],
 })

@@ -16,14 +16,14 @@
 export const SITE_ORIGIN = "https://paperworkmonster.com";
 
 /** Brand name, as it should appear in og:site_name. */
-export const SITE_NAME = "Paperwork Monster";
+const SITE_NAME = "DocuMonster";
 
 /** The share card: static/og-card.png, 1200x630 (Facebook's large format). */
 export const OG_IMAGE = {
   path: "/og-card.png",
   width: 1200,
   height: 630,
-  alt: "Paperwork Monster",
+  alt: "DocuMonster",
 } as const;
 
 /** Absolute URL for a site-relative path ("/landing" → origin + path). */

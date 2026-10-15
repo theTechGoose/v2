@@ -34,8 +34,10 @@ export default define.page(function PayFake(ctx) {
         <div class="verify-card">
           <a href="/" class="brand" style="margin:0 auto 8px">
             <img src="/logo-monster.png" alt={tFor(lang, "brand.name")} style="width:38px;height:38px;flex-shrink:0" />
-            <span>{tFor(lang, "brand.namePrefix")}</span>
-            <em style="font-style:normal;color:var(--brand-green)">{tFor(lang, "brand.nameSuffix")}</em>
+            <span>
+              {tFor(lang, "brand.namePrefix")}
+              <em style="font-style:normal;color:var(--brand-green)">{tFor(lang, "brand.nameSuffix")}</em>
+            </span>
           </a>
           <h1 style="font-size:28px;margin-top:6px">{tFor(lang, "payFake.heading")}</h1>
           <p class="muted" style="color:var(--fg-muted);font-size:15px;margin-bottom:16px">

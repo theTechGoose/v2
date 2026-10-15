@@ -63,10 +63,10 @@ export default define.page(async function Verify(ctx) {
               alt={tFor(lang, "brand.name")}
               style="width:38px;height:38px;flex-shrink:0"
             />
-            <span>{tFor(lang, "brand.namePrefix")}</span>
-            <em style="font-style:normal;color:var(--brand-green)">
-              {tFor(lang, "brand.nameSuffix")}
-            </em>
+            <span>
+              {tFor(lang, "brand.namePrefix")}
+              <em style="font-style:normal;color:var(--brand-green)">{tFor(lang, "brand.nameSuffix")}</em>
+            </span>
           </a>
           <ol class="pm-steps" aria-label={tFor(lang, "verify.steps.aria")}>
             <li class="pm-steps__item pm-steps__item--done">

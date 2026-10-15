@@ -47,11 +47,11 @@ Deno.test("REQ-058 payments-link fake — a customer with a ref the fake knows i
 
 Deno.test("REQ-059 payments-link fake — a link minted with a return address carries it to the stand-in page", () =>
   withEnv({ PPWK_PAYMENTS_URL: undefined, PPWK_PAYMENTS_TOKEN: undefined, DENO_DEPLOYMENT_ID: undefined, APP_URL: "http://localhost:13170" }, async () => {
-    const { payUrl } = await new PaymentsLink().mintPayLink({ customerId: "c", dueId: "d", returnUrl: "http://localhost:13170/plan/return?due=d", returnLabel: "Paperwork Monster" });
+    const { payUrl } = await new PaymentsLink().mintPayLink({ customerId: "c", dueId: "d", returnUrl: "http://localhost:13170/plan/return?due=d", returnLabel: "DocuMonster" });
     const u = new URL(payUrl);
     assertEquals(u.pathname, "/pay/fake");
     assertEquals(u.searchParams.get("return"), "http://localhost:13170/plan/return?due=d");
-    assertEquals(u.searchParams.get("label"), "Paperwork Monster");
+    assertEquals(u.searchParams.get("label"), "DocuMonster");
   }));
 
 Deno.test("REQ-058 payments-link real — the customer goes to the CRM with its phone and ref; a ref the CRM does not know reads null", () =>
@@ -69,8 +69,8 @@ Deno.test("REQ-058 payments-link real — the customer goes to the CRM with its 
     assertEquals(calls[0], { method: "POST", url: "http://crm.test/api/payments/customers", body: { customerName: "Ana", customerEmail: "", customerPhone: "+15125550101", externalRef: "pm:u-1" } });
     assertEquals(await link.findCustomer("pm:u-1"), { customerId: "c-1", customerName: "Ana", customerEmail: "", customerPhone: "+15125550101", externalRef: "pm:u-1" });
     assertEquals(await link.findCustomer("pm:gone"), null);
-    await link.mintPayLink({ customerId: "c-1", dueId: "d-1", returnUrl: "http://app.test/plan/return?due=d-1", returnLabel: "Paperwork Monster" });
-    assertEquals(calls.at(-1)?.body, { customerId: "c-1", dueId: "d-1", brandId: "", returnUrl: "http://app.test/plan/return?due=d-1", returnLabel: "Paperwork Monster" });
+    await link.mintPayLink({ customerId: "c-1", dueId: "d-1", returnUrl: "http://app.test/plan/return?due=d-1", returnLabel: "DocuMonster" });
+    assertEquals(calls.at(-1)?.body, { customerId: "c-1", dueId: "d-1", brandId: "", returnUrl: "http://app.test/plan/return?due=d-1", returnLabel: "DocuMonster" });
   }));
 
 Deno.test("REQ-060 payments-link fake — a phone alone is a lead; the ref that arrives with that phone claims it; a bare phone post changes nothing (the CRM's REQ-082)", () =>
@@ -98,7 +98,7 @@ Deno.test("REQ-061 payments-link fake — the clock: a month on, the card on fil
     const { customerId } = await link.createCustomer({ customerName: "Rosa", customerEmail: "rosa@roof.test", externalRef: "pm:u-1" });
     const { dueId } = await link.raiseDue({ customerId, amountCents: 9900, memo: "Monster — first month" });
     world.settle(dueId); // the first month paid on the page: a card is on file now
-    const { subscriptionId } = await link.startSubscription({ customerId, amountCents: 9900, memo: "Monster", externalRef: "pm:u-1:monster", firstBillAt: "2026-11-02T00:00:00.000Z", returnUrl: "http://localhost:13170/plan/return?back=%2Fsettings", returnLabel: "Paperwork Monster" });
+    const { subscriptionId } = await link.startSubscription({ customerId, amountCents: 9900, memo: "Monster", externalRef: "pm:u-1:monster", firstBillAt: "2026-11-02T00:00:00.000Z", returnUrl: "http://localhost:13170/plan/return?back=%2Fsettings", returnLabel: "DocuMonster" });
     assertEquals((await link.findSubscription("pm:u-1:monster"))?.subscriptionId, subscriptionId);
     assertEquals((await link.subscription(subscriptionId))?.status, "active");
     world.bill("2026-11-01T00:00:00.000Z");
@@ -135,8 +135,8 @@ Deno.test("REQ-061 payments-link real — subscriptions go to the CRM's routes; 
       if (url.endsWith("/subscriptions/s-1")) return Promise.resolve(Response.json({ subscriptionId: "s-1", status: "past_due", nextBillAt: "2026-12-02T00:00:00.000Z", lastBilledAt: "2026-11-02T00:00:00.000Z", cardBrand: "visa", cardLast4: "1111", failures: 1, payUrl: "/ui/payments/charge?customer=x&due=d-dec" }));
       return Promise.resolve(Response.json({ subscriptionId: "s-1" }));
     };
-    assertEquals(await link.startSubscription({ customerId: "c-1", amountCents: 9900, memo: "Monster", externalRef: "pm:u-1:monster", firstBillAt: "2026-11-02T00:00:00.000Z", returnUrl: "http://app.test/plan/return?back=%2Fsettings", returnLabel: "Paperwork Monster" }), { subscriptionId: "s-1" });
-    assertEquals(calls[0], { method: "POST", url: "http://crm.test/api/payments/subscriptions", body: { customerId: "c-1", amountCents: 9900, categoryCode: "sales", memo: "Monster", externalRef: "pm:u-1:monster", firstBillAt: "2026-11-02T00:00:00.000Z", brandId: "", returnUrl: "http://app.test/plan/return?back=%2Fsettings", returnLabel: "Paperwork Monster" } });
+    assertEquals(await link.startSubscription({ customerId: "c-1", amountCents: 9900, memo: "Monster", externalRef: "pm:u-1:monster", firstBillAt: "2026-11-02T00:00:00.000Z", returnUrl: "http://app.test/plan/return?back=%2Fsettings", returnLabel: "DocuMonster" }), { subscriptionId: "s-1" });
+    assertEquals(calls[0], { method: "POST", url: "http://crm.test/api/payments/subscriptions", body: { customerId: "c-1", amountCents: 9900, categoryCode: "sales", memo: "Monster", externalRef: "pm:u-1:monster", firstBillAt: "2026-11-02T00:00:00.000Z", brandId: "", returnUrl: "http://app.test/plan/return?back=%2Fsettings", returnLabel: "DocuMonster" } });
     assertEquals((await link.findSubscription("pm:u-1:monster"))?.status, "active");
     assertEquals(calls.at(-1)?.url, "http://crm.test/api/payments/subscriptions/by-external/pm%3Au-1%3Amonster");
     const sub = await link.subscription("s-1");

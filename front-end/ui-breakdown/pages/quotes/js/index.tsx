@@ -16,7 +16,7 @@ export default define.page(function QuotesRoute(ctx) {
   return (
     <>
       <Head>
-        <title>Quotes · Paperwork Monster</title>
+        <title>Quotes · DocuMonster</title>
         <link key="css-dashboard" rel="stylesheet" href="/dashboard.css" />
         <link key="css-quotes" rel="stylesheet" href="/quotes.css" />
       </Head>

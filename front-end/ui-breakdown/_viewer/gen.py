@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Generate viewer-data.js — a self-contained manifest of the ui-breakdown tree
-so viewer.html can render it over file:// with no server/fetch."""
-import json, os, glob
+"""Generate the ui-breakdown manifest INTO viewer.html — one self-contained page that
+renders the tree over file:// with no server/fetch. The data lives in the page's
+<script id="uib-data"> line; rerun this after editing any spec."""
+import json, os, glob, re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # the ui-breakdown dir
 CAP = 90000  # per-file char cap so the manifest stays a sane size
@@ -91,11 +92,13 @@ data = {
     },
 }
 
-out = os.path.join(ROOT, "viewer-data.js")
+out = os.path.join(ROOT, "viewer.html")
+html = open(out, encoding="utf-8").read()
+payload = '<script id="uib-data">window.UIB = ' + json.dumps(data, ensure_ascii=False).replace("</script", "<\\/script") + ";</script>"
+html, n = re.subn(r'<script id="uib-data">.*?</script>', lambda m: payload, html, count=1, flags=re.S)
+assert n == 1, "viewer.html has no <script id=\"uib-data\"> line to fill"
 with open(out, "w", encoding="utf-8") as fh:
-    fh.write("window.UIB = ")
-    json.dump(data, fh, ensure_ascii=False)
-    fh.write(";\n")
+    fh.write(html)
 
 size = os.path.getsize(out)
 print(f"wrote {out}  ({size/1024:.0f} KB)")

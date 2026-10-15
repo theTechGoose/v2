@@ -1,4 +1,4 @@
-# Data Model (implied backend) — Paperwork Monster
+# Data Model (implied backend) — DocuMonster
 
 Reverse-documented from the Fresh 2 front-end's **typed API clients** (`clients/*.ts`),
 **SSR/inline route interfaces** (`routes/{q,i,co,c,s}/*`), **shape/derive helpers**

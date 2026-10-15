@@ -2,6 +2,7 @@ import "#reflect-metadata";
 import { DanetApplication, Module } from "#danet/core";
 import { loadConfig } from "./config.ts";
 import { UsersModule } from "@users/mod-root.ts";
+import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { AgentsModule } from "@agents/mod-root.ts";
 import { CrmModule } from "@crm/mod-root.ts";
 import { PaperworkModule } from "@paperwork/mod-root.ts";
@@ -29,6 +30,14 @@ class AppModule {}
  */
 const app = new DanetApplication();
 await app.init(AppModule);
+
+// REQ-072 — the CRM lead-capture outbox: whatever a dead isolate left pending is swept at boot,
+// and Deno Deploy's cron sweeps every minute; every login sweeps too.
+{
+  const leads = app.get(CrmLeadCapture);
+  leads.registerSweep();
+  void leads.drain();
+}
 
 const hono = (app as unknown as {
   app: {

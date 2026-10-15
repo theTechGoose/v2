@@ -185,7 +185,7 @@ const DEMO_QUOTE_ES: QuoteCopy = {
 
 /**
  * Landing route — server-renders the prototype's HTML structure (verbatim from
- * Paperwork Monster Landing.html) with `data-i18n` attributes the
+ * DocuMonster Landing.html) with `data-i18n` attributes the
  * <LandingScripts> island substitutes on hydration. Styling lives in
  * /static/landing.css.
  */
@@ -277,14 +277,13 @@ export default define.page(async function Landing(ctx) {
       <div class="nav-wrap">
         <div class="container nav">
           <a href="#" class="brand">
-            <img src="/logo-monster.png" alt="Paperwork Monster" />
-            <span data-i18n="brand1">{t("brand1")}</span>
-            <em
-              data-i18n="brand2"
-              style="font-style:normal;color:var(--brand-green)"
-            >
-              {t("brand2")}
-            </em>
+            <img src="/logo-monster.png" alt="DocuMonster" />
+            <span>
+              <span data-i18n="brand1">{t("brand1")}</span>
+              <em data-i18n="brand2" style="font-style:normal;color:var(--brand-green)">
+                {t("brand2")}
+              </em>
+            </span>
           </a>
 
           {
@@ -519,9 +518,9 @@ export default define.page(async function Landing(ctx) {
                 <div class="hs-phone__notch"></div>
                 <div class="hs-phone__screen">
                   <div class="hs-chat__hdr">
-                    <span class="hs-chat__avatar">PM</span>
+                    <span class="hs-chat__avatar">DM</span>
                     <span class="hs-chat__name">
-                      <strong>Paperwork Monster</strong>
+                      <strong>DocuMonster</strong>
                       <em data-i18n="hero.chatStatus">
                         {t("hero.chatStatus")}
                       </em>
@@ -1216,8 +1215,10 @@ export default define.page(async function Landing(ctx) {
         <div class="container footer-row">
           <a href="#" class="brand">
             <img src="/logo-monster.png" alt="" />
-            <span>Paperwork</span>
-            <em style="font-style:normal;color:var(--brand-green)">Monster</em>
+            <span>
+              Docu
+              <em style="font-style:normal;color:var(--brand-green)">Monster</em>
+            </span>
           </a>
           <div class="links">
             <a href="#features" data-i18n="nav.features">{t("nav.features")}</a>
