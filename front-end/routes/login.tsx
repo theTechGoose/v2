@@ -59,8 +59,8 @@ export default define.page(async function Login(ctx) {
             {tFor(lang, "loginPage.subtitle")}
           </p>
           <LoginForm />
-          <SiteFooter lang={lang} />
         </div>
+        <SiteFooter lang={lang} />
       </div>
     </>
   );

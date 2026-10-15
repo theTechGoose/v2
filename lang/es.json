@@ -2426,6 +2426,7 @@
   "siteFooter.refunds": "Política de reembolsos y cancelaciones",
   "siteFooter.privacy": "Política de privacidad",
   "siteFooter.sms": "Términos y condiciones de SMS",
+  "siteFooter.policiesAria": "Políticas",
   "signedConfirm.email.attachmentSub": "adjunto · firmado por ambas partes",
   "signedConfirm.email.bizFallback": "tu contratista",
   "signedConfirm.email.bodyBase": "Gracias por firmar. Tu acuerdo refrendado va adjunto en PDF para tus registros{invoiceClause}. {who} se comunicará contigo para fijar la fecha de inicio.",

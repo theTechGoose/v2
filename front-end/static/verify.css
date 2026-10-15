@@ -677,29 +677,6 @@ section.tight {
   font-size: 14px;
 }
 
-/* ---- footer ---- */
-footer {
-  background: var(--brand-teal);
-  color: #fff;
-  padding: 48px 0 32px;
-}
-footer a {
-  color: rgba(255, 255, 255, 0.8);
-}
-footer a:hover {
-  color: #fff;
-}
-.footer-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 24px;
-}
-@media (min-width: 720px) {
-  .footer-grid {
-    grid-template-columns: 2fr 1fr 1fr 1fr;
-  }
-}
-
 /* =========================================================================
    VERIFY page
    ========================================================================= */
@@ -717,10 +694,20 @@ footer a:hover {
   height: var(--vvh, 100dvh);
   transform: translateY(var(--vvt, 0px));
   overflow-y: auto;
+  /* REQ-079: the card centered in what is left above the page's footer (the
+     SiteFooter, the shell's last child), which runs edge to edge through the
+     24px sides and closes the bottom. A card taller than the room scrolls
+     the shell, the footer still at its end. */
   display: grid;
+  grid-template-rows: 1fr auto; /* 1fr = minmax(auto, 1fr): the row grows with a tall card */
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
-  padding: 24px;
+  padding: 24px 24px 0;
   box-sizing: border-box;
+}
+.verify-shell > .site-footer {
+  justify-self: stretch;
+  margin: 24px -24px 0;
 }
 .verify-card {
   width: 100%;

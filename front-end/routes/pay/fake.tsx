@@ -44,8 +44,8 @@ export default define.page(function PayFake(ctx) {
             {tFor(lang, "payFake.lede", { customer: customer.slice(0, 8), due: due.slice(0, 8) })}
           </p>
           <FakePayPage lang={lang} customer={customer} due={due} returnUrl={returnUrl} returnLabel={returnLabel} />
-          <SiteFooter lang={lang} />
         </div>
+        <SiteFooter lang={lang} />
       </div>
     </>
   );

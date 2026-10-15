@@ -109,8 +109,8 @@ export default define.page(function Contact(ctx) {
           >
             {tFor(lang, "contactPage.back")}
           </a>
-          <SiteFooter lang={lang} />
         </div>
+        <SiteFooter lang={lang} />
       </div>
     </>
   );

@@ -59,9 +59,9 @@ export default define.page(async function PublicChangeOrder(ctx) {
         <link rel="stylesheet" href="/landing.css" />
       </Head>
       <div
-        style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};padding:32px 16px calc(64px + var(--kb-inset, 0px));scroll-padding-bottom:var(--kb-inset, 0px)`}
+        style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
-        <div style="max-width:560px;margin:0 auto">
+        <div style="flex:1;width:100%;max-width:592px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">
           {!co
             ? (
               <div style="background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center">
@@ -184,7 +184,7 @@ export default define.page(async function PublicChangeOrder(ctx) {
               </article>
             )}
         </div>
-        <SiteFooter lang={lang} style="margin-top:24px" />
+        <SiteFooter lang={lang} />
       </div>
     </>
   );
