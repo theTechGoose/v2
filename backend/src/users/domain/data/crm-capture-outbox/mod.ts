@@ -12,9 +12,14 @@ const PREFIX = "crm-capture";
 
 @Injectable()
 export class CrmCaptureOutbox {
+  /** the KV the records live in — the process's; a test hands a sweep a KV of its own */
+  protected kv(): Promise<Deno.Kv> {
+    return getKv();
+  }
+
   /** a record for the phone; an existing one is kept as it is (its attempts, its clock) */
   async add(phone: string, now: number): Promise<void> {
-    const kv = await getKv();
+    const kv = await this.kv();
     const key = [PREFIX, phone];
     const existing = await kv.get<PendingCapture>(key);
     if (existing.value) return;
@@ -23,7 +28,7 @@ export class CrmCaptureOutbox {
   }
 
   async list(): Promise<PendingCapture[]> {
-    const kv = await getKv();
+    const kv = await this.kv();
     const out: PendingCapture[] = [];
     for await (const e of kv.list<PendingCapture>({ prefix: [PREFIX] })) out.push(e.value);
     return out;
@@ -31,7 +36,7 @@ export class CrmCaptureOutbox {
 
   /** take the record for one attempt: false when it changed or vanished under us */
   async claim(rec: PendingCapture, now: number): Promise<boolean> {
-    const kv = await getKv();
+    const kv = await this.kv();
     const key = [PREFIX, rec.phone];
     const current = await kv.get<PendingCapture>(key);
     if (!current.value) return false;
@@ -42,7 +47,7 @@ export class CrmCaptureOutbox {
 
   /** the attempt failed: count it, note why, and set the next time */
   async defer(rec: PendingCapture, now: number, error: string): Promise<PendingCapture> {
-    const kv = await getKv();
+    const kv = await this.kv();
     const key = [PREFIX, rec.phone];
     const current = await kv.get<PendingCapture>(key);
     const base = current.value ?? rec;
@@ -53,7 +58,7 @@ export class CrmCaptureOutbox {
   }
 
   async done(phone: string): Promise<void> {
-    const kv = await getKv();
+    const kv = await this.kv();
     await kv.delete([PREFIX, phone]);
   }
 }

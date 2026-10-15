@@ -9,7 +9,7 @@
  * The sweep against a stub CRM door (the PaymentsLink port): no env, no network.
  */
 import { assert, assertEquals } from "#std/assert";
-import { resetKv } from "@core/data/kv/mod.ts";
+import { kvCache, resetKv } from "@core/data/kv/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
@@ -22,7 +22,7 @@ type Answer = { status: number } | "hang";
 
 /** the CRM door as the sweep sees it: answers in order, then always yes. No env, no network — the
  *  real client's selection is env-wide and the int lane runs files in parallel. */
-async function fresh(answers: Answer[]) {
+async function fresh(answers: Answer[], outbox = new CrmCaptureOutbox()) {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const calls: { path: string; phone: string }[] = [];
@@ -36,7 +36,6 @@ async function fresh(answers: Answer[]) {
     },
   } as unknown as PaymentsLink;
   const crm = new CrmCustomerSync(new UserStore(), new BusinessIdentityStore(), link, new PlanStore());
-  const outbox = new CrmCaptureOutbox();
   const make = () => new CrmLeadCapture(outbox, crm);
   return { calls, outbox, make };
 }
@@ -116,4 +115,38 @@ Deno.test("REQ-072 enqueue twice for one phone is one record, and enqueue never 
   await until(() => calls.length >= 1);
   assertEquals(calls.length, 1, "the hung attempt is in flight; nothing else was sent");
   await done();
+});
+
+Deno.test("REQ-073 a sweep over a KV that will not open resolves with the failure logged, and the next sweep opens KV again", async () => {
+  // the real Deno.openKv on a path that cannot open, then on a path that can — a cache of this
+  // test's own: the process's KV and KV_PATH are shared with every file the parallel lane runs
+  let path = "/nonexistent-dir-req-073/kv.db";
+  const own = kvCache((p) => Deno.openKv(p), () => path);
+  class OwnKvOutbox extends CrmCaptureOutbox {
+    protected override kv() {
+      return own.get();
+    }
+  }
+  const outbox = new OwnKvOutbox();
+  const { calls, make } = await fresh([], outbox);
+  const errors: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => errors.push(args.map(String).join(" "));
+  try {
+    const leads = make();
+    const result = await leads.drain(); // the boot sweep: it must come back, not reject
+    assertEquals([result.landed, result.deferred, result.waiting], [0, 0, 0]);
+    assert(result.failed, "the failure is named");
+    assert(result.failed.includes("unable to open database file"), `the real open's words: ${result.failed}`);
+    assertEquals(errors.length, 1, "and logged once");
+    // KV is back (a bad open is not remembered): the same process sweeps for real
+    path = ":memory:";
+    await outbox.add("+15125550073", Date.now());
+    assertEquals(await leads.drain(), { landed: 1, deferred: 0, waiting: 0 });
+    assertEquals(calls.map((c) => c.phone), ["+15125550073"]);
+  } finally {
+    console.error = original;
+    await own.reset();
+    await done();
+  }
 });
