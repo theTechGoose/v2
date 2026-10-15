@@ -88,7 +88,7 @@ function pixelIdOf(calls: PixelCall[]): string | undefined {
 const named = (calls: PixelCall[], name: string) =>
   calls.filter((c) => c.name === name);
 
-/** a frame for the judge AFTER the page settled: the fake loader's ribbon (bottom left) names every
+/** a frame for the judge AFTER the page settled: the fake loader's ribbon (top left) names every
  *  event the pixel was told, and a key press on the body is the one harmless action that takes a frame */
 const frame = (page: StoryTools["page"]) => page.locator("body").press("Shift");
 

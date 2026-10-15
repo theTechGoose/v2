@@ -16,7 +16,7 @@
       ribbon.setAttribute("data-meta-pixel-ribbon", "");
       ribbon.setAttribute("aria-hidden", "true");
       ribbon.style.cssText =
-        "position:fixed;left:8px;bottom:8px;z-index:2147483647;pointer-events:none;" +
+        "position:fixed;left:8px;top:8px;z-index:2147483647;pointer-events:none;" +
         "font:600 11px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:#1877f2;" +
         "padding:4px 8px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.35);max-width:70vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
       (document.body || document.documentElement).appendChild(ribbon);
