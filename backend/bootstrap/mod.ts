@@ -32,12 +32,13 @@ const app = new DanetApplication();
 await app.init(AppModule);
 
 // REQ-072 — the CRM lead-capture outbox: whatever a dead isolate left pending is swept at boot,
-// and Deno Deploy's cron sweeps every minute; every login sweeps too.
-// REQ-073 — neither can end the process: drain() never rejects, registerSweep() holds the cron's answer.
+// a timer sweeps every minute while the isolate lives (REQ-074 — never Deno.cron: a revision that
+// calls it never routes on Deno Deploy), and every login sweeps too.
+// REQ-073 — neither can end the process: drain() never rejects, registerSweep() never throws.
 {
   const leads = app.get(CrmLeadCapture);
   const minute = leads.registerSweep();
-  console.log(`[crm-lead-capture] boot sweep started; minute sweep ${minute ? "registered" : "not available"}`);
+  console.log(`[crm-lead-capture] boot sweep started; minute sweep ${minute ? "on a timer" : "not available"}`);
   void leads.drain();
 }
 
