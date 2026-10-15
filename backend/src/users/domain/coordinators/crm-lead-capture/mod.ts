@@ -20,7 +20,15 @@ export interface SweepResult {
   landed: number;
   deferred: number;
   waiting: number;
+  /** REQ-073 — the sweep could not read its outbox (KV down): nothing was sent, the records stay */
+  failed?: string;
 }
+
+/** REQ-073 — the platform's cron, injected so a registration that rejects can be proven held */
+export type CronRegister = (name: string, schedule: string, handler: () => Promise<void>) => unknown;
+const SWEEP_NAME = "crm-lead-capture sweep";
+const EVERY_MINUTE = "* * * * *";
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const LOUD_AFTER_ATTEMPTS = 5;
 
@@ -36,11 +44,18 @@ export class CrmLeadCapture {
     void this.drain();
   }
 
+  /** never rejects (REQ-073): a sweep that cannot read its outbox is logged and the records wait */
   drain(now: number = Date.now()): Promise<SweepResult> {
     if (this.inFlight) return this.inFlight;
-    this.inFlight = this.sweep(now).finally(() => {
-      this.inFlight = null;
-    });
+    this.inFlight = this.sweep(now)
+      .catch((e: unknown): SweepResult => {
+        const failed = message(e);
+        console.error(`[crm-lead-capture] sweep failed before anything was sent; the records stay for the next sweep: ${failed}`);
+        return { landed: 0, deferred: 0, waiting: 0, failed };
+      })
+      .finally(() => {
+        this.inFlight = null;
+      });
     return this.inFlight;
   }
 
@@ -56,10 +71,10 @@ export class CrmLeadCapture {
         await this.outbox.done(rec.phone);
         result.landed++;
       } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        const next = await this.outbox.defer(rec, Date.now(), message);
+        const why = message(e);
+        const next = await this.outbox.defer(rec, Date.now(), why);
         result.deferred++;
-        const line = `[crm-lead-capture] ${rec.phone} attempt ${next.attempts} failed, next at ${next.nextAt}: ${message}`;
+        const line = `[crm-lead-capture] ${rec.phone} attempt ${next.attempts} failed, next at ${next.nextAt}: ${why}`;
         if (next.attempts >= LOUD_AFTER_ATTEMPTS) console.error(`${line} — STILL NOT IN THE CRM`);
         else console.warn(line);
       }
@@ -67,17 +82,28 @@ export class CrmLeadCapture {
     return result;
   }
 
-  /** Deno Deploy runs Deno.cron; where it is not enabled (a local run without --unstable-cron) there is no minute sweep — logins and boots still sweep */
-  registerSweep(): boolean {
-    const cron = (Deno as unknown as { cron?: (name: string, schedule: string, fn: () => Promise<void>) => void }).cron;
-    if (typeof cron !== "function") return false;
+  /**
+   * Deno Deploy runs Deno.cron; where it is not enabled (a local run without --unstable-cron) there
+   * is no minute sweep — logins and boots still sweep. REQ-073: whatever the registration does —
+   * throw now, reject later, or not exist — is logged and never ends the process.
+   */
+  registerSweep(cron: CronRegister | undefined = (Deno as unknown as { cron?: CronRegister }).cron): boolean {
+    if (typeof cron !== "function") {
+      console.warn("[crm-lead-capture] no minute sweep: Deno.cron is not available here; logins and boots sweep");
+      return false;
+    }
     try {
-      cron("crm-lead-capture sweep", "* * * * *", async () => {
+      const registration = cron(SWEEP_NAME, EVERY_MINUTE, async () => {
         await this.drain();
       });
+      if (registration && typeof (registration as Promise<unknown>).then === "function") {
+        (registration as Promise<unknown>).then(undefined, (e: unknown) => {
+          console.warn(`[crm-lead-capture] the minute sweep's registration was refused; logins and boots sweep: ${message(e)}`);
+        });
+      }
       return true;
     } catch (e) {
-      console.warn(`[crm-lead-capture] no minute sweep: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn(`[crm-lead-capture] no minute sweep: ${message(e)}`);
       return false;
     }
   }
