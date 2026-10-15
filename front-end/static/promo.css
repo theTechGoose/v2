@@ -654,7 +654,15 @@
   font-size: 13px;
   color: var(--pm-fg-subtle);
 }
-/* REQ-067: the policies link — a 24px tap box (hit-target audit). */
+/* REQ-067/076: the four policy links, kept together; 24px tap boxes 16px
+   apart, rows 8px apart (hit-target audit). */
+.pm-footer__legal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
 .pm-footer__terms {
   display: inline-block;
   min-height: 24px;

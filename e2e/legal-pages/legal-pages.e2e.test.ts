@@ -5,11 +5,13 @@
  * page that houses this information make the header look the same as the rest of the website".
  * REQ-067 — "we need these hyper links: Terms of Service | Refund & Cancellation Policy |
  * Privacy Policy | SMS Terms & Conditions — Every page of the websites · On the Contact us page
- * inquiry page · Footer of DocuMonster software" — and Raphael, 2026-10-09: "it needs to be one
- * link with a page that has multiple tabs": every footer carries ONE "Terms & Policies" link to
- * the policies page, whose tabs are the four.
+ * inquiry page · Footer of DocuMonster software".
  * REQ-068 — "Attached is the example for the contact us page as well" — the unchecked SMS
  * consent box with STOP / HELP and the policy links.
+ * REQ-076 — Raphael, 2026-10-15, on RingCentral's DCA rejection (code 7102, the privacy link
+ * "does not appear to show an actual privacy policy"): "i guess we have to go back to the broken
+ * out links cant have it tabbed" — every footer carries the four links again, each straight to
+ * its own page, and the policies page has no tabs: the document stands alone under the header.
  *
  * Pages: front-end/routes/terms.tsx, refund-policy.tsx, privacy.tsx, sms-terms.tsx (one shared
  * front-end/components/LegalPage.tsx under the website's header), the SiteFooter every app page
@@ -68,25 +70,24 @@ async function lookAtFooter(page: StoryTools["page"], footer: string) {
   await page.locator(`${footer} [data-site-address]`).first().click();
 }
 
-/** the ONE policies link inside a footer: [href, label] — and there is exactly one */
-async function footerLegalLink(page: StoryTools["page"], footer: string): Promise<[string, string, number]> {
-  const link = page.locator(`${footer} a[data-legal-footer-link]`);
-  await link.first().waitFor({ timeout: 15000 });
-  return [(await link.first().getAttribute("href")) ?? "", ((await link.first().innerText()) ?? "").trim(), await link.count()];
-}
-
-function expectOneLink(expect: StoryTools["expect"], where: string, link: [string, string, number]) {
-  expect.eq(JSON.stringify(link), JSON.stringify(["/terms", "Terms & Policies", 1]), `${where}: one "Terms & Policies" link to the policies page`);
-}
-
-/** the four tabs on the policies page, in order: [href, label] */
-async function tabs(page: StoryTools["page"]): Promise<[string, string][]> {
-  const t = page.locator("[data-legal-nav] a[data-legal-link]");
+/** the policy links inside a footer, in order: [href, label] */
+async function footerLinks(page: StoryTools["page"], footer: string): Promise<[string, string][]> {
+  const t = page.locator(`${footer} a[data-legal-link]`);
   await t.first().waitFor({ timeout: 15000 });
   const n = await t.count();
   const out: [string, string][] = [];
   for (let i = 0; i < n; i++) out.push([(await t.nth(i).getAttribute("href")) ?? "", ((await t.nth(i).innerText()) ?? "").trim()]);
   return out;
+}
+
+function expectFourLinks(expect: StoryTools["expect"], where: string, links: [string, string][]) {
+  expect.eq(JSON.stringify(links), JSON.stringify(PAGES.map((q) => [q.path, q.title])), `${where}: the four policy links, broken out, in Hans's order, each to its own page`);
+}
+
+/** the page has no tab row: no document nav at all, and the document's title is the only h1 */
+async function expectNoTabs(page: StoryTools["page"], expect: StoryTools["expect"], where: string, title: string) {
+  expect.eq(await page.locator("[data-legal-nav], .legal__tabs, .legal__tabsbar").count(), 0, `${where}: no tabs, no document row`);
+  expect.eq((await page.locator("h1").allTextContents()).join("|"), title, `${where}: the document's title is the page's one heading`);
 }
 
 Deno.test("REQ-066: each policy is its own page with the website's header, and the pages link to each other", (t) =>
@@ -101,21 +102,20 @@ Deno.test("REQ-066: each policy is its own page with the website's header, and t
       expect(await header.locator(".lang-toggle").count() === 1, `${p.path}: the language toggle in the header`);
       expect.eq((await header.locator(".nav-links a").allInnerTexts()).join("|"), "What We Do|How It Works|Pricing", `${p.path}: the website's nav links`);
       expect.eq(await header.locator("a.btn-outline").getAttribute("href"), "/login", `${p.path}: the Log in button`);
-      // this one document, the October 6 text
+      // this one document, the October 6 text — alone under the header, not a tab (REQ-076)
       // innerText reads the stylesheet's uppercase; the markup is the title as written
       expect.eq((await page.locator(".legal__doc h1").allTextContents()).join("|"), p.title, `${p.path}: one document, its own`);
+      await expectNoTabs(page, expect, p.path, p.title);
       await expect.see("Last Updated: October 6, 2026");
       if (p.path !== "/refund-policy") await expect.see("doing business as DocuMonster Powered by Paperwork Monster");
-      // the four documents as tabs, this one current
-      expect.eq(JSON.stringify(await tabs(page)), JSON.stringify(PAGES.map((q) => [q.path, q.title])), `${p.path}: the four tabs, in Hans's order`);
-      expect.eq(await page.locator(`[data-legal-nav] a[aria-current="page"]`).getAttribute("href"), p.path, `${p.path}: the current tab`);
-      // and the site footer with its one policies link — in the frame
+      // and the site footer with the four links — in the frame
       await lookAtFooter(page, "[data-site-footer]");
-      expectOneLink(expect, p.path, await footerLegalLink(page, "[data-site-footer]"));
+      expectFourLinks(expect, p.path, await footerLinks(page, "[data-site-footer]"));
     }
-    // a tab opens the next document
+    // a footer link opens the next document
     await page.goto("/terms");
-    await page.locator("[data-legal-nav] a[data-legal-link='sms']").click();
+    await lookAtFooter(page, "[data-site-footer]");
+    await page.locator("[data-site-footer] a[data-legal-link='sms']").click();
     await page.waitForURL((u: URL) => u.pathname === "/sms-terms", { timeout: 15000 });
     await expect.see("SMS Program Overview");
     await expect.see("A recipient may opt out of an applicable SMS program at any time by replying STOP.");
@@ -125,56 +125,53 @@ Deno.test("REQ-066: each policy is its own page with the website's header, and t
     await expect.see("Última actualización: 6 de octubre de 2026");
     await page.goto("/privacy");
     await expect.see("Política de privacidad");
-    // the tabs in Spanish (the long labels), wide and narrow: one row on a desktop, a 2×2 grid on
-    // a narrow window, one column on a phone — every tab FULLY in view, nothing clipped, nothing
-    // to scroll, the current one filled ("can you do this?" — the pill wrapped; then "why cant
-    // you think about the ux" — the pill cut off at the edge of a phone)
-    for (const [w, h, rows] of [[1440, 900, 1], [830, 900, 2], [390, 844, 4]] as const) {
+    // wide and narrow: the document starts right under the header — no tab row above it, the
+    // title fully in view, nothing to scroll sideways
+    for (const [w, h] of [[1440, 900], [830, 900], [390, 844]] as const) {
       await page.setViewportSize({ width: w, height: h });
       await page.goto("/sms-terms");
-      const boxes = await page.locator("[data-legal-nav] a").evaluateAll((els: Element[]) => els.map((e) => { const r = (e as HTMLElement).getBoundingClientRect(); return { top: Math.round(r.top), left: Math.round(r.left), right: Math.round(r.right), w: window.innerWidth }; }));
-      expect(boxes.length === 4, `${w}px: four tabs`);
-      expect.eq(new Set(boxes.map((b: { top: number }) => b.top)).size, rows, `${w}px: the tabs sit in ${rows} row(s)`);
-      expect(boxes.every((b: { left: number; right: number; w: number }) => b.left >= 0 && b.right <= b.w), `${w}px: every tab is fully inside the window (${JSON.stringify(boxes)})`);
+      await expectNoTabs(page, expect, `${w}px`, "Términos y condiciones de SMS");
+      const box = await page.locator(".legal__doc h1").evaluate((e: Element) => { const r = (e as HTMLElement).getBoundingClientRect(); return { top: Math.round(r.top), left: Math.round(r.left), right: Math.round(r.right), w: window.innerWidth, h: window.innerHeight }; });
+      expect(box.top >= 0 && box.top < box.h && box.left >= 0 && box.right <= box.w, `${w}px: the title is in view under the header (${JSON.stringify(box)})`);
       const over = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
       expect(over, `${w}px: the page does not scroll sideways`);
-      const bar = await page.locator("[data-legal-nav]").evaluate((e: Element) => e.scrollWidth <= e.clientWidth + 1);
-      expect(bar, `${w}px: the tab bar itself has nothing hidden to scroll to`);
-      const fill = await page.locator("[data-legal-nav] a.on").evaluate((e: Element) => getComputedStyle(e).backgroundColor);
-      expect(fill === "rgb(26, 83, 92)", `${w}px: the current tab is filled teal (${fill})`);
     }
   }));
 
-Deno.test("REQ-067: one policies link in the footer of both websites, the contact page, and the DocuMonster software, to the page whose tabs are the four", (t) =>
+Deno.test("REQ-076: the four policy links, broken out, in the footer of both websites, the contact page, and the DocuMonster software — and the Privacy Policy link lands on the Privacy Policy itself", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await english(page, baseUrl);
     // the website
     await page.goto("/");
     await lookAtFooter(page, "footer.footer");
-    expectOneLink(expect, "/", await footerLegalLink(page, "footer.footer"));
+    expectFourLinks(expect, "/", await footerLinks(page, "footer.footer"));
+    // the website's Refund link is the refund policy
+    await page.locator("footer.footer a[data-legal-link='refunds']").click();
+    await page.waitForURL((u: URL) => u.pathname === "/refund-policy", { timeout: 15000 });
+    await expectNoTabs(page, expect, "/refund-policy", "Refund & Cancellation Policy");
+    await expect.see("No Prorated Refunds");
     // the promo website
     await page.goto("/landing");
     await lookAtFooter(page, "footer.pm-footer");
-    expectOneLink(expect, "/landing", await footerLegalLink(page, "footer.pm-footer"));
+    expectFourLinks(expect, "/landing", await footerLinks(page, "footer.pm-footer"));
     // the contact page
     await page.goto("/contact");
     await lookAtFooter(page, "[data-site-footer]");
-    expectOneLink(expect, "/contact", await footerLegalLink(page, "[data-site-footer]"));
+    expectFourLinks(expect, "/contact", await footerLinks(page, "[data-site-footer]"));
     // the DocuMonster software: signed in, the dashboard and the settings page
     await signIn(http, page, baseUrl);
     await page.goto("/dashboard");
     await lookAtFooter(page, "[data-site-footer]");
-    expectOneLink(expect, "/dashboard", await footerLegalLink(page, "[data-site-footer]"));
+    expectFourLinks(expect, "/dashboard", await footerLinks(page, "[data-site-footer]"));
     await page.goto("/settings");
     await lookAtFooter(page, "[data-site-footer]");
-    expectOneLink(expect, "/settings", await footerLegalLink(page, "[data-site-footer]"));
-    // the link opens the policies page, and its tabs are Hans's four
-    await page.locator("[data-site-footer] a[data-legal-footer-link]").click();
-    await page.waitForURL((u: URL) => u.pathname === "/terms", { timeout: 15000 });
-    expect.eq(JSON.stringify(await tabs(page)), JSON.stringify(PAGES.map((q) => [q.path, q.title])), "the four tabs, in Hans's order");
-    await page.locator("[data-legal-nav] a[data-legal-link='refunds']").click();
-    await page.waitForURL((u: URL) => u.pathname === "/refund-policy", { timeout: 15000 });
-    await expect.see("No Prorated Refunds");
+    expectFourLinks(expect, "/settings", await footerLinks(page, "[data-site-footer]"));
+    // the Privacy Policy link is the Privacy Policy — the page a reviewer lands on IS the policy,
+    // with the SMS sentence RingCentral asks for (rejection code 7102)
+    await page.locator("[data-site-footer] a[data-legal-link='privacy']").click();
+    await page.waitForURL((u: URL) => u.pathname === "/privacy", { timeout: 15000 });
+    await expectNoTabs(page, expect, "/privacy", "Privacy Policy");
+    await expect.see("Mobile opt-in information and SMS consent are not sold, rented, released, or shared with third parties or affiliates for their own marketing or promotional purposes.");
   }));
 
 Deno.test("REQ-068: the contact form carries a phone and an unchecked SMS consent box, and a consented inquiry goes through", (t) =>
@@ -207,18 +204,21 @@ Deno.test("REQ-068: the contact form carries a phone and an unchecked SMS consen
 // Raphael, 2026-10-09, on the first pin: "this looks like crap … the blue part has expanded
 // into a huge thing, its spoosed to be a small thing." The blue part is the site footer inside
 // the contact card (verify.css paints a footer teal): with four links it had grown to six rows
-// on a phone; and the website's footer links, eight now, overflowed the phone's screen word by word.
+// on a phone, every item wrapping onto two lines; and the website's footer links overflowed the
+// phone's screen word by word. With the four links back (REQ-076) the strip is rows of 24px
+// one-line items: three rows in the 480px card on a desktop, five on a phone — the first
+// amendment's numbers — and still rounded with --radius-lg.
 Deno.test("REQ-067: the footers stay small and rounded — the contact card's strip is a few rows, and the website's links wrap instead of running off a phone", (t) =>
   story(t, async ({ page, expect, baseUrl }) => {
     await english(page, baseUrl);
-    // desktop: the strip under the contact form is three rows at most (24px each, plus 4px)
+    // desktop: the strip under the contact form is three rows at most (24px each, plus 8px)
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/contact");
     const strip = page.locator("[data-site-footer]");
     await strip.waitFor({ timeout: 15000 });
     await lookAtFooter(page, "[data-site-footer]");
     let box = (await strip.boundingBox())!;
-    expect(box.height <= 60, `desktop contact footer strip is ${box.height}px tall (≤ 60: two rows)`);
+    expect(box.height <= 80, `desktop contact footer strip is ${box.height}px tall (≤ 80: three rows)`);
     // rounded like the card ("rounded corners to speak the design language of the app")
     const radius = await strip.evaluate((el: Element) => getComputedStyle(el).borderTopLeftRadius);
     expect.eq(radius, "16px", "the strip's corners are the app's --radius-lg");
@@ -228,7 +228,7 @@ Deno.test("REQ-067: the footers stay small and rounded — the contact card's st
     await strip.waitFor({ timeout: 15000 });
     await lookAtFooter(page, "[data-site-footer]");
     box = (await strip.boundingBox())!;
-    expect(box.height <= 90, `phone contact footer strip is ${box.height}px tall (≤ 90: three rows)`);
+    expect(box.height <= 130, `phone contact footer strip is ${box.height}px tall (≤ 130: five rows)`);
     const rows = await strip.locator("a, span").evaluateAll((els: Element[]) => els.map((e) => (e as HTMLElement).getBoundingClientRect().height));
     expect(rows.every((h: number) => h <= 26), `every footer item is one line (${rows.join(",")})`);
     // the website on a phone: the footer links wrap between links; nothing runs off the screen
@@ -240,5 +240,5 @@ Deno.test("REQ-067: the footers stay small and rounded — the contact card's st
     expect(over.scroll <= over.client, `the links do not overflow their row (${over.scroll} > ${over.client})`);
     expect(over.page <= over.vw, `the page does not scroll sideways (${over.page} > ${over.vw})`);
     const heights = await links.locator("a").evaluateAll((els: Element[]) => els.map((e) => (e as HTMLElement).getBoundingClientRect().height));
-    expect(heights.length === 5 && heights.every((h: number) => h <= 26), `each of the 5 links is one line (${heights.join(",")})`);
+    expect(heights.length === 8 && heights.every((h: number) => h <= 26), `each of the 8 links is one line (${heights.join(",")})`);
   }));

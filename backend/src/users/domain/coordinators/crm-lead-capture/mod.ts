@@ -7,8 +7,9 @@
  * carried to the CRM (CrmCustomerSync.capture, REQ-060's lead) and cleared on the CRM's
  * answer; a failure defers it with backoff (lead-capture-retry) and it is never dropped. Sweeps
  * run on every login, at boot (an isolate that died mid-capture leaves its record for the next
- * one) and every minute on Deno Deploy's cron (registerSweep). One sweep per process at a time;
- * a lease keeps two processes off one record.
+ * one) and every minute while the isolate lives, on a timer (registerSweep; REQ-074 — never
+ * Deno.cron: a revision that calls it never routes on Deno Deploy). One sweep per process at a
+ * time; a lease keeps two processes off one record.
  */
 import { Injectable } from "#danet/core";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
@@ -24,10 +25,11 @@ export interface SweepResult {
   failed?: string;
 }
 
-/** REQ-073 — the platform's cron, injected so a registration that rejects can be proven held */
-export type CronRegister = (name: string, schedule: string, handler: () => Promise<void>) => unknown;
-const SWEEP_NAME = "crm-lead-capture sweep";
-const EVERY_MINUTE = "* * * * *";
+/** REQ-074 — the isolate's interval timer, injected so a tick can be driven by hand */
+export type Timer = (handler: () => void, ms: number) => number;
+/** REQ-074 — lets the process end with the timer pending (Deno.unrefTimer) */
+export type Unref = (id: number) => void;
+const EVERY_MINUTE_MS = 60_000;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const LOUD_AFTER_ATTEMPTS = 5;
@@ -83,27 +85,22 @@ export class CrmLeadCapture {
   }
 
   /**
-   * Deno Deploy runs Deno.cron; where it is not enabled (a local run without --unstable-cron) there
-   * is no minute sweep — logins and boots still sweep. REQ-073: whatever the registration does —
-   * throw now, reject later, or not exist — is logged and never ends the process.
+   * REQ-074 — the minute sweep is a timer inside the isolate, never Deno.cron: on Deno Deploy a
+   * revision that calls Deno.cron warms up and then fails at routing (three preview deployments
+   * of main @ 980fe04 proved it: the cron in bootstrap, the cron at mod.ts top level — both
+   * failed; no cron — routed). The timer is unref'd so it never holds a process open; it sweeps
+   * while the isolate lives, and logins and boots sweep the rest. REQ-073 still holds: whatever
+   * the timer does — throw, or not exist — is logged and never ends the process.
    */
-  registerSweep(cron: CronRegister | undefined = (Deno as unknown as { cron?: CronRegister }).cron): boolean {
-    if (typeof cron !== "function") {
-      console.warn("[crm-lead-capture] no minute sweep: Deno.cron is not available here; logins and boots sweep");
-      return false;
-    }
+  registerSweep(timer: Timer = (fn, ms) => setInterval(fn, ms) as unknown as number, unref: Unref = (id) => Deno.unrefTimer(id)): boolean {
     try {
-      const registration = cron(SWEEP_NAME, EVERY_MINUTE, async () => {
-        await this.drain();
-      });
-      if (registration && typeof (registration as Promise<unknown>).then === "function") {
-        (registration as Promise<unknown>).then(undefined, (e: unknown) => {
-          console.warn(`[crm-lead-capture] the minute sweep's registration was refused; logins and boots sweep: ${message(e)}`);
-        });
-      }
+      const id = timer(() => {
+        void this.drain();
+      }, EVERY_MINUTE_MS);
+      unref(id);
       return true;
     } catch (e) {
-      console.warn(`[crm-lead-capture] no minute sweep: ${message(e)}`);
+      console.warn(`[crm-lead-capture] no minute sweep: ${message(e)}; logins and boots sweep`);
       return false;
     }
   }

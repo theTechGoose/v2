@@ -2977,8 +2977,8 @@ section {
 }
 .footer-row .links {
   display: flex;
-  flex-wrap: wrap; /* REQ-067: eight links now — they wrap between links on a phone, never word by word off the screen */
-  gap: 4px 20px;
+  flex-wrap: wrap; /* REQ-067/076: eight links — they wrap between links on a phone, never word by word off the screen */
+  gap: 8px 20px; /* hit-target audit: rows 8px apart, so a thumb never lands on the next row's link */
   font-size: 13px;
   color: var(--fg-muted);
 }

@@ -1,6 +1,7 @@
 // REQ-073 — the lead-capture outbox's boot work never takes the isolate down: a sweep that
-// cannot read its outbox resolves with the failure named, and a cron whose registration rejects
-// is logged, not left as an unhandled rejection. Pure: stub outbox, stub CRM, injected cron.
+// cannot read its outbox resolves with the failure named. REQ-074 — the minute sweep is a timer
+// in the isolate, never Deno.cron (a revision that calls it never routes). Pure: stub outbox,
+// stub CRM, injected timer.
 import { assert, assertEquals, assertStringIncludes } from "#std/assert";
 import type { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import type { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
@@ -28,30 +29,60 @@ Deno.test("REQ-073 drain — an outbox that cannot be read resolves with the fai
   }
 });
 
-Deno.test("REQ-073 registerSweep — a cron whose registration rejects is logged, never an unhandled rejection; one that throws, or no cron at all, is false and logged", async () => {
+Deno.test("REQ-074 registerSweep — the minute sweep is an in-isolate timer: Deno.cron is never called", () => {
   const outbox = { list: () => Promise.resolve([]) } as unknown as CrmCaptureOutbox;
-  const crm = {} as CrmCustomerSync;
-  const leads = new CrmLeadCapture(outbox, crm);
+  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync);
+  const deno = Deno as unknown as { cron?: unknown };
+  const hadCron = Object.getOwnPropertyDescriptor(Deno, "cron");
+  let cronCalls = 0;
+  Object.defineProperty(Deno, "cron", { configurable: true, writable: true, value: () => ++cronCalls });
+  const timers: { ms: number }[] = [];
+  const timer = (_fn: () => void, ms: number) => {
+    timers.push({ ms });
+    return 7;
+  };
+  try {
+    assert(leads.registerSweep(timer, () => {}), "the sweep is scheduled");
+    assertEquals(cronCalls, 0, "Deno.cron is never touched — a revision that calls it never routes");
+    assertEquals(timers.length, 1);
+  } finally {
+    if (hadCron) Object.defineProperty(Deno, "cron", hadCron);
+    else delete deno.cron;
+  }
+});
+
+Deno.test("REQ-074 registerSweep — the timer fires every 60 s and each tick sweeps the outbox; the timer never keeps the process alive and never throws", async () => {
+  let lists = 0;
+  const outbox = {
+    list: () => {
+      lists++;
+      return Promise.resolve([]);
+    },
+  } as unknown as CrmCaptureOutbox;
+  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync);
+  const held: { tick?: () => void; everyMs?: number } = {};
+  const timer = (fn: () => void, ms: number) => {
+    held.tick = fn;
+    held.everyMs = ms;
+    return 42;
+  };
+  const unrefd: number[] = [];
+  assert(leads.registerSweep(timer, (id: number) => unrefd.push(id)));
+  assertEquals(held.everyMs, 60_000);
+  assertEquals(unrefd, [42], "the timer is unref'd: it never holds the process open");
+  assert(held.tick, "a tick is scheduled");
+  held.tick();
+  held.tick();
+  await tick();
+  assert(lists >= 1, "a tick sweeps the outbox");
+
   const logged = capture("warn");
   try {
-    const names: string[] = [];
-    const rejects = (name: string) => {
-      names.push(name);
-      return Promise.reject(new Error("crons are off for this app"));
-    };
-    assert(leads.registerSweep(rejects), "registered — the platform's answer comes later");
-    await tick();
-    assertEquals(names, ["crm-lead-capture sweep"]);
-    assertStringIncludes(logged.lines.at(-1) ?? "", "crons are off for this app");
-
     const throws = () => {
-      throw new Error("Deno.cron is not allowed here");
+      throw new Error("no timers here");
     };
-    assertEquals(leads.registerSweep(throws), false);
-    assertStringIncludes(logged.lines.at(-1) ?? "", "Deno.cron is not allowed here");
-
-    assertEquals(leads.registerSweep(undefined), false, "no Deno.cron: logins and boots still sweep");
-    assertStringIncludes(logged.lines.at(-1) ?? "", "no minute sweep");
+    assertEquals(leads.registerSweep(throws, () => {}), false, "a timer that cannot be set is logged, never thrown");
+    assertStringIncludes(logged.lines.at(-1) ?? "", "no timers here");
   } finally {
     logged.restore();
   }

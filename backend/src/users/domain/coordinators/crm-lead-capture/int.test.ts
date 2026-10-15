@@ -150,3 +150,28 @@ Deno.test("REQ-073 a sweep over a KV that will not open resolves with the failur
     await done();
   }
 });
+
+Deno.test("REQ-074 a boot sweep and a login sweep still carry the outbox with no cron anywhere", async () => {
+  const { calls, outbox, make } = await fresh([]);
+  const deno = Deno as unknown as { cron?: unknown };
+  const hadCron = Object.getOwnPropertyDescriptor(Deno, "cron");
+  let cronCalls = 0;
+  Object.defineProperty(Deno, "cron", { configurable: true, writable: true, value: () => ++cronCalls });
+  try {
+    // the boot: a record a dead isolate left behind, swept by the next process's boot sweep
+    await outbox.add("+15125550074", Date.now() - 1000);
+    const leads = make();
+    assert(leads.registerSweep(), "the minute timer is set at boot");
+    assertEquals(await leads.drain(), { landed: 1, deferred: 0, waiting: 0 });
+    // the login: enqueue() sweeps without being awaited
+    await leads.enqueue("+1 (512) 555-0075");
+    await until(() => calls.length >= 2);
+    assertEquals(calls.map((c) => c.phone), ["+15125550074", "+15125550075"]);
+    assertEquals((await outbox.list()).length, 0);
+    assertEquals(cronCalls, 0, "Deno.cron is never called");
+  } finally {
+    if (hadCron) Object.defineProperty(Deno, "cron", hadCron);
+    else delete deno.cron;
+    await done();
+  }
+});

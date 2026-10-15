@@ -26,8 +26,9 @@ async function page(path: string, cookie?: string) {
   return { status: res.status, html: await res.text(), location: res.headers.get("location") };
 }
 
-/** The footer's one policies link as the SiteFooter (and the two websites) emit it (REQ-067 amendment). */
-const LINK = /<a[^>]*href="\/terms"[^>]*data-legal-footer-link[^>]*>Terms &amp; Policies<\/a>|<a[^>]*data-legal-footer-link[^>]*href="\/terms"[^>]*>Terms &amp; Policies<\/a>/;
+/** The footer's Terms link as the SiteFooter (and the two websites) emit it — one of the four
+ *  broken-out policy links (REQ-067/076), carrying REQ-043's data-terms-link hook. */
+const LINK = /<a[^>]*href="\/terms"[^>]*data-legal-link="terms"[^>]*data-terms-link[^>]*>Terms of Service<\/a>/;
 
 describe("REQ-043 every SSR page carries the footer Terms of Service link to /terms", () => {
   const ANON = ["/?lang=en", "/landing?lang=en", "/login", "/contact", "/terms", "/refund-policy", "/privacy", "/sms-terms", "/verify?phone=%2B15125550930"];
@@ -101,11 +102,11 @@ describe("REQ-066 each policy page renders its one document under the website's 
       expect(html).not.toContain("Effective Date");
       expect(html).toContain(first);
       expect(html).toContain(last);
-      // the website's header, then the four documents as tabs with this one current
+      // the website's header, then the document — no tabs (REQ-076); the footer links the four
       expect(html).toMatch(/<div class="nav-wrap">/);
       expect(html).toMatch(/<a href="\/login" class="btn btn-outline">/);
-      expect(html).toMatch(new RegExp(`<a href="${path}" data-legal-link="[a-z]+" class="on" aria-current="page">`));
-      for (const [other] of PAGES) expect(html).toMatch(new RegExp(`data-legal-nav[^]*?<a href="${other}"`));
+      expect(html).not.toContain("data-legal-nav");
+      for (const [other] of PAGES) expect(html).toMatch(new RegExp(`data-site-footer[^]*?<a href="${other}" data-legal-link="[a-z]+"`));
     });
   }
   it("REQ-065 /terms: the arbitration notice, the brand line, the acceptable-use list", async () => {
