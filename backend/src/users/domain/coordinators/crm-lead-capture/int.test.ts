@@ -117,3 +117,28 @@ Deno.test("REQ-072 enqueue twice for one phone is one record, and enqueue never 
   assertEquals(calls.length, 1, "the hung attempt is in flight; nothing else was sent");
   await done();
 });
+
+Deno.test("REQ-073 a sweep over a KV that will not open resolves with the failure logged, and the next sweep opens KV again", async () => {
+  const { calls, outbox, make } = await fresh([]);
+  await resetKv();
+  Deno.env.set("KV_PATH", "/nonexistent-dir-req-073/kv.db");
+  const errors: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => errors.push(args.map(String).join(" "));
+  try {
+    const leads = make();
+    const result = await leads.drain(); // the boot sweep: it must come back, not reject
+    assertEquals([result.landed, result.deferred, result.waiting], [0, 0, 0]);
+    assert(result.failed, "the failure is named");
+    assertEquals(errors.length, 1, "and logged once");
+    // KV is back (a bad open is not remembered): the same process sweeps for real
+    Deno.env.set("KV_PATH", ":memory:");
+    await outbox.add("+15125550073", Date.now());
+    assertEquals(await leads.drain(), { landed: 1, deferred: 0, waiting: 0 });
+    assertEquals(calls.map((c) => c.phone), ["+15125550073"]);
+  } finally {
+    console.error = original;
+    Deno.env.set("KV_PATH", ":memory:");
+    await done();
+  }
+});

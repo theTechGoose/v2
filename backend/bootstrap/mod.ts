@@ -33,9 +33,11 @@ await app.init(AppModule);
 
 // REQ-072 — the CRM lead-capture outbox: whatever a dead isolate left pending is swept at boot,
 // and Deno Deploy's cron sweeps every minute; every login sweeps too.
+// REQ-073 — neither can end the process: drain() never rejects, registerSweep() holds the cron's answer.
 {
   const leads = app.get(CrmLeadCapture);
-  leads.registerSweep();
+  const minute = leads.registerSweep();
+  console.log(`[crm-lead-capture] boot sweep started; minute sweep ${minute ? "registered" : "not available"}`);
   void leads.drain();
 }
 
