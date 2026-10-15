@@ -253,7 +253,11 @@ Deno.test("REQ-080: Lead fires once when the OTP is sent from the landing page â
     await drain();
     const phone = `512${digits()}`;
     await page.locator("#f-phone").fill(phone);
-    await page.locator("#contact-form .cf-cta").click();
+    // the submit itself is not a wrapped action: a frame taken mid-navigation hung on the
+    // landing's web fonts; the frame after the code page settles (below) shows the Lead
+    await page.locator("#contact-form").evaluate((f: HTMLFormElement) =>
+      f.requestSubmit()
+    );
     await page.waitForURL(
       (u: URL) =>
         u.pathname === "/verify" && u.searchParams.get("px") === "lead",
