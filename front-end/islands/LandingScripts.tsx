@@ -156,7 +156,10 @@ const I18N_KEYS = [
   "cta.useSaved",
   "cta.notYou",
   "footer.contact",
-  "footer.legal",
+  "footer.terms",
+  "footer.refunds",
+  "footer.privacy",
+  "footer.sms",
   "footer.copy",
 ];
 

@@ -29,67 +29,11 @@
   background: var(--brand-teal);
   color: #fff;
 }
-/* The four documents as tabs — a segmented pill like the header's language
-   toggle (REQ-066; Raphael: "one link with a page that has multiple tabs").
-   Wide screens: one centred row. Under 900px (the Spanish labels no longer
-   fit a row): a two-column grid; under 560px (a phone): one column. Every
-   tab is always fully in view — never wrapped into a ragged second row,
-   never clipped at the edge, nothing to scroll ("why cant you think about
-   the ux"). Each tab is a 36px+ tap box, 4px apart; the current one is
-   filled teal; a long label wraps inside its own cell. */
-.legal__tabsbar {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 20px;
-}
-.legal__tabs {
-  display: inline-flex;
-  gap: 4px;
-  padding: 4px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  font-family: var(--font-heading);
-  font-size: 13px;
-  font-weight: 700;
-}
-.legal__tabs a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 6px 14px;
-  border-radius: var(--radius-md);
-  color: var(--fg-muted);
-  text-align: center;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: all 200ms var(--ease-bounce);
-}
-.legal__tabs a:hover {
-  color: var(--brand-teal);
-}
-.legal__tabs a.on {
-  background: var(--brand-teal);
-  color: #fff;
-}
-@media (max-width: 900px) {
-  .legal__tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    width: 100%;
-  }
-  .legal__tabs a {
-    white-space: normal;
-  }
-}
-@media (max-width: 560px) {
-  .legal__tabs {
-    grid-template-columns: 1fr;
-  }
-}
+/* The document starts right under the header: no tabs, no row of the other
+   documents (REQ-076 — "cant have it tabbed"); the footer's four links are
+   how the pages link each other. */
 .legal__doc {
-  padding: 28px 0 12px;
+  padding: 12px 0 12px;
 }
 .legal__doc h1 {
   margin: 0;
