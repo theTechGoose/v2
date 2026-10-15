@@ -88,6 +88,27 @@ function pixelIdOf(calls: PixelCall[]): string | undefined {
 const named = (calls: PixelCall[], name: string) =>
   calls.filter((c) => c.name === name);
 
+/** a frame for the judge AFTER the page settled: the fake loader's ribbon (bottom left) names every
+ *  event the pixel was told, and a key press on the body is the one harmless action that takes a frame */
+const frame = (page: StoryTools["page"]) => page.locator("body").press("Shift");
+
+/** on fakes the ribbon must read what the record says; on the real loader there is no ribbon */
+async function ribbonSays(
+  page: StoryTools["page"],
+  expect: StoryTools["expect"],
+  text: string,
+) {
+  const ribbon = await page.locator("#pm-pixel-fake").textContent({
+    timeout: 5_000,
+  }).catch(() => null);
+  if (ribbon !== null) {
+    expect(
+      ribbon.includes(text),
+      `the ribbon names it: "${ribbon}" has "${text}"`,
+    );
+  }
+}
+
 /** English on this browser: the public pages are Spanish-first (REQ-002) */
 async function english(page: StoryTools["page"], baseUrl: string) {
   const hosts = new Set([new URL(baseUrl).hostname, "localhost", "127.0.0.1"]);
@@ -190,6 +211,8 @@ Deno.test("REQ-080: the pixel is on the ad funnel's pages â€” the landing page i
     await english(page, baseUrl);
     await page.goto("/");
     await expect.see("DocuMonster");
+    await frame(page);
+    await ribbonSays(page, expect, "PageView");
     let calls = await drain();
     const id = pixelIdOf(calls);
     expect(/^\d{15}$/.test(id ?? ""), `the pixel booted with an id (${id})`);
@@ -237,6 +260,8 @@ Deno.test("REQ-080: Lead fires once when the OTP is sent from the landing page â
       { timeout: 60_000 },
     );
     await expect.see("code");
+    await frame(page);
+    await ribbonSays(page, expect, "Lead");
     let calls = await drain();
     const leads = named(calls, "Lead");
     expect.eq(leads.length, 1, "one Lead on the code page");
@@ -254,7 +279,7 @@ Deno.test("REQ-080: Lead fires once when the OTP is sent from the landing page â
       "and the code page's PageView",
     );
     // a reload of the code page is not a second lead
-    await page.reload();
+    await page.goto(page.url());
     await expect.see("code");
     calls = await drain();
     expect.eq(named(calls, "Lead").length, 0, "no Lead on the reload");
@@ -269,11 +294,13 @@ Deno.test("REQ-080: CompleteRegistration fires once when a new account reaches /
     await page.locator("[data-cy='welcome-continue']").waitFor({
       timeout: 60_000,
     });
+    await frame(page);
+    await ribbonSays(page, expect, "CompleteRegistration");
     let calls = await drain();
     const regs = named(calls, "CompleteRegistration");
     expect.eq(regs.length, 1, "one CompleteRegistration on the wizard");
     expect.eq(regs[0].eventId, `reg:${userId}`, "keyed by the account");
-    await page.reload();
+    await page.goto(page.url());
     await page.locator("[data-cy='welcome-continue']").waitFor({
       timeout: 60_000,
     });
@@ -319,6 +346,8 @@ Deno.test("REQ-080: Subscribe fires with the plan's price when the receipt bring
       { timeout: 60_000 },
     );
     await expect.see("Which state");
+    await frame(page);
+    await ribbonSays(page, expect, "Subscribe $99");
     let calls = await drain();
     let subs = named(calls, "Subscribe");
     expect.eq(subs.length, 1, "one Subscribe when the receipt lands");
@@ -331,7 +360,7 @@ Deno.test("REQ-080: Subscribe fires with the plan's price when the receipt bring
       `sub:monster:${plan.dueId}`,
       "keyed by the due that was paid",
     );
-    await page.reload();
+    await page.goto(page.url());
     await expect.see("Which state");
     calls = await drain();
     expect.eq(named(calls, "Subscribe").length, 0, "not again on a reload");
@@ -372,6 +401,8 @@ Deno.test("REQ-080: Subscribe fires with the plan's price when the receipt bring
     );
     await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
     await expect.see("Monster Assist is active");
+    await frame(page);
+    await ribbonSays(page, expect, "Subscribe $199");
     calls = await drain();
     subs = named(calls, "Subscribe");
     expect.eq(subs.length, 1, "one Subscribe on settings");
