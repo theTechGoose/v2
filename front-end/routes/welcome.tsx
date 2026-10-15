@@ -97,7 +97,7 @@ export default define.page(async function Welcome(ctx) {
               {tFor(lang, "welcome.loadError")}
             </p>
           )}
-        <SiteFooter lang={lang} style="margin-top:auto" />
+        <SiteFooter lang={lang} />
       </div>
     </>
   );

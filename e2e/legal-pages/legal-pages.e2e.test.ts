@@ -206,15 +206,14 @@ Deno.test("REQ-068: the contact form carries a phone and an unchecked SMS consen
 // Conditions  855-362-8666"), a jumble. REQ-078: the strip is two blocks — the four links two by
 // two in a grid, then the phone and the address on their own line beneath — small and rounded
 // as REQ-067's amendments asked, every item on one line, on a desktop and on a phone.
-Deno.test("REQ-078: the card's strip is a tidy block — the four links two by two, the phone and the address on their own line beneath, on a desktop and on a phone", (t) =>
+Deno.test("REQ-078: the footer is a tidy block — the four links two by two, the phone and the address on their own lines beneath, on a desktop and on a phone", (t) =>
   story(t, async ({ page, expect, baseUrl }) => {
     await english(page, baseUrl);
     type Box = { top: number; bottom: number; left: number; h: number };
     const boxes = async (sel: string): Promise<Box[]> =>
       await page.locator(sel).evaluateAll((els: Element[]) => els.map((e) => { const r = (e as HTMLElement).getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), h: Math.round(r.height) }; }));
-    // five rows of 24px in the 480px card — the links two by two, the phone, the address — plus
-    // the 8px between the blocks and the grid's rows and the 6px padding: 124px, both widths
-    for (const [w, h, maxStrip] of [[1440, 900, 128], [390, 844, 128]] as const) {
+    // five rows of 24px — the links two by two, the phone, the address — both widths
+    for (const [w, h] of [[1440, 900], [390, 844]] as const) {
       await page.setViewportSize({ width: w, height: h });
       await page.goto("/login");
       const strip = page.locator("[data-site-footer]");
@@ -235,14 +234,68 @@ Deno.test("REQ-078: the card's strip is a tidy block — the four links two by t
       expect(phone.top >= linksBottom, `${w}px: the phone sits beneath the links (phone top ${phone.top}, links bottom ${linksBottom})`);
       expect(address.top >= linksBottom, `${w}px: the address sits beneath the links`);
       expect(links.every((b) => b.top !== phone.top), `${w}px: no link shares a row with the phone number`);
-      // nothing jumbled: every item on one line, the strip a small rounded block
+      expect(address.top >= phone.bottom, `${w}px: the address is on its own line under the phone`);
+      // nothing jumbled: every item on one line
       const items = await boxes("[data-site-footer] a, [data-site-footer] span");
       expect(items.every((b) => b.h <= 26), `${w}px: every item is one line (${items.map((b) => b.h).join(",")})`);
-      const box = (await strip.boundingBox())!;
-      expect(box.height <= maxStrip, `${w}px: the strip is ${box.height}px tall (≤ ${maxStrip})`);
-      const radius = await strip.evaluate((el: Element) => getComputedStyle(el).borderTopLeftRadius);
-      expect.eq(radius, "16px", `${w}px: the strip's corners are the app's --radius-lg`);
     }
+  }));
+
+// Raphael, 2026-10-15, on REQ-078's teal strip inside the login card: "just make this the
+// actual footer." The block is the page's own footer now: out of the card, the full width of
+// the screen, teal, square-cornered, ending at the bottom of the screen — on every page that
+// ends with it (the card pages, the dashboard's pane, the policy pages, the documents).
+Deno.test("REQ-079: the block is the page's actual footer — out of the card, the full width of the screen, teal, at the bottom: the login page on a desktop and a phone, the contact page on a phone, a policy page, the dashboard", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await english(page, baseUrl);
+    const TEAL = "rgb(26, 83, 92)"; // --brand-teal, #1a535c
+    /** scroll whatever scrolls to its end, then measure the footer against the screen */
+    const footerAtTheEnd = async () => {
+      await page.evaluate(() => {
+        for (const el of Array.from(document.querySelectorAll<HTMLElement>(".verify-shell, .content"))) el.scrollTop = el.scrollHeight;
+        globalThis.scrollTo(0, document.documentElement.scrollHeight);
+      });
+      return await page.locator("[data-site-footer]").evaluate((el: Element) => {
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), bg: cs.backgroundColor, radius: cs.borderTopLeftRadius, vw: globalThis.innerWidth, vh: globalThis.innerHeight };
+      });
+    };
+    // the card pages: the footer is out of the card, under it, the full width, down to the bottom —
+    // the login card fits the screen; the contact card on a phone is taller than it, and scrolls
+    for (const [path, w, h] of [["/login", 1440, 900], ["/login", 390, 844], ["/contact", 390, 844]] as const) {
+      await page.setViewportSize({ width: w, height: h });
+      await page.goto(path);
+      await page.locator("[data-site-footer]").waitFor({ timeout: 15000 });
+      expect.eq(await page.locator(".verify-card [data-site-footer]").count(), 0, `${path} ${w}px: the footer is out of the card`);
+      await lookAtFooter(page, "[data-site-footer]");
+      const f = await footerAtTheEnd();
+      const card = await page.locator(".verify-card").evaluate((el: Element) => Math.round(el.getBoundingClientRect().bottom));
+      expect(f.top >= card, `${path} ${w}px: the footer sits beneath the card (footer top ${f.top}, card bottom ${card})`);
+      expect(f.left === 0 && f.right === f.vw, `${path} ${w}px: the footer spans the screen (${f.left}–${f.right} of ${f.vw})`);
+      expect(Math.abs(f.bottom - f.vh) <= 1, `${path} ${w}px: the footer ends at the bottom of the screen (${f.bottom} vs ${f.vh})`);
+      expect.eq(f.bg, TEAL, `${path} ${w}px: the footer is teal`);
+      expect.eq(f.radius, "0px", `${path} ${w}px: a footer, not a rounded strip`);
+    }
+    // a policy page: the same footer, the full width, at the end of the page
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/terms");
+    await lookAtFooter(page, "[data-site-footer]");
+    const t2 = await footerAtTheEnd();
+    expect(t2.left === 0 && t2.right === t2.vw, `/terms: the footer spans the screen (${t2.left}–${t2.right} of ${t2.vw})`);
+    expect(Math.abs(t2.bottom - t2.vh) <= 1, `/terms: the footer ends at the bottom of the screen (${t2.bottom} vs ${t2.vh})`);
+    expect.eq(t2.bg, TEAL, "/terms: the footer is teal");
+    // the dashboard: the footer spans its scrolling pane edge to edge and ends at the pane's bottom
+    await signIn(http, page, baseUrl);
+    await page.goto("/dashboard");
+    await page.locator("[data-site-footer]").waitFor({ timeout: 15000 });
+    await lookAtFooter(page, "[data-site-footer]");
+    const d = await footerAtTheEnd();
+    const pane = await page.locator(".content").evaluate((el: Element) => { const r = el.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), bottom: Math.round(r.bottom) }; });
+    expect(d.left === pane.left && d.right === pane.right, `/dashboard: the footer spans the pane (${d.left}–${d.right} vs ${pane.left}–${pane.right})`);
+    expect(Math.abs(d.bottom - pane.bottom) <= 1, `/dashboard: the footer ends at the pane's bottom (${d.bottom} vs ${pane.bottom})`);
+    expect.eq(d.bg, TEAL, "/dashboard: the footer is teal");
+    expect.eq(d.radius, "0px", "/dashboard: a footer, not a rounded strip");
   }));
 
 // Raphael, 2026-10-09, on the first pin: "this looks like crap … the blue part has expanded

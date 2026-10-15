@@ -96,8 +96,8 @@ export default define.page(async function Verify(ctx) {
             initialLang={lang}
             editHref={editHref}
           />
-          <SiteFooter lang={lang} />
         </div>
+        <SiteFooter lang={lang} />
       </div>
     </>
   );

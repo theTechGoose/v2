@@ -33,8 +33,8 @@ export default define.page((ctx) => {
   const homeCta = tFor(lang, "errorPage.home");
 
   return (
-    <div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30;padding:32px 16px">
-      <div style="max-width:440px;width:100%;text-align:center">
+    <div style="min-height:100dvh;display:flex;flex-direction:column;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
+      <div style="flex:1;width:100%;max-width:472px;margin:0 auto;padding:32px 16px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">
         <a
           href="/"
           style="display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:#144852;font-weight:800;font-size:18px;letter-spacing:-0.01em"
@@ -63,8 +63,8 @@ export default define.page((ctx) => {
         >
           {homeCta}
         </a>
-        <SiteFooter lang={lang} style="margin-top:28px" />
       </div>
+      <SiteFooter lang={lang} />
     </div>
   );
 });

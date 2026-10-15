@@ -36,12 +36,12 @@ export default define.page(function PublicQuote(ctx) {
         <link key="css-public-contract" rel="stylesheet" href="/public-contract.css" />
       </Head>
       <div
-        style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};padding:32px 16px calc(64px + var(--kb-inset, 0px));scroll-padding-bottom:var(--kb-inset, 0px)`}
+        style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
-        <div style="max-width:760px;margin:0 auto">
+        <div style="flex:1;width:100%;max-width:792px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">
           <PublicQuoteView id={id} lang={lang} />
         </div>
-        <SiteFooter lang={lang ?? "en"} style="margin-top:24px" />
+        <SiteFooter lang={lang ?? "en"} />
       </div>
     </>
   );
