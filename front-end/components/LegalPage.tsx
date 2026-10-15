@@ -104,10 +104,9 @@ export default function LegalPage(
               </section>
             ))}
           </article>
-
-          <SiteFooter lang={lang} style="margin-top:24px" />
         </div>
       </div>
+      <SiteFooter lang={lang} />
     </>
   );
 }

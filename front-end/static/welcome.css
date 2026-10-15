@@ -19,6 +19,12 @@
     var(--brand-mint) 60%
   );
 }
+/* REQ-079: the SiteFooter is the page's footer — pushed to the bottom, edge to edge
+   through the shell's 20px sides and 40px bottom */
+.welcome-shell > .site-footer {
+  margin: auto -20px -40px;
+  align-self: stretch;
+}
 
 .welcome-shell__brand {
   display: inline-flex;

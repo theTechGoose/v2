@@ -120,9 +120,9 @@ export default define.page(async function PublicInvoice(ctx) {
         <link rel="stylesheet" href="/landing.css" />
       </Head>
       <div
-        style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};padding:32px 16px calc(64px + var(--kb-inset, 0px));scroll-padding-bottom:var(--kb-inset, 0px)`}
+        style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
-        <div style="max-width:680px;margin:0 auto">
+        <div style="flex:1;width:100%;max-width:712px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">
           {err || !invoice
             ? (
               <ErrorCard
@@ -132,7 +132,7 @@ export default define.page(async function PublicInvoice(ctx) {
             )
             : <InvoiceDoc invoice={invoice} lang={lang} />}
         </div>
-        <SiteFooter lang={lang} style="margin-top:24px" />
+        <SiteFooter lang={lang} />
       </div>
     </>
   );

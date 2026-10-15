@@ -73,8 +73,8 @@ export default define.page(async function VerifyInternal(ctx) {
             editHref="/login-internal"
             editLabel={tFor(lang, "verifyInternal.editEmail")}
           />
-          <SiteFooter lang={lang} />
         </div>
+        <SiteFooter lang={lang} />
       </div>
     </>
   );

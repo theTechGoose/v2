@@ -44,8 +44,8 @@ export default define.page(async function PlanTest(ctx) {
           </p>
           <PlanCards plans={plans} lang={lang} disabled={(p) => p.priceCents > 0 && !hasEmail} back="/settings" merchant={merchant} />
           {!hasEmail ? <p style="color:var(--fg-muted);font-size:13.5px;margin-top:10px">{tFor(lang, "plan.emailFirstSettings")}</p> : null}
-          <SiteFooter lang={lang} />
         </div>
+        <SiteFooter lang={lang} />
       </div>
     </>
   );

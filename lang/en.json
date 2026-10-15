@@ -2426,6 +2426,7 @@
   "siteFooter.refunds": "Refund & Cancellation Policy",
   "siteFooter.privacy": "Privacy Policy",
   "siteFooter.sms": "SMS Terms & Conditions",
+  "siteFooter.policiesAria": "Policies",
   "signedConfirm.email.attachmentSub": "attached · signed by both parties",
   "signedConfirm.email.bizFallback": "your contractor",
   "signedConfirm.email.bodyBase": "Thanks for signing. Your countersigned agreement is attached as a PDF for your records{invoiceClause}. {who} will reach out to lock in a start day.",
