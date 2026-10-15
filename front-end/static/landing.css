@@ -270,7 +270,7 @@ html, body {
 }
 
 /* ============================================================
-   Paperwork Monster — Landing
+   DocuMonster — Landing
    Built on Sabor Design System tokens
    ============================================================ */
 
@@ -3148,7 +3148,7 @@ section {
   }
 }
 
-/* Phone widths cannot carry the "Paperwork Monster" word-mark AND the four
+/* Phone widths cannot carry the "DocuMonster" word-mark AND the four
    nav controls on one row — the logo alone keeps the row honest. */
 @media (max-width: 520px) {
   /* .nav-scoped on purpose — /login, /verify, /contact and the landing

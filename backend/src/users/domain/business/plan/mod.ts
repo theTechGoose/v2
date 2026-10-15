@@ -74,7 +74,7 @@ export function externalRefFor(userId: string): string {
 }
 
 /** REQ-059 — what the pay page's receipt calls this app on its way back */
-export const RETURN_LABEL = "Paperwork Monster";
+export const RETURN_LABEL = "DocuMonster";
 
 /** the pages that show the plan cards — the only places a pick comes back to */
 const PICK_BACKS = ["/welcome", "/settings"] as const;

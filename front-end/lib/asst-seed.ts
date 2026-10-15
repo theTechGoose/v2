@@ -1,6 +1,6 @@
 /**
  * Static seed for the assistant — ported verbatim from
- * Paperwork Monster Assistant.html. Used until the backend's `/agents/*`
+ * DocuMonster Assistant.html. Used until the backend's `/agents/*`
  * endpoints flesh out (per spec, those are deferred).
  */
 import { type Lang, tFor } from "./i18n.ts";

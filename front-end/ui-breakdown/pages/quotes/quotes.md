@@ -34,7 +34,7 @@ app-shell and mounts exactly one data island:
 
 ## `<Head>`
 
-- **title:** `Quotes · Paperwork Monster` (hard-coded literal in the route —
+- **title:** `Quotes · DocuMonster` (hard-coded literal in the route —
   NOT localized via `tFor`, unlike /contracts which uses
   `contractsPage.docTitle`).
 - **CSS:** two `<link>` tags, in order:

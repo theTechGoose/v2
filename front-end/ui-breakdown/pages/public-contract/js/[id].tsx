@@ -15,7 +15,7 @@ export default define.page(function PublicContract(ctx) {
   return (
     <>
       <Head>
-        <title>Quote & Agreement · Paperwork Monster</title>
+        <title>Quote & Agreement · DocuMonster</title>
         <link rel="stylesheet" href="/landing.css" />
         <style>
           {`

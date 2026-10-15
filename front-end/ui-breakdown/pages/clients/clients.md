@@ -29,8 +29,7 @@ Add-Client modal. The shared shell, `Skeletons`, `MobileViewport`,
 `ImpersonationBanner` are NOT re-spec'd here (see `shared-components/`).
 
 ## `<Head>`
-- **Title:** `tFor(lang, "clientsRoute.docTitle")` → **"Clients · Paperwork
-  Monster"** (`es` variant from the dict).
+- **Title:** `tFor(lang, "clientsRoute.docTitle")` → **"Clients · DocuMonster"** (`es` variant from the dict).
 - **CSS (two stylesheets, order matters):**
   - `<link rel="stylesheet" href="/dashboard.css" key="css-dashboard" />` — the
     token + shell base (`--brand-*`, `--fg-*`, `.app`, `.main`, `.content`).

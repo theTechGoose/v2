@@ -79,8 +79,10 @@ export default define.page(async function Welcome(ctx) {
             width={34}
             height={34}
           />
-          <span>{tFor(lang, "brand.namePrefix")}</span>
-          <em>{tFor(lang, "brand.nameSuffix")}</em>
+          <span>
+            {tFor(lang, "brand.namePrefix")}
+            <em>{tFor(lang, "brand.nameSuffix")}</em>
+          </span>
         </a>
         {snapshot
           ? (

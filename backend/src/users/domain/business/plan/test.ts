@@ -99,7 +99,7 @@ Deno.test("REQ-058 plan — the account's ref on the CRM customer is pm:<userId>
 Deno.test("REQ-059 plan — the return address is the app's /plan/return naming the due and the page the pick came from, whatever slash the origin ends with", () => {
   assertEquals(returnUrlFor("http://localhost:5280", "due-1", "/settings"), "http://localhost:5280/plan/return?due=due-1&back=%2Fsettings");
   assertEquals(returnUrlFor("https://app.paperworkmonster.com/", "a b", "/welcome"), "https://app.paperworkmonster.com/plan/return?due=a+b&back=%2Fwelcome");
-  assertEquals(RETURN_LABEL, "Paperwork Monster");
+  assertEquals(RETURN_LABEL, "DocuMonster");
 });
 
 Deno.test("REQ-059 plan — a pick comes back only to the pages that show the cards; anything else is settings", () => {

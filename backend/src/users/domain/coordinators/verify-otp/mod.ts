@@ -104,7 +104,7 @@ export class VerifyOtp {
       if (recipients.length === 0) return;
       const [to, ...cc] = recipients;
       const when = new Date().toISOString();
-      const htmlBody = `<h2>New Paperwork Monster signup 🎉</h2>` +
+      const htmlBody = `<h2>New DocuMonster signup 🎉</h2>` +
         `<p>A new contractor just created an account.</p>` +
         `<ul>` +
         `<li><strong>Phone:</strong> ${user.phoneNumber}</li>` +
@@ -115,7 +115,7 @@ export class VerifyOtp {
       await this.email.send({
         to,
         cc: cc.length ? cc : undefined,
-        subject: "🎉 New Paperwork Monster signup",
+        subject: "🎉 New DocuMonster signup",
         htmlBody,
       });
     } catch (err) {

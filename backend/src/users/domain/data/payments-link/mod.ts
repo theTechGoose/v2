@@ -388,6 +388,9 @@ function info(s: FakeSubscription): SubscriptionInfo {
 export class PaymentsLink implements PaymentsLinkPort {
   /** test seam for the real client's HTTP, like EmailService.fetchOverride */
   fetchOverride: typeof fetch | null = null;
+  /** test seam for the whole door (REQ-072): a port that stands in for the CRM on this instance,
+   *  so a test never has to flip the process-wide env that selects the real client */
+  portOverride: PaymentsLinkPort | null = null;
 
   constructor() {
     this.which();
@@ -404,6 +407,7 @@ export class PaymentsLink implements PaymentsLinkPort {
     return this.which() === "fake";
   }
   private port(): PaymentsLinkPort {
+    if (this.portOverride) return this.portOverride;
     if (this.which() === "fake") return new FakePaymentsLink();
     const origin = (Deno.env.get("PPWK_PAYMENTS_URL") ?? "").trim().replace(/\/+$/, "");
     const token = (Deno.env.get("PPWK_PAYMENTS_TOKEN") ?? "").trim();

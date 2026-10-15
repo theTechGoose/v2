@@ -28,11 +28,11 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     // <head> copy, so the client-side language toggle can retitle the page
     // instead of leaving an English <title> over Spanish copy.
     "head.title":
-      "Paperwork Monster — You do the work. We handle the paperwork.",
+      "DocuMonster — You do the work. We handle the paperwork.",
     "head.metaDescription":
       "Quotes, contracts, and invoices done right — built for contractors. No app to install. Just chat with us.",
     "nav.features": "What We Do",
-    "brand1": "Paperwork",
+    "brand1": "Docu",
     "brand2": "Monster",
     "nav.how": "How It Works",
     "nav.pricing": "Pricing",
@@ -159,7 +159,7 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "cta.btn": "Sign up",
     "cta.fine": "By submitting, you agree to receive a friendly text from us.",
     "cta.smsPreview":
-      "Paperwork Monster: Your code is 482-913. Don’t share it.",
+      "DocuMonster: Your code is 482-913. Don’t share it.",
     "cta.steps.phone": "Phone",
     "cta.steps.code": "Code",
     "cta.steps.in": "You’re in",
@@ -170,19 +170,19 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "cta.errPhone":
       "That doesn’t look like a phone number. Enter your 10-digit US number.",
     "cta.errSend": "We couldn’t send the code. Try again.",
-    "cta.trustRest": "already on Paperwork Monster",
+    "cta.trustRest": "already on DocuMonster",
     "footer.contact": "Contact",
     // REQ-067 — the one link to the policies page (shared/legal/terms.ts LEGAL_FOOTER_LINK)
     "footer.legal": "Terms & Policies",
-    "footer.copy": "© 2026 Paperwork Monster. All rights reserved.",
+    "footer.copy": "© 2026 DocuMonster. All rights reserved.",
   },
   es: {
     "head.title":
-      "Paperwork Monster — Tú haces el trabajo. Nosotros el papeleo.",
+      "DocuMonster — Tú haces el trabajo. Nosotros el papeleo.",
     "head.metaDescription":
       "Cotizaciones, contratos y facturas bien hechos — creados para contratistas. Sin apps que instalar. Solo chatea con nosotros.",
     "nav.features": "Qué hacemos",
-    "brand1": "Paperwork",
+    "brand1": "Docu",
     "brand2": "Monster",
     "nav.how": "Cómo funciona",
     "nav.pricing": "Precios",
@@ -312,7 +312,7 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "cta.fine":
       "Al enviar, aceptas recibir un mensaje amigable de nuestra parte.",
     "cta.smsPreview":
-      "Paperwork Monster: Tu código es 482-913. No lo compartas.",
+      "DocuMonster: Tu código es 482-913. No lo compartas.",
     "cta.steps.phone": "Teléfono",
     "cta.steps.code": "Código",
     "cta.steps.in": "Listo",
@@ -321,11 +321,11 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "cta.errPhone":
       "Ese número no parece válido. Escribe tus 10 dígitos de EE. UU.",
     "cta.errSend": "No pudimos enviar el código. Intenta otra vez.",
-    "cta.trustRest": "ya en Paperwork Monster",
+    "cta.trustRest": "ya en DocuMonster",
     "footer.contact": "Contacto",
     // REQ-067 — the one link to the policies page (shared/legal/terms.ts LEGAL_FOOTER_LINK)
     "footer.legal": "Términos y políticas",
-    "footer.copy": "© 2026 Paperwork Monster. Todos los derechos reservados.",
+    "footer.copy": "© 2026 DocuMonster. Todos los derechos reservados.",
   },
 };
 

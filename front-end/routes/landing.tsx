@@ -114,9 +114,9 @@ export default define.page(function PromoLanding(ctx) {
           {/* ---------- header ---------- */}
           <header class="pm-header">
             <a href="/landing" class="pm-brand">
-              <img src="/logo-monster.png" alt="Paperwork Monster" />
+              <img src="/logo-monster.png" alt="DocuMonster" />
               <span>
-                Paperwork <em>Monster</em>
+                Docu<em>Monster</em>
               </span>
             </a>
             <div class="pm-header__right">
@@ -356,7 +356,7 @@ export default define.page(function PromoLanding(ctx) {
             <a href="/landing" class="pm-brand">
               <img src="/logo-monster.png" alt="" />
               <span>
-                Paperwork <em>Monster</em>
+                Docu<em>Monster</em>
               </span>
             </a>
             <div class="pm-footer__contact">

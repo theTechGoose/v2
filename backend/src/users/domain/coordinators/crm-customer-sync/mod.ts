@@ -78,19 +78,11 @@ export class CrmCustomerSync {
     }
   }
 
-  /**
-   * REQ-060 — the number typed into login, before any code is entered: a lead on the CRM (its
-   * REQ-082), named "unknown dragon mcdragonson" and tiered Lead (REQ-062). Best effort, like
-   * sync. The sign-up with that phone then claims it through sync's ref.
-   */
-  async capture(phoneNumber: string): Promise<{ customerId: string } | null> {
+  /** REQ-060 — the phone typed into login is a CRM lead at once, unnamed, no email, no ref;
+   *  REQ-072 — the CRM's refusal is thrown: the outbox sweep (CrmLeadCapture) decides the retry */
+  capture(phoneNumber: string): Promise<{ customerId: string }> {
     const phone = normalizePhone(phoneNumber);
-    try {
-      return await this.link.createCustomer({ customerName: UNNAMED_CUSTOMER, customerEmail: "", customerPhone: phone, tier: LEAD_TIER, leadSource: LEAD_SOURCE });
-    } catch (e) {
-      console.warn(`[crm-customer-sync] lead ${phone}: ${e instanceof Error ? e.message : String(e)}`);
-      return null;
-    }
+    return this.link.createCustomer({ customerName: UNNAMED_CUSTOMER, customerEmail: "", customerPhone: phone, tier: LEAD_TIER, leadSource: LEAD_SOURCE });
   }
 
   /** what the CRM holds for this account; null before its first sync */

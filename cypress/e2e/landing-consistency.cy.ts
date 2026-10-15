@@ -44,7 +44,7 @@ describe("P-08 landing offer consistency (ES mode)", () => {
       cy.contains("h2, h1", /./); // page rendered
       cy.get("body").invoke("text").then((landingText: string) => {
         // Red today: / makes no trial claim; /landing headlines
-        // "Prueba Paperwork Monster GRATIS por 30 días" / "30 días gratis".
+        // "Prueba DocuMonster GRATIS por 30 días" / "30 días gratis".
         expect(
           TRIAL_RE.test(rootText),
           `trial claim on "/" (${TRIAL_RE.test(rootText)}) must match "/landing" (${
