@@ -35,10 +35,11 @@
 .l2 *::after {
   box-sizing: border-box;
 }
-.l2 a {
+/* the text links; a button or the language toggle keeps its own colour at rest and under the mouse */
+.l2 a:not(.l2-btn):not(.l2-lang) {
   color: var(--l2-forest);
 }
-.l2 a:hover {
+.l2 a:not(.l2-btn):not(.l2-lang):hover {
   color: var(--l2-green);
 }
 .l2 p {
@@ -281,9 +282,9 @@
   color: #fff;
 }
 .l2-day {
-  min-width: 62px;
+  min-width: 0;
   min-height: 72px;
-  padding: 8px 6px;
+  padding: 8px 2px;
   border: 2px solid var(--l2-ink);
   border-radius: 14px;
   font: inherit;
@@ -295,7 +296,6 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
-  flex: none;
 }
 .l2-day.on {
   background: var(--l2-green);
@@ -469,28 +469,37 @@
   display: flex;
   flex-direction: column;
 }
+/* one link: a click anywhere on it flips the language; the lit half is the current one */
 .l2-lang {
   display: inline-flex;
+  align-items: center;
   border: 2px solid var(--l2-ink);
   border-radius: 999px;
   padding: 3px;
   background: #fff;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.08s;
 }
-.l2-lang a {
+.l2-lang:hover {
+  transform: translateY(-1px);
+}
+.l2-lang:active {
+  transform: translateY(1px);
+}
+.l2-lang span {
   min-height: 36px;
   padding: 6px 12px;
   border-radius: 999px;
-  border: 0;
   font: inherit;
   font-weight: 700;
   font-size: 13px;
-  text-decoration: none;
   background: transparent;
   color: var(--l2-ink);
   display: inline-flex;
   align-items: center;
 }
-.l2-lang a.on {
+.l2-lang span.on {
   background: var(--l2-ink);
   color: #fff;
 }
@@ -1003,10 +1012,9 @@
   gap: 16px;
 }
 .l2-demo__days {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 4px;
 }
 .l2-demo__slots {
   display: grid;

@@ -240,24 +240,16 @@ export default define.page(function Landing2(ctx) {
               </span>
             </a>
             <div class="l2-row">
-              <div class="l2-lang" role="group" aria-label={t("langAria")}>
-                <a
-                  href="/landing2?lang=es"
-                  class={lang === "es" ? "on" : ""}
-                  data-cy="l2-lang-es"
-                  hreflang="es"
-                >
-                  ES
-                </a>
-                <a
-                  href="/landing2?lang=en"
-                  class={lang === "en" ? "on" : ""}
-                  data-cy="l2-lang-en"
-                  hreflang="en"
-                >
-                  EN
-                </a>
-              </div>
+              <a
+                class="l2-lang"
+                href={`/landing2?lang=${lang === "es" ? "en" : "es"}`}
+                hreflang={lang === "es" ? "en" : "es"}
+                aria-label={t("langAria")}
+                data-cy="l2-lang"
+              >
+                <span class={lang === "es" ? "on" : ""}>ES</span>
+                <span class={lang === "en" ? "on" : ""}>EN</span>
+              </a>
               <a
                 class="l2-btn l2-btn--ghost l2-btn--sm l2-hide-m"
                 href={SUPPORT_PHONE_HREF}
