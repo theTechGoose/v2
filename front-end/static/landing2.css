@@ -589,14 +589,6 @@
   font-weight: 700;
   color: var(--l2-forest);
 }
-.l2-done {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: center;
-  text-align: center;
-  padding: 8px 0;
-}
 .l2-tick {
   width: 60px;
   height: 60px;

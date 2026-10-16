@@ -46,7 +46,13 @@ Deno.test('REQ-082: on the fakes the code pops up on the page that sent it — /
       "/landing2: Use fills the code field",
     );
     await page.locator("[data-cy='l2-confirm-code']").click();
-    await expect.see("you are in!");
+    await page.waitForURL((u: URL) => u.pathname !== "/landing2", {
+      timeout: 60_000,
+    });
+    expect(
+      !page.url().includes("/login"),
+      `/landing2: straight into the app (${page.url()})`,
+    );
     await page.context().clearCookies();
 
     // /login → /verify: the popup carries over, Use signs in

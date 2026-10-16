@@ -174,7 +174,7 @@ Deno.test("REQ-081: /landing2 is the mock made real — every section of it, Spa
     await page.locator("body").press("Shift"); // a frame of the lower half on the phone
   }));
 
-Deno.test("REQ-081: the hero signup works on the page — the code goes out, the code opens the account, Done links into the app, and the Lead fires once", (t) =>
+Deno.test("REQ-081: the hero signup works on the page — the code goes out, the code opens the account and goes straight into the app, and the Lead fires once", (t) =>
   story(t, async ({ page, expect, baseUrl }) => {
     const drain = watchPixel(page);
     await page.setViewportSize(DESKTOP);
@@ -205,30 +205,27 @@ Deno.test("REQ-081: the hero signup works on the page — the code goes out, the
     // the right code opens the account (the dev master code on the fakes)
     await page.locator("#reg-code").fill("000000");
     await page.locator("[data-cy='l2-confirm-code']").click();
-    await expect.see("¡Listo, ya estás dentro!");
-    const open = page.locator("[data-cy='l2-open-app']");
-    const href = (await open.getAttribute("href")) ?? "";
-    expect(
-      href.startsWith("/") && !href.startsWith("//"),
-      `Done links into the app, where the server sends a new account (${href})`,
-    );
-    expect.eq(
-      (await drain()).filter((c) => c.name === "Lead").length,
-      0,
-      "no second Lead for the code",
-    );
-    // Done really opens the app, signed in: the page the server named, not the login
-    await open.click();
+    // and goes straight into the app — no "you are in" card, no button to press (Raphael's feedback)
     // the app's own onboarding redirect may carry the new account one hop further; what matters is
     // that it left the landing for an app page and was not bounced to the login
     await page.waitForURL((u: URL) => u.pathname !== "/landing2", {
       timeout: 60_000,
     });
+    expect.eq(
+      (await drain()).filter((c) => c.name === "Lead").length,
+      0,
+      "no second Lead for the code",
+    );
+    expect.eq(
+      await page.locator("[data-cy='l2-open-app']").count(),
+      0,
+      "no Done card on the way",
+    );
     await page.waitForLoadState("networkidle");
     const landed = new URL(page.url()).pathname;
     expect(
       landed !== "/login" && landed !== "/landing2",
-      `signed in and inside the app (${landed}, via ${href})`,
+      `signed in and inside the app (${landed})`,
     );
     // back on the landing: the Lead's once-per-browser guard is on record (REQ-080's key by event id),
     // and a second code for the same number inside 30 s is the cooldown, said on the page (P-03)

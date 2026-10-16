@@ -13,7 +13,8 @@ import DevCodeCard from "../components/DevCodeCard.tsx";
  * /auth/verify-otp), so the account, the CRM lead (REQ-060/072) and the session are the real
  * ones; the Lead pixel fires here when the code goes out (REQ-080: the code step is on this page,
  * not on /verify, so the page fires it itself — once per browser, by the same id). A number that
- * belongs to a closed account goes to /verify, where the recover-or-start-fresh choice lives.
+ * belongs to a closed account goes to /verify, where the recover-or-start-fresh choice lives. The
+ * right code goes straight into the app (Raphael: "once it goes here it should just go to the app").
  *
  * Every string comes in as `labels` from the route, so the island renders exactly what the server
  * did (no flash, no second dictionary on the client).
@@ -34,9 +35,6 @@ export interface Landing2SignupLabels {
   confirm: string;
   confirming: string;
   resend: string;
-  regDoneH: string;
-  regDoneSub: string;
-  openApp: string;
   errPhone: string;
   errSend: string;
   errCooldown: string;
@@ -53,7 +51,7 @@ function toE164(raw: string): string {
   return "+" + digits;
 }
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2;
 
 export default function Landing2Signup(
   { lang, labels }: { lang: Lang; labels: Landing2SignupLabels },
@@ -63,7 +61,6 @@ export default function Landing2Signup(
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [redirectTo, setRedirectTo] = useState("/welcome");
   /** REQ-082 — on the fakes the reply carries the code; the popup shows it on the code step */
   const [devCode, setDevCode] = useState<string | null>(null);
 
@@ -125,8 +122,8 @@ export default function Landing2Signup(
         return;
       }
       if (result.ok) {
-        setRedirectTo(result.redirectTo);
-        setStep(3);
+        // straight into the app, where the server sends the account — no "you are in" card
+        globalThis.location.href = result.redirectTo;
         return;
       }
       setErr(
@@ -149,37 +146,6 @@ export default function Landing2Signup(
     setCode("");
     setDevCode(null);
     setStep(1);
-  }
-
-  if (step === 3) {
-    return (
-      <div class="l2-done" data-cy="l2-signup-step" data-step="3">
-        <div class="l2-tick" aria-hidden="true">
-          <svg
-            width="30"
-            height="30"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#fff"
-            stroke-width="3.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M4 12l5 5L20 6" />
-          </svg>
-        </div>
-        <div class="l2-h" style="font-size: 26px">{labels.regDoneH}</div>
-        <p style="font-size: 15px">{labels.regDoneSub}</p>
-        <a
-          class="l2-btn l2-btn--dark"
-          href={redirectTo}
-          data-cy="l2-open-app"
-          style="margin-top: 4px"
-        >
-          {labels.openApp}
-        </a>
-      </div>
-    );
   }
 
   if (step === 2) {
