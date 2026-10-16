@@ -57,7 +57,8 @@ export default define.page(function App(ctx) {
   // used to be mislabelled <html lang="es">.
   const url = new URL(ctx.req.url);
   const qLang = url.searchParams.get("lang");
-  const spanishFirst = url.pathname === "/" || url.pathname === "/landing";
+  const spanishFirst = url.pathname === "/" || url.pathname === "/landing" ||
+    url.pathname === "/landing2";
   const lang: Lang = (qLang === "en" || qLang === "es")
     ? qLang
     : langFromCookie(ctx.req?.headers?.get("cookie")) ??
