@@ -5,6 +5,7 @@ import { landingClient } from "../clients/landing.ts";
 import { verifyClient } from "../clients/verify.ts";
 import { ApiError } from "../lib/api.ts";
 import type { Lang } from "../lib/lang.ts";
+import DevCodeCard from "../components/DevCodeCard.tsx";
 
 /**
  * REQ-081 — the signup card in /landing2's hero: phone → code → done, all on the page, the way
@@ -63,6 +64,8 @@ export default function Landing2Signup(
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [redirectTo, setRedirectTo] = useState("/welcome");
+  /** REQ-082 — on the fakes the reply carries the code; the popup shows it on the code step */
+  const [devCode, setDevCode] = useState<string | null>(null);
 
   async function sendCode(e: Event) {
     e.preventDefault();
@@ -74,7 +77,11 @@ export default function Landing2Signup(
     }
     setBusy(true);
     try {
-      await landingClient.sendOtp({ phoneNumber: e164, language: lang });
+      const sent = await landingClient.sendOtp({
+        phoneNumber: e164,
+        language: lang,
+      });
+      setDevCode(sent.devCode ?? null);
       try {
         localStorage.setItem("pm:last-phone", e164);
       } catch { /* private mode */ }
@@ -140,6 +147,7 @@ export default function Landing2Signup(
   function backToPhone() {
     setErr(null);
     setCode("");
+    setDevCode(null);
     setStep(1);
   }
 
@@ -183,6 +191,19 @@ export default function Landing2Signup(
         data-step="2"
       >
         <div class="l2-signup__h">{labels.codeSentTo}</div>
+        {devCode
+          ? (
+            <DevCodeCard
+              lang={lang}
+              code={devCode}
+              onUse={() => {
+                setCode(devCode);
+                setDevCode(null);
+              }}
+              onClose={() => setDevCode(null)}
+            />
+          )
+          : null}
         <div>
           <label class="l2-lbl" for="reg-code">{labels.codeLbl}</label>
           <input

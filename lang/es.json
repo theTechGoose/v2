@@ -2725,5 +2725,9 @@
   "landing2.footer.privacy": "Privacidad",
   "landing2.footer.sms": "Términos de SMS",
   "landing2.footerLegalAria": "Políticas",
-  "landing2.copyright": "© 2026 DocuMonster"
+  "landing2.copyright": "© 2026 DocuMonster",
+  "devCode.title": "Modo de prueba — este es tu código",
+  "devCode.body": "En el modo de prueba no sale ningún texto. En el sitio real llega por SMS.",
+  "devCode.use": "Usar este código",
+  "devCode.close": "Cerrar"
 }

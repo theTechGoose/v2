@@ -842,6 +842,14 @@
           return;
         }
         if (!res.ok) throw new Error("send failed " + res.status);
+        // REQ-082: on the fakes the reply carries the code; /verify shows it
+        // (lib/dev-code.ts reads this one key).
+        try {
+          const sent = await res.json();
+          if (sent && sent.devCode) {
+            sessionStorage.setItem("pm:dev-code", JSON.stringify({ phone: e164, code: sent.devCode }));
+          }
+        } catch { /* ignore */ }
         // Persist for next-visit one-tap. The /verify page also writes
         // this on successful verify (more authoritative), but writing
         // here means the chip works even if the user abandons verify.

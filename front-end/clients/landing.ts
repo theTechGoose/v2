@@ -14,6 +14,8 @@ export interface SendOtpInput {
 
 export interface SendOtpResult {
   sent: true;
+  /** REQ-082 — on the fakes only: the code the server stored, for the page to show. */
+  devCode?: string;
 }
 
 export interface ContactInput {

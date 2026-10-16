@@ -167,7 +167,7 @@ export const verifyClient = {
   resendOtp(
     input: ResendOtpInput,
     opts: ApiOptions = {},
-  ): Promise<{ sent: true }> {
-    return api.post<{ sent: true }>("/auth/send-otp", input, opts);
+  ): Promise<{ sent: true; devCode?: string }> {
+    return api.post<{ sent: true; devCode?: string }>("/auth/send-otp", input, opts);
   },
 };

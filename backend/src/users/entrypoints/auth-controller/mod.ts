@@ -4,12 +4,13 @@ import {
   SendOtp,
   SendOtpCooldownError,
 } from "@users/domain/coordinators/send-otp/mod.ts";
+import { devCodeFor } from "@users/domain/business/dev-code/mod.ts";
 import {
+  AccountClosedError,
   ExpiredCodeError,
   InvalidCodeError,
   RateLimitedError,
   VerifyOtp,
-  AccountClosedError,
 } from "@users/domain/coordinators/verify-otp/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
 import {
@@ -82,10 +83,16 @@ export class AuthController {
       await this.sendEmailOtp.run({ email: dto.email, language: dto.language });
     } catch (err) {
       const mapped = mapEmailError(err);
-      if (mapped) return jsonResponse({ ok: false, error: mapped.error }, mapped.status);
+      if (mapped) {
+        return jsonResponse({ ok: false, error: mapped.error }, mapped.status);
+      }
       if (err instanceof SendOtpCooldownError) {
         return jsonResponse(
-          { ok: false, error: "cooldown", retryAfterSeconds: err.retryAfterSeconds },
+          {
+            ok: false,
+            error: "cooldown",
+            retryAfterSeconds: err.retryAfterSeconds,
+          },
           429,
           { "retry-after": String(err.retryAfterSeconds) },
         );
@@ -108,7 +115,10 @@ export class AuthController {
   async verifyEmail(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const dto = parseVerifyEmailOtp(body);
     try {
-      const result = await this.verifyEmailOtp.run({ email: dto.email, code: dto.code });
+      const result = await this.verifyEmailOtp.run({
+        email: dto.email,
+        code: dto.code,
+      });
       if (result.isNewUser) await this.crm.sync(result.userId);
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
@@ -120,7 +130,9 @@ export class AuthController {
       };
     } catch (err) {
       const mapped = mapEmailError(err) ?? mapVerifyError(err);
-      if (mapped) return jsonResponse({ ok: false, error: mapped.error }, mapped.status);
+      if (mapped) {
+        return jsonResponse({ ok: false, error: mapped.error }, mapped.status);
+      }
       throw err;
     }
   }
@@ -178,8 +190,10 @@ export class AuthController {
    * Responds `{ sent: true }` on a well-formed phone, even if the
    * downstream SMS gateway is down — production should add observability so
    * silent SMS failures don't lock people out, but the API contract is
-   * fire-and-respond. The OTP code is NEVER returned to the client; it goes
-   * through the SMS adapter instead.
+   * fire-and-respond. On the real deploy the OTP code is NEVER returned to the
+   * client; it goes through the SMS adapter instead. On the fakes (REQ-082,
+   * DENO_DEPLOY unset) the reply carries it as `devCode`, so the page can show
+   * it — no text goes out there.
    *
    * P-03: a second send for the same phone inside the 30-second cooldown is
    * rejected with 429 + Retry-After and never claims `{sent:true}`.
@@ -187,11 +201,13 @@ export class AuthController {
   @Post("send-otp")
   async send(@Body() body: unknown) {
     const dto = parseSendOtp(body);
+    let devCode: string | undefined;
     try {
-      await this.sendOtp.run({
+      const sent = await this.sendOtp.run({
         phoneNumber: dto.phoneNumber,
         language: dto.language,
       });
+      devCode = devCodeFor(sent.codeForDispatch);
       // REQ-060 — the phone is a CRM lead the moment the code goes out, code entered or not.
       // REQ-072 — fire and forget, guaranteed: the lead is a KV outbox record before this
       // replies (ms), and the sweep carries it to the CRM and retries until the CRM confirms.
@@ -211,7 +227,7 @@ export class AuthController {
       }
       throw err;
     }
-    return { sent: true };
+    return devCode ? { sent: true, devCode } : { sent: true };
   }
 
   /**
@@ -244,7 +260,9 @@ export class AuthController {
     } catch (err) {
       if (err instanceof AccountClosedError) return closedResponse(err);
       const mapped = mapVerifyError(err);
-      if (mapped) return jsonResponse({ ok: false, error: mapped.error }, mapped.status);
+      if (mapped) {
+        return jsonResponse({ ok: false, error: mapped.error }, mapped.status);
+      }
       throw err;
     }
   }
@@ -320,9 +338,13 @@ function errorBody(code: string, _status: number) {
 function mapVerifyError(
   err: unknown,
 ): { error: string; status: number } | null {
-  if (err instanceof InvalidCodeError) return { error: "invalid_code", status: 401 };
+  if (err instanceof InvalidCodeError) {
+    return { error: "invalid_code", status: 401 };
+  }
   if (err instanceof ExpiredCodeError) return { error: "expired", status: 410 };
-  if (err instanceof RateLimitedError) return { error: "rate_limited", status: 429 };
+  if (err instanceof RateLimitedError) {
+    return { error: "rate_limited", status: 429 };
+  }
   return null;
 }
 
@@ -331,8 +353,12 @@ function mapVerifyError(
 function mapEmailError(
   err: unknown,
 ): { error: string; status: number } | null {
-  if (err instanceof InvalidEmailError) return { error: "invalid_email", status: 400 };
-  if (err instanceof ClosedAccountError) return { error: "account_closed", status: 409 };
+  if (err instanceof InvalidEmailError) {
+    return { error: "invalid_email", status: 400 };
+  }
+  if (err instanceof ClosedAccountError) {
+    return { error: "account_closed", status: 409 };
+  }
   return null;
 }
 

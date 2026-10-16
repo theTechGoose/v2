@@ -31,8 +31,8 @@ export interface SendOtpResult {
   /** E.164 form actually used as the storage key. */
   normalizedPhone: string;
   /**
-   * Internal: code value the SMS gateway will deliver.
-   * NEVER returned to API clients — exposed only for tests + the SMS adapter.
+   * The code the SMS gateway will deliver. Never returned to API clients on the real
+   * deploy; on the fakes the controller hands it back as `devCode` (REQ-082, devCodeFor).
    */
   codeForDispatch: string;
 }
