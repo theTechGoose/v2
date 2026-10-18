@@ -61,16 +61,18 @@ function toE164(raw: string): string {
 const CODE_LEN = 6;
 const TYPE_MS = 90;
 const COLORS = ["#3ea448", "#f4a125", "#e8457c", "#3d9b96", "#15202b"];
-/** the burst: eighteen pieces fanned out from the check, three rings, four delays */
-const CONFETTI = Array.from({ length: 18 }, (_, i) => {
-  const a = (i / 18) * Math.PI * 2;
-  const d = 120 + (i % 3) * 45;
+/** the burst: twenty-four pieces fanned out from the check — three rings, squares and bars, four delays */
+const CONFETTI = Array.from({ length: 24 }, (_, i) => {
+  const a = (i / 24) * Math.PI * 2 + (i % 2) * 0.13;
+  const d = 150 + (i % 3) * 60;
   return {
     dx: Math.round(Math.cos(a) * d),
-    dy: Math.round(Math.sin(a) * d - 40),
-    rot: 180 + i * 40,
+    dy: Math.round(Math.sin(a) * d - 60),
+    rot: 180 + i * 50,
     c: COLORS[i % COLORS.length],
-    delay: (i % 4) * 40,
+    delay: (i % 4) * 45,
+    w: i % 3 === 0 ? 18 : 12,
+    h: i % 3 === 0 ? 8 : 12,
   };
 });
 
@@ -103,7 +105,9 @@ export default function Landing2Signup(
   const [flipped, setFlipped] = useState(false);
   const [sms, setSms] = useState<{ x: number; y: number } | null>(null);
   const [bad, setBad] = useState(false);
-  const [takeoff, setTakeoff] = useState(false);
+  /** the takeoff's burst sits over the card's centre, outside it: the card fades, the burst does not */
+  const [takeoff, setTakeoff] = useState<{ x: number; y: number } | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
   const sendRef = useRef<HTMLButtonElement>(null);
   const timers = useRef<number[]>([]);
@@ -206,7 +210,12 @@ export default function Landing2Signup(
           globalThis.location.href = result.redirectTo;
           return;
         }
-        setTakeoff(true);
+        const r = cardRef.current?.getBoundingClientRect();
+        setTakeoff(
+          r
+            ? { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+            : { x: globalThis.innerWidth / 2, y: globalThis.innerHeight / 2 },
+        );
         later(() => {
           globalThis.location.href = result.redirectTo;
         }, 800);
@@ -276,6 +285,7 @@ export default function Landing2Signup(
     <>
       <div
         id="empezar"
+        ref={cardRef}
         class={cardClass}
         data-cy="l2-signup"
         data-motion={flipped ? "flipped" : undefined}
@@ -415,23 +425,6 @@ export default function Landing2Signup(
               </div>
             </form>
           )}
-        {takeoff
-          ? (
-            <div class="l2-launch" aria-hidden="true">
-              <svg class="l2-check" viewBox="0 0 24 24">
-                <path d="M4 12l5 5L20 6" />
-              </svg>
-              <div class="l2-confetti">
-                {CONFETTI.map((p, i) => (
-                  <i
-                    key={i}
-                    style={`--dx:${p.dx}px;--dy:${p.dy}px;--rot:${p.rot}deg;--c:${p.c};--d:${p.delay}ms`}
-                  />
-                ))}
-              </div>
-            </div>
-          )
-          : null}
       </div>
       {/* outside the card: a fixed element inside a transformed card would move with it */}
       {sms
@@ -454,7 +447,30 @@ export default function Landing2Signup(
           />
         )
         : null}
-      {takeoff ? <div class="l2-fade" data-cy="l2-takeoff" /> : null}
+      {takeoff
+        ? (
+          <>
+            <div class="l2-fade" data-cy="l2-takeoff" />
+            <div
+              class="l2-launch"
+              aria-hidden="true"
+              style={`left:${takeoff.x}px;top:${takeoff.y}px`}
+            >
+              <svg class="l2-check" viewBox="0 0 24 24">
+                <path d="M4 12l5 5L20 6" />
+              </svg>
+              <div class="l2-confetti">
+                {CONFETTI.map((p, i) => (
+                  <i
+                    key={i}
+                    style={`--dx:${p.dx}px;--dy:${p.dy}px;--rot:${p.rot}deg;--c:${p.c};--d:${p.delay}ms;width:${p.w}px;height:${p.h}px`}
+                  />
+                ))}
+              </div>
+            </div>
+          </>
+        )
+        : null}
     </>
   );
 }

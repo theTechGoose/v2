@@ -1549,11 +1549,9 @@
   }
 }
 .l2-launch {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: fixed;
+  z-index: 45;
+  transform: translate(-50%, -50%);
   pointer-events: none;
 }
 .l2-check {
@@ -1576,21 +1574,29 @@
 }
 .l2-confetti i {
   position: absolute;
-  left: -5px;
-  top: -5px;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
+  left: -6px;
+  top: -6px;
+  border-radius: 3px;
+  border: 2px solid var(--l2-ink);
   background: var(--c);
-  animation: l2-confetti 0.8s var(--d, 0ms) cubic-bezier(0.1, 0.8, 0.3, 1) both;
+  animation: l2-confetti 0.75s var(--d, 0ms) cubic-bezier(0.1, 0.8, 0.3, 1)
+    both;
 }
 @keyframes l2-confetti {
   from {
-    transform: translate(0, 0) rotate(0) scale(1);
+    transform: translate(0, 0) rotate(0) scale(0.6);
+    opacity: 1;
+  }
+  20% {
+    transform: translate(calc(var(--dx) * 0.45), calc(var(--dy) * 0.45))
+      rotate(calc(var(--rot) * 0.3)) scale(1.1);
+    opacity: 1;
+  }
+  70% {
     opacity: 1;
   }
   to {
-    transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(0.6);
+    transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(0.8);
     opacity: 0;
   }
 }
@@ -1600,7 +1606,7 @@
   z-index: 40;
   background: var(--l2-cream);
   pointer-events: none;
-  animation: l2-fade-in 0.45s 0.3s ease-in both;
+  animation: l2-fade-in 0.4s 0.4s ease-in both;
 }
 @keyframes l2-fade-in {
   from {

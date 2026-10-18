@@ -185,16 +185,15 @@ Deno.test("REQ-083: the signup card tells the signup in motion — the card slam
       };
       return {
         fade: a("[data-cy='l2-takeoff']"),
-        check: a("[data-cy='l2-signup'] .l2-check path"),
-        confetti:
-          document.querySelectorAll("[data-cy='l2-signup'] .l2-confetti i")
-            .length,
+        check: a(".l2-check path"),
+        confetti: document.querySelectorAll(".l2-confetti i")
+          .length,
         card: a("[data-cy='l2-signup']"),
       };
     });
     expect.eq(takeoff.fade, "l2-fade-in", "the page fades toward the app");
     expect.eq(takeoff.check, "l2-draw", "the check draws itself");
-    expect(takeoff.confetti >= 12, `the confetti bursts (${takeoff.confetti})`);
+    expect(takeoff.confetti >= 20, `the confetti bursts (${takeoff.confetti})`);
     expect(
       takeoff.card.includes("l2-takeoff"),
       `the card lifts off (${takeoff.card})`,
