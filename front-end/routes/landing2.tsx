@@ -3,6 +3,7 @@ import { define } from "../utils.ts";
 import Landing2Signup, {
   type Landing2SignupLabels,
 } from "../islands/Landing2Signup.tsx";
+import Landing2Monster from "../islands/Landing2Monster.tsx";
 import Landing2Demo, {
   type Landing2DemoLabels,
 } from "../islands/Landing2Demo.tsx";
@@ -277,9 +278,7 @@ export default define.page(function Landing2(ctx) {
             </h1>
             <p class="l2-hero__sub">{t("heroSub")}</p>
 
-            <div id="empezar" class="l2-card l2-signup" data-cy="l2-signup">
-              <Landing2Signup lang={lang} labels={signupLabels} />
-            </div>
+            <Landing2Signup lang={lang} labels={signupLabels} />
 
             <div class="l2-talk">
               <span class="l2-talk__q">{t("orTalk")}</span>
@@ -306,9 +305,7 @@ export default define.page(function Landing2(ctx) {
           </div>
 
           <div class="l2-hero__art">
-            <div class="l2-hero__disc">
-              <img src={MONSTER_IMG} alt={t("monsterAlt")} />
-            </div>
+            <Landing2Monster src={MONSTER_IMG} alt={t("monsterAlt")} />
             <div class="l2-card l2-note l2-note--said">
               <div class="l2-note__k">{t("youSaid")}</div>
               <div class="l2-note__msg">{t("youSaidMsg")}</div>

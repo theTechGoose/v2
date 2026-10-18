@@ -198,13 +198,16 @@ Deno.test("REQ-081: the hero signup works on the page — the code goes out, the
       /^lead:[0-9a-f]{8}$/.test(leads[0].eventId ?? ""),
       `the Lead carries its stable id (${leads[0].eventId})`,
     );
-    // a wrong code is refused, on the page
+    // a wrong code is refused, on the page — the sixth digit submits by itself (REQ-083)
+    expect.eq(
+      await count(page, "[data-cy='l2-confirm-code']"),
+      1,
+      "the confirm button is there for a hand-typed code",
+    );
     await page.locator("#reg-code").fill("111111");
-    await page.locator("[data-cy='l2-confirm-code']").click();
     await expect.see("Ese código no es correcto");
     // the right code opens the account (the dev master code on the fakes)
     await page.locator("#reg-code").fill("000000");
-    await page.locator("[data-cy='l2-confirm-code']").click();
     // and goes straight into the app — no "you are in" card, no button to press (Raphael's feedback)
     // the app's own onboarding redirect may carry the new account one hop further; what matters is
     // that it left the landing for an app page and was not bounced to the login

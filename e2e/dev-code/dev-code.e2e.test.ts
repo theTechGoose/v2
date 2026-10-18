@@ -40,12 +40,14 @@ Deno.test('REQ-082: on the fakes the code pops up on the page that sent it — /
     const l2code = await popupCode(page, expect, "/landing2");
     await expect.see("this is your code");
     await page.locator("[data-cy='dev-code-use']").click();
-    expect.eq(
-      await page.locator("#reg-code").inputValue(),
+    // the code types itself into the slots and the sixth digit submits (REQ-083)
+    await page.waitForFunction(
+      (c: string) =>
+        (document.querySelector("#reg-code") as HTMLInputElement | null)
+          ?.value === c,
       l2code,
-      "/landing2: Use fills the code field",
+      { timeout: 5000 },
     );
-    await page.locator("[data-cy='l2-confirm-code']").click();
     await page.waitForURL((u: URL) => u.pathname !== "/landing2", {
       timeout: 60_000,
     });
