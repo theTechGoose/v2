@@ -6,6 +6,7 @@ import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
+import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
 import { websiteLabel } from "#quote-flow/format-helpers.ts";
 import { agreementTitle } from "#quote-flow/agreement-title.ts";
 
@@ -448,7 +449,8 @@ export class RenderQuotePdf {
             label: es && termLabelKey[term.stepId]
               ? t(lang, termLabelKey[term.stepId])
               : term.label.toUpperCase(),
-            value: term.stepId === "wraps"
+            // REQ-047: a TBD duration is not an estimate — print it bare.
+            value: term.stepId === "wraps" && !isTbdTermValue(term.value)
               ? t(lang, "renderQuotePdf.term.estimatedPrefix", {
                 value: localized,
               })
@@ -907,6 +909,8 @@ export function localizeTermValue(value: string, lang: "en" | "es"): string {
     // line above keeps quotes saved before the casing change localizing.
     "Job completed": "renderQuotePdf.termValue.jobCompleted",
     "Due Now": "renderQuotePdf.termValue.dueNow",
+    // REQ-046/047: the wizard's TBD pick on start date / duration.
+    "TBD": "renderQuotePdf.termValue.tbd",
   };
   if (exactKey[trimmed]) return t(lang, exactKey[trimmed]);
   return trimmed

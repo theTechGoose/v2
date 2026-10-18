@@ -9,6 +9,34 @@
    outside the island's DOM range and always survives.
    ============================================================ */
 
+/* ---------- REQ-048: EN | ES toggle above the contract ---------- */
+.ctr__lang {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+.ctr__lang button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  min-width: 44px;
+  padding: 2px 12px;
+  border: 1px solid rgba(20, 72, 82, 0.25);
+  border-radius: 999px;
+  background: #fff;
+  color: #144852;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.ctr__lang button.on {
+  background: #144852;
+  color: #fff;
+}
+
 /* ---------- phones ---------- */
 @media (max-width: 720px) {
   .ctr__inner {

@@ -220,10 +220,11 @@ describe("public quote — agreement anatomy + signature ceremony", () => {
     cy.contains(/both signatures captured/i, { timeout: 10_000 }).should(
       "be.visible",
     );
-    // The customer card fills with the captured signature image (P-40).
-    cy.get('img[alt="Green Goblin"]', { timeout: 10_000 })
-      .should("have.attr", "src")
-      .and("match", /^data:image\/png/);
+    // The customer card names the signer (quoteDoc.signatureOf) and carries
+    // the typed name. The drawn signature mark is no longer rendered on the
+    // signed card — since 1a520814 both columns read the same (bold name,
+    // cursive typed name, By:/Date:) — so the evidence is the card, not an <img>.
+    cy.contains(/green goblin signature/i, { timeout: 10_000 }).should("be.visible");
     // No second ceremony remains on the page.
     cy.get("form.ctr__sign-form").should("not.exist");
     // PDF parity with the invoice page (deriveQuoteView.pdfUrl).

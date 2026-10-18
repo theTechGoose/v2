@@ -113,10 +113,9 @@ describe("UX-22 signing on /q shows the full evidence right away, and reload agr
     cy.contains(FIRMADO_ES, { timeout: 15000 }).should("be.visible");
     // 2) Who signed — the customer card heading (quoteDoc.signatureOf):
     cy.contains(`Firma de ${MARIA}`).should("be.visible");
-    // 3) Her captured mark (P-40 — the typed-name PNG the island rendered):
-    cy.get(`img[alt="${MARIA}"]`)
-      .should("have.attr", "src")
-      .and("match", /^data:image\/png/);
+    // 3) The drawn mark is no longer rendered on the signed card — since
+    //    1a520814 both signature columns read the same (bold name, cursive
+    //    typed name, By:/Date:) — so her evidence is the card itself (2).
     // 4) Both-signatures line + no leftover ceremony chrome.
     cy.contains("Ambas firmas capturadas.").should("be.visible");
     cy.get("form.ctr__sign-form").should("not.exist");
@@ -127,9 +126,6 @@ describe("UX-22 signing on /q shows the full evidence right away, and reload agr
     cy.reload();
     cy.contains(FIRMADO_ES, { timeout: 10000 }).should("be.visible");
     cy.contains(`Firma de ${MARIA}`).should("be.visible");
-    cy.get(`img[alt="${MARIA}"]`)
-      .should("have.attr", "src")
-      .and("match", /^data:image\/png/);
     cy.contains("Ambas firmas capturadas.").should("be.visible");
     cy.get("form.ctr__sign-form").should("not.exist");
   });

@@ -5,6 +5,7 @@ import { computePaymentSplit, type MilestoneRole } from "#payment-split";
 import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
+import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -513,7 +514,9 @@ export class RenderInvoicePdf {
               color: MUTED,
             });
             const localized = localizeTermValue(term.value, lang);
-            const displayValue = term.stepId === "wraps"
+            // REQ-047: a TBD duration is not an estimate — print it bare.
+            const displayValue = term.stepId === "wraps" &&
+                !isTbdTermValue(term.value)
               ? t(lang, "renderQuotePdf.term.estimatedPrefix", {
                 value: localized,
               })
@@ -711,6 +714,8 @@ export function localizeTermValue(value: string, lang: "en" | "es"): string {
     // line above keeps quotes saved before the casing change localizing.
     "Job completed": "renderQuotePdf.termValue.jobCompleted",
     "Due Now": "renderQuotePdf.termValue.dueNow",
+    // REQ-046/047: the wizard's TBD pick on start date / duration.
+    "TBD": "renderQuotePdf.termValue.tbd",
   };
   if (exactKey[trimmed]) return t(lang, exactKey[trimmed]);
   return trimmed

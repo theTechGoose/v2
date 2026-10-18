@@ -326,15 +326,14 @@ describe("UX-35 assistant step-card anchoring and top-chrome overlap", () => {
     loginEs(PHONE);
     cy.viewport(1440, 900);
     facturarToCustomerStep();
-    // RED today: .chat__empty centers its content vertically
-    // (assistant-page.css:7874 justify-content:center), so the customer step
-    // card floats mid-viewport with a large dead band below it (the audit's
-    // screenshot). Desired: the card hugs the bottom of the panel — where
-    // the composer lives on conversational steps — leaving at most a small
-    // gap. 140px is the documented heuristic for "anchored": a centered
-    // card in a ~700px-tall panel measures well above it, an anchored card
-    // well below.
-    cy.get(".chat__price-capture").then(($card) => {
+    // The customer step card (the wizard `.wiz` card holding .cust-create —
+    // the driver above ends there, past the price capture) used to float
+    // mid-viewport with a large dead band below it (the audit's screenshot).
+    // Desired: the card hugs the bottom of the panel — where the composer
+    // lives on conversational steps — leaving at most a small gap. 140px is
+    // the documented heuristic for "anchored": a centered card in a
+    // ~700px-tall panel measures well above it, an anchored card well below.
+    cy.get(".cust-create").closest(".wiz").then(($card) => {
       cy.get(".chat__scroll, .chat").first().then(($panel) => {
         const card = $card[0].getBoundingClientRect();
         const panel = $panel[0].getBoundingClientRect();
