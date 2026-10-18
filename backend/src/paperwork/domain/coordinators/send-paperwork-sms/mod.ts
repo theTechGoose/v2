@@ -20,6 +20,7 @@ import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import type { BusinessIdentity } from "@users/dto/business-identity.ts";
+import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 
 export type PaperworkKind = "quote" | "invoice";
 
@@ -275,7 +276,7 @@ const APP_URL = (() => {
   if (explicit) return explicit;
   const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod" ||
     !!Deno.env.get("DENO_DEPLOYMENT_ID");
-  return isProd ? "https://paperworkmonster.com" : "http://localhost:5280";
+  return isProd ? SITE_ORIGIN : "http://localhost:5280";
 })();
 
 // ---------- bodies ----------------------------------------------------------

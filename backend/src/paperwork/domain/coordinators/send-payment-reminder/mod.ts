@@ -9,6 +9,7 @@ import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
+import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 
 /** The cadence steps fired by the overdue-reminder cron. */
 export const CADENCE_DAYS = [3, 7, 14, 30] as const;
@@ -123,7 +124,7 @@ export class SendPaymentReminder {
     let url = "";
     try {
       const link = await this.shortlinks.findOrCreate(userId, "invoice", invoice.id);
-      const appUrl = Deno.env.get("APP_URL") ?? "https://paperworkmonster.com";
+      const appUrl = Deno.env.get("APP_URL") ?? SITE_ORIGIN;
       url = `${appUrl}/s/${link.code}`;
     } catch { /* fall through */ }
 

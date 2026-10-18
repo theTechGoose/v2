@@ -15,6 +15,7 @@ import { type Lang, t } from "@core/i18n/mod.ts";
 import { outboundSenderFirstName } from "#quote-flow/outbound-identity.ts";
 import type { PaymentMethod } from "@paperwork/dto/invoice.ts";
 import type { PaymentMethod as PaymentStorageMethod } from "@paperwork/dto/payment.ts";
+import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 
 /**
  * ConfirmPayment — contractor-side "I got it" coordinator.
@@ -162,7 +163,7 @@ export class ConfirmPayment {
             invoice.id,
           );
           const appUrl = Deno.env.get("APP_URL") ??
-            "https://paperworkmonster.com";
+            SITE_ORIGIN;
           shortUrl = `${appUrl}/s/${link.code}`;
         } catch { /* fall through to no-url body */ }
         const customerFirst = customer.name?.trim().split(/\s+/)[0];

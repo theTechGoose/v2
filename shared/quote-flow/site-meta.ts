@@ -13,7 +13,7 @@
  */
 
 /** Production origin. Must match static/sitemap.xml and static/robots.txt. */
-export const SITE_ORIGIN = "https://paperworkmonster.com";
+export const SITE_ORIGIN = "https://documonster.com";
 
 /** Brand name, as it should appear in og:site_name. */
 const SITE_NAME = "DocuMonster";

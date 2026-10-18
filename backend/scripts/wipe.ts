@@ -17,8 +17,10 @@
  *   WIPE_URL=https://staging.example.com deno task wipe   # different target
  */
 
+import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+
 const DEFAULT_PHONE = "+18438557133";
-const DEFAULT_URL = "https://paperworkmonster.com";
+const DEFAULT_URL = SITE_ORIGIN;
 
 function fail(msg: string): never {
   console.error(`✖ ${msg}`);
