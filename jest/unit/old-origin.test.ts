@@ -17,9 +17,9 @@ import { execSync } from "child_process";
 const ROOT = path.resolve(__dirname, "../..");
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
 
+const OLD_HOST = "paperworkmonster.com".replace(".", "\\.");
 /** the old domain used as a URL: with a scheme, or with a path after it */
-const OLD_URL_PATTERN =
-  "https?://[a-z.]*paperworkmonster\\.com|[a-z.]*paperworkmonster\\.com/";
+const OLD_URL_PATTERN = `https?://[a-z.]*${OLD_HOST}|[a-z.]*${OLD_HOST}/`;
 const OLD_URL = new RegExp(OLD_URL_PATTERN, "i");
 /** the mocks the pages were built from — frozen, not code */
 const FROZEN = ["front-end/static/_proto/"];

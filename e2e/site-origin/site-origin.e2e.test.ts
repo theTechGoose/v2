@@ -17,7 +17,7 @@
 import { story, type StoryTools } from "#shots";
 
 const ORIGIN = "https://documonster.com";
-const OLD_DOMAIN = /paperworkmonster\.com/i;
+const OLD_DOMAIN = new RegExp("paperworkmonster.com".replace(".", "\\."), "i");
 const DESKTOP = { width: 1280, height: 900 };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
 

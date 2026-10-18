@@ -12,7 +12,7 @@ import { absoluteUrl, SITE_ORIGIN } from "../../shared/quote-flow/site-meta";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
-const OLD_DOMAIN = /paperworkmonster\.com/i;
+const OLD_DOMAIN = new RegExp("paperworkmonster.com".replace(".", "\\."), "i");
 
 describe("REQ-085: the site's own origin is documonster.com", () => {
   test("REQ-085: SITE_ORIGIN is https://documonster.com and absoluteUrl builds from it", () => {
