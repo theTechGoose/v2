@@ -10,12 +10,13 @@ import {
   buildAcceptedAlertSms,
   buildAcceptedAlertSubject,
 } from "#quote-flow/sms-i18n.ts";
+import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
   const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod" ||
     !!Deno.env.get("DENO_DEPLOYMENT_ID");
-  if (isProd) return explicit ?? "https://paperworkmonster.com";
+  if (isProd) return explicit ?? SITE_ORIGIN;
   if (explicit && /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(explicit)) {
     return explicit;
   }

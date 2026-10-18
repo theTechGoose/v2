@@ -28,6 +28,7 @@ import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
+import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 
 export type PaperworkKind = "quote" | "invoice";
 
@@ -297,7 +298,7 @@ const APP_URL = (() => {
   const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod" ||
     !!Deno.env.get("DENO_DEPLOYMENT_ID");
   if (isProd) {
-    return explicit ?? "https://paperworkmonster.com";
+    return explicit ?? SITE_ORIGIN;
   }
   // Honor explicit APP_URL in dev when it targets localhost — that's how
   // the serve.ts orchestrator wires the backend to the *running* frontend

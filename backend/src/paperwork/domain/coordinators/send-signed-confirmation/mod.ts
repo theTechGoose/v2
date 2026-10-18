@@ -15,6 +15,7 @@ import { computePaymentSplit } from "#payment-split";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import type { User } from "@users/dto/user.ts";
 import type { Customer } from "@crm/dto/customer.ts";
+import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 
 const COLOR_TEAL = "#144852";
 const COLOR_GREEN = "#519843";
@@ -30,7 +31,7 @@ const APP_URL = (() => {
   const force = Deno.env.get("APP_URL_FORCE") === "1";
   const isProd = Deno.env.get("APP_ENV")?.toLowerCase() === "prod" ||
     !!Deno.env.get("DENO_DEPLOYMENT_ID");
-  if (isProd) return explicit ?? "https://paperworkmonster.com";
+  if (isProd) return explicit ?? SITE_ORIGIN;
   // Honor explicit APP_URL in dev when it targets localhost (set by
   // serve.ts to point at the running frontend port). FORCE remains the
   // opt-in for tunnel URLs.
