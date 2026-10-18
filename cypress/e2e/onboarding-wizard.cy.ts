@@ -264,7 +264,8 @@ describe("Onboarding wizard — data questions", () => {
 describe("Onboarding wizard — education + hand-off", () => {
   const PHONE = "+18435559004";
 
-  // Seed every data step so /welcome resumes on the first education screen.
+  // Seed every data step so /welcome resumes on the sample-quote screen —
+  // the one education step left since 1a520814 dropped meet-your-assistant.
   function seedAllData() {
     cy.request("PUT", "/api/me", {
       name: "Rafa",
@@ -287,24 +288,11 @@ describe("Onboarding wizard — education + hand-off", () => {
     return cy.contains("button", /^continue$/i);
   }
 
-  it("shows the meet-your-assistant screen with three example prompts after the data steps", () => {
-    cy.startFreshOnboarding(PHONE);
-    seedAllData();
-    cy.visit("/welcome");
-    cy.contains(/meet your assistant/i, { timeout: 10_000 }).should(
-      "be.visible",
-    );
-    cy.contains(/paver patio for the nguyens/i).should("be.visible");
-    cy.contains(/invoice maria for the deck job/i).should("be.visible");
-    cy.contains(/nudge tom about the bathroom quote/i).should("be.visible");
-  });
-
   it("sample quote renders inline, branded with the business name, never 'Dev Business'", () => {
     cy.startFreshOnboarding(PHONE);
     seedAllData();
     cy.visit("/welcome");
-    cy.step("advance to the sample-quote screen");
-    continueBtn().click(); // meet-your-assistant -> sampleQuote
+    cy.step("resumes on the sample-quote screen");
     cy.contains(/see what your customer sees/i, { timeout: 10_000 })
       .should("be.visible");
 
@@ -326,8 +314,7 @@ describe("Onboarding wizard — education + hand-off", () => {
   it("Continue on the sample step finishes onto a fresh assistant chat, and /welcome never traps again", () => {
     cy.startFreshOnboarding(PHONE);
     seedAllData();
-    cy.visit("/welcome");
-    continueBtn().click(); // -> sampleQuote (final step)
+    cy.visit("/welcome"); // resumes on sampleQuote (the final step)
     cy.contains(/see what your customer sees/i, { timeout: 10_000 })
       .should("be.visible");
 

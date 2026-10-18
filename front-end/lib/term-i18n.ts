@@ -28,6 +28,8 @@ export function localizeTermValue(value: string, lang: Lang): string {
     // line above keeps quotes saved before the casing change localizing.
     "Job completed": "quoteDoc.termValue.jobCompleted",
     "Due Now": "quoteDoc.termValue.dueNow",
+    // REQ-046/047: the wizard's TBD pick on start date / duration.
+    "TBD": "quoteDoc.termValue.tbd",
   };
   if (exact[trimmed]) return tFor(lang, exact[trimmed]);
   return trimmed

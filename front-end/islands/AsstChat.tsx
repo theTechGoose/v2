@@ -16,6 +16,7 @@ import {
 import { filesClient } from "../clients/files.ts";
 import { type QuoteCard, quotesClient } from "../clients/quotes.ts";
 import { billedTotalCents } from "../../shared/quote-flow/milestone-reconcile.ts";
+import { isTbdTermValue } from "../../shared/quote-flow/terms-i18n.ts";
 import { clientsClient } from "../clients/clients.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
@@ -141,12 +142,14 @@ const TERM_OPTIONS_FALLBACK: Record<
     { labelKey: "asstChat.terms.startDate.rightAway" },
     { labelKey: "asstChat.terms.startDate.nextWeek" },
     { labelKey: "asstChat.terms.startDate.nextMonth" },
+    { labelKey: "asstChat.terms.startDate.tbd" }, // REQ-046
   ],
   wraps: [
     { labelKey: "asstChat.duration.preset.oneDay" },
     { labelKey: "asstChat.duration.preset.twoThreeDays" },
     { labelKey: "asstChat.duration.preset.oneWeek" },
     { labelKey: "asstChat.duration.preset.twoWeeks" },
+    { labelKey: "asstChat.duration.preset.tbd" }, // REQ-047
   ],
   payment_terms: [
     {
@@ -5598,7 +5601,9 @@ export default function AsstChat({
                         return {
                           stepId,
                           label,
-                          value: isDuration && bare
+                          // REQ-047: a TBD duration is not an estimate —
+                          // the card prints it bare, like the agreement.
+                          value: isDuration && bare && !isTbdTermValue(value)
                             ? tFor(
                               previewLang,
                               "asstChat.preview.estimatedValue",

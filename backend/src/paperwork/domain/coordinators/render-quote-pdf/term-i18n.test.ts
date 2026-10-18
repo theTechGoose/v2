@@ -26,3 +26,12 @@ for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] 
     assertEquals(fn("2 years", "en"), "2 years");
   });
 }
+
+// REQ-046 / REQ-047 (2026-09-30): the wizard's TBD pick persists as "TBD" and
+// prints "Por definir" on the Spanish PDFs, "TBD" on the English ones.
+for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] as const) {
+  Deno.test(`REQ-046/047 ${name}: 'TBD' localizes to 'Por definir' (es) and stays 'TBD' (en)`, () => {
+    assertEquals(fn("TBD", "es"), "Por definir");
+    assertEquals(fn("TBD", "en"), "TBD");
+  });
+}

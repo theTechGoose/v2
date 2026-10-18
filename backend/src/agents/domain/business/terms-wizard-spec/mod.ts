@@ -41,6 +41,9 @@ export const TERMS_WIZARD_V1: WizardSpec = {
         { id: "asap", label: "termsWizard.startDate.asap" },
         { id: "next_week", label: "termsWizard.startDate.nextWeek" },
         { id: "next_month", label: "termsWizard.startDate.nextMonth" },
+        // REQ-046: "add TBD to when does the job start" — a one-tap pick that
+        // lands "TBD" on the agreement's Start row.
+        { id: "tbd", label: "termsWizard.startDate.tbd" },
         // NW-23 (REQ-009): "Job completed" is NOT a start date — the client
         // asked for Right away / Next week / Next month / Pick a date. The
         // duration (wraps) step keeps its own job_completed option.
@@ -60,6 +63,9 @@ export const TERMS_WIZARD_V1: WizardSpec = {
           id: "job_completed",
           label: "termsWizard.wraps.jobCompleted",
         },
+        // REQ-047: "… and how long will the job take" — the stored "TBD"
+        // prints bare on every reader (no "Estimated" wrapper).
+        { id: "tbd", label: "termsWizard.wraps.tbd" },
         { id: "custom", label: "termsWizard.wraps.custom", isCustom: true },
       ],
     },

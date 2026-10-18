@@ -148,7 +148,9 @@ describe("UX-38/39/40 — Spanish /q agreement page + ES /invoices hero", () => 
       .find("input")
       .first()
       .type(CUSTOMER_NAME);
-    cy.contains("button", /firmar el contrato/i).click();
+    // publicSign.submitEnabled reads "Firmar el acuerdo →" (the quote IS the
+    // agreement); the older "contrato" wording no longer exists.
+    cy.contains("button", /firmar el acuerdo/i).click();
 
     // The island reloads ~900ms after success; "Ambas firmas capturadas."
     // renders only on the signed page (quoteDoc.bothCaptured) — a stable

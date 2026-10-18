@@ -13,6 +13,7 @@ import {
   type QuotePublic,
 } from "../components/quote-doc.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import { langSignal, persistLang, writeLangToUrl } from "../lib/lang.ts";
 
 interface State {
   phase: "loading" | "error" | "ok";
@@ -21,17 +22,51 @@ interface State {
 }
 
 export default function PublicQuoteView(
-  { id, lang }: {
+  { id, lang: initialLang }: {
     id: string;
-    /** Customer's language, resolved by the route from the pm_lang cookie.
-     *  Undefined → the document falls back to the contractor's
-     *  outgoing-comms language (QuoteDoc decides). */
-    lang?: Lang;
+    /** REQ-048: the language the contract OPENS in — English unless the
+     *  visitor picked otherwise (resolveContractLang in the /q route). The
+     *  EN | ES toggle below flips it in place from there. */
+    lang: Lang;
   },
 ) {
-  const msgLang: Lang = lang ?? "en";
-  const LINK_GONE = tFor(msgLang, "publicQuote.linkExpired");
+  const [lang, setLang] = useState<Lang>(initialLang);
+  const LINK_GONE = tFor(lang, "publicQuote.linkExpired");
   const [s, setS] = useState<State>({ phase: "loading" });
+
+  // REQ-048: one tap flips the whole document — no reload — and the pick is
+  // remembered (cookie + localStorage) and mirrored into ?lang= so the link
+  // stays shareable; <html lang> (HtmlLang) and the tab title follow.
+  function pick(next: Lang) {
+    if (next === lang) return;
+    setLang(next);
+    persistLang(next);
+    writeLangToUrl(next);
+    langSignal.value = next;
+    if (typeof document !== "undefined") {
+      document.title = tFor(next, "quoteDoc.docTitle");
+    }
+  }
+  const toggle = (
+    <div
+      class="ctr__lang ctr__no-print"
+      role="group"
+      aria-label={tFor(lang, "quoteDoc.langToggleAria")}
+    >
+      {(["en", "es"] as Lang[]).map((l) => (
+        <button
+          key={l}
+          type="button"
+          data-contract-lang={l}
+          aria-pressed={lang === l ? "true" : "false"}
+          class={lang === l ? "on" : ""}
+          onClick={() => pick(l)}
+        >
+          {l.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  );
 
   useEffect(() => {
     let alive = true;
@@ -55,17 +90,30 @@ export default function PublicQuoteView(
   }, [id]);
 
   if (s.phase === "ok" && s.quote) {
-    return <QuoteDoc quote={s.quote} lang={lang} />;
+    return (
+      <>
+        {toggle}
+        <QuoteDoc quote={s.quote} lang={lang} />
+      </>
+    );
   }
   if (s.phase === "error") {
     return (
-      <ErrorCard
-        message={s.message ?? tFor(msgLang, "publicQuote.unavailable")}
-        lang={msgLang}
-      />
+      <>
+        {toggle}
+        <ErrorCard
+          message={s.message ?? tFor(lang, "publicQuote.unavailable")}
+          lang={lang}
+        />
+      </>
     );
   }
-  return <LoadingSkeleton />;
+  return (
+    <>
+      {toggle}
+      <LoadingSkeleton />
+    </>
+  );
 }
 
 /** Lightweight placeholder shown while the agreement loads — mirrors the
