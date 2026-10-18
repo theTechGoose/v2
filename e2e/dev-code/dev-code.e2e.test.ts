@@ -51,6 +51,7 @@ Deno.test('REQ-082: on the fakes the code pops up on the page that sent it — /
     await page.waitForURL((u: URL) => u.pathname !== "/landing2", {
       timeout: 60_000,
     });
+    await page.waitForLoadState("networkidle"); // the app redirects once more; let it land before the cookies go
     expect(
       !page.url().includes("/login"),
       `/landing2: straight into the app (${page.url()})`,
@@ -67,6 +68,7 @@ Deno.test('REQ-082: on the fakes the code pops up on the page that sent it — /
     await page.waitForURL((u: URL) => u.pathname !== "/verify", {
       timeout: 15_000,
     });
+    await page.waitForLoadState("networkidle"); // the app redirects once more; let it land before the cookies go
     expect(
       !page.url().includes("/login"),
       `/login → /verify: signed in (${page.url()})`,
