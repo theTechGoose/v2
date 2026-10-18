@@ -105,4 +105,36 @@ Deno.test('REQ-082: on the fakes the code pops up on the page that sent it — /
       timeout: 60_000,
     });
     await popupCode(page, expect, "/landing → /verify");
+
+    // resend on /verify: a fresh number straight on the code page (the numbers above are inside the
+    // 30 s send cooldown, which refuses a resend), "Resend code" → the popup → Use signs in
+    await page.context().clearCookies();
+    await page.goto(
+      `/verify?phone=${encodeURIComponent(`+1512${digits()}`)}&lang=en`,
+    );
+    expect.eq(
+      await page.locator("[data-cy='dev-code']").count(),
+      0,
+      "resend: no popup before — nothing was sent to this number",
+    );
+    const resend = page.locator(".meta button");
+    for (
+      let i = 0;
+      i < 10 && (await page.locator("[data-cy='dev-code']").count()) === 0;
+      i++
+    ) {
+      await resend.click({ timeout: 2000 }).catch(() => {}); // the island may still be hydrating
+      await page.waitForTimeout(300);
+    }
+    await popupCode(page, expect, "resend on /verify");
+    await page.locator("[data-cy='dev-code-use']").evaluate((el: HTMLElement) =>
+      el.click()
+    );
+    await page.waitForURL((u: URL) => u.pathname !== "/verify", {
+      timeout: 15_000,
+    });
+    expect(
+      !page.url().includes("/login"),
+      `resend on /verify: Use signs in (${page.url()})`,
+    );
   }));
