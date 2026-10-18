@@ -14,7 +14,7 @@ import {
 } from "../../shared/quote-flow/share-link";
 
 const quote = { id: "2cc3b5c9", shortCode: "umn591" };
-const base = "https://paperworkmonster.com";
+const base = "https://documonster.com";
 
 describe("quote share links", () => {
   it("uses the public short-link format for SMS friendliness", () => {

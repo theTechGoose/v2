@@ -16,7 +16,7 @@ describe("buildQuoteReadySms", () => {
     contractorName: "Hans Pedersen",
     businessName: "HANS LLC",
     jobName: "Backyard Junk Removal",
-    link: "https://paperworkmonster.com/s/umn591",
+    link: "https://documonster.com/s/umn591",
   };
 
   it("opens with the personalized greeting and introduction", () => {
@@ -33,7 +33,7 @@ describe("buildQuoteReadySms", () => {
 
   it("includes the signing link on its own line", () => {
     const lines = buildQuoteReadySms(args).split("\n").map((l) => l.trim());
-    expect(lines).toContain("https://paperworkmonster.com/s/umn591");
+    expect(lines).toContain("https://documonster.com/s/umn591");
   });
 
   it("closes with the questions + looking-forward line", () => {

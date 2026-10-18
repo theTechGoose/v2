@@ -24,7 +24,7 @@ const frontendFetch = (frontend as unknown as {
  * The old BACKEND_PREFIXES / FRONTEND_OVERRIDES pair was a standing bug
  * class: any frontend page added under a backend-owned prefix was silently
  * shadowed in prod only (the /customers page rendered locally but dumped
- * the backend's JSON on paperworkmonster.com), and any backend namespace
+ * the backend's JSON on documonster.com), and any backend namespace
  * missing from the list (e.g. /cron) 404'd for external callers. Dev never
  * runs this file, so the drift was invisible until production.
  *

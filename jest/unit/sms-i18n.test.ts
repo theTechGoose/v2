@@ -146,7 +146,7 @@ describe("P-27 smsJobName — SMS projects jobNameByLang[lang] exactly like emai
 describe("P-30 buildSignedConfirmSms — natural greeting, never 'Hola hola'", () => {
   const base = {
     jobName: "Remodelación de cocina",
-    url: "https://paperworkmonster.com/c/abc123",
+    url: "https://documonster.com/c/abc123",
     businessName: "MARTA LLC",
   };
 
@@ -177,7 +177,7 @@ describe("P-30 buildSignedConfirmSms — natural greeting, never 'Hola hola'", (
 });
 
 describe("P-49 buildInvoiceSms — always starts with a capital letter", () => {
-  const base = { amount: "$2,500", url: "https://paperworkmonster.com/i/inv123" };
+  const base = { amount: "$2,500", url: "https://documonster.com/i/inv123" };
 
   it("P-49: es + UNNAMED customer starts with a capital (greeting or capitalized sentence)", () => {
     const sms = buildInvoiceSms({ ...base, contractorFirstName: "Marta", lang: "es" });
@@ -234,9 +234,9 @@ describe("P-50 buildAcceptedAlert — with-job variant keeps the celebration and
   });
 
   it("P-50: the accepted-alert SMS body projects jobNameByLang for the contractor's language", () => {
-    const sms = buildAcceptedAlertSms({ ...args, url: "https://paperworkmonster.com/quotes", lang: "es" });
+    const sms = buildAcceptedAlertSms({ ...args, url: "https://documonster.com/quotes", lang: "es" });
     expect(sms).toContain("Remodelación de cocina");
     expect(sms).not.toContain("Kitchen Remodel");
-    expect(sms).toContain("https://paperworkmonster.com/quotes");
+    expect(sms).toContain("https://documonster.com/quotes");
   });
 });

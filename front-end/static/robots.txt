@@ -18,4 +18,4 @@ Disallow: /clients
 Disallow: /settings
 Disallow: /api
 
-Sitemap: https://paperworkmonster.com/sitemap.xml
+Sitemap: https://documonster.com/sitemap.xml

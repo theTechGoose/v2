@@ -118,6 +118,6 @@ describe("REQ-081 /landing2 is wired to the site's one sources", () => {
   });
 
   test("the sitemap lists /landing2 next to the other websites", () => {
-    expect(read("front-end/static/sitemap.xml")).toContain("<loc>https://paperworkmonster.com/landing2</loc>");
+    expect(read("front-end/static/sitemap.xml")).toContain("<loc>https://documonster.com/landing2</loc>");
   });
 });
