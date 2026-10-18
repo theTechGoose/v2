@@ -18,8 +18,8 @@ import DevCodeCard from "../components/DevCodeCard.tsx";
  *
  * REQ-083 — the card tells the signup in motion: each digit pops in and the button charges at
  * ten; "Get started" slams, a text bubble launches from it, the monster bounces and the card flips
- * to the code step; the code is six slots the digits pop into — from the keyboard, the phone's
- * autofill or the dev popup (REQ-082), which types itself in — and the sixth digit submits; a wrong
+ * to the code step; the code is six slots the digits pop into — from the keyboard or the dev popup
+ * (REQ-082), which types itself in — and the sixth digit submits; a wrong
  * code shakes; the right one draws a check, bursts confetti and lifts the card off into the app.
  * The monster is told through one DOM event. Reduced motion turns all of it off: the plain flow.
  *
@@ -246,7 +246,7 @@ export default function Landing2Signup(
       CODE_LEN,
     );
     setCode(next);
-    // the sixth digit submits — no button to press, from the keyboard or the phone's autofill
+    // the sixth digit submits — no button to press (REQ-084: no autofill on either field)
     if (next.length === CODE_LEN) void submitCode(next);
   }
 
@@ -333,7 +333,10 @@ export default function Landing2Signup(
                     class="l2-code__input"
                     type="text"
                     inputMode="numeric"
-                    autoComplete="one-time-code"
+                    autoComplete="off"
+                    data-lpignore="true"
+                    data-1p-ignore
+                    data-form-type="other"
                     maxLength={CODE_LEN}
                     value={code}
                     onInput={onCodeInput}
@@ -381,7 +384,10 @@ export default function Landing2Signup(
                     class="l2-field l2-phone__input"
                     type="tel"
                     inputMode="tel"
-                    autoComplete="tel"
+                    autoComplete="off"
+                    data-lpignore="true"
+                    data-1p-ignore
+                    data-form-type="other"
                     placeholder="(555) 123-4567"
                     value={shown}
                     onInput={(e) =>

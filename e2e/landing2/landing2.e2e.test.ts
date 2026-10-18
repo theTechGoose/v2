@@ -631,3 +631,47 @@ Deno.test("REQ-081: all seven days of the demo's day picker sit whole inside the
       );
     }
   }));
+
+/** REQ-084 — Raphael, 2026-10-18, on the signup card: "make it so there is no autofill." */
+Deno.test("REQ-084: the signup card asks the browser for no autofill — the phone field and the code field carry autocomplete=off, no name, and the password managers' ignore flags", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2?lang=en");
+    const attrs = (sel: string) =>
+      page.locator(sel).evaluate((el: HTMLInputElement) => ({
+        autocomplete: el.getAttribute("autocomplete"),
+        name: el.getAttribute("name"),
+        lp: el.getAttribute("data-lpignore"),
+        op: el.hasAttribute("data-1p-ignore"),
+        dl: el.getAttribute("data-form-type"),
+      }));
+    const phone = await attrs("#reg-phone");
+    expect.eq(
+      JSON.stringify(phone),
+      JSON.stringify({
+        autocomplete: "off",
+        name: null,
+        lp: "true",
+        op: true,
+        dl: "other",
+      }),
+      `the phone field (${JSON.stringify(phone)})`,
+    );
+    await page.locator("#reg-phone").fill(`512${digits()}`);
+    await page.locator("[data-cy='l2-send-code']").click();
+    await page.locator("[data-cy='l2-signup-step'][data-step='2']").waitFor({
+      timeout: 15_000,
+    });
+    const code = await attrs("#reg-code");
+    expect.eq(
+      JSON.stringify(code),
+      JSON.stringify({
+        autocomplete: "off",
+        name: null,
+        lp: "true",
+        op: true,
+        dl: "other",
+      }),
+      `the code field (${JSON.stringify(code)})`,
+    );
+  }));
