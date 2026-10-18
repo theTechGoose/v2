@@ -160,7 +160,10 @@ Deno.test("REQ-083: the signup card tells the signup in motion — the card slam
     const code =
       (await popup.locator("[data-cy='dev-code-value']").textContent() ?? "")
         .trim();
-    await page.locator("[data-cy='dev-code-use']").click();
+    // not a wrapped click: the page navigates right after, and a frame taken mid-navigation can hang
+    await page.locator("[data-cy='dev-code-use']").evaluate((el: HTMLElement) =>
+      el.click()
+    );
     await page.waitForFunction(
       (n: number) =>
         ((document.querySelector("#reg-code") as HTMLInputElement | null)?.value
@@ -243,7 +246,10 @@ Deno.test("REQ-083: the signup card tells the signup in motion — the card slam
       state: "visible",
       timeout: 10_000,
     });
-    await page.locator("[data-cy='dev-code-use']").click();
+    // not a wrapped click: the page navigates right after, and a frame taken mid-navigation can hang
+    await page.locator("[data-cy='dev-code-use']").evaluate((el: HTMLElement) =>
+      el.click()
+    );
     await page.waitForURL((u: URL) => u.pathname !== "/landing2", {
       timeout: 60_000,
     });
