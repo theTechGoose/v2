@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, STRINGS } from "../lib/lang.ts";
 import { t } from "../lib/i18n.ts";
 import { verifyClient } from "../clients/verify.ts";
+import { takeDevCode } from "../lib/dev-code.ts";
+import DevCodeCard from "../components/DevCodeCard.tsx";
 
 interface Props {
   /** The phone the code was texted to — the /verify flow. */
@@ -43,6 +45,8 @@ export default function CodeInput(
   const [recovery, setRecovery] = useState<{ token: string } | null>(null);
   const [recovering, setRecovering] = useState(false);
   const [, force] = useState(0);
+  /** REQ-082 — on the fakes the page that sent the code stashed it; the popup shows it */
+  const [devCode, setDevCode] = useState<string | null>(null);
 
   useEffect(() => {
     // initialLang (SSR-resolved from the pm_lang cookie / Accept-Language) wins
@@ -52,6 +56,7 @@ export default function CodeInput(
     const stored = globalThis.localStorage?.getItem("pm:lang") as Lang | null;
     langSignal.value = initialLang ?? stored ?? "es";
     refs.current[0]?.focus();
+    if (phoneNumber) setDevCode(takeDevCode(phoneNumber));
     const unsub = langSignal.subscribe(() => force((n) => n + 1));
     return () => unsub();
   }, []);
@@ -198,12 +203,33 @@ export default function CodeInput(
     setErrorKey(null);
     try {
       if (byEmail) await verifyClient.resendEmailOtp({ email, language: lang });
-      else await verifyClient.resendOtp({ phoneNumber: phoneNumber ?? "", language: lang });
+      else {
+        const sent = await verifyClient.resendOtp({
+          phoneNumber: phoneNumber ?? "",
+          language: lang,
+        });
+        setDevCode(sent.devCode ?? null); // REQ-082 — the new code on the fakes
+      }
     } catch { /* keep cooldown */ }
   }
 
   return (
     <>
+      {devCode
+        ? (
+          <DevCodeCard
+            lang={lang}
+            code={devCode}
+            onUse={() => {
+              const c = devCode;
+              setDevCode(null);
+              setDigits(c.split(""));
+              void submit(c);
+            }}
+            onClose={() => setDevCode(null)}
+          />
+        )
+        : null}
       <div class={`code-input ${shake ? "shake" : ""}`} onPaste={onPaste}>
         {digits.map((d, i) => (
           <input
@@ -252,7 +278,9 @@ export default function CodeInput(
       {errorKey
         ? (
           <p class="error" role="alert">
-            {errorKey.startsWith("loginInternal.") ? t(errorKey) : s[errorKey as keyof typeof s] as string}
+            {errorKey.startsWith("loginInternal.")
+              ? t(errorKey)
+              : s[errorKey as keyof typeof s] as string}
           </p>
         )
         : null}

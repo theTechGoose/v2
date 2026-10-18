@@ -32,13 +32,15 @@ Deno.test("auth e2e: send-otp persists OTP record and replies { sent: true }", a
       body: JSON.stringify({ phoneNumber: "(512) 555-1234", language: "es" }),
     });
     const body = await res.json();
-    assertEquals(body, { sent: true });
+    assertEquals(body.sent, true);
 
     const otps = new OtpStore();
     const stored = await otps.get("+15125551234");
     assert(stored, "OTP record should exist");
     assertEquals(stored.language, "es");
     assert(/^\d{6}$/.test(stored.code), "code should be 6 digits");
+    // REQ-082: this test runs on the fakes, so the reply carries the stored code for the page's popup
+    assertEquals(body, { sent: true, devCode: stored.code });
   });
 });
 

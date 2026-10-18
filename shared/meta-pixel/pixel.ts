@@ -5,7 +5,7 @@
  * The pure half, shared by the pages that carry the pixel (front-end) and
  * any server-side copy of the same events later (the Conversions API):
  *
- *  - WHICH pages load it: the ad funnel only — the two landings, the code
+ *  - WHICH pages load it: the ad funnel only — the three landings, the code
  *    page, the welcome wizard, the plan and pay pages, settings (the upgrade
  *    comes back there) and login. Never the dashboard, the assistant or a
  *    customer's document: those visitors are the users' customers and would
@@ -57,6 +57,7 @@ export function pixelConfig(env: PixelEnv): PixelConfig | null {
 const PIXEL_PAGES = new Set([
   "/",
   "/landing",
+  "/landing2",
   "/verify",
   "/welcome",
   "/login",
@@ -195,4 +196,37 @@ export function pixelEventScript(ev: PixelEvent): string {
     `else{(window.__pmPxQ=window.__pmPxQ||[]).push([${
       JSON.stringify(ev.name)
     },${params},${id}])}})();`;
+}
+
+/**
+ * REQ-081 — the same conversion fired from a page that is already running
+ * (the /landing2 signup keeps the code step on the page, so there is no code
+ * page whose <Head> could carry the script): the same once-per-browser guard
+ * by event id, the same call, the same queue when the snippet has not run
+ * yet. `w` is the window; a server has none and nothing fires.
+ */
+export function firePixelEvent(
+  ev: PixelEvent,
+  w: {
+    localStorage?: {
+      getItem(k: string): string | null;
+      setItem(k: string, v: string): void;
+    };
+    fbq?: (...args: unknown[]) => void;
+    __pmPxQ?: unknown[][] | null;
+  } | undefined,
+): boolean {
+  if (!w) return false;
+  const key = `pm:px:${ev.eventId}`;
+  try {
+    if (w.localStorage?.getItem(key)) return false;
+    w.localStorage?.setItem(key, "1");
+  } catch { /* private mode: fire anyway, once per page */ }
+  const params = ev.params ?? {};
+  if (typeof w.fbq === "function") {
+    w.fbq("track", ev.name, params, { eventID: ev.eventId });
+  } else {
+    (w.__pmPxQ = w.__pmPxQ || []).push([ev.name, params, ev.eventId]);
+  }
+  return true;
 }
