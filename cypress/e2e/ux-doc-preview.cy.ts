@@ -211,21 +211,18 @@ describe("REQ-007 NW-06 a conversation started at /assistant shows the From bloc
     cy.setCookie("pm_lang", "en");
   });
 
-  it("REQ-007 NW-06 chat → Lock it in → Person → wizard → review card renders From with the contractor's email", () => {
-    cy.visit("/assistant"); // the BARE route — not a thread URL
-    cy.get("textarea.composer__input", { timeout: 10_000 })
+  it("REQ-007 NW-06 bare /assistant → seeded quote → Person → wizard → review card renders From with the contractor's email", () => {
+    cy.visit("/assistant?dev"); // the BARE route — not a thread URL
+    // The dev seed (quote → lock → transition, no LLM — the gate runs the
+    // stub client) starts the conversation from the bare route exactly as a
+    // typed job would: the island stays mounted, the URL flips via
+    // replaceState, no reload.
+    cy.get(".chat__empty-debug-btn", { timeout: 10_000 })
       .should("be.visible")
-      .type("Replace a toilet for $500 for Sam Rivera");
-    cy.get("button.composer__send").click();
-    // The island stays mounted: the URL flips via replaceState, no reload.
+      .click();
     cy.location("pathname", { timeout: 30_000 })
       .should("match", /^\/assistant\/[A-Za-z0-9_-]+$/);
-    cy.contains("button", "Lock it in", { timeout: 90_000 })
-      .should("be.visible")
-      .click();
-    cy.contains("button", "Person", { timeout: 30_000 })
-      .should("be.visible")
-      .click();
+    cy.openCustomerCreateForm();
     cy.get(".cust-create input.cust-pick__search", { timeout: 20_000 })
       .first()
       .type("Sam Rivera");

@@ -79,6 +79,23 @@ export function resolvePublicLang(args: {
   });
 }
 
+/**
+ * REQ-048: the public CONTRACT (/q/:id) is English first. Only a choice the
+ * visitor made themselves changes that — an explicit ?lang= on the link,
+ * then their persisted pm_lang pick. The contractor's outgoing-comms
+ * language is deliberately NOT an input: the customer flips the document
+ * with the page's own EN | ES toggle, in place, whenever they like.
+ */
+export function resolveContractLang(parts: {
+  /** The link's ?lang= query value, raw. */
+  query?: string | null;
+  /** The RAW Cookie request header. */
+  cookie?: string | null;
+}): PublicLang {
+  if (parts.query === "en" || parts.query === "es") return parts.query;
+  return pmLangFromCookie(parts.cookie) ?? "en";
+}
+
 export interface MoneyPageStrings {
   billTo: string;
   amountDue: string;
