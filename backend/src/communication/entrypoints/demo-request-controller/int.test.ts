@@ -1,0 +1,175 @@
+/**
+ * REQ-081 — "make sure all aspects of the page are working": the demo booking on /landing2 goes
+ * through POST /demo-request, and a booking is three things at once — the team's inbox gets it,
+ * the person gets the text the page promised ("Te confirmamos por texto"), and the phone is a
+ * CRM lead (REQ-060/072: a phone alone is a lead, carried by the outbox). This drives the
+ * controller with capturing collaborators in every seat — the same discipline as the contact
+ * controller's int test: the int lane runs in one process, so nothing here touches the env.
+ */
+import "#reflect-metadata";
+import { assertEquals, assertMatch } from "#std/assert";
+import type { ExecutionContext } from "#danet/core";
+import { DemoRequestController } from "./mod.ts";
+import type {
+  EmailService,
+  SendEmailInput,
+  SendEmailResult,
+} from "@communication/domain/data/email-service/mod.ts";
+import type {
+  SendSmsInput,
+  SendSmsResult,
+  SmsService,
+} from "@users/domain/data/sms/mod.ts";
+import type { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
+import type { RateLimiter } from "@core/data/rate-limit/mod.ts";
+
+class CapturingInbox {
+  sent: SendEmailInput[] = [];
+  send(input: SendEmailInput): Promise<SendEmailResult> {
+    this.sent.push(input);
+    return Promise.resolve({ ok: true, messageId: `m-${this.sent.length}` });
+  }
+}
+class CapturingPhone {
+  sent: SendSmsInput[] = [];
+  send(input: SendSmsInput): Promise<SendSmsResult> {
+    this.sent.push(input);
+    return Promise.resolve({ ok: true, sid: `SM${this.sent.length}` });
+  }
+}
+class CapturingLeads {
+  phones: string[] = [];
+  enqueue(phone: string): Promise<void> {
+    this.phones.push(phone);
+    return Promise.resolve();
+  }
+}
+const openGate = {
+  take: () => Promise.resolve({ allowed: true, remaining: 4, resetMs: 0 }),
+} as unknown as RateLimiter;
+const closedGate = {
+  take: () => Promise.resolve({ allowed: false, remaining: 0, resetMs: 1234 }),
+} as unknown as RateLimiter;
+/** ctx.json(body) is the one thing the controller uses of the context */
+function context() {
+  return { ctx: { json: (v: unknown) => v } as unknown as ExecutionContext };
+}
+
+const tomorrow = () =>
+  new Date(Date.now() + 36 * 3600_000).toISOString().slice(0, 10);
+const booking = () => ({
+  mode: "demo",
+  name: "José García",
+  phone: "(512) 555-0199",
+  email: "jose@tunegocio.com",
+  trade: "Pintura",
+  day: tomorrow(),
+  slot: "11:00 AM",
+  lang: "es",
+});
+
+function build(gate = openGate) {
+  const inbox = new CapturingInbox();
+  const phone = new CapturingPhone();
+  const leads = new CapturingLeads();
+  const controller = new DemoRequestController(
+    inbox as unknown as EmailService,
+    phone as unknown as SmsService,
+    leads as unknown as CrmLeadCapture,
+    gate,
+  );
+  return { inbox, phone, leads, controller };
+}
+
+Deno.test("REQ-081 demo-request int — a booking emails the team, texts the person, and makes the phone a lead; the reply says what was done", async () => {
+  const { inbox, phone, leads, controller } = build();
+  const { ctx } = context();
+  const res = await controller.submit(ctx, booking()) as unknown as Record<
+    string,
+    unknown
+  >;
+  assertEquals(res.ok, true);
+  assertEquals(res.emailed, true);
+  assertEquals(res.texted, true);
+  assertEquals(res.lead, true);
+  assertEquals(res.mode, "demo");
+  assertEquals(res.day, tomorrow());
+  assertEquals(res.slot, "11:00 AM");
+  // the team
+  assertEquals(inbox.sent.length, 1);
+  assertMatch(inbox.sent[0].subject, /^\[demo\] José García/);
+  assertMatch(inbox.sent[0].htmlBody ?? "", /\+15125550199/);
+  assertMatch(inbox.sent[0].htmlBody ?? "", /jose@tunegocio\.com/);
+  assertMatch(inbox.sent[0].htmlBody ?? "", /Pintura/);
+  // the person, in their language
+  assertEquals(phone.sent.length, 1);
+  assertEquals(phone.sent[0].to, "+15125550199");
+  assertMatch(phone.sent[0].body, /Demo de 15 min/);
+  assertMatch(phone.sent[0].body, /11:00 AM/);
+  // the CRM
+  assertEquals(leads.phones, ["+15125550199"]);
+});
+
+Deno.test("REQ-081 demo-request int — a call with no email is a booking too, texted in English when the page was English", async () => {
+  const { inbox, phone, leads, controller } = build();
+  const { ctx } = context();
+  const res = await controller.submit(ctx, {
+    ...booking(),
+    mode: "call",
+    email: "",
+    lang: "en",
+  }) as unknown as Record<string, unknown>;
+  assertEquals(res.ok, true);
+  assertEquals(inbox.sent.length, 1);
+  assertMatch(inbox.sent[0].subject, /^\[call\] /);
+  assertMatch(phone.sent[0].body, /Phone call/);
+  assertEquals(leads.phones.length, 1);
+});
+
+Deno.test("REQ-081 demo-request int — a malformed booking is refused by field, in the ok:false envelope the public forms use, and nothing is sent", async () => {
+  const { inbox, phone, leads, controller } = build();
+  const { ctx } = context();
+  const res = await controller.submit(ctx, {
+    ...booking(),
+    slot: "11:30 AM",
+  }) as unknown as Record<string, unknown>;
+  assertEquals(res.ok, false);
+  assertEquals(res.reason, "invalid");
+  assertEquals(res.field, "slot");
+  assertEquals(inbox.sent.length + phone.sent.length + leads.phones.length, 0);
+});
+
+Deno.test("REQ-081 demo-request int — a flooded phone is told to wait and nothing is sent", async () => {
+  const { inbox, phone, leads, controller } = build(closedGate);
+  const { ctx } = context();
+  const res = await controller.submit(ctx, booking()) as unknown as Record<
+    string,
+    unknown
+  >;
+  assertEquals(res.ok, false);
+  assertEquals(res.reason, "too_many_attempts");
+  assertEquals(res.retryAfterMs, 1234);
+  assertEquals(inbox.sent.length + phone.sent.length + leads.phones.length, 0);
+});
+
+Deno.test("REQ-081 demo-request int — the team still has the booking when the text cannot go out; the reply says the text did not", async () => {
+  const { inbox, phone, leads, controller } = build();
+  phone.send = (input: SendSmsInput) => {
+    phone.sent.push(input);
+    return Promise.resolve({
+      ok: false,
+      reason: "sms.invalidNumber",
+      code: 21211,
+    });
+  };
+  const { ctx } = context();
+  const res = await controller.submit(ctx, booking()) as unknown as Record<
+    string,
+    unknown
+  >;
+  assertEquals(res.ok, true);
+  assertEquals(res.emailed, true);
+  assertEquals(res.texted, false);
+  assertEquals(inbox.sent.length, 1);
+  assertEquals(leads.phones.length, 1);
+});

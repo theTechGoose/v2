@@ -12,17 +12,11 @@ import {
 import { plainToInstance } from "#class-transformer";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { RateLimiter } from "@core/data/rate-limit/mod.ts";
+import { teamInbox } from "@communication/domain/business/team-inbox/mod.ts";
 
 const MAX_PER_WINDOW = 5;
 const WINDOW_MS = 60 * 60 * 1000;
 
-/**
- * Team inboxes that every contact-form submission is delivered to. Postmark
- * accepts a comma-separated `To`, so all three receive the message. Override
- * with the CONTACT_INBOX env (also comma-separated) if the list ever changes.
- */
-const DEFAULT_CONTACT_INBOX =
-  "hp@hans.work, rafac@monsterrg.com, amcgill@monsterrg.com";
 
 class ContactDto {
   @IsString() @MinLength(1) @MaxLength(120)
@@ -88,10 +82,8 @@ export class ContactPublicController {
 
     const subject = `[contact] ${dto.subject}`;
     const htmlBody = renderContactHtml(dto);
-    const recipient = Deno.env.get("CONTACT_INBOX") ?? DEFAULT_CONTACT_INBOX;
-    if (!recipient) {
-      return ctx.json({ ok: false, reason: "no_destination_configured" });
-    }
+    // the team inboxes, the one list the demo booking reaches too (REQ-081)
+    const recipient = teamInbox();
 
     const result = await this.email.send({ to: recipient, subject, htmlBody });
     return ctx.json({ ok: result.ok, reason: result.reason });

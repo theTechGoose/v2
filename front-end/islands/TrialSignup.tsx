@@ -4,6 +4,7 @@ import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import { landingClient } from "../clients/landing.ts";
 import { type Lang } from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
+import { stashDevCode } from "../lib/dev-code.ts";
 
 /**
  * TrialSignup — the "Start My Free Trial" phone form on the /landing promo
@@ -34,7 +35,11 @@ export default function TrialSignup({ lang = "es" }: { lang?: Lang }) {
     }
     setSubmitting(true);
     try {
-      await landingClient.sendOtp({ phoneNumber: e164, language: lang });
+      const sent = await landingClient.sendOtp({
+        phoneNumber: e164,
+        language: lang,
+      });
+      stashDevCode(e164, sent.devCode); // REQ-082 — /verify shows it on the fakes
       try {
         localStorage.setItem("pm:last-phone", e164);
       } catch { /* private mode */ }

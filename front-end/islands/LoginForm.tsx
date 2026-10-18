@@ -5,6 +5,7 @@ import { langSignal } from "../lib/lang.ts";
 import { t } from "../lib/i18n.ts";
 import { landingClient } from "../clients/landing.ts";
 import { ApiError } from "../lib/api.ts";
+import { stashDevCode } from "../lib/dev-code.ts";
 
 /**
  * LoginForm — the clean, login-branded phone entry used by /login
@@ -36,7 +37,11 @@ export default function LoginForm() {
     }
     setSubmitting(true);
     try {
-      await landingClient.sendOtp({ phoneNumber: e164, language: lang });
+      const sent = await landingClient.sendOtp({
+        phoneNumber: e164,
+        language: lang,
+      });
+      stashDevCode(e164, sent.devCode); // REQ-082 — /verify shows it on the fakes
       globalThis.location.href = `/verify?phone=${
         encodeURIComponent(e164)
       }&lang=${lang}`;
