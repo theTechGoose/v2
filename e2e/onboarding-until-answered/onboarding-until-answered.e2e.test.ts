@@ -53,7 +53,7 @@ async function fillStep(page: StoryTools["page"], selector: string, value: strin
   throw new Error(`the wizard never took "${value}" at ${selector}`);
 }
 
-Deno.test("REQ-091: onboarding happens until every question is answered — a new account's code lands in the wizard, Skip only puts a question off, \"Skip setup for now\" leaves for the assistant, and the dashboard and the next code bring the wizard back at the first open question", (t) =>
+Deno.test("REQ-091: onboarding happens until every question is answered — a new account's code lands in the wizard, Skip only puts a question off, 'Skip setup for now' leaves for the assistant, and the dashboard and the next code bring the wizard back at the first open question", (t) =>
   story(t, async ({ page, expect, baseUrl }) => {
     await page.setViewportSize(DESKTOP);
     const host = new URL(baseUrl).hostname;
