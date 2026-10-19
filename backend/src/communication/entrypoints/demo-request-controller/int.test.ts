@@ -97,7 +97,7 @@ Deno.test("REQ-090 demo-request int — a demo with a day and a window and a cal
   // the demo: emailed, texted in Spanish, a lead; the reply says what was done
   {
     const { inbox, phone, leads, controller } = build();
-    const res = await controller.submit(context().ctx, demo()) as Reply;
+    const res = await controller.submit(context().ctx, demo()) as unknown as Reply;
     assertEquals(res.ok, true);
     assertEquals(res.emailed, true);
     assertEquals(res.texted, true);
@@ -123,7 +123,7 @@ Deno.test("REQ-090 demo-request int — a demo with a day and a window and a cal
   // the call: just a cell, as soon as possible, texted in English when the page was English
   {
     const { inbox, phone, leads, controller } = build();
-    const res = await controller.submit(context().ctx, call()) as Reply;
+    const res = await controller.submit(context().ctx, call()) as unknown as Reply;
     assertEquals(res.ok, true);
     assertEquals(res.mode, "call");
     assertEquals(res.day, "");
@@ -145,7 +145,7 @@ Deno.test("REQ-090 demo-request int — a demo with a day and a window and a cal
     }]
   ) {
     const { inbox, phone, leads, controller } = build();
-    const res = await controller.submit(context().ctx, body) as Reply;
+    const res = await controller.submit(context().ctx, body) as unknown as Reply;
     assertEquals(res.ok, false);
     assertEquals(res.reason, "invalid");
     assertEquals(res.field, "consent");
@@ -161,7 +161,7 @@ Deno.test("REQ-090 demo-request int — a malformed booking is refused by field,
   const res = await controller.submit(context().ctx, {
     ...demo(),
     slot: "11:00 AM",
-  }) as Reply;
+  }) as unknown as Reply;
   assertEquals(res.ok, false);
   assertEquals(res.reason, "invalid");
   assertEquals(res.field, "slot");
@@ -170,7 +170,7 @@ Deno.test("REQ-090 demo-request int — a malformed booking is refused by field,
 
 Deno.test("REQ-081 demo-request int — a flooded phone is told to wait and nothing is sent", async () => {
   const { inbox, phone, leads, controller } = build(closedGate);
-  const res = await controller.submit(context().ctx, demo()) as Reply;
+  const res = await controller.submit(context().ctx, demo()) as unknown as Reply;
   assertEquals(res.ok, false);
   assertEquals(res.reason, "too_many_attempts");
   assertEquals(res.retryAfterMs, 1234);
@@ -187,7 +187,7 @@ Deno.test("REQ-081 demo-request int — the team still has the booking when the 
       code: 21211,
     });
   };
-  const res = await controller.submit(context().ctx, demo()) as Reply;
+  const res = await controller.submit(context().ctx, demo()) as unknown as Reply;
   assertEquals(res.ok, true);
   assertEquals(res.emailed, true);
   assertEquals(res.texted, false);
