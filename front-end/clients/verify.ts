@@ -7,6 +7,10 @@
  * strips `/api/` and the backend has no `/auth/verify` route — only
  * `/auth/verify-otp`. Translating the raw backend response into the
  * client's discriminated union here keeps CodeInput.tsx unchanged.
+ *
+ * REQ-091: where the code lands is the backend's call (`redirectTo`): the
+ * wizard while any onboarding question is open, the dashboard once every
+ * one is answered — never derived here from the one-shot "new user" flag.
  */
 import { api, ApiError, type ApiOptions } from "../lib/api.ts";
 import type { Lang } from "../lib/lang.ts";
@@ -81,6 +85,7 @@ export const verifyClient = {
           sessionId?: string;
           userId?: string;
           isNewUser?: boolean;
+          redirectTo?: string;
           recoverable?: boolean;
           recoveryToken?: string;
         }
@@ -89,16 +94,13 @@ export const verifyClient = {
         return { ok: true, recoverable: true, recoveryToken: raw.recoveryToken };
       }
       if (typeof raw.sessionId === "string" && typeof raw.userId === "string") {
-        const isNewUser = raw.isNewUser === true;
-        const redirectTo = isNewUser
-          ? "/assistant?onboard=1"
-          : "/dashboard?welcome=back";
         return {
           ok: true,
           sessionId: raw.sessionId,
           userId: raw.userId,
-          isNewUser,
-          redirectTo,
+          isNewUser: raw.isNewUser === true,
+          // the wizard is the safe landing: it lets a finished account go to the dashboard itself
+          redirectTo: raw.redirectTo ?? "/welcome",
         };
       }
       return { ok: false, error: "invalid_code" };
@@ -151,17 +153,15 @@ export const verifyClient = {
   },
 
   /** REQ-039: bring the closed account back exactly as it was. Lands where
-   *  a returning user lands. */
-  async recover(token: string, opts: ApiOptions = {}): Promise<RecoveryResult> {
-    const raw = await api.post<RecoveryResult>("/auth/recover", { token }, opts);
-    return { ...raw, redirectTo: "/dashboard?welcome=back" };
+   *  the backend says (REQ-091): the wizard if a question is still open. */
+  recover(token: string, opts: ApiOptions = {}): Promise<RecoveryResult> {
+    return api.post<RecoveryResult>("/auth/recover", { token }, opts);
   },
 
   /** REQ-039: a brand-new account on the number; the old one keeps its data.
-   *  Lands where a brand-new user lands. */
-  async startFresh(token: string, opts: ApiOptions = {}): Promise<RecoveryResult> {
-    const raw = await api.post<RecoveryResult>("/auth/start-fresh", { token }, opts);
-    return { ...raw, redirectTo: "/assistant?onboard=1" };
+   *  Lands where the backend says: the wizard, nothing answered yet. */
+  startFresh(token: string, opts: ApiOptions = {}): Promise<RecoveryResult> {
+    return api.post<RecoveryResult>("/auth/start-fresh", { token }, opts);
   },
 
   resendOtp(

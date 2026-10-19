@@ -26,8 +26,8 @@ export default define.page(async function AssistantHome(ctx) {
   // This MUST go through the in-process backend: on Deno Deploy the HTTP
   // api client 500s/508s SSR-side, which used to silently drop the user on
   // an empty /assistant?onboard=1 chat ("0 messages" limbo). On any failure
-  // we send them to the dashboard — now reachable without onboarding and
-  // carrying the SetupChecklist nudge — rather than stranding them here.
+  // we send them to the dashboard rather than stranding them here (REQ-091:
+  // the dashboard sends an account with an open question on to /welcome).
   // New-user onboarding now lives in the first-sign-in wizard at /welcome, not
   // the chat state machine. Anything still arriving here with ?onboard=1 (old
   // links, the assistant `?onboard=1` deep-link) is forwarded to /welcome,

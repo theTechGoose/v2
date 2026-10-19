@@ -10,6 +10,7 @@
  * front-end/islands/DashSidebar.tsx.
  */
 import { story, type StoryTools } from "#shots";
+import { answerQuestions } from "../_shared/onboarding-answers.ts";
 
 const PHONE = "+15125550991";
 const JSON_HEADERS = { "content-type": "application/json" };
@@ -37,19 +38,8 @@ async function signIn(
     cookie = (f.headers.get("set-cookie") ?? "").split(";")[0];
   }
   const auth = { ...JSON_HEADERS, cookie };
-  for (
-    const [path, payload] of [
-      ["/api/me", { name: "Shell User" }],
-      ["/api/profile/identity", { businessName: "Shell Business" }],
-    ] as const
-  ) {
-    const res = await http(path, {
-      method: "PUT",
-      headers: auth,
-      body: JSON.stringify(payload),
-    });
-    await res.body?.cancel();
-  }
+  // REQ-091: the dashboard sends an account with an onboarding question open back to the wizard — answer them all
+  await answerQuestions(http, auth, { name: "Shell User", businessName: "Shell Business" });
   const [name, value] = cookie.split("=");
   // The cookie must be set for the host the runner actually serves on — the
   // gate uses 127.0.0.1, a pin uses localhost; a cookie for the wrong one

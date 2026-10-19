@@ -97,10 +97,11 @@ export interface ProfileUser {
   language?: "en" | "es";
   /** Super-admin flag — drives the sidebar Admin tab. Server-enforced. */
   superAdmin?: boolean;
-  /** ISO timestamp of the first time the user finished/skipped the /welcome
-   *  wizard. Once set it never changes; drives the "already onboarded?" guard. */
+  /** ISO timestamp of the first time the user reached the end of the /welcome
+   *  wizard or left it. A record, not a gate (REQ-091): the wizard returns
+   *  until every question is answered. */
   onboardedAt?: string;
-  /** Whether that first onboarding completion was a skip vs. a real finish. */
+  /** Whether that first time was a skip vs. a real finish. */
   onboardingSkipped?: boolean;
   createdAt: number;
   updatedAt: number;

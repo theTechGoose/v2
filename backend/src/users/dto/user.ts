@@ -20,10 +20,11 @@ export interface User {
    */
   superAdmin?: boolean;
   /**
-   * First-sign-in onboarding completion. `onboardedAt` is the server ISO
-   * timestamp of the FIRST time the user finished or skipped the /welcome
-   * wizard; once set it never changes (skip is permanent). `onboardingSkipped`
-   * records whether that first completion was a skip vs. a real finish.
+   * `onboardedAt` is the server ISO timestamp of the FIRST time the user
+   * reached the end of the /welcome wizard or left it; once set it never
+   * changes. `onboardingSkipped` records whether that first time was a skip.
+   * A record, not a gate (REQ-091): where a code lands and when the wizard
+   * lets go are read off the questions still open on the profile.
    *
    * NEVER part of UpdateUserDto — they are stamped only through the dedicated
    * `UserStore.markOnboarded` write path (POST /me/onboarded), so they can't

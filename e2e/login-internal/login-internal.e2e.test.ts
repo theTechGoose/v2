@@ -11,6 +11,7 @@
  * phone flow, then the email goes on the record through PUT /me.
  */
 import { story, type StoryTools } from "#shots";
+import { answerQuestions } from "../_shared/onboarding-answers.ts";
 
 const PHONE = "+15125550980";
 /** Postmark's documented blackhole: accepted and discarded — a dev box with
@@ -60,19 +61,8 @@ async function seedAccount(http: StoryTools["http"]) {
     throw new Error(`seed: no session cookie (${JSON.stringify(body)})`);
   }
   const auth = { ...JSON_HEADERS, cookie };
-  const me = await http("/api/me", {
-    method: "PUT",
-    headers: auth,
-    body: JSON.stringify({ email: EMAIL, name: "Story User" }),
-  });
-  await me.body?.cancel();
-  // A named business keeps /dashboard from bouncing a "new" user into onboarding.
-  const biz = await http("/api/profile/identity", {
-    method: "PUT",
-    headers: auth,
-    body: JSON.stringify({ businessName: "Story Business" }),
-  });
-  await biz.body?.cancel();
+  // REQ-091: a code lands on the dashboard only once every onboarding question is answered
+  await answerQuestions(http, auth, { name: "Story User", email: EMAIL, businessName: "Story Business" });
   const out = await http("/api/auth/logout", { method: "POST", headers: auth });
   await out.body?.cancel();
   return body.userId as string;

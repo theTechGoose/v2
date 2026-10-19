@@ -12,6 +12,7 @@ import { VerifyOtp } from "@users/domain/coordinators/verify-otp/mod.ts";
 import { SendEmailOtp } from "@users/domain/coordinators/send-email-otp/mod.ts";
 import { VerifyEmailOtp } from "@users/domain/coordinators/verify-email-otp/mod.ts";
 import { AccountRecovery } from "@users/domain/coordinators/account-recovery/mod.ts";
+import { SignInLanding } from "@users/domain/coordinators/sign-in-landing/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
 import { WipeAccount } from "@users/domain/coordinators/wipe-account/mod.ts";
 import { Impersonate } from "@users/domain/coordinators/impersonate/mod.ts";
@@ -85,6 +86,7 @@ import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.
     SendEmailOtp,
     VerifyEmailOtp,
     AccountRecovery,
+    SignInLanding, // REQ-091
     Logout,
     WipeAccount,
     Impersonate,

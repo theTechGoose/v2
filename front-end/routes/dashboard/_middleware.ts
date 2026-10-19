@@ -1,25 +1,29 @@
 import { define } from "../../utils.ts";
 import { loadUser } from "../../lib/auth.ts";
+import { openOnboardingQuestions } from "../../lib/onboarding-gate.ts";
 
-/** Auth gate only.
+/** The dashboard's gate.
  *
  *  - No session → redirect to "/".
+ *  - REQ-091: an onboarding question still open → redirect to /welcome, which
+ *    resumes at the first open one. Onboarding happens until every question
+ *    is answered; Skip only puts a question off, so the dashboard — the app's
+ *    front door after a code — brings the wizard back. A profile that cannot
+ *    be read lets the person through: two pages that cannot load would loop.
  *  - Otherwise → populate ctx.state.user and continue.
  *
- *  Onboarding info (name / businessName / state / address) is NOT a
- *  navigation prerequisite. The assistant already lets a user draft and
- *  lock a quote without any of it, so gating the rest of the app behind it
- *  only produced limbo: incomplete users got bounced to
- *  /assistant?onboard=1 and stranded on an empty onboarding chat. Setup is
- *  now collected as a non-blocking nudge — the dashboard's SetupChecklist
- *  surfaces name + business + the rest — and individual fields are re-asked
- *  at the one moment they're actually required (e.g. the contract wizard's
- *  governing-state step).
+ *  The other app pages (the assistant, quotes, settings …) stay reachable: the
+ *  wizard's own side trips (the pay page, the sample quote) and "Skip setup
+ *  for now" land there.
  */
 export const handler = define.middleware(async (ctx) => {
   const user = await loadUser(ctx.req);
   if (!user) {
     return new Response(null, { status: 302, headers: { Location: "/" } });
+  }
+  const open = await openOnboardingQuestions(ctx.req);
+  if (open && open.length > 0) {
+    return new Response(null, { status: 302, headers: { Location: "/welcome" } });
   }
   ctx.state.user = user;
   return await ctx.next();
