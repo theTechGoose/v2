@@ -42,7 +42,9 @@
 .l2 a:where(:not(.l2-btn):not(.l2-lang)):hover {
   color: var(--l2-green);
 }
-.l2 p {
+/* the paragraph reset, :where-scoped (REQ-094): a class's own margin outranks it. As `.l2 p`
+   (0,1,1) it beat every single-class margin on a <p>, and two of the mock's never applied. */
+.l2 :where(p) {
   margin: 0;
 }
 
@@ -486,6 +488,9 @@
   max-width: 1120px;
   margin: 0 auto;
   padding: 48px 20px 40px;
+  /* REQ-094 — the monster's 118% image is wider than its column on a tablet: clipped here,
+     never a sideways scroll of the whole page */
+  overflow-x: clip;
   display: grid;
   grid-template-columns: 1.15fr 0.85fr;
   gap: 40px;
@@ -854,6 +859,7 @@
 .l2-plans__head .l2-h2 {
   max-width: 760px;
 }
+/* the two margins below apply since REQ-094's :where reset — the mock's spacing */
 .l2-plans__sub {
   margin-top: 6px;
   font-size: 18px;
@@ -919,8 +925,8 @@
   gap: 8px;
   flex-grow: 1;
 }
-/* REQ-093 — 10px of padding on the Projects line. (A margin here never applied: the page's
-   `.l2 p` reset outranks a single class, so the line sat flush against the cards.) */
+/* REQ-093 — 10px of padding on the Projects line, what was asked. (The mock's 28px margin never
+   applied: the paragraph reset outranked a single class until REQ-094; the padding stands.) */
 .l2-plans__note {
   padding: 10px;
   text-align: center;

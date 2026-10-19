@@ -4,7 +4,9 @@
  * itteration of landing2 can you update it?" — the v3 mock (documonster-landing, approved Oct 18).
  * REQ-092/093 — Raphael, 2026-10-19, on the shipped page: "the call us button on the bottom is
  * broken it should scroll us to call us, the 1-855 button to call does not pick up the phone app
- * or facetime etc..." and "big jobs plan or bids needs 10px of padding."
+ * or facetime etc..." and "big jobs plan or bids needs 10px of padding." REQ-094 — Raphael,
+ * 2026-10-19, on that worktree: "go through this with a fine tooth comb." — the audit of the whole
+ * page, and what it found.
  *
  * "Real" means the page reads the site's one sources instead of carrying copies the mock had
  * inline: the plans and their prices (shared/quote-flow/pricing-plans.ts, P-08), the support
@@ -20,6 +22,7 @@ import { execSync } from "child_process";
 import { isPixelPage } from "../../shared/meta-pixel/pixel";
 import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans";
 import { DEMO_DAY_COUNT, DEMO_SLOTS } from "../../shared/demo-booking/mod";
+import { OG_IMAGE } from "../../shared/quote-flow/site-meta";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -317,7 +320,56 @@ describe("REQ-093 the Big jobs, plans or bids line has 10px of padding", () => {
     const rule = /\.l2-plans__note \{([^}]*)\}/.exec(css)?.[1] ?? "";
     expect(rule).toMatch(/padding: 10px;/);
     expect(rule).not.toMatch(/margin/);
-    // the reset that outranks any margin on a .l2-plans__note (0,1,1 over 0,1,0)
-    expect(css).toMatch(/\.l2 p \{\s*margin: 0;\s*\}/);
+    // the paragraph reset (REQ-094: :where-scoped, so a class's own margin applies — the line
+    // keeps padding, not a margin, because 10px of padding is what was asked)
+    expect(css).toMatch(/\.l2 :where\(p\) \{\s*margin: 0;\s*\}/);
+  });
+});
+
+/**
+ * REQ-094 — "go through this with a fine tooth comb." What the audit of the shipped page found and
+ * fixed: the paragraph reset ate two of the mock's margins (the plan blurbs, the plans subtitle);
+ * the hero's 118% monster image widened the page on a tablet (a sideways scroll at 761–860px); the
+ * share image every landing's og:image names, /og-card.png, was a 404 — never tracked; and the
+ * signup's phone field carried `required`, so an empty Empezar gratis got the browser's tooltip in
+ * the browser's language instead of the page's own message.
+ */
+describe("REQ-094 the fine-tooth comb — what the audit of the shipped page found", () => {
+  test("the paragraph reset is :where-scoped, so a class's own margin applies: the plan blurbs and the plans subtitle keep the mock's spacing", () => {
+    const css = read(CSS);
+    expect(css).toMatch(/\.l2 :where\(p\) \{\s*margin: 0;\s*\}/);
+    expect(css).not.toMatch(/\.l2 p \{/);
+    const planSub = /\.l2-plan__sub \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(planSub).toMatch(/margin: -4px 0 4px;/);
+    const plansSub = /\.l2-plans__sub \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(plansSub).toMatch(/margin-top: 6px;/);
+  });
+
+  test("the hero clips sideways overflow: the monster's oversized image cannot widen the page on a tablet", () => {
+    const css = read(CSS);
+    const hero = /\.l2-hero \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(hero).toMatch(/overflow-x: clip;/);
+  });
+
+  test("the share image every landing's og:image names is a tracked PNG of the size the tags declare, 1200×630", () => {
+    const rel = `front-end/static${OG_IMAGE.path}`;
+    expect([rel, tracked(rel)]).toEqual([rel, true]);
+    const buf = fs.readFileSync(path.join(ROOT, rel));
+    expect(buf.subarray(0, 8)).toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
+    expect([buf.readUInt32BE(16), buf.readUInt32BE(20)]).toEqual([
+      OG_IMAGE.width,
+      OG_IMAGE.height,
+    ]);
+    expect([OG_IMAGE.width, OG_IMAGE.height]).toEqual([1200, 630]);
+  });
+
+  test("the signup's phone field carries no `required`: an empty send is answered by the page's own message, in the page's language", () => {
+    const signup = read(ISLANDS[0]);
+    const input = /<input[^>]*id="reg-phone"[\s\S]*?\/>/.exec(signup)?.[0] ?? "";
+    expect(input).not.toBe("");
+    expect(input).not.toMatch(/\brequired\b/);
+    expect(signup).toMatch(/labels\.errPhone/);
   });
 });

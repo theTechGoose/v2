@@ -5,7 +5,8 @@
  * documonster-landing" — the v3 mock, approved Oct 18. REQ-092/093 — Raphael, 2026-10-19, on the
  * shipped page: "the call us button on the bottom is broken it should scroll us to call us, the
  * 1-855 button to call does not pick up the phone app or facetime etc..." and "big jobs plan or
- * bids needs 10px of padding."
+ * bids needs 10px of padding." REQ-094 — Raphael, 2026-10-19, on that worktree: "go through this
+ * with a fine tooth comb." — the audit of the whole page, and what it found.
  *
  * The page: front-end/routes/landing2.tsx (SSR, Spanish first, English on the toggle), its
  * islands — Landing2Signup (phone + the TCPA consent box → code → straight into the app, through
@@ -22,6 +23,8 @@ import { DEMO_DAY_COUNT, DEMO_SLOTS } from "../../shared/demo-booking/mod.ts";
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
 const DESKTOP = { width: 1280, height: 900 };
 const PHONE = { width: 390, height: 844 };
+/** an iPad in portrait: two columns still, the hero's art column squeezed to the disc's width */
+const TABLET = { width: 820, height: 1180 };
 const INK = "rgb(21, 32, 43)";
 const CARD_PLANS = PUBLIC_PLANS.filter((p) => !p.custom);
 const LINE_PLANS = PUBLIC_PLANS.filter((p) => p.custom);
@@ -1107,3 +1110,78 @@ Deno.test(
       }
     }),
 );
+
+Deno.test("REQ-094: the fine-tooth comb — on a tablet nothing is wider than the screen and the monster's disc stays round; the plan blurbs and the plans subtitle keep the mock's spacing; the share image every landing's og:image names answers at 1200×630; an empty Empezar gratis is answered on the page, in its language", (t) =>
+  story(t, async ({ page, expect }) => {
+    // a tablet in portrait: the hero's 118% monster image used to push a sideways scroll
+    await page.setViewportSize(TABLET);
+    await page.goto("/landing2?lang=en");
+    await expect.see("that win you the job.");
+    const tabletScroll = await page.evaluate(() =>
+      document.documentElement.scrollWidth
+    );
+    expect(
+      tabletScroll <= TABLET.width,
+      `nothing wider than the tablet (${tabletScroll} ≤ ${TABLET.width})`,
+    );
+    const disc = await page.locator("[data-cy='l2-monster']").evaluate((
+      el: HTMLElement,
+    ) => {
+      const r = el.getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height) };
+    });
+    expect(disc.w === disc.h, `the monster's disc is round (${disc.w}×${disc.h})`);
+    // a desktop: the margins the stylesheet declares on the plan blurbs and the plans subtitle
+    // apply — the page's paragraph reset no longer outranks them
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2?lang=en");
+    await expect.see("A lost invoice costs you more than a year of DocuMonster.");
+    const margins = await page.evaluate(() => {
+      const m = (sel: string) =>
+        getComputedStyle(document.querySelector(sel) as HTMLElement);
+      return {
+        subTop: m(".l2-plan__sub").marginTop,
+        subBottom: m(".l2-plan__sub").marginBottom,
+        plansSub: m(".l2-plans__sub").marginTop,
+        note: m(".l2-plans__note").padding,
+      };
+    });
+    expect.eq(margins.subTop, "-4px", "the plan blurb's top margin applies");
+    expect.eq(margins.subBottom, "4px", "the plan blurb's bottom margin applies");
+    expect.eq(margins.plansSub, "6px", "the plans subtitle's margin applies");
+    expect.eq(
+      margins.note,
+      "10px",
+      "the Projects line keeps its 10px of padding (REQ-093)",
+    );
+    // the share image the page's og:image names: a PNG of the size the tags declare
+    const og = await page.evaluate(async () => {
+      const href =
+        document.querySelector("meta[property='og:image']")?.getAttribute(
+          "content",
+        ) ?? "";
+      const path = new URL(href).pathname;
+      const r = await fetch(path);
+      const type = r.headers.get("content-type") ?? "";
+      if (!r.ok || !type.startsWith("image/")) {
+        return { path, status: r.status, type, w: 0, h: 0 };
+      }
+      const bmp = await createImageBitmap(await r.blob());
+      return { path, status: r.status, type, w: bmp.width, h: bmp.height };
+    });
+    expect.eq(og.status, 200, `${og.path} answers`);
+    expect(og.type.startsWith("image/png"), `a PNG (${og.type})`);
+    expect.eq(`${og.w}×${og.h}`, "1200×630", "1200×630, Facebook's large card");
+    // an empty Empezar gratis: the page's own message, not the browser's tooltip
+    await clickUntil(
+      page,
+      "[data-cy='l2-send-code']",
+      async () => (await count(page, "[data-cy='l2-signup'] [role='alert']")) > 0,
+    );
+    await expect.see("Enter a valid cell number.");
+    expect.eq(
+      await count(page, "[data-cy='l2-signup-step'][data-step='1']"),
+      1,
+      "still on the phone step",
+    );
+  }));

@@ -29,6 +29,9 @@ import DevCodeCard from "../components/DevCodeCard.tsx";
  * code shakes; the right one draws a check, bursts confetti and lifts the card off into the app.
  * The monster is told through one DOM event. Reduced motion turns all of it off: the plain flow.
  *
+ * REQ-094 — the phone field carries no `required`: an empty Empezar gratis is answered by
+ * errPhone on the page, in the page's language, not by the browser's tooltip in the browser's.
+ *
  * Every string comes in as `labels` from the route, so the island renders exactly what the server
  * did (no flash, no second dictionary on the client).
  */
@@ -425,7 +428,6 @@ export default function Landing2Signup(
                       setPhone((e.target as HTMLInputElement).value)}
                     onFocus={() => monster("lean")}
                     onBlur={() => monster("rest")}
-                    required
                   />
                   <div class="l2-phone__show" aria-hidden="true">
                     {shown.split("").map((ch, i) =>

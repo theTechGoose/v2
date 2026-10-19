@@ -44,6 +44,11 @@ import { LEGAL_LINKS, type LegalDocId } from "../../shared/legal/terms.ts";
  * and the hours — instead of handing a tel: link to a browser that may have no dialer; the 1-855
  * buttons themselves stay plain tel: links. REQ-093 — the Projects line under the plan cards
  * carries 10px of padding.
+ *
+ * REQ-094 — the fine-tooth comb (Raphael, 2026-10-19): the stylesheet's paragraph reset is
+ * :where-scoped so the mock's margins apply, the hero clips the monster's overflow on a tablet, the
+ * share image every landing's og:image names (/og-card.png, a 404 until now) is a tracked file,
+ * and the signup's phone field has no `required`.
  */
 
 /** REQ-076 — the dictionary key for each policy link's label on this page. */
