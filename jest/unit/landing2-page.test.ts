@@ -6,7 +6,8 @@
  * broken it should scroll us to call us, the 1-855 button to call does not pick up the phone app
  * or facetime etc..." and "big jobs plan or bids needs 10px of padding." REQ-094 — Raphael,
  * 2026-10-19, on that worktree: "go through this with a fine tooth comb." — the audit of the whole
- * page, and what it found.
+ * page, and what it found. REQ-095 — "go through the landing page with a fine tooth comb again.
+ * find any issues, fix them" — the second pass.
  *
  * "Real" means the page reads the site's one sources instead of carrying copies the mock had
  * inline: the plans and their prices (shared/quote-flow/pricing-plans.ts, P-08), the support
@@ -96,8 +97,8 @@ describe("REQ-081 /landing2 is wired to the site's one sources", () => {
   test("every dictionary key the page and its islands read exists in BOTH languages, the two languages differ, and no landing2 key goes unread", () => {
     const page = read(PAGE);
     const keys = new Set<string>();
-    // t("key") on the page — `t` prefixes "landing2."
-    for (const m of page.matchAll(/\bt\("([A-Za-z0-9_.]+)"\)/g)) {
+    // t("key") and t("key", { vars }) on the page — `t` prefixes "landing2."
+    for (const m of page.matchAll(/\bt\("([A-Za-z0-9_.]+)"[,)]/g)) {
       keys.add(`landing2.${m[1]}`);
     }
     // the label lists handed to the islands: pick([ "a", "b", … ] as const)
@@ -371,5 +372,91 @@ describe("REQ-094 the fine-tooth comb — what the audit of the shipped page fou
     expect(input).not.toBe("");
     expect(input).not.toMatch(/\brequired\b/);
     expect(signup).toMatch(/labels\.errPhone/);
+  });
+});
+
+/**
+ * REQ-095 — "go through the landing page with a fine tooth comb again. find any issues, fix them."
+ * The second pass: the page had no landmarks (every section a <div>; a screen reader had no header,
+ * main or footer to jump to) and the brand's #top sat on the hero, below the nav; the head named
+ * no hreflang alternates for the two language variants of one URL and gave the browser no early
+ * word of the font host; the footer's year was typed into the dictionaries; the demo's window
+ * group had no name where the day group has one; the hero's English note was unmarked on the
+ * Spanish page; on a tablet the 58px headline ran to five lines in a 369px column; the footer's
+ * policy links were 20px tap targets.
+ */
+describe("REQ-095 the second comb — landmarks, the head's language links, the year, the window group's name, the tablet headline, the footer's targets", () => {
+  test("the page has its landmarks: the nav is a <header>, the sections a <main>, the footer a <footer>, and #top is the page itself", () => {
+    const page = read(PAGE);
+    expect(page).toMatch(/<header class="l2-nav" data-cy="l2-nav">/);
+    expect(page).toMatch(/<main>/);
+    expect(page).toMatch(/<footer class="l2-footer" data-cy="l2-footer">/);
+    expect(page).toMatch(/<div class="l2" id="top">/);
+    expect(page).not.toMatch(/id="top" class="l2-hero"/);
+    expect((page.match(/\bid="top"/g) ?? []).length).toBe(1);
+  });
+
+  test("the head names the two language variants and a default for search engines, and warms the font host", () => {
+    const page = read(PAGE);
+    for (const l of ["es", "en"]) {
+      expect(page).toMatch(
+        new RegExp(
+          `<link\\s+rel="alternate"\\s+hreflang="${l}"\\s+href=\\{absoluteUrl\\("/landing2\\?lang=${l}"\\)\\}`,
+        ),
+      );
+    }
+    expect(page).toMatch(
+      /<link\s+rel="alternate"\s+hreflang="x-default"\s+href=\{absoluteUrl\("\/landing2"\)\}/,
+    );
+    expect(page).toMatch(
+      /rel="preconnect"\s+href="https:\/\/fonts\.googleapis\.com"/,
+    );
+    expect(page).toMatch(
+      /rel="preconnect"\s+href="https:\/\/fonts\.gstatic\.com"\s+crossorigin="anonymous"/,
+    );
+  });
+
+  test("the footer's year is the clock's, in both languages", () => {
+    expect(es["landing2.copyright"]).toBe("© {year} DocuMonster");
+    expect(en["landing2.copyright"]).toBe("© {year} DocuMonster");
+    const page = read(PAGE);
+    expect(page).toMatch(/const year = new Date\(\)\.getFullYear\(\);/);
+    expect(page).toMatch(/t\("copyright", \{ year \}\)/);
+  });
+
+  test("the demo's window group is named, in both languages, and the island reads the name", () => {
+    expect(es["landing2.pickSlot"]).toBeTruthy();
+    expect(en["landing2.pickSlot"]).toBeTruthy();
+    expect(es["landing2.pickSlot"]).not.toBe(en["landing2.pickSlot"]);
+    const demo = read(ISLANDS[1]);
+    expect(demo).toMatch(
+      /class="l2-demo__slots"\s+role="group"\s+aria-label=\{labels\.pickSlot\}/,
+    );
+    expect(demo).toMatch(/pickSlot: string;/);
+    expect(read(PAGE)).toMatch(/"pickSlot",/);
+  });
+
+  test("the hero's English note is marked English on the Spanish page", () => {
+    expect(read(PAGE)).toMatch(
+      /<div class="l2-card l2-note l2-note--got" lang="en">/,
+    );
+  });
+
+  test("on a tablet the headlines scale between the phone's and the desktop's sizes", () => {
+    const css = read(CSS);
+    const tablet =
+      /@media \(min-width: 761px\) and \(max-width: 1023px\) \{([\s\S]*?)\n\}/.exec(
+        css,
+      )?.[1] ?? "";
+    expect(tablet).toMatch(/\.l2-h1 \{\s*font-size: clamp\(40px, 5vw, 48px\);/);
+    expect(tablet).toMatch(/\.l2-h2 \{\s*font-size: clamp\(32px, 4vw, 36px\);/);
+  });
+
+  test("the footer's policy links are tap targets of at least 24px", () => {
+    const css = read(CSS);
+    const rule = /\.l2-footer__legal a \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/display: inline-flex;/);
+    expect(rule).toMatch(/align-items: center;/);
+    expect(rule).toMatch(/min-height: 24px;/);
   });
 });

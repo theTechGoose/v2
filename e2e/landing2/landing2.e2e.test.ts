@@ -6,7 +6,8 @@
  * shipped page: "the call us button on the bottom is broken it should scroll us to call us, the
  * 1-855 button to call does not pick up the phone app or facetime etc..." and "big jobs plan or
  * bids needs 10px of padding." REQ-094 — Raphael, 2026-10-19, on that worktree: "go through this
- * with a fine tooth comb." — the audit of the whole page, and what it found.
+ * with a fine tooth comb." — the audit of the whole page, and what it found. REQ-095 — "go through
+ * the landing page with a fine tooth comb again. find any issues, fix them" — the second pass.
  *
  * The page: front-end/routes/landing2.tsx (SSR, Spanish first, English on the toggle), its
  * islands — Landing2Signup (phone + the TCPA consent box → code → straight into the app, through
@@ -1130,12 +1131,17 @@ Deno.test("REQ-094: the fine-tooth comb — on a tablet nothing is wider than th
       const r = el.getBoundingClientRect();
       return { w: Math.round(r.width), h: Math.round(r.height) };
     });
-    expect(disc.w === disc.h, `the monster's disc is round (${disc.w}×${disc.h})`);
+    expect(
+      disc.w === disc.h,
+      `the monster's disc is round (${disc.w}×${disc.h})`,
+    );
     // a desktop: the margins the stylesheet declares on the plan blurbs and the plans subtitle
     // apply — the page's paragraph reset no longer outranks them
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2?lang=en");
-    await expect.see("A lost invoice costs you more than a year of DocuMonster.");
+    await expect.see(
+      "A lost invoice costs you more than a year of DocuMonster.",
+    );
     const margins = await page.evaluate(() => {
       const m = (sel: string) =>
         getComputedStyle(document.querySelector(sel) as HTMLElement);
@@ -1147,7 +1153,11 @@ Deno.test("REQ-094: the fine-tooth comb — on a tablet nothing is wider than th
       };
     });
     expect.eq(margins.subTop, "-4px", "the plan blurb's top margin applies");
-    expect.eq(margins.subBottom, "4px", "the plan blurb's bottom margin applies");
+    expect.eq(
+      margins.subBottom,
+      "4px",
+      "the plan blurb's bottom margin applies",
+    );
     expect.eq(margins.plansSub, "6px", "the plans subtitle's margin applies");
     expect.eq(
       margins.note,
@@ -1176,7 +1186,8 @@ Deno.test("REQ-094: the fine-tooth comb — on a tablet nothing is wider than th
     await clickUntil(
       page,
       "[data-cy='l2-send-code']",
-      async () => (await count(page, "[data-cy='l2-signup'] [role='alert']")) > 0,
+      async () =>
+        (await count(page, "[data-cy='l2-signup'] [role='alert']")) > 0,
     );
     await expect.see("Enter a valid cell number.");
     expect.eq(
@@ -1184,4 +1195,100 @@ Deno.test("REQ-094: the fine-tooth comb — on a tablet nothing is wider than th
       1,
       "still on the phone step",
     );
+  }));
+
+Deno.test("REQ-095: the second comb — the page has its landmarks and the brand goes to the very top; the head names both language variants; the footer's year is this year; the demo's window group has a name and the hero's English note is marked English; the footer's policy links are 24px tap targets; on a tablet the headline is the phone's size, four lines at most", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2?lang=en");
+    await expect.see("that win you the job.");
+    // the landmarks a screen reader jumps by
+    const marks = await page.evaluate(() => ({
+      header: document.querySelectorAll(".l2 > header").length,
+      main: document.querySelectorAll(".l2 > main").length,
+      footer: document.querySelectorAll(".l2 > footer").length,
+      top: document.getElementById("top")?.className ?? "",
+    }));
+    expect.eq(marks.header, 1, "one <header>: the nav");
+    expect.eq(marks.main, 1, "one <main>: the page's sections");
+    expect.eq(marks.footer, 1, "one <footer>");
+    expect.eq(marks.top, "l2", "#top is the page itself, not the hero");
+    // the head: both language variants and a default, and the font host warmed
+    const alts = await page.evaluate(() =>
+      [...document.querySelectorAll("link[rel='alternate'][hreflang]")].map((
+        l,
+      ) => `${l.getAttribute("hreflang")}=${l.getAttribute("href")}`).sort()
+    );
+    expect.eq(
+      alts.join(" "),
+      "en=https://documonster.com/landing2?lang=en es=https://documonster.com/landing2?lang=es x-default=https://documonster.com/landing2",
+      "es, en and a default",
+    );
+    expect.eq(
+      await count(
+        page,
+        "link[rel='preconnect'][href='https://fonts.gstatic.com']",
+      ),
+      1,
+      "the font host is warmed",
+    );
+    // the footer's year is the clock's
+    await expect.see(`© ${new Date().getFullYear()} DocuMonster`);
+    // the hero's English note is marked English
+    expect.eq(
+      await page.locator("[data-cy='l2-hero'] .l2-note--got").getAttribute(
+        "lang",
+      ),
+      "en",
+      "the hero's English note carries lang=en",
+    );
+    // the footer's policy links are tap targets
+    const legal = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-cy='l2-footer'] a[data-legal-link]")]
+        .map((a) => Math.round(a.getBoundingClientRect().height))
+    );
+    expect(
+      legal.length === 4 && legal.every((h) => h >= 24),
+      `four policy links, each at least 24px tall (${legal})`,
+    );
+    // the demo's window group is named like the day group
+    await clickUntil(
+      page,
+      "[data-cy='l2-pick-time']",
+      async () => (await count(page, "[data-cy='l2-slot']")) > 0,
+    );
+    expect.eq(
+      await page.locator(".l2-demo__slots").getAttribute("aria-label"),
+      "Pick a window",
+      "the window group's name",
+    );
+    // the brand goes to the very top of the page
+    expect(
+      (await page.evaluate(() => scrollY)) > 0,
+      "scrolled down to the demo first",
+    );
+    await page.locator(".l2-brand").click();
+    expect.eq(
+      await page.evaluate(() => scrollY),
+      0,
+      "the brand scrolls to the very top",
+    );
+    // a tablet: the headline at the phone's size, four lines at most
+    await page.setViewportSize(TABLET);
+    await page.goto("/landing2?lang=es");
+    await expect.see("que te ganan el trabajo.");
+    const h1 = await page.locator("[data-cy='l2-hero'] h1").evaluate((
+      el: HTMLElement,
+    ) => {
+      const size = parseFloat(getComputedStyle(el).fontSize);
+      return {
+        size,
+        lines: Math.round(el.getBoundingClientRect().height / (size * 1.02)),
+      };
+    });
+    expect(
+      h1.size >= 40 && h1.size <= 48,
+      `the headline is between 40 and 48px on a tablet (${h1.size})`,
+    );
+    expect(h1.lines <= 4, `four lines at most (${h1.lines})`);
   }));

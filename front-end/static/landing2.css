@@ -1107,8 +1107,12 @@
   padding-top: 10px;
   align-items: center;
 }
+/* REQ-095 — a 24px tap target each, where the 13px text alone gave 20 */
 .l2-footer__legal a {
   color: #d9e2dc;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
 }
 .l2-footer__legal a:hover {
   color: #fff;
@@ -1128,6 +1132,16 @@
     grid-template-columns: minmax(0, 1fr);
     max-width: 480px;
     margin: 0 auto;
+  }
+}
+/* REQ-095 — a tablet: the headlines scale between the phone's size and the desktop's, so the
+   58px headline no longer runs to five lines in the hero's squeezed column */
+@media (min-width: 761px) and (max-width: 1023px) {
+  .l2-h1 {
+    font-size: clamp(40px, 5vw, 48px);
+  }
+  .l2-h2 {
+    font-size: clamp(32px, 4vw, 36px);
   }
 }
 @media (max-width: 760px) {

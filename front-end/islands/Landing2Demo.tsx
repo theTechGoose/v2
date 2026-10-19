@@ -28,6 +28,8 @@ export interface Landing2DemoLabels {
   pickTimeLink: string;
   quickLink: string;
   pickDay: string;
+  /** REQ-095 — the window group's name, as the day group has one */
+  pickSlot: string;
   name: string;
   namePh: string;
   phone: string;
@@ -253,7 +255,7 @@ export default function Landing2Demo(
           ))}
         </div>
       </div>
-      <div class="l2-demo__slots" role="group">
+      <div class="l2-demo__slots" role="group" aria-label={labels.pickSlot}>
         {slots.map((s, i) => (
           <button
             type="button"
