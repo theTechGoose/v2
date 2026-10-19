@@ -17,19 +17,33 @@ import { answerQuestions, JSON_HEADERS } from "../_shared/onboarding-answers.ts"
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
 const DESKTOP = { width: 1280, height: 900 };
 
+/** a frame of the page as it stands (the runner shoots after every action; a hover changes nothing —
+ *  forced, so a fixed overlay such as the code popup does not hold it up) */
+async function frame(page: StoryTools["page"]): Promise<void> {
+  await page.locator("html").hover({ force: true, position: { x: 1, y: 1 } });
+}
+
+/** a click that leaves the page, taken off-camera: the runner's frame after a click can land mid-navigation
+ *  (Chromium's "Unable to capture screenshot"), so the landed page gets its own frame instead */
+async function clickAway(page: StoryTools["page"], selector: string): Promise<void> {
+  await page.locator(selector).evaluate((el: HTMLElement) => el.click());
+}
+
 /** sign in on /login with this phone: the code pops up on /verify, "Use this code" lands wherever the app sends it */
 async function codeIn(page: StoryTools["page"], local: string): Promise<URL> {
   await page.goto("/login?lang=en");
   await page.locator("input[type='tel']").fill(local);
-  await page.locator("button[type='submit']").click();
+  await clickAway(page, "button[type='submit']");
   await page.waitForURL((u: URL) => u.pathname === "/verify", { timeout: 60_000 });
   await page.locator("[data-cy='dev-code']").waitFor({ state: "visible", timeout: 15_000 });
-  await page.locator("[data-cy='dev-code-use']").click();
+  await frame(page); // the code page, the popup on it
+  await clickAway(page, "[data-cy='dev-code-use']");
   await page.waitForURL((u: URL) => u.pathname !== "/verify", { timeout: 20_000 });
   // read the landing as the app sent it — the dashboard's welcome-back toast drops its
   // query from the address once the island hydrates
   const landed = new URL(page.url());
   await page.waitForLoadState("networkidle");
+  await frame(page); // where the code landed
   return landed;
 }
 
@@ -71,8 +85,10 @@ Deno.test("REQ-091: onboarding happens until every question is answered — a ne
     await page.locator("[data-cy='welcome-skip']").click();
     await expect.see("best email");
     // "Skip setup for now" leaves the wizard — for the assistant, not the dashboard (which would send the person straight back)
-    await page.locator("button.welcome__escape").click();
+    await clickAway(page, "button.welcome__escape");
     await page.waitForURL((u: URL) => u.pathname.startsWith("/assistant"), { timeout: 60_000 });
+    await page.waitForLoadState("networkidle");
+    await frame(page); // the assistant, where the escape lands
     expect(new URL(page.url()).pathname.startsWith("/assistant"), `skip setup leaves for the assistant (${page.url()})`);
 
     // the dashboard sends the person back to the wizard, at the first open question
