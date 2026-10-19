@@ -919,8 +919,10 @@
   gap: 8px;
   flex-grow: 1;
 }
+/* REQ-093 — 10px of padding on the Projects line. (A margin here never applied: the page's
+   `.l2 p` reset outranks a single class, so the line sat flush against the cards.) */
 .l2-plans__note {
-  margin: 28px 0 0;
+  padding: 10px;
   text-align: center;
   font-size: 19px;
   font-weight: 700;

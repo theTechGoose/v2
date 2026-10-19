@@ -2,7 +2,10 @@
  * REQ-081 — Raphael, 2026-10-16: "take this mock … make it real at /landing2 and make sure all
  * aspects of the page are working." REQ-088/089/090 — Raphael, 2026-10-18: "this is the newest
  * itteration of landing2 can you update it? /Users/raphaelcastro/Documents/programming/v2/
- * documonster-landing" — the v3 mock, approved Oct 18.
+ * documonster-landing" — the v3 mock, approved Oct 18. REQ-092/093 — Raphael, 2026-10-19, on the
+ * shipped page: "the call us button on the bottom is broken it should scroll us to call us, the
+ * 1-855 button to call does not pick up the phone app or facetime etc..." and "big jobs plan or
+ * bids needs 10px of padding."
  *
  * The page: front-end/routes/landing2.tsx (SSR, Spanish first, English on the toggle), its
  * islands — Landing2Signup (phone + the TCPA consent box → code → straight into the app, through
@@ -378,9 +381,9 @@ Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the th
       "Start free",
     );
     expect.eq(
-      await final.locator("a[href='tel:+18553628666']").count(),
+      await final.locator("a[href='#llamanos']").count(),
       1,
-      "Call us",
+      "Call us — to the call-us section (REQ-092)",
     );
     expect.eq(await final.locator("a[href='#demo']").count(), 1, "Book a demo");
     // WhatsApp is nowhere: no link, no button, no word
@@ -402,8 +405,8 @@ Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the th
     }
     // the phone and email links
     expect(
-      (await count(page, "a[href='tel:+18553628666']")) >= 6,
-      "the phone links dial the support line — nav, signup, team, Projects, final, footer",
+      (await count(page, "a[href='tel:+18553628666']")) >= 5,
+      "the phone links dial the support line — nav, signup, team, Projects, footer (the bottom Call us buttons scroll instead, REQ-092)",
     );
     expect((await count(page, "a[href^='mailto:']")) >= 1, "the email link");
     // the in-page buttons: Start free → the signup, Book a demo → the demo
@@ -440,9 +443,9 @@ Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the th
     expect(await bar.isVisible(), "the sticky bar on a phone");
     expect.eq(await bar.locator("a").count(), 2, "two buttons: start and call");
     expect.eq(
-      await bar.locator("a[href='tel:+18553628666']").count(),
+      await bar.locator("a[href='#llamanos']").count(),
       1,
-      "the call button dials the line",
+      "the call button scrolls to the call-us section (REQ-092)",
     );
     await bar.locator("a[href='#empezar']").click();
     expect(
@@ -933,3 +936,174 @@ Deno.test("REQ-084: the signup card asks the browser for no autofill — the pho
       `the code field (${JSON.stringify(code)})`,
     );
   }));
+
+Deno.test(
+  "REQ-092: the Llámanos button at the bottom — the sticky bar on a phone, the final CTA on a desktop — scrolls to the call-us section, and every 1-855 button is a plain tel: link the browser hands to the dialer",
+  (t) =>
+    story(t, async ({ page, expect }) => {
+      // the call-us section is the team: Art and Ben, the number and the hours
+      await page.setViewportSize(DESKTOP);
+      await page.goto("/landing2?lang=en");
+      await expect.see("that win you the job.");
+      const callUs = page.locator("#llamanos");
+      expect.eq(await callUs.count(), 1, "the page has one call-us anchor");
+      expect.eq(
+        await callUs.getAttribute("data-cy"),
+        "l2-team",
+        "the anchor is the team section",
+      );
+      expect.eq(
+        await callUs.locator("[data-cy='l2-member']").count(),
+        2,
+        "Art and Ben are in it",
+      );
+      expect.eq(
+        await callUs.locator("a[href='tel:+18553628666']").count(),
+        1,
+        "and so is the 1-855 button",
+      );
+      // a desktop: the final CTA's Call us scrolls there; the page never leaves
+      const finalCall = page.locator("[data-cy='l2-final'] a.l2-btn--dark");
+      expect.eq(
+        await finalCall.getAttribute("href"),
+        "#llamanos",
+        "the final CTA's Call us points at the call-us section",
+      );
+      await finalCall.scrollIntoViewIfNeeded();
+      expect(
+        await callUs.evaluate((el: HTMLElement) =>
+          el.getBoundingClientRect().bottom < 0
+        ),
+        "at the final CTA the call-us section is above the screen",
+      );
+      await finalCall.click();
+      expect(
+        await callUs.evaluate((el: HTMLElement) => {
+          const r = el.getBoundingClientRect();
+          return r.top >= -2 && r.top < innerHeight / 2;
+        }),
+        "Call us scrolls the call-us section to the top of the screen",
+      );
+      expect.eq(
+        await page.evaluate(() => location.pathname + location.hash),
+        "/landing2#llamanos",
+        "the page stays; the hash names the section",
+      );
+      expect(
+        await callUs.locator("a[href='tel:+18553628666']").isVisible(),
+        "the 1-855 button is on the screen",
+      );
+      await expect.see("8 AM – 8 PM");
+      // a phone: the sticky bar's Call us does the same
+      await page.setViewportSize(PHONE);
+      await page.goto("/landing2?lang=en&vp=390");
+      await expect.see("that win you the job.");
+      const bar = page.locator("[data-cy='l2-stickybar']");
+      expect(await bar.isVisible(), "the sticky bar on a phone");
+      const barCall = bar.locator("a.l2-btn--dark");
+      expect.eq(
+        await barCall.getAttribute("href"),
+        "#llamanos",
+        "the bar's Call us points at the call-us section",
+      );
+      expect(
+        await callUs.evaluate((el: HTMLElement) =>
+          el.getBoundingClientRect().top > innerHeight
+        ),
+        "at the top of the page the call-us section is below the screen",
+      );
+      await barCall.click();
+      expect(
+        await callUs.evaluate((el: HTMLElement) => {
+          const r = el.getBoundingClientRect();
+          return r.top >= -2 && r.top < innerHeight / 2;
+        }),
+        "the bar's Call us scrolls the call-us section onto the screen",
+      );
+      expect(
+        await callUs.locator("a[href='tel:+18553628666']").isVisible(),
+        "the 1-855 button is on the phone's screen",
+      );
+      // every 1-855 button is a plain tel: link — the number as the browser dials it, no script in the way
+      const tel = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLAnchorElement>("a[href^='tel:']")]
+          .map((a) => ({
+            href: a.getAttribute("href"),
+            text: (a.textContent ?? "").trim(),
+            plain: a.onclick === null && !a.hasAttribute("onclick") &&
+              a.target === "",
+          }))
+      );
+      expect(
+        tel.length >= 5,
+        `the 1-855 buttons — nav, signup, team, Projects, footer (${tel.length})`,
+      );
+      for (const a of tel) {
+        expect.eq(
+          a.href,
+          "tel:+18553628666",
+          `"${a.text}" dials the support line as the browser expects it`,
+        );
+        expect(a.plain, `"${a.text}" has no script and no target in the way`);
+      }
+      expect.eq(
+        await count(
+          page,
+          "[data-cy='l2-final'] a[href^='tel:'], [data-cy='l2-stickybar'] a[href^='tel:']",
+        ),
+        0,
+        "the bottom Call us buttons are no longer tel: links",
+      );
+    }),
+);
+
+Deno.test(
+  "REQ-093: the Big jobs, plans or bids line under the plan cards has 10px of padding on every side, on a desktop and on a phone",
+  (t) =>
+    story(t, async ({ page, expect }) => {
+      for (const vp of [DESKTOP, PHONE]) {
+        await page.setViewportSize(vp);
+        await page.goto(`/landing2?lang=en&vp=${vp.width}`);
+        await expect.see("Big jobs, plans or bids?");
+        const line = page.locator("[data-cy='l2-projects']");
+        await line.scrollIntoViewIfNeeded();
+        const m = await line.evaluate((el: HTMLElement) => {
+          const cs = getComputedStyle(el);
+          const box = el.getBoundingClientRect();
+          const cards = document.querySelector(".l2-three--plans")!
+            .getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const text = range.getBoundingClientRect();
+          return {
+            padding: [
+              cs.paddingTop,
+              cs.paddingRight,
+              cs.paddingBottom,
+              cs.paddingLeft,
+            ].join(" "),
+            textBelowCards: text.top - cards.bottom,
+            textInsetLeft: text.left - box.left,
+            textInsetRight: box.right - text.right,
+            textInsetBottom: box.bottom - text.bottom,
+          };
+        });
+        expect.eq(
+          m.padding,
+          "10px 10px 10px 10px",
+          `10px of padding on every side at ${vp.width}`,
+        );
+        expect(
+          m.textBelowCards >= 9.5,
+          `the text sits at least 10px below the cards at ${vp.width} (${
+            m.textBelowCards.toFixed(1)
+          })`,
+        );
+        expect(
+          m.textInsetLeft >= 9.5 && m.textInsetRight >= 9.5 &&
+            m.textInsetBottom >= 9.5,
+          `the text keeps 10px from the line's edges at ${vp.width}`,
+        );
+      }
+    }),
+);

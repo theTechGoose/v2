@@ -38,6 +38,12 @@ import { LEGAL_LINKS, type LegalDocId } from "../../shared/legal/terms.ts";
  * the hero, three headline-only outcome cards, Art and Ben with their photos and the 8 to 8
  * hours, three plan cards with the custom plan as the call-us line, the FAQ's four points, and
  * start / call / demo in the final CTA and the sticky bar — no chat-app link anywhere on the page.
+ *
+ * REQ-092 — the Llámanos button at the bottom (the sticky bar on a phone, the final CTA on a
+ * desktop) scrolls to the call-us section — the team, `#llamanos`: Art and Ben, the 1-855 button
+ * and the hours — instead of handing a tel: link to a browser that may have no dialer; the 1-855
+ * buttons themselves stay plain tel: links. REQ-093 — the Projects line under the plan cards
+ * carries 10px of padding.
  */
 
 /** REQ-076 — the dictionary key for each policy link's label on this page. */
@@ -328,7 +334,7 @@ export default define.page(function Landing2(ctx) {
         </div>
 
         {/* ---------- the people ---------- */}
-        <div class="l2-team" data-cy="l2-team">
+        <div id="llamanos" class="l2-team" data-cy="l2-team">
           <div class="l2-wrap l2-two l2-team__grid">
             <div class="l2-stack">
               <span class="l2-eyebrow l2-eyebrow--forest">
@@ -482,7 +488,7 @@ export default define.page(function Landing2(ctx) {
               <a class="l2-btn l2-btn--primary" href="#empezar">
                 {t("navCta")}
               </a>
-              <a class="l2-btn l2-btn--dark" href={SUPPORT_PHONE_HREF}>
+              <a class="l2-btn l2-btn--dark" href="#llamanos">
                 {t("callUs")}
               </a>
               <a class="l2-btn l2-btn--ghost" href="#demo">{t("bookDemo")}</a>
@@ -527,7 +533,7 @@ export default define.page(function Landing2(ctx) {
           <a class="l2-btn l2-btn--primary l2-btn--bar" href="#empezar">
             {t("navCta")}
           </a>
-          <a class="l2-btn l2-btn--dark l2-btn--bar" href={SUPPORT_PHONE_HREF}>
+          <a class="l2-btn l2-btn--dark l2-btn--bar" href="#llamanos">
             {t("callUs")}
           </a>
         </div>

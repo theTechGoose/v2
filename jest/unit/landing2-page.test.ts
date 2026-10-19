@@ -2,6 +2,9 @@
  * REQ-081 — Raphael, 2026-10-16: "take this mock … make it real at /landing2 and make sure all
  * aspects of the page are working." REQ-088/089/090 — Raphael, 2026-10-18: "this is the newest
  * itteration of landing2 can you update it?" — the v3 mock (documonster-landing, approved Oct 18).
+ * REQ-092/093 — Raphael, 2026-10-19, on the shipped page: "the call us button on the bottom is
+ * broken it should scroll us to call us, the 1-855 button to call does not pick up the phone app
+ * or facetime etc..." and "big jobs plan or bids needs 10px of padding."
  *
  * "Real" means the page reads the site's one sources instead of carrying copies the mock had
  * inline: the plans and their prices (shared/quote-flow/pricing-plans.ts, P-08), the support
@@ -192,11 +195,14 @@ describe("REQ-088 the v3 landing reads as the mock", () => {
     const sticky =
       /data-cy="l2-stickybar"[\s\S]*?<\/div>\s*<\/div>/.exec(page)?.[0] ?? "";
     expect(sticky).toMatch(/#empezar/);
-    expect(sticky).toMatch(/SUPPORT_PHONE_HREF/);
+    expect(sticky).toMatch(/href="#llamanos"/); // REQ-092: Call us scrolls to the call-us section
+    expect(sticky).not.toMatch(/SUPPORT_PHONE_HREF/);
     expect((sticky.match(/<a\b/g) ?? []).length).toBe(2);
     const final =
       /data-cy="l2-final"[\s\S]*?data-cy="l2-footer"/.exec(page)?.[0] ?? "";
     expect((final.match(/<a\b/g) ?? []).length).toBe(3);
+    expect(final).toMatch(/href="#llamanos"/); // REQ-092
+    expect(final).not.toMatch(/SUPPORT_PHONE_HREF/);
     expect(final).not.toMatch(/EMAIL_HREF|mailto/);
     expect(page).not.toMatch(/emailUs/);
   });
@@ -266,5 +272,52 @@ describe("REQ-090 the demo card posts the new booking", () => {
     const page = read(PAGE);
     expect(page).toMatch(/upcomingDemoDays\(lang\)/);
     expect(page).toMatch(/slots=\{DEMO_SLOTS\}/);
+  });
+});
+
+describe("REQ-092 the bottom Llámanos scrolls to the call-us section; the 1-855 buttons are plain tel: links", () => {
+  test("the team section is the call-us anchor, and both bottom Call us buttons point at it", () => {
+    const page = read(PAGE);
+    const team = /<div[^>]*data-cy="l2-team"[^>]*>/.exec(page)?.[0] ?? "";
+    expect(team).toMatch(/\bid="llamanos"/);
+    expect((page.match(/\bid="llamanos"/g) ?? []).length).toBe(1);
+    const sticky =
+      /data-cy="l2-stickybar"[\s\S]*?<\/div>\s*<\/div>/.exec(page)?.[0] ?? "";
+    const final =
+      /data-cy="l2-final"[\s\S]*?data-cy="l2-footer"/.exec(page)?.[0] ?? "";
+    for (const block of [sticky, final]) {
+      const call = /<a\b[^>]*l2-btn--dark[^>]*>/.exec(block)?.[0] ?? "";
+      expect(call).toMatch(/href="#llamanos"/);
+      expect(call).not.toMatch(/SUPPORT_PHONE_HREF|tel:/);
+    }
+  });
+
+  test("every 1-855 button is the shared tel: href with nothing in the way — the browser's dialer gets the number untouched", () => {
+    const contact = read("shared/legal/contact.ts");
+    expect(contact).toMatch(/export const SUPPORT_PHONE_E164 = "\+1\d{10}"/);
+    expect(contact).toMatch(
+      /export const SUPPORT_PHONE_HREF = `tel:\$\{SUPPORT_PHONE_E164\}`/,
+    );
+    const page = read(PAGE);
+    const phones = page.match(/<a\b[^>]*href=\{SUPPORT_PHONE_HREF\}[^>]*>/g) ??
+      [];
+    expect(phones.length).toBe(4); // the nav, the team's button, the Projects line, the footer
+    for (const a of phones) expect(a).not.toMatch(/onClick|target=|download/);
+    const signup = read(ISLANDS[0]);
+    const row = /<a\b[^>]*href=\{phoneHref\}[^>]*>/.exec(signup)?.[0] ?? "";
+    expect(row).not.toBe("");
+    expect(row).not.toMatch(/onClick|target=|download/);
+    for (const s of SOURCES.map(read)) expect(s).not.toMatch(/href="tel:/);
+  });
+});
+
+describe("REQ-093 the Big jobs, plans or bids line has 10px of padding", () => {
+  test("the stylesheet gives the Projects line 10px of padding on every side, and no margin the page's paragraph reset would eat", () => {
+    const css = read(CSS);
+    const rule = /\.l2-plans__note \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/padding: 10px;/);
+    expect(rule).not.toMatch(/margin/);
+    // the reset that outranks any margin on a .l2-plans__note (0,1,1 over 0,1,0)
+    expect(css).toMatch(/\.l2 p \{\s*margin: 0;\s*\}/);
   });
 });
