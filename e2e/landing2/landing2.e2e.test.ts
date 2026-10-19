@@ -1183,6 +1183,23 @@ Deno.test("REQ-094: the fine-tooth comb — on a tablet nothing is wider than th
     expect.eq(og.status, 200, `${og.path} answers`);
     expect(og.type.startsWith("image/png"), `a PNG (${og.type})`);
     expect.eq(`${og.w}×${og.h}`, "1200×630", "1200×630, Facebook's large card");
+    // "every landing's og:image": the site's front page names the same card, and it answers there too
+    await page.goto("/");
+    const home = await page.evaluate(async () => {
+      const href =
+        document.querySelector("meta[property='og:image']")?.getAttribute(
+          "content",
+        ) ?? "";
+      const path = new URL(href).pathname;
+      const r = await fetch(path);
+      return { path, status: r.status };
+    });
+    expect.eq(home.path, og.path, "the front page names the same share image");
+    expect.eq(home.status, 200, "and it answers there too");
+    await page.goto("/landing2?lang=en");
+    await expect.see(
+      "A lost invoice costs you more than a year of DocuMonster.",
+    );
     // an empty Empezar gratis: the page's own message, not the browser's tooltip
     await clickUntil(
       page,
