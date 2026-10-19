@@ -2,7 +2,13 @@
  * REQ-081 — Raphael, 2026-10-16: "take this mock … make it real at /landing2 and make sure all
  * aspects of the page are working." REQ-088/089/090 — Raphael, 2026-10-18: "this is the newest
  * itteration of landing2 can you update it? /Users/raphaelcastro/Documents/programming/v2/
- * documonster-landing" — the v3 mock, approved Oct 18.
+ * documonster-landing" — the v3 mock, approved Oct 18. REQ-092/093 — Raphael, 2026-10-19, on the
+ * shipped page: "the call us button on the bottom is broken it should scroll us to call us, the
+ * 1-855 button to call does not pick up the phone app or facetime etc..." and "big jobs plan or
+ * bids needs 10px of padding." REQ-094 — Raphael, 2026-10-19, on that worktree: "go through this
+ * with a fine tooth comb." — the audit of the whole page, and what it found. REQ-095 — "go through
+ * the landing page with a fine tooth comb again. find any issues, fix them" — the second pass.
+ * REQ-096 — "run the fine tooth comb again" — the third.
  *
  * The page: front-end/routes/landing2.tsx (SSR, Spanish first, English on the toggle), its
  * islands — Landing2Signup (phone + the TCPA consent box → code → straight into the app, through
@@ -19,6 +25,8 @@ import { DEMO_DAY_COUNT, DEMO_SLOTS } from "../../shared/demo-booking/mod.ts";
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
 const DESKTOP = { width: 1280, height: 900 };
 const PHONE = { width: 390, height: 844 };
+/** an iPad in portrait: two columns still, the hero's art column squeezed to the disc's width */
+const TABLET = { width: 820, height: 1180 };
 const INK = "rgb(21, 32, 43)";
 const CARD_PLANS = PUBLIC_PLANS.filter((p) => !p.custom);
 const LINE_PLANS = PUBLIC_PLANS.filter((p) => p.custom);
@@ -378,9 +386,9 @@ Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the th
       "Start free",
     );
     expect.eq(
-      await final.locator("a[href='tel:+18553628666']").count(),
+      await final.locator("a[href='#llamanos']").count(),
       1,
-      "Call us",
+      "Call us — to the call-us section (REQ-092)",
     );
     expect.eq(await final.locator("a[href='#demo']").count(), 1, "Book a demo");
     // WhatsApp is nowhere: no link, no button, no word
@@ -402,8 +410,8 @@ Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the th
     }
     // the phone and email links
     expect(
-      (await count(page, "a[href='tel:+18553628666']")) >= 6,
-      "the phone links dial the support line — nav, signup, team, Projects, final, footer",
+      (await count(page, "a[href='tel:+18553628666']")) >= 5,
+      "the phone links dial the support line — nav, signup, team, Projects, footer (the bottom Call us buttons scroll instead, REQ-092)",
     );
     expect((await count(page, "a[href^='mailto:']")) >= 1, "the email link");
     // the in-page buttons: Start free → the signup, Book a demo → the demo
@@ -440,9 +448,9 @@ Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the th
     expect(await bar.isVisible(), "the sticky bar on a phone");
     expect.eq(await bar.locator("a").count(), 2, "two buttons: start and call");
     expect.eq(
-      await bar.locator("a[href='tel:+18553628666']").count(),
+      await bar.locator("a[href='#llamanos']").count(),
       1,
-      "the call button dials the line",
+      "the call button scrolls to the call-us section (REQ-092)",
     );
     await bar.locator("a[href='#empezar']").click();
     expect(
@@ -931,5 +939,444 @@ Deno.test("REQ-084: the signup card asks the browser for no autofill — the pho
         dl: "other",
       }),
       `the code field (${JSON.stringify(code)})`,
+    );
+  }));
+
+Deno.test(
+  "REQ-092: the Llámanos button at the bottom — the sticky bar on a phone, the final CTA on a desktop — scrolls to the call-us section, and every 1-855 button is a plain tel: link the browser hands to the dialer",
+  (t) =>
+    story(t, async ({ page, expect }) => {
+      // the call-us section is the team: Art and Ben, the number and the hours
+      await page.setViewportSize(DESKTOP);
+      await page.goto("/landing2?lang=en");
+      await expect.see("that win you the job.");
+      const callUs = page.locator("#llamanos");
+      expect.eq(await callUs.count(), 1, "the page has one call-us anchor");
+      expect.eq(
+        await callUs.getAttribute("data-cy"),
+        "l2-team",
+        "the anchor is the team section",
+      );
+      expect.eq(
+        await callUs.locator("[data-cy='l2-member']").count(),
+        2,
+        "Art and Ben are in it",
+      );
+      expect.eq(
+        await callUs.locator("a[href='tel:+18553628666']").count(),
+        1,
+        "and so is the 1-855 button",
+      );
+      // a desktop: the final CTA's Call us scrolls there; the page never leaves
+      const finalCall = page.locator("[data-cy='l2-final'] a.l2-btn--dark");
+      expect.eq(
+        await finalCall.getAttribute("href"),
+        "#llamanos",
+        "the final CTA's Call us points at the call-us section",
+      );
+      await finalCall.scrollIntoViewIfNeeded();
+      expect(
+        await callUs.evaluate((el: HTMLElement) =>
+          el.getBoundingClientRect().bottom < 0
+        ),
+        "at the final CTA the call-us section is above the screen",
+      );
+      await finalCall.click();
+      expect(
+        await callUs.evaluate((el: HTMLElement) => {
+          const r = el.getBoundingClientRect();
+          return r.top >= -2 && r.top < innerHeight / 2;
+        }),
+        "Call us scrolls the call-us section to the top of the screen",
+      );
+      expect.eq(
+        await page.evaluate(() => location.pathname + location.hash),
+        "/landing2#llamanos",
+        "the page stays; the hash names the section",
+      );
+      expect(
+        await callUs.locator("a[href='tel:+18553628666']").isVisible(),
+        "the 1-855 button is on the screen",
+      );
+      await expect.see("8 AM – 8 PM");
+      // a phone: the sticky bar's Call us does the same
+      await page.setViewportSize(PHONE);
+      await page.goto("/landing2?lang=en&vp=390");
+      await expect.see("that win you the job.");
+      const bar = page.locator("[data-cy='l2-stickybar']");
+      expect(await bar.isVisible(), "the sticky bar on a phone");
+      const barCall = bar.locator("a.l2-btn--dark");
+      expect.eq(
+        await barCall.getAttribute("href"),
+        "#llamanos",
+        "the bar's Call us points at the call-us section",
+      );
+      expect(
+        await callUs.evaluate((el: HTMLElement) =>
+          el.getBoundingClientRect().top > innerHeight
+        ),
+        "at the top of the page the call-us section is below the screen",
+      );
+      await barCall.click();
+      expect(
+        await callUs.evaluate((el: HTMLElement) => {
+          const r = el.getBoundingClientRect();
+          return r.top >= -2 && r.top < innerHeight / 2;
+        }),
+        "the bar's Call us scrolls the call-us section onto the screen",
+      );
+      expect(
+        await callUs.locator("a[href='tel:+18553628666']").isVisible(),
+        "the 1-855 button is on the phone's screen",
+      );
+      // every 1-855 button is a plain tel: link — the number as the browser dials it, no script in the way
+      const tel = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLAnchorElement>("a[href^='tel:']")]
+          .map((a) => ({
+            href: a.getAttribute("href"),
+            text: (a.textContent ?? "").trim(),
+            plain: a.onclick === null && !a.hasAttribute("onclick") &&
+              a.target === "",
+          }))
+      );
+      expect(
+        tel.length >= 5,
+        `the 1-855 buttons — nav, signup, team, Projects, footer (${tel.length})`,
+      );
+      for (const a of tel) {
+        expect.eq(
+          a.href,
+          "tel:+18553628666",
+          `"${a.text}" dials the support line as the browser expects it`,
+        );
+        expect(a.plain, `"${a.text}" has no script and no target in the way`);
+      }
+      expect.eq(
+        await count(
+          page,
+          "[data-cy='l2-final'] a[href^='tel:'], [data-cy='l2-stickybar'] a[href^='tel:']",
+        ),
+        0,
+        "the bottom Call us buttons are no longer tel: links",
+      );
+    }),
+);
+
+Deno.test(
+  "REQ-093: the Big jobs, plans or bids line under the plan cards has 10px of padding on every side, on a desktop and on a phone",
+  (t) =>
+    story(t, async ({ page, expect }) => {
+      for (const vp of [DESKTOP, PHONE]) {
+        await page.setViewportSize(vp);
+        await page.goto(`/landing2?lang=en&vp=${vp.width}`);
+        await expect.see("Big jobs, plans or bids?");
+        const line = page.locator("[data-cy='l2-projects']");
+        await line.scrollIntoViewIfNeeded();
+        const m = await line.evaluate((el: HTMLElement) => {
+          const cs = getComputedStyle(el);
+          const box = el.getBoundingClientRect();
+          const cards = document.querySelector(".l2-three--plans")!
+            .getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const text = range.getBoundingClientRect();
+          return {
+            padding: [
+              cs.paddingTop,
+              cs.paddingRight,
+              cs.paddingBottom,
+              cs.paddingLeft,
+            ].join(" "),
+            textBelowCards: text.top - cards.bottom,
+            textInsetLeft: text.left - box.left,
+            textInsetRight: box.right - text.right,
+            textInsetBottom: box.bottom - text.bottom,
+          };
+        });
+        expect.eq(
+          m.padding,
+          "10px 10px 10px 10px",
+          `10px of padding on every side at ${vp.width}`,
+        );
+        expect(
+          m.textBelowCards >= 9.5,
+          `the text sits at least 10px below the cards at ${vp.width} (${
+            m.textBelowCards.toFixed(1)
+          })`,
+        );
+        expect(
+          m.textInsetLeft >= 9.5 && m.textInsetRight >= 9.5 &&
+            m.textInsetBottom >= 9.5,
+          `the text keeps 10px from the line's edges at ${vp.width}`,
+        );
+      }
+    }),
+);
+
+Deno.test("REQ-094: the fine-tooth comb — on a tablet nothing is wider than the screen and the monster's disc stays round; the plan blurbs and the plans subtitle keep the mock's spacing; the share image every landing's og:image names answers at 1200×630; an empty Empezar gratis is answered on the page, in its language", (t) =>
+  story(t, async ({ page, expect }) => {
+    // a tablet in portrait: the hero's 118% monster image used to push a sideways scroll
+    await page.setViewportSize(TABLET);
+    await page.goto("/landing2?lang=en");
+    await expect.see("that win you the job.");
+    const tabletScroll = await page.evaluate(() =>
+      document.documentElement.scrollWidth
+    );
+    expect(
+      tabletScroll <= TABLET.width,
+      `nothing wider than the tablet (${tabletScroll} ≤ ${TABLET.width})`,
+    );
+    const disc = await page.locator("[data-cy='l2-monster']").evaluate((
+      el: HTMLElement,
+    ) => {
+      const r = el.getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height) };
+    });
+    expect(
+      disc.w === disc.h,
+      `the monster's disc is round (${disc.w}×${disc.h})`,
+    );
+    // a desktop: the margins the stylesheet declares on the plan blurbs and the plans subtitle
+    // apply — the page's paragraph reset no longer outranks them
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2?lang=en");
+    await expect.see(
+      "A lost invoice costs you more than a year of DocuMonster.",
+    );
+    const margins = await page.evaluate(() => {
+      const m = (sel: string) =>
+        getComputedStyle(document.querySelector(sel) as HTMLElement);
+      return {
+        subTop: m(".l2-plan__sub").marginTop,
+        subBottom: m(".l2-plan__sub").marginBottom,
+        plansSub: m(".l2-plans__sub").marginTop,
+        note: m(".l2-plans__note").padding,
+      };
+    });
+    expect.eq(margins.subTop, "-4px", "the plan blurb's top margin applies");
+    expect.eq(
+      margins.subBottom,
+      "4px",
+      "the plan blurb's bottom margin applies",
+    );
+    expect.eq(margins.plansSub, "6px", "the plans subtitle's margin applies");
+    expect.eq(
+      margins.note,
+      "10px",
+      "the Projects line keeps its 10px of padding (REQ-093)",
+    );
+    // the share image the page's og:image names: a PNG of the size the tags declare
+    const og = await page.evaluate(async () => {
+      const href =
+        document.querySelector("meta[property='og:image']")?.getAttribute(
+          "content",
+        ) ?? "";
+      const path = new URL(href).pathname;
+      const r = await fetch(path);
+      const type = r.headers.get("content-type") ?? "";
+      if (!r.ok || !type.startsWith("image/")) {
+        return { path, status: r.status, type, w: 0, h: 0 };
+      }
+      const bmp = await createImageBitmap(await r.blob());
+      return { path, status: r.status, type, w: bmp.width, h: bmp.height };
+    });
+    expect.eq(og.status, 200, `${og.path} answers`);
+    expect(og.type.startsWith("image/png"), `a PNG (${og.type})`);
+    expect.eq(`${og.w}×${og.h}`, "1200×630", "1200×630, Facebook's large card");
+    // "every landing's og:image": the site's front page names the same card, and it answers there too
+    await page.goto("/");
+    const home = await page.evaluate(async () => {
+      const href =
+        document.querySelector("meta[property='og:image']")?.getAttribute(
+          "content",
+        ) ?? "";
+      const path = new URL(href).pathname;
+      const r = await fetch(path);
+      return { path, status: r.status };
+    });
+    expect.eq(home.path, og.path, "the front page names the same share image");
+    expect.eq(home.status, 200, "and it answers there too");
+    await page.goto("/landing2?lang=en");
+    await expect.see(
+      "A lost invoice costs you more than a year of DocuMonster.",
+    );
+    // an empty Empezar gratis: the page's own message, not the browser's tooltip
+    await clickUntil(
+      page,
+      "[data-cy='l2-send-code']",
+      async () =>
+        (await count(page, "[data-cy='l2-signup'] [role='alert']")) > 0,
+    );
+    await expect.see("Enter a valid cell number.");
+    expect.eq(
+      await count(page, "[data-cy='l2-signup-step'][data-step='1']"),
+      1,
+      "still on the phone step",
+    );
+  }));
+
+Deno.test("REQ-095: the second comb — the page has its landmarks and the brand goes to the very top; the head names both language variants; the footer's year is this year; the demo's window group has a name and the hero's English note is marked English; the footer's policy links are 24px tap targets; on a tablet the headline is the phone's size, four lines at most", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2?lang=en");
+    await expect.see("that win you the job.");
+    // the landmarks a screen reader jumps by
+    const marks = await page.evaluate(() => ({
+      header: document.querySelectorAll(".l2 > header").length,
+      main: document.querySelectorAll(".l2 > main").length,
+      footer: document.querySelectorAll(".l2 > footer").length,
+      top: document.getElementById("top")?.className ?? "",
+    }));
+    expect.eq(marks.header, 1, "one <header>: the nav");
+    expect.eq(marks.main, 1, "one <main>: the page's sections");
+    expect.eq(marks.footer, 1, "one <footer>");
+    expect.eq(marks.top, "l2", "#top is the page itself, not the hero");
+    // the head: both language variants and a default, and the font host warmed
+    const alts = await page.evaluate(() =>
+      [...document.querySelectorAll("link[rel='alternate'][hreflang]")].map((
+        l,
+      ) => `${l.getAttribute("hreflang")}=${l.getAttribute("href")}`).sort()
+    );
+    expect.eq(
+      alts.join(" "),
+      "en=https://documonster.com/landing2?lang=en es=https://documonster.com/landing2?lang=es x-default=https://documonster.com/landing2",
+      "es, en and a default",
+    );
+    expect.eq(
+      await count(
+        page,
+        "link[rel='preconnect'][href='https://fonts.gstatic.com']",
+      ),
+      1,
+      "the font host is warmed",
+    );
+    // the footer's year is the clock's
+    await expect.see(`© ${new Date().getFullYear()} DocuMonster`);
+    // the hero note's English lines are marked English (REQ-096: the lines, not the whole note)
+    expect.eq(
+      await page.locator("[data-cy='l2-hero'] .l2-note--got .l2-note__quote")
+        .getAttribute("lang"),
+      "en",
+      "the hero note's quote line carries lang=en",
+    );
+    // the footer's policy links are tap targets
+    const legal = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-cy='l2-footer'] a[data-legal-link]")]
+        .map((a) => Math.round(a.getBoundingClientRect().height))
+    );
+    expect(
+      legal.length === 4 && legal.every((h) => h >= 24),
+      `four policy links, each at least 24px tall (${legal})`,
+    );
+    // the demo's window group is named like the day group
+    await clickUntil(
+      page,
+      "[data-cy='l2-pick-time']",
+      async () => (await count(page, "[data-cy='l2-slot']")) > 0,
+    );
+    expect.eq(
+      await page.locator(".l2-demo__slots").getAttribute("aria-label"),
+      "Pick a window",
+      "the window group's name",
+    );
+    // the brand goes to the very top of the page
+    expect(
+      (await page.evaluate(() => scrollY)) > 0,
+      "scrolled down to the demo first",
+    );
+    await page.locator(".l2-brand").click();
+    expect.eq(
+      await page.evaluate(() => scrollY),
+      0,
+      "the brand scrolls to the very top",
+    );
+    // a tablet: the headline at the phone's size, four lines at most
+    await page.setViewportSize(TABLET);
+    await page.goto("/landing2?lang=es");
+    await expect.see("que te ganan el trabajo.");
+    const h1 = await page.locator("[data-cy='l2-hero'] h1").evaluate((
+      el: HTMLElement,
+    ) => {
+      const size = parseFloat(getComputedStyle(el).fontSize);
+      return {
+        size,
+        lines: Math.round(el.getBoundingClientRect().height / (size * 1.02)),
+      };
+    });
+    expect(
+      h1.size >= 40 && h1.size <= 48,
+      `the headline is between 40 and 48px on a tablet (${h1.size})`,
+    );
+    expect(h1.lines <= 4, `four lines at most (${h1.lines})`);
+  }));
+
+Deno.test("REQ-096: the third comb — the stylesheet's link is cache-busted; the hero note's Spanish label is not marked English while its quote lines and the team's English role are; the signup card's title and the demo's thanks are headings; the language toggle says where it goes", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2");
+    await expect.see("que te ganan el trabajo.");
+    // the stylesheet carries the build id, like every image on the page
+    const css = await page.evaluate(() =>
+      document.querySelector("link[rel='stylesheet'][href*='landing2.css']")
+        ?.getAttribute("href") ?? ""
+    );
+    expect(
+      css.includes("__frsh_c="),
+      `the stylesheet link carries the build id (${css})`,
+    );
+    // lang marks: the English lines, and only them
+    const langs = await page.evaluate(() => {
+      const mark = (s: string) =>
+        document.querySelector(s)?.closest("[lang]")?.getAttribute("lang");
+      return {
+        label: mark(".l2-note--got .l2-note__k"),
+        quote: mark(".l2-note--got .l2-note__quote"),
+        signed: mark(".l2-note--got .l2-note__signed"),
+        role: mark(".l2-member__role"),
+      };
+    });
+    expect.eq(
+      langs.label,
+      "es",
+      "the note's label, Tu cliente recibió, is Spanish",
+    );
+    expect.eq(langs.quote, "en", "the quote line is English");
+    expect.eq(langs.signed, "en", "the signed line is English");
+    expect.eq(langs.role, "en", "Monster Success Specialist is English");
+    // the signup card's title is a heading
+    const headings = await page.evaluate(() =>
+      [...document.querySelectorAll(".l2 h1, .l2 h2, .l2 h3")].map((h) =>
+        `${h.tagName}:${(h.textContent ?? "").trim().slice(0, 30)}`
+      )
+    );
+    expect(
+      headings.includes("H2:Empieza gratis en 30 segundos"),
+      `the signup card's title is a heading (${headings.join(" | ")})`,
+    );
+    // the toggle says where it goes, both ways
+    expect.eq(
+      await page.locator("[data-cy='l2-lang']").getAttribute("aria-label"),
+      "Cambiar a inglés",
+      "the toggle's name on the Spanish page",
+    );
+    await page.locator("[data-cy='l2-lang']").click();
+    await page.waitForURL((u: URL) => u.searchParams.get("lang") === "en");
+    expect.eq(
+      await page.locator("[data-cy='l2-lang']").getAttribute("aria-label"),
+      "Switch to Spanish",
+      "and on the English page",
+    );
+    // the demo's thanks is a heading: book a call and read it
+    await page.locator("#demo-phone").fill(`512${digits()}`);
+    await page.locator("#demo-consent").check();
+    await clickUntil(
+      page,
+      "[data-cy='l2-demo-call']",
+      async () => (await count(page, "[data-cy='l2-demo-done']")) > 0,
+    );
+    expect.eq(
+      await count(page, "[data-cy='l2-demo-done'] h3"),
+      1,
+      "Done! is a heading",
     );
   }));
