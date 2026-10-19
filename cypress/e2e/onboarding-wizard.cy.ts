@@ -332,11 +332,11 @@ describe("Onboarding wizard — education + hand-off", () => {
 describe("Onboarding wizard — entry points", () => {
   const PHONE = "+18435559005";
 
-  it("new users are routed to /welcome; returning users to /dashboard?welcome=back", () => {
+  it("REQ-091: a code lands in /welcome while an onboarding question is open — returning user or not", () => {
     cy.startFreshOnboarding(PHONE).then((r) => {
       expect(r.redirectTo, "fresh user → wizard").to.eq("/welcome");
     });
-    // Second login, same phone, NOT wiped → returning user.
+    // Second login, same phone, NOT wiped → returning user, every question still open.
     cy.clearCookies();
     cy.request("POST", "/api/auth/send-otp", { phoneNumber: PHONE });
     cy.exec(
@@ -346,7 +346,7 @@ describe("Onboarding wizard — entry points", () => {
         const code = res.stdout.trim();
         cy.request("POST", "/api/auth/verify", { phoneNumber: PHONE, code })
           .its("body.redirectTo")
-          .should("eq", "/dashboard?welcome=back");
+          .should("eq", "/welcome");
       });
   });
 

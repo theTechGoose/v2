@@ -22,6 +22,7 @@ import { VerifyEmailOtp } from "@users/domain/coordinators/verify-email-otp/mod.
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { AccountRecovery } from "@users/domain/coordinators/account-recovery/mod.ts";
+import { SignInLanding } from "@users/domain/coordinators/sign-in-landing/mod.ts";
 import { InvalidRecoveryTokenError } from "@users/domain/data/recovery-token-store/mod.ts";
 import {
   parseSendEmailOtp,
@@ -64,6 +65,8 @@ export class AuthController {
     private crm: CrmCustomerSync,
     /** REQ-072 — the login's lead capture: durable, never awaited by the request */
     private leads: CrmLeadCapture,
+    /** REQ-091 — where a verified code lands: the wizard while an onboarding question is open */
+    private landing: SignInLanding,
   ) {}
 
   /**
@@ -126,7 +129,7 @@ export class AuthController {
         sessionId: result.sessionId,
         userId: result.userId,
         isNewUser: result.isNewUser,
-        redirectTo: result.isNewUser ? "/welcome" : "/dashboard?welcome=back",
+        redirectTo: await this.landing.run(result.userId),
       };
     } catch (err) {
       const mapped = mapEmailError(err) ?? mapVerifyError(err);
@@ -149,7 +152,7 @@ export class AuthController {
         sessionId: result.sessionId,
         userId: result.userId,
         isNewUser: false,
-        redirectTo: "/dashboard?welcome=back",
+        redirectTo: await this.landing.run(result.userId),
       };
     } catch (err) {
       if (err instanceof InvalidRecoveryTokenError) {
@@ -173,7 +176,7 @@ export class AuthController {
         sessionId: result.sessionId,
         userId: result.userId,
         isNewUser: true,
-        redirectTo: "/welcome",
+        redirectTo: await this.landing.run(result.userId),
       };
     } catch (err) {
       if (err instanceof InvalidRecoveryTokenError) {
@@ -236,6 +239,7 @@ export class AuthController {
    * at /api/auth/verify produces, so direct API/SDK/test clients get one
    * consistent contract whether they go through the proxy or not:
    *   - 200 { ok:true, sessionId, userId, isNewUser, redirectTo } + cookie
+   *     (redirectTo, REQ-091: /welcome while an onboarding question is open)
    *   - 401 { ok:false, error:"invalid_code" }
    *   - 410 { ok:false, error:"expired" }
    *   - 429 { ok:false, error:"rate_limited" }
@@ -255,7 +259,7 @@ export class AuthController {
         sessionId: result.sessionId,
         userId: result.userId,
         isNewUser: result.isNewUser,
-        redirectTo: result.isNewUser ? "/welcome" : "/dashboard?welcome=back",
+        redirectTo: await this.landing.run(result.userId),
       };
     } catch (err) {
       if (err instanceof AccountClosedError) return closedResponse(err);
@@ -273,7 +277,9 @@ export class AuthController {
    *
    * On success: sets `pm_session` as an HTTP-only cookie AND returns the
    * session id in the response body so SDK / API clients without cookie
-   * jars can keep using the `x-session-id` header.
+   * jars can keep using the `x-session-id` header. `redirectTo` (REQ-091) is
+   * where the code lands: /welcome while any onboarding question is open,
+   * /dashboard?welcome=back once every one is answered — the page follows it.
    *
    * Errors are typed so the frontend can render the right message:
    *   - invalid_code  : code didn't match (attempts++)
@@ -295,6 +301,7 @@ export class AuthController {
         sessionId: result.sessionId,
         userId: result.userId,
         isNewUser: result.isNewUser,
+        redirectTo: await this.landing.run(result.userId),
       };
     } catch (err) {
       if (err instanceof AccountClosedError) {

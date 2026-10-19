@@ -264,7 +264,7 @@ Deno.test("REQ-050 auth e2e: send-email-otp → verify-email-otp opens the sessi
     assertEquals(body.ok, true);
     assertEquals(body.userId, userId);
     assertEquals(body.isNewUser, false);
-    assertEquals(body.redirectTo, "/dashboard?welcome=back");
+    assertEquals(body.redirectTo, "/welcome", "REQ-091: a returning account with onboarding questions open lands in the wizard");
     assertEquals(await new OtpStore().get("email:raphael@example.com"), null, "the code is single-use");
 
     const me = await fetch(`http://localhost:${port}/me`, { headers: { cookie: setCookie.split(";")[0] } }).then((r) => r.json());
@@ -316,5 +316,40 @@ Deno.test("REQ-050 auth e2e: a wrong code is 401 invalid_code; no code pending i
     const res = await postJson(`http://localhost:${port}/auth/verify-email-otp`, { email: "wrong@example.com", code: wrong });
     assertEquals(res.status, 401);
     assertEquals(await res.json(), { ok: false, error: "invalid_code" });
+  });
+});
+
+// ── REQ-091: a verified code lands in the wizard until every onboarding question is answered ──
+
+Deno.test("REQ-091 auth e2e: verify-otp carries redirectTo — /welcome while any of the nine onboarding questions is open, /dashboard?welcome=back once all are answered", async () => {
+  await withServer(async (port) => {
+    const base = `http://localhost:${port}`;
+    const phone = "+15125550991";
+    const verify = async () => {
+      await drain(await postJson(`${base}/auth/send-otp`, { phoneNumber: phone, language: "en" }));
+      const otp = await new OtpStore().get(phone);
+      const r = await postJson(`${base}/auth/verify-otp`, { phoneNumber: phone, code: otp!.code });
+      const cookie = r.headers.get("set-cookie")!.split(";")[0];
+      return { body: await r.json(), cookie };
+    };
+    const first = await verify();
+    assertEquals(first.body.isNewUser, true);
+    assertEquals(first.body.redirectTo, "/welcome", "a new account: everything open");
+    const headers = { "content-type": "application/json", cookie: first.cookie };
+    const send = async (method: string, path: string, payload: unknown) => {
+      const r = await fetch(`${base}${path}`, { method, headers, body: JSON.stringify(payload) });
+      assertEquals(r.ok, true, `${method} ${path}`);
+      await drain(r);
+    };
+    await send("PUT", "/me", { name: "Story Person", email: "story@example.com" });
+    await send("PUT", "/profile/identity", { businessName: "Story Roofing LLC", logoFileId: "f-logo", acceptedPaymentMethods: { cash: { enabled: true } } });
+    await send("PUT", "/profile/address", { state: "TX", street: "1600 Congress Ave" });
+    await send("POST", "/me/plan", { planId: "free" });
+    const eight = await verify();
+    assertEquals(eight.body.isNewUser, false);
+    assertEquals(eight.body.redirectTo, "/welcome", "the insurance is still open");
+    await send("PUT", "/profile/insurance", { provider: "State Farm" });
+    const nine = await verify();
+    assertEquals(nine.body.redirectTo, "/dashboard?welcome=back", "all nine answered: the dashboard, as a returning user");
   });
 });

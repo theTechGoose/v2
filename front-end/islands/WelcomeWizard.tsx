@@ -6,9 +6,13 @@
  * wizard-state persistence: the saved profile data IS the state, so a reload
  * resumes at the first still-incomplete step.
  *
- * Navigation is never gated on completeness — every step is skippable-or-not
- * per its registry entry, and a low-key "Skip setup for now" escape marks
- * onboarding done and drops the user on the dashboard permanently.
+ * REQ-091: onboarding happens until every question is answered. A step is
+ * skippable-or-not per its registry entry — Skip puts the question off, and
+ * the wizard comes back at the first open one on the next code and on the
+ * dashboard. The low-key "Skip setup for now" escape records the leave and
+ * drops the user in the assistant (the dashboard would send them straight
+ * back). Which questions are open is the one rule the backend and the
+ * dashboard read too: shared/quote-flow/onboarding-questions.ts.
  *
  * The step engine here is deliberately extensible: each phase of the build
  * adds entries to STEPS without touching the engine.
@@ -20,10 +24,11 @@ import { t } from "../lib/i18n.ts";
 import { SUPPORT_PHONE_DISPLAY } from "../../shared/legal/contact.ts";
 import {
   type BusinessAddress,
-  type BusinessIdentity,
   profileClient,
   type ProfileSnapshot,
 } from "../clients/profile.ts";
+import { isAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
+import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import { PRICING_PLANS, PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
 import { pickErrorOf, resumesAfterPlan } from "../lib/plan-return.ts";
@@ -48,15 +53,6 @@ interface Props {
    *  address state is set yet). Drives the state step's tap-to-confirm. */
   suggestedState?: string;
   initialLang?: Lang;
-}
-
-/** Seeded placeholder names set at signup — treated as "no name yet" so the
- *  name step prefills empty instead of the literal placeholder. Mirrors
- *  backend `isPlaceholderName` in verify-otp/mod.ts. */
-const PLACEHOLDER_NAMES = ["New user", "Nuevo usuario"];
-export function isPlaceholderName(name?: string): boolean {
-  const n = (name ?? "").trim();
-  return n.length === 0 || PLACEHOLDER_NAMES.includes(n);
 }
 
 // ---------------------------------------------------------------------------
@@ -1060,29 +1056,24 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
   );
 }
 
-function paymentComplete(identity: BusinessIdentity | null): boolean {
-  const m = identity?.acceptedPaymentMethods ?? {};
-  return Object.values(m).some((v) => v?.enabled);
-}
-
 function buildSteps(): StepDef[] {
   return [
     {
       id: "name",
       skippable: false,
-      isComplete: (s) => !isPlaceholderName(s.user.name),
+      isComplete: (s) => isAnswered("name", s),
       Component: NameStep,
     },
     {
       id: "businessName",
       skippable: true,
-      isComplete: (s) => Boolean(s.identity?.businessName?.trim()),
+      isComplete: (s) => isAnswered("businessName", s),
       Component: BusinessNameStep,
     },
     {
       id: "email",
       skippable: true,
-      isComplete: (s) => Boolean(s.user.email?.trim()),
+      isComplete: (s) => isAnswered("email", s),
       Component: EmailStep,
     },
     {
@@ -1091,7 +1082,7 @@ function buildSteps(): StepDef[] {
       // brought the person back with the plan active, the wizard moves on
       id: "plan",
       skippable: true,
-      isComplete: (s) => Boolean(s.plan) && s.plan?.status !== "pending",
+      isComplete: (s) => isAnswered("plan", s),
       Component: PlanStep,
     },
     {
@@ -1099,31 +1090,31 @@ function buildSteps(): StepDef[] {
       // P-54: skippable like every other data step — skip advances without
       // saving a state, exactly like skipping business name or email.
       skippable: true,
-      isComplete: (s) => Boolean(s.address?.state),
+      isComplete: (s) => isAnswered("state", s),
       Component: StateStep,
     },
     {
       id: "address",
       skippable: true,
-      isComplete: (s) => Boolean(s.address?.street?.trim()),
+      isComplete: (s) => isAnswered("address", s),
       Component: AddressStep,
     },
     {
       id: "payment",
       skippable: true,
-      isComplete: (s) => paymentComplete(s.identity),
+      isComplete: (s) => isAnswered("payment", s),
       Component: PaymentStep,
     },
     {
       id: "logo",
       skippable: true,
-      isComplete: (s) => Boolean(s.identity?.logoFileId),
+      isComplete: (s) => isAnswered("logo", s),
       Component: LogoStep,
     },
     {
       id: "insurance",
       skippable: true,
-      isComplete: (s) => Boolean(s.insurance?.provider?.trim()),
+      isComplete: (s) => isAnswered("insurance", s),
       Component: InsuranceStep,
     },
     // Education — always shown (isComplete: false) so a data-complete user
@@ -1228,14 +1219,16 @@ export default function WelcomeWizard(
   async function skipSetup() {
     if (leaving) return;
     setLeaving(true);
-    // Mark onboarding done (skipped) then leave — permanent, no re-trap.
+    // REQ-091: record the leave, then the assistant — the dashboard would send
+    // an account with an open question straight back here; the wizard returns
+    // at the first open question on the next code.
     await fetch("/api/me/onboarded", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
       body: JSON.stringify({ skipped: true }),
     }).catch(() => {});
-    globalThis.location.href = "/dashboard";
+    globalThis.location.href = "/assistant";
   }
 
   return (
