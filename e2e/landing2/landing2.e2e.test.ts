@@ -1,21 +1,27 @@
 /**
- * REQ-081 — Raphael, 2026-10-16: "take this mock /Users/raphaelcastro/Documents/programming/v2/
- * Landing v2 — conversion-first-html.zip make it real at /landing2 and make sure all aspects of
- * the page are working."
+ * REQ-081 — Raphael, 2026-10-16: "take this mock … make it real at /landing2 and make sure all
+ * aspects of the page are working." REQ-088/089/090 — Raphael, 2026-10-18: "this is the newest
+ * itteration of landing2 can you update it? /Users/raphaelcastro/Documents/programming/v2/
+ * documonster-landing" — the v3 mock, approved Oct 18.
  *
- * The page: front-end/routes/landing2.tsx (SSR, Spanish first, English on the toggle), its two
- * islands — Landing2Signup (phone → code → done, on the page, through the real OTP endpoints)
- * and Landing2Demo (demo or call, a day, a time, the details → POST /demo-request) — and
- * front-end/static/landing2.css. The stories run on the fakes: the code is the dev master code,
- * the text and the email go nowhere but are reported done, the pixel is the app's own fake.
+ * The page: front-end/routes/landing2.tsx (SSR, Spanish first, English on the toggle), its
+ * islands — Landing2Signup (phone + the TCPA consent box → code → straight into the app, through
+ * the real OTP endpoints) and Landing2Demo (Llámenme with just a cell, or a day and a window with
+ * the details, each behind its consent box → POST /demo-request) — and front-end/static/landing2.css.
+ * The stories run on the fakes: the code is the dev master code, the text and the email go nowhere
+ * but are reported done, the pixel is the app's own fake.
  */
 import { story, type StoryTools } from "#shots";
 import { LEGAL_LINKS } from "../../shared/legal/terms.ts";
 import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import { DEMO_DAY_COUNT, DEMO_SLOTS } from "../../shared/demo-booking/mod.ts";
 
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
 const DESKTOP = { width: 1280, height: 900 };
 const PHONE = { width: 390, height: 844 };
+const INK = "rgb(21, 32, 43)";
+const CARD_PLANS = PUBLIC_PLANS.filter((p) => !p.custom);
+const LINE_PLANS = PUBLIC_PLANS.filter((p) => p.custom);
 
 interface PixelCall {
   name: string;
@@ -63,8 +69,22 @@ function watchPixel(page: StoryTools["page"]) {
   };
 }
 
+/** every POST the browser makes to one API path, counted */
+function watchPosts(page: StoryTools["page"], path: string) {
+  let n = 0;
+  page.on("request", (req: { url(): string; method(): string }) => {
+    if (req.method() === "POST" && req.url().includes(path)) n++;
+  });
+  return () => n;
+}
+
 const count = async (page: StoryTools["page"], selector: string) =>
   await page.locator(selector).count();
+
+const top = (page: StoryTools["page"], selector: string) =>
+  page.locator(selector).evaluate((el: HTMLElement) =>
+    el.getBoundingClientRect().top + globalThis.scrollY
+  );
 
 /** an island may still be hydrating when its button appears: click until the page shows the effect */
 async function clickUntil(
@@ -82,7 +102,12 @@ async function clickUntil(
   throw new Error(`${selector}: the click never took`);
 }
 
-Deno.test("REQ-081: /landing2 is the mock made real — every section of it, Spanish first, English on the toggle, on a desktop and on a phone", (t) =>
+const loaded = (page: StoryTools["page"], selector: string) =>
+  page.locator(selector).first().evaluate((el: HTMLImageElement) =>
+    el.complete && el.naturalWidth > 0
+  );
+
+Deno.test("REQ-088: /landing2 is the v3 mock top to bottom — Spanish first, English on the toggle, on a desktop and on a phone", (t) =>
   story(t, async ({ page, expect }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2");
@@ -94,50 +119,87 @@ Deno.test("REQ-081: /landing2 is the mock made real — every section of it, Spa
       "es",
       "<html lang> is es",
     );
-    // every section of the mock, top to bottom
-    for (
-      const section of [
-        "nav",
-        "hero",
-        "signup",
-        "outcomes",
-        "proof",
-        "team",
-        "plans",
-        "demo",
-        "faq",
-        "final",
-        "footer",
-      ]
-    ) {
+    // every section of the mock, in its order: the proof band now sits right after the hero,
+    // the outcomes after it
+    const order = [
+      "nav",
+      "hero",
+      "proof",
+      "outcomes",
+      "team",
+      "plans",
+      "demo",
+      "faq",
+      "final",
+      "footer",
+    ];
+    let last = -1;
+    for (const section of order) {
       expect.eq(
         await count(page, `[data-cy='l2-${section}']`),
         1,
         `the ${section} section is on the page`,
       );
+      const y = await top(page, `[data-cy='l2-${section}']`);
+      expect(
+        y >= last,
+        `${section} comes after the section before it (${y} ≥ ${last})`,
+      );
+      last = y;
     }
-    await expect.see("Un mensaje. Tres documentos.");
-    await expect.see("Personas reales. En tu idioma. Siete días a la semana.");
-    await expect.see("Empieza gratis. Precio fijo al mes. Sin sorpresas.");
-    await expect.see("Elige el día y la hora. Nosotros te llamamos.");
-    await expect.see("Deja el Papeleo al Monstruo. Tú sigue en la obra.");
-    // the monster and the signed quote card of the hero
-    const img = page.locator(
-      "[data-cy='l2-hero'] img[src^='/monster-paper.png']",
-    ).first();
-    expect(
-      await img.evaluate((el: HTMLImageElement) =>
-        el.complete && el.naturalWidth > 0
+    expect.eq(
+      await count(page, "[data-cy='l2-signup']"),
+      1,
+      "the signup card is in the hero",
+    );
+    // the proof band is ink
+    expect.eq(
+      await page.locator("[data-cy='l2-proof']").evaluate((el: HTMLElement) =>
+        getComputedStyle(el).backgroundColor
       ),
+      INK,
+      "the proof section is an ink band",
+    );
+    await expect.see("Un mensaje. Tres documentos.");
+    await expect.see("Ganas más trabajos");
+    await expect.see("Recuperas tus noches con la familia");
+    await expect.see(
+      "Personas reales que hablan español. Siete días a la semana.",
+    );
+    await expect.see("8 AM – 8 PM");
+    await expect.see(
+      "Empieza gratis o elige un plan con precio fijo al mes. Sin Contratos. Sin Sorpresas.",
+    );
+    await expect.see(
+      "Una factura perdida te cuesta más que un año de DocuMonster.",
+    );
+    await expect.see("¿Quieres verlo primero? Te llamamos.");
+    await expect.see("¿Todavía tienes dudas? DocuMonster no.");
+    await expect.see("Deja el Papeleo al Monstruo. Tú sigue en la obra.");
+    // the monster, the signed quote card of the hero, Art and Ben
+    expect(
+      await loaded(page, "[data-cy='l2-hero'] img[src^='/monster-paper.png']"),
       "the monster image loaded",
     );
     await expect.see("Quote #PM-2641 · $10,990");
+    expect(
+      await loaded(page, "[data-cy='l2-team'] img[src^='/team-art.jpg']"),
+      "Art's photo loaded",
+    );
+    expect(
+      await loaded(page, "[data-cy='l2-team'] img[src^='/team-ben.jpg']"),
+      "Ben's photo loaded",
+    );
+    await expect.see("Monster Success Specialist");
     // English on the toggle
     await page.locator("[data-cy='l2-lang']").click();
     await page.waitForURL((u: URL) => u.searchParams.get("lang") === "en");
     await expect.see("Quotes in English");
     await expect.see("that win you the job.");
     await expect.see("One message. Three documents.");
+    await expect.see("You win more jobs");
+    await expect.see("Real people speaking Spanish. Seven days a week.");
+    await expect.see("Want to see it first? We’ll call you.");
     expect.eq(
       await page.evaluate(() => document.documentElement.lang),
       "en",
@@ -148,7 +210,7 @@ Deno.test("REQ-081: /landing2 is the mock made real — every section of it, Spa
     await page.locator("[data-cy='l2-lang']").click();
     await page.waitForURL((u: URL) => u.searchParams.get("lang") === "es");
     await expect.see("Cotizaciones en inglés");
-    // the phone: one column, the headline smaller, the sticky bar at the bottom
+    // the phone: one column, the headline smaller, the two-button sticky bar at the bottom
     await page.setViewportSize(PHONE);
     await page.goto("/landing2");
     await expect.see("Cotizaciones en inglés");
@@ -161,6 +223,11 @@ Deno.test("REQ-081: /landing2 is the mock made real — every section of it, Spa
         JSON.stringify(barBox)
       })`,
     );
+    expect.eq(
+      await bar.locator("a").count(),
+      2,
+      "two buttons on the bar: start and call",
+    );
     const h1 = await page.locator("[data-cy='l2-hero'] h1").evaluate((
       el: HTMLElement,
     ) => parseFloat(getComputedStyle(el).fontSize));
@@ -169,24 +236,278 @@ Deno.test("REQ-081: /landing2 is the mock made real — every section of it, Spa
       document.documentElement.scrollWidth
     );
     expect(scrollW <= PHONE.width, `nothing wider than the phone (${scrollW})`);
+    await page.locator("[data-cy='l2-plans']").scrollIntoViewIfNeeded();
+    await page.locator("body").press("Shift"); // a frame of the plans on the phone
     await page.locator("[data-cy='l2-faq'] summary").first()
       .scrollIntoViewIfNeeded();
     await page.locator("body").press("Shift"); // a frame of the lower half on the phone
   }));
 
-Deno.test("REQ-081: the hero signup works on the page — the code goes out, the code opens the account and goes straight into the app, and the Lead fires once", (t) =>
+Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the three plan cards and the Projects line, the FAQ's four points, the final CTA and the sticky bar — every link lands where it says, and WhatsApp is nowhere", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2?lang=en");
+    await expect.see("Still have doubts? DocuMonster doesn’t.");
+    // the proof band: the four bubbles and the signed quote
+    const proof = page.locator("[data-cy='l2-proof']");
+    expect.eq(
+      await proof.locator(".l2-bubble").count(),
+      4,
+      "four chat bubbles",
+    );
+    await expect.see("QUOTE #PM-2641");
+    await expect.see("$10,990.00");
+    // the outcomes: three headline cards — a number and a title, nothing more
+    const outcomes = page.locator("[data-cy='l2-outcome']");
+    expect.eq(await outcomes.count(), 3, "three outcome cards");
+    const titles = [
+      "You win more jobs",
+      "You get paid faster",
+      "You get your evenings with family back",
+    ];
+    for (let i = 0; i < 3; i++) {
+      const text = ((await outcomes.nth(i).textContent()) ?? "").replace(
+        /\s+/g,
+        " ",
+      ).trim();
+      expect.eq(
+        text.replace(/^0(\d)\s*/, "0$1 "),
+        `0${i + 1} ${titles[i]}`,
+        `outcome card ${i + 1} is its number and its headline`,
+      );
+    }
+    // the team: Art and Ben, one dark phone button, the hours
+    const members = page.locator("[data-cy='l2-member']");
+    expect.eq(await members.count(), 2, "two people");
+    expect.eq(
+      await members.nth(0).locator("img").getAttribute("alt"),
+      "Art",
+      "Art's photo",
+    );
+    expect.eq(
+      await members.nth(1).locator("img").getAttribute("alt"),
+      "Ben",
+      "Ben's photo",
+    );
+    await expect.see("Monday to Sunday, 8 AM – 8 PM");
+    expect.eq(
+      await count(page, "[data-cy='l2-team'] a.l2-btn--dark"),
+      1,
+      "the one phone button of the team",
+    );
+    // the plans: three cards from the one list — names, prices, features — and the Projects line
+    const cards = page.locator("[data-cy='l2-plan']");
+    expect.eq(
+      await cards.count(),
+      CARD_PLANS.length,
+      "one card per priced plan",
+    );
+    for (let i = 0; i < CARD_PLANS.length; i++) {
+      const plan = CARD_PLANS[i];
+      const card = cards.nth(i);
+      expect.eq(
+        await card.getAttribute("data-plan"),
+        plan.id,
+        `card ${i} is ${plan.id}`,
+      );
+      await expect.see(plan.name);
+      const price =
+        ((await card.locator("[data-cy='l2-plan-price']").textContent()) ?? "")
+          .trim();
+      expect(
+        price.startsWith(`$${Math.round(plan.priceCents / 100)}`),
+        `${plan.id} shows its price (${price})`,
+      );
+      for (const f of plan.features) await expect.see(f.en);
+      expect.eq(
+        await card.locator("[data-cy='l2-plan-cta']").getAttribute("href"),
+        "#empezar",
+        `${plan.id}'s button goes to the signup`,
+      );
+    }
+    expect.eq(
+      await count(page, "[data-cy='l2-plan'][data-popular]"),
+      1,
+      "one plan is the popular one",
+    );
+    const line = page.locator("[data-cy='l2-projects']");
+    expect.eq(await line.count(), 1, "the Projects line");
+    for (const p of LINE_PLANS) {
+      expect(
+        ((await line.textContent()) ?? "").includes(p.name),
+        `the line names ${p.name}`,
+      );
+    }
+    expect.eq(
+      await line.locator("a[href='tel:+18553628666']").count(),
+      1,
+      "the line says call us",
+    );
+    // the FAQ: four points, four questions that open and close
+    expect.eq(
+      await count(page, "[data-cy='l2-faq-point']"),
+      4,
+      "four points beside the questions",
+    );
+    await expect.see(
+      "It sends your quote before your competitor finishes lunch.",
+    );
+    const faqs = page.locator("[data-cy='l2-faq'] details");
+    expect.eq(await faqs.count(), 4, "four questions");
+    await faqs.nth(0).locator("summary").click();
+    expect(
+      await faqs.nth(0).evaluate((d: HTMLDetailsElement) => d.open),
+      "the first question opened",
+    );
+    await expect.see("it is built exactly for you");
+    await faqs.nth(0).locator("summary").click();
+    expect(
+      !(await faqs.nth(0).evaluate((d: HTMLDetailsElement) => d.open)),
+      "and closed again",
+    );
+    // the final CTA: start, call, demo — three buttons, nothing else
+    const final = page.locator("[data-cy='l2-final']");
+    expect.eq(
+      await final.locator("a").count(),
+      3,
+      "three buttons in the final CTA",
+    );
+    expect.eq(
+      await final.locator("a[href='#empezar']").count(),
+      1,
+      "Start free",
+    );
+    expect.eq(
+      await final.locator("a[href='tel:+18553628666']").count(),
+      1,
+      "Call us",
+    );
+    expect.eq(await final.locator("a[href='#demo']").count(), 1, "Book a demo");
+    // WhatsApp is nowhere: no link, no button, no word
+    expect.eq(
+      await count(page, "a[href*='wa.me'], [data-cy='l2-whatsapp']"),
+      0,
+      "no WhatsApp link",
+    );
+    await expect.notSee("WhatsApp");
+    // the policy links: the four, in order, to their own pages
+    const legal = page.locator("[data-cy='l2-footer'] a[data-legal-link]");
+    expect.eq(await legal.count(), LEGAL_LINKS.length, "the four policy links");
+    for (let i = 0; i < LEGAL_LINKS.length; i++) {
+      expect.eq(
+        await legal.nth(i).getAttribute("href"),
+        LEGAL_LINKS[i].path,
+        `policy link ${i} is ${LEGAL_LINKS[i].path}`,
+      );
+    }
+    // the phone and email links
+    expect(
+      (await count(page, "a[href='tel:+18553628666']")) >= 6,
+      "the phone links dial the support line — nav, signup, team, Projects, final, footer",
+    );
+    expect((await count(page, "a[href^='mailto:']")) >= 1, "the email link");
+    // the in-page buttons: Start free → the signup, Book a demo → the demo
+    await page.locator("[data-cy='l2-nav'] a[href='#empezar']").click();
+    expect(
+      await page.locator("#empezar").evaluate((el: HTMLElement) => {
+        const r = el.getBoundingClientRect();
+        return r.top >= -2 && r.top < innerHeight;
+      }),
+      "Start free scrolls to the signup card",
+    );
+    await page.locator("[data-cy='l2-final'] a[href='#demo']").click();
+    expect(
+      await page.locator("#demo").evaluate((el: HTMLElement) =>
+        el.getBoundingClientRect().top < innerHeight / 2
+      ),
+      "Book a demo scrolls to the demo",
+    );
+    // every policy link really lands on its page
+    await page.locator("[data-cy='l2-footer'] a[data-legal-link='privacy']")
+      .click();
+    await page.waitForURL((u: URL) => u.pathname === "/privacy");
+    await expect.see("Privacy Policy");
+    // the sticky bar: start and call on a phone, gone on a desktop
+    await page.goto("/landing2?lang=en");
+    expect.eq(
+      await page.locator("[data-cy='l2-stickybar']").isVisible(),
+      false,
+      "no sticky bar on a desktop",
+    );
+    await page.setViewportSize(PHONE);
+    await page.goto("/landing2?lang=en");
+    const bar = page.locator("[data-cy='l2-stickybar']");
+    expect(await bar.isVisible(), "the sticky bar on a phone");
+    expect.eq(await bar.locator("a").count(), 2, "two buttons: start and call");
+    expect.eq(
+      await bar.locator("a[href='tel:+18553628666']").count(),
+      1,
+      "the call button dials the line",
+    );
+    await bar.locator("a[href='#empezar']").click();
+    expect(
+      await page.locator("#empezar").evaluate((el: HTMLElement) =>
+        el.getBoundingClientRect().top < innerHeight
+      ),
+      "the bar's Start free reaches the signup",
+    );
+  }));
+
+Deno.test("REQ-089: the signup card is the mock's — the consent box starts unticked and holds the code until it is ticked, then the code goes out, opens the account and goes straight into the app, and the Lead fires once", (t) =>
   story(t, async ({ page, expect, baseUrl }) => {
     const drain = watchPixel(page);
+    const posts = watchPosts(page, "/auth/send-otp");
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2");
     await expect.see("Empieza gratis en 30 segundos");
     await drain(); // the PageView
+    // the card as the mock drew it: the phone, Empezar gratis, the consent box unticked, the phone row
+    const card = page.locator("[data-cy='l2-signup']");
+    expect.eq(
+      ((await card.locator("[data-cy='l2-send-code']").textContent()) ?? "")
+        .trim(),
+      "Empezar gratis",
+      "the button says Empezar gratis",
+    );
+    const consent = page.locator("#reg-consent");
+    expect.eq(
+      await consent.isChecked(),
+      false,
+      "the consent box starts unticked",
+    );
+    await expect.see("Al tocar Empezar aceptas recibir textos de DocuMonster.");
+    expect.eq(
+      await card.locator("a[href='/sms-terms']").count(),
+      1,
+      "the consent's Términos link goes to the SMS terms",
+    );
+    await expect.see("¿Prefieres hablar?");
+    expect.eq(
+      await card.locator("a[href='tel:+18553628666']").count(),
+      1,
+      "the phone row dials the line",
+    );
+    // unticked: the code is held on the page, nothing is posted, no Lead
     const phone = `512${digits()}`;
-    // step 1: the phone
     await page.locator("#reg-phone").fill(phone);
     await page.locator("[data-cy='l2-send-code']").click();
-    // step 2: the code, on the same page — and the Lead, once
+    await expect.see("Marca la casilla para que te mandemos el código.");
+    expect.eq(posts(), 0, "nothing was posted without consent");
+    expect.eq(
+      await count(page, "[data-cy='l2-signup-step'][data-step='1']"),
+      1,
+      "still on the phone step",
+    );
+    expect.eq(
+      (await drain()).filter((c) => c.name === "Lead").length,
+      0,
+      "no Lead without consent",
+    );
+    // ticked: the code goes out, on the same page — and the Lead, once
+    await consent.check();
+    await page.locator("[data-cy='l2-send-code']").click();
     await expect.see("Te mandamos un código de 6 dígitos");
+    expect.eq(posts(), 1, "one POST once the box is ticked");
     const calls = await drain();
     const leads = calls.filter((c) => c.name === "Lead");
     expect.eq(
@@ -206,11 +527,9 @@ Deno.test("REQ-081: the hero signup works on the page — the code goes out, the
     );
     await page.locator("#reg-code").fill("111111");
     await expect.see("Ese código no es correcto");
-    // the right code opens the account (the dev master code on the fakes)
+    // the right code opens the account (the dev master code on the fakes) and goes straight into the
+    // app — no card, no button (REQ-081's amendment stands)
     await page.locator("#reg-code").fill("000000");
-    // and goes straight into the app — no "you are in" card, no button to press (Raphael's feedback)
-    // the app's own onboarding redirect may carry the new account one hop further; what matters is
-    // that it left the landing for an app page and was not bounced to the login
     await page.waitForURL((u: URL) => u.pathname !== "/landing2", {
       timeout: 60_000,
     });
@@ -219,25 +538,23 @@ Deno.test("REQ-081: the hero signup works on the page — the code goes out, the
       0,
       "no second Lead for the code",
     );
-    expect.eq(
-      await page.locator("[data-cy='l2-open-app']").count(),
-      0,
-      "no Done card on the way",
-    );
     await page.waitForLoadState("networkidle");
     const landed = new URL(page.url()).pathname;
     expect(
       landed !== "/login" && landed !== "/landing2",
       `signed in and inside the app (${landed})`,
     );
-    // back on the landing: the Lead's once-per-browser guard is on record (REQ-080's key by event id),
-    // and a second code for the same number inside 30 s is the cooldown, said on the page (P-03)
+    // back on the landing: the Lead's once-per-browser guard is on record, and a second code for the
+    // same number inside 30 s is the cooldown, said on the page (P-03)
     await page.goto(`${baseUrl}/landing2`);
     await drain();
-    const guarded = await page.evaluate(() =>
-      Object.keys(localStorage).some((k) => k.startsWith("pm:px:lead:"))
+    expect(
+      await page.evaluate(() =>
+        Object.keys(localStorage).some((k) => k.startsWith("pm:px:lead:"))
+      ),
+      "the Lead's once-per-browser guard is on record",
     );
-    expect(guarded, "the Lead's once-per-browser guard is on record");
+    await page.locator("#reg-consent").check();
     await page.locator("#reg-phone").fill(phone);
     await page.locator("[data-cy='l2-send-code']").click();
     await expect.see("Ya te mandamos un código");
@@ -254,23 +571,88 @@ Deno.test("REQ-081: the hero signup works on the page — the code goes out, the
     await expect.see("Empieza gratis en 30 segundos");
   }));
 
-Deno.test("REQ-081: booking a demo works — demo or call, a day, a time, the details, then the confirmation; the team is emailed, the person is texted, and the phone is a lead", (t) =>
+Deno.test("REQ-090: the demo card — Llámenme with just a cell books a call as soon as possible; the day-and-window form books a demo; each holds until its consent box is ticked; the team is emailed, the person is texted, and the phone is a lead", (t) =>
   story(t, async ({ page, expect }) => {
+    const posts = watchPosts(page, "/api/demo-request");
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2?lang=en");
-    await expect.see("Pick the day and time. We call you.");
+    await expect.see("Want to see it first? We’ll call you.");
     await page.locator("#demo").scrollIntoViewIfNeeded();
-    // seven days from tomorrow, twelve hours; the summary follows the picks
-    expect.eq(await count(page, "[data-cy='l2-day']"), 7, "seven days to pick");
+    // one card: the copy on the left, the form on the right
+    expect.eq(
+      await count(page, "[data-cy='l2-demo'] [data-cy='l2-demo-card']"),
+      1,
+      "the demo is one card",
+    );
+    expect.eq(
+      await count(page, "[data-cy='l2-demo-card'] [data-cy='l2-demo-form']"),
+      1,
+      "the form is inside it",
+    );
+    // Llámenme: just a cell — held until the box is ticked
+    const quickPhone = `512${digits()}`;
+    await page.locator("#demo-phone").fill(quickPhone);
+    expect.eq(
+      await page.locator("#demo-consent").isChecked(),
+      false,
+      "the demo's consent box starts unticked",
+    );
+    await page.locator("[data-cy='l2-demo-call']").click();
+    await expect.see("Tick the box so we can text or call you.");
+    expect.eq(posts(), 0, "nothing was posted without consent");
+    await page.locator("#demo-consent").check();
+    const [res] = await Promise.all([
+      page.waitForResponse((
+        r: { url(): string; request(): { method(): string } },
+      ) =>
+        r.url().includes("/api/demo-request") && r.request().method() === "POST"
+      ),
+      page.locator("[data-cy='l2-demo-call']").click(),
+    ]);
+    const body = await res.json();
+    expect.eq(body.ok, true, `the call was booked (${JSON.stringify(body)})`);
+    expect.eq(body.mode, "call", "a call");
+    expect.eq(body.day, "", "as soon as possible: no day…");
+    expect.eq(body.slot, "", "…and no window");
+    expect.eq(body.emailed, true, "the team was emailed");
+    expect.eq(
+      typeof body.texted,
+      "boolean",
+      "the server says whether the person was texted",
+    );
+    expect.eq(body.lead, true, "the phone is a lead");
+    await expect.see("Done!");
+    await expect.see(
+      body.texted
+        ? "We confirm by text. No commitment."
+        : "We could not text you, but your booking is in",
+    );
+    // the day-and-window form, Spanish (an explicit ?lang= is a choice the site persists — asked by name)
+    await page.goto("/landing2?lang=es");
+    await page.locator("#demo").scrollIntoViewIfNeeded();
+    await clickUntil(
+      page,
+      "[data-cy='l2-pick-time']",
+      async () => (await count(page, "[data-cy='l2-day']")) > 0,
+    );
+    expect.eq(
+      await count(page, "[data-cy='l2-day']"),
+      DEMO_DAY_COUNT,
+      "five days to pick",
+    );
     expect.eq(
       await count(page, "[data-cy='l2-slot']"),
-      12,
-      "twelve hours to pick",
+      DEMO_SLOTS.length,
+      "two windows to pick",
     );
+    await expect.see("Mañana (9–12)");
+    await expect.see("Tarde (1–5)");
     const summary = page.locator("[data-cy='l2-demo-summary']");
     expect(
-      /15-min demo · .+ · 11:00 AM/.test((await summary.textContent()) ?? ""),
-      `the summary starts on the demo at 11:00 AM (${await summary
+      /^Demo · .+ · Mañana, 9 AM – 12 PM \(hora del Este\)$/.test(
+        ((await summary.textContent()) ?? "").replace(/\s+/g, " ").trim(),
+      ),
+      `the summary starts on the demo, the first day, the morning (${await summary
         .textContent()})`,
     );
     await clickUntil(
@@ -282,78 +664,30 @@ Deno.test("REQ-081: booking a demo works — demo or call, a day, a time, the de
     );
     await clickUntil(
       page,
-      "[data-cy='l2-slot'] >> nth=5",
+      "[data-cy='l2-slot'] >> nth=1",
       async () =>
-        (await page.locator("[data-cy='l2-slot']").nth(5).getAttribute("class"))
+        (await page.locator("[data-cy='l2-slot']").nth(1).getAttribute("class"))
           ?.includes("on") ?? false,
     );
-    const dayLabel =
-      ((await page.locator("[data-cy='l2-day']").nth(2).textContent()) ?? "")
-        .replace(/\s+/g, " ").trim();
-    expect(
-      ((await summary.textContent()) ?? "").includes("2:00 PM"),
-      "the summary follows the hour",
+    const dayIso = await page.locator("[data-cy='l2-day']").nth(2).getAttribute(
+      "data-day",
     );
-    // a demo needs an email unless there is none — the page says so before posting
-    await page.locator("#f-name").fill("José García");
+    expect(
+      ((await summary.textContent()) ?? "").includes("Tarde, 1 – 5 PM"),
+      "the summary follows the window",
+    );
+    // the details: a name is needed, the consent box too; the email is optional
     await page.locator("#f-phone").fill(`512${digits()}`);
     await page.locator("[data-cy='l2-demo-submit']").click();
-    await expect.see("Email is required for the demo");
-    await page.locator("#f-noemail").check();
-    await page.locator("#f-trade").fill("Painting");
-    // the booking posts and the server says what it did
-    const [res] = await Promise.all([
-      page.waitForResponse((
-        r: { url(): string; request(): { method(): string } },
-      ) =>
-        r.url().includes("/api/demo-request") && r.request().method() === "POST"
-      ),
-      page.locator("[data-cy='l2-demo-submit']").click(),
-    ]);
-    const body = await res.json();
-    expect.eq(body.ok, true, `the booking was taken (${JSON.stringify(body)})`);
-    expect.eq(body.emailed, true, "the team was emailed");
-    // the text: sent on the fakes and on the real run; a box whose Twilio seat is half-configured
-    // reports it honestly as not sent, and the page says so — either way the booking stands
-    expect.eq(
-      typeof body.texted,
-      "boolean",
-      "the server says whether the person was texted",
-    );
-    expect.eq(body.lead, true, "the phone is a lead");
-    expect.eq(body.slot, "2:00 PM", "the slot picked");
-    await expect.see("Done!");
+    await expect.see("Escribe tu nombre.");
+    await page.locator("#f-name").fill("José García");
+    await page.locator("[data-cy='l2-demo-submit']").click();
     await expect.see(
-      body.texted
-        ? "We sent you a text confirmation."
-        : "We could not text you, but your booking is in",
+      "Marca la casilla para que podamos escribirte o llamarte.",
     );
-    const done =
-      (await page.locator("[data-cy='l2-demo-done']").textContent()) ?? "";
-    expect(
-      done.includes("15-min demo") && done.includes("2:00 PM"),
-      `the confirmation repeats the booking (${done})`,
-    );
-    const dayNum = /\d+/.exec(dayLabel)?.[0] ?? "";
-    expect(
-      dayNum !== "" && done.includes(` ${dayNum} `),
-      `the confirmation names the day picked (${dayLabel} in ${done})`,
-    );
-    // "just call me" is the other mode, Spanish, no email at all (an explicit ?lang= is a choice the
-    // site persists — lib/lang.ts — so the Spanish page is asked for by name)
-    await page.goto("/landing2?lang=es");
-    await page.locator("#demo").scrollIntoViewIfNeeded();
-    await clickUntil(
-      page,
-      "[data-cy='l2-mode-call']",
-      async () => ((await summary.textContent()) ?? "").startsWith("Llamada"),
-    );
-    expect(
-      ((await summary.textContent()) ?? "").startsWith("Llamada"),
-      "the summary says a call",
-    );
-    await page.locator("#f-name").fill("María López");
-    await page.locator("#f-phone").fill(`512${digits()}`);
+    expect.eq(posts(), 1, "nothing more was posted without consent");
+    await page.locator("#f-email").fill("jose@tunegocio.com");
+    await page.locator("#demo-consent").check();
     const [res2] = await Promise.all([
       page.waitForResponse((
         r: { url(): string; request(): { method(): string } },
@@ -362,137 +696,35 @@ Deno.test("REQ-081: booking a demo works — demo or call, a day, a time, the de
       ),
       page.locator("[data-cy='l2-demo-submit']").click(),
     ]);
-    expect.eq((await res2.json()).mode, "call", "a call was booked");
+    const body2 = await res2.json();
+    expect.eq(body2.ok, true, `the demo was booked (${JSON.stringify(body2)})`);
+    expect.eq(body2.mode, "demo", "a demo");
+    expect.eq(body2.day, dayIso, "the day picked");
+    expect.eq(body2.slot, "afternoon", "the window picked");
+    expect.eq(body2.lead, true, "the phone is a lead");
     await expect.see("¡Listo!");
-  }));
-
-Deno.test("REQ-081: the FAQ opens and closes, the plans are the one plan list, every link and button lands where it says, and a phone shows the sticky bar", (t) =>
-  story(t, async ({ page, expect }) => {
-    await page.setViewportSize(DESKTOP);
-    await page.goto("/landing2?lang=en");
-    await expect.see("Have doubts?");
-    // the FAQ: four questions, each opens and closes
-    const faqs = page.locator("[data-cy='l2-faq'] details");
-    expect.eq(await faqs.count(), 4, "four questions");
-    await faqs.nth(0).locator("summary").click();
-    expect(
-      await faqs.nth(0).evaluate((d: HTMLDetailsElement) => d.open),
-      "the first question opened",
+    await expect.see(
+      body2.texted
+        ? "Te confirmamos por texto. Sin compromiso."
+        : "No pudimos mandarte el texto",
     );
-    await expect.see("it is built exactly for you");
-    await faqs.nth(0).locator("summary").click();
-    expect(
-      !(await faqs.nth(0).evaluate((d: HTMLDetailsElement) => d.open)),
-      "and closed again",
+    // ← Solo llámenme goes back to the one-field form
+    await page.goto("/landing2?lang=es");
+    await page.locator("#demo").scrollIntoViewIfNeeded();
+    await clickUntil(
+      page,
+      "[data-cy='l2-pick-time']",
+      async () => (await count(page, "[data-cy='l2-day']")) > 0,
     );
-    // the plans: the one list, its names, prices and features
-    const cards = page.locator("[data-cy='l2-plan']");
+    await clickUntil(
+      page,
+      "[data-cy='l2-quick-mode']",
+      async () => (await count(page, "#demo-phone")) > 0,
+    );
     expect.eq(
-      await cards.count(),
-      PUBLIC_PLANS.length,
-      "one card per public plan",
-    );
-    for (let i = 0; i < PUBLIC_PLANS.length; i++) {
-      const plan = PUBLIC_PLANS[i];
-      const card = cards.nth(i);
-      expect.eq(
-        await card.getAttribute("data-plan"),
-        plan.id,
-        `card ${i} is ${plan.id}`,
-      );
-      await expect.see(plan.name);
-      const price =
-        ((await card.locator("[data-cy='l2-plan-price']").textContent()) ?? "")
-          .trim();
-      expect(
-        price.startsWith(
-          plan.custom ? "Custom" : `$${Math.round(plan.priceCents / 100)}`,
-        ),
-        `${plan.id} shows its price (${price})`,
-      );
-      for (const f of plan.features) await expect.see(f.en);
-      const cta = await card.locator("[data-cy='l2-plan-cta']").getAttribute(
-        "href",
-      );
-      expect.eq(
-        cta,
-        plan.custom ? "#demo" : "#empezar",
-        `${plan.id}'s button goes to ${
-          plan.custom ? "the demo" : "the signup"
-        }`,
-      );
-    }
-    expect.eq(
-      await count(page, "[data-cy='l2-plan'][data-popular]"),
-      1,
-      "one plan is the popular one",
-    );
-    // the policy links: the four, in order, to their own pages
-    const legal = page.locator("[data-cy='l2-footer'] a[data-legal-link]");
-    expect.eq(await legal.count(), LEGAL_LINKS.length, "the four policy links");
-    for (let i = 0; i < LEGAL_LINKS.length; i++) {
-      expect.eq(
-        await legal.nth(i).getAttribute("href"),
-        LEGAL_LINKS[i].path,
-        `policy link ${i} is ${LEGAL_LINKS[i].path}`,
-      );
-    }
-    // the phone, WhatsApp and email links
-    expect(
-      (await count(page, "a[href='tel:+18553628666']")) >= 4,
-      "the phone links dial the support line",
-    );
-    const wa = await page.locator("[data-cy='l2-whatsapp']").first()
-      .getAttribute("href");
-    expect.eq(
-      wa,
-      "https://wa.me/18553628666",
-      "WhatsApp opens the support line",
-    );
-    expect((await count(page, "a[href^='mailto:']")) >= 2, "the email links");
-    // the in-page buttons: Start free → the signup, Book a demo → the demo
-    await page.locator("[data-cy='l2-nav'] a[href='#empezar']").click();
-    expect(
-      await page.locator("#empezar").evaluate((el: HTMLElement) => {
-        const r = el.getBoundingClientRect();
-        return r.top >= -2 && r.top < innerHeight;
-      }),
-      "Start free scrolls to the signup card",
-    );
-    await page.locator("[data-cy='l2-hero'] a[href='#demo']").click();
-    expect(
-      await page.locator("#demo").evaluate((el: HTMLElement) =>
-        el.getBoundingClientRect().top < innerHeight / 2
-      ),
-      "Book a demo scrolls to the demo",
-    );
-    // every policy link really lands on its page
-    await page.locator("[data-cy='l2-footer'] a[data-legal-link='privacy']")
-      .click();
-    await page.waitForURL((u: URL) => u.pathname === "/privacy");
-    await expect.see("Privacy Policy");
-    // the phone: the sticky bar is the three buttons, and it is gone on a desktop
-    await page.goto("/landing2?lang=en");
-    expect.eq(
-      await page.locator("[data-cy='l2-stickybar']").isVisible(),
-      false,
-      "no sticky bar on a desktop",
-    );
-    await page.setViewportSize(PHONE);
-    await page.goto("/landing2?lang=en");
-    const bar = page.locator("[data-cy='l2-stickybar']");
-    expect(await bar.isVisible(), "the sticky bar on a phone");
-    expect.eq(
-      await bar.locator("a").count(),
-      3,
-      "three buttons: start, WhatsApp, call",
-    );
-    await bar.locator("a[href='#empezar']").click();
-    expect(
-      await page.locator("#empezar").evaluate((el: HTMLElement) =>
-        el.getBoundingClientRect().top < innerHeight
-      ),
-      "the bar's Start free reaches the signup",
+      await count(page, "[data-cy='l2-day']"),
+      0,
+      "the day picker is gone again",
     );
   }));
 
@@ -500,7 +732,7 @@ Deno.test("REQ-081: the FAQ opens and closes, the plans are the one plan list, e
  * Raphael's feedback on the shown page, 2026-10-16: "the english spanish toggle looks like ass when
  * toggling, if you click it at all it should toggle to the opposite, you should not have to click
  * the letters." · "need more contrast on this button" (1-855-DocuMon, dark on dark) · "more
- * contrast on this button" (Call us, the same) · "this is cut off" (the day picker's seventh day).
+ * contrast on this button" (Call us, the same) · "this is cut off" (the day picker's last day).
  */
 Deno.test("REQ-081: the language toggle is one button — a click anywhere on it flips the language, both ways", (t) =>
   story(t, async ({ page, expect }) => {
@@ -551,7 +783,7 @@ Deno.test("REQ-081: the language toggle is one button — a click anywhere on it
       await halves.nth(1).evaluate((el: HTMLElement) =>
         getComputedStyle(el).color
       ),
-      "rgb(21, 32, 43)",
+      INK,
       "EN ink",
     );
   }));
@@ -561,7 +793,6 @@ Deno.test("REQ-081: every dark button has white text and every light button has 
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2?lang=en");
     const WHITE = "rgb(255, 255, 255)";
-    const INK = "rgb(21, 32, 43)";
     const color = (sel: string) =>
       page.locator(sel).first().evaluate((el: HTMLElement) =>
         getComputedStyle(el).color
@@ -580,6 +811,11 @@ Deno.test("REQ-081: every dark button has white text and every light button has 
       INK,
       "Start free is ink on orange",
     );
+    expect.eq(
+      await color("[data-cy='l2-signup'] a.l2-btn--ghost"),
+      INK,
+      "the signup card's phone button is ink on white",
+    );
     // and on hover the text keeps its colour — the page's link hover never paints a button green
     await page.locator(callUs).scrollIntoViewIfNeeded();
     await page.locator(callUs).hover();
@@ -595,8 +831,10 @@ Deno.test("REQ-081: every dark button has white text and every light button has 
       "Book a demo stays ink under the mouse",
     );
     expect.eq(
-      await count(page, "a.l2-btn--dark"),
-      await page.locator("a.l2-btn--dark").evaluateAll((els: HTMLElement[]) =>
+      await count(page, "a.l2-btn--dark, button.l2-btn--dark"),
+      await page.locator("a.l2-btn--dark, button.l2-btn--dark").evaluateAll((
+        els: HTMLElement[],
+      ) =>
         els.filter((el) => getComputedStyle(el).color === "rgb(255, 255, 255)")
           .length
       ),
@@ -604,16 +842,28 @@ Deno.test("REQ-081: every dark button has white text and every light button has 
     );
   }));
 
-Deno.test("REQ-081: all seven days of the demo's day picker sit whole inside the card, on a desktop and on a phone", (t) =>
+Deno.test("REQ-090: all five days of the demo's day picker sit whole inside the card, on a desktop and on a phone", (t) =>
   story(t, async ({ page, expect }) => {
     for (const vp of [DESKTOP, PHONE]) {
       await page.setViewportSize(vp);
-      await page.goto("/landing2?lang=en#demo");
+      // a second goto that differs only by its hash is a same-document jump — the island would keep
+      // its state and the link would be gone: ask for the page afresh and scroll to the demo
+      await page.goto(`/landing2?lang=en&vp=${vp.width}`);
+      await page.locator("#demo").scrollIntoViewIfNeeded();
+      await clickUntil(
+        page,
+        "[data-cy='l2-pick-time']",
+        async () => (await count(page, "[data-cy='l2-day']")) > 0,
+      );
       const days = page.locator("[data-cy='l2-day']");
-      expect.eq(await days.count(), 7, `seven days at ${vp.width}px`);
-      const card = (await page.locator("[data-cy='l2-demo'] .l2-demo__card")
-        .boundingBox())!;
-      for (let i = 0; i < 7; i++) {
+      expect.eq(
+        await days.count(),
+        DEMO_DAY_COUNT,
+        `five days at ${vp.width}px`,
+      );
+      const card =
+        (await page.locator("[data-cy='l2-demo-card']").boundingBox())!;
+      for (let i = 0; i < DEMO_DAY_COUNT; i++) {
         const b = (await days.nth(i).boundingBox())!;
         expect(
           b.x >= card.x && b.x + b.width <= card.x + card.width + 0.5,
@@ -622,12 +872,19 @@ Deno.test("REQ-081: all seven days of the demo's day picker sit whole inside the
           } ≤ ${Math.round(card.x + card.width)})`,
         );
       }
-      const row = page.locator("[data-cy='l2-demo'] .l2-demo__days");
+      const row = page.locator("[data-cy='l2-demo-card'] .l2-demo__days");
       expect(
         await row.evaluate((el: HTMLElement) =>
           el.scrollWidth <= el.clientWidth + 1
         ),
         `nothing to scroll at ${vp.width}px`,
+      );
+      const scrollW = await page.evaluate(() =>
+        document.documentElement.scrollWidth
+      );
+      expect(
+        scrollW <= vp.width,
+        `nothing wider than the screen at ${vp.width}px (${scrollW})`,
       );
     }
   }));
@@ -657,6 +914,7 @@ Deno.test("REQ-084: the signup card asks the browser for no autofill — the pho
       }),
       `the phone field (${JSON.stringify(phone)})`,
     );
+    await page.locator("#reg-consent").check(); // REQ-089: the consent box gates the code
     await page.locator("#reg-phone").fill(`512${digits()}`);
     await page.locator("[data-cy='l2-send-code']").click();
     await page.locator("[data-cy='l2-signup-step'][data-step='2']").waitFor({

@@ -35,24 +35,33 @@ export interface ContactResult {
   retryAfterMs?: number;
 }
 
-/** REQ-081 — a demo booking from /landing2: demo or call, the day and the slot, who, how to reach them */
+/** REQ-081/090 — a demo booking from /landing2: a call with just a cell (as soon as possible), or a demo on a day and a window, who, how to reach them — and the consent box, ticked */
 export interface DemoRequestInput {
   mode: "demo" | "call";
+  /** "" for a call with just a cell */
   name: string;
   phone: string;
+  /** "" when not given */
   email: string;
-  /** the person said they have no email — a demo may be booked without one then */
-  noEmail: boolean;
-  trade: string;
-  /** YYYY-MM-DD */
+  /** YYYY-MM-DD for a demo; "" for a call */
   day: string;
-  /** one of the twelve slots, "9:00 AM" … "8:00 PM" */
+  /** "morning" | "afternoon" for a demo; "" for a call */
   slot: string;
   lang: Lang;
+  /** the TCPA consent box — the page only posts once it is ticked */
+  consent: boolean;
 }
 
 export type DemoRequestResult =
-  | { ok: true; mode: "demo" | "call"; day: string; slot: string; emailed: boolean; texted: boolean; lead: boolean }
+  | {
+    ok: true;
+    mode: "demo" | "call";
+    day: string;
+    slot: string;
+    emailed: boolean;
+    texted: boolean;
+    lead: boolean;
+  }
   | { ok: false; reason: "invalid"; field: string }
   | { ok: false; reason: "too_many_attempts"; retryAfterMs: number }
   | { ok: false; reason: string };
@@ -63,8 +72,11 @@ export const landingClient = {
     return api.post<SendOtpResult>("/auth/send-otp", input, opts);
   },
 
-  /** REQ-081 — POST /demo-request — the demo booking (backend DemoRequestController). */
-  requestDemo(input: DemoRequestInput, opts: ApiOptions = {}): Promise<DemoRequestResult> {
+  /** REQ-081/090 — POST /demo-request — the demo booking (backend DemoRequestController). */
+  requestDemo(
+    input: DemoRequestInput,
+    opts: ApiOptions = {},
+  ): Promise<DemoRequestResult> {
     return api.post<DemoRequestResult>("/demo-request", input, opts);
   },
 

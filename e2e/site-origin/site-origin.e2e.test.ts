@@ -95,6 +95,7 @@ Deno.test("REQ-085: the signup card on /landing2 sends the code through the page
 
     await page.goto("/landing2");
     const origin = await page.evaluate(() => location.origin);
+    await page.locator("#reg-consent").check(); // REQ-089: the consent box gates the code
     await page.locator("#reg-phone").fill(`512${digits()}`);
     await page.locator("[data-cy='l2-send-code']").click();
     await page.locator("[data-cy='dev-code']").waitFor({

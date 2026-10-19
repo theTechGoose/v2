@@ -1,31 +1,61 @@
 /**
- * REQ-081 — the demo booking on /landing2, the part both sides agree on: the twelve hours the
- * page offers, the seven days it shows (from tomorrow, Eastern), and how a day is labelled in
- * each language. The page's island renders from this; the backend (demo-request) validates and
- * writes the confirmation from the same source. Pure data and date arithmetic, no imports.
+ * REQ-081/090 — the demo booking on /landing2, the part both sides agree on: the two windows the
+ * page offers (morning, afternoon — Eastern), the five days it shows (from tomorrow, Eastern), how
+ * a day and a window are labelled in each language, and the words for a call booked with just a
+ * cell ("as soon as possible"). The page's island renders from this; the backend (demo-request)
+ * validates and writes the confirmation from the same source. Pure data and date arithmetic, no
+ * imports.
  */
 
 export type DemoLang = "es" | "en";
+export type DemoSlotId = "morning" | "afternoon";
 
-/** the twelve hours the page offers, Eastern */
-export const DEMO_SLOTS: readonly string[] = [
-  "9:00 AM",
-  "10:00 AM",
-  "11:00 AM",
-  "12:00 PM",
-  "1:00 PM",
-  "2:00 PM",
-  "3:00 PM",
-  "4:00 PM",
-  "5:00 PM",
-  "6:00 PM",
-  "7:00 PM",
-  "8:00 PM",
+export interface DemoSlot {
+  id: DemoSlotId;
+  /** on the button: "Mañana (9–12)" */
+  short: Record<DemoLang, string>;
+  /** in the summary and the messages, before the time zone: "Mañana, 9 AM – 12 PM" */
+  long: Record<DemoLang, string>;
+}
+
+/** the two windows the page offers, Eastern */
+export const DEMO_SLOTS: readonly DemoSlot[] = [
+  {
+    id: "morning",
+    short: { es: "Mañana (9–12)", en: "Morning (9–12)" },
+    long: { es: "Mañana, 9 AM – 12 PM", en: "Morning, 9 AM – 12 PM" },
+  },
+  {
+    id: "afternoon",
+    short: { es: "Tarde (1–5)", en: "Afternoon (1–5)" },
+    long: { es: "Tarde, 1 – 5 PM", en: "Afternoon, 1 – 5 PM" },
+  },
 ];
 
-/** the slot the page starts on (11:00 AM) and the number of days it shows */
-export const DEFAULT_SLOT_INDEX = 2;
-export const DEMO_DAY_COUNT = 7;
+/** the time zone every window is in, as the page says it */
+export const DEMO_TZ: Record<DemoLang, string> = {
+  es: "hora del Este",
+  en: "Eastern",
+};
+
+/** a call booked with just a cell: no day, no window */
+export const ASAP_LABEL: Record<DemoLang, string> = {
+  es: "lo antes posible",
+  en: "as soon as possible",
+};
+
+/** the number of days the page shows */
+export const DEMO_DAY_COUNT = 5;
+
+export function demoSlot(id: string): DemoSlot | undefined {
+  return DEMO_SLOTS.find((s) => s.id === id);
+}
+
+/** one window as the summary and the messages read it: "Mañana, 9 AM – 12 PM (hora del Este)" */
+export function demoSlotLabel(id: string, lang: DemoLang): string {
+  const slot = demoSlot(id);
+  return slot ? `${slot.long[lang]} (${DEMO_TZ[lang]})` : id;
+}
 
 const DOWS: Record<DemoLang, string[]> = {
   es: ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"],
@@ -83,7 +113,7 @@ export interface DemoDay {
   mon: string;
 }
 
-/** one day as the picker shows it: "Sáb 17 Oct" */
+/** one day as the summary shows it: "Sáb 17 Oct" */
 export function demoDayLabel(day: string, lang: DemoLang): string {
   const d = demoDay(day, lang);
   return d ? `${d.dow} ${d.num} ${d.mon}` : day;
@@ -112,7 +142,7 @@ export function easternToday(now: Date = new Date()): string {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
-/** the seven days the page offers, starting tomorrow (Eastern) */
+/** the five days the page offers, starting tomorrow (Eastern) */
 export function upcomingDemoDays(
   lang: DemoLang,
   now: Date = new Date(),
