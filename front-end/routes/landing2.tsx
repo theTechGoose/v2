@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import Landing2Signup, {
   type Landing2SignupLabels,
@@ -55,6 +55,12 @@ import { LEGAL_LINKS, type LegalDocId } from "../../shared/legal/terms.ts";
  * footer a <footer> — and #top is the page itself; the head names both language variants and a
  * default (hreflang) and warms the font host (preconnect); the footer's year is the clock's; the
  * demo's window group is named like its day group; the hero's English note is marked English.
+ *
+ * REQ-096 — the third comb ("run the fine tooth comb again"): the stylesheet's link goes through
+ * Fresh's asset() — prod serves a plain static URL as no-store, so every view re-downloaded it,
+ * while a busted URL is immutable for a year; the lang="en" mark sits on the hero note's English
+ * lines (REQ-095 had put it on the whole note, Spanish label included) and on the team's English
+ * role; the signup card's title and the demo's thanks are headings; the toggle says where it goes.
  */
 
 /** REQ-076 — the dictionary key for each policy link's label on this page. */
@@ -232,7 +238,7 @@ export default define.page(function Landing2(ctx) {
             ? <meta key={m.key} property={m.key} content={m.content} />
             : <meta key={m.key} name={m.key} content={m.content} />
         )}
-        <link rel="stylesheet" href="/landing2.css" />
+        <link rel="stylesheet" href={asset("/landing2.css")} />
       </Head>
 
       <div class="l2" id="top">
@@ -296,10 +302,14 @@ export default define.page(function Landing2(ctx) {
                 <div class="l2-note__k">{t("youSaid")}</div>
                 <div class="l2-note__msg">{t("youSaidMsg")}</div>
               </div>
-              <div class="l2-card l2-note l2-note--got" lang="en">
+              <div class="l2-card l2-note l2-note--got">
                 <div class="l2-note__k">{t("clientGot")}</div>
-                <div class="l2-note__quote">Quote #PM-2641 · $10,990</div>
-                <div class="l2-note__signed">Signed ✓ R. Hernández</div>
+                <div class="l2-note__quote" lang="en">
+                  Quote #PM-2641 · $10,990
+                </div>
+                <div class="l2-note__signed" lang="en">
+                  Signed ✓ R. Hernández
+                </div>
               </div>
             </div>
           </div>
@@ -396,7 +406,7 @@ export default define.page(function Landing2(ctx) {
                   >
                     <img class="l2-member__photo" src={m.img} alt={m.name} />
                     <div class="l2-member__name">{m.name}</div>
-                    <div class="l2-member__role">{m.role}</div>
+                    <div class="l2-member__role" lang="en">{m.role}</div>
                     <p class="l2-member__line">{m.line}</p>
                   </div>
                 ))}

@@ -7,7 +7,8 @@
  * or facetime etc..." and "big jobs plan or bids needs 10px of padding." REQ-094 — Raphael,
  * 2026-10-19, on that worktree: "go through this with a fine tooth comb." — the audit of the whole
  * page, and what it found. REQ-095 — "go through the landing page with a fine tooth comb again.
- * find any issues, fix them" — the second pass.
+ * find any issues, fix them" — the second pass. REQ-096 — "run the fine tooth comb again" — the
+ * third.
  *
  * "Real" means the page reads the site's one sources instead of carrying copies the mock had
  * inline: the plans and their prices (shared/quote-flow/pricing-plans.ts, P-08), the support
@@ -436,10 +437,9 @@ describe("REQ-095 the second comb — landmarks, the head's language links, the 
     expect(read(PAGE)).toMatch(/"pickSlot",/);
   });
 
-  test("the hero's English note is marked English on the Spanish page", () => {
-    expect(read(PAGE)).toMatch(
-      /<div class="l2-card l2-note l2-note--got" lang="en">/,
-    );
+  test("the hero note's English lines are marked English on the Spanish page (REQ-096 moved the mark off the note's Spanish label)", () => {
+    expect(read(PAGE)).toMatch(/<div class="l2-note__quote" lang="en">/);
+    expect(read(PAGE)).toMatch(/<div class="l2-note__signed" lang="en">/);
   });
 
   test("on a tablet the headlines scale between the phone's and the desktop's sizes", () => {
@@ -458,5 +458,45 @@ describe("REQ-095 the second comb — landmarks, the head's language links, the 
     expect(rule).toMatch(/display: inline-flex;/);
     expect(rule).toMatch(/align-items: center;/);
     expect(rule).toMatch(/min-height: 24px;/);
+  });
+});
+
+/**
+ * REQ-096 — "run the fine tooth comb again." The third pass: the stylesheet's link bypassed Fresh's
+ * cache-busting (prod serves a plain static URL as no-store, so every view re-downloaded it, while
+ * a busted one is immutable for a year); REQ-095's lang="en" sat on the whole hero note, Spanish
+ * label included; the team's English role was unmarked; the signup card's title and the demo's
+ * thanks were styled divs, invisible to a heading list; the language toggle's name said
+ * "Idioma / Language" instead of where it goes.
+ */
+describe("REQ-096 the third comb — the stylesheet is cache-busted, the English lines are marked and nothing else, the cards' titles are headings, the toggle says where it goes", () => {
+  test("the stylesheet link goes through Fresh's asset(), so a returning visitor's browser keeps it until the build changes and never keeps a stale one", () => {
+    const page = read(PAGE);
+    expect(page).toMatch(/import \{ asset, Head \} from "fresh\/runtime";/);
+    expect(page).toMatch(
+      /<link rel="stylesheet" href=\{asset\("\/landing2\.css"\)\} \/>/,
+    );
+  });
+
+  test("lang=\"en\" marks the hero note's English lines and the team's English role — not the note's Spanish label", () => {
+    const page = read(PAGE);
+    expect(page).not.toMatch(/l2-note--got" lang="en"/);
+    expect(page).toMatch(/<div class="l2-note__quote" lang="en">/);
+    expect(page).toMatch(/<div class="l2-note__signed" lang="en">/);
+    expect(page).toMatch(/<div class="l2-member__role" lang="en">/);
+  });
+
+  test("the signup card's title and the demo's thanks are headings, not styled divs", () => {
+    const signup = read(ISLANDS[0]);
+    expect((signup.match(/<h2 class="l2-signup__h">/g) ?? []).length).toBe(2);
+    expect(signup).not.toMatch(/<div class="l2-signup__h">/);
+    const demo = read(ISLANDS[1]);
+    expect(demo).toMatch(/<h3 class="l2-h l2-thanks__h">/);
+    expect(demo).not.toMatch(/<div class="l2-h l2-thanks__h">/);
+  });
+
+  test("the language toggle's name says where it goes, in both languages", () => {
+    expect(es["landing2.langAria"]).toBe("Cambiar a inglés");
+    expect(en["landing2.langAria"]).toBe("Switch to Spanish");
   });
 });

@@ -28,7 +28,7 @@ export interface Landing2DemoLabels {
   pickTimeLink: string;
   quickLink: string;
   pickDay: string;
-  /** REQ-095 — the window group's name, as the day group has one */
+  /** REQ-095 — the window group's name, as the day group has one (REQ-096: the thanks is an h3) */
   pickSlot: string;
   name: string;
   namePh: string;
@@ -170,7 +170,7 @@ export default function Landing2Demo(
             <path d="M4 12l5 5L20 6" />
           </svg>
         </div>
-        <div class="l2-h l2-thanks__h">{labels.thanksH}</div>
+        <h3 class="l2-h l2-thanks__h">{labels.thanksH}</h3>
         <p class="l2-thanks__sub">
           {sent.texted ? labels.thanksSub : labels.thanksNoText}
         </p>

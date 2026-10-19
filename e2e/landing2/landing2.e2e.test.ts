@@ -8,6 +8,7 @@
  * bids needs 10px of padding." REQ-094 — Raphael, 2026-10-19, on that worktree: "go through this
  * with a fine tooth comb." — the audit of the whole page, and what it found. REQ-095 — "go through
  * the landing page with a fine tooth comb again. find any issues, fix them" — the second pass.
+ * REQ-096 — "run the fine tooth comb again" — the third.
  *
  * The page: front-end/routes/landing2.tsx (SSR, Spanish first, English on the toggle), its
  * islands — Landing2Signup (phone + the TCPA consent box → code → straight into the app, through
@@ -1234,13 +1235,12 @@ Deno.test("REQ-095: the second comb — the page has its landmarks and the brand
     );
     // the footer's year is the clock's
     await expect.see(`© ${new Date().getFullYear()} DocuMonster`);
-    // the hero's English note is marked English
+    // the hero note's English lines are marked English (REQ-096: the lines, not the whole note)
     expect.eq(
-      await page.locator("[data-cy='l2-hero'] .l2-note--got").getAttribute(
-        "lang",
-      ),
+      await page.locator("[data-cy='l2-hero'] .l2-note--got .l2-note__quote")
+        .getAttribute("lang"),
       "en",
-      "the hero's English note carries lang=en",
+      "the hero note's quote line carries lang=en",
     );
     // the footer's policy links are tap targets
     const legal = await page.evaluate(() =>
@@ -1291,4 +1291,75 @@ Deno.test("REQ-095: the second comb — the page has its landmarks and the brand
       `the headline is between 40 and 48px on a tablet (${h1.size})`,
     );
     expect(h1.lines <= 4, `four lines at most (${h1.lines})`);
+  }));
+
+Deno.test("REQ-096: the third comb — the stylesheet's link is cache-busted; the hero note's Spanish label is not marked English while its quote lines and the team's English role are; the signup card's title and the demo's thanks are headings; the language toggle says where it goes", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2");
+    await expect.see("que te ganan el trabajo.");
+    // the stylesheet carries the build id, like every image on the page
+    const css = await page.evaluate(() =>
+      document.querySelector("link[rel='stylesheet'][href*='landing2.css']")
+        ?.getAttribute("href") ?? ""
+    );
+    expect(
+      css.includes("__frsh_c="),
+      `the stylesheet link carries the build id (${css})`,
+    );
+    // lang marks: the English lines, and only them
+    const langs = await page.evaluate(() => {
+      const mark = (s: string) =>
+        document.querySelector(s)?.closest("[lang]")?.getAttribute("lang");
+      return {
+        label: mark(".l2-note--got .l2-note__k"),
+        quote: mark(".l2-note--got .l2-note__quote"),
+        signed: mark(".l2-note--got .l2-note__signed"),
+        role: mark(".l2-member__role"),
+      };
+    });
+    expect.eq(
+      langs.label,
+      "es",
+      "the note's label, Tu cliente recibió, is Spanish",
+    );
+    expect.eq(langs.quote, "en", "the quote line is English");
+    expect.eq(langs.signed, "en", "the signed line is English");
+    expect.eq(langs.role, "en", "Monster Success Specialist is English");
+    // the signup card's title is a heading
+    const headings = await page.evaluate(() =>
+      [...document.querySelectorAll(".l2 h1, .l2 h2, .l2 h3")].map((h) =>
+        `${h.tagName}:${(h.textContent ?? "").trim().slice(0, 30)}`
+      )
+    );
+    expect(
+      headings.includes("H2:Empieza gratis en 30 segundos"),
+      `the signup card's title is a heading (${headings.join(" | ")})`,
+    );
+    // the toggle says where it goes, both ways
+    expect.eq(
+      await page.locator("[data-cy='l2-lang']").getAttribute("aria-label"),
+      "Cambiar a inglés",
+      "the toggle's name on the Spanish page",
+    );
+    await page.locator("[data-cy='l2-lang']").click();
+    await page.waitForURL((u: URL) => u.searchParams.get("lang") === "en");
+    expect.eq(
+      await page.locator("[data-cy='l2-lang']").getAttribute("aria-label"),
+      "Switch to Spanish",
+      "and on the English page",
+    );
+    // the demo's thanks is a heading: book a call and read it
+    await page.locator("#demo-phone").fill(`512${digits()}`);
+    await page.locator("#demo-consent").check();
+    await clickUntil(
+      page,
+      "[data-cy='l2-demo-call']",
+      async () => (await count(page, "[data-cy='l2-demo-done']")) > 0,
+    );
+    expect.eq(
+      await count(page, "[data-cy='l2-demo-done'] h3"),
+      1,
+      "Done! is a heading",
+    );
   }));
