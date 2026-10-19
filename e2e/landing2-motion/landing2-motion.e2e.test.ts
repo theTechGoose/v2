@@ -73,6 +73,7 @@ Deno.test("REQ-083: the signup card tells the signup in motion — the card slam
     );
     // each digit pops in; at ten the field is done and the button is charged
     const phone = `512${digits()}`;
+    await page.locator("#reg-consent").check(); // REQ-089: the consent box gates the code
     await page.locator("#reg-phone").pressSequentially(phone, { delay: 15 });
     expect.eq(
       await page.locator(`${card} .l2-phone__d`).count(),
@@ -188,7 +189,7 @@ Deno.test("REQ-083: the signup card tells the signup in motion — the card slam
       };
       return {
         fade: a("[data-cy='l2-takeoff']"),
-        check: a(".l2-check path"),
+        check: a(".l2-launch__check path"),
         confetti: document.querySelectorAll(".l2-confetti i")
           .length,
         card: a("[data-cy='l2-signup']"),
@@ -228,6 +229,7 @@ Deno.test("REQ-083: the signup card tells the signup in motion — the card slam
       false,
       "the monster stays still",
     );
+    await page.locator("#reg-consent").check();
     await page.locator("#reg-phone").fill(`512${digits()}`);
     await page.locator("[data-cy='l2-send-code']").click();
     await page.locator("[data-cy='l2-signup-step'][data-step='2']").waitFor({

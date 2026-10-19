@@ -16,6 +16,12 @@ import DevCodeCard from "../components/DevCodeCard.tsx";
  * belongs to a closed account goes to /verify, where the recover-or-start-fresh choice lives. The
  * right code goes straight into the app (Raphael: "once it goes here it should just go to the app").
  *
+ * REQ-089 — the v3 card (Raphael, 2026-10-18: "the signup card is the mock's — the phone and
+ * Empezar gratis, a TCPA consent box unchecked by default that has to be ticked before the code
+ * goes out, and the ¿Prefieres hablar? phone row"): the consent box starts unticked and the code
+ * is held on the page until it is ticked — nothing is posted, no Lead fires; the row under it
+ * dials the support line the route hands in.
+ *
  * REQ-083 — the card tells the signup in motion: each digit pops in and the button charges at
  * ten; "Get started" slams, a text bubble launches from it, the monster bounces and the card flips
  * to the code step; the code is six slots the digits pop into — from the keyboard or the dev popup
@@ -28,15 +34,13 @@ import DevCodeCard from "../components/DevCodeCard.tsx";
  */
 export interface Landing2SignupLabels {
   regH: string;
-  regSubA: string;
-  regSubB: string;
-  regSubC: string;
   phoneLbl: string;
   sendCode: string;
   sending: string;
-  tr1: string;
-  tr2: string;
-  tr3: string;
+  consentA: string;
+  consentTerms: string;
+  errConsent: string;
+  preferTalk: string;
   codeSentTo: string;
   codeLbl: string;
   confirm: string;
@@ -90,11 +94,39 @@ function monster(mood: "lean" | "rest" | "bounce") {
 type Step = 1 | 2;
 type Flip = "out" | "in" | null;
 
+function PhoneIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.9 2z" />
+    </svg>
+  );
+}
+
 export default function Landing2Signup(
-  { lang, labels }: { lang: Lang; labels: Landing2SignupLabels },
+  { lang, labels, smsTermsPath, phoneHref, phoneLabel }: {
+    lang: Lang;
+    labels: Landing2SignupLabels;
+    /** the SMS terms the consent line links to (LEGAL_LINKS, REQ-076) */
+    smsTermsPath: string;
+    /** the support line the ¿Prefieres hablar? row dials (REQ-044) */
+    phoneHref: string;
+    phoneLabel: string;
+  },
 ) {
   const [step, setStep] = useState<Step>(1);
   const [phone, setPhone] = useState("");
+  /** REQ-089 — the TCPA box: unticked until the person ticks it; the code waits for it */
+  const [consent, setConsent] = useState(false);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -128,6 +160,10 @@ export default function Landing2Signup(
     const e164 = toE164(phone);
     if (e164.replace(/\D/g, "").length < 10) {
       setErr(labels.errPhone);
+      return;
+    }
+    if (!consent) {
+      setErr(labels.errConsent);
       return;
     }
     const from = sendRef.current?.getBoundingClientRect();
@@ -347,7 +383,7 @@ export default function Landing2Signup(
               {err ? <p class="l2-error" role="alert">{err}</p> : null}
               <button
                 type="submit"
-                class="l2-btn l2-btn--green l2-btn--full"
+                class="l2-btn l2-btn--primary l2-btn--full"
                 data-cy="l2-confirm-code"
                 disabled={busy}
               >
@@ -371,11 +407,6 @@ export default function Landing2Signup(
               data-step="1"
             >
               <div class="l2-signup__h">{labels.regH}</div>
-              <p class="l2-signup__sub">
-                {labels.regSubA}
-                <strong>{labels.regSubB}</strong>
-                {labels.regSubC}
-              </p>
               <div class="l2-signup__row">
                 <label for="reg-phone" class="l2-sr">{labels.phoneLbl}</label>
                 <div class={`l2-phone ${phoneDone ? "l2-phone--done" : ""}`}>
@@ -424,10 +455,25 @@ export default function Landing2Signup(
                 </button>
               </div>
               {err ? <p class="l2-error" role="alert">{err}</p> : null}
-              <div class="l2-trust">
-                <span>✓ {labels.tr1}</span>
-                <span>✓ {labels.tr2}</span>
-                <span>✓ {labels.tr3}</span>
+              <label class="l2-consent" for="reg-consent">
+                <input
+                  id="reg-consent"
+                  type="checkbox"
+                  checked={consent}
+                  onChange={(e) =>
+                    setConsent((e.target as HTMLInputElement).checked)}
+                />
+                <span>
+                  {labels.consentA}
+                  <a href={smsTermsPath}>{labels.consentTerms}</a>
+                </span>
+              </label>
+              <div class="l2-signup__talk">
+                <span>{labels.preferTalk}</span>
+                <a class="l2-btn l2-btn--ghost l2-btn--phone" href={phoneHref}>
+                  <PhoneIcon />
+                  {phoneLabel}
+                </a>
               </div>
             </form>
           )}
@@ -462,7 +508,7 @@ export default function Landing2Signup(
               aria-hidden="true"
               style={`left:${takeoff.x}px;top:${takeoff.y}px`}
             >
-              <svg class="l2-check" viewBox="0 0 24 24">
+              <svg class="l2-launch__check" viewBox="0 0 24 24">
                 <path d="M4 12l5 5L20 6" />
               </svg>
               <div class="l2-confetti">

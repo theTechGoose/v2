@@ -35,6 +35,7 @@ Deno.test('REQ-082: on the fakes the code pops up on the page that sent it — /
     await page.setViewportSize(DESKTOP);
     // /landing2: the popup on the code step, Use fills the field, confirm → done
     await page.goto("/landing2?lang=en");
+    await page.locator("#reg-consent").check(); // REQ-089: the consent box gates the code
     await page.locator("#reg-phone").fill(`512${digits()}`);
     await page.locator("[data-cy='l2-send-code']").click();
     const l2code = await popupCode(page, expect, "/landing2");
