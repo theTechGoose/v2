@@ -702,8 +702,8 @@ describe("REQ-107 the signup card says Get started, not Start free", () => {
     expect(island).toMatch(/<h2 class="l2-signup__h">\{labels\.regH\}<\/h2>/);
     expect(island).toMatch(/\{busy \? labels\.sending : labels\.sendCode\}/);
     expect(island).toMatch(/\{labels\.consentA\}/);
-    // and the consent box beside that line is a 24px tap target (REQ-344's floor; it was 18px)
-    expect(read("front-end/static/landing2.css")).toMatch(/\.l2-consent input \{\s*width: 24px;\s*height: 24px;/);
+    // and the consent box beside that line is a tap target clear of REQ-344's 24px floor (it was 18px)
+    expect(read("front-end/static/landing2.css")).toMatch(/\.l2-consent input \{\s*width: 26px;\s*height: 26px;/);
   });
 
   test("REQ-107 the buttons into the card keep their own words: Start free where it is free, Sign up on the paid cards", () => {

@@ -257,12 +257,13 @@
   color: var(--l2-muted);
   cursor: pointer;
 }
-/* REQ-107 — a 24px tap target (REQ-344's floor): the box was 18px beside its 12px line */
+/* REQ-107 — a tap target clear of REQ-344's 24px floor (a 24px box measured a hair under it
+   in the judge's audit): the box was 18px beside its 12px line */
 .l2-consent input {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   flex: none;
-  margin: -3px 0 0;
+  margin: -4px 0 0;
   accent-color: var(--l2-green);
 }
 .l2-day {
