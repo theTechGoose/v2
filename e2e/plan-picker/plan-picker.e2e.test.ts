@@ -465,8 +465,65 @@ Deno.test("REQ-101: /plan/test charges sandbox unless its address names another 
     await page.goto("/plan/test?merchant=alpha");
     await expect.see("Merchant account: alpha");
     await page.locator("[data-cy='plan-pick-test']").click();
+    // REQ-106 — the pick answers at once; the CRM's refusal reaches the hand-off page, which brings the person back saying why
     await page.waitForURL((u: URL) => u.pathname === "/settings" && u.searchParams.get("plan") === "merchant-unknown", { timeout: 60_000 });
     await expect.see("not on record");
     const after = await (await http("/api/me/plan", { headers: auth })).json();
-    expect(after.merchant === "primary" && after.payUrl === primary.payUrl, `the plan is as it was: nothing charged, nothing minted (${JSON.stringify(after)})`);
+    expect(after.payLinkError === "merchant-unknown" && !after.payUrl && after.merchant === "alpha", `the pick reads the refusal: nothing charged, nothing minted (${JSON.stringify(after)})`);
+    // and the cards are offered again: a pick naming primary clears it
+    await page.goto("/plan/test?merchant=primary");
+    payPage = await pickGoesToPayPage(page, "plan-pick-test");
+    expect.eq(payPage.searchParams.get("account"), "primary", "primary again");
+  }));
+
+/**
+ * REQ-106 — Raphael, 2026-10-20: "when i click a plan in the onboarding flow the payment link takes
+ * FOREVER to load, can we speed it up and keep the exact same result in the crm? i dont care if it
+ * happens asyncronously it takes that amount of time anyway so as long as it ends up where its going
+ * fine. what i care about is that the user experience is good."
+ * The pick replies at once with a pending plan; the CRM's customer, due and pay link are minted by
+ * the outbox's sweep after the reply; the browser waits on the hand-off page (/plan/pay), which
+ * says the payment page is being prepared and moves there the moment it is. The fake link builder
+ * is told to take its time (POST /me/plan/fake-slow, the fake's control like fake-paid), the way the
+ * real CRM's cold start and Quickbase writes do.
+ */
+Deno.test("REQ-106: a paid pick answers at once — the hand-off page says the payment page is being prepared, and the person lands on it the moment it is ready; the CRM holds the same customer, due and link", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.goto("/");
+    const { auth } = await signIn(http, page, baseUrl, { name: "Handoff Story", email: `handoff-${digits()}@blackhole.postmarkapp.com` });
+    const slow = await http("/api/me/plan/fake-slow", { method: "POST", headers: auth, body: JSON.stringify({ ms: 4000 }) });
+    await slow.body?.cancel();
+    expect.eq(slow.status, 200, "the fake link builder takes four seconds from here on");
+    await page.goto("/welcome");
+    await fillStep(page, "input.welcome__input", "Handoff Builders");
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("best email");
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("Pick your plan");
+    const t0 = Date.now();
+    await page.locator("[data-cy='plan-pick-monster']").click();
+    // the pick answered at once: the hand-off page, not the link builder's four seconds
+    await page.waitForURL((u: URL) => u.pathname === "/plan/pay" && u.searchParams.get("back") === "/welcome", { timeout: 60_000 });
+    const answered = Date.now() - t0;
+    expect(answered < 3000, `the pick answered at once, not after the link builder (${answered} ms)`);
+    await expect.see("Preparing your secure payment page");
+    await expect.see("Monster · $99");
+    const prepared = await (await http("/api/me/plan", { headers: auth })).json();
+    expect(prepared.status === "pending" && !prepared.payUrl && prepared.merchant === "primary", `pending, the account decided, the page still to come (${JSON.stringify(prepared)})`);
+    // the moment the page is ready the person is on it — the same link as before: customer, due, the way back, the account
+    await page.waitForURL((u: URL) => u.pathname === "/pay/fake" && u.searchParams.has("customer") && u.searchParams.has("due"), { timeout: 60_000 });
+    const arrived = Date.now() - t0;
+    expect(arrived >= 4000, `the page came once the link builder was done, not before (${arrived} ms)`);
+    const payPage = new URL(page.url());
+    expect(payPage.searchParams.get("return")?.includes("/plan/return?due=") ?? false, `the link carries the way back (${payPage.searchParams.get("return")})`);
+    expect.eq(payPage.searchParams.get("account"), "primary", "the account the pick decided");
+    // paying there brings the person back with the plan active, as before
+    await payAndGoBack(page, expect);
+    await page.waitForURL((u: URL) => u.pathname === "/welcome", { timeout: 60_000 });
+    await expect.see("Which state");
+    const plan = await (await http("/api/me/plan", { headers: auth })).json();
+    // REQ-061 — an active plan's payUrl is blank (nothing to pay while current): the page the hand-off opened is the plan's by its due and customer
+    expect(plan.planId === "monster" && plan.status === "active" && plan.dueId === payPage.searchParams.get("due") && plan.customerId === payPage.searchParams.get("customer"), `monster · active, paid on the page the hand-off opened (${JSON.stringify(plan)})`);
+    const customer = await crmCustomer(http, auth);
+    expect(customer.customerId === plan.customerId && customer.customerName === "Handoff Builders", `the due was raised on the account's own customer, named by the business entered in onboarding (${JSON.stringify(customer)})`);
   }));

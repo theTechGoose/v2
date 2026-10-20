@@ -26,6 +26,7 @@ import {
   type SubscriptionView,
   withSubscription,
 } from "./mod.ts";
+import { isPreparing, minted, payLinkFailed, samePick } from "./mod.ts"; // REQ-106
 
 const NOW = "2026-10-01T15:00:00.000Z";
 const LATER = "2026-10-01T15:05:00.000Z";
@@ -211,4 +212,37 @@ Deno.test("REQ-064 plan — a merchant name is a slug or nothing; anything else 
     const e = assertThrows(() => merchantOf(bad), Error, "merchant-invalid");
     assertEquals((e as Error & { status?: number }).status, 400);
   }
+});
+
+// ---- REQ-106 — Raphael, 2026-10-20: "when i click a plan in the onboarding flow the payment link
+// takes FOREVER to load, can we speed it up and keep the exact same result in the crm? i dont care
+// if it happens asyncronously … what i care about is that the user experience is good." A paid
+// pick is pending from the reply on, with the account decided; the CRM's customer, due and page
+// come by the sweep and land on the record; a refusal is read on it; a re-pick is told apart.
+Deno.test("REQ-106 plan — a paid pick is pending with its account before the CRM is reached; the page the sweep mints lands on it; a refusal is read on it; a newer pick is told apart", () => {
+  const preparing = chosen("u1", "monster", NOW, { merchant: "primary" });
+  assertEquals(preparing, { userId: "u1", planId: "monster", status: "pending", chosenAt: NOW, updatedAt: NOW, merchant: "primary" });
+  assertEquals(isPreparing(preparing), true);
+  // a paid pick still names the account the charge goes through (REQ-100)
+  assertThrows(() => chosen("u1", "monster", NOW, { merchant: "" }), Error, "pay-link-missing");
+  assertThrows(() => chosen("u1", "monster", NOW), Error, "pay-link-missing");
+  // the sweep's result: the same customer, due and page the reply used to carry
+  const link = { customerId: "c1", dueId: "d1", payUrl: "https://pay/x", merchant: "primary" };
+  const ready = minted(preparing, link, LATER);
+  assertEquals(ready, { ...preparing, customerId: "c1", dueId: "d1", payUrl: "https://pay/x", updatedAt: LATER });
+  assertEquals(isPreparing(ready), false);
+  assertEquals({ ...chosen("u1", "monster", NOW, link), updatedAt: LATER }, ready, "the record a sync pick used to write");
+  // the CRM's refusal is read on the record; the sweep's success clears it
+  const refused = payLinkFailed(preparing, "merchant-unknown", LATER);
+  assertEquals([refused.payLinkError, refused.status, refused.updatedAt, isPreparing(refused)], ["merchant-unknown", "pending", LATER, true]);
+  assertEquals(payLinkFailed(preparing, "payments-unavailable", LATER).payLinkError, "payments-unavailable");
+  assertEquals(minted(refused, link, LATER).payLinkError, undefined);
+  // nothing is being prepared on a free plan, an active one, or a past-due month (its page is the CRM's)
+  assertEquals(isPreparing(chosen("u1", "free", NOW)), false);
+  assertEquals(isPreparing(settle(ready, false, LATER)), false);
+  // the pick the sweep set out to mint is told apart from a newer one
+  assertEquals(samePick(preparing, preparing), true);
+  assertEquals(samePick(preparing, refused), true, "a refusal on the same pick is still that pick");
+  assertEquals(samePick(preparing, chosen("u1", "assist", NOW, { merchant: "primary" })), false);
+  assertEquals(samePick(preparing, chosen("u1", "monster", LATER, { merchant: "primary" })), false);
 });

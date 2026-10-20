@@ -2,7 +2,7 @@ import { define } from "../../utils.ts";
 import { getSessionId, loadUser } from "../../lib/auth.ts";
 import { ssrBackendPostAuthed } from "../../lib/backend-fetch.ts";
 import type { UserPlan } from "../../clients/profile.ts";
-import { backOf, merchantOf, pageAfterPick, payPageOf, pickErrorQuery } from "../../lib/plan-return.ts";
+import { afterPickOf, backOf, merchantOf, pickErrorQuery } from "../../lib/plan-return.ts";
 
 /**
  * POST /plan/pick (REQ-055/059) — a plan card is a form that posts here (`planId`, `back`), and
@@ -11,6 +11,8 @@ import { backOf, merchantOf, pageAfterPick, payPageOf, pickErrorQuery } from "..
  * the cards for free (stored; the wizard resumes PAST the plan step, settings reads free). A pick
  * the backend refuses goes back saying why (`?plan=email-required` — a paid plan needs an email
  * on the account; `?plan=error` — the CRM did not answer). Without a session: the front page.
+ * REQ-106 — the paid pick answers at once, pending with no page yet: the browser goes to the
+ * hand-off page (/plan/pay), which waits for the page and moves there the moment it is minted.
  */
 export const handler = define.handlers({
   async POST(ctx) {
@@ -24,7 +26,7 @@ export const handler = define.handlers({
     const r = await ssrBackendPostAuthed<UserPlan>("/me/plan", { planId, back, ...(merchant ? { merchant } : {}) }, getSessionId(ctx.req))
       .catch(() => ({ ok: false as const, status: 0 }));
     if (!r.ok || !r.data) return redirect(`${back}${pickErrorQuery(r.status)}`);
-    return redirect(payPageOf(r.data) ?? pageAfterPick(back));
+    return redirect(afterPickOf(r.data, back));
   },
 });
 

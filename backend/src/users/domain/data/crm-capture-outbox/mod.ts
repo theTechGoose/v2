@@ -19,7 +19,13 @@ const PREFIX = "crm-capture";
 /** the record's key: a lead by its phone, a customer sync (REQ-098) by its account, a signup notice
  *  (REQ-103) by its account, apart from the sync */
 const keyOf = (rec: Pick<PendingCapture, "phone" | "userId" | "kind">): Deno.KvKey =>
-  rec.kind === "signup-notice" ? [PREFIX, "signup-notice", rec.userId ?? ""] : rec.userId ? [PREFIX, "user", rec.userId] : [PREFIX, rec.phone];
+  rec.kind === "signup-notice"
+    ? [PREFIX, "signup-notice", rec.userId ?? ""]
+    : rec.kind === "pay-link"
+    ? [PREFIX, "pay-link", rec.userId ?? ""] // REQ-106
+    : rec.userId
+    ? [PREFIX, "user", rec.userId]
+    : [PREFIX, rec.phone];
 
 @Injectable()
 export class CrmCaptureOutbox {
@@ -63,6 +69,28 @@ export class CrmCaptureOutbox {
     await kv.atomic().check(existing).set(key, rec).commit();
   }
 
+  /** REQ-106 — the account's pay link, a record of its own, keyed apart from the sync. A newer
+   *  pick re-marks it (a new enqueuedAt, due now, its clock restarted); a lease a sweep holds is
+   *  kept, so the running sweep leaves the re-marked record for the sweep that follows (REQ-099's
+   *  rule) and no second sweep mints the stale pick meanwhile */
+  async addPayLink(userId: string, back: string, now: number): Promise<void> {
+    const kv = await this.kv();
+    const key = keyOf({ phone: "", userId, kind: "pay-link" });
+    const existing = await kv.get<PendingCapture>(key);
+    const at = new Date(now).toISOString();
+    const rec: PendingCapture = {
+      phone: "",
+      userId,
+      kind: "pay-link",
+      back,
+      enqueuedAt: at,
+      attempts: 0,
+      nextAt: at,
+      ...(existing.value?.leaseUntil ? { leaseUntil: existing.value.leaseUntil } : {}),
+    };
+    await kv.atomic().check(existing).set(key, rec).commit();
+  }
+
   async list(): Promise<PendingCapture[]> {
     const kv = await this.kv();
     const out: PendingCapture[] = [];
@@ -88,7 +116,7 @@ export class CrmCaptureOutbox {
     const current = await kv.get<PendingCapture>(key);
     const base = current.value ?? rec;
     const attempts = base.attempts + 1;
-    const next: PendingCapture = { phone: base.phone, ...(base.userId ? { userId: base.userId } : {}), ...(base.kind ? { kind: base.kind } : {}), enqueuedAt: base.enqueuedAt, attempts, nextAt: new Date(now + backoffMs(attempts)).toISOString(), lastError: error.slice(0, 300) };
+    const next: PendingCapture = { phone: base.phone, ...(base.userId ? { userId: base.userId } : {}), ...(base.kind ? { kind: base.kind } : {}), ...(base.back ? { back: base.back } : {}), enqueuedAt: base.enqueuedAt, attempts, nextAt: new Date(now + backoffMs(attempts)).toISOString(), lastError: error.slice(0, 300) };
     await kv.set(key, next);
     return next;
   }

@@ -250,6 +250,10 @@ class FakePaymentsWorld {
   /** REQ-101 — the CRM's merchant accounts on record (its Accounts tab): primary and sandbox, and
    *  whatever a test adds the way the operator would; a charge naming any other is refused */
   accounts = new Set<string>(KNOWN_ACCOUNTS);
+  /** REQ-106 — how long this customer's pay link takes to mint (by this app's ref), the way the
+   *  real CRM's cold start and Quickbase writes take theirs: a story sets it (me-controller's
+   *  fake-slow) to watch the hand-off page; 0 = at once */
+  slowFor = new Map<string, number>();
   reset() {
     this.customers = [];
     this.dues = [];
@@ -257,6 +261,12 @@ class FakePaymentsWorld {
     this.subscriptions = [];
     this.cards.clear();
     this.accounts = new Set<string>(KNOWN_ACCOUNTS);
+    this.slowFor.clear();
+  }
+  /** REQ-106 — the clock on a customer's mint, if a story set one */
+  mintDelayMs(customerId: string): number {
+    const ref = this.customers.find((c) => c.customerId === customerId)?.externalRef;
+    return (ref && this.slowFor.get(ref)) || 0;
   }
   /** REQ-100/101 — what the CRM does with the `x-account` header: required, and on record */
   account(merchant: string | undefined): string {
@@ -365,7 +375,6 @@ class FakePaymentsLink implements PaymentsLinkPort {
     this.world.dues.push({ ...input, dueId, open: true });
     return Promise.resolve({ dueId });
   }
-  // deno-lint-ignore require-await
   async mintPayLink(input: NewPayLink) {
     // REQ-057 — the app's own stand-in pay page (front-end/routes/pay/fake.tsx), the shape the
     // real link builder makes: a page carrying the customer's ref and the due, at the app's url.
@@ -373,6 +382,9 @@ class FakePaymentsLink implements PaymentsLinkPort {
     // REQ-100/101 — and the account the charge goes through, checked the way the CRM checks its
     // header, on the url as `account=` the way the CRM's link carries it (ppwk-crm REQ-091)
     const account = this.world.account(input.merchant);
+    // REQ-106 — the clock a story set on this customer's mint
+    const delay = this.world.mintDelayMs(input.customerId);
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
     const q = new URLSearchParams({ customer: input.customerId, due: input.dueId });
     if (input.returnUrl) {
       q.set("return", input.returnUrl);

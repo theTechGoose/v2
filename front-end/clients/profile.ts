@@ -128,6 +128,9 @@ export interface UserPlan {
   cardLast4?: string;
   /** REQ-064 — the merchant account the pick named; absent = the CRM's default */
   merchant?: string;
+  /** REQ-106 — on a pending pick with no page yet: the CRM has no account by that name (final), or
+   *  the link builder has not answered (still being tried). Absent and no payUrl = being prepared. */
+  payLinkError?: "merchant-unknown" | "payments-unavailable";
   updatedAt: string;
 }
 

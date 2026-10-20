@@ -8,6 +8,7 @@ import type { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sy
 import type { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 import type { PendingCapture } from "@users/domain/business/lead-capture-retry/mod.ts";
 import { CrmLeadCapture } from "./mod.ts";
+import type { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
 
 function capture(method: "warn" | "error") {
   const lines: string[] = [];
@@ -22,7 +23,7 @@ Deno.test("REQ-073 drain — an outbox that cannot be read resolves with the fai
   const crm = { capture: () => Promise.resolve({ customerId: "never" }) } as unknown as CrmCustomerSync;
   const logged = capture("error");
   try {
-    const result = await new CrmLeadCapture(outbox, crm, {} as SignupNotice).drain();
+    const result = await new CrmLeadCapture(outbox, crm, {} as SignupNotice, {} as PayLinkMint).drain();
     assertEquals(result, { landed: 0, deferred: 0, waiting: 0, failed: "kv closed" });
     assertEquals(logged.lines.length, 1);
     assertStringIncludes(logged.lines[0], "kv closed");
@@ -33,7 +34,7 @@ Deno.test("REQ-073 drain — an outbox that cannot be read resolves with the fai
 
 Deno.test("REQ-074 registerSweep — the minute sweep is an in-isolate timer: Deno.cron is never called", () => {
   const outbox = { list: () => Promise.resolve([]) } as unknown as CrmCaptureOutbox;
-  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync, {} as SignupNotice);
+  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync, {} as SignupNotice, {} as PayLinkMint);
   const deno = Deno as unknown as { cron?: unknown };
   const hadCron = Object.getOwnPropertyDescriptor(Deno, "cron");
   let cronCalls = 0;
@@ -61,7 +62,7 @@ Deno.test("REQ-074 registerSweep — the timer fires every 60 s and each tick sw
       return Promise.resolve([]);
     },
   } as unknown as CrmCaptureOutbox;
-  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync, {} as SignupNotice);
+  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync, {} as SignupNotice, {} as PayLinkMint);
   const held: { tick?: () => void; everyMs?: number } = {};
   const timer = (fn: () => void, ms: number) => {
     held.tick = fn;
@@ -117,7 +118,7 @@ Deno.test("REQ-098 sweep — a record carrying a userId is the account's custome
       return Promise.resolve({ customerId: "c-user" });
     },
   } as unknown as CrmCustomerSync;
-  assertEquals(await new CrmLeadCapture(outbox, crm, {} as SignupNotice).drain(Date.parse(at) + 1), { landed: 2, deferred: 0, waiting: 0 });
+  assertEquals(await new CrmLeadCapture(outbox, crm, {} as SignupNotice, {} as PayLinkMint).drain(Date.parse(at) + 1), { landed: 2, deferred: 0, waiting: 0 });
   assertEquals(calls, ["capture +15125550098", "ensure u-98"]);
   assertEquals(cleared, [lead, sync]);
 });
@@ -133,7 +134,7 @@ Deno.test("REQ-098 a record enqueued while a sweep is running is swept right aft
     add: () => Promise.resolve(),
     addSync: () => Promise.resolve(),
   } as unknown as CrmCaptureOutbox;
-  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync, {} as SignupNotice);
+  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync, {} as SignupNotice, {} as PayLinkMint);
   const first = leads.drain(Date.parse(at));
   await leads.enqueueSync("u-98"); // arrives while the first sweep is on its list
   await first;
@@ -182,7 +183,7 @@ Deno.test("REQ-103 sweep — a signup-notice record is carried by SignupNotice.s
       return refuse ? Promise.reject(new Error("signup-notice: postmark 500: boom")) : Promise.resolve();
     },
   } as unknown as SignupNotice;
-  const leads = new CrmLeadCapture(outbox, crm, mail);
+  const leads = new CrmLeadCapture(outbox, crm, mail, {} as PayLinkMint);
   assertEquals(await leads.drain(Date.parse(at) + 1), { landed: 3, deferred: 0, waiting: 0 });
   assertEquals(calls, ["capture +15125550103", "ensure u-103", "notice u-103"]);
   assertEquals(cleared, [lead, sync, notice], "each record is cleared by its own key");
