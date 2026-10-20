@@ -3,7 +3,10 @@
  * is written before the login replies and deleted only when the CRM has answered; everything in
  * between (claims, deferrals) is a compare-and-swap on the record's versionstamp so two sweeps
  * never work one record at once. REQ-098 — the account's customer sync rides the same outbox:
- * ["crm-capture", "user", userId] → PendingCapture with the userId, carried by ensure.
+ * ["crm-capture", "user", userId] → PendingCapture with the userId, carried by ensure. REQ-099 — a save
+ * made while that sync is in flight re-marks the record (a new enqueuedAt); the running sweep's
+ * done() then leaves it, lease cleared, for the sweep that follows, so the CRM ends up with the
+ * profile as last saved.
  */
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
@@ -31,13 +34,17 @@ export class CrmCaptureOutbox {
     await kv.atomic().check(existing).set(key, rec).commit();
   }
 
-  /** REQ-098 — a customer sync record for the account; an existing one is kept as it is */
+  /** REQ-098 — a customer sync record for the account. REQ-099 — an existing one is re-marked
+   *  (a new enqueuedAt, due now, its lease kept): the profile changed again, so the sweep that
+   *  holds it must not clear it, and the next sweep carries the newer profile */
   async addSync(userId: string, now: number): Promise<void> {
     const kv = await this.kv();
     const key = keyOf({ phone: "", userId });
     const existing = await kv.get<PendingCapture>(key);
-    if (existing.value) return;
-    const rec: PendingCapture = { phone: "", userId, enqueuedAt: new Date(now).toISOString(), attempts: 0, nextAt: new Date(now).toISOString() };
+    const at = new Date(now).toISOString();
+    const rec: PendingCapture = existing.value
+      ? { ...existing.value, enqueuedAt: at, nextAt: at }
+      : { phone: "", userId, enqueuedAt: at, attempts: 0, nextAt: at };
     await kv.atomic().check(existing).set(key, rec).commit();
   }
 
@@ -71,8 +78,18 @@ export class CrmCaptureOutbox {
     return next;
   }
 
-  async done(rec: Pick<PendingCapture, "phone" | "userId">): Promise<void> {
+  /** the CRM answered for the record as the sweep claimed it: gone — unless it was re-marked
+   *  meanwhile (REQ-099), in which case it stays, lease cleared, for the sweep that follows */
+  async done(rec: Pick<PendingCapture, "phone" | "userId" | "enqueuedAt">): Promise<void> {
     const kv = await this.kv();
-    await kv.delete(keyOf(rec));
+    const key = keyOf(rec);
+    const current = await kv.get<PendingCapture>(key);
+    if (!current.value) return;
+    if (current.value.enqueuedAt === rec.enqueuedAt) {
+      await kv.atomic().check(current).delete(key).commit();
+      return;
+    }
+    const { leaseUntil: _lease, ...again } = current.value;
+    await kv.atomic().check(current).set(key, again).commit();
   }
 }

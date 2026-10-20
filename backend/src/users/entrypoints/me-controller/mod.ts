@@ -8,6 +8,7 @@ import { parseUpdateUser } from "@users/dto/user.ts";
 import { requireUser, readSessionId, UnauthorizedError } from "@users/domain/coordinators/require-user/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
+import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { fakePaymentsWorld, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { parseChoosePlan } from "@users/dto/plan.ts";
 
@@ -27,6 +28,7 @@ export class MeController {
     private choosePlan: ChoosePlan,
     private paymentsLink: PaymentsLink,
     private crm: CrmCustomerSync,
+    private leads: CrmLeadCapture,
   ) {}
 
   /** REQ-054 — the plan this account picked; null until a pick (read as free) */
@@ -106,7 +108,7 @@ export class MeController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const patch = parseUpdateUser(body);
     const updated = await this.users.update(user.id, patch);
-    await this.crm.sync(user.id); // REQ-058 — the name and email reach the CRM customer
+    await this.leads.enqueueSync(user.id); // REQ-058/099 — the name and email reach the CRM customer, after this reply
     return updated;
   }
 
@@ -124,7 +126,7 @@ export class MeController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const skipped = Boolean((body as { skipped?: unknown } | null)?.skipped);
     const marked = await this.users.markOnboarded(user.id, skipped);
-    await this.crm.sync(user.id); // REQ-058 — onboarding done: the CRM customer reads what it entered
+    await this.leads.enqueueSync(user.id); // REQ-058/099 — onboarding done: the CRM customer reads what it entered, after this reply
     return marked;
   }
 

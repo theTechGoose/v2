@@ -59,23 +59,14 @@ export class CrmCustomerSync {
   ) {}
 
   /**
-   * the account's CRM customer, made or revised from what the account says now
-   * @throws payments-unavailable — the CRM did not answer
+   * the account's CRM customer, made or revised from what the account says now. Called by the
+   * outbox's sweep (REQ-098/099: never inside a request's reply) and by the paid pick, whose pay
+   * link needs the customerId.
+   * @throws payments-unavailable — the CRM did not answer: the sweep defers and retries
    */
   async ensure(userId: string): Promise<{ customerId: string }> {
     const [user, identity, plan, address] = await Promise.all([this.users.get(userId), this.identity.get(userId), this.plans.get(userId), this.address.get(userId)]);
     return await this.link.createCustomer(customerFor(user, identity, plan, address));
-  }
-
-  /** the same, best effort: a sign-up or a profile edit never fails because the CRM is down —
-   *  the next write, or the paid pick, catches the record up */
-  async sync(userId: string): Promise<{ customerId: string } | null> {
-    try {
-      return await this.ensure(userId);
-    } catch (e) {
-      console.warn(`[crm-customer-sync] ${userId}: ${e instanceof Error ? e.message : String(e)}`);
-      return null;
-    }
   }
 
   /** REQ-060 — the phone typed into login is a CRM lead at once, unnamed, no email, no ref;
