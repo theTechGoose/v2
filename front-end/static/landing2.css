@@ -993,18 +993,29 @@
   align-items: stretch;
 }
 /* the view clips the sliding group to its own cell (a slide never paints over an arrow); the 3px
-   of padding, taken back by the margin, keeps a day's focus ring from being clipped */
+   of padding, taken back by the margin, keeps a day's focus ring from being clipped.
+   REQ-105: a finger across the view is the strip's — touch-action leaves up and down to the
+   page's own scroll and claims sideways for the swipe; a mouse drag selects no text */
 .l2-demo__view {
   min-width: 0;
   overflow: hidden;
   padding: 3px;
   margin: -3px;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
 }
+/* the strip: five days a page; the transition is the spring back after a drag too short to page (REQ-105) */
 .l2-demo__days {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   min-width: 0;
+  transition: transform 0.2s ease-out;
+}
+/* REQ-105: while a finger holds the strip it follows at once; let go short of a page, it springs back in the 200 ms above */
+.l2-demo__days--held {
+  transition: none;
 }
 .l2-demo__days--next {
   animation: l2-slide-next 0.2s ease-out;

@@ -671,8 +671,79 @@ describe("REQ-104 a Monster Free signup names its plan at the code", () => {
     expect(island).toMatch(/addEventListener\("click", /);
     // the card says which plan it signs up for — what a story reads, what a person could be shown
     expect(island).toMatch(/id="empezar"[\s\S]*?data-plan=\{plan\}/);
-    expect(island).toMatch(/verifyClient\.verifyOtp\(\{\s*phoneNumber: toE164\(phone\),\s*code: digits,\s*plan,\s*\}\)/);
+    expect(island).toMatch(
+      /verifyClient\.verifyOtp\(\{\s*phoneNumber: toE164\(phone\),\s*code: digits,\s*plan,\s*\}\)/,
+    );
     const client = read("front-end/clients/verify.ts");
     expect(client).toMatch(/plan\?: string;/);
+  });
+});
+
+/**
+ * REQ-105 — Raphael, 2026-10-20, on the pinned /landing2: "why cant i click and drag the calendar
+ * on mobile? the expierence on mobile leds itself better to that." — "do it." The day strip was
+ * paged by its two arrows alone (REQ-102): no gesture handler and no scroller, so a finger across
+ * it did nothing. Now a finger — or a mouse — dragged across the strip slides it a page: the
+ * island tracks the pointer on the strip's view, the strip follows it, a release past the
+ * threshold pages (front-end/lib/swipe.ts, swipe.test.ts), and the click a drag would leave is
+ * swallowed, so a drag never picks the day it started on. The arrows stay.
+ */
+describe("REQ-105 the demo's day picker swipes — a finger or a mouse drags the strip to the next or the previous five", () => {
+  test("the island tracks a pointer on the strip's view, follows it, pages on a swipe past the threshold, and swallows the click a drag would leave", () => {
+    const demo = read(ISLANDS[1]);
+    const imported =
+      /import \{([^}]*)\} from "\.\.\/lib\/swipe\.ts";/.exec(demo)?.[1] ?? "";
+    for (const name of ["followOffset", "isDrag", "swipeDir"]) {
+      expect([name, imported.includes(name)]).toEqual([name, true]);
+    }
+    expect(demo).toMatch(/import \{ useRef, useState \} from "preact\/hooks";/);
+    // the view — the clipped cell between the arrows — carries the gesture, not each day
+    const view = /<div\s+class="l2-demo__view"[\s\S]*?>/.exec(demo)?.[0] ?? "";
+    expect(view).toMatch(/onPointerDown=\{grab\}/);
+    expect(view).toMatch(/onPointerMove=\{follow\}/);
+    expect(view).toMatch(/onPointerUp=\{release\}/);
+    expect(view).toMatch(/onPointerCancel=\{cancel\}/);
+    expect(view).toMatch(/onClickCapture=\{swallowClick\}/);
+    // the pointer is captured, so a drag that leaves the strip still releases here
+    expect(demo).toMatch(/setPointerCapture\(e\.pointerId\)/);
+    // the strip follows the finger while held, and pages on the release
+    expect(demo).toMatch(/setDrag\(followOffset\(dx, page, pages\)\)/);
+    expect(demo).toMatch(
+      /const dir = swipeDir\(dx, dy\);\s*if \(dir\) slide\(dir\);/,
+    );
+    expect(demo).toMatch(/l2-demo__days--held/);
+    expect(demo).toMatch(/translateX\(\$\{drag\}px\)/);
+    // a drag is not a tap: the click after one is swallowed once; a tap's click passes
+    expect(demo).toMatch(/if \(isDrag\(dx, dy\)\) t\.moved = true;/);
+    expect(demo).toMatch(/swallow\.current = t\.moved;/);
+    // a tap is the pick on the release itself — the day the pointer came down on — so it holds
+    // when the browser withholds the click that follows a tap made right after a swipe
+    expect(demo).toMatch(/closest<HTMLElement>\("\[data-day\]"\)/);
+    expect(demo).toMatch(
+      /day: iso \? days\.findIndex\(\(d\) => d\.iso === iso\) : -1,/,
+    );
+    expect(demo).toMatch(/if \(!t\.moved && t\.day >= 0\) setDay\(t\.day\);/);
+    expect(demo).toMatch(
+      /function swallowClick\(e: MouseEvent\) \{\s*if \(!swallow\.current\) return;\s*swallow\.current = false;\s*e\.stopPropagation\(\);\s*e\.preventDefault\(\);/,
+    );
+    // the page's own scroll (a pointercancel) just lets go
+    expect(demo).toMatch(
+      /function cancel\(\) \{\s*touch\.current = null;\s*setDrag\(null\);\s*\}/,
+    );
+  });
+
+  test("the stylesheet: the view claims sideways touches and leaves up-and-down to the page, selects no text under a mouse drag, springs the strip back in 200 ms, follows the finger at once while held, and stands still under reduced motion", () => {
+    const css = read(CSS);
+    const view = /\.l2-demo__view \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(view).toMatch(/touch-action: pan-y;/);
+    expect(view).toMatch(/user-select: none;/);
+    expect(view).toMatch(/overflow: hidden;/); // still no scroller: the strip pages, nothing scrolls sideways (REQ-102)
+    const days = /\.l2-demo__days \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(days).toMatch(/transition: transform 0\.2s ease-out;/);
+    expect(css).toMatch(/\.l2-demo__days--held \{\s*transition: none;\s*\}/);
+    const calm =
+      /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(css)
+        ?.[1] ?? "";
+    expect(calm).toMatch(/transition: none !important;/);
   });
 });

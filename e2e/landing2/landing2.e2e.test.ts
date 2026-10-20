@@ -1668,3 +1668,257 @@ Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the n
       }
     }
   }));
+
+/**
+ * REQ-105 — Raphael, 2026-10-20, on the pinned /landing2: "why cant i click and drag the calendar
+ * on mobile? the expierence on mobile leds itself better to that." — "do it." The day strip was
+ * paged by its two arrows alone (REQ-102): a finger across it did nothing, there being no gesture
+ * handler and no scroller. Now a finger — or a mouse — dragged across the strip slides it a page:
+ * left for the next five, right for the five before; the strip follows the finger and springs
+ * back when the drag was too short to page; a drag never picks the day it started on, a tap still
+ * does; an up-and-down swipe is the page's own scroll, not the strip's; and a day swiped to books.
+ * The finger is the browser's own touch input (CDP), so the page sees pointer events of type
+ * touch, as on a phone; the mouse is Playwright's.
+ */
+Deno.test("REQ-105: on a phone the demo's day picker swipes — a finger dragged left shows the next five days and dragged right the five before; a short drag springs back and does not pick the day under it, a tap still picks; an up-and-down swipe leaves the strip alone; a mouse drag on a desktop pages the same; the day swiped to books", (t) =>
+  story(t, async ({ page, expect }) => {
+    type Pt = { x: number; y: number };
+    type Box = { x: number; y: number; width: number; height: number };
+    const isos = () =>
+      page.locator("[data-cy='l2-day']").evaluateAll((els: HTMLElement[]) =>
+        els.map((e) => e.getAttribute("data-day") ?? "")
+      );
+    const plusDays = (iso: string, n: number) =>
+      new Date(Date.parse(iso) + n * 86_400_000).toISOString().slice(0, 10);
+    const until = async (done: () => Promise<boolean>): Promise<boolean> => {
+      for (let i = 0; i < 30; i++) {
+        if (await done()) return true;
+        await page.waitForTimeout(100);
+      }
+      return false;
+    };
+    // the lit day, read at once (null when none): a wrong pick fails by name, never by a timeout
+    const lit = (): Promise<string | null> =>
+      page.evaluate(() =>
+        document.querySelector("[data-cy='l2-day'].on")?.getAttribute(
+          "data-day",
+        ) ?? null
+      );
+    // the strip at rest: a tap aimed while the 200 ms slide or spring-back still moves the days
+    // would land in a gap or on the neighbour
+    const settled = async () => {
+      let last = Number.NaN;
+      for (let i = 0; i < 20; i++) {
+        const b = await page.locator(".l2-demo__days").boundingBox();
+        const x = b ? Math.round(b.x * 10) : Number.NaN;
+        if (x === last) return;
+        last = x;
+        await page.waitForTimeout(60);
+      }
+    };
+    const open = async (vp: { width: number; height: number }) => {
+      await page.setViewportSize(vp);
+      await page.goto(`/landing2?lang=es&vp=${vp.width}`);
+      await page.locator("#demo").scrollIntoViewIfNeeded();
+      await clickUntil(
+        page,
+        "[data-cy='l2-pick-time']",
+        async () => (await count(page, "[data-cy='l2-day']")) > 0,
+      );
+    };
+    const view = async (): Promise<Box> =>
+      (await page.locator(".l2-demo__view").boundingBox())!;
+    const dayAt = async (i: number): Promise<Pt> => {
+      await settled();
+      const b: Box = (await page.locator("[data-cy='l2-day']").nth(i)
+        .boundingBox())!;
+      return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    };
+    const across = async (way: "left" | "right"): Promise<[Pt, Pt]> => {
+      const v = await view();
+      const y = v.y + v.height / 2;
+      const near = v.x + v.width * 0.15, far = v.x + v.width * 0.85;
+      return way === "left"
+        ? [{ x: far, y }, { x: near, y }]
+        : [{ x: near, y }, { x: far, y }];
+    };
+    // a finger: the browser's own touch input, eight moves between the two points
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true });
+    const finger = async (from: Pt, to: Pt) => {
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [from],
+      });
+      for (let i = 1; i <= 8; i++) {
+        await cdp.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [{
+            x: from.x + (to.x - from.x) * i / 8,
+            y: from.y + (to.y - from.y) * i / 8,
+          }],
+        });
+        await page.waitForTimeout(16);
+      }
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+      });
+    };
+    const tap = async (at: Pt) => {
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [at],
+      });
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+      });
+    };
+    // a mouse: Playwright's, the button held across eight moves
+    const mouse = async (from: Pt, to: Pt) => {
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      for (let i = 1; i <= 8; i++) {
+        await page.mouse.move(
+          from.x + (to.x - from.x) * i / 8,
+          from.y + (to.y - from.y) * i / 8,
+        );
+        await page.waitForTimeout(16);
+      }
+      await page.mouse.up();
+    };
+    const RANGE = "[data-cy='l2-days-range']";
+
+    await open(PHONE);
+    const first = await isos();
+    expect.eq(await lit(), first[0], "tomorrow is picked as the strip opens");
+    // a finger dragged left: the next five
+    await finger(...(await across("left")));
+    expect(
+      await until(async () =>
+        (await isos())[0] === plusDays(first[DEMO_DAY_COUNT - 1], 1)
+      ),
+      `a finger dragged left shows the next five days (${
+        (await isos())[0]
+      } after ${first[DEMO_DAY_COUNT - 1]})`,
+    );
+    await settled();
+    await page.locator(RANGE).hover(); // a frame of the second page
+    const second = await isos();
+    expect.eq(second.length, DEMO_DAY_COUNT, "five on the second page");
+    expect.eq(
+      await count(page, "[data-cy='l2-day'].on"),
+      0,
+      "the swipe picked nothing",
+    );
+    // dragged right: the five before
+    await finger(...(await across("right")));
+    expect(
+      await until(async () => (await isos())[0] === first[0]),
+      `a finger dragged right shows the five before (${(await isos())[0]})`,
+    );
+    await settled();
+    await page.locator(RANGE).hover();
+    // a short drag on the third day: the strip springs back, the third day is not picked
+    let d = await dayAt(2);
+    await finger(d, { x: d.x - 15, y: d.y });
+    await page.waitForTimeout(400);
+    expect.eq(
+      (await isos())[0],
+      first[0],
+      "a drag too short to page springs back",
+    );
+    expect.eq(await lit(), first[0], "and does not pick the day it started on");
+    // a tap on the third day picks it
+    await tap(await dayAt(2));
+    expect(
+      await until(async () => (await lit()) === first[2]),
+      `a tap still picks the day under it (${await lit()})`,
+    );
+    await settled();
+    await page.locator("[data-cy='l2-day']").nth(2).hover();
+    // up and down is the page's own scroll: the strip stays on its page, the pick stays
+    d = await dayAt(1);
+    await finger(d, { x: d.x, y: d.y - 120 });
+    await page.waitForTimeout(400);
+    expect.eq(
+      (await isos())[0],
+      first[0],
+      "an up-and-down swipe leaves the strip on its page",
+    );
+    expect.eq(await lit(), first[2], "and keeps the pick");
+    // to the second page again, by finger; its second day, by tap; and it books
+    await page.locator("#demo").scrollIntoViewIfNeeded();
+    await finger(...(await across("left")));
+    expect(
+      await until(async () => (await isos())[0] === second[0]),
+      "a finger dragged left again shows the second page",
+    );
+    await tap(await dayAt(1));
+    expect(
+      await until(async () => (await lit()) === second[1]),
+      `the second day of the second page is picked by a tap (${await lit()})`,
+    );
+    await settled();
+    await page.locator("[data-cy='l2-day']").nth(1).hover();
+    await page.locator("#f-name").fill("José García");
+    await page.locator("#f-phone").fill(`512${digits()}`);
+    const [res] = await Promise.all([
+      page.waitForResponse((
+        r: { url(): string; request(): { method(): string } },
+      ) =>
+        r.url().includes("/api/demo-request") &&
+        r.request().method() === "POST"
+      ),
+      page.locator("[data-cy='l2-demo-submit']").click(),
+    ]);
+    const body = await res.json();
+    expect.eq(
+      body.ok,
+      true,
+      `the demo on the day swiped to was booked (${JSON.stringify(body)})`,
+    );
+    expect.eq(body.day, second[1], "the booking carries the day swiped to");
+
+    // a desktop: a mouse drag pages the same way, and a drag never picks the day it started on
+    await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await open(DESKTOP);
+    const desk = await isos();
+    expect.eq(
+      await lit(),
+      desk[0],
+      "tomorrow is picked as the strip opens on a desktop",
+    );
+    d = await dayAt(2);
+    await mouse(d, { x: d.x - 20, y: d.y });
+    await page.waitForTimeout(400);
+    expect.eq((await isos())[0], desk[0], "a short mouse drag springs back");
+    expect.eq(await lit(), desk[0], "and does not pick the day it started on");
+    await mouse(...(await across("left")));
+    expect(
+      await until(async () =>
+        (await isos())[0] === plusDays(desk[DEMO_DAY_COUNT - 1], 1)
+      ),
+      `a mouse dragged left shows the next five days (${(await isos())[0]})`,
+    );
+    await settled();
+    await page.locator(RANGE).hover();
+    expect.eq(
+      await count(page, "[data-cy='l2-day'].on"),
+      0,
+      "the drag picked nothing",
+    );
+    await mouse(...(await across("right")));
+    expect(
+      await until(async () => (await isos())[0] === desk[0]),
+      `a mouse dragged right shows the five before (${(await isos())[0]})`,
+    );
+    await settled();
+    await page.locator(RANGE).hover();
+    expect.eq(
+      await lit(),
+      desk[0],
+      "the pick made as the strip opened is lit again",
+    );
+  }));

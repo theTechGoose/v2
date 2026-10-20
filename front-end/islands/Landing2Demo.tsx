@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useRef, useState } from "preact/hooks";
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import {
   DEMO_DAY_COUNT,
@@ -10,6 +10,7 @@ import {
 } from "../../shared/demo-booking/mod.ts";
 import { landingClient } from "../clients/landing.ts";
 import type { Lang } from "../lib/lang.ts";
+import { followOffset, isDrag, swipeDir } from "../lib/swipe.ts";
 
 /**
  * REQ-090 — the demo card on /landing2, the v3 mock (Raphael, 2026-10-18: "the demo is one card —
@@ -19,7 +20,11 @@ import type { Lang } from "../lib/lang.ts";
  * "Mejor elijo día y hora", the day picker (REQ-102, Raphael, 2026-10-20: "calendar days need to
  * slide so that i can pick more than 5 days out. arrow for good ux that is clickable." — every day
  * the route hands down, from tomorrow, Eastern, five at a time between two arrows that slide it a
- * page; the pick is the day's index in the whole list, so it outlives the page on view), the two
+ * page, or a finger — or a mouse — dragged across it (REQ-105, Raphael, 2026-10-20: "why cant i
+ * click and drag the calendar on mobile?" — the strip follows the drag and pages on the release,
+ * left for the next five, right for the five before; a drag never picks the day it started on,
+ * a tap still does; front-end/lib/swipe.ts holds the rules); the pick is the day's index in the
+ * whole list, so it outlives the page on view), the two
  * windows, the name, the cell, the email (optional), and a summary that follows every pick. Each posts to POST /demo-request — which emails the team with the consent on record,
  * texts the person and makes the phone a lead — only while the consent box is ticked, and shows
  * the confirmation the mock drew. REQ-097 (Raphael, 2026-10-20: "all the … checkboxes should be
@@ -85,6 +90,14 @@ export default function Landing2Demo(
   /** the page of DEMO_DAY_COUNT days on the strip, and which way the last slide went (its animation) */
   const [page, setPage] = useState(0);
   const [slid, setSlid] = useState<"prev" | "next" | null>(null);
+  /** REQ-105 — how far the strip follows a finger (or a mouse) across it; null while none is on it */
+  const [drag, setDrag] = useState<number | null>(null);
+  /** the pointer on the strip: where it came down, the day it came down on (-1 for none), and whether it has moved past a tap's slack */
+  const touch = useRef<
+    { id: number; x: number; y: number; day: number; moved: boolean } | null
+  >(null);
+  /** the click a drag leaves behind is not a pick: swallowed once, at the capture */
+  const swallow = useRef(false);
   const [slot, setSlot] = useState(0);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -104,6 +117,58 @@ export default function Landing2Demo(
   function slide(dir: -1 | 1) {
     setPage((p) => Math.min(pages - 1, Math.max(0, p + dir)));
     setSlid(dir > 0 ? "next" : "prev");
+  }
+
+  /**
+   * REQ-105 — a finger or a mouse on the strip's view: grab, follow, release; a swipe past the
+   * threshold pages. A tap — down and up on a day without moving — is the pick, decided here by
+   * the same pointer that decides a drag: Chromium was seen to withhold the click that follows a
+   * tap made within ~300 ms of a swipe on the strip (1 in 4 to 1 in 10), so the pick does not
+   * wait on it; the click, when it comes, picks the same day again.
+   */
+  function grab(e: PointerEvent) {
+    if (e.button !== 0 || !e.isPrimary) return;
+    swallow.current = false;
+    const iso = (e.target as Element | null)?.closest<HTMLElement>("[data-day]")
+      ?.dataset.day;
+    touch.current = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      day: iso ? days.findIndex((d) => d.iso === iso) : -1,
+      moved: false,
+    };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setDrag(0);
+  }
+  function follow(e: PointerEvent) {
+    const t = touch.current;
+    if (!t || e.pointerId !== t.id) return;
+    const dx = e.clientX - t.x, dy = e.clientY - t.y;
+    if (isDrag(dx, dy)) t.moved = true;
+    setDrag(followOffset(dx, page, pages));
+  }
+  function release(e: PointerEvent) {
+    const t = touch.current;
+    if (!t || e.pointerId !== t.id) return;
+    touch.current = null;
+    swallow.current = t.moved;
+    setDrag(null);
+    if (!t.moved && t.day >= 0) setDay(t.day);
+    const dx = e.clientX - t.x, dy = e.clientY - t.y;
+    const dir = swipeDir(dx, dy);
+    if (dir) slide(dir);
+  }
+  /** the browser took the gesture (the page's own scroll): let go, nothing pages */
+  function cancel() {
+    touch.current = null;
+    setDrag(null);
+  }
+  function swallowClick(e: MouseEvent) {
+    if (!swallow.current) return;
+    swallow.current = false;
+    e.stopPropagation();
+    e.preventDefault();
   }
 
   async function post(input: Parameters<typeof landingClient.requestDemo>[0]) {
@@ -287,10 +352,22 @@ export default function Landing2Demo(
             </svg>
           </button>
           {/* the view clips the slide; keyed by page: a fresh group each slide, so its slide-in plays */}
-          <div class="l2-demo__view">
+          <div
+            class="l2-demo__view"
+            onPointerDown={grab}
+            onPointerMove={follow}
+            onPointerUp={release}
+            onPointerCancel={cancel}
+            onClickCapture={swallowClick}
+          >
             <div
               key={page}
-              class={`l2-demo__days${slid ? ` l2-demo__days--${slid}` : ""}`}
+              class={`l2-demo__days${slid ? ` l2-demo__days--${slid}` : ""}${
+                drag === null ? "" : " l2-demo__days--held"
+              }`}
+              style={drag === null
+                ? undefined
+                : `transform: translateX(${drag}px)`}
               role="group"
               aria-label={labels.pickDay}
             >
