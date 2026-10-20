@@ -8,6 +8,7 @@
  * page promises — "Te confirmamos por texto" to the person, the booking to the team, consent on it.
  */
 import { assertEquals, assertMatch, assertThrows } from "#std/assert";
+import { DEMO_DAY_WINDOW, upcomingDemoDays } from "#demo-booking/mod.ts";
 import {
   DEMO_SLOTS,
   demoConfirmationSms,
@@ -186,4 +187,29 @@ Deno.test("REQ-090 demoTeamEmail — the team's email carries every field of the
   assertMatch(quick.htmlBody, /Email:<\/strong> —/);
   assertMatch(quick.htmlBody, /Consent:<\/strong> yes/);
   assertMatch(quick.htmlBody, /English/);
+});
+
+/**
+ * REQ-102 — "calendar days need to slide so that i can pick more than 5 days out": the page now
+ * offers every day the backend accepts, and the backend reads its window from the same constant —
+ * so the last day the picker shows is a booking and the day after it is refused, by name.
+ */
+Deno.test("REQ-102 parseDemoRequest — the window is the shared one the page offers: the sixth day (where the old picker stopped) and the last day of upcomingDemoDays are bookings, the day after the last is refused", () => {
+  const offered = upcomingDemoDays("es", NOW);
+  assertEquals(offered.length, DEMO_DAY_WINDOW);
+  const sixth = offered[5].iso;
+  assertEquals(parseDemoRequest({ ...demo, day: sixth }, NOW).day, sixth);
+  const last = offered[offered.length - 1].iso;
+  assertEquals(parseDemoRequest({ ...demo, day: last }, NOW).day, last);
+  const after = new Date(Date.parse(last) + 86_400_000).toISOString().slice(
+    0,
+    10,
+  );
+  assertEquals(
+    assertThrows(
+      () => parseDemoRequest({ ...demo, day: after }, NOW),
+      DemoRequestInvalid,
+    ).field,
+    "day",
+  );
 });

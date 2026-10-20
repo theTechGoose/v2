@@ -23,6 +23,7 @@ import type {
 } from "@users/domain/data/sms/mod.ts";
 import type { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import type { RateLimiter } from "@core/data/rate-limit/mod.ts";
+import { upcomingDemoDays } from "#demo-booking/mod.ts";
 
 class CapturingInbox {
   sent: SendEmailInput[] = [];
@@ -97,7 +98,10 @@ Deno.test("REQ-090 demo-request int — a demo with a day and a window and a cal
   // the demo: emailed, texted in Spanish, a lead; the reply says what was done
   {
     const { inbox, phone, leads, controller } = build();
-    const res = await controller.submit(context().ctx, demo()) as unknown as Reply;
+    const res = await controller.submit(
+      context().ctx,
+      demo(),
+    ) as unknown as Reply;
     assertEquals(res.ok, true);
     assertEquals(res.emailed, true);
     assertEquals(res.texted, true);
@@ -123,7 +127,10 @@ Deno.test("REQ-090 demo-request int — a demo with a day and a window and a cal
   // the call: just a cell, as soon as possible, texted in English when the page was English
   {
     const { inbox, phone, leads, controller } = build();
-    const res = await controller.submit(context().ctx, call()) as unknown as Reply;
+    const res = await controller.submit(
+      context().ctx,
+      call(),
+    ) as unknown as Reply;
     assertEquals(res.ok, true);
     assertEquals(res.mode, "call");
     assertEquals(res.day, "");
@@ -145,7 +152,10 @@ Deno.test("REQ-090 demo-request int — a demo with a day and a window and a cal
     }]
   ) {
     const { inbox, phone, leads, controller } = build();
-    const res = await controller.submit(context().ctx, body) as unknown as Reply;
+    const res = await controller.submit(
+      context().ctx,
+      body,
+    ) as unknown as Reply;
     assertEquals(res.ok, false);
     assertEquals(res.reason, "invalid");
     assertEquals(res.field, "consent");
@@ -170,7 +180,10 @@ Deno.test("REQ-090 demo-request int — a malformed booking is refused by field,
 
 Deno.test("REQ-081 demo-request int — a flooded phone is told to wait and nothing is sent", async () => {
   const { inbox, phone, leads, controller } = build(closedGate);
-  const res = await controller.submit(context().ctx, demo()) as unknown as Reply;
+  const res = await controller.submit(
+    context().ctx,
+    demo(),
+  ) as unknown as Reply;
   assertEquals(res.ok, false);
   assertEquals(res.reason, "too_many_attempts");
   assertEquals(res.retryAfterMs, 1234);
@@ -187,10 +200,32 @@ Deno.test("REQ-081 demo-request int — the team still has the booking when the 
       code: 21211,
     });
   };
-  const res = await controller.submit(context().ctx, demo()) as unknown as Reply;
+  const res = await controller.submit(
+    context().ctx,
+    demo(),
+  ) as unknown as Reply;
   assertEquals(res.ok, true);
   assertEquals(res.emailed, true);
   assertEquals(res.texted, false);
   assertEquals(inbox.sent.length, 1);
   assertEquals(leads.phones.length, 1);
+});
+
+/** REQ-102 — the picker slides past its first five days: a day on any page the picker shows is a booking */
+Deno.test("REQ-102 demo-request int — a demo on a day beyond the first five — the sixth, and the last day the page offers — is a booking: emailed, texted and a lead, the reply and the team's subject naming that day", async () => {
+  const offered = upcomingDemoDays("es");
+  for (const day of [offered[5]?.iso, offered[offered.length - 1]?.iso]) {
+    const { inbox, phone, leads, controller } = build();
+    const res = await controller.submit(context().ctx, {
+      ...demo(),
+      day,
+    }) as unknown as Reply;
+    assertEquals(res.ok, true, `${day}: ${JSON.stringify(res)}`);
+    assertEquals(res.day, day);
+    assertEquals(res.slot, "morning");
+    assertEquals(inbox.sent.length, 1);
+    assertMatch(inbox.sent[0].subject, new RegExp(`— ${day} morning$`));
+    assertEquals(phone.sent.length, 1);
+    assertEquals(leads.phones, ["+15125550199"]);
+  }
 });

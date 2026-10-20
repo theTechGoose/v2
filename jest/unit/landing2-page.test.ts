@@ -23,7 +23,13 @@ import * as path from "path";
 import { execSync } from "child_process";
 import { isPixelPage } from "../../shared/meta-pixel/pixel";
 import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans";
-import { DEMO_DAY_COUNT, DEMO_SLOTS } from "../../shared/demo-booking/mod";
+import {
+  DEMO_DAY_COUNT,
+  DEMO_DAY_WINDOW,
+  DEMO_SLOTS,
+  demoMonthRange,
+  upcomingDemoDays,
+} from "../../shared/demo-booking/mod";
 import { OG_IMAGE } from "../../shared/quote-flow/site-meta";
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -254,7 +260,7 @@ describe("REQ-089 the signup card's consent box", () => {
 });
 
 describe("REQ-090 the demo card posts the new booking", () => {
-  test("the shared model is five days from tomorrow and two windows", () => {
+  test("the shared model is five days a page (REQ-102 slides the pages) and two windows", () => {
     expect(DEMO_DAY_COUNT).toBe(5);
     expect(DEMO_SLOTS.map((s) => s.id)).toEqual(["morning", "afternoon"]);
   });
@@ -532,5 +538,109 @@ describe("REQ-097 every consent box on /landing2 is ticked when the page opens",
       expect(box).toMatch(/onChange=/);
       expect(src).toMatch(/if \(!consent\)[\s\S]*?labels\.errConsent/);
     }
+  });
+});
+
+/**
+ * REQ-102 — Raphael, 2026-10-20: "calendar days need to slide so that i can pick more than 5 days
+ * out. arrow for good ux that is clickable." The demo's day picker offers every day the backend
+ * accepts, five at a time, an arrow at each end sliding it a page; the pick survives the slide.
+ */
+describe("REQ-102 the demo's day picker slides — every day the backend accepts, five at a time, by arrow", () => {
+  test("the shared model offers every day the backend accepts — DEMO_DAY_WINDOW from tomorrow, Eastern, consecutive — in whole pages of five, and the range names the month or the two months on view", () => {
+    expect(DEMO_DAY_WINDOW).toBe(90);
+    expect(DEMO_DAY_WINDOW % DEMO_DAY_COUNT).toBe(0); // the last page is a full one
+    const days = upcomingDemoDays("en", new Date("2026-10-18T15:00:00Z"));
+    expect(days.length).toBe(DEMO_DAY_WINDOW);
+    expect(days[0].iso).toBe("2026-10-19");
+    for (let i = 1; i < days.length; i++) {
+      expect([i, days[i].iso]).toEqual([
+        i,
+        new Date(Date.parse(days[0].iso) + i * 86_400_000).toISOString().slice(
+          0,
+          10,
+        ),
+      ]);
+    }
+    expect(days[days.length - 1].iso).toBe("2027-01-16");
+    // an Eastern evening is still today there: the first day offered is Eastern tomorrow
+    expect(upcomingDemoDays("en", new Date("2026-10-19T02:00:00Z"))[0].iso)
+      .toBe(
+        "2026-10-19",
+      );
+    expect(demoMonthRange(days.slice(0, 5))).toBe("Oct");
+    expect(demoMonthRange(days.slice(10, 15))).toBe("Oct – Nov"); // Oct 29 – Nov 2
+    expect(
+      demoMonthRange(
+        upcomingDemoDays("es", new Date("2026-10-18T15:00:00Z")).slice(10, 15),
+      ),
+    ).toBe("Oct – Nov");
+    expect(demoMonthRange([])).toBe("");
+  });
+
+  test("the backend's window is the shared constant, never its own number — the page offers exactly the days the backend takes", () => {
+    const src = read(
+      "backend/src/communication/domain/business/demo-request/mod.ts",
+    );
+    expect(src).toMatch(/DEMO_DAY_WINDOW/);
+    expect(src).not.toMatch(/const WINDOW_DAYS = \d+/);
+  });
+
+  test("the island shows a page of DEMO_DAY_COUNT between two arrows named from the dictionaries, keeps the pick by its index across pages, and names the month(s) on view beside the label", () => {
+    const demo = read(ISLANDS[1]);
+    expect(demo).toMatch(/DEMO_DAY_COUNT/);
+    expect(demo).toMatch(/data-cy="l2-days-prev"/);
+    expect(demo).toMatch(/data-cy="l2-days-next"/);
+    expect(demo).toMatch(/aria-label=\{labels\.prevDays\}/);
+    expect(demo).toMatch(/aria-label=\{labels\.nextDays\}/);
+    expect(demo).toMatch(/disabled=\{page === 0\}/);
+    expect(demo).toMatch(/disabled=\{page === pages - 1\}/);
+    expect(demo).toMatch(/demoMonthRange\(shown\)/);
+    expect(demo).toMatch(/data-cy="l2-days-range"/);
+    expect(demo).toMatch(/prevDays: string;/);
+    expect(demo).toMatch(/nextDays: string;/);
+    // the pick is the day's index in the whole list, so it outlives the page on view
+    expect(demo).toMatch(/const i = page \* DEMO_DAY_COUNT \+ j;/);
+    expect(demo).toMatch(/aria-pressed=\{i === day\}/);
+    const page = read(PAGE);
+    expect(page).toMatch(/"prevDays",/);
+    expect(page).toMatch(/"nextDays",/);
+    for (const k of ["landing2.prevDays", "landing2.nextDays"]) {
+      expect([k, k in es && k in en]).toEqual([k, true]);
+      expect([k, es[k] === en[k]]).toEqual([k, false]);
+    }
+    expect(es["landing2.prevDays"]).toBe("Días anteriores");
+    expect(es["landing2.nextDays"]).toBe("Más días");
+  });
+
+  test("the stylesheet: the arrows are 36px targets the strip's height that read as buttons, the strip slides in 200 ms and stands still under reduced motion, and on a phone the arrows narrow so five days still fit", () => {
+    const css = read(CSS);
+    const strip = /\.l2-demo__strip \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(strip).toMatch(/grid-template-columns: 36px minmax\(0, 1fr\) 36px;/);
+    expect(strip).toMatch(/align-items: stretch;/);
+    const arrow = /\.l2-arrow \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(arrow).toMatch(/min-width: 36px;/);
+    expect(arrow).toMatch(/cursor: pointer;/);
+    expect(css).toMatch(/\.l2-arrow:disabled \{[^}]*opacity/);
+    expect(css).toMatch(
+      /\.l2-demo__days--next \{\s*animation: l2-slide-next 0\.2s/,
+    );
+    expect(css).toMatch(
+      /\.l2-demo__days--prev \{\s*animation: l2-slide-prev 0\.2s/,
+    );
+    expect(css).toMatch(/@keyframes l2-slide-next/);
+    expect(css).toMatch(/@keyframes l2-slide-prev/);
+    const calm =
+      /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(css)
+        ?.[1] ?? "";
+    // the block stills every .l2 animation, the slide included — no second rule for it
+    expect(calm).toMatch(/\.l2 \*,[\s\S]*?animation: none !important;/);
+    expect(calm).not.toMatch(/l2-demo__days/);
+    const phone =
+      /@media \(max-width: 760px\) \{([\s\S]*?)\n\}/.exec(css)?.[1] ??
+        "";
+    expect(phone).toMatch(
+      /\.l2-demo__strip \{\s*grid-template-columns: 32px minmax\(0, 1fr\) 32px;/,
+    );
   });
 });

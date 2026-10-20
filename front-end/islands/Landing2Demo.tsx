@@ -1,8 +1,10 @@
 import { useState } from "preact/hooks";
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import {
+  DEMO_DAY_COUNT,
   type DemoDay,
   demoDayLabel,
+  demoMonthRange,
   type DemoSlot,
   demoSlotLabel,
 } from "../../shared/demo-booking/mod.ts";
@@ -14,9 +16,11 @@ import type { Lang } from "../lib/lang.ts";
  * Llámenme with just a cell books a call as soon as possible, or the person picks one of five
  * days from tomorrow and a morning or afternoon window, name, cell and email, with its own
  * consent box"). Two forms in one card: the one-field form (the cell, Llámenme) and, behind
- * "Mejor elijo día y hora", the day picker (the five the route hands down, from tomorrow,
- * Eastern), the two windows, the name, the cell, the email (optional), and a summary that follows
- * every pick. Each posts to POST /demo-request — which emails the team with the consent on record,
+ * "Mejor elijo día y hora", the day picker (REQ-102, Raphael, 2026-10-20: "calendar days need to
+ * slide so that i can pick more than 5 days out. arrow for good ux that is clickable." — every day
+ * the route hands down, from tomorrow, Eastern, five at a time between two arrows that slide it a
+ * page; the pick is the day's index in the whole list, so it outlives the page on view), the two
+ * windows, the name, the cell, the email (optional), and a summary that follows every pick. Each posts to POST /demo-request — which emails the team with the consent on record,
  * texts the person and makes the phone a lead — only while the consent box is ticked, and shows
  * the confirmation the mock drew. REQ-097 (Raphael, 2026-10-20: "all the … checkboxes should be
  * ticked"): the box is ticked when the page opens; the person can untick it, and then both forms wait. Every string comes in as `labels` from the route, so the island
@@ -29,6 +33,9 @@ export interface Landing2DemoLabels {
   pickTimeLink: string;
   quickLink: string;
   pickDay: string;
+  /** REQ-102 — the two arrows' names: the page of days before, the page after */
+  prevDays: string;
+  nextDays: string;
   /** REQ-095 — the window group's name, as the day group has one (REQ-096: the thanks is an h3) */
   pickSlot: string;
   name: string;
@@ -73,7 +80,11 @@ export default function Landing2Demo(
   },
 ) {
   const [view, setView] = useState<View>("quick");
+  /** the picked day: its index in the WHOLE list, so a slide never loses it (REQ-102) */
   const [day, setDay] = useState(0);
+  /** the page of DEMO_DAY_COUNT days on the strip, and which way the last slide went (its animation) */
+  const [page, setPage] = useState(0);
+  const [slid, setSlid] = useState<"prev" | "next" | null>(null);
   const [slot, setSlot] = useState(0);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -86,6 +97,14 @@ export default function Landing2Demo(
 
   const picked = days[day] ?? days[0];
   const window = slots[slot] ?? slots[0];
+  const pages = Math.max(1, Math.ceil(days.length / DEMO_DAY_COUNT));
+  const shown = days.slice(page * DEMO_DAY_COUNT, (page + 1) * DEMO_DAY_COUNT);
+
+  /** the arrows: one page at a time, never past either end */
+  function slide(dir: -1 | 1) {
+    setPage((p) => Math.min(pages - 1, Math.max(0, p + dir)));
+    setSlid(dir > 0 ? "next" : "prev");
+  }
 
   async function post(input: Parameters<typeof landingClient.requestDemo>[0]) {
     setBusy(true);
@@ -238,22 +257,84 @@ export default function Landing2Demo(
   return (
     <form class="l2-stack" onSubmit={submitDemo} data-cy="l2-demo-form">
       <div>
-        <span class="l2-lbl">{labels.pickDay}</span>
-        <div class="l2-demo__days" role="group" aria-label={labels.pickDay}>
-          {days.map((d, i) => (
-            <button
-              type="button"
-              key={d.iso}
-              class={`l2-day ${i === day ? "on" : ""}`}
-              data-cy="l2-day"
-              data-day={d.iso}
-              aria-pressed={i === day}
-              onClick={() => setDay(i)}
+        <div class="l2-demo__dayhead">
+          <span class="l2-lbl">{labels.pickDay}</span>
+          <span class="l2-demo__range" data-cy="l2-days-range">
+            {demoMonthRange(shown)}
+          </span>
+        </div>
+        <div class="l2-demo__strip">
+          <button
+            type="button"
+            class="l2-arrow"
+            data-cy="l2-days-prev"
+            aria-label={labels.prevDays}
+            disabled={page === 0}
+            onClick={() => slide(-1)}
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
             >
-              <span class="l2-day__dow">{d.dow}</span>
-              <span class="l2-day__num">{d.num}</span>
-            </button>
-          ))}
+              <path d="M15 5l-7 7 7 7" />
+            </svg>
+          </button>
+          {/* the view clips the slide; keyed by page: a fresh group each slide, so its slide-in plays */}
+          <div class="l2-demo__view">
+            <div
+              key={page}
+              class={`l2-demo__days${slid ? ` l2-demo__days--${slid}` : ""}`}
+              role="group"
+              aria-label={labels.pickDay}
+            >
+              {shown.map((d, j) => {
+                const i = page * DEMO_DAY_COUNT + j;
+                return (
+                  <button
+                    type="button"
+                    key={d.iso}
+                    class={`l2-day ${i === day ? "on" : ""}`}
+                    data-cy="l2-day"
+                    data-day={d.iso}
+                    aria-pressed={i === day}
+                    onClick={() => setDay(i)}
+                  >
+                    <span class="l2-day__dow">{d.dow}</span>
+                    <span class="l2-day__num">{d.num}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <button
+            type="button"
+            class="l2-arrow"
+            data-cy="l2-days-next"
+            aria-label={labels.nextDays}
+            disabled={page === pages - 1}
+            onClick={() => slide(1)}
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
         </div>
       </div>
       <div class="l2-demo__slots" role="group" aria-label={labels.pickSlot}>

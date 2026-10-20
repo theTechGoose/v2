@@ -2670,6 +2670,8 @@
   "landing2.pickTimeLink": "I would rather pick a day and time to book my demo →",
   "landing2.quickLink": "← Just call me",
   "landing2.pickDay": "Pick a day",
+  "landing2.prevDays": "Previous days",
+  "landing2.nextDays": "More days",
   "landing2.pickSlot": "Pick a window",
   "landing2.name": "Name",
   "landing2.namePh": "José García",
