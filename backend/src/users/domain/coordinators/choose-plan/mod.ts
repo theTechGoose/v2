@@ -5,6 +5,7 @@
 // active. REQ-059: the link carries the way back — the app's /plan/return, which calls
 // `refresh` on arrival, so the plan reads active without a "Check payment".
 import { Injectable } from "#danet/core";
+import { accountForPick } from "#quote-flow/merchant-accounts.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { appOrigin, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
@@ -44,8 +45,11 @@ export class ChoosePlan {
    * @throws email-required — a paid pick with no email on the account
    * @throws payments-unavailable — the CRM did not answer
    */
-  /** REQ-064 — `merchant`: the merchant account the pick named ("" = the CRM's default); it rides
-   *  on the pay link and is remembered on the plan for the billing it starts */
+  /** REQ-064/100 — `merchant`: the merchant account the pick named, if it named one; the account the
+   *  charge goes through is decided ONCE here, by the one rule (accountForPick: the name given,
+   *  else sandbox for the $1 test tier, primary for every real plan), and that one name rides the
+   *  pay link, the pay page's footer and the plan's record, which the billing reads later
+   *  @throws merchant-unknown (422) — a name the CRM has no account on record for */
   async choose(userId: string, planId: string, back: PickBack = "/settings", merchant = ""): Promise<UserPlan> {
     const plan = planOf(planId);
     const now = new Date().toISOString();
@@ -63,11 +67,11 @@ export class ChoosePlan {
     if (!user.email?.trim()) throw new EmailRequiredError();
 
     const { customerId } = await this.crm.ensure(userId);
+    const account = accountForPick(plan.id, merchant); // REQ-100 — decided once, here
     const { dueId } = await this.link.raiseDue({ customerId, amountCents: plan.priceCents, memo: firstMonthMemo(plan) });
-    const named = merchant ? { merchant } : {};
-    const { payUrl } = await this.link.mintPayLink({ customerId, dueId, returnUrl: returnUrlFor(appOrigin(), dueId, back), returnLabel: RETURN_LABEL, ...named });
+    const { payUrl } = await this.link.mintPayLink({ customerId, dueId, returnUrl: returnUrlFor(appOrigin(), dueId, back), returnLabel: RETURN_LABEL, merchant: account });
     // a switch of paid plan: the billing in force is canceled once the new one is live
-    return this.plans.put(chosen(userId, plan.id as PlanId, now, { customerId, dueId, payUrl, ...named }, billing));
+    return this.plans.put(chosen(userId, plan.id as PlanId, now, { customerId, dueId, payUrl, merchant: account }, billing));
   }
 
   /** a pending plan asks the CRM whether its due settled (what /plan/return does on arrival,
@@ -120,7 +124,9 @@ export class ChoosePlan {
       firstBillAt: addMonth(plan.activatedAt ?? plan.updatedAt),
       returnUrl: returnUrlFor(appOrigin(), "", "/settings"),
       returnLabel: RETURN_LABEL,
-      ...(plan.merchant ? { merchant: plan.merchant } : {}), // REQ-064 — the same merchant the pick named
+      // REQ-064/100 — the same account the pick went through; a plan stored before the account
+      // was recorded on it (REQ-069's env default) resolves by the one rule: primary
+      merchant: accountForPick(plan.planId, plan.merchant ?? ""),
     });
     if (plan.previousSubscriptionId && plan.previousSubscriptionId !== subscriptionId) {
       try {

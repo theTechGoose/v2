@@ -1011,7 +1011,7 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
   const [err, setErr] = useState("");
   useEffect(() => {
     const why = pickErrorOf(location.search);
-    if (why) setErr(t(why === "email-required" ? "welcome.plan.emailFirst" : "plan.error"));
+    if (why) setErr(t(why === "email-required" ? "welcome.plan.emailFirst" : why === "merchant-unknown" ? "plan.merchantUnknown" : "plan.error"));
   }, []);
 
   const settled = plan?.status === "active" || plan?.status === "free";

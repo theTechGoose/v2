@@ -1,16 +1,19 @@
 // REQ-054 — the CRM's link builder, from this app's side: a customer, the first month as a due,
 // the pay link that collects it, and whether the due still reads open. Real against ppwk-crm's
-// payments API when PPWK_PAYMENTS_URL + PPWK_PAYMENTS_TOKEN + PPWK_PAYMENTS_ACCOUNT are set;
-// otherwise the in-process fake the gate's lanes run on (the same way EmailService runs without
-// a Postmark key).
-// REQ-069 — the CRM (its REQ-091) takes the merchant account as the `x-account` request header
-// on every mint and every subscription, required: PPWK_PAYMENTS_ACCOUNT names it, and a pick
-// that names its own merchant (REQ-064) rides that header instead. Nothing about the account is
-// in the body any more.
+// payments API when PPWK_PAYMENTS_URL + PPWK_PAYMENTS_TOKEN are set; otherwise the in-process
+// fake the gate's lanes run on (the same way EmailService runs without a Postmark key).
+// REQ-069/100 — the CRM (its REQ-091) takes the merchant account as the `x-account` request
+// header on every mint and every subscription, required. The name is the PICK's, every time
+// (shared/quote-flow/merchant-accounts.ts): a call that names none is refused here, before any
+// request, and nothing defaults it — the `PPWK_PAYMENTS_ACCOUNT` default is gone (it sent a real
+// $99 through the sandbox account, NMI 12670394611). Nothing about the account is in the body.
+// REQ-101 — a name the CRM has no record of (its Accounts tab) answers 422: `merchant-unknown`
+// here, by name; the fake keeps the same record (primary, sandbox, and whatever a test adds).
 // REQ-058 — a customer carries this app's ref: the CRM upserts by it (ppwk-crm REQ-076), so
 // sign-up, onboarding and every later edit talk about ONE record, read back with findCustomer.
 // REQ-059 — a pay link carries the address the receipt brings the person back to (REQ-077 there).
 import { Injectable } from "#danet/core";
+import { KNOWN_ACCOUNTS } from "#quote-flow/merchant-accounts.ts";
 import { type PaymentsLinkName, selectPaymentsLinkName } from "@users/domain/business/payments-link-select/mod.ts";
 import { addMonth, monthLabel } from "@users/domain/business/plan/mod.ts";
 
@@ -48,8 +51,8 @@ export interface NewPayLink {
   /** REQ-059 — where the receipt goes back to, and what it calls that place */
   returnUrl?: string;
   returnLabel?: string;
-  /** REQ-064 — the merchant account the charge goes through (the CRM's `x-account`, REQ-069); absent = PPWK_PAYMENTS_ACCOUNT */
-  merchant?: string;
+  /** REQ-064/100 — the merchant account the charge goes through (the CRM's `x-account`, REQ-069), the pick's own, required */
+  merchant: string;
 }
 /** REQ-061 — a monthly billing on the CRM (its REQ-081): the amount, what it is for, this app's
  *  handle, when the first recurring month falls due, and where a recovery link brings the person back */
@@ -61,8 +64,8 @@ export interface NewSubscription {
   firstBillAt: string;
   returnUrl?: string;
   returnLabel?: string;
-  /** REQ-064 — the merchant account the months go through (the CRM's `x-account`, REQ-069); absent = PPWK_PAYMENTS_ACCOUNT */
-  merchant?: string;
+  /** REQ-064/100 — the merchant account the months go through (the CRM's `x-account`, REQ-069), the pick's own, required */
+  merchant: string;
 }
 export type SubscriptionStatus = "active" | "past_due" | "canceled";
 export interface SubscriptionInfo {
@@ -110,11 +113,34 @@ class PaymentsUnavailableError extends Error {
     this.name = "PaymentsUnavailableError";
   }
 }
+/** REQ-100 — a charge that names no merchant account is refused before any request: nothing
+ *  defaults it, so nothing can send it through the wrong account */
+class MerchantRequiredError extends Error {
+  readonly status = 400;
+  constructor() {
+    super("merchant-required: a pay link and a billing name the merchant account the charge goes through");
+    this.name = "MerchantRequiredError";
+  }
+}
+/** REQ-101 — a name the CRM has no account on record for (its Accounts tab) */
+class MerchantUnknownError extends Error {
+  readonly status = 422;
+  constructor(name: string) {
+    super(`merchant-unknown: ${name} is not an account on record — add it on the CRM's Accounts tab first`);
+    this.name = "MerchantUnknownError";
+  }
+}
+/** the one check every charging call makes: the pick's account, named */
+function requireAccount(merchant: string | undefined): string {
+  const name = (merchant ?? "").trim();
+  if (!name) throw new MerchantRequiredError();
+  return name;
+}
 
-/** the real one: ppwk-crm's payments API behind the operator token; `account` is the merchant
- *  account (PPWK_PAYMENTS_ACCOUNT) every charge goes through unless a call names its own (REQ-069) */
+/** the real one: ppwk-crm's payments API behind the operator token; every charging call names
+ *  its own merchant account (REQ-069/100) */
 class CrmPaymentsLink implements PaymentsLinkPort {
-  constructor(private readonly origin: string, private readonly token: string, private readonly account: string, private readonly f: typeof fetch = globalThis.fetch) {}
+  constructor(private readonly origin: string, private readonly token: string, private readonly f: typeof fetch = globalThis.fetch) {}
 
   private async send(method: string, path: string, body?: unknown, account?: string): Promise<Response> {
     try {
@@ -134,6 +160,9 @@ class CrmPaymentsLink implements PaymentsLinkPort {
   private async call<T>(method: string, path: string, body?: unknown, account?: string): Promise<T> {
     const res = await this.send(method, path, body, account);
     const text = await res.text();
+    // REQ-101 — the CRM refusing the account by name (merchant-unknown / account-required, 422) is
+    // that, not the CRM being down
+    if (res.status === 422 && account) throw new MerchantUnknownError(account);
     if (!res.ok) throw new PaymentsUnavailableError(`${method} ${path} answered ${res.status}: ${text.slice(0, 200)}`);
     return JSON.parse(text) as T;
   }
@@ -156,7 +185,8 @@ class CrmPaymentsLink implements PaymentsLinkPort {
   }
   async mintPayLink(input: NewPayLink) {
     const { merchant, ...link } = input;
-    const l = await this.call<{ chargeUrl: string }>("POST", PAY_LINKS, { ...link, brandId: "" }, merchant || this.account);
+    const account = requireAccount(merchant); // REQ-100 — the pick's account, or nothing is sent
+    const l = await this.call<{ chargeUrl: string }>("POST", PAY_LINKS, { ...link, brandId: "" }, account);
     return { payUrl: `${this.origin}${l.chargeUrl}` };
   }
   async dueOpen(dueId: string) {
@@ -165,6 +195,7 @@ class CrmPaymentsLink implements PaymentsLinkPort {
   }
   // REQ-061 — the CRM's subscriptions (its REQ-081); its payUrl is a path on its origin
   async startSubscription(input: NewSubscription) {
+    const account = requireAccount(input.merchant); // REQ-100 — the pick's account, or nothing is sent
     const s = await this.call<{ subscriptionId: string }>("POST", SUBSCRIPTIONS, {
       customerId: input.customerId,
       amountCents: input.amountCents,
@@ -175,7 +206,7 @@ class CrmPaymentsLink implements PaymentsLinkPort {
       brandId: "",
       returnUrl: input.returnUrl ?? "",
       returnLabel: input.returnLabel ?? "",
-    }, input.merchant || this.account); // REQ-064/069 — the pick's merchant, else the configured account
+    }, account); // REQ-064/069/100 — the pick's merchant account, always
     return { subscriptionId: s.subscriptionId };
   }
   async findSubscription(externalRef: string) {
@@ -216,12 +247,22 @@ class FakePaymentsWorld {
   /** REQ-061 — the CRM's subscriptions, and the card its pay page put on file per customer */
   subscriptions: FakeSubscription[] = [];
   cards = new Map<string, { cardBrand: string; cardLast4: string }>();
+  /** REQ-101 — the CRM's merchant accounts on record (its Accounts tab): primary and sandbox, and
+   *  whatever a test adds the way the operator would; a charge naming any other is refused */
+  accounts = new Set<string>(KNOWN_ACCOUNTS);
   reset() {
     this.customers = [];
     this.dues = [];
     this.links = [];
     this.subscriptions = [];
     this.cards.clear();
+    this.accounts = new Set<string>(KNOWN_ACCOUNTS);
+  }
+  /** REQ-100/101 — what the CRM does with the `x-account` header: required, and on record */
+  account(merchant: string | undefined): string {
+    const name = requireAccount(merchant);
+    if (!this.accounts.has(name)) throw new MerchantUnknownError(name);
+    return name;
   }
   /** the card landed: what the real pay page does to the due — and the card is on file now;
    *  a past-due month paid this way makes its subscription current again (the CRM's REQ-081) */
@@ -263,6 +304,7 @@ class FakePaymentsWorld {
           q.set("return", s.returnUrl);
           q.set("label", s.returnLabel ?? "");
         }
+        q.set("account", s.merchant); // REQ-100 — the month's page names the billing's account, as the CRM's does
         s.payUrl = `${fakePayPageOrigin()}/pay/fake?${q}`;
       }
       s.status = "past_due";
@@ -323,30 +365,37 @@ class FakePaymentsLink implements PaymentsLinkPort {
     this.world.dues.push({ ...input, dueId, open: true });
     return Promise.resolve({ dueId });
   }
-  mintPayLink(input: NewPayLink) {
+  // deno-lint-ignore require-await
+  async mintPayLink(input: NewPayLink) {
     // REQ-057 — the app's own stand-in pay page (front-end/routes/pay/fake.tsx), the shape the
     // real link builder makes: a page carrying the customer's ref and the due, at the app's url.
     // REQ-059 — and the return address the receipt follows, as the real page's does.
+    // REQ-100/101 — and the account the charge goes through, checked the way the CRM checks its
+    // header, on the url as `account=` the way the CRM's link carries it (ppwk-crm REQ-091)
+    const account = this.world.account(input.merchant);
     const q = new URLSearchParams({ customer: input.customerId, due: input.dueId });
     if (input.returnUrl) {
       q.set("return", input.returnUrl);
       q.set("label", input.returnLabel ?? "");
     }
-    if (input.merchant) q.set("merchant", input.merchant); // REQ-064 — on the page's url, as the CRM's link carries it
+    q.set("account", account);
     const payUrl = `${fakePayPageOrigin()}/pay/fake?${q}`;
-    this.world.links.push({ ...input, payUrl });
-    return Promise.resolve({ payUrl });
+    this.world.links.push({ ...input, merchant: account, payUrl });
+    return { payUrl };
   }
   dueOpen(dueId: string) {
     const due = this.world.dues.find((d) => d.dueId === dueId);
     return Promise.resolve(due ? due.open : false);
   }
   // REQ-061 — the CRM's subscriptions, as the fake (its clock is world.bill)
-  startSubscription(input: NewSubscription) {
+  // deno-lint-ignore require-await
+  async startSubscription(input: NewSubscription) {
+    const account = this.world.account(input.merchant); // REQ-100/101 — the CRM's header check
     // the card the pay page just put on file is the one the months will go to (the CRM says so from the start)
     const card = this.world.cards.get(input.customerId) ?? { cardBrand: "", cardLast4: "" };
     const sub: FakeSubscription = {
       ...input,
+      merchant: account,
       subscriptionId: crypto.randomUUID(),
       status: "active",
       nextBillAt: new Date(input.firstBillAt).toISOString(),
@@ -356,7 +405,7 @@ class FakePaymentsLink implements PaymentsLinkPort {
       payUrl: "",
     };
     this.world.subscriptions.push(sub);
-    return Promise.resolve({ subscriptionId: sub.subscriptionId });
+    return { subscriptionId: sub.subscriptionId };
   }
   findSubscription(externalRef: string) {
     const mine = this.world.subscriptions.filter((s) => s.externalRef === externalRef);
@@ -399,7 +448,6 @@ export class PaymentsLink implements PaymentsLinkPort {
     return selectPaymentsLinkName({
       PPWK_PAYMENTS_URL: Deno.env.get("PPWK_PAYMENTS_URL"),
       PPWK_PAYMENTS_TOKEN: Deno.env.get("PPWK_PAYMENTS_TOKEN"),
-      PPWK_PAYMENTS_ACCOUNT: Deno.env.get("PPWK_PAYMENTS_ACCOUNT"),
       DENO_DEPLOYMENT_ID: Deno.env.get("DENO_DEPLOYMENT_ID"),
     });
   }
@@ -411,8 +459,7 @@ export class PaymentsLink implements PaymentsLinkPort {
     if (this.which() === "fake") return new FakePaymentsLink();
     const origin = (Deno.env.get("PPWK_PAYMENTS_URL") ?? "").trim().replace(/\/+$/, "");
     const token = (Deno.env.get("PPWK_PAYMENTS_TOKEN") ?? "").trim();
-    const account = (Deno.env.get("PPWK_PAYMENTS_ACCOUNT") ?? "").trim();
-    return new CrmPaymentsLink(origin, token, account, this.fetchOverride ?? globalThis.fetch);
+    return new CrmPaymentsLink(origin, token, this.fetchOverride ?? globalThis.fetch);
   }
   createCustomer(input: NewCustomer) {
     return this.port().createCustomer(input);

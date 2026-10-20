@@ -94,18 +94,19 @@ export interface PayLinkInfo {
   customerId: string;
   dueId: string;
   payUrl: string;
-  /** REQ-064 — the merchant account the pick named; absent = the CRM's default */
-  merchant?: string;
+  /** REQ-064/100 — the merchant account the charge goes through: the one source of truth the
+   *  pay link, the pay page's footer and the billing all read; required on a paid pick */
+  merchant: string;
 }
 
 /**
  * the record of a pick: free is free; a paid pick is pending on its due
- * @throws pay-link-missing — a paid pick without the CRM's customer, due and pay page
+ * @throws pay-link-missing — a paid pick without the CRM's customer, due, pay page and account
  */
 export function chosen(userId: string, planId: PlanId, now: string, link?: PayLinkInfo, previousSubscriptionId?: string): UserPlan {
   if (planId === "free") return { userId, planId, status: "free", chosenAt: now, updatedAt: now };
-  if (!link?.customerId || !link.dueId || !link.payUrl) {
-    throw new Error("pay-link-missing: a paid plan needs the CRM's customer, due and pay page");
+  if (!link?.customerId || !link.dueId || !link.payUrl || !link.merchant) {
+    throw new Error("pay-link-missing: a paid plan needs the CRM's customer, due, pay page and the merchant account the charge goes through");
   }
   return { userId, planId, status: "pending", chosenAt: now, updatedAt: now, ...link, ...(previousSubscriptionId ? { previousSubscriptionId } : {}) };
 }

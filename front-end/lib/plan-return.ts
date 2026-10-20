@@ -32,15 +32,16 @@ export function resumesAfterPlan(search: string): boolean {
   return new URLSearchParams(search).get("after") === "plan";
 }
 
-export type PickError = "email-required" | "error";
+/** merchant-unknown — REQ-101: the pick named a merchant account the CRM has no record of */
+export type PickError = "email-required" | "merchant-unknown" | "error";
 
 /** the query a failed pick comes back with (`?plan=…`), and what a page reads from it */
 export function pickErrorQuery(status: number): string {
-  return `?plan=${status === 409 ? "email-required" : "error"}`;
+  return `?plan=${status === 409 ? "email-required" : status === 422 ? "merchant-unknown" : "error"}`;
 }
 export function pickErrorOf(search: string): PickError | null {
   const v = new URLSearchParams(search).get("plan");
-  return v === "email-required" || v === "error" ? v : null;
+  return v === "email-required" || v === "merchant-unknown" || v === "error" ? v : null;
 }
 
 /**
