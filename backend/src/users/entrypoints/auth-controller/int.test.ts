@@ -66,7 +66,6 @@ Deno.test("REQ-072 send-otp answers before the CRM capture finishes, and the cap
   const app = new DanetApplication();
   await app.init(TestApp);
   app.get(PaymentsLink).portOverride = door;
-  app.get(SignupNotice).email = { send: () => Promise.resolve({ ok: true }) }; // REQ-103 — its own test; no mail leaves the box
   await app.listen(PORT);
   try {
     const res = await fetch(`http://localhost:${PORT}/auth/send-otp`, {
@@ -123,7 +122,6 @@ Deno.test("REQ-082 send-otp answers with the dev code on the fakes, and that cod
   const app = new DanetApplication();
   await app.init(TestApp);
   app.get(PaymentsLink).portOverride = door;
-  app.get(SignupNotice).email = { send: () => Promise.resolve({ ok: true }) }; // REQ-103 — its own test; no mail leaves the box
   await app.listen(PORT + 1);
   try {
     const phone = "+15125550082";
@@ -194,7 +192,6 @@ Deno.test("REQ-098 verify-otp for a new account answers before the CRM has made 
   const app = new DanetApplication();
   await app.init(TestApp);
   app.get(PaymentsLink).portOverride = door;
-  app.get(SignupNotice).email = { send: () => Promise.resolve({ ok: true }) }; // REQ-103 — its own test; no mail leaves the box
   await app.listen(PORT + 2);
   try {
     const phone = "+15125550098";
@@ -280,6 +277,9 @@ Deno.test("REQ-103 a sign-up — by phone on /auth/verify-otp and /auth/verify, 
       return { ok: true, messageId: `m-${mails.length}` };
     },
   };
+  // the real deploy's side of REQ-318's switch: Postmark (the stub above) is reached; on the fakes
+  // (every other app in this file) the notice is logged and nothing leaves the box
+  app.get(SignupNotice).env = { get: (k: string) => (k === "DENO_DEPLOY" ? "true" : undefined) };
   await app.listen(PORT + 3);
   const base = `http://localhost:${PORT + 3}`;
   const json = { "content-type": "application/json" };

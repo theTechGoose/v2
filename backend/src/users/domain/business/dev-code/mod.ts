@@ -1,3 +1,5 @@
+import { type EnvReader, onRealDeploy } from "@core/business/real-deploy/mod.ts";
+
 /**
  * REQ-082 — "for the fake you should have a pop up with the code."
  *
@@ -8,9 +10,7 @@
  */
 export function devCodeFor(
   code: string,
-  env: { get(k: string): string | undefined } = Deno.env,
+  env: EnvReader = Deno.env,
 ): string | undefined {
-  const real = Boolean(env.get("DENO_DEPLOY")?.trim()) ||
-    Boolean(env.get("DENO_DEPLOYMENT_ID")?.trim());
-  return real ? undefined : code;
+  return onRealDeploy(env) ? undefined : code;
 }

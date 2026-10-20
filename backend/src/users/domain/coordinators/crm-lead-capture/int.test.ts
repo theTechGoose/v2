@@ -54,6 +54,9 @@ async function fresh(answers: Answer[], outbox = new CrmCaptureOutbox()) {
       return Promise.resolve(a.ok ? { ok: true, messageId: `m-${mails.length}` } : { ok: false, reason: a.reason });
     },
   };
+  // the real deploy's side of REQ-318's switch: Postmark (the stub above) is reached. On the fakes
+  // the notice is logged and never mailed (the test below).
+  notice.env = { get: (k: string) => (k === "DENO_DEPLOY" ? "true" : undefined) };
   const make = () => new CrmLeadCapture(outbox, crm, notice);
   return { calls, outbox, make, users, mails, mailAnswers, notice };
 }
@@ -333,5 +336,27 @@ Deno.test("REQ-103 the sweep mails hello@documonster.com with the account on it 
   } finally {
     console.warn = warn;
   }
+  await done();
+});
+
+// REQ-103 — found in the gate: the served backend runs with the primary's real Postmark key, and the
+// two e2e runs mailed hello@documonster.com 70 times for the stories' fake sign-ups. REQ-318: on the
+// fakes nothing leaves the box.
+Deno.test("REQ-103 on the fakes (REQ-318: DENO_DEPLOY unset, not on Deno Deploy) the sweep logs the notice with its subject and clears it — Postmark is never reached", async () => {
+  const { outbox, make, users, mails, notice } = await fresh([]);
+  notice.env = { get: () => undefined };
+  const user = await users.create({ phoneNumber: "+15125550107", language: "es" });
+  await outbox.addSignupNotice(user.id, Date.now());
+  const logged: string[] = [];
+  const log = console.log;
+  console.log = (...args: unknown[]) => logged.push(args.map(String).join(" "));
+  try {
+    assertEquals(await make().drain(), { landed: 1, deferred: 0, waiting: 0 });
+  } finally {
+    console.log = log;
+  }
+  assertEquals(mails, [], "no mail leaves the box");
+  assertStringIncludes(logged.at(-1) ?? "", "[signup-notice] fakes: would mail hello@documonster.com — New DocuMonster signup — +15125550107");
+  assertEquals(await outbox.list(), [], "counted as sent → gone");
   await done();
 });

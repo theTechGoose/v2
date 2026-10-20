@@ -20,7 +20,6 @@ import {
   type PaymentsLinkPort,
 } from "@users/domain/data/payments-link/mod.ts";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
-import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 
 @Module({ imports: [UsersModule] })
 class TestApp {}
@@ -56,7 +55,6 @@ Deno.test("REQ-099 the wizard's saves — PUT /me, PUT /profile/identity, POST /
   const app = new DanetApplication();
   await app.init(TestApp);
   app.get(PaymentsLink).portOverride = door;
-  app.get(SignupNotice).email = { send: () => Promise.resolve({ ok: true }) }; // REQ-103 — its own test; no mail leaves the box
   await app.listen(PORT);
   const base = `http://localhost:${PORT}`;
   const json = { "content-type": "application/json" };
