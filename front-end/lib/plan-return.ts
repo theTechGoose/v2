@@ -5,14 +5,10 @@
  * CRM's pay page for a paid pick (this tab, no popup), back to the page for free. The link the
  * backend minted carries the way back (/plan/return, naming the due), so the receipt brings the
  * person home with the plan already active. Pure helpers of that route and of the stand-in page.
+ * REQ-106 — the pick answers before the page exists: where it sends the browser is `afterPickOf`
+ * (the hand-off page, the pay page when it is already there, or back with the reason).
  */
 import type { UserPlan } from "../clients/profile.ts";
-
-/** where a pick sends the browser: the pay page for a paid pick, nowhere (null) for free */
-export function payPageOf(plan: Pick<UserPlan, "status" | "payUrl">): string | null {
-  // REQ-061 — a past-due month has a pay page of its own, the same way
-  return (plan.status === "pending" || plan.status === "past_due") && plan.payUrl ? plan.payUrl : null;
-}
 
 // ---- REQ-106 — the pick answers at once; the page comes after -------------------------------
 // Raphael, 2026-10-20: "when i click a plan in the onboarding flow the payment link takes FOREVER
