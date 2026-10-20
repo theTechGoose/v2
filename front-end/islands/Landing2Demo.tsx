@@ -286,30 +286,32 @@ export default function Landing2Demo(
               <path d="M15 5l-7 7 7 7" />
             </svg>
           </button>
-          {/* keyed by page: a fresh group each slide, so its slide-in animation plays */}
-          <div
-            key={page}
-            class={`l2-demo__days${slid ? ` l2-demo__days--${slid}` : ""}`}
-            role="group"
-            aria-label={labels.pickDay}
-          >
-            {shown.map((d, j) => {
-              const i = page * DEMO_DAY_COUNT + j;
-              return (
-                <button
-                  type="button"
-                  key={d.iso}
-                  class={`l2-day ${i === day ? "on" : ""}`}
-                  data-cy="l2-day"
-                  data-day={d.iso}
-                  aria-pressed={i === day}
-                  onClick={() => setDay(i)}
-                >
-                  <span class="l2-day__dow">{d.dow}</span>
-                  <span class="l2-day__num">{d.num}</span>
-                </button>
-              );
-            })}
+          {/* the view clips the slide; keyed by page: a fresh group each slide, so its slide-in plays */}
+          <div class="l2-demo__view">
+            <div
+              key={page}
+              class={`l2-demo__days${slid ? ` l2-demo__days--${slid}` : ""}`}
+              role="group"
+              aria-label={labels.pickDay}
+            >
+              {shown.map((d, j) => {
+                const i = page * DEMO_DAY_COUNT + j;
+                return (
+                  <button
+                    type="button"
+                    key={d.iso}
+                    class={`l2-day ${i === day ? "on" : ""}`}
+                    data-cy="l2-day"
+                    data-day={d.iso}
+                    aria-pressed={i === day}
+                    onClick={() => setDay(i)}
+                  >
+                    <span class="l2-day__dow">{d.dow}</span>
+                    <span class="l2-day__num">{d.num}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <button
             type="button"

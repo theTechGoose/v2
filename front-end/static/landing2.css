@@ -991,7 +991,14 @@
   grid-template-columns: 36px minmax(0, 1fr) 36px;
   gap: 8px;
   align-items: stretch;
+}
+/* the view clips the sliding group to its own cell (a slide never paints over an arrow); the 3px
+   of padding, taken back by the margin, keeps a day's focus ring from being clipped */
+.l2-demo__view {
+  min-width: 0;
   overflow: hidden;
+  padding: 3px;
+  margin: -3px;
 }
 .l2-demo__days {
   display: grid;
