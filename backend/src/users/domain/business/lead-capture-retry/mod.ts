@@ -4,7 +4,11 @@
  * live lease) is left alone. Pure — the outbox stores these fields, the sweep reads them.
  */
 export interface PendingCapture {
+  /** the lead's phone (REQ-072); "" on a customer sync record */
   phone: string;
+  /** REQ-098 — a customer sync record: the account whose CRM customer the sweep makes or revises
+   *  (CrmCustomerSync.ensure), keyed apart from the leads */
+  userId?: string;
   enqueuedAt: string;
   attempts: number;
   /** ISO — not tried before this */

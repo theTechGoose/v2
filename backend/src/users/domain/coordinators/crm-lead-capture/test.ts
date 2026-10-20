@@ -87,3 +87,55 @@ Deno.test("REQ-074 registerSweep — the timer fires every 60 s and each tick sw
     logged.restore();
   }
 });
+
+// REQ-098 — Raphael, 2026-10-20: "it should fire the event to the backend and forget about it while
+// the backend finishes the request." The account's CRM customer (REQ-058) rides the same outbox as
+// the lead: a record carrying a userId is carried by CrmCustomerSync.ensure.
+Deno.test("REQ-098 sweep — a record carrying a userId is the account's customer sync: carried by ensure and cleared by its record; a phone record stays a lead capture", async () => {
+  const at = "2026-10-20T00:00:00.000Z";
+  const lead = { phone: "+15125550098", enqueuedAt: at, attempts: 0, nextAt: at };
+  const sync = { phone: "", userId: "u-98", enqueuedAt: at, attempts: 0, nextAt: at };
+  const cleared: unknown[] = [];
+  const outbox = {
+    list: () => Promise.resolve([lead, sync]),
+    claim: () => Promise.resolve(true),
+    done: (rec: unknown) => {
+      cleared.push(rec);
+      return Promise.resolve();
+    },
+  } as unknown as CrmCaptureOutbox;
+  const calls: string[] = [];
+  const crm = {
+    capture: (phone: string) => {
+      calls.push(`capture ${phone}`);
+      return Promise.resolve({ customerId: "c-lead" });
+    },
+    ensure: (userId: string) => {
+      calls.push(`ensure ${userId}`);
+      return Promise.resolve({ customerId: "c-user" });
+    },
+  } as unknown as CrmCustomerSync;
+  assertEquals(await new CrmLeadCapture(outbox, crm).drain(Date.parse(at) + 1), { landed: 2, deferred: 0, waiting: 0 });
+  assertEquals(calls, ["capture +15125550098", "ensure u-98"]);
+  assertEquals(cleared, [lead, sync]);
+});
+
+Deno.test("REQ-098 a record enqueued while a sweep is running is swept right after it, not left for the next login", async () => {
+  const at = "2026-10-20T00:00:00.000Z";
+  let lists = 0;
+  const outbox = {
+    list: () => {
+      lists++;
+      return Promise.resolve(lists === 1 ? [] : []);
+    },
+    add: () => Promise.resolve(),
+    addSync: () => Promise.resolve(),
+  } as unknown as CrmCaptureOutbox;
+  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync);
+  const first = leads.drain(Date.parse(at));
+  await leads.enqueueSync("u-98"); // arrives while the first sweep is on its list
+  await first;
+  await tick();
+  await tick();
+  assertEquals(lists, 2, "a second sweep followed the first for the record that arrived meanwhile");
+});

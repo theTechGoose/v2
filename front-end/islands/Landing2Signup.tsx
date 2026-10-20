@@ -18,9 +18,11 @@ import DevCodeCard from "../components/DevCodeCard.tsx";
  *
  * REQ-089 — the v3 card (Raphael, 2026-10-18: "the signup card is the mock's — the phone and
  * Empezar gratis, a TCPA consent box unchecked by default that has to be ticked before the code
- * goes out, and the ¿Prefieres hablar? phone row"): the consent box starts unticked and the code
- * is held on the page until it is ticked — nothing is posted, no Lead fires; the row under it
- * dials the support line the route hands in.
+ * goes out, and the ¿Prefieres hablar? phone row"): the code is held on the page while the box is
+ * unticked — nothing is posted, no Lead fires; the row under it dials the support line the route
+ * hands in. REQ-097 (Raphael, 2026-10-20: "all the 'Al tocar Empezar aceptas recibir textos de
+ * DocuMonster. … Términos' checkboxes should be ticked"): the box is ticked when the page opens;
+ * the person can untick it, and then the code waits.
  *
  * REQ-083 — the card tells the signup in motion: each digit pops in and the button charges at
  * ten; "Get started" slams, a text bubble launches from it, the monster bounces and the card flips
@@ -129,8 +131,8 @@ export default function Landing2Signup(
 ) {
   const [step, setStep] = useState<Step>(1);
   const [phone, setPhone] = useState("");
-  /** REQ-089 — the TCPA box: unticked until the person ticks it; the code waits for it */
-  const [consent, setConsent] = useState(false);
+  /** REQ-089/097 — the TCPA box: ticked when the page opens; the code waits while the person has it unticked */
+  const [consent, setConsent] = useState(true);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);

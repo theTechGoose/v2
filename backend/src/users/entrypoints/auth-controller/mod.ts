@@ -19,7 +19,6 @@ import {
   SendEmailOtp,
 } from "@users/domain/coordinators/send-email-otp/mod.ts";
 import { VerifyEmailOtp } from "@users/domain/coordinators/verify-email-otp/mod.ts";
-import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { AccountRecovery } from "@users/domain/coordinators/account-recovery/mod.ts";
 import { SignInLanding } from "@users/domain/coordinators/sign-in-landing/mod.ts";
@@ -62,7 +61,6 @@ export class AuthController {
     private sendEmailOtp: SendEmailOtp,
     private verifyEmailOtp: VerifyEmailOtp,
     /** REQ-058 — a new account is a CRM customer from its first sign-in */
-    private crm: CrmCustomerSync,
     /** REQ-072 — the login's lead capture: durable, never awaited by the request */
     private leads: CrmLeadCapture,
     /** REQ-091 — where a verified code lands: the wizard while an onboarding question is open */
@@ -122,7 +120,7 @@ export class AuthController {
         email: dto.email,
         code: dto.code,
       });
-      if (result.isNewUser) await this.crm.sync(result.userId);
+      if (result.isNewUser) await this.leads.enqueueSync(result.userId); // REQ-098
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         ok: true,
@@ -169,7 +167,7 @@ export class AuthController {
     const token = readToken(body);
     try {
       const result = await this.recovery.startFresh(token);
-      await this.crm.sync(result.userId);
+      await this.leads.enqueueSync(result.userId); // REQ-098
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         ok: true,
@@ -252,7 +250,8 @@ export class AuthController {
         phoneNumber: dto.phoneNumber,
         code: dto.code,
       });
-      if (result.isNewUser) await this.crm.sync(result.userId);
+      // REQ-098 — the CRM customer is an outbox record; the sweep makes it after this reply
+      if (result.isNewUser) await this.leads.enqueueSync(result.userId);
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         ok: true,
@@ -295,7 +294,8 @@ export class AuthController {
         phoneNumber: dto.phoneNumber,
         code: dto.code,
       });
-      if (result.isNewUser) await this.crm.sync(result.userId);
+      // REQ-098 — the CRM customer is an outbox record; the sweep makes it after this reply
+      if (result.isNewUser) await this.leads.enqueueSync(result.userId);
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         sessionId: result.sessionId,
