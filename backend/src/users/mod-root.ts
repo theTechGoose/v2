@@ -45,6 +45,7 @@ import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
+import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 
 /**
  * UsersModule — owns the full user identity surface:
@@ -107,6 +108,7 @@ import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.
     CrmCustomerSync, // REQ-058
     CrmCaptureOutbox, // REQ-072
     CrmLeadCapture, // REQ-072
+    SignupNotice, // REQ-103
     ChoosePlan,
   ],
 })

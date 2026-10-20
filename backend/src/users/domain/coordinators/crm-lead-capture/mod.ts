@@ -20,10 +20,15 @@
  * PUT /profile/identity, POST /me/onboarded, the plan's tier changes) enqueue the same record;
  * a record re-marked while a sweep holds it is carried again by the sweep that follows (the
  * outbox's done() leaves it), so the CRM ends up with the profile as last saved.
+ * REQ-103 — Raphael, 2026-10-20: "if somone signs up we need to generate an email to
+ * hello@documonster.com." That email rides the same outbox: enqueueSignupNotice(userId) is the record
+ * before the sign-up replies, and the sweep mails it (SignupNotice.send) after — a mail Postmark
+ * refused is deferred and retried like a CRM refusal, never dropped.
  */
 import { Injectable } from "#danet/core";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
+import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 import { isDue } from "@users/domain/business/lead-capture-retry/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 
@@ -50,7 +55,7 @@ export class CrmLeadCapture {
   /** a record arrived while a sweep was on its list: sweep again right after */
   private again = false;
 
-  constructor(private outbox: CrmCaptureOutbox, private crm: CrmCustomerSync) {}
+  constructor(private outbox: CrmCaptureOutbox, private crm: CrmCustomerSync, private notice: SignupNotice) {}
 
   /** durable at once; the CRM is reached by the sweep this starts, never by the caller's request */
   async enqueue(phoneNumber: string): Promise<void> {
@@ -62,6 +67,13 @@ export class CrmLeadCapture {
    *  starts, never by the caller's request */
   async enqueueSync(userId: string): Promise<void> {
     await this.outbox.addSync(userId, Date.now());
+    this.kick();
+  }
+
+  /** REQ-103 — the new account's email to hello@documonster.com, durable at once; mailed by the
+   *  sweep this starts, never by the sign-up's reply */
+  async enqueueSignupNotice(userId: string): Promise<void> {
+    await this.outbox.addSignupNotice(userId, Date.now());
     this.kick();
   }
 
@@ -96,9 +108,10 @@ export class CrmLeadCapture {
         result.waiting++;
         continue;
       }
-      const who = rec.userId ? `customer of ${rec.userId}` : rec.phone;
+      const who = rec.kind === "signup-notice" ? `signup notice for ${rec.userId}` : rec.userId ? `customer of ${rec.userId}` : rec.phone;
       try {
-        if (rec.userId) await this.crm.ensure(rec.userId); // REQ-098
+        if (rec.kind === "signup-notice") await this.notice.send(rec.userId ?? ""); // REQ-103
+        else if (rec.userId) await this.crm.ensure(rec.userId); // REQ-098
         else await this.crm.capture(rec.phone);
         await this.outbox.done(rec);
         result.landed++;
@@ -107,7 +120,8 @@ export class CrmLeadCapture {
         const next = await this.outbox.defer(rec, Date.now(), why);
         result.deferred++;
         const line = `[crm-lead-capture] ${who} attempt ${next.attempts} failed, next at ${next.nextAt}: ${why}`;
-        if (next.attempts >= LOUD_AFTER_ATTEMPTS) console.error(`${line} — STILL NOT IN THE CRM`);
+        const still = rec.kind === "signup-notice" ? "STILL NOT MAILED" : "STILL NOT IN THE CRM";
+        if (next.attempts >= LOUD_AFTER_ATTEMPTS) console.error(`${line} — ${still}`);
         else console.warn(line);
       }
     }

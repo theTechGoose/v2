@@ -6,7 +6,9 @@
  * ["crm-capture", "user", userId] → PendingCapture with the userId, carried by ensure. REQ-099 — a save
  * made while that sync is in flight re-marks the record (a new enqueuedAt); the running sweep's
  * done() then leaves it, lease cleared, for the sweep that follows, so the CRM ends up with the
- * profile as last saved.
+ * profile as last saved. REQ-103 — the sign-up's email to hello@documonster.com rides it too:
+ * ["crm-capture", "signup-notice", userId] → PendingCapture with kind "signup-notice", carried by
+ * SignupNotice.send.
  */
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
@@ -14,8 +16,10 @@ import { backoffMs, LEASE_MS, type PendingCapture } from "@users/domain/business
 
 const PREFIX = "crm-capture";
 
-/** the record's key: a lead by its phone, a customer sync (REQ-098) by its account */
-const keyOf = (rec: Pick<PendingCapture, "phone" | "userId">): Deno.KvKey => rec.userId ? [PREFIX, "user", rec.userId] : [PREFIX, rec.phone];
+/** the record's key: a lead by its phone, a customer sync (REQ-098) by its account, a signup notice
+ *  (REQ-103) by its account, apart from the sync */
+const keyOf = (rec: Pick<PendingCapture, "phone" | "userId" | "kind">): Deno.KvKey =>
+  rec.kind === "signup-notice" ? [PREFIX, "signup-notice", rec.userId ?? ""] : rec.userId ? [PREFIX, "user", rec.userId] : [PREFIX, rec.phone];
 
 @Injectable()
 export class CrmCaptureOutbox {
@@ -48,6 +52,17 @@ export class CrmCaptureOutbox {
     await kv.atomic().check(existing).set(key, rec).commit();
   }
 
+  /** REQ-103 — the new account's signup notice, a record of its own; an existing one is kept as it is */
+  async addSignupNotice(userId: string, now: number): Promise<void> {
+    const kv = await this.kv();
+    const key = keyOf({ phone: "", userId, kind: "signup-notice" });
+    const existing = await kv.get<PendingCapture>(key);
+    if (existing.value) return;
+    const at = new Date(now).toISOString();
+    const rec: PendingCapture = { phone: "", userId, kind: "signup-notice", enqueuedAt: at, attempts: 0, nextAt: at };
+    await kv.atomic().check(existing).set(key, rec).commit();
+  }
+
   async list(): Promise<PendingCapture[]> {
     const kv = await this.kv();
     const out: PendingCapture[] = [];
@@ -73,14 +88,14 @@ export class CrmCaptureOutbox {
     const current = await kv.get<PendingCapture>(key);
     const base = current.value ?? rec;
     const attempts = base.attempts + 1;
-    const next: PendingCapture = { phone: base.phone, ...(base.userId ? { userId: base.userId } : {}), enqueuedAt: base.enqueuedAt, attempts, nextAt: new Date(now + backoffMs(attempts)).toISOString(), lastError: error.slice(0, 300) };
+    const next: PendingCapture = { phone: base.phone, ...(base.userId ? { userId: base.userId } : {}), ...(base.kind ? { kind: base.kind } : {}), enqueuedAt: base.enqueuedAt, attempts, nextAt: new Date(now + backoffMs(attempts)).toISOString(), lastError: error.slice(0, 300) };
     await kv.set(key, next);
     return next;
   }
 
   /** the CRM answered for the record as the sweep claimed it: gone — unless it was re-marked
    *  meanwhile (REQ-099), in which case it stays, lease cleared, for the sweep that follows */
-  async done(rec: Pick<PendingCapture, "phone" | "userId" | "enqueuedAt">): Promise<void> {
+  async done(rec: Pick<PendingCapture, "phone" | "userId" | "kind" | "enqueuedAt">): Promise<void> {
     const kv = await this.kv();
     const key = keyOf(rec);
     const current = await kv.get<PendingCapture>(key);
