@@ -5,6 +5,8 @@
  */
 import { backOf, fakeReturnHref, merchantOf, pageAfterPick, payPageOf, pickErrorOf, pickErrorQuery, resumesAfterPlan } from "../../front-end/lib/plan-return";
 import { afterPickOf, handoffNext, handoffOf, handoffPage, planViewOf } from "../../front-end/lib/plan-return";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 describe("REQ-059 plan-return", () => {
   test("REQ-059 a pending paid pick goes to its pay page; free and active go nowhere", () => {
@@ -110,6 +112,23 @@ describe("REQ-106 pay hand-off", () => {
     expect(handoffNext({ status: "free" }, "/welcome")).toBe("/welcome?after=plan");
     expect(handoffNext({ status: "active" }, "/settings")).toBe("/settings");
     expect(handoffNext(null, "/settings")).toBe("/settings");
+  });
+
+  test("REQ-106 the hand-off page is the route /plan/pay: unlinked and noindex, a visitor without a session goes home, and its island polls the plan and moves on the hand-off rules", () => {
+    const route = readFileSync(join(__dirname, "../../front-end/routes/plan/pay.tsx"), "utf8");
+    expect(route).toContain('<meta name="robots" content="noindex" />');
+    expect(route).toContain('headers: { Location: "/" }');
+    expect(route).toContain("<PayHandoff lang={lang} back={back} />");
+    expect(route).toContain('backOf(ctx.url.searchParams.get("back") ?? "")');
+    const island = readFileSync(join(__dirname, "../../front-end/islands/PayHandoff.tsx"), "utf8");
+    expect(island).toContain("planClient.get()");
+    expect(island).toContain("handoffNext(read, back)");
+    expect(island).toContain("location.replace(next)");
+    expect(island).toContain('data-cy="plan-handoff"');
+    expect(island).toContain('tFor(lang, "planHandoff.heading")');
+    // the pick sends the browser there
+    const pick = readFileSync(join(__dirname, "../../front-end/routes/plan/pick.tsx"), "utf8");
+    expect(pick).toContain("redirect(afterPickOf(r.data, back))");
   });
 
   test("REQ-106 the cards pages show a pending pick as its page, as being prepared, or as the cards again after a refusal", () => {
