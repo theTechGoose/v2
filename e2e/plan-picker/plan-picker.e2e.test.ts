@@ -371,7 +371,14 @@ Deno.test("REQ-062: a person who never finishes is 'unknown dragon mcdragonson' 
     expect.eq(crm?.customerName, "Dragon Story", "the same record");
   }));
 
-Deno.test("REQ-064: the test tier is nowhere on the site; /plan/test?merchant=alpha shows its one $1 card, the pay page carries the merchant, and settings reads it paid once with no billing", (t) =>
+/** REQ-100 — the pay page's footer: the one account the charge goes through, printed by name */
+async function payPageFooter(page: StoryTools["page"]): Promise<{ account: string; text: string }> {
+  const footer = page.locator("[data-cy='fake-pay-account']");
+  await footer.waitFor({ timeout: 60_000 });
+  return { account: (await footer.getAttribute("data-account")) ?? "", text: (await footer.innerText()).trim() };
+}
+
+Deno.test("REQ-064: the test tier is nowhere on the site; /plan/test shows its one $1 card, the pay page carries the account (sandbox, REQ-101), and settings reads it paid once with no billing", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.goto("/?lang=en");
     await expect.see("Monster Free");
@@ -381,12 +388,12 @@ Deno.test("REQ-064: the test tier is nowhere on the site; /plan/test?merchant=al
     await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
     expect.eq(await page.locator("[data-cy='plan-pick-test']").count(), 0, "no test card in settings");
     expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 1, "the real plans are");
-    // the one page that offers it, with the merchant account as its query param
-    await page.goto("/plan/test?merchant=alpha");
+    // the one page that offers it; nothing named = the fake account, sandbox (REQ-101)
+    await page.goto("/plan/test");
     await expect.see("Monster Test");
     await expect.see("$1");
     const payPage = await pickGoesToPayPage(page, "plan-pick-test");
-    expect.eq(payPage.searchParams.get("merchant"), "alpha", "the merchant rides on the pay page's url");
+    expect.eq(payPage.searchParams.get("account"), "sandbox", "the account rides on the pay page's url");
     await payAndGoBack(page, expect);
     await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
     await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
@@ -395,7 +402,71 @@ Deno.test("REQ-064: the test tier is nowhere on the site; /plan/test?merchant=al
     expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 1, "the real plans stay cards");
     expect.eq(await page.locator("[data-cy='plan-pick-test']").count(), 0, "still no test card");
     const plan = await (await http("/api/me/plan", { headers: auth })).json();
-    expect(plan.planId === "test" && plan.status === "active" && plan.merchant === "alpha" && !plan.subscriptionId, `test · active · alpha, no billing (${JSON.stringify(plan)})`);
+    expect(plan.planId === "test" && plan.status === "active" && plan.merchant === "sandbox" && !plan.subscriptionId, `test · active · sandbox, no billing (${JSON.stringify(plan)})`);
     const customer = await crmCustomer(http, auth);
     expect(customer.tier === "Lead", `the CRM tier stays Lead (${customer.tier})`);
+  }));
+
+/**
+ * REQ-100 — "THE FOOTER SHOWS WHAT FUCKING MERCHANT ACCOUNT IS BEING USED. ONE FUCKING SOURCE OF
+ * TRUTH SO IT CANNOT BE MIXED UP." A real customer's $99 (NMI 12670394611, 2026-10-12) went
+ * through the sandbox account because an env var on Deploy said so while nothing on the page
+ * did. Now: a plan pick names `primary`, the one rule in shared/quote-flow/merchant-accounts.ts;
+ * the pay link carries that name on its url, the page prints it in its footer, and the plan's
+ * record and the monthly billing carry the same name. No env var is read.
+ */
+Deno.test("REQ-100: a paid pick from onboarding lands on a pay page whose footer reads the one account the charge goes through — primary — the same name the pay link and the plan's record carry", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl, { name: "Truth Story", email: `truth-${digits()}@blackhole.postmarkapp.com` });
+    await page.goto("/welcome");
+    await fillStep(page, "input.welcome__input", "Truth Roofing LLC");
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("best email");
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("Pick your plan");
+    const payPage = await pickGoesToPayPage(page, "plan-pick-monster");
+    expect.eq(payPage.searchParams.get("account"), "primary", "the link names the account on its url");
+    const footer = await payPageFooter(page);
+    expect.eq(footer.account, "primary", "the footer is bound to the link's account");
+    expect(footer.text.toLowerCase().includes("primary"), `the footer prints the account by name (${footer.text})`); // drawn in capitals, as the CRM's footer is
+    const pending = await (await http("/api/me/plan", { headers: auth })).json();
+    expect(pending.status === "pending" && pending.merchant === "primary", `the plan's record says primary (${JSON.stringify(pending)})`);
+    expect(new URL(pending.payUrl).searchParams.get("account") === "primary", "and holds the same link");
+    await payAndGoBack(page, expect);
+    await page.waitForURL((u: URL) => u.pathname === "/welcome", { timeout: 60_000 });
+    await expect.see("Which state");
+    const plan = await (await http("/api/me/plan", { headers: auth })).json();
+    expect(plan.planId === "monster" && plan.status === "active" && plan.merchant === "primary", `monster · active · primary (${JSON.stringify(plan)})`);
+  }));
+
+/**
+ * REQ-101 — "PRIMARY IS THE ACUTAL ACCOUNT AND SANDBOX IS THE FAKE ACCOUNT BUT WE CAN ADD MORE."
+ * The accounts are defined on the CRM's Accounts tab; the $1 test page charges sandbox unless its
+ * address names another; a name the CRM has no record of is refused by name and nothing is charged.
+ */
+Deno.test("REQ-101: /plan/test charges sandbox unless its address names another account; ?merchant=primary charges primary; a name not on record is refused and nothing is charged", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl, { name: "Accounts Story", email: `accounts-${digits()}@blackhole.postmarkapp.com` });
+    // nothing named: the fake account
+    await page.goto("/plan/test");
+    await expect.see("Merchant account: sandbox");
+    let payPage = await pickGoesToPayPage(page, "plan-pick-test");
+    expect.eq(payPage.searchParams.get("account"), "sandbox", "sandbox on the url");
+    expect.eq((await payPageFooter(page)).account, "sandbox", "sandbox in the footer");
+    // the real account, named on the address
+    await page.goto("/plan/test?merchant=primary");
+    await expect.see("Merchant account: primary");
+    payPage = await pickGoesToPayPage(page, "plan-pick-test");
+    expect.eq(payPage.searchParams.get("account"), "primary", "primary on the url");
+    expect.eq((await payPageFooter(page)).account, "primary", "primary in the footer");
+    const primary = await (await http("/api/me/plan", { headers: auth })).json();
+    expect(primary.planId === "test" && primary.merchant === "primary", `the record says primary (${JSON.stringify(primary)})`);
+    // a name the CRM has no record of: refused by name, back on the page, nothing minted
+    await page.goto("/plan/test?merchant=alpha");
+    await expect.see("Merchant account: alpha");
+    await page.locator("[data-cy='plan-pick-test']").click();
+    await page.waitForURL((u: URL) => u.pathname === "/settings" && u.searchParams.get("plan") === "merchant-unknown", { timeout: 60_000 });
+    await expect.see("not on record");
+    const after = await (await http("/api/me/plan", { headers: auth })).json();
+    expect(after.merchant === "primary" && after.payUrl === primary.payUrl, `the plan is as it was: nothing charged, nothing minted (${JSON.stringify(after)})`);
   }));

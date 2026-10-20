@@ -62,7 +62,7 @@ Deno.test("REQ-054 plan — free is free, a paid pick is pending until its due s
   const free = chosen("u1", "free", NOW);
   assertEquals(free, { userId: "u1", planId: "free", status: "free", chosenAt: NOW, updatedAt: NOW });
 
-  const pending = chosen("u1", "monster", NOW, { customerId: "c1", dueId: "d1", payUrl: "https://pay/x" });
+  const pending = chosen("u1", "monster", NOW, { customerId: "c1", dueId: "d1", payUrl: "https://pay/x", merchant: "primary" });
   assertEquals(pending.status, "pending");
   assertEquals(pending.planId, "monster");
   assertEquals(pending.dueId, "d1");
@@ -149,7 +149,7 @@ Deno.test("REQ-061 plan — a month the CRM could not collect is PAST DUE with t
 });
 
 Deno.test("REQ-061 plan — a paid pick over a paid plan remembers the billing it replaces", () => {
-  const link = { customerId: "c-1", dueId: "d-2", payUrl: "http://crm/second" };
+  const link = { customerId: "c-1", dueId: "d-2", payUrl: "http://crm/second", merchant: "primary" };
   assertEquals(chosen("u-1", "assist", "2026-11-01T00:00:00.000Z", link, "s-1").previousSubscriptionId, "s-1");
   assertEquals("previousSubscriptionId" in chosen("u-1", "assist", "2026-11-01T00:00:00.000Z", link), false);
 });
@@ -193,10 +193,14 @@ Deno.test("REQ-064 plan — a paid test tier keeps the CRM tier Lead: a test cha
   assertEquals(tierFor({ ...base, planId: "test", status: "pending" }), LEAD_TIER);
 });
 
-Deno.test("REQ-064 plan — a pick carries the merchant it was made with, and only then", () => {
-  const link = { customerId: "c-1", dueId: "d-1", payUrl: "http://crm/ui/payments/charge?customer=x&due=d-1&merchant=alpha" };
-  assertEquals(chosen("u-1", "test", NOW, { ...link, merchant: "alpha" }).merchant, "alpha");
-  assertEquals("merchant" in chosen("u-1", "monster", NOW, link), false, "no merchant named = none stored");
+// REQ-100 — one source of truth: a paid pick's record always carries the account its charge goes
+// through; a link without one is not a pay link (REQ-064's "none stored" is retired)
+Deno.test("REQ-064/100 plan — a paid pick's record carries the account it was made with, always; a link naming none is refused", () => {
+  const link = { customerId: "c-1", dueId: "d-1", payUrl: "http://crm/ui/payments/charge?customer=x&due=d-1&account=primary" };
+  assertEquals(chosen("u-1", "test", NOW, { ...link, merchant: "sandbox" }).merchant, "sandbox");
+  assertEquals(chosen("u-1", "monster", NOW, { ...link, merchant: "primary" }).merchant, "primary");
+  assertThrows(() => chosen("u-1", "monster", NOW, { ...link, merchant: "" }), Error, "pay-link-missing");
+  assertEquals("merchant" in chosen("u-1", "free", NOW), false, "free has no charge, so no account");
 });
 
 Deno.test("REQ-064 plan — a merchant name is a slug or nothing; anything else is refused by name", () => {

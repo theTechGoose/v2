@@ -1466,7 +1466,7 @@ function PlanCard({ snapshot }: { snapshot: ProfileSnapshot }) {
   const [err, setErr] = useState("");
   useEffect(() => {
     const why = pickErrorOf(location.search);
-    if (why) setErr(tFor(lang, why === "email-required" ? "plan.emailFirstSettings" : "plan.error"));
+    if (why) setErr(tFor(lang, why === "email-required" ? "plan.emailFirstSettings" : why === "merchant-unknown" ? "plan.merchantUnknown" : "plan.error"));
   }, []);
 
   const currentName = plan ? nameOf(plan.planId) : nameOf("free");

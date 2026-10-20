@@ -60,3 +60,14 @@ describe("REQ-064 merchant", () => {
     expect(merchantOf("x".repeat(41))).toBe("");
   });
 });
+
+// REQ-101 — a pick naming an account the CRM has no record of is refused (422): the page the pick
+// came from says so by name, instead of the generic "could not update the plan"
+describe("REQ-101 merchant-unknown", () => {
+  test("REQ-101 the CRM's 422 comes back as ?plan=merchant-unknown, and the page reads it", () => {
+    expect(pickErrorQuery(422)).toBe("?plan=merchant-unknown");
+    expect(pickErrorOf("?plan=merchant-unknown")).toBe("merchant-unknown");
+    expect(pickErrorQuery(409)).toBe("?plan=email-required");
+    expect(pickErrorQuery(502)).toBe("?plan=error");
+  });
+});

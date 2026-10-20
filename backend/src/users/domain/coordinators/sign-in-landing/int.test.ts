@@ -99,7 +99,7 @@ Deno.test("REQ-091 sign-in-landing — a paid pick still waiting on its pay page
   const user = await f.users.create({ phoneNumber: "+15125550914", language: "en", name: "New user" });
   await answerAll(f, user.id, ["plan"]);
   const now = new Date().toISOString();
-  await f.plans.put(chosen(user.id, "monster", now, { customerId: "c-1", dueId: "d-1", payUrl: "https://pay.example/d-1" }));
+  await f.plans.put(chosen(user.id, "monster", now, { customerId: "c-1", dueId: "d-1", payUrl: "https://pay.example/d-1", merchant: "primary" }));
   assertEquals(await f.flow.run(user.id), "/welcome", "pending");
   await resetKv();
 });

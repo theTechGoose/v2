@@ -26,7 +26,8 @@ export interface UserPlan {
   cardLast4?: string;
   /** the billing a paid pick replaces (a switch of plan): canceled once the new one is live */
   previousSubscriptionId?: string;
-  /** REQ-064 — the merchant account the pick named (ppwk-crm REQ-084); absent = the CRM's default */
+  /** REQ-064/100 — the merchant account the charge goes through (the CRM's `x-account`): on every
+   *  paid pick, the one name the pay link, the pay page's footer and the billing share; free has none */
   merchant?: string;
   updatedAt: string;
 }
@@ -36,7 +37,8 @@ export interface UserPlan {
 export interface ChoosePlanDto {
   planId: string;
   back: PickBack;
-  /** REQ-064 — the merchant account, a slug; "" = the CRM's default */
+  /** REQ-064/100 — the merchant account the pick names, a slug; "" = decided by the one rule
+   *  (shared/quote-flow/merchant-accounts.ts: sandbox for the test tier, primary for a real plan) */
   merchant: string;
 }
 
