@@ -11,7 +11,7 @@
  * selection is process-wide and the int lane runs files in parallel.
  */
 import "#reflect-metadata";
-import { assert, assertEquals } from "#std/assert";
+import { assert, assertEquals, assertStringIncludes } from "#std/assert";
 import { DanetApplication, Module } from "#danet/core";
 import { UsersModule } from "@users/mod-root.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
@@ -20,6 +20,10 @@ import {
   type PaymentsLinkPort,
 } from "@users/domain/data/payments-link/mod.ts";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
+import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
+import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import type { SendEmailInput } from "@communication/domain/data/email-service/mod.ts";
 
 @Module({ imports: [UsersModule] })
 class TestApp {}
@@ -62,6 +66,7 @@ Deno.test("REQ-072 send-otp answers before the CRM capture finishes, and the cap
   const app = new DanetApplication();
   await app.init(TestApp);
   app.get(PaymentsLink).portOverride = door;
+  app.get(SignupNotice).email = { send: () => Promise.resolve({ ok: true }) }; // REQ-103 — its own test; no mail leaves the box
   await app.listen(PORT);
   try {
     const res = await fetch(`http://localhost:${PORT}/auth/send-otp`, {
@@ -118,6 +123,7 @@ Deno.test("REQ-082 send-otp answers with the dev code on the fakes, and that cod
   const app = new DanetApplication();
   await app.init(TestApp);
   app.get(PaymentsLink).portOverride = door;
+  app.get(SignupNotice).email = { send: () => Promise.resolve({ ok: true }) }; // REQ-103 — its own test; no mail leaves the box
   await app.listen(PORT + 1);
   try {
     const phone = "+15125550082";
@@ -188,6 +194,7 @@ Deno.test("REQ-098 verify-otp for a new account answers before the CRM has made 
   const app = new DanetApplication();
   await app.init(TestApp);
   app.get(PaymentsLink).portOverride = door;
+  app.get(SignupNotice).email = { send: () => Promise.resolve({ ok: true }) }; // REQ-103 — its own test; no mail leaves the box
   await app.listen(PORT + 2);
   try {
     const phone = "+15125550098";
@@ -224,9 +231,9 @@ Deno.test("REQ-098 verify-otp for a new account answers before the CRM has made 
     );
     const outbox = new CrmCaptureOutbox();
     assertEquals(
-      (await outbox.list()).map((r) => r.userId).filter(Boolean),
+      (await outbox.list()).filter((r) => r.userId && !r.kind).map((r) => r.userId),
       [v.userId],
-      "pending in KV until the CRM answers",
+      "the sync is pending in KV until the CRM answers (the notice is REQ-103's record)",
     );
     release();
     const t1 = Date.now();
@@ -235,6 +242,110 @@ Deno.test("REQ-098 verify-otp for a new account answers before the CRM has made 
     }
     assertEquals(await outbox.list(), [], "landed → cleared");
   } finally {
+    release();
+    await app.close();
+    twilio === undefined
+      ? Deno.env.delete("TWILIO_ACCOUNT_SID")
+      : Deno.env.set("TWILIO_ACCOUNT_SID", twilio);
+    await resetKv();
+  }
+});
+
+// REQ-103 — Raphael, 2026-10-20: "if somone signs up we need to generate an email to
+// hello@documonster.com." Every sign-up site enqueues the notice next to the CRM customer
+// (REQ-098) and the sweep mails it after the reply. The CRM door answers at once here (REQ-098 is
+// its own test); the mail is held until the test lets it go — as Postmark's wire holds the real one.
+Deno.test("REQ-103 a sign-up — by phone on /auth/verify-otp and /auth/verify, by email, by start-fresh — answers at once, and the email to hello@documonster.com goes out after the reply with the account on it; a sign-in to an existing account sends none", async () => {
+  const door = { createCustomer: () => Promise.resolve({ customerId: "c-103" }) } as unknown as PaymentsLinkPort;
+  const mails: SendEmailInput[] = [];
+  let received: () => void = () => {};
+  const receivedP = new Promise<void>((r) => (received = r));
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  let hold = true;
+  const twilio = Deno.env.get("TWILIO_ACCOUNT_SID");
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("TWILIO_ACCOUNT_SID"); // SMS in dev mode: nothing leaves the box
+  await resetKv();
+  const app = new DanetApplication();
+  await app.init(TestApp);
+  app.get(PaymentsLink).portOverride = door;
+  app.get(SignupNotice).email = {
+    async send(input: SendEmailInput) {
+      mails.push(input);
+      if (hold) {
+        received();
+        await held;
+      }
+      return { ok: true, messageId: `m-${mails.length}` };
+    },
+  };
+  await app.listen(PORT + 3);
+  const base = `http://localhost:${PORT + 3}`;
+  const json = { "content-type": "application/json" };
+  const post = (path: string, body: unknown) => fetch(`${base}${path}`, { method: "POST", headers: json, body: JSON.stringify(body) });
+  const outbox = new CrmCaptureOutbox();
+  const settled = async () => {
+    const t = Date.now();
+    while ((await outbox.list()).length > 0 && Date.now() - t < 5000) await new Promise((r) => setTimeout(r, 20));
+    assertEquals(await outbox.list(), [], "the outbox is clear");
+  };
+  try {
+    // by phone, the code the page got — /auth/verify-otp — while Postmark holds the mail
+    const phone = "+15125550103";
+    const sent = await (await post("/auth/send-otp", { phoneNumber: phone, language: "es" })).json();
+    assertEquals(sent.sent, true, JSON.stringify(sent));
+    const t0 = Date.now();
+    const v = await (await timeout(post("/auth/verify-otp", { phoneNumber: phone, code: sent.devCode }), 5000, "the verify reply while the mail is held")).json();
+    assertEquals(v.isNewUser, true, JSON.stringify(v));
+    assert(Date.now() - t0 < 3000, `the reply did not wait for the mail (${Date.now() - t0} ms)`);
+    await timeout(receivedP, 5000, "the notice reaching Postmark");
+    assertEquals(mails.length, 1);
+    assertEquals(mails[0].to, "hello@documonster.com");
+    assertEquals(mails[0].subject, `New DocuMonster signup — ${phone}`);
+    assertStringIncludes(mails[0].htmlBody, "by phone");
+    assertStringIncludes(mails[0].htmlBody, `<strong>User ID:</strong> ${v.userId}`);
+    assertEquals((await outbox.list()).filter((r) => r.kind === "signup-notice").map((r) => r.userId), [v.userId], "pending in KV until Postmark answers");
+    hold = false;
+    release();
+    await settled();
+
+    // the same account signs in again — /auth/verify with the master code: no mail
+    const again = await (await post("/auth/verify", { phoneNumber: phone, code: "000000" })).json();
+    assertEquals(again.isNewUser, false, JSON.stringify(again));
+    await app.get(CrmLeadCapture).drain();
+    assertEquals(mails.length, 1, "a sign-in is not a sign-up");
+
+    // a new phone on /auth/verify, the other phone route
+    const phone2 = "+15125550104";
+    const v2 = await (await post("/auth/verify", { phoneNumber: phone2, code: "000000" })).json();
+    assertEquals(v2.isNewUser, true, JSON.stringify(v2));
+    await settled();
+    assertEquals(mails.length, 2);
+    assertEquals(mails[1].subject, `New DocuMonster signup — ${phone2}`);
+
+    // by email — /auth/verify-email-otp (REQ-050), an address no account has yet
+    const email = "ana.103@blackhole.postmarkapp.com";
+    const v3 = await (await post("/auth/verify-email-otp", { email, code: "000000" })).json();
+    assertEquals(v3.isNewUser, true, JSON.stringify(v3));
+    await settled();
+    assertEquals(mails.length, 3);
+    assertEquals(mails[2].subject, `New DocuMonster signup — ${email}`);
+    assertStringIncludes(mails[2].htmlBody, "by email");
+
+    // start-fresh on a closed account (REQ-039): a new account on the number is a sign-up
+    await app.get(UserStore).delete(v.userId);
+    const closed = await (await post("/auth/verify", { phoneNumber: phone, code: "000000" })).json();
+    assertEquals(closed.recoverable, true, JSON.stringify(closed));
+    const v4 = await (await post("/auth/start-fresh", { token: closed.recoveryToken })).json();
+    assertEquals(v4.isNewUser, true, JSON.stringify(v4));
+    assert(v4.userId !== v.userId, "a new account, not the old one back");
+    await settled();
+    assertEquals(mails.length, 4);
+    assertEquals(mails[3].subject, `New DocuMonster signup — ${phone}`);
+    assertStringIncludes(mails[3].htmlBody, `<strong>User ID:</strong> ${v4.userId}`);
+  } finally {
+    hold = false;
     release();
     await app.close();
     twilio === undefined

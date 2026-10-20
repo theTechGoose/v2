@@ -20,6 +20,7 @@ import {
   type PaymentsLinkPort,
 } from "@users/domain/data/payments-link/mod.ts";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
+import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 
 @Module({ imports: [UsersModule] })
 class TestApp {}
@@ -55,6 +56,7 @@ Deno.test("REQ-099 the wizard's saves — PUT /me, PUT /profile/identity, POST /
   const app = new DanetApplication();
   await app.init(TestApp);
   app.get(PaymentsLink).portOverride = door;
+  app.get(SignupNotice).email = { send: () => Promise.resolve({ ok: true }) }; // REQ-103 — its own test; no mail leaves the box
   await app.listen(PORT);
   const base = `http://localhost:${PORT}`;
   const json = { "content-type": "application/json" };
@@ -86,7 +88,7 @@ Deno.test("REQ-099 the wizard's saves — PUT /me, PUT /profile/identity, POST /
     }
     assertEquals(seen.length, 1, "one customer write is on the CRM, held; the saves did not line up behind it");
     const outbox = new CrmCaptureOutbox();
-    assertEquals((await outbox.list()).map((r) => r.userId).filter(Boolean), [v.userId], "the account's sync is pending in KV, re-marked by the saves");
+    assertEquals((await outbox.list()).filter((r) => r.userId && !r.kind).map((r) => r.userId), [v.userId], "the account's sync is pending in KV, re-marked by the saves (the notice is REQ-103's record)");
     release();
     const t1 = Date.now();
     while ((await outbox.list()).length > 0 && Date.now() - t1 < 5000) await new Promise((r) => setTimeout(r, 20));

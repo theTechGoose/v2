@@ -5,6 +5,8 @@
 import { assert, assertEquals, assertStringIncludes } from "#std/assert";
 import type { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import type { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
+import type { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
+import type { PendingCapture } from "@users/domain/business/lead-capture-retry/mod.ts";
 import { CrmLeadCapture } from "./mod.ts";
 
 function capture(method: "warn" | "error") {
@@ -20,7 +22,7 @@ Deno.test("REQ-073 drain — an outbox that cannot be read resolves with the fai
   const crm = { capture: () => Promise.resolve({ customerId: "never" }) } as unknown as CrmCustomerSync;
   const logged = capture("error");
   try {
-    const result = await new CrmLeadCapture(outbox, crm).drain();
+    const result = await new CrmLeadCapture(outbox, crm, {} as SignupNotice).drain();
     assertEquals(result, { landed: 0, deferred: 0, waiting: 0, failed: "kv closed" });
     assertEquals(logged.lines.length, 1);
     assertStringIncludes(logged.lines[0], "kv closed");
@@ -31,7 +33,7 @@ Deno.test("REQ-073 drain — an outbox that cannot be read resolves with the fai
 
 Deno.test("REQ-074 registerSweep — the minute sweep is an in-isolate timer: Deno.cron is never called", () => {
   const outbox = { list: () => Promise.resolve([]) } as unknown as CrmCaptureOutbox;
-  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync);
+  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync, {} as SignupNotice);
   const deno = Deno as unknown as { cron?: unknown };
   const hadCron = Object.getOwnPropertyDescriptor(Deno, "cron");
   let cronCalls = 0;
@@ -59,7 +61,7 @@ Deno.test("REQ-074 registerSweep — the timer fires every 60 s and each tick sw
       return Promise.resolve([]);
     },
   } as unknown as CrmCaptureOutbox;
-  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync);
+  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync, {} as SignupNotice);
   const held: { tick?: () => void; everyMs?: number } = {};
   const timer = (fn: () => void, ms: number) => {
     held.tick = fn;
@@ -115,7 +117,7 @@ Deno.test("REQ-098 sweep — a record carrying a userId is the account's custome
       return Promise.resolve({ customerId: "c-user" });
     },
   } as unknown as CrmCustomerSync;
-  assertEquals(await new CrmLeadCapture(outbox, crm).drain(Date.parse(at) + 1), { landed: 2, deferred: 0, waiting: 0 });
+  assertEquals(await new CrmLeadCapture(outbox, crm, {} as SignupNotice).drain(Date.parse(at) + 1), { landed: 2, deferred: 0, waiting: 0 });
   assertEquals(calls, ["capture +15125550098", "ensure u-98"]);
   assertEquals(cleared, [lead, sync]);
 });
@@ -131,11 +133,73 @@ Deno.test("REQ-098 a record enqueued while a sweep is running is swept right aft
     add: () => Promise.resolve(),
     addSync: () => Promise.resolve(),
   } as unknown as CrmCaptureOutbox;
-  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync);
+  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync, {} as SignupNotice);
   const first = leads.drain(Date.parse(at));
   await leads.enqueueSync("u-98"); // arrives while the first sweep is on its list
   await first;
   await tick();
   await tick();
   assertEquals(lists, 2, "a second sweep followed the first for the record that arrived meanwhile");
+});
+
+// REQ-103 — Raphael, 2026-10-20: "if somone signs up we need to generate an email to
+// hello@documonster.com." The signup notice rides the outbox like the customer sync (REQ-098): a
+// record of kind "signup-notice" is carried by SignupNotice.send, never by a sign-up's reply.
+Deno.test("REQ-103 sweep — a signup-notice record is carried by SignupNotice.send and cleared by its record; a send Postmark refused is deferred with the reason, never dropped; the lead and the sync stay theirs", async () => {
+  const at = "2026-10-20T00:00:00.000Z";
+  const lead = { phone: "+15125550103", enqueuedAt: at, attempts: 0, nextAt: at };
+  const sync = { phone: "", userId: "u-103", enqueuedAt: at, attempts: 0, nextAt: at };
+  const notice = { phone: "", userId: "u-103", kind: "signup-notice" as const, enqueuedAt: at, attempts: 0, nextAt: at };
+  const cleared: unknown[] = [];
+  const deferred: [unknown, string][] = [];
+  const outbox = {
+    list: () => Promise.resolve([lead, sync, notice]),
+    claim: () => Promise.resolve(true),
+    done: (rec: unknown) => {
+      cleared.push(rec);
+      return Promise.resolve();
+    },
+    defer: (rec: PendingCapture, _now: number, error: string) => {
+      deferred.push([rec, error]);
+      return Promise.resolve({ ...rec, attempts: rec.attempts + 1, nextAt: at, lastError: error });
+    },
+  } as unknown as CrmCaptureOutbox;
+  const calls: string[] = [];
+  const crm = {
+    capture: (phone: string) => {
+      calls.push(`capture ${phone}`);
+      return Promise.resolve({ customerId: "c-lead" });
+    },
+    ensure: (userId: string) => {
+      calls.push(`ensure ${userId}`);
+      return Promise.resolve({ customerId: "c-user" });
+    },
+  } as unknown as CrmCustomerSync;
+  let refuse = false;
+  const mail = {
+    send: (userId: string) => {
+      calls.push(`notice ${userId}`);
+      return refuse ? Promise.reject(new Error("signup-notice: postmark 500: boom")) : Promise.resolve();
+    },
+  } as unknown as SignupNotice;
+  const leads = new CrmLeadCapture(outbox, crm, mail);
+  assertEquals(await leads.drain(Date.parse(at) + 1), { landed: 3, deferred: 0, waiting: 0 });
+  assertEquals(calls, ["capture +15125550103", "ensure u-103", "notice u-103"]);
+  assertEquals(cleared, [lead, sync, notice], "each record is cleared by its own key");
+
+  // Postmark refused the notice: its record is deferred with the reason; the others still land
+  refuse = true;
+  calls.length = 0;
+  cleared.length = 0;
+  const logged = capture("warn");
+  try {
+    assertEquals(await leads.drain(Date.parse(at) + 1), { landed: 2, deferred: 1, waiting: 0 });
+  } finally {
+    logged.restore();
+  }
+  assertEquals(cleared, [lead, sync], "the refused notice is not cleared");
+  assertEquals(deferred.length, 1);
+  assertEquals(deferred[0][0], notice);
+  assertStringIncludes(deferred[0][1], "postmark 500");
+  assertStringIncludes(logged.lines.at(-1) ?? "", "signup notice for u-103");
 });

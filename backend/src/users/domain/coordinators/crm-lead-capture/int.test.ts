@@ -8,8 +8,8 @@
  *
  * The sweep against a stub CRM door (the PaymentsLink port): no env, no network.
  */
-import { assert, assertEquals } from "#std/assert";
-import { kvCache, resetKv } from "@core/data/kv/mod.ts";
+import { assert, assertEquals, assertStringIncludes } from "#std/assert";
+import { getKv, kvCache, resetKv } from "@core/data/kv/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
@@ -17,8 +17,12 @@ import { PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { CrmLeadCapture } from "./mod.ts";
+import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
+import type { SendEmailInput, SendEmailResult } from "@communication/domain/data/email-service/mod.ts";
 
 type Answer = { status: number } | "hang";
+/** REQ-103 — Postmark as the sweep sees it, for the signup notice */
+type MailAnswer = { ok: boolean; reason?: string } | "hang";
 
 /** the CRM door as the sweep sees it: answers in order, then always yes. No env, no network — the
  *  real client's selection is env-wide and the int lane runs files in parallel. */
@@ -35,9 +39,23 @@ async function fresh(answers: Answer[], outbox = new CrmCaptureOutbox()) {
       return Promise.resolve({ customerId: "c-lead" });
     },
   } as unknown as PaymentsLink;
-  const crm = new CrmCustomerSync(new UserStore(), new BusinessIdentityStore(), link, new PlanStore());
-  const make = () => new CrmLeadCapture(outbox, crm);
-  return { calls, outbox, make };
+  const users = new UserStore();
+  const crm = new CrmCustomerSync(users, new BusinessIdentityStore(), link, new PlanStore());
+  // REQ-103 — the signup notice's sender as the sweep sees it: answers in order, then always ok.
+  // No env: the real one reads POSTMARK_API_KEY, process-wide, and the int lane runs files in parallel.
+  const mails: SendEmailInput[] = [];
+  const mailAnswers: MailAnswer[] = [];
+  const notice = new SignupNotice(users);
+  notice.email = {
+    send(input: SendEmailInput): Promise<SendEmailResult> {
+      mails.push(input);
+      const a = mailAnswers.shift() ?? { ok: true };
+      if (a === "hang") return new Promise<SendEmailResult>(() => {});
+      return Promise.resolve(a.ok ? { ok: true, messageId: `m-${mails.length}` } : { ok: false, reason: a.reason });
+    },
+  };
+  const make = () => new CrmLeadCapture(outbox, crm, notice);
+  return { calls, outbox, make, users, mails, mailAnswers, notice };
 }
 async function done() {
   await resetKv();
@@ -232,7 +250,7 @@ Deno.test("REQ-099 a save made while the account's sync is in flight is not lost
   const outbox = new CrmCaptureOutbox();
   const users = new UserStore();
   const crm = new CrmCustomerSync(users, new BusinessIdentityStore(), link, new PlanStore());
-  const leads = new CrmLeadCapture(outbox, crm);
+  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice); // no notice is enqueued here
   const user = await users.create({ phoneNumber: "+15125550199", language: "en" });
   await leads.enqueueSync(user.id);
   await until(() => inputs.length >= 1);
@@ -245,5 +263,75 @@ Deno.test("REQ-099 a save made while the account's sync is in flight is not lost
   while ((await outbox.list()).length > 0 && Date.now() - t0 < 3000) await new Promise((r) => setTimeout(r, 10));
   assertEquals(await outbox.list(), [], "cleared once the newer profile landed");
   assertEquals(inputs.map((i) => i.contact), [undefined, "Ana"], "the sweep that followed carried the name");
+  await done();
+});
+
+// REQ-103 — Raphael, 2026-10-20: "if somone signs up we need to generate an email to
+// hello@documonster.com." The notice is a KV record before the sign-up replies (the same outbox as
+// the lead and the customer sync); the sweep mails it after, and a mail Postmark refused is retried.
+Deno.test("REQ-103 a signup notice is a KV record before anything is sent, and enqueueSignupNotice never waits on the mail", async () => {
+  const { outbox, make, users, mails, mailAnswers } = await fresh([]);
+  mailAnswers.push("hang");
+  const user = await users.create({ phoneNumber: "+15125550103", language: "es", name: "Nuevo usuario" });
+  const leads = make();
+  const t0 = Date.now();
+  await leads.enqueueSignupNotice(user.id);
+  assert(Date.now() - t0 < 500, "enqueue returned at once while Postmark hangs");
+  const [rec] = (await outbox.list()).filter((r) => r.kind === "signup-notice");
+  assertEquals([rec.userId, rec.attempts], [user.id, 0], "pending in KV, keyed as a signup notice");
+  await until(() => mails.length >= 1);
+  assertEquals(mails.length, 1, "the hung send is in flight; nothing else was sent");
+  await leads.enqueueSignupNotice(user.id);
+  assertEquals((await outbox.list()).filter((r) => r.kind === "signup-notice").length, 1, "enqueued twice is one record");
+  await done();
+});
+
+Deno.test("REQ-103 the sweep mails hello@documonster.com with the account on it and clears the record; a mail Postmark refused keeps the record with its attempts and reason, and a later sweep mails it; an account wiped before its sweep is cleared with no mail", async () => {
+  const { outbox, make, users, mails, mailAnswers } = await fresh([]);
+  const user = await users.create({ phoneNumber: "+15125550104", language: "en", name: "New user" });
+  await outbox.addSignupNotice(user.id, Date.now()); // the request wrote it; the isolate died before any sweep
+  const leads = make();
+  assertEquals(await leads.drain(), { landed: 1, deferred: 0, waiting: 0 });
+  assertEquals(mails.length, 1);
+  assertEquals(mails[0].to, "hello@documonster.com");
+  assertEquals(mails[0].subject, "New DocuMonster signup — +15125550104");
+  assertStringIncludes(mails[0].htmlBody, `<strong>User ID:</strong> ${user.id}`);
+  assertStringIncludes(mails[0].htmlBody, `<strong>Signed up:</strong> ${user.createdAt}`);
+  assertEquals(await outbox.list(), [], "mailed → gone");
+
+  // Postmark refuses twice, then takes it
+  const second = await users.create({ phoneNumber: "+15125550105", language: "es" });
+  mailAnswers.push({ ok: false, reason: "postmark 503: down" }, { ok: false, reason: "postmark 500: boom" });
+  await outbox.addSignupNotice(second.id, Date.now());
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => warned.push(args.map(String).join(" "));
+  try {
+    assertEquals(await leads.drain(), { landed: 0, deferred: 1, waiting: 0 });
+    const [rec] = await outbox.list();
+    assertEquals([rec.kind, rec.userId, rec.attempts], ["signup-notice", second.id, 1]);
+    assertStringIncludes(rec.lastError ?? "", "postmark 503");
+    assert(Date.parse(rec.nextAt) > Date.now(), "not due again at once — backoff");
+    assertEquals(await leads.drain(), { landed: 0, deferred: 0, waiting: 1 }, "a sweep before its time leaves it alone");
+    assertEquals(await leads.drain(Date.parse(rec.nextAt)), { landed: 0, deferred: 1, waiting: 0 });
+    const [rec2] = await outbox.list();
+    assertEquals([rec2.kind, rec2.attempts], ["signup-notice", 2]);
+    assertEquals(await leads.drain(Date.parse(rec2.nextAt)), { landed: 1, deferred: 0, waiting: 0 });
+    assertEquals(mails.length, 4, "three tries for the second account, one for the first");
+    assertEquals(mails.at(-1)?.subject, "New DocuMonster signup — +15125550105");
+    assertEquals(await outbox.list(), []);
+    assertStringIncludes(warned[0] ?? "", "signup notice for");
+
+    // wiped before the sweep got to it (GET /me/wipe hard-deletes): nothing to tell, the record clears
+    const third = await users.create({ phoneNumber: "+15125550106" });
+    await outbox.addSignupNotice(third.id, Date.now());
+    await (await getKv()).delete(["user", third.id]);
+    assertEquals(await leads.drain(), { landed: 1, deferred: 0, waiting: 0 });
+    assertEquals(mails.length, 4, "no mail for an account that is gone");
+    assertEquals(await outbox.list(), []);
+    assertStringIncludes(warned.at(-1) ?? "", third.id);
+  } finally {
+    console.warn = warn;
+  }
   await done();
 });

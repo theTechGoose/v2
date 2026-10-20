@@ -9,6 +9,9 @@ export interface PendingCapture {
   /** REQ-098 — a customer sync record: the account whose CRM customer the sweep makes or revises
    *  (CrmCustomerSync.ensure), keyed apart from the leads */
   userId?: string;
+  /** REQ-103 — a signup notice record: the new account's email to hello@documonster.com
+   *  (SignupNotice.send), keyed apart from the lead and the sync; `userId` names the account */
+  kind?: "signup-notice";
   enqueuedAt: string;
   attempts: number;
   /** ISO — not tried before this */

@@ -62,6 +62,7 @@ export class AuthController {
     private verifyEmailOtp: VerifyEmailOtp,
     /** REQ-058 — a new account is a CRM customer from its first sign-in */
     /** REQ-072 — the login's lead capture: durable, never awaited by the request */
+    /** REQ-103 — and the sign-up's email to hello@documonster.com, the same way */
     private leads: CrmLeadCapture,
     /** REQ-091 — where a verified code lands: the wizard while an onboarding question is open */
     private landing: SignInLanding,
@@ -120,7 +121,10 @@ export class AuthController {
         email: dto.email,
         code: dto.code,
       });
-      if (result.isNewUser) await this.leads.enqueueSync(result.userId); // REQ-098
+      if (result.isNewUser) {
+        await this.leads.enqueueSync(result.userId); // REQ-098
+        await this.leads.enqueueSignupNotice(result.userId); // REQ-103
+      }
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         ok: true,
@@ -168,6 +172,7 @@ export class AuthController {
     try {
       const result = await this.recovery.startFresh(token);
       await this.leads.enqueueSync(result.userId); // REQ-098
+      await this.leads.enqueueSignupNotice(result.userId); // REQ-103
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         ok: true,
@@ -251,7 +256,11 @@ export class AuthController {
         code: dto.code,
       });
       // REQ-098 — the CRM customer is an outbox record; the sweep makes it after this reply
-      if (result.isNewUser) await this.leads.enqueueSync(result.userId);
+      // REQ-103 — so is the sign-up's email to hello@documonster.com
+      if (result.isNewUser) {
+        await this.leads.enqueueSync(result.userId);
+        await this.leads.enqueueSignupNotice(result.userId);
+      }
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         ok: true,
@@ -295,7 +304,11 @@ export class AuthController {
         code: dto.code,
       });
       // REQ-098 — the CRM customer is an outbox record; the sweep makes it after this reply
-      if (result.isNewUser) await this.leads.enqueueSync(result.userId);
+      // REQ-103 — so is the sign-up's email to hello@documonster.com
+      if (result.isNewUser) {
+        await this.leads.enqueueSync(result.userId);
+        await this.leads.enqueueSignupNotice(result.userId);
+      }
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         sessionId: result.sessionId,
