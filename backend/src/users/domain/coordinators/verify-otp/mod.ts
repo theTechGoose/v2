@@ -5,8 +5,6 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import { deriveLanguageOnVerify } from "@users/domain/business/derive-language/mod.ts";
-import type { User } from "@users/dto/user.ts";
-import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { issueRecoveryToken } from "@users/domain/data/recovery-token-store/mod.ts";
 import { isPlaceholderName, placeholderNameFor } from "@users/domain/business/placeholder-name/mod.ts";
 
@@ -24,22 +22,6 @@ export class AccountClosedError extends Error {
 }
 
 const MAX_ATTEMPTS = 5;
-
-/** New-user team alert — OFF for now. Flip SIGNUP_NOTIFY_ENABLED=1 in the env
- *  to turn the first-time-signup email back on. Recipients default to the team
- *  list and are overridable via SIGNUP_NOTIFY_EMAILS (comma-separated). Fires
- *  ONLY on first-time signup, never on login. */
-const SIGNUP_NOTIFY_ENABLED = typeof Deno !== "undefined" &&
-  Deno.env.get("SIGNUP_NOTIFY_ENABLED") === "1";
-const DEFAULT_SIGNUP_NOTIFY = [
-  "hp@hans.work",
-  "raphael@rcincorporated.net",
-];
-function signupNotifyRecipients(): string[] {
-  const raw = (typeof Deno !== "undefined" && Deno.env.get("SIGNUP_NOTIFY_EMAILS")) || "";
-  const parsed = raw.split(",").map((s) => s.trim()).filter(Boolean);
-  return parsed.length ? parsed : DEFAULT_SIGNUP_NOTIFY;
-}
 
 export { placeholderNameFor };
 
@@ -77,6 +59,9 @@ export interface VerifyOtpResult { sessionId: string; userId: string; isNewUser:
  *   5. Match: clear the OTP, find or create the User, copy `language` from
  *      the OTP record into a brand-new user (see derive-language).
  *   6. Create + return a fresh session.
+ *
+ * REQ-103 — a new account's email to hello@documonster.com is the controller's record on the
+ * outbox (CrmLeadCapture.enqueueSignupNotice), mailed by the sweep after the reply — never here.
  */
 @Injectable()
 export class VerifyOtp {
@@ -86,43 +71,6 @@ export class VerifyOtp {
     private sessions: SessionStore,
     private businessIdentities: BusinessIdentityStore,
   ) {}
-
-  /** EmailService is stateless (no injected deps) and UsersModule can't
-   *  resolve it from DI (it lives in CommunicationModule, which imports
-   *  UsersModule, not vice-versa), so we instantiate it directly. */
-  private readonly email = new EmailService();
-
-  /** Best-effort internal alert when a brand-new user is created. OFF unless
-   *  SIGNUP_NOTIFY_ENABLED=1 (returns immediately otherwise). Never throws — a
-   *  notification hiccup must not break signup/login. Awaited by callers so the
-   *  dispatch completes before the request returns (fire-and-forget is
-   *  unreliable on Deno Deploy, which can cut work after the response). */
-  private async notifyNewSignup(user: User): Promise<void> {
-    if (!SIGNUP_NOTIFY_ENABLED) return;
-    try {
-      const recipients = signupNotifyRecipients();
-      if (recipients.length === 0) return;
-      const [to, ...cc] = recipients;
-      const when = new Date().toISOString();
-      const htmlBody = `<h2>New DocuMonster signup 🎉</h2>` +
-        `<p>A new contractor just created an account.</p>` +
-        `<ul>` +
-        `<li><strong>Phone:</strong> ${user.phoneNumber}</li>` +
-        `<li><strong>Language:</strong> ${user.language ?? "en"}</li>` +
-        `<li><strong>User ID:</strong> ${user.id}</li>` +
-        `<li><strong>Signed up:</strong> ${when}</li>` +
-        `</ul>`;
-      await this.email.send({
-        to,
-        cc: cc.length ? cc : undefined,
-        subject: "🎉 New DocuMonster signup",
-        htmlBody,
-      });
-    } catch (err) {
-      // Swallow — best-effort only.
-      console.error("[verify-otp] new-signup notification failed:", (err as Error).message);
-    }
-  }
 
   async run(input: VerifyOtpInput): Promise<VerifyOtpResult> {
     const phone = normalizePhone(input.phoneNumber);
@@ -158,7 +106,6 @@ export class VerifyOtp {
           await this.businessIdentities.upsert(user.id, { businessName: "Dev Business" });
         }
       }
-      if (!existing) await this.notifyNewSignup(user);
       const session = await this.sessions.create(user.id);
       // Report the real new-user state so the verify proxy can route
       // fresh phones into onboarding the same way the production OTP
@@ -194,7 +141,6 @@ export class VerifyOtp {
           name: placeholderNameFor(language),
         });
 
-    if (!existing) await this.notifyNewSignup(user);
     const session = await this.sessions.create(user.id);
     return { sessionId: session.id, userId: user.id, isNewUser: !existing };
   }

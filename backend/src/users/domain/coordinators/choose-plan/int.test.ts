@@ -9,6 +9,7 @@ import { fakePaymentsWorld, PaymentsLink } from "@users/domain/data/payments-lin
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
+import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 import { ChoosePlan } from "./mod.ts";
 
 async function fresh() {
@@ -22,7 +23,7 @@ async function fresh() {
   const plans = new PlanStore();
   const link = new PaymentsLink();
   const crm = new CrmCustomerSync(users, identity, link, plans);
-  const leads = new CrmLeadCapture(new CrmCaptureOutbox(), crm); // REQ-099 — the tier reaches the CRM by the sweep, after the reply
+  const leads = new CrmLeadCapture(new CrmCaptureOutbox(), crm, new SignupNotice(users)); // REQ-099 — the tier reaches the CRM by the sweep, after the reply
   const flow = new ChoosePlan(users, plans, link, crm, leads);
   return { users, identity, plans, link, crm, leads, flow };
 }
