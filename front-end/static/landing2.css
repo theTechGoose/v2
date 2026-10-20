@@ -972,8 +972,8 @@
 }
 /* REQ-102 — the day picker slides: the label with the month(s) on view beside it, then the strip —
    an arrow at each end, five days between, a page at a time; the group is re-keyed on every slide
-   so it slides in from the side it came from (the reduced-motion block below stills every .l2
-   animation, this one included) */
+   so it slides in from the side it came from — a shift only, never a fade, so the days are legible
+   at every frame (the reduced-motion block below stills every .l2 animation, this one included) */
 .l2-demo__dayhead {
   display: flex;
   justify-content: space-between;
@@ -1008,21 +1008,17 @@
 @keyframes l2-slide-next {
   from {
     transform: translateX(32px);
-    opacity: 0;
   }
   to {
     transform: none;
-    opacity: 1;
   }
 }
 @keyframes l2-slide-prev {
   from {
     transform: translateX(-32px);
-    opacity: 0;
   }
   to {
     transform: none;
-    opacity: 1;
   }
 }
 .l2-arrow {
