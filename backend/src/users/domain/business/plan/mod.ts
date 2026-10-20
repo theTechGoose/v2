@@ -1,7 +1,7 @@
 // REQ-054 — the pure rules of a plan pick. The catalogue is the ONE pricing module the landing
 // pages read (shared/quote-flow/pricing-plans.ts): what a plan costs here is what the site says.
 import { PRICING_PLANS, type PricingPlan } from "#quote-flow/pricing-plans.ts";
-import type { PlanId, UserPlan } from "@users/dto/plan.ts";
+import type { PayLinkError, PlanId, UserPlan } from "@users/dto/plan.ts";
 
 /** the plans a person can pick: the public monthly ones; Projects is custom — "call us";
  *  test — REQ-064: the hidden $1 one-time tier, picked only from /plan/test */
@@ -100,15 +100,55 @@ export interface PayLinkInfo {
 }
 
 /**
- * the record of a pick: free is free; a paid pick is pending on its due
- * @throws pay-link-missing — a paid pick without the CRM's customer, due, pay page and account
+ * the record of a pick: free is free; a paid pick is pending on its due — from the reply on
+ * (REQ-106): the account the charge goes through is decided here (REQ-100); the CRM's customer,
+ * due and pay page come by the sweep (`minted`) and are absent meanwhile (`isPreparing`)
+ * @throws pay-link-missing — a paid pick without the merchant account the charge goes through
  */
-export function chosen(userId: string, planId: PlanId, now: string, link?: PayLinkInfo, previousSubscriptionId?: string): UserPlan {
+export function chosen(userId: string, planId: PlanId, now: string, link?: Pick<PayLinkInfo, "merchant"> & Partial<PayLinkInfo>, previousSubscriptionId?: string): UserPlan {
   if (planId === "free") return { userId, planId, status: "free", chosenAt: now, updatedAt: now };
-  if (!link?.customerId || !link.dueId || !link.payUrl || !link.merchant) {
-    throw new Error("pay-link-missing: a paid plan needs the CRM's customer, due, pay page and the merchant account the charge goes through");
-  }
-  return { userId, planId, status: "pending", chosenAt: now, updatedAt: now, ...link, ...(previousSubscriptionId ? { previousSubscriptionId } : {}) };
+  if (!link?.merchant) throw new Error("pay-link-missing: a paid plan names the merchant account the charge goes through");
+  const { customerId, dueId, payUrl, merchant } = link;
+  return {
+    userId,
+    planId,
+    status: "pending",
+    chosenAt: now,
+    updatedAt: now,
+    merchant,
+    ...(customerId ? { customerId } : {}),
+    ...(dueId ? { dueId } : {}),
+    ...(payUrl ? { payUrl } : {}),
+    ...(previousSubscriptionId ? { previousSubscriptionId } : {}),
+  };
+}
+
+// ---- REQ-106 — the pay page comes after the reply --------------------------------------------
+// Raphael, 2026-10-20: "when i click a plan in the onboarding flow the payment link takes FOREVER
+// to load … i dont care if it happens asyncronously … what i care about is that the user
+// experience is good."
+
+/** a pending pick whose pay page the sweep has not minted yet */
+export function isPreparing(plan: UserPlan): boolean {
+  return plan.status === "pending" && !plan.payUrl;
+}
+
+/** the sweep's result on the record: the same customer, due and page the reply used to carry;
+ *  a refusal read on it meanwhile is cleared */
+export function minted(plan: UserPlan, link: PayLinkInfo, now: string): UserPlan {
+  const { payLinkError: _cleared, ...rest } = plan;
+  return { ...rest, customerId: link.customerId, dueId: link.dueId, payUrl: link.payUrl, merchant: link.merchant, updatedAt: now };
+}
+
+/** the CRM's answer read on the pick: a name it has no account for (final), or no answer yet (retried) */
+export function payLinkFailed(plan: UserPlan, error: PayLinkError, now: string): UserPlan {
+  return { ...plan, payLinkError: error, updatedAt: now };
+}
+
+/** is this the pick the sweep set out to mint: the same plan, chosen at the same moment, through
+ *  the same account — a newer pick is never written over with the stale page */
+export function samePick(a: UserPlan, b: UserPlan): boolean {
+  return a.planId === b.planId && a.chosenAt === b.chosenAt && a.merchant === b.merchant;
 }
 
 // ---- REQ-061 — monthly billing: the CRM's subscription behind an active plan ----------------

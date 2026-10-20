@@ -20,6 +20,7 @@ import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
+import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts"; // REQ-106
 import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
@@ -35,7 +36,7 @@ function freshFlow() {
   const crm = new CrmCustomerSync(users, identity, new PaymentsLink(), plans);
   const profile = new LoadProfile(
     users, identity, address, insurance, new TaxIdentityStore(), new ContractDefaultsStore(), new ReferenceStore(),
-    new ChoosePlan(users, plans, new PaymentsLink(), crm, new CrmLeadCapture(new CrmCaptureOutbox(), crm, new SignupNotice(users))), // REQ-099
+    new ChoosePlan(users, plans, new PaymentsLink(), crm, new CrmLeadCapture(new CrmCaptureOutbox(), crm, new SignupNotice(users), new PayLinkMint(new PlanStore(), new PaymentsLink(), crm))), // REQ-099
   );
   return { users, identity, address, insurance, plans, flow: new SignInLanding(profile) };
 }

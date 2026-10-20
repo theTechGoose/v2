@@ -31,7 +31,7 @@ import { isAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import { PRICING_PLANS, PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
-import { pickErrorOf, resumesAfterPlan } from "../lib/plan-return.ts";
+import { handoffPage, pickErrorOf, planViewOf, resumesAfterPlan } from "../lib/plan-return.ts";
 import { askedSteps, asksPlan, indexAfterPlan } from "../lib/welcome-steps.ts";
 import { filesClient } from "../clients/files.ts";
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
@@ -1022,16 +1022,19 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
   }, []);
 
   const settled = plan?.status === "active" || plan?.status === "free";
+  // REQ-106 — a pending pick is its page, or the page being prepared (the hand-off page), or —
+  // refused by name — the cards again
+  const view = planViewOf(plan);
 
   return (
     <StepBody question={t("welcome.plan.question")} why={t("welcome.plan.why")}>
-      {plan?.status === "active"
+      {view === "active" && plan
         ? (
           <p class="welcome__plan-active" data-cy="plan-active" role="status">
             ✓ {t("plan.active", { name: nameOf(plan.planId) })}
           </p>
         )
-        : plan?.status === "pending"
+        : view === "pay" && plan
         ? (
           <div class="welcome__plan-pending" data-cy="plan-pending">
             <p class="welcome__plan-pending-lede">
@@ -1040,6 +1043,19 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
             <div class="welcome__plan-actions">
               <a class="welcome__btn welcome__btn--primary" data-cy="plan-pay-link" href={plan.payUrl}>
                 {t("plan.resume")} →
+              </a>
+            </div>
+          </div>
+        )
+        : view === "preparing" && plan
+        ? (
+          <div class="welcome__plan-pending" data-cy="plan-preparing">
+            <p class="welcome__plan-pending-lede">
+              <b>{nameOf(plan.planId)}</b> · {t("plan.preparing")}
+            </p>
+            <div class="welcome__plan-actions">
+              <a class="welcome__btn welcome__btn--primary" data-cy="plan-handoff-link" href={handoffPage("/welcome")}>
+                {t("plan.preparingOpen")} →
               </a>
             </div>
           </div>

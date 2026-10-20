@@ -24,11 +24,20 @@
  * hello@documonster.com." That email rides the same outbox: enqueueSignupNotice(userId) is the record
  * before the sign-up replies, and the sweep mails it (SignupNotice.send) after — a mail Postmark
  * refused is deferred and retried like a CRM refusal, never dropped.
+ * REQ-106 — Raphael, 2026-10-20: "when i click a plan in the onboarding flow the payment link
+ * takes FOREVER to load … i dont care if it happens asyncronously … what i care about is that the
+ * user experience is good." The paid pick's three CRM calls — the customer, the first month's due,
+ * the pay link — ride the same outbox: enqueuePayLink(userId, back) is the record before the pick
+ * replies, and the sweep mints them (PayLinkMint) after it, onto the plan's record. The CRM's
+ * refusal by name is final (the record is cleared, the plan reads it); anything else is deferred
+ * and retried like the rest. A newer pick re-marks the record, like a newer save does.
  */
 import { Injectable } from "#danet/core";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
+import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
+import { type PickBack, pickBackOf } from "@users/domain/business/plan/mod.ts";
 import { isDue } from "@users/domain/business/lead-capture-retry/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 
@@ -55,7 +64,7 @@ export class CrmLeadCapture {
   /** a record arrived while a sweep was on its list: sweep again right after */
   private again = false;
 
-  constructor(private outbox: CrmCaptureOutbox, private crm: CrmCustomerSync, private notice: SignupNotice) {}
+  constructor(private outbox: CrmCaptureOutbox, private crm: CrmCustomerSync, private notice: SignupNotice, private payLink: PayLinkMint) {}
 
   /** durable at once; the CRM is reached by the sweep this starts, never by the caller's request */
   async enqueue(phoneNumber: string): Promise<void> {
@@ -77,9 +86,22 @@ export class CrmLeadCapture {
     this.kick();
   }
 
+  /** REQ-106 — the paid pick's pay page, durable at once; the CRM's customer, due and link are
+   *  made by the sweep this starts, never by the pick's reply */
+  async enqueuePayLink(userId: string, back: PickBack): Promise<void> {
+    await this.outbox.addPayLink(userId, back, Date.now());
+    this.kick();
+  }
+
   private kick(): void {
     if (this.inFlight) this.again = true;
     void this.drain();
+  }
+
+  /** the sweeps this process has in flight or flagged to follow, settled — what a test awaits after
+   *  a reply whose work rides the outbox (a sweep kicked while one runs follows it, REQ-099) */
+  async idle(): Promise<void> {
+    while (this.inFlight) await this.inFlight;
   }
 
   /** never rejects (REQ-073): a sweep that cannot read its outbox is logged and the records wait */
@@ -108,9 +130,10 @@ export class CrmLeadCapture {
         result.waiting++;
         continue;
       }
-      const who = rec.kind === "signup-notice" ? `signup notice for ${rec.userId}` : rec.userId ? `customer of ${rec.userId}` : rec.phone;
+      const who = rec.kind === "signup-notice" ? `signup notice for ${rec.userId}` : rec.kind === "pay-link" ? `pay page of ${rec.userId}` : rec.userId ? `customer of ${rec.userId}` : rec.phone;
       try {
         if (rec.kind === "signup-notice") await this.notice.send(rec.userId ?? ""); // REQ-103
+        else if (rec.kind === "pay-link") await this.payLink.mint(rec.userId ?? "", pickBackOf(rec.back)); // REQ-106
         else if (rec.userId) await this.crm.ensure(rec.userId); // REQ-098
         else await this.crm.capture(rec.phone);
         await this.outbox.done(rec);
@@ -120,7 +143,7 @@ export class CrmLeadCapture {
         const next = await this.outbox.defer(rec, Date.now(), why);
         result.deferred++;
         const line = `[crm-lead-capture] ${who} attempt ${next.attempts} failed, next at ${next.nextAt}: ${why}`;
-        const still = rec.kind === "signup-notice" ? "STILL NOT MAILED" : "STILL NOT IN THE CRM";
+        const still = rec.kind === "signup-notice" ? "STILL NOT MAILED" : rec.kind === "pay-link" ? "STILL NO PAY PAGE" : "STILL NOT IN THE CRM";
         if (next.attempts >= LOUD_AFTER_ATTEMPTS) console.error(`${line} — ${still}`);
         else console.warn(line);
       }

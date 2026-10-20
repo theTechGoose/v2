@@ -4,6 +4,12 @@
 // link that collects it; the plan is pending until the due settles on that pay page, then
 // active. REQ-059: the link carries the way back — the app's /plan/return, which calls
 // `refresh` on arrival, so the plan reads active without a "Check payment".
+// REQ-106 — Raphael, 2026-10-20: "when i click a plan in the onboarding flow the payment link
+// takes FOREVER to load, can we speed it up and keep the exact same result in the crm? i dont care
+// if it happens asyncronously … what i care about is that the user experience is good." The paid
+// pick replies at once — pending, through the account the one rule decides — and the three CRM
+// calls ride the lead outbox (CrmLeadCapture.enqueuePayLink → PayLinkMint, after the reply), the
+// same calls in the same order; the browser waits on /plan/pay until the page is on the record.
 import { Injectable } from "#danet/core";
 import { accountForPick } from "#quote-flow/merchant-accounts.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -11,7 +17,7 @@ import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { appOrigin, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
-import { addMonth, chosen, firstMonthMemo, isOneTime, monthlyMemo, type PickBack, planOf, RETURN_LABEL, returnUrlFor, settle, subscriptionRefFor, type SubscriptionView, withSubscription } from "@users/domain/business/plan/mod.ts";
+import { addMonth, chosen, isOneTime, monthlyMemo, type PickBack, planOf, RETURN_LABEL, returnUrlFor, settle, subscriptionRefFor, type SubscriptionView, withSubscription } from "@users/domain/business/plan/mod.ts";
 import type { PlanId } from "@users/dto/plan.ts";
 import type { UserPlan } from "@users/dto/plan.ts";
 
@@ -30,7 +36,7 @@ export class ChoosePlan {
     private plans: PlanStore,
     private link: PaymentsLink,
     private crm: CrmCustomerSync,
-    /** REQ-099 — the CRM hears a tier change by the sweep, after the reply; only the paid pick waits on the CRM (its pay link needs the customer) */
+    /** REQ-099 — the CRM hears a tier change by the sweep, after the reply; REQ-106 — the paid pick's customer, due and pay link too */
     private leads: CrmLeadCapture,
   ) {}
 
@@ -59,18 +65,21 @@ export class ChoosePlan {
   /**
    * @throws plan-unknown — not a selectable plan
    * @throws email-required — a paid pick with no email on the account
-   * @throws payments-unavailable — the CRM did not answer
+   * @throws payments-unavailable — the CRM did not answer a downgrade's cancel
    */
   /** REQ-064/100 — `merchant`: the merchant account the pick named, if it named one; the account the
    *  charge goes through is decided ONCE here, by the one rule (accountForPick: the name given,
    *  else sandbox for the $1 test tier, primary for every real plan), and that one name rides the
-   *  pay link, the pay page's footer and the plan's record, which the billing reads later
-   *  @throws merchant-unknown (422) — a name the CRM has no account on record for */
+   *  pay link, the pay page's footer and the plan's record, which the billing reads later.
+   *  REQ-106 — a paid pick replies pending with that account and no page: the CRM's customer, due
+   *  and pay link are minted by the sweep after the reply (PayLinkMint) and land on the record;
+   *  a name the CRM has no account for (REQ-101) is read on the record as merchant-unknown. */
   async choose(userId: string, planId: string, back: PickBack = "/settings", merchant = ""): Promise<UserPlan> {
     const plan = planOf(planId);
     const now = new Date().toISOString();
     const before = await this.plans.get(userId);
-    const billing = before && before.status !== "free" ? before.subscriptionId : undefined;
+    // the billing a paid pick replaces: an active plan's — or the one a pending pick, not paid yet, already replaced
+    const billing = before && before.status !== "free" ? (before.subscriptionId ?? before.previousSubscriptionId) : undefined;
     if (plan.id === "free") {
       // REQ-061 — back to free stops the billing; the CRM has to take that, or the plan stays
       if (billing) await this.link.cancelSubscription(billing, "downgraded to free");
@@ -82,12 +91,12 @@ export class ChoosePlan {
     const user = await this.users.get(userId);
     if (!user.email?.trim()) throw new EmailRequiredError();
 
-    const { customerId } = await this.crm.ensure(userId);
     const account = accountForPick(plan.id, merchant); // REQ-100 — decided once, here
-    const { dueId } = await this.link.raiseDue({ customerId, amountCents: plan.priceCents, memo: firstMonthMemo(plan) });
-    const { payUrl } = await this.link.mintPayLink({ customerId, dueId, returnUrl: returnUrlFor(appOrigin(), dueId, back), returnLabel: RETURN_LABEL, merchant: account });
-    // a switch of paid plan: the billing in force is canceled once the new one is live
-    return this.plans.put(chosen(userId, plan.id as PlanId, now, { customerId, dueId, payUrl, merchant: account }, billing));
+    // REQ-106 — the reply: pending through that account; a switch of paid plan carries the billing
+    // in force, canceled once the new one is live. The CRM's customer, due and pay page: the sweep's.
+    const pending = await this.plans.put(chosen(userId, plan.id as PlanId, now, { merchant: account }, billing));
+    await this.leads.enqueuePayLink(userId, back);
+    return pending;
   }
 
   /** a pending plan asks the CRM whether its due settled (what /plan/return does on arrival,

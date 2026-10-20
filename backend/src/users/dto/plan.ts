@@ -5,6 +5,9 @@ import { merchantOf, type PickBack, pickBackOf } from "@users/domain/business/pl
 export type PlanId = "free" | "monster" | "assist" | "test";
 /** past_due — REQ-061: the CRM could not collect the latest month; the person pays it on the pay page */
 export type PlanStatus = "free" | "pending" | "active" | "past_due";
+/** REQ-106 — why a pending pick has no pay page yet: the CRM has no account by the name the pick
+ *  gave (final — the person picks again), or the CRM did not answer (the sweep retries) */
+export type PayLinkError = "merchant-unknown" | "payments-unavailable";
 
 export interface UserPlan {
   userId: string;
@@ -29,6 +32,9 @@ export interface UserPlan {
   /** REQ-064/100 — the merchant account the charge goes through (the CRM's `x-account`): on every
    *  paid pick, the one name the pay link, the pay page's footer and the billing share; free has none */
   merchant?: string;
+  /** REQ-106 — read on a pending pick whose page the sweep could not mint; cleared the moment the
+   *  page lands. Absent and no payUrl = the page is being prepared. */
+  payLinkError?: PayLinkError;
   updatedAt: string;
 }
 

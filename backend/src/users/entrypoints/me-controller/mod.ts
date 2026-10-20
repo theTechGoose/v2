@@ -11,6 +11,7 @@ import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mo
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { fakePaymentsWorld, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { parseChoosePlan } from "@users/dto/plan.ts";
+import { externalRefFor } from "@users/domain/business/plan/mod.ts"; // REQ-106 — the fake's clock is per account
 
 /**
  * /me — endpoints that act on the currently-authenticated User.
@@ -96,6 +97,23 @@ export class MeController {
     if (b.cardGone === true) fakePaymentsWorld().dropCard(plan.customerId);
     fakePaymentsWorld().bill(typeof b.now === "string" && b.now ? new Date(b.now).toISOString() : new Date().toISOString());
     return await this.choosePlan.current(user.id);
+  }
+
+  /**
+   * REQ-106 — the FAKE's clock on the link builder: from here on THIS account's pay link takes
+   * `ms` to mint (up to a minute), the way the real CRM's cold start and Quickbase writes take
+   * theirs — so a story can watch the hand-off page wait and then move. Fake only, like fake-paid;
+   * 404 against the real CRM.
+   */
+  @Post("plan/fake-slow")
+  async fakeSlow(@Context() ctx: ExecutionContext) {
+    const body = await optionalBody(ctx);
+    const user = await requireUser(ctx, this.sessions, this.users);
+    if (!this.paymentsLink.isFake()) throw Object.assign(new Error("not-found: the fake is not in use"), { status: 404 });
+    const asked = Number((body as { ms?: unknown } | null)?.ms ?? 0);
+    const ms = Number.isFinite(asked) && asked > 0 ? Math.min(Math.round(asked), 60_000) : 0;
+    fakePaymentsWorld().slowFor.set(externalRefFor(user.id), ms);
+    return { ms };
   }
 
   @Get()
