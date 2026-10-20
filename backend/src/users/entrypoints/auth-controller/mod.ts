@@ -22,6 +22,7 @@ import { VerifyEmailOtp } from "@users/domain/coordinators/verify-email-otp/mod.
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { AccountRecovery } from "@users/domain/coordinators/account-recovery/mod.ts";
 import { SignInLanding } from "@users/domain/coordinators/sign-in-landing/mod.ts";
+import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { InvalidRecoveryTokenError } from "@users/domain/data/recovery-token-store/mod.ts";
 import {
   parseSendEmailOtp,
@@ -66,6 +67,8 @@ export class AuthController {
     private leads: CrmLeadCapture,
     /** REQ-091 — where a verified code lands: the wizard while an onboarding question is open */
     private landing: SignInLanding,
+    /** REQ-104 — a Monster Free signup names free with the code: the plan is stored before the wizard asks anything */
+    private choosePlan: ChoosePlan,
   ) {}
 
   /**
@@ -246,6 +249,7 @@ export class AuthController {
    *   - 401 { ok:false, error:"invalid_code" }
    *   - 410 { ok:false, error:"expired" }
    *   - 429 { ok:false, error:"rate_limited" }
+   * `plan` (REQ-104) is taken the way /auth/verify-otp takes it.
    */
   @Post("verify")
   async verifyDirect(@Context() ctx: ExecutionContext, @Body() body: unknown) {
@@ -261,6 +265,8 @@ export class AuthController {
         await this.leads.enqueueSync(result.userId);
         await this.leads.enqueueSignupNotice(result.userId);
       }
+      // REQ-104 — a Monster Free signup: free is the plan from the code on; the wizard never asks it
+      if (dto.plan === "free") await this.choosePlan.startFree(result.userId);
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         ok: true,
@@ -281,13 +287,18 @@ export class AuthController {
 
   /**
    * POST /auth/verify-otp
-   * body: { phoneNumber, code }
+   * body: { phoneNumber, code, plan? }
    *
    * On success: sets `pm_session` as an HTTP-only cookie AND returns the
    * session id in the response body so SDK / API clients without cookie
    * jars can keep using the `x-session-id` header. `redirectTo` (REQ-091) is
    * where the code lands: /welcome while any onboarding question is open,
    * /dashboard?welcome=back once every one is answered — the page follows it.
+   * `plan` (REQ-104): the plan the signup names — "free" from the landing's
+   * Empezar gratis is stored as Monster Free on an account with no plan on
+   * record, before the wizard asks anything, so the wizard never asks the
+   * plan; a paid name stores nothing (the wizard asks, where the email and
+   * the pay page are); a pick already on record stands.
    *
    * Errors are typed so the frontend can render the right message:
    *   - invalid_code  : code didn't match (attempts++)
@@ -309,6 +320,8 @@ export class AuthController {
         await this.leads.enqueueSync(result.userId);
         await this.leads.enqueueSignupNotice(result.userId);
       }
+      // REQ-104 — a Monster Free signup: free is the plan from the code on; the wizard never asks it
+      if (dto.plan === "free") await this.choosePlan.startFree(result.userId);
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         sessionId: result.sessionId,
