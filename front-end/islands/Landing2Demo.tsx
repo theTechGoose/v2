@@ -17,8 +17,9 @@ import type { Lang } from "../lib/lang.ts";
  * "Mejor elijo día y hora", the day picker (the five the route hands down, from tomorrow,
  * Eastern), the two windows, the name, the cell, the email (optional), and a summary that follows
  * every pick. Each posts to POST /demo-request — which emails the team with the consent on record,
- * texts the person and makes the phone a lead — only once the consent box is ticked, and shows
- * the confirmation the mock drew. Every string comes in as `labels` from the route, so the island
+ * texts the person and makes the phone a lead — only while the consent box is ticked, and shows
+ * the confirmation the mock drew. REQ-097 (Raphael, 2026-10-20: "all the … checkboxes should be
+ * ticked"): the box is ticked when the page opens; the person can untick it, and then both forms wait. Every string comes in as `labels` from the route, so the island
  * renders exactly what the server did.
  */
 export interface Landing2DemoLabels {
@@ -77,8 +78,8 @@ export default function Landing2Demo(
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  /** the consent box: unticked until the person ticks it; both forms wait for it */
-  const [consent, setConsent] = useState(false);
+  /** the consent box: ticked when the page opens (REQ-097); both forms wait while the person has it unticked */
+  const [consent, setConsent] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [sent, setSent] = useState<{ texted: boolean } | null>(null);

@@ -172,7 +172,7 @@ describe("REQ-081 /landing2 is wired to the site's one sources", () => {
 
 /**
  * REQ-088/089/090 — the v3 mock: WhatsApp is nowhere on the page, the team's hours are 8 to 8, the
- * two consent boxes start unticked and gate what they guard, and the demo posts the new booking
+ * two consent boxes open ticked (REQ-097) and gate what they guard, and the demo posts the new booking
  * (a call with just a cell, or a day and a window) with the consent on it.
  */
 describe("REQ-088 the v3 landing reads as the mock", () => {
@@ -214,9 +214,9 @@ describe("REQ-088 the v3 landing reads as the mock", () => {
 });
 
 describe("REQ-089 the signup card's consent box", () => {
-  test("starts unticked, is wired to the SMS terms, and the code waits for it", () => {
+  test("starts ticked (REQ-097), is wired to the SMS terms, and the code waits for it", () => {
     const signup = read(ISLANDS[0]);
-    expect(signup).toMatch(/const \[consent, setConsent\] = useState\(false\)/);
+    expect(signup).toMatch(/const \[consent, setConsent\] = useState\(true\)/);
     const box = /<input[^>]*id="reg-consent"[\s\S]*?\/>/.exec(signup)?.[0] ??
       "";
     expect(box).toMatch(/type="checkbox"/);
@@ -259,9 +259,9 @@ describe("REQ-090 the demo card posts the new booking", () => {
     expect(DEMO_SLOTS.map((s) => s.id)).toEqual(["morning", "afternoon"]);
   });
 
-  test("the island books a call with just a cell, or a demo with a day and a window; its consent box starts unticked and gates both; the client carries the consent and nothing retired", () => {
+  test("the island books a call with just a cell, or a demo with a day and a window; its consent box starts ticked (REQ-097) and still gates both; the client carries the consent and nothing retired", () => {
     const demo = read(ISLANDS[1]);
-    expect(demo).toMatch(/const \[consent, setConsent\] = useState\(false\)/);
+    expect(demo).toMatch(/const \[consent, setConsent\] = useState\(true\)/);
     expect(demo).toMatch(/if \(!consent\)[\s\S]*?labels\.errConsent/);
     expect(demo).toMatch(/mode: "call"[\s\S]*?day: ""[\s\S]*?slot: ""/);
     expect(demo).toMatch(/mode: "demo"/);
@@ -369,7 +369,8 @@ describe("REQ-094 the fine-tooth comb — what the audit of the shipped page fou
 
   test("the signup's phone field carries no `required`: an empty send is answered by the page's own message, in the page's language", () => {
     const signup = read(ISLANDS[0]);
-    const input = /<input[^>]*id="reg-phone"[\s\S]*?\/>/.exec(signup)?.[0] ?? "";
+    const input = /<input[^>]*id="reg-phone"[\s\S]*?\/>/.exec(signup)?.[0] ??
+      "";
     expect(input).not.toBe("");
     expect(input).not.toMatch(/\brequired\b/);
     expect(signup).toMatch(/labels\.errPhone/);
@@ -445,9 +446,10 @@ describe("REQ-095 the second comb — landmarks, the head's language links, the 
   test("on a tablet the headlines scale between the phone's and the desktop's sizes", () => {
     const css = read(CSS);
     const tablet =
-      /@media \(min-width: 761px\) and \(max-width: 1023px\) \{([\s\S]*?)\n\}/.exec(
-        css,
-      )?.[1] ?? "";
+      /@media \(min-width: 761px\) and \(max-width: 1023px\) \{([\s\S]*?)\n\}/
+        .exec(
+          css,
+        )?.[1] ?? "";
     expect(tablet).toMatch(/\.l2-h1 \{\s*font-size: clamp\(40px, 5vw, 48px\);/);
     expect(tablet).toMatch(/\.l2-h2 \{\s*font-size: clamp\(32px, 4vw, 36px\);/);
   });
@@ -498,5 +500,37 @@ describe("REQ-096 the third comb — the stylesheet is cache-busted, the English
   test("the language toggle's name says where it goes, in both languages", () => {
     expect(es["landing2.langAria"]).toBe("Cambiar a inglés");
     expect(en["landing2.langAria"]).toBe("Switch to Spanish");
+  });
+});
+
+/**
+ * REQ-097 — Raphael, 2026-10-20: "all the 'Al tocar Empezar aceptas recibir textos de DocuMonster.
+ * La frecuencia varía. Pueden aplicar tarifas. Responde STOP para cancelar. Términos' checkboxes
+ * should be ticked." — every consent box on /landing2 opens ticked: the signup card's and the demo's.
+ */
+describe("REQ-097 every consent box on /landing2 is ticked when the page opens", () => {
+  test("the signup's and the demo's boxes start ticked, stay a live checkbox the person can untick, and still hold the code and the call once unticked", () => {
+    for (const island of ISLANDS) {
+      const src = read(island);
+      expect([
+        island,
+        /const \[consent, setConsent\] = useState\(true\)/.test(src),
+      ]).toEqual([island, true]);
+      expect([island, /setConsent\] = useState\(false\)/.test(src)]).toEqual([
+        island,
+        false,
+      ]);
+      const box = /<input[^>]*id="(?:reg|demo)-consent"[\s\S]*?\/>/.exec(src)
+        ?.[0] ?? "";
+      expect([island, box]).toEqual([
+        island,
+        expect.stringMatching(/type="checkbox"/),
+      ]);
+      // bound to the state, never a hard-coded attribute, and the person can untick it
+      expect(box).toMatch(/checked=\{consent\}/);
+      expect(box).not.toMatch(/checked(=\{true\}|=""|\s)/);
+      expect(box).toMatch(/onChange=/);
+      expect(src).toMatch(/if \(!consent\)[\s\S]*?labels\.errConsent/);
+    }
   });
 });

@@ -11,7 +11,7 @@
  * selection is process-wide and the int lane runs files in parallel.
  */
 import "#reflect-metadata";
-import { assertEquals } from "#std/assert";
+import { assert, assertEquals } from "#std/assert";
 import { DanetApplication, Module } from "#danet/core";
 import { UsersModule } from "@users/mod-root.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
@@ -147,6 +147,95 @@ Deno.test("REQ-082 send-otp answers with the dev code on the fakes, and that cod
     assertEquals(verified.status, 200, JSON.stringify(v));
     assertEquals(v.ok, true, "the dev code is the stored code");
   } finally {
+    await app.close();
+    twilio === undefined
+      ? Deno.env.delete("TWILIO_ACCOUNT_SID")
+      : Deno.env.set("TWILIO_ACCOUNT_SID", twilio);
+    await resetKv();
+  }
+});
+
+/**
+ * REQ-098 — Raphael, 2026-10-20, on prod's sign-up sitting after the code: "i think it has to do
+ * with the crm logic to capture the lead being synchronous, it should fire the event to the
+ * backend and forget about it while the backend finishes the request." The customer sync a new
+ * account makes on the CRM (REQ-058) was awaited before verify-otp replied — the CRM app's cold
+ * start, its ledger account and its Quickbase calls, with no timeout anywhere. It is an outbox
+ * record now, carried by the sweep after the reply, exactly as REQ-072's lead.
+ */
+Deno.test("REQ-098 verify-otp for a new account answers before the CRM has made its customer, and the customer still reaches the CRM", async () => {
+  const seen: { phone: string; ref: string }[] = [];
+  let received: () => void = () => {};
+  const receivedP = new Promise<void>((r) => (received = r));
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  // the stub CRM door: the lead capture (no ref, REQ-072) answers at once; the account's customer
+  // (with its ref) is held until the test lets it go — as the CRM app's cold start holds the real one
+  const door = {
+    async createCustomer(input: { customerPhone?: string; externalRef?: string }) {
+      const ref = input.externalRef ?? "";
+      seen.push({ phone: input.customerPhone ?? "", ref });
+      if (ref === "") return { customerId: "c-lead-3" };
+      received();
+      await held;
+      return { customerId: "c-user-3" };
+    },
+  } as unknown as PaymentsLinkPort;
+  const twilio = Deno.env.get("TWILIO_ACCOUNT_SID");
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("TWILIO_ACCOUNT_SID"); // SMS in dev mode: nothing leaves the box
+  await resetKv();
+  const app = new DanetApplication();
+  await app.init(TestApp);
+  app.get(PaymentsLink).portOverride = door;
+  await app.listen(PORT + 2);
+  try {
+    const phone = "+15125550098";
+    const sent = await (await fetch(`http://localhost:${PORT + 2}/auth/send-otp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phoneNumber: phone, language: "es" }),
+    })).json();
+    assertEquals(sent.sent, true, JSON.stringify(sent));
+    const t0 = Date.now();
+    const verified = await timeout(
+      fetch(`http://localhost:${PORT + 2}/auth/verify-otp`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phoneNumber: phone, code: sent.devCode }),
+      }),
+      5000,
+      "the verify reply while the CRM holds the customer",
+    );
+    const v = await verified.json();
+    assertEquals(verified.status, 200, JSON.stringify(v));
+    assertEquals(
+      [v.isNewUser, typeof v.sessionId, typeof v.redirectTo],
+      [true, "string", "string"],
+      "a new account, signed in, sent on",
+    );
+    assert(Date.now() - t0 < 3000, `the reply did not wait for the CRM (${Date.now() - t0} ms)`);
+    // the customer still happens, after the reply: the CRM is holding it now
+    await timeout(receivedP, 5000, "the customer reaching the CRM");
+    assertEquals(
+      seen.filter((s) => s.ref !== "").map((s) => s.phone),
+      [phone],
+      "the account's customer, once, with its phone",
+    );
+    const outbox = new CrmCaptureOutbox();
+    assertEquals(
+      (await outbox.list()).map((r) => r.userId).filter(Boolean),
+      [v.userId],
+      "pending in KV until the CRM answers",
+    );
+    release();
+    const t1 = Date.now();
+    while ((await outbox.list()).length > 0 && Date.now() - t1 < 5000) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assertEquals(await outbox.list(), [], "landed → cleared");
+  } finally {
+    release();
     await app.close();
     twilio === undefined
       ? Deno.env.delete("TWILIO_ACCOUNT_SID")

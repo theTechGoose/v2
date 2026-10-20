@@ -175,3 +175,37 @@ Deno.test("REQ-074 a boot sweep and a login sweep still carry the outbox with no
     await done();
   }
 });
+
+/**
+ * REQ-098 — Raphael, 2026-10-20, on prod's sign-up sitting after the code: "it should fire the
+ * event to the backend and forget about it while the backend finishes the request." The account's
+ * CRM customer (REQ-058's sync) is an outbox record too: enqueueSync is a KV write, the sweep makes
+ * the customer through CrmCustomerSync.ensure, and the record is cleared on the CRM's answer.
+ */
+Deno.test("REQ-098 a customer sync is a KV record before anything is sent, enqueueSync never waits on the CRM, and the sweep makes the account's customer", async () => {
+  const { calls, outbox, make } = await fresh(["hang"]);
+  const user = await new UserStore().create({ phoneNumber: "+15125550098", language: "en" });
+  const leads = make();
+  const t0 = Date.now();
+  await leads.enqueueSync(user.id);
+  assert(Date.now() - t0 < 500, "enqueueSync returned at once while the CRM hangs");
+  assertEquals((await outbox.list()).map((r) => r.userId), [user.id], "the sync is a record in KV");
+  await until(() => calls.length >= 1);
+  assertEquals(calls.map((c) => c.phone), ["+15125550098"], "the hung attempt is in flight, with the account's phone");
+  await done();
+});
+
+Deno.test("REQ-098 a CRM that fails keeps the sync record with its attempts and error, and a later sweep makes the customer and clears it", async () => {
+  const { calls, outbox, make } = await fresh([{ status: 503 }]);
+  const user = await new UserStore().create({ phoneNumber: "+15125550097", language: "en" });
+  const leads = make();
+  await leads.enqueueSync(user.id);
+  assertEquals(await leads.drain(), { landed: 0, deferred: 1, waiting: 0 });
+  const [rec] = await outbox.list();
+  assertEquals([rec.userId, rec.attempts], [user.id, 1]);
+  assert((rec.lastError ?? "").includes("503"), `the error is on the record: ${rec.lastError}`);
+  assertEquals(await leads.drain(Date.parse(rec.nextAt)), { landed: 1, deferred: 0, waiting: 0 });
+  assertEquals(calls.map((c) => c.phone), ["+15125550097", "+15125550097"]);
+  assertEquals(await outbox.list(), []);
+  await done();
+});

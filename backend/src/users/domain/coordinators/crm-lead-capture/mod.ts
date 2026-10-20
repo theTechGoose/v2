@@ -9,7 +9,13 @@
  * run on every login, at boot (an isolate that died mid-capture leaves its record for the next
  * one) and every minute while the isolate lives, on a timer (registerSweep; REQ-074 — never
  * Deno.cron: a revision that calls it never routes on Deno Deploy). One sweep per process at a
- * time; a lease keeps two processes off one record.
+ * time; a lease keeps two processes off one record; a record enqueued while a sweep runs is swept
+ * right after it.
+ *
+ * REQ-098 — Raphael, 2026-10-20, on prod's sign-up sitting after the code: "it should fire the
+ * event to the backend and forget about it while the backend finishes the request." The account's
+ * CRM customer (REQ-058) rides the same outbox: enqueueSync(userId) is the record before the
+ * verify replies, and the sweep makes or revises the customer (CrmCustomerSync.ensure) after it.
  */
 import { Injectable } from "#danet/core";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
@@ -37,12 +43,26 @@ const LOUD_AFTER_ATTEMPTS = 5;
 @Injectable()
 export class CrmLeadCapture {
   private inFlight: Promise<SweepResult> | null = null;
+  /** a record arrived while a sweep was on its list: sweep again right after */
+  private again = false;
 
   constructor(private outbox: CrmCaptureOutbox, private crm: CrmCustomerSync) {}
 
   /** durable at once; the CRM is reached by the sweep this starts, never by the caller's request */
   async enqueue(phoneNumber: string): Promise<void> {
     await this.outbox.add(normalizePhone(phoneNumber), Date.now());
+    this.kick();
+  }
+
+  /** REQ-098 — the account's CRM customer, durable at once; made or revised by the sweep this
+   *  starts, never by the caller's request */
+  async enqueueSync(userId: string): Promise<void> {
+    await this.outbox.addSync(userId, Date.now());
+    this.kick();
+  }
+
+  private kick(): void {
+    if (this.inFlight) this.again = true;
     void this.drain();
   }
 
@@ -57,6 +77,10 @@ export class CrmLeadCapture {
       })
       .finally(() => {
         this.inFlight = null;
+        if (this.again) {
+          this.again = false;
+          void this.drain();
+        }
       });
     return this.inFlight;
   }
@@ -68,15 +92,17 @@ export class CrmLeadCapture {
         result.waiting++;
         continue;
       }
+      const who = rec.userId ? `customer of ${rec.userId}` : rec.phone;
       try {
-        await this.crm.capture(rec.phone);
-        await this.outbox.done(rec.phone);
+        if (rec.userId) await this.crm.ensure(rec.userId); // REQ-098
+        else await this.crm.capture(rec.phone);
+        await this.outbox.done(rec);
         result.landed++;
       } catch (e) {
         const why = message(e);
         const next = await this.outbox.defer(rec, Date.now(), why);
         result.deferred++;
-        const line = `[crm-lead-capture] ${rec.phone} attempt ${next.attempts} failed, next at ${next.nextAt}: ${why}`;
+        const line = `[crm-lead-capture] ${who} attempt ${next.attempts} failed, next at ${next.nextAt}: ${why}`;
         if (next.attempts >= LOUD_AFTER_ATTEMPTS) console.error(`${line} — STILL NOT IN THE CRM`);
         else console.warn(line);
       }

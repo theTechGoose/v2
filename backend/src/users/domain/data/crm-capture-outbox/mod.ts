@@ -2,13 +2,17 @@
  * REQ-072 — the CRM lead-capture outbox in KV: ["crm-capture", phone] → PendingCapture. A record
  * is written before the login replies and deleted only when the CRM has answered; everything in
  * between (claims, deferrals) is a compare-and-swap on the record's versionstamp so two sweeps
- * never work one record at once.
+ * never work one record at once. REQ-098 — the account's customer sync rides the same outbox:
+ * ["crm-capture", "user", userId] → PendingCapture with the userId, carried by ensure.
  */
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
 import { backoffMs, LEASE_MS, type PendingCapture } from "@users/domain/business/lead-capture-retry/mod.ts";
 
 const PREFIX = "crm-capture";
+
+/** the record's key: a lead by its phone, a customer sync (REQ-098) by its account */
+const keyOf = (rec: Pick<PendingCapture, "phone" | "userId">): Deno.KvKey => rec.userId ? [PREFIX, "user", rec.userId] : [PREFIX, rec.phone];
 
 @Injectable()
 export class CrmCaptureOutbox {
@@ -27,6 +31,16 @@ export class CrmCaptureOutbox {
     await kv.atomic().check(existing).set(key, rec).commit();
   }
 
+  /** REQ-098 — a customer sync record for the account; an existing one is kept as it is */
+  async addSync(userId: string, now: number): Promise<void> {
+    const kv = await this.kv();
+    const key = keyOf({ phone: "", userId });
+    const existing = await kv.get<PendingCapture>(key);
+    if (existing.value) return;
+    const rec: PendingCapture = { phone: "", userId, enqueuedAt: new Date(now).toISOString(), attempts: 0, nextAt: new Date(now).toISOString() };
+    await kv.atomic().check(existing).set(key, rec).commit();
+  }
+
   async list(): Promise<PendingCapture[]> {
     const kv = await this.kv();
     const out: PendingCapture[] = [];
@@ -37,7 +51,7 @@ export class CrmCaptureOutbox {
   /** take the record for one attempt: false when it changed or vanished under us */
   async claim(rec: PendingCapture, now: number): Promise<boolean> {
     const kv = await this.kv();
-    const key = [PREFIX, rec.phone];
+    const key = keyOf(rec);
     const current = await kv.get<PendingCapture>(key);
     if (!current.value) return false;
     if (current.value.leaseUntil && Date.parse(current.value.leaseUntil) > now) return false;
@@ -48,17 +62,17 @@ export class CrmCaptureOutbox {
   /** the attempt failed: count it, note why, and set the next time */
   async defer(rec: PendingCapture, now: number, error: string): Promise<PendingCapture> {
     const kv = await this.kv();
-    const key = [PREFIX, rec.phone];
+    const key = keyOf(rec);
     const current = await kv.get<PendingCapture>(key);
     const base = current.value ?? rec;
     const attempts = base.attempts + 1;
-    const next: PendingCapture = { phone: base.phone, enqueuedAt: base.enqueuedAt, attempts, nextAt: new Date(now + backoffMs(attempts)).toISOString(), lastError: error.slice(0, 300) };
+    const next: PendingCapture = { phone: base.phone, ...(base.userId ? { userId: base.userId } : {}), enqueuedAt: base.enqueuedAt, attempts, nextAt: new Date(now + backoffMs(attempts)).toISOString(), lastError: error.slice(0, 300) };
     await kv.set(key, next);
     return next;
   }
 
-  async done(phone: string): Promise<void> {
+  async done(rec: Pick<PendingCapture, "phone" | "userId">): Promise<void> {
     const kv = await this.kv();
-    await kv.delete([PREFIX, phone]);
+    await kv.delete(keyOf(rec));
   }
 }
