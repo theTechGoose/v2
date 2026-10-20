@@ -10,6 +10,8 @@
  * the landing page with a fine tooth comb again. find any issues, fix them" — the second pass.
  * REQ-096 — "run the fine tooth comb again" — the third. REQ-097 — Raphael, 2026-10-20: "all the
  * 'Al tocar Empezar aceptas recibir textos de DocuMonster. … Términos' checkboxes should be ticked."
+ * REQ-102 — Raphael, 2026-10-20: "calendar days need to slide so that i can pick more than 5 days
+ * out. arrow for good ux that is clickable."
  *
  * The page: front-end/routes/landing2.tsx (SSR, Spanish first, English on the toggle), its
  * islands — Landing2Signup (phone + the TCPA consent box → code → straight into the app, through
@@ -21,7 +23,14 @@
 import { story, type StoryTools } from "#shots";
 import { LEGAL_LINKS } from "../../shared/legal/terms.ts";
 import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
-import { DEMO_DAY_COUNT, DEMO_SLOTS } from "../../shared/demo-booking/mod.ts";
+import {
+  DEMO_DAY_COUNT,
+  DEMO_DAY_WINDOW,
+  DEMO_SLOTS,
+  demoDay,
+  demoDayLabel,
+  demoMonthRange,
+} from "../../shared/demo-booking/mod.ts";
 
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
 const DESKTOP = { width: 1280, height: 900 };
@@ -1441,4 +1450,221 @@ Deno.test("REQ-097: every consent box on /landing2 — the signup card's and the
       "Marca la casilla para que podamos escribirte o llamarte.",
     );
     expect.eq(demos(), 1, "no call was booked once unticked");
+  }));
+
+/**
+ * REQ-102 — Raphael, 2026-10-20: "calendar days need to slide so that i can pick more than 5 days
+ * out. arrow for good ux that is clickable." The picker shows five days at a time between two
+ * arrows; the right arrow slides it to the next five, the left back; the arrows stop at the first
+ * and the last page (DEMO_DAY_WINDOW days out, every day the backend accepts); a pick survives the
+ * slide and books.
+ */
+Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the next five days, a day on the second page is picked, kept through a slide back and booked; the arrows stop at the first and the last page; five days and both arrows sit whole inside the card, on a desktop and on a phone", (t) =>
+  story(t, async ({ page, expect }) => {
+    const isos = () =>
+      page.locator("[data-cy='l2-day']").evaluateAll((els: HTMLElement[]) =>
+        els.map((e) => e.getAttribute("data-day") ?? "")
+      );
+    const plusDays = (iso: string, n: number) =>
+      new Date(Date.parse(iso) + n * 86_400_000).toISOString().slice(0, 10);
+    for (const vp of [DESKTOP, PHONE]) {
+      await page.setViewportSize(vp);
+      await page.goto(`/landing2?lang=es&vp=${vp.width}`);
+      await page.locator("#demo").scrollIntoViewIfNeeded();
+      await clickUntil(
+        page,
+        "[data-cy='l2-pick-time']",
+        async () => (await count(page, "[data-cy='l2-day']")) > 0,
+      );
+      const prev = page.locator("[data-cy='l2-days-prev']");
+      const next = page.locator("[data-cy='l2-days-next']");
+      expect.eq(
+        await count(page, "[data-cy='l2-day']"),
+        DEMO_DAY_COUNT,
+        `five days at a time at ${vp.width}px`,
+      );
+      expect.eq(await prev.count(), 1, "an arrow on the left");
+      expect.eq(await next.count(), 1, "an arrow on the right");
+      expect.eq(
+        await prev.isDisabled(),
+        true,
+        "on the first page the left arrow is off",
+      );
+      expect.eq(await next.isDisabled(), false, "and the right arrow is on");
+      expect.eq(
+        await prev.getAttribute("aria-label"),
+        "Días anteriores",
+        "the left arrow's name",
+      );
+      expect.eq(
+        await next.getAttribute("aria-label"),
+        "Más días",
+        "the right arrow's name",
+      );
+      // five days and both arrows whole inside the card; the arrows a real target; no sideways scroll
+      const card =
+        (await page.locator("[data-cy='l2-demo-card']").boundingBox())!;
+      const parts = [
+        "[data-cy='l2-days-prev']",
+        "[data-cy='l2-days-next']",
+        ...Array.from(
+          { length: DEMO_DAY_COUNT },
+          (_, i) => `[data-cy='l2-day'] >> nth=${i}`,
+        ),
+      ];
+      for (const sel of parts) {
+        const b = (await page.locator(sel).boundingBox())!;
+        expect(
+          b.x >= card.x - 0.5 && b.x + b.width <= card.x + card.width + 0.5,
+          `${sel} is whole inside the card at ${vp.width}px (${
+            Math.round(b.x)
+          }–${Math.round(b.x + b.width)} in ${Math.round(card.x)}–${
+            Math.round(card.x + card.width)
+          })`,
+        );
+      }
+      const arrow = (await next.boundingBox())!;
+      const strip = (await page.locator(".l2-demo__days").boundingBox())!;
+      expect(
+        arrow.width >= 32 && Math.abs(arrow.height - strip.height) < 1,
+        `the arrow is a tap target the strip's height at ${vp.width}px (${
+          Math.round(arrow.width)
+        }×${Math.round(arrow.height)}, strip ${Math.round(strip.height)})`,
+      );
+      const scrollW = await page.evaluate(() =>
+        document.documentElement.scrollWidth
+      );
+      expect(
+        scrollW <= vp.width,
+        `nothing wider than the screen at ${vp.width}px (${scrollW})`,
+      );
+      const first = await isos();
+      // the right arrow: the next five days, consecutive from the fifth
+      await clickUntil(
+        page,
+        "[data-cy='l2-days-next']",
+        async () => (await isos())[0] !== first[0],
+      );
+      const second = await isos();
+      expect.eq(second.length, DEMO_DAY_COUNT, "still five on the second page");
+      expect.eq(
+        second[0],
+        plusDays(first[DEMO_DAY_COUNT - 1], 1),
+        "the second page starts the day after the first page ends",
+      );
+      for (let i = 1; i < DEMO_DAY_COUNT; i++) {
+        expect.eq(
+          second[i],
+          plusDays(second[0], i),
+          `day ${i + 1} of the second page follows the one before`,
+        );
+      }
+      expect.eq(await prev.isDisabled(), false, "the left arrow is on now");
+      expect.eq(
+        await count(page, "[data-cy='l2-day'].on"),
+        0,
+        "nothing on the second page is picked yet",
+      );
+      const range =
+        ((await page.locator("[data-cy='l2-days-range']").textContent()) ?? "")
+          .trim();
+      expect.eq(
+        range,
+        demoMonthRange(second.map((iso) => demoDay(iso, "es")!)),
+        `the range beside the label names the month(s) on view (${range})`,
+      );
+      // pick the second day of the second page — the seventh day out
+      await clickUntil(
+        page,
+        "[data-cy='l2-day'] >> nth=1",
+        async () =>
+          ((await page.locator("[data-cy='l2-day']").nth(1).getAttribute(
+            "class",
+          )) ?? "").includes("on"),
+      );
+      const picked = second[1];
+      const summary = page.locator("[data-cy='l2-demo-summary']");
+      expect(
+        ((await summary.textContent()) ?? "").includes(
+          demoDayLabel(picked, "es"),
+        ),
+        `the summary names the picked day (${await summary.textContent()})`,
+      );
+      // back: the first five again, none lit, the summary unmoved; forward: the pick is lit again
+      await clickUntil(
+        page,
+        "[data-cy='l2-days-prev']",
+        async () => (await isos())[0] === first[0],
+      );
+      expect.eq(
+        await count(page, "[data-cy='l2-day'].on"),
+        0,
+        "the first page shows no pick",
+      );
+      expect(
+        ((await summary.textContent()) ?? "").includes(
+          demoDayLabel(picked, "es"),
+        ),
+        "the summary keeps the pick through the slide back",
+      );
+      await clickUntil(
+        page,
+        "[data-cy='l2-days-next']",
+        async () => (await isos())[0] === second[0],
+      );
+      expect.eq(
+        await page.locator("[data-cy='l2-day'].on").getAttribute("data-day"),
+        picked,
+        "the pick is lit again on its page",
+      );
+      if (vp === DESKTOP) {
+        // to the end: a page per click, the right arrow off on the last page, DEMO_DAY_WINDOW days out
+        let clicks = 0;
+        while (!(await next.isDisabled()) && clicks < 40) {
+          await next.click();
+          clicks++;
+          await page.waitForTimeout(60);
+        }
+        const last = await isos();
+        expect.eq(
+          last[last.length - 1],
+          plusDays(first[0], DEMO_DAY_WINDOW - 1),
+          `the last day on the strip is ${DEMO_DAY_WINDOW} days out`,
+        );
+        expect.eq(
+          await next.isDisabled(),
+          true,
+          "the right arrow is off on the last page",
+        );
+        expect.eq(
+          clicks + 2,
+          Math.ceil(DEMO_DAY_WINDOW / DEMO_DAY_COUNT),
+          `a page per click (${clicks} clicks from the second page)`,
+        );
+        // the seventh day, picked two pages back, books
+        await page.locator("#f-name").fill("José García");
+        await page.locator("#f-phone").fill(`512${digits()}`);
+        const [res] = await Promise.all([
+          page.waitForResponse((
+            r: { url(): string; request(): { method(): string } },
+          ) =>
+            r.url().includes("/api/demo-request") &&
+            r.request().method() === "POST"
+          ),
+          page.locator("[data-cy='l2-demo-submit']").click(),
+        ]);
+        const body = await res.json();
+        expect.eq(
+          body.ok,
+          true,
+          `the demo on the seventh day was booked (${JSON.stringify(body)})`,
+        );
+        expect.eq(
+          body.day,
+          picked,
+          "the booking carries the day picked on the second page",
+        );
+        await expect.see("¡Listo!");
+      }
+    }
   }));

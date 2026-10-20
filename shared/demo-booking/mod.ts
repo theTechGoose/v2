@@ -1,10 +1,11 @@
 /**
- * REQ-081/090 — the demo booking on /landing2, the part both sides agree on: the two windows the
- * page offers (morning, afternoon — Eastern), the five days it shows (from tomorrow, Eastern), how
- * a day and a window are labelled in each language, and the words for a call booked with just a
- * cell ("as soon as possible"). The page's island renders from this; the backend (demo-request)
- * validates and writes the confirmation from the same source. Pure data and date arithmetic, no
- * imports.
+ * REQ-081/090/102 — the demo booking on /landing2, the part both sides agree on: the two windows
+ * the page offers (morning, afternoon — Eastern), the days it offers (REQ-102: every day the
+ * backend accepts, DEMO_DAY_WINDOW of them from tomorrow, Eastern, shown DEMO_DAY_COUNT at a time
+ * between two arrows), how a day and a window are labelled in each language, and the words for a
+ * call booked with just a cell ("as soon as possible"). The page's island renders from this; the
+ * backend (demo-request) validates — the same window — and writes the confirmation from the same
+ * source. Pure data and date arithmetic, no imports.
  */
 
 export type DemoLang = "es" | "en";
@@ -44,8 +45,15 @@ export const ASAP_LABEL: Record<DemoLang, string> = {
   en: "as soon as possible",
 };
 
-/** the number of days the page shows */
+/** the number of days the picker shows at a time — a page; the arrows slide it by this many (REQ-102) */
 export const DEMO_DAY_COUNT = 5;
+
+/**
+ * REQ-102 — how many days out a demo can be booked: the days the page offers (from tomorrow,
+ * Eastern) and the window the backend accepts (from today, UTC — never behind Eastern, so every
+ * day offered is taken). A whole number of pages.
+ */
+export const DEMO_DAY_WINDOW = 90;
 
 export function demoSlot(id: string): DemoSlot | undefined {
   return DEMO_SLOTS.find((s) => s.id === id);
@@ -142,7 +150,12 @@ export function easternToday(now: Date = new Date()): string {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
-/** the five days the page offers, starting tomorrow (Eastern) */
+/** the month, or the two months, the days on view fall in: "Oct", "Oct – Nov" (REQ-102) */
+export function demoMonthRange(days: readonly DemoDay[]): string {
+  return [...new Set(days.map((d) => d.mon))].join(" – ");
+}
+
+/** every day the page offers — DEMO_DAY_WINDOW of them, consecutive, starting tomorrow (Eastern) */
 export function upcomingDemoDays(
   lang: DemoLang,
   now: Date = new Date(),
@@ -152,7 +165,7 @@ export function upcomingDemoDays(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
     );
   const out: DemoDay[] = [];
-  for (let i = 1; i <= DEMO_DAY_COUNT; i++) {
+  for (let i = 1; i <= DEMO_DAY_WINDOW; i++) {
     const d = new Date(base.getTime() + i * 86_400_000);
     const iso = d.toISOString().slice(0, 10);
     out.push(demoDay(iso, lang) as DemoDay);

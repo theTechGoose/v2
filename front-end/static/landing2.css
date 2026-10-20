@@ -970,10 +970,79 @@
   flex: 1 1 160px;
   font-size: 17px;
 }
+/* REQ-102 — the day picker slides: the label with the month(s) on view beside it, then the strip —
+   an arrow at each end, five days between, a page at a time; the group is re-keyed on every slide
+   so it slides in from the side it came from (the reduced-motion block below stills every .l2
+   animation, this one included) */
+.l2-demo__dayhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.l2-demo__range {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--l2-muted);
+  margin-bottom: 6px;
+}
+.l2-demo__strip {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  gap: 8px;
+  align-items: stretch;
+  overflow: hidden;
+}
 .l2-demo__days {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
+  min-width: 0;
+}
+.l2-demo__days--next {
+  animation: l2-slide-next 0.2s ease-out;
+}
+.l2-demo__days--prev {
+  animation: l2-slide-prev 0.2s ease-out;
+}
+@keyframes l2-slide-next {
+  from {
+    transform: translateX(32px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes l2-slide-prev {
+  from {
+    transform: translateX(-32px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.l2-arrow {
+  min-width: 36px;
+  padding: 0;
+  border: 2px solid var(--l2-ink);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--l2-ink);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.l2-arrow:hover:not(:disabled) {
+  background: var(--l2-sand);
+}
+.l2-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 .l2-demo__slots {
   display: grid;
@@ -1166,6 +1235,14 @@
   }
   .l2-demo__card {
     padding: 22px;
+  }
+  /* REQ-102: narrower arrows and gaps, so five days still sit whole beside them */
+  .l2-demo__strip {
+    grid-template-columns: 32px minmax(0, 1fr) 32px;
+    gap: 6px;
+  }
+  .l2-demo__days {
+    gap: 6px;
   }
   .l2-stickybar {
     display: grid;
