@@ -265,6 +265,7 @@
   accent-color: var(--l2-green);
 }
 .l2-day {
+  scroll-snap-align: start;
   min-width: 0;
   min-height: 68px;
   padding: 8px 4px;
@@ -992,41 +993,41 @@
   gap: 8px;
   align-items: stretch;
 }
-/* the view clips the sliding group to its own cell (a slide never paints over an arrow); the 3px
-   of padding, taken back by the margin, keeps a day's focus ring from being clipped */
+/* the view scrolls the row (REQ-105): every day in one row, five to the view's width, snapping to
+   a day — a finger scrolls it the way the browser scrolls anything, the boxes moving under it; the
+   arrows scroll it a page, smoothly; a mouse drags it (--held: snapping off while the button is
+   down, so it follows exactly). No bar; a sideways overscroll stays inside; the 3px of padding,
+   taken back by the margin, keeps a day's focus ring from being clipped, and scroll-padding makes
+   a stop a day's edge. A mouse drag selects no text. */
 .l2-demo__view {
   min-width: 0;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 3px;
   margin: -3px;
+  scroll-snap-type: x mandatory;
+  scroll-padding: 3px;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  -webkit-user-select: none;
+  user-select: none;
 }
+.l2-demo__view::-webkit-scrollbar {
+  display: none;
+}
+.l2-demo__view--held {
+  scroll-snap-type: none;
+  scroll-behavior: auto;
+  cursor: grabbing;
+}
+/* the row: every day, each a fifth of the view's width less the gaps, so five stand whole on view */
 .l2-demo__days {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - 4 * 8px) / 5);
   gap: 8px;
   min-width: 0;
-}
-.l2-demo__days--next {
-  animation: l2-slide-next 0.2s ease-out;
-}
-.l2-demo__days--prev {
-  animation: l2-slide-prev 0.2s ease-out;
-}
-@keyframes l2-slide-next {
-  from {
-    transform: translateX(32px);
-  }
-  to {
-    transform: none;
-  }
-}
-@keyframes l2-slide-prev {
-  from {
-    transform: translateX(-32px);
-  }
-  to {
-    transform: none;
-  }
 }
 .l2-arrow {
   min-width: 36px;
@@ -1246,6 +1247,7 @@
   }
   .l2-demo__days {
     gap: 6px;
+    grid-auto-columns: calc((100% - 4 * 6px) / 5);
   }
   .l2-stickybar {
     display: grid;
@@ -1680,6 +1682,7 @@
   .l2 *::after {
     animation: none !important;
     transition: none !important;
+    scroll-behavior: auto !important;
   }
   .l2-monster {
     transform: none !important;
