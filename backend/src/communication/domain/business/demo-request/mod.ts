@@ -10,6 +10,7 @@ import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import { SUPPORT_PHONE_DISPLAY } from "#legal/contact.ts";
 import {
   ASAP_LABEL,
+  DEMO_DAY_WINDOW,
   DEMO_SLOTS,
   demoDateOf,
   demoDayLabel,
@@ -32,7 +33,7 @@ export interface DemoRequest {
   phone: string;
   /** "" when not given — the box on the page is optional */
   email: string;
-  /** YYYY-MM-DD, today or later, within 90 days — for a demo; "" for a call (as soon as possible) */
+  /** YYYY-MM-DD, today or later, within DEMO_DAY_WINDOW days (REQ-102: the days the page offers) — for a demo; "" for a call (as soon as possible) */
   day: string;
   /** the window of DEMO_SLOTS — for a demo; "" for a call */
   slot: DemoSlotId | "";
@@ -41,7 +42,6 @@ export interface DemoRequest {
   consent: true;
 }
 
-const WINDOW_DAYS = 90;
 const NAME_MAX = 120;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -120,8 +120,8 @@ export function parseDemoRequest(
     if (date.getTime() < today) {
       throw new DemoRequestInvalid("day", "in the past");
     }
-    if (date.getTime() > today + WINDOW_DAYS * DAY_MS) {
-      throw new DemoRequestInvalid("day", `past ${WINDOW_DAYS} days out`);
+    if (date.getTime() > today + DEMO_DAY_WINDOW * DAY_MS) {
+      throw new DemoRequestInvalid("day", `past ${DEMO_DAY_WINDOW} days out`);
     }
     if (!demoSlot(slotId)) {
       throw new DemoRequestInvalid(

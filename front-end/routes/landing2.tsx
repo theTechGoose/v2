@@ -152,6 +152,8 @@ export default define.page(function Landing2(ctx) {
         "pickTimeLink",
         "quickLink",
         "pickDay",
+        "prevDays",
+        "nextDays",
         "pickSlot",
         "name",
         "namePh",
