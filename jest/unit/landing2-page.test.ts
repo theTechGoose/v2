@@ -644,3 +644,35 @@ describe("REQ-102 the demo's day picker slides — every day the backend accepts
     );
   });
 });
+
+/**
+ * REQ-104 — Raphael, 2026-10-20: "Monster Free signup must get initial information and then
+ * skip credit card ask." The signup card is a Monster Free signup — "Empieza gratis en 30
+ * segundos" — unless a paid card's Registrarme brought the person to it: every Empezar gratis
+ * button into the card names free, each plan card's button names its plan, the card shows the
+ * plan it signs up for, and the island posts that plan with the code (POST /auth/verify-otp
+ * { plan }), where the backend stores Monster Free on an account with no plan on record. The
+ * wizard then never shows the cards (welcome-steps.test.ts).
+ */
+describe("REQ-104 a Monster Free signup names its plan at the code", () => {
+  test("REQ-104 every Empezar gratis button into the card names free; each plan card's button names its plan", () => {
+    const anchors = read(PAGE).match(/<a[^>]*href="#empezar"[^>]*>/g) ?? [];
+    expect(anchors.length).toBe(4);
+    for (const a of anchors) expect(a).toMatch(/data-plan=/);
+    // the nav, the final CTA and the sticky bar start free; the plan cards' one button names its plan
+    expect(anchors.filter((a) => /data-plan="free"/.test(a)).length).toBe(3);
+    expect(anchors.filter((a) => /data-plan=\{p\.id\}/.test(a)).length).toBe(1);
+  });
+
+  test("REQ-104 the card signs up for Monster Free as the page opens, follows the button that brought the person to it, and posts that plan with the code", () => {
+    const island = read("front-end/islands/Landing2Signup.tsx");
+    expect(island).toMatch(/const \[plan, setPlan\] = useState\("free"\);/);
+    expect(island).toMatch(/closest\("a\[data-plan\]"\)/);
+    expect(island).toMatch(/addEventListener\("click", /);
+    // the card says which plan it signs up for — what a story reads, what a person could be shown
+    expect(island).toMatch(/id="empezar"[\s\S]*?data-plan=\{plan\}/);
+    expect(island).toMatch(/verifyClient\.verifyOtp\(\{\s*phoneNumber: toE164\(phone\),\s*code: digits,\s*plan,\s*\}\)/);
+    const client = read("front-end/clients/verify.ts");
+    expect(client).toMatch(/plan\?: string;/);
+  });
+});

@@ -353,3 +353,57 @@ Deno.test("REQ-091 auth e2e: verify-otp carries redirectTo — /welcome while an
     assertEquals(nine.body.redirectTo, "/dashboard?welcome=back", "all nine answered: the dashboard, as a returning user");
   });
 });
+
+// ── REQ-104: a Monster Free signup names its plan with the code ──
+
+Deno.test("REQ-104 auth e2e: verify-otp with plan free — a new account has Monster Free on record and lands in the wizard; the same number again keeps it; a paid name and a plain code store nothing; an account that already picked keeps its pick; /auth/verify the same", async () => {
+  await withServer(async (port) => {
+    const base = `http://localhost:${port}`;
+    const verify = async (phone: string, extra: Record<string, unknown>, path = "/auth/verify-otp") => {
+      await drain(await postJson(`${base}/auth/send-otp`, { phoneNumber: phone, language: "en" }));
+      const otp = await new OtpStore().get(phone);
+      const r = await postJson(`${base}${path}`, { phoneNumber: phone, code: otp!.code, ...extra });
+      assertEquals(r.status, 200, `${path} ${JSON.stringify(extra)}`);
+      const cookie = r.headers.get("set-cookie")!.split(";")[0];
+      return { body: await r.json(), cookie };
+    };
+    // null until a pick: an empty body
+    const planOf = async (cookie: string) => {
+      const text = await fetch(`${base}/me/plan`, { headers: { cookie } }).then((r) => r.text());
+      return text ? JSON.parse(text) : null;
+    };
+
+    // the Monster Free signup: free is on record from the code on, and the wizard still asks the rest
+    const free = await verify("+15125551041", { plan: "free" });
+    assertEquals(free.body.isNewUser, true);
+    assertEquals(free.body.redirectTo, "/welcome", "the initial information is still asked");
+    const stored = await planOf(free.cookie);
+    assertEquals([stored.planId, stored.status], ["free", "free"], "Monster Free on record");
+    // the same number again, no plan named: the record stands
+    const back = await verify("+15125551041", {});
+    assertEquals(back.body.isNewUser, false);
+    assertEquals((await planOf(back.cookie)).status, "free");
+
+    // a paid card's Registrarme: nothing is stored — the wizard asks, where the email and the pay page are
+    const paid = await verify("+15125551042", { plan: "monster" });
+    assertEquals(await planOf(paid.cookie), null);
+    // a plain code (the login page, the other landings): nothing either
+    const plain = await verify("+15125551043", {});
+    assertEquals(await planOf(plain.cookie), null);
+
+    // an account that picked a paid plan is never downgraded by a free signup on its number
+    const headers = { "content-type": "application/json", cookie: paid.cookie };
+    await drain(await fetch(`${base}/me`, { method: "PUT", headers, body: JSON.stringify({ email: "pick@example.com" }) }));
+    const picked = await fetch(`${base}/me/plan`, { method: "POST", headers, body: JSON.stringify({ planId: "assist" }) });
+    assertEquals(picked.status, 200);
+    await drain(picked);
+    const again = await verify("+15125551042", { plan: "free" });
+    const kept = await planOf(again.cookie);
+    assertEquals([kept.planId, kept.status], ["assist", "pending"], "the pick stands");
+
+    // /auth/verify takes the plan the same way
+    const direct = await verify("+15125551044", { plan: "free" }, "/auth/verify");
+    assertEquals(direct.body.ok, true);
+    assertEquals((await planOf(direct.cookie)).status, "free");
+  });
+});

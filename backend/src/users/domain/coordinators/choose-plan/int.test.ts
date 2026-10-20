@@ -298,3 +298,32 @@ Deno.test("REQ-071 choose-plan — the pay link's way back is under DocuMonster"
   await flow.choose(user.id, "assist", "/welcome");
   assertEquals(fakePaymentsWorld().links[0].returnLabel, "DocuMonster");
 });
+
+// REQ-104 — "Monster Free signup must get initial information and then skip credit card ask"
+Deno.test("REQ-104 choose-plan — a Monster Free signup stores free on an account with no plan on record and tells the CRM its tier; a pick already made stands, and no billing is touched", async () => {
+  const { users, plans, leads, flow } = await fresh();
+  const world = fakePaymentsWorld();
+  // nothing on record: the signup's free is the plan from the code on
+  const fresh1 = await users.create({ phoneNumber: "+15125551041" });
+  const free = await flow.startFree(fresh1.id);
+  assertEquals([free.planId, free.status], ["free", "free"]);
+  assertEquals((await plans.get(fresh1.id))?.status, "free");
+  await leads.drain();
+  assertEquals(world.customers.map((c) => c.tier), ["Lead"], "the CRM hears the tier, after the reply");
+  // a second code on the same account: the record stands as it is
+  assertEquals(await flow.startFree(fresh1.id), free);
+  // a paid pick waiting on its pay page is never downgraded by a free signup on its number
+  const paid = await users.create({ phoneNumber: "+15125551042", email: "p@roof.test", name: "Pat" });
+  const pending = await flow.choose(paid.id, "monster", "/welcome");
+  assertEquals((await flow.startFree(paid.id)).status, "pending");
+  assertEquals((await plans.get(paid.id))?.planId, "monster");
+  // an active plan with its monthly billing: still active, the billing untouched
+  world.settle(pending.dueId!);
+  const active = await flow.refresh(paid.id);
+  assertEquals(active.status, "active");
+  assertEquals(world.subscriptions.length, 1, "the billing started");
+  const kept = await flow.startFree(paid.id);
+  assertEquals([kept.planId, kept.status, kept.subscriptionId], ["monster", "active", active.subscriptionId]);
+  assertEquals(world.subscriptions.map((s) => s.status), ["active"], "nothing canceled");
+  assertEquals([world.dues.length, world.links.length], [1, 1], "nothing raised, nothing minted");
+});

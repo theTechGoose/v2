@@ -18,6 +18,10 @@ import type { Lang } from "../lib/lang.ts";
 export interface VerifyOtpInput {
   phoneNumber: string;
   code: string;
+  /** REQ-104 — the plan the signup names ("free" from the landing's Empezar gratis): the
+   *  backend stores Monster Free on an account with no plan on record; a paid name is left to
+   *  the wizard, where the email and the pay page are */
+  plan?: string;
 }
 
 export type VerifyOtpError =

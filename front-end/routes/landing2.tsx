@@ -61,6 +61,12 @@ import { LEGAL_LINKS, type LegalDocId } from "../../shared/legal/terms.ts";
  * while a busted URL is immutable for a year; the lang="en" mark sits on the hero note's English
  * lines (REQ-095 had put it on the whole note, Spanish label included) and on the team's English
  * role; the signup card's title and the demo's thanks are headings; the toggle says where it goes.
+ *
+ * REQ-104 — "Monster Free signup must get initial information and then skip credit card ask":
+ * every button into the signup card names a plan (`data-plan`) — free on the Empezar gratis
+ * buttons (the nav, the final CTA, the sticky bar, the Monster Free card), the card's own plan on
+ * a plan card's Registrarme — and the card posts the plan named with the code; for free the
+ * wizard never asks the plan (Landing2Signup, lib/welcome-steps.ts).
  */
 
 /** REQ-076 — the dictionary key for each policy link's label on this page. */
@@ -265,7 +271,11 @@ export default define.page(function Landing2(ctx) {
               <a class="l2-nav__phone l2-hide-m" href={SUPPORT_PHONE_HREF}>
                 {VANITY}
               </a>
-              <a class="l2-btn l2-btn--primary l2-btn--sm" href="#empezar">
+              <a
+                class="l2-btn l2-btn--primary l2-btn--sm"
+                href="#empezar"
+                data-plan="free"
+              >
                 {t("navCta")}
               </a>
             </div>
@@ -464,6 +474,7 @@ export default define.page(function Landing2(ctx) {
                       class={`l2-btn l2-btn--plan ${look.btn}`}
                       href="#empezar"
                       data-cy="l2-plan-cta"
+                      data-plan={p.id}
                     >
                       {t(`plan.${p.id}.cta`)}
                     </a>
@@ -538,7 +549,11 @@ export default define.page(function Landing2(ctx) {
             <div class="l2-wrap l2-final__in">
               <h2 class="l2-h l2-h2 l2-h2--final">{t("finalH")}</h2>
               <div class="l2-final__ctas">
-                <a class="l2-btn l2-btn--primary" href="#empezar">
+                <a
+                  class="l2-btn l2-btn--primary"
+                  href="#empezar"
+                  data-plan="free"
+                >
                   {t("navCta")}
                 </a>
                 <a class="l2-btn l2-btn--dark" href="#llamanos">
@@ -584,7 +599,11 @@ export default define.page(function Landing2(ctx) {
 
         {/* ---------- sticky mobile bar: start, call ---------- */}
         <div class="l2-stickybar" data-cy="l2-stickybar">
-          <a class="l2-btn l2-btn--primary l2-btn--bar" href="#empezar">
+          <a
+            class="l2-btn l2-btn--primary l2-btn--bar"
+            href="#empezar"
+            data-plan="free"
+          >
             {t("navCta")}
           </a>
           <a class="l2-btn l2-btn--dark l2-btn--bar" href="#llamanos">
