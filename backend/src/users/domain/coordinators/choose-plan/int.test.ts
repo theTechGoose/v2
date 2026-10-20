@@ -15,7 +15,6 @@ async function fresh() {
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("PPWK_PAYMENTS_URL");
   Deno.env.delete("PPWK_PAYMENTS_TOKEN");
-  Deno.env.delete("PPWK_PAYMENTS_ACCOUNT");
   await resetKv();
   fakePaymentsWorld().reset();
   const users = new UserStore();
@@ -219,15 +218,17 @@ Deno.test("REQ-062 choose-plan — the CRM's tier follows the plan: Monster the 
 });
 
 // REQ-064 — the hidden $1 one-time test tier, and the merchant account a pick names
+// REQ-101 — an account the operator added on the CRM is admitted by name; the fake's record is the stand-in
 Deno.test("REQ-064 choose-plan — the test tier is a $1 one-time due with the merchant on its link; paid, it is active with no billing and the CRM tier stays Lead", async () => {
   const { users, leads, flow } = await fresh();
+  const world = fakePaymentsWorld();
+  world.accounts.add("alpha"); // REQ-101 — on record, so it can be named
   const user = await users.create({ phoneNumber: "+15125550164", email: "tester@roof.test", name: "Tess" });
   const plan = await flow.choose(user.id, "test", "/settings", "alpha");
   assertEquals([plan.planId, plan.status, plan.merchant], ["test", "pending", "alpha"]);
-  const world = fakePaymentsWorld();
   assertEquals(world.dues.map((d) => [d.amountCents, d.memo, d.open]), [[100, "Monster Test — one-time test charge", true]]);
   assertEquals(world.links[0].merchant, "alpha");
-  assertStringIncludes(plan.payUrl ?? "", "merchant=alpha");
+  assertStringIncludes(plan.payUrl ?? "", "account=alpha");
   world.settle(plan.dueId!); // the $1 lands on the page; /plan/return refreshes
   const active = await flow.refresh(user.id);
   await leads.drain(); // REQ-099
@@ -239,21 +240,56 @@ Deno.test("REQ-064 choose-plan — the test tier is a $1 one-time due with the m
   assertEquals(world.subscriptions.length, 0, "and reading it again starts none either");
 });
 
-Deno.test("REQ-064 choose-plan — a monthly plan picked with a merchant starts its billing on that merchant; none named = none sent", async () => {
+Deno.test("REQ-064 choose-plan — a monthly plan picked with a merchant starts its billing on that merchant", async () => {
   const { users, flow } = await fresh();
   const world = fakePaymentsWorld();
+  world.accounts.add("alpha"); // REQ-101 — on record, so it can be named
   const named = await users.create({ phoneNumber: "+15125550165", email: "m@roof.test", name: "Mo" });
   const pending = await flow.choose(named.id, "monster", "/settings", "alpha");
   assertEquals(pending.merchant, "alpha");
   world.settle(pending.dueId!);
   assertEquals((await flow.refresh(named.id)).status, "active");
   assertEquals(world.subscriptions.map((s) => [s.externalRef, s.merchant]), [[`pm:${named.id}:monster`, "alpha"]]);
-  const plain = await users.create({ phoneNumber: "+15125550166", email: "p@roof.test", name: "Pat" });
-  const p2 = await flow.choose(plain.id, "monster");
-  assertEquals("merchant" in p2, false);
-  world.settle(p2.dueId!);
-  assertEquals((await flow.refresh(plain.id)).status, "active");
-  assertEquals("merchant" in world.subscriptions[1], false, "nothing named, nothing sent");
+});
+
+// REQ-100 — "THERE NEEDS TO BE A SINGLE SOURCE OF TRUTH WHEN IT REGARDS TO WHAT ACCOUNT IS BEING
+// USED": a plan pick that names nothing goes through `primary` — the one rule in
+// shared/quote-flow/merchant-accounts.ts — on the link, on the plan's record and on the billing;
+// no env var has a say (PPWK_PAYMENTS_ACCOUNT=sandbox is what charged a real customer's $99 on the
+// test account on 2026-10-12)
+Deno.test("REQ-100 choose-plan — a plan pick naming nothing goes through primary: the pay link, the plan's record and the monthly billing all say primary, whatever PPWK_PAYMENTS_ACCOUNT says", async () => {
+  const { users, flow } = await fresh();
+  Deno.env.set("PPWK_PAYMENTS_ACCOUNT", "sandbox"); // the old knob, still set on some box: ignored
+  try {
+    const world = fakePaymentsWorld();
+    const user = await users.create({ phoneNumber: "+15125550100", email: "one@roof.test", name: "One" });
+    const pending = await flow.choose(user.id, "monster", "/welcome");
+    assertEquals(pending.merchant, "primary", "the record");
+    assertEquals(new URL(pending.payUrl!).searchParams.get("account"), "primary", "the pay page's url");
+    assertEquals(world.links[0].merchant, "primary", "the link the CRM holds");
+    world.settle(pending.dueId!);
+    assertEquals((await flow.refresh(user.id)).status, "active");
+    assertEquals(world.subscriptions.map((s) => s.merchant), ["primary"], "the billing");
+    const again = await users.create({ phoneNumber: "+15125550101", email: "two@roof.test", name: "Two" });
+    assertEquals((await flow.choose(again.id, "assist", "/settings")).merchant, "primary", "every public plan");
+  } finally {
+    Deno.env.delete("PPWK_PAYMENTS_ACCOUNT");
+  }
+});
+
+// REQ-101 — "PRIMARY IS THE ACUTAL ACCOUNT AND SANDBOX IS THE FAKE ACCOUNT BUT WE CAN ADD MORE"
+Deno.test("REQ-101 choose-plan — the $1 test tier goes through sandbox unless the pick names another account; primary named is primary; a name the CRM has no record of is refused and nothing is stored", async () => {
+  const { users, plans, flow } = await fresh();
+  const world = fakePaymentsWorld();
+  const user = await users.create({ phoneNumber: "+15125550102", email: "tst@roof.test", name: "Tst" });
+  const sandbox = await flow.choose(user.id, "test", "/settings");
+  assertEquals([sandbox.merchant, new URL(sandbox.payUrl!).searchParams.get("account"), world.links[0].merchant], ["sandbox", "sandbox", "sandbox"]);
+  const primary = await flow.choose(user.id, "test", "/settings", "primary");
+  assertEquals([primary.merchant, world.links[1].merchant], ["primary", "primary"]);
+  const e = await assertRejects(() => flow.choose(user.id, "monster", "/settings", "alpha"), Error, "merchant-unknown: alpha");
+  assertEquals((e as Error & { status?: number }).status, 422);
+  assertEquals(world.links.length, 2, "nothing minted for a name not on record");
+  assertEquals((await plans.get(user.id))?.merchant, "primary", "the plan stays as it was");
 });
 
 Deno.test("REQ-071 choose-plan — the pay link's way back is under DocuMonster", async () => {

@@ -5,6 +5,7 @@ import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, langFromCookie, pickLangFromAcceptLanguage } from "../../lib/lang.ts";
 import { tFor } from "../../lib/i18n.ts";
 import { PRICING_PLANS } from "../../../shared/quote-flow/pricing-plans.ts";
+import { accountForPick } from "../../../shared/quote-flow/merchant-accounts.ts";
 import { PlanCards } from "../../components/PlanCards.tsx";
 import { merchantOf } from "../../lib/plan-return.ts";
 
@@ -12,7 +13,9 @@ import { merchantOf } from "../../lib/plan-return.ts";
  * GET /plan/test (REQ-064) — the one page that offers the hidden test tier: a $1 one-time charge
  * through the real pay page, for testing the card flow (and a merchant account) end to end. No
  * link points here. `?merchant=<name>` names the merchant account the charge goes through; it
- * rides on the card's form, on the pick, and onto the pay page's url (ppwk-crm REQ-084).
+ * rides on the card's form, on the pick, and onto the pay page's url (ppwk-crm REQ-091).
+ * REQ-101 — nothing named = sandbox, the fake account (the one rule, accountForPick); the page
+ * says which account the charge will go through, by name, and the card's form carries that name.
  * Without a session: the front page. The pick comes back to settings, which reads it paid once.
  */
 export default define.page(async function PlanTest(ctx) {
@@ -24,7 +27,8 @@ export default define.page(async function PlanTest(ctx) {
     : user.language === "en" || user.language === "es"
     ? user.language
     : langFromCookie(ctx.req.headers.get("cookie")) ?? pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
-  const merchant = merchantOf(ctx.url.searchParams.get("merchant") ?? "");
+  // REQ-101 — the account this page's charge goes through: the one named on the address, else sandbox
+  const merchant = accountForPick("test", merchantOf(ctx.url.searchParams.get("merchant") ?? ""));
   const plans = PRICING_PLANS.filter((p) => p.id === "test");
   const hasEmail = Boolean(user.email?.trim());
   return (
@@ -40,7 +44,7 @@ export default define.page(async function PlanTest(ctx) {
           <h1 style="font-size:28px;margin-top:6px">{tFor(lang, "planTest.heading")}</h1>
           <p class="muted" style="color:var(--fg-muted);font-size:15px;margin-bottom:12px">{tFor(lang, "planTest.lede")}</p>
           <p style="font-size:13.5px;margin-bottom:16px" data-cy="plan-test-merchant">
-            {merchant ? tFor(lang, "planTest.merchant", { merchant }) : tFor(lang, "planTest.merchantDefault")}
+            {tFor(lang, "planTest.merchant", { merchant })} {tFor(lang, "planTest.merchantHint")}
           </p>
           <PlanCards plans={plans} lang={lang} disabled={(p) => p.priceCents > 0 && !hasEmail} back="/settings" merchant={merchant} />
           {!hasEmail ? <p style="color:var(--fg-muted);font-size:13.5px;margin-top:10px">{tFor(lang, "plan.emailFirstSettings")}</p> : null}
