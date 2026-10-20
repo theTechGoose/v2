@@ -1,6 +1,6 @@
 // REQ-058 — the account is a CRM customer from sign-up, and onboarding fills that record in: on
 // the fakes (the KV stores and the fake link builder, which upserts by ref like the CRM does).
-import { assertEquals } from "#std/assert";
+import { assertEquals, assertRejects } from "#std/assert";
 import { resetKv } from "@core/data/kv/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -29,13 +29,13 @@ async function fresh() {
 Deno.test("REQ-070 crm-customer-sync — the person, the business's city and state, its website and this app's name ride with every sync; a lead has only the source", async () => {
   const { users, identity, address, sync } = await fresh();
   const user = await users.create({ phoneNumber: "+15125550270", language: "es", name: placeholderNameFor("es") });
-  await sync.sync(user.id);
+  await sync.ensure(user.id);
   const lead = fakePaymentsWorld().customers[0];
   assertEquals([lead.contact, lead.city, lead.state, lead.website, lead.leadSource], [undefined, undefined, undefined, undefined, LEAD_SOURCE], "a placeholder is never the contact");
   await users.update(user.id, { name: "María Ejemplo", email: "maria@pintura.test" });
   await identity.upsert(user.id, { businessName: "Pintura Ejemplo LLC", websiteUrl: "https://pintura-ejemplo.test" });
   await address.upsert(user.id, { street: "456 Oak Ave", city: "Dallas", state: "tx", postal: "75201" });
-  await sync.sync(user.id);
+  await sync.ensure(user.id);
   const filled = fakePaymentsWorld().customers[0];
   assertEquals([filled.customerName, filled.contact, filled.city, filled.state, filled.website, filled.leadSource], ["Pintura Ejemplo LLC", "María Ejemplo", "Dallas", "TX", "https://pintura-ejemplo.test", LEAD_SOURCE]);
   assertEquals(fakePaymentsWorld().customers.length, 1, "the same record");
@@ -53,7 +53,7 @@ Deno.test("REQ-058 crm-customer-sync — a sign-up makes the customer with what 
   const { users, sync } = await fresh();
   const user = await users.create({ phoneNumber: "+15125550201", language: "en", name: placeholderNameFor("en") });
   assertEquals(await sync.read(user.id), null, "nothing on the CRM before the first sync");
-  const made = await sync.sync(user.id);
+  const made = await sync.ensure(user.id);
   const world = fakePaymentsWorld();
   assertEquals(world.customers.length, 1);
   const { createdAt, ...born } = world.customers[0];
@@ -73,37 +73,30 @@ Deno.test("REQ-058 crm-customer-sync — a sign-up makes the customer with what 
 Deno.test("REQ-058 crm-customer-sync — onboarding fills the SAME customer in: the business as its name, the account's email; never a second record", async () => {
   const { users, identity, sync } = await fresh();
   const user = await users.create({ phoneNumber: "+15125550202", language: "es", name: placeholderNameFor("es") });
-  const made = await sync.sync(user.id);
+  const made = await sync.ensure(user.id);
   await users.update(user.id, { name: "Ana", email: "ana@roof.test" });
-  await sync.sync(user.id);
+  await sync.ensure(user.id);
   assertEquals(fakePaymentsWorld().customers.map((c) => [c.customerId, c.customerName, c.customerEmail]), [[made!.customerId, "Ana", "ana@roof.test"]]);
   await identity.upsert(user.id, { businessName: "Ana Roofing" });
-  await sync.sync(user.id);
+  await sync.ensure(user.id);
   assertEquals(fakePaymentsWorld().customers.map((c) => [c.customerId, c.customerName, c.customerEmail, c.customerPhone]), [[made!.customerId, "Ana Roofing", "ana@roof.test", "+15125550202"]]);
   assertEquals((await sync.read(user.id))?.customerName, "Ana Roofing");
 });
 
-Deno.test("REQ-058 crm-customer-sync — the CRM being down never fails the account's write: sync answers null and says so", async () => {
+Deno.test("REQ-058/099 crm-customer-sync — the CRM being down is thrown by ensure, named: the sweep that carries every sync (REQ-098/099) defers it and nothing on the account fails", async () => {
   const { users, link, sync } = await fresh();
   const user = await users.create({ phoneNumber: "+15125550203" });
   Deno.env.set("PPWK_PAYMENTS_URL", "http://crm.test");
   Deno.env.set("PPWK_PAYMENTS_TOKEN", "t");
   Deno.env.set("PPWK_PAYMENTS_ACCOUNT", "primary"); // REQ-069
   link.fetchOverride = () => Promise.reject(new TypeError("connection refused"));
-  const warned: string[] = [];
-  const warn = console.warn;
-  console.warn = (...a: unknown[]) => warned.push(a.join(" "));
   try {
-    assertEquals(await sync.sync(user.id), null);
+    await assertRejects(() => sync.ensure(user.id), Error, "payments-unavailable");
   } finally {
-    console.warn = warn;
     Deno.env.delete("PPWK_PAYMENTS_URL");
     Deno.env.delete("PPWK_PAYMENTS_TOKEN");
     Deno.env.delete("PPWK_PAYMENTS_ACCOUNT");
-  Deno.env.delete("PPWK_PAYMENTS_ACCOUNT");
   }
-  assertEquals(warned.length, 1);
-  assertEquals(warned[0].includes("payments-unavailable"), true, warned[0]);
 });
 
 Deno.test("REQ-060 crm-customer-sync — the phone typed into login is a CRM lead at once; the sign-up with it claims that lead; the lead never overwrites the account", async () => {
@@ -115,13 +108,13 @@ Deno.test("REQ-060 crm-customer-sync — the phone typed into login is a CRM lea
   assertEquals(captured?.customerId, world.customers[0].customerId);
   // no code entered, no onboarding — the lead stands. Later the same phone signs up:
   const user = await users.create({ phoneNumber: "+15125550199", language: "en", name: placeholderNameFor("en") });
-  const made = await sync.sync(user.id);
+  const made = await sync.ensure(user.id);
   assertEquals(made?.customerId, captured?.customerId, "the account IS the lead");
   assertEquals(world.customers.length, 1);
   assertEquals((await sync.read(user.id))?.externalRef, `pm:${user.id}`);
   // onboarding fills the name in; a second lead capture for the same phone (a re-login) changes nothing
   await users.update(user.id, { name: "Rosa Demo" });
-  await sync.sync(user.id);
+  await sync.ensure(user.id);
   await sync.capture("+15125550199");
   assertEquals((await sync.read(user.id))?.customerName, "Rosa Demo");
   assertEquals(world.customers.length, 1);
@@ -135,20 +128,20 @@ Deno.test("REQ-062 crm-customer-sync — the lead and the half-finished account 
   const world = fakePaymentsWorld();
   assertEquals([world.customers[0].customerName, world.customers[0].tier], ["unknown dragon mcdragonson", "Lead"]);
   const user = await users.create({ phoneNumber: "+15125550777", language: "es", name: placeholderNameFor("es") });
-  await sync.sync(user.id);
+  await sync.ensure(user.id);
   let crm = await sync.read(user.id);
   assertEquals([crm?.customerName, crm?.tier, crm?.customerPhone], ["unknown dragon mcdragonson", "Lead", "+15125550777"], "the placeholder is not a name");
   const now = new Date().toISOString();
   await plans.put({ userId: user.id, planId: "monster", status: "pending", chosenAt: now, updatedAt: now });
-  await sync.sync(user.id);
+  await sync.ensure(user.id);
   assertEquals((await sync.read(user.id))?.tier, "Lead", "not paid yet");
   await plans.put({ userId: user.id, planId: "monster", status: "active", chosenAt: now, activatedAt: now, updatedAt: now });
   await users.update(user.id, { name: "Rosa Demo" });
-  await sync.sync(user.id);
+  await sync.ensure(user.id);
   crm = await sync.read(user.id);
   assertEquals([crm?.customerName, crm?.tier], ["Rosa Demo", "Monster"]);
   await plans.put({ userId: user.id, planId: "free", status: "free", chosenAt: now, updatedAt: now });
-  await sync.sync(user.id);
+  await sync.ensure(user.id);
   assertEquals((await sync.read(user.id))?.tier, "Lead");
   assertEquals(world.customers.length, 1, "one record throughout");
 });

@@ -7,6 +7,8 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { fakePaymentsWorld, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
+import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
+import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { ChoosePlan } from "./mod.ts";
 
 async function fresh() {
@@ -21,15 +23,17 @@ async function fresh() {
   const plans = new PlanStore();
   const link = new PaymentsLink();
   const crm = new CrmCustomerSync(users, identity, link, plans);
-  const flow = new ChoosePlan(users, plans, link, crm);
-  return { users, identity, plans, link, crm, flow };
+  const leads = new CrmLeadCapture(new CrmCaptureOutbox(), crm); // REQ-099 — the tier reaches the CRM by the sweep, after the reply
+  const flow = new ChoosePlan(users, plans, link, crm, leads);
+  return { users, identity, plans, link, crm, leads, flow };
 }
 
 Deno.test("REQ-054 choose-plan — nobody has a plan until they pick one; free is stored as free", async () => {
-  const { users, flow } = await fresh();
+  const { users, leads, flow } = await fresh();
   const user = await users.create({ phoneNumber: "+15125550101" });
   assertEquals(await flow.current(user.id), null);
   const plan = await flow.choose(user.id, "free");
+  await leads.drain(); // REQ-099 — the CRM hears the tier after the reply
   assertEquals(plan.planId, "free");
   assertEquals(plan.status, "free");
   assertEquals((await flow.current(user.id))?.status, "free");
@@ -57,7 +61,7 @@ Deno.test("REQ-054 choose-plan — a paid plan makes the CRM customer, raises th
 Deno.test("REQ-058 choose-plan — the paid pick reuses the customer sign-up made, revised with the account's details: one record, carrying this app's ref", async () => {
   const { users, identity, crm, flow } = await fresh();
   const user = await users.create({ phoneNumber: "+15125550107", language: "en", name: "New user" });
-  const atSignUp = await crm.sync(user.id);
+  const atSignUp = await crm.ensure(user.id);
   await users.update(user.id, { email: "e@roof.test", name: "Eli" });
   await identity.upsert(user.id, { businessName: "Eli Decks" });
   const plan = await flow.choose(user.id, "monster");
@@ -202,19 +206,21 @@ Deno.test("REQ-061 choose-plan — back to free cancels the billing (and refuses
 // REQ-062 — "all financial info and guest info updated in quickbase with tier": the CRM hears
 // about the plan the moment it changes, not on the next profile edit
 Deno.test("REQ-062 choose-plan — the CRM's tier follows the plan: Monster the moment the first month settles, Lead again on the way back to free", async () => {
-  const { users, flow } = await fresh();
+  const { users, leads, flow } = await fresh();
   const { user } = await paidAndActive(flow, users, "+15125550601");
+  await leads.drain(); // REQ-099 — by the sweep, after the reply
   const world = fakePaymentsWorld();
   const mine = () => world.customers.find((c) => c.externalRef === `pm:${user.id}`);
   assertEquals(mine()?.tier, "Monster", "told the CRM when the due settled");
   await flow.choose(user.id, "free");
+  await leads.drain();
   assertEquals(mine()?.tier, "Lead", "told the CRM on the downgrade");
   assertEquals(world.customers.length, 1);
 });
 
 // REQ-064 — the hidden $1 one-time test tier, and the merchant account a pick names
 Deno.test("REQ-064 choose-plan — the test tier is a $1 one-time due with the merchant on its link; paid, it is active with no billing and the CRM tier stays Lead", async () => {
-  const { users, flow } = await fresh();
+  const { users, leads, flow } = await fresh();
   const user = await users.create({ phoneNumber: "+15125550164", email: "tester@roof.test", name: "Tess" });
   const plan = await flow.choose(user.id, "test", "/settings", "alpha");
   assertEquals([plan.planId, plan.status, plan.merchant], ["test", "pending", "alpha"]);
@@ -224,6 +230,7 @@ Deno.test("REQ-064 choose-plan — the test tier is a $1 one-time due with the m
   assertStringIncludes(plan.payUrl ?? "", "merchant=alpha");
   world.settle(plan.dueId!); // the $1 lands on the page; /plan/return refreshes
   const active = await flow.refresh(user.id);
+  await leads.drain(); // REQ-099
   assertEquals(active.status, "active");
   assertEquals(active.subscriptionId, undefined, "a one-time charge starts no billing");
   assertEquals(world.subscriptions.length, 0);

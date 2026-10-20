@@ -19,6 +19,8 @@ import { ReferenceStore } from "@profile/domain/data/reference-store/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
+import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
+import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { chosen } from "@users/domain/business/plan/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
@@ -29,9 +31,10 @@ function freshFlow() {
   const address = new BusinessAddressStore();
   const insurance = new BusinessInsuranceStore();
   const plans = new PlanStore();
+  const crm = new CrmCustomerSync(users, identity, new PaymentsLink(), plans);
   const profile = new LoadProfile(
     users, identity, address, insurance, new TaxIdentityStore(), new ContractDefaultsStore(), new ReferenceStore(),
-    new ChoosePlan(users, plans, new PaymentsLink(), new CrmCustomerSync(users, identity, new PaymentsLink(), plans)),
+    new ChoosePlan(users, plans, new PaymentsLink(), crm, new CrmLeadCapture(new CrmCaptureOutbox(), crm)), // REQ-099
   );
   return { users, identity, address, insurance, plans, flow: new SignInLanding(profile) };
 }

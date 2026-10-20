@@ -11,6 +11,8 @@ import { resetKv } from "@core/data/kv/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
+import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
+import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 
 function freshFlow() {
@@ -21,12 +23,13 @@ function freshFlow() {
   const tax       = new TaxIdentityStore();
   const defaults  = new ContractDefaultsStore();
   const refs      = new ReferenceStore();
+  const crm       = new CrmCustomerSync(users, identity, new PaymentsLink(), new PlanStore());
   return {
     users, identity, address, insurance, tax, defaults, refs,
     flow: new LoadProfile(
       users, identity, address, insurance, tax, defaults, refs,
       // REQ-061 — the plan is read through ChoosePlan, as the CRM's billing says it stands
-      new ChoosePlan(users, new PlanStore(), new PaymentsLink(), new CrmCustomerSync(users, identity, new PaymentsLink(), new PlanStore())),
+      new ChoosePlan(users, new PlanStore(), new PaymentsLink(), crm, new CrmLeadCapture(new CrmCaptureOutbox(), crm)), // REQ-099
     ),
   };
 }
