@@ -32,6 +32,7 @@ import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts"
 import { PRICING_PLANS, PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
 import { pickErrorOf, resumesAfterPlan } from "../lib/plan-return.ts";
+import { askedSteps, asksPlan, indexAfterPlan } from "../lib/welcome-steps.ts";
 import { filesClient } from "../clients/files.ts";
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
 import { api } from "../lib/api.ts";
@@ -90,6 +91,9 @@ interface StepDef {
   skippable: boolean;
   /** Used once on mount to resume at the first incomplete step. */
   isComplete: (snap: ProfileSnapshot) => boolean;
+  /** REQ-104 — is this account asked the step at all? Absent = always. The plan step is not
+   *  asked once the plan is Monster Free (lib/welcome-steps.ts). */
+  asked?: (snap: ProfileSnapshot) => boolean;
   Component: StepComponent;
 }
 
@@ -1000,7 +1004,10 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
 // paid pick is REDIRECTED to the CRM's pay page in this tab — the receipt brings the person back
 // to /plan/return, which reads the plan active, and the wizard resumes past this step; free is
 // stored and the wizard resumes at the next step. A pick still waiting on its page resumes
-// here, with the way back to it. Skippable: no pick reads as free.
+// here, with the way back to it. Skippable: no pick reads as free. REQ-104: once the plan is
+// Monster Free — stored with the code by a Monster Free signup on /landing2, or picked here or
+// in settings — this step is not asked at all (the registry's `asked`): the person is never
+// shown the cards, or the pay page behind the paid ones, again; the upgrade is in settings.
 function PlanStep({ ctx }: { ctx: StepCtx }) {
   const plan = ctx.snap.plan ?? null;
   const lang = langSignal.value;
@@ -1081,6 +1088,7 @@ function buildSteps(): StepDef[] {
       // waiting on its pay page resumes HERE (the way back to the page); once the receipt has
       // brought the person back with the plan active, the wizard moves on
       id: "plan",
+      asked: asksPlan,
       skippable: true,
       isComplete: (s) => isAnswered("plan", s),
       Component: PlanStep,
@@ -1141,13 +1149,16 @@ function firstIncomplete(steps: StepDef[], snap: ProfileSnapshot): number {
 export default function WelcomeWizard(
   { snapshot, suggestedState, initialLang }: Props,
 ) {
-  const steps = useMemo(() => buildSteps(), []);
+  const registry = useMemo(() => buildSteps(), []);
+  // REQ-104 — the steps this account is asked: a Monster Free account is never asked the plan
+  const steps = useMemo(() => askedSteps(registry, snapshot), [registry]);
   const [snap, setSnap] = useState<ProfileSnapshot>(snapshot);
   // REQ-059 — back from a pick (free stored, or the receipt with the plan active): resume PAST
-  // the plan step, not at the first step the person skipped on the way to it
+  // the plan's slot, not at the first step the person skipped on the way to it — the same step
+  // whether the plan step is still asked or not (REQ-104)
   const [index, setIndex] = useState(() =>
     typeof location !== "undefined" && resumesAfterPlan(location.search)
-      ? Math.min(steps.findIndex((step) => step.id === "plan") + 1, steps.length - 1)
+      ? indexAfterPlan(registry, steps)
       : firstIncomplete(steps, snapshot)
   );
   const [, force] = useState(0);

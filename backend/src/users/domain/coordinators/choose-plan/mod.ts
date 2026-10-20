@@ -41,6 +41,22 @@ export class ChoosePlan {
   }
 
   /**
+   * REQ-104 — a Monster Free signup ("Monster Free signup must get initial information and then
+   * skip credit card ask"): the landing's Empezar gratis names free with the code, and on an
+   * account with no plan on record the plan is Monster Free from then on — so the wizard asks
+   * the initial information and never the plan. A pick already made stands untouched: a pending
+   * or active paid plan is never downgraded by a free signup on its number, no billing is
+   * touched. The CRM hears the tier by the sweep, after the reply (REQ-099).
+   */
+  async startFree(userId: string): Promise<UserPlan> {
+    const before = await this.plans.get(userId);
+    if (before) return before;
+    const free = await this.plans.put(chosen(userId, "free", new Date().toISOString()));
+    await this.leads.enqueueSync(userId);
+    return free;
+  }
+
+  /**
    * @throws plan-unknown — not a selectable plan
    * @throws email-required — a paid pick with no email on the account
    * @throws payments-unavailable — the CRM did not answer
