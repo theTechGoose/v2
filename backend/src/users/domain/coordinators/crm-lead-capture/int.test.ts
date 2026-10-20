@@ -209,3 +209,41 @@ Deno.test("REQ-098 a CRM that fails keeps the sync record with its attempts and 
   assertEquals(await outbox.list(), []);
   await done();
 });
+
+/**
+ * REQ-099 — Raphael, 2026-10-20, on prod after REQ-098 shipped: "every fucking onboarding question
+ * makes me wait." The wizard's saves enqueue the account's sync like the sign-up does — and a save
+ * made while that sync is already in flight must not be lost to it: the record is re-marked, the
+ * running sweep leaves it, the sweep that follows carries the newer profile.
+ */
+Deno.test("REQ-099 a save made while the account's sync is in flight is not lost: the record is re-marked, the sweep runs again after the first, and the CRM ends up with the newer profile", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const inputs: { contact?: string }[] = [];
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  const link = {
+    async createCustomer(input: { contact?: string }) {
+      inputs.push({ contact: input.contact });
+      if (inputs.length === 1) await held; // the first write sits on the CRM, as the CRM app's cold start holds the real one
+      return { customerId: "c-99" };
+    },
+  } as unknown as PaymentsLink;
+  const outbox = new CrmCaptureOutbox();
+  const users = new UserStore();
+  const crm = new CrmCustomerSync(users, new BusinessIdentityStore(), link, new PlanStore());
+  const leads = new CrmLeadCapture(outbox, crm);
+  const user = await users.create({ phoneNumber: "+15125550199", language: "en" });
+  await leads.enqueueSync(user.id);
+  await until(() => inputs.length >= 1);
+  // the person types a name while the first write is held, and the wizard saves it
+  await users.update(user.id, { name: "Ana" });
+  await leads.enqueueSync(user.id);
+  assertEquals((await outbox.list()).length, 1, "one record per account, re-marked");
+  release();
+  const t0 = Date.now();
+  while ((await outbox.list()).length > 0 && Date.now() - t0 < 3000) await new Promise((r) => setTimeout(r, 10));
+  assertEquals(await outbox.list(), [], "cleared once the newer profile landed");
+  assertEquals(inputs.map((i) => i.contact), [undefined, "Ana"], "the sweep that followed carried the name");
+  await done();
+});

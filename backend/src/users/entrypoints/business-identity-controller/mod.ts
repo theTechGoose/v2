@@ -5,7 +5,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { parseUpdateBusinessIdentity } from "@profile/dto/business-identity.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
-import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
+import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 
 @Controller("profile/identity")
 export class BusinessIdentityController {
@@ -13,7 +13,7 @@ export class BusinessIdentityController {
     private store: BusinessIdentityStore,
     private users: UserStore,
     private sessions: SessionStore,
-    private crm: CrmCustomerSync,
+    private leads: CrmLeadCapture,
   ) {}
 
   @Get()
@@ -28,7 +28,7 @@ export class BusinessIdentityController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const patch = parseUpdateBusinessIdentity(body);
     const saved = await this.store.upsert(user.id, patch);
-    await this.crm.sync(user.id); // REQ-058 — the business name is the CRM customer's name
+    await this.leads.enqueueSync(user.id); // REQ-058/099 — the business name is the CRM customer's name, after this reply
     return saved;
   }
 }

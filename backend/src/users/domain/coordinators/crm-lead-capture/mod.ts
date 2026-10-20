@@ -16,6 +16,10 @@
  * event to the backend and forget about it while the backend finishes the request." The account's
  * CRM customer (REQ-058) rides the same outbox: enqueueSync(userId) is the record before the
  * verify replies, and the sweep makes or revises the customer (CrmCustomerSync.ensure) after it.
+ * REQ-099 — "every fucking onboarding question makes me wait": the wizard's saves (PUT /me,
+ * PUT /profile/identity, POST /me/onboarded, the plan's tier changes) enqueue the same record;
+ * a record re-marked while a sweep holds it is carried again by the sweep that follows (the
+ * outbox's done() leaves it), so the CRM ends up with the profile as last saved.
  */
 import { Injectable } from "#danet/core";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";

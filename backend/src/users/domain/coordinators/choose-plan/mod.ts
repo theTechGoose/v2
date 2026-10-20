@@ -9,6 +9,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { appOrigin, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
+import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { addMonth, chosen, firstMonthMemo, isOneTime, monthlyMemo, type PickBack, planOf, RETURN_LABEL, returnUrlFor, settle, subscriptionRefFor, type SubscriptionView, withSubscription } from "@users/domain/business/plan/mod.ts";
 import type { PlanId } from "@users/dto/plan.ts";
 import type { UserPlan } from "@users/dto/plan.ts";
@@ -28,6 +29,8 @@ export class ChoosePlan {
     private plans: PlanStore,
     private link: PaymentsLink,
     private crm: CrmCustomerSync,
+    /** REQ-099 — the CRM hears a tier change by the sweep, after the reply; only the paid pick waits on the CRM (its pay link needs the customer) */
+    private leads: CrmLeadCapture,
   ) {}
 
   /** the plan as it stands — a paid one as the CRM's monthly billing says it stands (REQ-061) */
@@ -52,7 +55,7 @@ export class ChoosePlan {
       // REQ-061 — back to free stops the billing; the CRM has to take that, or the plan stays
       if (billing) await this.link.cancelSubscription(billing, "downgraded to free");
       const free = await this.plans.put(chosen(userId, "free", now));
-      await this.crm.sync(userId); // REQ-062 — the CRM's tier is Lead again
+      await this.leads.enqueueSync(userId); // REQ-062/099 — the CRM's tier is Lead again, after this reply
       return free;
     }
 
@@ -77,7 +80,7 @@ export class ChoosePlan {
     const next = settle(plan, open, new Date().toISOString());
     if (next === plan) return plan;
     const active = await this.projected(await this.plans.put(next));
-    await this.crm.sync(userId); // REQ-062 — a paying customer: the CRM's tier is the plan's name
+    await this.leads.enqueueSync(userId); // REQ-062/099 — a paying customer: the CRM's tier is the plan's name, after this reply
     return active;
   }
 
@@ -95,7 +98,7 @@ export class ChoosePlan {
       const next = withSubscription(plan, sub, new Date().toISOString());
       if (next === plan) return plan;
       const stored = await this.plans.put(next);
-      if (next.status !== plan.status) await this.crm.sync(plan.userId); // REQ-062 — a billing canceled on the CRM drops the tier
+      if (next.status !== plan.status) await this.leads.enqueueSync(plan.userId); // REQ-062/099 — a billing canceled on the CRM drops the tier, after this reply
       return stored;
     } catch (e) {
       console.warn(`[choose-plan] ${plan.userId}: the billing was not read: ${e instanceof Error ? e.message : String(e)}`);
