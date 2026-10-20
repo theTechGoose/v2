@@ -593,14 +593,15 @@ describe("REQ-102 the demo's day picker slides — every day the backend accepts
     expect(demo).toMatch(/data-cy="l2-days-next"/);
     expect(demo).toMatch(/aria-label=\{labels\.prevDays\}/);
     expect(demo).toMatch(/aria-label=\{labels\.nextDays\}/);
-    expect(demo).toMatch(/disabled=\{page === 0\}/);
-    expect(demo).toMatch(/disabled=\{page === pages - 1\}/);
+    // REQ-105: the strip scrolls — the arrows go off at the first day on view and at a view of the last five
+    expect(demo).toMatch(/disabled=\{first === 0\}/);
+    expect(demo).toMatch(/disabled=\{first >= days\.length - DEMO_DAY_COUNT\}/);
     expect(demo).toMatch(/demoMonthRange\(shown\)/);
     expect(demo).toMatch(/data-cy="l2-days-range"/);
     expect(demo).toMatch(/prevDays: string;/);
     expect(demo).toMatch(/nextDays: string;/);
-    // the pick is the day's index in the whole list, so it outlives the page on view
-    expect(demo).toMatch(/const i = page \* DEMO_DAY_COUNT \+ j;/);
+    // the pick is the day's index in the whole list, so it outlives the page on view (REQ-105: every day is in the row)
+    expect(demo).toMatch(/days\.map\(\(d, i\) =>/);
     expect(demo).toMatch(/aria-pressed=\{i === day\}/);
     const page = read(PAGE);
     expect(page).toMatch(/"prevDays",/);
@@ -622,19 +623,16 @@ describe("REQ-102 the demo's day picker slides — every day the backend accepts
     expect(arrow).toMatch(/min-width: 36px;/);
     expect(arrow).toMatch(/cursor: pointer;/);
     expect(css).toMatch(/\.l2-arrow:disabled \{[^}]*opacity/);
-    expect(css).toMatch(
-      /\.l2-demo__days--next \{\s*animation: l2-slide-next 0\.2s/,
-    );
-    expect(css).toMatch(
-      /\.l2-demo__days--prev \{\s*animation: l2-slide-prev 0\.2s/,
-    );
-    expect(css).toMatch(/@keyframes l2-slide-next/);
-    expect(css).toMatch(/@keyframes l2-slide-prev/);
+    // REQ-105 amended the motion: the strip is a scroller the arrows scroll smoothly; the keyframe slide is gone
+    expect(css).not.toMatch(/l2-slide-next|l2-slide-prev|l2-demo__days--/);
+    const view = /\.l2-demo__view \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(view).toMatch(/scroll-behavior: smooth;/);
     const calm =
       /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(css)
         ?.[1] ?? "";
-    // the block stills every .l2 animation, the slide included — no second rule for it
+    // the block stills every .l2 animation and plain-scrolls the strip — no second rule for it
     expect(calm).toMatch(/\.l2 \*,[\s\S]*?animation: none !important;/);
+    expect(calm).toMatch(/scroll-behavior: auto !important;/);
     expect(calm).not.toMatch(/l2-demo__days/);
     const phone =
       /@media \(max-width: 760px\) \{([\s\S]*?)\n\}/.exec(css)?.[1] ??
@@ -671,8 +669,121 @@ describe("REQ-104 a Monster Free signup names its plan at the code", () => {
     expect(island).toMatch(/addEventListener\("click", /);
     // the card says which plan it signs up for — what a story reads, what a person could be shown
     expect(island).toMatch(/id="empezar"[\s\S]*?data-plan=\{plan\}/);
-    expect(island).toMatch(/verifyClient\.verifyOtp\(\{\s*phoneNumber: toE164\(phone\),\s*code: digits,\s*plan,\s*\}\)/);
+    expect(island).toMatch(
+      /verifyClient\.verifyOtp\(\{\s*phoneNumber: toE164\(phone\),\s*code: digits,\s*plan,\s*\}\)/,
+    );
     const client = read("front-end/clients/verify.ts");
     expect(client).toMatch(/plan\?: string;/);
+  });
+});
+
+/**
+ * REQ-105 — Raphael, 2026-10-20, on the pinned /landing2: "why cant i click and drag the calendar
+ * on mobile? the expierence on mobile leds itself better to that." — "do it." — and on the first
+ * cut, which held five days and flipped the page on the release: "the boxes should render smoothly
+ * as you scroll, these fucking boxes dont render until you release". The strip is a scroller now:
+ * every day in one row, five to the view's width, snapping to a day; a finger scrolls it natively,
+ * the boxes moving under it; the arrows scroll it a page from wherever it stands; a mouse drags it
+ * (front-end/lib/day-strip.ts holds the arithmetic, day-strip.test.ts proves it).
+ */
+describe("REQ-105 the demo's day strip scrolls under the finger — every day in one row, five to the width, snapping to a day", () => {
+  test("the island renders every day in the row, reads the first day on view from the scroll, pages the arrows five from where the strip stands, drags under a mouse, and never picks the day a drag started on", () => {
+    const demo = read(ISLANDS[1]);
+    const imported =
+      /import \{([^}]*)\} from "\.\.\/lib\/day-strip\.ts";/.exec(demo)?.[1] ??
+        "";
+    for (const name of ["firstOnView", "isDrag", "nearestStop", "pageTarget"]) {
+      expect([name, imported.includes(name)]).toEqual([name, true]);
+    }
+    // the first cut's paging is gone with it (REQ-281)
+    expect(demo).not.toMatch(
+      /lib\/swipe\.ts|swipeDir|followOffset|slide\(|setPage|setSlid|l2-demo__days--/,
+    );
+    expect(demo).toMatch(/import \{ useRef, useState \} from "preact\/hooks";/);
+    expect(demo).toMatch(/days\.map\(\(d, i\) =>/);
+    // the view — the clipped cell between the arrows — is the scroller and carries the handlers
+    const view =
+      /<div\s+ref=\{viewRef\}\s+class=\{`l2-demo__view[\s\S]*?>/.exec(
+        demo,
+      )?.[0] ?? "";
+    expect(view).toMatch(/onScroll=\{track\}/);
+    expect(view).toMatch(/onPointerDown=\{grab\}/);
+    expect(view).toMatch(/onPointerMove=\{follow\}/);
+    expect(view).toMatch(/onPointerUp=\{release\}/);
+    expect(view).toMatch(/onPointerCancel=\{release\}/);
+    expect(view).toMatch(/onClickCapture=\{swallowClick\}/);
+    // the first day on view is read off the scroll; the arrows send the strip five on from where it stands (or from where the last arrow sent it, while that scroll still runs)
+    expect(demo).toMatch(
+      /setFirst\(firstOnView\(el\.scrollLeft, stepOf\(el\)\)\)/,
+    );
+    expect(demo).toMatch(/disabled=\{first === 0\}/);
+    expect(demo).toMatch(/disabled=\{first >= days\.length - DEMO_DAY_COUNT\}/);
+    expect(demo).toMatch(
+      /pageTarget\(\s*aim\.current \?\? first,\s*dir,\s*DEMO_DAY_COUNT,\s*days\.length,?\s*\)/,
+    );
+    expect(demo).toMatch(/el\.scrollTo\(\{ left: target \* stepOf\(el\) \}\)/);
+    // a mouse drags the view directly while held — snapping off — and it settles on the nearest day when let go; a finger is the browser's own scroll, untouched
+    expect(demo).toMatch(
+      /if \(e\.pointerType !== "mouse" \|\| e\.button !== 0\) return;/,
+    );
+    expect(demo).toMatch(/setPointerCapture\(e\.pointerId\)/);
+    expect(demo).toMatch(/el\.scrollLeft = t\.left - \(e\.clientX - t\.x\);/);
+    expect(demo).toMatch(/l2-demo__view--held/);
+    expect(demo).toMatch(
+      /el\.scrollTo\(\{\s*left: nearestStop\(el\.scrollLeft, stepOf\(el\)\),\s*behavior: calm\(\),\s*\}\)/,
+    );
+    // a drag is not a tap: the click after one is swallowed once; a tap's click picks
+    // the pointer is taken once the mouse has moved past the slack — never on the press, which would retarget a plain click away from its day
+    expect(demo).toMatch(
+      /if \(!t\.moved && isDrag\(dx, 0\)\) \{\s*t\.moved = true;\s*el\.setPointerCapture\(e\.pointerId\);/,
+    );
+    expect(demo).not.toMatch(
+      /swallow\.current = false;\s*touch\.current = \{[^}]*\};\s*el\.setPointerCapture/,
+    );
+    expect(demo).toMatch(/swallow\.current = t\.moved;/);
+    expect(demo).toMatch(
+      /function swallowClick\(e: MouseEvent\) \{\s*if \(!swallow\.current\) return;\s*swallow\.current = false;\s*e\.stopPropagation\(\);\s*e\.preventDefault\(\);/,
+    );
+  });
+
+  test("the stylesheet: the view is a horizontal scroller that snaps to a day and hides its bar, the row holds every day five to the width, a day is a snap stop, a held view snaps not, and reduced motion scrolls plainly", () => {
+    const css = read(CSS);
+    const view = /\.l2-demo__view \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(view).toMatch(/overflow-x: auto;/);
+    expect(view).toMatch(/overflow-y: hidden;/);
+    expect(view).toMatch(/scroll-snap-type: x mandatory;/);
+    expect(view).toMatch(/scroll-padding: 3px;/); // the focus-ring padding, so a stop is a day's edge
+    expect(view).toMatch(/scroll-behavior: smooth;/);
+    expect(view).toMatch(/scrollbar-width: none;/);
+    expect(view).toMatch(/overscroll-behavior-x: contain;/);
+    expect(view).toMatch(/user-select: none;/);
+    expect(view).not.toMatch(/touch-action|overflow: hidden|transition/);
+    expect(css).toMatch(
+      /\.l2-demo__view::-webkit-scrollbar \{\s*display: none;\s*\}/,
+    );
+    expect(css).toMatch(
+      /\.l2-demo__view--held \{[^}]*scroll-snap-type: none;[^}]*\}/,
+    );
+    expect(css).toMatch(
+      /\.l2-demo__view--held \{[^}]*scroll-behavior: auto;[^}]*\}/,
+    );
+    const days = /\.l2-demo__days \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(days).toMatch(/grid-auto-flow: column;/);
+    expect(days).toMatch(
+      /grid-auto-columns: calc\(\(100% - 4 \* 8px\) \/ 5\);/,
+    );
+    expect(days).not.toMatch(/grid-template-columns|transition|animation/);
+    const day = /\.l2-day \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(day).toMatch(/scroll-snap-align: start;/);
+    const phone =
+      /@media \(max-width: 760px\) \{([\s\S]*?)\n\}/.exec(css)?.[1] ??
+        "";
+    expect(phone).toMatch(
+      /\.l2-demo__days \{\s*gap: 6px;\s*grid-auto-columns: calc\(\(100% - 4 \* 6px\) \/ 5\);/,
+    );
+    const calm =
+      /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(css)
+        ?.[1] ?? "";
+    expect(calm).toMatch(/scroll-behavior: auto !important;/);
   });
 });
