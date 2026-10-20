@@ -15,6 +15,7 @@
  * Either way a conversion is "an event of that name, once, with that id".
  */
 import { story, type StoryTools } from "#shots";
+import { answerQuestions } from "../_shared/onboarding-answers.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -232,7 +233,9 @@ Deno.test("REQ-080: the pixel is on the ad funnel's pages — the landing page i
     calls = await drain();
     expect.eq(named(calls, "PageView").length, 1, "one PageView on /landing");
     // the app's own pages: no pixel at all — no fbq, no event
-    await signIn(http, page, baseUrl, { name: "Pixel Reader" });
+    const reader = await signIn(http, page, baseUrl, { name: "Pixel Reader" });
+    // REQ-091: the dashboard sends an account with an onboarding question open back to the wizard — answer them all
+    await answerQuestions(http, reader.auth, { name: "Pixel Reader" });
     for (const path of ["/dashboard", "/terms"]) {
       await page.goto(path);
       await page.waitForLoadState("networkidle");

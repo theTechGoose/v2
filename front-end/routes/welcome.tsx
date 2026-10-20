@@ -1,15 +1,15 @@
 import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import SiteFooter from "../components/SiteFooter.tsx";
-import { getSessionId, loadUser } from "../lib/auth.ts";
+import { loadUser } from "../lib/auth.ts";
 import {
   type Lang,
   langFromCookie,
   pickLangFromAcceptLanguage,
 } from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
-import { type ProfileSnapshot } from "../clients/profile.ts";
-import { ssrBackendGetAuthed } from "../lib/backend-fetch.ts";
+import { loadProfileSnapshot } from "../lib/onboarding-gate.ts";
+import { onboardingAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
 import WelcomeWizard from "../islands/WelcomeWizard.tsx";
 import { MetaPixelEvent } from "../components/MetaPixel.tsx";
 import {
@@ -18,17 +18,18 @@ import {
 } from "../../shared/meta-pixel/pixel.ts";
 
 /**
- * /welcome — the first-sign-in onboarding wizard.
+ * /welcome — the onboarding wizard.
  *
- * Entered by exactly ONE redirect at first sign-in (verify → /welcome) and by
- * voluntary visits. It is the ONLY place that redirects on onboarding state,
- * and it does so in one direction only:
- *   - no session          → 302 /            (sign in first)
- *   - already onboarded    → 302 /dashboard   (skip is permanent, no re-trap)
- *   - otherwise            → render the wizard
+ * REQ-091: onboarding happens until every one of its questions is answered.
+ * Entered by every verified code while a question is open (the backend's
+ * redirectTo), by the dashboard's gate (routes/dashboard/_middleware.ts) and
+ * by voluntary visits. It redirects in one direction only:
+ *   - no session              → 302 /           (sign in first)
+ *   - every question answered → 302 /dashboard  (nothing left to ask)
+ *   - otherwise               → render the wizard, at the first open question
  *
- * No middleware anywhere else gates navigation on profile completeness — a
- * brand-new user who skips everything can still reach every page.
+ * Skip puts a question off for now; the skip stamp (`onboardedAt`) is a
+ * record, never a gate — the wizard asks again next time.
  */
 export default define.page(async function Welcome(ctx) {
   const user = await loadUser(ctx.req);
@@ -36,21 +37,15 @@ export default define.page(async function Welcome(ctx) {
     return new Response(null, { status: 302, headers: { Location: "/" } });
   }
 
-  // In-process SSR fetch — the HTTP profile client self-fetches the public URL
-  // (508 Loop Detected on Deno Deploy) or falls back to BACKEND_URL=localhost,
-  // which fails in prod and left this page stuck on welcome.loadError. Go
-  // through the in-process backend handler like the assistant routes do.
-  const sessionId = getSessionId(ctx.req);
-  const snapRes = await ssrBackendGetAuthed<ProfileSnapshot>(
-    "/profile",
-    sessionId,
-  ).catch(() => ({ ok: false as const, status: 0 }));
-  const snapshot: ProfileSnapshot | null = snapRes.ok && snapRes.data
-    ? snapRes.data
-    : null;
+  // In-process SSR fetch (lib/onboarding-gate.ts) — the HTTP profile client
+  // self-fetches the public URL (508 Loop Detected on Deno Deploy) or falls
+  // back to BACKEND_URL=localhost, which fails in prod and left this page
+  // stuck on welcome.loadError.
+  const snapshot = await loadProfileSnapshot(ctx.req);
 
-  // Already finished (or skipped) onboarding → never trap them here again.
-  if (snapshot?.user?.onboardedAt) {
+  // REQ-091: nothing left to ask → the dashboard. (A profile that cannot load
+  // shows the load error below, never a loop.)
+  if (snapshot && onboardingAnswered(snapshot)) {
     return new Response(null, {
       status: 302,
       headers: { Location: "/dashboard" },

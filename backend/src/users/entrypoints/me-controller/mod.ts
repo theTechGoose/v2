@@ -111,11 +111,13 @@ export class MeController {
   }
 
   /**
-   * POST /me/onboarded — mark first-sign-in onboarding as finished (or
-   * skipped). Body `{ skipped?: boolean }` (defaults to false = a real
-   * finish). Idempotent: the first call stamps the server's now-ISO onto
-   * `onboardedAt`; later calls are no-ops that keep the first timestamp, so
-   * `/welcome` bounces to `/dashboard` forever after (skip is permanent).
+   * POST /me/onboarded — record that the person reached the end of the
+   * /welcome wizard, or left it (`{ skipped: true }`). Idempotent: the first
+   * call stamps the server's now-ISO onto `onboardedAt`; later calls are
+   * no-ops that keep the first timestamp. A record, not a gate (REQ-091):
+   * the wizard, the dashboard and a verified code look at the questions
+   * still open on the profile, never at this stamp — onboarding happens
+   * until every question is answered.
    */
   @Post("onboarded")
   async onboarded(@Context() ctx: ExecutionContext, @Body() body: unknown) {

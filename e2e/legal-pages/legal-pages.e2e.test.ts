@@ -19,6 +19,7 @@
  * landing.tsx) and /contact with its ContactForm island.
  */
 import { story, type StoryTools } from "#shots";
+import { answerQuestions } from "../_shared/onboarding-answers.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -49,13 +50,9 @@ async function signIn(http: StoryTools["http"], page: StoryTools["page"], baseUr
   }
   if (!cookie) throw new Error(`sign-in: no session cookie (${JSON.stringify(body)})`);
   const auth = { ...JSON_HEADERS, cookie };
-  for (const [path, payload] of [
-    ["/api/me", { name: "Footer Reader", language: "en" }],
-    ["/api/profile/identity", { businessName: "Footer Reader LLC" }],
-  ] as const) {
-    const res = await http(path, { method: "PUT", headers: auth, body: JSON.stringify(payload) });
-    await res.body?.cancel();
-  }
+  await (await http("/api/me", { method: "PUT", headers: auth, body: JSON.stringify({ language: "en" }) })).body?.cancel();
+  // REQ-091: the dashboard sends an account with an onboarding question open back to the wizard — answer them all
+  await answerQuestions(http, auth, { name: "Footer Reader", businessName: "Footer Reader LLC" });
   const [name, value] = cookie.split("=");
   const host = new URL(baseUrl).hostname;
   await page.context().addCookies([
