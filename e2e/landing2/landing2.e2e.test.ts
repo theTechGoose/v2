@@ -8,7 +8,8 @@
  * bids needs 10px of padding." REQ-094 — Raphael, 2026-10-19, on that worktree: "go through this
  * with a fine tooth comb." — the audit of the whole page, and what it found. REQ-095 — "go through
  * the landing page with a fine tooth comb again. find any issues, fix them" — the second pass.
- * REQ-096 — "run the fine tooth comb again" — the third.
+ * REQ-096 — "run the fine tooth comb again" — the third. REQ-097 — Raphael, 2026-10-20: "all the
+ * 'Al tocar Empezar aceptas recibir textos de DocuMonster. … Términos' checkboxes should be ticked."
  *
  * The page: front-end/routes/landing2.tsx (SSR, Spanish first, English on the toggle), its
  * islands — Landing2Signup (phone + the TCPA consent box → code → straight into the app, through
@@ -461,7 +462,7 @@ Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the th
     );
   }));
 
-Deno.test("REQ-089: the signup card is the mock's — the consent box starts unticked and holds the code until it is ticked, then the code goes out, opens the account and goes straight into the app, and the Lead fires once", (t) =>
+Deno.test("REQ-089: the signup card is the mock's — the consent box is ticked when the page opens (REQ-097) and holds the code while it is unticked, then the code goes out, opens the account and goes straight into the app, and the Lead fires once", (t) =>
   story(t, async ({ page, expect, baseUrl }) => {
     const drain = watchPixel(page);
     const posts = watchPosts(page, "/auth/send-otp");
@@ -469,7 +470,7 @@ Deno.test("REQ-089: the signup card is the mock's — the consent box starts unt
     await page.goto("/landing2");
     await expect.see("Empieza gratis en 30 segundos");
     await drain(); // the PageView
-    // the card as the mock drew it: the phone, Empezar gratis, the consent box unticked, the phone row
+    // the card as the mock drew it: the phone, Empezar gratis, the consent box — ticked when the page opens (REQ-097) — the phone row
     const card = page.locator("[data-cy='l2-signup']");
     expect.eq(
       ((await card.locator("[data-cy='l2-send-code']").textContent()) ?? "")
@@ -480,8 +481,8 @@ Deno.test("REQ-089: the signup card is the mock's — the consent box starts unt
     const consent = page.locator("#reg-consent");
     expect.eq(
       await consent.isChecked(),
-      false,
-      "the consent box starts unticked",
+      true,
+      "the consent box is ticked when the page opens (REQ-097)",
     );
     await expect.see("Al tocar Empezar aceptas recibir textos de DocuMonster.");
     expect.eq(
@@ -495,7 +496,8 @@ Deno.test("REQ-089: the signup card is the mock's — the consent box starts unt
       1,
       "the phone row dials the line",
     );
-    // unticked: the code is held on the page, nothing is posted, no Lead
+    // unticked by the person: the code is held on the page, nothing is posted, no Lead
+    await consent.uncheck();
     const phone = `512${digits()}`;
     await page.locator("#reg-phone").fill(phone);
     await page.locator("[data-cy='l2-send-code']").click();
@@ -511,7 +513,7 @@ Deno.test("REQ-089: the signup card is the mock's — the consent box starts unt
       0,
       "no Lead without consent",
     );
-    // ticked: the code goes out, on the same page — and the Lead, once
+    // ticked again: the code goes out, on the same page — and the Lead, once
     await consent.check();
     await page.locator("[data-cy='l2-send-code']").click();
     await expect.see("Te mandamos un código de 6 dígitos");
@@ -579,7 +581,7 @@ Deno.test("REQ-089: the signup card is the mock's — the consent box starts unt
     await expect.see("Empieza gratis en 30 segundos");
   }));
 
-Deno.test("REQ-090: the demo card — Llámenme with just a cell books a call as soon as possible; the day-and-window form books a demo; each holds until its consent box is ticked; the team is emailed, the person is texted, and the phone is a lead", (t) =>
+Deno.test("REQ-090: the demo card — Llámenme with just a cell books a call as soon as possible; the day-and-window form books a demo; each holds while its consent box is unticked (it opens ticked, REQ-097); the team is emailed, the person is texted, and the phone is a lead", (t) =>
   story(t, async ({ page, expect }) => {
     const posts = watchPosts(page, "/api/demo-request");
     await page.setViewportSize(DESKTOP);
@@ -597,14 +599,15 @@ Deno.test("REQ-090: the demo card — Llámenme with just a cell books a call as
       1,
       "the form is inside it",
     );
-    // Llámenme: just a cell — held until the box is ticked
+    // Llámenme: just a cell — held while the box is unticked
     const quickPhone = `512${digits()}`;
     await page.locator("#demo-phone").fill(quickPhone);
     expect.eq(
       await page.locator("#demo-consent").isChecked(),
-      false,
-      "the demo's consent box starts unticked",
+      true,
+      "the demo's consent box is ticked when the page opens (REQ-097)",
     );
+    await page.locator("#demo-consent").uncheck();
     await page.locator("[data-cy='l2-demo-call']").click();
     await expect.see("Tick the box so we can text or call you.");
     expect.eq(posts(), 0, "nothing was posted without consent");
@@ -684,7 +687,8 @@ Deno.test("REQ-090: the demo card — Llámenme with just a cell books a call as
       ((await summary.textContent()) ?? "").includes("Tarde, 1 – 5 PM"),
       "the summary follows the window",
     );
-    // the details: a name is needed, the consent box too; the email is optional
+    // the details: a name is needed, the consent box too (unticked by the person — it opens ticked, REQ-097); the email is optional
+    await page.locator("#demo-consent").uncheck();
     await page.locator("#f-phone").fill(`512${digits()}`);
     await page.locator("[data-cy='l2-demo-submit']").click();
     await expect.see("Escribe tu nombre.");
@@ -922,7 +926,7 @@ Deno.test("REQ-084: the signup card asks the browser for no autofill — the pho
       }),
       `the phone field (${JSON.stringify(phone)})`,
     );
-    await page.locator("#reg-consent").check(); // REQ-089: the consent box gates the code
+    // REQ-097: the consent box is ticked when the page opens — nothing to tick
     await page.locator("#reg-phone").fill(`512${digits()}`);
     await page.locator("[data-cy='l2-send-code']").click();
     await page.locator("[data-cy='l2-signup-step'][data-step='2']").waitFor({
@@ -1368,7 +1372,6 @@ Deno.test("REQ-096: the third comb — the stylesheet's link is cache-busted; th
     );
     // the demo's thanks is a heading: book a call and read it
     await page.locator("#demo-phone").fill(`512${digits()}`);
-    await page.locator("#demo-consent").check();
     await clickUntil(
       page,
       "[data-cy='l2-demo-call']",
@@ -1379,4 +1382,63 @@ Deno.test("REQ-096: the third comb — the stylesheet's link is cache-busted; th
       1,
       "Done! is a heading",
     );
+  }));
+
+Deno.test("REQ-097: every consent box on /landing2 — the signup card's and the demo's — is ticked when the page opens, in both languages; Empezar gratis and Llámenme go through without touching it, and unticking it still holds the code and the call", (t) =>
+  story(t, async ({ page, expect }) => {
+    const otps = watchPosts(page, "/auth/send-otp");
+    const demos = watchPosts(page, "/api/demo-request");
+    await page.setViewportSize(DESKTOP);
+    for (const lang of ["es", "en"] as const) {
+      await page.goto(`/landing2?lang=${lang}`);
+      await expect.see(
+        lang === "es"
+          ? "Empieza gratis en 30 segundos"
+          : "Want to see it first? We’ll call you.",
+      );
+      expect.eq(
+        await page.locator("#reg-consent").isChecked(),
+        true,
+        `the signup's consent box is ticked when the ${lang} page opens`,
+      );
+      await page.locator("#demo").scrollIntoViewIfNeeded();
+      expect.eq(
+        await page.locator("#demo-consent").isChecked(),
+        true,
+        `the demo's consent box is ticked when the ${lang} page opens`,
+      );
+    }
+    // the English page is open: Llámenme books the call without touching the box
+    await page.locator("#demo-phone").fill(`512${digits()}`);
+    await clickUntil(
+      page,
+      "[data-cy='l2-demo-call']",
+      async () => (await count(page, "[data-cy='l2-demo-done']")) > 0,
+    );
+    expect.eq(demos(), 1, "the call was booked without touching the box");
+    // and Start free sends the code without touching the box
+    await page.locator("#reg-phone").fill(`512${digits()}`);
+    await clickUntil(
+      page,
+      "[data-cy='l2-send-code']",
+      async () =>
+        (await count(page, "[data-cy='l2-signup-step'][data-step='2']")) > 0,
+    );
+    expect.eq(otps(), 1, "the code went out without touching the box");
+    // unticked by the person, each box still holds what it guards, in the page's language
+    await page.goto("/landing2?lang=es");
+    await expect.see("Empieza gratis en 30 segundos");
+    await page.locator("#reg-consent").uncheck();
+    await page.locator("#reg-phone").fill(`512${digits()}`);
+    await page.locator("[data-cy='l2-send-code']").click();
+    await expect.see("Marca la casilla para que te mandemos el código.");
+    expect.eq(otps(), 1, "nothing more was posted once unticked");
+    await page.locator("#demo").scrollIntoViewIfNeeded();
+    await page.locator("#demo-consent").uncheck();
+    await page.locator("#demo-phone").fill(`512${digits()}`);
+    await page.locator("[data-cy='l2-demo-call']").click();
+    await expect.see(
+      "Marca la casilla para que podamos escribirte o llamarte.",
+    );
+    expect.eq(demos(), 1, "no call was booked once unticked");
   }));
