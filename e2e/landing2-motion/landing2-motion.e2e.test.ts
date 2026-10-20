@@ -102,15 +102,17 @@ Deno.test("REQ-083: the signup card tells the signup in motion — the card slam
     );
     // Get started: the text bubble launches, the monster bounces, the card flips to the code step
     await page.locator("[data-cy='l2-send-code']").click();
-    await page.locator("[data-cy='l2-sms']").waitFor({
-      state: "visible",
-      timeout: 5000,
-    });
-    expect.eq(
-      await anim(page, "[data-cy='l2-sms']"),
-      "l2-sms-fly",
-      "the text bubble flies",
+    // the bubble is on the page only while it flies: read its animation the moment it appears,
+    // in one call — a wait and then a read raced on a loaded machine (the gate, 2026-10-19)
+    const fly = await page.waitForFunction(
+      () => {
+        const el = document.querySelector("[data-cy='l2-sms']");
+        return el ? getComputedStyle(el).animationName : null;
+      },
+      undefined,
+      { timeout: 5000 },
     );
+    expect.eq(await fly.jsonValue(), "l2-sms-fly", "the text bubble flies");
     await page.locator("[data-cy='l2-signup-step'][data-step='2']").waitFor({
       timeout: 15_000,
     });
