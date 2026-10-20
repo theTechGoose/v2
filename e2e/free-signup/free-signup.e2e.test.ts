@@ -2,7 +2,7 @@
  * REQ-104 — Raphael, 2026-10-20: "Monster Free signup must get initial information and then
  * skip credit card ask."
  *
- * The signup card on /landing2 is a Monster Free signup — "Empieza gratis en 30 segundos" — and
+ * The signup card on /landing2 is a Monster Free signup — it says "Empieza en 30 segundos" (REQ-107) — and
  * so is every Empezar gratis button into it (the nav's, the Monster Free card's, the final CTA's,
  * the sticky bar's); a paid card's Registrarme is not. A Monster Free signup names free with the
  * code, the backend stores Monster Free on the new account, and the wizard asks the initial
@@ -111,7 +111,7 @@ Deno.test("REQ-104: a Monster Free signup on /landing2 — Empezar gratis — ge
   story(t, async ({ page, expect, http }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2?lang=en");
-    await expect.see("Start free in 30 seconds");
+    await expect.see("Get started in 30 seconds");
     // the card signs up for Monster Free as the page opens; the Monster Free card's button says so too
     expect.eq(
       await page.locator("[data-cy='l2-signup']").getAttribute("data-plan"),
@@ -180,7 +180,7 @@ Deno.test("REQ-104: Registrarme on a paid card is not a Monster Free signup — 
   story(t, async ({ page, expect, http }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2?lang=en");
-    await expect.see("Start free in 30 seconds");
+    await expect.see("Get started in 30 seconds");
     await enterThrough(page, "monster");
     await signUpOnCard(page);
     await expect.see("what should we call you");
@@ -219,3 +219,38 @@ Deno.test("REQ-104: Registrarme on a paid card is not a Monster Free signup — 
       "and so is the plan the button named",
     );
   }));
+
+/**
+ * REQ-107 — Raphael, 2026-10-20, on the shipped /landing2: "if you click start on the $99 it jumps
+ * you to start free even though you ask, just change the text to get started." The $99 card's
+ * Sign up opened the signup card titled Start free in 30 seconds with a Start free button; the
+ * card's title, its button and its consent line say Get started / Empezar now, in both languages,
+ * and the card still signs up for the plan whose button brought the person to it (REQ-104).
+ */
+Deno.test("REQ-107: Sign up on the $99 card opens the signup card saying Get started — not Start free — and the card still signs up for Monster", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2?lang=en");
+    await expect.see("Get started in 30 seconds");
+    await enterThrough(page, "monster");
+    const card = page.locator("[data-cy='l2-signup']");
+    expect.eq(await card.getAttribute("data-plan"), "monster", "the card signs up for the plan whose button was pressed");
+    expect.eq(((await card.locator("h2").first().textContent()) ?? "").trim(), "Get started in 30 seconds", "the title says Get started, not Start free");
+    expect.eq(((await card.locator("[data-cy='l2-send-code']").textContent()) ?? "").trim(), "Get started", "the button too");
+    const consent = ((await page.locator("label[for='reg-consent']").textContent()) ?? "").trim();
+    expect(/By tapping Get started/.test(consent), `the consent line names the button by its new name (${consent.slice(0, 60)})`);
+    for (const text of [await card.locator("h2").first().textContent(), await card.locator("[data-cy='l2-send-code']").textContent(), consent]) {
+      expect(!/free/i.test(text ?? ""), `nothing on the card says free (${(text ?? "").slice(0, 60)})`);
+    }
+    // and in Spanish
+    await page.goto("/landing2?lang=es");
+    await expect.see("Empieza en 30 segundos");
+    await enterThrough(page, "monster");
+    expect.eq(((await card.locator("[data-cy='l2-send-code']").textContent()) ?? "").trim(), "Empezar", "Empezar, not Empezar gratis");
+    expect(!/gratis/i.test(((await card.locator("h2").first().textContent()) ?? "")), "the title does not say gratis");
+    expect.eq(await card.getAttribute("data-plan"), "monster", "still Monster");
+    // the buttons INTO the card keep their own words: the Monster Free card starts free, the paid cards sign up
+    expect.eq(((await page.locator("[data-cy='l2-plan-cta'][data-plan='free']").textContent()) ?? "").trim(), "Empezar gratis", "the Monster Free card's button still says Empezar gratis");
+    expect.eq(((await page.locator("[data-cy='l2-plan-cta'][data-plan='monster']").textContent()) ?? "").trim(), "Registrarme", "the $99 card's button says Registrarme");
+  }));
+

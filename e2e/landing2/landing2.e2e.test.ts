@@ -523,15 +523,15 @@ Deno.test("REQ-089: the signup card is the mock's — the consent box is ticked 
     const posts = watchPosts(page, "/auth/send-otp");
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2");
-    await expect.see("Empieza gratis en 30 segundos");
+    await expect.see("Empieza en 30 segundos");
     await drain(); // the PageView
-    // the card as the mock drew it: the phone, Empezar gratis, the consent box — ticked when the page opens (REQ-097) — the phone row
+    // the card as the mock drew it: the phone, Empezar (REQ-107), the consent box — ticked when the page opens (REQ-097) — the phone row
     const card = page.locator("[data-cy='l2-signup']");
     expect.eq(
       ((await card.locator("[data-cy='l2-send-code']").textContent()) ?? "")
         .trim(),
-      "Empezar gratis",
-      "the button says Empezar gratis",
+      "Empezar",
+      "the button says Empezar (REQ-107: not Empezar gratis)",
     );
     const consent = page.locator("#reg-consent");
     expect.eq(
@@ -633,7 +633,7 @@ Deno.test("REQ-089: the signup card is the mock's — the consent box is ticked 
     await page.locator("[data-cy='l2-send-code']").click();
     await expect.see("Te mandamos un código de 6 dígitos");
     await page.locator("[data-cy='l2-back-to-phone']").click();
-    await expect.see("Empieza gratis en 30 segundos");
+    await expect.see("Empieza en 30 segundos");
   }));
 
 Deno.test("REQ-090: the demo card — Llámenme with just a cell books a call as soon as possible; the day-and-window form books a demo; each holds while its consent box is unticked (it opens ticked, REQ-097); the team is emailed, the person is texted, and the phone is a lead", (t) =>
@@ -1410,7 +1410,7 @@ Deno.test("REQ-096: the third comb — the stylesheet's link is cache-busted; th
       )
     );
     expect(
-      headings.includes("H2:Empieza gratis en 30 segundos"),
+      headings.includes("H2:Empieza en 30 segundos"),
       `the signup card's title is a heading (${headings.join(" | ")})`,
     );
     // the toggle says where it goes, both ways
@@ -1449,7 +1449,7 @@ Deno.test("REQ-097: every consent box on /landing2 — the signup card's and the
       await page.goto(`/landing2?lang=${lang}`);
       await expect.see(
         lang === "es"
-          ? "Empieza gratis en 30 segundos"
+          ? "Empieza en 30 segundos"
           : "Want to see it first? We’ll call you.",
       );
       expect.eq(
@@ -1483,7 +1483,7 @@ Deno.test("REQ-097: every consent box on /landing2 — the signup card's and the
     expect.eq(otps(), 1, "the code went out without touching the box");
     // unticked by the person, each box still holds what it guards, in the page's language
     await page.goto("/landing2?lang=es");
-    await expect.see("Empieza gratis en 30 segundos");
+    await expect.see("Empieza en 30 segundos");
     await page.locator("#reg-consent").uncheck();
     await page.locator("#reg-phone").fill(`512${digits()}`);
     await page.locator("[data-cy='l2-send-code']").click();
