@@ -99,6 +99,52 @@ function watchPosts(page: StoryTools["page"], path: string) {
 const count = async (page: StoryTools["page"], selector: string) =>
   await page.locator(selector).count();
 
+/** REQ-105 — the day strip is a scroller: the days whole inside its view, left to right */
+const onView = (page: StoryTools["page"]): Promise<string[]> =>
+  page.evaluate(() => {
+    const v = document.querySelector(".l2-demo__view")!.getBoundingClientRect();
+    return Array.from(document.querySelectorAll("[data-cy='l2-day']"))
+      .filter((e) => {
+        const b = e.getBoundingClientRect();
+        return b.left >= v.left - 1.5 && b.right <= v.right + 1.5;
+      })
+      .map((e) => e.getAttribute("data-day") ?? "");
+  });
+/** the days with any part inside the view — what a finger mid-scroll sees */
+const peeking = (page: StoryTools["page"]): Promise<string[]> =>
+  page.evaluate(() => {
+    const v = document.querySelector(".l2-demo__view")!.getBoundingClientRect();
+    return Array.from(document.querySelectorAll("[data-cy='l2-day']"))
+      .filter((e) => {
+        const b = e.getBoundingClientRect();
+        return b.right > v.left + 1 && b.left < v.right - 1;
+      })
+      .map((e) => e.getAttribute("data-day") ?? "");
+  });
+/** the picked day while it is on view; null when none is, or it has scrolled away */
+const litOnView = async (
+  page: StoryTools["page"],
+): Promise<string | null> => {
+  const lit: string | null = await page.evaluate(() =>
+    document.querySelector("[data-cy='l2-day'].on")?.getAttribute("data-day") ??
+      null
+  );
+  return lit && (await onView(page)).includes(lit) ? lit : null;
+};
+/** the strip at rest: its scroll unchanged across 80 ms — a smooth scroll or a snap still moving it would fool a read */
+const settledStrip = async (page: StoryTools["page"]) => {
+  const read = () =>
+    page.locator(".l2-demo__view").evaluate((el: HTMLElement) => el.scrollLeft);
+  let last = Number.NaN;
+  await page.waitForTimeout(60);
+  for (let i = 0; i < 40; i++) {
+    const x = Math.round((await read()) * 10);
+    if (x === last) return;
+    last = x;
+    await page.waitForTimeout(80);
+  }
+};
+
 const top = (page: StoryTools["page"], selector: string) =>
   page.locator(selector).evaluate((el: HTMLElement) =>
     el.getBoundingClientRect().top + globalThis.scrollY
@@ -656,9 +702,9 @@ Deno.test("REQ-090: the demo card — Llámenme with just a cell books a call as
       async () => (await count(page, "[data-cy='l2-day']")) > 0,
     );
     expect.eq(
-      await count(page, "[data-cy='l2-day']"),
+      (await onView(page)).length,
       DEMO_DAY_COUNT,
-      "five days to pick",
+      "five days to pick on view (REQ-105: the whole list is in the row, five to the width)",
     );
     expect.eq(
       await count(page, "[data-cy='l2-slot']"),
@@ -878,9 +924,9 @@ Deno.test("REQ-090: all five days of the demo's day picker sit whole inside the 
       );
       const days = page.locator("[data-cy='l2-day']");
       expect.eq(
-        await days.count(),
+        (await onView(page)).length,
         DEMO_DAY_COUNT,
-        `five days at ${vp.width}px`,
+        `five days on view at ${vp.width}px`,
       );
       const card =
         (await page.locator("[data-cy='l2-demo-card']").boundingBox())!;
@@ -893,12 +939,13 @@ Deno.test("REQ-090: all five days of the demo's day picker sit whole inside the 
           } ≤ ${Math.round(card.x + card.width)})`,
         );
       }
-      const row = page.locator("[data-cy='l2-demo-card'] .l2-demo__days");
+      // REQ-105 amends REQ-090's "never scrolls": the strip scrolls INSIDE its view — the page never does (below)
+      const view = page.locator("[data-cy='l2-demo-card'] .l2-demo__view");
       expect(
-        await row.evaluate((el: HTMLElement) =>
-          el.scrollWidth <= el.clientWidth + 1
+        await view.evaluate((el: HTMLElement) =>
+          el.scrollWidth > el.clientWidth + 1
         ),
-        `nothing to scroll at ${vp.width}px`,
+        `the strip scrolls inside its view at ${vp.width}px`,
       );
       const scrollW = await page.evaluate(() =>
         document.documentElement.scrollWidth
@@ -1461,10 +1508,8 @@ Deno.test("REQ-097: every consent box on /landing2 — the signup card's and the
  */
 Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the next five days, a day on the second page is picked, kept through a slide back and booked; the arrows stop at the first and the last page; five days and both arrows sit whole inside the card, on a desktop and on a phone", (t) =>
   story(t, async ({ page, expect }) => {
-    const isos = () =>
-      page.locator("[data-cy='l2-day']").evaluateAll((els: HTMLElement[]) =>
-        els.map((e) => e.getAttribute("data-day") ?? "")
-      );
+    // REQ-105: the whole list is in the row and the strip scrolls — "a page" is the five on view
+    const isos = () => onView(page);
     const plusDays = (iso: string, n: number) =>
       new Date(Date.parse(iso) + n * 86_400_000).toISOString().slice(0, 10);
     for (const vp of [DESKTOP, PHONE]) {
@@ -1479,7 +1524,7 @@ Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the n
       const prev = page.locator("[data-cy='l2-days-prev']");
       const next = page.locator("[data-cy='l2-days-next']");
       expect.eq(
-        await count(page, "[data-cy='l2-day']"),
+        (await isos()).length,
         DEMO_DAY_COUNT,
         `five days at a time at ${vp.width}px`,
       );
@@ -1540,11 +1585,8 @@ Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the n
       );
       const first = await isos();
       // the right arrow: the next five days, consecutive from the fifth
-      await clickUntil(
-        page,
-        "[data-cy='l2-days-next']",
-        async () => (await isos())[0] !== first[0],
-      );
+      await next.click();
+      await settledStrip(page);
       const second = await isos();
       expect.eq(second.length, DEMO_DAY_COUNT, "still five on the second page");
       expect.eq(
@@ -1561,8 +1603,8 @@ Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the n
       }
       expect.eq(await prev.isDisabled(), false, "the left arrow is on now");
       expect.eq(
-        await count(page, "[data-cy='l2-day'].on"),
-        0,
+        await litOnView(page),
+        null,
         "nothing on the second page is picked yet",
       );
       const range =
@@ -1574,13 +1616,15 @@ Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the n
         `the range beside the label names the month(s) on view (${range})`,
       );
       // pick the second day of the second page — the seventh day out
+      await settledStrip(page);
       await clickUntil(
         page,
-        "[data-cy='l2-day'] >> nth=1",
+        `[data-cy='l2-day'] >> nth=${DEMO_DAY_COUNT + 1}`,
         async () =>
-          ((await page.locator("[data-cy='l2-day']").nth(1).getAttribute(
-            "class",
-          )) ?? "").includes("on"),
+          ((await page.locator("[data-cy='l2-day']").nth(DEMO_DAY_COUNT + 1)
+            .getAttribute(
+              "class",
+            )) ?? "").includes("on"),
       );
       const picked = second[1];
       const summary = page.locator("[data-cy='l2-demo-summary']");
@@ -1591,14 +1635,16 @@ Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the n
         `the summary names the picked day (${await summary.textContent()})`,
       );
       // back: the first five again, none lit, the summary unmoved; forward: the pick is lit again
-      await clickUntil(
-        page,
-        "[data-cy='l2-days-prev']",
-        async () => (await isos())[0] === first[0],
+      await prev.click();
+      await settledStrip(page);
+      expect.eq(
+        (await isos())[0],
+        first[0],
+        "the left arrow: the first five again",
       );
       expect.eq(
-        await count(page, "[data-cy='l2-day'].on"),
-        0,
+        await litOnView(page),
+        null,
         "the first page shows no pick",
       );
       expect(
@@ -1607,13 +1653,15 @@ Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the n
         ),
         "the summary keeps the pick through the slide back",
       );
-      await clickUntil(
-        page,
-        "[data-cy='l2-days-next']",
-        async () => (await isos())[0] === second[0],
+      await next.click();
+      await settledStrip(page);
+      expect.eq(
+        (await isos())[0],
+        second[0],
+        "the right arrow: the second five again",
       );
       expect.eq(
-        await page.locator("[data-cy='l2-day'].on").getAttribute("data-day"),
+        await litOnView(page),
         picked,
         "the pick is lit again on its page",
       );
@@ -1623,7 +1671,7 @@ Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the n
         while (!(await next.isDisabled()) && clicks < 40) {
           await next.click();
           clicks++;
-          await page.waitForTimeout(60);
+          await settledStrip(page);
         }
         const last = await isos();
         expect.eq(
@@ -1671,25 +1719,24 @@ Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the n
 
 /**
  * REQ-105 — Raphael, 2026-10-20, on the pinned /landing2: "why cant i click and drag the calendar
- * on mobile? the expierence on mobile leds itself better to that." — "do it." The day strip was
- * paged by its two arrows alone (REQ-102): a finger across it did nothing, there being no gesture
- * handler and no scroller. Now a finger — or a mouse — dragged across the strip slides it a page:
- * left for the next five, right for the five before; the strip follows the finger and springs
- * back when the drag was too short to page; a drag never picks the day it started on, a tap still
- * does; an up-and-down swipe is the page's own scroll, not the strip's; and a day swiped to books.
- * The finger is the browser's own touch input (CDP), so the page sees pointer events of type
- * touch, as on a phone; the mouse is Playwright's.
+ * on mobile? the expierence on mobile leds itself better to that." — "do it." — and on the first
+ * cut, which held five days and flipped the page on the release: "the boxes should render smoothly
+ * as you scroll, these fucking boxes dont render until you release". The strip is a scroller now:
+ * every day in one row, five to the view's width, snapping to a day. A finger scrolls it the way
+ * the browser scrolls anything — the boxes move under it and the next days come into view before
+ * it lets go; let go, it settles on a day. The arrows scroll it a page from wherever it stands; a
+ * mouse drags it the same on a desktop; a tap picks, a drag never picks the day it started on; up
+ * and down is the page's own scroll. The finger is the browser's own touch input (CDP), so the
+ * page sees a real touch scroll; the mouse is Playwright's.
  */
-Deno.test("REQ-105: on a phone the demo's day picker swipes — a finger dragged left shows the next five days and dragged right the five before; a short drag springs back and does not pick the day under it, a tap still picks; an up-and-down swipe leaves the strip alone; a mouse drag on a desktop pages the same; the day swiped to books", (t) =>
+Deno.test("REQ-105: the demo's day strip scrolls under the finger — the boxes move as the finger moves and the next days come into view before it lets go; let go, it settles on a day; a tap picks, a short drag does not; the arrows page five from wherever it stands; a mouse drag scrolls it the same on a desktop; the day scrolled to books", (t) =>
   story(t, async ({ page, expect }) => {
     type Pt = { x: number; y: number };
     type Box = { x: number; y: number; width: number; height: number };
-    const isos = () =>
-      page.locator("[data-cy='l2-day']").evaluateAll((els: HTMLElement[]) =>
-        els.map((e) => e.getAttribute("data-day") ?? "")
-      );
     const plusDays = (iso: string, n: number) =>
       new Date(Date.parse(iso) + n * 86_400_000).toISOString().slice(0, 10);
+    const consecutive = (list: string[]) =>
+      list.every((iso, i) => i === 0 || iso === plusDays(list[i - 1], 1));
     const until = async (done: () => Promise<boolean>): Promise<boolean> => {
       for (let i = 0; i < 30; i++) {
         if (await done()) return true;
@@ -1697,25 +1744,12 @@ Deno.test("REQ-105: on a phone the demo's day picker swipes — a finger dragged
       }
       return false;
     };
-    // the lit day, read at once (null when none): a wrong pick fails by name, never by a timeout
     const lit = (): Promise<string | null> =>
       page.evaluate(() =>
         document.querySelector("[data-cy='l2-day'].on")?.getAttribute(
           "data-day",
         ) ?? null
       );
-    // the strip at rest: a tap aimed while the 200 ms slide or spring-back still moves the days
-    // would land in a gap or on the neighbour
-    const settled = async () => {
-      let last = Number.NaN;
-      for (let i = 0; i < 20; i++) {
-        const b = await page.locator(".l2-demo__days").boundingBox();
-        const x = b ? Math.round(b.x * 10) : Number.NaN;
-        if (x === last) return;
-        last = x;
-        await page.waitForTimeout(60);
-      }
-    };
     const open = async (vp: { width: number; height: number }) => {
       await page.setViewportSize(vp);
       await page.goto(`/landing2?lang=es&vp=${vp.width}`);
@@ -1728,140 +1762,195 @@ Deno.test("REQ-105: on a phone the demo's day picker swipes — a finger dragged
     };
     const view = async (): Promise<Box> =>
       (await page.locator(".l2-demo__view").boundingBox())!;
-    const dayAt = async (i: number): Promise<Pt> => {
-      await settled();
-      const b: Box = (await page.locator("[data-cy='l2-day']").nth(i)
+    const scrolled = (): Promise<number> =>
+      page.locator(".l2-demo__view").evaluate((el: HTMLElement) =>
+        el.scrollLeft
+      );
+    const stepPx = (): Promise<number> =>
+      page.locator(".l2-demo__view").evaluate((el: HTMLElement) => {
+        const d = el.querySelectorAll("[data-day]");
+        return d[1].getBoundingClientRect().left -
+          d[0].getBoundingClientRect().left;
+      });
+    const snapped = async () => {
+      const s = await scrolled(), p = await stepPx();
+      return Math.abs(s - Math.round(s / p) * p) < 1.5;
+    };
+    const box = async (iso: string): Promise<Box> =>
+      (await page.locator(`[data-cy='l2-day'][data-day='${iso}']`)
         .boundingBox())!;
+    /** the middle of a day's box, read once the strip stands still */
+    const dayAt = async (iso: string): Promise<Pt> => {
+      await settledStrip(page);
+      const b = await box(iso);
       return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
     };
-    const across = async (way: "left" | "right"): Promise<[Pt, Pt]> => {
-      const v = await view();
-      const y = v.y + v.height / 2;
-      const near = v.x + v.width * 0.15, far = v.x + v.width * 0.85;
-      return way === "left"
-        ? [{ x: far, y }, { x: near, y }]
-        : [{ x: near, y }, { x: far, y }];
-    };
-    // a finger: the browser's own touch input, eight moves between the two points
+    const RANGE = "[data-cy='l2-days-range']";
+    // a finger: the browser's own touch input — down, moves, and a lift that is its own call, so
+    // the strip can be read while the finger is still down
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true });
-    const finger = async (from: Pt, to: Pt) => {
-      await cdp.send("Input.dispatchTouchEvent", {
-        type: "touchStart",
-        touchPoints: [from],
-      });
-      for (let i = 1; i <= 8; i++) {
-        await cdp.send("Input.dispatchTouchEvent", {
-          type: "touchMove",
-          touchPoints: [{
-            x: from.x + (to.x - from.x) * i / 8,
-            y: from.y + (to.y - from.y) * i / 8,
-          }],
-        });
-        await page.waitForTimeout(16);
-      }
-      await cdp.send("Input.dispatchTouchEvent", {
-        type: "touchEnd",
-        touchPoints: [],
-      });
-    };
-    const tap = async (at: Pt) => {
-      await cdp.send("Input.dispatchTouchEvent", {
+    const press = (at: Pt) =>
+      cdp.send("Input.dispatchTouchEvent", {
         type: "touchStart",
         touchPoints: [at],
       });
-      await cdp.send("Input.dispatchTouchEvent", {
+    const slideTo = async (from: Pt, to: Pt, steps = 6, pace = 16) => {
+      for (let i = 1; i <= steps; i++) {
+        await cdp.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [{
+            x: from.x + (to.x - from.x) * i / steps,
+            y: from.y + (to.y - from.y) * i / steps,
+          }],
+        });
+        await page.waitForTimeout(pace);
+      }
+    };
+    const lift = () =>
+      cdp.send("Input.dispatchTouchEvent", {
         type: "touchEnd",
         touchPoints: [],
       });
+    const tap = async (at: Pt) => {
+      await press(at);
+      await lift();
     };
-    // a mouse: Playwright's, the button held across eight moves
-    const mouse = async (from: Pt, to: Pt) => {
-      await page.mouse.move(from.x, from.y);
-      await page.mouse.down();
-      for (let i = 1; i <= 8; i++) {
-        await page.mouse.move(
-          from.x + (to.x - from.x) * i / 8,
-          from.y + (to.y - from.y) * i / 8,
-        );
-        await page.waitForTimeout(16);
-      }
-      await page.mouse.up();
-    };
-    const RANGE = "[data-cy='l2-days-range']";
 
     await open(PHONE);
-    const first = await isos();
+    const first = await onView(page);
+    expect.eq(
+      first.length,
+      DEMO_DAY_COUNT,
+      "five days on view as the strip opens",
+    );
+    expect(consecutive(first), "and they are consecutive");
     expect.eq(await lit(), first[0], "tomorrow is picked as the strip opens");
-    // a finger dragged left: the next five
-    await finger(...(await across("left")));
+    expect.eq(await scrolled(), 0, "the strip opens at its start");
+    // the finger comes down on the strip and moves two days' worth to the left — and stays down
+    let v = await view();
+    let y = v.y + v.height / 2;
+    const first0 = await box(first[0]);
+    await press({ x: v.x + v.width * 0.85, y });
+    await slideTo({ x: v.x + v.width * 0.85, y }, {
+      x: v.x + v.width * 0.45,
+      y,
+    });
+    await page.waitForTimeout(100);
+    const midway = await scrolled();
+    const first0Mid = await box(first[0]);
+    const seen = await peeking(page);
+    await page.locator(RANGE).hover(); // the frame: the finger still down, the boxes already moved
     expect(
-      await until(async () =>
-        (await isos())[0] === plusDays(first[DEMO_DAY_COUNT - 1], 1)
-      ),
-      `a finger dragged left shows the next five days (${
-        (await isos())[0]
-      } after ${first[DEMO_DAY_COUNT - 1]})`,
+      midway > 30,
+      `the strip has scrolled under the finger before it lets go (${
+        Math.round(midway)
+      }px)`,
     );
-    await settled();
-    await page.locator(RANGE).hover(); // a frame of the second page
-    const second = await isos();
-    expect.eq(second.length, DEMO_DAY_COUNT, "five on the second page");
+    expect(
+      first0Mid.x < first0.x - 30,
+      `the first box moved with the finger (${Math.round(first0.x)} → ${
+        Math.round(first0Mid.x)
+      })`,
+    );
+    expect(
+      seen.includes(plusDays(first[DEMO_DAY_COUNT - 1], 1)),
+      `the sixth day is in view under the finger (${seen.join(" ")})`,
+    );
+    await lift();
+    await settledStrip(page);
+    expect(
+      await snapped(),
+      `let go, the strip settles on a day (${await scrolled()}px)`,
+    );
+    const after = await onView(page);
+    expect.eq(after.length, DEMO_DAY_COUNT, "five whole days on view again");
+    expect(
+      after[0] > first[0],
+      `the strip stands later than it opened (${after[0]})`,
+    );
+    expect(consecutive(after), "and the days are consecutive");
+    const range = ((await page.locator(RANGE).textContent()) ?? "").trim();
     expect.eq(
-      await count(page, "[data-cy='l2-day'].on"),
-      0,
-      "the swipe picked nothing",
+      range,
+      demoMonthRange(after.map((iso) => demoDay(iso, "es")!)),
+      `the range beside the label names the month(s) on view (${range})`,
     );
-    // dragged right: the five before
-    await finger(...(await across("right")));
+    // a tap picks the day under it; a drag too short to reach the next day springs back and picks
+    // nothing — measured on this strip: Chromium's tap slop ends between 15 and 18 px, a step is
+    // 46 px at this width, so 19 px at a slow pace is a drag that stays on its day
+    await tap(await dayAt(after[1]));
     expect(
-      await until(async () => (await isos())[0] === first[0]),
-      `a finger dragged right shows the five before (${(await isos())[0]})`,
+      await until(async () => (await lit()) === after[1]),
+      `a tap picks the day under it (${await lit()})`,
     );
-    await settled();
-    await page.locator(RANGE).hover();
-    // a short drag on the third day: the strip springs back, the third day is not picked
-    let d = await dayAt(2);
-    await finger(d, { x: d.x - 15, y: d.y });
+    await settledStrip(page);
+    await page.locator(`[data-cy='l2-day'][data-day='${after[1]}']`).hover();
+    let d = await dayAt(after[2]);
+    await press(d);
+    await slideTo(d, { x: d.x - 19, y: d.y }, 4, 40);
+    await lift();
+    await settledStrip(page);
+    expect(
+      await snapped(),
+      "a drag too short to reach the next day springs back to a stop",
+    );
+    expect.eq((await onView(page))[0], after[0], "on the same five days");
+    expect.eq(await lit(), after[1], "and does not pick the day it started on");
+    // up and down is the page's own scroll: the strip stays where it stands
+    d = await dayAt(after[1]);
+    await press(d);
+    await slideTo(d, { x: d.x, y: d.y - 120 }, 4);
+    await lift();
     await page.waitForTimeout(400);
     expect.eq(
-      (await isos())[0],
-      first[0],
-      "a drag too short to page springs back",
+      (await onView(page))[0],
+      after[0],
+      "an up-and-down swipe leaves the strip where it stands",
     );
-    expect.eq(await lit(), first[0], "and does not pick the day it started on");
-    // a tap on the third day picks it
-    await tap(await dayAt(2));
-    expect(
-      await until(async () => (await lit()) === first[2]),
-      `a tap still picks the day under it (${await lit()})`,
-    );
-    await settled();
-    await page.locator("[data-cy='l2-day']").nth(2).hover();
-    // up and down is the page's own scroll: the strip stays on its page, the pick stays
-    d = await dayAt(1);
-    await finger(d, { x: d.x, y: d.y - 120 });
-    await page.waitForTimeout(400);
-    expect.eq(
-      (await isos())[0],
-      first[0],
-      "an up-and-down swipe leaves the strip on its page",
-    );
-    expect.eq(await lit(), first[2], "and keeps the pick");
-    // to the second page again, by finger; its second day, by tap; and it books
     await page.locator("#demo").scrollIntoViewIfNeeded();
-    await finger(...(await across("left")));
-    expect(
-      await until(async () => (await isos())[0] === second[0]),
-      "a finger dragged left again shows the second page",
+    await settledStrip(page);
+    // the arrows page five from wherever the strip stands
+    const here = (await onView(page))[0];
+    await page.locator("[data-cy='l2-days-next']").click();
+    await settledStrip(page);
+    expect.eq(
+      (await onView(page))[0],
+      plusDays(here, DEMO_DAY_COUNT),
+      "the right arrow shows the next five from where the strip stood",
     );
-    await tap(await dayAt(1));
-    expect(
-      await until(async () => (await lit()) === second[1]),
-      `the second day of the second page is picked by a tap (${await lit()})`,
+    await page.locator("[data-cy='l2-days-prev']").click();
+    await settledStrip(page);
+    expect.eq(
+      (await onView(page))[0],
+      here,
+      "and the left arrow brings the five back",
     );
-    await settled();
-    await page.locator("[data-cy='l2-day']").nth(1).hover();
+    // a quick swipe carries the strip further on, and it still settles on a day with five whole on view
+    v = await view(); // the page scrolled since: the strip's middle is read afresh
+    y = v.y + v.height / 2;
+    await press({ x: v.x + v.width * 0.85, y });
+    await slideTo({ x: v.x + v.width * 0.85, y }, {
+      x: v.x + v.width * 0.15,
+      y,
+    }, 4);
+    await lift();
+    await settledStrip(page);
+    const far = await onView(page);
+    expect(await snapped(), `a swipe settles on a day (${await scrolled()}px)`);
+    expect(
+      far[0] > here,
+      `a swipe carries the strip on (${far[0]} after ${here})`,
+    );
+    expect.eq(far.length, DEMO_DAY_COUNT, "five whole on view");
+    expect(consecutive(far), "consecutive");
+    await page.locator(RANGE).hover();
+    // the day scrolled to books
+    await tap(await dayAt(far[1]));
+    expect(
+      await until(async () => (await lit()) === far[1]),
+      `the second day on view is picked by a tap (${await lit()})`,
+    );
     await page.locator("#f-name").fill("José García");
     await page.locator("#f-phone").fill(`512${digits()}`);
     const [res] = await Promise.all([
@@ -1877,48 +1966,70 @@ Deno.test("REQ-105: on a phone the demo's day picker swipes — a finger dragged
     expect.eq(
       body.ok,
       true,
-      `the demo on the day swiped to was booked (${JSON.stringify(body)})`,
+      `the demo on the day scrolled to was booked (${JSON.stringify(body)})`,
     );
-    expect.eq(body.day, second[1], "the booking carries the day swiped to");
+    expect.eq(body.day, far[1], "the booking carries the day scrolled to");
 
-    // a desktop: a mouse drag pages the same way, and a drag never picks the day it started on
+    // a desktop: the mouse drags the strip the same — the boxes move under the pointer before the
+    // button is released, it settles on a day, and the day the drag started on is not picked
     await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
     await open(DESKTOP);
-    const desk = await isos();
+    const desk = await onView(page);
     expect.eq(
       await lit(),
       desk[0],
       "tomorrow is picked as the strip opens on a desktop",
     );
-    d = await dayAt(2);
-    await mouse(d, { x: d.x - 20, y: d.y });
-    await page.waitForTimeout(400);
-    expect.eq((await isos())[0], desk[0], "a short mouse drag springs back");
-    expect.eq(await lit(), desk[0], "and does not pick the day it started on");
-    await mouse(...(await across("left")));
+    v = await view();
+    const drag = async (from: Pt, dx: number, steps = 6) => {
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      for (let i = 1; i <= steps; i++) {
+        await page.mouse.move(from.x + dx * i / steps, from.y);
+        await page.waitForTimeout(16);
+      }
+    };
+    let start = await dayAt(desk[2]);
+    await drag(start, -v.width * 0.4);
+    await page.waitForTimeout(100);
+    const held = await scrolled();
+    const seenDesk = await peeking(page);
     expect(
-      await until(async () =>
-        (await isos())[0] === plusDays(desk[DEMO_DAY_COUNT - 1], 1)
-      ),
-      `a mouse dragged left shows the next five days (${(await isos())[0]})`,
+      held > 30,
+      `the strip scrolls under the pointer before the button is released (${
+        Math.round(held)
+      }px)`,
     );
-    await settled();
-    await page.locator(RANGE).hover();
-    expect.eq(
-      await count(page, "[data-cy='l2-day'].on"),
-      0,
-      "the drag picked nothing",
-    );
-    await mouse(...(await across("right")));
     expect(
-      await until(async () => (await isos())[0] === desk[0]),
-      `a mouse dragged right shows the five before (${(await isos())[0]})`,
+      seenDesk.includes(plusDays(desk[DEMO_DAY_COUNT - 1], 1)),
+      "the sixth day is in view under the pointer",
     );
-    await settled();
-    await page.locator(RANGE).hover();
+    await page.mouse.up();
+    await settledStrip(page);
+    expect(await snapped(), "released, the strip settles on a day");
+    const dragged = await onView(page);
+    expect(dragged[0] > desk[0], `the strip stands later (${dragged[0]})`);
     expect.eq(
       await lit(),
       desk[0],
-      "the pick made as the strip opened is lit again",
+      "the drag did not pick the day it started on",
     );
+    await page.locator(RANGE).hover();
+    // a short mouse drag on a day: back to its stop, nothing picked
+    start = await dayAt(dragged[2]);
+    await drag(start, -20, 2);
+    await page.mouse.up();
+    await settledStrip(page);
+    expect(await snapped(), "a short mouse drag springs back to a stop");
+    expect.eq(await lit(), desk[0], "and picks nothing");
+    // dragged right: the earlier days again
+    start = await dayAt(dragged[1]);
+    await drag(start, v.width * 0.6);
+    await page.mouse.up();
+    await settledStrip(page);
+    expect(
+      (await onView(page))[0] < dragged[0],
+      `a drag right brings the earlier days back (${(await onView(page))[0]})`,
+    );
+    await page.locator(RANGE).hover();
   }));

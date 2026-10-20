@@ -10,7 +10,12 @@ import {
 } from "../../shared/demo-booking/mod.ts";
 import { landingClient } from "../clients/landing.ts";
 import type { Lang } from "../lib/lang.ts";
-import { followOffset, isDrag, swipeDir } from "../lib/swipe.ts";
+import {
+  firstOnView,
+  isDrag,
+  nearestStop,
+  pageTarget,
+} from "../lib/day-strip.ts";
 
 /**
  * REQ-090 — the demo card on /landing2, the v3 mock (Raphael, 2026-10-18: "the demo is one card —
@@ -20,11 +25,13 @@ import { followOffset, isDrag, swipeDir } from "../lib/swipe.ts";
  * "Mejor elijo día y hora", the day picker (REQ-102, Raphael, 2026-10-20: "calendar days need to
  * slide so that i can pick more than 5 days out. arrow for good ux that is clickable." — every day
  * the route hands down, from tomorrow, Eastern, five at a time between two arrows that slide it a
- * page, or a finger — or a mouse — dragged across it (REQ-105, Raphael, 2026-10-20: "why cant i
- * click and drag the calendar on mobile?" — the strip follows the drag and pages on the release,
- * left for the next five, right for the five before; a drag never picks the day it started on,
- * a tap still does; front-end/lib/swipe.ts holds the rules); the pick is the day's index in the
- * whole list, so it outlives the page on view), the two
+ * page, or a finger — or a mouse — scrolling it (REQ-105, Raphael, 2026-10-20: "why cant i click
+ * and drag the calendar on mobile?" and, on a first cut that flipped a page on the release, "the
+ * boxes should render smoothly as you scroll": the strip is a scroller — every day in one row,
+ * five to the width, snapping to a day; a finger scrolls it natively, the boxes moving under it;
+ * the arrows scroll it a page from wherever it stands; a mouse drags it; a drag never picks the
+ * day it started on; front-end/lib/day-strip.ts holds the arithmetic); the pick is the day's
+ * index in the whole list, so it outlives the days on view), the two
  * windows, the name, the cell, the email (optional), and a summary that follows every pick. Each posts to POST /demo-request — which emails the team with the consent on record,
  * texts the person and makes the phone a lead — only while the consent box is ticked, and shows
  * the confirmation the mock drew. REQ-097 (Raphael, 2026-10-20: "all the … checkboxes should be
@@ -87,14 +94,17 @@ export default function Landing2Demo(
   const [view, setView] = useState<View>("quick");
   /** the picked day: its index in the WHOLE list, so a slide never loses it (REQ-102) */
   const [day, setDay] = useState(0);
-  /** the page of DEMO_DAY_COUNT days on the strip, and which way the last slide went (its animation) */
-  const [page, setPage] = useState(0);
-  const [slid, setSlid] = useState<"prev" | "next" | null>(null);
-  /** REQ-105 — how far the strip follows a finger (or a mouse) across it; null while none is on it */
-  const [drag, setDrag] = useState<number | null>(null);
-  /** the pointer on the strip: where it came down, the day it came down on (-1 for none), and whether it has moved past a tap's slack */
+  /** REQ-105 — the strip is a scroller: the first day on view, read off its scroll; the arrows and the range follow it */
+  const [first, setFirst] = useState(0);
+  /** a mouse drag in progress: the view's snapping is off while the button is held */
+  const [held, setHeld] = useState(false);
+  const viewRef = useRef<HTMLDivElement>(null);
+  /** where the last arrow sent the strip, while that scroll still runs — a second click goes on from there, not from midway */
+  const aim = useRef<number | null>(null);
+  const aimTimer = useRef<number | undefined>(undefined);
+  /** the mouse on the strip: where it came down, the scroll it came down at, and whether it has moved past a click's slack */
   const touch = useRef<
-    { id: number; x: number; y: number; day: number; moved: boolean } | null
+    { id: number; x: number; left: number; moved: boolean } | null
   >(null);
   /** the click a drag leaves behind is not a pick: swallowed once, at the capture */
   const swallow = useRef(false);
@@ -110,59 +120,85 @@ export default function Landing2Demo(
 
   const picked = days[day] ?? days[0];
   const window = slots[slot] ?? slots[0];
-  const pages = Math.max(1, Math.ceil(days.length / DEMO_DAY_COUNT));
-  const shown = days.slice(page * DEMO_DAY_COUNT, (page + 1) * DEMO_DAY_COUNT);
+  const shown = days.slice(first, first + DEMO_DAY_COUNT);
 
-  /** the arrows: one page at a time, never past either end */
-  function slide(dir: -1 | 1) {
-    setPage((p) => Math.min(pages - 1, Math.max(0, p + dir)));
-    setSlid(dir > 0 ? "next" : "prev");
+  /** a day's stop is a step from the next: the distance between the first two days' left edges */
+  function stepOf(el: HTMLElement): number {
+    const d = el.querySelectorAll<HTMLElement>("[data-day]");
+    return d.length > 1
+      ? d[1].getBoundingClientRect().left - d[0].getBoundingClientRect().left
+      : 0;
+  }
+  /** reduced motion asks for no smooth scroll */
+  const calm = (): ScrollBehavior =>
+    globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth";
+  /** REQ-105 — the view scrolled (a finger, a wheel, an arrow, a mouse): which day stands first now */
+  function track(e: Event) {
+    const el = e.currentTarget as HTMLElement;
+    setFirst(firstOnView(el.scrollLeft, stepOf(el)));
+  }
+  /** the arrows: five on, or five back, from where the strip stands — never past either end */
+  function page(dir: -1 | 1) {
+    const el = viewRef.current;
+    if (!el) return;
+    const target = pageTarget(
+      aim.current ?? first,
+      dir,
+      DEMO_DAY_COUNT,
+      days.length,
+    );
+    aim.current = target;
+    clearTimeout(aimTimer.current);
+    aimTimer.current = setTimeout(() => aim.current = null, 700);
+    el.scrollTo({ left: target * stepOf(el) });
   }
 
   /**
-   * REQ-105 — a finger or a mouse on the strip's view: grab, follow, release; a swipe past the
-   * threshold pages. A tap — down and up on a day without moving — is the pick, decided here by
-   * the same pointer that decides a drag: Chromium was seen to withhold the click that follows a
-   * tap made within ~300 ms of a swipe on the strip (1 in 4 to 1 in 10), so the pick does not
-   * wait on it; the click, when it comes, picks the same day again.
+   * A mouse drags the strip: past a click's slack the view takes the pointer and scrolls with it
+   * while the button is held — its snapping off, so it follows exactly — and settles on the
+   * nearest day when let go. The pointer is taken only then: taken on the press, the mouseup and
+   * the click would be retargeted to the view and a plain click would never reach its day. A
+   * finger never comes here: the browser scrolls the view itself, the boxes moving under it.
    */
   function grab(e: PointerEvent) {
-    if (e.button !== 0 || !e.isPrimary) return;
+    if (e.pointerType !== "mouse" || e.button !== 0) return;
+    const el = e.currentTarget as HTMLElement;
     swallow.current = false;
-    const iso = (e.target as Element | null)?.closest<HTMLElement>("[data-day]")
-      ?.dataset.day;
     touch.current = {
       id: e.pointerId,
       x: e.clientX,
-      y: e.clientY,
-      day: iso ? days.findIndex((d) => d.iso === iso) : -1,
+      left: el.scrollLeft,
       moved: false,
     };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setDrag(0);
   }
   function follow(e: PointerEvent) {
     const t = touch.current;
     if (!t || e.pointerId !== t.id) return;
-    const dx = e.clientX - t.x, dy = e.clientY - t.y;
-    if (isDrag(dx, dy)) t.moved = true;
-    setDrag(followOffset(dx, page, pages));
+    const el = e.currentTarget as HTMLElement;
+    const dx = e.clientX - t.x;
+    if (!t.moved && isDrag(dx, 0)) {
+      t.moved = true;
+      el.setPointerCapture(e.pointerId);
+      el.classList.add("l2-demo__view--held"); // at once — the render below is a microtask away
+      setHeld(true);
+    }
+    if (!t.moved) return;
+    el.scrollLeft = t.left - (e.clientX - t.x);
   }
   function release(e: PointerEvent) {
     const t = touch.current;
     if (!t || e.pointerId !== t.id) return;
     touch.current = null;
     swallow.current = t.moved;
-    setDrag(null);
-    if (!t.moved && t.day >= 0) setDay(t.day);
-    const dx = e.clientX - t.x, dy = e.clientY - t.y;
-    const dir = swipeDir(dx, dy);
-    if (dir) slide(dir);
-  }
-  /** the browser took the gesture (the page's own scroll): let go, nothing pages */
-  function cancel() {
-    touch.current = null;
-    setDrag(null);
+    if (!t.moved) return;
+    setHeld(false);
+    const el = e.currentTarget as HTMLElement;
+    el.scrollTo({
+      left: nearestStop(el.scrollLeft, stepOf(el)),
+      behavior: calm(),
+    });
   }
   function swallowClick(e: MouseEvent) {
     if (!swallow.current) return;
@@ -334,8 +370,8 @@ export default function Landing2Demo(
             class="l2-arrow"
             data-cy="l2-days-prev"
             aria-label={labels.prevDays}
-            disabled={page === 0}
-            onClick={() => slide(-1)}
+            disabled={first === 0}
+            onClick={() => page(-1)}
           >
             <svg
               width="20"
@@ -351,43 +387,32 @@ export default function Landing2Demo(
               <path d="M15 5l-7 7 7 7" />
             </svg>
           </button>
-          {/* the view clips the slide; keyed by page: a fresh group each slide, so its slide-in plays */}
+          {/* the view scrolls the row: every day, five to its width, snapping to a day (REQ-105) */}
           <div
-            class="l2-demo__view"
+            ref={viewRef}
+            class={`l2-demo__view${held ? " l2-demo__view--held" : ""}`}
+            onScroll={track}
             onPointerDown={grab}
             onPointerMove={follow}
             onPointerUp={release}
-            onPointerCancel={cancel}
+            onPointerCancel={release}
             onClickCapture={swallowClick}
           >
-            <div
-              key={page}
-              class={`l2-demo__days${slid ? ` l2-demo__days--${slid}` : ""}${
-                drag === null ? "" : " l2-demo__days--held"
-              }`}
-              style={drag === null
-                ? undefined
-                : `transform: translateX(${drag}px)`}
-              role="group"
-              aria-label={labels.pickDay}
-            >
-              {shown.map((d, j) => {
-                const i = page * DEMO_DAY_COUNT + j;
-                return (
-                  <button
-                    type="button"
-                    key={d.iso}
-                    class={`l2-day ${i === day ? "on" : ""}`}
-                    data-cy="l2-day"
-                    data-day={d.iso}
-                    aria-pressed={i === day}
-                    onClick={() => setDay(i)}
-                  >
-                    <span class="l2-day__dow">{d.dow}</span>
-                    <span class="l2-day__num">{d.num}</span>
-                  </button>
-                );
-              })}
+            <div class="l2-demo__days" role="group" aria-label={labels.pickDay}>
+              {days.map((d, i) => (
+                <button
+                  type="button"
+                  key={d.iso}
+                  class={`l2-day ${i === day ? "on" : ""}`}
+                  data-cy="l2-day"
+                  data-day={d.iso}
+                  aria-pressed={i === day}
+                  onClick={() => setDay(i)}
+                >
+                  <span class="l2-day__dow">{d.dow}</span>
+                  <span class="l2-day__num">{d.num}</span>
+                </button>
+              ))}
             </div>
           </div>
           <button
@@ -395,8 +420,8 @@ export default function Landing2Demo(
             class="l2-arrow"
             data-cy="l2-days-next"
             aria-label={labels.nextDays}
-            disabled={page === pages - 1}
-            onClick={() => slide(1)}
+            disabled={first >= days.length - DEMO_DAY_COUNT}
+            onClick={() => page(1)}
           >
             <svg
               width="20"
