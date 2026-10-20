@@ -46,6 +46,7 @@ import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mo
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
+import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
 
 /**
  * UsersModule — owns the full user identity surface:
@@ -109,6 +110,7 @@ import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
     CrmCaptureOutbox, // REQ-072
     CrmLeadCapture, // REQ-072
     SignupNotice, // REQ-103
+    PayLinkMint, // REQ-106
     ChoosePlan,
   ],
 })

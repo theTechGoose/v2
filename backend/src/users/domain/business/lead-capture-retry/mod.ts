@@ -11,7 +11,10 @@ export interface PendingCapture {
   userId?: string;
   /** REQ-103 — a signup notice record: the new account's email to hello@documonster.com
    *  (SignupNotice.send), keyed apart from the lead and the sync; `userId` names the account */
-  kind?: "signup-notice";
+  kind?: "signup-notice" | "pay-link";
+  /** REQ-106 — a pay-link record: the page the pick came from, where the receipt brings the
+   *  person back (the pick's `back`); the plan's record names the rest */
+  back?: string;
   enqueuedAt: string;
   attempts: number;
   /** ISO — not tried before this */

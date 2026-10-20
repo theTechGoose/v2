@@ -17,6 +17,8 @@ import { PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { CrmLeadCapture } from "./mod.ts";
+import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
+import { chosen } from "@users/domain/business/plan/mod.ts";
 import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 import type { SendEmailInput, SendEmailResult } from "@communication/domain/data/email-service/mod.ts";
 
@@ -57,7 +59,7 @@ async function fresh(answers: Answer[], outbox = new CrmCaptureOutbox()) {
   // the real deploy's side of REQ-318's switch: Postmark (the stub above) is reached. On the fakes
   // the notice is logged and never mailed (the test below).
   notice.env = { get: (k: string) => (k === "DENO_DEPLOY" ? "true" : undefined) };
-  const make = () => new CrmLeadCapture(outbox, crm, notice);
+  const make = () => new CrmLeadCapture(outbox, crm, notice, new PayLinkMint(new PlanStore(), link, crm)); // REQ-106 — the pay link rides this outbox too
   return { calls, outbox, make, users, mails, mailAnswers, notice };
 }
 async function done() {
@@ -253,7 +255,7 @@ Deno.test("REQ-099 a save made while the account's sync is in flight is not lost
   const outbox = new CrmCaptureOutbox();
   const users = new UserStore();
   const crm = new CrmCustomerSync(users, new BusinessIdentityStore(), link, new PlanStore());
-  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice); // no notice is enqueued here
+  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, {} as PayLinkMint); // no notice, no pay link is enqueued here
   const user = await users.create({ phoneNumber: "+15125550199", language: "en" });
   await leads.enqueueSync(user.id);
   await until(() => inputs.length >= 1);
@@ -358,5 +360,142 @@ Deno.test("REQ-103 on the fakes (REQ-318: DENO_DEPLOY unset, not on Deno Deploy)
   assertEquals(mails, [], "no mail leaves the box");
   assertStringIncludes(logged.at(-1) ?? "", "[signup-notice] fakes: would mail hello@documonster.com — New DocuMonster signup — +15125550107");
   assertEquals(await outbox.list(), [], "counted as sent → gone");
+  await done();
+});
+
+// ---- REQ-106 — the paid pick's CRM work rides this outbox -------------------------------------
+// Raphael, 2026-10-20: "when i click a plan in the onboarding flow the payment link takes FOREVER
+// to load … i dont care if it happens asyncronously … what i care about is that the user
+// experience is good." The pick replies with a pending plan and a pay-link record; the sweep makes
+// the customer, raises the due and mints the page (PayLinkMint) after the reply — the same three
+// calls, in the same order, that the reply used to wait on.
+type PayAnswer = { status: number } | "hang" | "ok";
+/** the CRM's three doors as the sweep sees them: answers in order per door, then always yes */
+async function freshPay(opts: { customer?: PayAnswer[]; due?: PayAnswer[]; link?: PayAnswer[] } = {}) {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const calls: string[] = [];
+  const answer = <T>(queue: PayAnswer[] | undefined, path: string, ok: T): Promise<T> => {
+    calls.push(path);
+    const a = queue?.shift() ?? "ok";
+    if (a === "hang") return new Promise<T>(() => {});
+    if (a !== "ok" && a.status >= 400) {
+      const e = Object.assign(
+        new Error(a.status === 422 ? "merchant-unknown: alpha is not an account on record" : `payments-unavailable: POST ${path} answered ${a.status}: {"error":"boom"}`),
+        { status: a.status },
+      );
+      return Promise.reject(e);
+    }
+    return Promise.resolve(ok);
+  };
+  let minted = 0;
+  const link = {
+    createCustomer: (_input: unknown) => answer(opts.customer, "/api/payments/customers", { customerId: "c-106" }),
+    raiseDue: (input: { amountCents: number }) => answer(opts.due, "/api/payments/dues", { dueId: `d-${input.amountCents}` }),
+    mintPayLink: (input: { dueId: string; merchant: string }) => answer(opts.link, "/api/payments/pay-links", { payUrl: `http://crm/pay?due=${input.dueId}&account=${input.merchant}&n=${++minted}` }),
+  } as unknown as PaymentsLink;
+  const users = new UserStore();
+  const plans = new PlanStore();
+  const crm = new CrmCustomerSync(users, new BusinessIdentityStore(), link, plans);
+  const outbox = new CrmCaptureOutbox();
+  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, new PayLinkMint(plans, link, crm));
+  const user = await users.create({ phoneNumber: "+15125551060", email: "h@roof.test", name: "Han" });
+  await plans.put(chosen(user.id, "monster", new Date().toISOString(), { merchant: "primary" }));
+  return { calls, outbox, leads, plans, user };
+}
+
+Deno.test("REQ-106 a pay link is a KV record before anything is sent: enqueuePayLink returns at once while the CRM hangs, and the record names the account's pick and the way back", async () => {
+  const { calls, outbox, leads, user } = await freshPay({ customer: ["hang"] });
+  const t0 = Date.now();
+  await leads.enqueuePayLink(user.id, "/welcome");
+  assert(Date.now() - t0 < 500, "enqueuePayLink returned at once while the CRM hangs");
+  assertEquals((await outbox.list()).map((r) => [r.kind, r.userId, r.back]), [["pay-link", user.id, "/welcome"]], "the pay link is a record in KV, keyed apart from the sync");
+  await until(() => calls.length >= 1);
+  assertEquals(calls, ["/api/payments/customers"], "the hung attempt is in flight: the customer first");
+  await done();
+});
+
+Deno.test("REQ-106 the sweep makes the customer, raises the due and mints the page in that order, writes the page on the plan and clears the record", async () => {
+  const { calls, outbox, leads, plans, user } = await freshPay();
+  await leads.enqueuePayLink(user.id, "/settings");
+  await leads.drain();
+  assertEquals(calls, ["/api/payments/customers", "/api/payments/dues", "/api/payments/pay-links"]);
+  const plan = (await plans.get(user.id))!;
+  assertEquals([plan.status, plan.customerId, plan.dueId, plan.payUrl, plan.payLinkError], ["pending", "c-106", "d-9900", "http://crm/pay?due=d-9900&account=primary&n=1", undefined]);
+  assertEquals(await outbox.list(), []);
+  await done();
+});
+
+Deno.test("REQ-106 a CRM that fails keeps the record with its attempts and error, the plan says payments-unavailable meanwhile, and a later sweep mints the page and clears both", async () => {
+  const { calls, outbox, leads, plans, user } = await freshPay({ due: [{ status: 503 }] });
+  await leads.enqueuePayLink(user.id, "/welcome");
+  assertEquals(await leads.drain(), { landed: 0, deferred: 1, waiting: 0 });
+  const [rec] = await outbox.list();
+  assertEquals([rec.kind, rec.attempts, rec.back], ["pay-link", 1, "/welcome"], "the way back survives the deferral");
+  assertStringIncludes(rec.lastError ?? "", "503");
+  const meanwhile = (await plans.get(user.id))!;
+  assertEquals([meanwhile.payLinkError, meanwhile.payUrl], ["payments-unavailable", undefined], "the hand-off page can say it is taking longer");
+  assertEquals(await leads.drain(Date.parse(rec.nextAt)), { landed: 1, deferred: 0, waiting: 0 });
+  const plan = (await plans.get(user.id))!;
+  assertEquals([plan.payUrl, plan.payLinkError], ["http://crm/pay?due=d-9900&account=primary&n=1", undefined]);
+  assertEquals(calls, ["/api/payments/customers", "/api/payments/dues", "/api/payments/customers", "/api/payments/dues", "/api/payments/pay-links"], "the retry is the whole mint again — the CRM upserts the customer by ref");
+  assertEquals(await outbox.list(), []);
+  await done();
+});
+
+Deno.test("REQ-106 a name the CRM has no record of ends the record: the plan reads merchant-unknown, no page, and nothing is retried", async () => {
+  const { calls, outbox, leads, plans, user } = await freshPay({ link: [{ status: 422 }] });
+  await leads.enqueuePayLink(user.id, "/settings");
+  assertEquals(await leads.drain(), { landed: 1, deferred: 0, waiting: 0 });
+  const plan = (await plans.get(user.id))!;
+  assertEquals([plan.status, plan.payUrl, plan.payLinkError], ["pending", undefined, "merchant-unknown"]);
+  assertEquals(await outbox.list(), [], "the refusal is final: the person picks again");
+  assertEquals(await leads.drain(Date.now() + 60_000), { landed: 0, deferred: 0, waiting: 0 });
+  assertEquals(calls.length, 3, "nothing retried");
+  await done();
+});
+
+Deno.test("REQ-106 a newer pick made while the first page is being minted is the one that lands: the stale page is never written over it, and the sweep that follows mints the newer pick", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const mints: string[] = [];
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  const link = {
+    createCustomer: () => Promise.resolve({ customerId: "c-106" }),
+    raiseDue: (input: { amountCents: number }) => Promise.resolve({ dueId: `d-${input.amountCents}` }),
+    async mintPayLink(input: { dueId: string }) {
+      mints.push(input.dueId);
+      if (mints.length === 1) await held; // the first page sits on the CRM
+      return { payUrl: `http://crm/pay?due=${input.dueId}` };
+    },
+  } as unknown as PaymentsLink;
+  const users = new UserStore();
+  const plans = new PlanStore();
+  const crm = new CrmCustomerSync(users, new BusinessIdentityStore(), link, plans);
+  const outbox = new CrmCaptureOutbox();
+  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, new PayLinkMint(plans, link, crm));
+  const user = await users.create({ phoneNumber: "+15125551062", email: "r@roof.test", name: "Rae" });
+  await plans.put(chosen(user.id, "monster", "2026-10-20T10:00:00.000Z", { merchant: "primary" }));
+  await leads.enqueuePayLink(user.id, "/welcome");
+  await until(() => mints.length >= 1);
+  // a change of mind while the first page is held: a newer pick, its record re-marked
+  await plans.put(chosen(user.id, "assist", "2026-10-20T10:00:05.000Z", { merchant: "primary" }));
+  await leads.enqueuePayLink(user.id, "/welcome");
+  release();
+  await leads.drain(); // the first sweep ends: its page is not the newer pick's, so it is not written; the re-marked record stays
+  const stale = (await plans.get(user.id))!;
+  assertEquals([stale.planId, stale.payUrl], ["assist", undefined], "the stale page never landed on the newer pick");
+  // the sweep that follows (the re-mark flagged it) mints the newer pick
+  await until(() => mints.length >= 2);
+  let final = (await plans.get(user.id))!;
+  for (let i = 0; i < 200 && !final.payUrl; i++) {
+    await new Promise((r) => setTimeout(r, 10));
+    final = (await plans.get(user.id))!;
+  }
+  assertEquals(mints, ["d-9900", "d-19900"], "both pages were minted, the newer one last");
+  assertEquals(final.planId, "assist", "the newer pick stood throughout");
+  assertEquals(final.payUrl, "http://crm/pay?due=d-19900", "the page on the record is the newer pick's, never the stale one");
+  assertEquals(await outbox.list(), []);
   await done();
 });

@@ -14,6 +14,62 @@ export function payPageOf(plan: Pick<UserPlan, "status" | "payUrl">): string | n
   return (plan.status === "pending" || plan.status === "past_due") && plan.payUrl ? plan.payUrl : null;
 }
 
+// ---- REQ-106 — the pick answers at once; the page comes after -------------------------------
+// Raphael, 2026-10-20: "when i click a plan in the onboarding flow the payment link takes FOREVER
+// to load, can we speed it up and keep the exact same result in the crm? i dont care if it happens
+// asyncronously … what i care about is that the user experience is good." A paid pick is pending
+// with no page yet; the browser goes to the hand-off page (/plan/pay), which polls the plan and
+// moves on the moment the page is on the record.
+
+type PlanLike = Pick<UserPlan, "status" | "payUrl" | "payLinkError">;
+
+/** what a pending pick is, read from its record: being prepared, ready, refused by name, or the
+ *  link builder not answering yet; none for anything that is not pending */
+export type Handoff = "preparing" | "ready" | "merchant-unknown" | "unavailable" | "none";
+export function handoffOf(plan: PlanLike | null | undefined): Handoff {
+  if (!plan || plan.status !== "pending") return "none";
+  if (plan.payUrl) return "ready";
+  if (plan.payLinkError === "merchant-unknown") return "merchant-unknown";
+  if (plan.payLinkError === "payments-unavailable") return "unavailable";
+  return "preparing";
+}
+
+/** the hand-off page, carrying the page the pick came from */
+export function handoffPage(back: PickBack): string {
+  return `/plan/pay?${new URLSearchParams({ back })}`;
+}
+
+/** where a pick sends the browser: the hand-off page while the page is being prepared, straight
+ *  to the page when it is already there, back with the reason when the CRM refused the name, and
+ *  the page after a pick for free */
+export function afterPickOf(plan: PlanLike | null | undefined, back: PickBack): string {
+  const h = handoffOf(plan);
+  if (h === "ready") return plan!.payUrl!;
+  if (h === "preparing" || h === "unavailable") return handoffPage(back);
+  if (h === "merchant-unknown") return `${back}?plan=merchant-unknown`;
+  return pageAfterPick(back);
+}
+
+/** what the hand-off page does with the plan it just read: nothing while the page is being
+ *  prepared (ask again), the page the moment it is there, back with the reason on a refusal, on
+ *  to the page after a pick when the plan is no longer pending (picked free elsewhere, or active) */
+export function handoffNext(plan: PlanLike | null | undefined, back: PickBack): string | null {
+  const h = handoffOf(plan);
+  if (h === "preparing" || h === "unavailable") return null;
+  return afterPickOf(plan, back);
+}
+
+/** how the cards pages show the plan: active as active; a pending pick as its page (Resume
+ *  payment), as being prepared (the hand-off page), or as the cards again after a refusal */
+export type PlanView = "active" | "pay" | "preparing" | "cards";
+export function planViewOf(plan: PlanLike | null | undefined): PlanView {
+  if (plan?.status === "active") return "active";
+  const h = handoffOf(plan);
+  if (h === "ready") return "pay";
+  if (h === "preparing" || h === "unavailable") return "preparing";
+  return "cards";
+}
+
 /** the pages that show the cards — the only places a pick goes back to */
 const BACKS = ["/welcome", "/settings"] as const;
 export type PickBack = typeof BACKS[number];

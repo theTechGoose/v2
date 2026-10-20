@@ -13,7 +13,7 @@ import type { ComponentChildren } from "preact";
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
 import { PRICING_PLANS, PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
-import { pickErrorOf } from "../lib/plan-return.ts";
+import { handoffOf, handoffPage, pickErrorOf, planViewOf } from "../lib/plan-return.ts";
 import { filesClient } from "../clients/files.ts";
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
@@ -1460,7 +1460,8 @@ function PlanCard({ snapshot }: { snapshot: ProfileSnapshot }) {
   // REQ-056 — every selectable plan but the current one is a card: Monster Free among them on a
   // paid plan, so going back to free is the same one click as going up
   const selectable = PUBLIC_PLANS.filter((p) => !p.custom && p.period === "monthly");
-  const currentId = plan && plan.status !== "free" ? plan.planId : "free";
+  // REQ-106 — a pick the CRM refused by name is not the plan: the cards offer it again
+  const currentId = plan && plan.status !== "free" && handoffOf(plan) !== "merchant-unknown" ? plan.planId : "free";
   const hasEmail = Boolean(snapshot.user.email?.trim());
   // REQ-059 — a pick the backend refused came back here saying why (/plan/pick)
   const [err, setErr] = useState("");
@@ -1483,6 +1484,11 @@ function PlanCard({ snapshot }: { snapshot: ProfileSnapshot }) {
       : tFor(lang, "plan.activeSince", { name: currentName, date: since }))
     : plan.status === "past_due"
     ? tFor(lang, "plan.pastDue", { name: currentName })
+    // REQ-106 — a pending pick: refused by name, being prepared, or waiting on its page
+    : handoffOf(plan) === "merchant-unknown"
+    ? tFor(lang, "plan.merchantUnknown")
+    : handoffOf(plan) !== "ready"
+    ? tFor(lang, "plan.preparing")
     : tFor(lang, "plan.pending");
 
   return (
@@ -1499,13 +1505,22 @@ function PlanCard({ snapshot }: { snapshot: ProfileSnapshot }) {
             ? <div data-cy="plan-card-on-file">{tFor(lang, "plan.cardOnFile", { brand: plan.cardBrand || "card", last4: plan.cardLast4 })}</div>
             : null}
         </div>
-        {plan?.status === "pending" || plan?.status === "past_due"
+        {plan && (plan.status === "past_due" || planViewOf(plan) === "pay")
           ? (
             // REQ-059 — the pay page again, in this tab; the receipt brings the person back here.
             // REQ-061 — the past-due month's page, the same way
             <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
               <a class="btn btn--accent" data-cy="plan-pay-link" href={plan.payUrl}>
                 {tFor(lang, plan.status === "past_due" ? "plan.payNow" : "plan.resume")} →
+              </a>
+            </div>
+          )
+          : planViewOf(plan) === "preparing"
+          ? (
+            // REQ-106 — the page is being prepared: the hand-off page waits for it
+            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+              <a class="btn btn--accent" data-cy="plan-handoff-link" href={handoffPage("/settings")}>
+                {tFor(lang, "plan.preparingOpen")} →
               </a>
             </div>
           )
