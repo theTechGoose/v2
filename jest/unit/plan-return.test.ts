@@ -114,18 +114,22 @@ describe("REQ-106 pay hand-off", () => {
     expect(handoffNext(null, "/settings")).toBe("/settings");
   });
 
-  test("REQ-106 the hand-off page is the route /plan/pay: unlinked and noindex, a visitor without a session goes home, and its island polls the plan and moves on the hand-off rules", () => {
+  test("REQ-106 the hand-off page is the route /plan/pay: unlinked and noindex, a visitor without a session goes home, a page already on the record is a redirect straight to it, and its island polls the plan and moves on the hand-off rules", () => {
     const route = readFileSync(join(__dirname, "../../front-end/routes/plan/pay.tsx"), "utf8");
     expect(route).toContain('<meta name="robots" content="noindex" />');
-    expect(route).toContain('headers: { Location: "/" }');
-    expect(route).toContain("<PayHandoff lang={lang} back={back} />");
+    expect(route).toContain('if (!user) return redirect("/");');
+    expect(route).toContain('ssrBackendGetAuthed<UserPlan | null>("/me/plan", getSessionId(ctx.req))');
+    expect(route).toContain("handoffNext(plan, back)");
+    expect(route).toContain("if (next) return redirect(next);");
+    expect(route).toContain('<meta http-equiv="refresh" content="3" />');
+    expect(route).toContain('tFor(lang, "planHandoff.heading")');
     expect(route).toContain('backOf(ctx.url.searchParams.get("back") ?? "")');
     const island = readFileSync(join(__dirname, "../../front-end/islands/PayHandoff.tsx"), "utf8");
     expect(island).toContain("planClient.get()");
     expect(island).toContain("handoffNext(read, back)");
     expect(island).toContain("location.replace(next)");
     expect(island).toContain('data-cy="plan-handoff"');
-    expect(island).toContain('tFor(lang, "planHandoff.heading")');
+    expect(island).not.toContain("i18n"); // the words come from the route: the island carries no dictionary
     // the pick sends the browser there
     const pick = readFileSync(join(__dirname, "../../front-end/routes/plan/pick.tsx"), "utf8");
     expect(pick).toContain("redirect(afterPickOf(r.data, back))");

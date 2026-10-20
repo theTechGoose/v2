@@ -1,9 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
-import { type Lang, tFor } from "../lib/i18n.ts";
-import { planClient, type UserPlan } from "../clients/profile.ts";
+import { planClient } from "../clients/profile.ts";
 import { handoffNext, handoffOf, type PickBack } from "../lib/plan-return.ts";
-import { PRICING_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
-import { dollars } from "../components/PlanCards.tsx";
 
 /** how often the plan is asked for while its page is being prepared */
 const POLL_MS = 1000;
@@ -11,15 +8,23 @@ const POLL_MS = 1000;
  *  and its Quickbase writes take a few seconds; more means something is being retried) */
 const SLOW_AFTER_MS = 15_000;
 
+/** the page's words, rendered by the route in the person's language — the island carries no dictionary */
+export interface HandoffText {
+  heading: string;
+  lede: string;
+  slow: string;
+  back: string;
+}
+
 /**
  * PayHandoff (REQ-106) — the one thing the hand-off page does: ask for the plan every second and
  * go to the pay page the moment the sweep has put it on the record. A refusal by name goes back to
  * the page the pick came from saying why; a plan no longer pending (free picked elsewhere, or
  * already active) goes on to the page after a pick. Meanwhile it says what is happening, names
- * the plan once it has read it, and offers the way back. Nothing to click.
+ * the plan the route read, and offers the way back. Nothing to click.
  */
-export default function PayHandoff({ lang, back }: { lang: Lang; back: PickBack }) {
-  const [plan, setPlan] = useState<UserPlan | null>(null);
+export default function PayHandoff({ back, planLabel, text }: { back: PickBack; planLabel: string; text: HandoffText }) {
+  const [state, setState] = useState<ReturnType<typeof handoffOf>>("preparing");
   const [slow, setSlow] = useState(false);
 
   useEffect(() => {
@@ -31,7 +36,7 @@ export default function PayHandoff({ lang, back }: { lang: Lang; back: PickBack 
       try {
         const read = await planClient.get();
         if (stopped) return;
-        setPlan(read);
+        setState(handoffOf(read));
         const next = handoffNext(read, back);
         if (next) {
           stopped = true;
@@ -51,8 +56,6 @@ export default function PayHandoff({ lang, back }: { lang: Lang; back: PickBack 
     };
   }, []);
 
-  const state = handoffOf(plan);
-  const pricing = plan ? PRICING_PLANS.find((p) => p.id === plan.planId) : undefined;
   const waiting = state === "unavailable" || slow;
   return (
     <div data-cy="plan-handoff" data-state={state} style="display:grid;gap:12px;justify-items:center;text-align:center">
@@ -61,19 +64,13 @@ export default function PayHandoff({ lang, back }: { lang: Lang; back: PickBack 
         aria-hidden="true"
         style="width:44px;height:44px;border-radius:50%;border:4px solid var(--border, #e5e7eb);border-top-color:var(--brand-green, #16a34a);animation:plan-handoff-spin 0.9s linear infinite"
       />
-      <h1 style="font-size:26px;margin:0">{tFor(lang, "planHandoff.heading")}</h1>
-      {pricing
-        ? (
-          <p data-cy="plan-handoff-plan" style="font-weight:700;margin:0">
-            {pricing.name} · {dollars(pricing.priceCents)}
-          </p>
-        )
-        : null}
+      <h1 style="font-size:26px;margin:0">{text.heading}</h1>
+      {planLabel ? <p data-cy="plan-handoff-plan" style="font-weight:700;margin:0">{planLabel}</p> : null}
       <p role="status" aria-live="polite" style="color:var(--fg-muted);font-size:15px;margin:0">
-        {tFor(lang, waiting ? "planHandoff.slow" : "planHandoff.lede")}
+        {waiting ? text.slow : text.lede}
       </p>
       <p style="margin:0">
-        <a href={back} data-cy="plan-handoff-back">{tFor(lang, "planHandoff.back")}</a>
+        <a href={back} data-cy="plan-handoff-back">{text.back}</a>
       </p>
     </div>
   );
