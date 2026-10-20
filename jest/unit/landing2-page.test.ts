@@ -645,8 +645,8 @@ describe("REQ-102 the demo's day picker slides — every day the backend accepts
 
 /**
  * REQ-104 — Raphael, 2026-10-20: "Monster Free signup must get initial information and then
- * skip credit card ask." The signup card is a Monster Free signup — "Empieza gratis en 30
- * segundos" — unless a paid card's Registrarme brought the person to it: every Empezar gratis
+ * skip credit card ask." The signup card is a Monster Free signup — its button names free
+ * (its title says "Empieza en 30 segundos", REQ-107) — unless a paid card's Registrarme brought the person to it: every Empezar gratis
  * button into the card names free, each plan card's button names its plan, the card shows the
  * plan it signs up for, and the island posts that plan with the code (POST /auth/verify-otp
  * { plan }), where the backend stores Monster Free on an account with no plan on record. The
@@ -674,6 +674,42 @@ describe("REQ-104 a Monster Free signup names its plan at the code", () => {
     );
     const client = read("front-end/clients/verify.ts");
     expect(client).toMatch(/plan\?: string;/);
+  });
+});
+
+/**
+ * REQ-107 — Raphael, 2026-10-20, on the shipped /landing2: "if you click start on the $99 it jumps
+ * you to start free even though you ask, just change the text to get started." The $99 card's Sign
+ * up opened the signup card titled "Start free in 30 seconds" with a "Start free" button (REQ-104
+ * made it sign up for Monster, but it still said free). The card's title, button and consent line
+ * say Get started / Empezar now, in both languages; the buttons INTO the card keep their own
+ * words (the nav's and the Monster Free card's Start free, the paid cards' Sign up).
+ */
+describe("REQ-107 the signup card says Get started, not Start free", () => {
+  test("REQ-107 the card's heading, button and consent line name no free in either language", () => {
+    expect(en["landing2.regH"]).toBe("Get started in 30 seconds");
+    expect(en["landing2.sendCode"]).toBe("Get started");
+    expect(en["landing2.consentA"]).toMatch(/^By tapping Get started you agree/);
+    expect(es["landing2.regH"]).toBe("Empieza en 30 segundos");
+    expect(es["landing2.sendCode"]).toBe("Empezar");
+    expect(es["landing2.consentA"]).toMatch(/^Al tocar Empezar aceptas/);
+    for (const k of ["landing2.regH", "landing2.sendCode", "landing2.consentA"]) {
+      expect([k, /free/i.test(en[k])]).toEqual([k, false]);
+      expect([k, /gratis/i.test(es[k])]).toEqual([k, false]);
+    }
+    // the island renders those three as its title, its button and its consent line
+    const island = read("front-end/islands/Landing2Signup.tsx");
+    expect(island).toMatch(/<h2 class="l2-signup__h">\{labels\.regH\}<\/h2>/);
+    expect(island).toMatch(/\{busy \? labels\.sending : labels\.sendCode\}/);
+    expect(island).toMatch(/\{labels\.consentA\}/);
+  });
+
+  test("REQ-107 the buttons into the card keep their own words: Start free where it is free, Sign up on the paid cards", () => {
+    expect(en["landing2.navCta"]).toBe("Start free");
+    expect(en["landing2.plan.free.cta"]).toBe("Start free");
+    expect(en["landing2.plan.monster.cta"]).toBe("Sign up");
+    expect(en["landing2.plan.assist.cta"]).toBe("Sign up");
+    expect(es["landing2.plan.monster.cta"]).toBe("Registrarme");
   });
 });
 

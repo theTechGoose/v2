@@ -31,17 +31,21 @@ import DevCodeCard from "../components/DevCodeCard.tsx";
  * code shakes; the right one draws a check, bursts confetti and lifts the card off into the app.
  * The monster is told through one DOM event. Reduced motion turns all of it off: the plain flow.
  *
- * REQ-094 — the phone field carries no `required`: an empty Empezar gratis is answered by
+ * REQ-094 — the phone field carries no `required`: an empty Get started is answered by
  * errPhone on the page, in the page's language, not by the browser's tooltip in the browser's.
  * REQ-096 — the card's title is a heading (h2) on both steps, so a heading list finds the signup.
  *
  * REQ-104 (Raphael, 2026-10-20: "Monster Free signup must get initial information and then skip
- * credit card ask") — the card is a Monster Free signup, as its title says, unless a paid card's
- * Registrarme brought the person to it: every button into the card names a plan (`data-plan` —
+ * credit card ask") — the card is a Monster Free signup unless a paid card's Registrarme brought
+ * the person to it: every button into the card names a plan (`data-plan` —
  * free on the Empezar gratis buttons, the card's plan on a plan card's), the last one pressed is
  * the plan this signup names, the card shows it (`data-plan`), and the code posts it
  * (/auth/verify-otp { plan }): for free the backend stores Monster Free on the new account, so
  * the wizard asks the initial information and never the plan; a paid name is left to the wizard.
+ *
+ * REQ-107 (Raphael, 2026-10-20: "if you click start on the $99 it jumps you to start free even
+ * though you ask, just change the text to get started.") — the card's title, its button and its
+ * consent line say Get started / Empezar, never free: the plan is the button's (`data-plan`).
  *
  * Every string comes in as `labels` from the route, so the island renders exactly what the server
  * did (no flash, no second dictionary on the client).
