@@ -33,9 +33,11 @@ function capture(method: "log" | "warn") {
   return { lines, restore: () => (console[method] = original) };
 }
 
+const nothing = { get: () => Promise.resolve(null) };
 function notice(vars: Record<string, string>) {
   const sent: SendEmailInput[] = [];
-  const n = new SignupNotice(users);
+  // REQ-112 — the profile's stores, empty: a fresh sign-up with nothing answered yet
+  const n = new SignupNotice(users, nothing as never, nothing as never, nothing as never, nothing as never);
   n.env = env(vars);
   n.email = {
     send: (input: SendEmailInput) => {
@@ -61,7 +63,7 @@ Deno.test("REQ-103 SignupNotice — on the fakes (neither switch set) the notice
   );
   assertStringIncludes(
     logged.lines.at(-1) ?? "",
-    "New DocuMonster signup — +15125550103",
+    "DocuMonster signup — signed up — no plan yet — +15125550103",
   );
 });
 
@@ -74,8 +76,13 @@ Deno.test("REQ-103 SignupNotice — on the real deploy (DENO_DEPLOY set, or Deno
     await n.send("u-103");
     assertEquals(sent.length, 1, JSON.stringify(vars));
     assertEquals(sent[0].to, "hello@documonster.com");
-    assertEquals(sent[0].subject, "New DocuMonster signup — +15125550103");
+    assertEquals(sent[0].subject, "DocuMonster signup — signed up — no plan yet — +15125550103");
   }
+  // REQ-112 — what happened rides on the subject: the sweep passes the record's reason
+  const { n: later, sent: sentLater } = notice({ DENO_DEPLOY: "true" });
+  await later.send("u-103", "completed onboarding");
+  assertEquals(sentLater[0].subject, "DocuMonster signup — completed onboarding — no plan yet — +15125550103");
+  assertStringIncludes(sentLater[0].htmlBody ?? "", "<strong>What happened:</strong> completed onboarding");
   const { n } = notice({ DENO_DEPLOY: "true" });
   n.email = {
     send: () => Promise.resolve({ ok: false, reason: "postmark 500: boom" }),

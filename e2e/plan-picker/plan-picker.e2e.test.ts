@@ -274,7 +274,12 @@ Deno.test("REQ-060: the phone typed into login is a CRM customer before any code
     const r = await http("/api/auth/verify", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ phoneNumber: phone, code: "000000" }) });
     const body = await r.json();
     const auth = { ...JSON_HEADERS, cookie: (r.headers.get("set-cookie") ?? "").split(";")[0] };
-    const crm = await crmCustomer(http, auth);
+    // the sign-up's sync rides the outbox AFTER the reply (REQ-098): give the sweep a moment under the gate's workers
+    let crm = await crmCustomer(http, auth);
+    for (let i = 0; i < 40 && !(crm && crm.externalRef === `pm:${body.userId}`); i++) {
+      await page.waitForTimeout(250);
+      crm = await crmCustomer(http, auth);
+    }
     expect(crm !== null, "the CRM knows the account");
     expect.eq(crm.customerPhone, phone, "by its phone");
     expect.eq(crm.externalRef, `pm:${body.userId}`, "now carrying this app's ref");

@@ -1,7 +1,10 @@
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
-import type { Language, User } from "@users/dto/user.ts";
+import type { Language, SignupPlan, User } from "@users/dto/user.ts";
+
+/** the fields a profile patch may change (REQ-113: everything else a PUT /me body carries is dropped) */
+const PROFILE_FIELDS: ReadonlySet<string> = new Set(["name", "email", "language"]);
 
 /**
  * Phone numbers that are ALWAYS super admins — hardcoded in source, so the
@@ -162,13 +165,18 @@ export class UserStore {
     return updated;
   }
 
+  /**
+   * The three fields a profile patch may change — and only those (REQ-113): parseUpdateUser
+   * passes every field a PUT /me body carries, so the admin flag, the onboarding stamp and the
+   * plan a sign-up named — each with its own write path — are dropped here, never written.
+   */
   async update(
     id: string,
     patch: Partial<Pick<User, "name" | "email" | "language">>,
   ): Promise<User> {
     const existing = await this.get(id);
     const definedPatch = Object.fromEntries(
-      Object.entries(patch).filter(([_, v]) => v !== undefined),
+      Object.entries(patch).filter(([k, v]) => PROFILE_FIELDS.has(k) && v !== undefined),
     );
     const updated: User = {
       ...existing,
@@ -201,6 +209,20 @@ export class UserStore {
       onboardingSkipped: skipped,
       updatedAt: new Date().toISOString(),
     };
+    const kv = await getKv();
+    await kv.set(["user", id], updated);
+    return updated;
+  }
+
+  /**
+   * REQ-113 — the paid plan a sign-up named with the code, on the account from then on. Its own
+   * write path, like `markOnboarded`: never reachable from a PUT /me body. The same name again is
+   * a no-op.
+   */
+  async nameSignupPlan(id: string, signupPlan: SignupPlan): Promise<User> {
+    const existing = await this.get(id);
+    if (existing.signupPlan === signupPlan) return existing;
+    const updated: User = { ...existing, signupPlan, updatedAt: new Date().toISOString() };
     const kv = await getKv();
     await kv.set(["user", id], updated);
     return updated;

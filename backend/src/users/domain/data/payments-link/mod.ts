@@ -33,6 +33,10 @@ export interface NewCustomer {
   state?: string;
   website?: string;
   leadSource?: string;
+  /** REQ-111 — the selected plan by name ("none yet" before a pick) and the exact stage the signup
+   *  reached, in words the team reads; the CRM shows them beside the lead (its own REQ) */
+  signupPlan?: string;
+  signupStage?: string;
 }
 /** what the CRM holds for a customer, as this app reads it back */
 export interface CrmCustomer extends NewCustomer {
@@ -177,7 +181,17 @@ class CrmPaymentsLink implements PaymentsLinkPort {
     if (res.status === 404) return null;
     if (!res.ok) throw new PaymentsUnavailableError(`GET customers/by-external answered ${res.status}: ${text.slice(0, 200)}`);
     const c = JSON.parse(text) as CrmCustomer;
-    return { customerId: c.customerId, customerName: c.customerName, customerEmail: c.customerEmail, customerPhone: c.customerPhone, externalRef: c.externalRef, ...(c.tier ? { tier: c.tier } : {}), ...(c.createdAt ? { createdAt: c.createdAt } : {}) };
+    return {
+      customerId: c.customerId,
+      customerName: c.customerName,
+      customerEmail: c.customerEmail,
+      customerPhone: c.customerPhone,
+      externalRef: c.externalRef,
+      ...(c.tier ? { tier: c.tier } : {}),
+      ...(c.createdAt ? { createdAt: c.createdAt } : {}),
+      ...(c.signupPlan ? { signupPlan: c.signupPlan } : {}), // REQ-111 — once the CRM holds them
+      ...(c.signupStage ? { signupStage: c.signupStage } : {}),
+    };
   }
   async raiseDue(input: NewDue) {
     const d = await this.call<{ dueId: string }>("POST", DUES, { ...input, categoryCode: CATEGORY });

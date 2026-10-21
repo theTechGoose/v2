@@ -15,6 +15,9 @@ export interface PendingCapture {
   /** REQ-106 — a pay-link record: the page the pick came from, where the receipt brings the
    *  person back (the pick's `back`); the plan's record names the rest */
   back?: string;
+  /** REQ-112 — a signup-notice record: what happened (signed up · completed onboarding · skipped
+   *  setup · paid); a later happening re-marks the record with the newer one */
+  reason?: string;
   enqueuedAt: string;
   attempts: number;
   /** ISO — not tried before this */

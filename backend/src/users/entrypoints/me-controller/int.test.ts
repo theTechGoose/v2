@@ -92,9 +92,123 @@ Deno.test("REQ-099 the wizard's saves — PUT /me, PUT /profile/identity, POST /
     while ((await outbox.list()).length > 0 && Date.now() - t1 < 5000) await new Promise((r) => setTimeout(r, 20));
     assertEquals(await outbox.list(), [], "landed → cleared");
     const last = seen[seen.length - 1];
-    assertEquals([last.customerName, last.contact, last.tier], ["Ana Roofing", "Ana", "Lead"], "the CRM ends up with the profile as last saved");
+    assertEquals([last.customerName, last.contact, last.tier], ["Ana Roofing", "Ana", "Free"], "the CRM ends up with the profile as last saved — on the free plan, the Free rung (REQ-111)");
   } finally {
     release();
+    // the stub door is this test's alone: PaymentsLink is one instance across the apps this file
+    // opens, so a door left on it is what the next test's reads hit (REQ-113 found it as
+    // `findCustomer is not a function` — REQ-384: isolation, not a re-run)
+    app.get(PaymentsLink).portOverride = null;
+    await app.close();
+    twilio === undefined ? Deno.env.delete("TWILIO_ACCOUNT_SID") : Deno.env.set("TWILIO_ACCOUNT_SID", twilio);
+    await resetKv();
+  }
+});
+
+/**
+ * REQ-112 — "Whenever someone completes signup for Monster Free, Monster, or Monster Assist,
+ * automatically send an email to hello@documonster.com." Leaving the wizard — done, or Skip setup
+ * for now — enqueues the notice with what happened; the sweep mails it after the reply (on the
+ * fakes: logged, REQ-318), with the plan, the stage and everything collected on it.
+ */
+Deno.test("REQ-112 POST /me/onboarded sends the signup notice after the reply — 'completed onboarding', or 'skipped setup' — with the plan and the stage on it", async () => {
+  const twilio = Deno.env.get("TWILIO_ACCOUNT_SID");
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("TWILIO_ACCOUNT_SID");
+  Deno.env.delete("PPWK_PAYMENTS_URL");
+  Deno.env.delete("PPWK_PAYMENTS_TOKEN");
+  await resetKv();
+  const app = new DanetApplication();
+  await app.init(TestApp);
+  await app.listen(PORT + 1);
+  const base = `http://localhost:${PORT + 1}`;
+  const json = { "content-type": "application/json" };
+  const logged: string[] = [];
+  const log = console.log;
+  console.log = (...args: unknown[]) => logged.push(args.map(String).join(" "));
+  try {
+    for (const [phone, skipped, reason] of [["+15125551122", false, "completed onboarding"], ["+15125551123", true, "skipped setup"]] as const) {
+      const sent = await (await fetch(`${base}/auth/send-otp`, { method: "POST", headers: json, body: JSON.stringify({ phoneNumber: phone, language: "en" }) })).json();
+      const v = await (await fetch(`${base}/auth/verify-otp`, { method: "POST", headers: json, body: JSON.stringify({ phoneNumber: phone, code: sent.devCode, plan: "free" }) })).json();
+      const h = { ...json, "x-session-id": v.sessionId };
+      await (await fetch(`${base}/me`, { method: "PUT", headers: h, body: JSON.stringify({ name: "Ana", email: `${phone.slice(-4)}@roof.test` }) })).body?.cancel();
+      await (await fetch(`${base}/profile/identity`, { method: "PUT", headers: h, body: JSON.stringify({ businessName: "Ana Roofing" }) })).body?.cancel();
+      const left = await fetch(`${base}/me/onboarded`, { method: "POST", headers: h, body: JSON.stringify({ skipped }) });
+      await left.body?.cancel();
+      assertEquals(left.status, 200);
+      const outbox = new CrmCaptureOutbox();
+      const t0 = Date.now();
+      while ((await outbox.list()).length > 0 && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 20));
+      const notice = logged.filter((l) => l.includes("[signup-notice] fakes: would mail") && l.includes(phone));
+      assert(notice.some((l) => l.includes(`DocuMonster signup — ${reason} — Monster Free — ${phone}`)), `the notice says ${reason} with the plan (${notice.join(" | ")})`);
+    }
+  } finally {
+    console.log = log;
+    await app.close();
+    twilio === undefined ? Deno.env.delete("TWILIO_ACCOUNT_SID") : Deno.env.set("TWILIO_ACCOUNT_SID", twilio);
+    await resetKv();
+  }
+});
+
+/**
+ * REQ-113 — "Carry the selected plan from the landing-page button into signup so customers enter
+ * the correct flow." The $99 card's code names Monster; the account carries the name; the wizard's
+ * email save (PUT /me) makes the pick after the reply's work — pending, read at once — and the
+ * sweep mints the page and tells the CRM. A PUT /me body names no plan and flips no flag.
+ */
+Deno.test("REQ-113 a sign-up naming Monster carries it: GET /me says so and the CRM reads Monster before a single answer; PUT /me with the email makes the pick — pending Monster through primary, on GET /me/plan at once — and the CRM then says Monster picked, awaiting payment; a PUT /me body cannot name a plan nor flip the admin flag", async () => {
+  const twilio = Deno.env.get("TWILIO_ACCOUNT_SID");
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("TWILIO_ACCOUNT_SID");
+  Deno.env.delete("PPWK_PAYMENTS_URL");
+  Deno.env.delete("PPWK_PAYMENTS_TOKEN");
+  await resetKv();
+  const app = new DanetApplication();
+  await app.init(TestApp);
+  await app.listen(PORT + 2);
+  const base = `http://localhost:${PORT + 2}`;
+  const json = { "content-type": "application/json" };
+  const outbox = new CrmCaptureOutbox();
+  const settled = async () => {
+    const t0 = Date.now();
+    while ((await outbox.list()).length > 0 && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 20));
+    assertEquals(await outbox.list(), [], "the sweep landed everything");
+  };
+  try {
+    const phone = "+15125551131";
+    const sent = await (await fetch(`${base}/auth/send-otp`, { method: "POST", headers: json, body: JSON.stringify({ phoneNumber: phone, language: "en" }) })).json();
+    const v = await (await fetch(`${base}/auth/verify-otp`, { method: "POST", headers: json, body: JSON.stringify({ phoneNumber: phone, code: sent.devCode, plan: "monster" }) })).json();
+    assertEquals([v.isNewUser, v.redirectTo], [true, "/welcome"], JSON.stringify(v));
+    const h = { ...json, "x-session-id": v.sessionId };
+    const me = async () => await (await fetch(`${base}/me`, { headers: h })).json();
+    const planOf = async () => {
+      const text = await (await fetch(`${base}/me/plan`, { headers: h })).text();
+      return text ? JSON.parse(text) : null;
+    };
+    const crm = async () => {
+      const res = await fetch(`${base}/me/crm-customer`, { headers: h });
+      const text = await res.text();
+      assertEquals(res.status, 200, `GET /me/crm-customer answered ${res.status}: ${text.slice(0, 300)}`);
+      return JSON.parse(text);
+    };
+    assertEquals((await me()).signupPlan, "monster", "the account carries the plan the button named");
+    assertEquals(await planOf(), null, "no pick before the email a paid pick needs");
+    await settled();
+    assertEquals([(await crm()).tier, (await crm()).signupPlan, (await crm()).signupStage], ["Lead", "Monster", "signed up — nothing answered yet, next the name"], "the CRM reads the plan asked for before a single answer");
+    // the name: still no pick
+    await (await fetch(`${base}/me`, { method: "PUT", headers: h, body: JSON.stringify({ name: "Ana" }) })).body?.cancel();
+    assertEquals(await planOf(), null);
+    // the email — with a plan name and the admin flag smuggled in the same body
+    const saved = await fetch(`${base}/me`, { method: "PUT", headers: h, body: JSON.stringify({ email: "ana@roof.test", signupPlan: "assist", superAdmin: true }) });
+    assertEquals(saved.status, 200);
+    const user = await saved.json();
+    assertEquals([user.email, user.signupPlan, user.superAdmin ?? false], ["ana@roof.test", "monster", false], "the email landed; the body named no plan and flipped no flag");
+    const pending = await planOf();
+    assertEquals([pending?.planId, pending?.status, pending?.merchant], ["monster", "pending", "primary"], "the pick the sign-up named, made by the email, read at once");
+    await settled();
+    assert((await planOf()).payUrl, "the sweep minted the page");
+    assertEquals([(await crm()).signupPlan, (await crm()).signupStage], ["Monster", "2 of 9 answered — next the business name · Monster picked, awaiting payment"]);
+  } finally {
     await app.close();
     twilio === undefined ? Deno.env.delete("TWILIO_ACCOUNT_SID") : Deno.env.set("TWILIO_ACCOUNT_SID", twilio);
     await resetKv();

@@ -37,8 +37,9 @@ import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
+import { type NoticeReason, noticeReasonOf } from "@users/domain/business/signup-notice/mod.ts";
 import { type PickBack, pickBackOf } from "@users/domain/business/plan/mod.ts";
-import { isDue } from "@users/domain/business/lead-capture-retry/mod.ts";
+import { isDue, type PendingCapture } from "@users/domain/business/lead-capture-retry/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 
 export interface SweepResult {
@@ -57,6 +58,8 @@ const EVERY_MINUTE_MS = 60_000;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const LOUD_AFTER_ATTEMPTS = 5;
+/** lanes carried at once: enough that one slow person never queues the rest, few enough for a CRM to take */
+const LANES_AT_ONCE = 8;
 
 @Injectable()
 export class CrmLeadCapture {
@@ -80,9 +83,10 @@ export class CrmLeadCapture {
   }
 
   /** REQ-103 — the new account's email to hello@documonster.com, durable at once; mailed by the
-   *  sweep this starts, never by the sign-up's reply */
-  async enqueueSignupNotice(userId: string): Promise<void> {
-    await this.outbox.addSignupNotice(userId, Date.now());
+   *  sweep this starts, never by the sign-up's reply. REQ-112 — saying what happened: signed up,
+   *  completed onboarding, skipped setup, paid */
+  async enqueueSignupNotice(userId: string, reason: NoticeReason = "signed up"): Promise<void> {
+    await this.outbox.addSignupNotice(userId, reason, Date.now());
     this.kick();
   }
 
@@ -104,6 +108,13 @@ export class CrmLeadCapture {
     while (this.inFlight) await this.inFlight;
   }
 
+  /** Danet's app-close hook (called by name on every injectable): the app closing waits for the
+   *  sweep in flight, so its records land in the store it read them from, never in whatever store
+   *  opens next (a test's fresh KV saw another test's user deferred into it, REQ-112) */
+  async onAppClose(): Promise<void> {
+    await this.idle();
+  }
+
   /** never rejects (REQ-073): a sweep that cannot read its outbox is logged and the records wait */
   drain(now: number = Date.now()): Promise<SweepResult> {
     if (this.inFlight) return this.inFlight;
@@ -123,32 +134,63 @@ export class CrmLeadCapture {
     return this.inFlight;
   }
 
+  /**
+   * One lane per person — the lead by its phone, the account by its id — carried at once, LANES_AT_ONCE
+   * at a time, each lane in order: one account's slow CRM call (a cold start, a pay page's mint)
+   * never holds another's record (REQ-111: the stage reaches the CRM while another account's pay
+   * page is being made). The leads go first, so a phone's lead is on the CRM before the account
+   * that phone just opened is synced (REQ-072 before REQ-098).
+   */
   private async sweep(now: number): Promise<SweepResult> {
     const result: SweepResult = { landed: 0, deferred: 0, waiting: 0 };
+    const leads: PendingCapture[][] = [];
+    const accounts = new Map<string, PendingCapture[]>();
     for (const rec of await this.outbox.list()) {
-      if (!isDue(rec, now) || !(await this.outbox.claim(rec, now))) {
-        result.waiting++;
-        continue;
-      }
-      const who = rec.kind === "signup-notice" ? `signup notice for ${rec.userId}` : rec.kind === "pay-link" ? `pay page of ${rec.userId}` : rec.userId ? `customer of ${rec.userId}` : rec.phone;
-      try {
-        if (rec.kind === "signup-notice") await this.notice.send(rec.userId ?? ""); // REQ-103
-        else if (rec.kind === "pay-link") await this.payLink.mint(rec.userId ?? "", pickBackOf(rec.back)); // REQ-106
-        else if (rec.userId) await this.crm.ensure(rec.userId); // REQ-098
-        else await this.crm.capture(rec.phone);
-        await this.outbox.done(rec);
-        result.landed++;
-      } catch (e) {
-        const why = message(e);
-        const next = await this.outbox.defer(rec, Date.now(), why);
-        result.deferred++;
-        const line = `[crm-lead-capture] ${who} attempt ${next.attempts} failed, next at ${next.nextAt}: ${why}`;
-        const still = rec.kind === "signup-notice" ? "STILL NOT MAILED" : rec.kind === "pay-link" ? "STILL NO PAY PAGE" : "STILL NOT IN THE CRM";
-        if (next.attempts >= LOUD_AFTER_ATTEMPTS) console.error(`${line} — ${still}`);
-        else console.warn(line);
+      if (!rec.userId) leads.push([rec]);
+      else {
+        const lane = accounts.get(rec.userId);
+        if (lane) lane.push(rec);
+        else accounts.set(rec.userId, [rec]);
       }
     }
+    await this.lanes(leads, now, result);
+    await this.lanes([...accounts.values()], now, result);
     return result;
+  }
+
+  private async lanes(lanes: PendingCapture[][], now: number, result: SweepResult): Promise<void> {
+    let next = 0;
+    const worker = async () => {
+      while (next < lanes.length) {
+        const lane = lanes[next++];
+        for (const rec of lane) await this.carry(rec, now, result);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(LANES_AT_ONCE, lanes.length) }, worker));
+  }
+
+  private async carry(rec: PendingCapture, now: number, result: SweepResult): Promise<void> {
+    if (!isDue(rec, now) || !(await this.outbox.claim(rec, now))) {
+      result.waiting++;
+      return;
+    }
+    const who = rec.kind === "signup-notice" ? `signup notice for ${rec.userId}` : rec.kind === "pay-link" ? `pay page of ${rec.userId}` : rec.userId ? `customer of ${rec.userId}` : rec.phone;
+    try {
+      if (rec.kind === "signup-notice") await this.notice.send(rec.userId ?? "", noticeReasonOf(rec.reason)); // REQ-103/112
+      else if (rec.kind === "pay-link") await this.payLink.mint(rec.userId ?? "", pickBackOf(rec.back)); // REQ-106
+      else if (rec.userId) await this.crm.ensure(rec.userId); // REQ-098
+      else await this.crm.capture(rec.phone);
+      await this.outbox.done(rec);
+      result.landed++;
+    } catch (e) {
+      const why = message(e);
+      const next = await this.outbox.defer(rec, Date.now(), why);
+      result.deferred++;
+      const line = `[crm-lead-capture] ${who} attempt ${next.attempts} failed, next at ${next.nextAt}: ${why}`;
+      const still = rec.kind === "signup-notice" ? "STILL NOT MAILED" : rec.kind === "pay-link" ? "STILL NO PAY PAGE" : "STILL NOT IN THE CRM";
+      if (next.attempts >= LOUD_AFTER_ATTEMPTS) console.error(`${line} — ${still}`);
+      else console.warn(line);
+    }
   }
 
   /**

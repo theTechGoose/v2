@@ -231,6 +231,16 @@
   font-size: 16px;
   min-height: 50px;
 }
+/* REQ-108 — the time to pick: the native select, dressed like the fields, with its own chevron */
+.l2-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 44px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2315202b' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  cursor: pointer;
+}
 .l2-lbl {
   display: block;
   font-weight: 700;
@@ -297,21 +307,6 @@
   font-family: var(--l2-font-h);
   font-weight: 800;
   font-size: 22px;
-}
-.l2-slot {
-  min-height: 48px;
-  padding: 10px 12px;
-  border: 2px solid var(--l2-ink);
-  border-radius: 12px;
-  font: inherit;
-  font-weight: 700;
-  font-size: 15px;
-  cursor: pointer;
-  background: #fff;
-  color: var(--l2-ink);
-}
-.l2-slot.on {
-  background: var(--l2-orange);
 }
 .l2-check {
   display: flex;
@@ -689,6 +684,34 @@
   color: var(--l2-ink);
   border-radius: 18px 18px 18px 4px;
 }
+/* REQ-110 — the three documents: a tab each over the one card */
+.l2-docs {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.l2-doc-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.l2-doc-tab {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+}
+.l2-doc-tab[aria-selected="true"] {
+  background: var(--l2-orange);
+  border-color: var(--l2-orange);
+  color: var(--l2-ink);
+}
 .l2-quote {
   padding: 26px;
   border-radius: 18px;
@@ -960,19 +983,6 @@
   line-height: 1.5;
   max-width: 420px;
 }
-.l2-demo__row {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.l2-demo__row .l2-field {
-  flex: 1 1 200px;
-  width: auto;
-}
-.l2-demo__row .l2-btn {
-  flex: 1 1 160px;
-  font-size: 17px;
-}
 /* REQ-102 — the day picker slides: the label with the month(s) on view beside it, then the strip —
    an arrow at each end, five days between, a page at a time; the group is re-keyed on every slide
    so it slides in from the side it came from — a shift only, never a fade, so the days are legible
@@ -1050,10 +1060,19 @@
   opacity: 0.35;
   cursor: default;
 }
-.l2-demo__slots {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+/* REQ-090/117 — Call me: the cell and the button on one row */
+.l2-demo__row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.l2-demo__row .l2-field {
+  flex: 1 1 200px;
+  width: auto;
+}
+.l2-demo__row .l2-btn {
+  flex: 1 1 160px;
+  font-size: 17px;
 }
 .l2-demo__pair {
   display: grid;
@@ -1081,6 +1100,21 @@
   font-size: 15px;
   color: var(--l2-muted);
   max-width: 360px;
+}
+/* REQ-115 — the way back from Done! to the form: a text button, a tap target (REQ-344) */
+.l2-thanks__back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: none;
+  border: 0;
+  color: var(--l2-ink);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 /* faq */
@@ -1169,10 +1203,14 @@
   gap: 16px;
   flex-wrap: wrap;
 }
+/* REQ-344 — a 24px tap target each, where the text alone gave 20 (as REQ-095 did for the legal links) */
 .l2-footer__contact a,
 .l2-footer__contact a:hover {
   color: #fff;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
 }
 .l2-footer__legal {
   display: flex;

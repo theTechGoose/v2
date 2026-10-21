@@ -8,6 +8,7 @@ import { fakePaymentsWorld, PaymentsLink } from "@users/domain/data/payments-lin
 import { placeholderNameFor } from "@users/domain/business/placeholder-name/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { BusinessAddressStore } from "@users/domain/data/business-address-store/mod.ts";
+import { BusinessInsuranceStore } from "@users/domain/data/business-insurance-store/mod.ts";
 import { CrmCustomerSync, customerFor, LEAD_SOURCE } from "./mod.ts";
 
 async function fresh() {
@@ -46,6 +47,9 @@ Deno.test("REQ-070 customerFor — pure: blanks are left out so the CRM keeps wh
   assertEquals([c.contact, c.city, c.state, "website" in c, c.leadSource], ["Ana", "Austin", "TX", false, LEAD_SOURCE]);
   const bare = customerFor(user, null, null, null);
   assertEquals(["city" in bare, "state" in bare, bare.contact], [false, false, "Ana"]);
+  // REQ-111 — the plan and the stage ride with every sync, always said (the CRM shows them to the team)
+  assertEquals([c.signupPlan, c.signupStage], ["none yet", "4 of 9 answered — next the plan"]); // the name, the business, the email and the state are answered; the plan comes before the state in the wizard
+  assertEquals(bare.signupStage, "2 of 9 answered — next the business name");
 });
 
 Deno.test("REQ-058 crm-customer-sync — a sign-up makes the customer with what there is: no name yet (REQ-062: 'unknown dragon mcdragonson'), the phone, no email, this app's ref", async () => {
@@ -65,6 +69,8 @@ Deno.test("REQ-058 crm-customer-sync — a sign-up makes the customer with what 
     customerPhone: "+15125550201",
     externalRef: `pm:${user.id}`,
     tier: "Lead",
+    signupPlan: "none yet", // REQ-111 — the plan and the stage, always said
+    signupStage: "signed up — nothing answered yet, next the name",
   });
   assertEquals((await sync.read(user.id))?.customerId, made!.customerId);
 });
@@ -139,6 +145,43 @@ Deno.test("REQ-062 crm-customer-sync — the lead and the half-finished account 
   assertEquals([crm?.customerName, crm?.tier], ["Rosa Demo", "Monster"]);
   await plans.put({ userId: user.id, planId: "free", status: "free", chosenAt: now, updatedAt: now });
   await sync.ensure(user.id);
-  assertEquals((await sync.read(user.id))?.tier, "Lead");
+  assertEquals((await sync.read(user.id))?.tier, "Free", "REQ-111 — back on the free plan: the ladder's Free rung");
   assertEquals(world.customers.length, 1, "one record throughout");
+});
+
+/**
+ * REQ-111 — Raphael, 2026-10-21, the launch checklist: "CRITICAL — Save incomplete signups … Include
+ * their selected plan and the exact stage they reached so the team knows how to follow up. Make these
+ * incomplete signups accessible to the team." Every sync carries the plan and the stage, as the
+ * account stands at that moment, and a free plan sits on the CRM ladder's Free rung.
+ */
+Deno.test("REQ-111 crm-customer-sync — the selected plan and the exact stage ride with every sync: nothing answered at sign-up, the questions as they are answered, a paid pick awaiting payment, Monster Free on the Free rung, and onboarding complete", async () => {
+  const { users, identity, address, plans, sync } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125551111", language: "es", name: placeholderNameFor("es") });
+  await sync.ensure(user.id);
+  const read = async () => (await sync.read(user.id)) as unknown as { tier?: string; signupPlan?: string; signupStage?: string };
+  let crm = await read();
+  assertEquals([crm.tier, crm.signupPlan, crm.signupStage], ["Lead", "none yet", "signed up — nothing answered yet, next the name"]);
+  await users.update(user.id, { name: "Ana", email: "ana@roof.test" });
+  await identity.upsert(user.id, { businessName: "Ana Roofing" });
+  await sync.ensure(user.id);
+  crm = await read();
+  assertEquals([crm.tier, crm.signupPlan, crm.signupStage], ["Lead", "none yet", "3 of 9 answered — next the plan"]);
+  const now = new Date().toISOString();
+  await plans.put({ userId: user.id, planId: "monster", status: "pending", chosenAt: now, updatedAt: now, merchant: "primary" });
+  await sync.ensure(user.id);
+  crm = await read();
+  assertEquals([crm.tier, crm.signupPlan, crm.signupStage], ["Lead", "Monster", "3 of 9 answered — next the plan · Monster picked, awaiting payment"]);
+  await plans.put({ userId: user.id, planId: "free", status: "free", chosenAt: now, updatedAt: now });
+  await sync.ensure(user.id);
+  crm = await read();
+  assertEquals([crm.tier, crm.signupPlan, crm.signupStage], ["Free", "Monster Free", "4 of 9 answered — next the state"]);
+  await address.upsert(user.id, { street: "1600 Congress Ave", city: "Austin", state: "TX", postal: "78701" });
+  await identity.upsert(user.id, { businessName: "Ana Roofing", logoFileId: "f-1", acceptedPaymentMethods: { cash: { enabled: true } } });
+  await new BusinessInsuranceStore().upsert(user.id, { provider: "State Farm" });
+  await users.markOnboarded(user.id, false);
+  await sync.ensure(user.id);
+  crm = await read();
+  assertEquals([crm.tier, crm.signupPlan, crm.signupStage], ["Free", "Monster Free", "onboarding complete"]);
+  assertEquals(fakePaymentsWorld().customers.length, 1, "one record throughout");
 });

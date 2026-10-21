@@ -150,7 +150,7 @@ Deno.test("REQ-103 sweep — a signup-notice record is carried by SignupNotice.s
   const at = "2026-10-20T00:00:00.000Z";
   const lead = { phone: "+15125550103", enqueuedAt: at, attempts: 0, nextAt: at };
   const sync = { phone: "", userId: "u-103", enqueuedAt: at, attempts: 0, nextAt: at };
-  const notice = { phone: "", userId: "u-103", kind: "signup-notice" as const, enqueuedAt: at, attempts: 0, nextAt: at };
+  const notice = { phone: "", userId: "u-103", kind: "signup-notice" as const, reason: "completed onboarding", enqueuedAt: at, attempts: 0, nextAt: at };
   const cleared: unknown[] = [];
   const deferred: [unknown, string][] = [];
   const outbox = {
@@ -178,14 +178,14 @@ Deno.test("REQ-103 sweep — a signup-notice record is carried by SignupNotice.s
   } as unknown as CrmCustomerSync;
   let refuse = false;
   const mail = {
-    send: (userId: string) => {
-      calls.push(`notice ${userId}`);
+    send: (userId: string, reason: string) => {
+      calls.push(`notice ${userId} ${reason}`);
       return refuse ? Promise.reject(new Error("signup-notice: postmark 500: boom")) : Promise.resolve();
     },
   } as unknown as SignupNotice;
   const leads = new CrmLeadCapture(outbox, crm, mail, {} as PayLinkMint);
   assertEquals(await leads.drain(Date.parse(at) + 1), { landed: 3, deferred: 0, waiting: 0 });
-  assertEquals(calls, ["capture +15125550103", "ensure u-103", "notice u-103"]);
+  assertEquals(calls, ["capture +15125550103", "ensure u-103", "notice u-103 completed onboarding"]); // REQ-112 — the reason rides with it
   assertEquals(cleared, [lead, sync, notice], "each record is cleared by its own key");
 
   // Postmark refused the notice: its record is deferred with the reason; the others still land
@@ -204,3 +204,70 @@ Deno.test("REQ-103 sweep — a signup-notice record is carried by SignupNotice.s
   assertStringIncludes(deferred[0][1], "postmark 500");
   assertStringIncludes(logged.lines.at(-1) ?? "", "signup notice for u-103");
 });
+
+Deno.test("REQ-112 onAppClose — the app closing waits for the sweep in flight: its records land in the store it read them from, never in a store the next test opened", async () => {
+  const rec = { phone: "+15125550112", enqueuedAt: 0, nextAt: 0, attempts: 0 } as unknown as PendingCapture;
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  const done: PendingCapture[] = [];
+  const outbox = {
+    list: () => Promise.resolve(done.length ? [] : [rec]),
+    claim: () => Promise.resolve(true),
+    done: (r: PendingCapture) => {
+      done.push(r);
+      return Promise.resolve();
+    },
+  } as unknown as CrmCaptureOutbox;
+  const crm = {
+    capture: async () => {
+      await held;
+      return { customerId: "c-112" };
+    },
+  } as unknown as CrmCustomerSync;
+  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, {} as PayLinkMint);
+  void leads.drain();
+  let closed = false;
+  const closing = leads.onAppClose().then(() => (closed = true));
+  await tick();
+  await tick();
+  assertEquals(closed, false, "the close waits while the CRM holds the record");
+  release();
+  await closing;
+  assertEquals(done.length, 1, "the record landed and was cleared before the app closed");
+});
+
+Deno.test("REQ-111 sweep — one lane per person, carried at once: an account whose CRM call is slow never holds another account's record; a lead is on the CRM before any account is synced", async () => {
+  const now = 0;
+  const at = new Date(now).toISOString();
+  const recs: PendingCapture[] = [
+    { phone: "", userId: "u-slow", enqueuedAt: at, attempts: 0, nextAt: at },
+    { phone: "", userId: "u-quick", enqueuedAt: at, attempts: 0, nextAt: at },
+    { phone: "+15125550111", enqueuedAt: at, attempts: 0, nextAt: at },
+  ];
+  const done: string[] = [];
+  const outbox = {
+    list: () => Promise.resolve(done.length ? [] : recs),
+    claim: () => Promise.resolve(true),
+    done: (r: PendingCapture) => {
+      done.push(r.userId ?? r.phone);
+      return Promise.resolve();
+    },
+  } as unknown as CrmCaptureOutbox;
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  const crm = {
+    capture: () => Promise.resolve({ customerId: "c-lead" }),
+    ensure: async (userId: string) => {
+      if (userId === "u-slow") await held;
+    },
+  } as unknown as CrmCustomerSync;
+  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, {} as PayLinkMint);
+  const sweep = leads.drain(now);
+  await tick();
+  await tick();
+  assertEquals(done, ["+15125550111", "u-quick"], "the lead first, then the quick account — while the slow account's CRM call is still held");
+  release();
+  assertEquals(await sweep, { landed: 3, deferred: 0, waiting: 0 });
+  assertEquals(done, ["+15125550111", "u-quick", "u-slow"]);
+});
+

@@ -302,7 +302,7 @@ Deno.test("REQ-103 a sign-up — by phone on /auth/verify-otp and /auth/verify, 
     await timeout(receivedP, 5000, "the notice reaching Postmark");
     assertEquals(mails.length, 1);
     assertEquals(mails[0].to, "hello@documonster.com");
-    assertEquals(mails[0].subject, `New DocuMonster signup — ${phone}`);
+    assertEquals(mails[0].subject, `DocuMonster signup — signed up — no plan yet — ${phone}`);
     assertStringIncludes(mails[0].htmlBody, "by phone");
     assertStringIncludes(mails[0].htmlBody, `<strong>User ID:</strong> ${v.userId}`);
     assertEquals((await outbox.list()).filter((r) => r.kind === "signup-notice").map((r) => r.userId), [v.userId], "pending in KV until Postmark answers");
@@ -322,7 +322,7 @@ Deno.test("REQ-103 a sign-up — by phone on /auth/verify-otp and /auth/verify, 
     assertEquals(v2.isNewUser, true, JSON.stringify(v2));
     await settled();
     assertEquals(mails.length, 2);
-    assertEquals(mails[1].subject, `New DocuMonster signup — ${phone2}`);
+    assertEquals(mails[1].subject, `DocuMonster signup — signed up — no plan yet — ${phone2}`);
 
     // by email — /auth/verify-email-otp (REQ-050), an address no account has yet
     const email = "ana.103@blackhole.postmarkapp.com";
@@ -330,7 +330,7 @@ Deno.test("REQ-103 a sign-up — by phone on /auth/verify-otp and /auth/verify, 
     assertEquals(v3.isNewUser, true, JSON.stringify(v3));
     await settled();
     assertEquals(mails.length, 3);
-    assertEquals(mails[2].subject, `New DocuMonster signup — ${email}`);
+    assertEquals(mails[2].subject, `DocuMonster signup — signed up — no plan yet — ${email}`);
     assertStringIncludes(mails[2].htmlBody, "by email");
 
     // start-fresh on a closed account (REQ-039): a new account on the number is a sign-up
@@ -342,7 +342,7 @@ Deno.test("REQ-103 a sign-up — by phone on /auth/verify-otp and /auth/verify, 
     assert(v4.userId !== v.userId, "a new account, not the old one back");
     await settled();
     assertEquals(mails.length, 4);
-    assertEquals(mails[3].subject, `New DocuMonster signup — ${phone}`);
+    assertEquals(mails[3].subject, `DocuMonster signup — signed up — no plan yet — ${phone}`);
     assertStringIncludes(mails[3].htmlBody, `<strong>User ID:</strong> ${v4.userId}`);
   } finally {
     hold = false;

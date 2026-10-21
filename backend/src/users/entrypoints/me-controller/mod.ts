@@ -126,6 +126,7 @@ export class MeController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const patch = parseUpdateUser(body);
     const updated = await this.users.update(user.id, patch);
+    await this.choosePlan.pickNamed(user.id); // REQ-113 — the email a paid sign-up's pick waited for: the pick, pending; the page by the sweep
     await this.leads.enqueueSync(user.id); // REQ-058/099 — the name and email reach the CRM customer, after this reply
     return updated;
   }
@@ -145,6 +146,7 @@ export class MeController {
     const skipped = Boolean((body as { skipped?: unknown } | null)?.skipped);
     const marked = await this.users.markOnboarded(user.id, skipped);
     await this.leads.enqueueSync(user.id); // REQ-058/099 — onboarding done: the CRM customer reads what it entered, after this reply
+    await this.leads.enqueueSignupNotice(user.id, skipped ? "skipped setup" : "completed onboarding"); // REQ-112 — the team hears it, with everything collected
     return marked;
   }
 

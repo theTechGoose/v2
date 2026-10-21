@@ -17,7 +17,13 @@ import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 import type { PickBack } from "@users/domain/business/plan/mod.ts";
 import { ChoosePlan } from "./mod.ts";
 
+/** the sweep the previous test left in flight: a fixture waits for it before it resets the world
+ *  and the KV, or that sweep's mint lands in this test's fake world (REQ-384: one test's "primary"
+ *  link was the next test's links[0] under the gate's load) */
+let previous: CrmLeadCapture | null = null;
+
 async function fresh() {
+  await previous?.idle();
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("PPWK_PAYMENTS_URL");
   Deno.env.delete("PPWK_PAYMENTS_TOKEN");
@@ -31,6 +37,7 @@ async function fresh() {
   const mint = new PayLinkMint(plans, link, crm); // REQ-106 — the pay link, by the sweep
   const leads = new CrmLeadCapture(new CrmCaptureOutbox(), crm, new SignupNotice(users), mint); // REQ-099 — the tier reaches the CRM by the sweep, after the reply
   const flow = new ChoosePlan(users, plans, link, crm, leads);
+  previous = leads;
   return { users, identity, plans, link, crm, mint, leads, flow };
 }
 
@@ -47,13 +54,13 @@ Deno.test("REQ-054 choose-plan — nobody has a plan until they pick one; free i
   const user = await users.create({ phoneNumber: "+15125550101" });
   assertEquals(await flow.current(user.id), null);
   const plan = await flow.choose(user.id, "free");
-  await leads.drain(); // REQ-099 — the CRM hears the tier after the reply
+  await leads.idle(); // REQ-099 — the CRM hears the tier after the reply
   assertEquals(plan.planId, "free");
   assertEquals(plan.status, "free");
   assertEquals((await flow.current(user.id))?.status, "free");
   // REQ-062 — a free pick tells the CRM its tier (Lead) on the account's one customer; no due, no link
   const world = fakePaymentsWorld();
-  assertEquals([world.customers.length, world.customers[0]?.tier, world.dues.length, world.links.length], [1, "Lead", 0, 0], "a free plan raises nothing on the CRM");
+  assertEquals([world.customers.length, world.customers[0]?.tier, world.dues.length, world.links.length], [1, "Free", 0, 0], "a free plan raises nothing on the CRM; its tier is the ladder's Free rung (REQ-111)");
 });
 
 Deno.test("REQ-054 choose-plan — a paid plan makes the CRM customer, raises the first month as a due and mints its pay link", async () => {
@@ -276,13 +283,13 @@ Deno.test("REQ-061 choose-plan — back to free cancels the billing (and refuses
 Deno.test("REQ-062 choose-plan — the CRM's tier follows the plan: Monster the moment the first month settles, Lead again on the way back to free", async () => {
   const { users, leads, flow } = await fresh();
   const { user } = await paidAndActive(flow, leads, users, "+15125550601");
-  await leads.drain(); // REQ-099 — by the sweep, after the reply
+  await leads.idle(); // REQ-099 — by the sweep, after the reply
   const world = fakePaymentsWorld();
   const mine = () => world.customers.find((c) => c.externalRef === `pm:${user.id}`);
   assertEquals(mine()?.tier, "Monster", "told the CRM when the due settled");
   await flow.choose(user.id, "free");
-  await leads.drain();
-  assertEquals(mine()?.tier, "Lead", "told the CRM on the downgrade");
+  await leads.idle();
+  assertEquals(mine()?.tier, "Free", "told the CRM on the downgrade — the Free rung (REQ-111)");
   assertEquals(world.customers.length, 1);
 });
 
@@ -300,7 +307,7 @@ Deno.test("REQ-064 choose-plan — the test tier is a $1 one-time due with the m
   assertStringIncludes(plan.payUrl ?? "", "account=alpha");
   world.settle(plan.dueId!); // the $1 lands on the page; /plan/return refreshes
   const active = await flow.refresh(user.id);
-  await leads.drain(); // REQ-099
+  await leads.idle(); // REQ-099
   assertEquals(active.status, "active");
   assertEquals(active.subscriptionId, undefined, "a one-time charge starts no billing");
   assertEquals(world.subscriptions.length, 0);
@@ -383,8 +390,8 @@ Deno.test("REQ-104 choose-plan — a Monster Free signup stores free on an accou
   const free = await flow.startFree(fresh1.id);
   assertEquals([free.planId, free.status], ["free", "free"]);
   assertEquals((await plans.get(fresh1.id))?.status, "free");
-  await leads.drain();
-  assertEquals(world.customers.map((c) => c.tier), ["Lead"], "the CRM hears the tier, after the reply");
+  await leads.idle();
+  assertEquals(world.customers.map((c) => c.tier), ["Free"], "the CRM hears the tier — Free, the ladder's rung (REQ-111) — after the reply");
   // a second code on the same account: the record stands as it is
   assertEquals(await flow.startFree(fresh1.id), free);
   // a paid pick waiting on its pay page is never downgraded by a free signup on its number
@@ -401,4 +408,80 @@ Deno.test("REQ-104 choose-plan — a Monster Free signup stores free on an accou
   assertEquals([kept.planId, kept.status, kept.subscriptionId], ["monster", "active", active.subscriptionId]);
   assertEquals(world.subscriptions.map((s) => s.status), ["active"], "nothing canceled");
   assertEquals([world.dues.length, world.links.length], [1, 1], "nothing raised, nothing minted");
+});
+
+/**
+ * REQ-112 — "Whenever someone completes signup … automatically send an email to
+ * hello@documonster.com. Include … payment status where applicable." A paid pick whose due settles
+ * is a completed signup: the notice goes out with "paid" — on the fakes, logged (REQ-318).
+ */
+Deno.test("REQ-112 choose-plan — the first month settling sends the signup notice with 'paid' and the plan on it, after the reply", async () => {
+  const { users, leads, flow } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125551121", email: "p@roof.test", name: "Pat" });
+  const pending = await pick(flow, leads, user.id, "monster", "/welcome");
+  const logged: string[] = [];
+  const log = console.log;
+  console.log = (...args: unknown[]) => logged.push(args.map(String).join(" "));
+  try {
+    fakePaymentsWorld().settle(pending.dueId!);
+    const active = await flow.refresh(user.id);
+    assertEquals(active.status, "active");
+    await leads.idle();
+  } finally {
+    console.log = log;
+  }
+  const notice = logged.find((l) => l.includes("[signup-notice] fakes: would mail hello@documonster.com"));
+  assertStringIncludes(notice ?? "(no notice logged)", "DocuMonster signup — paid — Monster — +15125551121");
+});
+
+/**
+ * REQ-113 — Raphael, 2026-10-21, the launch checklist: "Carry the selected plan from the
+ * landing-page button into signup so customers enter the correct flow." — and, told the $99 pick
+ * was asked again at the wizard's fourth step: "can we get #2 implemented?" A paid pick needs the
+ * account's email (REQ-054), and a phone sign-up has none until the wizard's third question: the
+ * name is kept on the account from the code on, and the pick is made the moment the email is there.
+ */
+Deno.test("REQ-113 choose-plan — a paid sign-up names its plan with the code: without an email the name waits on the account (the CRM reads it) and nothing is picked; the email landing makes the pick — pending through primary, back to the wizard — and the sweep mints its page, once; with the email already on record the pick is made at the code; free is REQ-104's; a pick on record stands; a name that is no plan is nothing", async () => {
+  const { users, plans, leads, flow } = await fresh();
+  const world = fakePaymentsWorld();
+  const before = Deno.env.get("APP_URL");
+  Deno.env.set("APP_URL", "http://localhost:13113");
+  try {
+    // by phone, no email yet: the name is kept, the pick waits
+    const byPhone = await users.create({ phoneNumber: "+15125551131" });
+    await flow.signupNamed(byPhone.id, "monster");
+    assertEquals((await users.get(byPhone.id)).signupPlan, "monster", "the name is on the account");
+    assertEquals(await plans.get(byPhone.id), null, "no pick without the email a paid pick needs");
+    assertEquals(await flow.pickNamed(byPhone.id), null, "asking again before the email picks nothing");
+    await leads.idle();
+    assertEquals(world.links.length, 0, "nothing minted");
+    assertEquals(world.customers.map((c) => [c.tier, c.signupPlan]), [["Lead", "Monster"]], "the CRM reads the plan asked for — a Lead until the first month is paid");
+    // the email lands (the wizard's third question): the pick is made; the page comes by the sweep (REQ-106)
+    await users.update(byPhone.id, { email: "ana@roof.test" });
+    const pending = await flow.pickNamed(byPhone.id);
+    assertEquals([pending?.planId, pending?.status, pending?.merchant, pending?.payUrl], ["monster", "pending", "primary", undefined], "pending through primary, no page yet");
+    await leads.idle();
+    const minted = (await flow.current(byPhone.id))!;
+    assert(minted.payUrl, "the sweep minted the page");
+    assertEquals(world.links[0].returnUrl, `http://localhost:13113/plan/return?due=${minted.dueId}&back=%2Fwelcome`, "the receipt brings the person back to the wizard");
+    assertEquals((await flow.pickNamed(byPhone.id))?.chosenAt, pending!.chosenAt, "a later save of the email does not pick again");
+    assertEquals(world.links.length, 1, "one page");
+    // the email already on record at the code: picked at once
+    const withEmail = await users.create({ phoneNumber: "+15125551132", email: "pat@roof.test" });
+    await flow.signupNamed(withEmail.id, "assist");
+    assertEquals([(await plans.get(withEmail.id))?.planId, (await plans.get(withEmail.id))?.status], ["assist", "pending"]);
+    // free is stored at once (REQ-104); a pick on record stands over a later name; a name that is no plan is nothing
+    const free = await users.create({ phoneNumber: "+15125551133" });
+    await flow.signupNamed(free.id, "free");
+    assertEquals((await plans.get(free.id))?.status, "free");
+    await flow.signupNamed(free.id, "monster");
+    assertEquals([(await plans.get(free.id))?.planId, (await users.get(free.id)).signupPlan], ["free", undefined], "the pick on record stands; no name kept over it");
+    const plain = await users.create({ phoneNumber: "+15125551134" });
+    await flow.signupNamed(plain.id, "gold");
+    await flow.signupNamed(plain.id, undefined);
+    assertEquals([(await users.get(plain.id)).signupPlan, await plans.get(plain.id)], [undefined, null]);
+    await leads.idle();
+  } finally {
+    before === undefined ? Deno.env.delete("APP_URL") : Deno.env.set("APP_URL", before);
+  }
 });

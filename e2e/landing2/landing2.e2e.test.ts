@@ -15,7 +15,7 @@
  *
  * The page: front-end/routes/landing2.tsx (SSR, Spanish first, English on the toggle), its
  * islands — Landing2Signup (phone + the TCPA consent box → code → straight into the app, through
- * the real OTP endpoints) and Landing2Demo (Llámenme with just a cell, or a day and a window with
+ * the real OTP endpoints) and Landing2Demo (a demo on a day and a time, name, cell and email — REQ-108 — with
  * the details, each behind its consent box → POST /demo-request) — and front-end/static/landing2.css.
  * The stories run on the fakes: the code is the dev master code, the text and the email go nowhere
  * but are reported done, the pixel is the app's own fake.
@@ -26,10 +26,10 @@ import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import {
   DEMO_DAY_COUNT,
   DEMO_DAY_WINDOW,
-  DEMO_SLOTS,
   demoDay,
   demoDayLabel,
   demoMonthRange,
+  upcomingDemoDays,
 } from "../../shared/demo-booking/mod.ts";
 
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -94,6 +94,12 @@ function watchPosts(page: StoryTools["page"], path: string) {
     if (req.method() === "POST" && req.url().includes(path)) n++;
   });
   return () => n;
+}
+
+/** REQ-117 — the card opens on Call me, as before; the booking is behind its link */
+async function openBooking(page: StoryTools["page"]): Promise<void> {
+  await page.locator("[data-cy='l2-pick-time']").click();
+  await page.locator("[data-cy='l2-demo-submit']").waitFor({ timeout: 10_000 });
 }
 
 const count = async (page: StoryTools["page"], selector: string) =>
@@ -171,6 +177,20 @@ const loaded = (page: StoryTools["page"], selector: string) =>
     el.complete && el.naturalWidth > 0
   );
 
+/** REQ-108 — book a demo on the card as it opens (the first day, the first time): the name, the cell, the email, Book My Demo — until the thanks shows */
+async function bookDemo(page: StoryTools["page"]): Promise<void> {
+  await page.locator("#demo").scrollIntoViewIfNeeded();
+  await openBooking(page); // REQ-117
+  await page.locator("#f-name").fill("José García");
+  await page.locator("#f-phone").fill(`512${digits()}`);
+  await page.locator("#f-email").fill("jose@tunegocio.com");
+  await clickUntil(
+    page,
+    "[data-cy='l2-demo-submit']",
+    async () => (await count(page, "[data-cy='l2-demo-done']")) > 0,
+  );
+}
+
 Deno.test("REQ-088: /landing2 is the v3 mock top to bottom — Spanish first, English on the toggle, on a desktop and on a phone", (t) =>
   story(t, async ({ page, expect }) => {
     await page.setViewportSize(DESKTOP);
@@ -237,7 +257,7 @@ Deno.test("REQ-088: /landing2 is the v3 mock top to bottom — Spanish first, En
     await expect.see(
       "Una factura perdida te cuesta más que un año de DocuMonster.",
     );
-    await expect.see("¿Quieres verlo primero? Te llamamos.");
+    await expect.see("¿Quieres verlo primero? Elige un día y una hora para agendar tu demo.");
     await expect.see("¿Todavía tienes dudas? DocuMonster no.");
     await expect.see("Deja el Papeleo al Monstruo. Tú sigue en la obra.");
     // the monster, the signed quote card of the hero, Art and Ben
@@ -263,7 +283,7 @@ Deno.test("REQ-088: /landing2 is the v3 mock top to bottom — Spanish first, En
     await expect.see("One message. Three documents.");
     await expect.see("You win more jobs");
     await expect.see("Real people speaking Spanish. Seven days a week.");
-    await expect.see("Want to see it first? We’ll call you.");
+    await expect.see("Want to see it first? Pick a day and time to book your demo.");
     expect.eq(
       await page.evaluate(() => document.documentElement.lang),
       "en",
@@ -636,163 +656,139 @@ Deno.test("REQ-089: the signup card is the mock's — the consent box is ticked 
     await expect.see("Empieza en 30 segundos");
   }));
 
-Deno.test("REQ-090: the demo card — Llámenme with just a cell books a call as soon as possible; the day-and-window form books a demo; each holds while its consent box is unticked (it opens ticked, REQ-097); the team is emailed, the person is texted, and the phone is a lead", (t) =>
+/**
+ * REQ-108 — Raphael, 2026-10-21, the launch checklist: "This section is for booking an actual
+ * 15-minute demo. Visitors must select a specific day and time, rather than a morning or afternoon
+ * window. Offer available times between 8 a.m. and 8 p.m. Eastern Time. Do not allow same-day
+ * bookings. The earliest available date must be tomorrow. Collect their name, phone number, and
+ * email address. Keep the button labeled 'Book My Demo.' Ensure the team receives all submitted
+ * information, including the selected demo date and time. Replace the current callback wording."
+ * REQ-090's Llámenme is still there, first (REQ-117): the booking opens from its link.
+ */
+Deno.test("REQ-108: the demo card books a specific day and time — tomorrow at the earliest, 8 AM to 8 PM Eastern — with the name, the cell and the email, on Book My Demo; the team's email carries the date and the time; the card says so in both languages and holds while its consent box is unticked", (t) =>
   story(t, async ({ page, expect }) => {
     const posts = watchPosts(page, "/api/demo-request");
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2?lang=en");
-    await expect.see("Want to see it first? We’ll call you.");
+    await expect.see("15-minute demo");
+    await expect.see("Want to see it first? Pick a day and time to book your demo.");
+    await expect.see("Enter your name, phone number, and email, then select ‘Book My Demo.’");
     await page.locator("#demo").scrollIntoViewIfNeeded();
-    // one card: the copy on the left, the form on the right
+    expect.eq(await count(page, "[data-cy='l2-demo'] [data-cy='l2-demo-card']"), 1, "the demo is one card");
+    expect.eq(await count(page, "[data-cy='l2-demo-card'] [data-cy='l2-demo-form']"), 1, "one form at a time: Call me first (REQ-117)");
+    expect.eq(await count(page, "[data-cy='l2-demo-call']"), 1, "Llámenme is there; the booking is one tap away");
+    await page.locator("[data-cy='l2-pick-time']").click();
+    await page.locator("[data-cy='l2-demo-submit']").waitFor({ timeout: 10_000 });
+    // the days: five on view, the first is tomorrow (Eastern) — never today
+    expect.eq((await onView(page)).length, DEMO_DAY_COUNT, "five days on view");
     expect.eq(
-      await count(page, "[data-cy='l2-demo'] [data-cy='l2-demo-card']"),
-      1,
-      "the demo is one card",
+      await page.locator("[data-cy='l2-day']").first().getAttribute("data-day"),
+      upcomingDemoDays("en")[0].iso,
+      "the first day offered is tomorrow, Eastern",
     );
-    expect.eq(
-      await count(page, "[data-cy='l2-demo-card'] [data-cy='l2-demo-form']"),
-      1,
-      "the form is inside it",
+    // the times: 8:00 AM to 7:30 PM, every half hour
+    const times = page.locator("[data-cy='l2-time'] option");
+    expect.eq(await times.count(), 24, "twenty-four times to pick");
+    expect.eq(((await times.first().textContent()) ?? "").trim(), "8:00 AM", "from 8 AM");
+    expect.eq(((await times.last().textContent()) ?? "").trim(), "7:30 PM", "to the last start before 8 PM");
+    expect.eq(((await page.locator("[data-cy='l2-demo-submit']").textContent()) ?? "").trim(), "Book My Demo", "the button");
+    // the third day and 2:00 PM; the summary follows both
+    await clickUntil(
+      page,
+      "[data-cy='l2-day'] >> nth=2",
+      async () => (await page.locator("[data-cy='l2-day']").nth(2).getAttribute("class"))?.includes("on") ?? false,
     );
-    // Llámenme: just a cell — held while the box is unticked
-    const quickPhone = `512${digits()}`;
-    await page.locator("#demo-phone").fill(quickPhone);
-    expect.eq(
-      await page.locator("#demo-consent").isChecked(),
-      true,
-      "the demo's consent box is ticked when the page opens (REQ-097)",
-    );
+    const dayIso = await page.locator("[data-cy='l2-day']").nth(2).getAttribute("data-day");
+    const summary = page.locator("[data-cy='l2-demo-summary']");
+    for (let attempt = 0; attempt < 8; attempt++) {
+      await page.locator("[data-cy='l2-time']").selectOption("14:00");
+      if (((await summary.textContent()) ?? "").includes("2:00 PM")) break;
+      await page.waitForTimeout(200);
+    }
+    const summaryText = ((await summary.textContent()) ?? "").replace(/\s+/g, " ").trim();
+    expect(/^Demo · .+ · 2:00 PM \(Eastern\)$/.test(summaryText), `the summary names the day and the time, Eastern (${summaryText})`);
+    // every field is collected — the name, the cell, the email — each asked for by name
+    await page.locator("[data-cy='l2-demo-submit']").click();
+    await expect.see("Enter your name.");
+    await page.locator("#f-name").fill("José García");
+    await page.locator("[data-cy='l2-demo-submit']").click();
+    await expect.see("Enter a valid cell number.");
+    await page.locator("#f-phone").fill(`512${digits()}`);
+    await page.locator("[data-cy='l2-demo-submit']").click();
+    await expect.see("Enter your email.");
+    await page.locator("#f-email").fill("jose@tunegocio.com");
+    // the consent box opens ticked (REQ-097); unticked by the person, the booking holds
+    expect.eq(await page.locator("#demo-consent").isChecked(), true, "the demo's consent box is ticked when the page opens");
     await page.locator("#demo-consent").uncheck();
-    await page.locator("[data-cy='l2-demo-call']").click();
+    await page.locator("[data-cy='l2-demo-submit']").click();
     await expect.see("Tick the box so we can text or call you.");
     expect.eq(posts(), 0, "nothing was posted without consent");
     await page.locator("#demo-consent").check();
     const [res] = await Promise.all([
-      page.waitForResponse((
-        r: { url(): string; request(): { method(): string } },
-      ) =>
-        r.url().includes("/api/demo-request") && r.request().method() === "POST"
-      ),
-      page.locator("[data-cy='l2-demo-call']").click(),
-    ]);
-    const body = await res.json();
-    expect.eq(body.ok, true, `the call was booked (${JSON.stringify(body)})`);
-    expect.eq(body.mode, "call", "a call");
-    expect.eq(body.day, "", "as soon as possible: no day…");
-    expect.eq(body.slot, "", "…and no window");
-    expect.eq(body.emailed, true, "the team was emailed");
-    expect.eq(
-      typeof body.texted,
-      "boolean",
-      "the server says whether the person was texted",
-    );
-    expect.eq(body.lead, true, "the phone is a lead");
-    await expect.see("Done!");
-    await expect.see(
-      body.texted
-        ? "We confirm by text. No commitment."
-        : "We could not text you, but your booking is in",
-    );
-    // the day-and-window form, Spanish (an explicit ?lang= is a choice the site persists — asked by name)
-    await page.goto("/landing2?lang=es");
-    await page.locator("#demo").scrollIntoViewIfNeeded();
-    await clickUntil(
-      page,
-      "[data-cy='l2-pick-time']",
-      async () => (await count(page, "[data-cy='l2-day']")) > 0,
-    );
-    expect.eq(
-      (await onView(page)).length,
-      DEMO_DAY_COUNT,
-      "five days to pick on view (REQ-105: the whole list is in the row, five to the width)",
-    );
-    expect.eq(
-      await count(page, "[data-cy='l2-slot']"),
-      DEMO_SLOTS.length,
-      "two windows to pick",
-    );
-    await expect.see("Mañana (9–12)");
-    await expect.see("Tarde (1–5)");
-    const summary = page.locator("[data-cy='l2-demo-summary']");
-    expect(
-      /^Demo · .+ · Mañana, 9 AM – 12 PM \(hora del Este\)$/.test(
-        ((await summary.textContent()) ?? "").replace(/\s+/g, " ").trim(),
-      ),
-      `the summary starts on the demo, the first day, the morning (${await summary
-        .textContent()})`,
-    );
-    await clickUntil(
-      page,
-      "[data-cy='l2-day'] >> nth=2",
-      async () =>
-        (await page.locator("[data-cy='l2-day']").nth(2).getAttribute("class"))
-          ?.includes("on") ?? false,
-    );
-    await clickUntil(
-      page,
-      "[data-cy='l2-slot'] >> nth=1",
-      async () =>
-        (await page.locator("[data-cy='l2-slot']").nth(1).getAttribute("class"))
-          ?.includes("on") ?? false,
-    );
-    const dayIso = await page.locator("[data-cy='l2-day']").nth(2).getAttribute(
-      "data-day",
-    );
-    expect(
-      ((await summary.textContent()) ?? "").includes("Tarde, 1 – 5 PM"),
-      "the summary follows the window",
-    );
-    // the details: a name is needed, the consent box too (unticked by the person — it opens ticked, REQ-097); the email is optional
-    await page.locator("#demo-consent").uncheck();
-    await page.locator("#f-phone").fill(`512${digits()}`);
-    await page.locator("[data-cy='l2-demo-submit']").click();
-    await expect.see("Escribe tu nombre.");
-    await page.locator("#f-name").fill("José García");
-    await page.locator("[data-cy='l2-demo-submit']").click();
-    await expect.see(
-      "Marca la casilla para que podamos escribirte o llamarte.",
-    );
-    expect.eq(posts(), 1, "nothing more was posted without consent");
-    await page.locator("#f-email").fill("jose@tunegocio.com");
-    await page.locator("#demo-consent").check();
-    const [res2] = await Promise.all([
-      page.waitForResponse((
-        r: { url(): string; request(): { method(): string } },
-      ) =>
+      page.waitForResponse((r: { url(): string; request(): { method(): string } }) =>
         r.url().includes("/api/demo-request") && r.request().method() === "POST"
       ),
       page.locator("[data-cy='l2-demo-submit']").click(),
     ]);
-    const body2 = await res2.json();
-    expect.eq(body2.ok, true, `the demo was booked (${JSON.stringify(body2)})`);
-    expect.eq(body2.mode, "demo", "a demo");
-    expect.eq(body2.day, dayIso, "the day picked");
-    expect.eq(body2.slot, "afternoon", "the window picked");
-    expect.eq(body2.lead, true, "the phone is a lead");
-    await expect.see("¡Listo!");
-    await expect.see(
-      body2.texted
-        ? "Te confirmamos por texto. Sin compromiso."
-        : "No pudimos mandarte el texto",
-    );
-    // ← Solo llámenme goes back to the one-field form
+    const body = await res.json();
+    expect.eq(body.ok, true, `the demo was booked (${JSON.stringify(body)})`);
+    expect.eq(body.day, dayIso, "the day picked");
+    expect.eq(body.time, "14:00", "the time picked");
+    expect.eq(body.emailed, true, "the team was emailed — the date and the time on it (the demo-request int test reads the mail)");
+    expect.eq(typeof body.texted, "boolean", "the server says whether the person was texted");
+    expect.eq(body.lead, true, "the phone is a lead");
+    await expect.see("Done!");
+    await expect.see(body.texted ? "We confirm by text. No commitment." : "We could not text you, but your booking is in");
+    // the same card in Spanish
     await page.goto("/landing2?lang=es");
+    await expect.see("Demo de 15 minutos");
+    await expect.see("¿Quieres verlo primero? Elige un día y una hora para agendar tu demo.");
+    await expect.see("Pon tu nombre, tu celular y tu correo, y toca ‘Agendar mi demo’.");
     await page.locator("#demo").scrollIntoViewIfNeeded();
+    await page.locator("[data-cy='l2-pick-time']").click();
+    await page.locator("[data-cy='l2-demo-submit']").waitFor({ timeout: 10_000 });
+    expect.eq(((await page.locator("[data-cy='l2-demo-submit']").textContent()) ?? "").trim(), "Agendar mi demo", "the button in Spanish");
+    const esSummary = ((await page.locator("[data-cy='l2-demo-summary']").textContent()) ?? "").replace(/\s+/g, " ").trim();
+    expect(/^Demo · .+ · 8:00 AM \(hora del Este\)$/.test(esSummary), `the summary names the first time, hora del Este (${esSummary})`);
+  }));
+
+/**
+ * REQ-115 — Raphael, 2026-10-21, on the pinned /landing2 after booking a demo: "how do i see the
+ * phone number entry on the demo i should be able to just go back and forth". Done! had nothing to
+ * press; the form was gone until a reload. The card goes back to the form now, with the day, the
+ * time, the name, the cell and the email still as typed, and Book My Demo there to press again.
+ */
+Deno.test("REQ-115: after Book My Demo the Done! card goes back to the form — the day, the time, the name, the cell and the email still as typed — and Book My Demo is there again", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2?lang=en");
+    await page.locator("#demo").scrollIntoViewIfNeeded();
+    await openBooking(page); // REQ-117
     await clickUntil(
       page,
-      "[data-cy='l2-pick-time']",
-      async () => (await count(page, "[data-cy='l2-day']")) > 0,
+      "[data-cy='l2-day'] >> nth=1",
+      async () => (await page.locator("[data-cy='l2-day']").nth(1).getAttribute("class"))?.includes("on") ?? false,
     );
-    await clickUntil(
-      page,
-      "[data-cy='l2-quick-mode']",
-      async () => (await count(page, "#demo-phone")) > 0,
-    );
-    expect.eq(
-      await count(page, "[data-cy='l2-day']"),
-      0,
-      "the day picker is gone again",
-    );
+    const dayIso = await page.locator("[data-cy='l2-day']").nth(1).getAttribute("data-day");
+    await page.locator("[data-cy='l2-time']").selectOption("10:30");
+    const cell = `512${digits()}`;
+    await page.locator("#f-name").fill("Back Forth");
+    await page.locator("#f-phone").fill(cell);
+    await page.locator("#f-email").fill("back@tunegocio.com");
+    await page.locator("[data-cy='l2-demo-submit']").click();
+    await expect.see("Done!");
+    expect.eq(await count(page, "[data-cy='l2-demo-form']"), 0, "the form gave way to Done!");
+    await expect.see("← Back to the form");
+    // back: the form, with everything still as typed
+    await page.locator("[data-cy='l2-demo-back']").click();
+    await page.locator("[data-cy='l2-demo-form']").waitFor({ timeout: 10_000 });
+    expect.eq(await page.locator("#f-name").inputValue(), "Back Forth", "the name is still there");
+    expect.eq((await page.locator("#f-phone").inputValue()).replace(/\D/g, ""), cell, "the cell is still there");
+    expect.eq(await page.locator("#f-email").inputValue(), "back@tunegocio.com", "the email is still there");
+    expect.eq(await page.locator("[data-cy='l2-day'].on").getAttribute("data-day"), dayIso, "the day is still picked");
+    expect.eq(await page.locator("[data-cy='l2-time']").inputValue(), "10:30", "the time is still picked");
+    // and forth: the button is there to press again
+    expect.eq(((await page.locator("[data-cy='l2-demo-submit']").textContent()) ?? "").trim(), "Book My Demo", "Book My Demo is there again");
   }));
 
 /**
@@ -917,11 +913,8 @@ Deno.test("REQ-090: all five days of the demo's day picker sit whole inside the 
       // its state and the link would be gone: ask for the page afresh and scroll to the demo
       await page.goto(`/landing2?lang=en&vp=${vp.width}`);
       await page.locator("#demo").scrollIntoViewIfNeeded();
-      await clickUntil(
-        page,
-        "[data-cy='l2-pick-time']",
-        async () => (await count(page, "[data-cy='l2-day']")) > 0,
-      );
+      await openBooking(page); // REQ-117: the card opens on Call me; the day strip is on the booking behind its link
+      await page.locator("[data-cy='l2-day']").first().waitFor();
       const days = page.locator("[data-cy='l2-day']");
       expect.eq(
         (await onView(page)).length,
@@ -1328,16 +1321,13 @@ Deno.test("REQ-095: the second comb — the page has its landmarks and the brand
       legal.length === 4 && legal.every((h) => h >= 24),
       `four policy links, each at least 24px tall (${legal})`,
     );
-    // the demo's window group is named like the day group
-    await clickUntil(
-      page,
-      "[data-cy='l2-pick-time']",
-      async () => (await count(page, "[data-cy='l2-slot']")) > 0,
-    );
+    // the demo's time field is named like the day group (REQ-108: the window group it replaced)
+    await page.locator("#demo").scrollIntoViewIfNeeded();
+    await openBooking(page); // REQ-117
     expect.eq(
-      await page.locator(".l2-demo__slots").getAttribute("aria-label"),
-      "Pick a window",
-      "the window group's name",
+      ((await page.locator("label[for='f-time']").textContent()) ?? "").trim(),
+      "Pick the time",
+      "the time field's name",
     );
     // the brand goes to the very top of the page
     expect(
@@ -1426,13 +1416,8 @@ Deno.test("REQ-096: the third comb — the stylesheet's link is cache-busted; th
       "Switch to Spanish",
       "and on the English page",
     );
-    // the demo's thanks is a heading: book a call and read it
-    await page.locator("#demo-phone").fill(`512${digits()}`);
-    await clickUntil(
-      page,
-      "[data-cy='l2-demo-call']",
-      async () => (await count(page, "[data-cy='l2-demo-done']")) > 0,
-    );
+    // the demo's thanks is a heading: book a demo and read it
+    await bookDemo(page);
     expect.eq(
       await count(page, "[data-cy='l2-demo-done'] h3"),
       1,
@@ -1450,7 +1435,7 @@ Deno.test("REQ-097: every consent box on /landing2 — the signup card's and the
       await expect.see(
         lang === "es"
           ? "Empieza en 30 segundos"
-          : "Want to see it first? We’ll call you.",
+          : "Want to see it first? Pick a day and time to book your demo.",
       );
       expect.eq(
         await page.locator("#reg-consent").isChecked(),
@@ -1464,14 +1449,9 @@ Deno.test("REQ-097: every consent box on /landing2 — the signup card's and the
         `the demo's consent box is ticked when the ${lang} page opens`,
       );
     }
-    // the English page is open: Llámenme books the call without touching the box
-    await page.locator("#demo-phone").fill(`512${digits()}`);
-    await clickUntil(
-      page,
-      "[data-cy='l2-demo-call']",
-      async () => (await count(page, "[data-cy='l2-demo-done']")) > 0,
-    );
-    expect.eq(demos(), 1, "the call was booked without touching the box");
+    // the English page is open: Book My Demo books the demo without touching the box
+    await bookDemo(page);
+    expect.eq(demos(), 1, "the demo was booked without touching the box");
     // and Start free sends the code without touching the box
     await page.locator("#reg-phone").fill(`512${digits()}`);
     await clickUntil(
@@ -1490,13 +1470,16 @@ Deno.test("REQ-097: every consent box on /landing2 — the signup card's and the
     await expect.see("Marca la casilla para que te mandemos el código.");
     expect.eq(otps(), 1, "nothing more was posted once unticked");
     await page.locator("#demo").scrollIntoViewIfNeeded();
+    await openBooking(page); // REQ-117
     await page.locator("#demo-consent").uncheck();
-    await page.locator("#demo-phone").fill(`512${digits()}`);
-    await page.locator("[data-cy='l2-demo-call']").click();
+    await page.locator("#f-name").fill("José García");
+    await page.locator("#f-phone").fill(`512${digits()}`);
+    await page.locator("#f-email").fill("jose@tunegocio.com");
+    await page.locator("[data-cy='l2-demo-submit']").click();
     await expect.see(
       "Marca la casilla para que podamos escribirte o llamarte.",
     );
-    expect.eq(demos(), 1, "no call was booked once unticked");
+    expect.eq(demos(), 1, "no demo was booked once unticked");
   }));
 
 /**
@@ -1516,11 +1499,8 @@ Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the n
       await page.setViewportSize(vp);
       await page.goto(`/landing2?lang=es&vp=${vp.width}`);
       await page.locator("#demo").scrollIntoViewIfNeeded();
-      await clickUntil(
-        page,
-        "[data-cy='l2-pick-time']",
-        async () => (await count(page, "[data-cy='l2-day']")) > 0,
-      );
+      await openBooking(page); // REQ-117: the card opens on Call me; the day strip is on the booking behind its link
+      await page.locator("[data-cy='l2-day']").first().waitFor();
       const prev = page.locator("[data-cy='l2-days-prev']");
       const next = page.locator("[data-cy='l2-days-next']");
       expect.eq(
@@ -1692,6 +1672,7 @@ Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the n
         // the seventh day, picked two pages back, books
         await page.locator("#f-name").fill("José García");
         await page.locator("#f-phone").fill(`512${digits()}`);
+        await page.locator("#f-email").fill("jose@tunegocio.com"); // REQ-108: the email is collected too
         const [res] = await Promise.all([
           page.waitForResponse((
             r: { url(): string; request(): { method(): string } },
@@ -1754,11 +1735,8 @@ Deno.test("REQ-105: the demo's day strip scrolls under the finger — the boxes 
       await page.setViewportSize(vp);
       await page.goto(`/landing2?lang=es&vp=${vp.width}`);
       await page.locator("#demo").scrollIntoViewIfNeeded();
-      await clickUntil(
-        page,
-        "[data-cy='l2-pick-time']",
-        async () => (await count(page, "[data-cy='l2-day']")) > 0,
-      );
+      await openBooking(page); // REQ-117: the card opens on Call me; the day strip is on the booking behind its link
+      await page.locator("[data-cy='l2-day']").first().waitFor();
     };
     const view = async (): Promise<Box> =>
       (await page.locator(".l2-demo__view").boundingBox())!;
@@ -1953,6 +1931,7 @@ Deno.test("REQ-105: the demo's day strip scrolls under the finger — the boxes 
     );
     await page.locator("#f-name").fill("José García");
     await page.locator("#f-phone").fill(`512${digits()}`);
+    await page.locator("#f-email").fill("jose@tunegocio.com"); // REQ-108: the email is collected too
     const [res] = await Promise.all([
       page.waitForResponse((
         r: { url(): string; request(): { method(): string } },
@@ -2032,4 +2011,134 @@ Deno.test("REQ-105: the demo's day strip scrolls under the finger — the boxes 
       `a drag right brings the earlier days back (${(await onView(page))[0]})`,
     );
     await page.locator(RANGE).hover();
+  }));
+
+/**
+ * REQ-109 — Raphael, 2026-10-21, the launch checklist: "Update Monster Free inclusions. Use the
+ * following wording, with each item on its own line: Unlimited invoices · Up to five quotes and
+ * contracts a month · Spanish and English output. Make sure the introduction, plan comparison, and
+ * signup messaging are consistent. Monster Free is free forever."
+ */
+Deno.test("REQ-109: Monster Free's card lists its three inclusions, each on its own line — Unlimited invoices, Up to five quotes and contracts a month, Spanish and English output — and says it is free forever, in both languages", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    for (
+      const [lang, lines, forever] of [
+        ["en", ["Unlimited invoices", "Up to five quotes and contracts a month", "Spanish and English output"], "use Monster Free forever"],
+        ["es", ["Facturas ilimitadas", "Hasta cinco cotizaciones y contratos al mes", "Documentos en español y en inglés"], "usa Monster Free para siempre"],
+      ] as const
+    ) {
+      await page.goto(`/landing2?lang=${lang}`);
+      await page.locator("#planes").scrollIntoViewIfNeeded();
+      const free = page.locator("[data-cy='l2-plan']").filter({ has: page.locator("[data-cy='l2-plan-cta'][data-plan='free']") });
+      expect.eq(await free.count(), 1, `the Monster Free card (${lang})`);
+      const feats = (await free.locator(".l2-plan__feats .l2-check").allTextContents()).map((s) => s.replace(/\s+/g, " ").trim());
+      expect.eq(feats.join(" | "), lines.join(" | "), `the three lines, each its own (${lang})`);
+      await expect.see(forever);
+    }
+  }));
+
+/**
+ * REQ-110 — Raphael, 2026-10-21, the launch checklist: "Update 'One message. Three documents.'
+ * Show a quote, contract, and invoice that visitors can click through. Use R Hernandez
+ * consistently across all three previews so it is clear they belong to the same example. Keep the
+ * presentation simple and make all three document types easy to see."
+ */
+Deno.test("REQ-110: One message. Three documents. — the quote, the contract and the invoice for R. Hernández, each a click away, the same job on all three; the tabs in the page's language, the documents in English", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2?lang=en");
+    await expect.see("One message. Three documents.");
+    const proof = page.locator("[data-cy='l2-proof']");
+    expect.eq(await proof.locator("[data-cy='l2-doc-tab']").count(), 3, "three documents to click through");
+    expect.eq(
+      (await proof.locator("[data-cy='l2-doc-tab']").allTextContents()).map((s) => s.trim()).join(" | "),
+      "Quote | Contract | Invoice",
+      "the three, named",
+    );
+    expect.eq(await proof.locator("[data-cy='l2-doc-tab'][aria-selected='true']").getAttribute("data-doc"), "quote", "the quote first");
+    await expect.see("QUOTE #PM-2641");
+    await expect.see("Prepared for R. Hernández");
+    await clickUntil(
+      page,
+      "[data-cy='l2-doc-tab'][data-doc='contract']",
+      async () => (await count(page, "[data-cy='l2-doc'][data-doc='contract']")) > 0,
+    );
+    await expect.see("AGREEMENT #PM-2641");
+    const contract = ((await proof.locator("[data-cy='l2-doc']").textContent()) ?? "").replace(/\s+/g, " ");
+    expect(contract.includes("R. Hernández") && contract.includes("Kitchen remodel"), `the contract is R. Hernández's kitchen remodel (${contract.slice(0, 120)})`);
+    await clickUntil(
+      page,
+      "[data-cy='l2-doc-tab'][data-doc='invoice']",
+      async () => (await count(page, "[data-cy='l2-doc'][data-doc='invoice']")) > 0,
+    );
+    await expect.see("INVOICE #PM-2641");
+    const invoice = ((await proof.locator("[data-cy='l2-doc']").textContent()) ?? "").replace(/\s+/g, " ");
+    expect(invoice.includes("R. Hernández") && invoice.includes("$10,990.00"), `the invoice is R. Hernández's, the quote's total (${invoice.slice(0, 120)})`);
+    await clickUntil(
+      page,
+      "[data-cy='l2-doc-tab'][data-doc='quote']",
+      async () => (await count(page, "[data-cy='l2-doc'][data-doc='quote']")) > 0,
+    );
+    await expect.see("QUOTE #PM-2641");
+    // Spanish: the tabs in Spanish, the documents still the English ones the customer gets
+    await page.goto("/landing2?lang=es");
+    expect.eq(
+      (await proof.locator("[data-cy='l2-doc-tab']").allTextContents()).map((s) => s.trim()).join(" | "),
+      "Cotización | Contrato | Factura",
+      "the tabs in Spanish",
+    );
+    await expect.see("Prepared for R. Hernández");
+  }));
+
+/**
+ * REQ-117 — Raphael, 2026-10-21, on the pinned /landing2: "no where is the fucking component that
+ * was there before?" and "well no its not booking only, call me should be there but clicking the
+ * button then implements what we asked for." Call me is back, first on the card as it was: just
+ * the cell and Call me, a call as soon as possible; "I would rather pick a day and time to book my
+ * demo →" opens the booking the checklist asked for (REQ-108); "← Just call me" comes back; the
+ * cell rides both ways.
+ */
+Deno.test("REQ-117: Call me is there first — just a cell and Call me books a call as soon as possible — and the two views move between each other freely: the link opens the day-and-time booking, Just call me comes back, the cell kept; in both languages", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2?lang=en");
+    await page.locator("#demo").scrollIntoViewIfNeeded();
+    // Call me first, as before
+    expect.eq(await count(page, "[data-cy='l2-demo-call']"), 1, "Call me is there");
+    expect.eq(await count(page, "[data-cy='l2-demo-submit']"), 0, "the booking waits behind its link");
+    await expect.see("I would rather pick a day and time to book my demo →");
+    // the cell, kept across the switch both ways
+    const cell = `512${digits()}`;
+    await page.locator("#demo-phone").fill(cell);
+    await page.locator("[data-cy='l2-pick-time']").click();
+    await page.locator("[data-cy='l2-demo-submit']").waitFor({ timeout: 10_000 });
+    expect.eq(((await page.locator("[data-cy='l2-demo-submit']").textContent()) ?? "").trim(), "Book My Demo", "the booking: Book My Demo");
+    expect.eq(await count(page, "[data-cy='l2-time']"), 1, "a time to pick");
+    expect.eq((await page.locator("#f-phone").inputValue()).replace(/\D/g, ""), cell, "the cell came along");
+    await expect.see("← Just call me");
+    await page.locator("[data-cy='l2-quick-mode']").click();
+    await page.locator("[data-cy='l2-demo-call']").waitFor({ timeout: 10_000 });
+    expect.eq((await page.locator("#demo-phone").inputValue()).replace(/\D/g, ""), cell, "and back, the cell still there");
+    // Call me books a call as soon as possible
+    const [res] = await Promise.all([
+      page.waitForResponse((r: { url(): string; request(): { method(): string } }) =>
+        r.url().includes("/api/demo-request") && r.request().method() === "POST"
+      ),
+      page.locator("[data-cy='l2-demo-call']").click(),
+    ]);
+    const body = await res.json();
+    expect.eq(body.ok, true, `the call was booked (${JSON.stringify(body)})`);
+    expect.eq(body.mode, "call", "a call, as soon as possible");
+    expect.eq(body.emailed, true, "the team was emailed");
+    expect.eq(body.lead, true, "the phone is a lead");
+    await expect.see("Done!");
+    // the same card in Spanish
+    await page.goto("/landing2?lang=es");
+    await page.locator("#demo").scrollIntoViewIfNeeded();
+    expect.eq(((await page.locator("[data-cy='l2-demo-call']").textContent()) ?? "").trim(), "Llámenme", "Call me in Spanish");
+    await expect.see("Mejor elijo día y hora para mi demo →");
+    await page.locator("[data-cy='l2-pick-time']").click();
+    await page.locator("[data-cy='l2-demo-submit']").waitFor({ timeout: 10_000 });
+    await expect.see("← Solo llámenme");
   }));
