@@ -904,3 +904,31 @@ describe("REQ-110 One message. Three documents.", () => {
     }
   });
 });
+
+/**
+ * REQ-115 — Raphael, 2026-10-21, on the pinned /landing2 after booking the demo: "how do i see the
+ * phone number entry on the demo i should be able to just go back and forth". The "Done!" card
+ * replaced the form with nothing to press: the only way back to the entries was a reload. The
+ * thanks card carries a way back now, and the form returns with the day, the time, the name, the
+ * cell and the email as typed.
+ */
+describe("REQ-115 the demo's Done! card goes back to the form", () => {
+  test("REQ-115 the way back is in both dictionaries, the route hands it to the island, and the island renders it on the thanks card — a tap target — returning to the form with the entries kept", () => {
+    expect(en["landing2.thanksBack"]).toBe("← Back to the form");
+    expect(es["landing2.thanksBack"]).toBe("← Volver al formulario");
+    expect(read(PAGE)).toMatch(/"thanksNoText",\s*"thanksBack",/);
+    const demo = read(ISLANDS[1]);
+    expect(demo).toMatch(/thanksBack: string;/);
+    expect(demo).toMatch(/data-cy="l2-demo-back"[\s\S]{0,120}onClick=\{\(\) => setSent\(null\)\}/);
+    expect(demo).toMatch(/\{labels\.thanksBack\}/);
+    // the control lives on the thanks card, before the form in the source: it exists only once the booking is in
+    const done = demo.indexOf('data-cy="l2-demo-done"');
+    const back = demo.indexOf('data-cy="l2-demo-back"');
+    const form = demo.indexOf('data-cy="l2-demo-form"');
+    expect(done > 0 && done < back && back < form).toBe(true);
+    // the entries are state the thanks card never clears: going back shows them as typed
+    expect(demo).not.toMatch(/setName\(""\)|setPhone\(""\)|setEmail\(""\)/);
+    // a tap target clear of REQ-344's 24px floor
+    expect(read(CSS)).toMatch(/\.l2-thanks__back \{[^}]*min-height: 24px;/);
+  });
+});

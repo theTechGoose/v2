@@ -39,8 +39,11 @@ import {
  * while the consent box is ticked, and shows the confirmation the mock drew. REQ-097 (Raphael,
  * 2026-10-20: "all the … checkboxes should be ticked"): the box is ticked when the page opens; the
  * person can untick it, and then the form waits. REQ-090's Llámenme — a call with just a cell,
- * today — is gone. Every string comes in as `labels` from the route, so the island renders exactly
- * what the server did.
+ * today — is gone. REQ-115 (Raphael, 2026-10-21, after booking on the pin: "how do i see the phone
+ * number entry on the demo i should be able to just go back and forth"): the Done! card carries a
+ * way back to the form, and the entries are state the card never clears, so the day, the time, the
+ * name, the cell and the email are there as typed. Every string comes in as `labels` from the
+ * route, so the island renders exactly what the server did.
  */
 export interface Landing2DemoLabels {
   consent: string;
@@ -69,6 +72,8 @@ export interface Landing2DemoLabels {
   thanksH: string;
   thanksSub: string;
   thanksNoText: string;
+  /** REQ-115 — the way back from Done! to the form, the entries as typed */
+  thanksBack: string;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -277,6 +282,15 @@ export default function Landing2Demo(
         <p class="l2-thanks__sub">
           {sent.texted ? labels.thanksSub : labels.thanksNoText}
         </p>
+        {/* REQ-115 — "i should be able to just go back and forth": the form again, as typed */}
+        <button
+          type="button"
+          class="l2-thanks__back"
+          data-cy="l2-demo-back"
+          onClick={() => setSent(null)}
+        >
+          {labels.thanksBack}
+        </button>
       </div>
     );
   }

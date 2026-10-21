@@ -742,6 +742,44 @@ Deno.test("REQ-108: the demo card books a specific day and time — tomorrow at 
   }));
 
 /**
+ * REQ-115 — Raphael, 2026-10-21, on the pinned /landing2 after booking a demo: "how do i see the
+ * phone number entry on the demo i should be able to just go back and forth". Done! had nothing to
+ * press; the form was gone until a reload. The card goes back to the form now, with the day, the
+ * time, the name, the cell and the email still as typed, and Book My Demo there to press again.
+ */
+Deno.test("REQ-115: after Book My Demo the Done! card goes back to the form — the day, the time, the name, the cell and the email still as typed — and Book My Demo is there again", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2?lang=en");
+    await page.locator("#demo").scrollIntoViewIfNeeded();
+    await clickUntil(
+      page,
+      "[data-cy='l2-day'] >> nth=1",
+      async () => (await page.locator("[data-cy='l2-day']").nth(1).getAttribute("class"))?.includes("on") ?? false,
+    );
+    const dayIso = await page.locator("[data-cy='l2-day']").nth(1).getAttribute("data-day");
+    await page.locator("[data-cy='l2-time']").selectOption("10:30");
+    const cell = `512${digits()}`;
+    await page.locator("#f-name").fill("Back Forth");
+    await page.locator("#f-phone").fill(cell);
+    await page.locator("#f-email").fill("back@tunegocio.com");
+    await page.locator("[data-cy='l2-demo-submit']").click();
+    await expect.see("Done!");
+    expect.eq(await count(page, "[data-cy='l2-demo-form']"), 0, "the form gave way to Done!");
+    await expect.see("← Back to the form");
+    // back: the form, with everything still as typed
+    await page.locator("[data-cy='l2-demo-back']").click();
+    await page.locator("[data-cy='l2-demo-form']").waitFor({ timeout: 10_000 });
+    expect.eq(await page.locator("#f-name").inputValue(), "Back Forth", "the name is still there");
+    expect.eq((await page.locator("#f-phone").inputValue()).replace(/\D/g, ""), cell, "the cell is still there");
+    expect.eq(await page.locator("#f-email").inputValue(), "back@tunegocio.com", "the email is still there");
+    expect.eq(await page.locator("[data-cy='l2-day'].on").getAttribute("data-day"), dayIso, "the day is still picked");
+    expect.eq(await page.locator("[data-cy='l2-time']").inputValue(), "10:30", "the time is still picked");
+    // and forth: the button is there to press again
+    expect.eq(((await page.locator("[data-cy='l2-demo-submit']").textContent()) ?? "").trim(), "Book My Demo", "Book My Demo is there again");
+  }));
+
+/**
  * Raphael's feedback on the shown page, 2026-10-16: "the english spanish toggle looks like ass when
  * toggling, if you click it at all it should toggle to the opposite, you should not have to click
  * the letters." · "need more contrast on this button" (1-855-DocuMon, dark on dark) · "more

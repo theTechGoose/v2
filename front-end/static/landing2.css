@@ -1087,6 +1087,21 @@
   color: var(--l2-muted);
   max-width: 360px;
 }
+/* REQ-115 — the way back from Done! to the form: a text button, a tap target (REQ-344) */
+.l2-thanks__back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: none;
+  border: 0;
+  color: var(--l2-ink);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
 
 /* faq */
 .l2-faq {

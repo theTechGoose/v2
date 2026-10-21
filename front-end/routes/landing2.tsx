@@ -176,6 +176,7 @@ export default define.page(function Landing2(ctx) {
         "thanksH",
         "thanksSub",
         "thanksNoText",
+        "thanksBack",
       ] as const,
     ),
     consent: t("demoConsent"),
