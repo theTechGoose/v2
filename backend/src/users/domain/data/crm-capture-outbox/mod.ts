@@ -12,6 +12,10 @@
  */
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
+
+/** how many times a settling write re-reads a record whose version moved under it (REQ-113): a
+ *  wizard's saves re-mark a record a handful of times in a row, never more */
+const SETTLE_ATTEMPTS = 8;
 import { backoffMs, LEASE_MS, type PendingCapture } from "@users/domain/business/lead-capture-retry/mod.ts";
 
 const PREFIX = "crm-capture";
@@ -58,14 +62,25 @@ export class CrmCaptureOutbox {
     await kv.atomic().check(existing).set(key, rec).commit();
   }
 
-  /** REQ-103 — the new account's signup notice, a record of its own; an existing one is kept as it is */
-  async addSignupNotice(userId: string, now: number): Promise<void> {
+  /** REQ-103 — the new account's signup notice, a record of its own. REQ-112 — it says what
+   *  happened; a later happening re-marks the record with the newer reason (a new enqueuedAt, due
+   *  now, its lease kept), so a sweep holding the older one leaves it for the sweep that follows and
+   *  the mail that goes out carries the latest */
+  async addSignupNotice(userId: string, reason: string, now: number): Promise<void> {
     const kv = await this.kv();
     const key = keyOf({ phone: "", userId, kind: "signup-notice" });
     const existing = await kv.get<PendingCapture>(key);
-    if (existing.value) return;
     const at = new Date(now).toISOString();
-    const rec: PendingCapture = { phone: "", userId, kind: "signup-notice", enqueuedAt: at, attempts: 0, nextAt: at };
+    const rec: PendingCapture = {
+      phone: "",
+      userId,
+      kind: "signup-notice",
+      reason,
+      enqueuedAt: at,
+      attempts: 0,
+      nextAt: at,
+      ...(existing.value?.leaseUntil ? { leaseUntil: existing.value.leaseUntil } : {}),
+    };
     await kv.atomic().check(existing).set(key, rec).commit();
   }
 
@@ -109,30 +124,49 @@ export class CrmCaptureOutbox {
     return res.ok;
   }
 
-  /** the attempt failed: count it, note why, and set the next time */
+  /** the attempt failed: count it, note why, and set the next time — on the record as it stands
+   *  now: a save re-marking it between this read and this write is kept, never overwritten with
+   *  the older mark (REQ-113: read again, write again until the write lands); the lease goes with
+   *  the deferral */
   async defer(rec: PendingCapture, now: number, error: string): Promise<PendingCapture> {
     const kv = await this.kv();
     const key = keyOf(rec);
-    const current = await kv.get<PendingCapture>(key);
-    const base = current.value ?? rec;
-    const attempts = base.attempts + 1;
-    const next: PendingCapture = { phone: base.phone, ...(base.userId ? { userId: base.userId } : {}), ...(base.kind ? { kind: base.kind } : {}), ...(base.back ? { back: base.back } : {}), enqueuedAt: base.enqueuedAt, attempts, nextAt: new Date(now + backoffMs(attempts)).toISOString(), lastError: error.slice(0, 300) };
-    await kv.set(key, next);
+    let next: PendingCapture = rec;
+    for (let attempt = 0; attempt < SETTLE_ATTEMPTS; attempt++) {
+      const current = await kv.get<PendingCapture>(key);
+      const base = current.value ?? rec;
+      const attempts = base.attempts + 1;
+      next = { phone: base.phone, ...(base.userId ? { userId: base.userId } : {}), ...(base.kind ? { kind: base.kind } : {}), ...(base.back ? { back: base.back } : {}), ...(base.reason ? { reason: base.reason } : {}), enqueuedAt: base.enqueuedAt, attempts, nextAt: new Date(now + backoffMs(attempts)).toISOString(), lastError: error.slice(0, 300) };
+      if ((await kv.atomic().check(current).set(key, next).commit()).ok) return next;
+    }
+    await kv.set(key, next); // moved under every attempt: the last write wins, as it used to
     return next;
   }
 
   /** the CRM answered for the record as the sweep claimed it: gone — unless it was re-marked
-   *  meanwhile (REQ-099), in which case it stays, lease cleared, for the sweep that follows */
+   *  meanwhile (REQ-099), in which case it stays, lease cleared, for the sweep that follows.
+   *  REQ-113 — a save landing between this read and this write fails the version check: read
+   *  again and write again until the write lands or the record is gone. A write lost here left the
+   *  record re-marked AND leased for 90 s, and nobody clears a lease but this: under the gate's
+   *  load the wizard's saves crossed the sweep's write and the stage never reached the CRM. */
   async done(rec: Pick<PendingCapture, "phone" | "userId" | "kind" | "enqueuedAt">): Promise<void> {
     const kv = await this.kv();
     const key = keyOf(rec);
-    const current = await kv.get<PendingCapture>(key);
-    if (!current.value) return;
-    if (current.value.enqueuedAt === rec.enqueuedAt) {
-      await kv.atomic().check(current).delete(key).commit();
-      return;
+    for (let attempt = 0; attempt < SETTLE_ATTEMPTS; attempt++) {
+      const current = await kv.get<PendingCapture>(key);
+      if (!current.value) return;
+      const op = kv.atomic().check(current);
+      if (current.value.enqueuedAt === rec.enqueuedAt) op.delete(key);
+      else op.set(key, unleased(current.value));
+      if ((await op.commit()).ok) return;
     }
-    const { leaseUntil: _lease, ...again } = current.value;
-    await kv.atomic().check(current).set(key, again).commit();
+    // moved under every attempt: it is wanted again whatever it says now — left for the next sweep, unleased
+    const last = await kv.get<PendingCapture>(key);
+    if (last.value) await kv.set(key, unleased(last.value));
   }
+}
+
+/** the record without the lease a sweep held on it */
+function unleased({ leaseUntil: _lease, ...rest }: PendingCapture): PendingCapture {
+  return rest;
 }

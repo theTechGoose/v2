@@ -103,6 +103,9 @@ export interface ProfileUser {
   onboardedAt?: string;
   /** Whether that first time was a skip vs. a real finish. */
   onboardingSkipped?: boolean;
+  /** REQ-113 — the paid plan the sign-up named with the code (the landing's $99 / $199 card); the
+   *  backend makes the pick the moment the email is saved, and the wizard's plan step reads it */
+  signupPlan?: "monster" | "assist";
   createdAt: number;
   updatedAt: number;
 }

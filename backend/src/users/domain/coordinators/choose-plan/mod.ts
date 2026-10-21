@@ -17,7 +17,7 @@ import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { appOrigin, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
-import { addMonth, chosen, isOneTime, monthlyMemo, type PickBack, planOf, RETURN_LABEL, returnUrlFor, settle, subscriptionRefFor, type SubscriptionView, withSubscription } from "@users/domain/business/plan/mod.ts";
+import { addMonth, chosen, isOneTime, monthlyMemo, type PickBack, planOf, RETURN_LABEL, returnUrlFor, settle, signupPlanOf, subscriptionRefFor, type SubscriptionView, withSubscription } from "@users/domain/business/plan/mod.ts";
 import type { PlanId } from "@users/dto/plan.ts";
 import type { UserPlan } from "@users/dto/plan.ts";
 
@@ -60,6 +60,41 @@ export class ChoosePlan {
     const free = await this.plans.put(chosen(userId, "free", new Date().toISOString()));
     await this.leads.enqueueSync(userId);
     return free;
+  }
+
+  /**
+   * REQ-104/113 — the plan a sign-up names with the code (`POST /auth/verify-otp { plan }`;
+   * /auth/verify the same). Raphael, 2026-10-21: "Carry the selected plan from the landing-page
+   * button into signup so customers enter the correct flow." Free is Monster Free on record at
+   * once (startFree). A paid name — the landing's $99 or $199 card — is kept on the account and
+   * picked the moment the account has the email a paid pick needs (REQ-054): here, when the email
+   * is already on record; else when the wizard's email lands (pickNamed, from PUT /me). The CRM
+   * reads the name by the sweep, after the reply (REQ-099/111). A pick already on record stands,
+   * whatever the name (REQ-104); a name that is no plan is nothing.
+   */
+  async signupNamed(userId: string, named: unknown): Promise<void> {
+    if (named === "free") {
+      await this.startFree(userId);
+      return;
+    }
+    const plan = signupPlanOf(named);
+    if (!plan || await this.plans.get(userId)) return;
+    await this.users.nameSignupPlan(userId, plan);
+    if (!(await this.pickNamed(userId))) await this.leads.enqueueSync(userId);
+  }
+
+  /**
+   * REQ-113 — the pick a sign-up named, made once the account has an email: pending through the
+   * one rule's account with the wizard as its way back (the page comes by the sweep, REQ-106).
+   * Null while there is nothing to make — no name, or no email yet; the pick on record when one is
+   * already there (never a second one).
+   */
+  async pickNamed(userId: string): Promise<UserPlan | null> {
+    const user = await this.users.get(userId);
+    if (!user.signupPlan || !user.email?.trim()) return null;
+    const onRecord = await this.plans.get(userId);
+    if (onRecord) return onRecord;
+    return await this.choose(userId, user.signupPlan, "/welcome");
   }
 
   /**
@@ -110,6 +145,7 @@ export class ChoosePlan {
     if (next === plan) return plan;
     const active = await this.projected(await this.plans.put(next));
     await this.leads.enqueueSync(userId); // REQ-062/099 — a paying customer: the CRM's tier is the plan's name, after this reply
+    await this.leads.enqueueSignupNotice(userId, "paid"); // REQ-112 — the team hears the payment landed, with the plan on it
     return active;
   }
 

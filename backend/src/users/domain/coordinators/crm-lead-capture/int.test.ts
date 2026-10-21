@@ -291,15 +291,50 @@ Deno.test("REQ-103 a signup notice is a KV record before anything is sent, and e
   await done();
 });
 
+/**
+ * REQ-112 — Raphael, 2026-10-21, the launch checklist: "Whenever someone completes signup for
+ * Monster Free, Monster, or Monster Assist, automatically send an email to hello@documonster.com.
+ * Include all information collected, their selected plan, signup status/stage, and payment status
+ * where applicable." The notice says what happened — signed up, completed onboarding, skipped
+ * setup, paid — and a later happening re-marks the account's record, so the mail that goes out
+ * carries the latest; a sweep holding the older one leaves the re-marked record for the next.
+ */
+Deno.test("REQ-112 a signup notice carries what happened: the record names it, a later happening re-marks the same record with the newer reason, and the sweep mails each reason it carries", async () => {
+  const { outbox, make, users, mails } = await fresh([]);
+  const user = await users.create({ phoneNumber: "+15125551120", language: "en", name: "New user" });
+  const leads = make();
+  await outbox.addSignupNotice(user.id, "signed up", Date.now());
+  let [rec] = (await outbox.list()).filter((r) => r.kind === "signup-notice");
+  assertEquals([rec.userId, rec.reason], [user.id, "signed up"]);
+  // the person finishes onboarding before any sweep ran: one record, the newer reason
+  await outbox.addSignupNotice(user.id, "completed onboarding", Date.now());
+  const notices = (await outbox.list()).filter((r) => r.kind === "signup-notice");
+  assertEquals(notices.length, 1, "one record per account");
+  assertEquals(notices[0].reason, "completed onboarding");
+  assertEquals(await leads.drain(), { landed: 1, deferred: 0, waiting: 0 });
+  assertEquals(mails.length, 1);
+  assertEquals(mails[0].subject, "DocuMonster signup — completed onboarding — no plan yet — +15125551120");
+  assertStringIncludes(mails[0].htmlBody, "<strong>What happened:</strong> completed onboarding");
+  assertEquals(await outbox.list(), []);
+  // later, the plan is paid: a record of its own again, mailed with that reason
+  await leads.enqueueSignupNotice(user.id, "paid");
+  await leads.idle();
+  assertEquals(mails.length, 2);
+  assertEquals(mails[1].subject, "DocuMonster signup — paid — no plan yet — +15125551120");
+  [rec] = await outbox.list();
+  assertEquals(rec, undefined, "mailed → gone");
+  await done();
+});
+
 Deno.test("REQ-103 the sweep mails hello@documonster.com with the account on it and clears the record; a mail Postmark refused keeps the record with its attempts and reason, and a later sweep mails it; an account wiped before its sweep is cleared with no mail", async () => {
   const { outbox, make, users, mails, mailAnswers } = await fresh([]);
   const user = await users.create({ phoneNumber: "+15125550104", language: "en", name: "New user" });
-  await outbox.addSignupNotice(user.id, Date.now()); // the request wrote it; the isolate died before any sweep
+  await outbox.addSignupNotice(user.id, "signed up", Date.now()); // the request wrote it; the isolate died before any sweep
   const leads = make();
   assertEquals(await leads.drain(), { landed: 1, deferred: 0, waiting: 0 });
   assertEquals(mails.length, 1);
   assertEquals(mails[0].to, "hello@documonster.com");
-  assertEquals(mails[0].subject, "New DocuMonster signup — +15125550104");
+  assertEquals(mails[0].subject, "DocuMonster signup — signed up — no plan yet — +15125550104");
   assertStringIncludes(mails[0].htmlBody, `<strong>User ID:</strong> ${user.id}`);
   assertStringIncludes(mails[0].htmlBody, `<strong>Signed up:</strong> ${user.createdAt}`);
   assertEquals(await outbox.list(), [], "mailed → gone");
@@ -307,7 +342,7 @@ Deno.test("REQ-103 the sweep mails hello@documonster.com with the account on it 
   // Postmark refuses twice, then takes it
   const second = await users.create({ phoneNumber: "+15125550105", language: "es" });
   mailAnswers.push({ ok: false, reason: "postmark 503: down" }, { ok: false, reason: "postmark 500: boom" });
-  await outbox.addSignupNotice(second.id, Date.now());
+  await outbox.addSignupNotice(second.id, "signed up", Date.now());
   const warned: string[] = [];
   const warn = console.warn;
   console.warn = (...args: unknown[]) => warned.push(args.map(String).join(" "));
@@ -323,13 +358,13 @@ Deno.test("REQ-103 the sweep mails hello@documonster.com with the account on it 
     assertEquals([rec2.kind, rec2.attempts], ["signup-notice", 2]);
     assertEquals(await leads.drain(Date.parse(rec2.nextAt)), { landed: 1, deferred: 0, waiting: 0 });
     assertEquals(mails.length, 4, "three tries for the second account, one for the first");
-    assertEquals(mails.at(-1)?.subject, "New DocuMonster signup — +15125550105");
+    assertEquals(mails.at(-1)?.subject, "DocuMonster signup — signed up — no plan yet — +15125550105");
     assertEquals(await outbox.list(), []);
     assertStringIncludes(warned[0] ?? "", "signup notice for");
 
     // wiped before the sweep got to it (GET /me/wipe hard-deletes): nothing to tell, the record clears
     const third = await users.create({ phoneNumber: "+15125550106" });
-    await outbox.addSignupNotice(third.id, Date.now());
+    await outbox.addSignupNotice(third.id, "signed up", Date.now());
     await (await getKv()).delete(["user", third.id]);
     assertEquals(await leads.drain(), { landed: 1, deferred: 0, waiting: 0 });
     assertEquals(mails.length, 4, "no mail for an account that is gone");
@@ -348,7 +383,7 @@ Deno.test("REQ-103 on the fakes (REQ-318: DENO_DEPLOY unset, not on Deno Deploy)
   const { outbox, make, users, mails, notice } = await fresh([]);
   notice.env = { get: () => undefined };
   const user = await users.create({ phoneNumber: "+15125550107", language: "es" });
-  await outbox.addSignupNotice(user.id, Date.now());
+  await outbox.addSignupNotice(user.id, "signed up", Date.now());
   const logged: string[] = [];
   const log = console.log;
   console.log = (...args: unknown[]) => logged.push(args.map(String).join(" "));
@@ -358,7 +393,7 @@ Deno.test("REQ-103 on the fakes (REQ-318: DENO_DEPLOY unset, not on Deno Deploy)
     console.log = log;
   }
   assertEquals(mails, [], "no mail leaves the box");
-  assertStringIncludes(logged.at(-1) ?? "", "[signup-notice] fakes: would mail hello@documonster.com — New DocuMonster signup — +15125550107");
+  assertStringIncludes(logged.at(-1) ?? "", "[signup-notice] fakes: would mail hello@documonster.com — DocuMonster signup — signed up — no plan yet — +15125550107");
   assertEquals(await outbox.list(), [], "counted as sent → gone");
   await done();
 });

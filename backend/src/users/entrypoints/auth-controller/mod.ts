@@ -67,7 +67,7 @@ export class AuthController {
     private leads: CrmLeadCapture,
     /** REQ-091 — where a verified code lands: the wizard while an onboarding question is open */
     private landing: SignInLanding,
-    /** REQ-104 — a Monster Free signup names free with the code: the plan is stored before the wizard asks anything */
+    /** REQ-104/113 — a signup names its plan with the code: free is stored before the wizard asks anything; a paid name is carried */
     private choosePlan: ChoosePlan,
   ) {}
 
@@ -265,8 +265,9 @@ export class AuthController {
         await this.leads.enqueueSync(result.userId);
         await this.leads.enqueueSignupNotice(result.userId);
       }
-      // REQ-104 — a Monster Free signup: free is the plan from the code on; the wizard never asks it
-      if (dto.plan === "free") await this.choosePlan.startFree(result.userId);
+      // REQ-104/113 — the plan the sign-up named: free is on record from the code on; a paid name is
+      // carried on the account and picked the moment the email a paid pick needs is there
+      await this.choosePlan.signupNamed(result.userId, dto.plan);
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         ok: true,
@@ -297,8 +298,10 @@ export class AuthController {
    * `plan` (REQ-104): the plan the signup names — "free" from the landing's
    * Empezar gratis is stored as Monster Free on an account with no plan on
    * record, before the wizard asks anything, so the wizard never asks the
-   * plan; a paid name stores nothing (the wizard asks, where the email and
-   * the pay page are); a pick already on record stands.
+   * plan; a paid name (REQ-113: the $99 and $199 cards) is kept on the
+   * account and picked the moment the email a paid pick needs lands, so the
+   * wizard shows that plan's payment page instead of the cards; a pick
+   * already on record stands.
    *
    * Errors are typed so the frontend can render the right message:
    *   - invalid_code  : code didn't match (attempts++)
@@ -320,8 +323,9 @@ export class AuthController {
         await this.leads.enqueueSync(result.userId);
         await this.leads.enqueueSignupNotice(result.userId);
       }
-      // REQ-104 — a Monster Free signup: free is the plan from the code on; the wizard never asks it
-      if (dto.plan === "free") await this.choosePlan.startFree(result.userId);
+      // REQ-104/113 — the plan the sign-up named: free is on record from the code on; a paid name is
+      // carried on the account and picked the moment the email a paid pick needs is there
+      await this.choosePlan.signupNamed(result.userId, dto.plan);
       ctx.header("Set-Cookie", buildSessionCookie(result.sessionId));
       return {
         sessionId: result.sessionId,

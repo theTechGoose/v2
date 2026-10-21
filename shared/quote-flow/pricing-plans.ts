@@ -76,9 +76,10 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
     priceCents: 0,
     period: "monthly",
     public: true,
-    // "Monster Free is 'Unlimited invoices'" (Hans, Sep 2): that is the pitch,
-    // so it leads the card; the 5-quote cap is the second line.
-    blurb: "Unlimited invoices, free. Plus up to 5 quotes a month.",
+    // "Monster Free is 'Unlimited invoices'" (Hans, Sep 2): that is the pitch, so it leads.
+    // REQ-109 (Raphael, 2026-10-21): the three lines, each its own, and free forever — the
+    // introduction, the plan comparison and the signup messaging all read these.
+    blurb: "Unlimited invoices. Up to five quotes and contracts a month. Spanish and English output. Free forever.",
     limits: { quotesPerMonth: 5 },
     features: [
       {
@@ -88,13 +89,13 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
       },
       {
         id: "five-quotes",
-        en: "Up to 5 quotes a month",
-        es: "Hasta 5 cotizaciones al mes",
+        en: "Up to five quotes and contracts a month",
+        es: "Hasta cinco cotizaciones y contratos al mes",
       },
       {
         id: "spanish-in-english-out",
-        en: "Spanish in, English out",
-        es: "Escribes en español, sale en inglés",
+        en: "Spanish and English output",
+        es: "Documentos en español y en inglés",
       },
     ],
   },

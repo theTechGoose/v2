@@ -8,7 +8,11 @@ import { Injectable } from "#danet/core";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { BusinessAddressStore } from "@users/domain/data/business-address-store/mod.ts";
+import { BusinessInsuranceStore } from "@users/domain/data/business-insurance-store/mod.ts";
 import type { BusinessAddress } from "@users/dto/business-address.ts";
+import type { BusinessIdentity } from "@users/dto/business-identity.ts";
+import type { BusinessInsurance } from "@users/dto/business-insurance.ts";
+import { signupProgress } from "@users/domain/business/signup-progress/mod.ts";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { type CrmCustomer, type NewCustomer, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { customerNameFor, externalRefFor, LEAD_TIER, tierFor, UNNAMED_CUSTOMER } from "@users/domain/business/plan/mod.ts";
@@ -27,8 +31,16 @@ function said(value: string | undefined): string | undefined {
   return v === "" ? undefined : v;
 }
 
-export function customerFor(user: User, identity: { businessName?: string; websiteUrl?: string } | null, plan: UserPlan | null, address: Pick<BusinessAddress, "city" | "state"> | null = null): NewCustomer {
+export function customerFor(
+  user: User,
+  identity: Partial<BusinessIdentity> | null,
+  plan: UserPlan | null,
+  address: Partial<BusinessAddress> | null = null,
+  insurance: Partial<BusinessInsurance> | null = null,
+): NewCustomer {
   const name = isPlaceholderName(user.name) ? undefined : user.name;
+  // REQ-111 — the selected plan and the exact stage reached, always said: the team's follow-up reads them
+  const progress = signupProgress({ user, identity: identity as BusinessIdentity | null, address: address as BusinessAddress | null, insurance: insurance as BusinessInsurance | null, plan });
   // REQ-070 — the profile the CRM's lead columns show: the person (never the placeholder), the
   // business's city and state, its website, and that they came from this app
   const profile: Pick<NewCustomer, "contact" | "city" | "state" | "website" | "leadSource"> = {
@@ -45,6 +57,8 @@ export function customerFor(user: User, identity: { businessName?: string; websi
     externalRef: externalRefFor(user.id),
     tier: tierFor(plan),
     ...profile,
+    signupPlan: progress.plan || "none yet",
+    signupStage: progress.stage,
   };
 }
 
@@ -56,6 +70,7 @@ export class CrmCustomerSync {
     private link: PaymentsLink,
     private plans: PlanStore,
     private address: BusinessAddressStore = new BusinessAddressStore(),
+    private insurance: BusinessInsuranceStore = new BusinessInsuranceStore(),
   ) {}
 
   /**
@@ -65,8 +80,8 @@ export class CrmCustomerSync {
    * @throws payments-unavailable — the CRM did not answer: the sweep defers and retries
    */
   async ensure(userId: string): Promise<{ customerId: string }> {
-    const [user, identity, plan, address] = await Promise.all([this.users.get(userId), this.identity.get(userId), this.plans.get(userId), this.address.get(userId)]);
-    return await this.link.createCustomer(customerFor(user, identity, plan, address));
+    const [user, identity, plan, address, insurance] = await Promise.all([this.users.get(userId), this.identity.get(userId), this.plans.get(userId), this.address.get(userId), this.insurance.get(userId)]);
+    return await this.link.createCustomer(customerFor(user, identity, plan, address, insurance));
   }
 
   /** REQ-060 — the phone typed into login is a CRM lead at once, unnamed, no email, no ref;

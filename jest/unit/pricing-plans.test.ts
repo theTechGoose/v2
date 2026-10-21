@@ -45,7 +45,7 @@ describe("PRICING_PLANS", () => {
     expect(free.limits).toEqual({ quotesPerMonth: 5 });
     expect(planFeatures("free", "en")[0]).toBe("Unlimited invoices");
     expect(planFeatures("free", "es")[0]).toBe("Facturas ilimitadas");
-    expect(planFeatures("free", "en")).toContain("Up to 5 quotes a month");
+    expect(planFeatures("free", "en")).toContain("Up to five quotes and contracts a month"); // REQ-109
     expect(free.blurb).toMatch(/^Unlimited invoices/);
   });
 

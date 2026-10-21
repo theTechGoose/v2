@@ -22,12 +22,14 @@ import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
 import { isPixelPage } from "../../shared/meta-pixel/pixel";
-import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans";
+import { planById, planFeatures, PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans";
+import { LANDING_DICT } from "../../front-end/lib/landing-dict";
 import {
   DEMO_DAY_COUNT,
   DEMO_DAY_WINDOW,
-  DEMO_SLOTS,
+  DEMO_TIMES,
   demoMonthRange,
+  demoTimeLabel,
   upcomingDemoDays,
 } from "../../shared/demo-booking/mod";
 import { OG_IMAGE } from "../../shared/quote-flow/site-meta";
@@ -259,30 +261,51 @@ describe("REQ-089 the signup card's consent box", () => {
   });
 });
 
-describe("REQ-090 the demo card posts the new booking", () => {
-  test("the shared model is five days a page (REQ-102 slides the pages) and two windows", () => {
+describe("REQ-108 the demo card books a specific day and time", () => {
+  test("the shared model: five days a page from tomorrow (REQ-102/105), and the times — 8:00 AM to 7:30 PM Eastern every half hour, twenty-four of them; the windows are gone", () => {
     expect(DEMO_DAY_COUNT).toBe(5);
-    expect(DEMO_SLOTS.map((s) => s.id)).toEqual(["morning", "afternoon"]);
+    expect(DEMO_TIMES.length).toBe(24);
+    expect(DEMO_TIMES[0]).toEqual({ id: "08:00", label: "8:00 AM" });
+    expect(DEMO_TIMES[23]).toEqual({ id: "19:30", label: "7:30 PM" });
+    expect(demoTimeLabel("10:30", "en")).toBe("10:30 AM (Eastern)");
+    expect(demoTimeLabel("10:30", "es")).toBe("10:30 AM (hora del Este)");
   });
 
-  test("the island books a call with just a cell, or a demo with a day and a window; its consent box starts ticked (REQ-097) and still gates both; the client carries the consent and nothing retired", () => {
+  test("the island is one form — the day strip, a time to pick, the name, the cell and the email, every one collected — Book My Demo; the call with just a cell is gone; the consent box starts ticked (REQ-097) and still gates it", () => {
     const demo = read(ISLANDS[1]);
     expect(demo).toMatch(/const \[consent, setConsent\] = useState\(true\)/);
     expect(demo).toMatch(/if \(!consent\)[\s\S]*?labels\.errConsent/);
-    expect(demo).toMatch(/mode: "call"[\s\S]*?day: ""[\s\S]*?slot: ""/);
-    expect(demo).toMatch(/mode: "demo"/);
+    expect(demo).toMatch(/data-cy="l2-time"/);
+    expect(demo).toMatch(/if \(!mail\) return setErr\(labels\.errEmailReq\)/);
     expect(demo).toMatch(/consent: true/);
-    expect(demo).toMatch(/data-cy="l2-demo-call"/);
-    expect(demo).toMatch(/data-cy="l2-pick-time"/);
-    expect(demo).toMatch(/data-cy="l2-quick-mode"/);
-    expect(demo).not.toMatch(/noEmail|trade|l2-mode-demo|l2-mode-call/);
+    // REQ-117 — the morning/afternoon windows stay gone; the call with just a cell is back (its own test below)
+    expect(demo).not.toMatch(/slots|DemoSlot|pickSlot/);
     const client = read("front-end/clients/landing.ts");
-    expect(client).toMatch(/consent: boolean/);
-    expect(client).not.toMatch(/noEmail|trade/);
-    // the route hands the days and the windows from the one shared model
+    expect(client).toMatch(/time: string;/);
+    expect(client).not.toMatch(/slot/);
+    // the route hands the days and the times from the one shared model
     const page = read(PAGE);
     expect(page).toMatch(/upcomingDemoDays\(lang\)/);
-    expect(page).toMatch(/slots=\{DEMO_SLOTS\}/);
+    expect(page).toMatch(/times=\{DEMO_TIMES\}/);
+    expect(page).not.toMatch(/DEMO_SLOTS|"pickSlot"/);
+  });
+
+  test("the card's words are the checklist's, in both languages, and the button is Book My Demo", () => {
+    expect(en["landing2.demoEyebrow"]).toBe("15-minute demo");
+    expect(en["landing2.demoH"]).toBe("Want to see it first? Pick a day and time to book your demo.");
+    expect(en["landing2.demoSub"]).toBe("Enter your name, phone number, and email, then select ‘Book My Demo.’");
+    expect(en["landing2.submitDemo"]).toBe("Book My Demo");
+    expect(es["landing2.demoEyebrow"]).toBe("Demo de 15 minutos");
+    expect(es["landing2.demoH"]).toBe("¿Quieres verlo primero? Elige un día y una hora para agendar tu demo.");
+    expect(es["landing2.demoSub"]).toBe("Pon tu nombre, tu celular y tu correo, y toca ‘Agendar mi demo’.");
+    expect(es["landing2.submitDemo"]).toBe("Agendar mi demo");
+    // the morning/afternoon window's name stays gone; Call me and its two links are back (REQ-117)
+    for (const k of ["landing2.pickSlot"]) {
+      expect([k, k in en, k in es]).toEqual([k, false, false]);
+    }
+    for (const k of ["landing2.pickTime", "landing2.errEmailReq"]) {
+      expect([k, k in en && k in es]).toEqual([k, true]);
+    }
   });
 });
 
@@ -432,16 +455,14 @@ describe("REQ-095 the second comb — landmarks, the head's language links, the 
     expect(page).toMatch(/t\("copyright", \{ year \}\)/);
   });
 
-  test("the demo's window group is named, in both languages, and the island reads the name", () => {
-    expect(es["landing2.pickSlot"]).toBeTruthy();
-    expect(en["landing2.pickSlot"]).toBeTruthy();
-    expect(es["landing2.pickSlot"]).not.toBe(en["landing2.pickSlot"]);
+  test("the demo's time field is named, in both languages, and the island reads the name (REQ-108: the window group it replaced)", () => {
+    expect(es["landing2.pickTime"]).toBeTruthy();
+    expect(en["landing2.pickTime"]).toBeTruthy();
+    expect(es["landing2.pickTime"]).not.toBe(en["landing2.pickTime"]);
     const demo = read(ISLANDS[1]);
-    expect(demo).toMatch(
-      /class="l2-demo__slots"\s+role="group"\s+aria-label=\{labels\.pickSlot\}/,
-    );
-    expect(demo).toMatch(/pickSlot: string;/);
-    expect(read(PAGE)).toMatch(/"pickSlot",/);
+    expect(demo).toMatch(/<label class="l2-lbl" for="f-time">\{labels\.pickTime\}<\/label>/);
+    expect(demo).toMatch(/pickTime: string;/);
+    expect(read(PAGE)).toMatch(/"pickTime",/);
   });
 
   test("the hero note's English lines are marked English on the Spanish page (REQ-096 moved the mark off the note's Spanish label)", () => {
@@ -823,5 +844,136 @@ describe("REQ-105 the demo's day strip scrolls under the finger — every day in
       /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(css)
         ?.[1] ?? "";
     expect(calm).toMatch(/scroll-behavior: auto !important;/);
+  });
+});
+
+/**
+ * REQ-109 — Raphael, 2026-10-21, the launch checklist: "Update Monster Free inclusions. Use the
+ * following wording, with each item on its own line: Unlimited invoices · Up to five quotes and
+ * contracts a month · Spanish and English output. Make sure the introduction, plan comparison, and
+ * signup messaging are consistent. Monster Free is free forever."
+ */
+describe("REQ-109 Monster Free's inclusions are the three lines, free forever", () => {
+  test("the shared plan lists exactly the three lines, each its own feature, in both languages, and its blurb says free forever", () => {
+    expect(planFeatures("free", "en")).toEqual([
+      "Unlimited invoices",
+      "Up to five quotes and contracts a month",
+      "Spanish and English output",
+    ]);
+    expect(planFeatures("free", "es")).toEqual([
+      "Facturas ilimitadas",
+      "Hasta cinco cotizaciones y contratos al mes",
+      "Documentos en español y en inglés",
+    ]);
+    expect(planById("free").blurb).toBe("Unlimited invoices. Up to five quotes and contracts a month. Spanish and English output. Free forever.");
+  });
+
+  test("the introduction, the plan cards and the signup messaging agree: the landing dictionary's free blurb is the plan's, /landing2's free card says forever and renders the plan's own lines", () => {
+    expect(LANDING_DICT.en["price.t1.blurb"]).toBe(planById("free").blurb);
+    expect(LANDING_DICT.es["price.t1.blurb"]).toBe("Facturas ilimitadas. Hasta cinco cotizaciones y contratos al mes. Documentos en español y en inglés. Gratis para siempre.");
+    expect(en["landing2.plan.free.sub"]).toMatch(/Monster Free forever/);
+    expect(es["landing2.plan.free.sub"]).toMatch(/Monster Free para siempre/);
+    expect(read(PAGE)).toMatch(/\{p\.features\.map\(\(f\) => \(/);
+  });
+});
+
+/**
+ * REQ-110 — Raphael, 2026-10-21, the launch checklist: "Update 'One message. Three documents.'
+ * Show a quote, contract, and invoice that visitors can click through. Use R Hernandez
+ * consistently across all three previews so it is clear they belong to the same example. Keep the
+ * presentation simple and make all three document types easy to see."
+ */
+describe("REQ-110 One message. Three documents.", () => {
+  test("the proof band hosts the documents island: a quote, a contract and an invoice for R. Hernández, each a tab, the quote first, the same job on all three", () => {
+    const page = read(PAGE);
+    expect(page).toMatch(/<Landing2Docs\s/);
+    expect(page).not.toMatch(/class="l2-card l2-quote" lang="en"/);
+    const docs = read("front-end/islands/Landing2Docs.tsx");
+    expect(docs).toMatch(/const TABS: readonly DocId\[\] = \["quote", "contract", "invoice"\];/);
+    expect(docs).toMatch(/data-cy="l2-doc-tab"[\s\S]{0,80}data-doc=\{id\}/);
+    for (const id of ["quote", "contract", "invoice"]) {
+      expect(docs).toMatch(new RegExp(`data-cy="l2-doc" data-doc="${id}"`));
+    }
+    expect(docs).toMatch(/role="tablist"/);
+    expect(docs).toMatch(/useState<DocId>\("quote"\)/);
+    // one customer, one job, one reference — named once and rendered on all three
+    expect(docs).toMatch(/const CUSTOMER = "R\. Hernández";/);
+    expect(docs).toMatch(/const REF = "PM-2641";/);
+    expect((docs.match(/\{CUSTOMER\}/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect((docs.match(/#\{REF\}/g) ?? []).length).toBe(3);
+    for (const k of ["landing2.doc.quote", "landing2.doc.contract", "landing2.doc.invoice"]) {
+      expect([k, k in en && k in es]).toEqual([k, true]);
+    }
+  });
+});
+
+/**
+ * REQ-115 — Raphael, 2026-10-21, on the pinned /landing2 after booking the demo: "how do i see the
+ * phone number entry on the demo i should be able to just go back and forth". The "Done!" card
+ * replaced the form with nothing to press: the only way back to the entries was a reload. The
+ * thanks card carries a way back now, and the form returns with the day, the time, the name, the
+ * cell and the email as typed.
+ */
+describe("REQ-115 the demo's Done! card goes back to the form", () => {
+  test("REQ-115 the way back is in both dictionaries, the route hands it to the island, and the island renders it on the thanks card — a tap target — returning to the form with the entries kept", () => {
+    expect(en["landing2.thanksBack"]).toBe("← Back to the form");
+    expect(es["landing2.thanksBack"]).toBe("← Volver al formulario");
+    expect(read(PAGE)).toMatch(/"thanksNoText",\s*"thanksBack",/);
+    const demo = read(ISLANDS[1]);
+    expect(demo).toMatch(/thanksBack: string;/);
+    expect(demo).toMatch(/data-cy="l2-demo-back"[\s\S]{0,120}onClick=\{\(\) => setSent\(null\)\}/);
+    expect(demo).toMatch(/\{labels\.thanksBack\}/);
+    // the control lives on the thanks card, before the form in the source: it exists only once the booking is in
+    const done = demo.indexOf('data-cy="l2-demo-done"');
+    const back = demo.indexOf('data-cy="l2-demo-back"');
+    const form = demo.indexOf('data-cy="l2-demo-form"');
+    expect(done > 0 && done < back && back < form).toBe(true);
+    // the entries are state the thanks card never clears: going back shows them as typed
+    expect(demo).not.toMatch(/setName\(""\)|setPhone\(""\)|setEmail\(""\)/);
+    // a tap target clear of REQ-344's 24px floor
+    expect(read(CSS)).toMatch(/\.l2-thanks__back \{[^}]*min-height: 24px;/);
+  });
+});
+
+/**
+ * REQ-117 — Raphael, 2026-10-21, on the pinned /landing2: "no where is the fucking component that
+ * was there before?" and "well no its not booking only, call me should be there but clicking the
+ * button then implements what we asked for." REQ-108 took "replace the current callback wording"
+ * for "remove the callback" and deleted REQ-090's Call me. It is back, first on the card as it
+ * was: just the cell and Call me; "I would rather pick a day and time to book my demo →" opens
+ * the booking the checklist asked for; "← Just call me" comes back; the cell rides both ways.
+ * The cross-links of REQ-116 — a misreading of "phone entry" — are gone.
+ */
+describe("REQ-117 Call me is back, first on the card, and the two views move between each other freely", () => {
+  test("REQ-117 the island opens on Call me, books a call with mode call, switches to the booking and back; the route hands the three strings; the words are the old ones in both languages", () => {
+    const demo = read(ISLANDS[1]);
+    expect(demo).toMatch(/useState<View>\("quick"\)/);
+    expect(demo).toMatch(/data-cy="l2-demo-call"/);
+    expect(demo).toMatch(/id="demo-phone"/);
+    expect(demo).toMatch(/data-cy="l2-pick-time"[\s\S]{0,160}setView\("pick"\)/);
+    expect(demo).toMatch(/data-cy="l2-quick-mode"[\s\S]{0,160}setView\("quick"\)/);
+    expect(demo).toMatch(/mode: "call",\s*name: "",\s*phone: e164,\s*email: "",\s*day: "",\s*time: "",/);
+    expect(demo).toMatch(/mode: "demo",/);
+    for (const k of ["callMe", "pickTimeLink", "quickLink"]) expect(demo).toMatch(new RegExp(`${k}: string;`));
+    expect(read(PAGE)).toMatch(/"callMe",\s*"pickTimeLink",\s*"quickLink",/);
+    expect(read("front-end/clients/landing.ts")).toMatch(/mode: "demo" \| "call";/);
+    expect(en["landing2.callMe"]).toBe("Call me");
+    expect(en["landing2.pickTimeLink"]).toBe("I would rather pick a day and time to book my demo →");
+    expect(en["landing2.quickLink"]).toBe("← Just call me");
+    expect(es["landing2.callMe"]).toBe("Llámenme");
+    expect(es["landing2.pickTimeLink"]).toBe("Mejor elijo día y hora para mi demo →");
+    expect(es["landing2.quickLink"]).toBe("← Solo llámenme");
+    // the row the quick form lays its cell and its button on
+    expect(read(CSS)).toMatch(/\.l2-demo__row \{/);
+  });
+
+  test("REQ-117 the cross-links of REQ-116 are gone: no Get started now → on the demo card, no Book a demo → on the sign-up card, no strings for them", () => {
+    for (const k of ["landing2.demoToSignup", "landing2.toDemo"]) {
+      expect(en[k]).toBeUndefined();
+      expect(es[k]).toBeUndefined();
+    }
+    expect(read(PAGE)).not.toMatch(/l2-to-signup|demoToSignup|"toDemo"/);
+    expect(read(ISLANDS[0])).not.toMatch(/l2-to-demo|toDemo/);
+    expect(read(CSS)).not.toMatch(/\.l2-cross/);
   });
 });

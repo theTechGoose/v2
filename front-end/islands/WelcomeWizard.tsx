@@ -24,6 +24,7 @@ import { t } from "../lib/i18n.ts";
 import { SUPPORT_PHONE_DISPLAY } from "../../shared/legal/contact.ts";
 import {
   type BusinessAddress,
+  planClient,
   profileClient,
   type ProfileSnapshot,
 } from "../clients/profile.ts";
@@ -31,8 +32,8 @@ import { isAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import { PRICING_PLANS, PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
-import { handoffPage, pickErrorOf, planViewOf, resumesAfterPlan } from "../lib/plan-return.ts";
-import { askedSteps, asksPlan, indexAfterPlan } from "../lib/welcome-steps.ts";
+import { handoffOf, handoffPage, pickErrorOf, resumesAfterPlan } from "../lib/plan-return.ts";
+import { askedSteps, asksPlan, awaitsNamedPick, indexAfterPlan, planStepView } from "../lib/welcome-steps.ts";
 import { filesClient } from "../clients/files.ts";
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
 import { api } from "../lib/api.ts";
@@ -1008,6 +1009,10 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
 // Monster Free — stored with the code by a Monster Free signup on /landing2, or picked here or
 // in settings — this step is not asked at all (the registry's `asked`): the person is never
 // shown the cards, or the pay page behind the paid ones, again; the upgrade is in settings.
+// REQ-113: a paid card's Sign up on /landing2 names its plan with the code, and the backend makes
+// that pick the moment the email step saves (PUT /me) — so this step, reached right after, reads
+// the pick instead of showing the cards: the plan the person asked for, with the way to its
+// payment page (the sweep mints it after the reply, REQ-106: read every second until it is there).
 function PlanStep({ ctx }: { ctx: StepCtx }) {
   const plan = ctx.snap.plan ?? null;
   const lang = langSignal.value;
@@ -1023,11 +1028,39 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
 
   const settled = plan?.status === "active" || plan?.status === "free";
   // REQ-106 — a pending pick is its page, or the page being prepared (the hand-off page), or —
-  // refused by name — the cards again
-  const view = planViewOf(plan);
+  // refused by name — the cards again. REQ-113 — nothing on record yet but a paid plan named at
+  // the code and the email on the account: the pick is being read, not the cards shown
+  const [reading, setReading] = useState(() => awaitsNamedPick(ctx.snap));
+  const view = planStepView(plan, reading);
+  useEffect(() => {
+    if (view !== "preparing") return;
+    let stopped = false;
+    let timer: number | undefined;
+    async function poll() {
+      if (stopped) return;
+      try {
+        const read = await planClient.get();
+        if (stopped) return;
+        ctx.patchSnap({ plan: read ?? null });
+        if (handoffOf(read) !== "preparing") setReading(false); // read: its page, a refusal, or nothing to wait for
+      } catch {
+        // a blip on the way: ask again
+      }
+      timer = setTimeout(poll, 1000) as unknown as number;
+    }
+    void poll();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [view]);
+  // the words: Pick your plan over the cards; Your plan over a pick in flight or made
+  const cards = view === "cards";
+  const question = cards ? t("welcome.plan.question") : t("welcome.plan.yours");
+  const why = cards ? t("welcome.plan.why") : t("welcome.plan.yoursWhy");
 
   return (
-    <StepBody question={t("welcome.plan.question")} why={t("welcome.plan.why")}>
+    <StepBody question={question} why={why}>
       {view === "active" && plan
         ? (
           <p class="welcome__plan-active" data-cy="plan-active" role="status">
@@ -1042,22 +1075,26 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
             </p>
             <div class="welcome__plan-actions">
               <a class="welcome__btn welcome__btn--primary" data-cy="plan-pay-link" href={plan.payUrl}>
-                {t("plan.resume")} →
+                {t("plan.continue")} →
               </a>
             </div>
           </div>
         )
-        : view === "preparing" && plan
+        : view === "preparing"
         ? (
           <div class="welcome__plan-pending" data-cy="plan-preparing">
             <p class="welcome__plan-pending-lede">
-              <b>{nameOf(plan.planId)}</b> · {t("plan.preparing")}
+              <b>{nameOf(plan?.planId ?? ctx.snap.user.signupPlan ?? "")}</b> · {t("plan.preparing")}
             </p>
-            <div class="welcome__plan-actions">
-              <a class="welcome__btn welcome__btn--primary" data-cy="plan-handoff-link" href={handoffPage("/welcome")}>
-                {t("plan.preparingOpen")} →
-              </a>
-            </div>
+            {plan
+              ? (
+                <div class="welcome__plan-actions">
+                  <a class="welcome__btn welcome__btn--primary" data-cy="plan-handoff-link" href={handoffPage("/welcome")}>
+                    {t("plan.preparingOpen")} →
+                  </a>
+                </div>
+              )
+              : null}
           </div>
         )
         : (

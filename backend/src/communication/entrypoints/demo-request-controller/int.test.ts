@@ -1,11 +1,12 @@
 /**
- * REQ-090 — "the backend takes that booking and keeps the consent on record": the demo card on the
- * v3 /landing2 posts to POST /demo-request — a call with just a cell (as soon as possible) or a demo
- * with a day and a window — and a booking is three things at once: the team's inbox gets it with
- * the consent on record, the person gets the text the page promised ("Te confirmamos por texto"),
- * and the phone is a CRM lead (REQ-060/072, carried by the outbox). A booking without the ticked
- * box is refused and nothing is sent. This drives the controller with capturing collaborators in
- * every seat — the int lane runs in one process, so nothing here touches the env.
+ * REQ-090/108 — "the backend takes that booking and keeps the consent on record": the demo card on
+ * /landing2 posts to POST /demo-request — a demo on a specific day and time, with the name, the
+ * cell and the email (REQ-108: the call with just a cell is gone) — and a booking is three things
+ * at once: the team's inbox gets it with the date, the time and the consent on record, the person
+ * gets the text the page promised ("Te confirmamos por texto"), and the phone is a CRM lead
+ * (REQ-060/072, carried by the outbox). A booking without the ticked box is refused and nothing is
+ * sent. This drives the controller with capturing collaborators in every seat — the int lane runs
+ * in one process, so nothing here touches the env.
  */
 import "#reflect-metadata";
 import { assertEquals, assertMatch } from "#std/assert";
@@ -60,23 +61,12 @@ function context() {
 const tomorrow = () =>
   new Date(Date.now() + 36 * 3600_000).toISOString().slice(0, 10);
 const demo = () => ({
-  mode: "demo",
   name: "José García",
   phone: "(512) 555-0199",
   email: "jose@tunegocio.com",
   day: tomorrow(),
-  slot: "morning",
+  time: "10:30",
   lang: "es",
-  consent: true,
-});
-const call = () => ({
-  mode: "call",
-  name: "",
-  phone: "(512) 555-0199",
-  email: "",
-  day: "",
-  slot: "",
-  lang: "en",
   consent: true,
 });
 
@@ -94,7 +84,7 @@ function build(gate = openGate) {
 }
 type Reply = Record<string, unknown>;
 
-Deno.test("REQ-090 demo-request int — a demo with a day and a window and a call with just a cell are both bookings; the team's email records the consent; a booking without it is refused and nothing is sent", async () => {
+Deno.test("REQ-108 demo-request int — a demo on a day and a time is a booking: the team's email carries the date, the time and the consent; the person is texted in their language; the phone is a lead; a booking without the ticked box is refused and nothing is sent", async () => {
   // the demo: emailed, texted in Spanish, a lead; the reply says what was done
   {
     const { inbox, phone, leads, controller } = build();
@@ -106,48 +96,27 @@ Deno.test("REQ-090 demo-request int — a demo with a day and a window and a cal
     assertEquals(res.emailed, true);
     assertEquals(res.texted, true);
     assertEquals(res.lead, true);
-    assertEquals(res.mode, "demo");
     assertEquals(res.day, tomorrow());
-    assertEquals(res.slot, "morning");
+    assertEquals(res.time, "10:30");
     assertEquals(inbox.sent.length, 1);
     assertMatch(
       inbox.sent[0].subject,
-      /^\[demo\] José García — \d{4}-\d{2}-\d{2} morning$/,
+      /^\[demo\] José García — \d{4}-\d{2}-\d{2} 10:30 AM Eastern$/,
     );
     assertMatch(inbox.sent[0].htmlBody ?? "", /\+15125550199/);
     assertMatch(inbox.sent[0].htmlBody ?? "", /jose@tunegocio\.com/);
-    assertMatch(inbox.sent[0].htmlBody ?? "", /Morning, 9 AM – 12 PM Eastern/);
+    assertMatch(inbox.sent[0].htmlBody ?? "", /10:30 AM Eastern/);
     assertMatch(inbox.sent[0].htmlBody ?? "", /Consent:<\/strong> yes/);
     assertEquals(phone.sent.length, 1);
     assertEquals(phone.sent[0].to, "+15125550199");
     assertMatch(phone.sent[0].body, /Demo de 15 min/);
-    assertMatch(phone.sent[0].body, /Mañana, 9 AM – 12 PM \(hora del Este\)/);
+    assertMatch(phone.sent[0].body, /10:30 AM \(hora del Este\)/);
     assertEquals(leads.phones, ["+15125550199"]);
   }
-  // the call: just a cell, as soon as possible, texted in English when the page was English
-  {
-    const { inbox, phone, leads, controller } = build();
-    const res = await controller.submit(
-      context().ctx,
-      call(),
-    ) as unknown as Reply;
-    assertEquals(res.ok, true);
-    assertEquals(res.mode, "call");
-    assertEquals(res.day, "");
-    assertEquals(res.slot, "");
-    assertEquals(inbox.sent.length, 1);
-    assertMatch(
-      inbox.sent[0].subject,
-      /^\[call\] \+15125550199 — as soon as possible$/,
-    );
-    assertMatch(inbox.sent[0].htmlBody ?? "", /Consent:<\/strong> yes/);
-    assertMatch(phone.sent[0].body, /Phone call · as soon as possible/);
-    assertEquals(leads.phones, ["+15125550199"]);
-  }
-  // no consent: refused by name, nothing sent — for a demo and for a call
+  // no consent: refused by name, nothing sent
   for (
     const body of [{ ...demo(), consent: false }, {
-      ...call(),
+      ...demo(),
       consent: undefined,
     }]
   ) {
@@ -170,11 +139,11 @@ Deno.test("REQ-090 demo-request int — a malformed booking is refused by field,
   const { inbox, phone, leads, controller } = build();
   const res = await controller.submit(context().ctx, {
     ...demo(),
-    slot: "11:00 AM",
+    time: "11:00 AM",
   }) as unknown as Reply;
   assertEquals(res.ok, false);
   assertEquals(res.reason, "invalid");
-  assertEquals(res.field, "slot");
+  assertEquals(res.field, "time");
   assertEquals(inbox.sent.length + phone.sent.length + leads.phones.length, 0);
 });
 
@@ -222,10 +191,30 @@ Deno.test("REQ-102 demo-request int — a demo on a day beyond the first five �
     }) as unknown as Reply;
     assertEquals(res.ok, true, `${day}: ${JSON.stringify(res)}`);
     assertEquals(res.day, day);
-    assertEquals(res.slot, "morning");
+    assertEquals(res.time, "10:30");
     assertEquals(inbox.sent.length, 1);
-    assertMatch(inbox.sent[0].subject, new RegExp(`— ${day} morning$`));
+    assertMatch(inbox.sent[0].subject, new RegExp(`— ${day} 10:30 AM Eastern$`));
     assertEquals(phone.sent.length, 1);
     assertEquals(leads.phones, ["+15125550199"]);
   }
+});
+
+// REQ-117 — "call me should be there": the call with just a cell is a booking again, beside the
+// day-and-time demo (REQ-108).
+const call = () => ({ mode: "call", name: "", phone: "(512) 555-0199", email: "", day: "", time: "", lang: "en", consent: true });
+
+Deno.test("REQ-117 demo-request int — Call me is back: a call with just a cell is a booking as soon as possible — the team's email says [call] and as soon as possible with the consent on record, the person is texted in English, the phone is a lead, and the reply says mode call with no day and no time; a demo still answers mode demo with its day and time", async () => {
+  const { inbox, phone, leads, controller } = build();
+  const res = await controller.submit(context().ctx, call()) as unknown as Reply;
+  assertEquals([res.ok, res.mode, res.day, res.time, res.emailed, res.texted, res.lead], [true, "call", "", "", true, true, true]);
+  assertEquals(inbox.sent.length, 1);
+  assertMatch(inbox.sent[0].subject, /^\[call\] \+15125550199 — as soon as possible$/);
+  assertMatch(inbox.sent[0].htmlBody ?? "", /When:<\/strong> as soon as possible/);
+  assertMatch(inbox.sent[0].htmlBody ?? "", /Consent:<\/strong> yes/);
+  assertEquals(phone.sent.length, 1);
+  assertEquals(phone.sent[0].to, "+15125550199");
+  assertMatch(phone.sent[0].body, /Phone call · as soon as possible/);
+  assertEquals(leads.phones, ["+15125550199"]);
+  const d = await build().controller.submit(context().ctx, demo()) as unknown as Reply;
+  assertEquals([d.ok, d.mode, d.day, d.time], [true, "demo", tomorrow(), "10:30"]);
 });

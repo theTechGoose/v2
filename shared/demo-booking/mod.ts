@@ -1,48 +1,52 @@
 /**
- * REQ-081/090/102 — the demo booking on /landing2, the part both sides agree on: the two windows
- * the page offers (morning, afternoon — Eastern), the days it offers (REQ-102: every day the
- * backend accepts, DEMO_DAY_WINDOW of them from tomorrow, Eastern, shown DEMO_DAY_COUNT at a time
- * between two arrows), how a day and a window are labelled in each language, and the words for a
+ * REQ-081/090/102/108 — the demo booking on /landing2, the part both sides agree on: the times
+ * the page offers (REQ-108: 8 AM to 8 PM Eastern, every half hour, a specific time — the two
+ * windows are gone), the days it offers (REQ-102: every day the backend accepts, DEMO_DAY_WINDOW
+ * of them from tomorrow, Eastern — never today, REQ-108 — shown DEMO_DAY_COUNT at a time between
+ * two arrows), how a day and a time are labelled in each language, and the words for a
  * call booked with just a cell ("as soon as possible"). The page's island renders from this; the
  * backend (demo-request) validates — the same window — and writes the confirmation from the same
  * source. Pure data and date arithmetic, no imports.
  */
 
 export type DemoLang = "es" | "en";
-export type DemoSlotId = "morning" | "afternoon";
+/**
+ * REQ-108 — Raphael, 2026-10-21: "Visitors must select a specific day and time, rather than a
+ * morning or afternoon window. Offer available times between 8 a.m. and 8 p.m. Eastern Time."
+ * A demo starts on a half hour from 8:00 AM, the last start half an hour before the 8 PM close —
+ * twenty-four times, Eastern. `id` is the 24-hour HH:MM the page posts and the backend checks;
+ * `label` is what the person reads.
+ */
+export const DEMO_OPEN_HOUR = 8;
+export const DEMO_CLOSE_HOUR = 20;
+export const DEMO_STEP_MINUTES = 30;
 
-export interface DemoSlot {
-  id: DemoSlotId;
-  /** on the button: "Mañana (9–12)" */
-  short: Record<DemoLang, string>;
-  /** in the summary and the messages, before the time zone: "Mañana, 9 AM – 12 PM" */
-  long: Record<DemoLang, string>;
+export interface DemoTime {
+  /** HH:MM, 24-hour, Eastern */
+  id: string;
+  /** "8:00 AM" */
+  label: string;
 }
 
-/** the two windows the page offers, Eastern */
-export const DEMO_SLOTS: readonly DemoSlot[] = [
-  {
-    id: "morning",
-    short: { es: "Mañana (9–12)", en: "Morning (9–12)" },
-    long: { es: "Mañana, 9 AM – 12 PM", en: "Morning, 9 AM – 12 PM" },
-  },
-  {
-    id: "afternoon",
-    short: { es: "Tarde (1–5)", en: "Afternoon (1–5)" },
-    long: { es: "Tarde, 1 – 5 PM", en: "Afternoon, 1 – 5 PM" },
-  },
-];
+function timeLabel(hour: number, minute: number): string {
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12}:${String(minute).padStart(2, "0")} ${hour < 12 ? "AM" : "PM"}`;
+}
 
-/** the time zone every window is in, as the page says it */
+export const DEMO_TIMES: readonly DemoTime[] = (() => {
+  const out: DemoTime[] = [];
+  for (let m = DEMO_OPEN_HOUR * 60; m < DEMO_CLOSE_HOUR * 60; m += DEMO_STEP_MINUTES) {
+    const hour = Math.floor(m / 60);
+    const minute = m % 60;
+    out.push({ id: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`, label: timeLabel(hour, minute) });
+  }
+  return out;
+})();
+
+/** the time zone every time is in, as the page says it */
 export const DEMO_TZ: Record<DemoLang, string> = {
   es: "hora del Este",
   en: "Eastern",
-};
-
-/** a call booked with just a cell: no day, no window */
-export const ASAP_LABEL: Record<DemoLang, string> = {
-  es: "lo antes posible",
-  en: "as soon as possible",
 };
 
 /** the number of days the picker shows at a time — a page; the arrows slide it by this many (REQ-102) */
@@ -55,14 +59,19 @@ export const DEMO_DAY_COUNT = 5;
  */
 export const DEMO_DAY_WINDOW = 90;
 
-export function demoSlot(id: string): DemoSlot | undefined {
-  return DEMO_SLOTS.find((s) => s.id === id);
+export function demoTime(id: string): DemoTime | undefined {
+  return DEMO_TIMES.find((t) => t.id === id);
 }
 
-/** one window as the summary and the messages read it: "Mañana, 9 AM – 12 PM (hora del Este)" */
-export function demoSlotLabel(id: string, lang: DemoLang): string {
-  const slot = demoSlot(id);
-  return slot ? `${slot.long[lang]} (${DEMO_TZ[lang]})` : id;
+/** one time as the summary and the messages read it: "10:30 AM (hora del Este)" */
+export function demoTimeLabel(id: string, lang: DemoLang): string {
+  return `${demoTime(id)?.label ?? id} (${DEMO_TZ[lang]})`;
+}
+
+/** REQ-108 — the earliest day a demo can be booked: tomorrow, Eastern — never today */
+export function demoEarliestDay(now: Date = new Date()): string {
+  const today = demoDateOf(easternToday(now)) ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return new Date(today.getTime() + 86_400_000).toISOString().slice(0, 10);
 }
 
 const DOWS: Record<DemoLang, string[]> = {
