@@ -17,7 +17,13 @@ import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 import type { PickBack } from "@users/domain/business/plan/mod.ts";
 import { ChoosePlan } from "./mod.ts";
 
+/** the sweep the previous test left in flight: a fixture waits for it before it resets the world
+ *  and the KV, or that sweep's mint lands in this test's fake world (REQ-384: one test's "primary"
+ *  link was the next test's links[0] under the gate's load) */
+let previous: CrmLeadCapture | null = null;
+
 async function fresh() {
+  await previous?.idle();
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("PPWK_PAYMENTS_URL");
   Deno.env.delete("PPWK_PAYMENTS_TOKEN");
@@ -31,6 +37,7 @@ async function fresh() {
   const mint = new PayLinkMint(plans, link, crm); // REQ-106 — the pay link, by the sweep
   const leads = new CrmLeadCapture(new CrmCaptureOutbox(), crm, new SignupNotice(users), mint); // REQ-099 — the tier reaches the CRM by the sweep, after the reply
   const flow = new ChoosePlan(users, plans, link, crm, leads);
+  previous = leads;
   return { users, identity, plans, link, crm, mint, leads, flow };
 }
 
