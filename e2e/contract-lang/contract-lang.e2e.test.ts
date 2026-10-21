@@ -15,7 +15,9 @@
  */
 import { story, type StoryTools } from "#shots";
 
-const PHONE = "+15125550947";
+/** a fresh number per sign-in: one number shared by stories running in parallel signed one in over
+ *  another, and the next call answered 401 (the gate's workers, 2026-10-21) */
+const phone = () => `+1512${String(Math.floor(Math.random() * 9_000_000) + 1_000_000)}`;
 const JSON_HEADERS = { "content-type": "application/json" };
 
 /** A Spanish-sending contractor with one quote; returns the quote id. The
@@ -24,7 +26,7 @@ async function seedQuote(http: StoryTools["http"]): Promise<string> {
   const r = await http("/api/auth/verify", {
     method: "POST",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ phoneNumber: PHONE, code: "000000" }),
+    body: JSON.stringify({ phoneNumber: phone(), code: "000000" }),
   });
   let body = await r.json();
   let cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
