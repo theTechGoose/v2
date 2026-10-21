@@ -674,10 +674,10 @@ describe("REQ-102 the demo's day picker slides — every day the backend accepts
 describe("REQ-104 a Monster Free signup names its plan at the code", () => {
   test("REQ-104 every Empezar gratis button into the card names free; each plan card's button names its plan", () => {
     const anchors = read(PAGE).match(/<a[^>]*href="#empezar"[^>]*>/g) ?? [];
-    expect(anchors.length).toBe(4);
+    expect(anchors.length).toBe(5); // REQ-116 added the demo card's Get started now →
     for (const a of anchors) expect(a).toMatch(/data-plan=/);
-    // the nav, the final CTA and the sticky bar start free; the plan cards' one button names its plan
-    expect(anchors.filter((a) => /data-plan="free"/.test(a)).length).toBe(3);
+    // the nav, the final CTA, the sticky bar and the demo card's way back (REQ-116) start free; the plan cards' one button names its plan
+    expect(anchors.filter((a) => /data-plan="free"/.test(a)).length).toBe(4);
     expect(anchors.filter((a) => /data-plan=\{p\.id\}/.test(a)).length).toBe(1);
   });
 
@@ -930,5 +930,34 @@ describe("REQ-115 the demo's Done! card goes back to the form", () => {
     expect(demo).not.toMatch(/setName\(""\)|setPhone\(""\)|setEmail\(""\)/);
     // a tap target clear of REQ-344's 24px floor
     expect(read(CSS)).toMatch(/\.l2-thanks__back \{[^}]*min-height: 24px;/);
+  });
+});
+
+/**
+ * REQ-116 — Raphael, 2026-10-21, on the pinned /landing2: "i want to be able to go to phone entry
+ * if i dont want to book an appointment we should be able to move between them freelly". The
+ * sign-up card (the phone entry) and the demo card sat on the page with no way from one to the
+ * other: the demo card asked for a booking and offered nothing else; the sign-up card offered a
+ * call. Each card links to the other now.
+ */
+describe("REQ-116 the sign-up card and the demo card link to each other", () => {
+  test("REQ-116 both links are in both dictionaries; the demo card links to the phone entry, the sign-up card's phone step links to the demo, both as tap targets", () => {
+    expect(en["landing2.demoToSignup"]).toBe("Don't need a demo? Get started now →");
+    expect(en["landing2.toDemo"]).toBe("Want to see it first? Book a demo →");
+    expect(es["landing2.demoToSignup"]).toBe("¿No necesitas demo? Empieza ahora →");
+    expect(es["landing2.toDemo"]).toBe("¿Quieres verlo primero? Agenda un demo →");
+    const page = read(PAGE);
+    // a way into the sign-up card names the plan it starts (REQ-104): this one starts free
+    expect(page).toMatch(/<a class="l2-cross" href="#empezar" data-plan="free" data-cy="l2-to-signup">\s*\{t\("demoToSignup"\)\}\s*<\/a>/);
+    expect(page).toMatch(/"preferTalk",\s*"toDemo",/);
+    const signup = read(ISLANDS[0]);
+    expect(signup).toMatch(/toDemo: string;/);
+    expect(signup).toMatch(/<a class="l2-cross" href="#demo" data-cy="l2-to-demo">\s*\{labels\.toDemo\}\s*<\/a>/);
+    // on the phone step, after Rather talk? — the code step (earlier in the source) has no such link
+    const codeStep = signup.indexOf('data-cy="l2-code"');
+    const talk = signup.indexOf('class="l2-signup__talk"');
+    const link = signup.indexOf('data-cy="l2-to-demo"');
+    expect(codeStep > 0 && codeStep < talk && talk < link).toBe(true);
+    expect(read(CSS)).toMatch(/\.l2-cross \{[^}]*min-height: 24px;/);
   });
 });

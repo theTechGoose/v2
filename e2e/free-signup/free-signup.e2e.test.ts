@@ -143,8 +143,8 @@ Deno.test("REQ-104: a Monster Free signup on /landing2 — Empezar gratis — ge
     );
     expect.eq(
       await page.locator("a[href='#empezar'][data-plan='free']").count(),
-      4,
-      "the nav, the Monster Free card, the final CTA and the sticky bar all start free",
+      5,
+      "the nav, the Monster Free card, the final CTA, the sticky bar and the demo card's Get started now → (REQ-116) all start free",
     );
     await enterThrough(page, "free");
     await signUpOnCard(page);

@@ -2073,3 +2073,40 @@ Deno.test("REQ-110: One message. Three documents. — the quote, the contract an
     );
     await expect.see("Prepared for R. Hernández");
   }));
+
+/**
+ * REQ-116 — Raphael, 2026-10-21, on the pinned /landing2: "i want to be able to go to phone entry
+ * if i dont want to book an appointment we should be able to move between them freelly". Each card
+ * links to the other now: the demo's copy says Get started now → to the phone entry, and the
+ * sign-up card's phone step says Book a demo → to the demo.
+ */
+Deno.test("REQ-116: the demo card and the sign-up card move between each other freely — Get started now → lands on the phone entry, Book a demo → lands on the demo, and back again; in both languages", (t) =>
+  story(t, async ({ page, expect }) => {
+    const inView = (sel: string) =>
+      page.locator(sel).evaluate((el: HTMLElement) => {
+        const r = el.getBoundingClientRect();
+        return r.top >= -2 && r.top < innerHeight;
+      });
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2?lang=en");
+    await page.locator("#demo").scrollIntoViewIfNeeded();
+    await expect.see("Don't need a demo? Get started now →");
+    // from the demo to the phone entry
+    await page.locator("[data-cy='l2-demo-card'] [data-cy='l2-to-signup']").click();
+    expect(await inView("#empezar"), "Get started now → lands on the sign-up card");
+    expect(await page.locator("#reg-phone").isVisible(), "the phone entry is there to type into");
+    await expect.see("Want to see it first? Book a demo →");
+    // and from the phone entry to the demo
+    await page.locator("[data-cy='l2-signup'] [data-cy='l2-to-demo']").click();
+    expect(await inView("#demo"), "Book a demo → lands on the demo card");
+    expect(await page.locator("#f-time").isVisible(), "the booking is there to fill");
+    // and back once more: freely
+    await page.locator("[data-cy='l2-to-signup']").click();
+    expect(await inView("#empezar"), "and back to the phone entry");
+    // the same in Spanish
+    await page.goto("/landing2?lang=es");
+    await page.locator("#demo").scrollIntoViewIfNeeded();
+    await expect.see("¿No necesitas demo? Empieza ahora →");
+    await page.locator("[data-cy='l2-to-signup']").click();
+    await expect.see("¿Quieres verlo primero? Agenda un demo →");
+  }));

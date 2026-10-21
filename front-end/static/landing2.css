@@ -1087,6 +1087,17 @@
   color: var(--l2-muted);
   max-width: 360px;
 }
+/* REQ-116 — the sign-up card and the demo card link to each other: a text link, a tap target (REQ-344) */
+.l2-cross {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  align-self: flex-start;
+  color: var(--l2-ink);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: underline;
+}
 /* REQ-115 — the way back from Done! to the form: a text button, a tap target (REQ-344) */
 .l2-thanks__back {
   display: inline-flex;
