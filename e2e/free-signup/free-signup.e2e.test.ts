@@ -281,14 +281,15 @@ Deno.test("REQ-111: a Monster Free signup that stops after three questions is on
     await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("Which state");
     // … and the person leaves. The CRM already has them, with the plan and the stage: the sync rides
-    // the outbox after each reply (REQ-098/099), so the record is read until it says so
+    // the outbox after each reply (REQ-098/099), so the record is read until it says so — up to
+    // 20 s, in its own lane whatever the other stories' accounts are doing on the CRM (REQ-111)
     const headers = await sessionHeaders(page);
     const read = async () => {
       const text = await (await http("/api/me/crm-customer", { headers })).text();
       return text ? JSON.parse(text) : null;
     };
     let crm = await read();
-    for (let i = 0; i < 40 && !(crm && crm.signupStage === "4 of 9 answered — next the state"); i++) {
+    for (let i = 0; i < 80 && !(crm && crm.signupStage === "4 of 9 answered — next the state"); i++) {
       await page.waitForTimeout(250);
       crm = await read();
     }
