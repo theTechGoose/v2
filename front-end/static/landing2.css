@@ -1174,10 +1174,14 @@
   gap: 16px;
   flex-wrap: wrap;
 }
+/* REQ-344 — a 24px tap target each, where the text alone gave 20 (as REQ-095 did for the legal links) */
 .l2-footer__contact a,
 .l2-footer__contact a:hover {
   color: #fff;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
 }
 .l2-footer__legal {
   display: flex;
