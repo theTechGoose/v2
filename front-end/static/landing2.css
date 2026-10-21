@@ -1060,6 +1060,20 @@
   opacity: 0.35;
   cursor: default;
 }
+/* REQ-090/117 — Call me: the cell and the button on one row */
+.l2-demo__row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.l2-demo__row .l2-field {
+  flex: 1 1 200px;
+  width: auto;
+}
+.l2-demo__row .l2-btn {
+  flex: 1 1 160px;
+  font-size: 17px;
+}
 .l2-demo__pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1086,17 +1100,6 @@
   font-size: 15px;
   color: var(--l2-muted);
   max-width: 360px;
-}
-/* REQ-116 — the sign-up card and the demo card link to each other: a text link, a tap target (REQ-344) */
-.l2-cross {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  align-self: flex-start;
-  color: var(--l2-ink);
-  font-size: 14px;
-  font-weight: 700;
-  text-decoration: underline;
 }
 /* REQ-115 — the way back from Done! to the form: a text button, a tap target (REQ-344) */
 .l2-thanks__back {

@@ -198,3 +198,23 @@ Deno.test("REQ-102 demo-request int — a demo on a day beyond the first five �
     assertEquals(leads.phones, ["+15125550199"]);
   }
 });
+
+// REQ-117 — "call me should be there": the call with just a cell is a booking again, beside the
+// day-and-time demo (REQ-108).
+const call = () => ({ mode: "call", name: "", phone: "(512) 555-0199", email: "", day: "", time: "", lang: "en", consent: true });
+
+Deno.test("REQ-117 demo-request int — Call me is back: a call with just a cell is a booking as soon as possible — the team's email says [call] and as soon as possible with the consent on record, the person is texted in English, the phone is a lead, and the reply says mode call with no day and no time; a demo still answers mode demo with its day and time", async () => {
+  const { inbox, phone, leads, controller } = build();
+  const res = await controller.submit(context().ctx, call()) as unknown as Reply;
+  assertEquals([res.ok, res.mode, res.day, res.time, res.emailed, res.texted, res.lead], [true, "call", "", "", true, true, true]);
+  assertEquals(inbox.sent.length, 1);
+  assertMatch(inbox.sent[0].subject, /^\[call\] \+15125550199 — as soon as possible$/);
+  assertMatch(inbox.sent[0].htmlBody ?? "", /When:<\/strong> as soon as possible/);
+  assertMatch(inbox.sent[0].htmlBody ?? "", /Consent:<\/strong> yes/);
+  assertEquals(phone.sent.length, 1);
+  assertEquals(phone.sent[0].to, "+15125550199");
+  assertMatch(phone.sent[0].body, /Phone call · as soon as possible/);
+  assertEquals(leads.phones, ["+15125550199"]);
+  const d = await build().controller.submit(context().ctx, demo()) as unknown as Reply;
+  assertEquals([d.ok, d.mode, d.day, d.time], [true, "demo", tomorrow(), "10:30"]);
+});

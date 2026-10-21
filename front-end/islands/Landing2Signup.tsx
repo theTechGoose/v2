@@ -59,8 +59,6 @@ export interface Landing2SignupLabels {
   consentTerms: string;
   errConsent: string;
   preferTalk: string;
-  /** REQ-116 — the way to the demo from the phone entry: the two cards move between each other freely */
-  toDemo: string;
   codeSentTo: string;
   codeLbl: string;
   confirm: string;
@@ -509,10 +507,6 @@ export default function Landing2Signup(
                   {phoneLabel}
                 </a>
               </div>
-              {/* REQ-116 — "we should be able to move between them freelly": the demo, one tap away */}
-              <a class="l2-cross" href="#demo" data-cy="l2-to-demo">
-                {labels.toDemo}
-              </a>
             </form>
           )}
       </div>

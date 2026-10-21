@@ -37,12 +37,16 @@ export interface ContactResult {
 
 /** REQ-081/090/108 — a demo booking from /landing2: a specific day and time, who, how to reach them, the consent */
 export interface DemoRequestInput {
+  /** REQ-117 — a demo on a day and a time, or a call as soon as possible with just a cell */
+  mode: "demo" | "call";
+  /** "" for a call */
   name: string;
   phone: string;
+  /** "" for a call */
   email: string;
-  /** YYYY-MM-DD, tomorrow (Eastern) at the earliest */
+  /** YYYY-MM-DD, tomorrow (Eastern) at the earliest; "" for a call */
   day: string;
-  /** HH:MM Eastern, one of DEMO_TIMES (8:00 AM to 7:30 PM) */
+  /** HH:MM Eastern, one of DEMO_TIMES (8:00 AM to 7:30 PM); "" for a call */
   time: string;
   lang: Lang;
   /** the TCPA consent box — the page only posts once it is ticked */
@@ -52,6 +56,7 @@ export interface DemoRequestInput {
 export type DemoRequestResult =
   | {
     ok: true;
+    mode: "demo" | "call";
     day: string;
     time: string;
     emailed: boolean;

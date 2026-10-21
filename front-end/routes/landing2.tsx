@@ -138,7 +138,6 @@ export default define.page(function Landing2(ctx) {
       "consentTerms",
       "errConsent",
       "preferTalk",
-      "toDemo",
       "codeSentTo",
       "codeLbl",
       "confirm",
@@ -155,6 +154,9 @@ export default define.page(function Landing2(ctx) {
   const demoLabels: Landing2DemoLabels = {
     ...pick(
       [
+        "callMe",
+        "pickTimeLink",
+        "quickLink",
         "consentTerms",
         "pickDay",
         "prevDays",
@@ -481,10 +483,6 @@ export default define.page(function Landing2(ctx) {
                 </span>
                 <h2 class="l2-h l2-h2 l2-h2--demo">{t("demoH")}</h2>
                 <p class="l2-demo__sub">{t("demoSub")}</p>
-                {/* REQ-116 — "i want to be able to go to phone entry if i dont want to book an appointment": the sign-up card, one tap away */}
-                <a class="l2-cross" href="#empezar" data-plan="free" data-cy="l2-to-signup">
-                  {t("demoToSignup")}
-                </a>
               </div>
               <Landing2Demo
                 lang={lang}

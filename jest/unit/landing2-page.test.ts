@@ -278,15 +278,16 @@ describe("REQ-108 the demo card books a specific day and time", () => {
     expect(demo).toMatch(/data-cy="l2-time"/);
     expect(demo).toMatch(/if \(!mail\) return setErr\(labels\.errEmailReq\)/);
     expect(demo).toMatch(/consent: true/);
-    expect(demo).not.toMatch(/mode: "call"|l2-demo-call|l2-pick-time|l2-quick-mode|submitCall|slots|DemoSlot|callMe|quickLink/);
+    // REQ-117 — the morning/afternoon windows stay gone; the call with just a cell is back (its own test below)
+    expect(demo).not.toMatch(/slots|DemoSlot|pickSlot/);
     const client = read("front-end/clients/landing.ts");
     expect(client).toMatch(/time: string;/);
-    expect(client).not.toMatch(/"demo" \| "call"|slot/);
+    expect(client).not.toMatch(/slot/);
     // the route hands the days and the times from the one shared model
     const page = read(PAGE);
     expect(page).toMatch(/upcomingDemoDays\(lang\)/);
     expect(page).toMatch(/times=\{DEMO_TIMES\}/);
-    expect(page).not.toMatch(/DEMO_SLOTS|"callMe"|"pickTimeLink"|"quickLink"|"pickSlot"/);
+    expect(page).not.toMatch(/DEMO_SLOTS|"pickSlot"/);
   });
 
   test("the card's words are the checklist's, in both languages, and the button is Book My Demo", () => {
@@ -298,7 +299,8 @@ describe("REQ-108 the demo card books a specific day and time", () => {
     expect(es["landing2.demoH"]).toBe("¿Quieres verlo primero? Elige un día y una hora para agendar tu demo.");
     expect(es["landing2.demoSub"]).toBe("Pon tu nombre, tu celular y tu correo, y toca ‘Agendar mi demo’.");
     expect(es["landing2.submitDemo"]).toBe("Agendar mi demo");
-    for (const k of ["landing2.callMe", "landing2.pickTimeLink", "landing2.quickLink", "landing2.pickSlot"]) {
+    // the morning/afternoon window's name stays gone; Call me and its two links are back (REQ-117)
+    for (const k of ["landing2.pickSlot"]) {
       expect([k, k in en, k in es]).toEqual([k, false, false]);
     }
     for (const k of ["landing2.pickTime", "landing2.errEmailReq"]) {
@@ -674,10 +676,10 @@ describe("REQ-102 the demo's day picker slides — every day the backend accepts
 describe("REQ-104 a Monster Free signup names its plan at the code", () => {
   test("REQ-104 every Empezar gratis button into the card names free; each plan card's button names its plan", () => {
     const anchors = read(PAGE).match(/<a[^>]*href="#empezar"[^>]*>/g) ?? [];
-    expect(anchors.length).toBe(5); // REQ-116 added the demo card's Get started now →
+    expect(anchors.length).toBe(4);
     for (const a of anchors) expect(a).toMatch(/data-plan=/);
-    // the nav, the final CTA, the sticky bar and the demo card's way back (REQ-116) start free; the plan cards' one button names its plan
-    expect(anchors.filter((a) => /data-plan="free"/.test(a)).length).toBe(4);
+    // the nav, the final CTA and the sticky bar start free; the plan cards' one button names its plan
+    expect(anchors.filter((a) => /data-plan="free"/.test(a)).length).toBe(3);
     expect(anchors.filter((a) => /data-plan=\{p\.id\}/.test(a)).length).toBe(1);
   });
 
@@ -934,30 +936,44 @@ describe("REQ-115 the demo's Done! card goes back to the form", () => {
 });
 
 /**
- * REQ-116 — Raphael, 2026-10-21, on the pinned /landing2: "i want to be able to go to phone entry
- * if i dont want to book an appointment we should be able to move between them freelly". The
- * sign-up card (the phone entry) and the demo card sat on the page with no way from one to the
- * other: the demo card asked for a booking and offered nothing else; the sign-up card offered a
- * call. Each card links to the other now.
+ * REQ-117 — Raphael, 2026-10-21, on the pinned /landing2: "no where is the fucking component that
+ * was there before?" and "well no its not booking only, call me should be there but clicking the
+ * button then implements what we asked for." REQ-108 took "replace the current callback wording"
+ * for "remove the callback" and deleted REQ-090's Call me. It is back, first on the card as it
+ * was: just the cell and Call me; "I would rather pick a day and time to book my demo →" opens
+ * the booking the checklist asked for; "← Just call me" comes back; the cell rides both ways.
+ * The cross-links of REQ-116 — a misreading of "phone entry" — are gone.
  */
-describe("REQ-116 the sign-up card and the demo card link to each other", () => {
-  test("REQ-116 both links are in both dictionaries; the demo card links to the phone entry, the sign-up card's phone step links to the demo, both as tap targets", () => {
-    expect(en["landing2.demoToSignup"]).toBe("Don't need a demo? Get started now →");
-    expect(en["landing2.toDemo"]).toBe("Want to see it first? Book a demo →");
-    expect(es["landing2.demoToSignup"]).toBe("¿No necesitas demo? Empieza ahora →");
-    expect(es["landing2.toDemo"]).toBe("¿Quieres verlo primero? Agenda un demo →");
-    const page = read(PAGE);
-    // a way into the sign-up card names the plan it starts (REQ-104): this one starts free
-    expect(page).toMatch(/<a class="l2-cross" href="#empezar" data-plan="free" data-cy="l2-to-signup">\s*\{t\("demoToSignup"\)\}\s*<\/a>/);
-    expect(page).toMatch(/"preferTalk",\s*"toDemo",/);
-    const signup = read(ISLANDS[0]);
-    expect(signup).toMatch(/toDemo: string;/);
-    expect(signup).toMatch(/<a class="l2-cross" href="#demo" data-cy="l2-to-demo">\s*\{labels\.toDemo\}\s*<\/a>/);
-    // on the phone step, after Rather talk? — the code step (earlier in the source) has no such link
-    const codeStep = signup.indexOf('data-cy="l2-code"');
-    const talk = signup.indexOf('class="l2-signup__talk"');
-    const link = signup.indexOf('data-cy="l2-to-demo"');
-    expect(codeStep > 0 && codeStep < talk && talk < link).toBe(true);
-    expect(read(CSS)).toMatch(/\.l2-cross \{[^}]*min-height: 24px;/);
+describe("REQ-117 Call me is back, first on the card, and the two views move between each other freely", () => {
+  test("REQ-117 the island opens on Call me, books a call with mode call, switches to the booking and back; the route hands the three strings; the words are the old ones in both languages", () => {
+    const demo = read(ISLANDS[1]);
+    expect(demo).toMatch(/useState<View>\("quick"\)/);
+    expect(demo).toMatch(/data-cy="l2-demo-call"/);
+    expect(demo).toMatch(/id="demo-phone"/);
+    expect(demo).toMatch(/data-cy="l2-pick-time"[\s\S]{0,160}setView\("pick"\)/);
+    expect(demo).toMatch(/data-cy="l2-quick-mode"[\s\S]{0,160}setView\("quick"\)/);
+    expect(demo).toMatch(/mode: "call",\s*name: "",\s*phone: e164,\s*email: "",\s*day: "",\s*time: "",/);
+    expect(demo).toMatch(/mode: "demo",/);
+    for (const k of ["callMe", "pickTimeLink", "quickLink"]) expect(demo).toMatch(new RegExp(`${k}: string;`));
+    expect(read(PAGE)).toMatch(/"callMe",\s*"pickTimeLink",\s*"quickLink",/);
+    expect(read("front-end/clients/landing.ts")).toMatch(/mode: "demo" \| "call";/);
+    expect(en["landing2.callMe"]).toBe("Call me");
+    expect(en["landing2.pickTimeLink"]).toBe("I would rather pick a day and time to book my demo →");
+    expect(en["landing2.quickLink"]).toBe("← Just call me");
+    expect(es["landing2.callMe"]).toBe("Llámenme");
+    expect(es["landing2.pickTimeLink"]).toBe("Mejor elijo día y hora para mi demo →");
+    expect(es["landing2.quickLink"]).toBe("← Solo llámenme");
+    // the row the quick form lays its cell and its button on
+    expect(read(CSS)).toMatch(/\.l2-demo__row \{/);
+  });
+
+  test("REQ-117 the cross-links of REQ-116 are gone: no Get started now → on the demo card, no Book a demo → on the sign-up card, no strings for them", () => {
+    for (const k of ["landing2.demoToSignup", "landing2.toDemo"]) {
+      expect(en[k]).toBeUndefined();
+      expect(es[k]).toBeUndefined();
+    }
+    expect(read(PAGE)).not.toMatch(/l2-to-signup|demoToSignup|"toDemo"/);
+    expect(read(ISLANDS[0])).not.toMatch(/l2-to-demo|toDemo/);
+    expect(read(CSS)).not.toMatch(/\.l2-cross/);
   });
 });

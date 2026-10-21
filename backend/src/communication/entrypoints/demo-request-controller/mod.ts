@@ -16,8 +16,9 @@ const MAX_PER_WINDOW = 5;
 const WINDOW_MS = 60 * 60 * 1000;
 
 /**
- * REQ-081/108 — POST /demo-request: the demo booking on /landing2, public and unauthenticated —
- * a specific day and time (REQ-108), the name, the cell and the email.
+ * REQ-081/108/117 — POST /demo-request: the demo booking on /landing2, public and unauthenticated —
+ * a specific day and time (REQ-108), the name, the cell and the email; or a call as soon as
+ * possible with just a cell (REQ-090, back by REQ-117).
  *
  * A booking is three things at once, in this order: the team's inbox gets it (the same inbox
  * the contact form reaches) with the date and the time on it, the person gets the text the page
@@ -77,6 +78,7 @@ export class DemoRequestController {
 
     return ctx.json({
       ok: true,
+      mode: req.mode, // REQ-117 — a demo on a day and a time, or a call as soon as possible
       day: req.day,
       time: req.time,
       emailed: emailed.ok,

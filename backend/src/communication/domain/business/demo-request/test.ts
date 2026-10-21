@@ -41,6 +41,7 @@ const field = (input: unknown, now: Date = NOW) =>
 
 Deno.test("REQ-108 parseDemoRequest — a booking is normalised: E.164 phone, trimmed name, the email, the day, the time, the language, the consent", () => {
   assertEquals(parseDemoRequest(demo, NOW), {
+    mode: "demo",
     name: "José García",
     phone: "+15125550199",
     email: "jose@tunegocio.com",
@@ -93,7 +94,7 @@ Deno.test("REQ-108 parseDemoRequest — no same-day booking: today (Eastern) is 
   assertEquals(field({ ...demo, day: after }), "day");
 });
 
-Deno.test("REQ-108 parseDemoRequest — the time is one the page offers: 8:00 AM to 7:30 PM Eastern, every half hour; anything else is refused by name; REQ-090's call with just a cell is no booking", () => {
+Deno.test("REQ-108 parseDemoRequest — the time is one the page offers: 8:00 AM to 7:30 PM Eastern, every half hour; anything else is refused by name", () => {
   assertEquals(DEMO_TIMES.length, 24);
   assertEquals(DEMO_TIMES[0], { id: "08:00", label: "8:00 AM" });
   assertEquals(DEMO_TIMES[1], { id: "08:30", label: "8:30 AM" });
@@ -107,8 +108,7 @@ Deno.test("REQ-108 parseDemoRequest — the time is one the page offers: 8:00 AM
   assertEquals(field({ ...demo, time: "20:00" }), "time"); // 8 PM is the close, not a start
   assertEquals(field({ ...demo, time: "10:15" }), "time"); // between the half hours
   assertEquals(field({ ...demo, time: "10:30 AM" }), "time"); // the id is HH:MM, Eastern
-  // a cell alone is not a booking any more: the name, then the email, are asked for
-  assertEquals(field({ mode: "call", phone: "(512) 555-0199", lang: "es", consent: true }), "name");
+  // a demo with no email is asked for it (a call with just a cell is a booking again — REQ-117, below)
   assertEquals(field({ ...demo, email: "", day: "", time: "" }), "email");
 });
 
@@ -156,4 +156,43 @@ Deno.test("REQ-108 demoTeamEmail — the team's email carries every field of the
   assertMatch(mail.htmlBody, /Email:<\/strong> jose@tunegocio\.com/);
   assertMatch(mail.htmlBody, /Consent:<\/strong> yes/);
   assertMatch(mail.htmlBody, /Language:<\/strong> Spanish/);
+});
+
+// REQ-117 — Raphael, 2026-10-21, on the pinned /landing2: "no where is the fucking component that
+// was there before?" and "call me should be there but clicking the button then implements what we
+// asked for." REQ-108 had taken "replace the current callback wording" for "remove the callback":
+// the call with just a cell (REQ-090) is back beside the day-and-time booking.
+const call = { mode: "call", name: "", phone: "(512) 555-0199", email: "", day: "", time: "", lang: "en", consent: true };
+
+Deno.test("REQ-117 parseDemoRequest — Call me is back: a call with just a cell is a booking as soon as possible — no name, no email, no day, no time; a demo is the day and the time (REQ-108), its mode absent or demo; anything else is refused by name", () => {
+  assertEquals(parseDemoRequest(call, NOW), { mode: "call", name: "", phone: "+15125550199", email: "", day: "", time: "", lang: "en", consent: true });
+  assertEquals(parseDemoRequest({ mode: "call", phone: "(512) 555-0199", consent: true }, NOW).mode, "call");
+  assertEquals(parseDemoRequest(demo, NOW).mode, "demo");
+  assertEquals(parseDemoRequest({ ...demo, mode: "demo" }, NOW).mode, "demo");
+  assertEquals(field({ ...demo, mode: "visit" }), "mode");
+  // a call carries no day and no time; its cell and its consent are still the law
+  assertEquals(field({ ...call, day: "2026-10-20" }), "day");
+  assertEquals(field({ ...call, time: "10:30" }), "time");
+  assertEquals(field({ ...call, phone: "" }), "phone");
+  assertEquals(field({ ...call, phone: "555" }), "phone");
+  assertEquals(field({ ...call, consent: false }), "consent");
+  // a demo still needs every field (REQ-108)
+  assertEquals(field({ ...demo, mode: "demo", name: "" }), "name");
+  assertEquals(field({ ...demo, mode: "demo", email: "" }), "email");
+});
+
+Deno.test("REQ-117 demoSummary + demoConfirmationSms + demoTeamEmail — a call says as soon as possible, in both languages, with no name; the team's subject is [call]; a demo's is [demo] with the day and the time", () => {
+  assertEquals(demoSummary(parseDemoRequest(call, NOW)), "Phone call · as soon as possible");
+  assertEquals(demoSummary(parseDemoRequest({ ...call, lang: "es" }, NOW)), "Llamada · lo antes posible");
+  assertMatch(demoConfirmationSms(parseDemoRequest(call, NOW)), /^DocuMonster: you're booked! We'll call you — Phone call · as soon as possible\. Changes\?/);
+  assertMatch(demoConfirmationSms(parseDemoRequest({ ...call, lang: "es" }, NOW)), /^DocuMonster: ¡listo! Te llamamos — Llamada · lo antes posible\. ¿Cambios\?/);
+  const mail = demoTeamEmail(parseDemoRequest(call, NOW));
+  assertEquals(mail.subject, "[call] +15125550199 — as soon as possible");
+  assertMatch(mail.htmlBody, /<h2>New Phone call request from \/landing2<\/h2>/);
+  assertMatch(mail.htmlBody, /When:<\/strong> as soon as possible/);
+  assertMatch(mail.htmlBody, /Name:<\/strong> —/);
+  assertMatch(mail.htmlBody, /Email:<\/strong> —/);
+  assertMatch(mail.htmlBody, /Phone:<\/strong> \+15125550199/);
+  assertMatch(mail.htmlBody, /Consent:<\/strong> yes/);
+  assertMatch(demoTeamEmail(parseDemoRequest(demo, NOW)).subject, /^\[demo\] José García — 2026-10-20 10:30 AM Eastern$/);
 });

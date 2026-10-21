@@ -39,13 +39,21 @@ import {
  * while the consent box is ticked, and shows the confirmation the mock drew. REQ-097 (Raphael,
  * 2026-10-20: "all the … checkboxes should be ticked"): the box is ticked when the page opens; the
  * person can untick it, and then the form waits. REQ-090's Llámenme — a call with just a cell,
- * today — is gone. REQ-115 (Raphael, 2026-10-21, after booking on the pin: "how do i see the phone
+ * today — is back (REQ-117, Raphael, 2026-10-21: "no where is the fucking component that was there
+ * before?" — "call me should be there but clicking the button then implements what we asked for"):
+ * the card opens on it, as before — just the cell and Call me, a call as soon as possible — and
+ * "I would rather pick a day and time to book my demo →" opens the booking; "← Just call me" comes
+ * back; the cell rides both ways. REQ-115 (Raphael, 2026-10-21, after booking on the pin: "how do i see the phone
  * number entry on the demo i should be able to just go back and forth"): the Done! card carries a
  * way back to the form, and the entries are state the card never clears, so the day, the time, the
  * name, the cell and the email are there as typed. Every string comes in as `labels` from the
  * route, so the island renders exactly what the server did.
  */
 export interface Landing2DemoLabels {
+  /** REQ-090/117 — the call with just a cell, and the two links between the views */
+  callMe: string;
+  pickTimeLink: string;
+  quickLink: string;
   consent: string;
   consentTerms: string;
   pickDay: string;
@@ -86,6 +94,9 @@ function toE164(raw: string): string {
   return "+" + digits;
 }
 
+/** REQ-117 — the card's two views: Call me (just the cell, first) and the day-and-time booking */
+type View = "quick" | "pick";
+
 export default function Landing2Demo(
   { lang, labels, days, times, smsTermsPath }: {
     lang: Lang;
@@ -123,6 +134,8 @@ export default function Landing2Demo(
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [sent, setSent] = useState<{ texted: boolean } | null>(null);
+  /** Call me first, as before (REQ-117); the booking behind its link */
+  const [view, setView] = useState<View>("quick");
 
   const picked = days[day] ?? days[0];
   const at = times[time] ?? times[0];
@@ -239,6 +252,25 @@ export default function Landing2Demo(
     }
   }
 
+  /** REQ-090/117 — Call me: just the cell, a call as soon as possible */
+  function submitCall(e: Event) {
+    e.preventDefault();
+    setErr(null);
+    const e164 = toE164(phone);
+    if (e164.replace(/\D/g, "").length < 10) return setErr(labels.errPhoneReq);
+    if (!consent) return setErr(labels.errConsent);
+    void post({
+      mode: "call",
+      name: "",
+      phone: e164,
+      email: "",
+      day: "",
+      time: "",
+      lang,
+      consent: true,
+    });
+  }
+
   /** the day, the time and the details — every field collected — a demo */
   function submitDemo(e: Event) {
     e.preventDefault();
@@ -251,6 +283,7 @@ export default function Landing2Demo(
     if (!EMAIL_RE.test(mail)) return setErr(labels.errEmailBad);
     if (!consent) return setErr(labels.errConsent);
     void post({
+      mode: "demo",
       name: name.trim(),
       phone: e164,
       email: mail,
@@ -292,6 +325,62 @@ export default function Landing2Demo(
           {labels.thanksBack}
         </button>
       </div>
+    );
+  }
+
+  const consentBox = (
+    <label class="l2-consent" for="demo-consent">
+      <input
+        id="demo-consent"
+        type="checkbox"
+        checked={consent}
+        onChange={(e) => setConsent((e.target as HTMLInputElement).checked)}
+      />
+      <span>
+        {labels.consent}
+        <a href={smsTermsPath}>{labels.consentTerms}</a>
+      </span>
+    </label>
+  );
+
+  if (view === "quick") {
+    return (
+      <form class="l2-stack" onSubmit={submitCall} data-cy="l2-demo-form">
+        <div class="l2-demo__row">
+          <label for="demo-phone" class="l2-sr">{labels.phone}</label>
+          <input
+            id="demo-phone"
+            class="l2-field"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            placeholder="(555) 123-4567"
+            value={formatPhoneInput(phone)}
+            onInput={(e) => setPhone((e.target as HTMLInputElement).value)}
+          />
+          <button
+            type="submit"
+            class="l2-btn l2-btn--dark"
+            data-cy="l2-demo-call"
+            disabled={busy}
+          >
+            {busy ? labels.submitting : labels.callMe}
+          </button>
+        </div>
+        {err ? <p class="l2-error" role="alert">{err}</p> : null}
+        {consentBox}
+        <button
+          type="button"
+          class="l2-link-btn l2-link-btn--start"
+          data-cy="l2-pick-time"
+          onClick={() => {
+            setErr(null);
+            setView("pick");
+          }}
+        >
+          {labels.pickTimeLink}
+        </button>
+      </form>
     );
   }
 
@@ -435,18 +524,7 @@ export default function Landing2Demo(
           onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
         />
       </div>
-      <label class="l2-consent" for="demo-consent">
-        <input
-          id="demo-consent"
-          type="checkbox"
-          checked={consent}
-          onChange={(e) => setConsent((e.target as HTMLInputElement).checked)}
-        />
-        <span>
-          {labels.consent}
-          <a href={smsTermsPath}>{labels.consentTerms}</a>
-        </span>
-      </label>
+      {consentBox}
       <div class="l2-summary" data-cy="l2-demo-summary">
         <strong>{labels.sumDemo}</strong> · {demoDayLabel(picked.iso, lang)} ·
         {" "}
@@ -460,6 +538,17 @@ export default function Landing2Demo(
         disabled={busy}
       >
         {busy ? labels.submitting : labels.submitDemo}
+      </button>
+      <button
+        type="button"
+        class="l2-link-btn l2-link-btn--start"
+        data-cy="l2-quick-mode"
+        onClick={() => {
+          setErr(null);
+          setView("quick");
+        }}
+      >
+        {labels.quickLink}
       </button>
     </form>
   );

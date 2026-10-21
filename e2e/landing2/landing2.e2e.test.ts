@@ -96,6 +96,12 @@ function watchPosts(page: StoryTools["page"], path: string) {
   return () => n;
 }
 
+/** REQ-117 — the card opens on Call me, as before; the booking is behind its link */
+async function openBooking(page: StoryTools["page"]): Promise<void> {
+  await page.locator("[data-cy='l2-pick-time']").click();
+  await page.locator("[data-cy='l2-demo-submit']").waitFor({ timeout: 10_000 });
+}
+
 const count = async (page: StoryTools["page"], selector: string) =>
   await page.locator(selector).count();
 
@@ -174,6 +180,7 @@ const loaded = (page: StoryTools["page"], selector: string) =>
 /** REQ-108 — book a demo on the card as it opens (the first day, the first time): the name, the cell, the email, Book My Demo — until the thanks shows */
 async function bookDemo(page: StoryTools["page"]): Promise<void> {
   await page.locator("#demo").scrollIntoViewIfNeeded();
+  await openBooking(page); // REQ-117
   await page.locator("#f-name").fill("José García");
   await page.locator("#f-phone").fill(`512${digits()}`);
   await page.locator("#f-email").fill("jose@tunegocio.com");
@@ -656,7 +663,7 @@ Deno.test("REQ-089: the signup card is the mock's — the consent box is ticked 
  * bookings. The earliest available date must be tomorrow. Collect their name, phone number, and
  * email address. Keep the button labeled 'Book My Demo.' Ensure the team receives all submitted
  * information, including the selected demo date and time. Replace the current callback wording."
- * REQ-090's Llámenme (a call with just a cell, today) is gone: the card books a demo.
+ * REQ-090's Llámenme is still there, first (REQ-117): the booking opens from its link.
  */
 Deno.test("REQ-108: the demo card books a specific day and time — tomorrow at the earliest, 8 AM to 8 PM Eastern — with the name, the cell and the email, on Book My Demo; the team's email carries the date and the time; the card says so in both languages and holds while its consent box is unticked", (t) =>
   story(t, async ({ page, expect }) => {
@@ -668,8 +675,10 @@ Deno.test("REQ-108: the demo card books a specific day and time — tomorrow at 
     await expect.see("Enter your name, phone number, and email, then select ‘Book My Demo.’");
     await page.locator("#demo").scrollIntoViewIfNeeded();
     expect.eq(await count(page, "[data-cy='l2-demo'] [data-cy='l2-demo-card']"), 1, "the demo is one card");
-    expect.eq(await count(page, "[data-cy='l2-demo-card'] [data-cy='l2-demo-form']"), 1, "one form: the demo, no call-me path");
-    expect.eq(await count(page, "[data-cy='l2-demo-call']"), 0, "no Llámenme");
+    expect.eq(await count(page, "[data-cy='l2-demo-card'] [data-cy='l2-demo-form']"), 1, "one form at a time: Call me first (REQ-117)");
+    expect.eq(await count(page, "[data-cy='l2-demo-call']"), 1, "Llámenme is there; the booking is one tap away");
+    await page.locator("[data-cy='l2-pick-time']").click();
+    await page.locator("[data-cy='l2-demo-submit']").waitFor({ timeout: 10_000 });
     // the days: five on view, the first is tomorrow (Eastern) — never today
     expect.eq((await onView(page)).length, DEMO_DAY_COUNT, "five days on view");
     expect.eq(
@@ -736,6 +745,8 @@ Deno.test("REQ-108: the demo card books a specific day and time — tomorrow at 
     await expect.see("¿Quieres verlo primero? Elige un día y una hora para agendar tu demo.");
     await expect.see("Pon tu nombre, tu celular y tu correo, y toca ‘Agendar mi demo’.");
     await page.locator("#demo").scrollIntoViewIfNeeded();
+    await page.locator("[data-cy='l2-pick-time']").click();
+    await page.locator("[data-cy='l2-demo-submit']").waitFor({ timeout: 10_000 });
     expect.eq(((await page.locator("[data-cy='l2-demo-submit']").textContent()) ?? "").trim(), "Agendar mi demo", "the button in Spanish");
     const esSummary = ((await page.locator("[data-cy='l2-demo-summary']").textContent()) ?? "").replace(/\s+/g, " ").trim();
     expect(/^Demo · .+ · 8:00 AM \(hora del Este\)$/.test(esSummary), `the summary names the first time, hora del Este (${esSummary})`);
@@ -752,6 +763,7 @@ Deno.test("REQ-115: after Book My Demo the Done! card goes back to the form — 
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2?lang=en");
     await page.locator("#demo").scrollIntoViewIfNeeded();
+    await openBooking(page); // REQ-117
     await clickUntil(
       page,
       "[data-cy='l2-day'] >> nth=1",
@@ -901,7 +913,8 @@ Deno.test("REQ-090: all five days of the demo's day picker sit whole inside the 
       // its state and the link would be gone: ask for the page afresh and scroll to the demo
       await page.goto(`/landing2?lang=en&vp=${vp.width}`);
       await page.locator("#demo").scrollIntoViewIfNeeded();
-      await page.locator("[data-cy='l2-day']").first().waitFor(); // REQ-108: the day strip is on the card as it opens
+      await openBooking(page); // REQ-117: the card opens on Call me; the day strip is on the booking behind its link
+      await page.locator("[data-cy='l2-day']").first().waitFor();
       const days = page.locator("[data-cy='l2-day']");
       expect.eq(
         (await onView(page)).length,
@@ -1310,6 +1323,7 @@ Deno.test("REQ-095: the second comb — the page has its landmarks and the brand
     );
     // the demo's time field is named like the day group (REQ-108: the window group it replaced)
     await page.locator("#demo").scrollIntoViewIfNeeded();
+    await openBooking(page); // REQ-117
     expect.eq(
       ((await page.locator("label[for='f-time']").textContent()) ?? "").trim(),
       "Pick the time",
@@ -1456,6 +1470,7 @@ Deno.test("REQ-097: every consent box on /landing2 — the signup card's and the
     await expect.see("Marca la casilla para que te mandemos el código.");
     expect.eq(otps(), 1, "nothing more was posted once unticked");
     await page.locator("#demo").scrollIntoViewIfNeeded();
+    await openBooking(page); // REQ-117
     await page.locator("#demo-consent").uncheck();
     await page.locator("#f-name").fill("José García");
     await page.locator("#f-phone").fill(`512${digits()}`);
@@ -1484,7 +1499,8 @@ Deno.test("REQ-102: the demo's day picker slides — the right arrow shows the n
       await page.setViewportSize(vp);
       await page.goto(`/landing2?lang=es&vp=${vp.width}`);
       await page.locator("#demo").scrollIntoViewIfNeeded();
-      await page.locator("[data-cy='l2-day']").first().waitFor(); // REQ-108: the day strip is on the card as it opens
+      await openBooking(page); // REQ-117: the card opens on Call me; the day strip is on the booking behind its link
+      await page.locator("[data-cy='l2-day']").first().waitFor();
       const prev = page.locator("[data-cy='l2-days-prev']");
       const next = page.locator("[data-cy='l2-days-next']");
       expect.eq(
@@ -1719,7 +1735,8 @@ Deno.test("REQ-105: the demo's day strip scrolls under the finger — the boxes 
       await page.setViewportSize(vp);
       await page.goto(`/landing2?lang=es&vp=${vp.width}`);
       await page.locator("#demo").scrollIntoViewIfNeeded();
-      await page.locator("[data-cy='l2-day']").first().waitFor(); // REQ-108: the day strip is on the card as it opens
+      await openBooking(page); // REQ-117: the card opens on Call me; the day strip is on the booking behind its link
+      await page.locator("[data-cy='l2-day']").first().waitFor();
     };
     const view = async (): Promise<Box> =>
       (await page.locator(".l2-demo__view").boundingBox())!;
@@ -2075,38 +2092,53 @@ Deno.test("REQ-110: One message. Three documents. — the quote, the contract an
   }));
 
 /**
- * REQ-116 — Raphael, 2026-10-21, on the pinned /landing2: "i want to be able to go to phone entry
- * if i dont want to book an appointment we should be able to move between them freelly". Each card
- * links to the other now: the demo's copy says Get started now → to the phone entry, and the
- * sign-up card's phone step says Book a demo → to the demo.
+ * REQ-117 — Raphael, 2026-10-21, on the pinned /landing2: "no where is the fucking component that
+ * was there before?" and "well no its not booking only, call me should be there but clicking the
+ * button then implements what we asked for." Call me is back, first on the card as it was: just
+ * the cell and Call me, a call as soon as possible; "I would rather pick a day and time to book my
+ * demo →" opens the booking the checklist asked for (REQ-108); "← Just call me" comes back; the
+ * cell rides both ways.
  */
-Deno.test("REQ-116: the demo card and the sign-up card move between each other freely — Get started now → lands on the phone entry, Book a demo → lands on the demo, and back again; in both languages", (t) =>
+Deno.test("REQ-117: Call me is there first — just a cell and Call me books a call as soon as possible — and the two views move between each other freely: the link opens the day-and-time booking, Just call me comes back, the cell kept; in both languages", (t) =>
   story(t, async ({ page, expect }) => {
-    const inView = (sel: string) =>
-      page.locator(sel).evaluate((el: HTMLElement) => {
-        const r = el.getBoundingClientRect();
-        return r.top >= -2 && r.top < innerHeight;
-      });
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2?lang=en");
     await page.locator("#demo").scrollIntoViewIfNeeded();
-    await expect.see("Don't need a demo? Get started now →");
-    // from the demo to the phone entry
-    await page.locator("[data-cy='l2-demo-card'] [data-cy='l2-to-signup']").click();
-    expect(await inView("#empezar"), "Get started now → lands on the sign-up card");
-    expect(await page.locator("#reg-phone").isVisible(), "the phone entry is there to type into");
-    await expect.see("Want to see it first? Book a demo →");
-    // and from the phone entry to the demo
-    await page.locator("[data-cy='l2-signup'] [data-cy='l2-to-demo']").click();
-    expect(await inView("#demo"), "Book a demo → lands on the demo card");
-    expect(await page.locator("#f-time").isVisible(), "the booking is there to fill");
-    // and back once more: freely
-    await page.locator("[data-cy='l2-to-signup']").click();
-    expect(await inView("#empezar"), "and back to the phone entry");
-    // the same in Spanish
+    // Call me first, as before
+    expect.eq(await count(page, "[data-cy='l2-demo-call']"), 1, "Call me is there");
+    expect.eq(await count(page, "[data-cy='l2-demo-submit']"), 0, "the booking waits behind its link");
+    await expect.see("I would rather pick a day and time to book my demo →");
+    // the cell, kept across the switch both ways
+    const cell = `512${digits()}`;
+    await page.locator("#demo-phone").fill(cell);
+    await page.locator("[data-cy='l2-pick-time']").click();
+    await page.locator("[data-cy='l2-demo-submit']").waitFor({ timeout: 10_000 });
+    expect.eq(((await page.locator("[data-cy='l2-demo-submit']").textContent()) ?? "").trim(), "Book My Demo", "the booking: Book My Demo");
+    expect.eq(await count(page, "[data-cy='l2-time']"), 1, "a time to pick");
+    expect.eq((await page.locator("#f-phone").inputValue()).replace(/\D/g, ""), cell, "the cell came along");
+    await expect.see("← Just call me");
+    await page.locator("[data-cy='l2-quick-mode']").click();
+    await page.locator("[data-cy='l2-demo-call']").waitFor({ timeout: 10_000 });
+    expect.eq((await page.locator("#demo-phone").inputValue()).replace(/\D/g, ""), cell, "and back, the cell still there");
+    // Call me books a call as soon as possible
+    const [res] = await Promise.all([
+      page.waitForResponse((r: { url(): string; request(): { method(): string } }) =>
+        r.url().includes("/api/demo-request") && r.request().method() === "POST"
+      ),
+      page.locator("[data-cy='l2-demo-call']").click(),
+    ]);
+    const body = await res.json();
+    expect.eq(body.ok, true, `the call was booked (${JSON.stringify(body)})`);
+    expect.eq(body.mode, "call", "a call, as soon as possible");
+    expect.eq(body.emailed, true, "the team was emailed");
+    expect.eq(body.lead, true, "the phone is a lead");
+    await expect.see("Done!");
+    // the same card in Spanish
     await page.goto("/landing2?lang=es");
     await page.locator("#demo").scrollIntoViewIfNeeded();
-    await expect.see("¿No necesitas demo? Empieza ahora →");
-    await page.locator("[data-cy='l2-to-signup']").click();
-    await expect.see("¿Quieres verlo primero? Agenda un demo →");
+    expect.eq(((await page.locator("[data-cy='l2-demo-call']").textContent()) ?? "").trim(), "Llámenme", "Call me in Spanish");
+    await expect.see("Mejor elijo día y hora para mi demo →");
+    await page.locator("[data-cy='l2-pick-time']").click();
+    await page.locator("[data-cy='l2-demo-submit']").waitFor({ timeout: 10_000 });
+    await expect.see("← Solo llámenme");
   }));
