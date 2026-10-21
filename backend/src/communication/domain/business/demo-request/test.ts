@@ -1,215 +1,159 @@
 /**
- * REQ-090 — Raphael, 2026-10-18, the v3 landing: "the demo is one card — Llámenme with just a cell
- * books a call as soon as possible, or the person picks one of five days from tomorrow and a
- * morning or afternoon window, name, cell and email, with its own consent box — and the backend
- * takes that booking and keeps the consent on record." The parser reads the page's POST strictly:
- * a call needs nothing but the cell and the ticked box; a demo needs a name, a day and a window;
- * the consent is the one field never optional; and from the booking come the two messages the
- * page promises — "Te confirmamos por texto" to the person, the booking to the team, consent on it.
+ * REQ-108 — Raphael, 2026-10-21, the launch checklist: "Visitors must select a specific day and
+ * time, rather than a morning or afternoon window. Offer available times between 8 a.m. and
+ * 8 p.m. Eastern Time. Do not allow same-day bookings. The earliest available date must be
+ * tomorrow. Collect their name, phone number, and email address. … Ensure the team receives all
+ * submitted information, including the selected demo date and time." The parser reads the page's
+ * POST strictly: a name, a cell, an email, a day from tomorrow (Eastern) within the window, a time
+ * the page offers, the consent (never optional); from the booking come the two messages — the text
+ * to the person, the booking to the team with the date and the time on it. REQ-090's call with
+ * just a cell is gone: the card books a demo, nothing else.
  */
 import { assertEquals, assertMatch, assertThrows } from "#std/assert";
-import { DEMO_DAY_WINDOW, upcomingDemoDays } from "#demo-booking/mod.ts";
 import {
-  DEMO_SLOTS,
+  DEMO_DAY_WINDOW,
+  DEMO_TIMES,
+  demoTimeLabel,
+  upcomingDemoDays,
+} from "#demo-booking/mod.ts";
+import {
   demoConfirmationSms,
   demoDayLabel,
   DemoRequestInvalid,
-  demoSlotLabel,
   demoSummary,
   demoTeamEmail,
   parseDemoRequest,
 } from "./mod.ts";
 
+/** 11 AM Eastern on Sunday 18 Oct 2026 */
 const NOW = new Date("2026-10-18T15:00:00Z");
 const demo = {
-  mode: "demo",
   name: "  José García ",
   phone: "(512) 555-0199",
   email: "jose@tunegocio.com",
   day: "2026-10-20",
-  slot: "morning",
+  time: "10:30",
   lang: "es",
   consent: true,
 };
-const call = {
-  mode: "call",
-  phone: "(512) 555-0199",
-  lang: "es",
-  consent: true,
-};
+const field = (input: unknown, now: Date = NOW) =>
+  assertThrows(() => parseDemoRequest(input, now), DemoRequestInvalid).field;
 
-Deno.test("REQ-090 parseDemoRequest — a demo is normalised: E.164 phone, trimmed name, the day, the window, the language, the consent", () => {
+Deno.test("REQ-108 parseDemoRequest — a booking is normalised: E.164 phone, trimmed name, the email, the day, the time, the language, the consent", () => {
   assertEquals(parseDemoRequest(demo, NOW), {
-    mode: "demo",
     name: "José García",
     phone: "+15125550199",
     email: "jose@tunegocio.com",
     day: "2026-10-20",
-    slot: "morning",
+    time: "10:30",
     lang: "es",
     consent: true,
   });
 });
 
-Deno.test("REQ-090 parseDemoRequest — a call with just a cell is a booking as soon as possible: no name, no email, no day, no window", () => {
-  assertEquals(parseDemoRequest(call, NOW), {
-    mode: "call",
-    name: "",
-    phone: "+15125550199",
-    email: "",
-    day: "",
-    slot: "",
-    lang: "es",
-    consent: true,
-  });
-  // the page sends the empty fields along; they are read as absent
-  const r = parseDemoRequest(
-    { ...call, name: "", email: "", day: "", slot: "" },
-    NOW,
-  );
-  assertEquals(r.day, "");
-  assertEquals(r.slot, "");
-  // a demo's email is optional too — the box on the page has no "required"
-  assertEquals(parseDemoRequest({ ...demo, email: "" }, NOW).email, "");
-});
-
-Deno.test("REQ-090 parseDemoRequest — the consent box is the one field never optional: unticked, absent or anything but true is refused by name, for a demo and for a call", () => {
-  const field = (input: unknown) =>
-    assertThrows(() => parseDemoRequest(input, NOW), DemoRequestInvalid).field;
-  assertEquals(field({ ...demo, consent: false }), "consent");
-  assertEquals(field({ ...call, consent: false }), "consent");
-  assertEquals(field({ ...demo, consent: undefined }), "consent");
-  assertEquals(field({ ...call, consent: "true" }), "consent");
-  assertEquals(field({ ...call, consent: 1 }), "consent");
-});
-
-Deno.test("REQ-090 parseDemoRequest — every malformed field is refused by name", () => {
-  const field = (input: unknown) =>
-    assertThrows(() => parseDemoRequest(input, NOW), DemoRequestInvalid).field;
-  assertEquals(field({ ...demo, mode: "visit" }), "mode");
-  assertEquals(field({ ...demo, name: "   " }), "name"); // a demo has a name
+Deno.test("REQ-108 parseDemoRequest — the name, the cell and the email are all collected: each is refused by name when missing or malformed", () => {
+  assertEquals(field({ ...demo, name: "   " }), "name");
   assertEquals(field({ ...demo, name: "x".repeat(121) }), "name");
-  assertEquals(field({ ...call, name: "x".repeat(121) }), "name");
   assertEquals(field({ ...demo, phone: "12345" }), "phone");
-  assertEquals(field({ ...call, phone: "" }), "phone");
+  assertEquals(field({ ...demo, phone: "" }), "phone");
+  assertEquals(field({ ...demo, email: "" }), "email"); // collected, never optional
   assertEquals(field({ ...demo, email: "not-an-email" }), "email");
-  assertEquals(field({ ...call, email: "not-an-email" }), "email");
-  assertEquals(field({ ...demo, day: "" }), "day"); // a demo has a day
-  assertEquals(field({ ...demo, day: "20/10/2026" }), "day");
-  assertEquals(field({ ...demo, day: "2026-02-30" }), "day");
-  assertEquals(field({ ...demo, day: "2026-10-17" }), "day"); // yesterday
-  assertEquals(field({ ...demo, day: "2027-03-01" }), "day"); // past the 90-day window
-  assertEquals(field({ ...demo, slot: "" }), "slot"); // a demo has a window
-  assertEquals(field({ ...demo, slot: "11:00 AM" }), "slot"); // the old hours are no window
-  assertEquals(field({ ...demo, slot: "evening" }), "slot");
-  assertEquals(field({ ...call, day: "2026-10-20" }), "day"); // a call carries no day…
-  assertEquals(field({ ...call, slot: "morning" }), "slot"); // …and no window
   assertEquals(field({ ...demo, lang: "fr" }), "lang");
   assertEquals(field("nope"), "body");
-  assertEquals(field({}), "mode");
+  assertEquals(field({}), "consent");
 });
 
-Deno.test("REQ-090 DEMO_SLOTS — the two windows the page offers, morning and afternoon, Eastern, labelled in both languages", () => {
-  assertEquals(DEMO_SLOTS.map((s) => s.id), ["morning", "afternoon"]);
-  assertEquals(DEMO_SLOTS[0].short.es, "Mañana (9–12)");
-  assertEquals(DEMO_SLOTS[0].short.en, "Morning (9–12)");
-  assertEquals(DEMO_SLOTS[1].short.es, "Tarde (1–5)");
-  assertEquals(DEMO_SLOTS[1].short.en, "Afternoon (1–5)");
-  assertEquals(
-    demoSlotLabel("morning", "es"),
-    "Mañana, 9 AM – 12 PM (hora del Este)",
-  );
-  assertEquals(
-    demoSlotLabel("afternoon", "en"),
-    "Afternoon, 1 – 5 PM (Eastern)",
-  );
+Deno.test("REQ-108 parseDemoRequest — the consent box is the one field never optional: unticked, absent or anything but true is refused by name", () => {
+  assertEquals(field({ ...demo, consent: false }), "consent");
+  assertEquals(field({ ...demo, consent: undefined }), "consent");
+  assertEquals(field({ ...demo, consent: "true" }), "consent");
+  assertEquals(field({ ...demo, consent: 1 }), "consent");
 });
 
-Deno.test("REQ-081 demoDayLabel — the day as the page shows it, in either language", () => {
+Deno.test("REQ-108 parseDemoRequest — no same-day booking: today (Eastern) is refused and tomorrow is the earliest, even late in the Eastern evening; the window's last day is a booking and the day after is refused", () => {
+  assertEquals(field({ ...demo, day: "2026-10-18" }), "day"); // today
+  assertEquals(field({ ...demo, day: "2026-10-17" }), "day"); // yesterday
+  assertEquals(parseDemoRequest({ ...demo, day: "2026-10-19" }, NOW).day, "2026-10-19"); // tomorrow
+  // 11:30 PM Eastern on the 18th is already the 19th in UTC: still today in Eastern, so still refused
+  const lateEvening = new Date("2026-10-19T03:30:00Z");
+  assertEquals(field({ ...demo, day: "2026-10-18" }, lateEvening), "day");
+  assertEquals(parseDemoRequest({ ...demo, day: "2026-10-19" }, lateEvening).day, "2026-10-19");
+  assertEquals(field({ ...demo, day: "" }), "day");
+  assertEquals(field({ ...demo, day: "20/10/2026" }), "day");
+  assertEquals(field({ ...demo, day: "2026-02-30" }), "day");
+  // the page's days are the backend's: from tomorrow, DEMO_DAY_WINDOW of them (REQ-102)
+  const offered = upcomingDemoDays("es", NOW);
+  assertEquals(offered.length, DEMO_DAY_WINDOW);
+  assertEquals(offered[0].iso, "2026-10-19", "the first day offered is tomorrow, Eastern");
+  const sixth = offered[5].iso;
+  assertEquals(parseDemoRequest({ ...demo, day: sixth }, NOW).day, sixth);
+  const last = offered[offered.length - 1].iso;
+  assertEquals(parseDemoRequest({ ...demo, day: last }, NOW).day, last);
+  const after = new Date(Date.parse(last) + 86_400_000).toISOString().slice(0, 10);
+  assertEquals(field({ ...demo, day: after }), "day");
+});
+
+Deno.test("REQ-108 parseDemoRequest — the time is one the page offers: 8:00 AM to 7:30 PM Eastern, every half hour; anything else is refused by name; REQ-090's call with just a cell is no booking", () => {
+  assertEquals(DEMO_TIMES.length, 24);
+  assertEquals(DEMO_TIMES[0], { id: "08:00", label: "8:00 AM" });
+  assertEquals(DEMO_TIMES[1], { id: "08:30", label: "8:30 AM" });
+  assertEquals(DEMO_TIMES[8], { id: "12:00", label: "12:00 PM" });
+  assertEquals(DEMO_TIMES[9], { id: "12:30", label: "12:30 PM" });
+  assertEquals(DEMO_TIMES[23], { id: "19:30", label: "7:30 PM" });
+  for (const t of DEMO_TIMES) assertEquals(parseDemoRequest({ ...demo, time: t.id }, NOW).time, t.id);
+  assertEquals(field({ ...demo, time: "" }), "time");
+  assertEquals(field({ ...demo, time: "morning" }), "time"); // the old windows are no time
+  assertEquals(field({ ...demo, time: "07:30" }), "time"); // before 8 AM
+  assertEquals(field({ ...demo, time: "20:00" }), "time"); // 8 PM is the close, not a start
+  assertEquals(field({ ...demo, time: "10:15" }), "time"); // between the half hours
+  assertEquals(field({ ...demo, time: "10:30 AM" }), "time"); // the id is HH:MM, Eastern
+  // a cell alone is not a booking any more: the name, then the email, are asked for
+  assertEquals(field({ mode: "call", phone: "(512) 555-0199", lang: "es", consent: true }), "name");
+  assertEquals(field({ ...demo, email: "", day: "", time: "" }), "email");
+});
+
+Deno.test("REQ-108 demoTimeLabel + demoDayLabel — the time and the day as the page and the messages show them, in either language", () => {
+  assertEquals(demoTimeLabel("10:30", "es"), "10:30 AM (hora del Este)");
+  assertEquals(demoTimeLabel("19:30", "en"), "7:30 PM (Eastern)");
+  assertEquals(demoTimeLabel("12:00", "en"), "12:00 PM (Eastern)");
   assertEquals(demoDayLabel("2026-10-17", "es"), "Sáb 17 Oct");
   assertEquals(demoDayLabel("2026-10-17", "en"), "Sat 17 Oct");
   assertEquals(demoDayLabel("2026-12-01", "es"), "Mar 1 Dic");
 });
 
-Deno.test("REQ-090 demoSummary + demoConfirmationSms — a demo names the day and the window; a call says as soon as possible; the name only when there is one; the line to call; the person's language", () => {
+Deno.test("REQ-108 demoSummary + demoConfirmationSms — the booking names the day and the time; the text goes to the person in their language, by name, with the support number", () => {
   assertEquals(
     demoSummary(parseDemoRequest(demo, NOW)),
-    "Demo de 15 min · Mar 20 Oct · Mañana, 9 AM – 12 PM (hora del Este)",
+    "Demo de 15 min · Mar 20 Oct · 10:30 AM (hora del Este)",
   );
   assertEquals(
-    demoSummary(parseDemoRequest({ ...call, lang: "en" }, NOW)),
-    "Phone call · as soon as possible",
+    demoSummary(parseDemoRequest({ ...demo, lang: "en", time: "19:30" }, NOW)),
+    "15-min demo · Tue 20 Oct · 7:30 PM (Eastern)",
   );
   const es = demoConfirmationSms(parseDemoRequest(demo, NOW));
-  assertMatch(es, /^DocuMonster: ¡listo, José García!/);
   assertMatch(
     es,
-    /Demo de 15 min · Mar 20 Oct · Mañana, 9 AM – 12 PM \(hora del Este\)/,
+    /^DocuMonster: ¡listo, José García! Te llamamos — Demo de 15 min · Mar 20 Oct · 10:30 AM \(hora del Este\)\./,
   );
   assertMatch(es, /855-362-8666/);
-  const en = demoConfirmationSms(
-    parseDemoRequest({ ...call, lang: "en" }, NOW),
-  );
+  const en = demoConfirmationSms(parseDemoRequest({ ...demo, lang: "en" }, NOW));
   assertMatch(
     en,
-    /^DocuMonster: you're booked! We'll call you — Phone call · as soon as possible\./,
+    /^DocuMonster: you're booked, José García! We'll call you — 15-min demo · Tue 20 Oct · 10:30 AM \(Eastern\)\./,
   );
   assertMatch(en, /855-362-8666/);
-  const esCall = demoConfirmationSms(parseDemoRequest(call, NOW));
-  assertMatch(
-    esCall,
-    /^DocuMonster: ¡listo! Te llamamos — Llamada · lo antes posible\./,
-  );
 });
 
-Deno.test("REQ-090 demoTeamEmail — the team's email carries every field of the booking, escaped, with the consent on record; a call says as soon as possible and shows the missing name as none", () => {
+Deno.test("REQ-108 demoTeamEmail — the team's email carries every field of the booking, escaped, the date and the time on it, the consent on record", () => {
   const mail = demoTeamEmail(
-    parseDemoRequest(
-      { ...demo, name: "José <García>", slot: "afternoon" },
-      NOW,
-    ),
+    parseDemoRequest({ ...demo, name: "José <García>", time: "14:00" }, NOW),
   );
-  assertMatch(mail.subject, /^\[demo\] José <García> — 2026-10-20 afternoon$/);
-  assertMatch(mail.htmlBody, /José &lt;García&gt;/);
-  assertMatch(mail.htmlBody, /\+15125550199/);
-  assertMatch(mail.htmlBody, /jose@tunegocio\.com/);
+  assertMatch(mail.subject, /^\[demo\] José <García> — 2026-10-20 2:00 PM Eastern$/);
   assertMatch(mail.htmlBody, /15-min demo/);
-  assertMatch(
-    mail.htmlBody,
-    /Tue 20 Oct \(2026-10-20\) · Afternoon, 1 – 5 PM Eastern/,
-  );
+  assertMatch(mail.htmlBody, /When:<\/strong> Tue 20 Oct \(2026-10-20\) · 2:00 PM Eastern/);
+  assertMatch(mail.htmlBody, /Name:<\/strong> José &lt;García&gt;/);
+  assertMatch(mail.htmlBody, /Phone:<\/strong> \+15125550199/);
+  assertMatch(mail.htmlBody, /Email:<\/strong> jose@tunegocio\.com/);
   assertMatch(mail.htmlBody, /Consent:<\/strong> yes/);
-  assertMatch(mail.htmlBody, /Spanish/); // the language the person wrote in
-  const quick = demoTeamEmail(parseDemoRequest({ ...call, lang: "en" }, NOW));
-  assertMatch(quick.subject, /^\[call\] \+15125550199 — as soon as possible$/);
-  assertMatch(quick.htmlBody, /When:<\/strong> as soon as possible/);
-  assertMatch(quick.htmlBody, /Name:<\/strong> —/);
-  assertMatch(quick.htmlBody, /Email:<\/strong> —/);
-  assertMatch(quick.htmlBody, /Consent:<\/strong> yes/);
-  assertMatch(quick.htmlBody, /English/);
-});
-
-/**
- * REQ-102 — "calendar days need to slide so that i can pick more than 5 days out": the page now
- * offers every day the backend accepts, and the backend reads its window from the same constant —
- * so the last day the picker shows is a booking and the day after it is refused, by name.
- */
-Deno.test("REQ-102 parseDemoRequest — the window is the shared one the page offers: the sixth day (where the old picker stopped) and the last day of upcomingDemoDays are bookings, the day after the last is refused", () => {
-  const offered = upcomingDemoDays("es", NOW);
-  assertEquals(offered.length, DEMO_DAY_WINDOW);
-  const sixth = offered[5].iso;
-  assertEquals(parseDemoRequest({ ...demo, day: sixth }, NOW).day, sixth);
-  const last = offered[offered.length - 1].iso;
-  assertEquals(parseDemoRequest({ ...demo, day: last }, NOW).day, last);
-  const after = new Date(Date.parse(last) + 86_400_000).toISOString().slice(
-    0,
-    10,
-  );
-  assertEquals(
-    assertThrows(
-      () => parseDemoRequest({ ...demo, day: after }, NOW),
-      DemoRequestInvalid,
-    ).field,
-    "day",
-  );
+  assertMatch(mail.htmlBody, /Language:<\/strong> Spanish/);
 });

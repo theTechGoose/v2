@@ -7,6 +7,7 @@ import Landing2Monster from "../islands/Landing2Monster.tsx";
 import Landing2Demo, {
   type Landing2DemoLabels,
 } from "../islands/Landing2Demo.tsx";
+import Landing2Docs from "../islands/Landing2Docs.tsx";
 import { tFor, type Vars } from "../lib/i18n.ts";
 import {
   type Lang,
@@ -18,7 +19,7 @@ import {
   absoluteUrl,
   socialMetaTags,
 } from "../../shared/quote-flow/site-meta.ts";
-import { DEMO_SLOTS, upcomingDemoDays } from "../../shared/demo-booking/mod.ts";
+import { DEMO_TIMES, upcomingDemoDays } from "../../shared/demo-booking/mod.ts";
 import {
   BUSINESS_ADDRESS,
   SUPPORT_PHONE_DISPLAY,
@@ -153,14 +154,11 @@ export default define.page(function Landing2(ctx) {
   const demoLabels: Landing2DemoLabels = {
     ...pick(
       [
-        "callMe",
         "consentTerms",
-        "pickTimeLink",
-        "quickLink",
         "pickDay",
         "prevDays",
         "nextDays",
-        "pickSlot",
+        "pickTime",
         "name",
         "namePh",
         "phone",
@@ -171,6 +169,7 @@ export default define.page(function Landing2(ctx) {
         "sumDemo",
         "errName",
         "errPhoneReq",
+        "errEmailReq",
         "errEmailBad",
         "errSubmit",
         "errRateDemo",
@@ -342,35 +341,14 @@ export default define.page(function Landing2(ctx) {
                   <div class="l2-bubble l2-bubble--them">{t("msg4")}</div>
                 </div>
               </div>
-              <div class="l2-card l2-quote" lang="en">
-                <div class="l2-quote__head">
-                  <div>
-                    <div class="l2-quote__title">QUOTE #PM-2641</div>
-                    <div class="l2-quote__for">
-                      Kitchen remodel · Prepared for R. Hernández
-                    </div>
-                  </div>
-                  <span class="l2-pill">Signed ✓</span>
-                </div>
-                <div class="l2-quote__lines">
-                  <div class="l2-quote__line">
-                    <span>Cabinets &amp; installation</span>
-                    <strong>$4,200.00</strong>
-                  </div>
-                  <div class="l2-quote__line">
-                    <span>Quartz countertops</span>
-                    <strong>$3,990.00</strong>
-                  </div>
-                  <div class="l2-quote__line">
-                    <span>Demolition &amp; labor (3 days)</span>
-                    <strong>$2,800.00</strong>
-                  </div>
-                </div>
-                <div class="l2-quote__foot">
-                  <span class="l2-quote__sig">R. Hernández</span>
-                  <span class="l2-quote__total">$10,990.00</span>
-                </div>
-              </div>
+              {/* REQ-110 — the three documents, one tab each: the quote, the agreement, the invoice — R. Hernández's job on all three */}
+              <Landing2Docs
+                labels={{
+                  quote: t("doc.quote"),
+                  contract: t("doc.contract"),
+                  invoice: t("doc.invoice"),
+                }}
+              />
             </div>
           </div>
 
@@ -506,7 +484,7 @@ export default define.page(function Landing2(ctx) {
                 lang={lang}
                 labels={demoLabels}
                 days={days}
-                slots={DEMO_SLOTS}
+                times={DEMO_TIMES}
                 smsTermsPath={SMS_TERMS_PATH}
               />
             </div>

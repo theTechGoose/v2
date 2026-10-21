@@ -16,14 +16,15 @@ const MAX_PER_WINDOW = 5;
 const WINDOW_MS = 60 * 60 * 1000;
 
 /**
- * REQ-081 — POST /demo-request: the demo booking on /landing2, public and unauthenticated.
+ * REQ-081/108 — POST /demo-request: the demo booking on /landing2, public and unauthenticated —
+ * a specific day and time (REQ-108), the name, the cell and the email.
  *
  * A booking is three things at once, in this order: the team's inbox gets it (the same inbox
- * the contact form reaches), the person gets the text the page promised ("Te confirmamos por
- * texto"), and the phone is a CRM lead the way a code request is (REQ-060/072: the outbox
- * carries it, never this request). The reply says what was done — `emailed`, `texted`, `lead` —
- * so a text that could not go out (a landline, an opted-out number) still leaves the booking
- * with the team and the page can say so.
+ * the contact form reaches) with the date and the time on it, the person gets the text the page
+ * promised ("Te confirmamos por texto"), and the phone is a CRM lead the way a code request is
+ * (REQ-060/072: the outbox carries it, never this request). The reply says what was done —
+ * `emailed`, `texted`, `lead` — so a text that could not go out (a landline, an opted-out number)
+ * still leaves the booking with the team and the page can say so.
  *
  * Rate-limited per phone at 5 an hour; a malformed body answers `{ ok:false, reason:"invalid",
  * field }` in the 200 envelope the other public forms use (ContactPublicController).
@@ -76,9 +77,8 @@ export class DemoRequestController {
 
     return ctx.json({
       ok: true,
-      mode: req.mode,
       day: req.day,
-      slot: req.slot,
+      time: req.time,
       emailed: emailed.ok,
       texted: texted.ok,
       lead: true,

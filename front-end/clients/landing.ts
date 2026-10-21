@@ -35,18 +35,15 @@ export interface ContactResult {
   retryAfterMs?: number;
 }
 
-/** REQ-081/090 — a demo booking from /landing2: a call with just a cell (as soon as possible), or a demo on a day and a window, who, how to reach them — and the consent box, ticked */
+/** REQ-081/090/108 — a demo booking from /landing2: a specific day and time, who, how to reach them, the consent */
 export interface DemoRequestInput {
-  mode: "demo" | "call";
-  /** "" for a call with just a cell */
   name: string;
   phone: string;
-  /** "" when not given */
   email: string;
-  /** YYYY-MM-DD for a demo; "" for a call */
+  /** YYYY-MM-DD, tomorrow (Eastern) at the earliest */
   day: string;
-  /** "morning" | "afternoon" for a demo; "" for a call */
-  slot: string;
+  /** HH:MM Eastern, one of DEMO_TIMES (8:00 AM to 7:30 PM) */
+  time: string;
   lang: Lang;
   /** the TCPA consent box — the page only posts once it is ticked */
   consent: boolean;
@@ -55,9 +52,8 @@ export interface DemoRequestInput {
 export type DemoRequestResult =
   | {
     ok: true;
-    mode: "demo" | "call";
     day: string;
-    slot: string;
+    time: string;
     emailed: boolean;
     texted: boolean;
     lead: boolean;
@@ -72,7 +68,7 @@ export const landingClient = {
     return api.post<SendOtpResult>("/auth/send-otp", input, opts);
   },
 
-  /** REQ-081/090 — POST /demo-request — the demo booking (backend DemoRequestController). */
+  /** REQ-081/090/108 — POST /demo-request — the demo booking (backend DemoRequestController). */
   requestDemo(
     input: DemoRequestInput,
     opts: ApiOptions = {},

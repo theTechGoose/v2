@@ -136,7 +136,7 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "price.plans.trial": "Try Monster free for {d} days. Cancel anytime.",
     "price.permo": "/month",
     "price.t1.name": "Monster Free",
-    "price.t1.blurb": "Unlimited invoices, free. Plus up to 5 quotes a month.",
+    "price.t1.blurb": "Unlimited invoices. Up to five quotes and contracts a month. Spanish and English output. Free forever.", // REQ-109
     "price.t2.name": "Monster",
     "price.t2.badge": "Most popular",
     "price.t2.blurb":
@@ -291,7 +291,7 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "price.permo": "/mes",
     "price.t1.name": "Monster Free",
     "price.t1.blurb":
-      "Facturas ilimitadas, gratis. Y hasta 5 cotizaciones al mes.",
+      "Facturas ilimitadas. Hasta cinco cotizaciones y contratos al mes. Documentos en español y en inglés. Gratis para siempre.", // REQ-109
     "price.t2.name": "Monster",
     "price.t2.badge": "El más popular",
     "price.t2.blurb":

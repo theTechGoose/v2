@@ -5,8 +5,8 @@ import {
   type DemoDay,
   demoDayLabel,
   demoMonthRange,
-  type DemoSlot,
-  demoSlotLabel,
+  type DemoTime,
+  demoTimeLabel,
 } from "../../shared/demo-booking/mod.ts";
 import { landingClient } from "../clients/landing.ts";
 import type { Lang } from "../lib/lang.ts";
@@ -18,38 +18,39 @@ import {
 } from "../lib/day-strip.ts";
 
 /**
- * REQ-090 — the demo card on /landing2, the v3 mock (Raphael, 2026-10-18: "the demo is one card —
- * Llámenme with just a cell books a call as soon as possible, or the person picks one of five
- * days from tomorrow and a morning or afternoon window, name, cell and email, with its own
- * consent box"). Two forms in one card: the one-field form (the cell, Llámenme) and, behind
- * "Mejor elijo día y hora", the day picker (REQ-102, Raphael, 2026-10-20: "calendar days need to
- * slide so that i can pick more than 5 days out. arrow for good ux that is clickable." — every day
- * the route hands down, from tomorrow, Eastern, five at a time between two arrows that slide it a
- * page, or a finger — or a mouse — scrolling it (REQ-105, Raphael, 2026-10-20: "why cant i click
- * and drag the calendar on mobile?" and, on a first cut that flipped a page on the release, "the
- * boxes should render smoothly as you scroll": the strip is a scroller — every day in one row,
- * five to the width, snapping to a day; a finger scrolls it natively, the boxes moving under it;
- * the arrows scroll it a page from wherever it stands; a mouse drags it; a drag never picks the
- * day it started on; front-end/lib/day-strip.ts holds the arithmetic); the pick is the day's
- * index in the whole list, so it outlives the days on view), the two
- * windows, the name, the cell, the email (optional), and a summary that follows every pick. Each posts to POST /demo-request — which emails the team with the consent on record,
- * texts the person and makes the phone a lead — only while the consent box is ticked, and shows
- * the confirmation the mock drew. REQ-097 (Raphael, 2026-10-20: "all the … checkboxes should be
- * ticked"): the box is ticked when the page opens; the person can untick it, and then both forms wait. Every string comes in as `labels` from the route, so the island
- * renders exactly what the server did.
+ * REQ-108 — the demo card on /landing2 (Raphael, 2026-10-21, the launch checklist: "This section
+ * is for booking an actual 15-minute demo. Visitors must select a specific day and time, rather
+ * than a morning or afternoon window. Offer available times between 8 a.m. and 8 p.m. Eastern
+ * Time. Do not allow same-day bookings. The earliest available date must be tomorrow. Collect
+ * their name, phone number, and email address. Keep the button labeled 'Book My Demo.'"). One
+ * form: the day strip (REQ-102, Raphael, 2026-10-20: "calendar days need to slide so that i can
+ * pick more than 5 days out. arrow for good ux that is clickable." — every day the route hands
+ * down, from tomorrow, Eastern, five at a time between two arrows that slide it a page, or a
+ * finger — or a mouse — scrolling it (REQ-105, Raphael, 2026-10-20: "why cant i click and drag the
+ * calendar on mobile?" and, on a first cut that flipped a page on the release, "the boxes should
+ * render smoothly as you scroll": the strip is a scroller — every day in one row, five to the
+ * width, snapping to a day; a finger scrolls it natively, the boxes moving under it; the arrows
+ * scroll it a page from wherever it stands; a mouse drags it; a drag never picks the day it
+ * started on; front-end/lib/day-strip.ts holds the arithmetic); the pick is the day's index in
+ * the whole list, so it outlives the days on view), the time to pick (the route hands down the
+ * times, 8:00 AM to 7:30 PM Eastern), the name, the cell and the email — every one collected —
+ * and a summary that follows every pick. It posts to POST /demo-request — which emails the team
+ * with the date, the time and the consent, texts the person and makes the phone a lead — only
+ * while the consent box is ticked, and shows the confirmation the mock drew. REQ-097 (Raphael,
+ * 2026-10-20: "all the … checkboxes should be ticked"): the box is ticked when the page opens; the
+ * person can untick it, and then the form waits. REQ-090's Llámenme — a call with just a cell,
+ * today — is gone. Every string comes in as `labels` from the route, so the island renders exactly
+ * what the server did.
  */
 export interface Landing2DemoLabels {
-  callMe: string;
   consent: string;
   consentTerms: string;
-  pickTimeLink: string;
-  quickLink: string;
   pickDay: string;
   /** REQ-102 — the two arrows' names: the page of days before, the page after */
   prevDays: string;
   nextDays: string;
-  /** REQ-095 — the window group's name, as the day group has one (REQ-096: the thanks is an h3) */
-  pickSlot: string;
+  /** REQ-108 — the time field's name (REQ-095: named, like the day group) */
+  pickTime: string;
   name: string;
   namePh: string;
   phone: string;
@@ -60,6 +61,7 @@ export interface Landing2DemoLabels {
   sumDemo: string;
   errName: string;
   errPhoneReq: string;
+  errEmailReq: string;
   errEmailBad: string;
   errConsent: string;
   errSubmit: string;
@@ -79,19 +81,17 @@ function toE164(raw: string): string {
   return "+" + digits;
 }
 
-type View = "quick" | "pick";
-
 export default function Landing2Demo(
-  { lang, labels, days, slots, smsTermsPath }: {
+  { lang, labels, days, times, smsTermsPath }: {
     lang: Lang;
     labels: Landing2DemoLabels;
     days: DemoDay[];
-    slots: readonly DemoSlot[];
+    /** REQ-108 — the times the page offers, Eastern */
+    times: readonly DemoTime[];
     /** the SMS terms the consent line links to (LEGAL_LINKS, REQ-076) */
     smsTermsPath: string;
   },
 ) {
-  const [view, setView] = useState<View>("quick");
   /** the picked day: its index in the WHOLE list, so a slide never loses it (REQ-102) */
   const [day, setDay] = useState(0);
   /** REQ-105 — the strip is a scroller: the first day on view, read off its scroll; the arrows and the range follow it */
@@ -108,18 +108,19 @@ export default function Landing2Demo(
   >(null);
   /** the click a drag leaves behind is not a pick: swallowed once, at the capture */
   const swallow = useRef(false);
-  const [slot, setSlot] = useState(0);
+  /** REQ-108 — the picked time: its index in the times the route handed down */
+  const [time, setTime] = useState(0);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  /** the consent box: ticked when the page opens (REQ-097); both forms wait while the person has it unticked */
+  /** the consent box: ticked when the page opens (REQ-097); the form waits while the person has it unticked */
   const [consent, setConsent] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [sent, setSent] = useState<{ texted: boolean } | null>(null);
 
   const picked = days[day] ?? days[0];
-  const window = slots[slot] ?? slots[0];
+  const at = times[time] ?? times[0];
   const shown = days.slice(first, first + DEMO_DAY_COUNT);
 
   /** a day's stop is a step from the next: the distance between the first two days' left edges */
@@ -233,26 +234,7 @@ export default function Landing2Demo(
     }
   }
 
-  /** Llámenme: just the cell — a call as soon as possible */
-  function submitCall(e: Event) {
-    e.preventDefault();
-    setErr(null);
-    const e164 = toE164(phone);
-    if (e164.replace(/\D/g, "").length < 10) return setErr(labels.errPhoneReq);
-    if (!consent) return setErr(labels.errConsent);
-    void post({
-      mode: "call",
-      name: "",
-      phone: e164,
-      email: "",
-      day: "",
-      slot: "",
-      lang,
-      consent: true,
-    });
-  }
-
-  /** the day, the window and the details — a demo */
+  /** the day, the time and the details — every field collected — a demo */
   function submitDemo(e: Event) {
     e.preventDefault();
     setErr(null);
@@ -260,15 +242,15 @@ export default function Landing2Demo(
     const e164 = toE164(phone);
     if (e164.replace(/\D/g, "").length < 10) return setErr(labels.errPhoneReq);
     const mail = email.trim();
-    if (mail && !EMAIL_RE.test(mail)) return setErr(labels.errEmailBad);
+    if (!mail) return setErr(labels.errEmailReq);
+    if (!EMAIL_RE.test(mail)) return setErr(labels.errEmailBad);
     if (!consent) return setErr(labels.errConsent);
     void post({
-      mode: "demo",
       name: name.trim(),
       phone: e164,
       email: mail,
       day: picked.iso,
-      slot: window.id,
+      time: at.id,
       lang,
       consent: true,
     });
@@ -296,62 +278,6 @@ export default function Landing2Demo(
           {sent.texted ? labels.thanksSub : labels.thanksNoText}
         </p>
       </div>
-    );
-  }
-
-  const consentBox = (
-    <label class="l2-consent" for="demo-consent">
-      <input
-        id="demo-consent"
-        type="checkbox"
-        checked={consent}
-        onChange={(e) => setConsent((e.target as HTMLInputElement).checked)}
-      />
-      <span>
-        {labels.consent}
-        <a href={smsTermsPath}>{labels.consentTerms}</a>
-      </span>
-    </label>
-  );
-
-  if (view === "quick") {
-    return (
-      <form class="l2-stack" onSubmit={submitCall} data-cy="l2-demo-form">
-        <div class="l2-demo__row">
-          <label for="demo-phone" class="l2-sr">{labels.phone}</label>
-          <input
-            id="demo-phone"
-            class="l2-field"
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            placeholder="(555) 123-4567"
-            value={formatPhoneInput(phone)}
-            onInput={(e) => setPhone((e.target as HTMLInputElement).value)}
-          />
-          <button
-            type="submit"
-            class="l2-btn l2-btn--dark"
-            data-cy="l2-demo-call"
-            disabled={busy}
-          >
-            {busy ? labels.submitting : labels.callMe}
-          </button>
-        </div>
-        {err ? <p class="l2-error" role="alert">{err}</p> : null}
-        {consentBox}
-        <button
-          type="button"
-          class="l2-link-btn l2-link-btn--start"
-          data-cy="l2-pick-time"
-          onClick={() => {
-            setErr(null);
-            setView("pick");
-          }}
-        >
-          {labels.pickTimeLink}
-        </button>
-      </form>
     );
   }
 
@@ -439,19 +365,22 @@ export default function Landing2Demo(
           </button>
         </div>
       </div>
-      <div class="l2-demo__slots" role="group" aria-label={labels.pickSlot}>
-        {slots.map((s, i) => (
-          <button
-            type="button"
-            key={s.id}
-            class={`l2-slot ${i === slot ? "on" : ""}`}
-            data-cy="l2-slot"
-            aria-pressed={i === slot}
-            onClick={() => setSlot(i)}
-          >
-            {s.short[lang]}
-          </button>
-        ))}
+      <div>
+        <label class="l2-lbl" for="f-time">{labels.pickTime}</label>
+        <select
+          id="f-time"
+          class="l2-field l2-field--sm l2-select"
+          data-cy="l2-time"
+          value={at.id}
+          onChange={(e) => {
+            const i = times.findIndex((t) =>
+              t.id === (e.target as HTMLSelectElement).value
+            );
+            setTime(i < 0 ? 0 : i);
+          }}
+        >
+          {times.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+        </select>
       </div>
       <div class="l2-demo__pair">
         <div>
@@ -492,11 +421,22 @@ export default function Landing2Demo(
           onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
         />
       </div>
-      {consentBox}
+      <label class="l2-consent" for="demo-consent">
+        <input
+          id="demo-consent"
+          type="checkbox"
+          checked={consent}
+          onChange={(e) => setConsent((e.target as HTMLInputElement).checked)}
+        />
+        <span>
+          {labels.consent}
+          <a href={smsTermsPath}>{labels.consentTerms}</a>
+        </span>
+      </label>
       <div class="l2-summary" data-cy="l2-demo-summary">
         <strong>{labels.sumDemo}</strong> · {demoDayLabel(picked.iso, lang)} ·
         {" "}
-        {demoSlotLabel(window.id, lang)}
+        {demoTimeLabel(at.id, lang)}
       </div>
       {err ? <p class="l2-error" role="alert">{err}</p> : null}
       <button
@@ -506,17 +446,6 @@ export default function Landing2Demo(
         disabled={busy}
       >
         {busy ? labels.submitting : labels.submitDemo}
-      </button>
-      <button
-        type="button"
-        class="l2-link-btn l2-link-btn--start"
-        data-cy="l2-quick-mode"
-        onClick={() => {
-          setErr(null);
-          setView("quick");
-        }}
-      >
-        {labels.quickLink}
       </button>
     </form>
   );
