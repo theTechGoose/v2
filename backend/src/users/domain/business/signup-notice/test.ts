@@ -100,3 +100,11 @@ Deno.test("REQ-112 signupNoticeEmail — a paid pick waiting on its pay page say
   assertStringIncludes(paid.htmlBody, "<strong>What happened:</strong> paid");
   assertStringIncludes(paid.htmlBody, "<strong>Payment:</strong> paid");
 });
+
+Deno.test("REQ-113 signupNoticeEmail — a $99 sign-up that has not reached its payment page yet: the subject and the Plan row say Monster from the sign-up on, the payment none", () => {
+  const mail = signupNoticeEmail(bare({ ...byPhone, signupPlan: "monster" }), "signed up");
+  assertEquals(mail.subject, "DocuMonster signup — signed up — Monster — +15125550103");
+  assertStringIncludes(mail.htmlBody, "<strong>Plan:</strong> Monster</li>");
+  assertStringIncludes(mail.htmlBody, "<strong>Payment:</strong> none");
+  assertStringIncludes(mail.htmlBody, "<strong>Stage:</strong> signed up — nothing answered yet, next the name");
+});

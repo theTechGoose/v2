@@ -8,7 +8,9 @@
  * code, the backend stores Monster Free on the new account, and the wizard asks the initial
  * information — the name, the business, the email, then the state and the rest — without ever
  * showing the plan cards or the pay page behind the paid ones. The upgrade stays on /settings
- * (REQ-054). A Registrarme signup still meets the cards in the wizard, as before.
+ * (REQ-054). REQ-113: a paid card's Sign up carries its plan — the account names it from the code
+ * on, the pick is made the moment the wizard has the email, and the plan step is that plan's
+ * payment page, never the cards.
  *
  * On the fakes: the dev master code (000000) opens the account; the CRM is the in-process fake.
  */
@@ -176,7 +178,16 @@ Deno.test("REQ-104: a Monster Free signup on /landing2 — Empezar gratis — ge
     );
   }));
 
-Deno.test("REQ-104: Registrarme on a paid card is not a Monster Free signup — the wizard still asks the plan after the email, cards and pay page included", (t) =>
+/**
+ * REQ-113 — Raphael, 2026-10-21, the launch checklist: "Carry the selected plan from the
+ * landing-page button into signup so customers enter the correct flow." — and, told the $99 pick
+ * was asked again at the wizard's fourth step: "can we get #2 implemented?" The $99 card's Sign
+ * up names Monster with the code; the account carries the name from then on (the CRM's Signup
+ * Plan, the team's notice), and the moment the wizard has the email a paid pick needs the pick is
+ * made: the plan step shows Monster with the way to its payment page — never the cards — and
+ * paying there brings the person back with Monster active, the wizard moving on to the state.
+ */
+Deno.test("REQ-113: Sign up on the $99 card carries Monster into the wizard — the CRM reads Monster from the code on; after the name, the business and the email the plan step is Monster's payment page, no cards; paid there, the wizard goes on to the state with Monster active", (t) =>
   story(t, async ({ page, expect, http }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2?lang=en");
@@ -187,15 +198,30 @@ Deno.test("REQ-104: Registrarme on a paid card is not a Monster Free signup — 
     expect.eq(
       await stepCount(page),
       "10",
-      "ten steps: the plan is one of them",
+      "ten steps: the plan is one of them — where the payment page is",
     );
-    // nothing on record: the wizard is where the pick is made
-    const plan = await planOnRecord(http, page);
+    const headers = await sessionHeaders(page);
+    // the name is on the account from the code on; the pick waits for the email a paid pick needs
+    const me = await (await http("/api/me", { headers })).json();
+    expect.eq(me.signupPlan, "monster", "the account carries the plan the button named");
     expect(
-      plan === null,
-      `no plan on record for a paid signup (${JSON.stringify(plan)})`,
+      await planOnRecord(http, page) === null,
+      "no pick before the email",
     );
-    await fillStep(page, "input.welcome__input", "Paid Story");
+    // … and the CRM reads it, in its own lane (REQ-111): the team knows what was asked for before
+    // a single answer
+    const readCrm = async () => {
+      const text = await (await http("/api/me/crm-customer", { headers })).text();
+      return text ? JSON.parse(text) : null;
+    };
+    let crm = await readCrm();
+    for (let i = 0; i < 80 && crm?.signupPlan !== "Monster"; i++) {
+      await page.waitForTimeout(250);
+      crm = await readCrm();
+    }
+    expect.eq(crm?.signupPlan, "Monster", "the CRM's Signup Plan is Monster from the sign-up on");
+    expect.eq(crm?.tier, "Lead", "a Lead until the first month is paid");
+    await fillStep(page, "input.welcome__input", "Carried Story");
     await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("business called");
     await page.locator("[data-cy='welcome-skip']").click();
@@ -203,20 +229,56 @@ Deno.test("REQ-104: Registrarme on a paid card is not a Monster Free signup — 
     await fillStep(
       page,
       "input[type='email']",
-      `paid-${digits()}@blackhole.postmarkapp.com`,
+      `carried-${digits()}@blackhole.postmarkapp.com`,
     );
     await page.locator("[data-cy='welcome-continue']").click();
-    await expect.see("Pick your plan");
+    // the plan step is Monster's: the pick was made by the email; the page comes by the sweep (REQ-106)
+    await expect.see("Your plan");
     await expect.see("Step 4 of 10");
+    await page.locator("[data-cy='plan-pay-link']").waitFor({ timeout: 60_000 });
     expect.eq(
-      await page.locator("[data-cy='plan-pick-free']").count(),
-      1,
-      "Monster Free is a card here",
+      await page.locator("[data-cy='plan-pending'] b").textContent(),
+      "Monster",
+      "the plan the button named",
     );
+    await expect.see("Continue to payment");
     expect.eq(
-      await page.locator("[data-cy='plan-pick-monster']").count(),
-      1,
-      "and so is the plan the button named",
+      await page.locator("[data-cy^='plan-pick-']").count(),
+      0,
+      "no cards: the plan was picked on the landing page",
+    );
+    const pending = await planOnRecord(http, page);
+    expect(
+      pending?.planId === "monster" && pending?.status === "pending" &&
+        pending?.merchant === "primary",
+      `Monster, pending through primary (${JSON.stringify(pending)})`,
+    );
+    // the payment page is Monster's, the wizard its way back
+    await page.locator("[data-cy='plan-pay-link']").click();
+    await page.waitForURL(
+      (u: URL) =>
+        u.pathname === "/pay/fake" && u.searchParams.has("customer") &&
+        u.searchParams.has("due"),
+      { timeout: 60_000 },
+    );
+    const payPage = new URL(page.url());
+    const back = payPage.searchParams.get("return") ?? "";
+    expect(
+      back.includes("/plan/return?due=") && back.includes("back=%2Fwelcome"),
+      `the link carries the way back to the wizard (${back})`,
+    );
+    await expect.see("Test pay page");
+    await page.locator("[data-cy='fake-pay']").click();
+    await expect.see("Paid.");
+    await page.locator("[data-cy='fake-pay-back']").click();
+    await page.waitForURL((u: URL) => u.pathname === "/welcome", {
+      timeout: 60_000,
+    });
+    await expect.see("Which state");
+    const plan = await planOnRecord(http, page);
+    expect(
+      plan?.planId === "monster" && plan?.status === "active",
+      `Monster · active (${JSON.stringify(plan)})`,
     );
   }));
 

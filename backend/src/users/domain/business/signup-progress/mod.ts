@@ -90,7 +90,8 @@ export function signupProgress(s: SignupSnapshot): SignupProgress {
   const total = ONBOARDING_QUESTIONS.length;
   const answered = total - open.length;
   const next = open[0] ?? null;
-  const plan = planLabel(s.plan);
+  // REQ-113 — before the pick, the plan is the one the sign-up named with the code
+  const plan = planLabel(s.plan) || (s.user.signupPlan ? planOf(s.user.signupPlan).name : "");
   const payment = paymentStatus(s.plan);
   let stage: string;
   if (!next) stage = "onboarding complete";

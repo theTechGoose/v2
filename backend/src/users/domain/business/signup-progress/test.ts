@@ -58,3 +58,19 @@ Deno.test("REQ-111 signupProgress — every question answered is onboarding comp
   assertEquals(skipped.answered, 2);
   assertEquals(skipped.stage, "setup skipped — 2 of 9 answered, next the email");
 });
+
+Deno.test("REQ-113 signupProgress — the paid plan a sign-up named is the plan from the code on, before the pick: the plan question still open, payment none; the pick, once made, reads as it stands; a pick on record wins over the name", () => {
+  const named = signupProgress(snap({ user: { ...user, signupPlan: "monster" } }));
+  assertEquals([named.plan, named.payment, named.answered, named.next], ["Monster", "none", 0, "name"]);
+  assertEquals(named.stage, "signed up — nothing answered yet, next the name");
+  const assist = signupProgress(snap({ user: { ...user, name: "Ana", email: "ana@roof.test", signupPlan: "assist" }, identity: { userId: user.id, businessName: "Ana Roofing", createdAt: at, updatedAt: at } }));
+  assertEquals([assist.plan, assist.payment, assist.next], ["Monster Assist", "none", "plan"]);
+  assertEquals(assist.stage, "3 of 9 answered — next the plan");
+  // the pick the email made: pending on its page
+  const picked = signupProgress(snap({ user: { ...user, name: "Ana", email: "ana@roof.test", signupPlan: "monster" }, plan: plan("monster", "pending") }));
+  assertEquals([picked.plan, picked.payment], ["Monster", "awaiting payment"]);
+  assertEquals(picked.stage, "2 of 9 answered — next the business name · Monster picked, awaiting payment");
+  // a pick on record wins: Monster Free picked after a $199 name
+  const free = signupProgress(snap({ user: { ...user, signupPlan: "assist" }, plan: plan("free", "free") }));
+  assertEquals([free.plan, free.payment], ["Monster Free", "free"]);
+});

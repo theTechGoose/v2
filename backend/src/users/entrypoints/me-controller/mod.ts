@@ -126,6 +126,7 @@ export class MeController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const patch = parseUpdateUser(body);
     const updated = await this.users.update(user.id, patch);
+    await this.choosePlan.pickNamed(user.id); // REQ-113 — the email a paid sign-up's pick waited for: the pick, pending; the page by the sweep
     await this.leads.enqueueSync(user.id); // REQ-058/099 — the name and email reach the CRM customer, after this reply
     return updated;
   }
