@@ -47,13 +47,13 @@ Deno.test("REQ-054 choose-plan — nobody has a plan until they pick one; free i
   const user = await users.create({ phoneNumber: "+15125550101" });
   assertEquals(await flow.current(user.id), null);
   const plan = await flow.choose(user.id, "free");
-  await leads.drain(); // REQ-099 — the CRM hears the tier after the reply
+  await leads.idle(); // REQ-099 — the CRM hears the tier after the reply
   assertEquals(plan.planId, "free");
   assertEquals(plan.status, "free");
   assertEquals((await flow.current(user.id))?.status, "free");
   // REQ-062 — a free pick tells the CRM its tier (Lead) on the account's one customer; no due, no link
   const world = fakePaymentsWorld();
-  assertEquals([world.customers.length, world.customers[0]?.tier, world.dues.length, world.links.length], [1, "Lead", 0, 0], "a free plan raises nothing on the CRM");
+  assertEquals([world.customers.length, world.customers[0]?.tier, world.dues.length, world.links.length], [1, "Free", 0, 0], "a free plan raises nothing on the CRM; its tier is the ladder's Free rung (REQ-111)");
 });
 
 Deno.test("REQ-054 choose-plan — a paid plan makes the CRM customer, raises the first month as a due and mints its pay link", async () => {
@@ -276,13 +276,13 @@ Deno.test("REQ-061 choose-plan — back to free cancels the billing (and refuses
 Deno.test("REQ-062 choose-plan — the CRM's tier follows the plan: Monster the moment the first month settles, Lead again on the way back to free", async () => {
   const { users, leads, flow } = await fresh();
   const { user } = await paidAndActive(flow, leads, users, "+15125550601");
-  await leads.drain(); // REQ-099 — by the sweep, after the reply
+  await leads.idle(); // REQ-099 — by the sweep, after the reply
   const world = fakePaymentsWorld();
   const mine = () => world.customers.find((c) => c.externalRef === `pm:${user.id}`);
   assertEquals(mine()?.tier, "Monster", "told the CRM when the due settled");
   await flow.choose(user.id, "free");
-  await leads.drain();
-  assertEquals(mine()?.tier, "Lead", "told the CRM on the downgrade");
+  await leads.idle();
+  assertEquals(mine()?.tier, "Free", "told the CRM on the downgrade — the Free rung (REQ-111)");
   assertEquals(world.customers.length, 1);
 });
 
@@ -300,7 +300,7 @@ Deno.test("REQ-064 choose-plan — the test tier is a $1 one-time due with the m
   assertStringIncludes(plan.payUrl ?? "", "account=alpha");
   world.settle(plan.dueId!); // the $1 lands on the page; /plan/return refreshes
   const active = await flow.refresh(user.id);
-  await leads.drain(); // REQ-099
+  await leads.idle(); // REQ-099
   assertEquals(active.status, "active");
   assertEquals(active.subscriptionId, undefined, "a one-time charge starts no billing");
   assertEquals(world.subscriptions.length, 0);
@@ -383,8 +383,8 @@ Deno.test("REQ-104 choose-plan — a Monster Free signup stores free on an accou
   const free = await flow.startFree(fresh1.id);
   assertEquals([free.planId, free.status], ["free", "free"]);
   assertEquals((await plans.get(fresh1.id))?.status, "free");
-  await leads.drain();
-  assertEquals(world.customers.map((c) => c.tier), ["Lead"], "the CRM hears the tier, after the reply");
+  await leads.idle();
+  assertEquals(world.customers.map((c) => c.tier), ["Free"], "the CRM hears the tier — Free, the ladder's rung (REQ-111) — after the reply");
   // a second code on the same account: the record stands as it is
   assertEquals(await flow.startFree(fresh1.id), free);
   // a paid pick waiting on its pay page is never downgraded by a free signup on its number
@@ -401,4 +401,28 @@ Deno.test("REQ-104 choose-plan — a Monster Free signup stores free on an accou
   assertEquals([kept.planId, kept.status, kept.subscriptionId], ["monster", "active", active.subscriptionId]);
   assertEquals(world.subscriptions.map((s) => s.status), ["active"], "nothing canceled");
   assertEquals([world.dues.length, world.links.length], [1, 1], "nothing raised, nothing minted");
+});
+
+/**
+ * REQ-112 — "Whenever someone completes signup … automatically send an email to
+ * hello@documonster.com. Include … payment status where applicable." A paid pick whose due settles
+ * is a completed signup: the notice goes out with "paid" — on the fakes, logged (REQ-318).
+ */
+Deno.test("REQ-112 choose-plan — the first month settling sends the signup notice with 'paid' and the plan on it, after the reply", async () => {
+  const { users, leads, flow } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125551121", email: "p@roof.test", name: "Pat" });
+  const pending = await pick(flow, leads, user.id, "monster", "/welcome");
+  const logged: string[] = [];
+  const log = console.log;
+  console.log = (...args: unknown[]) => logged.push(args.map(String).join(" "));
+  try {
+    fakePaymentsWorld().settle(pending.dueId!);
+    const active = await flow.refresh(user.id);
+    assertEquals(active.status, "active");
+    await leads.idle();
+  } finally {
+    console.log = log;
+  }
+  const notice = logged.find((l) => l.includes("[signup-notice] fakes: would mail hello@documonster.com"));
+  assertStringIncludes(notice ?? "(no notice logged)", "DocuMonster signup — paid — Monster — +15125551121");
 });

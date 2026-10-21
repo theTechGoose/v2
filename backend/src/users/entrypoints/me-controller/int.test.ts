@@ -92,9 +92,54 @@ Deno.test("REQ-099 the wizard's saves — PUT /me, PUT /profile/identity, POST /
     while ((await outbox.list()).length > 0 && Date.now() - t1 < 5000) await new Promise((r) => setTimeout(r, 20));
     assertEquals(await outbox.list(), [], "landed → cleared");
     const last = seen[seen.length - 1];
-    assertEquals([last.customerName, last.contact, last.tier], ["Ana Roofing", "Ana", "Lead"], "the CRM ends up with the profile as last saved");
+    assertEquals([last.customerName, last.contact, last.tier], ["Ana Roofing", "Ana", "Free"], "the CRM ends up with the profile as last saved — on the free plan, the Free rung (REQ-111)");
   } finally {
     release();
+    await app.close();
+    twilio === undefined ? Deno.env.delete("TWILIO_ACCOUNT_SID") : Deno.env.set("TWILIO_ACCOUNT_SID", twilio);
+    await resetKv();
+  }
+});
+
+/**
+ * REQ-112 — "Whenever someone completes signup for Monster Free, Monster, or Monster Assist,
+ * automatically send an email to hello@documonster.com." Leaving the wizard — done, or Skip setup
+ * for now — enqueues the notice with what happened; the sweep mails it after the reply (on the
+ * fakes: logged, REQ-318), with the plan, the stage and everything collected on it.
+ */
+Deno.test("REQ-112 POST /me/onboarded sends the signup notice after the reply — 'completed onboarding', or 'skipped setup' — with the plan and the stage on it", async () => {
+  const twilio = Deno.env.get("TWILIO_ACCOUNT_SID");
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("TWILIO_ACCOUNT_SID");
+  Deno.env.delete("PPWK_PAYMENTS_URL");
+  Deno.env.delete("PPWK_PAYMENTS_TOKEN");
+  await resetKv();
+  const app = new DanetApplication();
+  await app.init(TestApp);
+  await app.listen(PORT + 1);
+  const base = `http://localhost:${PORT + 1}`;
+  const json = { "content-type": "application/json" };
+  const logged: string[] = [];
+  const log = console.log;
+  console.log = (...args: unknown[]) => logged.push(args.map(String).join(" "));
+  try {
+    for (const [phone, skipped, reason] of [["+15125551122", false, "completed onboarding"], ["+15125551123", true, "skipped setup"]] as const) {
+      const sent = await (await fetch(`${base}/auth/send-otp`, { method: "POST", headers: json, body: JSON.stringify({ phoneNumber: phone, language: "en" }) })).json();
+      const v = await (await fetch(`${base}/auth/verify-otp`, { method: "POST", headers: json, body: JSON.stringify({ phoneNumber: phone, code: sent.devCode, plan: "free" }) })).json();
+      const h = { ...json, "x-session-id": v.sessionId };
+      await (await fetch(`${base}/me`, { method: "PUT", headers: h, body: JSON.stringify({ name: "Ana", email: `${phone.slice(-4)}@roof.test` }) })).body?.cancel();
+      await (await fetch(`${base}/profile/identity`, { method: "PUT", headers: h, body: JSON.stringify({ businessName: "Ana Roofing" }) })).body?.cancel();
+      const left = await fetch(`${base}/me/onboarded`, { method: "POST", headers: h, body: JSON.stringify({ skipped }) });
+      await left.body?.cancel();
+      assertEquals(left.status, 200);
+      const outbox = new CrmCaptureOutbox();
+      const t0 = Date.now();
+      while ((await outbox.list()).length > 0 && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 20));
+      const notice = logged.filter((l) => l.includes("[signup-notice] fakes: would mail") && l.includes(phone));
+      assert(notice.some((l) => l.includes(`DocuMonster signup — ${reason} — Monster Free — ${phone}`)), `the notice says ${reason} with the plan (${notice.join(" | ")})`);
+    }
+  } finally {
+    console.log = log;
     await app.close();
     twilio === undefined ? Deno.env.delete("TWILIO_ACCOUNT_SID") : Deno.env.set("TWILIO_ACCOUNT_SID", twilio);
     await resetKv();

@@ -110,6 +110,7 @@ export class ChoosePlan {
     if (next === plan) return plan;
     const active = await this.projected(await this.plans.put(next));
     await this.leads.enqueueSync(userId); // REQ-062/099 — a paying customer: the CRM's tier is the plan's name, after this reply
+    await this.leads.enqueueSignupNotice(userId, "paid"); // REQ-112 — the team hears the payment landed, with the plan on it
     return active;
   }
 

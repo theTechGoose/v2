@@ -37,6 +37,7 @@ import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
+import { type NoticeReason, noticeReasonOf } from "@users/domain/business/signup-notice/mod.ts";
 import { type PickBack, pickBackOf } from "@users/domain/business/plan/mod.ts";
 import { isDue } from "@users/domain/business/lead-capture-retry/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
@@ -80,9 +81,10 @@ export class CrmLeadCapture {
   }
 
   /** REQ-103 — the new account's email to hello@documonster.com, durable at once; mailed by the
-   *  sweep this starts, never by the sign-up's reply */
-  async enqueueSignupNotice(userId: string): Promise<void> {
-    await this.outbox.addSignupNotice(userId, Date.now());
+   *  sweep this starts, never by the sign-up's reply. REQ-112 — saying what happened: signed up,
+   *  completed onboarding, skipped setup, paid */
+  async enqueueSignupNotice(userId: string, reason: NoticeReason = "signed up"): Promise<void> {
+    await this.outbox.addSignupNotice(userId, reason, Date.now());
     this.kick();
   }
 
@@ -102,6 +104,13 @@ export class CrmLeadCapture {
    *  a reply whose work rides the outbox (a sweep kicked while one runs follows it, REQ-099) */
   async idle(): Promise<void> {
     while (this.inFlight) await this.inFlight;
+  }
+
+  /** Danet's app-close hook (called by name on every injectable): the app closing waits for the
+   *  sweep in flight, so its records land in the store it read them from, never in whatever store
+   *  opens next (a test's fresh KV saw another test's user deferred into it, REQ-112) */
+  async onAppClose(): Promise<void> {
+    await this.idle();
   }
 
   /** never rejects (REQ-073): a sweep that cannot read its outbox is logged and the records wait */
@@ -132,7 +141,7 @@ export class CrmLeadCapture {
       }
       const who = rec.kind === "signup-notice" ? `signup notice for ${rec.userId}` : rec.kind === "pay-link" ? `pay page of ${rec.userId}` : rec.userId ? `customer of ${rec.userId}` : rec.phone;
       try {
-        if (rec.kind === "signup-notice") await this.notice.send(rec.userId ?? ""); // REQ-103
+        if (rec.kind === "signup-notice") await this.notice.send(rec.userId ?? "", noticeReasonOf(rec.reason)); // REQ-103/112
         else if (rec.kind === "pay-link") await this.payLink.mint(rec.userId ?? "", pickBackOf(rec.back)); // REQ-106
         else if (rec.userId) await this.crm.ensure(rec.userId); // REQ-098
         else await this.crm.capture(rec.phone);

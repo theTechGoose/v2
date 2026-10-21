@@ -58,9 +58,13 @@ export function customerNameFor(
 export const LEAD_TIER = "Lead";
 
 /** REQ-062 — the tier the CRM customer wears: a paid plan that is current (or a month being
- *  retried) is the plan's name; anything else — nothing picked, free, a pick not paid yet — is Lead */
+ *  retried) is the plan's name; nothing picked, or a pick not paid yet, is Lead. REQ-111 — the free
+ *  plan is the CRM ladder's own Free rung ("on the free plan — the first upsell call"), so the
+ *  selected plan reads on the record. */
+export const FREE_TIER = "Free";
 export function tierFor(plan: UserPlan | null): string {
-  if (!plan || plan.planId === "free") return LEAD_TIER;
+  if (!plan) return LEAD_TIER;
+  if (plan.planId === "free") return FREE_TIER;
   if (plan.status !== "active" && plan.status !== "past_due") return LEAD_TIER;
   const pricing = planOf(plan.planId);
   if (isOneTime(pricing)) return LEAD_TIER; // REQ-064 — a test charge is not a membership

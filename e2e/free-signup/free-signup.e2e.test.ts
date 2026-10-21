@@ -254,3 +254,49 @@ Deno.test("REQ-107: Sign up on the $99 card opens the signup card saying Get sta
     expect.eq(((await page.locator("[data-cy='l2-plan-cta'][data-plan='monster']").textContent()) ?? "").trim(), "Registrarme", "the $99 card's button says Registrarme");
   }));
 
+/**
+ * REQ-111 — Raphael, 2026-10-21, the launch checklist: "CRITICAL — Save incomplete signups. For
+ * Monster Free, Monster, and Monster Assist, save any and all information collected, even if the
+ * customer does not complete signup. Capture contact information as early as possible so we can
+ * call and help them finish. Include their selected plan and the exact stage they reached so the
+ * team knows how to follow up. Make these incomplete signups accessible to the team."
+ * The CRM customer the sign-up made (REQ-058) carries, after every save, the selected plan and the
+ * exact stage; a Monster Free signup sits on the CRM ladder's Free rung. The fake CRM echoes what
+ * it was told; the real one shows the two beside the lead once it holds the columns (its own REQ).
+ */
+Deno.test("REQ-111: a Monster Free signup that stops after three questions is on the CRM with its plan, its stage — 4 of 9 answered, next the state — and everything typed so far", (t) =>
+  story(t, async ({ page, expect, http }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/landing2?lang=en");
+    await enterThrough(page, "free");
+    await signUpOnCard(page);
+    await expect.see("what should we call you");
+    await fillStep(page, "input.welcome__input", "Stage Story");
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("business called");
+    await fillStep(page, "input.welcome__input", "Stage Story Roofing");
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("best email");
+    await fillStep(page, "input[type='email']", `stage-${digits()}@blackhole.postmarkapp.com`);
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("Which state");
+    // … and the person leaves. The CRM already has them, with the plan and the stage: the sync rides
+    // the outbox after each reply (REQ-098/099), so the record is read until it says so
+    const headers = await sessionHeaders(page);
+    const read = async () => {
+      const text = await (await http("/api/me/crm-customer", { headers })).text();
+      return text ? JSON.parse(text) : null;
+    };
+    let crm = await read();
+    for (let i = 0; i < 40 && !(crm && crm.signupStage === "4 of 9 answered — next the state"); i++) {
+      await page.waitForTimeout(250);
+      crm = await read();
+    }
+    expect(crm !== null, "the CRM knows the account");
+    expect.eq(crm.signupPlan, "Monster Free", "the selected plan is on the record");
+    expect.eq(crm.signupStage, "4 of 9 answered — next the state", "the exact stage reached");
+    expect.eq(crm.tier, "Free", "on the CRM ladder's Free rung");
+    expect.eq(crm.customerName, "Stage Story Roofing", "the business typed so far");
+    expect.eq(crm.contact, "Stage Story", "the person typed so far");
+    expect(typeof crm.customerEmail === "string" && crm.customerEmail.startsWith("stage-"), `the email typed so far (${crm.customerEmail})`);
+  }));

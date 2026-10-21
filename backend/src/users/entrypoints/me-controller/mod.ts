@@ -145,6 +145,7 @@ export class MeController {
     const skipped = Boolean((body as { skipped?: unknown } | null)?.skipped);
     const marked = await this.users.markOnboarded(user.id, skipped);
     await this.leads.enqueueSync(user.id); // REQ-058/099 — onboarding done: the CRM customer reads what it entered, after this reply
+    await this.leads.enqueueSignupNotice(user.id, skipped ? "skipped setup" : "completed onboarding"); // REQ-112 — the team hears it, with everything collected
     return marked;
   }
 

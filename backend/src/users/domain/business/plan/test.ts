@@ -170,7 +170,7 @@ Deno.test("REQ-062 plan — the CRM tier is Lead until a paid plan is current, t
   const base = { userId: "u-1", chosenAt: "2026-10-02T00:00:00.000Z", updatedAt: "2026-10-02T00:00:00.000Z" };
   assertEquals(LEAD_TIER, "Lead");
   assertEquals(tierFor(null), "Lead", "nothing picked yet");
-  assertEquals(tierFor({ ...base, planId: "free", status: "free" }), "Lead");
+  assertEquals(tierFor({ ...base, planId: "free", status: "free" }), "Free", "REQ-111 — on the free plan: the CRM ladder's Free rung (the first upsell call), the selected plan on the record");
   assertEquals(tierFor({ ...base, planId: "monster", status: "pending" }), "Lead", "not paid yet");
   assertEquals(tierFor({ ...base, planId: "monster", status: "active" }), "Monster");
   assertEquals(tierFor({ ...base, planId: "assist", status: "active" }), "Monster Assist");
