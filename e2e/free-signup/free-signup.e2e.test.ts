@@ -94,6 +94,27 @@ async function signUpOnCard(page: StoryTools["page"]): Promise<void> {
   });
 }
 
+/** the served app answers as 127.0.0.1 (the gate's BASE_URL) AND as localhost (APP_URL — the host
+ *  the fake's pay page and the return address are minted on, REQ-057/059): the session the code
+ *  left on one name is carried to the other, so the pay page knows who is paying (REQ-113) */
+async function carrySession(
+  page: StoryTools["page"],
+  baseUrl: string,
+): Promise<void> {
+  const cookies = (await page.context().cookies()).filter((c) =>
+    c.name === "pm_session" || c.name === "pm_lang"
+  );
+  if (!cookies.some((c) => c.name === "pm_session")) {
+    throw new Error("no pm_session cookie after the code");
+  }
+  const hosts = new Set([new URL(baseUrl).hostname, "localhost", "127.0.0.1"]);
+  await page.context().addCookies(
+    [...hosts].flatMap((domain) =>
+      cookies.map((c) => ({ name: c.name, value: c.value, domain, path: "/" }))
+    ),
+  );
+}
+
 /** how many steps the wizard says it has */
 const stepCount = async (page: StoryTools["page"]) =>
   await page.locator(".welcome__progressbar").getAttribute("aria-valuemax");
@@ -188,12 +209,13 @@ Deno.test("REQ-104: a Monster Free signup on /landing2 — Empezar gratis — ge
  * paying there brings the person back with Monster active, the wizard moving on to the state.
  */
 Deno.test("REQ-113: Sign up on the $99 card carries Monster into the wizard — the CRM reads Monster from the code on; after the name, the business and the email the plan step is Monster's payment page, no cards; paid there, the wizard goes on to the state with Monster active", (t) =>
-  story(t, async ({ page, expect, http }) => {
+  story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2?lang=en");
     await expect.see("Get started in 30 seconds");
     await enterThrough(page, "monster");
     await signUpOnCard(page);
+    await carrySession(page, baseUrl);
     await expect.see("what should we call you");
     expect.eq(
       await stepCount(page),
