@@ -350,7 +350,13 @@ Deno.test("REQ-062: a person who never finishes is 'unknown dragon mcdragonson' 
     const body = await r.json();
     const cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
     const auth = { ...JSON_HEADERS, cookie };
+    // the sign-up's sync rides the outbox AFTER the reply (REQ-098): give the sweep a moment under the
+    // gate's workers, the way REQ-060's story does (REQ-118's gate read the record before it landed)
     let crm = await crmCustomer(http, auth);
+    for (let i = 0; i < 40 && !(crm && crm.externalRef === `pm:${body.userId}`); i++) {
+      await page.waitForTimeout(250);
+      crm = await crmCustomer(http, auth);
+    }
     expect.eq(crm?.customerName, "unknown dragon mcdragonson", "the unfinished sign-up is the unnamed dragon");
     expect.eq(crm?.customerPhone, phone, "by phone");
     expect.eq(crm?.tier, "Lead", "a lead on the CRM");
