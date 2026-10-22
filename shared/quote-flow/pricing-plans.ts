@@ -6,17 +6,21 @@
  *   Monster Free         $0/month         unlimited invoices, max 5 quotes/month
  *   Monster              $99/month        the full self-service platform
  *   Monster Assist       $199/month       platform + phone/text/email help
+ *   Monster Assist+      $399/month       higher-level expert assistance (REQ-118)
  *   Monster Projects     custom           scoped per customer — no number shown
- *   Monster Assist Plus  $399–$599/month  higher-level expert assistance    HIDDEN
+ *
+ * REQ-118 (Raphael, 2026-10-22: "add another tier called monster assist + 399"):
+ * the tier Hans's email kept off the site as "Monster Assist Plus, $399–$599,
+ * an onboarding/phone upsell" is a public tier now — Monster Assist+, one
+ * price, $399 a month — listed after Monster Assist on every pricing section
+ * and a card in onboarding and in settings like the other paid plans.
  *
  * Only `public` plans render on the pricing sections — the pages iterate
- * `PUBLIC_PLANS`, never `PRICING_PLANS`. Monster Assist Plus is an
- * onboarding/phone upsell ("will not be displayed as a standard website
- * plan"): it stays in this list so sales has ONE source for what it costs and
- * includes, but no page lists it. Monster Projects IS on the site as the
- * custom card, but its structure ($600–$2,000/month of scoped work, or 1%–6%
- * of profit on qualifying jobs) is "discussed directly with customers rather
- * than displayed" — so the card says Custom and carries no figure.
+ * `PUBLIC_PLANS`, never `PRICING_PLANS`; the $1 test tier (REQ-064) is the one
+ * hidden plan. Monster Projects IS on the site as the custom card, but its
+ * structure ($600–$2,000/month of scoped work, or 1%–6% of profit on
+ * qualifying jobs) is "discussed directly with customers rather than
+ * displayed" — so the card says Custom and carries no figure.
  *
  * This module is the SINGLE source for what each plan costs AND for what each
  * plan includes. Both live landing pages read it:
@@ -44,10 +48,8 @@ export interface PlanFeature {
 export interface PricingPlan {
   id: string;
   name: string;
-  /** Monthly price; the low end for a tier quoted as a range. */
+  /** Monthly price. */
   priceCents: number;
-  /** High end of a range ("$399–$599/month"). Absent = a single price. */
-  priceMaxCents?: number;
   /**
    * Priced per engagement: the card shows "Custom" and no figure, and
    * `priceCents` is 0 only because a number is required.
@@ -160,6 +162,28 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
       },
     ],
   },
+  // REQ-118 — "add another tier called monster assist + 399": the fourth card, after Monster Assist
+  {
+    id: "assist-plus",
+    name: "Monster Assist+",
+    priceCents: 39900,
+    period: "monthly",
+    public: true,
+    blurb:
+      "Everything in Monster Assist, plus higher-level expert and business help.",
+    features: [
+      {
+        id: "everything-in-assist",
+        en: "Everything in Monster Assist",
+        es: "Todo lo de Monster Assist",
+      },
+      {
+        id: "expert-assistance",
+        en: "Higher-level expert & business assistance",
+        es: "Asesoría experta y de negocio de alto nivel",
+      },
+    ],
+  },
   {
     id: "projects",
     name: "Monster Projects",
@@ -184,28 +208,6 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
         id: "scoped-with-you",
         en: "Monthly or performance-based — agreed with you",
         es: "Mensual o por resultados — acordado contigo",
-      },
-    ],
-  },
-  // ---- Hidden tier: onboarding/phone upsell, never listed on a page. ----
-  {
-    id: "assist-plus",
-    name: "Monster Assist Plus",
-    priceCents: 39900,
-    priceMaxCents: 59900,
-    period: "monthly",
-    public: false,
-    blurb: "Higher-level expert and business assistance.",
-    features: [
-      {
-        id: "everything-in-assist",
-        en: "Everything in Monster Assist",
-        es: "Todo lo de Monster Assist",
-      },
-      {
-        id: "expert-assistance",
-        en: "Higher-level expert & business assistance",
-        es: "Asesoría experta y de negocio de alto nivel",
       },
     ],
   },

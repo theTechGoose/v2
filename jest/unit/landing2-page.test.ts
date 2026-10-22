@@ -82,10 +82,11 @@ describe("REQ-081 /landing2 is wired to the site's one sources", () => {
     for (const src2 of SOURCES.map(read)) {
       expect(src2).not.toMatch(/Facturas ilimitadas|Unlimited invoices/);
     }
-    // REQ-088: three cards and a line — the line names the custom plan from the list, not by hand
+    // REQ-088: the cards and a line — the line names the custom plan from the list, not by hand;
+    // REQ-118: Monster Assist+ is the fourth card
     expect(src).toMatch(/data-cy="l2-projects"/);
     expect(src).not.toMatch(/Monster Projects/);
-    expect(CARD_PLANS.map((p) => p.id)).toEqual(["free", "monster", "assist"]);
+    expect(CARD_PLANS.map((p) => p.id)).toEqual(["free", "monster", "assist", "assist-plus"]);
     expect(LINE_PLANS.map((p) => p.id)).toEqual(["projects"]);
   });
 
@@ -733,6 +734,22 @@ describe("REQ-107 the signup card says Get started, not Start free", () => {
     expect(en["landing2.plan.monster.cta"]).toBe("Sign up");
     expect(en["landing2.plan.assist.cta"]).toBe("Sign up");
     expect(es["landing2.plan.monster.cta"]).toBe("Registrarme");
+  });
+
+  // REQ-118 — Raphael, 2026-10-22: "add another tier called monster assist + 399"
+  test("REQ-118 Monster Assist+ is the fourth card: its line and its button are in both dictionaries (Sign up / Registrarme, the day rate of $399), the card is dressed by its id, and the plans grid holds four", () => {
+    expect(CARD_PLANS.map((p) => p.id)).toContain("assist-plus");
+    expect(planById("assist-plus").priceCents).toBe(39900);
+    for (const d of [en, es]) {
+      expect(typeof d["landing2.plan.assist-plus.sub"]).toBe("string");
+      expect(d["landing2.plan.assist-plus.sub"]).toMatch(/\$13\.30/); // $399 a month, a day
+      expect(typeof d["landing2.plan.assist-plus.cta"]).toBe("string");
+    }
+    expect(en["landing2.plan.assist-plus.sub"]).not.toBe(es["landing2.plan.assist-plus.sub"]);
+    expect(en["landing2.plan.assist-plus.cta"]).toBe("Sign up");
+    expect(es["landing2.plan.assist-plus.cta"]).toBe("Registrarme");
+    expect(read(PAGE)).toMatch(/"assist-plus": \{ btn: "l2-btn--ghost" \}/);
+    expect(read(CSS)).toMatch(/\.l2-three--plans \{\s*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
   });
 });
 

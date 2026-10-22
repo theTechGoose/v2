@@ -30,14 +30,22 @@ async function sessionHeaders(
   return { cookie: `pm_session=${session.value}` };
 }
 
-/** an island may still be hydrating when its button appears: click until the page shows the effect */
+/** an island may still be hydrating when its button appears: click until the page shows the effect.
+ *  The effect may land between a poll and the next click and take the button with it (the code
+ *  step replacing Send the code) — so each click is asked for again first and waits 2 s at most
+ *  (the race REQ-118's third gate caught in landing2's twin of this helper). */
 async function clickUntil(
   page: StoryTools["page"],
   selector: string,
   done: () => Promise<boolean>,
 ): Promise<void> {
   for (let attempt = 0; attempt < 10; attempt++) {
-    await page.locator(selector).click();
+    if (await done()) return;
+    try {
+      await page.locator(selector).click({ timeout: 2_000 });
+    } catch {
+      // the button is gone or not clickable yet: the polls below say whether the effect landed
+    }
     for (let i = 0; i < 5; i++) {
       if (await done()) return;
       await page.waitForTimeout(200);

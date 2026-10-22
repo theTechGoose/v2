@@ -1,7 +1,8 @@
 {
   "workspace": [
     "./backend",
-    "./front-end"
+    "./front-end",
+    "./e2e"
   ],
   "nodeModulesDir": "manual",
   "tasks": {

@@ -895,9 +895,9 @@ export default define.page(async function Landing(ctx) {
 
           {
             /* Only the PUBLIC plans (Monster Free, Monster, Monster Assist,
-              Monster Projects) render here — Monster Assist Plus is a
-              phone/onboarding upsell and is never listed. Projects is priced
-              per engagement, so its card says Custom and carries no figure. Both cards read shared/quote-flow/pricing-plans.ts,
+              Monster Assist+ since REQ-118, Monster Projects) render here —
+              the $1 test tier is never listed. Projects is priced per
+              engagement, so its card says Custom and carries no figure. Every card reads shared/quote-flow/pricing-plans.ts,
               the same list /landing renders. The data-i18n keys stay so the
               client-side language toggle keeps working. */
           }
@@ -1004,7 +1004,8 @@ export default define.page(async function Landing(ctx) {
               </a>
             </div>
 
-            <div class="tier tier--custom" data-cy="pricing-plan">
+            {/* REQ-118 — Monster Assist+, the fourth tier, after Monster Assist */}
+            <div class="tier" data-cy="pricing-plan">
               <div
                 class="tier-name"
                 data-i18n="price.t4.name"
@@ -1012,8 +1013,11 @@ export default define.page(async function Landing(ctx) {
               >
                 {t("price.t4.name")}
               </div>
-              <div class="tier-price" data-i18n="price.t4.price">
-                {t("price.t4.price")}
+              <div class="tier-price">
+                {TIER_PRICE["assist-plus"]}
+                <span class="permo" data-i18n="price.permo">
+                  {t("price.permo")}
+                </span>
               </div>
               <p class="tier-blurb" data-i18n="price.t4.blurb">
                 {t("price.t4.blurb")}
@@ -1022,6 +1026,36 @@ export default define.page(async function Landing(ctx) {
                 {PUBLIC_PLANS[3].features.map((f, i) => (
                   <li key={f.id} data-i18n={`price.t4.f${i + 1}`}>
                     {t(`price.t4.f${i + 1}`)}
+                  </li>
+                ))}
+              </ul>
+              <a
+                href="#contact"
+                class="btn btn-outline tier-cta cta-scroll"
+                data-i18n="price.plans.cta"
+              >
+                {t("price.plans.cta")}
+              </a>
+            </div>
+
+            <div class="tier tier--custom" data-cy="pricing-plan">
+              <div
+                class="tier-name"
+                data-i18n="price.t5.name"
+                data-cy="pricing-plan-name"
+              >
+                {t("price.t5.name")}
+              </div>
+              <div class="tier-price" data-i18n="price.t5.price">
+                {t("price.t5.price")}
+              </div>
+              <p class="tier-blurb" data-i18n="price.t5.blurb">
+                {t("price.t5.blurb")}
+              </p>
+              <ul class="tier-list">
+                {PUBLIC_PLANS[4].features.map((f, i) => (
+                  <li key={f.id} data-i18n={`price.t5.f${i + 1}`}>
+                    {t(`price.t5.f${i + 1}`)}
                   </li>
                 ))}
               </ul>
