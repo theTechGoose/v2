@@ -55,6 +55,18 @@ async function crmCustomer(http: StoryTools["http"], auth: Record<string, string
   return await (await http("/api/me/crm-customer", { headers: auth })).json();
 }
 
+/** REQ-099 — a plan's tier reaches the CRM by the sweep AFTER the reply: read the customer until it
+ *  wears the tier (10 s at most), so the gate's workers cannot read the record before the sweep lands
+ *  (REQ-118's gate did: "expected Monster, got Lead") */
+async function crmCustomerWithTier(http: StoryTools["http"], auth: Record<string, string>, tier: string) {
+  let customer = await crmCustomer(http, auth);
+  for (let i = 0; i < 40 && customer?.tier !== tier; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    customer = await crmCustomer(http, auth);
+  }
+  return customer;
+}
+
 /** REQ-059 — click a plan card (a form: the pick is a redirect): THIS tab goes to the pay page —
  *  on fakes the app's own /pay/fake (REQ-057), carrying the customer, the due and the way back.
  *  Hands back that url. */
@@ -377,7 +389,7 @@ Deno.test("REQ-062: a person who never finishes is 'unknown dragon mcdragonson' 
     await payAndGoBack(page, expect);
     await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
     await expect.see("Monster is active");
-    crm = await crmCustomer(http, auth);
+    crm = await crmCustomerWithTier(http, auth, "Monster"); // the tier lands by the sweep (REQ-099)
     expect.eq(crm?.tier, "Monster", "a paying customer carries the plan as its tier");
     expect.eq(crm?.customerName, "Dragon Story", "the same record");
   }));
@@ -592,6 +604,6 @@ Deno.test("REQ-118: Monster Assist+ is a $399 tier — priced on the front page,
     expect.eq(await page.locator("[data-cy='plan-pick-assist']").count(), 1, "Monster Assist stays a card");
     const plan = await (await http("/api/me/plan", { headers: auth })).json();
     expect(plan.planId === "assist-plus" && plan.status === "active", `assist-plus · active (${JSON.stringify(plan)})`);
-    const customer = await crmCustomer(http, auth);
+    const customer = await crmCustomerWithTier(http, auth, "Monster Assist+"); // the tier lands by the sweep (REQ-099)
     expect.eq(customer?.tier, "Monster Assist+", "the CRM's tier is the plan's name");
   }));
