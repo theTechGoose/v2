@@ -485,3 +485,35 @@ Deno.test("REQ-113 choose-plan — a paid sign-up names its plan with the code: 
     before === undefined ? Deno.env.delete("APP_URL") : Deno.env.set("APP_URL", before);
   }
 });
+
+/**
+ * REQ-118 — Raphael, 2026-10-22: "add another tier called monster assist + 399". Monster Assist+
+ * is a public $399 monthly plan, picked and billed like Monster and Monster Assist: the first
+ * month is a $399 due named for it, paid it is active with a $399 monthly billing, and the CRM
+ * customer's tier is its name; a sign-up can name it with the code (REQ-113).
+ */
+Deno.test("REQ-118 choose-plan — Monster Assist+ is picked like any paid plan: a $399 first-month due named for it, active once paid with a $399 monthly billing, the CRM tier Monster Assist+; a sign-up naming it with the code is kept and picked when the email lands", async () => {
+  const { users, identity, plans, leads, flow } = await fresh();
+  const world = fakePaymentsWorld();
+  const user = await users.create({ phoneNumber: "+15125551181", email: "plus@roof.test", name: "Pat" });
+  await identity.upsert(user.id, { businessName: "Pat Builders" });
+  const pending = await pick(flow, leads, user.id, "assist-plus");
+  assertEquals([pending.planId, pending.status, pending.merchant], ["assist-plus", "pending", "primary"]);
+  assertEquals(world.dues.map((d) => [d.customerId, d.amountCents, d.memo, d.open]), [[pending.customerId, 39900, "Monster Assist+ — first month", true]]);
+  assertEquals(world.customers.map((c) => [c.customerName, c.tier]), [["Pat Builders", "Lead"]], "a Lead until the first month is paid");
+  world.settle(pending.dueId!);
+  const active = await flow.refresh(user.id);
+  await leads.idle(); // REQ-099 — the tier reaches the CRM by the sweep
+  assertEquals([active.planId, active.status], ["assist-plus", "active"]);
+  assertEquals(world.subscriptions.map((s) => [s.externalRef, s.status, s.amountCents]), [[`pm:${user.id}:assist-plus`, "active", 39900]]);
+  assertEquals(world.customers.map((c) => [c.customerName, c.tier]), [["Pat Builders", "Monster Assist+"]], "the plan's name is the tier");
+  // the $399 card's Sign up names it with the code (REQ-113): kept on the account, picked once the email lands
+  const byPhone = await users.create({ phoneNumber: "+15125551182" });
+  await flow.signupNamed(byPhone.id, "assist-plus");
+  assertEquals((await users.get(byPhone.id)).signupPlan, "assist-plus", "the name is on the account");
+  assertEquals(await plans.get(byPhone.id), null, "no pick without the email a paid pick needs");
+  await users.update(byPhone.id, { email: "plus2@roof.test" });
+  const named = await flow.pickNamed(byPhone.id);
+  assertEquals([named?.planId, named?.status, named?.merchant], ["assist-plus", "pending", "primary"]);
+  await leads.idle();
+});

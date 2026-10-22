@@ -7,10 +7,12 @@
  *   Monster Free         $0/month        unlimited invoices, max 5 quotes/month
  *   Monster              $99/month       full self-service platform
  *   Monster Assist       $199/month      platform + phone/text/email help
+ *   Monster Assist+      $399/month      higher-level expert assistance (REQ-118: on the site)
  *   Monster Projects     custom          scoped per customer, no figure shown
- *   Monster Assist Plus  $399–$599/month HIDDEN — onboarding/phone upsell
  *
- * No percentage fee on any membership plan.
+ * REQ-118 (Raphael, 2026-10-22: "add another tier called monster assist + 399") — the tier Hans's
+ * email kept hidden as "Monster Assist Plus $399–$599" is a public $399 tier now, after Monster
+ * Assist. No percentage fee on any membership plan.
  * Target: shared/quote-flow/pricing-plans.ts
  */
 import {
@@ -21,17 +23,19 @@ import {
 } from "../../shared/quote-flow/pricing-plans";
 
 describe("PRICING_PLANS", () => {
-  it("lists exactly four PUBLIC plans, in site order", () => {
+  it("lists exactly five PUBLIC plans, in site order — Monster Assist+ after Monster Assist (REQ-118)", () => {
     expect(PUBLIC_PLANS.map((p) => p.id)).toEqual([
       "free",
       "monster",
       "assist",
+      "assist-plus",
       "projects",
     ]);
     expect(PUBLIC_PLANS.map((p) => p.name)).toEqual([
       "Monster Free",
       "Monster",
       "Monster Assist",
+      "Monster Assist+",
       "Monster Projects",
     ]);
     expect(PUBLIC_PLANS.every((p) => p.public)).toBe(true);
@@ -74,21 +78,27 @@ describe("PRICING_PLANS", () => {
     expect(projects.name).toBe("Monster Projects");
     expect(projects.public).toBe(true);
     expect(projects.custom).toBe(true);
-    expect(projects.priceMaxCents).toBeUndefined();
     for (const f of projects.features) {
       expect(f.en + f.es).not.toMatch(/\$|\d+\s?%/);
     }
   });
 
-  it("Monster Assist Plus is the ONE hidden tier (onboarding/phone upsell)", () => {
+  // REQ-118 — Raphael, 2026-10-22: "add another tier called monster assist + 399"
+  it("REQ-118 Monster Assist+ is $399/month, public and monthly, right after Monster Assist — one price, no range; the $1 test tier is the one hidden plan left", () => {
     const plus = planById("assist-plus");
-    expect(plus.name).toBe("Monster Assist Plus");
+    expect(plus.name).toBe("Monster Assist+");
     expect(plus.priceCents).toBe(39900);
-    expect(plus.priceMaxCents).toBe(59900);
-    expect(plus.public).toBe(false);
-    // REQ-064 — the $1 test tier is hidden too
+    expect(plus.period).toBe("monthly");
+    expect(plus.public).toBe(true);
+    expect(plus.custom).toBeUndefined();
+    expect("priceMaxCents" in plus).toBe(false);
+    expect(planFeatures("assist-plus", "en")[0]).toBe("Everything in Monster Assist");
+    expect(planFeatures("assist-plus", "es")[0]).toBe("Todo lo de Monster Assist");
+    expect(plus.features.length).toBeGreaterThanOrEqual(2);
+    const ids = PUBLIC_PLANS.map((p) => p.id);
+    expect(ids.indexOf("assist-plus")).toBe(ids.indexOf("assist") + 1);
+    // REQ-064 — the $1 test tier stays hidden; nothing else is
     expect(PRICING_PLANS.filter((p) => !p.public).map((p) => p.id)).toEqual([
-      "assist-plus",
       "test",
     ]);
   });

@@ -1,8 +1,8 @@
 // REQ-054 — the plan a person picked: free, or a paid plan that is pending until the first
 // month's due settles on the CRM's pay page, then active.
 import { merchantOf, type PickBack, pickBackOf } from "@users/domain/business/plan/mod.ts";
-/** test — REQ-064: the hidden $1 one-time test tier */
-export type PlanId = "free" | "monster" | "assist" | "test";
+/** assist-plus — REQ-118: Monster Assist+, the $399 tier; test — REQ-064: the hidden $1 one-time test tier */
+export type PlanId = "free" | "monster" | "assist" | "assist-plus" | "test";
 /** past_due — REQ-061: the CRM could not collect the latest month; the person pays it on the pay page */
 export type PlanStatus = "free" | "pending" | "active" | "past_due";
 /** REQ-106 — why a pending pick has no pay page yet: the CRM has no account by the name the pick
