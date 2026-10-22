@@ -55,6 +55,18 @@ async function crmCustomer(http: StoryTools["http"], auth: Record<string, string
   return await (await http("/api/me/crm-customer", { headers: auth })).json();
 }
 
+/** REQ-099 — a plan's tier reaches the CRM by the sweep AFTER the reply: read the customer until it
+ *  wears the tier (10 s at most), so the gate's workers cannot read the record before the sweep lands
+ *  (REQ-118's gate did: "expected Monster, got Lead") */
+async function crmCustomerWithTier(http: StoryTools["http"], auth: Record<string, string>, tier: string) {
+  let customer = await crmCustomer(http, auth);
+  for (let i = 0; i < 40 && customer?.tier !== tier; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    customer = await crmCustomer(http, auth);
+  }
+  return customer;
+}
+
 /** REQ-059 — click a plan card (a form: the pick is a redirect): THIS tab goes to the pay page —
  *  on fakes the app's own /pay/fake (REQ-057), carrying the customer, the due and the way back.
  *  Hands back that url. */
@@ -197,7 +209,7 @@ Deno.test("REQ-055 + REQ-059: on settings the paid plans are cards; a pick goes 
     await expect.see("$199");
     await expect.see("Everything in Monster Free");
     await expect.see("Phone, text & email help from our team");
-    expect.eq(await page.locator("[data-cy^='plan-pick-']").count(), 2, "two cards: Monster and Monster Assist");
+    expect.eq(await page.locator("[data-cy^='plan-pick-']").count(), 3, "three cards: Monster, Monster Assist and Monster Assist+ (REQ-118)");
     await expect.notSee("Upgrade to Monster");
     // the card is the pick AND the way to the pay page: one click, this tab
     const payPage = await pickGoesToPayPage(page, "plan-pick-monster");
@@ -350,7 +362,13 @@ Deno.test("REQ-062: a person who never finishes is 'unknown dragon mcdragonson' 
     const body = await r.json();
     const cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
     const auth = { ...JSON_HEADERS, cookie };
+    // the sign-up's sync rides the outbox AFTER the reply (REQ-098): give the sweep a moment under the
+    // gate's workers, the way REQ-060's story does (REQ-118's gate read the record before it landed)
     let crm = await crmCustomer(http, auth);
+    for (let i = 0; i < 40 && !(crm && crm.externalRef === `pm:${body.userId}`); i++) {
+      await page.waitForTimeout(250);
+      crm = await crmCustomer(http, auth);
+    }
     expect.eq(crm?.customerName, "unknown dragon mcdragonson", "the unfinished sign-up is the unnamed dragon");
     expect.eq(crm?.customerPhone, phone, "by phone");
     expect.eq(crm?.tier, "Lead", "a lead on the CRM");
@@ -371,7 +389,7 @@ Deno.test("REQ-062: a person who never finishes is 'unknown dragon mcdragonson' 
     await payAndGoBack(page, expect);
     await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
     await expect.see("Monster is active");
-    crm = await crmCustomer(http, auth);
+    crm = await crmCustomerWithTier(http, auth, "Monster"); // the tier lands by the sweep (REQ-099)
     expect.eq(crm?.tier, "Monster", "a paying customer carries the plan as its tier");
     expect.eq(crm?.customerName, "Dragon Story", "the same record");
   }));
@@ -531,4 +549,61 @@ Deno.test("REQ-106: a paid pick answers at once — the hand-off page says the p
     expect(plan.planId === "monster" && plan.status === "active" && plan.dueId === payPage.searchParams.get("due") && plan.customerId === payPage.searchParams.get("customer"), `monster · active, paid on the page the hand-off opened (${JSON.stringify(plan)})`);
     const customer = await crmCustomer(http, auth);
     expect(customer.customerId === plan.customerId && customer.customerName === "Handoff Builders", `the due was raised on the account's own customer, named by the business entered in onboarding (${JSON.stringify(customer)})`);
+  }));
+
+/**
+ * REQ-118 — Raphael, 2026-10-22: "add another tier called monster assist + 399". Monster Assist+
+ * is a $399 monthly tier of the one plan list: priced on every landing page after Monster
+ * Assist, a card in onboarding and in settings, picked and paid like Monster and Monster Assist,
+ * its name the CRM customer's tier once the first month is paid.
+ */
+Deno.test("REQ-118: Monster Assist+ is a $399 tier — priced on the front page, on /landing and on /landing2, a card in onboarding and in settings; picked from settings it goes to the pay page, and paid there it is active, its tier on the CRM", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    // the front page: five cards from the one list, Monster Assist+ fourth at $399
+    await page.goto("/?lang=en");
+    await page.locator("#pricing").scrollIntoViewIfNeeded();
+    await expect.see("Monster Assist+");
+    await expect.see("$399");
+    const names = (await page.locator("#pricing [data-cy='pricing-plan-name']").allTextContents()).map((s) => s.trim());
+    expect.eq(names.join(" | "), "Monster Free | Monster | Monster Assist | Monster Assist+ | Monster Projects", "five cards on the front page, in the list's order");
+    // /landing: the same five
+    await page.goto("/landing?lang=en");
+    await page.locator("#pricing").scrollIntoViewIfNeeded();
+    await expect.see("Monster Assist+");
+    await expect.see("$399");
+    const promo = (await page.locator("#pricing [data-cy='pricing-plan-name']").allTextContents()).map((s) => s.trim());
+    expect.eq(promo.join(" | "), "Monster Free | Monster | Monster Assist | Monster Assist+ | Monster Projects", "five cards on /landing, in the list's order");
+    // /landing2: a fourth card whose Sign up names the plan (REQ-113)
+    await page.goto("/landing2?lang=en");
+    await page.locator("[data-cy='l2-plans']").scrollIntoViewIfNeeded();
+    await expect.see("Monster Assist+");
+    await expect.see("$399");
+    expect.eq(await page.locator("[data-cy='l2-plan'][data-plan='assist-plus'] [data-cy='l2-plan-cta']").count(), 1, "the $399 card's Sign up names assist-plus");
+    // onboarding: a card beside Monster and Monster Assist
+    const { auth } = await signIn(http, page, baseUrl, { name: "Plus Story", email: `plus-${digits()}@blackhole.postmarkapp.com` });
+    await page.goto("/welcome");
+    await fillStep(page, "input.welcome__input", "Plus Story Builders");
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("best email");
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("Pick your plan");
+    await expect.see("$399");
+    expect.eq(await page.locator("[data-cy='plan-pick-assist-plus']").count(), 1, "Monster Assist+ is a card in onboarding");
+    // settings: the pick goes to the pay page in this tab; paid there, the receipt brings the person back with it active
+    await page.goto("/settings");
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await expect.see("$399");
+    expect.eq(await page.locator("[data-cy^='plan-pick-']").count(), 3, "three paid cards: Monster, Monster Assist and Monster Assist+");
+    const payPage = await pickGoesToPayPage(page, "plan-pick-assist-plus");
+    expect.eq(payPage.searchParams.get("account"), "primary", "through the one real account (REQ-100)");
+    await payAndGoBack(page, expect);
+    await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
+    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await expect.see("Monster Assist+ is active");
+    expect.eq(await page.locator("[data-cy='plan-pick-assist-plus']").count(), 0, "no card for the active plan");
+    expect.eq(await page.locator("[data-cy='plan-pick-assist']").count(), 1, "Monster Assist stays a card");
+    const plan = await (await http("/api/me/plan", { headers: auth })).json();
+    expect(plan.planId === "assist-plus" && plan.status === "active", `assist-plus · active (${JSON.stringify(plan)})`);
+    const customer = await crmCustomerWithTier(http, auth, "Monster Assist+"); // the tier lands by the sweep (REQ-099)
+    expect.eq(customer?.tier, "Monster Assist+", "the CRM's tier is the plan's name");
   }));

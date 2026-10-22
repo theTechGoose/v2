@@ -5,14 +5,14 @@ import type { PayLinkError, PlanId, UserPlan } from "@users/dto/plan.ts";
 import type { SignupPlan } from "@users/dto/user.ts";
 
 /** REQ-113 — the plans a sign-up can name with the code and carry into the wizard: the paid ones
- *  (free is stored outright, REQ-104); anything else names nothing */
+ *  (free is stored outright, REQ-104; assist-plus since REQ-118); anything else names nothing */
 export function signupPlanOf(raw: unknown): SignupPlan | null {
-  return raw === "monster" || raw === "assist" ? raw : null;
+  return raw === "monster" || raw === "assist" || raw === "assist-plus" ? raw : null;
 }
 
-/** the plans a person can pick: the public monthly ones; Projects is custom — "call us";
- *  test — REQ-064: the hidden $1 one-time tier, picked only from /plan/test */
-export const SELECTABLE_PLAN_IDS: readonly PlanId[] = ["free", "monster", "assist", "test"];
+/** the plans a person can pick: the public monthly ones (assist-plus since REQ-118); Projects is
+ *  custom — "call us"; test — REQ-064: the hidden $1 one-time tier, picked only from /plan/test */
+export const SELECTABLE_PLAN_IDS: readonly PlanId[] = ["free", "monster", "assist", "assist-plus", "test"];
 
 export function isSelectable(id: string): id is PlanId {
   return (SELECTABLE_PLAN_IDS as readonly string[]).includes(id);

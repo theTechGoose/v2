@@ -144,9 +144,13 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "price.t3.name": "Monster Assist",
     "price.t3.blurb":
       "Everything in Monster, plus a real person on call by phone, text or email.",
-    "price.t4.name": "Monster Projects",
-    "price.t4.price": "Custom",
+    // REQ-118 — Monster Assist+ is the fourth tier; Monster Projects moves to the fifth
+    "price.t4.name": "Monster Assist+",
     "price.t4.blurb":
+      "Everything in Monster Assist, plus higher-level expert and business help.",
+    "price.t5.name": "Monster Projects",
+    "price.t5.price": "Custom",
+    "price.t5.blurb":
       "For bigger or specialized work outside the standard plans. Scoped directly with you.",
     "cta.eyebrow": "Let’s go",
     "cta.h2": "Ready to get the paperwork off your plate?",
@@ -299,9 +303,13 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "price.t3.name": "Monster Assist",
     "price.t3.blurb":
       "Todo lo de Monster, más una persona real por teléfono, texto o correo.",
-    "price.t4.name": "Monster Projects",
-    "price.t4.price": "A medida",
+    // REQ-118 — Monster Assist+ is the fourth tier; Monster Projects moves to the fifth
+    "price.t4.name": "Monster Assist+",
     "price.t4.blurb":
+      "Todo lo de Monster Assist, más asesoría experta y de negocio de alto nivel.",
+    "price.t5.name": "Monster Projects",
+    "price.t5.price": "A medida",
+    "price.t5.blurb":
       "Para trabajos grandes o especializados fuera de los planes estándar. Lo definimos contigo.",
     "cta.eyebrow": "Vamos",
     "cta.h2": "¿Listo para quitarte el papeleo de encima?",
@@ -341,8 +349,8 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
  * `price.t<tier>.f<n>` data-i18n keys this page's markup and client-side
  * language toggle use. `/` and `/landing` sold the same prices with
  * different promises until this became a single list. Only the PUBLIC plans
- * are projected — Monster Assist Plus is a phone/onboarding upsell and never
- * reaches a page.
+ * are projected (five since REQ-118: Monster Assist+ is t4, Monster Projects
+ * t5) — the $1 test tier never reaches a page.
  */
 for (const lang of ["en", "es"] as const) {
   PUBLIC_PLANS.forEach((plan, tier) => {

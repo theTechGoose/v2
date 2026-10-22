@@ -156,14 +156,22 @@ const top = (page: StoryTools["page"], selector: string) =>
     el.getBoundingClientRect().top + globalThis.scrollY
   );
 
-/** an island may still be hydrating when its button appears: click until the page shows the effect */
+/** an island may still be hydrating when its button appears: click until the page shows the effect.
+ *  The effect may land between a poll and the next click and take the button with it (the thanks
+ *  card replacing Book My Demo) — so each click is asked for again first and waits 2 s at most, never
+ *  the 15 s that failed REQ-097 under the gate's workers (REQ-118's third gate). */
 async function clickUntil(
   page: StoryTools["page"],
   selector: string,
   done: () => Promise<boolean>,
 ): Promise<void> {
   for (let attempt = 0; attempt < 10; attempt++) {
-    await page.locator(selector).click();
+    if (await done()) return;
+    try {
+      await page.locator(selector).click({ timeout: 2_000 });
+    } catch {
+      // the button is gone or not clickable yet: the polls below say whether the effect landed
+    }
     for (let i = 0; i < 5; i++) {
       if (await done()) return;
       await page.waitForTimeout(200);
@@ -327,7 +335,7 @@ Deno.test("REQ-088: /landing2 is the v3 mock top to bottom — Spanish first, En
     await page.locator("body").press("Shift"); // a frame of the lower half on the phone
   }));
 
-Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the three plan cards and the Projects line, the FAQ's four points, the final CTA and the sticky bar — every link lands where it says, and WhatsApp is nowhere", (t) =>
+Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the four plan cards (REQ-118) and the Projects line, the FAQ's four points, the final CTA and the sticky bar — every link lands where it says, and WhatsApp is nowhere", (t) =>
   story(t, async ({ page, expect }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2?lang=en");
@@ -379,7 +387,7 @@ Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the th
       1,
       "the one phone button of the team",
     );
-    // the plans: three cards from the one list — names, prices, features — and the Projects line
+    // the plans: the cards from the one list (four, REQ-118) — names, prices, features — and the Projects line
     const cards = page.locator("[data-cy='l2-plan']");
     expect.eq(
       await cards.count(),
