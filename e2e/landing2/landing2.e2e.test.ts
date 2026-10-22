@@ -156,14 +156,22 @@ const top = (page: StoryTools["page"], selector: string) =>
     el.getBoundingClientRect().top + globalThis.scrollY
   );
 
-/** an island may still be hydrating when its button appears: click until the page shows the effect */
+/** an island may still be hydrating when its button appears: click until the page shows the effect.
+ *  The effect may land between a poll and the next click and take the button with it (the thanks
+ *  card replacing Book My Demo) — so each click is asked for again first and waits 2 s at most, never
+ *  the 15 s that failed REQ-097 under the gate's workers (REQ-118's third gate). */
 async function clickUntil(
   page: StoryTools["page"],
   selector: string,
   done: () => Promise<boolean>,
 ): Promise<void> {
   for (let attempt = 0; attempt < 10; attempt++) {
-    await page.locator(selector).click();
+    if (await done()) return;
+    try {
+      await page.locator(selector).click({ timeout: 2_000 });
+    } catch {
+      // the button is gone or not clickable yet: the polls below say whether the effect landed
+    }
     for (let i = 0; i < 5; i++) {
       if (await done()) return;
       await page.waitForTimeout(200);
