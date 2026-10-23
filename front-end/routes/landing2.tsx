@@ -90,12 +90,11 @@ const TEAM = [
   { n: 2, img: "/team-ben.jpg" },
 ];
 
-/** how each priced plan's card is dressed — the mock's three columns plus REQ-118's fourth, by plan id */
+/** how each priced plan's card is dressed — the mock's three columns, by plan id */
 const PLAN_LOOK: Record<string, { featured?: boolean; btn: string }> = {
   free: { btn: "l2-btn--ghost" },
   monster: { featured: true, btn: "l2-btn--primary" },
   assist: { btn: "l2-btn--ghost" },
-  "assist-plus": { btn: "l2-btn--ghost" },
 };
 const DEFAULT_LOOK = { btn: "l2-btn--ghost" };
 
@@ -409,7 +408,7 @@ export default define.page(function Landing2(ctx) {
             </div>
           </div>
 
-          {/* ---------- plans: four cards (REQ-118) and the Projects line ---------- */}
+          {/* ---------- plans: three cards and the Projects line — the hidden upgrade tier is settings' alone (REQ-119) ---------- */}
           <div id="planes" class="l2-wrap l2-plans" data-cy="l2-plans">
             <div class="l2-plans__head">
               <span class="l2-eyebrow l2-eyebrow--forest">

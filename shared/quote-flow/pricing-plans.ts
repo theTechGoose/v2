@@ -6,18 +6,24 @@
  *   Monster Free         $0/month         unlimited invoices, max 5 quotes/month
  *   Monster              $99/month        the full self-service platform
  *   Monster Assist       $199/month       platform + phone/text/email help
- *   Monster Assist+      $399/month       higher-level expert assistance (REQ-118)
+ *   Monster Assist+      $399/month       higher-level expert assistance (REQ-118) — HIDDEN:
+ *                                         a card in the settings upgrade panel only (REQ-119)
  *   Monster Projects     custom           scoped per customer — no number shown
  *
  * REQ-118 (Raphael, 2026-10-22: "add another tier called monster assist + 399"):
  * the tier Hans's email kept off the site as "Monster Assist Plus, $399–$599,
- * an onboarding/phone upsell" is a public tier now — Monster Assist+, one
- * price, $399 a month — listed after Monster Assist on every pricing section
- * and a card in onboarding and in settings like the other paid plans.
+ * an onboarding/phone upsell" is Monster Assist+, one price, $399 a month,
+ * after Monster Assist in this list, picked and billed like the other paid
+ * plans. REQ-119 (Raphael, 2026-10-23: "the monster assist + is a hidden item
+ * that can only be shown in the settings upgrade panel not on the onboarding
+ * panel."): it is hidden — not on any pricing section, not a card in
+ * onboarding — and offered in ONE place, the settings Plan panel (`upgrade`).
  *
  * Only `public` plans render on the pricing sections — the pages iterate
- * `PUBLIC_PLANS`, never `PRICING_PLANS`; the $1 test tier (REQ-064) is the one
- * hidden plan. Monster Projects IS on the site as the custom card, but its
+ * `PUBLIC_PLANS`, never `PRICING_PLANS`; the hidden plans are Monster Assist+
+ * (REQ-119) and the $1 test tier (REQ-064). The two card lists below are the
+ * only ones the app's pages render: `ONBOARDING_PLANS` in the wizard's plan
+ * step, `UPGRADE_PLANS` in settings. Monster Projects IS on the site as the custom card, but its
  * structure ($600–$2,000/month of scoped work, or 1%–6% of profit on
  * qualifying jobs) is "discussed directly with customers rather than
  * displayed" — so the card says Custom and carries no figure.
@@ -57,10 +63,18 @@ export interface PricingPlan {
   custom?: boolean;
   period: "monthly" | "yearly" | "one-time";
   /**
-   * Listed on the public pricing sections? `false` = sold only as an
-   * onboarding/phone upsell — never rendered on a page.
+   * Listed on the public pricing sections and in onboarding? `false` = never
+   * on a pricing page and never a card in onboarding: the $1 test tier
+   * (REQ-064, picked only from /plan/test) and Monster Assist+ (REQ-119,
+   * `upgrade`).
    */
   public: boolean;
+  /**
+   * REQ-119 — a hidden plan the settings upgrade panel still offers as a card:
+   * a person with an account moves up to it from settings, and from nowhere
+   * else. Only Monster Assist+.
+   */
+  upgrade?: boolean;
   blurb?: string;
   /**
    * Hard caps. Absent = unlimited. Display-only for now: enforcing the
@@ -162,13 +176,15 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
       },
     ],
   },
-  // REQ-118 — "add another tier called monster assist + 399": the fourth card, after Monster Assist
+  // REQ-118 — "add another tier called monster assist + 399", after Monster Assist; REQ-119 — "a hidden
+  // item that can only be shown in the settings upgrade panel not on the onboarding panel"
   {
     id: "assist-plus",
     name: "Monster Assist+",
     priceCents: 39900,
     period: "monthly",
-    public: true,
+    public: false,
+    upgrade: true,
     blurb:
       "Everything in Monster Assist, plus higher-level expert and business help.",
     features: [
@@ -234,6 +250,22 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
 /** The plans the pricing sections list, in display order. */
 export const PUBLIC_PLANS: readonly PricingPlan[] = PRICING_PLANS.filter(
   (p) => p.public,
+);
+
+/**
+ * REQ-054 — the cards onboarding's plan step offers: the public monthly plans
+ * (Projects is custom — "call us"; the hidden plans are not offered here).
+ */
+export const ONBOARDING_PLANS: readonly PricingPlan[] = PUBLIC_PLANS.filter(
+  (p) => !p.custom && p.period === "monthly",
+);
+
+/**
+ * REQ-054/REQ-119 — the cards the settings upgrade panel offers: onboarding's,
+ * and the hidden plans sold only as an upgrade from there (Monster Assist+).
+ */
+export const UPGRADE_PLANS: readonly PricingPlan[] = PRICING_PLANS.filter(
+  (p) => (p.public || p.upgrade) && !p.custom && p.period === "monthly",
 );
 
 /** Look one plan up by id. Throws — a missing plan id is a wiring bug. */

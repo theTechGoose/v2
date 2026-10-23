@@ -3,9 +3,10 @@ import { plainToInstance } from "#class-transformer";
 
 export type Language = "en" | "es";
 
-/** REQ-113 — the paid plans a sign-up can name with the code (the landing's $99, $199 and — REQ-118 —
- *  $399 cards); free is stored as the plan at once (REQ-104) */
-export type SignupPlan = "monster" | "assist" | "assist-plus";
+/** REQ-113 — the paid plans a sign-up can name with the code (the landing's $99 and $199 cards);
+ *  free is stored as the plan at once (REQ-104). Never assist-plus: hidden from the site, no card
+ *  names it — it is picked from settings alone (REQ-119) */
+export type SignupPlan = "monster" | "assist";
 
 export interface User {
   id: string;

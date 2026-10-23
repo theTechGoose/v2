@@ -30,7 +30,7 @@ import {
 } from "../clients/profile.ts";
 import { isAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
-import { PRICING_PLANS, PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import { ONBOARDING_PLANS, PRICING_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
 import { handoffOf, handoffPage, pickErrorOf, resumesAfterPlan } from "../lib/plan-return.ts";
 import { askedSteps, asksPlan, awaitsNamedPick, indexAfterPlan, planStepView } from "../lib/welcome-steps.ts";
@@ -1001,7 +1001,8 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
 
 
 // REQ-054 — "in onboarding a user can pick their plan": the public monthly plans of the one
-// pricing module, as the cards /settings shows too (PlanCards). A card is a form (REQ-059): a
+// pricing module (ONBOARDING_PLANS), as cards like the ones /settings shows (PlanCards) — though
+// not the hidden Monster Assist+, which is settings' alone (REQ-119). A card is a form (REQ-059): a
 // paid pick is REDIRECTED to the CRM's pay page in this tab — the receipt brings the person back
 // to /plan/return, which reads the plan active, and the wizard resumes past this step; free is
 // stored and the wizard resumes at the next step. A pick still waiting on its page resumes
@@ -1017,7 +1018,7 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
   const plan = ctx.snap.plan ?? null;
   const lang = langSignal.value;
   const hasEmail = Boolean(ctx.snap.user.email?.trim());
-  const plans = PUBLIC_PLANS.filter((p) => !p.custom && p.period === "monthly");
+  const plans = ONBOARDING_PLANS; // REQ-119 — the public monthly plans; the hidden Monster Assist+ is settings' alone
   const nameOf = (id: string) => PRICING_PLANS.find((p) => p.id === id)?.name ?? id; // REQ-064 — the test tier has a name too
   // a pick the backend refused came back here saying why (/plan/pick)
   const [err, setErr] = useState("");

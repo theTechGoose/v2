@@ -83,10 +83,10 @@ describe("REQ-081 /landing2 is wired to the site's one sources", () => {
       expect(src2).not.toMatch(/Facturas ilimitadas|Unlimited invoices/);
     }
     // REQ-088: the cards and a line — the line names the custom plan from the list, not by hand;
-    // REQ-118: Monster Assist+ is the fourth card
+    // REQ-119: three cards — Monster Assist+ is hidden from the site
     expect(src).toMatch(/data-cy="l2-projects"/);
     expect(src).not.toMatch(/Monster Projects/);
-    expect(CARD_PLANS.map((p) => p.id)).toEqual(["free", "monster", "assist", "assist-plus"]);
+    expect(CARD_PLANS.map((p) => p.id)).toEqual(["free", "monster", "assist"]);
     expect(LINE_PLANS.map((p) => p.id)).toEqual(["projects"]);
   });
 
@@ -736,20 +736,23 @@ describe("REQ-107 the signup card says Get started, not Start free", () => {
     expect(es["landing2.plan.monster.cta"]).toBe("Registrarme");
   });
 
-  // REQ-118 — Raphael, 2026-10-22: "add another tier called monster assist + 399"
-  test("REQ-118 Monster Assist+ is the fourth card: its line and its button are in both dictionaries (Sign up / Registrarme, the day rate of $399), the card is dressed by its id, and the plans grid holds four", () => {
-    expect(CARD_PLANS.map((p) => p.id)).toContain("assist-plus");
-    expect(planById("assist-plus").priceCents).toBe(39900);
+  // REQ-118 — Raphael, 2026-10-22: "add another tier called monster assist + 399"; REQ-119 — Raphael,
+  // 2026-10-23: "the monster assist + is a hidden item that can only be shown in the settings upgrade
+  // panel not on the onboarding panel."
+  test("REQ-119 Monster Assist+ is not a card on /landing2: three cards from the list, no line or button for it in either dictionary, no look by its id, and the plans grid is the three columns of .l2-three", () => {
+    expect(CARD_PLANS.map((p) => p.id)).toEqual(["free", "monster", "assist"]);
     for (const d of [en, es]) {
-      expect(typeof d["landing2.plan.assist-plus.sub"]).toBe("string");
-      expect(d["landing2.plan.assist-plus.sub"]).toMatch(/\$13\.30/); // $399 a month, a day
-      expect(typeof d["landing2.plan.assist-plus.cta"]).toBe("string");
+      expect(d["landing2.plan.assist-plus.sub"]).toBeUndefined();
+      expect(d["landing2.plan.assist-plus.cta"]).toBeUndefined();
+      expect(Object.keys(d).filter((k) => k.startsWith("landing2.plan."))).toEqual(
+        expect.arrayContaining(["landing2.plan.free.sub", "landing2.plan.monster.sub", "landing2.plan.assist.sub"]),
+      );
     }
-    expect(en["landing2.plan.assist-plus.sub"]).not.toBe(es["landing2.plan.assist-plus.sub"]);
-    expect(en["landing2.plan.assist-plus.cta"]).toBe("Sign up");
-    expect(es["landing2.plan.assist-plus.cta"]).toBe("Registrarme");
-    expect(read(PAGE)).toMatch(/"assist-plus": \{ btn: "l2-btn--ghost" \}/);
-    expect(read(CSS)).toMatch(/\.l2-three--plans \{\s*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
+    expect(read(PAGE)).not.toMatch(/assist-plus/);
+    expect(read(PAGE)).not.toMatch(/Assist\+/);
+    const plans = /\.l2-three--plans \{([^}]*)\}/.exec(read(CSS))?.[1] ?? "";
+    expect(plans).not.toMatch(/grid-template-columns/);
+    expect(read(CSS)).toMatch(/\.l2-three \{\s*display: grid;\s*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
   });
 });
 

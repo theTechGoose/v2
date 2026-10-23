@@ -250,8 +250,9 @@ export default define.page(function PromoLanding(ctx) {
             <p class="pm-pricing__sub">{t("pricingSub")}</p>
             {
               /* Only the PUBLIC plans (Monster Free, Monster, Monster Assist,
-                Monster Assist+ since REQ-118, Monster Projects) render here —
-                the $1 test tier is never listed. Projects is priced
+                Monster Projects) render here — the hidden upgrade tier is a
+                card in the settings upgrade panel alone (REQ-119), and the $1
+                test tier is never listed. Projects is priced
                 per engagement: Custom label, no figure, call-us CTA. Every card reads shared/quote-flow/pricing-plans.ts,
                 the same list "/" renders, so the two pages can no longer
                 promise different things at the same price. */
@@ -321,28 +322,6 @@ export default define.page(function PromoLanding(ctx) {
                 </a>
               </div>
 
-              {/* REQ-118 — Monster Assist+, the fourth card, after Monster Assist */}
-              <div class="pm-plan" data-cy="pricing-plan">
-                <h3 class="pm-plan__name" data-cy="pricing-plan-name">
-                  {t("pricingAssistPlusName")}
-                </h3>
-                <div class="pm-plan__price">
-                  {TIER_PRICE["assist-plus"]}
-                  <span class="pm-plan__cadence">{t("pricingPerMonth")}</span>
-                </div>
-                <p class="pm-plan__blurb">{t("pricingAssistPlusBlurb")}</p>
-                <ul class="pm-plan__feats">
-                  {PUBLIC_PLANS[3].features.map((f) => (
-                    <li key={f.id}>
-                      <Check /> {lang === "es" ? f.es : f.en}
-                    </li>
-                  ))}
-                </ul>
-                <a href="#trial" class="pm-btn pm-btn--ghost pm-plan__cta">
-                  {t("pricingCta")}
-                </a>
-              </div>
-
               <div class="pm-plan pm-plan--custom" data-cy="pricing-plan">
                 <h3 class="pm-plan__name" data-cy="pricing-plan-name">
                   {t("pricingProjectsName")}
@@ -350,7 +329,7 @@ export default define.page(function PromoLanding(ctx) {
                 <div class="pm-plan__price">{t("pricingCustom")}</div>
                 <p class="pm-plan__blurb">{t("pricingProjectsBlurb")}</p>
                 <ul class="pm-plan__feats">
-                  {PUBLIC_PLANS[4].features.map((f) => (
+                  {PUBLIC_PLANS[3].features.map((f) => (
                     <li key={f.id}>
                       <Check /> {lang === "es" ? f.es : f.en}
                     </li>

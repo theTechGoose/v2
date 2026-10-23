@@ -100,12 +100,11 @@ describe("REQ-104 the wizard skips the plan step once the plan is Monster Free",
  * (PUT /me); the plan step reads that pick instead of showing the cards.
  */
 describe("REQ-113 a paid sign-up carries its plan into the wizard's plan step", () => {
-  const user = (signupPlan?: "monster" | "assist" | "assist-plus", email?: string) => ({ signupPlan, email });
+  const user = (signupPlan?: "monster" | "assist", email?: string) => ({ signupPlan, email });
 
   test("REQ-113 the plan step reads the pick the sign-up named once the email is on the account — never before the email, never over a pick on record, never without a name", () => {
     expect(awaitsNamedPick({ user: user("monster", "a@b.test"), plan: null })).toBe(true);
     expect(awaitsNamedPick({ user: user("assist", "a@b.test") })).toBe(true);
-    expect(awaitsNamedPick({ user: user("assist-plus", "a@b.test") })).toBe(true); // REQ-118
     expect(awaitsNamedPick({ user: user("monster"), plan: null })).toBe(false);
     expect(awaitsNamedPick({ user: user("monster", "  "), plan: null })).toBe(false);
     expect(awaitsNamedPick({ user: user(undefined, "a@b.test"), plan: null })).toBe(false);

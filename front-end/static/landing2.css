@@ -391,7 +391,6 @@
   gap: 18px;
 }
 .l2-three--plans {
-  grid-template-columns: repeat(4, minmax(0, 1fr)); /* REQ-118: four cards */
   gap: 20px;
   align-items: stretch;
 }

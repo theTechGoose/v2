@@ -335,7 +335,7 @@ Deno.test("REQ-088: /landing2 is the v3 mock top to bottom — Spanish first, En
     await page.locator("body").press("Shift"); // a frame of the lower half on the phone
   }));
 
-Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the four plan cards (REQ-118) and the Projects line, the FAQ's four points, the final CTA and the sticky bar — every link lands where it says, and WhatsApp is nowhere", (t) =>
+Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the three plan cards (REQ-119: Monster Assist+ is hidden) and the Projects line, the FAQ's four points, the final CTA and the sticky bar — every link lands where it says, and WhatsApp is nowhere", (t) =>
   story(t, async ({ page, expect }) => {
     await page.setViewportSize(DESKTOP);
     await page.goto("/landing2?lang=en");
@@ -387,7 +387,7 @@ Deno.test("REQ-088: the proof band, the three outcome cards, Art and Ben, the fo
       1,
       "the one phone button of the team",
     );
-    // the plans: the cards from the one list (four, REQ-118) — names, prices, features — and the Projects line
+    // the plans: the cards from the one list (three — Monster Assist+ is hidden, REQ-119) — names, prices, features — and the Projects line
     const cards = page.locator("[data-cy='l2-plan']");
     expect.eq(
       await cards.count(),
