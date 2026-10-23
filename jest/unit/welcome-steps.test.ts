@@ -3,22 +3,18 @@
  * skip credit card ask."
  *
  * The wizard asks its plan question — the three cards, and the pay page behind the two paid
- * ones — only while the account has no Monster Free on record. A Monster Free signup on
- * /landing2 stores the plan with the code (POST /auth/verify-otp { plan: "free" }), so that
- * wizard goes name → business → email → state and never shows the cards; a free pick made in
- * the wizard or in settings hides them the same way. The upgrade stays in settings (REQ-054).
+ * ones — only while the account has no Monster Free on record: a free pick made in the wizard
+ * or in settings hides them from then on. REQ-120 (Raphael, 2026-10-23: "on /landing2 … remove
+ * the logic that changes the onboarding, everything just ends up on the plan picker onboarding
+ * page and they pick the plan there"): the /landing2 code names no plan any more, so every new
+ * account meets the cards and picks there. The upgrade stays in settings (REQ-054).
  *
  * Target: front-end/lib/welcome-steps.ts, bound into front-end/islands/WelcomeWizard.tsx.
  */
 import * as fs from "fs";
 import * as path from "path";
-import {
-  askedSteps,
-  asksPlan,
-  awaitsNamedPick,
-  indexAfterPlan,
-  planStepView,
-} from "../../front-end/lib/welcome-steps";
+import * as steps from "../../front-end/lib/welcome-steps";
+import { askedSteps, asksPlan, indexAfterPlan } from "../../front-end/lib/welcome-steps";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -82,7 +78,7 @@ describe("REQ-104 the wizard skips the plan step once the plan is Monster Free",
   test("REQ-104 the wizard is bound to the rule: the plan step says when it is asked, the engine shows the asked steps and resumes by the registry", () => {
     const src = read("front-end/islands/WelcomeWizard.tsx");
     expect(src).toMatch(
-      /import \{ askedSteps, asksPlan, awaitsNamedPick, indexAfterPlan, planStepView \} from "\.\.\/lib\/welcome-steps\.ts";/,
+      /import \{ askedSteps, asksPlan, indexAfterPlan \} from "\.\.\/lib\/welcome-steps\.ts";/,
     );
     expect(src).toMatch(/id: "plan",\n\s*asked: asksPlan,/);
     expect(src).toMatch(/askedSteps\(registry, snapshot\)/);
@@ -93,54 +89,34 @@ describe("REQ-104 the wizard skips the plan step once the plan is Monster Free",
 });
 
 /**
- * REQ-113 — Raphael, 2026-10-21, the launch checklist: "Carry the selected plan from the
- * landing-page button into signup so customers enter the correct flow." — and, told the $99 pick
- * was asked again at the wizard's fourth step: "can we get #2 implemented?" The $99 / $199 card's
- * code names the plan on the account; the backend makes the pick the moment the email lands
- * (PUT /me); the plan step reads that pick instead of showing the cards.
+ * REQ-120 — Raphael, 2026-10-23: "okay now on /landing2 can you please remove the logic that
+ * changes the onboarding, everything just ends up on the plan picker onboarding page and they pick
+ * the plan there." REQ-113's carry is gone: no button names a plan, the code stores none, and the
+ * wizard's plan step is the cards for every new account — a pick made there reads as it stands
+ * (plan-return's rule), the pay page behind a paid one.
  */
-describe("REQ-113 a paid sign-up carries its plan into the wizard's plan step", () => {
-  const user = (signupPlan?: "monster" | "assist" | "assist-plus", email?: string) => ({ signupPlan, email });
-
-  test("REQ-113 the plan step reads the pick the sign-up named once the email is on the account — never before the email, never over a pick on record, never without a name", () => {
-    expect(awaitsNamedPick({ user: user("monster", "a@b.test"), plan: null })).toBe(true);
-    expect(awaitsNamedPick({ user: user("assist", "a@b.test") })).toBe(true);
-    expect(awaitsNamedPick({ user: user("assist-plus", "a@b.test") })).toBe(true); // REQ-118
-    expect(awaitsNamedPick({ user: user("monster"), plan: null })).toBe(false);
-    expect(awaitsNamedPick({ user: user("monster", "  "), plan: null })).toBe(false);
-    expect(awaitsNamedPick({ user: user(undefined, "a@b.test"), plan: null })).toBe(false);
-    expect(awaitsNamedPick({ user: user("monster", "a@b.test"), plan: { status: "pending" } })).toBe(false);
-    expect(awaitsNamedPick({ user: user("monster", "a@b.test"), plan: { status: "free" } })).toBe(false);
+describe("REQ-120 nothing from /landing2 changes the wizard's plan step: it is the cards until a pick is made there", () => {
+  test("REQ-120 the rules know no named plan: welcome-steps reads the plan on record alone", () => {
+    expect(Object.keys(steps).filter((k) => k !== "__esModule").sort()).toEqual([
+      "askedSteps",
+      "asksPlan",
+      "indexAfterPlan",
+    ]);
+    const lib = read("front-end/lib/welcome-steps.ts");
+    expect(lib).not.toMatch(/signupPlan|awaitsNamedPick|planStepView|REQ-113/);
   });
 
-  test("REQ-113 while the named pick is being read the step is the page being prepared, never the cards; a pick on record reads as it stands", () => {
-    expect(planStepView(null, true)).toBe("preparing");
-    expect(planStepView(undefined, true)).toBe("preparing");
-    expect(planStepView(null, false)).toBe("cards");
-    expect(planStepView({ status: "pending" }, false)).toBe("preparing");
-    expect(planStepView({ status: "pending", payUrl: "https://pay.test/x" }, false)).toBe("pay");
-    expect(planStepView({ status: "pending", payUrl: "https://pay.test/x" }, true)).toBe("pay");
-    expect(planStepView({ status: "pending", payLinkError: "merchant-unknown" }, true)).toBe("cards");
-    expect(planStepView({ status: "active" }, true)).toBe("active");
-  });
-
-  test("REQ-113 the wizard is bound to the rule, and its plan step says Your plan over a pick in flight and Continue to payment on the way to the page, in both languages", () => {
+  test("REQ-120 the wizard shows the cards until a pick is on record and reads a pick as it stands; the front-end carries no sign-up plan", () => {
     const src = read("front-end/islands/WelcomeWizard.tsx");
     expect(src).toMatch(
-      /import \{ askedSteps, asksPlan, awaitsNamedPick, indexAfterPlan, planStepView \} from "\.\.\/lib\/welcome-steps\.ts";/,
+      /import \{ askedSteps, asksPlan, indexAfterPlan \} from "\.\.\/lib\/welcome-steps\.ts";/,
     );
-    expect(src).toMatch(/awaitsNamedPick\(ctx\.snap\)/);
-    expect(src).toMatch(/planStepView\(/);
-    expect(src).toMatch(/t\("plan\.continue"\)/);
-    expect(src).not.toMatch(/t\("plan\.resume"\)/);
+    expect(src).toMatch(/const view = plan \? planViewOf\(plan\) : "cards";/);
+    expect(src).not.toMatch(/signupPlan|awaitsNamedPick|planStepView|setReading/);
+    // the words over a pick made from the cards stay: Your plan, Continue to payment
     expect(src).toMatch(/t\("welcome\.plan\.yours"\)/);
-    const en = JSON.parse(read("lang/en.json"));
-    const es = JSON.parse(read("lang/es.json"));
-    expect(en["welcome.plan.yours"]).toBe("Your plan");
-    expect(en["plan.continue"]).toBe("Continue to payment");
-    expect(en["welcome.plan.yoursWhy"]).toMatch(/Settings/);
-    expect(es["welcome.plan.yours"]).toBe("Tu plan");
-    expect(es["plan.continue"]).toBe("Continuar al pago");
-    expect(es["welcome.plan.yoursWhy"]).toMatch(/Configuración/);
+    expect(src).toMatch(/t\("plan\.continue"\)/);
+    expect(read("front-end/clients/profile.ts")).not.toMatch(/signupPlan/);
+    expect(read("front-end/islands/Landing2Signup.tsx")).not.toMatch(/data-plan|setPlan/);
   });
 });

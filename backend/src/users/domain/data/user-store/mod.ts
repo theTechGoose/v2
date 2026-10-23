@@ -1,7 +1,7 @@
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
-import type { Language, SignupPlan, User } from "@users/dto/user.ts";
+import type { Language, User } from "@users/dto/user.ts";
 
 /** the fields a profile patch may change (REQ-113: everything else a PUT /me body carries is dropped) */
 const PROFILE_FIELDS: ReadonlySet<string> = new Set(["name", "email", "language"]);
@@ -166,9 +166,10 @@ export class UserStore {
   }
 
   /**
-   * The three fields a profile patch may change — and only those (REQ-113): parseUpdateUser
-   * passes every field a PUT /me body carries, so the admin flag, the onboarding stamp and the
-   * plan a sign-up named — each with its own write path — are dropped here, never written.
+   * The three fields a profile patch may change — and only those (REQ-113, kept by REQ-120):
+   * parseUpdateUser passes every field a PUT /me body carries, so the admin flag and the
+   * onboarding stamp — each with its own write path — and anything else are dropped here, never
+   * written.
    */
   async update(
     id: string,
@@ -209,20 +210,6 @@ export class UserStore {
       onboardingSkipped: skipped,
       updatedAt: new Date().toISOString(),
     };
-    const kv = await getKv();
-    await kv.set(["user", id], updated);
-    return updated;
-  }
-
-  /**
-   * REQ-113 — the paid plan a sign-up named with the code, on the account from then on. Its own
-   * write path, like `markOnboarded`: never reachable from a PUT /me body. The same name again is
-   * a no-op.
-   */
-  async nameSignupPlan(id: string, signupPlan: SignupPlan): Promise<User> {
-    const existing = await this.get(id);
-    if (existing.signupPlan === signupPlan) return existing;
-    const updated: User = { ...existing, signupPlan, updatedAt: new Date().toISOString() };
     const kv = await getKv();
     await kv.set(["user", id], updated);
     return updated;

@@ -209,7 +209,7 @@ Deno.test("REQ-055 + REQ-059: on settings the paid plans are cards; a pick goes 
     await expect.see("$199");
     await expect.see("Everything in Monster Free");
     await expect.see("Phone, text & email help from our team");
-    expect.eq(await page.locator("[data-cy^='plan-pick-']").count(), 3, "three cards: Monster, Monster Assist and Monster Assist+ (REQ-118)");
+    expect.eq(await page.locator("[data-cy^='plan-pick-']").count(), 3, "three cards: Monster, Monster Assist and Monster Assist+ (REQ-118 — and since REQ-119 this panel is the one place Monster Assist+ is a card)");
     await expect.notSee("Upgrade to Monster");
     // the card is the pick AND the way to the pay page: one click, this tab
     const payPage = await pickGoesToPayPage(page, "plan-pick-monster");
@@ -376,7 +376,13 @@ Deno.test("REQ-062: a person who never finishes is 'unknown dragon mcdragonson' 
     // 2) the sign-up finished: name, business and email reach the record (REQ-058)
     const me = await http("/api/me", { method: "PUT", headers: auth, body: JSON.stringify({ language: "en", name: "Dragon Story", email: `dragon-${digits()}@blackhole.postmarkapp.com` }) });
     await me.body?.cancel();
+    // the name reaches the record by the sweep, after the reply (REQ-098/099): read until it does,
+    // 10 s at most — the first read raced the sweep under twelve workers (REQ-120's run)
     crm = await crmCustomer(http, auth);
+    for (let i = 0; i < 40 && crm?.customerName !== "Dragon Story"; i++) {
+      await page.waitForTimeout(250);
+      crm = await crmCustomer(http, auth);
+    }
     expect.eq(crm?.customerName, "Dragon Story", "named once the person says who they are");
     expect.eq(crm?.tier, "Lead", "still a lead: nothing paid");
     // 3) the paid pick, the card on the page, the receipt back: the tier is the plan
@@ -553,33 +559,39 @@ Deno.test("REQ-106: a paid pick answers at once — the hand-off page says the p
 
 /**
  * REQ-118 — Raphael, 2026-10-22: "add another tier called monster assist + 399". Monster Assist+
- * is a $399 monthly tier of the one plan list: priced on every landing page after Monster
- * Assist, a card in onboarding and in settings, picked and paid like Monster and Monster Assist,
+ * is a $399 monthly tier of the one plan list, picked and paid like Monster and Monster Assist,
  * its name the CRM customer's tier once the first month is paid.
+ * REQ-119 — Raphael, 2026-10-23: "the monster assist + is a hidden item that can only be shown in
+ * the settings upgrade panel not on the onboarding panel." — hidden: not priced on any landing
+ * page, no card in onboarding; the settings Plan panel is the one place it is a card.
  */
-Deno.test("REQ-118: Monster Assist+ is a $399 tier — priced on the front page, on /landing and on /landing2, a card in onboarding and in settings; picked from settings it goes to the pay page, and paid there it is active, its tier on the CRM", (t) =>
+Deno.test("REQ-119: Monster Assist+ is hidden — not priced on the front page, on /landing or on /landing2, no card in onboarding; its one card is in the settings upgrade panel, where a pick goes to the pay page and, paid, is active with its tier on the CRM", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
-    // the front page: five cards from the one list, Monster Assist+ fourth at $399
+    // the front page: four cards from the one list, no Monster Assist+, no $399
     await page.goto("/?lang=en");
     await page.locator("#pricing").scrollIntoViewIfNeeded();
-    await expect.see("Monster Assist+");
-    await expect.see("$399");
+    await expect.see("Monster Projects");
+    await expect.notSee("Monster Assist+");
+    await expect.notSee("$399");
     const names = (await page.locator("#pricing [data-cy='pricing-plan-name']").allTextContents()).map((s) => s.trim());
-    expect.eq(names.join(" | "), "Monster Free | Monster | Monster Assist | Monster Assist+ | Monster Projects", "five cards on the front page, in the list's order");
-    // /landing: the same five
+    expect.eq(names.join(" | "), "Monster Free | Monster | Monster Assist | Monster Projects", "four cards on the front page, in the list's order");
+    // /landing: the same four
     await page.goto("/landing?lang=en");
     await page.locator("#pricing").scrollIntoViewIfNeeded();
-    await expect.see("Monster Assist+");
-    await expect.see("$399");
+    await expect.see("Monster Projects");
+    await expect.notSee("Monster Assist+");
+    await expect.notSee("$399");
     const promo = (await page.locator("#pricing [data-cy='pricing-plan-name']").allTextContents()).map((s) => s.trim());
-    expect.eq(promo.join(" | "), "Monster Free | Monster | Monster Assist | Monster Assist+ | Monster Projects", "five cards on /landing, in the list's order");
-    // /landing2: a fourth card whose Sign up names the plan (REQ-113)
+    expect.eq(promo.join(" | "), "Monster Free | Monster | Monster Assist | Monster Projects", "four cards on /landing, in the list's order");
+    // /landing2: three cards, none of them Monster Assist+
     await page.goto("/landing2?lang=en");
     await page.locator("[data-cy='l2-plans']").scrollIntoViewIfNeeded();
-    await expect.see("Monster Assist+");
-    await expect.see("$399");
-    expect.eq(await page.locator("[data-cy='l2-plan'][data-plan='assist-plus'] [data-cy='l2-plan-cta']").count(), 1, "the $399 card's Sign up names assist-plus");
-    // onboarding: a card beside Monster and Monster Assist
+    await expect.see("Monster Assist");
+    await expect.notSee("Monster Assist+");
+    await expect.notSee("$399");
+    expect.eq(await page.locator("[data-cy='l2-plan']").count(), 3, "three plan cards");
+    expect.eq(await page.locator("[data-cy='l2-plan'][data-plan='assist-plus']").count(), 0, "no card names assist-plus");
+    // onboarding: Monster Free, Monster and Monster Assist — no $399 card
     const { auth } = await signIn(http, page, baseUrl, { name: "Plus Story", email: `plus-${digits()}@blackhole.postmarkapp.com` });
     await page.goto("/welcome");
     await fillStep(page, "input.welcome__input", "Plus Story Builders");
@@ -587,13 +599,16 @@ Deno.test("REQ-118: Monster Assist+ is a $399 tier — priced on the front page,
     await expect.see("best email");
     await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("Pick your plan");
-    await expect.see("$399");
-    expect.eq(await page.locator("[data-cy='plan-pick-assist-plus']").count(), 1, "Monster Assist+ is a card in onboarding");
-    // settings: the pick goes to the pay page in this tab; paid there, the receipt brings the person back with it active
+    await expect.see("$199");
+    await expect.notSee("$399");
+    expect.eq(await page.locator("[data-cy^='plan-pick-']").count(), 3, "three cards in onboarding: Monster Free, Monster and Monster Assist");
+    expect.eq(await page.locator("[data-cy='plan-pick-assist-plus']").count(), 0, "no Monster Assist+ card in onboarding");
+    // settings: the one place it is a card; the pick goes to the pay page in this tab; paid there, the receipt brings the person back with it active
     await page.goto("/settings");
     await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
     await expect.see("$399");
     expect.eq(await page.locator("[data-cy^='plan-pick-']").count(), 3, "three paid cards: Monster, Monster Assist and Monster Assist+");
+    expect.eq(await page.locator("[data-cy='plan-pick-assist-plus']").count(), 1, "Monster Assist+ is a card in the settings upgrade panel");
     const payPage = await pickGoesToPayPage(page, "plan-pick-assist-plus");
     expect.eq(payPage.searchParams.get("account"), "primary", "through the one real account (REQ-100)");
     await payAndGoBack(page, expect);

@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
-import { PRICING_PLANS, PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import { PRICING_PLANS, UPGRADE_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
 import { handoffOf, handoffPage, pickErrorOf, planViewOf } from "../lib/plan-return.ts";
 import { filesClient } from "../clients/files.ts";
@@ -1449,8 +1449,9 @@ function ContractDefaultsEditCard(
  *  (the wipe drops every session, so the app is logged out anyway). */
 
 // REQ-054 — "later can upgrade to paid in the settings panel": the current plan, the paid plans
-// as the same cards onboarding shows (REQ-055 — a card is the pick, and it opens the CRM's pay
-// page itself), and for a pending one the link to reopen that page + check.
+// as cards like onboarding's (REQ-055 — a card is the pick, and it opens the CRM's pay page
+// itself) — Monster Assist+ among them here and nowhere else (REQ-119) — and for a pending one
+// the link to reopen that page + check.
 function PlanCard({ snapshot }: { snapshot: ProfileSnapshot }) {
   const lang: Lang = snapshot.user.language === "es" ? "es" : "en";
   const plan = snapshot.plan ?? null;
@@ -1458,8 +1459,9 @@ function PlanCard({ snapshot }: { snapshot: ProfileSnapshot }) {
   const nameOf = (id: string) => PRICING_PLANS.find((p) => p.id === id)?.name ?? id;
   const oneTime = (id: string) => PRICING_PLANS.find((p) => p.id === id)?.period === "one-time";
   // REQ-056 — every selectable plan but the current one is a card: Monster Free among them on a
-  // paid plan, so going back to free is the same one click as going up
-  const selectable = PUBLIC_PLANS.filter((p) => !p.custom && p.period === "monthly");
+  // paid plan, so going back to free is the same one click as going up. REQ-119 — the upgrade
+  // list: onboarding's cards and Monster Assist+, the hidden tier this panel alone offers
+  const selectable = UPGRADE_PLANS;
   // REQ-106 — a pick the CRM refused by name is not the plan: the cards offer it again
   const currentId = plan && plan.status !== "free" && handoffOf(plan) !== "merchant-unknown" ? plan.planId : "free";
   const hasEmail = Boolean(snapshot.user.email?.trim());

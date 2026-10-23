@@ -35,17 +35,15 @@ import DevCodeCard from "../components/DevCodeCard.tsx";
  * errPhone on the page, in the page's language, not by the browser's tooltip in the browser's.
  * REQ-096 — the card's title is a heading (h2) on both steps, so a heading list finds the signup.
  *
- * REQ-104 (Raphael, 2026-10-20: "Monster Free signup must get initial information and then skip
- * credit card ask") — the card is a Monster Free signup unless a paid card's Registrarme brought
- * the person to it: every button into the card names a plan (`data-plan` —
- * free on the Empezar gratis buttons, the card's plan on a plan card's), the last one pressed is
- * the plan this signup names, the card shows it (`data-plan`), and the code posts it
- * (/auth/verify-otp { plan }): for free the backend stores Monster Free on the new account, so
- * the wizard asks the initial information and never the plan; a paid name is left to the wizard.
- *
  * REQ-107 (Raphael, 2026-10-20: "if you click start on the $99 it jumps you to start free even
  * though you ask, just change the text to get started.") — the card's title, its button and its
- * consent line say Get started / Empezar, never free: the plan is the button's (`data-plan`).
+ * consent line say Get started / Empezar, never free.
+ *
+ * REQ-120 (Raphael, 2026-10-23: "on /landing2 can you please remove the logic that changes the
+ * onboarding, everything just ends up on the plan picker onboarding page and they pick the plan
+ * there.") — the card names no plan: whichever button brought the person here, the code posts the
+ * phone and the code alone, and the wizard's plan picker is where the plan is picked (REQ-104's
+ * free with the code and REQ-113's carried paid name are gone).
  *
  * Every string comes in as `labels` from the route, so the island renders exactly what the server
  * did (no flash, no second dictionary on the client).
@@ -145,19 +143,6 @@ export default function Landing2Signup(
   const [phone, setPhone] = useState("");
   /** REQ-089/097 — the TCPA box: ticked when the page opens; the code waits while the person has it unticked */
   const [consent, setConsent] = useState(true);
-  /** REQ-104 — the plan this signup names: Monster Free, as the card says, unless a paid card's
-   *  Registrarme brought the person here — the last button pressed into the card wins */
-  const [plan, setPlan] = useState("free");
-  useEffect(() => {
-    const follow = (e: Event) => {
-      const named = (e.target as Element | null)?.closest("a[data-plan]") as
-        | HTMLElement
-        | null;
-      if (named?.dataset.plan) setPlan(named.dataset.plan);
-    };
-    document.addEventListener("click", follow);
-    return () => document.removeEventListener("click", follow);
-  }, []);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -260,7 +245,6 @@ export default function Landing2Signup(
       const result = await verifyClient.verifyOtp({
         phoneNumber: toE164(phone),
         code: digits,
-        plan,
       });
       if (result.ok && "recoverable" in result) {
         // REQ-039 — a closed account's number: the recover-or-start-fresh choice lives on /verify
@@ -356,7 +340,6 @@ export default function Landing2Signup(
         ref={cardRef}
         class={cardClass}
         data-cy="l2-signup"
-        data-plan={plan}
         data-motion={flipped ? "flipped" : undefined}
       >
         {step === 2

@@ -22,7 +22,6 @@ import {
   returnUrlFor,
   SELECTABLE_PLAN_IDS,
   settle,
-  signupPlanOf,
   subscriptionRefFor,
   type SubscriptionView,
   withSubscription,
@@ -32,7 +31,7 @@ import { isPreparing, minted, payLinkFailed, samePick } from "./mod.ts"; // REQ-
 const NOW = "2026-10-01T15:00:00.000Z";
 const LATER = "2026-10-01T15:05:00.000Z";
 
-Deno.test("REQ-054 + REQ-064 plan — the selectable plans are the public monthly ones (free, monster, assist, assist-plus — REQ-118) plus the hidden one-time test plan; projects is custom and not pickable", () => {
+Deno.test("REQ-054 + REQ-064 plan — the selectable plans are the public monthly ones (free, monster, assist), assist-plus — REQ-118, hidden since REQ-119 and picked from settings — and the hidden one-time test plan; projects is custom and not pickable", () => {
   assertEquals([...SELECTABLE_PLAN_IDS], ["free", "monster", "assist", "assist-plus", "test"]);
   assertEquals(isSelectable("free"), true);
   assertEquals(isSelectable("projects"), false);
@@ -40,10 +39,12 @@ Deno.test("REQ-054 + REQ-064 plan — the selectable plans are the public monthl
   assertEquals(isSelectable(""), false);
 });
 
-// REQ-118 — Raphael, 2026-10-22: "add another tier called monster assist + 399"
-Deno.test("REQ-118 plan — Monster Assist+ is a selectable $399 monthly plan: priced from the one module, its first month's due and its billing named for it, its CRM tier its name once paid (Lead until then), and a sign-up can name it with the code", () => {
+// REQ-118 — Raphael, 2026-10-22: "add another tier called monster assist + 399"; REQ-119 — Raphael,
+// 2026-10-23: "the monster assist + is a hidden item that can only be shown in the settings upgrade
+// panel not on the onboarding panel."
+Deno.test("REQ-118 + REQ-119 plan — Monster Assist+ is a selectable $399 monthly plan, hidden (not public, an upgrade from settings): priced from the one module, its first month's due and its billing named for it, its CRM tier its name once paid (Lead until then)", () => {
   const plus = planOf("assist-plus");
-  assertEquals([plus.name, plus.priceCents, plus.period, plus.public], ["Monster Assist+", 39900, "monthly", true]);
+  assertEquals([plus.name, plus.priceCents, plus.period, plus.public, plus.upgrade], ["Monster Assist+", 39900, "monthly", false, true]);
   assertEquals(isOneTime(plus), false);
   assertEquals(firstMonthMemo(plus), "Monster Assist+ — first month");
   assertEquals(monthlyMemo(plus), "Monster Assist+");
@@ -52,9 +53,6 @@ Deno.test("REQ-118 plan — Monster Assist+ is a selectable $399 monthly plan: p
   assertEquals(tierFor({ ...base, planId: "assist-plus", status: "active" }), "Monster Assist+");
   assertEquals(tierFor({ ...base, planId: "assist-plus", status: "past_due" }), "Monster Assist+", "still a customer while the month is retried");
   assertEquals(tierFor({ ...base, planId: "assist-plus", status: "pending" }), LEAD_TIER, "not paid yet");
-  assertEquals(signupPlanOf("assist-plus"), "assist-plus", "the $399 card's Sign up names it with the code (REQ-113)");
-  assertEquals(signupPlanOf("assist"), "assist");
-  assertEquals(signupPlanOf("projects"), null);
 });
 
 Deno.test("REQ-054 plan — a plan's price and name come from the one pricing module", () => {
