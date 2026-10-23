@@ -4,12 +4,14 @@
  * One question per screen with a real typed input, saving each answer
  * immediately through the existing profile endpoints. There is NO separate
  * wizard-state persistence: the saved profile data IS the state, so a reload
- * resumes at the first still-incomplete step.
+ * asks what is still open.
  *
  * REQ-091: onboarding happens until every question is answered. A step is
  * skippable-or-not per its registry entry — Skip puts the question off, and
- * the wizard comes back at the first open one on the next code and on the
- * dashboard. The low-key "Skip setup for now" escape records the leave and
+ * the wizard comes back on the next code and on the dashboard. REQ-121: a
+ * visit asks the open questions alone — never one the account has already
+ * answered — and counts its steps over those (lib/welcome-steps.ts). The
+ * low-key "Skip setup for now" escape records the leave and
  * drops the user in the assistant (the dashboard would send them straight
  * back). Which questions are open is the one rule the backend and the
  * dashboard read too: shared/quote-flow/onboarding-questions.ts.
@@ -33,7 +35,7 @@ import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts"
 import { ONBOARDING_PLANS, PRICING_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
 import { handoffPage, pickErrorOf, planViewOf, resumesAfterPlan } from "../lib/plan-return.ts";
-import { askedSteps, asksPlan, indexAfterPlan } from "../lib/welcome-steps.ts";
+import { indexAfterPlan, openSteps } from "../lib/welcome-steps.ts";
 import { filesClient } from "../clients/files.ts";
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
 import { api } from "../lib/api.ts";
@@ -90,11 +92,9 @@ type StepComponent = (props: { ctx: StepCtx }) => ComponentChildren;
 interface StepDef {
   id: string;
   skippable: boolean;
-  /** Used once on mount to resume at the first incomplete step. */
+  /** Read once, when the wizard opens: a step the account has answered is not asked this visit
+   *  (REQ-121, lib/welcome-steps.ts); the closing screen is never complete, so it is always shown. */
   isComplete: (snap: ProfileSnapshot) => boolean;
-  /** REQ-104 — is this account asked the step at all? Absent = always. The plan step is not
-   *  asked once the plan is Monster Free (lib/welcome-steps.ts). */
-  asked?: (snap: ProfileSnapshot) => boolean;
   Component: StepComponent;
 }
 
@@ -1006,10 +1006,11 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
 // paid pick is REDIRECTED to the CRM's pay page in this tab — the receipt brings the person back
 // to /plan/return, which reads the plan active, and the wizard resumes past this step; free is
 // stored and the wizard resumes at the next step. A pick still waiting on its page resumes
-// here, with the way back to it. Skippable: no pick reads as free. REQ-104: once the plan is
-// Monster Free — picked here or in settings — this step is not asked at all (the registry's
-// `asked`): the person is never shown the cards, or the pay page behind the paid ones, again; the
-// upgrade is in settings. REQ-120: nothing from /landing2 reaches this step — the code names no
+// here, with the way back to it. Skippable: no pick reads as free. REQ-104/121: once a plan is
+// on record — Monster Free picked here or in settings, or a paid plan active — the question is
+// answered and this step is not asked again (lib/welcome-steps.ts): the person is never shown
+// the cards, or the pay page behind the paid ones, twice; the upgrade is in settings. REQ-120:
+// nothing from /landing2 reaches this step — the code names no
 // plan, so every new account meets the cards here and picks; a pick made here reads as it stands
 // (plan-return's rule: its page, or the page being prepared — the sweep mints it after the reply,
 // REQ-106: read every second until it is there).
@@ -1058,13 +1059,7 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
 
   return (
     <StepBody question={question} why={why}>
-      {view === "active" && plan
-        ? (
-          <p class="welcome__plan-active" data-cy="plan-active" role="status">
-            ✓ {t("plan.active", { name: nameOf(plan.planId) })}
-          </p>
-        )
-        : view === "pay" && plan
+      {view === "pay" && plan
         ? (
           <div class="welcome__plan-pending" data-cy="plan-pending">
             <p class="welcome__plan-pending-lede">
@@ -1134,7 +1129,6 @@ function buildSteps(): StepDef[] {
       // waiting on its pay page resumes HERE (the way back to the page); once the receipt has
       // brought the person back with the plan active, the wizard moves on
       id: "plan",
-      asked: asksPlan,
       skippable: true,
       isComplete: (s) => isAnswered("plan", s),
       Component: PlanStep,
@@ -1183,11 +1177,6 @@ function buildSteps(): StepDef[] {
   ];
 }
 
-function firstIncomplete(steps: StepDef[], snap: ProfileSnapshot): number {
-  const i = steps.findIndex((step) => !step.isComplete(snap));
-  return i === -1 ? Math.max(0, steps.length - 1) : i;
-}
-
 // ---------------------------------------------------------------------------
 // Engine
 // ---------------------------------------------------------------------------
@@ -1196,16 +1185,17 @@ export default function WelcomeWizard(
   { snapshot, suggestedState, initialLang }: Props,
 ) {
   const registry = useMemo(() => buildSteps(), []);
-  // REQ-104 — the steps this account is asked: a Monster Free account is never asked the plan
-  const steps = useMemo(() => askedSteps(registry, snapshot), [registry]);
+  // REQ-121 — the steps this visit asks: the questions with no answer on record when the wizard
+  // opens, and the closing screen; a question answered on an earlier visit is never shown again
+  const steps = useMemo(() => openSteps(registry, snapshot), [registry]);
   const [snap, setSnap] = useState<ProfileSnapshot>(snapshot);
   // REQ-059 — back from a pick (free stored, or the receipt with the plan active): resume PAST
-  // the plan's slot, not at the first step the person skipped on the way to it — the same step
-  // whether the plan step is still asked or not (REQ-104)
+  // the plan's slot, at the first open step after it — not at an earlier question the person
+  // skipped on the way to the plan; otherwise the first open step
   const [index, setIndex] = useState(() =>
     typeof location !== "undefined" && resumesAfterPlan(location.search)
       ? indexAfterPlan(registry, steps)
-      : firstIncomplete(steps, snapshot)
+      : 0
   );
   const [, force] = useState(0);
 

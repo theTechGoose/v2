@@ -26,7 +26,8 @@ import {
  * by voluntary visits. It redirects in one direction only:
  *   - no session              → 302 /           (sign in first)
  *   - every question answered → 302 /dashboard  (nothing left to ask)
- *   - otherwise               → render the wizard, at the first open question
+ *   - otherwise               → render the wizard: the open questions alone,
+ *                               never one already answered (REQ-121)
  *
  * Skip puts a question off for now; the skip stamp (`onboardedAt`) is a
  * record, never a gate — the wizard asks again next time.

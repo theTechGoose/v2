@@ -55,6 +55,17 @@ async function crmCustomer(http: StoryTools["http"], auth: Record<string, string
   return await (await http("/api/me/crm-customer", { headers: auth })).json();
 }
 
+/** REQ-098 — the CRM is revised by the sweep after the reply, never inside it: read the customer
+ *  until it says what the story expects, 10 s at most (REQ-062's story reads the same way) */
+async function crmCustomerUntil(http: StoryTools["http"], auth: Record<string, string>, ok: (c: Awaited<ReturnType<typeof crmCustomer>>) => boolean) {
+  let c = await crmCustomer(http, auth);
+  for (let i = 0; i < 40 && !ok(c); i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    c = await crmCustomer(http, auth);
+  }
+  return c;
+}
+
 /** REQ-099 — a plan's tier reaches the CRM by the sweep AFTER the reply: read the customer until it
  *  wears the tier (10 s at most), so the gate's workers cannot read the record before the sweep lands
  *  (REQ-118's gate did: "expected Monster, got Lead") */
@@ -116,21 +127,21 @@ Deno.test("REQ-058: a sign-up is a CRM customer at once — the phone and this a
     await fillStep(page, "input.welcome__input", "Story Person");
     await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("business called");
-    customer = await crmCustomer(http, auth);
+    customer = await crmCustomerUntil(http, auth, (c) => c?.customerName === "Story Person");
     expect(customer.customerName === "Story Person", `the name is the customer's name now (${customer.customerName})`);
     expect(customer.customerId === customerId, "the same customer, revised — never a second one");
     // … the business name, which takes over …
     await fillStep(page, "input.welcome__input", "Story Roofing LLC");
     await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("best email");
-    customer = await crmCustomer(http, auth);
+    customer = await crmCustomerUntil(http, auth, (c) => c?.customerName === "Story Roofing LLC");
     expect(customer.customerName === "Story Roofing LLC", `the business is the customer's name (${customer.customerName})`);
     // … and the email
     const email = `story-${digits()}@blackhole.postmarkapp.com`;
     await fillStep(page, "input[type='email']", email);
     await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("Pick your plan");
-    customer = await crmCustomer(http, auth);
+    customer = await crmCustomerUntil(http, auth, (c) => c?.customerEmail === email);
     expect(customer.customerEmail === email, `the email reached the customer (${customer.customerEmail})`);
     expect(customer.customerPhone === phone && customer.customerId === customerId, "phone kept, same record");
   }));
@@ -143,11 +154,9 @@ Deno.test("REQ-054: in onboarding the person picks a paid plan, pays on the link
     await expect.see("Monster Assist");
     const { auth } = await signIn(http, page, baseUrl, { name: "Plan Story", email: `plan-${digits()}@blackhole.postmarkapp.com` });
     await page.goto("/welcome");
-    // the wizard resumes at the first incomplete step: the business name; the email is on file,
-    // so its step is prefilled — continue; then the plan
+    // the wizard asks what is still open: the business name, then the plan — the name and the
+    // email are on file, so neither is asked again (REQ-121)
     await fillStep(page, "input.welcome__input", "Plan Story Builders");
-    await page.locator("[data-cy='welcome-continue']").click();
-    await expect.see("best email");
     await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("Pick your plan");
     await expect.see("Monster Free");
@@ -175,8 +184,6 @@ Deno.test("REQ-054: free in onboarding, then upgraded to a paid plan from the se
     await page.goto("/welcome");
     await page.locator("[data-cy='welcome-skip']").waitFor({ timeout: 60_000 });
     await page.locator("[data-cy='welcome-skip']").click();
-    await expect.see("best email");
-    await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("Pick your plan");
     await page.locator("[data-cy='plan-pick-free']").click();
     await expect.see("Which state");
@@ -450,8 +457,6 @@ Deno.test("REQ-100: a paid pick from onboarding lands on a pay page whose footer
     await page.goto("/welcome");
     await fillStep(page, "input.welcome__input", "Truth Roofing LLC");
     await page.locator("[data-cy='welcome-continue']").click();
-    await expect.see("best email");
-    await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("Pick your plan");
     const payPage = await pickGoesToPayPage(page, "plan-pick-monster");
     expect.eq(payPage.searchParams.get("account"), "primary", "the link names the account on its url");
@@ -526,8 +531,6 @@ Deno.test("REQ-106: a paid pick answers at once — the hand-off page says the p
     await page.goto("/welcome");
     await fillStep(page, "input.welcome__input", "Handoff Builders");
     await page.locator("[data-cy='welcome-continue']").click();
-    await expect.see("best email");
-    await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("Pick your plan");
     const t0 = Date.now();
     await page.locator("[data-cy='plan-pick-monster']").click();
@@ -595,8 +598,6 @@ Deno.test("REQ-119: Monster Assist+ is hidden — not priced on the front page, 
     const { auth } = await signIn(http, page, baseUrl, { name: "Plus Story", email: `plus-${digits()}@blackhole.postmarkapp.com` });
     await page.goto("/welcome");
     await fillStep(page, "input.welcome__input", "Plus Story Builders");
-    await page.locator("[data-cy='welcome-continue']").click();
-    await expect.see("best email");
     await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("Pick your plan");
     await expect.see("$199");

@@ -2568,7 +2568,6 @@
   "welcome.plan.emailFirst": "A paid plan needs an email on the account — go back a step and add one.",
   "plan.pending": "Waiting for the payment — finish it on the payment page and you'll be brought right back here.",
   "plan.resume": "Resume payment",
-  "plan.active": "{name} is active",
   "plan.activeSince": "{name} is active since {date}",
   "plan.statusFree": "Free — upgrade any time.",
   "plan.current": "Current plan",
