@@ -333,15 +333,14 @@ Deno.test("REQ-080: CompleteRegistration fires once when a new account reaches /
 Deno.test("REQ-080: Subscribe fires with the plan's price when the receipt brings the person back with the plan active — from onboarding and from settings", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const drain = watchPixel(page);
-    // onboarding: the paid pick, the pay page, the receipt back to the wizard
+    // onboarding: the paid pick, the pay page, the receipt back to the wizard — the name and the
+    // email are on file, so the wizard asks the business name, then the plan (REQ-121)
     const first = await signIn(http, page, baseUrl, {
       name: "Sub Story",
       email: `sub-${digits()}@blackhole.postmarkapp.com`,
     });
     await page.goto("/welcome");
     await fillStep(page, "input.welcome__input", "Sub Story Builders");
-    await page.locator("[data-cy='welcome-continue']").click();
-    await expect.see("best email");
     await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("Pick your plan");
     await drain();
@@ -385,8 +384,6 @@ Deno.test("REQ-080: Subscribe fires with the plan's price when the receipt bring
     await page.goto("/welcome");
     await page.locator("[data-cy='welcome-skip']").waitFor({ timeout: 60_000 });
     await page.locator("[data-cy='welcome-skip']").click();
-    await expect.see("best email");
-    await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("Pick your plan");
     await page.locator("[data-cy='plan-pick-free']").click();
     await expect.see("Which state");
