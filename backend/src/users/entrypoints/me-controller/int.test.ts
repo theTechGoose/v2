@@ -129,10 +129,11 @@ Deno.test("REQ-112 POST /me/onboarded sends the signup notice after the reply �
   try {
     for (const [phone, skipped, reason] of [["+15125551122", false, "completed onboarding"], ["+15125551123", true, "skipped setup"]] as const) {
       const sent = await (await fetch(`${base}/auth/send-otp`, { method: "POST", headers: json, body: JSON.stringify({ phoneNumber: phone, language: "en" }) })).json();
-      const v = await (await fetch(`${base}/auth/verify-otp`, { method: "POST", headers: json, body: JSON.stringify({ phoneNumber: phone, code: sent.devCode, plan: "free" }) })).json();
+      const v = await (await fetch(`${base}/auth/verify-otp`, { method: "POST", headers: json, body: JSON.stringify({ phoneNumber: phone, code: sent.devCode }) })).json();
       const h = { ...json, "x-session-id": v.sessionId };
       await (await fetch(`${base}/me`, { method: "PUT", headers: h, body: JSON.stringify({ name: "Ana", email: `${phone.slice(-4)}@roof.test` }) })).body?.cancel();
       await (await fetch(`${base}/profile/identity`, { method: "PUT", headers: h, body: JSON.stringify({ businessName: "Ana Roofing" }) })).body?.cancel();
+      await (await fetch(`${base}/me/plan`, { method: "POST", headers: h, body: JSON.stringify({ planId: "free" }) })).body?.cancel(); // REQ-120 — the plan is picked in the wizard
       const left = await fetch(`${base}/me/onboarded`, { method: "POST", headers: h, body: JSON.stringify({ skipped }) });
       await left.body?.cancel();
       assertEquals(left.status, 200);
@@ -151,12 +152,13 @@ Deno.test("REQ-112 POST /me/onboarded sends the signup notice after the reply �
 });
 
 /**
- * REQ-113 — "Carry the selected plan from the landing-page button into signup so customers enter
- * the correct flow." The $99 card's code names Monster; the account carries the name; the wizard's
- * email save (PUT /me) makes the pick after the reply's work — pending, read at once — and the
- * sweep mints the page and tells the CRM. A PUT /me body names no plan and flips no flag.
+ * REQ-120 — Raphael, 2026-10-23: "on /landing2 can you please remove the logic that changes the
+ * onboarding, everything just ends up on the plan picker onboarding page and they pick the plan
+ * there." A code posting a plan carries nothing: the account names none, the CRM says none yet,
+ * and the wizard's email save (PUT /me) picks nothing — the plan is picked in the wizard. A PUT /me
+ * body still flips no flag (REQ-113's guard, kept).
  */
-Deno.test("REQ-113 a sign-up naming Monster carries it: GET /me says so and the CRM reads Monster before a single answer; PUT /me with the email makes the pick — pending Monster through primary, on GET /me/plan at once — and the CRM then says Monster picked, awaiting payment; a PUT /me body cannot name a plan nor flip the admin flag", async () => {
+Deno.test("REQ-120 a sign-up posting a plan with the code carries nothing: GET /me names no plan and the CRM says none yet before a single answer; PUT /me with the email makes no pick — GET /me/plan stays empty, the CRM still none yet, next the business name; a PUT /me body cannot flip the admin flag", async () => {
   const twilio = Deno.env.get("TWILIO_ACCOUNT_SID");
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("TWILIO_ACCOUNT_SID");
@@ -191,23 +193,21 @@ Deno.test("REQ-113 a sign-up naming Monster carries it: GET /me says so and the 
       assertEquals(res.status, 200, `GET /me/crm-customer answered ${res.status}: ${text.slice(0, 300)}`);
       return JSON.parse(text);
     };
-    assertEquals((await me()).signupPlan, "monster", "the account carries the plan the button named");
-    assertEquals(await planOf(), null, "no pick before the email a paid pick needs");
+    assertEquals("signupPlan" in await me(), false, "the account carries no plan name");
+    assertEquals(await planOf(), null, "nothing on record: the plan is picked in the wizard");
     await settled();
-    assertEquals([(await crm()).tier, (await crm()).signupPlan, (await crm()).signupStage], ["Lead", "Monster", "signed up — nothing answered yet, next the name"], "the CRM reads the plan asked for before a single answer");
-    // the name: still no pick
+    assertEquals([(await crm()).tier, (await crm()).signupPlan, (await crm()).signupStage], ["Lead", "none yet", "signed up — nothing answered yet, next the name"], "the CRM knows no plan before the picker");
+    // the name: still nothing
     await (await fetch(`${base}/me`, { method: "PUT", headers: h, body: JSON.stringify({ name: "Ana" }) })).body?.cancel();
     assertEquals(await planOf(), null);
     // the email — with a plan name and the admin flag smuggled in the same body
     const saved = await fetch(`${base}/me`, { method: "PUT", headers: h, body: JSON.stringify({ email: "ana@roof.test", signupPlan: "assist", superAdmin: true }) });
     assertEquals(saved.status, 200);
     const user = await saved.json();
-    assertEquals([user.email, user.signupPlan, user.superAdmin ?? false], ["ana@roof.test", "monster", false], "the email landed; the body named no plan and flipped no flag");
-    const pending = await planOf();
-    assertEquals([pending?.planId, pending?.status, pending?.merchant], ["monster", "pending", "primary"], "the pick the sign-up named, made by the email, read at once");
+    assertEquals([user.email, "signupPlan" in user, user.superAdmin ?? false], ["ana@roof.test", false, false], "the email landed; the body named no plan and flipped no flag");
+    assertEquals(await planOf(), null, "the email picks nothing: the plan is picked in the wizard");
     await settled();
-    assert((await planOf()).payUrl, "the sweep minted the page");
-    assertEquals([(await crm()).signupPlan, (await crm()).signupStage], ["Monster", "2 of 9 answered — next the business name · Monster picked, awaiting payment"]);
+    assertEquals([(await crm()).signupPlan, (await crm()).signupStage], ["none yet", "2 of 9 answered — next the business name"]);
   } finally {
     await app.close();
     twilio === undefined ? Deno.env.delete("TWILIO_ACCOUNT_SID") : Deno.env.set("TWILIO_ACCOUNT_SID", twilio);

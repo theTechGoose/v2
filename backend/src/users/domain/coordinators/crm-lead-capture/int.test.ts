@@ -76,9 +76,13 @@ Deno.test("REQ-072 a capture is a KV record before anything is sent, and the swe
   const leads = make();
   await leads.enqueue("(512) 555-0072");
   assertEquals((await outbox.list()).map((r) => r.phone), ["+15125550072"], "pending in KV, normalized");
+  // the sweep enqueue kicked lands it: drain joins that sweep while it is in flight (landed 1), or —
+  // when it already finished under the gate's load (REQ-120's gate find) — sweeps an empty outbox
+  // (landed 0); either way one sweep carried it, once, and nothing was deferred or left waiting
   const swept = await leads.drain();
-  assertEquals(swept, { landed: 1, deferred: 0, waiting: 0 });
-  assertEquals(calls, [{ path: "/api/payments/customers", phone: "+15125550072" }]);
+  await leads.idle();
+  assert(swept.landed <= 1 && swept.deferred === 0 && swept.waiting === 0, `landed by this sweep or the one enqueue kicked (${JSON.stringify(swept)})`);
+  assertEquals(calls, [{ path: "/api/payments/customers", phone: "+15125550072" }], "carried to the CRM once, normalized");
   assertEquals(await outbox.list(), [], "landed → gone");
   await done();
 });

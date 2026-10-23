@@ -35,7 +35,7 @@ Deno.test("REQ-111 signupProgress — the stage counts what onboarding has answe
   const named = signupProgress(snap({ user: { ...user, name: "Ana", email: "ana@roof.test" }, identity: { userId: user.id, businessName: "Ana Roofing", createdAt: at, updatedAt: at } }));
   assertEquals([named.answered, named.next], [3, "plan"]);
   assertEquals(named.stage, "3 of 9 answered — next the plan");
-  // a Monster Free signup never meets the plan question: free is on record, the state is next
+  // Monster Free picked in the wizard (REQ-120): free is on record, the state is next
   const free = signupProgress(snap({ user: { ...user, name: "Ana", email: "ana@roof.test" }, identity: { userId: user.id, businessName: "Ana Roofing", createdAt: at, updatedAt: at }, plan: plan("free", "free") }));
   assertEquals([free.answered, free.next, free.plan, free.payment], [4, "state", "Monster Free", "free"]);
   assertEquals(free.stage, "4 of 9 answered — next the state");
@@ -59,18 +59,18 @@ Deno.test("REQ-111 signupProgress — every question answered is onboarding comp
   assertEquals(skipped.stage, "setup skipped — 2 of 9 answered, next the email");
 });
 
-Deno.test("REQ-113 signupProgress — the paid plan a sign-up named is the plan from the code on, before the pick: the plan question still open, payment none; the pick, once made, reads as it stands; a pick on record wins over the name", () => {
-  const named = signupProgress(snap({ user: { ...user, signupPlan: "monster" } }));
-  assertEquals([named.plan, named.payment, named.answered, named.next], ["Monster", "none", 0, "name"]);
-  assertEquals(named.stage, "signed up — nothing answered yet, next the name");
-  const assist = signupProgress(snap({ user: { ...user, name: "Ana", email: "ana@roof.test", signupPlan: "assist" }, identity: { userId: user.id, businessName: "Ana Roofing", createdAt: at, updatedAt: at } }));
-  assertEquals([assist.plan, assist.payment, assist.next], ["Monster Assist", "none", "plan"]);
-  assertEquals(assist.stage, "3 of 9 answered — next the plan");
-  // the pick the email made: pending on its page
-  const picked = signupProgress(snap({ user: { ...user, name: "Ana", email: "ana@roof.test", signupPlan: "monster" }, plan: plan("monster", "pending") }));
+// REQ-120 — Raphael, 2026-10-23: "on /landing2 can you please remove the logic that changes the
+// onboarding, everything just ends up on the plan picker onboarding page and they pick the plan
+// there." Nothing a code was told reaches the plan: it is the pick on record, nothing before it.
+Deno.test("REQ-120 signupProgress — before a pick the plan is nothing, whatever the code was told: the plan question open, payment none; the pick, once made in the wizard, reads as it stands", () => {
+  const identity = { userId: user.id, businessName: "Ana Roofing", createdAt: at, updatedAt: at };
+  const before = signupProgress(snap({ user: { ...user, name: "Ana", email: "ana@roof.test" }, identity }));
+  assertEquals([before.plan, before.payment, before.next], ["", "none", "plan"]);
+  assertEquals(before.stage, "3 of 9 answered — next the plan");
+  // @ts-expect-error — REQ-120: an account carries no plan name (REQ-113's field is gone), and a stray one reads as nothing
+  const stray: User = { ...user, name: "Ana", email: "ana@roof.test", signupPlan: "monster" };
+  assertEquals([signupProgress(snap({ user: stray, identity })).plan, signupProgress(snap({ user: stray, identity })).stage], ["", "3 of 9 answered — next the plan"]);
+  const picked = signupProgress(snap({ user: { ...user, name: "Ana", email: "ana@roof.test" }, identity, plan: plan("monster", "pending") }));
   assertEquals([picked.plan, picked.payment], ["Monster", "awaiting payment"]);
-  assertEquals(picked.stage, "2 of 9 answered — next the business name · Monster picked, awaiting payment");
-  // a pick on record wins: Monster Free picked after a $199 name
-  const free = signupProgress(snap({ user: { ...user, signupPlan: "assist" }, plan: plan("free", "free") }));
-  assertEquals([free.plan, free.payment], ["Monster Free", "free"]);
+  assertEquals(picked.stage, "3 of 9 answered — next the plan · Monster picked, awaiting payment");
 });

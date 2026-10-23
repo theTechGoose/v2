@@ -7,35 +7,38 @@
  *   Monster Free         $0/month        unlimited invoices, max 5 quotes/month
  *   Monster              $99/month       full self-service platform
  *   Monster Assist       $199/month      platform + phone/text/email help
- *   Monster Assist+      $399/month      higher-level expert assistance (REQ-118: on the site)
+ *   Monster Assist+      $399/month      higher-level expert assistance (REQ-118; hidden — settings only, REQ-119)
  *   Monster Projects     custom          scoped per customer, no figure shown
  *
  * REQ-118 (Raphael, 2026-10-22: "add another tier called monster assist + 399") — the tier Hans's
- * email kept hidden as "Monster Assist Plus $399–$599" is a public $399 tier now, after Monster
- * Assist. No percentage fee on any membership plan.
+ * email kept hidden as "Monster Assist Plus $399–$599" is a $399 tier, after Monster Assist.
+ * REQ-119 (Raphael, 2026-10-23: "the monster assist + is a hidden item that can only be shown in
+ * the settings upgrade panel not on the onboarding panel.") — it is hidden again: not public, not
+ * in onboarding, a card in the settings upgrade panel only (`upgrade`). The two card lists are the
+ * module's (ONBOARDING_PLANS, UPGRADE_PLANS). No percentage fee on any membership plan.
  * Target: shared/quote-flow/pricing-plans.ts
  */
 import {
+  ONBOARDING_PLANS,
   planById,
   planFeatures,
   PRICING_PLANS,
   PUBLIC_PLANS,
+  UPGRADE_PLANS,
 } from "../../shared/quote-flow/pricing-plans";
 
 describe("PRICING_PLANS", () => {
-  it("lists exactly five PUBLIC plans, in site order — Monster Assist+ after Monster Assist (REQ-118)", () => {
+  it("lists exactly four PUBLIC plans, in site order — Monster Assist+ is hidden (REQ-119)", () => {
     expect(PUBLIC_PLANS.map((p) => p.id)).toEqual([
       "free",
       "monster",
       "assist",
-      "assist-plus",
       "projects",
     ]);
     expect(PUBLIC_PLANS.map((p) => p.name)).toEqual([
       "Monster Free",
       "Monster",
       "Monster Assist",
-      "Monster Assist+",
       "Monster Projects",
     ]);
     expect(PUBLIC_PLANS.every((p) => p.public)).toBe(true);
@@ -84,23 +87,38 @@ describe("PRICING_PLANS", () => {
   });
 
   // REQ-118 — Raphael, 2026-10-22: "add another tier called monster assist + 399"
-  it("REQ-118 Monster Assist+ is $399/month, public and monthly, right after Monster Assist — one price, no range; the $1 test tier is the one hidden plan left", () => {
+  // REQ-119 — Raphael, 2026-10-23: "the monster assist + is a hidden item that can only be shown in
+  // the settings upgrade panel not on the onboarding panel."
+  it("REQ-118 + REQ-119 Monster Assist+ is $399/month, monthly, right after Monster Assist in the list — one price, no range — and HIDDEN: not public, an upgrade from settings only; the $1 test tier is the other hidden plan", () => {
     const plus = planById("assist-plus");
     expect(plus.name).toBe("Monster Assist+");
     expect(plus.priceCents).toBe(39900);
     expect(plus.period).toBe("monthly");
-    expect(plus.public).toBe(true);
+    expect(plus.public).toBe(false);
+    expect(plus.upgrade).toBe(true);
     expect(plus.custom).toBeUndefined();
     expect("priceMaxCents" in plus).toBe(false);
     expect(planFeatures("assist-plus", "en")[0]).toBe("Everything in Monster Assist");
     expect(planFeatures("assist-plus", "es")[0]).toBe("Todo lo de Monster Assist");
     expect(plus.features.length).toBeGreaterThanOrEqual(2);
-    const ids = PUBLIC_PLANS.map((p) => p.id);
+    const ids = PRICING_PLANS.map((p) => p.id);
     expect(ids.indexOf("assist-plus")).toBe(ids.indexOf("assist") + 1);
-    // REQ-064 — the $1 test tier stays hidden; nothing else is
+    expect(PUBLIC_PLANS.some((p) => p.id === "assist-plus")).toBe(false);
+    // REQ-064 — the $1 test tier is hidden too; nothing else is
     expect(PRICING_PLANS.filter((p) => !p.public).map((p) => p.id)).toEqual([
+      "assist-plus",
       "test",
     ]);
+    // the only plan sold as an upgrade from settings
+    expect(PRICING_PLANS.filter((p) => p.upgrade).map((p) => p.id)).toEqual(["assist-plus"]);
+  });
+
+  it("REQ-119 the card lists: onboarding offers the public monthly plans and never Monster Assist+; the settings upgrade panel offers those and Monster Assist+ — Projects (custom) and the test tier (one-time) on neither", () => {
+    expect(ONBOARDING_PLANS.map((p) => p.id)).toEqual(["free", "monster", "assist"]);
+    expect(UPGRADE_PLANS.map((p) => p.id)).toEqual(["free", "monster", "assist", "assist-plus"]);
+    expect(ONBOARDING_PLANS.every((p) => p.public && !p.custom && p.period === "monthly")).toBe(true);
+    expect(UPGRADE_PLANS.every((p) => !p.custom && p.period === "monthly")).toBe(true);
+    expect(UPGRADE_PLANS.filter((p) => !p.public).map((p) => p.id)).toEqual(["assist-plus"]);
   });
 
   it("charges no percentage fee on any membership plan", () => {

@@ -30,10 +30,10 @@ import {
 } from "../clients/profile.ts";
 import { isAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
-import { PRICING_PLANS, PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import { ONBOARDING_PLANS, PRICING_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
-import { handoffOf, handoffPage, pickErrorOf, resumesAfterPlan } from "../lib/plan-return.ts";
-import { askedSteps, asksPlan, awaitsNamedPick, indexAfterPlan, planStepView } from "../lib/welcome-steps.ts";
+import { handoffPage, pickErrorOf, planViewOf, resumesAfterPlan } from "../lib/plan-return.ts";
+import { askedSteps, asksPlan, indexAfterPlan } from "../lib/welcome-steps.ts";
 import { filesClient } from "../clients/files.ts";
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
 import { api } from "../lib/api.ts";
@@ -1001,23 +1001,23 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
 
 
 // REQ-054 — "in onboarding a user can pick their plan": the public monthly plans of the one
-// pricing module, as the cards /settings shows too (PlanCards). A card is a form (REQ-059): a
+// pricing module (ONBOARDING_PLANS), as cards like the ones /settings shows (PlanCards) — though
+// not the hidden Monster Assist+, which is settings' alone (REQ-119). A card is a form (REQ-059): a
 // paid pick is REDIRECTED to the CRM's pay page in this tab — the receipt brings the person back
 // to /plan/return, which reads the plan active, and the wizard resumes past this step; free is
 // stored and the wizard resumes at the next step. A pick still waiting on its page resumes
 // here, with the way back to it. Skippable: no pick reads as free. REQ-104: once the plan is
-// Monster Free — stored with the code by a Monster Free signup on /landing2, or picked here or
-// in settings — this step is not asked at all (the registry's `asked`): the person is never
-// shown the cards, or the pay page behind the paid ones, again; the upgrade is in settings.
-// REQ-113: a paid card's Sign up on /landing2 names its plan with the code, and the backend makes
-// that pick the moment the email step saves (PUT /me) — so this step, reached right after, reads
-// the pick instead of showing the cards: the plan the person asked for, with the way to its
-// payment page (the sweep mints it after the reply, REQ-106: read every second until it is there).
+// Monster Free — picked here or in settings — this step is not asked at all (the registry's
+// `asked`): the person is never shown the cards, or the pay page behind the paid ones, again; the
+// upgrade is in settings. REQ-120: nothing from /landing2 reaches this step — the code names no
+// plan, so every new account meets the cards here and picks; a pick made here reads as it stands
+// (plan-return's rule: its page, or the page being prepared — the sweep mints it after the reply,
+// REQ-106: read every second until it is there).
 function PlanStep({ ctx }: { ctx: StepCtx }) {
   const plan = ctx.snap.plan ?? null;
   const lang = langSignal.value;
   const hasEmail = Boolean(ctx.snap.user.email?.trim());
-  const plans = PUBLIC_PLANS.filter((p) => !p.custom && p.period === "monthly");
+  const plans = ONBOARDING_PLANS; // REQ-119 — the public monthly plans; the hidden Monster Assist+ is settings' alone
   const nameOf = (id: string) => PRICING_PLANS.find((p) => p.id === id)?.name ?? id; // REQ-064 — the test tier has a name too
   // a pick the backend refused came back here saying why (/plan/pick)
   const [err, setErr] = useState("");
@@ -1028,10 +1028,8 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
 
   const settled = plan?.status === "active" || plan?.status === "free";
   // REQ-106 — a pending pick is its page, or the page being prepared (the hand-off page), or —
-  // refused by name — the cards again. REQ-113 — nothing on record yet but a paid plan named at
-  // the code and the email on the account: the pick is being read, not the cards shown
-  const [reading, setReading] = useState(() => awaitsNamedPick(ctx.snap));
-  const view = planStepView(plan, reading);
+  // refused by name — the cards again; nothing on record is the cards (REQ-120)
+  const view = plan ? planViewOf(plan) : "cards";
   useEffect(() => {
     if (view !== "preparing") return;
     let stopped = false;
@@ -1041,8 +1039,7 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
       try {
         const read = await planClient.get();
         if (stopped) return;
-        ctx.patchSnap({ plan: read ?? null });
-        if (handoffOf(read) !== "preparing") setReading(false); // read: its page, a refusal, or nothing to wait for
+        ctx.patchSnap({ plan: read ?? null }); // its page, a refusal, or still being prepared: the view follows the record
       } catch {
         // a blip on the way: ask again
       }
@@ -1080,21 +1077,17 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
             </div>
           </div>
         )
-        : view === "preparing"
+        : view === "preparing" && plan
         ? (
           <div class="welcome__plan-pending" data-cy="plan-preparing">
             <p class="welcome__plan-pending-lede">
-              <b>{nameOf(plan?.planId ?? ctx.snap.user.signupPlan ?? "")}</b> · {t("plan.preparing")}
+              <b>{nameOf(plan.planId)}</b> · {t("plan.preparing")}
             </p>
-            {plan
-              ? (
-                <div class="welcome__plan-actions">
-                  <a class="welcome__btn welcome__btn--primary" data-cy="plan-handoff-link" href={handoffPage("/welcome")}>
-                    {t("plan.preparingOpen")} →
-                  </a>
-                </div>
-              )
-              : null}
+            <div class="welcome__plan-actions">
+              <a class="welcome__btn welcome__btn--primary" data-cy="plan-handoff-link" href={handoffPage("/welcome")}>
+                {t("plan.preparingOpen")} →
+              </a>
+            </div>
           </div>
         )
         : (

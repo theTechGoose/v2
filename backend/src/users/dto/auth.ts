@@ -19,13 +19,6 @@ export class VerifyOtpDto {
   @MinLength(6)
   @MaxLength(6)
   code!: string;
-
-  /** REQ-104 — the plan the signup names: "free" from the landing's Empezar gratis is stored as
-   *  Monster Free on an account with no plan on record; a paid name (REQ-113) is kept on the
-   *  account and picked the moment the email a paid pick needs is there */
-  @IsOptional()
-  @IsString()
-  plan?: string;
 }
 
 /** REQ-050: POST /auth/send-email-otp { email, language? } */
