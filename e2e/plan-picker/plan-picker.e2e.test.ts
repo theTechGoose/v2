@@ -376,7 +376,13 @@ Deno.test("REQ-062: a person who never finishes is 'unknown dragon mcdragonson' 
     // 2) the sign-up finished: name, business and email reach the record (REQ-058)
     const me = await http("/api/me", { method: "PUT", headers: auth, body: JSON.stringify({ language: "en", name: "Dragon Story", email: `dragon-${digits()}@blackhole.postmarkapp.com` }) });
     await me.body?.cancel();
+    // the name reaches the record by the sweep, after the reply (REQ-098/099): read until it does,
+    // 10 s at most — the first read raced the sweep under twelve workers (REQ-120's run)
     crm = await crmCustomer(http, auth);
+    for (let i = 0; i < 40 && crm?.customerName !== "Dragon Story"; i++) {
+      await page.waitForTimeout(250);
+      crm = await crmCustomer(http, auth);
+    }
     expect.eq(crm?.customerName, "Dragon Story", "named once the person says who they are");
     expect.eq(crm?.tier, "Lead", "still a lead: nothing paid");
     // 3) the paid pick, the card on the page, the receipt back: the tier is the plan

@@ -2,14 +2,6 @@
 // pages read (shared/quote-flow/pricing-plans.ts): what a plan costs here is what the site says.
 import { PRICING_PLANS, type PricingPlan } from "#quote-flow/pricing-plans.ts";
 import type { PayLinkError, PlanId, UserPlan } from "@users/dto/plan.ts";
-import type { SignupPlan } from "@users/dto/user.ts";
-
-/** REQ-113 — the plans a sign-up can name with the code and carry into the wizard: the paid ones
- *  on the site (free is stored outright, REQ-104); anything else names nothing — assist-plus among
- *  it, hidden from the site and picked from settings alone (REQ-119) */
-export function signupPlanOf(raw: unknown): SignupPlan | null {
-  return raw === "monster" || raw === "assist" ? raw : null;
-}
 
 /** the plans a person can pick: the public monthly ones; assist-plus — REQ-118/119: the hidden
  *  $399 tier, a card in the settings upgrade panel alone; Projects is custom — "call us"; test —

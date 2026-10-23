@@ -354,9 +354,9 @@ Deno.test("REQ-091 auth e2e: verify-otp carries redirectTo — /welcome while an
   });
 });
 
-// ── REQ-104: a Monster Free signup names its plan with the code ──
+// ── REQ-120: a code stores no plan — the plan is picked in the wizard ──
 
-Deno.test("REQ-104/113 auth e2e: verify-otp with plan free — a new account has Monster Free on record and lands in the wizard; the same number again keeps it; a paid name is kept on the account and picked the moment the email lands; a plain code stores nothing; an account that already picked keeps its pick; /auth/verify the same", async () => {
+Deno.test("REQ-120 auth e2e: a code stores no plan — verify-otp with plan free or plan monster in the body leaves nothing on record and nothing on the account, the wizard asked as for a plain code; the email landing picks nothing; /auth/verify the same", async () => {
   await withServer(async (port) => {
     const base = `http://localhost:${port}`;
     const verify = async (phone: string, extra: Record<string, unknown>, path = "/auth/verify-otp") => {
@@ -372,45 +372,26 @@ Deno.test("REQ-104/113 auth e2e: verify-otp with plan free — a new account has
       const text = await fetch(`${base}/me/plan`, { headers: { cookie } }).then((r) => r.text());
       return text ? JSON.parse(text) : null;
     };
-
-    // the Monster Free signup: free is on record from the code on, and the wizard still asks the rest
-    const free = await verify("+15125551041", { plan: "free" });
-    assertEquals(free.body.isNewUser, true);
-    assertEquals(free.body.redirectTo, "/welcome", "the initial information is still asked");
-    const stored = await planOf(free.cookie);
-    assertEquals([stored.planId, stored.status], ["free", "free"], "Monster Free on record");
-    // the same number again, no plan named: the record stands
-    const back = await verify("+15125551041", {});
-    assertEquals(back.body.isNewUser, false);
-    assertEquals((await planOf(back.cookie)).status, "free");
-
-    // REQ-113 — a paid card's Sign up: the name is on the account from the code on; the pick waits
-    // for the email a paid pick needs (the wizard's third question)
     const meOf = async (cookie: string) => await fetch(`${base}/me`, { headers: { cookie } }).then((r) => r.json());
-    const paid = await verify("+15125551042", { plan: "monster" });
-    assertEquals(await planOf(paid.cookie), null, "no pick before the email");
-    assertEquals((await meOf(paid.cookie)).signupPlan, "monster", "the account carries the plan the button named");
-    // a plain code (the login page, the other landings): nothing at all
-    const plain = await verify("+15125551043", {});
-    assertEquals([await planOf(plain.cookie), (await meOf(plain.cookie)).signupPlan], [null, undefined]);
 
-    // the email lands: the pick the sign-up named is made — pending, the wizard its way back
+    // REQ-104's free with the code: nothing — the wizard asks the plan, Monster Free among the cards
+    const free = await verify("+15125551041", { plan: "free" });
+    assertEquals([free.body.isNewUser, free.body.redirectTo], [true, "/welcome"]);
+    assertEquals(await planOf(free.cookie), null, "nothing on record: the plan is picked in the wizard");
+    assertEquals("signupPlan" in await meOf(free.cookie), false, "nothing on the account");
+    // REQ-113's paid name with the code: nothing either, before or after the email
+    const paid = await verify("+15125551042", { plan: "monster" });
+    assertEquals([await planOf(paid.cookie), "signupPlan" in await meOf(paid.cookie)], [null, false]);
     const headers = { "content-type": "application/json", cookie: paid.cookie };
     await drain(await fetch(`${base}/me`, { method: "PUT", headers, body: JSON.stringify({ email: "pick@example.com" }) }));
-    const carried = await planOf(paid.cookie);
-    assertEquals([carried.planId, carried.status, carried.merchant], ["monster", "pending", "primary"], "the $99 pick, made by the email");
-    // a pick on record is never downgraded by a free signup on its number (REQ-104), nor replaced by a new name
-    const again = await verify("+15125551042", { plan: "free" });
-    const kept = await planOf(again.cookie);
-    assertEquals([kept.planId, kept.status], ["monster", "pending"], "the pick stands");
-    const renamed = await verify("+15125551042", { plan: "assist" });
-    assertEquals([(await planOf(renamed.cookie)).planId, (await meOf(renamed.cookie)).signupPlan], ["monster", "monster"], "a pick on record stands over a new name");
-
-    // /auth/verify takes the plan the same way — free on record, a paid name on the account
+    assertEquals(await planOf(paid.cookie), null, "the email picks nothing");
+    // a plain code: the same nothing
+    const plain = await verify("+15125551043", {});
+    assertEquals([await planOf(plain.cookie), "signupPlan" in await meOf(plain.cookie)], [null, false]);
+    // /auth/verify the same
     const direct = await verify("+15125551044", { plan: "free" }, "/auth/verify");
-    assertEquals(direct.body.ok, true);
-    assertEquals((await planOf(direct.cookie)).status, "free");
+    assertEquals([direct.body.ok, await planOf(direct.cookie)], [true, null]);
     const directPaid = await verify("+15125551045", { plan: "assist" }, "/auth/verify");
-    assertEquals([await planOf(directPaid.cookie), (await meOf(directPaid.cookie)).signupPlan], [null, "assist"]);
+    assertEquals([await planOf(directPaid.cookie), "signupPlan" in await meOf(directPaid.cookie)], [null, false]);
   });
 });

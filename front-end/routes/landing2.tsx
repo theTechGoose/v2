@@ -63,11 +63,12 @@ import { LEGAL_LINKS, type LegalDocId } from "../../shared/legal/terms.ts";
  * lines (REQ-095 had put it on the whole note, Spanish label included) and on the team's English
  * role; the signup card's title and the demo's thanks are headings; the toggle says where it goes.
  *
- * REQ-104 — "Monster Free signup must get initial information and then skip credit card ask":
- * every button into the signup card names a plan (`data-plan`) — free on the Empezar gratis
- * buttons (the nav, the final CTA, the sticky bar, the Monster Free card), the card's own plan on
- * a plan card's Registrarme — and the card posts the plan named with the code; for free the
- * wizard never asks the plan (Landing2Signup, lib/welcome-steps.ts).
+ * REQ-120 — "on /landing2 can you please remove the logic that changes the onboarding, everything
+ * just ends up on the plan picker onboarding page and they pick the plan there": no button into
+ * the signup card names a plan — the nav's, the final CTA's, the sticky bar's and the plan cards'
+ * all open the same card, which posts the phone and the code alone (Landing2Signup); the plan is
+ * picked in the wizard's plan step. A plan card keeps `data-plan` on the card itself: its id for
+ * what reads the page, never a carry.
  */
 
 /** REQ-076 — the dictionary key for each policy link's label on this page. */
@@ -277,7 +278,6 @@ export default define.page(function Landing2(ctx) {
               <a
                 class="l2-btn l2-btn--primary l2-btn--sm"
                 href="#empezar"
-                data-plan="free"
               >
                 {t("navCta")}
               </a>
@@ -456,7 +456,6 @@ export default define.page(function Landing2(ctx) {
                       class={`l2-btn l2-btn--plan ${look.btn}`}
                       href="#empezar"
                       data-cy="l2-plan-cta"
-                      data-plan={p.id}
                     >
                       {t(`plan.${p.id}.cta`)}
                     </a>
@@ -534,7 +533,6 @@ export default define.page(function Landing2(ctx) {
                 <a
                   class="l2-btn l2-btn--primary"
                   href="#empezar"
-                  data-plan="free"
                 >
                   {t("navCta")}
                 </a>
@@ -584,7 +582,6 @@ export default define.page(function Landing2(ctx) {
           <a
             class="l2-btn l2-btn--primary l2-btn--bar"
             href="#empezar"
-            data-plan="free"
           >
             {t("navCta")}
           </a>

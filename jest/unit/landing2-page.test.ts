@@ -666,36 +666,30 @@ describe("REQ-102 the demo's day picker slides — every day the backend accepts
 });
 
 /**
- * REQ-104 — Raphael, 2026-10-20: "Monster Free signup must get initial information and then
- * skip credit card ask." The signup card is a Monster Free signup — its button names free
- * (its title says "Empieza en 30 segundos", REQ-107) — unless a paid card's Registrarme brought the person to it: every Empezar gratis
- * button into the card names free, each plan card's button names its plan, the card shows the
- * plan it signs up for, and the island posts that plan with the code (POST /auth/verify-otp
- * { plan }), where the backend stores Monster Free on an account with no plan on record. The
- * wizard then never shows the cards (welcome-steps.test.ts).
+ * REQ-120 — Raphael, 2026-10-23: "okay now on /landing2 can you please remove the logic that
+ * changes the onboarding, everything just ends up on the plan picker onboarding page and they pick
+ * the plan there." A button into the signup card names no plan (REQ-104's `data-plan` is gone);
+ * the card keeps none and posts the phone and the code alone; the plan is picked in the wizard
+ * (welcome-steps.test.ts).
  */
-describe("REQ-104 a Monster Free signup names its plan at the code", () => {
-  test("REQ-104 every Empezar gratis button into the card names free; each plan card's button names its plan", () => {
-    const anchors = read(PAGE).match(/<a[^>]*href="#empezar"[^>]*>/g) ?? [];
+describe("REQ-120 no button on /landing2 names a plan: the card posts the phone and the code alone", () => {
+  test("REQ-120 the four buttons into the card carry no plan; the plan cards keep their id on the card, never on the button", () => {
+    const page = read(PAGE);
+    const anchors = page.match(/<a[^>]*href="#empezar"[^>]*>/g) ?? [];
     expect(anchors.length).toBe(4);
-    for (const a of anchors) expect(a).toMatch(/data-plan=/);
-    // the nav, the final CTA and the sticky bar start free; the plan cards' one button names its plan
-    expect(anchors.filter((a) => /data-plan="free"/.test(a)).length).toBe(3);
-    expect(anchors.filter((a) => /data-plan=\{p\.id\}/.test(a)).length).toBe(1);
+    for (const a of anchors) expect(a).not.toMatch(/data-plan/);
+    expect(page).not.toMatch(/data-plan="free"/);
+    expect(page).toMatch(/data-cy="l2-plan"\s*data-plan=\{p\.id\}/);
   });
 
-  test("REQ-104 the card signs up for Monster Free as the page opens, follows the button that brought the person to it, and posts that plan with the code", () => {
+  test("REQ-120 the island keeps no plan, follows no click, shows none on the card, and posts the phone and the code alone", () => {
     const island = read("front-end/islands/Landing2Signup.tsx");
-    expect(island).toMatch(/const \[plan, setPlan\] = useState\("free"\);/);
-    expect(island).toMatch(/closest\("a\[data-plan\]"\)/);
-    expect(island).toMatch(/addEventListener\("click", /);
-    // the card says which plan it signs up for — what a story reads, what a person could be shown
-    expect(island).toMatch(/id="empezar"[\s\S]*?data-plan=\{plan\}/);
+    expect(island).not.toMatch(/data-plan|setPlan|closest\(|addEventListener\("click"/);
     expect(island).toMatch(
-      /verifyClient\.verifyOtp\(\{\s*phoneNumber: toE164\(phone\),\s*code: digits,\s*plan,\s*\}\)/,
+      /verifyClient\.verifyOtp\(\{\s*phoneNumber: toE164\(phone\),\s*code: digits,\s*\}\)/,
     );
     const client = read("front-end/clients/verify.ts");
-    expect(client).toMatch(/plan\?: string;/);
+    expect(client).not.toMatch(/\bplan\b/);
   });
 });
 

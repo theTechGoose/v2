@@ -3,11 +3,6 @@ import { plainToInstance } from "#class-transformer";
 
 export type Language = "en" | "es";
 
-/** REQ-113 — the paid plans a sign-up can name with the code (the landing's $99 and $199 cards);
- *  free is stored as the plan at once (REQ-104). Never assist-plus: hidden from the site, no card
- *  names it — it is picked from settings alone (REQ-119) */
-export type SignupPlan = "monster" | "assist";
-
 export interface User {
   id: string;
   phoneNumber: string;
@@ -37,16 +32,6 @@ export interface User {
    */
   onboardedAt?: string;
   onboardingSkipped?: boolean;
-  /**
-   * REQ-113 — the paid plan the sign-up named with the code: kept here from the code on (the
-   * CRM's Signup Plan and the team's notice read it) and picked the moment the account has the
-   * email a paid pick needs (ChoosePlan.pickNamed). A pick on record always wins over it.
-   *
-   * NEVER part of UpdateUserDto — written only by `UserStore.nameSignupPlan`. parseUpdateUser
-   * passes every field it is given, so `UserStore.update` takes the three profile fields and
-   * nothing else: this, the admin flag and the onboarding stamp cannot ride in on a PUT /me body.
-   */
-  signupPlan?: SignupPlan;
   createdAt: string;
   updatedAt: string;
 }

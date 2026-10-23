@@ -95,9 +95,9 @@ describe("REQ-119 the settings upgrade panel is the one place Monster Assist+ is
     expect(settings).not.toMatch(/PUBLIC_PLANS|ONBOARDING_PLANS/);
   });
 
-  test("no sign-up names it with the code: the front-end's sign-up plan is monster or assist (REQ-113), never assist-plus", () => {
+  test("no sign-up names it with the code: the front-end carries no sign-up plan at all (REQ-120)", () => {
     const profile = read("front-end/clients/profile.ts");
-    expect(profile).toMatch(/signupPlan\?: "monster" \| "assist";/);
+    expect(profile).not.toMatch(/signupPlan/);
     expect(profile).not.toMatch(/assist-plus/);
   });
 });

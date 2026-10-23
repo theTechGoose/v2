@@ -381,35 +381,6 @@ Deno.test("REQ-071 choose-plan — the pay link's way back is under DocuMonster"
   assertEquals(fakePaymentsWorld().links[0].returnLabel, "DocuMonster");
 });
 
-// REQ-104 — "Monster Free signup must get initial information and then skip credit card ask"
-Deno.test("REQ-104 choose-plan — a Monster Free signup stores free on an account with no plan on record and tells the CRM its tier; a pick already made stands, and no billing is touched", async () => {
-  const { users, plans, leads, flow } = await fresh();
-  const world = fakePaymentsWorld();
-  // nothing on record: the signup's free is the plan from the code on
-  const fresh1 = await users.create({ phoneNumber: "+15125551041" });
-  const free = await flow.startFree(fresh1.id);
-  assertEquals([free.planId, free.status], ["free", "free"]);
-  assertEquals((await plans.get(fresh1.id))?.status, "free");
-  await leads.idle();
-  assertEquals(world.customers.map((c) => c.tier), ["Free"], "the CRM hears the tier — Free, the ladder's rung (REQ-111) — after the reply");
-  // a second code on the same account: the record stands as it is
-  assertEquals(await flow.startFree(fresh1.id), free);
-  // a paid pick waiting on its pay page is never downgraded by a free signup on its number
-  const paid = await users.create({ phoneNumber: "+15125551042", email: "p@roof.test", name: "Pat" });
-  const pending = await pick(flow, leads, paid.id, "monster", "/welcome");
-  assertEquals((await flow.startFree(paid.id)).status, "pending");
-  assertEquals((await plans.get(paid.id))?.planId, "monster");
-  // an active plan with its monthly billing: still active, the billing untouched
-  world.settle(pending.dueId!);
-  const active = await flow.refresh(paid.id);
-  assertEquals(active.status, "active");
-  assertEquals(world.subscriptions.length, 1, "the billing started");
-  const kept = await flow.startFree(paid.id);
-  assertEquals([kept.planId, kept.status, kept.subscriptionId], ["monster", "active", active.subscriptionId]);
-  assertEquals(world.subscriptions.map((s) => s.status), ["active"], "nothing canceled");
-  assertEquals([world.dues.length, world.links.length], [1, 1], "nothing raised, nothing minted");
-});
-
 /**
  * REQ-112 — "Whenever someone completes signup … automatically send an email to
  * hello@documonster.com. Include … payment status where applicable." A paid pick whose due settles
@@ -435,67 +406,15 @@ Deno.test("REQ-112 choose-plan — the first month settling sends the signup not
 });
 
 /**
- * REQ-113 — Raphael, 2026-10-21, the launch checklist: "Carry the selected plan from the
- * landing-page button into signup so customers enter the correct flow." — and, told the $99 pick
- * was asked again at the wizard's fourth step: "can we get #2 implemented?" A paid pick needs the
- * account's email (REQ-054), and a phone sign-up has none until the wizard's third question: the
- * name is kept on the account from the code on, and the pick is made the moment the email is there.
- */
-Deno.test("REQ-113 choose-plan — a paid sign-up names its plan with the code: without an email the name waits on the account (the CRM reads it) and nothing is picked; the email landing makes the pick — pending through primary, back to the wizard — and the sweep mints its page, once; with the email already on record the pick is made at the code; free is REQ-104's; a pick on record stands; a name that is no plan is nothing", async () => {
-  const { users, plans, leads, flow } = await fresh();
-  const world = fakePaymentsWorld();
-  const before = Deno.env.get("APP_URL");
-  Deno.env.set("APP_URL", "http://localhost:13113");
-  try {
-    // by phone, no email yet: the name is kept, the pick waits
-    const byPhone = await users.create({ phoneNumber: "+15125551131" });
-    await flow.signupNamed(byPhone.id, "monster");
-    assertEquals((await users.get(byPhone.id)).signupPlan, "monster", "the name is on the account");
-    assertEquals(await plans.get(byPhone.id), null, "no pick without the email a paid pick needs");
-    assertEquals(await flow.pickNamed(byPhone.id), null, "asking again before the email picks nothing");
-    await leads.idle();
-    assertEquals(world.links.length, 0, "nothing minted");
-    assertEquals(world.customers.map((c) => [c.tier, c.signupPlan]), [["Lead", "Monster"]], "the CRM reads the plan asked for — a Lead until the first month is paid");
-    // the email lands (the wizard's third question): the pick is made; the page comes by the sweep (REQ-106)
-    await users.update(byPhone.id, { email: "ana@roof.test" });
-    const pending = await flow.pickNamed(byPhone.id);
-    assertEquals([pending?.planId, pending?.status, pending?.merchant, pending?.payUrl], ["monster", "pending", "primary", undefined], "pending through primary, no page yet");
-    await leads.idle();
-    const minted = (await flow.current(byPhone.id))!;
-    assert(minted.payUrl, "the sweep minted the page");
-    assertEquals(world.links[0].returnUrl, `http://localhost:13113/plan/return?due=${minted.dueId}&back=%2Fwelcome`, "the receipt brings the person back to the wizard");
-    assertEquals((await flow.pickNamed(byPhone.id))?.chosenAt, pending!.chosenAt, "a later save of the email does not pick again");
-    assertEquals(world.links.length, 1, "one page");
-    // the email already on record at the code: picked at once
-    const withEmail = await users.create({ phoneNumber: "+15125551132", email: "pat@roof.test" });
-    await flow.signupNamed(withEmail.id, "assist");
-    assertEquals([(await plans.get(withEmail.id))?.planId, (await plans.get(withEmail.id))?.status], ["assist", "pending"]);
-    // free is stored at once (REQ-104); a pick on record stands over a later name; a name that is no plan is nothing
-    const free = await users.create({ phoneNumber: "+15125551133" });
-    await flow.signupNamed(free.id, "free");
-    assertEquals((await plans.get(free.id))?.status, "free");
-    await flow.signupNamed(free.id, "monster");
-    assertEquals([(await plans.get(free.id))?.planId, (await users.get(free.id)).signupPlan], ["free", undefined], "the pick on record stands; no name kept over it");
-    const plain = await users.create({ phoneNumber: "+15125551134" });
-    await flow.signupNamed(plain.id, "gold");
-    await flow.signupNamed(plain.id, undefined);
-    assertEquals([(await users.get(plain.id)).signupPlan, await plans.get(plain.id)], [undefined, null]);
-    await leads.idle();
-  } finally {
-    before === undefined ? Deno.env.delete("APP_URL") : Deno.env.set("APP_URL", before);
-  }
-});
-
-/**
  * REQ-118 — Raphael, 2026-10-22: "add another tier called monster assist + 399". Monster Assist+
  * is a $399 monthly plan, picked and billed like Monster and Monster Assist: the first month is a
  * $399 due named for it, paid it is active with a $399 monthly billing, and the CRM customer's
  * tier is its name. REQ-119 — Raphael, 2026-10-23: "the monster assist + is a hidden item that can
  * only be shown in the settings upgrade panel not on the onboarding panel." — hidden from the
- * site, so no sign-up names it with the code (REQ-113); the pick is made from settings.
+ * site; the pick is made from settings.
  */
-Deno.test("REQ-118 + REQ-119 choose-plan — Monster Assist+ is picked like any paid plan (from settings): a $399 first-month due named for it, active once paid with a $399 monthly billing, the CRM tier Monster Assist+; a sign-up naming it with the code names nothing — hidden from the site", async () => {
-  const { users, identity, plans, leads, flow } = await fresh();
+Deno.test("REQ-118 + REQ-119 choose-plan — Monster Assist+ is picked like any paid plan (from settings): a $399 first-month due named for it, active once paid with a $399 monthly billing, the CRM tier Monster Assist+", async () => {
+  const { users, identity, leads, flow } = await fresh();
   const world = fakePaymentsWorld();
   const user = await users.create({ phoneNumber: "+15125551181", email: "plus@roof.test", name: "Pat" });
   await identity.upsert(user.id, { businessName: "Pat Builders" });
@@ -509,12 +428,4 @@ Deno.test("REQ-118 + REQ-119 choose-plan — Monster Assist+ is picked like any 
   assertEquals([active.planId, active.status], ["assist-plus", "active"]);
   assertEquals(world.subscriptions.map((s) => [s.externalRef, s.status, s.amountCents]), [[`pm:${user.id}:assist-plus`, "active", 39900]]);
   assertEquals(world.customers.map((c) => [c.customerName, c.tier]), [["Pat Builders", "Monster Assist+"]], "the plan's name is the tier");
-  // REQ-119 — no card on the site names it with the code (REQ-113): a sign-up naming it names nothing
-  const byPhone = await users.create({ phoneNumber: "+15125551182" });
-  await flow.signupNamed(byPhone.id, "assist-plus");
-  assertEquals((await users.get(byPhone.id)).signupPlan, undefined, "nothing on the account");
-  assertEquals(await plans.get(byPhone.id), null, "no pick");
-  await users.update(byPhone.id, { email: "plus2@roof.test" });
-  assertEquals(await flow.pickNamed(byPhone.id), null, "nothing to pick once the email lands");
-  await leads.idle();
 });

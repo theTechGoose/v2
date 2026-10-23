@@ -2038,7 +2038,7 @@ Deno.test("REQ-109: Monster Free's card lists its three inclusions, each on its 
     ) {
       await page.goto(`/landing2?lang=${lang}`);
       await page.locator("#planes").scrollIntoViewIfNeeded();
-      const free = page.locator("[data-cy='l2-plan']").filter({ has: page.locator("[data-cy='l2-plan-cta'][data-plan='free']") });
+      const free = page.locator("[data-cy='l2-plan'][data-plan='free']"); // REQ-120 — the card carries the id, its button no plan
       expect.eq(await free.count(), 1, `the Monster Free card (${lang})`);
       const feats = (await free.locator(".l2-plan__feats .l2-check").allTextContents()).map((s) => s.replace(/\s+/g, " ").trim());
       expect.eq(feats.join(" | "), lines.join(" | "), `the three lines, each its own (${lang})`);
