@@ -237,13 +237,30 @@ Deno.test("REQ-055 + REQ-059: on settings the paid plans are cards; a pick goes 
     expect(plan.planId === "monster" && plan.status === "active", `monster · active (${JSON.stringify(plan)})`);
   }));
 
+/** REQ-106 — a paid pick answers at once; the CRM's customer, due and pay link are minted by the
+ *  sweep after the reply. Read the plan until its due is on it, 20 s at most — a story that pays
+ *  by the fake's remote control (not through the hand-off page) must wait for it first, or the
+ *  fake-paid answers 404 "nothing to pay" (the gate's find under load, REQ-122). */
+async function untilDue(http: StoryTools["http"], auth: Record<string, string>): Promise<Record<string, unknown>> {
+  const read = async () => await (await http("/api/me/plan", { headers: auth })).json() as Record<string, unknown>;
+  let plan = await read();
+  for (let i = 0; i < 80 && !plan.dueId; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    plan = await read();
+  }
+  return plan;
+}
+
 Deno.test("REQ-056: a paid plan goes back to free from the settings cards", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl, { name: "Downgrade Story", email: `down-${digits()}@blackhole.postmarkapp.com` });
     // on Monster, paid and active
     const picked = await http("/api/me/plan", { method: "POST", headers: auth, body: JSON.stringify({ planId: "monster" }) });
     await picked.body?.cancel();
+    const pending = await untilDue(http, auth);
+    expect(typeof pending.dueId === "string", `the pick's due is on the plan before it is paid (${JSON.stringify(pending)})`);
     const paid = await http("/api/me/plan/fake-paid", { method: "POST", headers: auth });
+    expect.eq(paid.status, 200, "the fake settles the due");
     await paid.body?.cancel();
     const refreshed = await http("/api/me/plan/refresh", { method: "POST", headers: auth });
     await refreshed.body?.cancel();
