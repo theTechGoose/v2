@@ -47,7 +47,12 @@ export default define.page(function App(ctx) {
   // SSR-resolve <html lang> so the very first paint declares the right
   // language (screen readers, crawlers, browser translate prompts).
   //
-  // An explicit ?lang= is the strongest signal (a Spanish ad set links
+  // A page that resolved its own language says so on ctx.state.lang (REQ-122:
+  // the public pages — the four legal pages and /contact — through
+  // lib/public-page.ts) and the shell labels <html> with THAT: those pages are
+  // Spanish-first regardless of the browser, and guessing from Accept-Language
+  // here labelled a Spanish page "en" for every English browser. Otherwise:
+  // an explicit ?lang= is the strongest signal (a Spanish ad set links
   // "/?lang=es"), then the visitor's persisted pm_lang choice. With neither:
   // the two marketing landings are Spanish-first BY PRODUCT DECISION
   // (lib/lang.ts pickLangFromAcceptLanguage) and render ES regardless of the
@@ -59,13 +64,14 @@ export default define.page(function App(ctx) {
   const qLang = url.searchParams.get("lang");
   const spanishFirst = url.pathname === "/" || url.pathname === "/landing" ||
     url.pathname === "/landing2";
-  const lang: Lang = (qLang === "en" || qLang === "es")
-    ? qLang
-    : langFromCookie(ctx.req?.headers?.get("cookie")) ??
-      (spanishFirst
-        ? "es"
-        : pmLangFromAcceptLanguage(ctx.req?.headers?.get("accept-language")) ??
-          "es");
+  const lang: Lang = ctx.state.lang ??
+    ((qLang === "en" || qLang === "es")
+      ? qLang
+      : langFromCookie(ctx.req?.headers?.get("cookie")) ??
+        (spanishFirst
+          ? "es"
+          : pmLangFromAcceptLanguage(ctx.req?.headers?.get("accept-language")) ??
+            "es"));
   return (
     <html lang={lang}>
       <head>
