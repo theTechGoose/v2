@@ -89,7 +89,7 @@ export class SendInvoice {
 
     // State flip + bus emit are idempotent — only on first send. Email
     // dispatch retries every click so a previously-failed delivery
-    // (e.g., POSTMARK_FROM unset on first try) doesn't leave the
+    // (e.g., Postmark down on first try) doesn't leave the
     // invoice stuck in "sent" status without ever reaching the customer.
     if (!wasAlreadySent) {
       await this.invoices.update(invoice.id, input.userId, { status: "sent" });

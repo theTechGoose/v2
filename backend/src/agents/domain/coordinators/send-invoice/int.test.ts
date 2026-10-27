@@ -121,7 +121,7 @@ Deno.test("send-invoice: re-Send retries email but state-flip + bus emit + invoi
     const b = await s.flow.run({ userId: "u-1", conversationId: conv.id });
     assertEquals(a.conversation.invoiceId, b.conversation.invoiceId);
     // State flip + bus emit fire once. Email dispatch retries every
-    // click — a previously-failed delivery (POSTMARK_FROM unset,
+    // click — a previously-failed delivery (Postmark down,
     // network blip) shouldn't leave the invoice "sent" without ever
     // reaching the customer.
     assertEquals(events.filter((e) => e.action === "sent").length, 1);

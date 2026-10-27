@@ -209,8 +209,8 @@ Deno.test("send-quote: re-Send re-fires email but state-flip + bus emit stay ide
   assertEquals(ctx.sentEmails.length, 1);
   assertEquals(events.length, 1);
 
-  // Second click: previous attempt may have failed delivery (e.g., POSTMARK_FROM
-  // missing on first try); the user clicks Send again expecting a retry.
+  // Second click: previous attempt may have failed delivery (e.g., Postmark
+  // down on first try); the user clicks Send again expecting a retry.
   // Email re-fires; status flip + bus emit do NOT double — those are
   // one-time state changes.
   await ctx.flow.run({

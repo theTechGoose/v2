@@ -29,7 +29,7 @@ export class BusinessIdentityStore {
       ? { ...existing, ...definedPatch, userId, createdAt: existing.createdAt, updatedAt: now }
       : { userId, ...definedPatch, createdAt: now, updatedAt: now };
 
-    // Roadmap p.7: outbound email is sent from `<emailAlias>@paperworkmonster.com`.
+    // Roadmap p.7: outbound email is sent from `<emailAlias>@documonster.com` (REQ-123).
     // Generate the alias once, on first save with a businessName. Persist it
     // so the From line stays stable across subsequent edits. Collisions are
     // resolved by appending -2, -3, ... — see ensureUniqueAlias.

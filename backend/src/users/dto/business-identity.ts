@@ -114,7 +114,7 @@ export interface BusinessIdentity {
   businessLicense?: string;
   logoFileId?: string;
   /** Lowercase-kebab slug used as the From-localpart for outbound email:
-   *  `<emailAlias>@paperworkmonster.com`. Generated from businessName on
+   *  `<emailAlias>@documonster.com` (REQ-123). Generated from businessName on
    *  first save; persisted to keep the alias stable across edits. */
   emailAlias?: string;
   /** Per-method config that drives the public invoice page's "How would
