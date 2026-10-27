@@ -30,7 +30,8 @@ function trackedLines(pattern: string, excludes: string[] = []): string[] {
   }
 }
 
-const OLD_SENDER_DOMAINS = ["paperworkmonster", "quotejefe"].map((d) => `@${d}\\.com`).join("|");
+/** an address on one of the old sender domains (spelled the way old-origin.test.ts spells the old domain) */
+const OLD_SENDER_DOMAINS = ["paperworkmonster.com", "quotejefe.com"].map((d) => `@${d.replace(".", "\\.")}`).join("|");
 
 describe("REQ-123: every email leaves from documonster.com", () => {
   test("REQ-123: the house From and the alias domain are documonster.com", () => {
