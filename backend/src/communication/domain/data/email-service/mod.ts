@@ -1,5 +1,6 @@
 import { Injectable } from "#danet/core";
 import { encodeBase64 } from "#std/encoding/base64";
+import { fromDocumonster, HOUSE_FROM, SEND_DOMAIN } from "@communication/domain/business/sender/mod.ts";
 
 export interface EmailAttachment {
   /** Filename the recipient sees (e.g., "Agreement-1A0AE6B6.pdf"). */
@@ -14,7 +15,7 @@ export interface SendEmailInput {
   to: string;
   subject: string;
   htmlBody: string;
-  /** Optional From override; otherwise falls back to POSTMARK_FROM env. */
+  /** Optional From — a contractor's alias at documonster.com (REQ-123); otherwise the house From. */
   from?: string;
   /** Optional CC list — Postmark accepts a comma-separated string. */
   cc?: string[];
@@ -30,13 +31,47 @@ export interface SendEmailResult {
   reason?: string;
 }
 
+/** Postmark's /email request body (the fields this app sends). */
+export interface PostmarkPayload {
+  From: string;
+  To: string;
+  Cc?: string;
+  Subject: string;
+  HtmlBody: string;
+  MessageStream: "outbound";
+  Attachments?: { Name: string; Content: string; ContentType: string }[];
+}
+
+/** REQ-123 — the request Postmark gets: a send with no From leaves from the house address. Pure. */
+export function postmarkPayload(input: SendEmailInput): PostmarkPayload {
+  return {
+    From: input.from ?? HOUSE_FROM,
+    To: input.to,
+    ...(input.cc?.length ? { Cc: input.cc.join(", ") } : {}),
+    Subject: input.subject,
+    HtmlBody: input.htmlBody,
+    MessageStream: "outbound",
+    ...(input.attachments?.length
+      ? {
+        Attachments: input.attachments.map((a) => ({
+          Name: a.name,
+          Content: encodeBase64(a.content),
+          ContentType: a.contentType,
+        })),
+      }
+      : {}),
+  };
+}
+
 /**
  * EmailService — thin wrapper over Postmark's transactional API.
  *
  * Configuration:
  *   - POSTMARK_API_KEY       (required for production)
- *   - POSTMARK_FROM          (required for production; the verified sender)
  *   - POSTMARK_BASE_URL      (defaults to https://api.postmarkapp.com)
+ *
+ * The From is never configuration (REQ-123): the house From, or the alias a
+ * coordinator passes — on documonster.com, or the send is refused.
  *
  * If POSTMARK_API_KEY is not set, the service operates in **dev mode**:
  *   - logs the email to stdout
@@ -57,9 +92,15 @@ export class EmailService {
   fetchOverride: typeof fetch | null = null;
 
   async send(input: SendEmailInput): Promise<SendEmailResult> {
-    const apiKey = Deno.env.get("POSTMARK_API_KEY");
-    const from = input.from ?? Deno.env.get("POSTMARK_FROM");
+    const payload = postmarkPayload(input);
+    if (!fromDocumonster(payload.From)) {
+      return {
+        ok: false,
+        reason: `from ${payload.From} is not on ${SEND_DOMAIN}; every email leaves from ${SEND_DOMAIN} (REQ-123)`,
+      };
+    }
 
+    const apiKey = Deno.env.get("POSTMARK_API_KEY");
     if (!apiKey) {
       const attachLog = input.attachments?.length
         ? ` attachments=[${
@@ -69,12 +110,9 @@ export class EmailService {
         }]`
         : "";
       console.log(
-        `[email:dev-mode] would send to=${input.to} subject="${input.subject}"${attachLog}`,
+        `[email:dev-mode] would send from=${payload.From} to=${input.to} subject="${input.subject}"${attachLog}`,
       );
       return { ok: true, reason: "dev_mode_no_dispatch" };
-    }
-    if (!from) {
-      return { ok: false, reason: "POSTMARK_FROM not set; cannot dispatch" };
     }
 
     const baseUrl = Deno.env.get("POSTMARK_BASE_URL") ??
@@ -89,23 +127,7 @@ export class EmailService {
           "Content-Type": "application/json",
           "X-Postmark-Server-Token": apiKey,
         },
-        body: JSON.stringify({
-          From: from,
-          To: input.to,
-          ...(input.cc?.length ? { Cc: input.cc.join(", ") } : {}),
-          Subject: input.subject,
-          HtmlBody: input.htmlBody,
-          MessageStream: "outbound",
-          ...(input.attachments?.length
-            ? {
-              Attachments: input.attachments.map((a) => ({
-                Name: a.name,
-                Content: encodeBase64(a.content),
-                ContentType: a.contentType,
-              })),
-            }
-            : {}),
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         // Drain the body so the response doesn't leak in tests.

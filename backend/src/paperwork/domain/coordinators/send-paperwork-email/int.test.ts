@@ -19,6 +19,7 @@ interface SetupResult {
   customers: CustomerStore;
   quotes: QuoteStore;
   invoices: InvoiceStore;
+  identities: BusinessIdentityStore;
   email: EmailService;
   sent: SendEmailInput[];
 }
@@ -27,6 +28,7 @@ function fresh(): SetupResult {
   const customers = new CustomerStore();
   const quotes = new QuoteStore();
   const invoices = new InvoiceStore();
+  const identities = new BusinessIdentityStore();
   const email = new EmailService();
   const sent: SendEmailInput[] = [];
   // EmailService runs in dev-mode (no POSTMARK_API_KEY) — short-circuit and
@@ -42,15 +44,39 @@ function fresh(): SetupResult {
     invoices,
     customers,
     new UserStore(),
-    new BusinessIdentityStore(),
+    identities,
     email,
     new LogPaperworkMessage(
       new CommConversationStore(),
       new CommMessageStore(),
     ),
   );
-  return { flow, customers, quotes, invoices, email, sent };
+  return { flow, customers, quotes, invoices, identities, email, sent };
 }
+
+// REQ-123 — "i do not want to SEND ANYTHING VIA monsterrg.com can we send everything via
+// documonster instead?" — a contractor's paperwork leaves from their alias at documonster.com,
+// and from noreply@documonster.com when no business name has made an alias yet.
+Deno.test("REQ-123 send-paperwork-email: a quote leaves from <alias>@documonster.com — the business name's slug — and from noreply@documonster.com with no business identity on file", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, quotes, identities, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Acme", email: "ops@acme.test" });
+  const quote = await quotes.create("u-1", { customerId: customer.id, summary: "Job", lineItems: [] });
+
+  const bare = await flow.run("u-1", { kind: "quote", resourceId: quote.id });
+  assertEquals(bare.ok, true);
+  assertEquals(sent[0].from, "noreply@documonster.com");
+
+  const identity = await identities.upsert("u-1", { businessName: "Demo Roofing LLC" });
+  assertEquals(identity.emailAlias, "demo-roofing-llc");
+  const aliased = await flow.run("u-1", { kind: "quote", resourceId: quote.id });
+  assertEquals(aliased.ok, true);
+  assertEquals(sent[1].from, "demo-roofing-llc@documonster.com");
+
+  await resetKv();
+});
 
 /** P-06: outbound dispatch refuses without a real contractor name on file.
  *  UserStore.create() assigns a random id, so write the user row directly. */

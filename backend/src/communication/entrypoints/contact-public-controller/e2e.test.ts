@@ -28,7 +28,6 @@ const valid = (
 
 Deno.test("contact e2e: happy path returns ok=true (dev_mode_no_dispatch)", async () => {
   Deno.env.set("KV_PATH", ":memory:");
-  Deno.env.set("POSTMARK_FROM", "ops@example.test");
   Deno.env.delete("POSTMARK_API_KEY");
   await resetKv();
   const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
@@ -48,7 +47,6 @@ Deno.test("contact e2e: happy path returns ok=true (dev_mode_no_dispatch)", asyn
 
 Deno.test("contact e2e: rate limit kicks in after 5 submissions per email per hour", async () => {
   Deno.env.set("KV_PATH", ":memory:");
-  Deno.env.set("POSTMARK_FROM", "ops@example.test");
   Deno.env.delete("POSTMARK_API_KEY");
   await resetKv();
   const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
@@ -75,7 +73,6 @@ Deno.test("contact e2e: rate limit kicks in after 5 submissions per email per ho
 
 Deno.test("contact e2e: invalid email rejected before rate limiter consumes a slot", async () => {
   Deno.env.set("KV_PATH", ":memory:");
-  Deno.env.set("POSTMARK_FROM", "ops@example.test");
   Deno.env.delete("POSTMARK_API_KEY");
   await resetKv();
   const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
@@ -98,7 +95,6 @@ Deno.test("contact e2e: invalid email rejected before rate limiter consumes a sl
 // along with the inquiry; both are optional, and what arrives is validated.
 Deno.test("REQ-068 contact: a phone and sms consent are accepted; a bad phone is refused", async () => {
   Deno.env.set("KV_PATH", ":memory:");
-  Deno.env.set("POSTMARK_FROM", "ops@example.test");
   Deno.env.delete("POSTMARK_API_KEY");
   await resetKv();
   const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });

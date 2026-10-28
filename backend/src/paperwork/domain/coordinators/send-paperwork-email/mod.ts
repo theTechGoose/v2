@@ -11,6 +11,7 @@ import {
   type SendEmailResult,
 } from "@communication/domain/data/email-service/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import { aliasFrom } from "@communication/domain/business/sender/mod.ts";
 import {
   buildLocalizedQuoteEmailSubject,
   fmtPaperworkDate,
@@ -37,7 +38,7 @@ export interface SendPaperworkEmailInput {
   resourceId: string;
   /** Optional override; otherwise resolved from the linked customer. */
   to?: string;
-  /** Optional sender override (else falls back to POSTMARK_FROM env). */
+  /** Optional sender override (else the business alias at documonster.com, REQ-123). */
   from?: string;
   /** Per-send language override (the "Send in <lang>" button). When set it
    *  wins over the contractor's stored `commsLanguage` default. */
@@ -197,11 +198,10 @@ export class SendPaperworkEmail {
     // Roadmap p.7: contractor lands a copy on every outbound, so they can
     // forward and have a paper trail in their own inbox.
     const cc = sender?.email ? [sender.email] : undefined;
-    // Roadmap p.7 + scope answer: From is a per-business alias at the
-    // SEND_DOMAIN (e.g. acme@paperworkmonster.com) when the business identity
-    // has one set. Falls back to noreply@... and then to the configured
-    // POSTMARK_FROM env when neither is available.
-    const from = input.from ?? resolveSenderFrom(senderBiz);
+    // Roadmap p.7 + scope answer: From is a per-business alias at the send
+    // domain (e.g. acme@documonster.com, REQ-123) when the business identity
+    // has one set, noreply@ there when it has none.
+    const from = input.from ?? aliasFrom(senderBiz?.emailAlias);
 
     const result = await this.email.send({
       to: recipient,
@@ -312,22 +312,6 @@ const APP_URL = (() => {
   }
   return "http://localhost:5280";
 })();
-
-/** Outbound domain for the per-business alias system (roadmap p.7). All
- *  customer-facing email goes out as `<alias>@${SEND_DOMAIN}` so contractors
- *  get a unique address that can be forwarded to their personal inbox. */
-const SEND_DOMAIN = "paperworkmonster.com";
-
-/** Resolve the per-business From address. Uses the business identity's
- *  `emailAlias` when present; falls back to `noreply@${SEND_DOMAIN}`. The
- *  EmailService falls back further to POSTMARK_FROM env if needed. */
-function resolveSenderFrom(biz: BusinessIdentity | undefined): string {
-  const alias = biz?.emailAlias?.trim();
-  if (alias && /^[a-z0-9-]+$/.test(alias)) {
-    return `${alias}@${SEND_DOMAIN}`;
-  }
-  return `noreply@${SEND_DOMAIN}`;
-}
 
 const COLOR_TEAL = "#144852";
 const COLOR_GREEN = "#519843";

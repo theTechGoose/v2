@@ -5,10 +5,11 @@
  * default target. The old domain is a forwarder now — 404 for every path but
  * "/", 405 to a POST — so a link built on it is dead in a customer's inbox.
  *
- * The old domain survives only as a NAME, never a URL: the email domain and
- * the @paperworkmonster.com addresses, the CRM lead-source label, and the
- * frozen prototype pages under front-end/static/_proto/ (the mocks the pages
- * were built from, kept verbatim).
+ * The old domain survives only as a NAME, never a URL: the CRM lead-source
+ * label, one cypress fixture's contractor email, and the frozen prototype
+ * pages under front-end/static/_proto/ (the mocks the pages were built from,
+ * kept verbatim). The email domain moved too: every email leaves from
+ * documonster.com (REQ-123, sender-domain.test.ts).
  */
 import * as fs from "fs";
 import * as path from "path";
