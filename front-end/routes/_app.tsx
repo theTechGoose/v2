@@ -4,6 +4,7 @@ import ImpersonationBanner from "../islands/ImpersonationBanner.tsx";
 import HtmlLang from "../islands/HtmlLang.tsx";
 import MetaPixel from "../components/MetaPixel.tsx";
 import GoogleTag from "../components/GoogleTag.tsx";
+import CrazyEgg from "../components/CrazyEgg.tsx";
 import { readSessionCookie } from "../lib/api.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { langFromCookie } from "../lib/lang.ts";
@@ -100,6 +101,11 @@ export default define.page(function App(ctx) {
             nothing on the real deploy without an id. */
         }
         <MetaPixel path={url.pathname} />
+        {
+          /* REQ-125: Crazy Egg's tracking script, on /landing2 alone — theirs
+            on the real deploy, the app's own fake on the gate and a dev box. */
+        }
+        <CrazyEgg path={url.pathname} />
         {bootScript
           ? (
             <script
