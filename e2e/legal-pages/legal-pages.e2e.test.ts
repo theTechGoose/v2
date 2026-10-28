@@ -183,7 +183,8 @@ Deno.test("REQ-068: the contact form carries a phone and an unchecked SMS consen
     expect(!(await consent.getAttribute("required")), "consent is never required");
     // Hans's example text, with the policy links
     await expect.see("By checking this box, you agree to receive SMS messages from DocuMonster Powered by Paperwork Monster");
-    await expect.see("You may reply STOP to opt out at any time. Reply HELP to 855-362-8666 for assistance. Messages and data rates may apply. Message frequency will vary.");
+    // REQ-122: HELP is a keyword replied to the texting number — the sentence names no phone number
+    await expect.see("You may reply STOP to opt out at any time. Reply HELP for assistance. Messages and data rates may apply. Message frequency will vary.");
     expect.eq(await page.locator("[data-cy='contact-sms-privacy']").getAttribute("href"), "/privacy", "the consent text links the Privacy Policy");
     expect.eq(await page.locator("[data-cy='contact-sms-terms']").getAttribute("href"), "/sms-terms", "the consent text links the SMS Terms");
     // the inquiry, with a phone and consent

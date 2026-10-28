@@ -1,12 +1,9 @@
 import { Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import SiteFooter from "../components/SiteFooter.tsx";
-import {
-  type Lang,
-  langFromCookie,
-  pickLangFromAcceptLanguage,
-} from "../lib/lang.ts";
+import type { Lang } from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
+import { publicPageHandler } from "../lib/public-page.ts";
 import ContactForm from "../islands/ContactForm.tsx";
 
 // Toll-free support line — the same public number the dashboard's "Call
@@ -17,16 +14,20 @@ import {
 } from "../../shared/legal/contact.ts";
 import { legalPathFor } from "../../shared/legal/terms.ts";
 
+/** /contact — a public page like the four legal pages (REQ-122): an explicit
+ *  ?lang= wins and is persisted, then the visitor's saved choice, then
+ *  Spanish-first — so the English form a TCR reviewer is sent to is
+ *  /contact?lang=en, whatever the reviewer's browser asks for. */
+export const handler = publicPageHandler;
+
 /**
  * /contact — public inquiry page. Renders a name/email/phone/subject/message
  * form with the SMS consent box (REQ-068, Hans's example) that posts to the
  * backend ContactPublicController (POST /contact). Reachable from the landing
- * footer's "Contact" link. Language is resolved server-side (cookie →
- * Accept-Language), mirroring the /login pattern.
+ * footer's "Contact" link.
  */
-export default define.page(function Contact(ctx) {
-  const lang: Lang = langFromCookie(ctx.req.headers.get("cookie")) ??
-    pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
+export default define.page<typeof handler>(function Contact(ctx) {
+  const lang: Lang = ctx.data.lang;
 
   const labels = {
     name: tFor(lang, "contactPage.name"),
@@ -39,10 +40,9 @@ export default define.page(function Contact(ctx) {
     subjectPh: tFor(lang, "contactPage.subjectPh"),
     message: tFor(lang, "contactPage.message"),
     messagePh: tFor(lang, "contactPage.messagePh"),
-    // REQ-068 — the consent text names the support line the SMS Terms give for HELP
-    smsConsent: tFor(lang, "contactPage.smsConsent", {
-      phone: SUPPORT_PHONE_DISPLAY,
-    }),
+    // REQ-068 — Hans's consent text; REQ-122 — HELP is a keyword replied to the
+    // texting number, so the sentence names no phone number (TCR's ask)
+    smsConsent: tFor(lang, "contactPage.smsConsent"),
     smsPrivacy: tFor(lang, "contactPage.smsPrivacy"),
     smsAnd: tFor(lang, "contactPage.smsAnd"),
     smsTerms: tFor(lang, "contactPage.smsTerms"),
