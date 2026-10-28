@@ -3,6 +3,7 @@ import MobileViewport from "../islands/MobileViewport.tsx";
 import ImpersonationBanner from "../islands/ImpersonationBanner.tsx";
 import HtmlLang from "../islands/HtmlLang.tsx";
 import MetaPixel from "../components/MetaPixel.tsx";
+import GoogleTag from "../components/GoogleTag.tsx";
 import { readSessionCookie } from "../lib/api.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { langFromCookie } from "../lib/lang.ts";
@@ -47,7 +48,12 @@ export default define.page(function App(ctx) {
   // SSR-resolve <html lang> so the very first paint declares the right
   // language (screen readers, crawlers, browser translate prompts).
   //
-  // An explicit ?lang= is the strongest signal (a Spanish ad set links
+  // A page that resolved its own language says so on ctx.state.lang (REQ-122:
+  // the public pages — the four legal pages and /contact — through
+  // lib/public-page.ts) and the shell labels <html> with THAT: those pages are
+  // Spanish-first regardless of the browser, and guessing from Accept-Language
+  // here labelled a Spanish page "en" for every English browser. Otherwise:
+  // an explicit ?lang= is the strongest signal (a Spanish ad set links
   // "/?lang=es"), then the visitor's persisted pm_lang choice. With neither:
   // the two marketing landings are Spanish-first BY PRODUCT DECISION
   // (lib/lang.ts pickLangFromAcceptLanguage) and render ES regardless of the
@@ -59,13 +65,14 @@ export default define.page(function App(ctx) {
   const qLang = url.searchParams.get("lang");
   const spanishFirst = url.pathname === "/" || url.pathname === "/landing" ||
     url.pathname === "/landing2";
-  const lang: Lang = (qLang === "en" || qLang === "es")
-    ? qLang
-    : langFromCookie(ctx.req?.headers?.get("cookie")) ??
-      (spanishFirst
-        ? "es"
-        : pmLangFromAcceptLanguage(ctx.req?.headers?.get("accept-language")) ??
-          "es");
+  const lang: Lang = ctx.state.lang ??
+    ((qLang === "en" || qLang === "es")
+      ? qLang
+      : langFromCookie(ctx.req?.headers?.get("cookie")) ??
+        (spanishFirst ? "es" : pmLangFromAcceptLanguage(
+          ctx.req?.headers?.get("accept-language"),
+        ) ??
+          "es"));
   return (
     <html lang={lang}>
       <head>
@@ -79,6 +86,12 @@ export default define.page(function App(ctx) {
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/logo.png" />
         <title>{tFor(lang, "brand.name")}</title>
+        {
+          /* REQ-124: the Google tag (gtag.js, G-RN3H6L5263) on every page —
+            Google's loader on the real deploy, the app's own fake on the gate
+            and a dev box. */
+        }
+        <GoogleTag />
         {
           /* REQ-080: the Meta Pixel, on the ad funnel's pages only (the two
             landings, the code page, the welcome wizard, the plan pages,

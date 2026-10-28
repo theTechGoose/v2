@@ -47,9 +47,9 @@ function parseContact(input: unknown): ContactDto {
 /**
  * POST /contact — public, unauthenticated landing-page contact form.
  *
- * Rate-limited per email at 5 submissions per hour. The destination
- * inbox falls back to POSTMARK_FROM (i.e. the contractor's own
- * verified sender), so no extra config is required.
+ * Rate-limited per email at 5 submissions per hour. The destination is
+ * the team inbox (`teamInbox()`, CONTACT_INBOX to override); the mail
+ * leaves from the house From (REQ-123), so no extra config is required.
  *
  * Returns `{ ok: false, reason: "too_many_attempts" }` instead of HTTP
  * 429 to match the convention used by other public endpoints in this

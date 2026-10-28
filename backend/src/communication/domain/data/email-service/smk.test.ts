@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "#std/assert";
 import { EmailService } from "./mod.ts";
+import { aliasFrom, HOUSE_FROM } from "@communication/domain/business/sender/mod.ts";
 
 interface CapturedCall {
   url: string;
@@ -36,22 +37,8 @@ Deno.test("EmailService smoke: dev mode (no API key) returns ok with dev_mode re
   assertEquals(mock.calls.length, 0);
 });
 
-Deno.test("EmailService smoke: with API key but no FROM returns ok=false", async () => {
-  Deno.env.set("POSTMARK_API_KEY", "test-key");
-  Deno.env.delete("POSTMARK_FROM");
-  try {
-    const svc = new EmailService();
-    const out = await svc.send({ to: "ops@acme.test", subject: "hi", htmlBody: "<p>hi</p>" });
-    assertEquals(out.ok, false);
-    assert(out.reason?.includes("POSTMARK_FROM"));
-  } finally {
-    Deno.env.delete("POSTMARK_API_KEY");
-  }
-});
-
-Deno.test("EmailService smoke: posts to /email with X-Postmark-Server-Token header and Postmark body shape", async () => {
+Deno.test("EmailService smoke: posts to /email with X-Postmark-Server-Token header and Postmark body shape, from the house address (REQ-123)", async () => {
   Deno.env.set("POSTMARK_API_KEY", "test-key-xyz");
-  Deno.env.set("POSTMARK_FROM", "noreply@paperwork.test");
   try {
     const mock = makeMockFetch(() => new Response(JSON.stringify({ MessageID: "abc-123" }), {
       status: 200,
@@ -68,35 +55,35 @@ Deno.test("EmailService smoke: posts to /email with X-Postmark-Server-Token head
     assertEquals(call.method, "POST");
     assertEquals(call.headers["x-postmark-server-token"], "test-key-xyz");
     const body = call.body as { From: string; To: string; Subject: string; HtmlBody: string; MessageStream: string };
-    assertEquals(body.From, "noreply@paperwork.test");
+    assertEquals(body.From, HOUSE_FROM);
     assertEquals(body.To, "tom@example.test");
     assertEquals(body.Subject, "Your quote");
     assertEquals(body.HtmlBody, "<p>see attached</p>");
     assertEquals(body.MessageStream, "outbound");
   } finally {
     Deno.env.delete("POSTMARK_API_KEY");
-    Deno.env.delete("POSTMARK_FROM");
   }
 });
 
-Deno.test("EmailService smoke: per-call from override beats POSTMARK_FROM", async () => {
+Deno.test("EmailService smoke: a per-call From on documonster.com beats the house From; one off the domain is refused (REQ-123)", async () => {
   Deno.env.set("POSTMARK_API_KEY", "k");
-  Deno.env.set("POSTMARK_FROM", "default@x.test");
   try {
     const mock = makeMockFetch(() => new Response(JSON.stringify({ MessageID: "id" }), { status: 200, headers: { "content-type": "application/json" } }));
     const svc = new EmailService(); svc.fetchOverride = mock.fetch;
-    await svc.send({ to: "to@x.test", subject: "s", htmlBody: "h", from: "override@x.test" });
+    await svc.send({ to: "to@x.test", subject: "s", htmlBody: "h", from: aliasFrom("acme") });
     const body = mock.calls[0].body as { From: string };
-    assertEquals(body.From, "override@x.test");
+    assertEquals(body.From, "acme@documonster.com");
+
+    const refused = await svc.send({ to: "to@x.test", subject: "s", htmlBody: "h", from: "warnings@monsterrg.com" });
+    assertEquals(refused.ok, false);
+    assertEquals(mock.calls.length, 1, "Postmark never saw the refused one");
   } finally {
     Deno.env.delete("POSTMARK_API_KEY");
-    Deno.env.delete("POSTMARK_FROM");
   }
 });
 
 Deno.test("EmailService smoke: non-2xx response surfaces as ok=false with status in reason", async () => {
   Deno.env.set("POSTMARK_API_KEY", "k");
-  Deno.env.set("POSTMARK_FROM", "from@x.test");
   try {
     const mock = makeMockFetch(() => new Response("invalid api key", { status: 401 }));
     const svc = new EmailService(); svc.fetchOverride = mock.fetch;
@@ -105,13 +92,11 @@ Deno.test("EmailService smoke: non-2xx response surfaces as ok=false with status
     assert(out.reason?.includes("postmark 401"));
   } finally {
     Deno.env.delete("POSTMARK_API_KEY");
-    Deno.env.delete("POSTMARK_FROM");
   }
 });
 
 Deno.test("EmailService smoke: fetch throwing is caught and surfaced as ok=false", async () => {
   Deno.env.set("POSTMARK_API_KEY", "k");
-  Deno.env.set("POSTMARK_FROM", "from@x.test");
   try {
     const f = (() => { throw new Error("network down"); }) as unknown as typeof fetch;
     const svc = new EmailService(); svc.fetchOverride = f;
@@ -120,6 +105,30 @@ Deno.test("EmailService smoke: fetch throwing is caught and surfaced as ok=false
     assertEquals(out.reason, "network down");
   } finally {
     Deno.env.delete("POSTMARK_API_KEY");
-    Deno.env.delete("POSTMARK_FROM");
+  }
+});
+
+// REQ-123 — the real Postmark server accepts documonster.com as a sender: the house From and an
+// alias, each to Postmark's blackhole address (accepted and discarded, never delivered). Needs the
+// real key, read before the mock tests above delete it:
+// `cd backend && deno test -A --env-file=../.env src/communication/domain/data/email-service/smk.test.ts`.
+const REAL_KEY = Deno.env.get("POSTMARK_API_KEY");
+Deno.test("REQ-123 smoke (real Postmark): DocuMonster <hello@documonster.com> and <alias>@documonster.com are accepted senders", async () => {
+  assert(REAL_KEY && REAL_KEY.length > 20, "POSTMARK_API_KEY is the real server token here — load ../.env");
+  Deno.env.set("POSTMARK_API_KEY", REAL_KEY);
+  try {
+    const svc = new EmailService();
+    for (const from of [HOUSE_FROM, aliasFrom("sender-probe")]) {
+      const out = await svc.send({
+        to: "test@blackhole.postmarkapp.com",
+        subject: `REQ-123 sender probe — ${from}`,
+        htmlBody: `<p>REQ-123: every email leaves from documonster.com. This probe left from ${from}.</p>`,
+        from,
+      });
+      assertEquals(out.ok, true, `${from}: ${out.reason}`);
+      assert(out.messageId, `${from}: Postmark gives a MessageID`);
+    }
+  } finally {
+    Deno.env.delete("POSTMARK_API_KEY");
   }
 });

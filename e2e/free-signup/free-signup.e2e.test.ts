@@ -244,10 +244,10 @@ Deno.test("REQ-120: no button on /landing2 changes onboarding — Registrarme on
     );
     expect.eq(
       await page.locator(
-        "[data-cy='plan-pending'], [data-cy='plan-preparing'], [data-cy='plan-active']",
+        "[data-cy='plan-pending'], [data-cy='plan-preparing']",
       ).count(),
       0,
-      "no pay page, nothing prepared, nothing active: the landing page picked nothing",
+      "no pay page, nothing prepared: the landing page picked nothing",
     );
     expect(
       await planOnRecord(http, page) === null,
@@ -310,11 +310,11 @@ Deno.test("REQ-120: no button on /landing2 changes onboarding — Registrarme on
       1,
       "Monster Free is a card to pick",
     );
-    // Monster Free picked here: stored without a card ask, the wizard goes on to the state — nine
-    // steps from then on (REQ-104's rule for a plan already free)
+    // Monster Free picked here: stored without a card ask, the wizard goes on to the state — the
+    // six questions still open, counted alone (REQ-121: a question answered is not asked again)
     await page.locator("[data-cy='plan-pick-free']").click();
     await expect.see("Which state");
-    await expect.see("Step 4 of 9");
+    await expect.see("Step 1 of 6");
     expect(!page.url().includes("/pay/"), `never a pay page (${page.url()})`);
     const free = await planOnRecord(http, page);
     expect(

@@ -136,3 +136,48 @@ Deno.test("REQ-091: with eight of nine answered the code still lands in the wiza
     await page.waitForURL((u: URL) => u.pathname === "/dashboard", { timeout: 60_000 });
     expect.eq(new URL(page.url()).pathname, "/dashboard", "/welcome bounces a finished account to the dashboard");
   }));
+
+/**
+ * REQ-121 — Raphael, 2026-10-23: "we should not ask the onboarding questions that we already
+ * have an answer to on next login, if you login and have not completed question it should show
+ * only questions that have not been answered." The wizard asks the questions with no answer on
+ * record when it opens, then the closing sample-quote screen; the progress counts those alone.
+ */
+Deno.test("REQ-121: a later login asks only the questions still open — with the business name and the logo left open the wizard is three steps, the business name, the logo and the sample quote; the seven answered are never shown again, and a brand-new account still meets all ten", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize(DESKTOP);
+    const host = new URL(baseUrl).hostname;
+    const english = () => page.context().addCookies([{ name: "pm_lang", value: "en", domain: host, path: "/" }]);
+    await english();
+    const local = `512${digits()}`;
+
+    // a brand-new account: every question, the wizard ten steps long (REQ-120)
+    let landed = await codeIn(page, local);
+    expect.eq(landed.pathname, "/welcome", `a new account's code lands in the wizard (${landed})`);
+    await expect.see("what should we call you");
+    await expect.see("Step 1 of 10");
+
+    // seven answered through the app's own API — the business name and the logo left open
+    await answerQuestions(http, await sessionAuth(page), { except: ["businessName", "logo"] });
+    await page.context().clearCookies();
+    await english();
+    landed = await codeIn(page, local);
+    expect.eq(landed.pathname, "/welcome", `two open questions still land the code in the wizard (${landed})`);
+
+    // the wizard is the two open questions and the closing screen: three steps, the business name first
+    await expect.see("business called");
+    await expect.see("Step 1 of 3");
+    await fillStep(page, "input.welcome__input", "Story Roofing LLC");
+    await page.locator("[data-cy='welcome-continue']").click();
+    // straight to the logo: not the email, the plan, the state, the address or the payment methods, all answered
+    await expect.see("Add your logo");
+    await expect.see("Step 2 of 3");
+    const card = await page.locator(".welcome__card").innerText();
+    expect(!/best email|Pick your plan|Which state|business based|get paid/.test(card), `no answered question is asked again (${card.slice(0, 80)})`);
+    // the logo put off: the closing screen, the last of the three — never the insurance, answered
+    await page.locator("[data-cy='welcome-skip']").click();
+    await expect.see("See what your customer sees");
+    await expect.see("Step 3 of 3");
+    const closing = await page.locator(".welcome__card").innerText();
+    expect(!/insured/.test(closing), "the insurance, answered, is not asked again");
+  }));
