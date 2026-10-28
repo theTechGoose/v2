@@ -1,6 +1,10 @@
 import { Injectable } from "#danet/core";
 import { encodeBase64 } from "#std/encoding/base64";
-import { fromDocumonster, HOUSE_FROM, SEND_DOMAIN } from "@communication/domain/business/sender/mod.ts";
+import {
+  fromDocumonster,
+  HOUSE_FROM,
+  SEND_DOMAIN,
+} from "@communication/domain/business/sender/mod.ts";
 
 export interface EmailAttachment {
   /** Filename the recipient sees (e.g., "Agreement-1A0AE6B6.pdf"). */
@@ -90,17 +94,22 @@ export class EmailService {
    * can't resolve plain-object params.
    */
   fetchOverride: typeof fetch | null = null;
+  /** REQ-123 (the gate's find): the Postmark token a test hands in, so the
+   *  test never steers the real one through process env — which `deno test
+   *  --parallel` shares across modules, and other int files delete. */
+  apiKeyOverride: string | null = null;
 
   async send(input: SendEmailInput): Promise<SendEmailResult> {
     const payload = postmarkPayload(input);
     if (!fromDocumonster(payload.From)) {
       return {
         ok: false,
-        reason: `from ${payload.From} is not on ${SEND_DOMAIN}; every email leaves from ${SEND_DOMAIN} (REQ-123)`,
+        reason:
+          `from ${payload.From} is not on ${SEND_DOMAIN}; every email leaves from ${SEND_DOMAIN} (REQ-123)`,
       };
     }
 
-    const apiKey = Deno.env.get("POSTMARK_API_KEY");
+    const apiKey = this.apiKeyOverride ?? Deno.env.get("POSTMARK_API_KEY");
     if (!apiKey) {
       const attachLog = input.attachments?.length
         ? ` attachments=[${
