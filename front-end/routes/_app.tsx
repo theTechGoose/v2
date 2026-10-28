@@ -3,6 +3,7 @@ import MobileViewport from "../islands/MobileViewport.tsx";
 import ImpersonationBanner from "../islands/ImpersonationBanner.tsx";
 import HtmlLang from "../islands/HtmlLang.tsx";
 import MetaPixel from "../components/MetaPixel.tsx";
+import GoogleTag from "../components/GoogleTag.tsx";
 import { readSessionCookie } from "../lib/api.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { langFromCookie } from "../lib/lang.ts";
@@ -68,10 +69,10 @@ export default define.page(function App(ctx) {
     ((qLang === "en" || qLang === "es")
       ? qLang
       : langFromCookie(ctx.req?.headers?.get("cookie")) ??
-        (spanishFirst
-          ? "es"
-          : pmLangFromAcceptLanguage(ctx.req?.headers?.get("accept-language")) ??
-            "es"));
+        (spanishFirst ? "es" : pmLangFromAcceptLanguage(
+          ctx.req?.headers?.get("accept-language"),
+        ) ??
+          "es"));
   return (
     <html lang={lang}>
       <head>
@@ -85,6 +86,12 @@ export default define.page(function App(ctx) {
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/logo.png" />
         <title>{tFor(lang, "brand.name")}</title>
+        {
+          /* REQ-124: the Google tag (gtag.js, G-RN3H6L5263) on every page —
+            Google's loader on the real deploy, the app's own fake on the gate
+            and a dev box. */
+        }
+        <GoogleTag />
         {
           /* REQ-080: the Meta Pixel, on the ad funnel's pages only (the two
             landings, the code page, the welcome wizard, the plan pages,
