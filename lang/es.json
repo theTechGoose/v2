@@ -2568,7 +2568,6 @@
   "welcome.plan.emailFirst": "Un plan de pago necesita un correo en la cuenta — regresa un paso y agrégalo.",
   "plan.pending": "Esperando el pago — termínalo en la página de pago y volverás aquí automáticamente.",
   "plan.resume": "Continuar el pago",
-  "plan.active": "{name} está activo",
   "plan.activeSince": "{name} está activo desde {date}",
   "plan.statusFree": "Gratis — cambia cuando quieras.",
   "plan.current": "Plan actual",
