@@ -1625,7 +1625,17 @@ function BillingTab({ snapshot }: { snapshot: ProfileSnapshot }) {
               ? (
                 <div>
                   <dt>{tFor(lang, "billing.nextBill")}</dt>
-                  <dd data-cy="plan-next-bill">{fmtDate(plan.nextBillAt)}</dd>
+                  <dd data-cy="plan-next-bill">
+                    {fmtDate(plan.nextBillAt)}
+                    {/* REQ-129 — what that bill is for: the prorated days to the month's end, or the full month */}
+                    {plan.nextBillCents !== undefined
+                      ? ` · ${dollars(plan.nextBillCents)}${
+                        plan.nextBillCents < priceCents
+                          ? ` ${tFor(lang, "billing.prorated")}`
+                          : ""
+                      }`
+                      : ""}
+                  </dd>
                 </div>
               )
               : null}

@@ -538,3 +538,39 @@ Deno.test("REQ-106 a newer pick made while the first page is being minted is the
   assertEquals(await outbox.list(), []);
   await done();
 });
+
+// REQ-128 — Raphael, 2026-11-02, on REQ-060's story failing beside REQ-106's slow mint: "can you
+// please fix it?" A record that arrives while a sweep is held by a slow one is carried at once by
+// a pass of its own; the leases keep the passes off one record.
+Deno.test("REQ-128 a record enqueued while a sweep is held by a slow one is carried at once, not after it", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  const sent: string[] = [];
+  const link = {
+    async createCustomer(input: { customerPhone?: string }) {
+      sent.push(input.customerPhone ?? "");
+      if (input.customerPhone === "+15125551280") await held; // the CRM holds this one, as its cold start holds a real one
+      return { customerId: `c-${sent.length}` };
+    },
+    findCustomer: () => Promise.resolve(null),
+  } as unknown as PaymentsLink;
+  const outbox = new CrmCaptureOutbox();
+  const crm = new CrmCustomerSync(new UserStore(), new BusinessIdentityStore(), link, new PlanStore());
+  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, {} as PayLinkMint);
+  await leads.enqueue("+15125551280"); // its pass is now held on the CRM
+  await new Promise((r) => setTimeout(r, 50));
+  assertEquals(sent, ["+15125551280"], "the slow one is on the CRM");
+  const t0 = Date.now();
+  await leads.enqueue("+15125551281"); // arrives while that pass is held
+  for (let i = 0; i < 40 && !sent.includes("+15125551281"); i++) await new Promise((r) => setTimeout(r, 25));
+  const waited = Date.now() - t0;
+  assertEquals(sent.includes("+15125551281"), true, "the second lead reached the CRM while the first still holds");
+  assert(waited < 800, `carried at once, not after the slow one (${waited} ms)`);
+  assertEquals((await outbox.list()).filter((r) => r.phone === "+15125551281").length, 0, "and its record is cleared");
+  release();
+  await leads.idle();
+  assertEquals((await outbox.list()).length, 0, "both landed");
+  await resetKv();
+});

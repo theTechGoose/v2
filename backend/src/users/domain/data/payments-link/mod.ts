@@ -66,6 +66,8 @@ export interface NewSubscription {
   memo: string;
   externalRef: string;
   firstBillAt: string;
+  /** REQ-129 — what the bill at firstBillAt is for when not the monthly amount (the prorated days to the month's end; the CRM's REQ-125) */
+  firstAmountCents?: number;
   returnUrl?: string;
   returnLabel?: string;
   /** REQ-064/100 — the merchant account the months go through (the CRM's `x-account`, REQ-069), the pick's own, required */
@@ -77,6 +79,8 @@ export interface SubscriptionInfo {
   status: SubscriptionStatus;
   /** when the next month falls due; the month being retried while past due */
   nextBillAt: string;
+  /** REQ-129 — what that bill is for (the CRM's REQ-125); absent on a record from before the CRM said */
+  nextAmountCents?: number;
   lastBilledAt: string;
   cardBrand: string;
   cardLast4: string;
@@ -217,6 +221,7 @@ class CrmPaymentsLink implements PaymentsLinkPort {
       memo: input.memo,
       externalRef: input.externalRef,
       firstBillAt: input.firstBillAt,
+      ...(input.firstAmountCents !== undefined ? { firstAmountCents: input.firstAmountCents } : {}), // REQ-129
       brandId: "",
       returnUrl: input.returnUrl ?? "",
       returnLabel: input.returnLabel ?? "",
@@ -242,6 +247,7 @@ class CrmPaymentsLink implements PaymentsLinkPort {
       subscriptionId: s.subscriptionId,
       status: s.status,
       nextBillAt: s.nextBillAt,
+      ...(typeof s.nextAmountCents === "number" ? { nextAmountCents: s.nextAmountCents } : {}), // REQ-129
       lastBilledAt: s.lastBilledAt,
       cardBrand: s.cardBrand,
       cardLast4: s.cardLast4,
@@ -298,7 +304,7 @@ class FakePaymentsWorld {
     const now = new Date().toISOString();
     for (const s of this.subscriptions) {
       if (s.status === "past_due" && s.payUrl.includes(`due=${dueId}`)) {
-        Object.assign(s, { status: "active", nextBillAt: addMonth(s.nextBillAt), lastBilledAt: now, payUrl: "", failures: 0, ...this.cards.get(s.customerId) });
+        Object.assign(s, { status: "active", nextBillAt: addMonth(s.nextBillAt), nextAmountCents: s.amountCents, lastBilledAt: now, payUrl: "", failures: 0, ...this.cards.get(s.customerId) });
       }
     }
   }
@@ -311,18 +317,22 @@ class FakePaymentsWorld {
    * is charged to the card on file and moves on a month; with no card the month is past due,
    * with a pay page for it (the app's own stand-in) that returns where the subscription says.
    */
-  bill(now: string) {
+  bill(now: string, customerId?: string) {
     for (const s of this.subscriptions) {
       if (s.status === "canceled") continue;
+      // REQ-129 — the stories' fake-bill is one person's clock: with every billing anchored to the same
+      // 1st, one story's "a month on" would otherwise bill every other story's subscription too
+      if (customerId && s.customerId !== customerId) continue;
       if (s.status === "active" && s.nextBillAt > now) continue;
       const card = this.cards.get(s.customerId);
       if (card) {
-        Object.assign(s, { status: "active", nextBillAt: addMonth(s.nextBillAt), lastBilledAt: now, payUrl: "", failures: 0, ...card });
+        // REQ-129 — collected: what the first bill was for is behind; the months from here are the monthly amount
+        Object.assign(s, { status: "active", nextBillAt: addMonth(s.nextBillAt), nextAmountCents: s.amountCents, lastBilledAt: now, payUrl: "", failures: 0, ...card });
         continue;
       }
       if (s.status !== "past_due") {
         const dueId = crypto.randomUUID();
-        this.dues.push({ customerId: s.customerId, amountCents: s.amountCents, memo: `${s.memo} — ${monthLabel(s.nextBillAt)}`, dueId, open: true });
+        this.dues.push({ customerId: s.customerId, amountCents: s.nextAmountCents ?? s.amountCents, memo: `${s.memo} — ${monthLabel(s.nextBillAt)}`, dueId, open: true }); // REQ-129
         const q = new URLSearchParams({ customer: s.customerId, due: dueId });
         if (s.returnUrl) {
           q.set("return", s.returnUrl);
@@ -425,6 +435,7 @@ class FakePaymentsLink implements PaymentsLinkPort {
       subscriptionId: crypto.randomUUID(),
       status: "active",
       nextBillAt: new Date(input.firstBillAt).toISOString(),
+      nextAmountCents: input.firstAmountCents ?? input.amountCents, // REQ-129 — the CRM's REQ-125
       lastBilledAt: "",
       ...card,
       failures: 0,
@@ -451,7 +462,7 @@ class FakePaymentsLink implements PaymentsLinkPort {
 }
 
 function info(s: FakeSubscription): SubscriptionInfo {
-  return { subscriptionId: s.subscriptionId, status: s.status, nextBillAt: s.nextBillAt, lastBilledAt: s.lastBilledAt, cardBrand: s.cardBrand, cardLast4: s.cardLast4, failures: s.failures, payUrl: s.payUrl };
+  return { subscriptionId: s.subscriptionId, status: s.status, nextBillAt: s.nextBillAt, nextAmountCents: s.nextAmountCents, lastBilledAt: s.lastBilledAt, cardBrand: s.cardBrand, cardLast4: s.cardLast4, failures: s.failures, payUrl: s.payUrl };
 }
 
 /**

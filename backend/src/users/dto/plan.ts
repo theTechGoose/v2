@@ -36,6 +36,11 @@ export interface UserPlan {
   dueCents?: number;
   switchedFrom?: PlanId;
   firstBillAt?: string;
+  /** REQ-129 — what the first month paid through (a calendar month after activation; carried
+   *  across a switch), and what the CRM says the next bill is for: the prorated days to the
+   *  month's end on the first 1st, the full price every 1st after */
+  paidThrough?: string;
+  nextBillCents?: number;
   /** REQ-064/100 — the merchant account the charge goes through (the CRM's `x-account`): on every
    *  paid pick, the one name the pay link, the pay page's footer and the billing share; free has none */
   merchant?: string;
