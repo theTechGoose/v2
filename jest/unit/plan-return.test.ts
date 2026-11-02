@@ -18,7 +18,7 @@ describe("REQ-059 plan-return", () => {
 
   test("REQ-059 after a pick the wizard resumes past the plan step, settings is just settings", () => {
     expect(pageAfterPick("/welcome")).toBe("/welcome?after=plan");
-    expect(pageAfterPick("/settings")).toBe("/settings");
+    expect(pageAfterPick("/settings")).toBe("/settings?tab=billing"); // REQ-127 — the Billing tab
     expect(resumesAfterPlan("?after=plan")).toBe(true);
     expect(resumesAfterPlan("?after=plan&charge=x")).toBe(true);
     expect(resumesAfterPlan("")).toBe(false);
@@ -96,8 +96,8 @@ describe("REQ-106 pay hand-off", () => {
     expect(handoffNext(ready, "/welcome")).toBe(ready.payUrl);
     expect(handoffNext(refused, "/welcome")).toBe("/welcome?plan=merchant-unknown");
     expect(handoffNext({ status: "free" }, "/welcome")).toBe("/welcome?after=plan");
-    expect(handoffNext({ status: "active" }, "/settings")).toBe("/settings");
-    expect(handoffNext(null, "/settings")).toBe("/settings");
+    expect(handoffNext({ status: "active" }, "/settings")).toBe("/settings?tab=billing");
+    expect(handoffNext(null, "/settings")).toBe("/settings?tab=billing");
   });
 
   test("REQ-106 the hand-off page is the route /plan/pay: unlinked and noindex, a visitor without a session goes home, a page already on the record is a redirect straight to it, and its island polls the plan and moves on the hand-off rules", () => {

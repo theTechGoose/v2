@@ -2,6 +2,7 @@
 // pages read (shared/quote-flow/pricing-plans.ts): what a plan costs here is what the site says.
 import { PRICING_PLANS, type PricingPlan } from "#quote-flow/pricing-plans.ts";
 import type { PayLinkError, PlanId, UserPlan } from "@users/dto/plan.ts";
+export { addMonth, switchQuote, type SwitchQuote } from "#quote-flow/plan-switch.ts";
 
 /** the plans a person can pick: the public monthly ones; assist-plus — REQ-118/119: the hidden
  *  $399 tier, a card in the settings upgrade panel alone; Projects is custom — "call us"; test —
@@ -110,7 +111,15 @@ export interface PayLinkInfo {
  * due and pay page come by the sweep (`minted`) and are absent meanwhile (`isPreparing`)
  * @throws pay-link-missing — a paid pick without the merchant account the charge goes through
  */
-export function chosen(userId: string, planId: PlanId, now: string, link?: Pick<PayLinkInfo, "merchant"> & Partial<PayLinkInfo>, previousSubscriptionId?: string): UserPlan {
+export function chosen(
+  userId: string,
+  planId: PlanId,
+  now: string,
+  link?: Pick<PayLinkInfo, "merchant"> & Partial<PayLinkInfo>,
+  previousSubscriptionId?: string,
+  /** REQ-127 — an UPGRADE from an active plan: the due is the difference, from that plan */
+  upgrade?: { dueCents: number; switchedFrom: PlanId },
+): UserPlan {
   if (planId === "free") return { userId, planId, status: "free", chosenAt: now, updatedAt: now };
   if (!link?.merchant) throw new Error("pay-link-missing: a paid plan names the merchant account the charge goes through");
   const { customerId, dueId, payUrl, merchant } = link;
@@ -125,6 +134,44 @@ export function chosen(userId: string, planId: PlanId, now: string, link?: Pick<
     ...(dueId ? { dueId } : {}),
     ...(payUrl ? { payUrl } : {}),
     ...(previousSubscriptionId ? { previousSubscriptionId } : {}),
+    ...(upgrade ? { dueCents: upgrade.dueCents, switchedFrom: upgrade.switchedFrom } : {}),
+  };
+}
+
+// ---- REQ-127 — an upgrade charges the difference, a downgrade refunds nothing ---------------
+// Raphael, 2026-11-02: "alex paid $99 … when he upgrades its trying to charge him 399 not 300 for
+// the difference." / "upgrade charges the difference, downgrade has no refund". The rule is the
+// shared `switchQuote`; these are its records.
+
+/** what the pending pick's due is for: the difference on an upgrade, the full first month otherwise */
+export function dueCentsFor(plan: PricingPlan, pick: Pick<UserPlan, "dueCents">): number {
+  return pick.dueCents ?? plan.priceCents;
+}
+
+/** the memo on the due — what the person reads on the pay page and the CRM on its row */
+export function dueMemo(plan: PricingPlan, pick: Pick<UserPlan, "dueCents" | "switchedFrom">): string {
+  if (pick.switchedFrom && pick.dueCents !== undefined) {
+    const from = PRICING_PLANS.find((p) => p.id === pick.switchedFrom)?.name ?? pick.switchedFrom;
+    return `${plan.name} — upgrade from ${from} (the difference)`;
+  }
+  return firstMonthMemo(plan);
+}
+
+/** a DOWNGRADE: the cheaper plan, active now, on the same customer and account; the old billing is
+ *  canceled by the pick and the new one is ensured on the next read, first billing when the old one
+ *  would have (`firstBillAt`) — the paid month kept, nothing refunded, no month charged twice */
+export function downgraded(before: UserPlan, planId: PlanId, now: string, firstBillAt: string): UserPlan {
+  return {
+    userId: before.userId,
+    planId,
+    status: "active",
+    chosenAt: now,
+    activatedAt: now,
+    updatedAt: now,
+    ...(before.customerId ? { customerId: before.customerId } : {}),
+    ...(before.merchant ? { merchant: before.merchant } : {}),
+    switchedFrom: before.planId,
+    firstBillAt,
   };
 }
 
@@ -160,20 +207,6 @@ export function samePick(a: UserPlan, b: UserPlan): boolean {
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-/** a calendar month later, same day and time; a day the next month lacks lands on its last (the CRM's rule too) */
-export function addMonth(iso: string): string {
-  const d = new Date(iso);
-  const lastOfNext = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 2, 0)).getUTCDate();
-  return new Date(Date.UTC(
-    d.getUTCFullYear(),
-    d.getUTCMonth() + 1,
-    Math.min(d.getUTCDate(), lastOfNext),
-    d.getUTCHours(),
-    d.getUTCMinutes(),
-    d.getUTCSeconds(),
-    d.getUTCMilliseconds(),
-  )).toISOString();
-}
 
 /** "November 2026" — the month a due is for */
 export function monthLabel(iso: string): string {

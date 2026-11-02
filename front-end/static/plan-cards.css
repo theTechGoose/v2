@@ -57,3 +57,129 @@
   line-height: 1.4;
   opacity: 0.85;
 }
+
+/* REQ-127 — "SUPER clean what plan the user is on … just a billing tab": the Billing tab's own
+   pieces — the two tabs on /settings, the plan head with its one status pill, the facts, and the
+   one line on each card saying what picking it does. */
+.settings-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 14px;
+  border-bottom: 1px solid var(--border, #d8dcd5);
+}
+.settings-tab {
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 10px 14px;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--fg-muted, #6b7560);
+  cursor: pointer;
+}
+.settings-tab--on {
+  color: var(--fg, #1a535c);
+  border-bottom-color: var(--brand-green, #519843);
+}
+.billing__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.billing__eyebrow {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted, #6b7560);
+}
+.billing__name {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.billing__price {
+  margin-top: 2px;
+  font-size: 16px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+.billing__pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: #eef0ea;
+  color: var(--fg, #1a535c);
+}
+.billing__pill--active {
+  background: #e3f3df;
+  color: #2f6b27;
+}
+.billing__pill--pending,
+.billing__pill--preparing {
+  background: #fff3d6;
+  color: #8a5a00;
+}
+.billing__pill--past_due {
+  background: #fde3e1;
+  color: #a83b3b;
+}
+.billing__pill--free,
+.billing__pill--paidOnce {
+  background: #eef0ea;
+  color: var(--fg-muted, #6b7560);
+}
+.billing__status {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--fg-muted, #6b7560);
+}
+.billing__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--bg-alt2, #f6f7f3);
+}
+.billing__facts dt {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted, #6b7560);
+}
+.billing__facts dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.billing__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+}
+.billing__change {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted, #6b7560);
+}
+.plan-card__note {
+  margin-top: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--brand-green, #519843);
+}

@@ -30,6 +30,12 @@ export interface UserPlan {
   cardLast4?: string;
   /** the billing a paid pick replaces (a switch of plan): canceled once the new one is live */
   previousSubscriptionId?: string;
+  /** REQ-127 — on a pending UPGRADE: what its due is for — the difference of the two prices (the
+   *  full first month when absent) — and the active plan it comes from; a DOWNGRADE carries the
+   *  plan it came from too, and when the cheaper billing starts (the old billing's next bill) */
+  dueCents?: number;
+  switchedFrom?: PlanId;
+  firstBillAt?: string;
   /** REQ-064/100 — the merchant account the charge goes through (the CRM's `x-account`): on every
    *  paid pick, the one name the pay link, the pay page's footer and the billing share; free has none */
   merchant?: string;

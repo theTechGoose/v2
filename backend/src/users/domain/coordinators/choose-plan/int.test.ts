@@ -429,3 +429,68 @@ Deno.test("REQ-118 + REQ-119 choose-plan — Monster Assist+ is picked like any 
   assertEquals(world.subscriptions.map((s) => [s.externalRef, s.status, s.amountCents]), [[`pm:${user.id}:assist-plus`, "active", 39900]]);
   assertEquals(world.customers.map((c) => [c.customerName, c.tier]), [["Pat Builders", "Monster Assist+"]], "the plan's name is the tier");
 });
+
+// ---- REQ-127 — an upgrade charges the difference, a downgrade refunds nothing ----------------
+// Raphael, 2026-11-02: "i see alex paid $99, it seems that he picked the wrong plan, but when he
+// upgrades its trying to charge him 399 not 300 for the difference." / "upgrade charges the
+// difference, downgrade has no refund"
+
+Deno.test("REQ-127 choose-plan — an upgrade from an active plan raises the difference, named for both plans; paid, the new billing runs at the new price a month on and the old one is canceled", async () => {
+  const { users, leads, flow } = await fresh();
+  const { user, active } = await paidAndActive(flow, leads, users, "+15125551271"); // Monster, $99 paid, billing running
+  const world = fakePaymentsWorld();
+  const pending = await pick(flow, leads, user.id, "assist-plus");
+  assertEquals([pending.status, pending.planId, pending.dueCents, pending.switchedFrom], ["pending", "assist-plus", 30000, "monster"]);
+  assertEquals(pending.previousSubscriptionId, active.subscriptionId);
+  const due = world.dues.find((d) => d.dueId === pending.dueId)!;
+  assertEquals([due.amountCents, due.memo, due.open], [30000, "Monster Assist+ — upgrade from Monster (the difference)", true], "the due is the $300 difference, not $399");
+  world.settle(pending.dueId!);
+  const plus = await flow.refresh(user.id);
+  assertEquals([plus.planId, plus.status], ["assist-plus", "active"]);
+  assertEquals(world.subscriptions.map((s) => [s.externalRef, s.status, s.amountCents]), [[`pm:${user.id}:monster`, "canceled", 9900], [`pm:${user.id}:assist-plus`, "active", 39900]]);
+  assertEquals(world.subscriptions[1].firstBillAt, addMonth(plus.activatedAt!), "the full $399 months start a month after the upgrade");
+});
+
+Deno.test("REQ-127 choose-plan — a downgrade charges nothing and refunds nothing: active at once, no due, the old billing canceled and the cheaper one starting the day the old one would have billed", async () => {
+  const { users, leads, flow } = await fresh();
+  const { user } = await paidAndActive(flow, leads, users, "+15125551272");
+  const world = fakePaymentsWorld();
+  // up to Monster Assist+ first (REQ-127's upgrade), paid
+  const up = await pick(flow, leads, user.id, "assist-plus");
+  world.settle(up.dueId!);
+  const plus = await flow.refresh(user.id);
+  const duesBefore = world.dues.length;
+  const plusNext = plus.nextBillAt!;
+  // down to Monster: no page, nothing to pay
+  const down = await flow.choose(user.id, "monster");
+  await leads.idle();
+  assertEquals([down.planId, down.status], ["monster", "active"], "the downgrade is the plan at once");
+  assertEquals(["dueId" in down, "payUrl" in down && Boolean(down.payUrl)], [false, false], "nothing to pay");
+  assertEquals(world.dues.length, duesBefore, "no due raised, nothing refunded");
+  assertEquals(down.switchedFrom, "assist-plus");
+  const subs = world.subscriptions.map((s) => [s.externalRef, s.status, s.amountCents]);
+  assertEquals(subs.filter(([ref]) => ref === `pm:${user.id}:assist-plus`), [[`pm:${user.id}:assist-plus`, "canceled", 39900]], "the $399 billing is canceled");
+  const monster = world.subscriptions.filter((s) => s.externalRef === `pm:${user.id}:monster`);
+  assertEquals(monster.map((s) => [s.status, s.amountCents]), [["canceled", 9900], ["active", 9900]], "the old $99 billing stays canceled; a new $99 one runs");
+  assertEquals(monster[1].firstBillAt, plusNext, "the paid month is kept: the first $99 bill is the day the $399 one would have fallen");
+  assertEquals(down.nextBillAt, plusNext);
+  assertEquals(down.subscriptionId, monster[1].subscriptionId);
+  // read again: nothing started twice
+  const again = await flow.current(user.id);
+  assertEquals([again?.planId, again?.status, again?.subscriptionId], ["monster", "active", monster[1].subscriptionId]);
+  assertEquals(world.subscriptions.length, 3);
+  // the CRM's tier followed, after the reply
+  assertEquals(world.customers[0].tier, "Monster");
+});
+
+Deno.test("REQ-127 choose-plan — a switch away from a pending pick, or from free, is a fresh first month at full price", async () => {
+  const { users, leads, flow } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125551273", email: "ana@roof.test", name: "Ana" });
+  const world = fakePaymentsWorld();
+  const first = await pick(flow, leads, user.id, "assist"); // pending, never paid
+  const switched = await pick(flow, leads, user.id, "assist-plus");
+  assertEquals([switched.status, "dueCents" in switched, "switchedFrom" in switched], ["pending", false, false]);
+  const due = world.dues.find((d) => d.dueId === switched.dueId)!;
+  assertEquals([due.amountCents, due.memo], [39900, "Monster Assist+ — first month"], "a pick nobody paid gives no credit");
+  assertEquals(world.dues.find((d) => d.dueId === first.dueId)?.open, true, "the abandoned due stays the operator's to void (REQ-056)");
+});

@@ -128,6 +128,11 @@ export interface UserPlan {
   cardLast4?: string;
   /** REQ-064 — the merchant account the pick named; absent = the CRM's default */
   merchant?: string;
+  /** REQ-127 — a pending upgrade: what its due is for (the difference) and the plan it comes from;
+   *  a downgrade: the plan it came from and when the cheaper billing starts */
+  dueCents?: number;
+  switchedFrom?: PlanId;
+  firstBillAt?: string;
   /** REQ-106 — on a pending pick with no page yet: the CRM has no account by that name (final), or
    *  the link builder has not answered (still being tried). Absent and no payUrl = being prepared. */
   payLinkError?: "merchant-unknown" | "payments-unavailable";
@@ -193,10 +198,14 @@ export interface CrmCustomer {
 /** REQ-054 — the plan: pick one; REQ-059 — /plan/return refreshes a pending one on the way back. */
 export const planClient = {
   get: (opts: ApiOptions = {}) => api.get<UserPlan | null>("/me/plan", opts),
-  choose: (planId: PlanId, opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan", { planId }, opts),
-  refresh: (opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan/refresh", undefined, opts),
+  choose: (planId: PlanId, opts: ApiOptions = {}) =>
+    api.post<UserPlan>("/me/plan", { planId }, opts),
+  refresh: (opts: ApiOptions = {}) =>
+    api.post<UserPlan>("/me/plan/refresh", undefined, opts),
   /** REQ-058 — what the CRM holds for this account */
-  crmCustomer: (opts: ApiOptions = {}) => api.get<CrmCustomer | null>("/me/crm-customer", opts),
+  crmCustomer: (opts: ApiOptions = {}) =>
+    api.get<CrmCustomer | null>("/me/crm-customer", opts),
   /** REQ-057 — what the app's stand-in pay page presses: settles the due on the fake (404 on the real client) */
-  fakePaid: (dueId: string, opts: ApiOptions = {}) => api.post<UserPlan>("/me/plan/fake-paid", { dueId }, opts),
+  fakePaid: (dueId: string, opts: ApiOptions = {}) =>
+    api.post<UserPlan>("/me/plan/fake-paid", { dueId }, opts),
 };

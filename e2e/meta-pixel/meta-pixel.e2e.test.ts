@@ -393,8 +393,8 @@ Deno.test("REQ-080: Subscribe fires with the plan's price when the receipt bring
       0,
       "free is not a subscription",
     );
-    await page.goto("/settings");
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.goto("/settings?tab=billing"); // REQ-127 — the plan lives on the Billing tab
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await drain();
     await pickPayAndGoBack(page, expect, "plan-pick-assist");
     await page.waitForURL(
@@ -403,7 +403,7 @@ Deno.test("REQ-080: Subscribe fires with the plan's price when the receipt bring
         (u.searchParams.get("px") ?? "").startsWith("sub:assist:"),
       { timeout: 60_000 },
     );
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see("Monster Assist is active");
     await frame(page);
     await ribbonSays(page, expect, "Subscribe $199");

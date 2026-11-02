@@ -14,7 +14,7 @@ export function dollars(cents: number): string {
 }
 
 export function PlanCards(
-  { plans, lang, featuredId, disabled, back, merchant }: {
+  { plans, lang, featuredId, disabled, back, merchant, note }: {
     plans: readonly PricingPlan[];
     lang: Lang;
     /** the card drawn as the recommended one */
@@ -24,6 +24,9 @@ export function PlanCards(
     back: PickBack;
     /** REQ-064 — the merchant account the pick names (the test page's query param); "" = none */
     merchant?: string;
+    /** REQ-127 — ONE line under the card saying exactly what picking it does ("Upgrade · $300
+     *  today, then $399/month"); null = no line */
+    note?: (plan: PricingPlan) => string | null;
   },
 ) {
   return (
@@ -71,6 +74,13 @@ export function PlanCards(
                 <li key={f.id}>{lang === "es" ? f.es : f.en}</li>
               ))}
             </ul>
+            {note?.(p)
+              ? (
+                <span class="plan-card__note" data-cy={`plan-note-${p.id}`}>
+                  {note(p)}
+                </span>
+              )
+              : null}
           </button>
         </form>
       ))}

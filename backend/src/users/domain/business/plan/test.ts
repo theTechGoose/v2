@@ -262,3 +262,37 @@ Deno.test("REQ-106 plan — a paid pick is pending with its account before the C
   assertEquals(samePick(preparing, chosen("u1", "assist", NOW, { merchant: "primary" })), false);
   assertEquals(samePick(preparing, chosen("u1", "monster", LATER, { merchant: "primary" })), false);
 });
+
+// ---- REQ-127 — an upgrade charges the difference, a downgrade refunds nothing ----------------
+// Raphael, 2026-11-02: "alex paid $99 … when he upgrades its trying to charge him 399 not 300 for
+// the difference." / "upgrade charges the difference, downgrade has no refund"
+import { downgraded, dueCentsFor, dueMemo } from "./mod.ts";
+
+Deno.test("REQ-127 plan — a pending upgrade carries what its due is for: the difference, and the plan it comes from", () => {
+  const now = "2026-11-02T15:00:00.000Z";
+  const up = chosen("u1", "assist-plus", now, { merchant: "primary" }, "sub-old", { dueCents: 30000, switchedFrom: "monster" });
+  assertEquals([up.status, up.dueCents, up.switchedFrom, up.previousSubscriptionId], ["pending", 30000, "monster", "sub-old"]);
+  assertEquals(dueCentsFor(planOf("assist-plus"), up), 30000, "the mint raises the difference");
+  assertEquals(dueMemo(planOf("assist-plus"), up), "Monster Assist+ — upgrade from Monster (the difference)");
+  // a first pick carries nothing extra and is the full first month, as before
+  const first = chosen("u1", "assist-plus", now, { merchant: "primary" });
+  assertEquals(["dueCents" in first, "switchedFrom" in first], [false, false]);
+  assertEquals(dueCentsFor(planOf("assist-plus"), first), 39900);
+  assertEquals(dueMemo(planOf("assist-plus"), first), "Monster Assist+ — first month");
+});
+
+Deno.test("REQ-127 plan — a downgrade is active now, keeps the customer and the account, and bills at the cheaper price from the day the old billing would have", () => {
+  const now = "2026-11-02T15:00:00.000Z";
+  const before: UserPlan = {
+    userId: "u1", planId: "assist-plus", status: "active", chosenAt: "2026-10-20T10:00:00.000Z", activatedAt: "2026-10-20T10:05:00.000Z",
+    customerId: "c-1", merchant: "primary", subscriptionId: "sub-plus", nextBillAt: "2026-11-20T10:05:00.000Z", cardBrand: "visa", cardLast4: "1111", updatedAt: now,
+  };
+  const down = downgraded(before, "monster", now, "2026-11-20T10:05:00.000Z");
+  assertEquals(down.planId, "monster");
+  assertEquals(down.status, "active");
+  assertEquals([down.chosenAt, down.activatedAt, down.updatedAt], [now, now, now]);
+  assertEquals([down.customerId, down.merchant], ["c-1", "primary"]);
+  assertEquals(down.switchedFrom, "assist-plus");
+  assertEquals(down.firstBillAt, "2026-11-20T10:05:00.000Z", "the paid month is kept: the cheaper billing starts when the old one would have");
+  assertEquals(["subscriptionId" in down, "previousSubscriptionId" in down, "nextBillAt" in down, "payUrl" in down, "dueId" in down], [false, false, false, false, false], "the old billing is canceled by the pick, the new one is ensured on the next read");
+});
