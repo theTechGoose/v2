@@ -421,7 +421,9 @@ class FakePaymentsLink implements PaymentsLinkPort {
   }
   dueOpen(dueId: string) {
     const due = this.world.dues.find((d) => d.dueId === dueId);
-    return Promise.resolve(due ? due.open : false);
+    // REQ-133 — a due the CRM does not hold is a refusal (the real client's 404), never "settled"
+    if (!due) return Promise.reject(Object.assign(new Error(`due-missing: ${dueId}`), { status: 404 }));
+    return Promise.resolve(due.open);
   }
   // REQ-061 — the CRM's subscriptions, as the fake (its clock is world.bill)
   // deno-lint-ignore require-await

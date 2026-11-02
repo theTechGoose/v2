@@ -20,6 +20,8 @@ import { backoffMs, LEASE_MS, type PendingCapture, WATCH_FOR_MS } from "@users/d
 import type { UserPlan } from "@users/dto/plan.ts";
 
 const PREFIX = "crm-capture";
+/** REQ-133 — ["crm-capture-due", dueId] → userId: the account whose watch names the due, for the CRM's settled notice */
+const DUE_INDEX = "crm-capture-due";
 
 /** the record's key: a lead by its phone, a customer sync (REQ-098) by its account, a signup notice
  *  (REQ-103) by its account, apart from the sync */
@@ -119,6 +121,7 @@ export class CrmCaptureOutbox {
     const key = keyOf({ phone: "", userId, kind: "settle-watch" });
     const existing = await kv.get<PendingCapture>(key);
     const at = new Date(now).toISOString();
+    const previousDue = existing.value?.dueId;
     const rec: PendingCapture = {
       phone: "",
       userId,
@@ -131,13 +134,44 @@ export class CrmCaptureOutbox {
       watchUntil: new Date(now + WATCH_FOR_MS).toISOString(),
       ...(existing.value?.leaseUntil ? { leaseUntil: existing.value.leaseUntil } : {}),
     };
-    await kv.atomic().check(existing).set(key, rec).commit();
+    const op = kv.atomic().check(existing).set(key, rec).set([DUE_INDEX, pick.dueId], userId); // REQ-133 — findable by its due
+    if (previousDue && previousDue !== pick.dueId) op.delete([DUE_INDEX, previousDue]);
+    await op.commit();
+  }
+
+  /** REQ-133 — the account's watch that names the due, if any (the CRM's settled notice names the due alone) */
+  async watchByDue(dueId: string): Promise<PendingCapture | null> {
+    const kv = await this.kv();
+    const userId = (await kv.get<string>([DUE_INDEX, dueId])).value;
+    if (!userId) return null;
+    const rec = (await kv.get<PendingCapture>(keyOf({ phone: "", userId, kind: "settle-watch" }))).value;
+    return rec && rec.dueId === dueId ? rec : null;
+  }
+
+  /** REQ-133 — the watch's next look, set: no attempt counted, no error noted, the lease dropped —
+   *  on the record as it stands now (a re-mark landing meanwhile is kept, REQ-113's rule) */
+  async later(rec: PendingCapture, nextAt: number): Promise<PendingCapture> {
+    const kv = await this.kv();
+    const key = keyOf(rec);
+    let next: PendingCapture = rec;
+    for (let attempt = 0; attempt < SETTLE_ATTEMPTS; attempt++) {
+      const current = await kv.get<PendingCapture>(key);
+      const base = current.value ?? rec;
+      next = { ...unleased(base), nextAt: new Date(nextAt).toISOString() };
+      if ((await kv.atomic().check(current).set(key, next).commit()).ok) return next;
+    }
+    await kv.set(key, next);
+    return next;
   }
 
   /** REQ-131 — the account's watch, whatever it says: the due it watched activated its plan another way (/plan/return) */
   async dropSettleWatch(userId: string): Promise<void> {
     const kv = await this.kv();
-    await kv.delete(keyOf({ phone: "", userId, kind: "settle-watch" }));
+    const key = keyOf({ phone: "", userId, kind: "settle-watch" });
+    const current = await kv.get<PendingCapture>(key);
+    const op = kv.atomic().delete(key);
+    if (current.value?.dueId) op.delete([DUE_INDEX, current.value.dueId]);
+    await op.commit();
   }
 
   async list(): Promise<PendingCapture[]> {

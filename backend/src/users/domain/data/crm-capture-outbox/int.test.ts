@@ -117,3 +117,23 @@ Deno.test("REQ-131 outbox — addSettleWatch is a record keyed apart from the pa
   assertEquals((await outbox.list()).map((r) => r.kind), ["pay-link"], "cleared on its own, the pay link untouched");
   await resetKv();
 });
+
+Deno.test("REQ-133 outbox — later() sets the watch's next look and drops the lease without counting an attempt; watchByDue finds the account's watch by the due it names", async () => {
+  const outbox = await fresh();
+  const pick = { userId: "u-133", planId: "monster" as const, status: "pending" as const, chosenAt: at(0), updatedAt: at(0), merchant: "primary", customerId: "c-1", dueId: "d-133", payUrl: "http://crm/pay?due=d-133" };
+  await outbox.addSettleWatch("u-133", pick, t0);
+  assertEquals(await outbox.watchByDue("d-nobody"), null);
+  const found = await outbox.watchByDue("d-133");
+  assertEquals([found?.userId, found?.kind, found?.dueId], ["u-133", "settle-watch", "d-133"]);
+  assert(await outbox.claim(found!, t0));
+  const held = await outbox.watchByDue("d-133");
+  assert(held?.leaseUntil, "held");
+  const next = await outbox.later(held!, t0 + 60_000);
+  assertEquals([next.attempts, next.lastError, next.leaseUntil, next.nextAt, next.pick?.dueId], [0, undefined, undefined, at(60_000), "d-133"]);
+  assertEquals((await outbox.watchByDue("d-133"))?.nextAt, at(60_000), "written");
+  // a newer pick's watch re-points the due index; the old due finds nothing
+  await outbox.addSettleWatch("u-133", { ...pick, dueId: "d-134", chosenAt: at(1) }, t0 + 1);
+  assertEquals((await outbox.watchByDue("d-134"))?.dueId, "d-134");
+  assertEquals(await outbox.watchByDue("d-133"), null, "the old due's watch is gone with the re-mark");
+  await resetKv();
+});

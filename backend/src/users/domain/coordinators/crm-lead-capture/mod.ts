@@ -50,7 +50,7 @@ import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
 import { SettleWatch } from "@users/domain/coordinators/settle-watch/mod.ts";
 import { type NoticeReason, noticeReasonOf } from "@users/domain/business/signup-notice/mod.ts";
 import { type PickBack, pickBackOf } from "@users/domain/business/plan/mod.ts";
-import { isDue, type PendingCapture } from "@users/domain/business/lead-capture-retry/mod.ts";
+import { isDue, type PendingCapture, WATCH_EVERY_MS } from "@users/domain/business/lead-capture-retry/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import type { UserPlan } from "@users/dto/plan.ts";
 
@@ -120,9 +120,19 @@ export class CrmLeadCapture {
     this.kick();
   }
 
-  /** REQ-131 — the account's watch is moot: /plan/return read the due settled and activated the plan */
+  /** REQ-131 — the account's watch is moot: a read found the due settled and activated the plan */
   async dropSettleWatch(userId: string): Promise<void> {
     await this.outbox.dropSettleWatch(userId);
+  }
+
+  /** REQ-133 — the CRM says the due settled: the watch that names it is looked at now, by a pass
+   *  of its own, not at its minute; false when no watch names the due (nothing to look at) */
+  async lookNow(dueId: string): Promise<boolean> {
+    const rec = await this.outbox.watchByDue(dueId);
+    if (!rec) return false;
+    await this.outbox.later(rec, Date.now());
+    this.kick();
+    return true;
   }
 
   private kick(): void {
@@ -250,8 +260,9 @@ export class CrmLeadCapture {
   }
 
   /**
-   * REQ-131 — the due a page was minted for, asked until it settles. Open: the record waits on its
-   * backoff (never an error — a page nobody has paid yet is the ordinary case). Settled: the plan
+   * REQ-131 — the due a page was minted for, asked until it settles. Open: the record waits a
+   * minute (REQ-133: a fixed cadence, never a backoff or an error — a page nobody has paid yet is
+   * the ordinary case; the CRM's settled notice makes the watch look sooner). Settled: the plan
    * is active (SettleWatch — the pick it paid for, restored if a later unpaid pick buried it) and
    * the tier (REQ-062/099) and the paid notice (REQ-112) ride the outbox, carried at once. A window
    * passed unpaid ends the watch; the plan stays as stored.
@@ -264,7 +275,7 @@ export class CrmLeadCapture {
       } else {
         const outcome = await this.watch.check(rec.userId ?? "", rec.dueId ?? "", rec.pick ?? null);
         if (outcome.kind === "waiting") {
-          await this.outbox.defer(rec, Date.now(), "due still open");
+          await this.outbox.later(rec, Date.now() + WATCH_EVERY_MS); // REQ-133 — a minute on, no backoff, no error
           result.waiting++;
           return;
         }

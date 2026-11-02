@@ -606,7 +606,9 @@ Deno.test("REQ-131 the page minted, the sweep watches its due: open, the watch w
   let r = await leads.drain();
   assertEquals([r.landed, r.deferred, r.waiting, calls.at(-1)], [0, 0, 1, "open?d-131"]);
   const [w] = (await outbox.list()).filter((r) => r.kind === "settle-watch");
-  assertEquals([w.attempts, w.lastError, Date.parse(w.nextAt) > Date.now()], [1, "due still open", true]);
+  // REQ-133 — a fixed cadence, not a backoff: the next look is a minute out, no attempt counted, no error noted
+  assertEquals([w.attempts, w.lastError, w.leaseUntil], [0, undefined, undefined]);
+  assert(Date.parse(w.nextAt) - Date.now() > 50_000 && Date.parse(w.nextAt) - Date.now() <= 55_000, `the next look is the next minute sweep's (${w.nextAt})`);
   assertEquals((await plans.get(user.id))?.status, "pending");
   // the card lands (the CRM's own settlement, seconds after the receipt); the next sweep after its clock
   open = false;
@@ -636,5 +638,38 @@ Deno.test("REQ-131 a watch whose 48 h window passed unpaid ends quietly: the rec
   assertEquals([r.landed, r.deferred, r.waiting], [1, 0, 0]);
   assertEquals(await outbox.list(), []);
   assertEquals((await plans.get("u-131-old"))?.status, "pending");
+  await done();
+});
+
+// ---- REQ-133 — the CRM says the due settled: the watch looks now, not at its minute ----
+Deno.test("REQ-133 lookNow(dueId) — the CRM's settled notice: the watch on that due is looked at at once, the plan active before its minute; an unknown due is nothing", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  let open = true;
+  const looks: string[] = [];
+  const link = {
+    createCustomer: () => Promise.resolve({ customerId: "c-133" }),
+    raiseDue: () => Promise.resolve({ dueId: "d-133" }),
+    mintPayLink: () => Promise.resolve({ payUrl: "http://crm/pay?due=d-133" }),
+    dueOpen: (id: string) => (looks.push(id), Promise.resolve(open)),
+  } as unknown as PaymentsLink;
+  const users = new UserStore();
+  const plans = new PlanStore();
+  const crm = new CrmCustomerSync(users, new BusinessIdentityStore(), link, plans);
+  const outbox = new CrmCaptureOutbox();
+  const notice = { send: () => Promise.resolve() } as unknown as SignupNotice;
+  const leads = new CrmLeadCapture(outbox, crm, notice, new PayLinkMint(plans, link, crm), new SettleWatch(plans, link));
+  const user = await users.create({ phoneNumber: "+15125551330", email: "l@roof.test", name: "Lu" });
+  await plans.put(chosen(user.id, "monster", "2026-11-02T15:50:00.000Z", { merchant: "primary" }));
+  await leads.enqueuePayLink(user.id, "/settings");
+  await leads.idle();
+  await leads.drain(); // the minute sweep: open, the next look a minute out
+  assertEquals(looks, ["d-133"]);
+  open = false;
+  assertEquals(await leads.lookNow("d-nobody"), false, "no watch on that due: nothing to look at");
+  assertEquals(await leads.lookNow("d-133"), true);
+  await leads.idle();
+  assertEquals(looks, ["d-133", "d-133"], "looked again at once, not at its minute");
+  assertEquals((await plans.get(user.id))?.status, "active");
   await done();
 });
