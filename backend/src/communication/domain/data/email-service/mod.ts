@@ -5,6 +5,10 @@ import {
   HOUSE_FROM,
   SEND_DOMAIN,
 } from "@communication/domain/business/sender/mod.ts";
+import {
+  deliveredTo,
+  deliveryEnv,
+} from "@communication/domain/business/dev-recipient/mod.ts";
 
 export interface EmailAttachment {
   /** Filename the recipient sees (e.g., "Agreement-1A0AE6B6.pdf"). */
@@ -77,6 +81,9 @@ export function postmarkPayload(input: SendEmailInput): PostmarkPayload {
  * The From is never configuration (REQ-123): the house From, or the alias a
  * coordinator passes — on documonster.com, or the send is refused.
  *
+ * REQ-126: off the real deploy (DENO_DEPLOYMENT_ID unset) every send is addressed to
+ * Raphael alone (dev-recipient), whoever the caller named — tests never mail the team.
+ *
  * If POSTMARK_API_KEY is not set, the service operates in **dev mode**:
  *   - logs the email to stdout
  *   - returns `{ ok: true, reason: 'dev_mode_no_dispatch' }`
@@ -100,14 +107,17 @@ export class EmailService {
   apiKeyOverride: string | null = null;
 
   async send(input: SendEmailInput): Promise<SendEmailResult> {
-    const payload = postmarkPayload(input);
-    if (!fromDocumonster(payload.From)) {
+    const asked = postmarkPayload(input);
+    if (!fromDocumonster(asked.From)) {
       return {
         ok: false,
         reason:
-          `from ${payload.From} is not on ${SEND_DOMAIN}; every email leaves from ${SEND_DOMAIN} (REQ-123)`,
+          `from ${asked.From} is not on ${SEND_DOMAIN}; every email leaves from ${SEND_DOMAIN} (REQ-123)`,
       };
     }
+    // REQ-126 — off the real deploy (the gate, a box, the Mac, every test) the one recipient is
+    // Raphael, whoever the caller addressed; the subject says who it was for
+    const payload = deliveredTo(asked, deliveryEnv());
 
     const apiKey = this.apiKeyOverride ?? Deno.env.get("POSTMARK_API_KEY");
     if (!apiKey) {
@@ -119,7 +129,7 @@ export class EmailService {
         }]`
         : "";
       console.log(
-        `[email:dev-mode] would send from=${payload.From} to=${input.to} subject="${input.subject}"${attachLog}`,
+        `[email:dev-mode] would send from=${payload.From} to=${payload.To} subject="${payload.Subject}"${attachLog}`,
       );
       return { ok: true, reason: "dev_mode_no_dispatch" };
     }

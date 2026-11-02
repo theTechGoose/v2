@@ -191,14 +191,14 @@ Deno.test("REQ-054: free in onboarding, then upgraded to a paid plan from the se
     expect(plan.planId === "free" && plan.status === "free", `free is stored as free (${JSON.stringify(plan)})`);
 
     // later, the settings panel: the paid plans are cards, and the pick goes to the pay page (REQ-055/059)
-    await page.goto("/settings");
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.goto("/settings?tab=billing");
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see("Monster Free");
     await pickGoesToPayPage(page, "plan-pick-assist");
     await payAndGoBack(page, expect);
     // the receipt brings the person back to settings, where the plan already reads active
     await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see("Monster Assist is active");
     plan = await (await http("/api/me/plan", { headers: auth })).json();
     expect(plan.planId === "assist" && plan.status === "active", `assist · active (${JSON.stringify(plan)})`);
@@ -207,10 +207,10 @@ Deno.test("REQ-054: free in onboarding, then upgraded to a paid plan from the se
 Deno.test("REQ-055 + REQ-059: on settings the paid plans are cards; a pick goes to the payment page in this tab, and the receipt brings the person back with the plan active — no check button", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl, { name: "Cards Story", email: `cards-${digits()}@blackhole.postmarkapp.com` });
-    await page.goto("/settings");
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.goto("/settings?tab=billing");
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     // the current plan, then the two paid plans as the same cards onboarding shows: name, price, features
-    await expect.see("Current plan");
+    await expect.see("Your plan"); // REQ-127 — the Billing tab
     await expect.see("Monster Free");
     await expect.see("$99");
     await expect.see("$199");
@@ -222,8 +222,8 @@ Deno.test("REQ-055 + REQ-059: on settings the paid plans are cards; a pick goes 
     const payPage = await pickGoesToPayPage(page, "plan-pick-monster");
     // a change of mind before paying: back on settings the pick waits, with the way back to its
     // page — and nothing to "check"
-    await page.goto("/settings");
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.goto("/settings?tab=billing");
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see("Waiting for the payment");
     await expect.see("Resume payment");
     expect.eq(await page.locator("[data-cy='plan-pay-link']").getAttribute("href"), payPage.toString(), "the link resumes the same pay page");
@@ -235,7 +235,7 @@ Deno.test("REQ-055 + REQ-059: on settings the paid plans are cards; a pick goes 
     await page.waitForURL((u: URL) => u.pathname === "/pay/fake", { timeout: 60_000 });
     await payAndGoBack(page, expect);
     await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see("Monster is active");
     // the active plan's card is gone; the other paid plan is still a card
     expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 0, "no card for the plan that is active");
@@ -271,8 +271,8 @@ Deno.test("REQ-056: a paid plan goes back to free from the settings cards", (t) 
     await paid.body?.cancel();
     const refreshed = await http("/api/me/plan/refresh", { method: "POST", headers: auth });
     await refreshed.body?.cancel();
-    await page.goto("/settings");
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.goto("/settings?tab=billing");
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see("Monster is active");
     // every other plan is a card — Monster Free among them
     expect.eq(await page.locator("[data-cy='plan-pick-free']").count(), 1, "Monster Free is a card on a paid plan");
@@ -325,12 +325,12 @@ Deno.test("REQ-060: the phone typed into login is a CRM customer before any code
 Deno.test("REQ-061: a month later the card on file is charged by itself and settings shows the next bill; with the card gone the month is past due — Pay now opens the page, and paying it makes the plan current again", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl, { name: "Monthly Story", email: `monthly-${digits()}@blackhole.postmarkapp.com` });
-    await page.goto("/settings");
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.goto("/settings?tab=billing");
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await pickGoesToPayPage(page, "plan-pick-monster");
     await payAndGoBack(page, expect);
     await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see("Monster is active");
     await expect.see("next bill");
     await expect.see("•••• 1111");
@@ -342,14 +342,14 @@ Deno.test("REQ-061: a month later the card on file is charged by itself and sett
     plan = await (await http("/api/me/plan/fake-bill", { method: "POST", headers: auth, body: JSON.stringify({ now: firstNext }) })).json();
     expect.eq(plan.status, "active", "still current");
     expect(plan.nextBillAt > firstNext, "the next bill is the month after");
-    await page.goto("/settings");
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.goto("/settings?tab=billing");
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see(`next bill ${String(plan.nextBillAt).slice(0, 10)}`);
     // the card is gone: the month after cannot be collected — past due, with Pay now
     plan = await (await http("/api/me/plan/fake-bill", { method: "POST", headers: auth, body: JSON.stringify({ now: plan.nextBillAt, cardGone: true }) })).json();
     expect.eq(plan.status, "past_due", "the month is past due");
-    await page.goto("/settings");
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.goto("/settings?tab=billing");
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see("didn't go through");
     await expect.see("Pay now");
     expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 0, "Monster is still the plan");
@@ -357,7 +357,7 @@ Deno.test("REQ-061: a month later the card on file is charged by itself and sett
     await page.waitForURL((u: URL) => u.pathname === "/pay/fake", { timeout: 60_000 });
     await payAndGoBack(page, expect);
     await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await page.locator("[data-cy='plan-status']").waitFor({ timeout: 60_000 });
     const said = await page.locator("[data-cy='plan-status']").innerText();
     expect(said.includes("is active"), `the plan card says: "${said}" at ${page.url()}`);
@@ -413,8 +413,8 @@ Deno.test("REQ-062: a person who never finishes is 'unknown dragon mcdragonson' 
     const [name, value] = cookie.split("=");
     const hosts = new Set([new URL(baseUrl).hostname, "localhost", "127.0.0.1"]);
     await page.context().addCookies([...hosts].flatMap((domain) => [{ name, value, domain, path: "/" }, { name: "pm_lang", value: "en", domain, path: "/" }]));
-    await page.goto("/settings");
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.goto("/settings?tab=billing");
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await pickGoesToPayPage(page, "plan-pick-monster");
     await payAndGoBack(page, expect);
     await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
@@ -437,8 +437,8 @@ Deno.test("REQ-064: the test tier is nowhere on the site; /plan/test shows its o
     await expect.see("Monster Free");
     expect.eq(await page.getByText("Monster Test").count(), 0, "not priced on the front page");
     const { auth } = await signIn(http, page, baseUrl, { name: "Test Tier Story", email: `tier-${digits()}@blackhole.postmarkapp.com` });
-    await page.goto("/settings");
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.goto("/settings?tab=billing");
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     expect.eq(await page.locator("[data-cy='plan-pick-test']").count(), 0, "no test card in settings");
     expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 1, "the real plans are");
     // the one page that offers it; nothing named = the fake account, sandbox (REQ-101)
@@ -449,7 +449,7 @@ Deno.test("REQ-064: the test tier is nowhere on the site; /plan/test shows its o
     expect.eq(payPage.searchParams.get("account"), "sandbox", "the account rides on the pay page's url");
     await payAndGoBack(page, expect);
     await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see("Monster Test");
     await expect.see("paid once");
     expect.eq(await page.locator("[data-cy='plan-pick-monster']").count(), 1, "the real plans stay cards");
@@ -622,8 +622,8 @@ Deno.test("REQ-119: Monster Assist+ is hidden — not priced on the front page, 
     expect.eq(await page.locator("[data-cy^='plan-pick-']").count(), 3, "three cards in onboarding: Monster Free, Monster and Monster Assist");
     expect.eq(await page.locator("[data-cy='plan-pick-assist-plus']").count(), 0, "no Monster Assist+ card in onboarding");
     // settings: the one place it is a card; the pick goes to the pay page in this tab; paid there, the receipt brings the person back with it active
-    await page.goto("/settings");
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.goto("/settings?tab=billing");
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see("$399");
     expect.eq(await page.locator("[data-cy^='plan-pick-']").count(), 3, "three paid cards: Monster, Monster Assist and Monster Assist+");
     expect.eq(await page.locator("[data-cy='plan-pick-assist-plus']").count(), 1, "Monster Assist+ is a card in the settings upgrade panel");
@@ -631,7 +631,7 @@ Deno.test("REQ-119: Monster Assist+ is hidden — not priced on the front page, 
     expect.eq(payPage.searchParams.get("account"), "primary", "through the one real account (REQ-100)");
     await payAndGoBack(page, expect);
     await page.waitForURL((u: URL) => u.pathname === "/settings", { timeout: 60_000 });
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see("Monster Assist+ is active");
     expect.eq(await page.locator("[data-cy='plan-pick-assist-plus']").count(), 0, "no card for the active plan");
     expect.eq(await page.locator("[data-cy='plan-pick-assist']").count(), 1, "Monster Assist stays a card");
@@ -639,4 +639,74 @@ Deno.test("REQ-119: Monster Assist+ is hidden — not priced on the front page, 
     expect(plan.planId === "assist-plus" && plan.status === "active", `assist-plus · active (${JSON.stringify(plan)})`);
     const customer = await crmCustomerWithTier(http, auth, "Monster Assist+"); // the tier lands by the sweep (REQ-099)
     expect.eq(customer?.tier, "Monster Assist+", "the CRM's tier is the plan's name");
+  }));
+
+// REQ-127 — Raphael, 2026-11-02: "i see alex paid $99, it seems that he picked the wrong plan, but
+// when he upgrades its trying to charge him 399 not 300 for the difference." / "upgrade charges the
+// difference, downgrade has no refund, rework the pan ui so that its SUPER clean what plan the user
+// is on … how about just a billing tab rather than a slot on the page."
+Deno.test("REQ-127: the Billing tab says the plan plainly; upgrading Monster → Monster Assist+ charges $300 today; downgrading back to Monster charges nothing and keeps the next bill", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl, { name: "Alex Story", email: `alex-${digits()}@blackhole.postmarkapp.com` });
+    const text = async (cy: string) => (await page.locator(`[data-cy='${cy}']`).innerText()).trim();
+    const onBilling = (u: URL) => u.pathname === "/settings" && u.searchParams.get("tab") === "billing";
+    const readPlan = async () => await (await http("/api/me/plan", { headers: auth })).json();
+
+    // /settings opens on Account; the plan lives on the Billing tab
+    await page.goto("/settings");
+    await page.locator("[data-cy='settings-tab-billing']").waitFor({ timeout: 60_000 });
+    expect.eq(await page.locator("[data-cy='billing']").count(), 0, "the plan is not a slot on the Account tab");
+    await page.locator("[data-cy='settings-tab-billing']").click();
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
+    expect.eq(await text("plan-current"), "Monster Free", "plan-current reads Monster Free");
+    expect.eq(await text("plan-pill"), "Free plan", "plan-pill reads Free plan");
+    expect.eq(await text("plan-note-monster"), "$99/month · first month today", "a first pick says its price");
+    expect.eq(await page.locator("[data-cy='plan-note-free']").count(), 0, "no card for the plan the person is on");
+
+    // Monster, paid: the tab reads the plan in one look
+    await pickGoesToPayPage(page, "plan-pick-monster");
+    await payAndGoBack(page, expect);
+    await page.waitForURL(onBilling, { timeout: 60_000 });
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
+    await page.locator("[data-cy='plan-next-bill']").waitFor({ timeout: 60_000 });
+    expect.eq(await text("plan-current"), "Monster", "plan-current reads Monster");
+    expect.eq(await text("plan-price"), "$99/month", "plan-price reads $99/month");
+    expect.eq(await text("plan-pill"), "Active", "plan-pill reads Active");
+    expect((await text("plan-card-on-file")).includes("•••• 1111"), "the card on file");
+    let plan = await readPlan();
+    expect(plan.status === "active" && typeof plan.nextBillAt === "string", `active with a next bill (${JSON.stringify(plan)})`);
+
+    // the upgrade card says the difference — $300, not $399 — and that is what the due is
+    expect.eq(await text("plan-note-assist-plus"), "Upgrade · $300 today, then $399/month", "plan-note-assist-plus reads Upgrade · $300 today, then $399/month");
+    await pickGoesToPayPage(page, "plan-pick-assist-plus");
+    const pending = await untilDue(http, auth);
+    expect.eq(pending.dueCents, 30000, `the due is the difference (${JSON.stringify(pending)})`);
+    expect.eq(pending.switchedFrom, "monster", "pending.switchedFrom reads monster");
+    await payAndGoBack(page, expect);
+    await page.waitForURL(onBilling, { timeout: 60_000 });
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
+    await page.locator("[data-cy='plan-next-bill']").waitFor({ timeout: 60_000 });
+    expect.eq(await text("plan-current"), "Monster Assist+", "plan-current reads Monster Assist+");
+    expect.eq(await text("plan-price"), "$399/month", "plan-price reads $399/month");
+    expect.eq(await text("plan-pill"), "Active", "plan-pill reads Active");
+    plan = await readPlan();
+    expect(plan.planId === "assist-plus" && plan.status === "active", `Monster Assist+ active (${JSON.stringify(plan)})`);
+    const plusNext = plan.nextBillAt as string;
+
+    // the downgrade card says nothing today, and the pick is no pay page: straight back, Monster active, the next bill kept
+    const downNote = await text("plan-note-monster");
+    expect(downNote.startsWith("Downgrade · nothing today · $99/month from "), `the downgrade note: "${downNote}"`);
+    expect.eq(await text("plan-note-free"), "Back to free · billing stops today · no refund", "plan-note-free reads Back to free · billing stops today · no refund");
+    await page.locator("[data-cy='plan-pick-monster']").click();
+    await page.waitForURL(onBilling, { timeout: 60_000 });
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
+    await page.locator("[data-cy='plan-next-bill']").waitFor({ timeout: 60_000 });
+    expect.eq(await text("plan-current"), "Monster", "plan-current reads Monster");
+    expect.eq(await text("plan-price"), "$99/month", "plan-price reads $99/month");
+    expect.eq(await text("plan-pill"), "Active", "plan-pill reads Active");
+    plan = await readPlan();
+    expect(plan.planId === "monster" && plan.status === "active", `Monster active at once (${JSON.stringify(plan)})`);
+    expect.eq(plan.nextBillAt, plusNext, "the paid month is kept: the next bill is the day the old one would have fallen");
+    expect.eq(plan.switchedFrom, "assist-plus", "plan.switchedFrom reads assist-plus");
+    expect.eq(await page.locator("[data-cy='plan-pay-link']").count(), 0, "nothing to pay");
   }));

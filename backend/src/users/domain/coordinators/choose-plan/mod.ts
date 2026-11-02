@@ -4,6 +4,10 @@
 // link that collects it; the plan is pending until the due settles on that pay page, then
 // active. REQ-059: the link carries the way back — the app's /plan/return, which calls
 // `refresh` on arrival, so the plan reads active without a "Check payment".
+// REQ-127 — Raphael, 2026-11-02: "upgrade charges the difference, downgrade has no refund": the
+// switch rule is the shared `switchQuote`; an upgrade's pending record carries the difference its
+// due is for, a downgrade is active at once with the old billing canceled and the cheaper one
+// starting when the old one would have billed.
 // REQ-106 — Raphael, 2026-10-20: "when i click a plan in the onboarding flow the payment link
 // takes FOREVER to load, can we speed it up and keep the exact same result in the crm? i dont care
 // if it happens asyncronously … what i care about is that the user experience is good." The paid
@@ -17,7 +21,7 @@ import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { appOrigin, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
-import { addMonth, chosen, isOneTime, monthlyMemo, type PickBack, planOf, RETURN_LABEL, returnUrlFor, settle, subscriptionRefFor, type SubscriptionView, withSubscription } from "@users/domain/business/plan/mod.ts";
+import { addMonth, chosen, downgraded, isOneTime, monthlyMemo, type PickBack, planOf, RETURN_LABEL, returnUrlFor, settle, subscriptionRefFor, type SubscriptionView, switchQuote, withSubscription } from "@users/domain/business/plan/mod.ts";
 import type { PlanId } from "@users/dto/plan.ts";
 import type { UserPlan } from "@users/dto/plan.ts";
 
@@ -75,10 +79,25 @@ export class ChoosePlan {
     const user = await this.users.get(userId);
     if (!user.email?.trim()) throw new EmailRequiredError();
 
+    // REQ-127 — the one switch rule: an upgrade charges the difference, a downgrade nothing
+    const quote = switchQuote(before, plan.id, now);
+    if (quote.kind === "same") return before!;
+    if (quote.kind === "downgrade") {
+      // nothing to pay, nothing refunded: the plan switches now; the old billing stops (the CRM has
+      // to take that, or the plan stays, as on the way to free) and the cheaper one is ensured on
+      // this read, first billing the day the old one would have
+      if (billing) await this.link.cancelSubscription(billing, `downgraded to ${plan.id}`);
+      const stored = await this.plans.put(downgraded(before!, plan.id as PlanId, now, quote.firstBillAt!));
+      const live = await this.projected(stored);
+      await this.leads.enqueueSync(userId); // REQ-062/099 — the CRM's tier is the cheaper plan's name, after this reply
+      return live;
+    }
+    const upgrade = quote.kind === "upgrade" ? { dueCents: quote.dueCents, switchedFrom: before!.planId } : undefined;
+
     const account = accountForPick(plan.id, merchant); // REQ-100 — decided once, here
     // REQ-106 — the reply: pending through that account; a switch of paid plan carries the billing
     // in force, canceled once the new one is live. The CRM's customer, due and pay page: the sweep's.
-    const pending = await this.plans.put(chosen(userId, plan.id as PlanId, now, { merchant: account }, billing));
+    const pending = await this.plans.put(chosen(userId, plan.id as PlanId, now, { merchant: account }, billing, upgrade));
     await this.leads.enqueuePayLink(userId, back);
     return pending;
   }
@@ -131,7 +150,8 @@ export class ChoosePlan {
       amountCents: pricing.priceCents,
       memo: monthlyMemo(pricing),
       externalRef: ref,
-      firstBillAt: addMonth(plan.activatedAt ?? plan.updatedAt),
+      // REQ-127 — a downgrade bills first when the old billing would have; otherwise a month after activation
+      firstBillAt: plan.firstBillAt ?? addMonth(plan.activatedAt ?? plan.updatedAt),
       returnUrl: returnUrlFor(appOrigin(), "", "/settings"),
       returnLabel: RETURN_LABEL,
       // REQ-064/100 — the same account the pick went through; a plan stored before the account

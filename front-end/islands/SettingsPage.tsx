@@ -11,9 +11,21 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
-import { PRICING_PLANS, UPGRADE_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
-import { PlanCards } from "../components/PlanCards.tsx";
-import { handoffOf, handoffPage, pickErrorOf, planViewOf } from "../lib/plan-return.ts";
+import {
+  PRICING_PLANS,
+  type PricingPlan,
+  UPGRADE_PLANS,
+} from "../../shared/quote-flow/pricing-plans.ts";
+import { switchQuote } from "../../shared/quote-flow/plan-switch.ts";
+import { dollars, PlanCards } from "../components/PlanCards.tsx";
+import {
+  handoffOf,
+  handoffPage,
+  pickErrorOf,
+  planViewOf,
+  type SettingsTab,
+  settingsTabOf,
+} from "../lib/plan-return.ts";
 import { filesClient } from "../clients/files.ts";
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
@@ -1448,41 +1460,89 @@ function ContractDefaultsEditCard(
  *  single destructive button hits GET /me/wipe and bounces to the login page
  *  (the wipe drops every session, so the app is logged out anyway). */
 
-// REQ-054 — "later can upgrade to paid in the settings panel": the current plan, the paid plans
-// as cards like onboarding's (REQ-055 — a card is the pick, and it opens the CRM's pay page
-// itself) — Monster Assist+ among them here and nowhere else (REQ-119) — and for a pending one
-// the link to reopen that page + check.
-function PlanCard({ snapshot }: { snapshot: ProfileSnapshot }) {
+// REQ-127 — Raphael, 2026-11-02: "rework the pan ui so that its SUPER clean what plan the user is
+// on. right now its pretty confusing. how about just a billing tab rather than a slot on the page."
+// The plan in one look: its name and price large, ONE status pill, the facts (next bill, card,
+// since), the action a pending or past-due plan needs, then the other plans as cards each saying —
+// from the one switch rule (shared/quote-flow/plan-switch.ts) — exactly what picking it does.
+// REQ-054/055/056/059/061/064/106/119 all live here now: a card is the pick and opens the pay page
+// itself; Monster Assist+ is a card here and nowhere else; a pending one offers its page.
+const PILL_KEY = {
+  free: "billing.pill.free",
+  active: "billing.pill.active",
+  pending: "billing.pill.pending",
+  past_due: "billing.pill.pastDue",
+  preparing: "billing.pill.preparing",
+  paidOnce: "billing.pill.paidOnce",
+} as const;
+
+function BillingTab({ snapshot }: { snapshot: ProfileSnapshot }) {
   const lang: Lang = snapshot.user.language === "es" ? "es" : "en";
   const plan = snapshot.plan ?? null;
-  // REQ-064 — the hidden test tier has a name too, though it is never a card
-  const nameOf = (id: string) => PRICING_PLANS.find((p) => p.id === id)?.name ?? id;
-  const oneTime = (id: string) => PRICING_PLANS.find((p) => p.id === id)?.period === "one-time";
+  // REQ-064 — the hidden test tier has a name and a price too, though it is never a card
+  const planById = (id: string) => PRICING_PLANS.find((p) => p.id === id);
+  const nameOf = (id: string) => planById(id)?.name ?? id;
+  const oneTime = (id: string) => planById(id)?.period === "one-time";
   // REQ-056 — every selectable plan but the current one is a card: Monster Free among them on a
   // paid plan, so going back to free is the same one click as going up. REQ-119 — the upgrade
   // list: onboarding's cards and Monster Assist+, the hidden tier this panel alone offers
   const selectable = UPGRADE_PLANS;
   // REQ-106 — a pick the CRM refused by name is not the plan: the cards offer it again
-  const currentId = plan && plan.status !== "free" && handoffOf(plan) !== "merchant-unknown" ? plan.planId : "free";
+  const currentId =
+    plan && plan.status !== "free" && handoffOf(plan) !== "merchant-unknown"
+      ? plan.planId
+      : "free";
   const hasEmail = Boolean(snapshot.user.email?.trim());
   // REQ-059 — a pick the backend refused came back here saying why (/plan/pick)
   const [err, setErr] = useState("");
   useEffect(() => {
     const why = pickErrorOf(location.search);
-    if (why) setErr(tFor(lang, why === "email-required" ? "plan.emailFirstSettings" : why === "merchant-unknown" ? "plan.merchantUnknown" : "plan.error"));
+    if (why) {
+      setErr(tFor(
+        lang,
+        why === "email-required"
+          ? "plan.emailFirstSettings"
+          : why === "merchant-unknown"
+          ? "plan.merchantUnknown"
+          : "plan.error",
+      ));
+    }
   }, []);
 
-  const currentName = plan ? nameOf(plan.planId) : nameOf("free");
-  // REQ-061 — an active plan says when the next month is billed and to which card; a month the
-  // CRM could not collect says so, with the way to pay it
+  const currentName = nameOf(currentId);
+  const priceCents = planById(currentId)?.priceCents ?? 0;
+  const fmtDate = (iso: string | undefined) =>
+    iso
+      ? new Date(iso).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+      : "";
+  // ONE pill
+  const pill: keyof typeof PILL_KEY = !plan || currentId === "free"
+    ? "free"
+    : plan.status === "active"
+    ? (oneTime(plan.planId) ? "paidOnce" : "active") // REQ-064 — no monthly billing behind a one-time charge
+    : plan.status === "past_due"
+    ? "past_due"
+    : handoffOf(plan) === "ready"
+    ? "pending"
+    : "preparing";
+  // REQ-061 — the sentence under it: since when, the next bill; a month the CRM could not collect
+  // says so, with the way to pay it (the line the stories read)
   const since = (plan?.activatedAt ?? plan?.updatedAt ?? "").slice(0, 10);
   const status = !plan || plan.status === "free"
     ? tFor(lang, "plan.statusFree")
     : plan.status === "active" && oneTime(plan.planId)
-    ? tFor(lang, "plan.paidOnce", { name: currentName, date: since }) // REQ-064 — no monthly billing behind it
+    ? tFor(lang, "plan.paidOnce", { name: currentName, date: since })
     : plan.status === "active"
     ? (plan.nextBillAt
-      ? tFor(lang, "plan.activeNext", { name: currentName, date: since, next: plan.nextBillAt.slice(0, 10) })
+      ? tFor(lang, "plan.activeNext", {
+        name: currentName,
+        date: since,
+        next: plan.nextBillAt.slice(0, 10),
+      })
       : tFor(lang, "plan.activeSince", { name: currentName, date: since }))
     : plan.status === "past_due"
     ? tFor(lang, "plan.pastDue", { name: currentName })
@@ -1492,55 +1552,169 @@ function PlanCard({ snapshot }: { snapshot: ProfileSnapshot }) {
     : handoffOf(plan) !== "ready"
     ? tFor(lang, "plan.preparing")
     : tFor(lang, "plan.pending");
+  const paidPlan = Boolean(plan) && currentId !== "free";
+
+  // REQ-127 — what picking a card does, from the one rule the backend charges by
+  const note = (p: PricingPlan): string | null => {
+    const q = switchQuote(
+      plan
+        ? {
+          planId: plan.planId,
+          status: plan.status,
+          nextBillAt: plan.nextBillAt,
+        }
+        : null,
+      p.id,
+      new Date().toISOString(),
+    );
+    const monthly = dollars(q.monthlyCents);
+    if (q.kind === "upgrade") {
+      return tFor(lang, "billing.note.upgrade", {
+        due: dollars(q.dueCents),
+        monthly,
+      });
+    }
+    if (q.kind === "downgrade") {
+      return tFor(lang, "billing.note.downgrade", {
+        monthly,
+        date: fmtDate(q.firstBillAt ?? undefined),
+      });
+    }
+    if (q.kind === "first") {
+      return tFor(lang, "billing.note.first", { monthly });
+    }
+    if (q.kind === "free") {
+      if (currentId === "free") return null;
+      return plan?.status === "active" || plan?.status === "past_due"
+        ? tFor(lang, "billing.note.free")
+        : tFor(lang, "billing.note.freeUnpaid");
+    }
+    return null;
+  };
 
   return (
-    <div class="panel" style="padding:18px 20px" data-cy="plan-card">
-      <div class="panel__head" style="margin-bottom:12px">
-        <h3 class="panel__title">{tFor(lang, "settings.plan")}</h3>
-      </div>
-      <div style="display:grid;gap:10px;font-size:13.5px">
+    <div class="panel billing" style="padding:18px 20px" data-cy="billing">
+      <div class="billing__head">
         <div>
-          <div style="color:var(--fg-muted, #6b7560)">{tFor(lang, "plan.current")}</div>
-          <div style="font-weight:700;font-size:16px" data-cy="plan-current">{currentName}</div>
-          <div data-cy="plan-status">{status}</div>
-          {plan?.cardLast4
-            ? <div data-cy="plan-card-on-file">{tFor(lang, "plan.cardOnFile", { brand: plan.cardBrand || "card", last4: plan.cardLast4 })}</div>
-            : null}
+          <div class="billing__eyebrow">{tFor(lang, "billing.yourPlan")}</div>
+          <div class="billing__name" data-cy="plan-current">{currentName}</div>
+          <div class="billing__price" data-cy="plan-price">
+            {priceCents > 0
+              ? tFor(
+                lang,
+                oneTime(currentId)
+                  ? "billing.oneTimePrice"
+                  : "billing.perMonth",
+                { price: dollars(priceCents) },
+              )
+              : tFor(lang, "billing.freePrice")}
+          </div>
         </div>
-        {plan && (plan.status === "past_due" || planViewOf(plan) === "pay")
+        <span
+          class={`billing__pill billing__pill--${pill}`}
+          data-cy="plan-pill"
+        >
+          {tFor(lang, PILL_KEY[pill])}
+        </span>
+      </div>
+      <p class="billing__status" data-cy="plan-status">{status}</p>
+      {paidPlan && plan && (plan.nextBillAt || plan.cardLast4 || since)
+        ? (
+          <dl class="billing__facts">
+            {plan.nextBillAt && plan.status === "active"
+              ? (
+                <div>
+                  <dt>{tFor(lang, "billing.nextBill")}</dt>
+                  <dd data-cy="plan-next-bill">{fmtDate(plan.nextBillAt)}</dd>
+                </div>
+              )
+              : null}
+            {plan.cardLast4
+              ? (
+                <div>
+                  <dt>{tFor(lang, "billing.cardOnFile")}</dt>
+                  <dd data-cy="plan-card-on-file">
+                    {plan.cardBrand || "card"} •••• {plan.cardLast4}
+                  </dd>
+                </div>
+              )
+              : null}
+            {since
+              ? (
+                <div>
+                  <dt>{tFor(lang, "billing.since")}</dt>
+                  <dd data-cy="plan-since">
+                    {fmtDate(plan.activatedAt ?? plan.updatedAt)}
+                  </dd>
+                </div>
+              )
+              : null}
+          </dl>
+        )
+        : null}
+      {plan && (plan.status === "past_due" || planViewOf(plan) === "pay")
+        ? (
+          // REQ-059 — the pay page again, in this tab; the receipt brings the person back here.
+          // REQ-061 — the past-due month's page, the same way
+          <div class="billing__actions">
+            <a
+              class="btn btn--accent"
+              data-cy="plan-pay-link"
+              href={plan.payUrl}
+            >
+              {tFor(
+                lang,
+                plan.status === "past_due" ? "plan.payNow" : "plan.resume",
+              )} →
+            </a>
+          </div>
+        )
+        : planViewOf(plan) === "preparing"
+        ? (
+          // REQ-106 — the page is being prepared: the hand-off page waits for it
+          <div class="billing__actions">
+            <a
+              class="btn btn--accent"
+              data-cy="plan-handoff-link"
+              href={handoffPage("/settings")}
+            >
+              {tFor(lang, "plan.preparingOpen")} →
+            </a>
+          </div>
+        )
+        : null}
+      {
+        /* the other plans are cards — while one is pending too, a change of mind goes to ITS pay page (or stores free).
+          REQ-055/059: a card is a form; the pick is a redirect to the pay page, in this tab */
+      }
+      <h4 class="billing__change">{tFor(lang, "billing.changePlan")}</h4>
+      <div style="display:grid;gap:10px">
+        <PlanCards
+          plans={selectable.filter((p) => p.id !== currentId)}
+          lang={lang}
+          featuredId="monster"
+          disabled={(p) => p.priceCents > 0 && !hasEmail}
+          back="/settings"
+          note={note}
+        />
+        {!hasEmail
           ? (
-            // REQ-059 — the pay page again, in this tab; the receipt brings the person back here.
-            // REQ-061 — the past-due month's page, the same way
-            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-              <a class="btn btn--accent" data-cy="plan-pay-link" href={plan.payUrl}>
-                {tFor(lang, plan.status === "past_due" ? "plan.payNow" : "plan.resume")} →
-              </a>
-            </div>
-          )
-          : planViewOf(plan) === "preparing"
-          ? (
-            // REQ-106 — the page is being prepared: the hand-off page waits for it
-            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-              <a class="btn btn--accent" data-cy="plan-handoff-link" href={handoffPage("/settings")}>
-                {tFor(lang, "plan.preparingOpen")} →
-              </a>
-            </div>
+            <span style="color:var(--fg-muted, #6b7560)">
+              {tFor(lang, "plan.emailFirstSettings")}
+            </span>
           )
           : null}
-        {/* the other plans stay cards — while one is pending too, a change of mind goes to ITS pay page (or stores free).
-            REQ-055/059: a card is a form; the pick is a redirect to the pay page, in this tab */}
-        <div style="display:grid;gap:10px">
-          <PlanCards
-            plans={selectable.filter((p) => p.id !== currentId)}
-            lang={lang}
-            featuredId="monster"
-            disabled={(p) => p.priceCents > 0 && !hasEmail}
-            back="/settings"
-          />
-          {!hasEmail ? <span style="color:var(--fg-muted, #6b7560)">{tFor(lang, "plan.emailFirstSettings")}</span> : null}
-        </div>
-        {err ? <div role="alert" style="color:var(--danger, #b42318)">{err}</div> : null}
       </div>
+      {err
+        ? (
+          <div
+            role="alert"
+            style="color:var(--danger, #b42318); margin-top:10px"
+          >
+            {err}
+          </div>
+        )
+        : null}
     </div>
   );
 }
@@ -1621,6 +1795,19 @@ function DangerZoneCard(_props: { snapshot: ProfileSnapshot }) {
 
 export default function SettingsPage() {
   const [s, setS] = useState<State>(INITIAL);
+  // REQ-127 — two tabs: Account (everything below) and Billing (the plan). The address opens the
+  // one asked for (?tab=billing; a pick's reason or a receipt's marker open Billing too)
+  const [tab, setTab] = useState<SettingsTab>(() =>
+    typeof location === "undefined" ? "account" : settingsTabOf(location.search)
+  );
+  const pickTab = (next: SettingsTab) => {
+    setTab(next);
+    const u = new URL(location.href);
+    if (next === "billing") u.searchParams.set("tab", "billing");
+    else u.searchParams.delete("tab");
+    u.searchParams.delete("plan");
+    history.replaceState(null, "", u.pathname + u.search);
+  };
 
   useEffect(() => {
     let alive = true;
@@ -1675,57 +1862,82 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <PlanCard snapshot={p} />
+      <nav class="settings-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "account"}
+          class={`settings-tab${tab === "account" ? " settings-tab--on" : ""}`}
+          data-cy="settings-tab-account"
+          onClick={() => pickTab("account")}
+        >
+          {tFor(lang, "settings.tabAccount")}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "billing"}
+          class={`settings-tab${tab === "billing" ? " settings-tab--on" : ""}`}
+          data-cy="settings-tab-billing"
+          onClick={() => pickTab("billing")}
+        >
+          {tFor(lang, "settings.tabBilling")}
+        </button>
+      </nav>
 
-      <div class="grid">
-        <Card
-          title={t.account}
-          empty={t.nothingSet}
-          rows={[
-            [t.name, p.user.name],
-            [
-              t.phone,
-              p.user.phoneNumber ? fmtPhone(p.user.phoneNumber) : undefined,
-            ],
-            // UX-35: the email lives on ONE surface — the editable form
-            // below. Repeating it read-only here competed with the form and
-            // clipped long addresses at the card edge.
-            [t.language, p.user.language === "es" ? t.spanish : t.english],
-          ]}
-        />
-        <Card
-          title={t.businessIdentity}
-          empty={t.nothingSet}
-          rows={[
-            [
-              t.businessName,
-              p.identity?.businessName ?? p.identity?.displayName,
-            ],
-            [t.legalName, p.identity?.legalName],
-            [t.license, p.identity?.businessLicense],
-          ]}
-        />
-      </div>
+      {tab === "billing" ? <BillingTab snapshot={p} /> : (
+        <>
+          <div class="grid">
+            <Card
+              title={t.account}
+              empty={t.nothingSet}
+              rows={[
+                [t.name, p.user.name],
+                [
+                  t.phone,
+                  p.user.phoneNumber ? fmtPhone(p.user.phoneNumber) : undefined,
+                ],
+                // UX-35: the email lives on ONE surface — the editable form
+                // below. Repeating it read-only here competed with the form and
+                // clipped long addresses at the card edge.
+                [t.language, p.user.language === "es" ? t.spanish : t.english],
+              ]}
+            />
+            <Card
+              title={t.businessIdentity}
+              empty={t.nothingSet}
+              rows={[
+                [
+                  t.businessName,
+                  p.identity?.businessName ?? p.identity?.displayName,
+                ],
+                [t.legalName, p.identity?.legalName],
+                [t.license, p.identity?.businessLicense],
+              ]}
+            />
+          </div>
 
-      <EditCard snapshot={p} onSaved={onSaved} />
+          <EditCard snapshot={p} onSaved={onSaved} />
 
-      <div class="grid">
-        <AddressEditCard snapshot={p} onSaved={onSaved} />
-        <InsuranceEditCard snapshot={p} onSaved={onSaved} />
-      </div>
+          <div class="grid">
+            <AddressEditCard snapshot={p} onSaved={onSaved} />
+            <InsuranceEditCard snapshot={p} onSaved={onSaved} />
+          </div>
 
-      <div class="grid">
-        <TaxEditCard snapshot={p} onSaved={onSaved} />
-        {
-          /* P-42: live editor wired to GET/PUT /profile/contract-defaults —
+          <div class="grid">
+            <TaxEditCard snapshot={p} onSaved={onSaved} />
+            {
+              /* P-42: live editor wired to GET/PUT /profile/contract-defaults —
             the card is no longer a dead read-only panel. */
-        }
-        <ContractDefaultsEditCard snapshot={p} onSaved={onSaved} />
-      </div>
+            }
+            <ContractDefaultsEditCard snapshot={p} onSaved={onSaved} />
+          </div>
 
-      <PaymentsEditCard snapshot={p} onSaved={onSaved} />
+          <PaymentsEditCard snapshot={p} onSaved={onSaved} />
 
-      <DangerZoneCard snapshot={p} />
+          <DangerZoneCard snapshot={p} />
+        </>
+      )}
     </>
   );
 }

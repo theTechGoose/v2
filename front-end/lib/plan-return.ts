@@ -21,7 +21,12 @@ type PlanLike = Pick<UserPlan, "status" | "payUrl" | "payLinkError">;
 
 /** what a pending pick is, read from its record: being prepared, ready, refused by name, or the
  *  link builder not answering yet; none for anything that is not pending */
-export type Handoff = "preparing" | "ready" | "merchant-unknown" | "unavailable" | "none";
+export type Handoff =
+  | "preparing"
+  | "ready"
+  | "merchant-unknown"
+  | "unavailable"
+  | "none";
 export function handoffOf(plan: PlanLike | null | undefined): Handoff {
   if (!plan || plan.status !== "pending") return "none";
   if (plan.payUrl) return "ready";
@@ -38,7 +43,10 @@ export function handoffPage(back: PickBack): string {
 /** where a pick sends the browser: the hand-off page while the page is being prepared, straight
  *  to the page when it is already there, back with the reason when the CRM refused the name, and
  *  the page after a pick for free */
-export function afterPickOf(plan: PlanLike | null | undefined, back: PickBack): string {
+export function afterPickOf(
+  plan: PlanLike | null | undefined,
+  back: PickBack,
+): string {
   const h = handoffOf(plan);
   if (h === "ready") return plan!.payUrl!;
   if (h === "preparing" || h === "unavailable") return handoffPage(back);
@@ -49,7 +57,10 @@ export function afterPickOf(plan: PlanLike | null | undefined, back: PickBack): 
 /** what the hand-off page does with the plan it just read: nothing while the page is being
  *  prepared (ask again), the page the moment it is there, back with the reason on a refusal, on
  *  to the page after a pick when the plan is no longer pending (picked free elsewhere, or active) */
-export function handoffNext(plan: PlanLike | null | undefined, back: PickBack): string | null {
+export function handoffNext(
+  plan: PlanLike | null | undefined,
+  back: PickBack,
+): string | null {
   const h = handoffOf(plan);
   if (h === "preparing" || h === "unavailable") return null;
   return afterPickOf(plan, back);
@@ -72,13 +83,27 @@ export type PickBack = typeof BACKS[number];
 
 /** where a pick goes back to when there is no page to go to: the page it came from, settings otherwise */
 export function backOf(raw: string): PickBack {
-  return (BACKS as readonly string[]).includes(raw) ? raw as PickBack : "/settings";
+  return (BACKS as readonly string[]).includes(raw)
+    ? raw as PickBack
+    : "/settings";
 }
 
 /** the wizard's page after a pick: resume PAST the plan step (free stored, or the receipt back
- *  with the plan active) instead of at the first step the person skipped */
+ *  with the plan active) instead of at the first step the person skipped; REQ-127 — on settings,
+ *  the Billing tab, where the plan lives */
 export function pageAfterPick(back: PickBack): string {
-  return back === "/welcome" ? "/welcome?after=plan" : back;
+  return back === "/welcome" ? "/welcome?after=plan" : "/settings?tab=billing";
+}
+
+/** REQ-127 — "how about just a billing tab rather than a slot on the page": /settings is two tabs.
+ *  The address opens Billing when asked (?tab=billing), when a pick came back saying why (?plan=),
+ *  or when a receipt landed with its marker (?px=, REQ-080); Account otherwise. */
+export type SettingsTab = "account" | "billing";
+export function settingsTabOf(search: string): SettingsTab {
+  const q = new URLSearchParams(search);
+  return q.get("tab") === "billing" || q.has("plan") || q.has("px")
+    ? "billing"
+    : "account";
 }
 export function resumesAfterPlan(search: string): boolean {
   return new URLSearchParams(search).get("after") === "plan";
@@ -89,11 +114,19 @@ export type PickError = "email-required" | "merchant-unknown" | "error";
 
 /** the query a failed pick comes back with (`?plan=…`), and what a page reads from it */
 export function pickErrorQuery(status: number): string {
-  return `?plan=${status === 409 ? "email-required" : status === 422 ? "merchant-unknown" : "error"}`;
+  return `?plan=${
+    status === 409
+      ? "email-required"
+      : status === 422
+      ? "merchant-unknown"
+      : "error"
+  }`;
 }
 export function pickErrorOf(search: string): PickError | null {
   const v = new URLSearchParams(search).get("plan");
-  return v === "email-required" || v === "merchant-unknown" || v === "error" ? v : null;
+  return v === "email-required" || v === "merchant-unknown" || v === "error"
+    ? v
+    : null;
 }
 
 /**

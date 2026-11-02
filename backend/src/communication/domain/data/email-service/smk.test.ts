@@ -1,6 +1,7 @@
 import { assert, assertEquals } from "#std/assert";
 import { EmailService } from "./mod.ts";
 import { aliasFrom, HOUSE_FROM } from "@communication/domain/business/sender/mod.ts";
+import { DEV_RECIPIENT } from "@communication/domain/business/dev-recipient/mod.ts";
 
 interface CapturedCall {
   url: string;
@@ -56,8 +57,9 @@ Deno.test("EmailService smoke: posts to /email with X-Postmark-Server-Token head
     assertEquals(call.headers["x-postmark-server-token"], "test-key-xyz");
     const body = call.body as { From: string; To: string; Subject: string; HtmlBody: string; MessageStream: string };
     assertEquals(body.From, HOUSE_FROM);
-    assertEquals(body.To, "tom@example.test");
-    assertEquals(body.Subject, "Your quote");
+    // REQ-126 — off the deploy the one recipient is Raphael, the asked-for address in the subject
+    assertEquals(body.To, DEV_RECIPIENT);
+    assertEquals(body.Subject, "[to: tom@example.test] Your quote");
     assertEquals(body.HtmlBody, "<p>see attached</p>");
     assertEquals(body.MessageStream, "outbound");
   } finally {

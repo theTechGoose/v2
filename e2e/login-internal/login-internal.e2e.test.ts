@@ -203,9 +203,9 @@ Deno.test("REQ-063: hans@documonster.com signs in by email and is a super-admin 
     expect.eq(admin.status, 200, "the admin search answers hans");
     await admin.body?.cancel();
     // the frame the reviewer sees: settings, signed in as hans
-    await page.goto("/settings?lang=en");
-    await page.locator("[data-cy='plan-card']").waitFor({ timeout: 60_000 });
-    await expect.see("Current plan");
+    await page.goto("/settings?lang=en&tab=billing"); // REQ-127 — the plan lives on the Billing tab
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 }); // REQ-127 — the Billing tab
+    await expect.see("Your plan");
     // a stranger on the same flow has no admin
     const s = await http("/api/auth/verify-email-otp", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ email: `stranger-${Date.now()}@blackhole.postmarkapp.com`, code: "000000" }) });
     const strangerCookie = (s.headers.get("set-cookie") ?? "").split(";")[0];

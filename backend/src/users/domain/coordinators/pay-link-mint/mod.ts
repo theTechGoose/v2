@@ -22,7 +22,7 @@ import { Injectable } from "#danet/core";
 import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { appOrigin, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
-import { firstMonthMemo, isPreparing, minted, payLinkFailed, type PickBack, planOf, RETURN_LABEL, returnUrlFor, samePick } from "@users/domain/business/plan/mod.ts";
+import { dueCentsFor, dueMemo, isPreparing, minted, payLinkFailed, type PickBack, planOf, RETURN_LABEL, returnUrlFor, samePick } from "@users/domain/business/plan/mod.ts";
 import type { UserPlan } from "@users/dto/plan.ts";
 
 @Injectable()
@@ -41,7 +41,8 @@ export class PayLinkMint {
     const pricing = planOf(pick.planId);
     try {
       const { customerId } = await this.crm.ensure(userId);
-      const { dueId } = await this.link.raiseDue({ customerId, amountCents: pricing.priceCents, memo: firstMonthMemo(pricing) });
+      // REQ-127 — an upgrade's due is the difference the pick carries; a first pick is the full first month
+      const { dueId } = await this.link.raiseDue({ customerId, amountCents: dueCentsFor(pricing, pick), memo: dueMemo(pricing, pick) });
       const { payUrl } = await this.link.mintPayLink({ customerId, dueId, returnUrl: returnUrlFor(appOrigin(), dueId, back), returnLabel: RETURN_LABEL, merchant });
       return await this.write(userId, pick, (current) => minted(current, { customerId, dueId, payUrl, merchant }, new Date().toISOString()));
     } catch (e) {
