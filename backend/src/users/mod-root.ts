@@ -17,6 +17,7 @@ import { Logout } from "@users/domain/coordinators/logout/mod.ts";
 import { WipeAccount } from "@users/domain/coordinators/wipe-account/mod.ts";
 import { Impersonate } from "@users/domain/coordinators/impersonate/mod.ts";
 import { BootstrapSuperAdmin } from "@users/domain/coordinators/bootstrap-super-admin/mod.ts";
+import { DevLogin } from "@users/domain/coordinators/dev-login/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 
 // --- profile sub-aggregates (folded in from former ProfileModule) ---
@@ -93,6 +94,7 @@ import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
     WipeAccount,
     Impersonate,
     BootstrapSuperAdmin,
+    DevLogin,
     SmsService,
     RateLimiter,
     // profile
