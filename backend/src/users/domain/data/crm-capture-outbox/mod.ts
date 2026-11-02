@@ -16,7 +16,8 @@ import { getKv } from "@core/data/kv/mod.ts";
 /** how many times a settling write re-reads a record whose version moved under it (REQ-113): a
  *  wizard's saves re-mark a record a handful of times in a row, never more */
 const SETTLE_ATTEMPTS = 8;
-import { backoffMs, LEASE_MS, type PendingCapture } from "@users/domain/business/lead-capture-retry/mod.ts";
+import { backoffMs, LEASE_MS, type PendingCapture, WATCH_FOR_MS } from "@users/domain/business/lead-capture-retry/mod.ts";
+import type { UserPlan } from "@users/dto/plan.ts";
 
 const PREFIX = "crm-capture";
 
@@ -27,6 +28,8 @@ const keyOf = (rec: Pick<PendingCapture, "phone" | "userId" | "kind">): Deno.KvK
     ? [PREFIX, "signup-notice", rec.userId ?? ""]
     : rec.kind === "pay-link"
     ? [PREFIX, "pay-link", rec.userId ?? ""] // REQ-106
+    : rec.kind === "settle-watch"
+    ? [PREFIX, "settle-watch", rec.userId ?? ""] // REQ-131
     : rec.userId
     ? [PREFIX, "user", rec.userId]
     : [PREFIX, rec.phone];
@@ -106,6 +109,37 @@ export class CrmCaptureOutbox {
     await kv.atomic().check(existing).set(key, rec).commit();
   }
 
+  /** REQ-131 — the watch on a minted due: the pick the page was made for and a 48 h window. Re-marked
+   *  (a new enqueuedAt, due now, its clock restarted, the window from now) when the person comes
+   *  back to /plan/return with the due still open; a lease a sweep holds is kept (REQ-099's rule)
+   *  @throws settle-watch-invalid — a pick that names no due */
+  async addSettleWatch(userId: string, pick: UserPlan, now: number): Promise<void> {
+    if (!pick.dueId) throw new Error("settle-watch-invalid: the pick names no due");
+    const kv = await this.kv();
+    const key = keyOf({ phone: "", userId, kind: "settle-watch" });
+    const existing = await kv.get<PendingCapture>(key);
+    const at = new Date(now).toISOString();
+    const rec: PendingCapture = {
+      phone: "",
+      userId,
+      kind: "settle-watch",
+      dueId: pick.dueId,
+      pick,
+      enqueuedAt: at,
+      attempts: 0,
+      nextAt: at,
+      watchUntil: new Date(now + WATCH_FOR_MS).toISOString(),
+      ...(existing.value?.leaseUntil ? { leaseUntil: existing.value.leaseUntil } : {}),
+    };
+    await kv.atomic().check(existing).set(key, rec).commit();
+  }
+
+  /** REQ-131 — the account's watch, whatever it says: the due it watched activated its plan another way (/plan/return) */
+  async dropSettleWatch(userId: string): Promise<void> {
+    const kv = await this.kv();
+    await kv.delete(keyOf({ phone: "", userId, kind: "settle-watch" }));
+  }
+
   async list(): Promise<PendingCapture[]> {
     const kv = await this.kv();
     const out: PendingCapture[] = [];
@@ -136,7 +170,7 @@ export class CrmCaptureOutbox {
       const current = await kv.get<PendingCapture>(key);
       const base = current.value ?? rec;
       const attempts = base.attempts + 1;
-      next = { phone: base.phone, ...(base.userId ? { userId: base.userId } : {}), ...(base.kind ? { kind: base.kind } : {}), ...(base.back ? { back: base.back } : {}), ...(base.reason ? { reason: base.reason } : {}), enqueuedAt: base.enqueuedAt, attempts, nextAt: new Date(now + backoffMs(attempts)).toISOString(), lastError: error.slice(0, 300) };
+      next = { phone: base.phone, ...(base.userId ? { userId: base.userId } : {}), ...(base.kind ? { kind: base.kind } : {}), ...(base.back ? { back: base.back } : {}), ...(base.reason ? { reason: base.reason } : {}), ...(base.dueId ? { dueId: base.dueId } : {}), ...(base.pick ? { pick: base.pick } : {}), ...(base.watchUntil ? { watchUntil: base.watchUntil } : {}), enqueuedAt: base.enqueuedAt, attempts, nextAt: new Date(now + backoffMs(attempts)).toISOString(), lastError: error.slice(0, 300) };
       if ((await kv.atomic().check(current).set(key, next).commit()).ok) return next;
     }
     await kv.set(key, next); // moved under every attempt: the last write wins, as it used to

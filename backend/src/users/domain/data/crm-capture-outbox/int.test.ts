@@ -93,3 +93,27 @@ Deno.test("REQ-113 outbox — defer() keeps a save that re-marks the record betw
   assertEquals([after.enqueuedAt, after.attempts, after.lastError], [at(500), 1, "the CRM did not answer"], "the newer mark, counted once");
   assertEquals(after.leaseUntil, undefined, "the lease is released with the deferral");
 });
+
+// ---- REQ-131 — the settle watch: a record of its own, carrying the pick the due was minted for ----
+Deno.test("REQ-131 outbox — addSettleWatch is a record keyed apart from the pay link, carrying the due, the pick and a 48 h window; a re-mark restarts its clock and keeps a held lease; defer keeps the pick", async () => {
+  const outbox = await fresh();
+  const pick = { userId: "u-131", planId: "monster" as const, status: "pending" as const, chosenAt: at(0), updatedAt: at(0), merchant: "primary", customerId: "c-1", dueId: "d-99", payUrl: "http://crm/pay?due=d-99" };
+  await outbox.addPayLink("u-131", "/settings", t0);
+  await outbox.addSettleWatch("u-131", pick, t0);
+  const recs = await outbox.list();
+  assertEquals(recs.map((r) => r.kind), ["pay-link", "settle-watch"], "apart from the pay link, same account");
+  const watch = recs.find((r) => r.kind === "settle-watch")!;
+  assertEquals([watch.userId, watch.dueId, watch.pick?.planId, watch.attempts, watch.nextAt, watch.watchUntil], ["u-131", "d-99", "monster", 0, at(0), at(48 * 3_600_000)]);
+  assert(isDue(watch, t0), "due at once");
+  // held by a sweep, then re-marked (the person came back to /plan/return): the clock restarts, the lease stays
+  assert(await outbox.claim(watch, t0));
+  await outbox.addSettleWatch("u-131", pick, t0 + 60_000);
+  const marked = (await outbox.list()).find((r) => r.kind === "settle-watch")!;
+  assertEquals([marked.enqueuedAt, marked.attempts, marked.watchUntil, Boolean(marked.leaseUntil)], [at(60_000), 0, at(60_000 + 48 * 3_600_000), true]);
+  // deferred (the due still open): the pick and the window ride along
+  const deferred = await outbox.defer(marked, t0 + 61_000, "due still open");
+  assertEquals([deferred.kind, deferred.dueId, deferred.pick?.dueId, deferred.watchUntil, deferred.attempts], ["settle-watch", "d-99", "d-99", marked.watchUntil, 1]);
+  await outbox.done(deferred);
+  assertEquals((await outbox.list()).map((r) => r.kind), ["pay-link"], "cleared on its own, the pay link untouched");
+  await resetKv();
+});

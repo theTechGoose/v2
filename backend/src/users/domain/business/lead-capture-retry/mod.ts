@@ -3,6 +3,11 @@
  * after a wait that doubles from 5 s and caps at five minutes; a record another sweep holds (a
  * live lease) is left alone. Pure — the outbox stores these fields, the sweep reads them.
  */
+import type { UserPlan } from "@users/dto/plan.ts";
+
+/** REQ-131 — how long a minted due is watched for its settlement before the watch ends unpaid */
+export const WATCH_FOR_MS = 48 * 60 * 60_000;
+
 export interface PendingCapture {
   /** the lead's phone (REQ-072); "" on a customer sync record */
   phone: string;
@@ -11,7 +16,12 @@ export interface PendingCapture {
   userId?: string;
   /** REQ-103 — a signup notice record: the new account's email to hello@documonster.com
    *  (SignupNotice.send), keyed apart from the lead and the sync; `userId` names the account */
-  kind?: "signup-notice" | "pay-link";
+  kind?: "signup-notice" | "pay-link" | "settle-watch";
+  /** REQ-131 — a settle-watch record: the due a pay page was minted for, the pick it was minted
+   *  for (restored active if a later unpaid pick buried it), and when the watch ends unpaid */
+  dueId?: string;
+  pick?: UserPlan;
+  watchUntil?: string;
   /** REQ-106 — a pay-link record: the page the pick came from, where the receipt brings the
    *  person back (the pick's `back`); the plan's record names the rest */
   back?: string;

@@ -718,3 +718,34 @@ Deno.test("REQ-127: the Billing tab says the plan plainly; upgrading Monster →
     expect.eq(plan.switchedFrom, "assist-plus", "plan.switchedFrom reads assist-plus");
     expect.eq(await page.locator("[data-cy='plan-pay-link']").count(), 0, "nothing to pay");
   }));
+
+/**
+ * REQ-131 — Alex, 2026-11-02: the gateway approved his $99, the receipt brought him back six seconds
+ * later, the CRM's settlement landed half a minute after that — the one refresh said "still open" and
+ * nothing ever asked again. Now the due is WATCHED from the moment its page is minted: paid with nobody
+ * pressing anything (the receipt tab closed), the plan is active by the minute sweep. The fake settles
+ * the due quietly (fake-paid { quiet }: the card landed, no return, no refresh) and the story only reads.
+ */
+Deno.test("REQ-131: paid on the page and the receipt tab closed — no return, no refresh — the plan is active within the sweep's minute, by itself", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl, { name: "Watch Story", email: `watch-${digits()}@blackhole.postmarkapp.com` });
+    await (await http("/api/me/plan", { method: "POST", headers: auth, body: JSON.stringify({ planId: "monster", back: "/settings" }) })).body?.cancel();
+    let plan = await (await http("/api/me/plan", { headers: auth })).json();
+    for (let i = 0; i < 240 && !plan.payUrl; i++) { // REQ-106 — the page comes by the sweep
+      await new Promise((r) => setTimeout(r, 250));
+      plan = await (await http("/api/me/plan", { headers: auth })).json();
+    }
+    expect(typeof plan.payUrl === "string" && plan.status === "pending", `the page is on the record (${JSON.stringify(plan)})`);
+    // the card lands; the person closes the receipt — nothing calls /plan/return
+    const paid = await (await http("/api/me/plan/fake-paid", { method: "POST", headers: auth, body: JSON.stringify({ quiet: true }) })).json();
+    expect.eq(paid.status, "pending", "quiet: the due settled on the CRM, the app was not told");
+    const t0 = Date.now();
+    while (plan.status !== "active" && Date.now() - t0 < 150_000) { // the minute sweep, and its backoff after one open read
+      await new Promise((r) => setTimeout(r, 1000));
+      plan = await (await http("/api/me/plan", { headers: auth })).json();
+    }
+    expect(plan.status === "active" && plan.planId === "monster", `active by the sweep after ${Math.round((Date.now() - t0) / 1000)} s (${JSON.stringify(plan)})`);
+    await page.goto("/settings?tab=billing");
+    await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
+    await expect.see("Monster is active");
+  }));

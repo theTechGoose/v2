@@ -12,7 +12,8 @@ import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
-import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts"; // REQ-106
+import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
+import { SettleWatch } from "@users/domain/coordinators/settle-watch/mod.ts"; // REQ-131 // REQ-106
 import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
@@ -31,7 +32,7 @@ function freshFlow() {
     flow: new LoadProfile(
       users, identity, address, insurance, tax, defaults, refs,
       // REQ-061 — the plan is read through ChoosePlan, as the CRM's billing says it stands
-      new ChoosePlan(users, new PlanStore(), new PaymentsLink(), crm, new CrmLeadCapture(new CrmCaptureOutbox(), crm, new SignupNotice(users), new PayLinkMint(new PlanStore(), new PaymentsLink(), crm))), // REQ-099
+      new ChoosePlan(users, new PlanStore(), new PaymentsLink(), crm, new CrmLeadCapture(new CrmCaptureOutbox(), crm, new SignupNotice(users), new PayLinkMint(new PlanStore(), new PaymentsLink(), crm), new SettleWatch(new PlanStore(), new PaymentsLink()))), // REQ-099
     ),
   };
 }

@@ -18,6 +18,7 @@ import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mo
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { CrmLeadCapture } from "./mod.ts";
 import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
+import { SettleWatch } from "@users/domain/coordinators/settle-watch/mod.ts"; // REQ-131
 import { chosen } from "@users/domain/business/plan/mod.ts";
 import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 import type { SendEmailInput, SendEmailResult } from "@communication/domain/data/email-service/mod.ts";
@@ -59,7 +60,7 @@ async function fresh(answers: Answer[], outbox = new CrmCaptureOutbox()) {
   // the real deploy's side of REQ-318's switch: Postmark (the stub above) is reached. On the fakes
   // the notice is logged and never mailed (the test below).
   notice.env = { get: (k: string) => (k === "DENO_DEPLOY" ? "true" : undefined) };
-  const make = () => new CrmLeadCapture(outbox, crm, notice, new PayLinkMint(new PlanStore(), link, crm)); // REQ-106 — the pay link rides this outbox too
+  const make = () => new CrmLeadCapture(outbox, crm, notice, new PayLinkMint(new PlanStore(), link, crm), new SettleWatch(new PlanStore(), link)); // REQ-106 — the pay link rides this outbox too
   return { calls, outbox, make, users, mails, mailAnswers, notice };
 }
 async function done() {
@@ -259,7 +260,7 @@ Deno.test("REQ-099 a save made while the account's sync is in flight is not lost
   const outbox = new CrmCaptureOutbox();
   const users = new UserStore();
   const crm = new CrmCustomerSync(users, new BusinessIdentityStore(), link, new PlanStore());
-  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, {} as PayLinkMint); // no notice, no pay link is enqueued here
+  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, {} as PayLinkMint, {} as SettleWatch); // no notice, no pay link is enqueued here
   const user = await users.create({ phoneNumber: "+15125550199", language: "en" });
   await leads.enqueueSync(user.id);
   await until(() => inputs.length >= 1);
@@ -437,7 +438,7 @@ async function freshPay(opts: { customer?: PayAnswer[]; due?: PayAnswer[]; link?
   const plans = new PlanStore();
   const crm = new CrmCustomerSync(users, new BusinessIdentityStore(), link, plans);
   const outbox = new CrmCaptureOutbox();
-  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, new PayLinkMint(plans, link, crm));
+  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, new PayLinkMint(plans, link, crm), new SettleWatch(plans, link));
   const user = await users.create({ phoneNumber: "+15125551060", email: "h@roof.test", name: "Han" });
   await plans.put(chosen(user.id, "monster", new Date().toISOString(), { merchant: "primary" }));
   return { calls, outbox, leads, plans, user };
@@ -461,7 +462,7 @@ Deno.test("REQ-106 the sweep makes the customer, raises the due and mints the pa
   assertEquals(calls, ["/api/payments/customers", "/api/payments/dues", "/api/payments/pay-links"]);
   const plan = (await plans.get(user.id))!;
   assertEquals([plan.status, plan.customerId, plan.dueId, plan.payUrl, plan.payLinkError], ["pending", "c-106", "d-9900", "http://crm/pay?due=d-9900&account=primary&n=1", undefined]);
-  assertEquals(await outbox.list(), []);
+  assertEquals((await outbox.list()).map((r) => r.kind), ["settle-watch"], "the pay link is done; its due is watched (REQ-131)");
   await done();
 });
 
@@ -478,7 +479,7 @@ Deno.test("REQ-106 a CRM that fails keeps the record with its attempts and error
   const plan = (await plans.get(user.id))!;
   assertEquals([plan.payUrl, plan.payLinkError], ["http://crm/pay?due=d-9900&account=primary&n=1", undefined]);
   assertEquals(calls, ["/api/payments/customers", "/api/payments/dues", "/api/payments/customers", "/api/payments/dues", "/api/payments/pay-links"], "the retry is the whole mint again — the CRM upserts the customer by ref");
-  assertEquals(await outbox.list(), []);
+  assertEquals((await outbox.list()).map((r) => r.kind), ["settle-watch"], "the pay link is done; its due is watched (REQ-131)");
   await done();
 });
 
@@ -513,7 +514,7 @@ Deno.test("REQ-106 a newer pick made while the first page is being minted is the
   const plans = new PlanStore();
   const crm = new CrmCustomerSync(users, new BusinessIdentityStore(), link, plans);
   const outbox = new CrmCaptureOutbox();
-  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, new PayLinkMint(plans, link, crm));
+  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, new PayLinkMint(plans, link, crm), new SettleWatch(plans, link));
   const user = await users.create({ phoneNumber: "+15125551062", email: "r@roof.test", name: "Rae" });
   await plans.put(chosen(user.id, "monster", "2026-10-20T10:00:00.000Z", { merchant: "primary" }));
   await leads.enqueuePayLink(user.id, "/welcome");
@@ -535,7 +536,7 @@ Deno.test("REQ-106 a newer pick made while the first page is being minted is the
   assertEquals(mints, ["d-9900", "d-19900"], "both pages were minted, the newer one last");
   assertEquals(final.planId, "assist", "the newer pick stood throughout");
   assertEquals(final.payUrl, "http://crm/pay?due=d-19900", "the page on the record is the newer pick's, never the stale one");
-  assertEquals(await outbox.list(), []);
+  assertEquals((await outbox.list()).map((r) => r.kind), ["settle-watch"], "the pay link is done; its due is watched (REQ-131)");
   await done();
 });
 
@@ -558,7 +559,7 @@ Deno.test("REQ-128 a record enqueued while a sweep is held by a slow one is carr
   } as unknown as PaymentsLink;
   const outbox = new CrmCaptureOutbox();
   const crm = new CrmCustomerSync(new UserStore(), new BusinessIdentityStore(), link, new PlanStore());
-  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, {} as PayLinkMint);
+  const leads = new CrmLeadCapture(outbox, crm, {} as SignupNotice, {} as PayLinkMint, {} as SettleWatch);
   await leads.enqueue("+15125551280"); // its pass is now held on the CRM
   await new Promise((r) => setTimeout(r, 50));
   assertEquals(sent, ["+15125551280"], "the slow one is on the CRM");
@@ -573,4 +574,67 @@ Deno.test("REQ-128 a record enqueued while a sweep is held by a slow one is carr
   await leads.idle();
   assertEquals((await outbox.list()).length, 0, "both landed");
   await resetKv();
+});
+
+// ---- REQ-131 — the sweep watches a minted due until it settles ----
+Deno.test("REQ-131 the page minted, the sweep watches its due: open, the watch waits with backoff (no error); settled, the plan is active and the tier and the paid notice ride the outbox — nobody pressed anything", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const calls: string[] = [];
+  let open = true;
+  const link = {
+    createCustomer: () => (calls.push("customer"), Promise.resolve({ customerId: "c-131" })),
+    raiseDue: () => (calls.push("due"), Promise.resolve({ dueId: "d-131" })),
+    mintPayLink: () => (calls.push("link"), Promise.resolve({ payUrl: "http://crm/pay?due=d-131" })),
+    dueOpen: (id: string) => (calls.push(`open?${id}`), Promise.resolve(open)),
+  } as unknown as PaymentsLink;
+  const users = new UserStore();
+  const plans = new PlanStore();
+  const crm = new CrmCustomerSync(users, new BusinessIdentityStore(), link, plans);
+  const outbox = new CrmCaptureOutbox();
+  const mailed: string[] = [];
+  const notice = { send: (userId: string, reason: string) => (mailed.push(`${userId}:${reason}`), Promise.resolve()) } as unknown as SignupNotice;
+  const leads = new CrmLeadCapture(outbox, crm, notice, new PayLinkMint(plans, link, crm), new SettleWatch(plans, link));
+  const user = await users.create({ phoneNumber: "+15125551310", email: "a@roof.test", name: "Al" });
+  await plans.put(chosen(user.id, "monster", "2026-11-02T15:50:00.000Z", { merchant: "primary" }));
+  await leads.enqueuePayLink(user.id, "/settings");
+  await leads.idle();
+  assertEquals(calls, ["customer", "due", "link"], "the mint, as before");
+  const [watch] = (await outbox.list()).filter((r) => r.kind === "settle-watch");
+  assertEquals([watch?.userId, watch?.dueId, watch?.pick?.planId], [user.id, "d-131", "monster"], "the watch is on the outbox the moment the page is");
+  // the minute sweep, the due still open: waits, no deferral error, backoff on the record
+  let r = await leads.drain();
+  assertEquals([r.landed, r.deferred, r.waiting, calls.at(-1)], [0, 0, 1, "open?d-131"]);
+  const [w] = (await outbox.list()).filter((r) => r.kind === "settle-watch");
+  assertEquals([w.attempts, w.lastError, Date.parse(w.nextAt) > Date.now()], [1, "due still open", true]);
+  assertEquals((await plans.get(user.id))?.status, "pending");
+  // the card lands (the CRM's own settlement, seconds after the receipt); the next sweep after its clock
+  open = false;
+  r = await leads.drain(Date.parse(w.nextAt) + 1);
+  await leads.idle();
+  assertEquals([r.landed, r.waiting], [1, 0]);
+  const plan = (await plans.get(user.id))!;
+  assertEquals([plan.status, plan.dueId, typeof plan.activatedAt], ["active", "d-131", "string"]);
+  assertEquals((await outbox.list()).filter((r) => r.kind === "settle-watch"), [], "the watch is done");
+  assertEquals(mailed, [`${user.id}:paid`], "the team hears the payment landed");
+  assertEquals(calls.filter((c) => c === "customer").length, 2, "and the CRM's tier was revised (ensure, after the mint's)");
+  await done();
+});
+
+Deno.test("REQ-131 a watch whose 48 h window passed unpaid ends quietly: the record is cleared, the plan stays pending as stored", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const link = { dueOpen: () => Promise.reject(new Error("never asked")) } as unknown as PaymentsLink;
+  const plans = new PlanStore();
+  const outbox = new CrmCaptureOutbox();
+  const leads = new CrmLeadCapture(outbox, {} as CrmCustomerSync, {} as SignupNotice, {} as PayLinkMint, new SettleWatch(plans, link));
+  const pick = chosen("u-131-old", "monster", "2026-10-01T00:00:00.000Z", { merchant: "primary", customerId: "c-1", dueId: "d-old", payUrl: "http://crm/pay?due=d-old" });
+  await plans.put(pick);
+  const t0 = Date.parse("2026-10-01T00:00:00.000Z");
+  await outbox.addSettleWatch("u-131-old", pick, t0);
+  const r = await leads.drain(t0 + 49 * 3_600_000);
+  assertEquals([r.landed, r.deferred, r.waiting], [1, 0, 0]);
+  assertEquals(await outbox.list(), []);
+  assertEquals((await plans.get("u-131-old"))?.status, "pending");
+  await done();
 });

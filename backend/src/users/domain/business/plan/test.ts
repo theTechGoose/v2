@@ -27,6 +27,7 @@ import {
   withSubscription,
 } from "./mod.ts";
 import { isPreparing, minted, payLinkFailed, samePick } from "./mod.ts"; // REQ-106
+import { watchOutcome } from "./mod.ts"; // REQ-131
 
 const NOW = "2026-10-01T15:00:00.000Z";
 const LATER = "2026-10-01T15:05:00.000Z";
@@ -334,4 +335,36 @@ Deno.test("REQ-129 plan — what the CRM is told: a first pick bills on the 1st 
   // a plan from before the anchor, switched: the old billing's next, the full price (REQ-127 as it was)
   const legacy = Plan.downgraded({ ...active, paidThrough: undefined, subscriptionId: "s", nextBillAt: "2026-12-20T15:00:00.000Z" }, "monster", "2026-12-10T15:00:00.000Z", "2026-12-20T15:00:00.000Z");
   assertEquals(Plan.billingScheduleFor(legacy, planOf("monster"), "2026-12-10T15:00:00.000Z"), { firstBillAt: "2026-12-20T15:00:00.000Z", firstAmountCents: 9900 });
+});
+
+// ---- REQ-131 — a paid due activates its plan whenever the payer comes back, and even after a re-pick buried it ----
+// Raphael, 2026-11-02, on Alex's $99 approved by the gateway while the CRM still said the due was
+// open: "figure out why the hell it never logged Alex's payment" / "fix it."
+Deno.test("REQ-131 plan — watchOutcome: an open due waits; a settled due activates the pending pick that carries it", () => {
+  const watched: UserPlan = { userId: "u-1", planId: "monster", status: "pending", chosenAt: NOW, updatedAt: NOW, merchant: "primary", customerId: "c-1", dueId: "d-99", payUrl: "http://crm/pay?due=d-99" };
+  assertEquals(watchOutcome(watched, watched, true, LATER), { kind: "waiting" });
+  const settled = watchOutcome(watched, watched, false, LATER);
+  assertEquals(settled.kind, "settled");
+  if (settled.kind !== "settled") throw new Error("unreachable");
+  assertEquals([settled.plan.planId, settled.plan.status, settled.plan.activatedAt, settled.plan.dueId, settled.plan.paidThrough], ["monster", "active", LATER, "d-99", addMonth(LATER)]);
+});
+
+Deno.test("REQ-131 plan — watchOutcome: a settled due whose pick a later unpaid pick replaced restores the PAID pick active (Alex: $99 paid, three re-picks buried it under a $399 first-month due)", () => {
+  const paid: UserPlan = { userId: "u-1", planId: "monster", status: "pending", chosenAt: NOW, updatedAt: NOW, merchant: "primary", customerId: "c-1", dueId: "d-99", payUrl: "http://crm/pay?due=d-99" };
+  const buried: UserPlan = { userId: "u-1", planId: "assist-plus", status: "pending", chosenAt: LATER, updatedAt: LATER, merchant: "primary", customerId: "c-1", dueId: "d-399", payUrl: "http://crm/pay?due=d-399" };
+  const out = watchOutcome(buried, paid, false, LATER);
+  assertEquals(out.kind, "restored");
+  if (out.kind !== "restored") throw new Error("unreachable");
+  assertEquals([out.plan.planId, out.plan.status, out.plan.dueId, out.plan.customerId, out.plan.merchant, out.plan.activatedAt], ["monster", "active", "d-99", "c-1", "primary", LATER], "the plan the money paid for, active — the unpaid pick is gone");
+  assertEquals(out.plan.payUrl, undefined, "no page to resume: it is paid");
+});
+
+Deno.test("REQ-131 plan — watchOutcome: nothing to do when the plan is no longer pending (already active by /plan/return, back to free, or gone)", () => {
+  const paid: UserPlan = { userId: "u-1", planId: "monster", status: "pending", chosenAt: NOW, updatedAt: NOW, merchant: "primary", customerId: "c-1", dueId: "d-99" };
+  assertEquals(watchOutcome({ ...paid, status: "active", activatedAt: LATER }, paid, false, LATER).kind, "nothing", "already active: /plan/return got there first");
+  assertEquals(watchOutcome({ userId: "u-1", planId: "free", status: "free", chosenAt: LATER, updatedAt: LATER }, paid, false, LATER).kind, "nothing", "went back to free after: that was a choice");
+  assertEquals(watchOutcome(null, paid, false, LATER).kind, "nothing", "no plan on record");
+  // the plan went active and the person upgraded: the pending pick on the record is the SWITCH from the paid plan, not a pick that buried it
+  const upgrade: UserPlan = { userId: "u-1", planId: "assist-plus", status: "pending", chosenAt: LATER, updatedAt: LATER, merchant: "primary", customerId: "c-1", dueCents: 30000, switchedFrom: "monster" };
+  assertEquals(watchOutcome(upgrade, paid, false, LATER).kind, "nothing", "an upgrade from the paid plan is never written over with the paid plan");
 });

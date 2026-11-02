@@ -65,7 +65,12 @@ export class ChoosePlan {
   async choose(userId: string, planId: string, back: PickBack = "/settings", merchant = ""): Promise<UserPlan> {
     const plan = planOf(planId);
     const now = new Date().toISOString();
-    const before = await this.plans.get(userId);
+    let before = await this.plans.get(userId);
+    // REQ-132 — a pick while a pick is pending asks the CRM first: a due paid a moment ago makes this
+    // a switch from the plan it paid for, never a second first pick written over it (Alex's three
+    // re-picks buried his paid $99 under a $399 due). Best effort: a CRM that does not answer leaves
+    // the record as stored, and the due's watch (REQ-131) restores the paid pick when it settles.
+    if (before?.status === "pending" && before.dueId) before = await this.refresh(userId).catch(() => before);
     // the billing a paid pick replaces: an active plan's — or the one a pending pick, not paid yet, already replaced
     const billing = before && before.status !== "free" ? (before.subscriptionId ?? before.previousSubscriptionId) : undefined;
     if (plan.id === "free") {
@@ -78,6 +83,11 @@ export class ChoosePlan {
 
     const user = await this.users.get(userId);
     if (!user.email?.trim()) throw new EmailRequiredError();
+
+    const account = accountForPick(plan.id, merchant); // REQ-100 — decided once, here
+    // REQ-132 — the same plan picked again while its page is pending: that page (minted, or being
+    // minted by the sweep) is the answer, not a second due and a second link
+    if (before?.status === "pending" && before.planId === plan.id && before.merchant === account && before.payLinkError !== "merchant-unknown") return before;
 
     // REQ-127 — the one switch rule: an upgrade charges the difference, a downgrade nothing
     const quote = switchQuote(before, plan.id, now);
@@ -95,7 +105,6 @@ export class ChoosePlan {
     // REQ-129 — the new billing keeps the old one's anchor (its next bill, the 1st) and the month already paid through
     const upgrade = quote.kind === "upgrade" ? { dueCents: quote.dueCents, switchedFrom: before!.planId, firstBillAt: quote.firstBillAt ?? undefined, paidThrough: before!.paidThrough } : undefined;
 
-    const account = accountForPick(plan.id, merchant); // REQ-100 — decided once, here
     // REQ-106 — the reply: pending through that account; a switch of paid plan carries the billing
     // in force, canceled once the new one is live. The CRM's customer, due and pay page: the sweep's.
     const pending = await this.plans.put(chosen(userId, plan.id as PlanId, now, { merchant: account }, billing, upgrade));
@@ -111,8 +120,14 @@ export class ChoosePlan {
     if (plan.status !== "pending" || !plan.dueId) return await this.projected(plan);
     const open = await this.link.dueOpen(plan.dueId);
     const next = settle(plan, open, new Date().toISOString());
-    if (next === plan) return plan;
+    if (next === plan) {
+      // REQ-131 — still open as the CRM reads it this second (its settlement is posted after the
+      // approval): the due is watched by the sweep until it settles, from now
+      await this.leads.enqueueSettleWatch(userId, plan);
+      return plan;
+    }
     const active = await this.projected(await this.plans.put(next));
+    await this.leads.dropSettleWatch(userId); // REQ-131 — the watch on this due is moot
     await this.leads.enqueueSync(userId); // REQ-062/099 — a paying customer: the CRM's tier is the plan's name, after this reply
     await this.leads.enqueueSignupNotice(userId, "paid"); // REQ-112 — the team hears the payment landed, with the plan on it
     return active;

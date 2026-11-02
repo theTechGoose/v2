@@ -74,10 +74,13 @@ export class MeController {
     if (!plan?.dueId) throw Object.assign(new Error("plan-missing: nothing to pay"), { status: 404 });
     // REQ-061 — the page names the due it was opened for (a past-due month's); the plan's first month otherwise.
     // The body is optional (the older callers send none), so it is read by hand.
-    const named = (await optionalBody(ctx) as { dueId?: unknown } | null)?.dueId;
+    const body = await optionalBody(ctx) as { dueId?: unknown; quiet?: unknown } | null;
+    const named = body?.dueId;
     const world = fakePaymentsWorld();
     const dueId = typeof named === "string" && world.dues.some((d) => d.dueId === named && d.customerId === plan.customerId) ? named : plan.dueId;
     world.settle(dueId);
+    // REQ-131 — `quiet`: the card landed and the receipt tab was closed — the app is not told; the sweep's watch is
+    if (body?.quiet === true) return await this.choosePlan.current(user.id);
     return await this.choosePlan.refresh(user.id);
   }
 

@@ -18,6 +18,7 @@ import { WipeAccount } from "@users/domain/coordinators/wipe-account/mod.ts";
 import { Impersonate } from "@users/domain/coordinators/impersonate/mod.ts";
 import { BootstrapSuperAdmin } from "@users/domain/coordinators/bootstrap-super-admin/mod.ts";
 import { DevLogin } from "@users/domain/coordinators/dev-login/mod.ts";
+import { SettleWatch } from "@users/domain/coordinators/settle-watch/mod.ts"; // REQ-131
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 
 // --- profile sub-aggregates (folded in from former ProfileModule) ---
@@ -95,6 +96,7 @@ import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
     Impersonate,
     BootstrapSuperAdmin,
     DevLogin,
+    SettleWatch, // REQ-131
     SmsService,
     RateLimiter,
     // profile
