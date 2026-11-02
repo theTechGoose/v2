@@ -25,6 +25,11 @@ import {
 } from "@users/domain/business/admin-user-view/mod.ts";
 import { buildSessionCookie } from "@users/domain/business/session-cookie/mod.ts";
 import { LANDING_OFFER } from "#quote-flow/landing-offers.ts";
+import { accountForPick } from "#quote-flow/merchant-accounts.ts";
+import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
+import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
+import { chosen, merchantOf, planOf } from "@users/domain/business/plan/mod.ts";
+import type { PlanId } from "@users/dto/plan.ts";
 
 /**
  * /admin — super-admin-only surface. EVERY mutating/listing endpoint calls
@@ -44,7 +49,61 @@ export class AdminController {
     private identities: BusinessIdentityStore,
     private impersonate: Impersonate,
     private bootstrap: BootstrapSuperAdmin,
+    private plans: PlanStore,
+    private leads: CrmLeadCapture,
   ) {}
+
+  /**
+   * REQ-131 — POST /admin/users/:id/settle-watch { dueId, planId, merchant? }: a watch on a due the
+   * CRM holds (paid or not) for the plan it was minted for. The sweep carries it like the watch a
+   * mint sets: settled, that plan is active — restored over a later unpaid pick that buried it
+   * (Alex: $99 Monster paid, three re-picks, a $399 Assist+ due on the record). The repair IS the
+   * fix's code path, never a hand edit. Super admin only.
+   */
+  @Post("users/:id/settle-watch")
+  async settleWatch(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    await requireSuperAdmin(ctx, this.sessions, this.users);
+    const b = (body ?? {}) as {
+      dueId?: unknown;
+      planId?: unknown;
+      merchant?: unknown;
+    };
+    const dueId = typeof b.dueId === "string" ? b.dueId.trim() : "";
+    const planId = typeof b.planId === "string" ? b.planId.trim() : "";
+    if (!dueId || !planId) {
+      throw Object.assign(
+        new Error(
+          "settle-watch-invalid: body.dueId and body.planId (the plan the due was minted for) are required",
+        ),
+        { status: 400 },
+      );
+    }
+    const plan = planOf(planId); // plan-unknown → 400
+    if (plan.id === "free") {
+      throw Object.assign(new Error("settle-watch-invalid: free has no due"), {
+        status: 400,
+      });
+    }
+    await this.users.get(id);
+    const current = await this.plans.get(id);
+    const pick = chosen(id, plan.id as PlanId, new Date().toISOString(), {
+      merchant: accountForPick(plan.id, merchantOf(b.merchant)),
+      ...(current?.customerId ? { customerId: current.customerId } : {}),
+      dueId,
+    });
+    await this.leads.enqueueSettleWatch(id, pick);
+    return {
+      ok: true as const,
+      userId: id,
+      dueId,
+      planId: plan.id,
+      merchant: pick.merchant,
+    };
+  }
 
   /** GET /admin/users?q=<phone> — search users by (partial) phone number. */
   @Get("users")

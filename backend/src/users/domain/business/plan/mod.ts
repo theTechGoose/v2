@@ -293,3 +293,33 @@ export function settle(plan: UserPlan, dueOpen: boolean, now: string): UserPlan 
   if (plan.status !== "pending" || dueOpen) return plan;
   return { ...plan, status: "active", activatedAt: now, updatedAt: now, paidThrough: plan.paidThrough ?? addMonth(now) };
 }
+
+// ---- REQ-131 — a paid due activates its plan, whenever the payer comes back --------------------
+// Alex, 2026-11-02: the gateway approved his $99 at 15:53:22, the receipt had him on /plan/return
+// at 15:53:28, the CRM's deferred settlement landed at 15:53:55 — the one refresh read "still
+// open", nothing asked again, and three re-picks buried the paid pick under a $399 first-month due.
+// Raphael: "figure out why the hell it never logged Alex's payment" / "fix it." A minted due is
+// WATCHED by the outbox's sweep until it settles; this is what the watch does with what it reads.
+
+export type WatchOutcome =
+  /** the due is still open: ask again later */
+  | { kind: "waiting" }
+  /** settled, and nothing to write: the plan is no longer pending (already active, back to free, gone) */
+  | { kind: "nothing"; why: string }
+  /** settled: the pending pick that carries this due, active */
+  | { kind: "settled"; plan: UserPlan }
+  /** settled, but a later unpaid pick replaced the record: the pick the money paid for, active again */
+  | { kind: "restored"; plan: UserPlan };
+
+/** what a settle watch writes: `current` is the plan as stored now, `watched` the pick the due was minted for */
+export function watchOutcome(current: UserPlan | null, watched: UserPlan, dueOpen: boolean, now: string): WatchOutcome {
+  if (dueOpen) return { kind: "waiting" };
+  if (!current) return { kind: "nothing", why: "no plan on record" };
+  if (current.status !== "pending") return { kind: "nothing", why: `the plan is ${current.status} (${current.planId})` };
+  if (current.dueId === watched.dueId) return { kind: "settled", plan: settle(current, false, now) };
+  // a switch (REQ-127) comes from an ACTIVE plan: the paid pick went active already and this is the person's next move
+  if (current.switchedFrom) return { kind: "nothing", why: `the plan is a switch from ${current.switchedFrom} to ${current.planId}` };
+  // a later pick, not paid, sits where the paid one was: the paid one stands — no page to resume, it is paid
+  const { payUrl: _page, payLinkError: _error, ...paid } = watched;
+  return { kind: "restored", plan: settle({ ...paid, status: "pending" }, false, now) };
+}

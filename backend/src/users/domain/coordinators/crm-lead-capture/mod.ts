@@ -35,16 +35,24 @@
  * replies, and the sweep mints them (PayLinkMint) after it, onto the plan's record. The CRM's
  * refusal by name is final (the record is cleared, the plan reads it); anything else is deferred
  * and retried like the rest. A newer pick re-marks the record, like a newer save does.
+ * REQ-131 — Raphael, 2026-11-02, on Alex's $99 approved by the gateway while the CRM still read the
+ * due open: "figure out why the hell it never logged Alex's payment" / "fix it." The due a page
+ * was minted for rides the outbox too, from the moment the page is (the sweep adds the watch right
+ * after the mint) and again whenever /plan/return finds it still open: the sweep asks the CRM
+ * (SettleWatch) until it settles — open, the record waits on its backoff; settled, the plan is
+ * active (the pick restored if a later unpaid pick buried it), the tier and the paid notice follow.
  */
 import { Injectable } from "#danet/core";
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
+import { SettleWatch } from "@users/domain/coordinators/settle-watch/mod.ts";
 import { type NoticeReason, noticeReasonOf } from "@users/domain/business/signup-notice/mod.ts";
 import { type PickBack, pickBackOf } from "@users/domain/business/plan/mod.ts";
 import { isDue, type PendingCapture } from "@users/domain/business/lead-capture-retry/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
+import type { UserPlan } from "@users/dto/plan.ts";
 
 export interface SweepResult {
   landed: number;
@@ -75,7 +83,7 @@ export class CrmLeadCapture {
    *  sweep again right after */
   private again = false;
 
-  constructor(private outbox: CrmCaptureOutbox, private crm: CrmCustomerSync, private notice: SignupNotice, private payLink: PayLinkMint) {}
+  constructor(private outbox: CrmCaptureOutbox, private crm: CrmCustomerSync, private notice: SignupNotice, private payLink: PayLinkMint, private watch: SettleWatch) {}
 
   /** durable at once; the CRM is reached by the sweep this starts, never by the caller's request */
   async enqueue(phoneNumber: string): Promise<void> {
@@ -103,6 +111,18 @@ export class CrmLeadCapture {
   async enqueuePayLink(userId: string, back: PickBack): Promise<void> {
     await this.outbox.addPayLink(userId, back, Date.now());
     this.kick();
+  }
+
+  /** REQ-131 — the due of `pick`, watched until it settles (asked at once); a watch already on
+   *  the outbox is re-marked: its clock and its window restart */
+  async enqueueSettleWatch(userId: string, pick: UserPlan): Promise<void> {
+    await this.outbox.addSettleWatch(userId, pick, Date.now());
+    this.kick();
+  }
+
+  /** REQ-131 — the account's watch is moot: /plan/return read the due settled and activated the plan */
+  async dropSettleWatch(userId: string): Promise<void> {
+    await this.outbox.dropSettleWatch(userId);
   }
 
   private kick(): void {
@@ -206,11 +226,15 @@ export class CrmLeadCapture {
       result.waiting++;
       return;
     }
+    if (rec.kind === "settle-watch") return await this.watchDue(rec, now, result); // REQ-131
     const who = rec.kind === "signup-notice" ? `signup notice for ${rec.userId}` : rec.kind === "pay-link" ? `pay page of ${rec.userId}` : rec.userId ? `customer of ${rec.userId}` : rec.phone;
     try {
       if (rec.kind === "signup-notice") await this.notice.send(rec.userId ?? "", noticeReasonOf(rec.reason)); // REQ-103/112
-      else if (rec.kind === "pay-link") await this.payLink.mint(rec.userId ?? "", pickBackOf(rec.back)); // REQ-106
-      else if (rec.userId) await this.crm.ensure(rec.userId); // REQ-098
+      else if (rec.kind === "pay-link") {
+        const page = await this.payLink.mint(rec.userId ?? "", pickBackOf(rec.back)); // REQ-106
+        // REQ-131 — the due is watched from the moment its page is on the record
+        if (page?.status === "pending" && page.dueId && page.payUrl) await this.outbox.addSettleWatch(rec.userId ?? "", page, Date.now());
+      } else if (rec.userId) await this.crm.ensure(rec.userId); // REQ-098
       else await this.crm.capture(rec.phone);
       await this.outbox.done(rec);
       result.landed++;
@@ -222,6 +246,42 @@ export class CrmLeadCapture {
       const still = rec.kind === "signup-notice" ? "STILL NOT MAILED" : rec.kind === "pay-link" ? "STILL NO PAY PAGE" : "STILL NOT IN THE CRM";
       if (next.attempts >= LOUD_AFTER_ATTEMPTS) console.error(`${line} — ${still}`);
       else console.warn(line);
+    }
+  }
+
+  /**
+   * REQ-131 — the due a page was minted for, asked until it settles. Open: the record waits on its
+   * backoff (never an error — a page nobody has paid yet is the ordinary case). Settled: the plan
+   * is active (SettleWatch — the pick it paid for, restored if a later unpaid pick buried it) and
+   * the tier (REQ-062/099) and the paid notice (REQ-112) ride the outbox, carried at once. A window
+   * passed unpaid ends the watch; the plan stays as stored.
+   */
+  private async watchDue(rec: PendingCapture, now: number, result: SweepResult): Promise<void> {
+    const who = `due ${rec.dueId} of ${rec.userId}`;
+    try {
+      if (rec.watchUntil && Date.parse(rec.watchUntil) <= now) {
+        console.warn(`[crm-lead-capture] ${who}: unpaid for 48 h — the watch ends, the plan stays as stored`);
+      } else {
+        const outcome = await this.watch.check(rec.userId ?? "", rec.dueId ?? "", rec.pick ?? null);
+        if (outcome.kind === "waiting") {
+          await this.outbox.defer(rec, Date.now(), "due still open");
+          result.waiting++;
+          return;
+        }
+        if (outcome.kind === "nothing") console.log(`[crm-lead-capture] ${who}: settled, nothing to write — ${outcome.why}`);
+        else {
+          console.log(`[crm-lead-capture] ${who}: settled — ${outcome.plan.planId} ${outcome.kind === "restored" ? "restored, " : ""}active`);
+          await this.enqueueSync(rec.userId ?? "");
+          await this.enqueueSignupNotice(rec.userId ?? "", "paid");
+        }
+      }
+      await this.outbox.done(rec);
+      result.landed++;
+    } catch (e) {
+      const why = message(e);
+      const next = await this.outbox.defer(rec, Date.now(), why);
+      result.deferred++;
+      console.warn(`[crm-lead-capture] ${who} attempt ${next.attempts} failed, next at ${next.nextAt}: ${why}`);
     }
   }
 

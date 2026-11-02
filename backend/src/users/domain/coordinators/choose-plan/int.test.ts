@@ -13,8 +13,9 @@ import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mo
 import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
+import { SettleWatch } from "@users/domain/coordinators/settle-watch/mod.ts"; // REQ-131
 import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
-import type { PickBack } from "@users/domain/business/plan/mod.ts";
+import { chosen, type PickBack } from "@users/domain/business/plan/mod.ts";
 import { ChoosePlan } from "./mod.ts";
 
 /** the sweep the previous test left in flight: a fixture waits for it before it resets the world
@@ -35,7 +36,7 @@ async function fresh() {
   const link = new PaymentsLink();
   const crm = new CrmCustomerSync(users, identity, link, plans);
   const mint = new PayLinkMint(plans, link, crm); // REQ-106 — the pay link, by the sweep
-  const leads = new CrmLeadCapture(new CrmCaptureOutbox(), crm, new SignupNotice(users), mint); // REQ-099 — the tier reaches the CRM by the sweep, after the reply
+  const leads = new CrmLeadCapture(new CrmCaptureOutbox(), crm, new SignupNotice(users), mint, new SettleWatch(plans, link)); // REQ-099 — the tier reaches the CRM by the sweep, after the reply
   const flow = new ChoosePlan(users, plans, link, crm, leads);
   previous = leads;
   return { users, identity, plans, link, crm, mint, leads, flow };
@@ -527,4 +528,96 @@ Deno.test("REQ-129 choose-plan — the first settled month starts the billing on
   const pastDue = await flow.current(user.id);
   assertEquals(pastDue?.status, "past_due");
   assertEquals(world.dues[world.dues.length - 1].amountCents, 9900);
+});
+
+// ---- REQ-131 / REQ-132 — Alex, 2026-11-02: the gateway approved his $99 at 15:53:22, he was back on
+// /plan/return at 15:53:28, the CRM's deferred settlement landed at 15:53:55 — the one refresh said
+// "still open", nothing ever asked again, and three re-picks buried the paid pick under a $399 due.
+// Raphael: "figure out why the hell it never logged Alex's payment" / "fix it."
+
+Deno.test("REQ-131 choose-plan — a due paid while nobody presses anything activates the plan by the sweep: the watch minted with the page sees it settled, the CRM hears the tier and the team the payment", async () => {
+  const { users, leads, flow } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125551310", email: "alex@a2z.test", name: "Alex" });
+  const pending = await pick(flow, leads, user.id, "monster");
+  assertEquals(pending.status, "pending");
+  const world = fakePaymentsWorld();
+  world.settle(pending.dueId!); // the card landed; the receipt tab was closed — no /plan/return, no refresh
+  assertEquals((await flow.current(user.id))?.status, "pending", "reading the plan asks nothing (as before)");
+  await leads.drain(); // the minute sweep
+  await leads.idle();
+  const active = (await flow.current(user.id))!;
+  assertEquals([active.planId, active.status, active.dueId, typeof active.activatedAt], ["monster", "active", pending.dueId, "string"]);
+  assertEquals(world.customers.find((c) => c.externalRef === `pm:${user.id}`)?.tier, "Monster", "the tier followed, by the sweep");
+  assertEquals(world.subscriptions.length, 1, "the billing started on the read");
+});
+
+Deno.test("REQ-131 choose-plan — an unpaid due keeps its watch waiting (backoff, never an error) and the plan pending", async () => {
+  const { users, leads, flow } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125551311", email: "w@roof.test", name: "Wai" });
+  const pending = await pick(flow, leads, user.id, "monster");
+  const r = await leads.drain();
+  assertEquals([r.landed, r.deferred, r.waiting], [0, 0, 1], "the watch waits — not a failure");
+  assertEquals((await flow.current(user.id))?.status, "pending");
+  assertEquals((await flow.current(user.id))?.dueId, pending.dueId);
+});
+
+Deno.test("REQ-131 choose-plan — Alex: the paid pick buried under a later unpaid first-month due is restored active by a watch on the paid due, and the upgrade then charges the difference ($300), never $399", async () => {
+  const { users, plans, leads, flow } = await fresh();
+  const user = await users.create({ phoneNumber: "+15408303528", email: "a2z@landscape.test", name: "Alexander" });
+  const monster = await pick(flow, leads, user.id, "monster");
+  const world = fakePaymentsWorld();
+  world.settle(monster.dueId!); // $99 approved
+  // the bug as it was: the re-picks replaced the record with a $399 first pick, its own due, the paid one orphaned
+  await plans.put(chosen(user.id, "assist-plus", new Date().toISOString(), { merchant: "primary", customerId: monster.customerId, dueId: "due-399-orphan", payUrl: "http://crm/pay?due=due-399-orphan" }));
+  assertEquals((await plans.get(user.id))?.dueId, "due-399-orphan");
+  // the repair is the same code path: a watch on the paid due (what POST /admin/users/:id/settle-watch enqueues)
+  await leads.enqueueSettleWatch(user.id, chosen(user.id, "monster", monster.chosenAt, { merchant: "primary", customerId: monster.customerId, dueId: monster.dueId }));
+  await leads.idle();
+  const restored = (await flow.current(user.id))!;
+  assertEquals([restored.planId, restored.status, restored.dueId, restored.customerId], ["monster", "active", monster.dueId, monster.customerId], "the plan the $99 paid for");
+  // now the upgrade: the difference, from Monster
+  const up = await pick(flow, leads, user.id, "assist-plus");
+  assertEquals([up.planId, up.status, up.dueCents, up.switchedFrom], ["assist-plus", "pending", 30000, "monster"]);
+  const due = world.dues.find((d) => d.dueId === up.dueId)!;
+  assertEquals([due.amountCents, due.memo], [30000, "Monster Assist+ — upgrade from Monster (the difference)"], "the link says $300");
+});
+
+Deno.test("REQ-132 choose-plan — a pick while a pick is pending asks the CRM first: the due paid a moment ago makes it an upgrade from the paid plan (the difference), never a second first pick over it", async () => {
+  const { users, leads, flow } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125551320", email: "s@roof.test", name: "Sam" });
+  const monster = await pick(flow, leads, user.id, "monster");
+  fakePaymentsWorld().settle(monster.dueId!); // paid; the person is back on the cards before anything refreshed
+  const up = await pick(flow, leads, user.id, "assist-plus");
+  assertEquals([up.planId, up.status, up.dueCents, up.switchedFrom], ["assist-plus", "pending", 30000, "monster"]);
+  assertEquals(fakePaymentsWorld().dues.map((d) => d.amountCents), [9900, 30000]);
+  // and the watch on the paid due never writes Monster back over the upgrade (the sweep, any time later)
+  await leads.drain();
+  await leads.idle();
+  const still = (await flow.current(user.id))!;
+  assertEquals([still.planId, still.status, still.dueCents], ["assist-plus", "pending", 30000]);
+});
+
+Deno.test("REQ-131 choose-plan — /plan/return reading the due settled drops the watch: nothing is left on the outbox to look again", async () => {
+  const { users, leads, flow } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125551312", email: "d@roof.test", name: "Dee" });
+  const pending = await pick(flow, leads, user.id, "monster");
+  fakePaymentsWorld().settle(pending.dueId!);
+  assertEquals((await flow.refresh(user.id)).status, "active");
+  await leads.idle();
+  const outbox = new CrmCaptureOutbox();
+  assertEquals((await outbox.list()).filter((r) => r.kind === "settle-watch"), []);
+});
+
+Deno.test("REQ-132 choose-plan — the same plan picked again while its page is pending is the same page: no second due, no second link", async () => {
+  const { users, leads, flow } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125551321", email: "t@roof.test", name: "Tam" });
+  const first = await pick(flow, leads, user.id, "monster");
+  const again = await pick(flow, leads, user.id, "monster");
+  assertEquals([again.dueId, again.payUrl, again.chosenAt], [first.dueId, first.payUrl, first.chosenAt]);
+  const world = fakePaymentsWorld();
+  assertEquals([world.dues.length, world.links.length], [1, 1]);
+  // a different plan is a different pick, as before
+  const other = await pick(flow, leads, user.id, "assist");
+  assert(other.dueId !== first.dueId);
+  assertEquals(world.dues.map((d) => d.amountCents), [9900, 19900]);
 });
