@@ -14,6 +14,11 @@ import {
 } from "@users/domain/coordinators/verify-otp/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
 import {
+  DevLogin,
+  DevLoginForbiddenError,
+  DevLoginNoUserError,
+} from "@users/domain/coordinators/dev-login/mod.ts";
+import {
   ClosedAccountError,
   InvalidEmailError,
   SendEmailOtp,
@@ -24,6 +29,7 @@ import { AccountRecovery } from "@users/domain/coordinators/account-recovery/mod
 import { SignInLanding } from "@users/domain/coordinators/sign-in-landing/mod.ts";
 import { InvalidRecoveryTokenError } from "@users/domain/data/recovery-token-store/mod.ts";
 import {
+  parseDevLogin,
   parseSendEmailOtp,
   parseSendOtp,
   parseVerifyEmailOtp,
@@ -57,6 +63,7 @@ export class AuthController {
     private sendOtp: SendOtp,
     private verifyOtp: VerifyOtp,
     private logout: Logout,
+    private devLoginCoord: DevLogin,
     private recovery: AccountRecovery,
     private sendEmailOtp: SendEmailOtp,
     private verifyEmailOtp: VerifyEmailOtp,
@@ -344,6 +351,36 @@ export class AuthController {
     if (sessionId) await this.logout.run(sessionId);
     ctx.header("Set-Cookie", clearSessionCookie());
     return { ok: true };
+  }
+
+  /**
+   * POST /auth/dev-login { token, phoneNumber } — REQ-130. The developer
+   * service token: with the server's DEV_LOGIN_TOKEN set and matched, opens a
+   * session for the EXISTING user who owns the phone, skipping the OTP. Sets
+   * the pm_session cookie and returns the session id for header clients.
+   *   - 200 { ok:true, sessionId, userId } + cookie
+   *   - 403 { ok:false, error:"forbidden" }   (env unset or token mismatch)
+   *   - 404 { ok:false, error:"no_user" }      (no live user on that phone)
+   */
+  @Post("dev-login")
+  async devLogin(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const dto = parseDevLogin(body);
+    try {
+      const { session, user } = await this.devLoginCoord.byPhone(
+        dto.phoneNumber,
+        dto.token,
+      );
+      ctx.header("Set-Cookie", buildSessionCookie(session.id));
+      return { ok: true, sessionId: session.id, userId: user.id };
+    } catch (err) {
+      if (err instanceof DevLoginForbiddenError) {
+        return jsonResponse({ ok: false, error: "forbidden" }, 403);
+      }
+      if (err instanceof DevLoginNoUserError) {
+        return jsonResponse({ ok: false, error: "no_user" }, 404);
+      }
+      throw err;
+    }
   }
 }
 
