@@ -85,6 +85,20 @@ describe("REQ-127 the Billing tab", () => {
     expect(en["billing.note.free"]).toBe("Back to free · billing stops today · no refund");
   });
 
+  // REQ-129 — Raphael, 2026-11-02: "subscriptions should charge $399 whenever it happens, then on
+  // the 1st of the month prorated then every month $399" — the tab says that whole shape
+  test("REQ-129 the first-pick note says the whole shape, and the next-bill fact carries its amount and the prorated word", () => {
+    const en = dict("en");
+    const es = dict("es");
+    expect(en["billing.note.first"]).toBe("{monthly} today · prorated on the 1st · then {monthly}/month");
+    expect(es["billing.note.first"]).toMatch(/\{monthly\}/);
+    expect(typeof en["billing.prorated"]).toBe("string");
+    expect(typeof es["billing.prorated"]).toBe("string");
+    const settings = read("front-end/islands/SettingsPage.tsx");
+    expect(settings).toMatch(/plan\.nextBillCents/);
+    expect(settings).toContain('"billing.prorated"');
+  });
+
   test("REQ-127 a pick and a receipt come back to the Billing tab, and a pick's error shows there", () => {
     expect(pageAfterPick("/settings")).toBe("/settings?tab=billing");
     expect(pageAfterPick("/welcome")).toBe("/welcome?after=plan");

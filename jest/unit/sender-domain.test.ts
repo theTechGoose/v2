@@ -56,6 +56,7 @@ describe("REQ-123: every email leaves from documonster.com", () => {
   test("REQ-123: monsterrg.com is named by the backend only where mail LANDS (the team inbox) and in the sender module's account of what it retired", () => {
     const files = new Set(trackedLines("monsterrg", [TESTS, ":!e2e/"]).map((l) => l.split(":")[0]));
     expect([...files].sort()).toEqual([
+      "backend/src/communication/domain/business/dev-recipient/mod.ts", // REQ-126 — where every email lands off the deploy
       "backend/src/communication/domain/business/sender/mod.ts",
       "backend/src/communication/domain/business/team-inbox/mod.ts",
     ]);

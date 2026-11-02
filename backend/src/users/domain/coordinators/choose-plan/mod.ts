@@ -21,7 +21,7 @@ import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { appOrigin, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
-import { addMonth, chosen, downgraded, isOneTime, monthlyMemo, type PickBack, planOf, RETURN_LABEL, returnUrlFor, settle, subscriptionRefFor, type SubscriptionView, switchQuote, withSubscription } from "@users/domain/business/plan/mod.ts";
+import { billingScheduleFor, chosen, downgraded, isOneTime, monthlyMemo, type PickBack, planOf, RETURN_LABEL, returnUrlFor, settle, subscriptionRefFor, type SubscriptionView, switchQuote, withSubscription } from "@users/domain/business/plan/mod.ts";
 import type { PlanId } from "@users/dto/plan.ts";
 import type { UserPlan } from "@users/dto/plan.ts";
 
@@ -92,7 +92,8 @@ export class ChoosePlan {
       await this.leads.enqueueSync(userId); // REQ-062/099 — the CRM's tier is the cheaper plan's name, after this reply
       return live;
     }
-    const upgrade = quote.kind === "upgrade" ? { dueCents: quote.dueCents, switchedFrom: before!.planId } : undefined;
+    // REQ-129 — the new billing keeps the old one's anchor (its next bill, the 1st) and the month already paid through
+    const upgrade = quote.kind === "upgrade" ? { dueCents: quote.dueCents, switchedFrom: before!.planId, firstBillAt: quote.firstBillAt ?? undefined, paidThrough: before!.paidThrough } : undefined;
 
     const account = accountForPick(plan.id, merchant); // REQ-100 — decided once, here
     // REQ-106 — the reply: pending through that account; a switch of paid plan carries the billing
@@ -145,13 +146,16 @@ export class ChoosePlan {
     if (existing && existing.status !== "canceled") return existing;
     if (!plan.customerId) return null;
     const pricing = planOf(plan.planId);
+    // REQ-129 — anchored to the 1st: a first pick bills on the 1st after activation for the days past the
+    // month it paid; a switch (REQ-127) bills first when the old billing would have, prorated at the new price
+    const schedule = billingScheduleFor(plan, pricing, new Date().toISOString());
     const { subscriptionId } = await this.link.startSubscription({
       customerId: plan.customerId,
       amountCents: pricing.priceCents,
       memo: monthlyMemo(pricing),
       externalRef: ref,
-      // REQ-127 — a downgrade bills first when the old billing would have; otherwise a month after activation
-      firstBillAt: plan.firstBillAt ?? addMonth(plan.activatedAt ?? plan.updatedAt),
+      firstBillAt: schedule.firstBillAt,
+      firstAmountCents: schedule.firstAmountCents,
       returnUrl: returnUrlFor(appOrigin(), "", "/settings"),
       returnLabel: RETURN_LABEL,
       // REQ-064/100 — the same account the pick went through; a plan stored before the account

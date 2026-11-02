@@ -133,6 +133,10 @@ export interface UserPlan {
   dueCents?: number;
   switchedFrom?: PlanId;
   firstBillAt?: string;
+  /** REQ-129 — what the first month paid through (a month after activation), and what the next
+   *  bill is for: the prorated days to the month's end on the first 1st, the full price after */
+  paidThrough?: string;
+  nextBillCents?: number;
   /** REQ-106 — on a pending pick with no page yet: the CRM has no account by that name (final), or
    *  the link builder has not answered (still being tried). Absent and no payUrl = being prepared. */
   payLinkError?: "merchant-unknown" | "payments-unavailable";

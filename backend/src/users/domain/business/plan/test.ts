@@ -296,3 +296,42 @@ Deno.test("REQ-127 plan — a downgrade is active now, keeps the customer and th
   assertEquals(down.firstBillAt, "2026-11-20T10:05:00.000Z", "the paid month is kept: the cheaper billing starts when the old one would have");
   assertEquals(["subscriptionId" in down, "previousSubscriptionId" in down, "nextBillAt" in down, "payUrl" in down, "dueId" in down], [false, false, false, false, false], "the old billing is canceled by the pick, the new one is ensured on the next read");
 });
+
+// ---- REQ-129 — the billing anchors to the 1st -----------------------------------------------
+// Raphael, 2026-11-02: "subscriptions should charge $399 whenever it happens, then on the 1st of
+// the month prorated then every month $399."
+import * as Plan from "./mod.ts";
+
+Deno.test("REQ-129 plan — settle marks what the first month pays through; the switch records carry it", () => {
+  const now = "2026-11-20T15:00:00.000Z";
+  const pending = chosen("u1", "monster", now, { merchant: "primary", customerId: "c-1", dueId: "d-1", payUrl: "https://crm.test/pay" });
+  const active = Plan.settle(pending, false, now);
+  assertEquals([active.status, active.activatedAt, active.paidThrough], ["active", now, "2026-12-20T15:00:00.000Z"], "paid through a calendar month later");
+  // an upgrade's difference pays the month already paid through: the pick carries it, settle keeps it
+  const up = chosen("u1", "assist-plus", "2026-11-25T15:00:00.000Z", { merchant: "primary" }, "sub-old", { dueCents: 30000, switchedFrom: "monster", firstBillAt: "2026-12-01T00:00:00.000Z", paidThrough: active.paidThrough });
+  assertEquals([up.firstBillAt, up.paidThrough], ["2026-12-01T00:00:00.000Z", "2026-12-20T15:00:00.000Z"]);
+  assertEquals(Plan.settle(up, false, "2026-11-25T16:00:00.000Z").paidThrough, "2026-12-20T15:00:00.000Z", "kept, not moved");
+  // a downgrade carries it too
+  const before: UserPlan = { ...active, subscriptionId: "sub-1", nextBillAt: "2026-12-01T00:00:00.000Z" };
+  assertEquals(Plan.downgraded(before, "monster", "2026-11-26T15:00:00.000Z", "2026-12-01T00:00:00.000Z").paidThrough, "2026-12-20T15:00:00.000Z");
+  // a plan from before the anchor carries none
+  assertEquals("paidThrough" in Plan.downgraded({ ...before, paidThrough: undefined }, "monster", now, "2026-12-20T15:00:00.000Z"), false);
+});
+
+Deno.test("REQ-129 plan — what the CRM is told: a first pick bills on the 1st after activation for the days past paidThrough; a switch keeps the old anchor, prorated at the new price until the first collection", () => {
+  const now = "2026-11-20T15:00:00.000Z";
+  const active = Plan.settle(chosen("u1", "assist-plus", now, { merchant: "primary", customerId: "c-1", dueId: "d-1", payUrl: "x" }), false, now);
+  assertEquals(Plan.billingScheduleFor(active, planOf("assist-plus"), now), { firstBillAt: "2026-12-01T00:00:00.000Z", firstAmountCents: 15445 }, "$399 × 12/31 for Dec 20–31");
+  // picked on the 1st: the whole month
+  const first = Plan.settle(chosen("u1", "monster", "2026-11-01T00:00:00.000Z", { merchant: "primary", customerId: "c-1", dueId: "d-1", payUrl: "x" }), false, "2026-11-01T00:00:00.000Z");
+  assertEquals(Plan.billingScheduleFor(first, planOf("monster"), now), { firstBillAt: "2026-12-01T00:00:00.000Z", firstAmountCents: 9900 });
+  // a downgrade from it on Nov 26 (old billing's next: Dec 1): Dec 1 bills $99 for Dec 20–31
+  const down = Plan.downgraded({ ...active, subscriptionId: "s", nextBillAt: "2026-12-01T00:00:00.000Z" }, "monster", "2026-11-26T15:00:00.000Z", "2026-12-01T00:00:00.000Z");
+  assertEquals(Plan.billingScheduleFor(down, planOf("monster"), "2026-11-26T15:00:00.000Z"), { firstBillAt: "2026-12-01T00:00:00.000Z", firstAmountCents: 3832 }, "$99 × 12/31");
+  // the same switch after the old billing collected Dec 1 (its next: Jan 1): a full month
+  const later = Plan.downgraded({ ...active, subscriptionId: "s", nextBillAt: "2027-01-01T00:00:00.000Z" }, "monster", "2026-12-10T15:00:00.000Z", "2027-01-01T00:00:00.000Z");
+  assertEquals(Plan.billingScheduleFor(later, planOf("monster"), "2026-12-10T15:00:00.000Z"), { firstBillAt: "2027-01-01T00:00:00.000Z", firstAmountCents: 9900 });
+  // a plan from before the anchor, switched: the old billing's next, the full price (REQ-127 as it was)
+  const legacy = Plan.downgraded({ ...active, paidThrough: undefined, subscriptionId: "s", nextBillAt: "2026-12-20T15:00:00.000Z" }, "monster", "2026-12-10T15:00:00.000Z", "2026-12-20T15:00:00.000Z");
+  assertEquals(Plan.billingScheduleFor(legacy, planOf("monster"), "2026-12-10T15:00:00.000Z"), { firstBillAt: "2026-12-20T15:00:00.000Z", firstAmountCents: 9900 });
+});

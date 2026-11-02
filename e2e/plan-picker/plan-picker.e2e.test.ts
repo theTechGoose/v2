@@ -18,6 +18,7 @@
  * one Pay button settles the due the way a card on the real pay page would.
  */
 import { story, type StoryTools } from "#shots";
+import { firstOfNextMonth, proratedCents } from "../../shared/quote-flow/plan-switch.ts"; // REQ-129 — the one billing rule
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -660,7 +661,7 @@ Deno.test("REQ-127: the Billing tab says the plan plainly; upgrading Monster →
     await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     expect.eq(await text("plan-current"), "Monster Free", "plan-current reads Monster Free");
     expect.eq(await text("plan-pill"), "Free plan", "plan-pill reads Free plan");
-    expect.eq(await text("plan-note-monster"), "$99/month · first month today", "a first pick says its price");
+    expect.eq(await text("plan-note-monster"), "$99 today · prorated on the 1st · then $99/month", "REQ-129 — a first pick says the whole shape");
     expect.eq(await page.locator("[data-cy='plan-note-free']").count(), 0, "no card for the plan the person is on");
 
     // Monster, paid: the tab reads the plan in one look
@@ -675,6 +676,13 @@ Deno.test("REQ-127: the Billing tab says the plan plainly; upgrading Monster →
     expect((await text("plan-card-on-file")).includes("•••• 1111"), "the card on file");
     let plan = await readPlan();
     expect(plan.status === "active" && typeof plan.nextBillAt === "string", `active with a next bill (${JSON.stringify(plan)})`);
+    // REQ-129 — the next bill is the 1st of the month after activation, for the days past the month just paid, and the tab says so
+    expect.eq(plan.nextBillAt, firstOfNextMonth(plan.activatedAt), "the next bill is the 1st of the next month");
+    const prorated = proratedCents(9900, plan.paidThrough);
+    expect.eq(plan.nextBillCents, prorated, `the next bill is the prorated days (paid through ${plan.paidThrough})`);
+    const nextBill = await text("plan-next-bill");
+    expect(nextBill.includes(`$${Math.round(prorated / 100)}`), `the next-bill fact carries its amount: "${nextBill}"`);
+    expect.eq(nextBill.includes("(prorated)"), prorated < 9900, `and the prorated word when it is one: "${nextBill}"`);
 
     // the upgrade card says the difference — $300, not $399 — and that is what the due is
     expect.eq(await text("plan-note-assist-plus"), "Upgrade · $300 today, then $399/month", "plan-note-assist-plus reads Upgrade · $300 today, then $399/month");

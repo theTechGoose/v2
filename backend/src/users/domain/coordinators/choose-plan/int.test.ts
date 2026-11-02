@@ -201,7 +201,7 @@ Deno.test("REQ-054 choose-plan — picking a plan that is not selectable is refu
 // REQ-061 — monthly billing: once the first month settles, the CRM bills the card on file every
 // month; the plan reads what the billing says (next bill, card, past due); free cancels it; a
 // switch of paid plan replaces it.
-import { addMonth } from "@users/domain/business/plan/mod.ts";
+import { addMonth, firstOfNextMonth, proratedCents } from "@users/domain/business/plan/mod.ts";
 
 async function paidAndActive(flow: ChoosePlan, leads: CrmLeadCapture, users: UserStore, phone: string) {
   const user = await users.create({ phoneNumber: phone, email: `${phone.slice(-4)}@roof.test`, name: "Rosa" });
@@ -211,7 +211,7 @@ async function paidAndActive(flow: ChoosePlan, leads: CrmLeadCapture, users: Use
   return { user, active };
 }
 
-Deno.test("REQ-061 choose-plan — the first settled month starts the billing on the CRM: a month out, this app's handle, the way back to settings", async () => {
+Deno.test("REQ-061 choose-plan — the first settled month starts the billing on the CRM: on the next 1st (REQ-129), this app's handle, the way back to settings", async () => {
   const { users, leads, flow } = await fresh();
   const { user, active } = await paidAndActive(flow, leads, users, "+15125550301");
   assertEquals(active.status, "active");
@@ -219,7 +219,10 @@ Deno.test("REQ-061 choose-plan — the first settled month starts the billing on
   assertEquals(world.subscriptions.length, 1, "one billing");
   const sub = world.subscriptions[0];
   assertEquals([sub.customerId, sub.amountCents, sub.memo, sub.externalRef], [active.customerId, 9900, "Monster", `pm:${user.id}:monster`]);
-  assertEquals(sub.firstBillAt, addMonth(active.activatedAt!), "the first recurring month is a month after activation");
+  assertEquals(active.paidThrough, addMonth(active.activatedAt!), "the first month pays through a calendar month later (REQ-129)");
+  assertEquals(sub.firstBillAt, firstOfNextMonth(active.activatedAt!), "the first recurring bill is the 1st of the month after activation (REQ-129)");
+  assertEquals(sub.firstAmountCents, proratedCents(9900, active.paidThrough!), "for the days of that month past paidThrough");
+  assertEquals(active.nextBillCents, sub.firstAmountCents, "the plan says what the next bill is for");
   assertEquals(sub.returnUrl?.includes("/plan/return?"), true);
   assertEquals(sub.returnLabel, "DocuMonster");
   assertEquals(active.subscriptionId, sub.subscriptionId);
@@ -448,7 +451,10 @@ Deno.test("REQ-127 choose-plan — an upgrade from an active plan raises the dif
   const plus = await flow.refresh(user.id);
   assertEquals([plus.planId, plus.status], ["assist-plus", "active"]);
   assertEquals(world.subscriptions.map((s) => [s.externalRef, s.status, s.amountCents]), [[`pm:${user.id}:monster`, "canceled", 9900], [`pm:${user.id}:assist-plus`, "active", 39900]]);
-  assertEquals(world.subscriptions[1].firstBillAt, addMonth(plus.activatedAt!), "the full $399 months start a month after the upgrade");
+  assertEquals(world.subscriptions[1].firstBillAt, active.nextBillAt, "the new billing keeps the anchor: its first bill is the day the $99 one would have billed (REQ-129)");
+  assertEquals(plus.paidThrough, active.paidThrough, "the difference pays the month already paid through");
+  assertEquals(world.subscriptions[1].firstAmountCents, proratedCents(39900, plus.paidThrough!), "that bill is $399 for the days past paidThrough");
+  assertEquals(plus.nextBillCents, world.subscriptions[1].firstAmountCents);
 });
 
 Deno.test("REQ-127 choose-plan — a downgrade charges nothing and refunds nothing: active at once, no due, the old billing canceled and the cheaper one starting the day the old one would have billed", async () => {
@@ -473,6 +479,7 @@ Deno.test("REQ-127 choose-plan — a downgrade charges nothing and refunds nothi
   const monster = world.subscriptions.filter((s) => s.externalRef === `pm:${user.id}:monster`);
   assertEquals(monster.map((s) => [s.status, s.amountCents]), [["canceled", 9900], ["active", 9900]], "the old $99 billing stays canceled; a new $99 one runs");
   assertEquals(monster[1].firstBillAt, plusNext, "the paid month is kept: the first $99 bill is the day the $399 one would have fallen");
+  assertEquals(monster[1].firstAmountCents, proratedCents(9900, down.paidThrough!), "REQ-129 — at $99 for the days past the month already paid");
   assertEquals(down.nextBillAt, plusNext);
   assertEquals(down.subscriptionId, monster[1].subscriptionId);
   // read again: nothing started twice
@@ -493,4 +500,31 @@ Deno.test("REQ-127 choose-plan — a switch away from a pending pick, or from fr
   const due = world.dues.find((d) => d.dueId === switched.dueId)!;
   assertEquals([due.amountCents, due.memo], [39900, "Monster Assist+ — first month"], "a pick nobody paid gives no credit");
   assertEquals(world.dues.find((d) => d.dueId === first.dueId)?.open, true, "the abandoned due stays the operator's to void (REQ-056)");
+});
+
+// ---- REQ-129 — the billing anchors to the 1st -----------------------------------------------
+// Raphael, 2026-11-02: "subscriptions should charge $399 whenever it happens, then on the 1st of
+// the month prorated then every month $399."
+Deno.test("REQ-129 choose-plan — the first settled month starts the billing on the 1st of the next month for the days past paidThrough, then the full price every 1st", async () => {
+  const { users, leads, flow } = await fresh();
+  const { user, active } = await paidAndActive(flow, leads, users, "+15125551291");
+  const world = fakePaymentsWorld();
+  const sub = world.subscriptions[0];
+  const firstOf = firstOfNextMonth(active.activatedAt!);
+  assertEquals(active.nextBillAt, firstOf, "the next bill is the 1st");
+  assertEquals(new Date(firstOf).getUTCDate(), 1);
+  assertEquals(active.paidThrough, addMonth(active.activatedAt!));
+  const prorated = proratedCents(9900, active.paidThrough!);
+  assertEquals([sub.firstAmountCents, active.nextBillCents], [prorated, prorated], "the first bill is the days past paidThrough at $99's rate");
+  // the clock on the 1st: the card is charged what the first bill was for, and the bill after is the full month
+  world.bill(firstOf);
+  const billed = await flow.current(user.id);
+  assertEquals(billed?.nextBillAt, addMonth(firstOf), "the next 1st");
+  assertEquals(billed?.nextBillCents, 9900, "the full price from here on");
+  // the card gone on the next 1st: the due raised is the full month
+  world.dropCard(active.customerId!);
+  world.bill(billed!.nextBillAt!);
+  const pastDue = await flow.current(user.id);
+  assertEquals(pastDue?.status, "past_due");
+  assertEquals(world.dues[world.dues.length - 1].amountCents, 9900);
 });

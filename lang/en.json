@@ -2751,5 +2751,6 @@
   "billing.note.downgrade": "Downgrade · nothing today · {monthly}/month from {date}",
   "billing.note.free": "Back to free · billing stops today · no refund",
   "billing.note.freeUnpaid": "Back to free · nothing was charged",
-  "billing.note.first": "{monthly}/month · first month today"
+  "billing.note.first": "{monthly} today · prorated on the 1st · then {monthly}/month",
+  "billing.prorated": "(prorated)"
 }

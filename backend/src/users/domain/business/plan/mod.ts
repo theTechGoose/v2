@@ -2,7 +2,9 @@
 // pages read (shared/quote-flow/pricing-plans.ts): what a plan costs here is what the site says.
 import { PRICING_PLANS, type PricingPlan } from "#quote-flow/pricing-plans.ts";
 import type { PayLinkError, PlanId, UserPlan } from "@users/dto/plan.ts";
-export { addMonth, switchQuote, type SwitchQuote } from "#quote-flow/plan-switch.ts";
+import { anchoredSchedule, type BillingSchedule, switchedSchedule } from "#quote-flow/plan-switch.ts";
+export { addMonth, type BillingSchedule, firstOfNextMonth, proratedCents, switchQuote, type SwitchQuote } from "#quote-flow/plan-switch.ts";
+import { addMonth } from "#quote-flow/plan-switch.ts";
 
 /** the plans a person can pick: the public monthly ones; assist-plus — REQ-118/119: the hidden
  *  $399 tier, a card in the settings upgrade panel alone; Projects is custom — "call us"; test —
@@ -117,8 +119,9 @@ export function chosen(
   now: string,
   link?: Pick<PayLinkInfo, "merchant"> & Partial<PayLinkInfo>,
   previousSubscriptionId?: string,
-  /** REQ-127 — an UPGRADE from an active plan: the due is the difference, from that plan */
-  upgrade?: { dueCents: number; switchedFrom: PlanId },
+  /** REQ-127 — an UPGRADE from an active plan: the due is the difference, from that plan;
+   *  REQ-129 — the new billing keeps the old one's anchor (its next bill) and what the plan is paid through */
+  upgrade?: { dueCents: number; switchedFrom: PlanId; firstBillAt?: string; paidThrough?: string },
 ): UserPlan {
   if (planId === "free") return { userId, planId, status: "free", chosenAt: now, updatedAt: now };
   if (!link?.merchant) throw new Error("pay-link-missing: a paid plan names the merchant account the charge goes through");
@@ -135,6 +138,8 @@ export function chosen(
     ...(payUrl ? { payUrl } : {}),
     ...(previousSubscriptionId ? { previousSubscriptionId } : {}),
     ...(upgrade ? { dueCents: upgrade.dueCents, switchedFrom: upgrade.switchedFrom } : {}),
+    ...(upgrade?.firstBillAt ? { firstBillAt: upgrade.firstBillAt } : {}),
+    ...(upgrade?.paidThrough ? { paidThrough: upgrade.paidThrough } : {}),
   };
 }
 
@@ -172,7 +177,23 @@ export function downgraded(before: UserPlan, planId: PlanId, now: string, firstB
     ...(before.merchant ? { merchant: before.merchant } : {}),
     switchedFrom: before.planId,
     firstBillAt,
+    ...(before.paidThrough ? { paidThrough: before.paidThrough } : {}), // REQ-129 — the paid month is the same month
   };
+}
+
+// ---- REQ-129 — the billing anchors to the 1st ------------------------------------------------
+// Raphael, 2026-11-02: "subscriptions should charge $399 whenever it happens, then on the 1st of
+// the month prorated then every month $399." The rule is the shared `anchoredSchedule` /
+// `switchedSchedule`; this reads the plan's record into it.
+
+/** what the CRM is told when the plan's billing is started: a switch (`firstBillAt` on the record)
+ *  keeps the old billing's anchor, prorated at the new price while the paid month reaches into
+ *  that bill's month; a first pick bills on the 1st after activation for the days past paidThrough */
+export function billingScheduleFor(plan: UserPlan, plan_: PricingPlan, now: string): BillingSchedule {
+  const activatedAt = plan.activatedAt ?? plan.updatedAt;
+  if (plan.firstBillAt) return switchedSchedule({ nextBillAt: plan.firstBillAt, paidThrough: plan.paidThrough }, plan_.priceCents, activatedAt || now);
+  const { firstBillAt, firstAmountCents } = anchoredSchedule(activatedAt, plan_.priceCents);
+  return { firstBillAt, firstAmountCents };
 }
 
 // ---- REQ-106 — the pay page comes after the reply --------------------------------------------
@@ -228,6 +249,8 @@ export interface SubscriptionView {
   subscriptionId: string;
   status: "active" | "past_due" | "canceled";
   nextBillAt: string;
+  /** REQ-129 — what the bill at nextBillAt is for; absent on a billing from before the CRM said */
+  nextAmountCents?: number;
   cardBrand: string;
   cardLast4: string;
   payUrl: string;
@@ -242,7 +265,7 @@ export function withSubscription(plan: UserPlan, sub: SubscriptionView | null, n
   if (!sub) return plan;
   if (sub.status === "canceled") {
     if (plan.status === "free") return plan;
-    const { subscriptionId: _s, nextBillAt: _n, cardBrand: _b, cardLast4: _l, ...rest } = plan;
+    const { subscriptionId: _s, nextBillAt: _n, nextBillCents: _c, cardBrand: _b, cardLast4: _l, ...rest } = plan;
     return { ...rest, status: "free", updatedAt: now };
   }
   const next: UserPlan = {
@@ -250,6 +273,7 @@ export function withSubscription(plan: UserPlan, sub: SubscriptionView | null, n
     status: sub.status === "past_due" ? "past_due" : "active",
     subscriptionId: sub.subscriptionId,
     nextBillAt: sub.nextBillAt,
+    ...(sub.nextAmountCents !== undefined ? { nextBillCents: sub.nextAmountCents } : {}), // REQ-129
     cardBrand: sub.cardBrand,
     cardLast4: sub.cardLast4,
     payUrl: sub.status === "past_due" ? sub.payUrl : "", // nothing to pay while current
@@ -258,12 +282,14 @@ export function withSubscription(plan: UserPlan, sub: SubscriptionView | null, n
 }
 
 function sameBilling(a: UserPlan, b: UserPlan): boolean {
-  return a.status === b.status && a.subscriptionId === b.subscriptionId && a.nextBillAt === b.nextBillAt &&
+  return a.status === b.status && a.subscriptionId === b.subscriptionId && a.nextBillAt === b.nextBillAt && a.nextBillCents === b.nextBillCents &&
     a.cardBrand === b.cardBrand && a.cardLast4 === b.cardLast4 && a.payUrl === b.payUrl;
 }
 
-/** a pending plan goes active once its due is no longer open; anything else is left as it is */
+/** a pending plan goes active once its due is no longer open; anything else is left as it is.
+ *  REQ-129 — the first month paid pays the plan through a calendar month later (`paidThrough`); an
+ *  upgrade's difference pays the same month the plan was already paid through */
 export function settle(plan: UserPlan, dueOpen: boolean, now: string): UserPlan {
   if (plan.status !== "pending" || dueOpen) return plan;
-  return { ...plan, status: "active", activatedAt: now, updatedAt: now };
+  return { ...plan, status: "active", activatedAt: now, updatedAt: now, paidThrough: plan.paidThrough ?? addMonth(now) };
 }

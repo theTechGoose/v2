@@ -2751,5 +2751,6 @@
   "billing.note.downgrade": "Baja · nada hoy · {monthly}/mes a partir del {date}",
   "billing.note.free": "Volver a gratis · el cobro se detiene hoy · sin reembolso",
   "billing.note.freeUnpaid": "Volver a gratis · no se cobró nada",
-  "billing.note.first": "{monthly}/mes · primer mes hoy"
+  "billing.note.first": "{monthly} hoy · prorrateado el día 1 · luego {monthly}/mes",
+  "billing.prorated": "(prorrateado)"
 }

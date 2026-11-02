@@ -95,7 +95,7 @@ export class MeController {
     if (!plan?.customerId) throw Object.assign(new Error("plan-missing: nothing billed"), { status: 404 });
     const b = (body ?? {}) as { now?: unknown; cardGone?: unknown };
     if (b.cardGone === true) fakePaymentsWorld().dropCard(plan.customerId);
-    fakePaymentsWorld().bill(typeof b.now === "string" && b.now ? new Date(b.now).toISOString() : new Date().toISOString());
+    fakePaymentsWorld().bill(typeof b.now === "string" && b.now ? new Date(b.now).toISOString() : new Date().toISOString(), plan.customerId); // REQ-129 — this person's billing alone
     return await this.choosePlan.current(user.id);
   }
 

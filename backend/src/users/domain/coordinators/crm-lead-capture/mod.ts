@@ -8,9 +8,13 @@
  * answer; a failure defers it with backoff (lead-capture-retry) and it is never dropped. Sweeps
  * run on every login, at boot (an isolate that died mid-capture leaves its record for the next
  * one) and every minute while the isolate lives, on a timer (registerSweep; REQ-074 — never
- * Deno.cron: a revision that calls it never routes on Deno Deploy). One sweep per process at a
- * time; a lease keeps two processes off one record; a record enqueued while a sweep runs is swept
- * right after it.
+ * Deno.cron: a revision that calls it never routes on Deno Deploy). A lease keeps two sweeps off
+ * one record; drain() joins the sweep in flight. REQ-128 — Raphael, 2026-11-02, on REQ-060's story
+ * failing beside REQ-106's slow mint: "can you please fix it?" — a record that arrives while a
+ * sweep is in flight is carried AT ONCE by a pass of its own (`kick` starts one beside the sweep;
+ * the leases and the KV-atomic claim keep the two off one record), never after the slow one; a
+ * record that pass found held (REQ-099's re-mark, under the sweep's lease) is carried by the sweep
+ * that follows (`again`).
  *
  * REQ-098 — Raphael, 2026-10-20, on prod's sign-up sitting after the code: "it should fire the
  * event to the backend and forget about it while the backend finishes the request." The account's
@@ -63,8 +67,12 @@ const LANES_AT_ONCE = 8;
 
 @Injectable()
 export class CrmLeadCapture {
+  /** the sweep drain() joins */
   private inFlight: Promise<SweepResult> | null = null;
-  /** a record arrived while a sweep was on its list: sweep again right after */
+  /** REQ-128 — the passes a kick started beside it, for the records that arrived meanwhile */
+  private extra = new Set<Promise<SweepResult>>();
+  /** a record arrived while a sweep was on its list and was found held by it (REQ-099's re-mark):
+   *  sweep again right after */
   private again = false;
 
   constructor(private outbox: CrmCaptureOutbox, private crm: CrmCustomerSync, private notice: SignupNotice, private payLink: PayLinkMint) {}
@@ -98,14 +106,38 @@ export class CrmLeadCapture {
   }
 
   private kick(): void {
-    if (this.inFlight) this.again = true;
-    void this.drain();
+    if (!this.inFlight) {
+      void this.drain();
+      return;
+    }
+    // REQ-128 — a sweep is on its list (held, maybe, by one slow CRM call): this record is carried
+    // now by a pass of its own; a record that pass could not claim is held by the sweep — swept again after
+    const pass: Promise<SweepResult> = this.pass(Date.now())
+      .then((r) => {
+        if (r.waiting > 0) this.again = true;
+        return r;
+      })
+      .finally(() => {
+        this.extra.delete(pass);
+        this.followUp();
+      });
+    this.extra.add(pass);
   }
 
-  /** the sweeps this process has in flight or flagged to follow, settled — what a test awaits after
-   *  a reply whose work rides the outbox (a sweep kicked while one runs follows it, REQ-099) */
+  /** the sweeps and passes this process has in flight or flagged to follow, settled — what a test
+   *  awaits after a reply whose work rides the outbox (a record held by a sweep is carried by the
+   *  one that follows, REQ-099) */
   async idle(): Promise<void> {
-    while (this.inFlight) await this.inFlight;
+    while (this.inFlight || this.extra.size > 0) {
+      await Promise.allSettled([...(this.inFlight ? [this.inFlight] : []), ...this.extra]);
+    }
+  }
+
+  private followUp(): void {
+    if (!this.inFlight && this.again) {
+      this.again = false;
+      void this.drain();
+    }
   }
 
   /** Danet's app-close hook (called by name on every injectable): the app closing waits for the
@@ -118,20 +150,20 @@ export class CrmLeadCapture {
   /** never rejects (REQ-073): a sweep that cannot read its outbox is logged and the records wait */
   drain(now: number = Date.now()): Promise<SweepResult> {
     if (this.inFlight) return this.inFlight;
-    this.inFlight = this.sweep(now)
-      .catch((e: unknown): SweepResult => {
-        const failed = message(e);
-        console.error(`[crm-lead-capture] sweep failed before anything was sent; the records stay for the next sweep: ${failed}`);
-        return { landed: 0, deferred: 0, waiting: 0, failed };
-      })
-      .finally(() => {
-        this.inFlight = null;
-        if (this.again) {
-          this.again = false;
-          void this.drain();
-        }
-      });
+    this.inFlight = this.pass(now).finally(() => {
+      this.inFlight = null;
+      this.followUp();
+    });
     return this.inFlight;
+  }
+
+  /** one pass over the outbox, settled: a pass that cannot read it is logged and the records wait */
+  private pass(now: number): Promise<SweepResult> {
+    return this.sweep(now).catch((e: unknown): SweepResult => {
+      const failed = message(e);
+      console.error(`[crm-lead-capture] sweep failed before anything was sent; the records stay for the next sweep: ${failed}`);
+      return { landed: 0, deferred: 0, waiting: 0, failed };
+    });
   }
 
   /**
