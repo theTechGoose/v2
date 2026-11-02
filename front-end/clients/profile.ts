@@ -199,13 +199,11 @@ export interface CrmCustomer {
   externalRef?: string;
 }
 
-/** REQ-054 — the plan: pick one; REQ-059 — /plan/return refreshes a pending one on the way back. */
+/** REQ-054 — the plan: pick one; REQ-133 — every read of a pending one asks the CRM of its due (nothing to refresh). */
 export const planClient = {
   get: (opts: ApiOptions = {}) => api.get<UserPlan | null>("/me/plan", opts),
   choose: (planId: PlanId, opts: ApiOptions = {}) =>
     api.post<UserPlan>("/me/plan", { planId }, opts),
-  refresh: (opts: ApiOptions = {}) =>
-    api.post<UserPlan>("/me/plan/refresh", undefined, opts),
   /** REQ-058 — what the CRM holds for this account */
   crmCustomer: (opts: ApiOptions = {}) =>
     api.get<CrmCustomer | null>("/me/crm-customer", opts),

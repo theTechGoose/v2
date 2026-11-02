@@ -4,6 +4,7 @@ import { Module } from "#danet/core";
 import { AuthController } from "@users/entrypoints/auth-controller/mod.ts";
 import { MeController } from "@users/entrypoints/me-controller/mod.ts";
 import { AdminController } from "@users/entrypoints/admin-controller/mod.ts";
+import { PaymentsController } from "@users/entrypoints/payments-controller/mod.ts"; // REQ-133
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
@@ -70,6 +71,7 @@ import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
     AuthController,
     MeController,
     AdminController,
+    PaymentsController, // REQ-133
     // profile
     BusinessIdentityController,
     BusinessAddressController,

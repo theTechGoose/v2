@@ -270,8 +270,7 @@ Deno.test("REQ-056: a paid plan goes back to free from the settings cards", (t) 
     const paid = await http("/api/me/plan/fake-paid", { method: "POST", headers: auth });
     expect.eq(paid.status, 200, "the fake settles the due");
     await paid.body?.cancel();
-    const refreshed = await http("/api/me/plan/refresh", { method: "POST", headers: auth });
-    await refreshed.body?.cancel();
+    // REQ-133 — nothing to press: settings reads the plan, and the read finds the due settled
     await page.goto("/settings?tab=billing");
     await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see("Monster is active");
@@ -739,12 +738,19 @@ Deno.test("REQ-131: paid on the page and the receipt tab closed — no return, n
     // the card lands; the person closes the receipt — nothing calls /plan/return
     const paid = await (await http("/api/me/plan/fake-paid", { method: "POST", headers: auth, body: JSON.stringify({ quiet: true }) })).json();
     expect.eq(paid.status, "pending", "quiet: the due settled on the CRM, the app was not told");
+    // REQ-133 — reading the plan would settle it on the read, so the backend is watched from the
+    // outside: the CRM's tier flips to Monster only when the sweep activated the plan by itself
     const t0 = Date.now();
-    while (plan.status !== "active" && Date.now() - t0 < 150_000) { // the minute sweep, and its backoff after one open read
+    const customer = await crmCustomerWithTier(http, auth, "Monster");
+    for (let i = 0; customer?.tier !== "Monster" && i < 150 && Date.now() - t0 < 150_000; i++) {
       await new Promise((r) => setTimeout(r, 1000));
-      plan = await (await http("/api/me/plan", { headers: auth })).json();
+      Object.assign(customer ?? {}, await crmCustomer(http, auth));
     }
-    expect(plan.status === "active" && plan.planId === "monster", `active by the sweep after ${Math.round((Date.now() - t0) / 1000)} s (${JSON.stringify(plan)})`);
+    expect.eq(customer?.tier, "Monster", `the tier followed the sweep's activation after ${Math.round((Date.now() - t0) / 1000)} s`);
+    const seenAt = new Date().toISOString();
+    plan = await (await http("/api/me/plan", { headers: auth })).json();
+    expect(plan.status === "active" && plan.planId === "monster", `active (${JSON.stringify(plan)})`);
+    expect(plan.activatedAt < seenAt, `activated before this read (${plan.activatedAt} < ${seenAt}): by the sweep, not by the read`);
     await page.goto("/settings?tab=billing");
     await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     await expect.see("Monster is active");

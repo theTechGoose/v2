@@ -7,6 +7,9 @@ import type { UserPlan } from "@users/dto/plan.ts";
 
 /** REQ-131 — how long a minted due is watched for its settlement before the watch ends unpaid */
 export const WATCH_FOR_MS = 48 * 60 * 60_000;
+/** REQ-133 — the watch looks at a fixed cadence, never a backoff: once per minute sweep — a shade
+ *  under the minute, so the sweep that follows finds it due (a full minute skipped every other sweep) */
+export const WATCH_EVERY_MS = 55_000;
 
 export interface PendingCapture {
   /** the lead's phone (REQ-072); "" on a customer sync record */

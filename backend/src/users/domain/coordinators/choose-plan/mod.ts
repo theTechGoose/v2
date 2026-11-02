@@ -2,8 +2,8 @@
 // builder: the account's CRM customer (REQ-058: the one made at sign-up, revised with what the
 // account says now; the account's email — never invented), the first month as a due, the pay
 // link that collects it; the plan is pending until the due settles on that pay page, then
-// active. REQ-059: the link carries the way back — the app's /plan/return, which calls
-// `refresh` on arrival, so the plan reads active without a "Check payment".
+// active. REQ-059: the link carries the way back — the app's /plan/return, a redirect; the plan
+// reads active without a "Check payment" because every read asks the CRM of a pending due (REQ-133).
 // REQ-127 — Raphael, 2026-11-02: "upgrade charges the difference, downgrade has no refund": the
 // switch rule is the shared `switchQuote`; an upgrade's pending record carries the difference its
 // due is for, a downgrade is active at once with the old billing canceled and the cheaper one
@@ -44,10 +44,41 @@ export class ChoosePlan {
     private leads: CrmLeadCapture,
   ) {}
 
-  /** the plan as it stands — a paid one as the CRM's monthly billing says it stands (REQ-061) */
+  /** the plan as it stands — a pending one as the CRM says of its due (REQ-133), a paid one as the
+   *  CRM's monthly billing says it stands (REQ-061) */
   async current(userId: string): Promise<UserPlan | null> {
     const plan = await this.plans.get(userId);
-    return plan ? await this.projected(plan) : null;
+    return plan ? await this.projected(await this.settledOnRead(plan)) : null;
+  }
+
+  /** the plan as stored, projected against nothing (the fake's quiet settle reads this, REQ-131) */
+  stored(userId: string): Promise<UserPlan | null> {
+    return this.plans.get(userId);
+  }
+
+  /**
+   * REQ-133 — Raphael, 2026-11-02: "The front end should not be doing any business logic, only
+   * presentation logic. Put all of that in the back." There is no refresh for a page to press: a
+   * pending plan with a due is read against the CRM by every read, the way an active one is read
+   * against its billing (`projected`) — settled, it is active on that read, the watch is dropped,
+   * the tier (REQ-062/099) and the paid notice (REQ-112) ride the outbox; open, it stays as stored
+   * and the watch (REQ-131) keeps looking. A CRM that does not answer leaves it as stored.
+   */
+  private async settledOnRead(plan: UserPlan): Promise<UserPlan> {
+    if (plan.status !== "pending" || !plan.dueId) return plan;
+    try {
+      const open = await this.link.dueOpen(plan.dueId);
+      const next = settle(plan, open, new Date().toISOString());
+      if (next === plan) return plan;
+      const active = await this.plans.put(next);
+      await this.leads.dropSettleWatch(plan.userId); // REQ-131 — the watch on this due is moot
+      await this.leads.enqueueSync(plan.userId);
+      await this.leads.enqueueSignupNotice(plan.userId, "paid");
+      return active;
+    } catch (e) {
+      console.warn(`[choose-plan] ${plan.userId}: the due was not read: ${e instanceof Error ? e.message : String(e)}`);
+      return plan;
+    }
   }
 
   /**
@@ -68,9 +99,9 @@ export class ChoosePlan {
     let before = await this.plans.get(userId);
     // REQ-132 — a pick while a pick is pending asks the CRM first: a due paid a moment ago makes this
     // a switch from the plan it paid for, never a second first pick written over it (Alex's three
-    // re-picks buried his paid $99 under a $399 due). Best effort: a CRM that does not answer leaves
-    // the record as stored, and the due's watch (REQ-131) restores the paid pick when it settles.
-    if (before?.status === "pending" && before.dueId) before = await this.refresh(userId).catch(() => before);
+    // re-picks buried his paid $99 under a $399 due). Best effort (settledOnRead): a CRM that does
+    // not answer leaves the record as stored, and the due's watch (REQ-131) restores the paid pick.
+    if (before?.status === "pending" && before.dueId) before = await this.current(userId);
     // the billing a paid pick replaces: an active plan's — or the one a pending pick, not paid yet, already replaced
     const billing = before && before.status !== "free" ? (before.subscriptionId ?? before.previousSubscriptionId) : undefined;
     if (plan.id === "free") {
@@ -110,27 +141,6 @@ export class ChoosePlan {
     const pending = await this.plans.put(chosen(userId, plan.id as PlanId, now, { merchant: account }, billing, upgrade));
     await this.leads.enqueuePayLink(userId, back);
     return pending;
-  }
-
-  /** a pending plan asks the CRM whether its due settled (what /plan/return does on arrival,
-   *  REQ-059); anything else is answered as stored */
-  async refresh(userId: string): Promise<UserPlan> {
-    const plan = await this.plans.get(userId);
-    if (!plan) throw Object.assign(new Error("plan-missing: nothing picked yet"), { status: 404 });
-    if (plan.status !== "pending" || !plan.dueId) return await this.projected(plan);
-    const open = await this.link.dueOpen(plan.dueId);
-    const next = settle(plan, open, new Date().toISOString());
-    if (next === plan) {
-      // REQ-131 — still open as the CRM reads it this second (its settlement is posted after the
-      // approval): the due is watched by the sweep until it settles, from now
-      await this.leads.enqueueSettleWatch(userId, plan);
-      return plan;
-    }
-    const active = await this.projected(await this.plans.put(next));
-    await this.leads.dropSettleWatch(userId); // REQ-131 — the watch on this due is moot
-    await this.leads.enqueueSync(userId); // REQ-062/099 — a paying customer: the CRM's tier is the plan's name, after this reply
-    await this.leads.enqueueSignupNotice(userId, "paid"); // REQ-112 — the team hears the payment landed, with the plan on it
-    return active;
   }
 
   /**

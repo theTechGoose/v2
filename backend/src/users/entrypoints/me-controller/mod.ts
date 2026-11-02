@@ -54,13 +54,6 @@ export class MeController {
     return ctx.json(await this.crm.read(user.id)); // null before the first sync, as a body
   }
 
-  /** REQ-054/059 — a pending plan asks the CRM whether its due settled (what /plan/return presses) */
-  @Post("plan/refresh")
-  async refreshPlan(@Context() ctx: ExecutionContext) {
-    const user = await requireUser(ctx, this.sessions, this.users);
-    return await this.choosePlan.refresh(user.id);
-  }
-
   /**
    * REQ-054 — the FAKE's remote control: settles the pending due the way a card on the real
    * pay page does. Exists only while the CRM client is the fake (PPWK_PAYMENTS_URL unset) —
@@ -79,9 +72,10 @@ export class MeController {
     const world = fakePaymentsWorld();
     const dueId = typeof named === "string" && world.dues.some((d) => d.dueId === named && d.customerId === plan.customerId) ? named : plan.dueId;
     world.settle(dueId);
-    // REQ-131 — `quiet`: the card landed and the receipt tab was closed — the app is not told; the sweep's watch is
-    if (body?.quiet === true) return await this.choosePlan.current(user.id);
-    return await this.choosePlan.refresh(user.id);
+    // REQ-131 — `quiet`: the card landed and the receipt tab was closed — the app is not told; the
+    // sweep's watch is. The record as stored: a read would find the due settled (REQ-133)
+    if (body?.quiet === true) return await this.choosePlan.stored(user.id);
+    return await this.choosePlan.current(user.id); // REQ-133 — the read finds it settled
   }
 
   /**

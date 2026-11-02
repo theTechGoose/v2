@@ -131,7 +131,7 @@ Deno.test("REQ-106 choose-plan — the paid pick replies before the CRM is reach
   assertStringIncludes(world.links[0].returnUrl ?? "", "back=%2Fwelcome");
   // the rest is as it was: the due settles on that page and the plan goes active
   world.settle(plan.dueId!);
-  assertEquals((await flow.refresh(user.id)).status, "active");
+  assertEquals(((await flow.current(user.id))!).status, "active");
 });
 
 Deno.test("REQ-058 choose-plan — the paid pick reuses the customer sign-up made, revised with the account's details: one record, carrying this app's ref", async () => {
@@ -171,13 +171,13 @@ Deno.test("REQ-054 choose-plan — a paid plan needs an email on the account; th
   assertEquals(fakePaymentsWorld().customers.length, 0);
 });
 
-Deno.test("REQ-054 choose-plan — refresh keeps a pending plan pending while the due is open, and activates it once the due settles", async () => {
+Deno.test("REQ-054 choose-plan — the read keeps a pending plan pending while the due is open, and activates it once the due settles (REQ-133)", async () => {
   const { users, leads, flow } = await fresh();
   const user = await users.create({ phoneNumber: "+15125550104", email: "b@roof.test" });
   const pending = await pick(flow, leads, user.id, "assist");
-  assertEquals((await flow.refresh(user.id)).status, "pending");
+  assertEquals(((await flow.current(user.id))!).status, "pending");
   fakePaymentsWorld().settle(pending.dueId!);
-  const active = await flow.refresh(user.id);
+  const active = (await flow.current(user.id))!;
   assertEquals(active.status, "active");
   assertEquals(typeof active.activatedAt, "string");
   assertEquals((await flow.current(user.id))?.status, "active");
@@ -208,7 +208,7 @@ async function paidAndActive(flow: ChoosePlan, leads: CrmLeadCapture, users: Use
   const user = await users.create({ phoneNumber: phone, email: `${phone.slice(-4)}@roof.test`, name: "Rosa" });
   const pending = await pick(flow, leads, user.id, "monster");
   fakePaymentsWorld().settle(pending.dueId!);
-  const active = await flow.refresh(user.id);
+  const active = (await flow.current(user.id))!;
   return { user, active };
 }
 
@@ -252,7 +252,7 @@ Deno.test("REQ-061 choose-plan — the plan reads what the billing says: the nex
   const due = world.dues.find((d) => pastDue!.payUrl!.includes(`due=${d.dueId}`))!;
   assertEquals(due.open, true);
   world.settle(due.dueId); // paid on the page; /plan/return refreshes
-  const back = await flow.refresh(user.id);
+  const back = (await flow.current(user.id))!;
   assertEquals(back.status, "active");
   assertEquals(back.nextBillAt, addMonth(billed!.nextBillAt!));
   assertEquals(back.payUrl === pastDue?.payUrl, false, "the past-due page is no longer the plan's page");
@@ -267,7 +267,7 @@ Deno.test("REQ-061 choose-plan — back to free cancels the billing (and refuses
   assertEquals(pending.previousSubscriptionId, active.subscriptionId);
   assertEquals(world.subscriptions[0].status, "active", "the old billing runs until the new one is paid");
   world.settle(pending.dueId!);
-  const assist = await flow.refresh(user.id);
+  const assist = (await flow.current(user.id))!;
   assertEquals([assist.planId, assist.status], ["assist", "active"]);
   assertEquals(world.subscriptions.map((s) => [s.externalRef, s.status, s.amountCents]), [[`pm:${user.id}:monster`, "canceled", 9900], [`pm:${user.id}:assist`, "active", 19900]]);
   // free: the billing is canceled
@@ -310,7 +310,7 @@ Deno.test("REQ-064 choose-plan — the test tier is a $1 one-time due with the m
   assertEquals(world.links[0].merchant, "alpha");
   assertStringIncludes(plan.payUrl ?? "", "account=alpha");
   world.settle(plan.dueId!); // the $1 lands on the page; /plan/return refreshes
-  const active = await flow.refresh(user.id);
+  const active = (await flow.current(user.id))!;
   await leads.idle(); // REQ-099
   assertEquals(active.status, "active");
   assertEquals(active.subscriptionId, undefined, "a one-time charge starts no billing");
@@ -328,7 +328,7 @@ Deno.test("REQ-064 choose-plan — a monthly plan picked with a merchant starts 
   const pending = await pick(flow, leads, named.id, "monster", "/settings", "alpha");
   assertEquals(pending.merchant, "alpha");
   world.settle(pending.dueId!);
-  assertEquals((await flow.refresh(named.id)).status, "active");
+  assertEquals(((await flow.current(named.id))!).status, "active");
   assertEquals(world.subscriptions.map((s) => [s.externalRef, s.merchant]), [[`pm:${named.id}:monster`, "alpha"]]);
 });
 
@@ -348,7 +348,7 @@ Deno.test("REQ-100 choose-plan — a plan pick naming nothing goes through prima
     assertEquals(new URL(pending.payUrl!).searchParams.get("account"), "primary", "the pay page's url");
     assertEquals(world.links[0].merchant, "primary", "the link the CRM holds");
     world.settle(pending.dueId!);
-    assertEquals((await flow.refresh(user.id)).status, "active");
+    assertEquals(((await flow.current(user.id))!).status, "active");
     assertEquals(world.subscriptions.map((s) => s.merchant), ["primary"], "the billing");
     const again = await users.create({ phoneNumber: "+15125550101", email: "two@roof.test", name: "Two" });
     assertEquals((await flow.choose(again.id, "assist", "/settings")).merchant, "primary", "every public plan — decided at the reply (REQ-106)");
@@ -399,7 +399,7 @@ Deno.test("REQ-112 choose-plan — the first month settling sends the signup not
   console.log = (...args: unknown[]) => logged.push(args.map(String).join(" "));
   try {
     fakePaymentsWorld().settle(pending.dueId!);
-    const active = await flow.refresh(user.id);
+    const active = (await flow.current(user.id))!;
     assertEquals(active.status, "active");
     await leads.idle();
   } finally {
@@ -427,7 +427,7 @@ Deno.test("REQ-118 + REQ-119 choose-plan — Monster Assist+ is picked like any 
   assertEquals(world.dues.map((d) => [d.customerId, d.amountCents, d.memo, d.open]), [[pending.customerId, 39900, "Monster Assist+ — first month", true]]);
   assertEquals(world.customers.map((c) => [c.customerName, c.tier]), [["Pat Builders", "Lead"]], "a Lead until the first month is paid");
   world.settle(pending.dueId!);
-  const active = await flow.refresh(user.id);
+  const active = (await flow.current(user.id))!;
   await leads.idle(); // REQ-099 — the tier reaches the CRM by the sweep
   assertEquals([active.planId, active.status], ["assist-plus", "active"]);
   assertEquals(world.subscriptions.map((s) => [s.externalRef, s.status, s.amountCents]), [[`pm:${user.id}:assist-plus`, "active", 39900]]);
@@ -449,7 +449,7 @@ Deno.test("REQ-127 choose-plan — an upgrade from an active plan raises the dif
   const due = world.dues.find((d) => d.dueId === pending.dueId)!;
   assertEquals([due.amountCents, due.memo, due.open], [30000, "Monster Assist+ — upgrade from Monster (the difference)", true], "the due is the $300 difference, not $399");
   world.settle(pending.dueId!);
-  const plus = await flow.refresh(user.id);
+  const plus = (await flow.current(user.id))!;
   assertEquals([plus.planId, plus.status], ["assist-plus", "active"]);
   assertEquals(world.subscriptions.map((s) => [s.externalRef, s.status, s.amountCents]), [[`pm:${user.id}:monster`, "canceled", 9900], [`pm:${user.id}:assist-plus`, "active", 39900]]);
   assertEquals(world.subscriptions[1].firstBillAt, active.nextBillAt, "the new billing keeps the anchor: its first bill is the day the $99 one would have billed (REQ-129)");
@@ -465,7 +465,7 @@ Deno.test("REQ-127 choose-plan — a downgrade charges nothing and refunds nothi
   // up to Monster Assist+ first (REQ-127's upgrade), paid
   const up = await pick(flow, leads, user.id, "assist-plus");
   world.settle(up.dueId!);
-  const plus = await flow.refresh(user.id);
+  const plus = (await flow.current(user.id))!;
   const duesBefore = world.dues.length;
   const plusNext = plus.nextBillAt!;
   // down to Monster: no page, nothing to pay
@@ -536,15 +536,16 @@ Deno.test("REQ-129 choose-plan — the first settled month starts the billing on
 // Raphael: "figure out why the hell it never logged Alex's payment" / "fix it."
 
 Deno.test("REQ-131 choose-plan — a due paid while nobody presses anything activates the plan by the sweep: the watch minted with the page sees it settled, the CRM hears the tier and the team the payment", async () => {
-  const { users, leads, flow } = await fresh();
+  const { users, plans, leads, flow } = await fresh();
   const user = await users.create({ phoneNumber: "+15125551310", email: "alex@a2z.test", name: "Alex" });
   const pending = await pick(flow, leads, user.id, "monster");
   assertEquals(pending.status, "pending");
   const world = fakePaymentsWorld();
-  world.settle(pending.dueId!); // the card landed; the receipt tab was closed — no /plan/return, no refresh
-  assertEquals((await flow.current(user.id))?.status, "pending", "reading the plan asks nothing (as before)");
+  world.settle(pending.dueId!); // the card landed; the receipt tab was closed — no /plan/return, nothing read
+  assertEquals((await plans.get(user.id))?.status, "pending", "as stored: nothing has read it (a read would settle it, REQ-133)");
   await leads.drain(); // the minute sweep
   await leads.idle();
+  assertEquals((await plans.get(user.id))?.status, "active", "active in the store, by the sweep alone");
   const active = (await flow.current(user.id))!;
   assertEquals([active.planId, active.status, active.dueId, typeof active.activatedAt], ["monster", "active", pending.dueId, "string"]);
   assertEquals(world.customers.find((c) => c.externalRef === `pm:${user.id}`)?.tier, "Monster", "the tier followed, by the sweep");
@@ -597,12 +598,12 @@ Deno.test("REQ-132 choose-plan — a pick while a pick is pending asks the CRM f
   assertEquals([still.planId, still.status, still.dueCents], ["assist-plus", "pending", 30000]);
 });
 
-Deno.test("REQ-131 choose-plan — /plan/return reading the due settled drops the watch: nothing is left on the outbox to look again", async () => {
+Deno.test("REQ-131 choose-plan — the read that finds the due settled drops the watch: nothing is left on the outbox to look again", async () => {
   const { users, leads, flow } = await fresh();
   const user = await users.create({ phoneNumber: "+15125551312", email: "d@roof.test", name: "Dee" });
   const pending = await pick(flow, leads, user.id, "monster");
   fakePaymentsWorld().settle(pending.dueId!);
-  assertEquals((await flow.refresh(user.id)).status, "active");
+  assertEquals(((await flow.current(user.id))!).status, "active");
   await leads.idle();
   const outbox = new CrmCaptureOutbox();
   assertEquals((await outbox.list()).filter((r) => r.kind === "settle-watch"), []);
@@ -620,4 +621,22 @@ Deno.test("REQ-132 choose-plan — the same plan picked again while its page is 
   const other = await pick(flow, leads, user.id, "assist");
   assert(other.dueId !== first.dueId);
   assertEquals(world.dues.map((d) => d.amountCents), [9900, 19900]);
+});
+
+// ---- REQ-133 — Raphael, 2026-11-02: "The front end should not be doing any business logic, only
+// presentation logic. Put all of that in the back." No refresh endpoint for a page to press: a
+// pending plan is read against the CRM by `current` itself, the way an active one is read against
+// its billing — the return page only redirects.
+Deno.test("REQ-133 choose-plan — current() is the one read: a pending plan whose due the CRM holds settled is active on that read, the tier and the paid notice follow by the sweep; open, it stays pending and the watch keeps looking", async () => {
+  const { users, leads, flow } = await fresh();
+  const user = await users.create({ phoneNumber: "+15125551330", email: "r@roof.test", name: "Ren" });
+  const pending = await pick(flow, leads, user.id, "monster");
+  assertEquals((await flow.current(user.id))?.status, "pending", "open: as stored");
+  const world = fakePaymentsWorld();
+  world.settle(pending.dueId!);
+  const active = (await flow.current(user.id))!;
+  assertEquals([active.status, active.planId, typeof active.activatedAt, Boolean(active.subscriptionId)], ["active", "monster", "string", true], "settled on the read, the billing started on the same read");
+  await leads.idle();
+  assertEquals(world.customers.find((c) => c.externalRef === `pm:${user.id}`)?.tier, "Monster");
+  assertEquals((await new CrmCaptureOutbox().list()).filter((r) => r.kind === "settle-watch"), [], "the watch is dropped by the read that found it settled");
 });
