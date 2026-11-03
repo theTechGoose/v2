@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { getKv } from "@core/data/kv/mod.ts";
+import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import type {
   CreatePaymentDto,
@@ -42,12 +42,9 @@ export class PaymentStore {
 
   async listByUser(userId: string): Promise<Payment[]> {
     const kv = await getKv();
-    const out: Payment[] = [];
-    for await (const e of kv.list<string>({ prefix: [INDEX_BY_USER, userId] })) {
-      const r = await kv.get<Payment>([PREFIX, e.value]);
-      if (r.value) out.push(r.value);
-    }
-    return out;
+    const ids = await indexedIds(kv, [INDEX_BY_USER, userId]); // REQ-134 — read in batches
+    const recs = await readMany<Payment>(kv, ids.map((id) => [PREFIX, id]));
+    return recs.filter((p): p is Payment => !!p);
   }
 
   async listByUserAndMethod(userId: string, method: PaymentMethod): Promise<Payment[]> {
@@ -57,12 +54,9 @@ export class PaymentStore {
 
   async listByInvoice(invoiceId: string, userId: string): Promise<Payment[]> {
     const kv = await getKv();
-    const out: Payment[] = [];
-    for await (const e of kv.list<string>({ prefix: [INDEX_BY_INVOICE, invoiceId] })) {
-      const r = await kv.get<Payment>([PREFIX, e.value]);
-      if (r.value && r.value.userId === userId) out.push(r.value);
-    }
-    return out;
+    const ids = await indexedIds(kv, [INDEX_BY_INVOICE, invoiceId]); // REQ-134 — read in batches
+    const recs = await readMany<Payment>(kv, ids.map((id) => [PREFIX, id]));
+    return recs.filter((p): p is Payment => !!p && p.userId === userId);
   }
 
   async update(id: string, userId: string, patch: UpdatePaymentDto): Promise<Payment> {

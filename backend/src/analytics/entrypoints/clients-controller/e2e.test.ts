@@ -55,7 +55,7 @@ Deno.test("clients e2e: GET /clients returns CustomerCard[] with derived fields"
 
     const cards = await fetch(`http://localhost:${port}/clients`, {
       headers: { "x-session-id": sid },
-    }).then((r) => r.json());
+    }).then((r) => r.json()).then((p) => p.items) // REQ-135 — one page;
 
     assertEquals(cards.length, 1);
     const card = cards[0];
@@ -92,7 +92,7 @@ Deno.test("clients e2e: GET /clients scopes by owner", async () => {
     }));
     const bCards = await fetch(`http://localhost:${port}/clients`, {
       headers: { "x-session-id": sidB },
-    }).then((r) => r.json());
+    }).then((r) => r.json()).then((p) => p.items); // REQ-135 — one page
     assertEquals(bCards, []);
   });
 });
@@ -121,7 +121,7 @@ Deno.test("clients e2e: GET /clients spot-checks status==='owes' end-to-end (pen
 
     const cards = await fetch(`http://localhost:${port}/clients`, {
       headers: { "x-session-id": sid },
-    }).then((r) => r.json());
+    }).then((r) => r.json()).then((p) => p.items) // REQ-135 — one page;
 
     assertEquals(cards[0].status, "owes");
     assertEquals(cards[0].balanceCents, 250_00);

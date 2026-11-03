@@ -1,13 +1,17 @@
 /**
  * Top-level data island for /clients. The SSR route renders only the page
- * shell (sidebar + topbar); this island fetches the full payload from the
- * backend on mount and renders the editorial board.
+ * shell (sidebar + topbar); this island fetches ONE PAGE of the roster from
+ * the backend (REQ-135 — `GET /clients?page&q&status`) on mount and again on
+ * every search, chip or page change, and renders the editorial board with
+ * what it was handed. The hero's totals and the loop strip are the roster's,
+ * computed by the backend — nothing here derives from a list.
  */
 import { useEffect, useState } from "preact/hooks";
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import {
   clientsClient,
-  type CustomerCard,
+  type ClientsFilter,
+  type ClientsPageResponse,
   type TopClientsResponse,
 } from "../clients/clients.ts";
 import {
@@ -15,7 +19,7 @@ import {
   LoopBar,
   TopClients,
 } from "../components/ClientsSections.tsx";
-import ClientsBoard from "./ClientsBoard.tsx";
+import ClientsBoard, { filterFromSearch } from "./ClientsBoard.tsx";
 import {
   CardGridSkeleton,
   PageHeaderSkeleton,
@@ -26,24 +30,19 @@ import { langSignal, tFor } from "../lib/i18n.ts";
 interface State {
   loading: boolean;
   error: string | null;
-  cards: CustomerCard[];
+  data: ClientsPageResponse | null;
   top: TopClientsResponse;
 }
 
 const INITIAL: State = {
   loading: true,
   error: null,
-  cards: [],
+  data: null,
   top: { results: [] },
 };
 
-function pickLoop(cards: CustomerCard[]): CustomerCard[] {
-  const candidates = cards.filter((c) =>
-    c.status === "lead" || c.status === "owes"
-  );
-  candidates.sort((a, b) => b.daysSinceContact - a.daysSinceContact);
-  return candidates.slice(0, 3);
-}
+/** REQ-135 — a keystroke waits this long before it asks the API */
+const SEARCH_DEBOUNCE_MS = 250;
 
 export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
   const lang = langSignal.value;
@@ -55,11 +54,52 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
   const [addBusiness, setAddBusiness] = useState("");
   const [addPhone, setAddPhone] = useState("");
   const [addEmail, setAddEmail] = useState("");
+  // REQ-135 — what the API is asked for: the page, the search, the chip (seeded from ?segment=)
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState("");
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<ClientsFilter>(() =>
+    typeof globalThis.location === "undefined"
+      ? "all"
+      : filterFromSearch(globalThis.location.search)
+  );
 
   async function refreshClients() {
-    const cards = await clientsClient.list().catch(() => null);
-    if (cards) setS((prev) => ({ ...prev, cards }));
+    const data = await clientsClient.list({ page, q, status: filter }).catch(
+      () => null,
+    );
+    if (data) setS((prev) => ({ ...prev, data }));
   }
+
+  function onQuery(next: string) {
+    setQuery(next);
+  }
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQ(query);
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  function onFilter(next: ClientsFilter) {
+    setFilter(next);
+    setPage(1);
+    if (typeof globalThis.location === "undefined") return;
+    const url = new URL(globalThis.location.href);
+    if (next === "all") url.searchParams.delete("segment");
+    else url.searchParams.set("segment", next);
+    globalThis.history.pushState({ segment: next }, "", url.toString());
+  }
+  // Browser back / forward re-applies the URL's chip.
+  useEffect(() => {
+    function onPop() {
+      setFilter(filterFromSearch(globalThis.location.search));
+      setPage(1);
+    }
+    globalThis.addEventListener("popstate", onPop);
+    return () => globalThis.removeEventListener("popstate", onPop);
+  }, []);
 
   async function submitAddClient(e: Event) {
     e.preventDefault();
@@ -81,9 +121,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
       await refreshClients();
     } catch (err) {
       setAddErr(
-        err instanceof Error
-          ? err.message
-          : tFor(lang, "clientsPage.addError"),
+        err instanceof Error ? err.message : tFor(lang, "clientsPage.addError"),
       );
     } finally {
       setAdding(false);
@@ -92,22 +130,31 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([
-      clientsClient.list().catch(() => [] as CustomerCard[]),
-      clientsClient.top(5).catch(() => ({ results: [] } as TopClientsResponse)),
-    ]).then(([cards, top]) => {
-      if (!alive) return;
-      setS({ loading: false, error: null, cards, top });
-    }).catch((err: Error) => {
-      if (!alive) return;
-      setS({ ...INITIAL, loading: false, error: err.message });
-    });
+    clientsClient.top(5).catch(() => ({ results: [] } as TopClientsResponse))
+      .then((top) => {
+        if (alive) setS((prev) => ({ ...prev, top }));
+      });
     return () => {
       alive = false;
     };
   }, []);
 
-  if (s.loading) {
+  // REQ-135 — one page from the API, again on every page, search or chip change
+  useEffect(() => {
+    let alive = true;
+    clientsClient.list({ page, q, status: filter }).then((data) => {
+      if (!alive) return;
+      setS((prev) => ({ ...prev, loading: false, error: null, data }));
+    }).catch((err: Error) => {
+      if (!alive) return;
+      setS((prev) => ({ ...prev, loading: false, error: err.message }));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [page, q, filter]);
+
+  if (s.loading || !s.data) {
     return (
       <>
         <ShimmerStyle />
@@ -124,34 +171,41 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
     );
   }
 
-  const { cards: rawCards, top } = s;
-  const cards = Array.isArray(rawCards) ? rawCards : [];
-  const activeJobs = cards.filter((c) => c.status === "active").length;
-  const owedTotal = cards.reduce(
-    (sum, c) => sum + (c.balanceCents > 0 ? c.balanceCents : 0),
-    0,
-  ) / 100;
-  const quietCount = cards.filter((c) => c.status === "cold").length;
-  const loopPicks = pickLoop(cards);
+  const { data, top } = s;
+  const { summary } = data;
 
   return (
     <>
       <ClientsHero
-        totalClients={cards.length}
-        activeJobs={activeJobs}
-        owedTotal={owedTotal}
-        quietCount={quietCount}
+        totalClients={summary.totalClients}
+        activeJobs={summary.activeJobs}
+        owedTotal={summary.owedCents / 100}
+        quietCount={summary.quietCount}
         lang={lang}
         onAdd={() => {
           setAddErr(null);
           setAddOpen(true);
         }}
       />
-      <LoopBar picks={loopPicks} lang={lang} />
-      <ClientsBoard cards={cards} lang={lang}>
+      <LoopBar picks={data.loop} lang={lang} />
+      <ClientsBoard
+        cards={data.items}
+        counts={data.counts}
+        rosterEmpty={summary.totalClients === 0}
+        query={query}
+        onQuery={onQuery}
+        filter={filter}
+        onFilter={onFilter}
+        page={data.page}
+        totalPages={data.totalPages}
+        onPage={setPage}
+        lang={lang}
+      >
         <TopClients rows={top.results} lang={lang} />
-        {/* NW-36 (REQ-013): the "Who's on your books" segments chart is gone —
-            no part of the app ever collects a customer segment. */}
+        {
+          /* NW-36 (REQ-013): the "Who's on your books" segments chart is gone —
+            no part of the app ever collects a customer segment. */
+        }
       </ClientsBoard>
 
       {addOpen && (
@@ -174,7 +228,8 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
                 autoFocus
                 required
                 value={addName}
-                onInput={(e) => setAddName((e.target as HTMLInputElement).value)}
+                onInput={(e) =>
+                  setAddName((e.target as HTMLInputElement).value)}
                 style="padding:11px 13px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)"
               />
             </label>
@@ -192,7 +247,9 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
               {tFor(lang, "settings.phone")}
               <input
                 type="tel"
-                value={formatPhoneInput(addPhone)} /* NW-34 (REQ-012): (555) 123-4567 as you type */
+                value={formatPhoneInput(
+                  addPhone,
+                )} /* NW-34 (REQ-012): (555) 123-4567 as you type */
                 onInput={(e) =>
                   setAddPhone((e.target as HTMLInputElement).value)}
                 style="padding:11px 13px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)"

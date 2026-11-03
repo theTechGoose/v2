@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { getKv } from "@core/data/kv/mod.ts";
+import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
 import type {
   CreateMessageDto,
@@ -47,12 +47,9 @@ export class MessageStore {
 
   async listByConversation(conversationId: string): Promise<Message[]> {
     const kv = await getKv();
-    const out: Message[] = [];
-    for await (const e of kv.list<string>({ prefix: [INDEX_PREFIX, conversationId] })) {
-      const r = await kv.get<Message>([PREFIX, e.value]);
-      if (r.value) out.push(r.value);
-    }
-    return out;
+    const ids = await indexedIds(kv, [INDEX_PREFIX, conversationId]); // REQ-134 — read in batches
+    const recs = await readMany<Message>(kv, ids.map((id) => [PREFIX, id]));
+    return recs.filter((m): m is Message => !!m);
   }
 
   async update(id: string, patch: UpdateMessageDto): Promise<Message> {

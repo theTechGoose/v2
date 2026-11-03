@@ -2,15 +2,17 @@
  * Interactive heart of /clients: toolbar (search + filter chips) + the
  * editorial card grid + the slide-up contact panel.
  *
- * Receives the backend's `CustomerCard[]` from the SSR route — no seed data,
- * no derivations the backend already owns (status, balance, days-since-contact
- * all come pre-computed via BuildCustomerCards).
+ * Receives ONE PAGE of the backend's `CustomerCard[]` (REQ-135) with the chip
+ * counts the API counted — no seed data, no derivations the backend already
+ * owns (status, balance, days-since-contact all come pre-computed via
+ * BuildCustomerCards) and no list-wide filtering here: the search box and
+ * the chips report upward and the island asks the API for the page.
  */
 import type { ComponentChildren } from "preact";
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { tFor } from "../lib/i18n.ts";
-import type { ClientStatus, CustomerCard } from "../clients/clients.ts";
+import type { ClientsFilter, CustomerCard } from "../clients/clients.ts";
 import {
   addressFor,
   balanceDisplay,
@@ -30,7 +32,7 @@ import {
 // — six entries with the exact labels from the design source. URL
 // bookmarking via ?segment= is additive: it doesn't change the visual
 // chip set, just lets a filtered view be reloaded / shared / back-buttoned.
-type FilterId = ClientStatus | "all";
+type FilterId = ClientsFilter;
 
 interface FilterEntry {
   id: FilterId;
@@ -49,7 +51,9 @@ const FILTER_IDS: ReadonlyArray<string> = FILTER_DEFS.map((f) => f.id);
 function isFilterId(s: string | null | undefined): s is FilterId {
   return !!s && FILTER_IDS.includes(s);
 }
-function filterFromSearch(search: string | null | undefined): FilterId {
+export function filterFromSearch(
+  search: string | null | undefined,
+): FilterId {
   if (!search) return "all";
   const raw = new URLSearchParams(search).get("segment");
   return isFilterId(raw) ? raw : "all";
@@ -143,7 +147,9 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose, lang }: CardProps) {
           {cta} <span class="ccard2__nudge-arrow">→</span>
         </button>
         <div class="ccard2__bal-wrap">
-          <div class="ccard2__bal-lbl">{tFor(lang, "clientsBoard.balance")}</div>
+          <div class="ccard2__bal-lbl">
+            {tFor(lang, "clientsBoard.balance")}
+          </div>
           <div class={`ccard2__bal-val ${balance.cls}`}>{balance.text}</div>
         </div>
       </div>
@@ -242,23 +248,39 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose, lang }: CardProps) {
 }
 
 interface BoardProps {
+  /** the page's cards, as the API cut them (REQ-135) */
   cards: CustomerCard[];
+  /** the chip counts the API counted over the search */
+  counts: Record<FilterId, number>;
+  /** no customers on the books at all (the empty-roster copy, not "no matches") */
+  rosterEmpty: boolean;
+  query: string;
+  onQuery: (q: string) => void;
+  filter: FilterId;
+  onFilter: (f: FilterId) => void;
+  page: number;
+  totalPages: number;
+  onPage: (page: number) => void;
   children?: ComponentChildren;
   lang?: "en" | "es";
 }
 
 export default function ClientsBoard(
-  { cards, children, lang = "en" }: BoardProps,
+  {
+    cards,
+    counts,
+    rosterEmpty,
+    query,
+    onQuery,
+    filter,
+    onFilter,
+    page,
+    totalPages,
+    onPage,
+    children,
+    lang = "en",
+  }: BoardProps,
 ) {
-  // Filter id ("all" | ClientStatus). Seeded from URL ?segment= so a
-  // reload / shared link / back-button navigates to the same filtered
-  // view. Defaults to "all" (the leftmost chip) when the param is absent
-  // or unrecognized.
-  const [filter, setFilter] = useState<FilterId>(() => {
-    if (typeof globalThis.location === "undefined") return "all";
-    return filterFromSearch(globalThis.location.search);
-  });
-  const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -278,53 +300,8 @@ export default function ClientsBoard(
     };
   }, [openId]);
 
-  // Browser back / forward should re-apply the URL's filter state.
-  useEffect(() => {
-    function onPop() {
-      setFilter(filterFromSearch(globalThis.location.search));
-    }
-    globalThis.addEventListener("popstate", onPop);
-    return () => globalThis.removeEventListener("popstate", onPop);
-  }, []);
-
-  function selectFilter(next: FilterId) {
-    setFilter(next);
-    if (typeof globalThis.location === "undefined") return;
-    const url = new URL(globalThis.location.href);
-    // "all" is the default — represent it by absence of the param.
-    if (next === "all") url.searchParams.delete("segment");
-    else url.searchParams.set("segment", next);
-    globalThis.history.pushState({ segment: next }, "", url.toString());
-  }
-
-  const filterCounts = useMemo(() => {
-    const counts: Record<FilterId, number> = {
-      all: cards.length,
-      active: 0,
-      lead: 0,
-      owes: 0,
-      regular: 0,
-      cold: 0,
-    };
-    for (const c of cards) counts[c.status]++;
-    return counts;
-  }, [cards]);
-
-  const rows = cards.filter((c) => {
-    if (filter !== "all" && c.status !== filter) return false;
-    if (query.trim()) {
-      const q = query.toLowerCase();
-      return (
-        c.name.toLowerCase().includes(q) ||
-        (c.businessName ?? "").toLowerCase().includes(q) ||
-        (c.email ?? "").toLowerCase().includes(q) ||
-        (c.phoneNumber ?? "").includes(q) ||
-        (c.address ?? "").toLowerCase().includes(q) ||
-        (c.notes ?? "").toLowerCase().includes(q)
-      );
-    }
-    return true;
-  });
+  // REQ-135 — the rows ARE the page: the API searched, filtered and cut them
+  const rows = cards;
 
   return (
     <>
@@ -332,10 +309,11 @@ export default function ClientsBoard(
         <div class="ctoolbar2__search">
           <I d={ICN.search} size={14} />
           <input
+            data-cy="clients-search"
             placeholder={tFor(lang, "clientsBoard.searchPlaceholder")}
             value={query}
             onInput={(e) =>
-              setQuery((e.currentTarget as HTMLInputElement).value)}
+              onQuery((e.currentTarget as HTMLInputElement).value)}
           />
         </div>
         <div class="ctoolbar2__filters">
@@ -349,11 +327,11 @@ export default function ClientsBoard(
                 class={`ctoolbar2__filter ${
                   active ? "ctoolbar2__filter--active" : ""
                 }`}
-                onClick={() => selectFilter(f.id)}
+                onClick={() => onFilter(f.id)}
               >
                 {tFor(lang, f.labelKey)}
                 <span class="ctoolbar2__filter-count">
-                  {filterCounts[f.id]}
+                  {counts[f.id]}
                 </span>
               </button>
             );
@@ -380,10 +358,38 @@ export default function ClientsBoard(
           ))}
           {rows.length === 0 && (
             <div class="ccards2__empty">
-              {cards.length === 0
+              {rosterEmpty
                 ? tFor(lang, "clientsBoard.empty.noClients")
                 : tFor(lang, "clientsBoard.empty.noMatches")}
             </div>
+          )}
+          {/* REQ-135 — the pager: one page at a time from the API */}
+          {!rosterEmpty && (
+            <nav class="cpager" data-cy="clients-pager" aria-label="pages">
+              <button
+                type="button"
+                class="cpager__btn"
+                data-cy="clients-prev"
+                disabled={page <= 1}
+                onClick={() =>
+                  onPage(page - 1)}
+              >
+                ← {tFor(lang, "clientsBoard.prev")}
+              </button>
+              <span class="cpager__where" data-cy="clients-page">
+                {tFor(lang, "clientsBoard.page", { page, pages: totalPages })}
+              </span>
+              <button
+                type="button"
+                class="cpager__btn"
+                data-cy="clients-next"
+                disabled={page >= totalPages}
+                onClick={() =>
+                  onPage(page + 1)}
+              >
+                {tFor(lang, "clientsBoard.next")} →
+              </button>
+            </nav>
           )}
         </div>
         <div class="cside2">

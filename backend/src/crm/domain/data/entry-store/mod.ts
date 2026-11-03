@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { getKv } from "@core/data/kv/mod.ts";
+import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import type {
   CreateEntryDto,
@@ -39,12 +39,9 @@ export class EntryStore {
 
   async listByUser(userId: string): Promise<Entry[]> {
     const kv = await getKv();
-    const out: Entry[] = [];
-    for await (const indexEntry of kv.list<string>({ prefix: [INDEX_PREFIX, userId] })) {
-      const r = await kv.get<Entry>([PREFIX, indexEntry.value]);
-      if (r.value) out.push(r.value);
-    }
-    return out;
+    const ids = await indexedIds(kv, [INDEX_PREFIX, userId]); // REQ-134 — read in batches
+    const recs = await readMany<Entry>(kv, ids.map((id) => [PREFIX, id]));
+    return recs.filter((e): e is Entry => !!e);
   }
 
   async listByAccount(userId: string, accountId: string): Promise<Entry[]> {

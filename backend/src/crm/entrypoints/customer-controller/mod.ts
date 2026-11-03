@@ -1,4 +1,5 @@
-import { Body, Context, Controller, Delete, Get, Param, Post, Put } from "#danet/core";
+import { Body, Context, Controller, Delete, Get, Param, Post, Put, Query } from "#danet/core";
+import { matchesQuery, pageOf, sortByName } from "@analytics/domain/business/clients-page/mod.ts"; // REQ-135 — the one set of paging rules
 import type { ExecutionContext } from "#danet/core";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import {
@@ -23,10 +24,18 @@ export class CustomerController {
     return await this.store.create(user.id, parseCreateCustomer(body));
   }
 
+  /** the array, as always; REQ-135 — `?page=`, `?pageSize=` or `?q=` asks for one page: `{ items, page, pageSize, total, totalPages }` */
   @Get()
-  async list(@Context() ctx: ExecutionContext) {
+  async list(
+    @Context() ctx: ExecutionContext,
+    @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string,
+    @Query("q") q?: string,
+  ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return await this.store.listByUser(user.id);
+    const all = await this.store.listByUser(user.id);
+    if (page === undefined && pageSize === undefined && q === undefined) return all;
+    return pageOf(sortByName(all.filter((c) => matchesQuery(c, q))), Number(page), Number(pageSize));
   }
 
   @Get(":id")

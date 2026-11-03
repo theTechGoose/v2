@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { getKv } from "@core/data/kv/mod.ts";
+import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import type { CreateReferenceDto, Reference, UpdateReferenceDto } from "@profile/dto/reference.ts";
 
@@ -40,12 +40,9 @@ export class ReferenceStore {
 
   async listByUser(userId: string): Promise<Reference[]> {
     const kv = await getKv();
-    const out: Reference[] = [];
-    for await (const e of kv.list<string>({ prefix: [INDEX_PREFIX, userId] })) {
-      const r = await kv.get<Reference>([PREFIX, e.value]);
-      if (r.value) out.push(r.value);
-    }
-    return out.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+    const ids = await indexedIds(kv, [INDEX_PREFIX, userId]); // REQ-134 — read in batches
+    const recs = await readMany<Reference>(kv, ids.map((id) => [PREFIX, id]));
+    return recs.filter((r): r is Reference => !!r).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   }
 
   async update(id: string, userId: string, patch: UpdateReferenceDto): Promise<Reference> {
