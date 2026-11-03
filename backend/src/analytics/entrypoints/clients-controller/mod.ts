@@ -12,6 +12,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 import type { Lang } from "@core/i18n/mod.ts";
+import { clientsPage, type ClientsPageResponse } from "@analytics/domain/business/clients-page/mod.ts"; // REQ-135
 
 const SEGMENT_LABELS: Record<ClientSegment | "unsorted", string> = {
   property_mgmt: "Property mgmt",
@@ -24,7 +25,7 @@ const SEGMENT_LABELS: Record<ClientSegment | "unsorted", string> = {
 /**
  * ClientsController — page-aligned endpoint for the /clients UI surface.
  *
- *   GET /clients                       → CustomerCard[] (cards page rows)
+ *   GET /clients?page&pageSize&q&status → ClientsPageResponse (one page of cards + counts + totals, REQ-135)
  *   GET /analytics/clients/top         → TopClients leaderboard (right rail)
  *   GET /analytics/clients/segments    → segment-mix bar chart
  *
@@ -43,10 +44,18 @@ export class ClientsController {
     private sessions: SessionStore,
   ) {}
 
+  /** REQ-135 — one page of the roster: `?page=&pageSize=&q=&status=`, with the chip counts and the roster's totals */
   @Get("clients")
-  async listCards(@Context() ctx: ExecutionContext) {
+  async listCards(
+    @Context() ctx: ExecutionContext,
+    @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string,
+    @Query("q") q?: string,
+    @Query("status") status?: string,
+  ): Promise<ClientsPageResponse> {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return await this.flow.run(user.id, new Date(), (user.language ?? "en") as Lang);
+    const cards = await this.flow.run(user.id, new Date(), (user.language ?? "en") as Lang);
+    return clientsPage(cards, { page: Number(page), pageSize: Number(pageSize), q, status });
   }
 
   @Get("analytics/clients/top")

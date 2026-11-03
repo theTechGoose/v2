@@ -1,6 +1,6 @@
 import { Injectable } from "#danet/core";
 import { summarizeJobName } from "#quote-flow/job-name.ts";
-import { getKv } from "@core/data/kv/mod.ts";
+import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import type {
   CreateQuoteDto,
@@ -69,12 +69,9 @@ export class QuoteStore {
 
   async listByUser(userId: string): Promise<Quote[]> {
     const kv = await getKv();
-    const out: Quote[] = [];
-    for await (const e of kv.list<string>({ prefix: [INDEX_PREFIX, userId] })) {
-      const r = await kv.get<Quote>([PREFIX, e.value]);
-      if (r.value && !r.value.deletedAt) out.push(r.value);
-    }
-    return out;
+    const ids = await indexedIds(kv, [INDEX_PREFIX, userId]); // REQ-134 — read in batches
+    const recs = await readMany<Quote>(kv, ids.map((id) => [PREFIX, id]));
+    return recs.filter((q): q is Quote => !!q && !q.deletedAt);
   }
 
   /** Used by analytics + dashboard panels. Filters in-memory after the user-scoped fetch. */

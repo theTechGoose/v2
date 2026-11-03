@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { getKv } from "@core/data/kv/mod.ts";
+import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import type {
   CreatePaymentTermsDto,
@@ -39,12 +39,9 @@ export class PaymentTermsStore {
 
   async listByUser(userId: string): Promise<PaymentTerms[]> {
     const kv = await getKv();
-    const out: PaymentTerms[] = [];
-    for await (const e of kv.list<string>({ prefix: [INDEX_PREFIX, userId] })) {
-      const r = await kv.get<PaymentTerms>([PREFIX, e.value]);
-      if (r.value) out.push(r.value);
-    }
-    return out;
+    const ids = await indexedIds(kv, [INDEX_PREFIX, userId]); // REQ-134 — read in batches
+    const recs = await readMany<PaymentTerms>(kv, ids.map((id) => [PREFIX, id]));
+    return recs.filter((t): t is PaymentTerms => !!t);
   }
 
   async update(id: string, userId: string, patch: UpdatePaymentTermsDto): Promise<PaymentTerms> {

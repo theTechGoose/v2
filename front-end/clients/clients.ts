@@ -3,7 +3,7 @@
  *
  * Backend references:
  *  - analytics/.../clients-controller/mod.ts
- *      GET /clients                     → CustomerCard[]
+ *      GET /clients?page&pageSize&q&status → ClientsPageResponse (REQ-135 — one page)
  *      GET /analytics/clients/top       → TopClientsResponse
  */
 import { api, type ApiOptions } from "../lib/api.ts";
@@ -44,6 +44,34 @@ export interface CustomerCard {
   revenue12moCents: number;
 }
 
+/** REQ-135 — the board's chips: a status, or all of them */
+export type ClientsFilter = ClientStatus | "all";
+
+/** REQ-135 — one page of the roster, with the chip counts over the query and the roster's totals */
+export interface ClientsPageResponse {
+  items: CustomerCard[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  counts: Record<ClientsFilter, number>;
+  summary: {
+    totalClients: number;
+    activeJobs: number;
+    owedCents: number;
+    quietCount: number;
+  };
+  /** the three to call next: leads and owes, longest quiet first */
+  loop: CustomerCard[];
+}
+
+export interface ClientsListParams {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  status?: ClientsFilter;
+}
+
 export interface TopClient {
   customerId: string;
   name: string;
@@ -57,7 +85,19 @@ export interface TopClientsResponse {
 }
 
 export const clientsClient = {
-  list: (opts: ApiOptions = {}) => api.get<CustomerCard[]>("/clients", opts),
+  /** REQ-135 — one page; a blank query or the "all" chip is left off the URL */
+  list: (params: ClientsListParams = {}, opts: ApiOptions = {}) =>
+    api.get<ClientsPageResponse>("/clients", {
+      ...opts,
+      query: {
+        page: params.page,
+        pageSize: params.pageSize,
+        q: params.q?.trim() || undefined,
+        status: params.status && params.status !== "all"
+          ? params.status
+          : undefined,
+      },
+    }),
   top: (limit = 5, opts: ApiOptions = {}) =>
     api.get<TopClientsResponse>("/analytics/clients/top", {
       ...opts,

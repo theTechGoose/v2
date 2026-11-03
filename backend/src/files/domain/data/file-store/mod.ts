@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { getKv } from "@core/data/kv/mod.ts";
+import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import { chunk, sha256Hex, unchunk } from "@files/domain/business/chunk/mod.ts";
 import type { FileRecord } from "@files/dto/file.ts";
@@ -98,12 +98,9 @@ export class FileStore {
 
   async listByUser(userId: string): Promise<FileRecord[]> {
     const kv = await getKv();
-    const out: FileRecord[] = [];
-    for await (const e of kv.list<string>({ prefix: [INDEX_PREFIX, userId] })) {
-      const r = await kv.get<FileRecord>([META_PREFIX, e.value]);
-      if (r.value) out.push(r.value);
-    }
-    return out;
+    const ids = await indexedIds(kv, [INDEX_PREFIX, userId]); // REQ-134 — read in batches
+    const recs = await readMany<FileRecord>(kv, ids.map((id) => [META_PREFIX, id]));
+    return recs.filter((f): f is FileRecord => !!f);
   }
 
   /**

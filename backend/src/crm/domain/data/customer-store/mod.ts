@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { getKv } from "@core/data/kv/mod.ts";
+import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import type {
   CreateCustomerDto,
@@ -70,12 +70,9 @@ export class CustomerStore {
 
   async listByUser(userId: string): Promise<Customer[]> {
     const kv = await getKv();
-    const out: Customer[] = [];
-    for await (const entry of kv.list<string>({ prefix: [INDEX_PREFIX, userId] })) {
-      const result = await kv.get<Customer>([PREFIX, entry.value]);
-      if (result.value && !result.value.deletedAt) out.push(result.value);
-    }
-    return out;
+    const ids = await indexedIds(kv, [INDEX_PREFIX, userId]); // REQ-134 — read in batches
+    const recs = await readMany<Customer>(kv, ids.map((id) => [PREFIX, id]));
+    return recs.filter((c): c is Customer => !!c && !c.deletedAt);
   }
 
   async update(id: string, userId: string, patch: UpdateCustomerDto): Promise<Customer> {
