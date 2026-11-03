@@ -6,97 +6,11 @@ import { Head } from "fresh/runtime";
 import { HttpError } from "fresh";
 import { define } from "../../utils.ts";
 import SearchSelectDemo from "../../islands/SearchSelectDemo.tsx";
-import type { SearchOption } from "../../lib/search-select.ts";
-
-const FIRST = [
-  "Maria",
-  "Omar",
-  "Ana",
-  "Luis",
-  "Sofia",
-  "Marcus",
-  "Elena",
-  "James",
-  "Rosa",
-  "Daniel",
-  "Camila",
-  "Victor",
-  "Lucia",
-  "Ethan",
-  "Marta",
-  "Noah",
-  "Isabel",
-  "Mario",
-  "Grace",
-  "Hector",
-];
-const LAST = [
-  "Lopez",
-  "Martinez",
-  "Pérez",
-  "Nguyen",
-  "Smith",
-  "García",
-  "Brown",
-  "Ramírez",
-  "Johnson",
-  "Torres",
-  "Miller",
-  "Hernández",
-  "Davis",
-  "Flores",
-  "Wilson",
-  "Morales",
-  "Taylor",
-  "Castillo",
-  "Anderson",
-  "Ortiz",
-];
-const CITY = [
-  "Austin, TX",
-  "Dallas, TX",
-  "Houston, TX",
-  "San Antonio, TX",
-  "Harrisonburg, VA",
-  "Richmond, VA",
-  "Denver, CO",
-  "Phoenix, AZ",
-  "Tampa, FL",
-  "Atlanta, GA",
-];
-const CO = [
-  "Roofing",
-  "Landscape",
-  "Plumbing",
-  "Electric",
-  "Painting",
-  "Properties",
-  "Builders",
-  "HVAC",
-];
-
-/** 1,000 deterministic rows: 900 people, 100 companies, in a fixed shuffle. */
-function rows(): SearchOption[] {
-  const out: SearchOption[] = [];
-  for (let i = 0; i < 1000; i++) {
-    const a = (i * 7919) % FIRST.length,
-      b = (i * 104729) % LAST.length,
-      c = (i * 31) % CITY.length;
-    const label = i % 10 === 9
-      ? `${LAST[b]} ${CO[(i * 13) % CO.length]} LLC`
-      : `${FIRST[a]} ${LAST[b]}`;
-    out.push({
-      id: `row-${i}`,
-      label: i % 10 === 9 ? label : `${label}`,
-      hint: `${CITY[c]} · row ${i}`,
-    });
-  }
-  return out;
-}
+import { demoRows } from "../../lib/search-select-demo.ts";
 
 export default define.page(function SearchSelectDev() {
   if (Deno.env.get("DENO_DEPLOY")) throw new HttpError(404);
-  const options = rows();
+  const options = demoRows();
   return (
     <>
       <Head>
