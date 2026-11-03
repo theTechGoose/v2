@@ -1,7 +1,7 @@
 {
   "tasks": {
     "start": "AGENTS_LLM_CLIENT=openai TRANSCRIPTION_CLIENT=openai deno run -A --env-file=../.env --unstable-kv bootstrap/mod.ts",
-    "dev":   "AGENTS_LLM_CLIENT=openai TRANSCRIPTION_CLIENT=openai deno run -A --env-file=../.env --watch --unstable-kv bootstrap/mod.ts",
+    "dev": "AGENTS_LLM_CLIENT=openai TRANSCRIPTION_CLIENT=openai deno run -A --env-file=../.env --watch --unstable-kv bootstrap/mod.ts",
     "test": "deno test -A --unstable-kv --parallel",
     "wipe": "deno run -A --unstable-kv scripts/wipe.ts"
   },
@@ -27,7 +27,8 @@
     "@profile/": "./src/users/",
     "@agents/": "./src/agents/",
     "@analytics/": "./src/analytics/",
-    "@files/": "./src/files/"
+    "@files/": "./src/files/",
+    "@field/": "./src/field/"
   },
   "compilerOptions": {
     "experimentalDecorators": true,

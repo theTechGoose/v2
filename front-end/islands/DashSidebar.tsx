@@ -51,6 +51,23 @@ const NAV: NavEntry[] = [
     countKey: "invoices",
   },
   { id: "payments", icon: "pay", label: "Payments", href: "/payments" },
+  // REQ-143: the field module — recurring maintenance on the existing customers,
+  // billed through the existing invoices.
+  {
+    id: "subscriptions",
+    icon: "repeat",
+    label: "Subscriptions",
+    href: "/field/subscriptions",
+  },
+  {
+    id: "assignments",
+    icon: "map",
+    label: "Assignments",
+    href: "/field/assignments",
+  },
+  { id: "tasks", icon: "cal", label: "Tasks", href: "/field/tasks" },
+  { id: "batches", icon: "batch", label: "Batches", href: "/field/batches" },
+  { id: "workers", icon: "hardhat", label: "Workers", href: "/field/workers" },
 ];
 
 interface Props {
@@ -356,6 +373,25 @@ export default function DashSidebar(
               /* Roadmap p.4: removed the duplicate "Settings" nav link — the user block
               above (which opens /settings) is the single entry point. */
             }
+            {
+              /* REQ-143: the worker screen is always one click away — it is a
+              separate login (cell + PIN), so this is a plain link. */
+            }
+            <a
+              href="/worker"
+              class="nav-item"
+              style="color:rgba(255,255,255,0.7)"
+              data-cy="nav-worker-view"
+            >
+              <span class="nav-item__icon">
+                <I d={ICN.hardhat} size={18} />
+              </span>
+              {!collapsed && (
+                <span class="nav-item__label">
+                  {tFor(lang, "nav.workerView")}
+                </span>
+              )}
+            </a>
             <button
               type="button"
               class="nav-item nav-item--logout"
