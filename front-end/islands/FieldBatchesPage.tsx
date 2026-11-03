@@ -1,0 +1,432 @@
+/**
+ * REQ-143 — /field/batches: the office pulls the completed, un-invoiced tasks of
+ * a date range into one DRAFT invoice per customer (REQ-142), reviews the
+ * drafts as cards, ticks the ones to send, and sends. Earlier batches are listed
+ * below. Invoices themselves are the existing feature (REQ-137) — a card only
+ * links to /invoices; nothing is edited here.
+ *
+ * Ported from a2z/web/lotes.html (minus the demo driver and the inline line
+ * editor, which belongs to the invoices page).
+ */
+import { useEffect, useState } from "preact/hooks";
+import {
+  type BatchInvoice,
+  type BatchView,
+  fieldClient,
+  type PullSummary,
+} from "../clients/field.ts";
+import FieldHead from "../components/FieldHead.tsx";
+import { ApiError } from "../lib/api.ts";
+import { I, ICN } from "../lib/dash-icons.tsx";
+import { fmtMoneyExact, shiftIso, todayIso } from "../lib/field.ts";
+import { langSignal, t, type Vars } from "../lib/i18n.ts";
+
+/** "{n} invoice(s)" → "1 invoice" / "3 invoices" (the lang files carry the "(s)") */
+function tp(key: string, vars: Vars): string {
+  return t(key, vars).replace(
+    /\((s|es)\)/g,
+    (_m, x: string) => (vars.n === 1 ? "" : x),
+  );
+}
+
+const KNOWN_STATUS = new Set([
+  "draft",
+  "sent",
+  "paid",
+  "void",
+  "claimed",
+  "scheduled",
+]);
+
+function statusLabel(status: string): string {
+  return KNOWN_STATUS.has(status) ? t(`field.lt.status.${status}`) : status;
+}
+
+function statusChip(status: string): string {
+  if (status === "paid") return "chip chip--green";
+  if (status === "sent") return "chip chip--teal";
+  if (status === "void") return "chip chip--muted";
+  return "chip";
+}
+
+/** "Oct 12, 2026" / "12 oct 2026" */
+function fmtD(iso: string, lang: "en" | "es"): string {
+  const d = new Date(`${iso}T00:00:00`);
+  return d.toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function errorMessage(e: unknown): string {
+  if (e instanceof ApiError) {
+    const b = e.body as { error?: string; message?: string } | null;
+    if (b && typeof b === "object") {
+      if (typeof b.error === "string" && b.error) return b.error;
+      if (typeof b.message === "string" && b.message) return b.message;
+    }
+  }
+  return t("field.common.error");
+}
+
+const batchTotal = (b: BatchView) =>
+  b.invoices.filter((i) => i.status !== "void").reduce(
+    (s, i) => s + i.amount,
+    0,
+  );
+
+export default function FieldBatchesPage() {
+  const lang = langSignal.value;
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [batches, setBatches] = useState<BatchView[]>([]);
+  const [current, setCurrent] = useState<BatchView | null>(null);
+  const [summary, setSummary] = useState<PullSummary | null>(null);
+  const [flash, setFlash] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  /** a send refused with 409 because of a $0 line — offer "Send anyway" */
+  const [zeroBlocked, setZeroBlocked] = useState(false);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState<"pull" | "send" | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Default range: the last two weeks. Resolved in an effect — the browser's
+  // day, not the server's.
+  useEffect(() => {
+    const today = todayIso();
+    setFrom(shiftIso(today, -14));
+    setTo(today);
+  }, []);
+
+  async function load(keepId?: string): Promise<BatchView[]> {
+    const rows = (await fieldClient.batches())
+      .filter((b) => b.invoices.length > 0)
+      .sort((a, b) => b.from.localeCompare(a.from));
+    setBatches(rows);
+    if (keepId) {
+      const found = rows.find((b) => b.id === keepId);
+      if (found) setCurrent(found);
+    }
+    return rows;
+  }
+
+  useEffect(() => {
+    load()
+      .then((rows) => setCurrent((c) => c ?? rows[0] ?? null))
+      .catch((e) => setError(errorMessage(e)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function pull() {
+    if (busy || !from || !to) return;
+    setBusy("pull");
+    setError(null);
+    setZeroBlocked(false);
+    try {
+      const r = await fieldClient.pull(from, to);
+      setSummary(r.summary);
+      if (r.invoices.length) {
+        setFlash(
+          tp("field.lt.pulled", {
+            n: r.invoices.length,
+            lines: r.invoices.reduce(
+              (s, i) => s + (i.lineItems?.length ?? 0),
+              0,
+            ),
+          }),
+        );
+        setChecked(
+          new Set(
+            r.invoices.filter((i) => i.status === "draft").map((i) => i.id),
+          ),
+        );
+        setCurrent(r);
+        await load(r.id);
+      } else {
+        setFlash(t("field.lt.nothing"));
+        setChecked(new Set());
+        await load();
+      }
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function send(allowZero: boolean) {
+    if (busy || !current || checked.size === 0) return;
+    setBusy("send");
+    setError(null);
+    try {
+      const r = await fieldClient.send(current.id, [...checked], allowZero);
+      setZeroBlocked(false);
+      setFlash(tp("field.lt.sent", { n: r.sent }));
+      if (r.failed.length) {
+        setError(
+          r.failed.map((f) => {
+            const inv = current.invoices.find((i) => i.id === f.invoiceId);
+            return `${inv?.customerName ?? f.invoiceId}: ${f.reason}`;
+          }).join(" · "),
+        );
+      }
+      setChecked(new Set());
+      setCurrent(r.batch);
+      await load(r.batch.id);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        setZeroBlocked(true);
+        setError(`${errorMessage(e)} — ${t("field.lt.zeroConfirm")}`);
+      } else {
+        setError(errorMessage(e));
+      }
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function openBatch(b: BatchView) {
+    setCurrent(b);
+    setSummary(null);
+    setFlash("");
+    setError(null);
+    setZeroBlocked(false);
+    setChecked(new Set());
+  }
+
+  function toggle(id: string, on: boolean) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+    setZeroBlocked(false);
+  }
+
+  const drafts = current
+    ? current.invoices.filter((i) => i.status === "draft")
+    : [];
+  const allChecked = drafts.length > 0 &&
+    drafts.every((i) => checked.has(i.id));
+
+  return (
+    <>
+      <FieldHead
+        eyebrow={t("field.lt.eyebrow")}
+        title={t("field.lt.title")}
+        sub={t("field.lt.sub")}
+      />
+
+      <div class="panel">
+        <div class="row">
+          <label class="field">
+            {t("field.lt.from")}
+            <input
+              type="date"
+              data-cy="lt-from"
+              value={from}
+              onInput={(e) => setFrom((e.target as HTMLInputElement).value)}
+            />
+          </label>
+          <label class="field">
+            {t("field.lt.to")}
+            <input
+              type="date"
+              data-cy="lt-to"
+              value={to}
+              onInput={(e) => setTo((e.target as HTMLInputElement).value)}
+            />
+          </label>
+          <button
+            type="button"
+            class="btn btn--pink"
+            data-cy="lt-pull"
+            disabled={busy !== null || !from || !to}
+            onClick={pull}
+          >
+            <I d={ICN.batch} size={14} />
+            {busy === "pull" ? t("field.common.loading") : t("field.lt.pull")}
+          </button>
+        </div>
+        {flash && (
+          <div class="chip chip--green" style="margin-top:12px">{flash}</div>
+        )}
+        {summary && (
+          <div class="hint" data-cy="lt-summary" style="margin-top:8px">
+            {t("field.lt.summary", {
+              pullable: summary.pullable,
+              skipped: summary.skipped,
+              deferred: summary.deferred,
+              open: summary.open,
+              already: summary.alreadyInvoiced,
+            })}
+            {summary.zeroPriced > 0 && (
+              <>
+                {" · "}
+                <span class="chip chip--pink">
+                  {t("field.lt.zero", { n: summary.zeroPriced })}
+                </span>
+              </>
+            )}
+          </div>
+        )}
+        {error && <p class="alert">{error}</p>}
+      </div>
+
+      {current && (
+        <div class="panel">
+          <h3 class="panel__title">
+            {t("field.lt.batch")} {fmtD(current.from, lang)} →{" "}
+            {fmtD(current.to, lang)}{" "}
+            <span class="count">
+              {tp("field.lt.invoices", { n: current.invoices.length })}
+            </span>
+            <span style="flex:1"></span>
+            {drafts.length > 0 && (
+              <>
+                <label style="font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center">
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    onChange={(e) => {
+                      const on = (e.target as HTMLInputElement).checked;
+                      setChecked(
+                        new Set(on ? drafts.map((i) => i.id) : []),
+                      );
+                      setZeroBlocked(false);
+                    }}
+                  />
+                  {t("field.lt.selectAll")}
+                </label>
+                <button
+                  type="button"
+                  class="btn btn--green btn--sm"
+                  data-cy="lt-send"
+                  disabled={busy !== null || checked.size === 0}
+                  onClick={() => send(false)}
+                >
+                  <I d={ICN.send} size={13} />
+                  {t("field.lt.send")}
+                </button>
+                {zeroBlocked && (
+                  <button
+                    type="button"
+                    class="btn btn--pink btn--sm"
+                    data-cy="lt-send-zero"
+                    disabled={busy !== null || checked.size === 0}
+                    onClick={() => send(true)}
+                  >
+                    <I d={ICN.send} size={13} />
+                    {t("field.lt.sendAnyway")}
+                  </button>
+                )}
+              </>
+            )}
+          </h3>
+          <div class="hint" style="margin-bottom:10px">
+            {t("field.lt.noteHint")} ·{" "}
+            <b>{t("field.lt.total")}: {fmtMoneyExact(batchTotal(current))}</b>
+          </div>
+          {current.invoices.map((inv) => (
+            <InvoiceCard
+              key={inv.id}
+              inv={inv}
+              checked={checked.has(inv.id)}
+              onToggle={(on) => toggle(inv.id, on)}
+            />
+          ))}
+        </div>
+      )}
+
+      <div class="panel">
+        <h3 class="panel__title">{t("field.lt.past")}</h3>
+        {loading
+          ? <div class="hint">{t("field.common.loading")}</div>
+          : batches.length
+          ? (
+            <table class="table">
+              <tbody>
+                {batches.map((b) => (
+                  <tr
+                    key={b.id}
+                    data-cy="lt-past"
+                    style={`cursor:pointer${
+                      current?.id === b.id ? ";font-weight:700" : ""
+                    }`}
+                    onClick={() => openBatch(b)}
+                  >
+                    <td>{fmtD(b.from, lang)} → {fmtD(b.to, lang)}</td>
+                    <td>
+                      {t("field.lt.counts", {
+                        d: b.invoices.filter((i) => i.status === "draft")
+                          .length,
+                        s: b.invoices.filter((i) => i.status === "sent")
+                          .length,
+                        p: b.invoices.filter((i) => i.status === "paid")
+                          .length,
+                      })}
+                    </td>
+                    <td class="money">{fmtMoneyExact(batchTotal(b))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+          : <div class="hint">{t("field.lt.noPast")}</div>}
+      </div>
+    </>
+  );
+}
+
+function InvoiceCard(
+  { inv, checked, onToggle }: {
+    inv: BatchInvoice;
+    checked: boolean;
+    onToggle: (on: boolean) => void;
+  },
+) {
+  const draft = inv.status === "draft";
+  const lines = inv.lineItems ?? [];
+  return (
+    <div
+      class={`inv${draft ? "" : " inv--sent"}`}
+      data-cy="lt-invoice"
+      data-id={inv.id}
+    >
+      <div class="inv__head">
+        {draft && (
+          <input
+            type="checkbox"
+            data-cy="lt-check"
+            checked={checked}
+            onChange={(e) => onToggle((e.target as HTMLInputElement).checked)}
+          />
+        )}
+        <span class="inv__client">{inv.customerName}</span>
+        <span class={statusChip(inv.status)}>{statusLabel(inv.status)}</span>
+        {draft && inv.zeroLines > 0 && (
+          <span class="chip chip--pink">
+            {t("field.lt.zero", { n: inv.zeroLines })}
+          </span>
+        )}
+        <span class="inv__total">{fmtMoneyExact(inv.amount)}</span>
+      </div>
+      <div class="inv__line">
+        {lines.map((l, i) => (
+          <div key={i}>
+            {l.description} — {fmtMoneyExact(l.price)}
+          </div>
+        ))}
+        <a
+          href="/invoices"
+          style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-weight:700;color:var(--brand-teal)"
+        >
+          <I d={ICN.invoice} size={13} />
+          {t("field.lt.openInvoices")}
+        </a>
+      </div>
+    </div>
+  );
+}

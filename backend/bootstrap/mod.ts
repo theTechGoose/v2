@@ -9,6 +9,7 @@ import { PaperworkModule } from "@paperwork/mod-root.ts";
 import { CommunicationModule } from "@communication/mod-root.ts";
 import { FilesModule } from "@files/mod-root.ts";
 import { AnalyticsModule } from "@analytics/mod-root.ts";
+import { FieldModule } from "@field/mod-root.ts";
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { AnalyticsModule } from "@analytics/mod-root.ts";
     CommunicationModule,
     FilesModule,
     AnalyticsModule,
+    FieldModule,
   ],
 })
 class AppModule {}
