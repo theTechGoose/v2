@@ -1,0 +1,86 @@
+/* REQ-136 — SearchSelect island (islands/SearchSelect.tsx). Uses the dashboard tokens when present. */
+.ss {
+  position: relative;
+  font: inherit;
+  color: var(--fg, #1a535c);
+  --ss-border: var(--border, rgba(100, 69, 54, 0.16));
+  --ss-focus: var(--border-focus, #519843);
+  --ss-raised: var(--bg-raised, #fff);
+  --ss-muted: var(--fg-muted, rgba(26, 83, 92, 0.72));
+  --ss-hover: var(--bg-sunken, #eef7ee);
+}
+.ss__field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--ss-raised);
+  border: 1.5px solid var(--ss-border);
+  border-radius: 12px;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+.ss--open .ss__field,
+.ss__field:focus-within {
+  border-color: var(--ss-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ss-focus) 22%, transparent);
+}
+.ss__icon { width: 18px; height: 18px; color: var(--ss-muted); flex: 0 0 auto; }
+.ss__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  padding: 11px 0;
+  color: inherit;
+}
+.ss__clear {
+  border: 0;
+  background: transparent;
+  color: var(--ss-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+.ss__clear:hover { background: var(--ss-hover); }
+.ss__pop {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--ss-raised);
+  border: 1px solid var(--ss-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(26, 83, 92, 0.16);
+  overflow: hidden;
+}
+.ss__list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.ss__opt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.ss__opt--active { background: var(--ss-hover); }
+.ss__opt--picked .ss__label { font-weight: 600; }
+.ss__label { font-size: 15px; }
+.ss__hint { font-size: 12.5px; color: var(--ss-muted); }
+.ss__empty, .ss__more {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--ss-muted);
+}
+.ss__more { border-top: 1px solid var(--ss-border); background: color-mix(in srgb, var(--ss-hover) 50%, transparent); }
