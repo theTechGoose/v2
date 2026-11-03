@@ -6,6 +6,7 @@
  */
 import { Injectable } from "#danet/core";
 import { onRealDeploy } from "@core/business/real-deploy/mod.ts";
+import { FieldError } from "@field/dto/field.ts";
 
 export interface Geocoder {
   geocode(address: string): Promise<{ lat: number; lng: number }>;
@@ -39,8 +40,11 @@ export class FakeGeocoder implements Geocoder {
   calls = 0;
   geocode(address: string): Promise<{ lat: number; lng: number }> {
     this.calls++;
-    const key = address.toLowerCase().replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
-    for (const [k, v] of Object.entries(KNOWN)) if (key.startsWith(k)) return Promise.resolve(v);
+    const key = address.toLowerCase().replace(/[.,]/g, "").replace(/\s+/g, " ")
+      .trim();
+    for (const [k, v] of Object.entries(KNOWN)) {
+      if (key.startsWith(k)) return Promise.resolve(v);
+    }
     const a = hash(key), b = hash(key + "|lng");
     return Promise.resolve({ lat: 33.60 + a * 0.18, lng: -79.02 + b * 0.16 });
   }
@@ -49,12 +53,16 @@ export class FakeGeocoder implements Geocoder {
 export class MapboxGeocoder implements Geocoder {
   constructor(private token: string) {}
   async geocode(address: string): Promise<{ lat: number; lng: number }> {
-    const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(address)}&country=us&limit=1&access_token=${this.token}`;
+    const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${
+      encodeURIComponent(address)
+    }&country=us&limit=1&access_token=${this.token}`;
     const r = await fetch(url);
     if (!r.ok) throw new Error(`mapbox ${r.status}`);
     const j = await r.json();
     const [lng, lat] = j.features?.[0]?.geometry?.coordinates ?? [];
-    if (typeof lat !== "number") throw new Error("mapbox: no result for that address");
+    if (typeof lat !== "number") {
+      throw new Error("mapbox: no result for that address");
+    }
     return { lat, lng };
   }
 }
@@ -62,15 +70,24 @@ export class MapboxGeocoder implements Geocoder {
 /** the module's one geocoder — injectable so a test can read the fake's call count */
 @Injectable()
 export class FieldGeocoder implements Geocoder {
-  readonly inner: Geocoder;
+  /** null on the real deploy without MAPBOX_TOKEN — the app still boots; a
+   *  geocode then answers 503 instead of the whole app failing to start */
+  readonly inner: Geocoder | null;
   constructor() {
     if (onRealDeploy()) {
       const token = Deno.env.get("MAPBOX_TOKEN");
-      if (!token) throw new Error("MAPBOX_TOKEN is required on the real deploy (field geocoding)");
-      this.inner = new MapboxGeocoder(token);
+      this.inner = token ? new MapboxGeocoder(token) : null;
+      if (!token) {
+        console.error(
+          "[field] MAPBOX_TOKEN is not set — subscriptions cannot be geocoded until it is",
+        );
+      }
     } else this.inner = new FakeGeocoder();
   }
   geocode(address: string) {
+    if (!this.inner) {
+      throw new FieldError("geocoding is not configured (MAPBOX_TOKEN)", 503);
+    }
     return this.inner.geocode(address);
   }
   get fake(): FakeGeocoder | null {

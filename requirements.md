@@ -1008,3 +1008,6 @@ The plan-picker stories "REQ-060: the phone typed into login is a CRM customer b
 
 ### REQ-139/141 REVISION (2026-11-03) — PUT, not PATCH
 The edit verbs read `PUT /field/subscriptions/:id` and `PUT /field/tasks/:id` — the verb this app's own paperwork controllers use (`invoice-controller` has no PATCH); the front-end client (`front-end/clients/field.ts`) calls PUT. Same bodies, same answers. The int tests name the verb they call.
+
+### REQ-139 AMENDMENT (2026-11-03) — a missing Mapbox token never stops the app
+On the real deploy `FieldGeocoder` no longer throws in its constructor when `MAPBOX_TOKEN` is unset (Danet builds every injectable at boot, so that would have taken the whole app down with the module): it logs once at boot and a subscription create/address change answers 503 "geocoding is not configured (MAPBOX_TOKEN)" until the token is set. The fake is unchanged. `deno test -A --unstable-kv src/field/` → `35 passed | 0 failed`.
