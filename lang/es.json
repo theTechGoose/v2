@@ -2961,5 +2961,11 @@
   "field.asg.noRegions": "Aún no hay zonas — crea suscripciones y se agrupan solas.",
   "field.lt.sendAnyway": "Enviar de todos modos",
   "field.lt.openInvoices": "Abrir en Facturas",
-  "worker.docTitle": "Mis tareas · DocuMonster"
+  "worker.docTitle": "Mis tareas · DocuMonster",
+  "clientsBoard.panel.subs": "Suscripciones",
+  "clientsBoard.panel.subsNone": "Sin suscripciones",
+  "clientsBoard.panel.subsOpen": "Abrir Suscripciones",
+  "clientsBoard.subsCount.one": "{n} suscripción",
+  "clientsBoard.subsCount.other": "{n} suscripciones",
+  "clientsBoard.panel.perVisit": "por visita"
 }

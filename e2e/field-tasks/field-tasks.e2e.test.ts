@@ -272,3 +272,74 @@ Deno.test("REQ-144: picking a customer with an address on file fills the service
       "a typed address survives a re-pick",
     );
   }));
+
+Deno.test("REQ-145: Ana has two subscriptions and Bob one — Ana's card says 2 subscriptions and its panel lists both addresses with their prices; Bob's lists his one", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const mk = async (name: string) =>
+      (await (await http("/api/customers", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({
+          name,
+          email: `${
+            name.toLowerCase().replace(/\W+/g, ".")
+          }@blackhole.postmarkapp.com`,
+        }),
+      })).json()).id as string;
+    const ana = await mk("Ana Torres"), bob = await mk("Bob Marshall");
+    const subscribe = async (
+      customerId: string,
+      address: string,
+      items: [string, number][],
+    ) => {
+      const r = await http("/api/field/subscriptions", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({
+          customerId,
+          address,
+          cadence: "weekly",
+          intervalWeeks: 1,
+          items: items.map(([taskTypeName, priceCents]) => ({
+            taskTypeName,
+            priceCents,
+          })),
+        }),
+      });
+      expect(r.status === 201, `subscription at ${address} (${r.status})`);
+      await r.body?.cancel();
+    };
+    await subscribe(ana, "4601 Dick Pond Rd, Myrtle Beach, SC", [[
+      "Lawn cut",
+      6500,
+    ]]);
+    await subscribe(ana, "2201 River Oaks Dr, Myrtle Beach, SC", [[
+      "Lawn cut",
+      8000,
+    ], ["Hedge trim", 4000]]);
+    await subscribe(bob, "6219 Forestbrook Rd, Myrtle Beach, SC", [[
+      "Lawn cut",
+      7500,
+    ]]);
+    await page.goto("/customers");
+    const anaCard = page.locator(".ccard2", { hasText: "Ana Torres" });
+    await anaCard.locator("[data-cy='ccard2-subs-count']").waitFor({
+      timeout: 20_000,
+    });
+    await expect.see("2 subscriptions");
+    await anaCard.click();
+    const anaRows = anaCard.locator("[data-cy='ccard2-sub']");
+    await anaRows.first().waitFor({ timeout: 10_000 });
+    expect.eq(await anaRows.count(), 2, "Ana's panel lists two subscriptions");
+    await expect.see("4601 Dick Pond Rd");
+    await expect.see("2201 River Oaks Dr");
+    await expect.see("$120.00");
+    await page.keyboard.press("Escape");
+    const bobCard = page.locator(".ccard2", { hasText: "Bob Marshall" });
+    await bobCard.click();
+    const bobRows = bobCard.locator("[data-cy='ccard2-sub']");
+    await bobRows.first().waitFor({ timeout: 10_000 });
+    expect.eq(await bobRows.count(), 1, "Bob's panel lists his one");
+    await expect.see("6219 Forestbrook Rd");
+  }));

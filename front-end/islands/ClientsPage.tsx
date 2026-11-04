@@ -20,6 +20,8 @@ import {
   TopClients,
 } from "../components/ClientsSections.tsx";
 import ClientsBoard, { filterFromSearch } from "./ClientsBoard.tsx";
+import { fieldClient, type SubscriptionView } from "../clients/field.ts";
+import { subscriptionsByCustomer } from "../lib/field.ts";
 import {
   CardGridSkeleton,
   PageHeaderSkeleton,
@@ -47,6 +49,21 @@ const SEARCH_DEBOUNCE_MS = 250;
 export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
   const lang = langSignal.value;
   const [s, setS] = useState<State>(INITIAL);
+  // REQ-145 — the account's subscriptions, once, grouped by customer for the cards
+  const [subsByCustomer, setSubsByCustomer] = useState<
+    Map<string, SubscriptionView[]>
+  >(new Map());
+  useEffect(() => {
+    let alive = true;
+    fieldClient.subscriptions().then((list) => {
+      if (alive) setSubsByCustomer(subscriptionsByCustomer(list));
+    }).catch(() => {
+      // the cards simply show no subscriptions
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [addOpen, setAddOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addErr, setAddErr] = useState<string | null>(null);
@@ -200,6 +217,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
         totalPages={data.totalPages}
         onPage={setPage}
         lang={lang}
+        subsByCustomer={subsByCustomer}
       >
         <TopClients rows={top.results} lang={lang} />
         {

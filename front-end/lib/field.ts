@@ -69,3 +69,23 @@ export function prefillAddress(
     (!!previous?.address && current.trim() === previous.address.trim());
   return untouched ? picked : current;
 }
+
+/** REQ-145 — the account's subscriptions by customer, oldest first; a customer with none is absent */
+export function subscriptionsByCustomer<
+  T extends { customerId: string; createdAt: string },
+>(list: T[]): Map<string, T[]> {
+  const m = new Map<string, T[]>();
+  for (
+    const s of [...list].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  ) {
+    const rows = m.get(s.customerId);
+    if (rows) rows.push(s);
+    else m.set(s.customerId, [s]);
+  }
+  return m;
+}
+
+/** REQ-145 — what one visit of a subscription bills: its items' sum */
+export function perVisitCents(s: { items: { priceCents: number }[] }): number {
+  return s.items.reduce((sum, i) => sum + i.priceCents, 0);
+}
