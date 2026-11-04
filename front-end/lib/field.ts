@@ -51,3 +51,21 @@ export function fmtCell(digits: string): string {
     ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`
     : digits;
 }
+
+/**
+ * REQ-144 — picking a customer on a new subscription fills the service
+ * address with the customer's address on file. Never over what the owner
+ * typed: only an empty box, or one still holding the previous pick's
+ * address, is written; a pick with no address on file changes nothing.
+ */
+export function prefillAddress(
+  current: string,
+  previous: { address?: string } | undefined,
+  next: { address?: string } | undefined,
+): string {
+  const picked = next?.address?.trim();
+  if (!picked) return current;
+  const untouched = !current.trim() ||
+    (!!previous?.address && current.trim() === previous.address.trim());
+  return untouched ? picked : current;
+}

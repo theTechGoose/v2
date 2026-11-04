@@ -216,3 +216,59 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
       "exactly one invoice — one draft per customer",
     );
   }));
+
+Deno.test("REQ-144: picking a customer with an address on file fills the service address; a typed address survives a re-pick", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const mk = async (name: string, address?: string) =>
+      (await (await http("/api/customers", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({
+          name,
+          address,
+          email: `${
+            name.toLowerCase().replace(/\W+/g, ".")
+          }@blackhole.postmarkapp.com`,
+        }),
+      })).json()).id as string;
+    const ana = await mk("Ana Torres", "4601 Dick Pond Rd, Myrtle Beach, SC");
+    const bob = await mk(
+      "Bob Marshall",
+      "6219 Forestbrook Rd, Myrtle Beach, SC",
+    );
+    const noAddr = await mk("Nadia Noaddress");
+    await page.goto("/field/subscriptions");
+    await page.locator("[data-cy='subs-new']").click();
+    const sel = page.locator("[data-cy='subs-customer']");
+    await sel.locator(`option[value='${bob}']`).waitFor({
+      state: "attached",
+      timeout: 15_000,
+    });
+    const address = page.locator("[data-cy='subs-address']");
+    await sel.selectOption(ana);
+    expect.eq(
+      await address.inputValue(),
+      "4601 Dick Pond Rd, Myrtle Beach, SC",
+      "Ana's address fills the box",
+    );
+    await sel.selectOption(bob);
+    expect.eq(
+      await address.inputValue(),
+      "6219 Forestbrook Rd, Myrtle Beach, SC",
+      "the next pick replaces the previous pick's address",
+    );
+    await sel.selectOption(noAddr);
+    expect.eq(
+      await address.inputValue(),
+      "6219 Forestbrook Rd, Myrtle Beach, SC",
+      "a customer with no address leaves the box alone",
+    );
+    await address.fill("12 My Own St, Conway, SC");
+    await sel.selectOption(ana);
+    expect.eq(
+      await address.inputValue(),
+      "12 My Own St, Conway, SC",
+      "a typed address survives a re-pick",
+    );
+  }));
