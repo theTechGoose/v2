@@ -25,3 +25,37 @@ Deno.test("REQ-144 prefillAddress — a customer with no address on file leaves 
   assertEquals(prefillAddress(ana.address, ana, none), ana.address);
   assertEquals(prefillAddress("", undefined, undefined), "");
 });
+
+import { perVisitCents, subscriptionsByCustomer } from "./field.ts";
+
+const sub = (
+  id: string,
+  customerId: string,
+  prices: number[],
+  createdAt: string,
+) => ({
+  id,
+  customerId,
+  createdAt,
+  items: prices.map((priceCents, i) => ({
+    taskTypeId: `t${i}`,
+    taskTypeName: `T${i}`,
+    priceCents,
+  })),
+});
+
+Deno.test("REQ-145 subscriptionsByCustomer — grouped by customer, creation order kept, a customer with none is absent", () => {
+  const m = subscriptionsByCustomer([
+    sub("s2", "ana", [6500], "2026-11-02T00:00:00Z"),
+    sub("s3", "bob", [7500, 4000], "2026-11-03T00:00:00Z"),
+    sub("s1", "ana", [6000], "2026-11-01T00:00:00Z"),
+  ]);
+  assertEquals(m.get("ana")?.map((s) => s.id), ["s1", "s2"]);
+  assertEquals(m.get("bob")?.map((s) => s.id), ["s3"]);
+  assertEquals(m.get("camila"), undefined);
+});
+
+Deno.test("REQ-145 perVisitCents — the items' sum", () => {
+  assertEquals(perVisitCents(sub("s3", "bob", [7500, 4000], "")), 11500);
+  assertEquals(perVisitCents(sub("s0", "bob", [], "")), 0);
+});

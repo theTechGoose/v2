@@ -13,6 +13,8 @@ import { useEffect, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { tFor } from "../lib/i18n.ts";
 import type { ClientsFilter, CustomerCard } from "../clients/clients.ts";
+import type { SubscriptionView } from "../clients/field.ts";
+import { fmtMoneyExact, perVisitCents } from "../lib/field.ts";
 import {
   addressFor,
   balanceDisplay,
@@ -77,6 +79,8 @@ function SinceBadge({ days, lang }: { days: number; lang: "en" | "es" }) {
 
 interface CardProps {
   c: CustomerCard;
+  /** REQ-145 — the customer's subscriptions (the field module's), oldest first */
+  subs: SubscriptionView[];
   idx: number;
   isOpen: boolean;
   onOpen: () => void;
@@ -84,7 +88,9 @@ interface CardProps {
   lang: "en" | "es";
 }
 
-function ClientCard({ c, idx, isOpen, onOpen, onClose, lang }: CardProps) {
+function ClientCard(
+  { c, subs, idx, isOpen, onOpen, onClose, lang }: CardProps,
+) {
   const mood = moodFor(c, lang);
   const initials = initialsOf(c.name);
   // NW-36 (REQ-013): the app never collects a customer segment, so no
@@ -141,6 +147,22 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose, lang }: CardProps) {
           <span>{c.lastWhenRel}</span>
         </div>
         <p class="ccard2__story">{story}</p>
+        {subs.length > 0 && (
+          /* REQ-145: the count on the face; the panel lists them */
+          <div
+            class="ccard2__biz"
+            data-cy="ccard2-subs-count"
+            style="margin-top:6px"
+          >
+            <I d={ICN.repeat} size={12} sw={2.2} /> {tFor(
+              lang,
+              subs.length === 1
+                ? "clientsBoard.subsCount.one"
+                : "clientsBoard.subsCount.other",
+              { n: subs.length },
+            )}
+          </div>
+        )}
       </div>
       <div class="ccard2__foot">
         <button class="ccard2__nudge" type="button">
@@ -229,6 +251,56 @@ function ClientCard({ c, idx, isOpen, onOpen, onClose, lang }: CardProps) {
             </span>
           </div>
         </div>
+        {/* REQ-145: every subscription of this customer, each a link to the field page */}
+        <div
+          class="ccard2__panel-rows"
+          data-cy="ccard2-subs"
+          style="margin-top:8px;max-height:150px;overflow-y:auto"
+        >
+          <div class="ccard2__panel-row" style="pointer-events:none">
+            <span class="ccard2__panel-row-icon">
+              <I d={ICN.repeat} size={13} sw={2.2} />
+            </span>
+            <span class="ccard2__panel-row-text">
+              <div class="ccard2__panel-row-lbl">
+                {tFor(lang, "clientsBoard.panel.subs")}
+                {subs.length ? ` · ${subs.length}` : ""}
+              </div>
+              {subs.length === 0 && (
+                <div class="ccard2__panel-row-val">
+                  {tFor(lang, "clientsBoard.panel.subsNone")}
+                </div>
+              )}
+            </span>
+          </div>
+          {subs.map((s) => (
+            <a
+              class="ccard2__panel-row"
+              href="/field/subscriptions"
+              key={s.id}
+              data-cy="ccard2-sub"
+              title={tFor(lang, "clientsBoard.panel.subsOpen")}
+            >
+              <span class="ccard2__panel-row-icon">
+                <I d={ICN.pin} size={13} sw={2.2} />
+              </span>
+              <span class="ccard2__panel-row-text">
+                <div class="ccard2__panel-row-lbl">
+                  {s.schedule[lang]} · {s.active
+                    ? tFor(lang, "field.subs.active")
+                    : tFor(lang, "field.subs.paused")}
+                </div>
+                <div class="ccard2__panel-row-val">
+                  {s.address} · {fmtMoneyExact(perVisitCents(s))}{" "}
+                  {tFor(lang, "clientsBoard.panel.perVisit")}
+                </div>
+              </span>
+              <span class="ccard2__panel-row-arrow">
+                <I d={ICN.arrow} size={12} sw={2.4} />
+              </span>
+            </a>
+          ))}
+        </div>
         <div class="ccard2__panel-actions">
           <button class="ccard2__panel-act" type="button">
             <I d={ICN.msg} size={12} sw={2.4} />{" "}
@@ -263,6 +335,8 @@ interface BoardProps {
   onPage: (page: number) => void;
   children?: ComponentChildren;
   lang?: "en" | "es";
+  /** REQ-145 — the account's subscriptions by customer id */
+  subsByCustomer?: Map<string, SubscriptionView[]>;
 }
 
 export default function ClientsBoard(
@@ -279,6 +353,7 @@ export default function ClientsBoard(
     onPage,
     children,
     lang = "en",
+    subsByCustomer,
   }: BoardProps,
 ) {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -349,6 +424,7 @@ export default function ClientsBoard(
             <ClientCard
               key={c.id}
               c={c}
+              subs={subsByCustomer?.get(c.id) ?? []}
               idx={i}
               isOpen={openId === c.id}
               onOpen={() => setOpenId(c.id)}
