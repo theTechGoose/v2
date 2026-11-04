@@ -17,7 +17,7 @@ import { clientsClient } from "../clients/clients.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtMoneyExact, todayIso } from "../lib/field.ts";
+import { fmtMoneyExact, prefillAddress, todayIso } from "../lib/field.ts";
 import { langSignal, t } from "../lib/i18n.ts";
 
 /** the cadence <select>'s values: an interval in weeks, or monthly */
@@ -26,6 +26,8 @@ type CadenceChoice = "1" | "2" | "3" | "4" | "monthly";
 interface Customer {
   id: string;
   name: string;
+  /** the address on file — REQ-144 fills the service address with it */
+  address?: string;
 }
 
 interface Item {
@@ -143,7 +145,9 @@ async function loadAllCustomers(): Promise<Customer[]> {
   let page = 1;
   for (;;) {
     const res = await clientsClient.list({ page, pageSize: 200 });
-    for (const c of res.items) out.push({ id: c.id, name: c.name });
+    for (const c of res.items) {
+      out.push({ id: c.id, name: c.name, address: c.address });
+    }
     if (page >= res.totalPages || res.items.length === 0) break;
     page++;
   }
@@ -623,10 +627,24 @@ export default function FieldSubscriptionsPage() {
                 required
                 disabled={form.editId !== null}
                 value={form.customerId}
-                onChange={(e) =>
-                  patch({
-                    customerId: (e.currentTarget as HTMLSelectElement).value,
-                  })}
+                onChange={(e) => {
+                  // REQ-144: the pick fills the service address, never over a typed one
+                  const customerId =
+                    (e.currentTarget as HTMLSelectElement).value;
+                  setForm((f) =>
+                    f
+                      ? {
+                        ...f,
+                        customerId,
+                        address: prefillAddress(
+                          f.address,
+                          customers.find((c) => c.id === f.customerId),
+                          customers.find((c) => c.id === customerId),
+                        ),
+                      }
+                      : f
+                  );
+                }}
               >
                 <option value="">{t("field.subs.pickCustomer")}</option>
                 {!customerKnown && form.customerId && (
