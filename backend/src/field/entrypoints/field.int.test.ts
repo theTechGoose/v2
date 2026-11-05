@@ -12,6 +12,19 @@ import { FieldModule } from "@field/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 import { fieldToday, shiftDate } from "@field/domain/business/schedule/mod.ts";
+import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
+import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
+import {
+  FieldTaskStore,
+  FieldWorkerStore,
+  RegionStore,
+  SubscriptionStore,
+  TaskTypeStore,
+} from "@field/domain/data/field-stores/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { SmsService } from "@users/domain/data/sms/mod.ts";
 
 @Module({ imports: [FieldModule] })
 class TestApp {}
@@ -939,7 +952,7 @@ Deno.test("REQ-163 the office deletes a task; an invoiced task is 409; another a
   await withServer(async (call) => {
     const { H, today, task, day } = await todaysRound(call);
     const gone = await call("DELETE", `/field/tasks/${task.id}`, undefined, H);
-    assertEquals([gone.status, gone.body], [200, { ok: true }]);
+    assertEquals([gone.status, gone.body.ok], [200, true]); // REQ-171 adds `texted` to the answer
     const after =
       (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body;
     assertEquals(after.map((t: Row) => t.id), [
@@ -1205,5 +1218,248 @@ Deno.test("REQ-170 a future day materializes on read for the office and the work
       ) => [s.subscriptionId, s.customerName]),
       [[sub.id, "Ana Torres"]],
     );
+  });
+});
+
+/** REQ-171/172 — a Twilio stand-in on a port: every text the app sends lands here; the env points the SmsService at it */
+async function withTwilioStub(
+  fn: (texts: { to: string; body: string }[]) => Promise<void>,
+) {
+  const texts: { to: string; body: string }[] = [];
+  const stub = Deno.serve({ port: 9148, onListen() {} }, async (req) => {
+    const form = new URLSearchParams(await req.text());
+    texts.push({ to: form.get("To") ?? "", body: form.get("Body") ?? "" });
+    return Response.json({ sid: `SM${texts.length}` });
+  });
+  const prev = [
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    "TWILIO_FROM",
+    "TWILIO_BASE_URL",
+  ].map((k) => [k, Deno.env.get(k)] as const);
+  Deno.env.set("TWILIO_ACCOUNT_SID", "ACtest");
+  Deno.env.set("TWILIO_AUTH_TOKEN", "tok");
+  Deno.env.set("TWILIO_FROM", "+15550001111");
+  Deno.env.set("TWILIO_BASE_URL", "http://localhost:9148");
+  try {
+    await fn(texts);
+  } finally {
+    for (const [k, v] of prev) {
+      v === undefined ? Deno.env.delete(k) : Deno.env.set(k, v);
+    }
+    await stub.shutdown();
+  }
+}
+const CUSTOMER_PHONE = "+18435550199";
+
+// REQ-171 — "send text messages to the workers if they get a new one off task for the day" / "… to customers if a one off service is canceled" / "… if their service is canceled or deffered."
+Deno.test("REQ-171 a one-off for today texts the worker, tomorrow's does not; delete / skip / defer text the customer, once", async () => {
+  await withTwilioStub(async (texts) => {
+    await withServer(async (call) => {
+      const { H, today, customer, w, task, day } = await todaysRound(
+        call,
+        "+15125551710",
+      );
+      const workerPhone = "+1" + w.phoneNumber;
+      const toWorker = () =>
+        texts.filter((x) => x.to === workerPhone && !/PIN/.test(x.body));
+      const toCustomer = () => texts.filter((x) => x.to === CUSTOMER_PHONE);
+      // a one-off for today → the worker hears; for tomorrow → nothing
+      await call("POST", "/field/tasks", {
+        customerId: customer.id,
+        date: today,
+        taskTypeName: "Mulch",
+        priceCents: 500,
+        workerId: w.id,
+      }, H);
+      assertEquals(toWorker().length, 1);
+      assert(
+        toWorker()[0].body.includes("Mulch") &&
+          toWorker()[0].body.includes("Ana Torres"),
+        toWorker()[0].body,
+      );
+      await call("POST", "/field/tasks", {
+        customerId: customer.id,
+        date: shiftDate(today, 1),
+        taskTypeName: "Mulch",
+        priceCents: 500,
+        workerId: w.id,
+      }, H);
+      assertEquals(
+        toWorker().length,
+        1,
+        "tomorrow's one-off is not today's news",
+      );
+      // a service added to today's visit → the worker hears again; moved to another worker → that worker hears
+      await call("POST", `/field/tasks/${task.id}/services`, {
+        taskTypeName: "Aeration",
+        priceCents: 1000,
+      }, H);
+      assertEquals(toWorker().length, 2);
+      const w2 = (await call("POST", "/field/workers", {
+        name: "Luis",
+        phoneNumber: "8435550712",
+        pin: "4321",
+      }, H)).body;
+      await call("PUT", `/field/tasks/${task.id}`, { workerId: w2.id }, H);
+      const toLuis = texts.filter((x) =>
+        x.to === "+18435550712" && !/PIN/.test(x.body)
+      );
+      assertEquals(toLuis.length, 1);
+      assert(toLuis[0].body.includes("Cut"), toLuis[0].body);
+      // the office deletes today's Edge → the customer hears it was canceled
+      const edge = day.find((t: Row) => t.taskTypeName === "Edge")!;
+      assertEquals(toCustomer().length, 0);
+      await call("DELETE", `/field/tasks/${edge.id}`, undefined, H);
+      assertEquals(toCustomer().length, 1);
+      assert(
+        /cancel/i.test(toCustomer()[0].body) &&
+          toCustomer()[0].body.includes("Edge"),
+        toCustomer()[0].body,
+      );
+      // the worker marks Cut not done → canceled text; defers Aeration → "moved to" text
+      const login = await call("POST", "/field/worker/login", {
+        phoneNumber: w2.phoneNumber,
+        pin: "4321",
+      });
+      const WC = {
+        cookie: (login.headers.get("set-cookie") ?? "").split(";")[0],
+      };
+      await call("POST", `/field/worker/tasks/${task.id}/skip`, {}, WC);
+      assertEquals(toCustomer().length, 2);
+      assert(toCustomer()[1].body.includes("Cut"), toCustomer()[1].body);
+      await call("POST", `/field/worker/tasks/${task.id}/skip`, {}, WC);
+      assertEquals(toCustomer().length, 2, "skipped twice, told once");
+      const mine = (await call("GET", "/field/tasks", undefined, H))
+        .body as Row[];
+      const aeration = mine.find((t) => t.taskTypeName === "Aeration")!;
+      const login1 = await call("POST", "/field/worker/login", {
+        phoneNumber: w.phoneNumber,
+        pin: "4321",
+      });
+      const WC1 = {
+        cookie: (login1.headers.get("set-cookie") ?? "").split(";")[0],
+      };
+      const deferred = await call(
+        "POST",
+        `/field/worker/tasks/${aeration.id}/defer`,
+        { note: "rain" },
+        WC1,
+      );
+      assertEquals(deferred.status, 200);
+      assertEquals(toCustomer().length, 3);
+      assert(toCustomer()[2].body.includes("Aeration"), toCustomer()[2].body);
+    });
+  });
+});
+
+// REQ-172 — "send text messages to customers at 9 am based on their local time that they are on the schedule for the day"
+Deno.test("REQ-172 the sweep at 09:05 New York texts the day's customers once; Honolulu at the same instant is not due; the minute timer registers", async () => {
+  await withTwilioStub(async (texts) => {
+    await withServer(async (call) => {
+      const { H, today } = await todaysRound(call, "+15125551720");
+      const tz = await call("PUT", "/profile/identity", {
+        businessName: "A2Z Landscape LLC",
+        timezone: "America/New_York",
+      }, H);
+      assertEquals([tz.status, tz.body.timezone], [200, "America/New_York"]);
+      assertEquals(
+        (await call(
+          "PUT",
+          "/profile/identity",
+          { timezone: "Mars/Olympus" },
+          H,
+        )).status,
+        400,
+      );
+      const notices = new FieldNotices(
+        new UserStore(),
+        new BusinessIdentityStore(),
+        new CustomerStore(),
+        new FieldWorkerStore(),
+        new TaskTypeStore(),
+        new SubscriptionStore(),
+        new FieldDay(
+          new SubscriptionStore(),
+          new RegionStore(),
+          new FieldTaskStore(),
+        ),
+        new SmsService(),
+      );
+      const at = new Date(today + "T14:05:00Z"); // 09:05 or 10:05 New York, either way past nine, same date
+      const toCustomer = () => texts.filter((x) => x.to === CUSTOMER_PHONE);
+      const first = await notices.sweep(at);
+      assertEquals([first.accounts, first.texted], [1, 1]);
+      assert(
+        toCustomer()[0].body.includes("A2Z Landscape LLC") &&
+          toCustomer()[0].body.includes("Cut") &&
+          toCustomer()[0].body.includes("Edge"),
+        toCustomer()[0].body,
+      );
+      const second = await notices.sweep(new Date(at.getTime() + 60_000));
+      assertEquals([second.texted, toCustomer().length], [0, 1], "once a day");
+      // the same account in Honolulu: 04:05 local — not due; tomorrow's instant
+      await call(
+        "PUT",
+        "/profile/identity",
+        { timezone: "Pacific/Honolulu" },
+        H,
+      );
+      const third = await notices.sweep(
+        new Date(shiftDate(today, 1) + "T14:05:00Z"),
+      );
+      assertEquals([third.texted, toCustomer().length], [0, 1]);
+      const scheduled: number[] = [];
+      assert(
+        notices.registerSweep((_fn, ms) => {
+          scheduled.push(ms);
+          return 7;
+        }, () => {}),
+        "the minute timer is set",
+      );
+      assertEquals(scheduled, [60_000]);
+    });
+  });
+});
+
+// REQ-170 — the office page and a worker read the same day at the same instant: one round, not two
+Deno.test("REQ-170 two reads of the same day at once make one round; a generated task's id is stable", async () => {
+  await withServer(async (call) => {
+    const H = await login(call, "+15125551701");
+    const customer =
+      (await call("POST", "/customers", { name: "Ana Torres" }, H)).body;
+    const w = (await call("POST", "/field/workers", {
+      name: "Pedro",
+      phoneNumber: "8435550701",
+      pin: "4321",
+    }, H)).body;
+    const sub = (await call("POST", "/field/subscriptions", {
+      customerId: customer.id,
+      address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+      startDate: fieldToday(),
+      items: [{ taskTypeName: "Cut", priceCents: 6500 }],
+    }, H)).body;
+    await call("PUT", `/field/regions/${sub.region.id}/worker`, {
+      workerId: w.id,
+    }, H);
+    const d = shiftDate(fieldToday(), 7);
+    const reads = await Promise.all(
+      [1, 2, 3, 4].map(() =>
+        call("GET", `/field/tasks?date=${d}`, undefined, H)
+      ),
+    );
+    const after = (await call("GET", `/field/tasks?date=${d}`, undefined, H))
+      .body as Row[];
+    assertEquals(
+      after.length,
+      1,
+      `four reads at once: ${
+        reads.map((r) => (r.body as Row[]).length).join(",")
+      } → ${after.length}`,
+    );
+    const ids = new Set(
+      reads.flatMap((r) => (r.body as Row[]).map((t) => t.id)),
+    );
+    assertEquals([...ids], [after[0].id], "every read answered the same task");
   });
 });

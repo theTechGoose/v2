@@ -11,6 +11,7 @@ import { FieldZones } from "@field/domain/coordinators/field-zones/mod.ts";
 import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
 import { FieldBatches } from "@field/domain/coordinators/field-batches/mod.ts";
 import { FieldViews } from "@field/domain/coordinators/field-views/mod.ts";
+import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
 
 /** REQ-137 — field tasks: workers, subscriptions, zones, the day's round, batch invoicing — on the account's customers and invoices. */
 @Module({
@@ -37,6 +38,7 @@ import { FieldViews } from "@field/domain/coordinators/field-views/mod.ts";
     FieldDay,
     FieldBatches,
     FieldViews,
+    FieldNotices,
   ],
 })
 export class FieldModule {}

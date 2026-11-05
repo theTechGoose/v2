@@ -45,6 +45,7 @@ import {
 } from "@field/domain/coordinators/field-zones/mod.ts";
 import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
 import { FieldBatches } from "@field/domain/coordinators/field-batches/mod.ts";
+import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
 import {
   FieldViews,
   safeWorker,
@@ -689,6 +690,7 @@ export class FieldTasksController {
     private subs: SubscriptionStore,
     private regions: RegionStore,
     private customers: CustomerStore,
+    private notices: FieldNotices,
   ) {}
 
   /** REQ-164: a one-off task by hand — one customer, one day, no subscription */
@@ -731,7 +733,11 @@ export class FieldTasksController {
       newId,
     });
     await this.tasks.put(t);
-    return ctx.json(this.views.task(t, await this.views.names(user.id)), 201);
+    const texted = await this.notices.workerNewTask(user.id, t); // REQ-171: today's news reaches the worker
+    return ctx.json(
+      { ...this.views.task(t, await this.views.names(user.id)), texted },
+      201,
+    );
   }
 
   /** REQ-165: the office adds a service to the visit this task belongs to */
@@ -767,8 +773,12 @@ export class FieldTasksController {
       );
     }
     await this.tasks.put(r.task);
+    const texted = await this.notices.workerNewTask(user.id, r.task); // REQ-171
     const n = await this.views.names(user.id);
-    return ctx.json(this.views.task(r.task, n), r.restored ? 200 : 201);
+    return ctx.json(
+      { ...this.views.task(r.task, n), texted },
+      r.restored ? 200 : 201,
+    );
   }
 
   /** REQ-163: the office removes a task; one on an invoice stays */
@@ -785,7 +795,8 @@ export class FieldTasksController {
     // a one-off simply goes; a subscription's task stays as a tombstone so the day's round does not bring it back
     if (t.oneOff) await this.tasks.delete(t);
     else await this.tasks.put({ ...t, deleted: true });
-    return { ok: true };
+    const texted = await this.notices.customerCanceled(user.id, t); // REQ-171
+    return { ok: true, texted };
   }
 
   /** REQ-141/170: the day's round — any day is materialized on read, so it is always current */
@@ -808,9 +819,9 @@ export class FieldTasksController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const d = date ?? fieldToday();
     if (!isValidDate(d)) throw new FieldError("date must be YYYY-MM-DD");
-    const r = await this.day.generate(user.id, d);
+    const skipped = await this.day.unstaffedOn(user.id, d);
     const n = await this.views.names(user.id);
-    return r.skipped.map((s) => ({
+    return skipped.map((s) => ({
       subscriptionId: s.id,
       customerName: n.customer(s.customerId),
       address: s.address,
@@ -880,7 +891,11 @@ export class FieldTasksController {
         );
       }
       await ownWorker(this.workers, user.id, wid);
-      t.workerId = wid;
+      if (wid !== t.workerId) {
+        t.workerId = wid;
+        await this.tasks.put(t);
+        await this.notices.workerNewTask(user.id, t); // REQ-171: the new worker hears, when it is today
+      }
     }
     if ("priceCents" in b) {
       if (t.invoiceId) {

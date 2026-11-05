@@ -132,6 +132,8 @@ export interface BusinessIdentity {
    *  (first enabled) so every existing read keeps working. Unset → derive
    *  from `commsLanguage` (or ["en"]). */
   commsLanguages?: string[];
+  /** REQ-172: the business's IANA time zone — the 9 am schedule texts follow it (default America/New_York) */
+  timezone?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -168,6 +170,11 @@ export class UpdateBusinessIdentityDto {
   @IsArray()
   @IsString({ each: true })
   commsLanguages?: string[];
+
+  /** REQ-172: an IANA zone (validated by the route) */
+  @IsOptional()
+  @IsString()
+  timezone?: string;
 
   @IsOptional()
   @ValidateNested()

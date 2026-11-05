@@ -9,6 +9,7 @@ import { FieldTaskStore, FieldWorkerStore, SubscriptionStore, TaskTypeStore } fr
 import { WorkerSessionStore } from "@field/domain/data/worker-session-store/mod.ts";
 import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
 import { FieldViews } from "@field/domain/coordinators/field-views/mod.ts";
+import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
 import { newId } from "@field/domain/coordinators/field-zones/mod.ts";
 import { addService, canAct, deferTask, findOrCreateTaskType, inActionWindow } from "@field/domain/business/tasks/mod.ts";
 import { fieldToday, isValidDate, shiftDate } from "@field/domain/business/schedule/mod.ts";
@@ -50,6 +51,7 @@ export class FieldWorkerController {
     private types: TaskTypeStore,
     private day: FieldDay,
     private views: FieldViews,
+    private notices: FieldNotices,
   ) {}
 
 
@@ -167,6 +169,7 @@ export class FieldWorkerController {
     t.status = "skipped";
     delete t.completedAt;
     await this.tasks.put(t);
+    await this.notices.customerCanceled(w.userId, t); // REQ-171: the customer hears, once
     return this.views.workerTask(t, await this.views.names(w.userId));
   }
 
@@ -194,6 +197,7 @@ export class FieldWorkerController {
     const already = tomorrow.some((x) => x.subscriptionId === t.subscriptionId && x.taskTypeId === t.taskTypeId);
     const { copy } = deferTask(t, to, String(b.note ?? "").trim() || undefined, newId);
     await this.tasks.putMany(already ? [t] : [t, copy]); // tomorrow's slot may already exist (a generated round): then it simply absorbs the work
+    await this.notices.customerDeferred(w.userId, t, to); // REQ-171: the customer hears the new day, once
     return this.views.workerTask(t, await this.views.names(w.userId));
   }
 

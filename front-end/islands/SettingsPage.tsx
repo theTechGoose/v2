@@ -145,6 +145,8 @@ function tr(es: boolean) {
     // Outgoing-comms languages (what the contractor can SEND quotes in).
     commsLang: tFor(lang, "settings.commsLang"),
     commsLangHint: tFor(lang, "settings.commsLangHint"),
+    timezone: tFor(lang, "field.settings.timezone"),
+    timezoneHint: tFor(lang, "field.settings.timezoneHint"),
     // Insurance
     provider: tFor(lang, "settings.provider"),
     policyNumber: tFor(lang, "settings.policyNumber"),
@@ -534,10 +536,39 @@ function EditCard(
             {t.commsLangHint}
           </span>
         </div>
+        {/* REQ-172 — the business's time zone: the 9 am schedule texts follow it */}
+        <label style="display:block;grid-column:1 / -1">
+          <span style={labelStyle}>{t.timezone}</span>
+          <select
+            data-cy="settings-timezone"
+            value={snapshot.identity?.timezone ?? "America/New_York"}
+            disabled={busy === "identity"}
+            onChange={(e) => saveIdentity({
+              timezone: (e.target as HTMLSelectElement).value,
+            })}
+          >
+            {TIMEZONES.map((z) => <option key={z} value={z}>{z}</option>)}
+          </select>
+          <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted)">
+            {t.timezoneHint}
+          </span>
+        </label>
       </div>
     </EditPanel>
   );
 }
+
+/** REQ-172 — the zones a US business picks from (the current value is kept even when it is not one of these) */
+const TIMEZONES = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Phoenix",
+  "America/Los_Angeles",
+  "America/Anchorage",
+  "Pacific/Honolulu",
+  "America/Puerto_Rico",
+];
 
 /** AddressEditCard — editable mailing address (roadmap p.8). P-42: honors
  *  the page's "changes save as you go" promise — every edit autosaves
