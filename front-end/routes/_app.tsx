@@ -4,6 +4,9 @@ import ImpersonationBanner from "../islands/ImpersonationBanner.tsx";
 import HtmlLang from "../islands/HtmlLang.tsx";
 import MetaPixel from "../components/MetaPixel.tsx";
 import GoogleTag from "../components/GoogleTag.tsx";
+import GoogleTagManager, {
+  GoogleTagManagerNoscript,
+} from "../components/GoogleTagManager.tsx";
 import CrazyEgg from "../components/CrazyEgg.tsx";
 import { readSessionCookie } from "../lib/api.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
@@ -79,6 +82,13 @@ export default define.page(function App(ctx) {
     <html lang={lang}>
       <head>
         <meta charset="utf-8" />
+        {
+          /* REQ-183: Google Tag Manager's container snippet, "as high as
+            possible inside <head>, on every page" — Google's loader on the
+            real deploy with GTM_ID set, nothing there without it, the app's
+            own fake on the gate and a dev box. */
+        }
+        <GoogleTagManager />
         <meta
           name="viewport"
           content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
@@ -118,6 +128,11 @@ export default define.page(function App(ctx) {
           : null}
       </head>
       <body>
+        {
+          /* REQ-183: Google Tag Manager's noscript iframe, "right after the
+            opening <body> tag, on every page" (the real deploy only). */
+        }
+        <GoogleTagManagerNoscript />
         {
           /* Global keyboard handling: mirrors visualViewport.height into
             --app-vh on every page. iOS Safari overlays the soft keyboard

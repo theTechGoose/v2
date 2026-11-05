@@ -378,7 +378,9 @@ body {
      under the browser bar. --app-vh tracks the *visual* viewport (mirrors
      visualViewport.height via MobileViewport), so it also shrinks when the soft
      keyboard opens; falls back to 100dvh without JS. */
-  height: var(--app-vh, 100dvh);
+  /* REQ-181: minus the impersonation banner's room (--banner-h, set by the
+     banner island while it is on screen; 0 otherwise), so nothing hides under it. */
+  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px));
   display: flex;
   min-height: 0;
   overflow: hidden;
@@ -2582,7 +2584,7 @@ a.activity-item--link:hover {
   }
   .topbar {
     position: sticky;
-    top: 0;
+    top: var(--banner-h, 0px); /* REQ-181: pins under the impersonation banner */
     z-index: 30;
     padding: 0 12px;
     gap: 8px;
