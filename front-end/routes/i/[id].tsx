@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
@@ -117,7 +117,7 @@ export default define.page(async function PublicInvoice(ctx) {
     <>
       <Head>
         <title>{tFor(lang, "publicInvoice.docTitle")}</title>
-        <link rel="stylesheet" href="/landing.css" />
+        <link rel="stylesheet" href={asset("/landing.css")} />
       </Head>
       <div
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}

@@ -22,7 +22,7 @@ describe("REQ-152 the subscription form's customer field is the search-and-pick"
 
   test("the route links the search-select stylesheet", () => {
     const src = read("front-end/routes/field/subscriptions.tsx");
-    expect(src).toMatch(/href="\/search-select\.css"/);
+    expect(src).toMatch(/href=\{asset\("\/search-select\.css"\)\}/); // REQ-158: through asset()
   });
 
   test("SearchSelect takes `disabled` and locks its box", () => {

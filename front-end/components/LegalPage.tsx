@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { LANDING_DICT } from "../lib/landing-dict.ts";
 import SiteFooter from "./SiteFooter.tsx";
@@ -38,8 +38,8 @@ export default function LegalPage(
         <title>
           {doc.title} · {tFor(lang, "brand.name")}
         </title>
-        <link rel="stylesheet" href="/landing.css" key="css-landing" />
-        <link rel="stylesheet" href="/legal.css" key="css-legal" />
+        <link rel="stylesheet" href={asset("/landing.css")} key="css-landing" />
+        <link rel="stylesheet" href={asset("/legal.css")} key="css-legal" />
       </Head>
 
       {/* the website's header, as on "/" */}

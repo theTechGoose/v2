@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import SiteFooter from "../components/SiteFooter.tsx";
 import { loadUser } from "../lib/auth.ts";
@@ -34,7 +34,7 @@ export default define.page(async function LoginInternal(ctx) {
           {tFor(lang, "loginInternal.title")} · {tFor(lang, "brand.name")}
         </title>
         <meta name="robots" content="noindex" />
-        <link rel="stylesheet" href="/verify.css" />
+        <link rel="stylesheet" href={asset("/verify.css")} />
       </Head>
       <div class="verify-shell">
         <div class="verify-card">

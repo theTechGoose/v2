@@ -4,7 +4,7 @@
  * /api/field/worker/login, which sets its own pm_worker cookie. Phone-first,
  * no dashboard chrome.
  */
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import { langFromCookie } from "../../lib/lang.ts";
@@ -22,8 +22,12 @@ export default define.page(function WorkerRoute(ctx) {
     <>
       <Head>
         <title>{tFor(lang, "worker.docTitle")}</title>
-        <link key="css-dashboard" rel="stylesheet" href="/dashboard.css" />
-        <link key="css-field" rel="stylesheet" href="/field.css" />
+        <link
+          key="css-dashboard"
+          rel="stylesheet"
+          href={asset("/dashboard.css")}
+        />
+        <link key="css-field" rel="stylesheet" href={asset("/field.css")} />
       </Head>
       <WorkerScreen initialLang={lang} initialDate={date} />
     </>

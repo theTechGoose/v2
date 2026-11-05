@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import SiteFooter from "../components/SiteFooter.tsx";
 import type { Lang } from "../lib/lang.ts";
@@ -60,7 +60,7 @@ export default define.page<typeof handler>(function Contact(ctx) {
         <title>
           {tFor(lang, "contactPage.title")} · {tFor(lang, "brand.name")}
         </title>
-        <link rel="stylesheet" href="/verify.css" />
+        <link rel="stylesheet" href={asset("/verify.css")} />
       </Head>
       <div class="verify-shell">
         <div class="verify-card" style="max-width:480px;text-align:left">

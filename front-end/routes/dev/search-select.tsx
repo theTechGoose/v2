@@ -2,7 +2,7 @@
  * REQ-136 — /dev/search-select: the SearchSelect island over 1,000 generated rows, so it can be
  * seen and driven locally before it is mounted anywhere. A 404 on the real deploy.
  */
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { HttpError } from "fresh";
 import { define } from "../../utils.ts";
 import SearchSelectDemo from "../../islands/SearchSelectDemo.tsx";
@@ -15,11 +15,15 @@ export default define.page(function SearchSelectDev() {
     <>
       <Head>
         <title>SearchSelect — dev</title>
-        <link key="css-dashboard" rel="stylesheet" href="/dashboard.css" />
+        <link
+          key="css-dashboard"
+          rel="stylesheet"
+          href={asset("/dashboard.css")}
+        />
         <link
           key="css-search-select"
           rel="stylesheet"
-          href="/search-select.css"
+          href={asset("/search-select.css")}
         />
       </Head>
       <main style="max-width:560px;margin:48px auto;padding:0 20px;font-family:system-ui,sans-serif;color:var(--fg,#1a535c)">

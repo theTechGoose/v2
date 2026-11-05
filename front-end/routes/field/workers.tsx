@@ -2,7 +2,7 @@
  * REQ-143 — /field/workers. The dashboard shell around the FieldWorkersPage island;
  * data comes from /api/field/* (clients/field.ts). The sidebar's active tab is "workers".
  */
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
@@ -20,8 +20,12 @@ export default define.page(function FieldFieldWorkersPageRoute(ctx) {
     <>
       <Head>
         <title>{tFor(lang, "field.wk.docTitle")}</title>
-        <link key="css-dashboard" rel="stylesheet" href="/dashboard.css" />
-        <link key="css-field" rel="stylesheet" href="/field.css" />
+        <link
+          key="css-dashboard"
+          rel="stylesheet"
+          href={asset("/dashboard.css")}
+        />
+        <link key="css-field" rel="stylesheet" href={asset("/field.css")} />
       </Head>
       <div class="app">
         <DashSidebar active="workers" />

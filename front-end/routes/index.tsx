@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import {
   BUSINESS_ADDRESS,
   SUPPORT_PHONE_DISPLAY,
@@ -253,7 +253,7 @@ export default define.page(async function Landing(ctx) {
             ? <meta key={m.key} property={m.key} content={m.content} />
             : <meta key={m.key} name={m.key} content={m.content} />
         )}
-        <link rel="stylesheet" href="/landing.css" />
+        <link rel="stylesheet" href={asset("/landing.css")} />
         {
           /* Single-source the offer numbers (P-08): counters, from-price and
             trial length are SSR-injected from LANDING_OFFER instead of being
@@ -270,7 +270,7 @@ export default define.page(async function Landing(ctx) {
             run in document order, so the dict lands before its consumer. */
         }
         <script src="/landing-dict.js" defer></script>
-        <script src="/landing-scripts.js" defer></script>
+        <script src={asset("/landing-scripts.js")} defer></script>
       </Head>
 
       {/* ========== NAV ========== */}
