@@ -6,6 +6,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import type { BusinessIdentity } from "@users/dto/business-identity.ts";
+import { type EmailLogo, emailLogo } from "@paperwork/domain/business/email-logo/mod.ts";
 import {
   EmailService,
   type SendEmailResult,
@@ -371,6 +372,8 @@ function shell(opts: {
   ctaUrl: string;
   sender: User | undefined;
   lang: Lang;
+  /** REQ-160: the business's own logo when it has one, the house logo otherwise */
+  logo: EmailLogo;
 }): string {
   const {
     preheader,
@@ -384,6 +387,7 @@ function shell(opts: {
     ctaUrl,
     sender,
     lang,
+    logo,
   } = opts;
   const senderEmailLine = sender?.email
     ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px"><a href="mailto:${
@@ -415,7 +419,7 @@ function shell(opts: {
     <tr><td align="center" style="padding:32px 16px;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width:600px;background:${COLOR_CARD};border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(20,72,82,0.08);">
         <tr><td align="center" style="padding:24px 32px 0;">
-          <img src="${APP_URL}/logo-email.png" alt="DocuMonster" width="160" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:160px;">
+          <img src="${escapeAttr(logo.src)}" alt="${escapeAttr(logo.alt)}" width="160" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:160px;">
         </td></tr>
         <tr><td style="padding:24px 32px 0;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
@@ -981,7 +985,7 @@ function renderInvoiceHtml(
       : undefined);
   // Standalone invoice → lightweight amount-only email (unchanged behavior).
   if (items.length === 0 && agreementTotal == null) {
-    return renderInvoiceBasicHtml(i, customer, sender, lang, paid);
+    return renderInvoiceBasicHtml(i, customer, sender, senderBiz, lang, paid);
   }
   const amountLabel = invoiceAmountLabel(i, lang, paid);
 
@@ -1339,6 +1343,7 @@ function renderInvoiceBasicHtml(
   i: Invoice,
   customer: Customer | undefined,
   sender: User | undefined,
+  senderBiz: BusinessIdentity | undefined,
   lang: Lang,
   paid = false,
 ): string {
@@ -1422,6 +1427,7 @@ function renderInvoiceBasicHtml(
     ctaUrl: `${APP_URL}/i/${i.id}`,
     sender,
     lang,
+    logo: emailLogo({ appUrl: APP_URL, kind: "invoice", id: i.id, biz: senderBiz }),
   });
 }
 

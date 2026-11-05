@@ -443,3 +443,29 @@ Deno.test("REQ-020 NW-29 send-paperwork-email integration: the paid variant of a
   assertStringIncludes(sent[0].htmlBody, "PAID");
   await resetKv();
 });
+
+// REQ-160 — Raphael, previewing A2Z's October batch in his inbox: "these have the paperwork
+// monster on it not the client logo in this case a2z logo"
+Deno.test("REQ-160 send-paperwork-email: a standalone invoice's email carries the contractor's logo (the public-logo URL) once one is on file, and the house logo until then", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices, identities, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Randall Belknap", email: "rb@acme.test" });
+  const invoice = await invoices.create("u-1", { customerId: customer.id, status: "draft", jobName: "Maintenance", amount: 35750, lineItems: [{ description: "Oct 2 — Lawn", quantity: 1, unit: "visit", price: 6500 }] });
+
+  await identities.upsert("u-1", { businessName: "A2Z Landscape LLC" });
+  const before = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(before.ok, true);
+  assertStringIncludes(sent[0].htmlBody, "/logo-email.png");
+  assert(!sent[0].htmlBody.includes("/api/public-logo/"), "no business logo yet → no public-logo URL");
+
+  await identities.upsert("u-1", { logoFileId: "file-a2z" });
+  const after = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(after.ok, true);
+  assertStringIncludes(sent[1].htmlBody, `/api/public-logo/invoice/${invoice.id}`);
+  assertStringIncludes(sent[1].htmlBody, 'alt="A2Z Landscape LLC"');
+  assert(!sent[1].htmlBody.includes("/logo-email.png"), "the house logo makes way for the business's");
+
+  await resetKv();
+});
