@@ -3003,6 +3003,8 @@
   "field.subs.days": "Weekdays",
   "field.subs.start": "First visit",
   "field.subs.daysHint": "Pick at least one day.",
+  "field.subs.daysOfMonth": "Days of the month",
+  "field.subs.domHint": "29, 30 and 31 fall on the last day in shorter months.",
   "field.subs.taskTypes": "Task types",
   "field.subs.taskPh": "Search or type a task type…",
   "field.subs.pricePh": "Price $",

@@ -58,6 +58,8 @@ interface Form {
   cadence: CadenceChoice;
   startDate: string;
   days: number[];
+  /** REQ-157 — monthly: the picked days of the month */
+  daysOfMonth: number[];
   items: Item[];
   /** the combobox query */
   q: string;
@@ -82,6 +84,13 @@ const DAY_LETTERS: Record<"en" | "es", string[]> = {
   es: ["D", "L", "M", "X", "J", "V", "S"],
 };
 
+/** REQ-157 — the day of the month of a date, today's when it is not one */
+function monthDayOf(iso: string): number {
+  const d = Number(iso.slice(8, 10));
+  return Number.isInteger(d) && d >= 1 && d <= 31 ? d : new Date().getDate();
+}
+const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+
 function weekdayOf(iso: string): number {
   const d = new Date(`${iso}T00:00:00`);
   return Number.isNaN(d.getTime()) ? new Date().getDay() : d.getDay();
@@ -96,6 +105,7 @@ function blankForm(): Form {
     cadence: "1",
     startDate,
     days: [weekdayOf(startDate)],
+    daysOfMonth: [monthDayOf(startDate)],
     items: [],
     q: "",
     searchOn: false,
@@ -121,6 +131,9 @@ function formFor(s: SubscriptionView): Form {
     cadence: ["1", "2", "3", "4", "monthly"].includes(cadence) ? cadence : "1",
     startDate,
     days: s.days?.length ? s.days : [weekdayOf(startDate)],
+    daysOfMonth: s.daysOfMonth?.length
+      ? s.daysOfMonth
+      : [monthDayOf(startDate)],
     items: s.items.map((i) => ({
       id: i.taskTypeId,
       name: i.taskTypeName,
@@ -344,11 +357,27 @@ export default function FieldSubscriptionsPage() {
     });
   }
 
+  /** REQ-157 — a day of the month on or off */
+  function toggleMonthDay(d: number) {
+    setForm((f) => {
+      if (!f) return f;
+      const daysOfMonth = f.daysOfMonth.includes(d)
+        ? f.daysOfMonth.filter((x) => x !== d)
+        : [...f.daysOfMonth, d].sort((a, b) => a - b);
+      return { ...f, daysOfMonth };
+    });
+  }
+
   function onStartDate(v: string) {
     setForm((
       f,
     ) => (f
-      ? { ...f, startDate: v, days: f.days.length ? f.days : [weekdayOf(v)] }
+      ? {
+        ...f,
+        startDate: v,
+        days: f.days.length ? f.days : [weekdayOf(v)],
+        daysOfMonth: f.daysOfMonth.length ? f.daysOfMonth : [monthDayOf(v)],
+      }
       : f)
     );
   }
@@ -378,7 +407,7 @@ export default function FieldSubscriptionsPage() {
       return;
     }
     const monthly = f.cadence === "monthly";
-    if (!monthly && !f.days.length) {
+    if (monthly ? !f.daysOfMonth.length : !f.days.length) {
       setForm({ ...f, err: t("field.subs.daysHint") });
       return;
     }
@@ -390,13 +419,19 @@ export default function FieldSubscriptionsPage() {
     const n = Number(f.cadence);
     const schedule: Pick<
       SubscriptionInput,
-      "cadence" | "intervalWeeks" | "days" | "startDate"
-    > = monthly ? { cadence: "monthly", startDate: f.startDate } : {
-      cadence: n === 2 ? "biweekly" : "weekly",
-      intervalWeeks: n,
-      days: f.days,
-      startDate: f.startDate,
-    };
+      "cadence" | "intervalWeeks" | "days" | "daysOfMonth" | "startDate"
+    > = monthly
+      ? {
+        cadence: "monthly",
+        startDate: f.startDate,
+        daysOfMonth: f.daysOfMonth,
+      }
+      : {
+        cadence: n === 2 ? "biweekly" : "weekly",
+        intervalWeeks: n,
+        days: f.days,
+        startDate: f.startDate,
+      };
     setForm({ ...f, saving: true });
     try {
       if (f.editId) {
@@ -722,9 +757,16 @@ export default function FieldSubscriptionsPage() {
                     })}
                 >
                   <option value="1">{t("field.subs.weekly")}</option>
-                  <option value="2">{t("field.subs.biweekly")}</option>
-                  <option value="3">{t("field.subs.every3")}</option>
-                  <option value="4">{t("field.subs.every4")}</option>
+                  {/* REQ-157 — weekly or monthly; an older every-N-weeks subscription keeps its own */}
+                  {form.cadence === "2" && (
+                    <option value="2">{t("field.subs.biweekly")}</option>
+                  )}
+                  {form.cadence === "3" && (
+                    <option value="3">{t("field.subs.every3")}</option>
+                  )}
+                  {form.cadence === "4" && (
+                    <option value="4">{t("field.subs.every4")}</option>
+                  )}
                   <option value="monthly">{t("field.subs.monthly")}</option>
                 </select>
               </label>
@@ -767,6 +809,35 @@ export default function FieldSubscriptionsPage() {
                   })}
                 </div>
                 <span class="hint">{t("field.subs.daysHint")}</span>
+              </div>
+            )}
+
+            {form.cadence === "monthly" && (
+              <div class="field" data-cy="subs-dom">
+                {t("field.subs.daysOfMonth")}
+                <div class="days dom">
+                  {MONTH_DAYS.map((d) => {
+                    const on = form.daysOfMonth.includes(d);
+                    return (
+                      <label
+                        class={`day${on ? " on" : ""}`}
+                        key={d}
+                        data-cy="subs-dom-day"
+                        data-dom={d}
+                      >
+                        <input
+                          type="checkbox"
+                          name="daysOfMonth"
+                          value={d}
+                          checked={on}
+                          onChange={() => toggleMonthDay(d)}
+                        />
+                        {d}
+                      </label>
+                    );
+                  })}
+                </div>
+                <span class="hint">{t("field.subs.domHint")}</span>
               </div>
             )}
 

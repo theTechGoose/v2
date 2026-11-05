@@ -518,17 +518,32 @@ async function parseItems(
   return out;
 }
 
-/** REQ-139: cadence / days / intervalWeeks, validated */
+/** REQ-139: cadence / days / intervalWeeks, validated; REQ-157: daysOfMonth (1–31) */
 export function parseSchedule(
   b: Body_,
-  cur: { cadence: Cadence; days?: number[]; intervalWeeks?: number },
-): Pick<Subscription, "cadence" | "days" | "intervalWeeks"> {
+  cur: {
+    cadence: Cadence;
+    days?: number[];
+    intervalWeeks?: number;
+    daysOfMonth?: number[];
+  },
+): Pick<Subscription, "cadence" | "days" | "intervalWeeks" | "daysOfMonth"> {
   let cadence =
     (b.cadence !== undefined ? str(b.cadence) : cur.cadence) as Cadence;
   if (!CADENCES.includes(cadence)) {
     throw new FieldError("cadence must be weekly, biweekly or monthly");
   }
-  let days = cur.days, intervalWeeks = cur.intervalWeeks;
+  let days = cur.days,
+    intervalWeeks = cur.intervalWeeks,
+    daysOfMonth = cur.daysOfMonth;
+  if (b.daysOfMonth !== undefined) {
+    if (
+      !Array.isArray(b.daysOfMonth) ||
+      !b.daysOfMonth.every((d) => Number.isInteger(d) && d >= 1 && d <= 31)
+    ) throw new FieldError("daysOfMonth must be days 1–31");
+    daysOfMonth = [...new Set(b.daysOfMonth as number[])].sort((x, y) => x - y);
+    if (!daysOfMonth.length) daysOfMonth = undefined;
+  }
   if (b.days !== undefined) {
     if (
       !Array.isArray(b.days) ||
@@ -549,7 +564,7 @@ export function parseSchedule(
     b.cadence !== undefined && b.intervalWeeks === undefined &&
     cadence !== "monthly"
   ) intervalWeeks = cadence === "biweekly" ? 2 : 1;
-  return { cadence, days, intervalWeeks };
+  return { cadence, days, intervalWeeks, daysOfMonth };
 }
 
 @Controller("field/regions")

@@ -445,3 +445,62 @@ Deno.test("REQ-152: the customer field is a search box — typing narrows the li
       "nothing is saved without a picked customer",
     );
   }));
+
+Deno.test("REQ-157: Cadence offers weekly and monthly only; Monthly shows 31 clickable days with the first visit's day on and the short-month note; the saved card reads Monthly · days 15, 31", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const r = await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Ana Torres",
+        address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+        email: "ana.torres@blackhole.postmarkapp.com",
+      }),
+    });
+    await r.body?.cancel();
+    await page.goto("/field/subscriptions");
+    await page.locator("[data-cy='subs-new']").click();
+    await pickCustomer(page, "Ana Torres");
+    const cadence = page.locator("[data-cy='subs-cadence']");
+    expect.eq(
+      (await cadence.locator("option").allTextContents()).join("|"),
+      "Weekly|Monthly",
+      "two cadences on a new subscription",
+    );
+    await page.locator("[data-cy='subs-days']").waitFor();
+    await cadence.selectOption("monthly");
+    expect.eq(
+      await page.locator("[data-cy='subs-days']").count(),
+      0,
+      "the weekday chips are gone",
+    );
+    const cells = page.locator("[data-cy='subs-dom-day']");
+    expect.eq(await cells.count(), 31, "a grid of 31 days");
+    const todayDay = String(Number(todayIso().slice(8)));
+    expect.eq(
+      (await page.locator("[data-cy='subs-dom-day'].on").allTextContents())
+        .join("|"),
+      todayDay,
+      "the first visit's day is on up front",
+    );
+    await expect.see("29, 30 and 31 fall on the last day in shorter months.");
+    await page.locator(`[data-cy='subs-dom-day'][data-dom='${todayDay}']`)
+      .click();
+    await page.locator("[data-cy='subs-dom-day'][data-dom='15']").click();
+    await page.locator("[data-cy='subs-dom-day'][data-dom='31']").click();
+    expect.eq(
+      (await page.locator("[data-cy='subs-dom-day'].on").allTextContents())
+        .join("|"),
+      "15|31",
+      "the two picks are on",
+    );
+    await page.locator("[data-cy='subs-type-q']").fill("Lawn cut");
+    await page.locator("[data-cy='subs-price']").fill("65");
+    await page.locator("[data-cy='subs-add-item']").click();
+    await page.locator("[data-cy='subs-submit']").click();
+    await page.locator("[data-cy='subs-card']").first().waitFor({
+      timeout: 20_000,
+    });
+    await expect.see("Monthly · days 15, 31");
+  }));
