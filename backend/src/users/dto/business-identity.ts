@@ -137,6 +137,8 @@ export interface BusinessIdentity {
   commsLanguages?: string[];
   /** REQ-174: the default days a customer has to pay an invoice, from the day it is sent (subscriptions can override). */
   invoiceNetDays?: number;
+  /** REQ-172: the business's IANA time zone — the 9 am schedule texts follow it (default America/New_York) */
+  timezone?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -180,6 +182,10 @@ export class UpdateBusinessIdentityDto {
   @Min(0)
   @Max(365)
   invoiceNetDays?: number;
+  /** REQ-172: an IANA zone (validated by the route) */
+  @IsOptional()
+  @IsString()
+  timezone?: string;
 
   @IsOptional()
   @ValidateNested()

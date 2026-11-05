@@ -10,6 +10,7 @@ import { CommunicationModule } from "@communication/mod-root.ts";
 import { FilesModule } from "@files/mod-root.ts";
 import { AnalyticsModule } from "@analytics/mod-root.ts";
 import { FieldModule } from "@field/mod-root.ts";
+import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
 
 @Module({
   imports: [
@@ -42,6 +43,12 @@ await app.init(AppModule);
   const minute = leads.registerSweep();
   console.log(`[crm-lead-capture] boot sweep started; minute sweep ${minute ? "on a timer" : "not available"}`);
   void leads.drain();
+}
+// REQ-172 — the field's 9 am schedule texts: the same minute sweep, in each business's time zone
+{
+  const notices = app.get(FieldNotices);
+  const minute = notices.registerSweep();
+  console.log(`[field/notices] minute sweep ${minute ? "on a timer" : "not available"}`);
 }
 
 const hono = (app as unknown as {

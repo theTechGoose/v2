@@ -566,3 +566,107 @@ Deno.test("REQ-159: the office clicks the circle on /field/tasks — the task re
     await page.locator("[data-cy='tk-task'][data-status='assigned']").first().waitFor({ timeout: 15_000 });
     await expect.see("0 of 1 complete");
   }));
+
+/** REQ-163..166 — the office's day: one staffed subscription due today; answers the api helpers and the seeded ids */
+async function officeDay(tools: { page: StoryTools["page"]; http: StoryTools["http"]; baseUrl: string }, items = [{ taskTypeName: "Lawn cut", priceCents: 6500 }]) {
+  const { page, http, baseUrl } = tools;
+  const { auth } = await signIn(http, page, baseUrl);
+  const post = async (path: string, body: unknown) => {
+    const r = await http(path, { method: "POST", headers: auth, body: JSON.stringify(body) });
+    return r.json();
+  };
+  const put = async (path: string, body: unknown) => {
+    const r = await http(path, { method: "PUT", headers: auth, body: JSON.stringify(body) });
+    await r.body?.cancel();
+  };
+  const customer = await post("/api/customers", { name: "Ana Torres", address: "4601 Dick Pond Rd, Myrtle Beach, SC", email: "ana.torres@blackhole.postmarkapp.com" });
+  const worker = await post("/api/field/workers", { name: "Luis Herrera", phoneNumber: `843${digits()}`, pin: "1234" });
+  const sub = await post("/api/field/subscriptions", { customerId: customer.id, address: "4601 Dick Pond Rd, Myrtle Beach, SC", startDate: todayIso(), items });
+  await put(`/api/field/regions/${sub.region.id}/worker`, { workerId: worker.id });
+  return { auth, post, put, customer, worker, sub };
+}
+
+Deno.test("REQ-163: Delete on the card, confirm inline — the card is gone and the day reads 0 of 0", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await officeDay({ page, http, baseUrl });
+    await page.goto("/field/tasks");
+    const task = page.locator("[data-cy='tk-task']").first();
+    await task.waitFor({ timeout: 15_000 });
+    await expect.see("0 of 1 complete");
+    await task.locator("[data-cy='tk-delete']").click();
+    await task.locator("[data-cy='tk-delete-confirm']").click();
+    await page.locator("[data-cy='tk-task']").first().waitFor({ state: "detached", timeout: 15_000 });
+    expect.eq(await page.locator("[data-cy='tk-task']").count(), 0, "the card is gone");
+    await expect.see("0 of 0 complete");
+  }));
+
+Deno.test("REQ-164: Add task → customer, type, price, worker → the card shows on the day", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { worker } = await officeDay({ page, http, baseUrl });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-add']").click();
+    const form = page.locator("[data-cy='tk-add-form']");
+    await form.waitFor({ timeout: 15_000 });
+    const box = form.locator("[data-cy='tk-customer'] [data-cy='search-select-input']");
+    await box.fill("Ana");
+    await form.locator("[data-cy='tk-customer'] [data-cy='search-select-option']").filter({ hasText: "Ana Torres" }).first().click();
+    expect.eq(await form.locator("[data-cy='tk-add-address']").inputValue(), "4601 Dick Pond Rd, Myrtle Beach, SC", "the customer's address is filled in");
+    await form.locator("[data-cy='tk-add-type']").fill("Mulch");
+    await form.locator("[data-cy='tk-add-price']").fill("120");
+    await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
+    await form.locator("[data-cy='tk-add-save']").click();
+    await page.locator("[data-cy='tk-task'][data-oneoff='true']").first().waitFor({ timeout: 15_000 });
+    expect.eq(await page.locator("[data-cy='tk-task']").count(), 2, "the round plus the one-off");
+    await expect.see("Mulch");
+    await expect.see("$120.00");
+    await expect.see("0 of 2 complete");
+  }));
+
+Deno.test("REQ-165: Add service on the card → Edging $25 → a second card in the same group", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await officeDay({ page, http, baseUrl });
+    await page.goto("/field/tasks");
+    const task = page.locator("[data-cy='tk-task']").first();
+    await task.waitFor({ timeout: 15_000 });
+    await task.locator("[data-cy='tk-add-service']").click();
+    await task.locator("[data-cy='tk-service-type']").fill("Edging");
+    await task.locator("[data-cy='tk-service-price']").fill("25");
+    await task.locator("[data-cy='tk-service-save']").click();
+    await page.locator("[data-cy='tk-task']").nth(1).waitFor({ timeout: 15_000 });
+    expect.eq(await page.locator("[data-cy='tk-task']").count(), 2, "two services on the visit");
+    expect.eq(await page.locator(".panel .tasks").count(), 1, "the same worker · zone group");
+    await expect.see("Edging");
+    await expect.see("$25.00");
+  }));
+
+Deno.test("REQ-166: the card's worker picker moves the task to the other worker's group", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { post } = await officeDay({ page, http, baseUrl });
+    const other = await post("/api/field/workers", { name: "Marta Ríos", phoneNumber: `843${digits()}`, pin: "1234" });
+    await page.goto("/field/tasks");
+    const task = page.locator("[data-cy='tk-task']").first();
+    await task.waitFor({ timeout: 15_000 });
+    await expect.see("Luis Herrera · ");
+    await task.locator("[data-cy='tk-worker']").selectOption(other.id);
+    await page.locator("[data-cy='tk-task'][data-worker='" + other.id + "']").first().waitFor({ timeout: 15_000 });
+    await expect.see("Marta Ríos · ");
+    expect.eq(await page.locator(".panel__title").filter({ hasText: "Luis Herrera" }).count(), 0, "Luis's group is gone");
+  }));
+
+Deno.test("REQ-170: no Generate button; a week ahead shows its task on arrival; an unstaffed zone's subscription is listed", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { put, sub } = await officeDay({ page, http, baseUrl });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    expect.eq(await page.locator("[data-cy='tk-generate']").count(), 0, "no Generate button");
+    const ahead = new Date(todayIso() + "T12:00:00Z");
+    ahead.setUTCDate(ahead.getUTCDate() + 7);
+    await page.locator("[data-cy='tk-date']").fill(ahead.toISOString().slice(0, 10));
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    await expect.see("0 of 1 complete");
+    await put(`/api/field/regions/${sub.region.id}/worker`, { workerId: null });
+    await page.reload();
+    await page.locator("[data-cy='tk-unstaffed']").first().waitFor({ timeout: 15_000 });
+    await expect.see("Ana Torres");
+  }));

@@ -1,7 +1,7 @@
 import { assertEquals } from "#std/assert";
 import { emailLogo } from "./mod.ts";
 
-// REQ-160 — "these have the paperwork monster on it not the client logo"
+// REQ-160 — "these have the house logo on it not the client logo"
 Deno.test("REQ-160 emailLogo: a business with a logo on file brands the email with it (the public-logo URL, named after the business); without one the house logo stays", () => {
   const app = "https://documonster.com";
   assertEquals(
