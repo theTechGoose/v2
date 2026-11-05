@@ -84,3 +84,13 @@
   color: var(--ss-muted);
 }
 .ss__more { border-top: 1px solid var(--ss-border); background: color-mix(in srgb, var(--ss-hover) 50%, transparent); }
+
+/* REQ-152 — inside a form's .field (field.css styles every input) the box must not draw a second border */
+.field .ss__input,
+.field .ss__input:focus {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 11px 0;
+}

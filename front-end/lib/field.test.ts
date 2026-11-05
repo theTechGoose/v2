@@ -1,6 +1,6 @@
 /** REQ-144 — picking a customer fills the service address, never over a typed one. */
 import { assertEquals } from "@std/assert";
-import { prefillAddress } from "./field.ts";
+import { customerOptions, prefillAddress } from "./field.ts";
 
 const ana = { address: "4601 Dick Pond Rd, Myrtle Beach, SC" };
 const bob = { address: "6219 Forestbrook Rd, Myrtle Beach, SC" };
@@ -58,4 +58,19 @@ Deno.test("REQ-145 subscriptionsByCustomer — grouped by customer, creation ord
 Deno.test("REQ-145 perVisitCents — the items' sum", () => {
   assertEquals(perVisitCents(sub("s3", "bob", [7500, 4000], "")), 11500);
   assertEquals(perVisitCents(sub("s0", "bob", [], "")), 0);
+});
+
+Deno.test("REQ-152 customerOptions — name is the label, the address on file is the hint; no address, no hint", () => {
+  assertEquals(
+    customerOptions([
+      { id: "c1", name: "Ana Torres", address: ana.address },
+      { id: "c2", name: "Nadia Noaddress" },
+      { id: "c3", name: "Bob Marshall", address: "  " },
+    ]),
+    [
+      { id: "c1", label: "Ana Torres", hint: ana.address },
+      { id: "c2", label: "Nadia Noaddress" },
+      { id: "c3", label: "Bob Marshall" },
+    ],
+  );
 });
