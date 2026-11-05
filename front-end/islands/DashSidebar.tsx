@@ -8,6 +8,11 @@ import {
   subscribeDash,
 } from "../lib/dash-cache.ts";
 import { langSignal, tFor } from "../lib/i18n.ts";
+import {
+  type AccountsView,
+  adminsClient,
+  isActing,
+} from "../clients/admins.ts";
 
 interface NavEntry {
   id: string;
@@ -68,6 +73,8 @@ const NAV: NavEntry[] = [
   { id: "tasks", icon: "cal", label: "Tasks", href: "/field/tasks" },
   { id: "batches", icon: "batch", label: "Batches", href: "/field/batches" },
   { id: "workers", icon: "hardhat", label: "Workers", href: "/field/workers" },
+  // REQ-146: the numbers the owner lets into the account
+  { id: "admins", icon: "shield", label: "Admins", href: "/admins" },
 ];
 
 interface Props {
@@ -150,6 +157,32 @@ export default function DashSidebar(
   // last-known counts/identity immediately and the badge doesn't flash
   // empty before the refetch lands.
   const [s, setS] = useState<SbState>(() => projectSidebar(readCached()));
+  // REQ-146: the accounts this session can act in — the switcher shows when
+  // there is more than one, the "In X's account" line when acting for another's.
+  const [accounts, setAccounts] = useState<AccountsView | null>(null);
+  useEffect(() => {
+    let alive = true;
+    adminsClient.accounts().then((v) => {
+      if (alive) setAccounts(v);
+    }).catch(() => {/* no session yet, or the API is down — no switcher */});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function switchAccount(userId: string) {
+    if (!accounts || userId === accounts.currentUserId) return;
+    globalThis.dispatchEvent(new Event("pm:logout"));
+    try {
+      await adminsClient.switchTo(userId);
+    } catch {
+      return;
+    }
+    try {
+      globalThis.sessionStorage?.removeItem("pm:dash-cache:v1");
+    } catch { /* private mode */ }
+    globalThis.location.href = "/dashboard";
+  }
 
   useEffect(() => {
     // Roadmap p.2/p.4: the topbar hamburger drives the rail. On desktop it
@@ -373,6 +406,47 @@ export default function DashSidebar(
               /* Roadmap p.4: removed the duplicate "Settings" nav link — the user block
               above (which opens /settings) is the single entry point. */
             }
+            {
+              /* REQ-146: whose account this is, and the switch between the
+              accounts this person can act in. */
+            }
+            {accounts && isActing(accounts) && (
+              <div
+                class="sb__acting"
+                data-cy="acting-in"
+                style="display:flex;align-items:center;gap:6px;margin:0 8px 6px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,0.08);color:#fff;font-size:12px;line-height:1.3"
+              >
+                <I d={ICN.shield} size={12} />{" "}
+                {!collapsed && tFor(lang, "nav.actingIn", {
+                  label: accounts.accounts.find((a) =>
+                    a.userId === accounts.currentUserId
+                  )?.label ?? "",
+                })}
+              </div>
+            )}
+            {accounts && accounts.accounts.length > 1 && !collapsed && (
+              <label
+                class="sb__switch"
+                style="display:block;margin:0 8px 8px;color:rgba(255,255,255,0.7);font-size:11px"
+              >
+                {tFor(lang, "nav.switchAccount")}
+                <select
+                  data-cy="account-switch"
+                  value={accounts.currentUserId}
+                  style="display:block;width:100%;margin-top:4px;padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.25);color:#fff;font-size:12px"
+                  onChange={(e) =>
+                    switchAccount((e.currentTarget as HTMLSelectElement).value)}
+                >
+                  {accounts.accounts.map((a) => (
+                    <option value={a.userId} key={a.userId}>
+                      {a.role === "owner"
+                        ? tFor(lang, "nav.myAccount")
+                        : a.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {
               /* REQ-143: the worker screen is always one click away — it is a
               separate login (cell + PIN), so this is a plain link. */

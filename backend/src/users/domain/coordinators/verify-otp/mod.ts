@@ -7,6 +7,9 @@ import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import { deriveLanguageOnVerify } from "@users/domain/business/derive-language/mod.ts";
 import { issueRecoveryToken } from "@users/domain/data/recovery-token-store/mod.ts";
 import { isPlaceholderName, placeholderNameFor } from "@users/domain/business/placeholder-name/mod.ts";
+import { AccountAdminStore } from "@users/domain/data/account-admin-store/mod.ts";
+import { pickSignInAccount } from "@users/domain/business/account-admins/mod.ts";
+import type { User } from "@users/dto/user.ts";
 
 /**
  * REQ-039 (NW-52): the verified phone belongs to a CLOSED account. No
@@ -45,7 +48,9 @@ export class ExpiredCodeError    extends Error { constructor() { super("expired"
 export class RateLimitedError    extends Error { constructor() { super("rate_limited");    this.name = "RateLimitedError"; } }
 
 export interface VerifyOtpInput  { phoneNumber: string; code: string; }
-export interface VerifyOtpResult { sessionId: string; userId: string; isNewUser: boolean; }
+/** REQ-146: `userId` is the account the session opened IN — the owner's when the
+ *  phone administers an account (`actorId` is then the person's own id). */
+export interface VerifyOtpResult { sessionId: string; userId: string; isNewUser: boolean; actorId?: string; }
 
 /**
  * VerifyOtp — confirm the code, find-or-create the User, mint a session.
@@ -70,7 +75,25 @@ export class VerifyOtp {
     private users: UserStore,
     private sessions: SessionStore,
     private businessIdentities: BusinessIdentityStore,
+    /** REQ-146: a phone that administers an account signs into THAT account */
+    private admins: AccountAdminStore = new AccountAdminStore(),
   ) {}
+
+  /**
+   * REQ-146 — the session for a verified person: their own account, or the
+   * account they administer (the earliest invite) with them as the actor. An
+   * admin's first sign-in is not a sign-up (`isNewUser: false`): no CRM
+   * customer, no notice, no wizard — they land where the owner's profile says.
+   */
+  private async openSession(user: User, isNewUser: boolean): Promise<VerifyOtpResult> {
+    const picked = pickSignInAccount(user.id, await this.admins.listByPhone(user.phoneNumber));
+    if (picked.actorId) {
+      const session = await this.sessions.createActing(picked.userId, picked.actorId);
+      return { sessionId: session.id, userId: picked.userId, isNewUser: false, actorId: picked.actorId };
+    }
+    const session = await this.sessions.create(user.id);
+    return { sessionId: session.id, userId: user.id, isNewUser };
+  }
 
   async run(input: VerifyOtpInput): Promise<VerifyOtpResult> {
     const phone = normalizePhone(input.phoneNumber);
@@ -106,13 +129,11 @@ export class VerifyOtp {
           await this.businessIdentities.upsert(user.id, { businessName: "Dev Business" });
         }
       }
-      const session = await this.sessions.create(user.id);
       // Report the real new-user state so the verify proxy can route
       // fresh phones into onboarding the same way the production OTP
       // path does. Opt-in seeders above already make the user appear
       // onboarded; that branch will still see isNewUser=false.
-      const isNewUser = !existing;
-      return { sessionId: session.id, userId: user.id, isNewUser };
+      return await this.openSession(user, !existing);
     }
 
     const otp = await this.otps.get(phone);
@@ -141,7 +162,6 @@ export class VerifyOtp {
           name: placeholderNameFor(language),
         });
 
-    const session = await this.sessions.create(user.id);
-    return { sessionId: session.id, userId: user.id, isNewUser: !existing };
+    return await this.openSession(user, !existing);
   }
 }
