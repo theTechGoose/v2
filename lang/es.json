@@ -3003,6 +3003,8 @@
   "field.subs.days": "Días de la semana",
   "field.subs.start": "Primera visita",
   "field.subs.daysHint": "Elige al menos un día.",
+  "field.subs.daysOfMonth": "Días del mes",
+  "field.subs.domHint": "El 29, 30 y 31 caen en el último día en los meses más cortos.",
   "field.subs.taskTypes": "Tipos de tarea",
   "field.subs.taskPh": "Busca o escribe un tipo de tarea…",
   "field.subs.pricePh": "Precio $",

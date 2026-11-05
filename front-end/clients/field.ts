@@ -61,6 +61,8 @@ export interface SubscriptionView {
   /** weekdays, 0 = Sunday … 6 = Saturday */
   days?: number[];
   intervalWeeks?: number;
+  /** REQ-157 — monthly: the picked days of the month, 1–31 */
+  daysOfMonth?: number[];
   active: boolean;
   regionId?: string;
   region: Region | null;
@@ -86,6 +88,8 @@ export interface SubscriptionInput {
   /** 1–8; 2 = biweekly */
   intervalWeeks?: number;
   days?: number[];
+  /** REQ-157 — monthly: days of the month, 1–31 */
+  daysOfMonth?: number[];
   startDate?: string;
 }
 

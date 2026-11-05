@@ -52,6 +52,8 @@ export interface Subscription {
   days?: number[];
   /** every N weeks (1–8); weekly = 1, biweekly = 2. Ignored for monthly. */
   intervalWeeks?: number;
+  /** REQ-157 — monthly: the days of the month (1–31, unique, sorted); 29–31 fall on a shorter month's last day. Default: the start date's day. */
+  daysOfMonth?: number[];
   active: boolean;
   /** set by the grouping (REQ-140) — or by the owner's drag */
   regionId?: string;
@@ -116,7 +118,11 @@ export interface Batch {
 
 /** An error with the HTTP status Danet should answer with (`error.status || 500`). */
 export class FieldError extends Error {
-  constructor(message: string, readonly status = 400, readonly detail?: Record<string, unknown>) {
+  constructor(
+    message: string,
+    readonly status = 400,
+    readonly detail?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "FieldError";
   }
@@ -125,6 +131,8 @@ export class FieldError extends Error {
 /** free-text caps */
 export const CAP = { note: 2000, text: 300, taskType: 80 } as const;
 
-export const str = (v: unknown): string | undefined => typeof v === "string" && v.trim() ? v.trim() : undefined;
-export const tooLong = (v: unknown, max: number) => typeof v === "string" && v.length > max;
+export const str = (v: unknown): string | undefined =>
+  typeof v === "string" && v.trim() ? v.trim() : undefined;
+export const tooLong = (v: unknown, max: number) =>
+  typeof v === "string" && v.length > max;
 export const digitsOf = (v: unknown) => String(v ?? "").replace(/\D/g, "");
