@@ -11,6 +11,8 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
+import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
@@ -51,24 +53,27 @@ export class RenderInvoicePdf {
   ) {}
 
   async run(invoiceId: string): Promise<Uint8Array> {
-    const invoice = await this.invoices.get(invoiceId);
+    // REQ-161: the standard fonts encode WinAnsi only — every string drawn comes from here
+    const invoice = winAnsiSafeDeep(await this.invoices.get(invoiceId));
     // customer / contractor / ident depend only on the invoice, so fan them
     // out concurrently with the quote fetch instead of awaiting serially
     // (this is an uncached, customer-facing "Download PDF" endpoint).
-    const [quote, customer, contractor, ident] = await Promise.all([
-      invoice.quoteId
-        ? this.quotes.get(invoice.quoteId).catch(() =>
-          undefined as Quote | undefined
-        )
-        : Promise.resolve(undefined as Quote | undefined),
-      invoice.customerId
-        ? this.customers.getOwned(invoice.customerId, invoice.userId).catch(
-          () => undefined,
-        )
-        : Promise.resolve(undefined),
-      this.users.get(invoice.userId).catch(() => undefined),
-      this.identity.get(invoice.userId).catch(() => null),
-    ]);
+    const [quote, customer, contractor, ident] = winAnsiSafeDeep(
+      await Promise.all([
+        invoice.quoteId
+          ? this.quotes.get(invoice.quoteId).catch(() =>
+            undefined as Quote | undefined
+          )
+          : Promise.resolve(undefined as Quote | undefined),
+        invoice.customerId
+          ? this.customers.getOwned(invoice.customerId, invoice.userId).catch(
+            () => undefined,
+          )
+          : Promise.resolve(undefined),
+        this.users.get(invoice.userId).catch(() => undefined),
+        this.identity.get(invoice.userId).catch(() => null),
+      ]),
+    );
     const businessName = ident?.businessName ?? ident?.legalName;
     const es = ident?.commsLanguage === "es";
     const lang: "en" | "es" = es ? "es" : "en";
@@ -145,8 +150,66 @@ export class RenderInvoicePdf {
     page.drawText(heroTitle, { x: M, y, size: 24, font: bold, color: TEAL });
     y -= 24;
 
+    // REQ-173: a batch invoice — the address is a heading, the visits sit under it
+    const visits = groupVisits(invoice.lineItems);
+    if (visits) {
+      for (const g of visits) {
+        addPageIfNeeded(40);
+        page.drawText(g.address, {
+          x: M,
+          y,
+          size: 10.5,
+          font: bold,
+          color: TEAL,
+        });
+        y -= 8;
+        page.drawLine({
+          start: { x: M, y },
+          end: { x: W - M, y },
+          thickness: 0.5,
+          color: LINE,
+        });
+        y -= 13;
+        for (const v of g.visits) {
+          addPageIfNeeded(24);
+          page.drawText(fmtVisitDate(v.date, lang), {
+            x: M,
+            y,
+            size: 9.5,
+            font: reg,
+            color: MUTED,
+          });
+          page.drawText(v.service, {
+            x: M + 56,
+            y,
+            size: 10,
+            font: reg,
+            color: INK,
+          });
+          const amt = fmtUSD(v.price);
+          page.drawText(amt, {
+            x: W - M - bold.widthOfTextAtSize(amt, 10),
+            y,
+            size: 10,
+            font: bold,
+            color: INK,
+          });
+          y -= 8;
+          page.drawLine({
+            start: { x: M, y },
+            end: { x: W - M, y },
+            thickness: 0.4,
+            color: LINE,
+          });
+          y -= 13;
+        }
+        y -= 6;
+      }
+      y -= 6;
+    }
+
     // Standalone description (no quote line items) — render as a paragraph.
-    if (!quote?.lineItems?.length && invoice.description) {
+    if (!visits && !quote?.lineItems?.length && invoice.description) {
       y = drawWrappedText(
         page,
         invoice.description,
@@ -189,6 +252,11 @@ export class RenderInvoicePdf {
         businessName,
         contractor?.phoneNumber,
         contractor?.email,
+        // REQ-168: the business website
+        ident?.websiteUrl?.trim().replace(/^https?:\/\//i, "").replace(
+          /\/$/,
+          "",
+        ),
       ].filter((v): v is string => !!v && v.trim().length > 0);
       const rows = Math.max(toLines.length, fromLines.length, 1);
       for (let i = 0; i < rows; i++) {

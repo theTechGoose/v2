@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
@@ -61,7 +61,7 @@ export default define.page(function Dashboard(ctx) {
             brand: tFor(lang, "brand.name"),
           })}
         </title>
-        <link rel="stylesheet" href="/dashboard.css" />
+        <link rel="stylesheet" href={asset("/dashboard.css")} />
       </Head>
 
       <div class="app">

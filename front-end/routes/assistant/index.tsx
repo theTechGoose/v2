@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { getSessionId } from "../../lib/auth.ts";
@@ -75,7 +75,7 @@ export default define.page(async function AssistantHome(ctx) {
     <>
       <Head>
         <title>{tFor(lang, "assistantPage.docTitle")}</title>
-        <link rel="stylesheet" href="/assistant-page.css" />
+        <link rel="stylesheet" href={asset("/assistant-page.css")} />
       </Head>
 
       <RedirectToast />

@@ -54,6 +54,10 @@ export interface Subscription {
   days?: number[];
   /** every N weeks (1–8); weekly = 1, biweekly = 2. Ignored for monthly. */
   intervalWeeks?: number;
+  /** REQ-157 — monthly: the days of the month (1–31, unique, sorted); 29–31 fall on a shorter month's last day. Default: the start date's day. */
+  daysOfMonth?: number[];
+  /** REQ-174: days the customer has to pay, from the day the invoice is sent; unset = the account's default */
+  netDays?: number;
   active: boolean;
   /** set by the grouping (REQ-140) — or by the owner's drag */
   regionId?: string;
@@ -98,8 +102,12 @@ export interface FieldTask {
   note?: string;
   /** the office's own note; never sent to the worker */
   adminNote?: string;
-  /** the worker added this service on site; the office prices it */
-  addedBy?: "worker";
+  /** the worker added this service on site (the office prices it) — or the office added it by hand (REQ-164/165) */
+  addedBy?: "worker" | "office";
+  /** REQ-164: made by hand for one day — no subscription behind it; generation and re-sync never touch it */
+  oneOff?: true;
+  /** REQ-163: the office deleted it — kept only so the day's generation does not bring it back; never listed */
+  deleted?: true;
   addedByName?: string;
   completedAt?: string;
   /** REQ-142: set once the task is on an invoice (the invoice's id, in InvoiceStore) */

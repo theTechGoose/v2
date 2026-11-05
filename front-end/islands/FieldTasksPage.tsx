@@ -1,28 +1,49 @@
 /**
  * REQ-143 — /field/tasks. The day's round, by worker.
  *
- * A date picker (default today, ◀ ▶ and Today), "Generate the day's tasks", the
- * day's tasks as cards grouped by worker · zone (check state, type, customer,
- * address, the worker's note, an inline price input and an office note — both
- * save on blur/Enter), a done/open summary, and the "unstaffed" list generate
- * returns (subscriptions due that day whose zone has no worker). A task already
- * on an invoice (409 `invoiceId`) gets a read-only price and a link to /invoices.
+ * A date picker (default today, ◀ ▶ and Today) — the day materializes on read
+ * (REQ-170, no Generate button) — the day's tasks as cards
+ * grouped by worker · zone (check state, type, customer, address, the worker's
+ * note, an inline price input and an office note — both save on blur/Enter),
+ * a done/open summary, and the "unstaffed" list (subscriptions due that day
+ * whose zone has no worker). A task already on an invoice (409 `invoiceId`)
+ * gets a read-only price and a link to /invoices.
+ *
+ * REQ-163 a Delete with an inline confirm · REQ-164 "Add task": a one-off by
+ * hand (customer search box, service, price, worker, address, day) · REQ-165
+ * "Add service" on a card · REQ-166 a worker picker on the card.
  *
  * Ported from a2z/web/tareas.html (demo driver dropped).
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
   fieldClient,
+  type FieldWorker,
   type GenerateResult,
+  type TaskType,
   type TaskView,
 } from "../clients/field.ts";
+import { clientsClient } from "../clients/clients.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtDay, fmtMoneyExact, shiftIso, todayIso } from "../lib/field.ts";
+import {
+  customerOptions,
+  fmtDay,
+  fmtMoneyExact,
+  shiftIso,
+  todayIso,
+} from "../lib/field.ts";
 import { langSignal, t } from "../lib/i18n.ts";
+import SearchSelect from "./SearchSelect.tsx";
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+interface Customer {
+  id: string;
+  name: string;
+  address?: string;
+}
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError && e.body && typeof e.body === "object") {
@@ -45,11 +66,45 @@ function invoiceIdOf(e: unknown): string | null {
   return null;
 }
 
+/** every customer, page after page (REQ-137 — the existing resource) */
+async function loadAllCustomers(): Promise<Customer[]> {
+  const out: Customer[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await clientsClient.list({ page, pageSize: 200 });
+    for (const c of res.items) {
+      out.push({ id: c.id, name: c.name, address: c.address });
+    }
+    if (page >= res.totalPages || res.items.length === 0) break;
+    page++;
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** "120" / "120.50" → cents, or null when it is not a price */
+function centsOf(raw: string): number | null {
+  const n = Number(raw);
+  if (raw.trim() === "" || !Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
 const isOpen = (x: TaskView) =>
   x.status !== "skipped" && x.status !== "deferred";
 
 /** one price draft per task — committed on blur / Enter */
 type Drafts = Record<string, string>;
+
+interface AddForm {
+  customerId: string;
+  typeName: string;
+  price: string;
+  workerId: string;
+  address: string;
+  date: string;
+}
+
+const INPUT =
+  "padding:8px 10px;border:1px solid var(--border);border-radius:8px;font:inherit;font-size:13px";
 
 export default function FieldTasksPage() {
   const lang = langSignal.value;
@@ -63,12 +118,28 @@ export default function FieldTasksPage() {
   const [priceDraft, setPriceDraft] = useState<Drafts>({});
   const [noteDraft, setNoteDraft] = useState<Drafts>({});
   const [saving, setSaving] = useState<string | null>(null);
+  // REQ-164..166 — what the forms pick from
+  const [workers, setWorkers] = useState<FieldWorker[]>([]);
+  const [types, setTypes] = useState<TaskType[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [add, setAdd] = useState<AddForm | null>(null);
+  const [addErr, setAddErr] = useState<string | null>(null);
+  const [service, setService] = useState<
+    { taskId: string; typeName: string; price: string } | null
+  >(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const lastPick = useRef<string | null>(null);
 
   async function load(d: string) {
     setLoading(true);
     try {
-      const rows = await fieldClient.tasks(d);
+      // REQ-170 — the day materializes on read; the unstaffed list rides along
+      const [rows, un] = await Promise.all([
+        fieldClient.tasks(d),
+        fieldClient.unstaffed(d).catch(() => []),
+      ]);
       setTasks(rows);
+      setSkipped(un);
       setError(null);
     } catch (e) {
       setError(errMsg(e));
@@ -81,6 +152,16 @@ export default function FieldTasksPage() {
     load(date);
   }, [date]);
 
+  useEffect(() => {
+    let alive = true;
+    fieldClient.workers().then((w) => alive && setWorkers(w)).catch(() => {});
+    fieldClient.taskTypes().then((x) => alive && setTypes(x)).catch(() => {});
+    loadAllCustomers().then((c) => alive && setCustomers(c)).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   function go(d: string) {
     if (!ISO.test(d) || d === date) return;
     setFlash("");
@@ -90,40 +171,29 @@ export default function FieldTasksPage() {
     setDate(d);
   }
 
-  async function generate() {
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await fieldClient.generate(date);
-      setSkipped(r.skipped ?? []);
-      setFlash(
-        t("field.tk.generated", { n: r.created }) +
-          (r.skipped?.length
-            ? ` · ${t("field.tk.skippedGen", { n: r.skipped.length })}`
-            : ""),
-      );
-      await load(date);
-    } catch (e) {
-      setError(errMsg(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function replace(next: TaskView) {
     setTasks((rows) => rows.map((x) => (x.id === next.id ? next : x)));
   }
 
   async function save(
     task: TaskView,
-    patch: { adminNote?: string; priceCents?: number },
+    patch: {
+      adminNote?: string;
+      priceCents?: number;
+      status?: "complete" | "assigned";
+      workerId?: string;
+    },
   ) {
     setSaving(task.id);
     setError(null);
     try {
       const next = await fieldClient.updateTask(task.id, patch);
       replace(next);
-      setFlash(t("field.tk.saved"));
+      setFlash(
+        patch.workerId
+          ? t("field.tk.moved", { name: next.workerName })
+          : t("field.tk.saved"),
+      );
     } catch (e) {
       const inv = invoiceIdOf(e);
       if (inv) {
@@ -137,6 +207,105 @@ export default function FieldTasksPage() {
     }
   }
 
+  // REQ-163 — the confirmed delete
+  async function remove(task: TaskView) {
+    setSaving(task.id);
+    setError(null);
+    try {
+      await fieldClient.deleteTask(task.id);
+      setTasks((rows) => rows.filter((x) => x.id !== task.id));
+      setFlash(t("field.tk.deleted"));
+    } catch (e) {
+      const inv = invoiceIdOf(e);
+      if (inv) replace({ ...task, invoiceId: inv });
+      else setError(errMsg(e));
+    } finally {
+      setConfirmDelete(null);
+      setSaving(null);
+    }
+  }
+
+  // REQ-164 — the one-off form
+  function openAdd() {
+    setAddErr(null);
+    lastPick.current = null;
+    setAdd({
+      customerId: "",
+      typeName: "",
+      price: "",
+      workerId: "",
+      address: "",
+      date,
+    });
+  }
+
+  async function submitAdd(e: Event) {
+    e.preventDefault();
+    if (!add) return;
+    const cents = centsOf(add.price);
+    if (!add.customerId || !add.typeName.trim() || cents === null) {
+      setAddErr(t("field.common.error"));
+      return;
+    }
+    setBusy(true);
+    setAddErr(null);
+    try {
+      const made = await fieldClient.createTask({
+        customerId: add.customerId,
+        date: add.date,
+        taskTypeName: add.typeName.trim(),
+        priceCents: cents,
+        workerId: add.workerId || undefined,
+        address: add.address.trim() || undefined,
+      });
+      if (made.date === date) setTasks((rows) => [...rows, made]);
+      if (!types.some((x) => x.id === made.taskTypeId)) {
+        setTypes((x) => [...x, {
+          id: made.taskTypeId,
+          userId: made.userId,
+          name: made.taskTypeName,
+          createdAt: "",
+        }]);
+      }
+      setFlash(t("field.tk.added"));
+      setAdd(null);
+    } catch (err) {
+      setAddErr(errMsg(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // REQ-165 — a service on the visit
+  async function submitService(task: TaskView) {
+    if (!service || service.taskId !== task.id) return;
+    const name = service.typeName.trim();
+    if (!name) return;
+    const cents = service.price.trim() === ""
+      ? undefined
+      : centsOf(service.price);
+    if (cents === null) return;
+    setSaving(task.id);
+    setError(null);
+    try {
+      const made = await fieldClient.addTaskService(task.id, {
+        taskTypeName: name,
+        priceCents: cents,
+      });
+      setTasks((rows) =>
+        rows.some((x) => x.id === made.id)
+          ? rows.map((x) => (x.id === made.id ? made : x))
+          : [...rows, made]
+      );
+      setFlash(t("field.tk.serviceAdded"));
+      setService(null);
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setSaving(null);
+    }
+  }
+
   function commitPrice(task: TaskView) {
     const raw = priceDraft[task.id];
     if (raw === undefined) return;
@@ -144,9 +313,8 @@ export default function FieldTasksPage() {
       const { [task.id]: _drop, ...rest } = d;
       return rest;
     });
-    const n = Number(raw);
-    if (raw.trim() === "" || !Number.isFinite(n) || n < 0) return;
-    const cents = Math.round(n * 100);
+    const cents = centsOf(raw);
+    if (cents === null) return;
     if (cents === task.priceCents) return;
     save(task, { priceCents: cents });
   }
@@ -202,8 +370,14 @@ export default function FieldTasksPage() {
     return <span class="chip">{t("field.tk.assigned")}</span>;
   }
 
+  const typeList = (
+    <datalist id="tk-types">
+      {types.map((x) => <option key={x.id} value={x.name} />)}
+    </datalist>
+  );
+
   function card(x: TaskView) {
-    const noteKey = `${x.subscriptionId}|${x.date}`;
+    const noteKey = `${x.subscriptionId || x.customerId}|${x.date}`;
     const showNote = !!x.note && !seenNote.has(noteKey);
     if (showNote) seenNote.add(noteKey);
     const locked = !!x.invoiceId;
@@ -216,6 +390,8 @@ export default function FieldTasksPage() {
       !isOpen(x) ? "task--skipped" : "",
     ].filter(Boolean)
       .join(" ");
+    const asking = confirmDelete === x.id;
+    const adding = service?.taskId === x.id;
     return (
       <div
         class={cls}
@@ -223,14 +399,39 @@ export default function FieldTasksPage() {
         data-cy="tk-task"
         data-id={x.id}
         data-status={x.status}
+        data-worker={x.workerId}
+        data-oneoff={x.oneOff ? "true" : undefined}
         style={isOpen(x) ? undefined : "opacity:.55"}
       >
-        <div class="task__check" aria-hidden="true">
+        {/* REQ-159 — the office marks the task done, or re-opens it; inert once invoiced */}
+        <button
+          type="button"
+          class="task__check"
+          data-cy="tk-done"
+          aria-pressed={x.status === "complete"}
+          aria-label={x.status === "complete"
+            ? t("field.tk.markOpen")
+            : t("field.tk.markDone")}
+          title={x.status === "complete"
+            ? t("field.tk.markOpen")
+            : t("field.tk.markDone")}
+          disabled={locked || saving === x.id}
+          onClick={() =>
+            save(x, {
+              status: x.status === "complete" ? "assigned" : "complete",
+            })}
+        >
           <I d={ICN.check} size={20} sw={3} />
-        </div>
+        </button>
         <div>
           <div class="task__type">
             {x.taskTypeName}
+            {x.oneOff && (
+              <>
+                {" "}
+                <span class="chip chip--teal">{t("field.tk.oneOff")}</span>
+              </>
+            )}
             {x.addedBy === "worker" && (
               <>
                 {" "}
@@ -238,6 +439,12 @@ export default function FieldTasksPage() {
                   {t("field.tk.extra")}
                   {x.addedByName ? ` · ${x.addedByName}` : ""}
                 </span>
+              </>
+            )}
+            {x.addedBy === "office" && !x.oneOff && (
+              <>
+                {" "}
+                <span class="chip chip--pink">{t("field.tk.officeExtra")}</span>
               </>
             )}
             {x.deferredFrom && (
@@ -272,7 +479,7 @@ export default function FieldTasksPage() {
               aria-label={t("field.tk.adminNote")}
               value={noteVal}
               disabled={saving === x.id}
-              style="flex:1;min-width:200px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font:inherit;font-size:13px"
+              style={`flex:1;min-width:200px;${INPUT}`}
               onInput={(e) => {
                 const v = (e.currentTarget as HTMLInputElement).value;
                 setNoteDraft((d) => ({ ...d, [x.id]: v }));
@@ -294,7 +501,7 @@ export default function FieldTasksPage() {
                 readOnly={locked}
                 disabled={saving === x.id}
                 title={locked ? t("field.tk.invoiced") : undefined}
-                style="width:96px;padding:8px;border:1px solid var(--border);border-radius:8px;font:inherit;font-size:13px;text-align:right"
+                style={`width:96px;text-align:right;${INPUT}`}
                 onInput={(e) => {
                   const v = (e.currentTarget as HTMLInputElement).value;
                   setPriceDraft((d) => ({ ...d, [x.id]: v }));
@@ -313,6 +520,145 @@ export default function FieldTasksPage() {
               </a>
             )}
           </div>
+          {/* REQ-163/165/166 — the office's actions on the task */}
+          <div
+            class="office"
+            style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"
+          >
+            <label style="font-size:12px;color:var(--fg-muted);display:flex;align-items:center;gap:4px">
+              {t("field.tk.worker")}
+              <select
+                data-cy="tk-worker"
+                aria-label={t("field.tk.worker")}
+                value={x.workerId}
+                disabled={locked || saving === x.id}
+                style={INPUT}
+                onChange={(e) => {
+                  const v = (e.currentTarget as HTMLSelectElement).value;
+                  if (v && v !== x.workerId) save(x, { workerId: v });
+                }}
+              >
+                {!workers.some((w) => w.id === x.workerId) && (
+                  <option value={x.workerId}>{x.workerName}</option>
+                )}
+                {workers.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            </label>
+            {!adding && !asking && (
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm"
+                data-cy="tk-add-service"
+                disabled={locked || saving === x.id}
+                onClick={() => {
+                  setConfirmDelete(null);
+                  setService({ taskId: x.id, typeName: "", price: "" });
+                }}
+              >
+                <I d={ICN.plus} size={12} /> {t("field.tk.addService")}
+              </button>
+            )}
+            {!adding && !asking && (
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm"
+                data-cy="tk-delete"
+                disabled={locked || saving === x.id}
+                style="color:#a83b3b"
+                onClick={() => {
+                  setService(null);
+                  setConfirmDelete(x.id);
+                }}
+              >
+                <I d={ICN.trash} size={12} /> {t("field.tk.delete")}
+              </button>
+            )}
+            {asking && (
+              <span
+                data-cy="tk-delete-ask"
+                style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"
+              >
+                <span style="font-size:13px">{t("field.tk.deleteAsk")}</span>
+                <button
+                  type="button"
+                  class="btn btn--danger btn--sm"
+                  data-cy="tk-delete-confirm"
+                  disabled={saving === x.id}
+                  onClick={() => remove(x)}
+                >
+                  {t("field.tk.deleteYes")}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  data-cy="tk-delete-cancel"
+                  onClick={() => setConfirmDelete(null)}
+                >
+                  {t("field.common.cancel")}
+                </button>
+              </span>
+            )}
+          </div>
+          {adding && service && (
+            <form
+              data-cy="tk-service-form"
+              style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitService(x);
+              }}
+            >
+              <input
+                type="text"
+                list="tk-types"
+                data-cy="tk-service-type"
+                placeholder={t("field.tk.typePh")}
+                aria-label={t("field.tk.type")}
+                value={service.typeName}
+                required
+                style={`flex:1;min-width:160px;${INPUT}`}
+                onInput={(e) => {
+                  const v = (e.currentTarget as HTMLInputElement).value;
+                  setService((s) => s && { ...s, typeName: v });
+                }}
+              />
+              <label style="font-size:12px;color:var(--fg-muted);display:flex;align-items:center;gap:4px">
+                $
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  data-cy="tk-service-price"
+                  aria-label={t("field.tk.price")}
+                  value={service.price}
+                  style={`width:96px;text-align:right;${INPUT}`}
+                  onInput={(e) => {
+                    const v = (e.currentTarget as HTMLInputElement).value;
+                    setService((s) => s && { ...s, price: v });
+                  }}
+                />
+              </label>
+              <button
+                type="submit"
+                class="btn btn--green btn--sm"
+                data-cy="tk-service-save"
+                disabled={saving === x.id}
+              >
+                {t("field.common.save")}
+              </button>
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm"
+                data-cy="tk-service-cancel"
+                onClick={() => setService(null)}
+              >
+                {t("field.common.cancel")}
+              </button>
+            </form>
+          )}
         </div>
         <div class="task__meta">
           <b>{fmtMoneyExact(x.priceCents)}</b>
@@ -365,16 +711,168 @@ export default function FieldTasksPage() {
             </button>
           </span>
         </label>
+        {/* REQ-164 — the page's one primary action */}
         <button
           type="button"
           class="btn btn--green"
-          data-cy="tk-generate"
-          disabled={busy}
-          onClick={generate}
+          data-cy="tk-add"
+          disabled={busy || add !== null}
+          onClick={openAdd}
         >
-          <I d={ICN.cal} size={14} /> {t("field.tk.generate")}
+          <I d={ICN.plus} size={14} /> {t("field.tk.add")}
         </button>
       </FieldHead>
+
+      {typeList}
+
+      {add && (
+        <form
+          class="panel"
+          data-cy="tk-add-form"
+          style="margin-bottom:14px"
+          onSubmit={submitAdd}
+        >
+          <h3 class="panel__title">
+            <I d={ICN.plus} size={16} /> {t("field.tk.addTitle")}
+          </h3>
+          <p class="hint" style="margin:0 0 10px">{t("field.tk.addHint")}</p>
+          <div class="row">
+            <div class="field">
+              <span>{t("field.tk.customer")}</span>
+              <div data-cy="tk-customer">
+                <SearchSelect
+                  name="customer"
+                  options={customerOptions(customers)}
+                  value={add.customerId}
+                  placeholder={t("field.tk.pickCustomer")}
+                  onSelect={(o) => {
+                    const previous = customers.find((c) =>
+                      c.id === lastPick.current
+                    );
+                    lastPick.current = o.id;
+                    const picked = customers.find((c) => c.id === o.id);
+                    setAdd((f) =>
+                      f && {
+                        ...f,
+                        customerId: o.id,
+                        address: !f.address.trim() ||
+                            f.address === (previous?.address ?? "")
+                          ? picked?.address ?? ""
+                          : f.address,
+                      }
+                    );
+                  }}
+                  onQuery={(q) => {
+                    const current = customers.find((c) =>
+                      c.id === add.customerId
+                    );
+                    if (current && q !== current.name) {
+                      setAdd((f) => f && { ...f, customerId: "" });
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <label class="field">
+              <span>{t("field.tk.type")}</span>
+              <input
+                type="text"
+                list="tk-types"
+                data-cy="tk-add-type"
+                placeholder={t("field.tk.typePh")}
+                value={add.typeName}
+                required
+                onInput={(e) => {
+                  const v = (e.currentTarget as HTMLInputElement).value;
+                  setAdd((f) => f && { ...f, typeName: v });
+                }}
+              />
+            </label>
+            <label class="field">
+              <span>{t("field.tk.price")} ($)</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                data-cy="tk-add-price"
+                value={add.price}
+                required
+                onInput={(e) => {
+                  const v = (e.currentTarget as HTMLInputElement).value;
+                  setAdd((f) => f && { ...f, price: v });
+                }}
+              />
+            </label>
+          </div>
+          <div class="row">
+            <label class="field">
+              <span>{t("field.tk.worker")}</span>
+              <select
+                data-cy="tk-add-worker"
+                value={add.workerId}
+                onChange={(e) => {
+                  const v = (e.currentTarget as HTMLSelectElement).value;
+                  setAdd((f) => f && { ...f, workerId: v });
+                }}
+              >
+                <option value="">{t("field.tk.pickWorker")}</option>
+                {workers.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            </label>
+            <label class="field">
+              <span>{t("field.tk.address")}</span>
+              <input
+                type="text"
+                data-cy="tk-add-address"
+                value={add.address}
+                onInput={(e) => {
+                  const v = (e.currentTarget as HTMLInputElement).value;
+                  setAdd((f) => f && { ...f, address: v });
+                }}
+              />
+            </label>
+            <label class="field">
+              <span>{t("field.tk.date")}</span>
+              <input
+                type="date"
+                data-cy="tk-add-date"
+                value={add.date}
+                required
+                onChange={(e) => {
+                  const v = (e.currentTarget as HTMLInputElement).value;
+                  setAdd((f) => f && { ...f, date: v });
+                }}
+              />
+            </label>
+          </div>
+          {addErr && (
+            <div class="alert" style="margin:0 0 10px" role="alert">
+              {addErr}
+            </div>
+          )}
+          <div style="display:flex;gap:8px;align-items:center">
+            <button
+              type="submit"
+              class="btn btn--green"
+              data-cy="tk-add-save"
+              disabled={busy}
+            >
+              {t("field.common.save")}
+            </button>
+            <button
+              type="button"
+              class="btn btn--ghost"
+              data-cy="tk-add-cancel"
+              onClick={() => setAdd(null)}
+            >
+              {t("field.common.cancel")}
+            </button>
+          </div>
+        </form>
+      )}
 
       <div class="workload" data-cy="tk-summary" style="align-items:center">
         <span class="hint" style="font-weight:700">{fmtDay(date, lang)}</span>

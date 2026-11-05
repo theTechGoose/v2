@@ -11,6 +11,8 @@ import { PaymentController } from "@paperwork/entrypoints/payment-controller/mod
 import { PaperworkPublicController } from "@paperwork/entrypoints/public-controller/mod.ts";
 import { PaperworkEmailController } from "@paperwork/entrypoints/paperwork-email-controller/mod.ts";
 import { CronController } from "@paperwork/entrypoints/cron-controller/mod.ts";
+import { InboundController } from "@paperwork/entrypoints/inbound-controller/mod.ts";
+import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
@@ -47,6 +49,7 @@ import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/recor
     PaperworkPublicController,
     PaperworkEmailController,
     CronController,
+    InboundController,
   ],
   injectables: [
     QuoteStore,
@@ -56,6 +59,7 @@ import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/recor
     PaymentTermsStore,
     PaymentStore,
     ShortLinkStore,
+    ReplyTokenStore,
     SummarizePaperworkViews,
     SendPaperworkEmail,
     SendPaperworkSms,

@@ -13,6 +13,7 @@ import { LogPaperworkMessage } from "@communication/domain/coordinators/log-pape
 import { ConversationStore as CommConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
 import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { getKv, resetKv } from "@core/data/kv/mod.ts";
+import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
 
 interface SetupResult {
   flow: SendPaperworkEmail;
@@ -441,5 +442,104 @@ Deno.test("REQ-020 NW-29 send-paperwork-email integration: the paid variant of a
   assertStringIncludes(sent[0].subject, "Paid");
   assert(!/amount due/i.test(sent[0].htmlBody), "no 'Amount due' label on a paid invoice");
   assertStringIncludes(sent[0].htmlBody, "PAID");
+  await resetKv();
+});
+
+// REQ-160 — Raphael, previewing A2Z's October batch in his inbox: "these have the paperwork
+// monster on it not the client logo in this case a2z logo"
+Deno.test("REQ-160 send-paperwork-email: a standalone invoice's email carries the contractor's logo (the public-logo URL) once one is on file, and the house logo until then", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices, identities, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Randall Belknap", email: "rb@acme.test" });
+  const invoice = await invoices.create("u-1", { customerId: customer.id, status: "draft", jobName: "Maintenance", amount: 35750, lineItems: [{ description: "Oct 2 — Lawn", quantity: 1, unit: "visit", price: 6500 }] });
+
+  await identities.upsert("u-1", { businessName: "A2Z Landscape LLC" });
+  const before = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(before.ok, true);
+  assertStringIncludes(sent[0].htmlBody, "/logo-email.png");
+  assert(!sent[0].htmlBody.includes("/api/public-logo/"), "no business logo yet → no public-logo URL");
+
+  await identities.upsert("u-1", { logoFileId: "file-a2z" });
+  const after = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(after.ok, true);
+  assertStringIncludes(sent[1].htmlBody, `/api/public-logo/invoice/${invoice.id}`);
+  assertStringIncludes(sent[1].htmlBody, 'alt="A2Z Landscape LLC"');
+  assert(!sent[1].htmlBody.includes("/logo-email.png"), "the house logo makes way for the business's");
+
+  await resetKv();
+});
+
+// REQ-168 — "we need to collect a customer web page so we can attach it to invoices also"
+// REQ-169 — "invoices should say instead of 'thank you for the work' really make this wording pretty"
+Deno.test("REQ-168/169 send-paperwork-email: a standalone invoice's email links the business website in its From block and opens by thanking the customer for trusting the business", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices, identities, sent } = fresh();
+  await seedContractor("u-1");
+  await identities.upsert("u-1", { businessName: "A2Z Landscape LLC", websiteUrl: "https://a2zlandscape.com/" });
+  const customer = await customers.create("u-1", { name: "Randall Belknap", email: "rb@acme.test" });
+  const invoice = await invoices.create("u-1", { customerId: customer.id, status: "draft", jobName: "Maintenance", amount: 35750 });
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, true);
+  const html = sent[0].htmlBody;
+  assertStringIncludes(html, 'href="https://a2zlandscape.com/"');
+  assertStringIncludes(html, ">a2zlandscape.com<");
+  assertStringIncludes(html, "Thank you for trusting A2Z Landscape LLC");
+  assert(!html.includes("Thanks for the work"), "the old intro is gone");
+  await resetKv();
+});
+
+// REQ-173 — "on invoices can we make the address a heading and then detail the date and the service?"
+Deno.test("REQ-173 send-paperwork-email: a batch invoice's email shows the address as a heading with one row per visit (date · service · price), not the flat 'date — service — address' lines", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices, identities, sent } = fresh();
+  await seedContractor("u-1");
+  await identities.upsert("u-1", { businessName: "A2Z Landscape LLC" });
+  const customer = await customers.create("u-1", { name: "Randall Belknap", email: "rb@acme.test" });
+  const addr = "725 Frederick Rd, Rockingham, VA 22801-1306";
+  const invoice = await invoices.create("u-1", {
+    customerId: customer.id,
+    status: "draft",
+    jobName: "Maintenance 2026-10-01 → 2026-10-31",
+    description: `Oct 2 — Lawn — ${addr}\nOct 9 — Lawn — ${addr}`,
+    lineItems: [
+      { description: `Oct 2 — Lawn — ${addr}`, quantity: 1, unit: "visit", price: 6500, date: "2026-10-02", service: "Lawn", address: addr },
+      { description: `Oct 9 — Lawn — ${addr}`, quantity: 1, unit: "visit", price: 6500, date: "2026-10-09", service: "Lawn", address: addr },
+    ],
+    amount: 13000,
+  });
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, true);
+  const html = sent[0].htmlBody;
+  assertStringIncludes(html, 'data-visit-address');
+  assertStringIncludes(html, addr);
+  assertStringIncludes(html, "Oct 2");
+  assertStringIncludes(html, "Oct 9");
+  assertStringIncludes(html, "$65.00");
+  assert(!html.includes(`Oct 2 — Lawn — ${addr}`), "the flat line is replaced by the grouped visits");
+  await resetKv();
+});
+
+// REQ-175 — "when a customers customer replies to an invoice it should go to the customer inbox"
+Deno.test("REQ-175 send-paperwork-email: the invoice email carries Reply-To reply+<token>@inbound.documonster.com, the token resolving to this contractor and customer and reused on the next send", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("INBOUND_MAIL_DOMAIN");
+  await resetKv();
+  const { flow, customers, invoices, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Randall Belknap", email: "rb@acme.test" });
+  const invoice = await invoices.create("u-1", { customerId: customer.id, status: "draft", jobName: "Maintenance", amount: 100 });
+  assertEquals((await flow.run("u-1", { kind: "invoice", resourceId: invoice.id })).ok, true);
+  const replyTo = sent[0].replyTo ?? "";
+  const m = /^reply\+([a-z0-9]+)@inbound\.documonster\.com$/.exec(replyTo);
+  assert(m, `Reply-To is reply+<token>@inbound.documonster.com (${replyTo})`);
+  const owner = await new ReplyTokenStore().resolve(m![1]);
+  assertEquals([owner?.userId, owner?.customerId], ["u-1", customer.id]);
+  assertEquals((await flow.run("u-1", { kind: "invoice", resourceId: invoice.id })).ok, true);
+  assertEquals(sent[1].replyTo, replyTo, "the same token next time");
+  assertEquals(await new ReplyTokenStore().resolve("nope00"), null);
   await resetKv();
 });

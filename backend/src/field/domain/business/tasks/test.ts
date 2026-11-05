@@ -1,6 +1,6 @@
 /** REQ-139/141 — task types, the day's tasks, and what a worker may do to them. */
 import { assert, assertEquals } from "#std/assert";
-import { addService, canAct, deferTask, findOrCreateTaskType, generateTasks, inActionWindow, searchTaskTypes, unstaffed, workerView } from "./mod.ts";
+import { addService, canAct, deferTask, findOrCreateTaskType, generateTasks, inActionWindow, officeService, oneOffTask, searchTaskTypes, unstaffed, workerView } from "./mod.ts";
 import type { FieldTask, FieldWorker, Region, Subscription, TaskType } from "@field/dto/field.ts";
 
 let n = 0;
@@ -115,4 +115,31 @@ Deno.test("REQ-141 deferTask — the original is marked, tomorrow's copy holds t
   assertEquals([copy.date, copy.status, copy.priceCents, copy.deferredFrom, copy.workerId], ["2026-10-13", "assigned", 6500, "2026-10-12", "w1"]);
   const again = generateTasks({ userId: "u", date: "2026-10-13", subscriptions: [weekly], regions, existing: [t, copy], newId });
   assertEquals(again.filter((x) => x.taskTypeId === "1").length, 0, "the copy already holds tomorrow's slot for that service");
+});
+
+// REQ-164 — "when in tasks i need a button to manually add a task as a one off"
+Deno.test("REQ-164 oneOffTask — no subscription, flagged oneOff, the office as author; generateTasks leaves it alone", () => {
+  const t = oneOffTask({ userId: "u", customerId: "c9", date: "2026-10-27", taskTypeId: "1", priceCents: 12000, workerId: "w1", address: "1 Main St", newId });
+  assertEquals([t.subscriptionId, t.oneOff, t.addedBy, t.status, t.regionId, t.priceCents, t.address], ["", true, "office", "assigned", "", 12000, "1 Main St"]);
+  const again = generateTasks({ userId: "u", date: "2026-10-27", subscriptions: [sub("s1", "ra", { customerId: "c9" })], regions, existing: [t], newId });
+  assert(again.every((x) => x.id !== t.id && x.subscriptionId === "s1"), "the round is generated next to the one-off, never over it");
+});
+
+// REQ-165 — "when in tasks i need to be able to add services to a task as a one off."
+Deno.test("REQ-165 officeService — a sibling of the visit, priced as given or from the subscription, duplicate refused, removed restored", () => {
+  const s = sub("s1", "ra", { items: [{ taskTypeId: "1", priceCents: 6500 }, { taskTypeId: "2", priceCents: 2500 }] });
+  const [cut] = generateTasks({ userId: "u", date: "2026-10-27", subscriptions: [s], regions, existing: [], newId });
+  const given = officeService({ task: cut, visit: [cut], taskTypeId: "3", priceCents: 4000, subscription: s, newId });
+  assert(given.ok);
+  assertEquals([given.task.taskTypeId, given.task.priceCents, given.task.addedBy, given.task.subscriptionId, given.task.workerId, given.task.date, given.task.customerId], ["3", 4000, "office", "s1", "w1", "2026-10-27", s.customerId]);
+  const fromSub = officeService({ task: cut, visit: [cut], taskTypeId: "2", subscription: s, newId });
+  assert(fromSub.ok && fromSub.task.priceCents === 2500, "the subscription's price when none is given");
+  const dup = officeService({ task: cut, visit: [cut], taskTypeId: "1", subscription: s, newId });
+  assertEquals(dup, { ok: false, reason: "duplicate" });
+  const removed = { ...cut, status: "skipped" as const };
+  const back = officeService({ task: removed, visit: [removed], taskTypeId: "1", priceCents: 7000, subscription: s, newId });
+  assert(back.ok && back.restored && back.task.status === "assigned" && back.task.priceCents === 7000, "a removed service is restored, repriced");
+  const one = oneOffTask({ userId: "u", customerId: "c9", date: "2026-10-27", taskTypeId: "1", priceCents: 100, workerId: "w2", newId });
+  const sib = officeService({ task: one, visit: [one], taskTypeId: "2", newId });
+  assert(sib.ok && sib.task.oneOff === true && sib.task.subscriptionId === "" && sib.task.workerId === "w2" && sib.task.priceCents === 0, "a one-off's sibling is a one-off too, $0 without a price");
 });

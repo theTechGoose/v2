@@ -18,6 +18,8 @@ export interface BusinessIdentity {
   logoUrl?: string;
   tagline?: string;
   websiteUrl?: string;
+  /** REQ-174: the default days a customer has to pay an invoice */
+  invoiceNetDays?: number;
   /** Language the contractor's customers receive outbound comms in
    *  (quotes/SMS/email/docs). Distinct from the contractor's UI language.
    *  Defaults to "en" when unset. Stays the DEFAULT (first enabled). */
@@ -26,6 +28,8 @@ export interface BusinessIdentity {
    *  Settings checkboxes and the "Send in" buttons on the quote-review card.
    *  Unset → derive from `commsLanguage` (or ["en"]). */
   commsLanguages?: string[];
+  /** REQ-172: the business's IANA time zone (the 9 am schedule texts follow it) */
+  timezone?: string;
   /** Per-method enable flags + handles (Venmo @, Zelle email, etc.).
    *  Shape mirrors backend AcceptedPaymentMethods but kept permissive so
    *  consumers only need the .enabled flag for gating logic. */

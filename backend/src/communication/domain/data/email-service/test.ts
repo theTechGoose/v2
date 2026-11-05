@@ -45,3 +45,10 @@ Deno.test("REQ-123 EmailService — a From off documonster.com is refused before
   }
   assertEquals(calls, 0, "Postmark is never asked");
 });
+
+// REQ-175 — a customer's reply must come back to us: the payload carries Reply-To when asked
+Deno.test("REQ-175 postmarkPayload — replyTo becomes Postmark's ReplyTo; absent otherwise", () => {
+  const base = { to: "rb@acme.test", subject: "s", htmlBody: "<p/>" };
+  assertEquals(postmarkPayload({ ...base, replyTo: "reply+tok@inbound.documonster.com" }).ReplyTo, "reply+tok@inbound.documonster.com");
+  assertEquals("ReplyTo" in postmarkPayload(base), false);
+});

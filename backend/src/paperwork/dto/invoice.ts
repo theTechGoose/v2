@@ -87,6 +87,10 @@ export class CreateInvoiceDto {
     quantity: number;
     unit: string;
     price: number;
+    /** REQ-173: a batch visit — the invoice groups these under the address */
+    date?: string;
+    service?: string;
+    address?: string;
   }>;
 
   /** ≤3-word job title for STANDALONE invoices (roadmap p.10) — quote-
@@ -112,6 +116,9 @@ export class CreateInvoiceDto {
    *  public invoice (roadmap p.12). `amount` is the net total due. */
   @IsOptional() @IsNumber()
   discountCents?: number;
+  /** REQ-174: days to pay, from the day the invoice is sent (a batch invoice carries its subscription's). */
+  @IsOptional() @IsNumber()
+  netDays?: number;
   @IsOptional() @IsString()
   discountReason?: string;
   @IsOptional() @IsString()
@@ -154,6 +161,10 @@ export class UpdateInvoiceDto {
     quantity: number;
     unit: string;
     price: number;
+    /** REQ-173: a batch visit — the invoice groups these under the address */
+    date?: string;
+    service?: string;
+    address?: string;
   }>;
   @IsOptional() @IsString()
   jobName?: string;
@@ -166,6 +177,9 @@ export class UpdateInvoiceDto {
   amount?: number;
   @IsOptional() @IsNumber()
   discountCents?: number;
+  /** REQ-174: days to pay, from the day the invoice is sent (a batch invoice carries its subscription's). */
+  @IsOptional() @IsNumber()
+  netDays?: number;
   @IsOptional() @IsString()
   discountReason?: string;
   @IsOptional() @IsString()

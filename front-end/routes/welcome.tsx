@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import SiteFooter from "../components/SiteFooter.tsx";
 import { loadUser } from "../lib/auth.ts";
@@ -67,8 +67,12 @@ export default define.page(async function Welcome(ctx) {
         <title>
           {tFor(lang, "welcome.docTitle")} · {tFor(lang, "brand.name")}
         </title>
-        <link key="css-welcome" rel="stylesheet" href="/welcome.css" />
-        <link key="css-plan-cards" rel="stylesheet" href="/plan-cards.css" />
+        <link key="css-welcome" rel="stylesheet" href={asset("/welcome.css")} />
+        <link
+          key="css-plan-cards"
+          rel="stylesheet"
+          href={asset("/plan-cards.css")}
+        />
         {
           /* REQ-080: a new account on the wizard is a CompleteRegistration
             for the ads (once per account on this browser); the receipt's way

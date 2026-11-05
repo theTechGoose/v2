@@ -18,6 +18,7 @@ Deno.test("projectAdminUser: maps the fixed admin shape + businessName", () => {
     phoneNumber: "+15125551234",
     businessName: "Ramirez Roofing",
     superAdmin: false,
+    features: {}, // REQ-177
   });
 });
 

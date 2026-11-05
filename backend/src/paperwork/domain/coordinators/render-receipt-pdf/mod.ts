@@ -1,5 +1,6 @@
 import { Injectable } from "#danet/core";
 import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
+import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
 import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
@@ -34,7 +35,9 @@ export interface RenderReceiptPdfInput {
  */
 @Injectable()
 export class RenderReceiptPdf {
-  async run(input: RenderReceiptPdfInput): Promise<Uint8Array> {
+  async run(raw: RenderReceiptPdfInput): Promise<Uint8Array> {
+    // REQ-161: the standard fonts encode WinAnsi only
+    const input = winAnsiSafeDeep(raw);
     const {
       invoice,
       customer,

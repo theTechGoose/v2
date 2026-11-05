@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { loadUser } from "../../lib/auth.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
@@ -36,8 +36,8 @@ export default define.page(async function PlanTest(ctx) {
       <Head>
         <title>{tFor(lang, "planTest.title")} · {tFor(lang, "brand.name")}</title>
         <meta name="robots" content="noindex" />
-        <link key="css-verify" rel="stylesheet" href="/verify.css" />
-        <link key="css-plan-cards" rel="stylesheet" href="/plan-cards.css" />
+        <link key="css-verify" rel="stylesheet" href={asset("/verify.css")} />
+        <link key="css-plan-cards" rel="stylesheet" href={asset("/plan-cards.css")} />
       </Head>
       <div class="verify-shell">
         <div class="verify-card" data-cy="plan-test-page" data-merchant={merchant}>

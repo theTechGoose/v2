@@ -12,6 +12,7 @@
  * Every guarded call is enforced server-side; the client gating is cosmetic.
  */
 import { api, type ApiOptions } from "../lib/api.ts";
+import type { FeatureKey, Features } from "../../shared/features.ts";
 
 export interface AdminUserView {
   id: string;
@@ -19,6 +20,8 @@ export interface AdminUserView {
   phoneNumber: string;
   businessName?: string;
   superAdmin: boolean;
+  /** REQ-177: the account's feature flags */
+  features?: Features;
 }
 
 export interface ImpersonationResponse {
@@ -54,5 +57,12 @@ export const adminClient = {
       undefined,
       opts,
     ),
+  /** REQ-177 */
+  setFeature: (
+    id: string,
+    key: FeatureKey,
+    on: boolean,
+    opts: ApiOptions = {},
+  ) => api.put<AdminUserView>(`/admin/users/${id}/features`, { key, on }, opts),
   whoami: (opts: ApiOptions = {}) => api.get<WhoAmI>("/admin/whoami", opts),
 };

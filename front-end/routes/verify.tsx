@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import SiteFooter from "../components/SiteFooter.tsx";
 import { loadUser } from "../lib/auth.ts";
@@ -55,7 +55,7 @@ export default define.page(async function Verify(ctx) {
     <>
       <Head>
         <title>{s["verify.h1"]} · {tFor(lang, "brand.name")}</title>
-        <link rel="stylesheet" href="/verify.css" />
+        <link rel="stylesheet" href={asset("/verify.css")} />
         {
           /* REQ-080: reached by sending the code from a landing page (the
             landings add ?px=lead; the login page does not) — a Lead for the

@@ -171,7 +171,7 @@
 .row {
   display: flex;
   gap: 10px;
-  align-items: flex-end;
+  align-items: flex-start; /* REQ-157 — the labels line up; the date input is taller than a select */
   flex-wrap: wrap;
 }
 .row > .field {
@@ -576,6 +576,8 @@
   border-color: var(--green-100);
 }
 .task__check {
+  padding: 0;
+  font: inherit;
   width: 44px;
   height: 44px;
   border-radius: 12px;
@@ -597,6 +599,9 @@
 }
 .task--done .task__check svg {
   opacity: 1;
+}
+.task__check:disabled {
+  cursor: default;
 }
 .task__type {
   font-family: var(--font-heading);
@@ -776,6 +781,11 @@
   font-weight: 800;
   color: var(--fg-muted);
   cursor: pointer;
+}
+/* REQ-157 — the month grid: 31 chips, seven to a row */
+.days.dom {
+  flex-wrap: wrap;
+  max-width: calc(7 * 36px + 6 * 6px);
 }
 .days .day input {
   position: absolute;

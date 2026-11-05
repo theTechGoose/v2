@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import TrialSignup from "../islands/TrialSignup.tsx";
 import { tFor } from "../lib/i18n.ts";
@@ -114,7 +114,7 @@ export default define.page(function PromoLanding(ctx) {
             ? <meta key={m.key} property={m.key} content={m.content} />
             : <meta key={m.key} name={m.key} content={m.content} />
         )}
-        <link rel="stylesheet" href="/promo.css" />
+        <link rel="stylesheet" href={asset("/promo.css")} />
       </Head>
 
       <div class="pm">

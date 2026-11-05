@@ -27,6 +27,8 @@ export interface SendEmailInput {
   from?: string;
   /** Optional CC list — Postmark accepts a comma-separated string. */
   cc?: string[];
+  /** REQ-175: where a reply should go (reply+<token>@<inbound domain>). */
+  replyTo?: string;
   /** File attachments — Postmark base64-encodes them; we accept raw bytes. */
   attachments?: EmailAttachment[];
 }
@@ -44,6 +46,7 @@ export interface PostmarkPayload {
   From: string;
   To: string;
   Cc?: string;
+  ReplyTo?: string;
   Subject: string;
   HtmlBody: string;
   MessageStream: "outbound";
@@ -56,6 +59,7 @@ export function postmarkPayload(input: SendEmailInput): PostmarkPayload {
     From: input.from ?? HOUSE_FROM,
     To: input.to,
     ...(input.cc?.length ? { Cc: input.cc.join(", ") } : {}),
+    ...(input.replyTo?.trim() ? { ReplyTo: input.replyTo.trim() } : {}),
     Subject: input.subject,
     HtmlBody: input.htmlBody,
     MessageStream: "outbound",

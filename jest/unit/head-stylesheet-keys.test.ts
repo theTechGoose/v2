@@ -34,7 +34,7 @@ describe("REQ-055 every stylesheet link in a route's Head carries its own key", 
     for (const rel of ["settings/index.tsx", "welcome.tsx"]) {
       const src = fs.readFileSync(path.join(ROUTES, rel), "utf8");
       const links = src.match(/<link\b[^>]*rel="stylesheet"[^>]*>/g) ?? [];
-      expect(links.some((l) => l.includes('href="/plan-cards.css"'))).toBe(true);
+      expect(links.some((l) => l.includes("/plan-cards.css"))).toBe(true); // REQ-158: href={asset("/plan-cards.css")}
       expect(links.length).toBe(2);
     }
   });

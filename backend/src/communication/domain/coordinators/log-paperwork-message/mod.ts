@@ -1,7 +1,11 @@
 import { Injectable } from "#danet/core";
 import { ConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
 import { MessageStore } from "@communication/domain/data/message-store/mod.ts";
-import type { Message, MessageChannel } from "@communication/dto/message.ts";
+import type {
+  Message,
+  MessageChannel,
+  MessageRole,
+} from "@communication/dto/message.ts";
 
 export interface LogPaperworkMessageInput {
   userId: string;
@@ -15,6 +19,9 @@ export interface LogPaperworkMessageInput {
   toAddress?: string;
   paperworkId?: string;
   paperworkType?: string;
+  /** REQ-175: an inbound reply is logged as the customer's own words ("user"); outbound logs stay "system" */
+  role?: MessageRole;
+  fromAddress?: string;
 }
 
 /**
@@ -43,9 +50,10 @@ export class LogPaperworkMessage {
       );
       return await this.messages.create({
         conversationId,
-        role: "system",
+        role: input.role ?? "system",
         channel: input.channel,
         content: input.content,
+        ...(input.fromAddress ? { fromAddress: input.fromAddress } : {}),
         ...(input.subject ? { subject: input.subject } : {}),
         ...(input.htmlBody ? { htmlBody: input.htmlBody } : {}),
         ...(input.toAddress ? { toAddress: input.toAddress } : {}),

@@ -16,6 +16,7 @@ import {
   type TaskType,
 } from "../clients/field.ts";
 import { clientsClient } from "../clients/clients.ts";
+import { profileClient } from "../clients/profile.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
@@ -58,6 +59,8 @@ interface Form {
   cadence: CadenceChoice;
   startDate: string;
   days: number[];
+  /** REQ-157 — monthly: the picked days of the month */
+  daysOfMonth: number[];
   items: Item[];
   /** the combobox query */
   q: string;
@@ -69,6 +72,8 @@ interface Form {
   picked: Option | null;
   /** the price input for the row being added, as typed */
   price: string;
+  /** REQ-174: days to pay, as typed (prefilled from Settings) */
+  netDays: string;
   err: string | null;
   saving: boolean;
 }
@@ -82,12 +87,19 @@ const DAY_LETTERS: Record<"en" | "es", string[]> = {
   es: ["D", "L", "M", "X", "J", "V", "S"],
 };
 
+/** REQ-157 — the day of the month of a date, today's when it is not one */
+function monthDayOf(iso: string): number {
+  const d = Number(iso.slice(8, 10));
+  return Number.isInteger(d) && d >= 1 && d <= 31 ? d : new Date().getDate();
+}
+const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+
 function weekdayOf(iso: string): number {
   const d = new Date(`${iso}T00:00:00`);
   return Number.isNaN(d.getTime()) ? new Date().getDay() : d.getDay();
 }
 
-function blankForm(): Form {
+function blankForm(defaultNetDays = 30): Form {
   const startDate = todayIso();
   return {
     editId: null,
@@ -96,6 +108,7 @@ function blankForm(): Form {
     cadence: "1",
     startDate,
     days: [weekdayOf(startDate)],
+    daysOfMonth: [monthDayOf(startDate)],
     items: [],
     q: "",
     searchOn: false,
@@ -103,24 +116,29 @@ function blankForm(): Form {
     active: -1,
     picked: null,
     price: "",
+    netDays: String(defaultNetDays),
     err: null,
     saving: false,
   };
 }
 
-function formFor(s: SubscriptionView): Form {
+function formFor(s: SubscriptionView, defaultNetDays = 30): Form {
   const startDate = (s.startDate ?? s.createdAt).slice(0, 10);
   const cadence: CadenceChoice = s.cadence === "monthly" ? "monthly" : (String(
     s.intervalWeeks ?? (s.cadence === "biweekly" ? 2 : 1),
   ) as CadenceChoice);
   return {
-    ...blankForm(),
+    ...blankForm(defaultNetDays),
     editId: s.id,
+    netDays: String(s.netDays ?? defaultNetDays),
     customerId: s.customerId,
     address: s.address,
     cadence: ["1", "2", "3", "4", "monthly"].includes(cadence) ? cadence : "1",
     startDate,
     days: s.days?.length ? s.days : [weekdayOf(startDate)],
+    daysOfMonth: s.daysOfMonth?.length
+      ? s.daysOfMonth
+      : [monthDayOf(startDate)],
     items: s.items.map((i) => ({
       id: i.taskTypeId,
       name: i.taskTypeName,
@@ -170,6 +188,8 @@ export default function FieldSubscriptionsPage() {
   /** REQ-152 — the customer last picked in the open form (its address may sit in the box) */
   const lastPick = useRef<string | null>(null);
   const [form, setForm] = useState<Form | null>(null);
+  // REQ-174: the account's default days to pay, from Settings
+  const [defaultNetDays, setDefaultNetDays] = useState(30);
   /** the card whose Delete is waiting for its Confirm */
   const [confirmId, setConfirmId] = useState<string | null>(null);
   /** the card with a request in flight, and the message its last one failed with */
@@ -206,6 +226,12 @@ export default function FieldSubscriptionsPage() {
       if (alive) setCustomers(list);
     }).catch(() => {
       // the picker stays empty; the modal's error line reports the save failure
+    });
+    profileClient.get().then((snap) => {
+      const n = snap.identity?.invoiceNetDays;
+      if (alive && typeof n === "number") setDefaultNetDays(n);
+    }).catch(() => {
+      // 30 stays the default
     });
     return () => {
       alive = false;
@@ -249,12 +275,12 @@ export default function FieldSubscriptionsPage() {
 
   function openNew() {
     setConfirmId(null);
-    setForm(blankForm());
+    setForm(blankForm(defaultNetDays));
   }
 
   function openEdit(s: SubscriptionView) {
     setConfirmId(null);
-    setForm(formFor(s));
+    setForm(formFor(s, defaultNetDays));
   }
 
   function close() {
@@ -344,11 +370,27 @@ export default function FieldSubscriptionsPage() {
     });
   }
 
+  /** REQ-157 — a day of the month on or off */
+  function toggleMonthDay(d: number) {
+    setForm((f) => {
+      if (!f) return f;
+      const daysOfMonth = f.daysOfMonth.includes(d)
+        ? f.daysOfMonth.filter((x) => x !== d)
+        : [...f.daysOfMonth, d].sort((a, b) => a - b);
+      return { ...f, daysOfMonth };
+    });
+  }
+
   function onStartDate(v: string) {
     setForm((
       f,
     ) => (f
-      ? { ...f, startDate: v, days: f.days.length ? f.days : [weekdayOf(v)] }
+      ? {
+        ...f,
+        startDate: v,
+        days: f.days.length ? f.days : [weekdayOf(v)],
+        daysOfMonth: f.daysOfMonth.length ? f.daysOfMonth : [monthDayOf(v)],
+      }
       : f)
     );
   }
@@ -378,8 +420,17 @@ export default function FieldSubscriptionsPage() {
       return;
     }
     const monthly = f.cadence === "monthly";
-    if (!monthly && !f.days.length) {
+    if (monthly ? !f.daysOfMonth.length : !f.days.length) {
       setForm({ ...f, err: t("field.subs.daysHint") });
+      return;
+    }
+    // REQ-174: a whole number of days, 0–365
+    const netDays = Number(f.netDays);
+    if (
+      f.netDays.trim() === "" || !Number.isInteger(netDays) || netDays < 0 ||
+      netDays > 365
+    ) {
+      setForm({ ...f, err: t("field.subs.netDays") + ": 0–365" });
       return;
     }
     const items: SubscriptionItemInput[] = f.items.map((it) => ({
@@ -390,13 +441,19 @@ export default function FieldSubscriptionsPage() {
     const n = Number(f.cadence);
     const schedule: Pick<
       SubscriptionInput,
-      "cadence" | "intervalWeeks" | "days" | "startDate"
-    > = monthly ? { cadence: "monthly", startDate: f.startDate } : {
-      cadence: n === 2 ? "biweekly" : "weekly",
-      intervalWeeks: n,
-      days: f.days,
-      startDate: f.startDate,
-    };
+      "cadence" | "intervalWeeks" | "days" | "daysOfMonth" | "startDate"
+    > = monthly
+      ? {
+        cadence: "monthly",
+        startDate: f.startDate,
+        daysOfMonth: f.daysOfMonth,
+      }
+      : {
+        cadence: n === 2 ? "biweekly" : "weekly",
+        intervalWeeks: n,
+        days: f.days,
+        startDate: f.startDate,
+      };
     setForm({ ...f, saving: true });
     try {
       if (f.editId) {
@@ -404,6 +461,7 @@ export default function FieldSubscriptionsPage() {
           address: f.address.trim(),
           ...schedule,
           items,
+          netDays,
         });
       } else {
         await fieldClient.createSubscription({
@@ -411,6 +469,7 @@ export default function FieldSubscriptionsPage() {
           address: f.address.trim(),
           ...schedule,
           items,
+          netDays,
         });
       }
       close();
@@ -722,9 +781,16 @@ export default function FieldSubscriptionsPage() {
                     })}
                 >
                   <option value="1">{t("field.subs.weekly")}</option>
-                  <option value="2">{t("field.subs.biweekly")}</option>
-                  <option value="3">{t("field.subs.every3")}</option>
-                  <option value="4">{t("field.subs.every4")}</option>
+                  {/* REQ-157 — weekly or monthly; an older every-N-weeks subscription keeps its own */}
+                  {form.cadence === "2" && (
+                    <option value="2">{t("field.subs.biweekly")}</option>
+                  )}
+                  {form.cadence === "3" && (
+                    <option value="3">{t("field.subs.every3")}</option>
+                  )}
+                  {form.cadence === "4" && (
+                    <option value="4">{t("field.subs.every4")}</option>
+                  )}
                   <option value="monthly">{t("field.subs.monthly")}</option>
                 </select>
               </label>
@@ -738,6 +804,29 @@ export default function FieldSubscriptionsPage() {
                   onChange={(e) =>
                     onStartDate((e.currentTarget as HTMLInputElement).value)}
                 />
+              </label>
+            </div>
+
+            {/* REQ-174: days to pay, from the day the invoice is sent */}
+            <div class="row">
+              <label class="field">
+                {t("field.subs.netDays")}
+                <input
+                  type="number"
+                  name="netDays"
+                  min="0"
+                  max="365"
+                  step="1"
+                  data-cy="subs-net-days"
+                  value={form.netDays}
+                  onInput={(e) =>
+                    patch({
+                      netDays: (e.currentTarget as HTMLInputElement).value,
+                    })}
+                />
+                <span class="hint">
+                  {t("field.subs.netDaysHint", { n: defaultNetDays })}
+                </span>
               </label>
             </div>
 
@@ -767,6 +856,35 @@ export default function FieldSubscriptionsPage() {
                   })}
                 </div>
                 <span class="hint">{t("field.subs.daysHint")}</span>
+              </div>
+            )}
+
+            {form.cadence === "monthly" && (
+              <div class="field" data-cy="subs-dom">
+                {t("field.subs.daysOfMonth")}
+                <div class="days dom">
+                  {MONTH_DAYS.map((d) => {
+                    const on = form.daysOfMonth.includes(d);
+                    return (
+                      <label
+                        class={`day${on ? " on" : ""}`}
+                        key={d}
+                        data-cy="subs-dom-day"
+                        data-dom={d}
+                      >
+                        <input
+                          type="checkbox"
+                          name="daysOfMonth"
+                          value={d}
+                          checked={on}
+                          onChange={() => toggleMonthDay(d)}
+                        />
+                        {d}
+                      </label>
+                    );
+                  })}
+                </div>
+                <span class="hint">{t("field.subs.domHint")}</span>
               </div>
             )}
 
