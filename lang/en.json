@@ -3216,6 +3216,7 @@
   "field.asg.noRegions": "No zones yet — add subscriptions and they group on their own.",
   "field.lt.sendAnyway": "Send anyway",
   "field.lt.openInvoices": "Open in Invoices",
+  "field.lt.openInvoice": "Open invoice",
   "worker.docTitle": "My tasks · DocuMonster",
   "clientsBoard.panel.subs": "Subscriptions",
   "clientsBoard.panel.subsNone": "No subscriptions",

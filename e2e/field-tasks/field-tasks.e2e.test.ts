@@ -262,6 +262,12 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
       1,
       "exactly one invoice — one draft per customer",
     );
+
+    // REQ-162: the batch's "Open invoice" opens THAT invoice, not the invoices list
+    await page.locator("[data-cy='lt-open']").first().click();
+    await page.waitForURL(/\/invoices\?open=/, { timeout: 15_000 });
+    await expect.see("Invoice detail", { timeout: 15_000 });
+    await expect.see("Ana Torres");
   }));
 
 Deno.test("REQ-144: picking a customer with an address on file fills the service address; a typed address survives a re-pick", (t) =>
