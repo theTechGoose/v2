@@ -469,3 +469,23 @@ Deno.test("REQ-160 send-paperwork-email: a standalone invoice's email carries th
 
   await resetKv();
 });
+
+// REQ-168 — "we need to collect a customer web page so we can attach it to invoices also"
+// REQ-169 — "invoices should say instead of 'thank you for the work' really make this wording pretty"
+Deno.test("REQ-168/169 send-paperwork-email: a standalone invoice's email links the business website in its From block and opens by thanking the customer for trusting the business", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices, identities, sent } = fresh();
+  await seedContractor("u-1");
+  await identities.upsert("u-1", { businessName: "A2Z Landscape LLC", websiteUrl: "https://a2zlandscape.com/" });
+  const customer = await customers.create("u-1", { name: "Randall Belknap", email: "rb@acme.test" });
+  const invoice = await invoices.create("u-1", { customerId: customer.id, status: "draft", jobName: "Maintenance", amount: 35750 });
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, true);
+  const html = sent[0].htmlBody;
+  assertStringIncludes(html, 'href="https://a2zlandscape.com/"');
+  assertStringIncludes(html, ">a2zlandscape.com<");
+  assertStringIncludes(html, "Thank you for trusting A2Z Landscape LLC");
+  assert(!html.includes("Thanks for the work"), "the old intro is gone");
+  await resetKv();
+});

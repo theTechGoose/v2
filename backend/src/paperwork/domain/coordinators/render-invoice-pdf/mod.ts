@@ -193,6 +193,8 @@ export class RenderInvoicePdf {
         businessName,
         contractor?.phoneNumber,
         contractor?.email,
+        // REQ-168: the business website
+        ident?.websiteUrl?.trim().replace(/^https?:\/\//i, "").replace(/\/$/, ""),
       ].filter((v): v is string => !!v && v.trim().length > 0);
       const rows = Math.max(toLines.length, fromLines.length, 1);
       for (let i = 0; i < rows; i++) {

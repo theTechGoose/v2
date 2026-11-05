@@ -322,6 +322,11 @@ const COLOR_LINE = "#e3e8e6";
 const COLOR_BG = "#f7f6f1";
 const COLOR_CARD = "#ffffff";
 
+/** REQ-169: the name the bill thanks the customer on behalf of — the business, else the sender */
+function bizLabel(b: BusinessIdentity | undefined, u: User | undefined, lang: Lang): string {
+  return b?.businessName?.trim() || b?.legalName?.trim() || senderName(u, lang);
+}
+
 function senderName(u: User | undefined, lang: Lang): string {
   // P-06: the seeded placeholder ("Nuevo usuario"/"New user") reads like a
   // real name but must never be shown to a customer — fall back instead.
@@ -374,6 +379,8 @@ function shell(opts: {
   lang: Lang;
   /** REQ-160: the business's own logo when it has one, the house logo otherwise */
   logo: EmailLogo;
+  /** REQ-168: the business website, linked in the From block */
+  website?: string;
 }): string {
   const {
     preheader,
@@ -388,6 +395,7 @@ function shell(opts: {
     sender,
     lang,
     logo,
+    website,
   } = opts;
   const senderEmailLine = sender?.email
     ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px"><a href="mailto:${
@@ -400,6 +408,13 @@ function shell(opts: {
     ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px">${
       escapeHtml(sender.phoneNumber)
     }</div>`
+    : "";
+  const senderSiteLine = website?.trim()
+    ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px"><a href="${
+      escapeAttr(website.trim())
+    }" style="color:${COLOR_MUTED};text-decoration:none">${
+      escapeHtml(websiteLabel(website))
+    }</a></div>`
     : "";
 
   return `<!doctype html>
@@ -471,6 +486,7 @@ function shell(opts: {
   }</div>
           ${senderEmailLine}
           ${senderPhoneLine}
+          ${senderSiteLine}
         </td></tr>
       </table>
     </td></tr>
@@ -1196,7 +1212,7 @@ function renderInvoiceHtml(
         <tr><td style="padding:28px 36px 0;">
           <p style="margin:0 0 8px;font-size:16px;font-weight:700;color:${COLOR_INK}">${greeting}</p>
           <p style="margin:0;font-size:15px;color:${COLOR_INK};line-height:1.55">${
-    escapeHtml(t(lang, "paperworkEmail.invoice.intro"))
+    escapeHtml(t(lang, "paperworkEmail.invoice.intro", { business: bizLabel(senderBiz, sender, lang) }))
   }</p>
         </td></tr>
 
@@ -1421,13 +1437,14 @@ function renderInvoiceBasicHtml(
     docNumber,
     drafted,
     greeting: customerGreeting(customer, lang),
-    intro: t(lang, "paperworkEmail.invoice.intro"),
+    intro: t(lang, "paperworkEmail.invoice.intro", { business: bizLabel(senderBiz, sender, lang) }),
     body,
     ctaLabel: t(lang, "paperworkEmail.invoice.cta"),
     ctaUrl: `${APP_URL}/i/${i.id}`,
     sender,
     lang,
     logo: emailLogo({ appUrl: APP_URL, kind: "invoice", id: i.id, biz: senderBiz }),
+    website: senderBiz?.websiteUrl,
   });
 }
 

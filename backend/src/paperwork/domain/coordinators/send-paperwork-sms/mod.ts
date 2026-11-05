@@ -384,13 +384,14 @@ function renderInvoiceBody(
 ): string {
   // P-49: the shared builder guarantees a capitalized sentence start for
   // unnamed customers ("Tu factura…" / "Your invoice…"), greeting otherwise.
+  // REQ-169: the bill closes by thanking the customer, not "I look forward to working with you"
   return buildInvoiceSms({
     customerFirstName: customerFirst(cust),
     contractorFirstName: senderFirst(sender),
     amount: fmtUSD(i.amount),
     url,
     lang,
-  });
+  }) + "\n\n" + t(lang, "paperworkSms.body.invoiceClosing");
 }
 
 // ---------- phone normalization --------------------------------------------

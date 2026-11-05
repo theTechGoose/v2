@@ -35,6 +35,8 @@ interface Contractor {
   phoneNumber?: string;
   email?: string;
   addressLine?: string;
+  /** REQ-168: the business website, shown as a link under the address. */
+  websiteUrl?: string;
   /** 2-letter state code — expands governing-law / state-notices term values
    *  to customer-readable text in the term grid (matches the agreement page). */
   state?: string;
@@ -158,6 +160,11 @@ function ErrorCard({ message, lang }: { message: string; lang: Lang }) {
   );
 }
 
+/** REQ-168: "https://a2zlandscape.com/" → "a2zlandscape.com" */
+function siteLabel(url: string): string {
+  return url.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+}
+
 function InvoiceDoc(
   { invoice, lang }: { invoice: InvoicePublic; lang: Lang },
 ) {
@@ -242,6 +249,17 @@ function InvoiceDoc(
                   <div style={`margin-top:3px;font-size:12px;color:${MUTED}`}>
                     {invoice.contractor.addressLine}
                   </div>
+                )
+                : null}
+              {invoice.contractor?.websiteUrl
+                ? (
+                  <a
+                    data-cy="invoice-website"
+                    href={invoice.contractor.websiteUrl}
+                    style={`display:inline-block;margin-top:3px;font-size:12px;color:${TEAL};text-decoration:none;font-weight:700`}
+                  >
+                    {siteLabel(invoice.contractor.websiteUrl)}
+                  </a>
                 )
                 : null}
             </div>
@@ -506,12 +524,18 @@ function InvoiceDoc(
             </a>
           </div>
 
-          {/* Contact footer */}
-          {(invoice.contractor?.phoneNumber || invoice.contractor?.email)
+          {/* Contact footer — REQ-169: thank the customer for trusting the business, then where to turn */}
+          <footer
+            style={`margin-top:30px;padding-top:22px;border-top:1px solid ${LINE};color:${INK};font-size:14px;line-height:1.5`}
+          >
+            <p data-cy="invoice-thanks" style="margin:0 0 10px">
+              {tFor(lang, "publicInvoice.footer.thanks", {
+                business: businessLabel,
+              })}
+            </p>
+            {(invoice.contractor?.phoneNumber || invoice.contractor?.email)
             ? (
-              <footer
-                style={`margin-top:30px;padding-top:22px;border-top:1px solid ${LINE};color:${INK};font-size:14px;line-height:1.5`}
-              >
+              <p style="margin:0">
                 <span data-invoice-question>
                   {tFor(lang, "publicInvoice.footer.questions")}
                 </span>{" "}
@@ -545,9 +569,10 @@ function InvoiceDoc(
                   )
                   : null}
                 {tFor(lang, "publicInvoice.footer.closing")}
-              </footer>
+              </p>
             )
             : null}
+          </footer>
         </div>
         <div
           style={`display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;font-size:11px;color:#a8b2b3;letter-spacing:.04em`}
