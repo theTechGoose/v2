@@ -1,8 +1,8 @@
 /**
  * REQ-176 — the sidebar's tree, as data. The root is four rows: Dashboard, Customers, the
  * Billing folder (Quotes, Invoices, Payments — the quote IS the contract since the Quote+Agreement
- * merge, so there is no Contracts entry; /contracts 302s into /quotes) and the Admin folder (the
- * REQ-156 Recurring folder with the field entries, and Admins). The sidebar (islands/DashSidebar.tsx)
+ * merge, so there is no Contracts entry; /contracts 302s into /quotes), the REQ-156 Recurring folder
+ * with the field entries, and the Admin folder (Admins, and the super-admin tab). The sidebar (islands/DashSidebar.tsx)
  * renders one level at a time through lib/nav-folders.ts; `countKey` names a derived count from
  * /analytics/dashboard for the badge. Counts are never seeded client-side — a failed fetch or a 0
  * omits the badge. Icon names are the sidebar's (lib/dash-icons.tsx).
@@ -29,23 +29,24 @@ export const NAV: NavNode<IconName>[] = [
       { id: "payments", icon: "pay", href: "/payments" },
     ],
   },
+  // REQ-143: the field module — recurring maintenance on the existing customers,
+  // billed through the existing invoices; REQ-156: one folder, its five behind Back;
+  // REQ-176 amendment: on the root, not nested.
+  {
+    id: "recurring",
+    icon: "repeat",
+    items: [
+      { id: "subscriptions", icon: "repeat", href: "/field/subscriptions" },
+      { id: "assignments", icon: "map", href: "/field/assignments" },
+      { id: "tasks", icon: "cal", href: "/field/tasks" },
+      { id: "batches", icon: "batch", href: "/field/batches" },
+      { id: "workers", icon: "hardhat", href: "/field/workers" },
+    ],
+  },
   {
     id: "manage",
     icon: "cog",
     items: [
-      // REQ-143: the field module — recurring maintenance on the existing customers,
-      // billed through the existing invoices; REQ-156: one folder, its five behind Back.
-      {
-        id: "recurring",
-        icon: "repeat",
-        items: [
-          { id: "subscriptions", icon: "repeat", href: "/field/subscriptions" },
-          { id: "assignments", icon: "map", href: "/field/assignments" },
-          { id: "tasks", icon: "cal", href: "/field/tasks" },
-          { id: "batches", icon: "batch", href: "/field/batches" },
-          { id: "workers", icon: "hardhat", href: "/field/workers" },
-        ],
-      },
       // REQ-146: the numbers the owner lets into the account
       { id: "admins", icon: "shield", href: "/admins" },
     ],

@@ -31,7 +31,7 @@ async function verify(http: StoryTools["http"], phone: string) {
   return { cookie, auth: { ...JSON_HEADERS, cookie } };
 }
 
-Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Admin; Billing opens to Quotes, Invoices, Payments and Invoices loads inside it; Admin opens to Recurring and Admins; Back climbs one level; /field/tasks loads inside Recurring", (t) =>
+Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin; Billing opens to Quotes, Invoices, Payments and Invoices loads inside it; Admin opens to Admins; Recurring to the five; Back returns to the root; /field/tasks loads inside Recurring", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const user = await verify(http, `+1512${digits()}`);
     await (await http("/api/me", {
@@ -66,8 +66,8 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Admin; Billing op
     let seen = await labels();
     expect.eq(
       seen.join(" | "),
-      "Dashboard | Customers | Billing | Admin",
-      "the root is the four rows",
+      "Dashboard | Customers | Billing | Recurring | Admin",
+      "the root is the five rows",
     );
     // 2. Billing: Back, Quotes, Invoices, Payments; Invoices loads inside it
     await nav.locator("[data-cy='nav-folder-billing']").click();
@@ -89,18 +89,20 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Admin; Billing op
       (await labels()).includes("Payments"),
       "the sidebar opened inside Billing",
     );
-    // 3. Back to the root, then Admin: Recurring and Admins
+    // 3. Back to the root, then Admin: Admins alone (Recurring is on the root — the amendment)
     await nav.locator("[data-cy='nav-back']").click();
     await nav.locator("[data-cy='nav-folder-manage']").waitFor({
       timeout: 10_000,
     });
     await nav.locator("[data-cy='nav-folder-manage']").click();
+    await nav.locator("a[href='/admins']").waitFor({ timeout: 10_000 });
+    seen = await labels();
+    expect.eq(seen.join(" | "), "Back | Admins", "inside Admin");
+    await nav.locator("[data-cy='nav-back']").click();
+    // 4. Recurring, on the root: the five; Back lands on the root
     await nav.locator("[data-cy='nav-folder-recurring']").waitFor({
       timeout: 10_000,
     });
-    seen = await labels();
-    expect.eq(seen.join(" | "), "Back | Recurring | Admins", "inside Admin");
-    // 4. Recurring: the five; Back lands on Admin, Back again on the root
     await nav.locator("[data-cy='nav-folder-recurring']").click();
     await nav.locator("a[href='/field/workers']").waitFor({ timeout: 10_000 });
     seen = await labels();
@@ -110,16 +112,11 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Admin; Billing op
       "inside Recurring",
     );
     await nav.locator("[data-cy='nav-back']").click();
-    await nav.locator("[data-cy='nav-folder-recurring']").waitFor({
-      timeout: 10_000,
-    });
-    expect((await labels()).includes("Admins"), "Back landed on Admin");
-    await nav.locator("[data-cy='nav-back']").click();
     await nav.locator("[data-cy='nav-folder-billing']").waitFor({
       timeout: 10_000,
     });
-    expect((await labels()).includes("Customers"), "Back again: the root");
-    // 5. a page two folders deep opens inside its folder
+    expect((await labels()).includes("Customers"), "Back landed on the root");
+    // 5. a page inside a folder opens inside it
     await page.goto("/field/tasks");
     await nav.locator("[data-cy='nav-back']").waitFor({ timeout: 20_000 });
     seen = await labels();

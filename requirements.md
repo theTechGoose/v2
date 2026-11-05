@@ -1122,3 +1122,9 @@ On the real deploy `FieldGeocoder` no longer throws in its constructor when `MAP
 **Requirement:** The add form's Language select sits in the first row beside the PIN (Name, Phone, PIN, Language), the same height as the inputs; the hint is the select's tooltip, not a line of its own. The picker's id and default are unchanged.
 **Tests:** the REQ-155 tests stand (`wk-language` reads es by default — jest `unit/worker-language.test.ts`, the field-tasks story); the layout is checked by eye in the host browser — no tests — a visual placement.
 **Evidence (2026-11-05):** before: the select spanned the full card width under the three fields, its hint a line below. After: `FieldWorkersPage.tsx` places the select in the first row (`flex:0 0 150px`), `field.css` gives `.field select` `min-height: 47px` so it matches the inputs (measured in the host Chrome: all four boxes 47px tall, labels on one line). jest → `723 passed`; `shots run e2e/field-tasks` → `4 pass`.
+
+## REQ-176 — AMENDMENT (2026-11-05): Recurring is a root folder, not nested in Admin
+**Source:** Raphael, 2026-11-05: "recurring should not be nested."
+**Requirement:** The root is five rows: Dashboard, Customers, Billing, Recurring, Admin. Recurring keeps its five entries; Admin holds Admins (and the super-admin tab). Back from any folder lands on the root.
+**Tests:** the REQ-176 unit test and story and the REQ-156 story, amended to this shape (same files).
+**Evidence (2026-11-05):** RED — jest `unit/sidebar-root-folders.test.ts`: `2 failed` (the root still four rows, tasks' path still manage → recurring). GREEN — `lib/nav-tree.ts` with `recurring` on the root between Billing and Admin, Admin holding Admins; jest → `723 passed, 1 skipped`; `shots run e2e/sidebar-folders` → `2 pass` twice over (`✓ REQ-176 …`, `✓ REQ-156 …` back to its original root shape); lint and typecheck clean. Seen in the host Chrome: Dashboard, Customers, Billing ›, Recurring ›, Admin ›.

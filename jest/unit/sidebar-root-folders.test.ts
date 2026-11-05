@@ -17,25 +17,32 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 const ids = (p: string[]) => viewAt(NAV, p).items.map((n) => n.id);
 
 describe("REQ-176 the sidebar's root folders", () => {
-  test("the root is Dashboard, Customers, Billing, Admin — nothing else", () => {
-    expect(ids([])).toEqual(["home", "customers", "billing", "manage"]);
+  test("the root is Dashboard, Customers, Billing, Recurring, Admin — nothing else (REQ-176 amendment: Recurring is not nested)", () => {
+    expect(ids([])).toEqual([
+      "home",
+      "customers",
+      "billing",
+      "recurring",
+      "manage",
+    ]);
     expect(viewAt(NAV, []).items.filter(isFolder).map((n) => n.id)).toEqual([
       "billing",
+      "recurring",
       "manage",
     ]);
   });
 
-  test("Billing holds Quotes, Invoices, Payments; Admin holds Recurring (the five) and Admins", () => {
+  test("Billing holds Quotes, Invoices, Payments; Recurring the five; Admin holds Admins", () => {
     expect(ids(["billing"])).toEqual(["quotes", "invoices", "payments"]);
-    expect(ids(["manage"])).toEqual(["recurring", "admins"]);
-    expect(ids(["manage", "recurring"])).toEqual([
+    expect(ids(["manage"])).toEqual(["admins"]);
+    expect(ids(["recurring"])).toEqual([
       "subscriptions",
       "assignments",
       "tasks",
       "batches",
       "workers",
     ]);
-    expect(folderPathTo(NAV, "tasks")).toEqual(["manage", "recurring"]);
+    expect(folderPathTo(NAV, "tasks")).toEqual(["recurring"]);
     expect(folderPathTo(NAV, "invoices")).toEqual(["billing"]);
     expect(folderPathTo(NAV, "admins")).toEqual(["manage"]);
     expect(folderPathTo(NAV, "customers")).toEqual([]);

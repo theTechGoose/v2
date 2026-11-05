@@ -31,7 +31,7 @@ async function verify(http: StoryTools["http"], phone: string) {
   return { cookie, auth: { ...JSON_HEADERS, cookie } };
 }
 
-Deno.test("REQ-156: Recurring (inside Admin since REQ-176) holds the five and none show outside it; opening it shows Back and only the five; Tasks opens /field/tasks inside the folder; Back shows the root again", (t) =>
+Deno.test("REQ-156: the root shows Recurring and none of the five; opening it shows Back and only the five; Tasks opens /field/tasks inside the folder; Back shows the root again", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const user = await verify(http, `+1512${digits()}`);
     await (await http("/api/me", {
@@ -56,10 +56,9 @@ Deno.test("REQ-156: Recurring (inside Admin since REQ-176) holds the five and no
         s.trim()
       );
 
-    // 1. the root (/customers: a new account's /dashboard lands on the /welcome wizard, which has no sidebar — REQ-091);
-    //    REQ-176: Recurring sits inside the Admin folder, so open that first
+    // 1. the root: Recurring is a row, the five are not (/customers: a new account's /dashboard lands on the /welcome wizard, which has no sidebar — REQ-091)
     await page.goto("/customers");
-    await nav.locator("[data-cy='nav-folder-manage']").waitFor({
+    await nav.locator("[data-cy='nav-folder-recurring']").waitFor({
       timeout: 20_000,
     });
     // the rail hydrates in Spanish for a beat, then the profile's English lands — wait for it
@@ -67,23 +66,17 @@ Deno.test("REQ-156: Recurring (inside Admin since REQ-176) holds the five and no
       timeout: 20_000,
     });
     let seen = await labels();
+    expect(
+      seen.includes("Recurring"),
+      `Recurring on the root (${seen.join(", ")})`,
+    );
     expect(seen.includes("Customers"), "Customers on the root");
-    expect(!seen.includes("Recurring"), "Recurring is inside Admin (REQ-176)");
     for (
       const l of ["Subscriptions", "Assignments", "Tasks", "Batches", "Workers"]
     ) expect(!seen.includes(l), `${l} is inside the folder, not on the root`);
     expect(
       await nav.locator("[data-cy='nav-back']").count() === 0,
       "no Back on the root",
-    );
-    await nav.locator("[data-cy='nav-folder-manage']").click();
-    await nav.locator("[data-cy='nav-folder-recurring']").waitFor({
-      timeout: 10_000,
-    });
-    seen = await labels();
-    expect(
-      seen.includes("Recurring"),
-      `Recurring inside Admin (${seen.join(", ")})`,
     );
     // 2. open the folder: Back and only the five
     await nav.locator("[data-cy='nav-folder-recurring']").click();
@@ -92,7 +85,7 @@ Deno.test("REQ-156: Recurring (inside Admin since REQ-176) holds the five and no
     for (
       const l of ["Subscriptions", "Assignments", "Tasks", "Batches", "Workers"]
     ) expect(seen.includes(l), `${l} inside the folder (${seen.join(", ")})`);
-    expect(!seen.includes("Admins"), "Admin's other entries are gone");
+    expect(!seen.includes("Customers"), "the root's entries are gone");
     expect(
       !seen.includes("Recurring"),
       "the folder row itself is gone (its name is the header)",
@@ -113,23 +106,14 @@ Deno.test("REQ-156: Recurring (inside Admin since REQ-176) holds the five and no
       "Tasks is the active entry",
     );
 
-    // 4. Back: the Admin folder (REQ-176), and Back again: the root
+    // 4. Back: the root again
     await nav.locator("[data-cy='nav-back']").click();
     await nav.locator("[data-cy='nav-folder-recurring']").waitFor({
       timeout: 10_000,
     });
     seen = await labels();
     expect(
-      seen.includes("Admins") && !seen.includes("Tasks"),
-      `the Admin folder after Back (${seen.join(", ")})`,
-    );
-    await nav.locator("[data-cy='nav-back']").click();
-    await nav.locator("[data-cy='nav-folder-manage']").waitFor({
-      timeout: 10_000,
-    });
-    seen = await labels();
-    expect(
-      seen.includes("Customers") && !seen.includes("Admins"),
-      `the root after Back, Back (${seen.join(", ")})`,
+      seen.includes("Customers") && !seen.includes("Tasks"),
+      `the root after Back (${seen.join(", ")})`,
     );
   }));
