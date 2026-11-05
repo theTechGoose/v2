@@ -26,6 +26,8 @@ import {
   realName,
 } from "@users/domain/business/account-admins/mod.ts";
 import { appUrl } from "@users/domain/business/app-url/mod.ts";
+import { secretAllows } from "@users/domain/business/shared-secret/mod.ts";
+import type { User } from "@users/dto/user.ts";
 import { workerWelcome } from "@field/domain/business/worker-welcome/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import {
@@ -74,15 +76,113 @@ const body = (
   b: unknown,
 ): Body_ => (b && typeof b === "object" ? b as Body_ : {});
 
+/** what the welcome text and the owner tool need from the controller */
+interface WelcomeDeps {
+  users: UserStore;
+  identities: BusinessIdentityStore;
+  sms: SmsService;
+}
+
+/** REQ-151 — the welcome text to one worker, in the owner's language; false (and a log line) when it could not go out */
+async function welcomeWorker(
+  d: WelcomeDeps,
+  user: User,
+  w: FieldWorker,
+): Promise<boolean> {
+  const lang = user.language === "es" ? "es" : "en";
+  const identity = await d.identities.get(user.id);
+  const who = realName(user.name);
+  const biz = identity?.businessName?.trim();
+  const owner = who && biz ? `${who} (${biz})` : accountLabel(user, biz);
+  try {
+    const sent = await d.sms.send({
+      to: normalizePhone(w.phoneNumber),
+      body: workerWelcome(lang, {
+        owner,
+        url: `${appUrl()}/worker`,
+        pin: w.pin,
+      }),
+    });
+    if (!sent.ok) {
+      console.error(
+        `[field/workers] welcome text to ${w.phoneNumber} failed: ${sent.reason}`,
+      );
+    }
+    return sent.ok;
+  } catch (err) {
+    console.error(
+      `[field/workers] welcome text to ${w.phoneNumber} failed: ${
+        (err as Error).message
+      }`,
+    );
+    return false;
+  }
+}
+
+/** REQ-154 — the account the tool names: by phone, or by a business name matching exactly one account */
+async function findOwner(
+  d: WelcomeDeps,
+  b: Body_,
+): Promise<
+  { user: User; business: string | undefined } | {
+    error: string;
+    matches?: { phone: string; business: string }[];
+  }
+> {
+  if (typeof b.phoneNumber === "string" && b.phoneNumber.trim()) {
+    let phone: string;
+    try {
+      phone = normalizePhone(b.phoneNumber);
+    } catch {
+      return { error: "bad_phone" };
+    }
+    const user = await d.users.findByPhone(phone);
+    if (!user) return { error: "no_such_user" };
+    return {
+      user,
+      business: (await d.identities.get(user.id))?.businessName?.trim(),
+    };
+  }
+  const needle = typeof b.business === "string"
+    ? b.business.trim().toLowerCase()
+    : "";
+  if (!needle) return { error: "owner_required" };
+  const matches: { user: User; business: string }[] = [];
+  for (const user of await d.users.searchByPhone("", 100_000)) {
+    const business = (await d.identities.get(user.id))?.businessName?.trim();
+    if (business && business.toLowerCase().includes(needle)) {
+      matches.push({ user, business });
+    }
+  }
+  if (matches.length === 0) return { error: "no_such_business" };
+  if (matches.length > 1) {
+    return {
+      error: "ambiguous_business",
+      matches: matches.map((m) => ({
+        phone: m.user.phoneNumber,
+        business: m.business,
+      })),
+    };
+  }
+  return matches[0];
+}
+
+/** the controller's stores as the helpers take them (private members are not structurally assignable) */
+function deps(
+  c: { users: UserStore; identities: BusinessIdentityStore; sms: SmsService },
+): WelcomeDeps {
+  return { users: c.users, identities: c.identities, sms: c.sms };
+}
+
 @Controller("field/workers")
 export class FieldWorkersController {
   constructor(
     private workers: FieldWorkerStore,
     private regions: RegionStore,
-    private users: UserStore,
+    readonly users: UserStore,
     private sessions: SessionStore,
-    private identities: BusinessIdentityStore,
-    private sms: SmsService,
+    readonly identities: BusinessIdentityStore,
+    readonly sms: SmsService,
   ) {}
 
   @Get()
@@ -121,31 +221,54 @@ export class FieldWorkersController {
     if (b.role === "foreman") w.role = "foreman";
     await this.workers.put(w);
     // REQ-151 — the welcome text: who added them, the /worker address, the PIN; its failure is logged, never thrown
-    const lang = user.language === "es" ? "es" : "en";
-    const identity = await this.identities.get(user.id);
-    const who = realName(user.name);
-    const biz = identity?.businessName?.trim();
-    const owner = who && biz ? `${who} (${biz})` : accountLabel(user, biz);
-    let texted = false;
-    try {
-      const sent = await this.sms.send({
-        to: normalizePhone(phone),
-        body: workerWelcome(lang, { owner, url: `${appUrl()}/worker`, pin }),
-      });
-      texted = sent.ok;
-      if (!sent.ok) {
-        console.error(
-          `[field/workers] welcome text to ${phone} failed: ${sent.reason}`,
-        );
-      }
-    } catch (err) {
-      console.error(
-        `[field/workers] welcome text to ${phone} failed: ${
-          (err as Error).message
-        }`,
-      );
-    }
+    const texted = await welcomeWorker(deps(this), user, w);
     return ctx.json({ ...safeWorker(w), texted }, 201);
+  }
+
+  /**
+   * REQ-154 — OWNER TOOL: text every existing worker of an account their sign-in link and PIN (the
+   * REQ-151 text) — for the accounts that had workers before the text existed. Gated exactly as
+   * `/me/reset-by-phone` (`x-reset-secret` against `RESET_SECRET`, never a session). The owner by
+   * `phoneNumber` or by `business` (a case-insensitive match on the business name, one account only);
+   * `dryRun: true` lists the workers and texts nothing. `deno task welcome-workers` calls it on prod.
+   */
+  @Post("welcome-by-owner")
+  async welcomeByOwner(@Context() ctx: ExecutionContext, @Body() raw: unknown) {
+    if (
+      !secretAllows(
+        Deno.env.get("RESET_SECRET"),
+        ctx.req.header("x-reset-secret"),
+      )
+    ) {
+      return { ok: false as const, error: "forbidden" };
+    }
+    const b = body(raw);
+    const found = await findOwner(deps(this), b);
+    if ("error" in found) return { ok: false as const, ...found };
+    const { user, business } = found;
+    const dryRun = b.dryRun === true;
+    const workers = (await this.workers.listByUser(user.id)).sort((x, y) =>
+      x.createdAt.localeCompare(y.createdAt)
+    );
+    const out: { id: string; name: string; phone: string; texted?: boolean }[] =
+      [];
+    for (const w of workers) {
+      const row: { id: string; name: string; phone: string; texted?: boolean } =
+        { id: w.id, name: w.name, phone: w.phoneNumber };
+      if (!dryRun) row.texted = await welcomeWorker(deps(this), user, w);
+      out.push(row);
+    }
+    return {
+      ok: true as const,
+      dryRun,
+      owner: {
+        phone: user.phoneNumber,
+        business,
+        name: realName(user.name),
+        language: user.language === "es" ? "es" : "en",
+      },
+      workers: out,
+    };
   }
 
   @Delete(":id")

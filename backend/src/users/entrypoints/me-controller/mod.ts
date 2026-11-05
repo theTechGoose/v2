@@ -1,3 +1,4 @@
+import { secretAllows } from "@users/domain/business/shared-secret/mod.ts";
 import { Body, Context, Controller, Delete, Get, Post, Put } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -5,13 +6,21 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
 import { WipeAccount } from "@users/domain/coordinators/wipe-account/mod.ts";
 import { parseUpdateUser } from "@users/dto/user.ts";
-import { readSessionId, requireOwner, requireUser, UnauthorizedError } from "@users/domain/coordinators/require-user/mod.ts";
+import {
+  readSessionId,
+  requireOwner,
+  requireUser,
+  UnauthorizedError,
+} from "@users/domain/coordinators/require-user/mod.ts";
 import { AccountAdmins } from "@users/domain/coordinators/account-admins/mod.ts"; // REQ-146
 import { buildSessionCookie } from "@users/domain/business/session-cookie/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
-import { fakePaymentsWorld, PaymentsLink } from "@users/domain/data/payments-link/mod.ts";
+import {
+  fakePaymentsWorld,
+  PaymentsLink,
+} from "@users/domain/data/payments-link/mod.ts";
 import { parseChoosePlan } from "@users/dto/plan.ts";
 import { externalRefFor } from "@users/domain/business/plan/mod.ts"; // REQ-106 — the fake's clock is per account
 
@@ -85,15 +94,30 @@ export class MeController {
   @Post("plan/fake-paid")
   async fakePaid(@Context() ctx: ExecutionContext) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    if (!this.paymentsLink.isFake()) throw Object.assign(new Error("not-found: the fake is not in use"), { status: 404 });
+    if (!this.paymentsLink.isFake()) {
+      throw Object.assign(new Error("not-found: the fake is not in use"), {
+        status: 404,
+      });
+    }
     const plan = await this.choosePlan.current(user.id);
-    if (!plan?.dueId) throw Object.assign(new Error("plan-missing: nothing to pay"), { status: 404 });
+    if (!plan?.dueId) {
+      throw Object.assign(new Error("plan-missing: nothing to pay"), {
+        status: 404,
+      });
+    }
     // REQ-061 — the page names the due it was opened for (a past-due month's); the plan's first month otherwise.
     // The body is optional (the older callers send none), so it is read by hand.
-    const body = await optionalBody(ctx) as { dueId?: unknown; quiet?: unknown } | null;
+    const body = await optionalBody(ctx) as
+      | { dueId?: unknown; quiet?: unknown }
+      | null;
     const named = body?.dueId;
     const world = fakePaymentsWorld();
-    const dueId = typeof named === "string" && world.dues.some((d) => d.dueId === named && d.customerId === plan.customerId) ? named : plan.dueId;
+    const dueId = typeof named === "string" &&
+        world.dues.some((d) =>
+          d.dueId === named && d.customerId === plan.customerId
+        )
+      ? named
+      : plan.dueId;
     world.settle(dueId);
     // REQ-131 — `quiet`: the card landed and the receipt tab was closed — the app is not told; the
     // sweep's watch is. The record as stored: a read would find the due settled (REQ-133)
@@ -110,12 +134,25 @@ export class MeController {
   async fakeBill(@Context() ctx: ExecutionContext) {
     const body = await optionalBody(ctx);
     const user = await requireUser(ctx, this.sessions, this.users);
-    if (!this.paymentsLink.isFake()) throw Object.assign(new Error("not-found: the fake is not in use"), { status: 404 });
+    if (!this.paymentsLink.isFake()) {
+      throw Object.assign(new Error("not-found: the fake is not in use"), {
+        status: 404,
+      });
+    }
     const plan = await this.choosePlan.current(user.id);
-    if (!plan?.customerId) throw Object.assign(new Error("plan-missing: nothing billed"), { status: 404 });
+    if (!plan?.customerId) {
+      throw Object.assign(new Error("plan-missing: nothing billed"), {
+        status: 404,
+      });
+    }
     const b = (body ?? {}) as { now?: unknown; cardGone?: unknown };
     if (b.cardGone === true) fakePaymentsWorld().dropCard(plan.customerId);
-    fakePaymentsWorld().bill(typeof b.now === "string" && b.now ? new Date(b.now).toISOString() : new Date().toISOString(), plan.customerId); // REQ-129 — this person's billing alone
+    fakePaymentsWorld().bill(
+      typeof b.now === "string" && b.now
+        ? new Date(b.now).toISOString()
+        : new Date().toISOString(),
+      plan.customerId,
+    ); // REQ-129 — this person's billing alone
     return await this.choosePlan.current(user.id);
   }
 
@@ -129,9 +166,15 @@ export class MeController {
   async fakeSlow(@Context() ctx: ExecutionContext) {
     const body = await optionalBody(ctx);
     const user = await requireUser(ctx, this.sessions, this.users);
-    if (!this.paymentsLink.isFake()) throw Object.assign(new Error("not-found: the fake is not in use"), { status: 404 });
+    if (!this.paymentsLink.isFake()) {
+      throw Object.assign(new Error("not-found: the fake is not in use"), {
+        status: 404,
+      });
+    }
     const asked = Number((body as { ms?: unknown } | null)?.ms ?? 0);
-    const ms = Number.isFinite(asked) && asked > 0 ? Math.min(Math.round(asked), 60_000) : 0;
+    const ms = Number.isFinite(asked) && asked > 0
+      ? Math.min(Math.round(asked), 60_000)
+      : 0;
     fakePaymentsWorld().slowFor.set(externalRefFor(user.id), ms);
     return { ms };
   }
@@ -165,7 +208,10 @@ export class MeController {
     const skipped = Boolean((body as { skipped?: unknown } | null)?.skipped);
     const marked = await this.users.markOnboarded(user.id, skipped);
     await this.leads.enqueueSync(user.id); // REQ-058/099 — onboarding done: the CRM customer reads what it entered, after this reply
-    await this.leads.enqueueSignupNotice(user.id, skipped ? "skipped setup" : "completed onboarding"); // REQ-112 — the team hears it, with everything collected
+    await this.leads.enqueueSignupNotice(
+      user.id,
+      skipped ? "skipped setup" : "completed onboarding",
+    ); // REQ-112 — the team hears it, with everything collected
     return marked;
   }
 
@@ -213,9 +259,12 @@ export class MeController {
    */
   @Post("reset-by-phone")
   async resetByPhone(@Context() ctx: ExecutionContext, @Body() body: unknown) {
-    const secret = Deno.env.get("RESET_SECRET") ?? "";
-    const provided = ctx.req.header("x-reset-secret") ?? "";
-    if (secret.length < 16 || !constantTimeEqual(secret, provided)) {
+    if (
+      !secretAllows(
+        Deno.env.get("RESET_SECRET"),
+        ctx.req.header("x-reset-secret"),
+      )
+    ) {
       return { ok: false as const, error: "forbidden" };
     }
     const raw = (body as { phoneNumber?: unknown } | null)?.phoneNumber;
@@ -228,18 +277,6 @@ export class MeController {
     const res = await this.wipeCoord.run(user.id);
     return { ...res, phone, userId: user.id };
   }
-}
-
-/** Length-checked constant-time string comparison (no early char-by-char
- *  bailout that would leak the secret via timing). */
-function constantTimeEqual(a: string, b: string): boolean {
-  const enc = new TextEncoder();
-  const ba = enc.encode(a);
-  const bb = enc.encode(b);
-  if (ba.length !== bb.length) return false;
-  let diff = 0;
-  for (let i = 0; i < ba.length; i++) diff |= ba[i] ^ bb[i];
-  return diff === 0;
 }
 
 /** Normalize a US phone to the stored E.164 form, or "" if unusable. */
@@ -262,4 +299,3 @@ async function optionalBody(ctx: ExecutionContext): Promise<unknown> {
     return {};
   }
 }
-
