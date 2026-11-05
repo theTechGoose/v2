@@ -262,6 +262,12 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
       1,
       "exactly one invoice — one draft per customer",
     );
+    // REQ-173: the line is structured (date / service / address) for the grouped invoice
+    expect.eq(
+      [inv.lineItems?.[0]?.date, inv.lineItems?.[0]?.service].join("|"),
+      [today, "Lawn cut"].join("|"),
+      "the line carries its date and service",
+    );
 
     // REQ-162: the batch's "Open invoice" opens THAT invoice, not the invoices list
     await page.locator("[data-cy='lt-open']").first().click();

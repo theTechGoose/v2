@@ -22,6 +22,7 @@ import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
+import { groupVisits } from "#quote-flow/visit-groups.ts";
 import { AcceptedPaymentMethods } from "@profile/dto/business-identity.ts";
 
 /**
@@ -711,11 +712,14 @@ export class PaperworkPublicController {
       // pay?" buttons. We surface only methods the contractor has
       // explicitly enabled (handles non-empty).
       const acceptedMethods = projectAcceptedMethods(contractor);
+      // REQ-173: a batch invoice's visits, grouped under their address
+      const visits = groupVisits(i.lineItems);
       return ctx.json({
         ...redactInvoice(i),
         contractor,
         customer,
         jobDetails,
+        ...(visits ? { visits } : {}),
         siblings: sortedSiblings,
         acceptedMethods,
         // Agreement context mirrored from the linked quote so the invoice

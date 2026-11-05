@@ -87,6 +87,10 @@ export class CreateInvoiceDto {
     quantity: number;
     unit: string;
     price: number;
+    /** REQ-173: a batch visit — the invoice groups these under the address */
+    date?: string;
+    service?: string;
+    address?: string;
   }>;
 
   /** ≤3-word job title for STANDALONE invoices (roadmap p.10) — quote-
@@ -154,6 +158,10 @@ export class UpdateInvoiceDto {
     quantity: number;
     unit: string;
     price: number;
+    /** REQ-173: a batch visit — the invoice groups these under the address */
+    date?: string;
+    service?: string;
+    address?: string;
   }>;
   @IsOptional() @IsString()
   jobName?: string;

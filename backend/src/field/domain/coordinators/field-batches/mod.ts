@@ -11,7 +11,7 @@ import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwor
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import { BatchStore, FieldTaskStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
-import { lineText, linesFor, summarize } from "@field/domain/business/batch-lines/mod.ts";
+import { lineItem, lineText, linesFor, summarize } from "@field/domain/business/batch-lines/mod.ts";
 import { fieldToday, shiftDate } from "@field/domain/business/schedule/mod.ts";
 import { type Batch, FieldError } from "@field/dto/field.ts";
 import { newId } from "@field/domain/coordinators/field-zones/mod.ts";
@@ -55,7 +55,7 @@ export class FieldBatches {
         status: "draft",
         jobName: lang === "es" ? `Mantenimiento ${from} → ${to}` : `Maintenance ${from} → ${to}`,
         description: descriptions.join("\n"),
-        lineItems: g.lines.map((l, i) => ({ description: descriptions[i], quantity: 1, unit: lang === "es" ? "visita" : "visit", price: l.priceCents })),
+        lineItems: g.lines.map((l) => lineItem(l, lang)), // REQ-173: structured — date / service / address
         amount: g.amount,
         dueDate: shiftDate(today, 30),
       });

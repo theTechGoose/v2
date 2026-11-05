@@ -666,6 +666,16 @@ Deno.test("REQ-137/142 pull — a draft per customer readable at GET /invoices (
         ana.lineItems[0].description.includes("4601 Dick Pond Rd"),
       ana.lineItems[0].description,
     );
+    // REQ-173: the line is structured too — date / service / address — so the
+    // invoice can show the address as a heading with the visits under it
+    assertEquals(
+      [ana.lineItems[0].date, ana.lineItems[0].service],
+      [today, "Cortar césped"],
+    );
+    assert(
+      String(ana.lineItems[0].address).includes("4601 Dick Pond Rd"),
+      `address on the line (${ana.lineItems[0].address})`,
+    );
     assertEquals(
       JSON.stringify(pulled.body).includes("never on the invoice"),
       false,

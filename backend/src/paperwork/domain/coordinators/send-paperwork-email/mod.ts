@@ -7,6 +7,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import type { BusinessIdentity } from "@users/dto/business-identity.ts";
 import { type EmailLogo, emailLogo } from "@paperwork/domain/business/email-logo/mod.ts";
+import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
 import {
   EmailService,
   type SendEmailResult,
@@ -1370,15 +1371,42 @@ function renderInvoiceBasicHtml(
   // Standalone invoices carry their own job title + note (no quote behind
   // them). Surface them so a quote-less invoice email isn't just a bare figure.
   const jobName = (i as { jobName?: string }).jobName?.trim();
-  const description = (i as { description?: string }).description?.trim();
-  const jobBlock = (jobName || description)
+  // REQ-173: a batch invoice shows the address as a heading with the visits under it,
+  // instead of the flat "date — service — address" description
+  const visits = groupVisits(i.lineItems);
+  const description = visits
+    ? undefined
+    : (i as { description?: string }).description?.trim();
+  const visitsBlock = visits
+    ? visits.map((g) =>
+      `<div data-visit-address style="margin:0 0 6px;font-size:15px;font-weight:800;color:${COLOR_TEAL}">${
+        escapeHtml(g.address)
+      }</div>
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:0 0 14px;border-collapse:collapse;">${
+        g.visits.map((v) =>
+          `<tr>
+            <td style="padding:6px 0;border-top:1px solid ${COLOR_LINE};color:${COLOR_MUTED};font-size:13px;width:64px;white-space:nowrap">${
+            escapeHtml(fmtVisitDate(v.date, lang))
+          }</td>
+            <td style="padding:6px 8px;border-top:1px solid ${COLOR_LINE};color:${COLOR_INK};font-size:14px;font-weight:600">${
+            escapeHtml(v.service)
+          }</td>
+            <td style="padding:6px 0;border-top:1px solid ${COLOR_LINE};color:${COLOR_INK};font-size:14px;text-align:right;white-space:nowrap">${
+            fmtUSD(v.price)
+          }</td>
+          </tr>`
+        ).join("")
+      }</table>`
+    ).join("")
+    : "";
+  const jobBlock = (jobName || description || visits)
     ? `${
       jobName
         ? `<div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:22px;letter-spacing:-0.02em;color:${COLOR_TEAL};margin-bottom:${
-          description ? "6" : "16"
+          description || visits ? "10" : "16"
         }px">${escapeHtml(jobName)}</div>`
         : ""
-    }${
+    }${visitsBlock}${
       description
         ? `<p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:${COLOR_INK};white-space:pre-wrap">${
           escapeHtml(description)

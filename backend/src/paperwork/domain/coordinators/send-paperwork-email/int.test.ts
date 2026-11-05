@@ -489,3 +489,35 @@ Deno.test("REQ-168/169 send-paperwork-email: a standalone invoice's email links 
   assert(!html.includes("Thanks for the work"), "the old intro is gone");
   await resetKv();
 });
+
+// REQ-173 — "on invoices can we make the address a heading and then detail the date and the service?"
+Deno.test("REQ-173 send-paperwork-email: a batch invoice's email shows the address as a heading with one row per visit (date · service · price), not the flat 'date — service — address' lines", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices, identities, sent } = fresh();
+  await seedContractor("u-1");
+  await identities.upsert("u-1", { businessName: "A2Z Landscape LLC" });
+  const customer = await customers.create("u-1", { name: "Randall Belknap", email: "rb@acme.test" });
+  const addr = "725 Frederick Rd, Rockingham, VA 22801-1306";
+  const invoice = await invoices.create("u-1", {
+    customerId: customer.id,
+    status: "draft",
+    jobName: "Maintenance 2026-10-01 → 2026-10-31",
+    description: `Oct 2 — Lawn — ${addr}\nOct 9 — Lawn — ${addr}`,
+    lineItems: [
+      { description: `Oct 2 — Lawn — ${addr}`, quantity: 1, unit: "visit", price: 6500, date: "2026-10-02", service: "Lawn", address: addr },
+      { description: `Oct 9 — Lawn — ${addr}`, quantity: 1, unit: "visit", price: 6500, date: "2026-10-09", service: "Lawn", address: addr },
+    ],
+    amount: 13000,
+  });
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, true);
+  const html = sent[0].htmlBody;
+  assertStringIncludes(html, 'data-visit-address');
+  assertStringIncludes(html, addr);
+  assertStringIncludes(html, "Oct 2");
+  assertStringIncludes(html, "Oct 9");
+  assertStringIncludes(html, "$65.00");
+  assert(!html.includes(`Oct 2 — Lawn — ${addr}`), "the flat line is replaced by the grouped visits");
+  await resetKv();
+});

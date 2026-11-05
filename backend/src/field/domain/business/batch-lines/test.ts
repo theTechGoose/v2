@@ -1,6 +1,6 @@
 /** REQ-142 — a batch pull: completed, un-invoiced tasks in a range → one draft per customer, one line per task. */
 import { assertEquals, assertStringIncludes } from "#std/assert";
-import { lineText, linesFor, summarize } from "./mod.ts";
+import { lineItem, lineText, linesFor, summarize } from "./mod.ts";
 import type { FieldTask, Subscription, TaskType } from "@field/dto/field.ts";
 
 const taskTypes: TaskType[] = [{ id: "tt1", userId: "u", name: "Lawn cut", createdAt: "x" }, { id: "tt2", userId: "u", name: "Hedge trim", createdAt: "x" }];
@@ -50,4 +50,20 @@ Deno.test("REQ-142 summarize — what was and was not billed in the range", () =
   const t = (id: string, status: FieldTask["status"], date: string, invoiceId?: string, priceCents = 6500): FieldTask => ({ id, userId: "u", subscriptionId: "s", taskTypeId: "1", customerId: "c", regionId: "r", workerId: "w", date, status, priceCents, invoiceId });
   const sum = summarize({ from: "2026-10-01", to: "2026-10-31", liveInvoiceIds: new Set(["inv1"]), tasks: [t("a", "complete", "2026-10-05"), t("b", "skipped", "2026-10-05"), t("c", "assigned", "2026-10-12"), t("d", "complete", "2026-10-12", "inv1"), t("e", "complete", "2026-09-30"), t("f", "complete", "2026-10-19", undefined, 0), t("g", "deferred", "2026-10-20")] });
   assertEquals(sum, { pullable: 2, skipped: 1, deferred: 1, open: 1, alreadyInvoiced: 1, zeroPriced: 1 });
+});
+
+// REQ-173 — the batch writes structured line items: the description stays for compatibility,
+// and date / service / address let every surface group the visits under the address
+Deno.test("REQ-173 lineItem — description + date + service + address, priced from the task", () => {
+  const l = { taskId: "t1", date: "2026-10-02", description: "Lawn", address: "725 Frederick Rd, Rockingham, VA", priceCents: 6500 };
+  assertEquals(lineItem(l, "en"), {
+    description: "Oct 2 — Lawn — 725 Frederick Rd, Rockingham, VA",
+    quantity: 1,
+    unit: "visit",
+    price: 6500,
+    date: "2026-10-02",
+    service: "Lawn",
+    address: "725 Frederick Rd, Rockingham, VA",
+  });
+  assertEquals(lineItem(l, "es").unit, "visita");
 });

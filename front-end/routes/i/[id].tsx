@@ -6,6 +6,10 @@ import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import { resolvePublicLang } from "../../../shared/quote-flow/public-lang.ts";
 import { projectLineItems } from "../../../shared/quote-flow/public-doc-state.ts";
+import {
+  fmtVisitDate,
+  type VisitGroup,
+} from "../../../shared/quote-flow/visit-groups.ts";
 import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
 import {
   BG,
@@ -49,6 +53,8 @@ interface Contractor {
 
 interface InvoicePublic {
   id: string;
+  /** REQ-173: a batch invoice's visits, grouped under their address */
+  visits?: VisitGroup[];
   quoteId?: string;
   customerId?: string;
   status?: string;
@@ -290,7 +296,46 @@ function InvoiceDoc(
             job-details section below only renders for quote-linked invoices, so
             carry the contractor's note here when it's absent. */
           }
-          {!rich &&
+          {/* REQ-173: a batch invoice — the address is the heading, the visits sit under it */}
+          {invoice.visits?.length
+            ? (
+              <section data-cy="invoice-visits" style="margin-top:18px">
+                {invoice.visits.map((g) => (
+                  <div style="margin-top:14px">
+                    <h2
+                      data-cy="invoice-visit-address"
+                      style={`margin:0;font-size:15px;font-weight:800;color:${TEAL};letter-spacing:-0.01em`}
+                    >
+                      {g.address}
+                    </h2>
+                    <div style={`margin-top:6px;border-top:1px solid ${LINE}`}>
+                      {g.visits.map((v) => (
+                        <div
+                          data-cy="invoice-visit"
+                          style={`display:flex;align-items:baseline;gap:12px;padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px`}
+                        >
+                          <span
+                            style={`flex:0 0 64px;color:${MUTED};font-variant-numeric:tabular-nums`}
+                          >
+                            {fmtVisitDate(v.date, lang)}
+                          </span>
+                          <span style={`flex:1;color:${INK};font-weight:600`}>
+                            {v.service}
+                          </span>
+                          <span
+                            style={`color:${INK};font-variant-numeric:tabular-nums`}
+                          >
+                            {fmtMoneyExact(v.price)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </section>
+            )
+            : null}
+          {!rich && !invoice.visits?.length &&
               (invoice.jobDetails?.descriptionByLang?.[lang] ??
                 invoice.jobDetails?.description)
             ? (
@@ -534,44 +579,44 @@ function InvoiceDoc(
               })}
             </p>
             {(invoice.contractor?.phoneNumber || invoice.contractor?.email)
-            ? (
-              <p style="margin:0">
-                <span data-invoice-question>
-                  {tFor(lang, "publicInvoice.footer.questions")}
-                </span>{" "}
-                {invoice.contractor.phoneNumber
-                  ? (
-                    <>
-                      {tFor(lang, "publicInvoice.footer.call")}{" "}
-                      <a
-                        href={telHref(invoice.contractor.phoneNumber)}
-                        style={`color:${TEAL};text-decoration:none;font-weight:700;white-space:nowrap`}
-                      >
-                        {fmtPhone(invoice.contractor.phoneNumber)}
-                      </a>
-                    </>
-                  )
-                  : null}
-                {invoice.contractor.phoneNumber && invoice.contractor.email
-                  ? tFor(lang, "publicInvoice.footer.or")
-                  : ""}
-                {invoice.contractor.email
-                  ? (
-                    <>
-                      {tFor(lang, "publicInvoice.footer.email")}{" "}
-                      <a
-                        href={`mailto:${invoice.contractor.email}`}
-                        style={`color:${TEAL};text-decoration:none;font-weight:700`}
-                      >
-                        {invoice.contractor.email}
-                      </a>
-                    </>
-                  )
-                  : null}
-                {tFor(lang, "publicInvoice.footer.closing")}
-              </p>
-            )
-            : null}
+              ? (
+                <p style="margin:0">
+                  <span data-invoice-question>
+                    {tFor(lang, "publicInvoice.footer.questions")}
+                  </span>{" "}
+                  {invoice.contractor.phoneNumber
+                    ? (
+                      <>
+                        {tFor(lang, "publicInvoice.footer.call")}{" "}
+                        <a
+                          href={telHref(invoice.contractor.phoneNumber)}
+                          style={`color:${TEAL};text-decoration:none;font-weight:700;white-space:nowrap`}
+                        >
+                          {fmtPhone(invoice.contractor.phoneNumber)}
+                        </a>
+                      </>
+                    )
+                    : null}
+                  {invoice.contractor.phoneNumber && invoice.contractor.email
+                    ? tFor(lang, "publicInvoice.footer.or")
+                    : ""}
+                  {invoice.contractor.email
+                    ? (
+                      <>
+                        {tFor(lang, "publicInvoice.footer.email")}{" "}
+                        <a
+                          href={`mailto:${invoice.contractor.email}`}
+                          style={`color:${TEAL};text-decoration:none;font-weight:700`}
+                        >
+                          {invoice.contractor.email}
+                        </a>
+                      </>
+                    )
+                    : null}
+                  {tFor(lang, "publicInvoice.footer.closing")}
+                </p>
+              )
+              : null}
           </footer>
         </div>
         <div

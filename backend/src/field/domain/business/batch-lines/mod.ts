@@ -78,3 +78,17 @@ export function lineText(l: BatchLine, lang: "en" | "es" = "en"): string {
   const date = lang === "es" ? `${d.getUTCDate()} ${month}` : `${month.charAt(0).toUpperCase() + month.slice(1)} ${d.getUTCDate()}`;
   return `${date} — ${l.description} — ${l.address}`;
 }
+
+/** REQ-173: the invoice line item — the flat description for compatibility, plus date / service / address
+ *  so the invoice shows the address as a heading with the visits under it */
+export function lineItem(l: BatchLine, lang: "en" | "es" = "en") {
+  return {
+    description: lineText(l, lang),
+    quantity: 1,
+    unit: lang === "es" ? "visita" : "visit",
+    price: l.priceCents,
+    date: l.date,
+    service: l.description,
+    address: l.address,
+  };
+}
