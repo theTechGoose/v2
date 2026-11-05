@@ -7,14 +7,22 @@
  * hits /admin/stop-impersonating (server swaps the cookie back) and reloads.
  *
  * Renders nothing for ordinary sessions, so it's safe to mount everywhere.
+ *
+ * REQ-181: the banner makes room for itself. The shells are viewport-high and do not
+ * scroll, so a fixed banner over them hid the brand, the top bar and the first card. While
+ * shown, the banner publishes its height (`--banner-h` on <html>, re-measured when it wraps)
+ * and pads the body; the shells' CSS subtracts it (lib/banner-room.ts).
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { adminClient, type WhoAmI } from "../clients/admin.ts";
 import { fmtPhone } from "../lib/format.ts";
+import { clearBannerRoom, setBannerRoom } from "../lib/banner-room.ts";
 
 export default function ImpersonationBanner() {
   const [who, setWho] = useState<WhoAmI | null>(null);
   const [busy, setBusy] = useState(false);
+  const el = useRef<HTMLDivElement>(null);
+  const shown = Boolean(who?.impersonating);
 
   useEffect(() => {
     let alive = true;
@@ -28,7 +36,26 @@ export default function ImpersonationBanner() {
     };
   }, []);
 
-  if (!who?.impersonating) return null;
+  // REQ-181: publish the banner's height while it is on screen; release it when it goes.
+  useEffect(() => {
+    const node = el.current;
+    if (!shown || !node) return;
+    const root = document.documentElement.style;
+    const body = document.body.style;
+    const measure = () =>
+      setBannerRoom(root, body, node.getBoundingClientRect().height);
+    measure();
+    const ro = typeof ResizeObserver === "function"
+      ? new ResizeObserver(measure)
+      : null;
+    ro?.observe(node);
+    return () => {
+      ro?.disconnect();
+      clearBannerRoom(root, body);
+    };
+  }, [shown]);
+
+  if (!shown || !who) return null;
 
   const acting = who.user;
   const actingLabel = acting
@@ -47,7 +74,9 @@ export default function ImpersonationBanner() {
 
   return (
     <div
+      ref={el}
       role="status"
+      data-cy="imp-banner"
       style="position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:8px 14px;background:#7a2e2e;color:#fff;font:inherit;font-size:13px;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.25)"
     >
       <span>

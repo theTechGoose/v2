@@ -376,7 +376,9 @@ body {
      Safari's *large* viewport; --app-vh tracks the visual one (MobileViewport
      island) and shrinks for the soft keyboard; falls back to 100dvh without JS. */
   height: 100vh;
-  height: var(--app-vh, 100dvh);
+  /* REQ-181: minus the impersonation banner's room (--banner-h), so nothing
+     hides under it. */
+  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px));
   display: flex;
   min-height: 0;
   overflow: hidden;
@@ -2569,7 +2571,9 @@ body {
      Safari's *large* viewport; --app-vh tracks the visual one (MobileViewport
      island) and shrinks for the soft keyboard; falls back to 100dvh without JS. */
   height: 100vh;
-  height: var(--app-vh, 100dvh);
+  /* REQ-181: minus the impersonation banner's room (--banner-h), so nothing
+     hides under it. */
+  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px));
   display: flex;
   min-height: 0;
   overflow: hidden;
@@ -8901,15 +8905,15 @@ body {
      the translateY lines the overlay up exactly with the visible band. */
   .app {
     position: fixed;
-    top: 0;
+    top: var(--banner-h, 0px); /* REQ-181: under the impersonation banner */
     left: 0;
     right: 0;
-    height: var(--vvh, 100dvh);
+    height: calc(var(--vvh, 100dvh) - var(--banner-h, 0px));
     transform: translateY(var(--vvt, 0px));
     overflow: hidden;
   }
   .asst {
-    height: calc(var(--vvh, 100dvh) - 60px);
+    height: calc(var(--vvh, 100dvh) - var(--banner-h, 0px) - 60px);
     min-height: 0;
   }
 }
