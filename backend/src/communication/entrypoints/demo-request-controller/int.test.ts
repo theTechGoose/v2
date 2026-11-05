@@ -218,3 +218,18 @@ Deno.test("REQ-117 demo-request int — Call me is back: a call with just a cell
   const d = await build().controller.submit(context().ctx, demo()) as unknown as Reply;
   assertEquals([d.ok, d.mode, d.day, d.time], [true, "demo", tomorrow(), "10:30"]);
 });
+
+// REQ-149 — /landing5's "Need help? We can call you" card: a call as soon as possible WITH a name
+// (the mock collects name and cell). The parse already takes a name on a call; this pins what the
+// team and the person get when it is there.
+Deno.test("REQ-149 demo-request int — a call with a name: the team's subject and email name the person, the text greets them by name, the phone is a lead, and the reply says mode call", async () => {
+  const { inbox, phone, leads, controller } = build();
+  const res = await controller.submit(context().ctx, { ...call(), name: "Ana López", lang: "es" }) as unknown as Reply;
+  assertEquals([res.ok, res.mode, res.day, res.time, res.emailed, res.texted, res.lead], [true, "call", "", "", true, true, true]);
+  assertEquals(inbox.sent.length, 1);
+  assertMatch(inbox.sent[0].subject, /^\[call\] Ana López — as soon as possible$/);
+  assertMatch(inbox.sent[0].htmlBody ?? "", /Name:<\/strong> Ana López/);
+  assertEquals(phone.sent.length, 1);
+  assertMatch(phone.sent[0].body, /Ana López/);
+  assertEquals(leads.phones, ["+15125550199"]);
+});

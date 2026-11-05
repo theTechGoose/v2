@@ -1,0 +1,585 @@
+/* ============================================================
+   landing3.css — /landing3 and /landing4 (REQ-147/148), the
+   "Landing v3/v4" Meta ads mocks (landing-variations, Nov 3),
+   on top of landing2.css: the same tokens, buttons, cards,
+   fields, plans, team, FAQ and sticky bar; here only what the
+   two mocks lay out differently — the ad hero, the two-column
+   signup card, the proof band's document rows, the outcomes
+   with a photo under each, the contact card, the closing photo
+   band, and v4's top and steps. Loaded after landing2.css.
+   ============================================================ */
+
+/* ---- the ad ---- */
+.l3-ad {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0 0 8px;
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 0;
+  align-items: stretch;
+}
+.l3-ad__photo {
+  aspect-ratio: 1.05 / 1;
+  margin: 28px 0 0 20px;
+  border: 3px solid var(--l2-ink);
+  border-radius: 26px;
+  overflow: hidden;
+  box-shadow: 8px 8px 0 var(--l2-orange);
+  background: var(--l2-ink);
+}
+.l3-ad__photo img,
+.l3-moment__pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.l3-ad__text {
+  padding: 40px 20px 8px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+}
+.l3-ad__h1 {
+  font-size: 64px;
+}
+.l3-ad__tag {
+  font-family: var(--l2-font-h);
+  font-weight: 800;
+  font-size: 30px;
+  color: #1e8a3c;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.l3-ad__sub {
+  margin-top: 6px;
+  font-size: 18px;
+  line-height: 1.45;
+  max-width: 480px;
+}
+
+/* ---- the signup: the copy column beside /landing2's card, inline ---- */
+.l3-signup {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 20px 20px 48px;
+}
+.l3-signup__card {
+  padding: 26px 28px;
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 28px;
+  align-items: center;
+  box-shadow: 6px 6px 0 var(--l2-orange);
+}
+.l3-signup__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.l3-signup__h {
+  font-family: var(--l2-font-h);
+  font-weight: 800;
+  font-size: 26px;
+  line-height: 1.15;
+  margin: 0;
+}
+.l3-signup__sub {
+  font-size: 15px;
+  color: var(--l2-muted);
+}
+.l3-signup__talk {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--l2-muted);
+}
+.l3-signup__talk a {
+  font-family: var(--l2-font-h);
+  font-weight: 800;
+  font-size: 18px;
+  text-decoration: none;
+}
+/* the island without its card chrome: the section's card is the card */
+.l3 .l2-signup--inline {
+  padding: 0;
+  max-width: none;
+  box-shadow: none;
+  animation: none;
+}
+
+/* ---- the proof band ---- */
+.l3-proof {
+  background: var(--l2-ink);
+  color: var(--l2-cream);
+}
+.l3-proof__in {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 56px 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 36px;
+  align-items: center;
+}
+.l3-proof__sub {
+  font-size: 16px;
+  color: #d9e2dc;
+  max-width: 440px;
+}
+.l3-docs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.l3-doc {
+  padding: 16px 20px;
+  border-radius: 16px;
+  box-shadow: 6px 6px 0 var(--l2-orange);
+  color: var(--l2-ink);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.l3-doc__t {
+  font-family: var(--l2-font-h);
+  font-weight: 800;
+  font-size: 17px;
+}
+.l3-doc__s {
+  font-size: 13px;
+  color: var(--l2-muted);
+}
+.l3-doc__r {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex: none;
+}
+.l3-doc__amt {
+  font-family: var(--l2-font-h);
+  font-weight: 800;
+  font-size: 20px;
+}
+.l3-pill--paid {
+  background: var(--l2-ink);
+  color: var(--l2-orange);
+  border-color: var(--l2-ink);
+}
+
+/* ---- the outcomes: a card, and under it a photo of one of the other ads ---- */
+.l3-outcomes {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 48px 20px 40px;
+}
+/* REQ-147 amendment 2 — the three columns share two rows (subgrid), so a title that wraps to three
+   lines makes every pill that tall, and the three photo cards start and end on the same lines */
+.l3-outcomes__grid {
+  align-items: stretch;
+}
+.l3-outcome {
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: span 2;
+  gap: 14px;
+}
+.l3-moment {
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
+  border: 3px solid var(--l2-ink);
+  border-radius: 18px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 4px 4px 0 var(--l2-ink);
+  display: flex;
+  flex-direction: column;
+}
+.l3-moment__pic {
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+}
+.l3-moment__h {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  font-family: var(--l2-font-h);
+  font-weight: 800;
+  font-size: 15px;
+  line-height: 1.15;
+  text-align: center;
+}
+
+/* ---- the contact card ---- */
+.l3-contact {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 8px 20px 56px;
+}
+.l3-contact__card {
+  padding: 32px;
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 32px;
+  align-items: center;
+}
+.l3-contact__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.l3-contact__sub {
+  font-size: 16px;
+  line-height: 1.5;
+  max-width: 420px;
+}
+.l3-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 15px;
+}
+.l3-lines a {
+  font-weight: 700;
+}
+.l3-lines__hours {
+  font-size: 13px;
+  color: var(--l2-muted);
+}
+.l3-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.l3-form__two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.l3 textarea.l2-field {
+  min-height: 90px;
+  resize: vertical;
+  display: block;
+}
+.l3-optional {
+  font-weight: 400;
+  color: var(--l2-muted);
+}
+
+/* ---- the closing: the Sunday photo band ---- */
+.l3-close {
+  position: relative;
+  border-top: 3px solid var(--l2-ink);
+  background: var(--l2-ink);
+  overflow: hidden;
+}
+.l3-close__bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+  opacity: 0.42;
+}
+.l3-close__in {
+  position: relative;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 88px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  align-items: center;
+  text-align: center;
+  color: #fff;
+}
+.l3-close__h {
+  font-size: 52px;
+  color: #fff;
+  max-width: 760px;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.5);
+}
+.l3-close__sub {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--l2-orange);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+.l3-close__ctas {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* ---- v4: the top — what we do, the message-to-quote sample ---- */
+.l3-top {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 44px 20px 28px;
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 36px;
+  align-items: center;
+}
+.l3-top__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.l3-pill {
+  display: inline-flex;
+  align-self: flex-start;
+  background: #e6f4e8;
+  color: var(--l2-forest);
+  border: 2px solid var(--l2-ink);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.l3-pill--free {
+  border-radius: 12px;
+  padding: 8px 14px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.l3-top__h1 {
+  font-size: 60px;
+}
+.l3-top__h1 span {
+  display: block;
+}
+.l3-top__h1 .l2-accent {
+  color: var(--l2-green);
+}
+.l3-top__sub {
+  font-size: 20px;
+  line-height: 1.45;
+  max-width: 520px;
+  font-weight: 500;
+}
+.l3-top__ctas {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+.l3-top__cta {
+  font-size: 20px;
+  min-height: 62px;
+  padding: 14px 32px;
+}
+.l3-top__see {
+  font-weight: 800;
+  font-size: 16px;
+}
+.l3-top__note {
+  font-size: 14px;
+  color: var(--l2-muted);
+}
+.l3-sample {
+  padding: 22px;
+  box-shadow: 8px 8px 0 var(--l2-orange);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.l3-sample .l2-eyebrow {
+  color: var(--l2-ink);
+}
+.l3-sample__msg {
+  background: #e6f4e8;
+  border: 2px solid var(--l2-ink);
+  border-radius: 18px 18px 18px 4px;
+  padding: 14px 16px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.l3-sample__arrow {
+  text-align: center;
+  color: var(--l2-green);
+  font-size: 26px;
+  line-height: 1;
+}
+.l3-sample__doc {
+  border: 3px solid var(--l2-ink);
+  border-radius: 16px;
+  padding: 16px 18px;
+  background: #fffdf8;
+  position: relative;
+}
+.l3-sample__tag {
+  position: absolute;
+  top: -12px;
+  left: 14px;
+  background: var(--l2-orange);
+  border: 2px solid var(--l2-ink);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.l3-sample__biz {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--l2-muted);
+  margin-top: 4px;
+}
+.l3-sample__title {
+  text-align: center;
+  font-size: 26px;
+  margin: 4px 0 12px;
+}
+.l3-sample__lines {
+  border: 2px solid var(--l2-ink);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 15px;
+}
+.l3-sample__line {
+  padding: 8px 12px;
+  border-top: 2px solid var(--l2-ink);
+}
+.l3-sample__line--head {
+  border-top: 0;
+  background: var(--l2-sand);
+  font-weight: 700;
+}
+.l3-sample__line--total {
+  background: #e6f4e8;
+  display: flex;
+  justify-content: space-between;
+  font-weight: 800;
+}
+.l3-sample__ready {
+  text-align: center;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--l2-muted);
+  margin-top: 10px;
+}
+
+/* ---- v4: the steps ---- */
+.l3-steps {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 8px 20px 36px;
+  text-align: center;
+}
+.l3-steps__h {
+  font-size: 32px;
+  margin-bottom: 18px;
+}
+.l3-steps__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.l3-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+  background: #fff;
+  border: 3px solid var(--l2-ink);
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 4px 4px 0 var(--l2-ink);
+}
+.l3-step__n {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--l2-green);
+  color: #fff;
+  border: 2px solid var(--l2-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--l2-font-h);
+  font-weight: 800;
+  flex: none;
+}
+.l3-step__t {
+  font-family: var(--l2-font-h);
+  font-weight: 800;
+  font-size: 17px;
+  text-align: left;
+}
+
+/* ---- a tablet: the headlines between the phone's and the desktop's ---- */
+@media (min-width: 761px) and (max-width: 1023px) {
+  .l3-ad__h1,
+  .l3-top__h1 {
+    font-size: clamp(40px, 5vw, 48px);
+  }
+  .l3-close__h {
+    font-size: clamp(34px, 4.5vw, 44px);
+  }
+}
+
+/* ---- a phone: one column, the ad photo edge to edge ---- */
+@media (max-width: 760px) {
+  .l3-ad,
+  .l3-signup__card,
+  .l3-proof__in,
+  .l3-outcomes__grid,
+  .l3-contact__card,
+  .l3-form__two,
+  .l3-top,
+  .l3-steps__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .l3-ad__photo {
+    aspect-ratio: 1 / 1;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    margin: 0;
+    box-shadow: none;
+  }
+  .l3-ad__text {
+    padding: 28px 20px 8px;
+  }
+  .l3-ad__h1,
+  .l3-top__h1 {
+    font-size: 44px;
+  }
+  .l3-ad__tag {
+    font-size: 24px;
+  }
+  .l3-close__h {
+    font-size: 32px;
+  }
+  .l3-signup__card,
+  .l3-contact__card {
+    padding: 22px;
+  }
+  .l3-close__in {
+    padding: 56px 20px;
+  }
+}

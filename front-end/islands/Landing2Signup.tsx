@@ -45,6 +45,12 @@ import DevCodeCard from "../components/DevCodeCard.tsx";
  * phone and the code alone, and the wizard's plan picker is where the plan is picked (REQ-104's
  * free with the code and REQ-113's carried paid name are gone).
  *
+ * REQ-147 — /landing3 and /landing4 put this same card inside their two-column signup section
+ * (the title and the ¿Prefieres hablar? row in the copy column beside it): `variant="inline"`
+ * drops the card chrome, the step-one title and the talk row, and changes nothing else — the same
+ * endpoints, the same consent box, the same Lead, the same choreography. The default is the card
+ * /landing2 ships.
+ *
  * Every string comes in as `labels` from the route, so the island renders exactly what the server
  * did (no flash, no second dictionary on the client).
  */
@@ -129,7 +135,7 @@ function PhoneIcon() {
 }
 
 export default function Landing2Signup(
-  { lang, labels, smsTermsPath, phoneHref, phoneLabel }: {
+  { lang, labels, smsTermsPath, phoneHref, phoneLabel, variant = "card" }: {
     lang: Lang;
     labels: Landing2SignupLabels;
     /** the SMS terms the consent line links to (LEGAL_LINKS, REQ-076) */
@@ -137,8 +143,11 @@ export default function Landing2Signup(
     /** the support line the ¿Prefieres hablar? row dials (REQ-044) */
     phoneHref: string;
     phoneLabel: string;
+    /** REQ-147 — "inline": no card chrome, no step-one title, no talk row (the section around it has them) */
+    variant?: "card" | "inline";
   },
 ) {
+  const inline = variant === "inline";
   const [step, setStep] = useState<Step>(1);
   const [phone, setPhone] = useState("");
   /** REQ-089/097 — the TCPA box: ticked when the page opens; the code waits while the person has it unticked */
@@ -325,7 +334,7 @@ export default function Landing2Signup(
   }
 
   const cardClass = [
-    "l2-card",
+    inline ? "l2-signup--inline" : "l2-card",
     "l2-signup",
     flip === "out" ? "l2-signup--flip-out" : "",
     flip === "in" ? "l2-signup--flip-in" : "",
@@ -422,7 +431,7 @@ export default function Landing2Signup(
               data-cy="l2-signup-step"
               data-step="1"
             >
-              <h2 class="l2-signup__h">{labels.regH}</h2>
+              {inline ? null : <h2 class="l2-signup__h">{labels.regH}</h2>}
               <div class="l2-signup__row">
                 <label for="reg-phone" class="l2-sr">{labels.phoneLbl}</label>
                 <div class={`l2-phone ${phoneDone ? "l2-phone--done" : ""}`}>
@@ -483,13 +492,18 @@ export default function Landing2Signup(
                   <a href={smsTermsPath}>{labels.consentTerms}</a>
                 </span>
               </label>
-              <div class="l2-signup__talk">
-                <span>{labels.preferTalk}</span>
-                <a class="l2-btn l2-btn--ghost l2-btn--phone" href={phoneHref}>
-                  <PhoneIcon />
-                  {phoneLabel}
-                </a>
-              </div>
+              {inline ? null : (
+                <div class="l2-signup__talk">
+                  <span>{labels.preferTalk}</span>
+                  <a
+                    class="l2-btn l2-btn--ghost l2-btn--phone"
+                    href={phoneHref}
+                  >
+                    <PhoneIcon />
+                    {phoneLabel}
+                  </a>
+                </div>
+              )}
             </form>
           )}
       </div>
