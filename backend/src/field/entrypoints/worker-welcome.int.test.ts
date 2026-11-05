@@ -153,3 +153,159 @@ Deno.test("REQ-151 when the text cannot go out the worker is still added and the
     );
   });
 });
+
+// ---- REQ-154 — the owner tool: every existing worker of an account ----
+const SECRET = "test-reset-secret-0123456789";
+const S = { "x-reset-secret": SECRET };
+
+async function ownerWithWorkers(
+  call: Call,
+  phone: string,
+  business: string,
+  language: "en" | "es",
+  workers: [string, string, string][],
+) {
+  await call("POST", "/auth/send-otp", { phoneNumber: phone });
+  const stored = await new OtpStore().get(phone);
+  const v = await call("POST", "/auth/verify-otp", {
+    phoneNumber: phone,
+    code: stored!.code,
+  });
+  const H = { "x-session-id": v.body.sessionId as string };
+  await call("PUT", "/me", { name: "Alex Rivera", language }, H);
+  await call("PUT", "/profile/identity", { businessName: business }, H);
+  for (const [name, cell, pin] of workers) {
+    assertEquals(
+      (await call(
+        "POST",
+        "/field/workers",
+        { name, phoneNumber: cell, pin },
+        H,
+      )).status,
+      201,
+    );
+  }
+  return H;
+}
+
+Deno.test("REQ-154 welcome-by-owner — refused without the secret (and with RESET_SECRET unset); a dry run lists the workers by business and texts nothing", async () => {
+  await withServer(async (call, texts) => {
+    await ownerWithWorkers(call, "+15125551460", "A2Z Landscape LLC", "en", [[
+      "Luis",
+      "8435550301",
+      "1234",
+    ], ["Marcos", "8435550302", "2345"]]);
+    texts.length = 0;
+    Deno.env.delete("RESET_SECRET");
+    assertEquals(
+      (await call("POST", "/field/workers/welcome-by-owner", {
+        business: "a2z",
+      }, S)).body,
+      { ok: false, error: "forbidden" },
+      "unset: refused",
+    );
+    Deno.env.set("RESET_SECRET", SECRET);
+    assertEquals(
+      (await call("POST", "/field/workers/welcome-by-owner", {
+        business: "a2z",
+      })).body,
+      { ok: false, error: "forbidden" },
+      "no header: refused",
+    );
+    assertEquals(
+      (await call("POST", "/field/workers/welcome-by-owner", {
+        business: "a2z",
+      }, { "x-reset-secret": "wrong-secret-0123456789" })).body,
+      { ok: false, error: "forbidden" },
+    );
+    const dry = await call("POST", "/field/workers/welcome-by-owner", {
+      business: "a2z",
+      dryRun: true,
+    }, S);
+    assertEquals(dry.body.ok, true);
+    assertEquals(dry.body.dryRun, true);
+    assertEquals(dry.body.owner, {
+      phone: "+15125551460",
+      business: "A2Z Landscape LLC",
+      name: "Alex Rivera",
+      language: "en",
+    });
+    assertEquals(
+      dry.body.workers.map((
+        w: { name: string; phone: string; texted?: boolean },
+      ) => [w.name, w.phone, w.texted]),
+      [["Luis", "8435550301", undefined], ["Marcos", "8435550302", undefined]],
+    );
+    assertEquals(texts.length, 0, "a dry run texts nothing");
+    Deno.env.delete("RESET_SECRET");
+  });
+});
+
+Deno.test("REQ-154 welcome-by-owner — the send texts each worker in the owner's language; the answer says texted per worker; a second call texts again (it is manual)", async () => {
+  await withServer(async (call, texts) => {
+    await ownerWithWorkers(call, "+15125551461", "Jardines Rivera", "es", [[
+      "Luis",
+      "8435550311",
+      "1234",
+    ], ["Marcos", "8435550312", "2345"]]);
+    texts.length = 0;
+    Deno.env.set("RESET_SECRET", SECRET);
+    const res = await call("POST", "/field/workers/welcome-by-owner", {
+      phoneNumber: "512-555-1461",
+    }, S);
+    assertEquals(res.body.ok, true);
+    assertEquals(
+      res.body.workers.map((
+        w: { name: string; texted: boolean },
+      ) => [w.name, w.texted]),
+      [["Luis", true], ["Marcos", true]],
+    );
+    assertEquals(texts.map((x) => x.to), ["+18435550311", "+18435550312"]);
+    assert(
+      texts[0].body.startsWith(
+        "Alex Rivera (Jardines Rivera) te agregó como trabajador en DocuMonster. Entra en http://localhost:5280/worker",
+      ),
+      texts[0].body,
+    );
+    assert(texts[0].body.endsWith("tu PIN 1234."), texts[0].body);
+    assert(texts[1].body.endsWith("tu PIN 2345."), texts[1].body);
+    Deno.env.delete("RESET_SECRET");
+  });
+});
+
+Deno.test("REQ-154 welcome-by-owner — an unknown owner, a business matching nobody or more than one, and a body naming neither are refused with a reason", async () => {
+  await withServer(async (call, texts) => {
+    await ownerWithWorkers(call, "+15125551462", "Green Cut LLC", "en", [[
+      "Luis",
+      "8435550321",
+      "1234",
+    ]]);
+    await ownerWithWorkers(call, "+15125551463", "Green Cut Pros", "en", []);
+    texts.length = 0;
+    Deno.env.set("RESET_SECRET", SECRET);
+    assertEquals(
+      (await call("POST", "/field/workers/welcome-by-owner", {
+        phoneNumber: "+15125559999",
+      }, S)).body,
+      { ok: false, error: "no_such_user" },
+    );
+    assertEquals(
+      (await call("POST", "/field/workers/welcome-by-owner", {
+        business: "nobody",
+      }, S)).body,
+      { ok: false, error: "no_such_business" },
+    );
+    const many = (await call("POST", "/field/workers/welcome-by-owner", {
+      business: "green cut",
+    }, S)).body;
+    assertEquals(many.ok, false);
+    assertEquals(many.error, "ambiguous_business");
+    assertEquals(many.matches.length, 2);
+    assertEquals(
+      (await call("POST", "/field/workers/welcome-by-owner", {}, S)).body,
+      { ok: false, error: "owner_required" },
+    );
+    assertEquals(texts.length, 0);
+    Deno.env.delete("RESET_SECRET");
+  });
+});
