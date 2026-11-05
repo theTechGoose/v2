@@ -824,3 +824,65 @@ Deno.test("REQ-157 a monthly subscription with daysOfMonth answers them sorted a
     );
   });
 });
+
+Deno.test("REQ-159 the office completes and re-opens a task; a bad status is 400; an invoiced task is 409", async () => {
+  await withServer(async (call) => {
+    const H = await login(call);
+    const today = fieldToday();
+    const customer =
+      (await call("POST", "/customers", { name: "Ana" }, H)).body;
+    const w = (await call("POST", "/field/workers", {
+      name: "Pedro",
+      phoneNumber: "8435550777",
+      pin: "4321",
+    }, H)).body;
+    const sub = (await call("POST", "/field/subscriptions", {
+      customerId: customer.id,
+      address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+      startDate: today,
+      items: [{ taskTypeName: "Cut", priceCents: 6500 }],
+    }, H)).body;
+    await call("PUT", `/field/regions/${sub.region.id}/worker`, {
+      workerId: w.id,
+    }, H);
+    const day = (await call("GET", "/field/tasks", undefined, H)).body;
+    assertEquals(day.length, 1);
+    const id = day[0].id;
+    const done = await call(
+      "PUT",
+      `/field/tasks/${id}`,
+      { status: "complete" },
+      H,
+    );
+    assertEquals(done.status, 200);
+    assertEquals(done.body.status, "complete");
+    assert(typeof done.body.completedAt === "string", "completedAt stamped");
+    const open = await call(
+      "PUT",
+      `/field/tasks/${id}`,
+      { status: "assigned" },
+      H,
+    );
+    assertEquals([open.body.status, open.body.completedAt], [
+      "assigned",
+      undefined,
+    ]);
+    assertEquals(
+      (await call("PUT", `/field/tasks/${id}`, { status: "skipped" }, H))
+        .status,
+      400,
+    );
+    await call("PUT", `/field/tasks/${id}`, { status: "complete" }, H);
+    const pulled = await call("POST", "/field/batches/pull", {
+      from: today,
+      to: today,
+    }, H);
+    assertEquals(pulled.status, 201);
+    assertEquals(
+      (await call("PUT", `/field/tasks/${id}`, { status: "assigned" }, H))
+        .status,
+      409,
+      "on an invoice now",
+    );
+  });
+});

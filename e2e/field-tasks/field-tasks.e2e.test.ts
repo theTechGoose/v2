@@ -504,3 +504,35 @@ Deno.test("REQ-157: Cadence offers weekly and monthly only; Monthly shows 31 cli
     });
     await expect.see("Monthly · days 15, 31");
   }));
+
+Deno.test("REQ-159: the office clicks the circle on /field/tasks — the task reads Complete and the count says 1 of 1; a second click re-opens it", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const post = async (path: string, body: unknown) => {
+      const r = await http(path, { method: "POST", headers: auth, body: JSON.stringify(body) });
+      return r.json();
+    };
+    const put = async (path: string, body: unknown) => {
+      const r = await http(path, { method: "PUT", headers: auth, body: JSON.stringify(body) });
+      await r.body?.cancel();
+    };
+    const customer = await post("/api/customers", { name: "Ana Torres", email: "ana.torres@blackhole.postmarkapp.com" });
+    const worker = await post("/api/field/workers", { name: "Luis Herrera", phoneNumber: `843${digits()}`, pin: "1234" });
+    const sub = await post("/api/field/subscriptions", {
+      customerId: customer.id,
+      address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+      startDate: todayIso(),
+      items: [{ taskTypeName: "Lawn cut", priceCents: 6500 }],
+    });
+    await put(`/api/field/regions/${sub.region.id}/worker`, { workerId: worker.id });
+    await page.goto("/field/tasks");
+    const task = page.locator("[data-cy='tk-task']").first();
+    await task.waitFor({ timeout: 15_000 });
+    expect.eq(await task.getAttribute("data-status"), "assigned", "open to begin with");
+    await task.locator("[data-cy='tk-done']").click();
+    await page.locator("[data-cy='tk-task'][data-status='complete']").first().waitFor({ timeout: 15_000 });
+    await expect.see("1 of 1 complete");
+    await task.locator("[data-cy='tk-done']").click();
+    await page.locator("[data-cy='tk-task'][data-status='assigned']").first().waitFor({ timeout: 15_000 });
+    await expect.see("0 of 1 complete");
+  }));

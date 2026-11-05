@@ -275,7 +275,11 @@ export const fieldClient = {
     api.post<GenerateResult>("/field/tasks/generate", { date }, opts),
   updateTask: (
     id: string,
-    b: { adminNote?: string; priceCents?: number },
+    b: {
+      adminNote?: string;
+      priceCents?: number;
+      status?: "complete" | "assigned";
+    },
     opts?: ApiOptions,
   ) => api.put<TaskView>(`/field/tasks/${id}`, b, opts),
 
