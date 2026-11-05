@@ -111,3 +111,44 @@ export function addService(input: { subscription: Subscription; taskTypeId: stri
   };
   return { ok: true, task, restored: false };
 }
+
+/** REQ-164 — a one-off task the office makes by hand: no subscription, one day, flagged so nothing automatic touches it */
+export function oneOffTask(input: {
+  userId: string; customerId: string; date: string; taskTypeId: string; priceCents: number; workerId: string;
+  regionId?: string; address?: string; newId: () => string;
+}): FieldTask {
+  return {
+    id: input.newId(), userId: input.userId, subscriptionId: "", oneOff: true, taskTypeId: input.taskTypeId, customerId: input.customerId,
+    regionId: input.regionId ?? "", workerId: input.workerId, date: input.date, address: input.address, priceCents: input.priceCents,
+    status: "assigned", addedBy: "office",
+  };
+}
+
+/** the tasks that make up one visit: the subscription's that day — or, for a one-off, the customer's one-offs that day */
+export const sameVisit = (t: FieldTask, x: FieldTask) =>
+  x.date === t.date && (t.subscriptionId ? x.subscriptionId === t.subscriptionId : !!x.oneOff && x.customerId === t.customerId);
+
+/**
+ * REQ-165 — the office adds a service to the visit a task belongs to: a sibling (same customer, day,
+ * worker, zone, address, subscription); priced as given, else from the subscription, else $0; the same
+ * type already on the visit is a duplicate (a removed one is restored, repriced); an invoiced visit is closed.
+ */
+export function officeService(input: { task: FieldTask; visit: FieldTask[]; taskTypeId: string; priceCents?: number; subscription?: Subscription; newId: () => string }): AddServiceResult {
+  const t = input.task;
+  const visit = input.visit.filter((x) => sameVisit(t, x));
+  if (visit.some((x) => x.invoiceId)) return { ok: false, reason: "invoiced" };
+  const same = visit.find((x) => x.taskTypeId === input.taskTypeId);
+  if (same && same.status !== "skipped") return { ok: false, reason: "duplicate" };
+  if (same) {
+    same.status = "assigned";
+    if (input.priceCents !== undefined) same.priceCents = input.priceCents;
+    return { ok: true, task: same, restored: true };
+  }
+  const item = input.subscription?.items.find((i) => i.taskTypeId === input.taskTypeId);
+  const task: FieldTask = {
+    id: input.newId(), userId: t.userId, subscriptionId: t.subscriptionId, taskTypeId: input.taskTypeId, customerId: t.customerId,
+    regionId: t.regionId, workerId: t.workerId, date: t.date, address: t.address, priceCents: input.priceCents ?? item?.priceCents ?? 0,
+    status: "assigned", addedBy: "office", ...(t.oneOff ? { oneOff: true as const } : {}),
+  };
+  return { ok: true, task, restored: false };
+}

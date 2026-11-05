@@ -11,10 +11,11 @@ export class FieldDay {
 
   /** make the day's tasks that do not exist yet; answers them and the due subscriptions no worker covers */
   async generate(userId: string, date: string): Promise<{ created: FieldTask[]; skipped: Subscription[]; all: FieldTask[] }> {
-    const [subscriptions, regions, existing] = await Promise.all([this.subs.listByUser(userId), this.regions.listByUser(userId), this.tasks.listByDay(userId, date)]);
+    // REQ-163: a task the office deleted stays as a tombstone, so the round does not bring it back
+    const [subscriptions, regions, existing] = await Promise.all([this.subs.listByUser(userId), this.regions.listByUser(userId), this.tasks.listByDay(userId, date, { withDeleted: true })]);
     const created = generateTasks({ userId, date, subscriptions, regions, existing, newId });
     await this.tasks.putMany(created);
-    return { created, skipped: unstaffed({ date, subscriptions, regions }), all: [...existing, ...created] };
+    return { created, skipped: unstaffed({ date, subscriptions, regions }), all: [...existing.filter((t) => !t.deleted), ...created] };
   }
 
   /** REQ-141: open future work follows a change — drop not-yet-done tasks from `fromDate` on that match */

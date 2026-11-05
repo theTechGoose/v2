@@ -126,10 +126,25 @@ export interface TaskView {
   note?: string;
   /** the office's note, never shown to the worker */
   adminNote?: string;
-  addedBy?: "worker";
+  addedBy?: "worker" | "office";
   addedByName?: string;
   completedAt?: string;
   invoiceId?: string;
+  /** REQ-164 — made by hand for one day, no subscription behind it */
+  oneOff?: true;
+}
+
+/** POST /field/tasks — REQ-164: a one-off task by hand */
+export interface OneOffTaskInput {
+  customerId: string;
+  date: string;
+  taskTypeId?: string;
+  /** found in any case, or created */
+  taskTypeName?: string;
+  priceCents: number;
+  /** omitted: the worker covering the customer's subscription's zone */
+  workerId?: string;
+  address?: string;
 }
 
 /** GET /field/worker/tasks — no prices, no invoice ids, no office notes */
@@ -279,9 +294,23 @@ export const fieldClient = {
       adminNote?: string;
       priceCents?: number;
       status?: "complete" | "assigned";
+      /** REQ-166 — another of the account's workers, this day only */
+      workerId?: string;
     },
     opts?: ApiOptions,
   ) => api.put<TaskView>(`/field/tasks/${id}`, b, opts),
+  /** REQ-163 */
+  deleteTask: (id: string, opts?: ApiOptions) =>
+    api.delete<{ ok: true }>(`/field/tasks/${id}`, opts),
+  /** REQ-164 */
+  createTask: (b: OneOffTaskInput, opts?: ApiOptions) =>
+    api.post<TaskView>("/field/tasks", b, opts),
+  /** REQ-165 — a service added to the visit the task belongs to */
+  addTaskService: (
+    id: string,
+    b: { taskTypeId?: string; taskTypeName?: string; priceCents?: number },
+    opts?: ApiOptions,
+  ) => api.post<TaskView>(`/field/tasks/${id}/services`, b, opts),
 
   // ---- batches (REQ-142) ----
   batches: (opts?: ApiOptions) => api.get<BatchView[]>("/field/batches", opts),

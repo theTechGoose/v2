@@ -51,6 +51,8 @@ import {
 } from "@field/domain/coordinators/field-views/mod.ts";
 import {
   findOrCreateTaskType,
+  officeService,
+  oneOffTask,
   searchTaskTypes,
 } from "@field/domain/business/tasks/mod.ts";
 import {
@@ -623,6 +625,51 @@ export class FieldRegionsController {
   }
 }
 
+/** REQ-164/165: the task type a body names — by id, or found/created by name */
+async function taskTypeFrom(
+  types: TaskTypeStore,
+  userId: string,
+  b: Body_,
+): Promise<string> {
+  const list = await types.listByUser(userId);
+  const id = str(b.taskTypeId);
+  if (id) {
+    if (!list.some((x) => x.id === id)) {
+      throw new FieldError("unknown taskTypeId");
+    }
+    return id;
+  }
+  const name = str(b.taskTypeName);
+  if (!name) throw new FieldError("taskTypeId or taskTypeName required");
+  const r = findOrCreateTaskType(list, name, userId, newId);
+  if (r.created) await types.put(r.type);
+  return r.type.id;
+}
+
+/** REQ-164/166: the account's worker a body names, or 400 (a module function — Danet chokes on undecorated methods) */
+async function ownWorker(
+  workers: FieldWorkerStore,
+  userId: string,
+  id: string,
+): Promise<FieldWorker> {
+  const w = await workers.find(id);
+  if (!w || w.userId !== userId) throw new FieldError("unknown workerId");
+  return w;
+}
+
+/** a price in integer cents, 0 … $100,000 */
+function priceOf(v: unknown, fallback?: number): number {
+  if (v === undefined || v === null || v === "") {
+    if (fallback === undefined) throw new FieldError("priceCents required");
+    return fallback;
+  }
+  const p = Math.round(Number(v));
+  if (!Number.isFinite(p) || p < 0 || p > 10_000_000) {
+    throw new FieldError("bad price");
+  }
+  return p;
+}
+
 @Controller("field/tasks")
 export class FieldTasksController {
   constructor(
@@ -631,7 +678,109 @@ export class FieldTasksController {
     private views: FieldViews,
     private users: UserStore,
     private sessions: SessionStore,
+    private workers: FieldWorkerStore,
+    private types: TaskTypeStore,
+    private subs: SubscriptionStore,
+    private regions: RegionStore,
+    private customers: CustomerStore,
   ) {}
+
+  /** REQ-164: a one-off task by hand — one customer, one day, no subscription */
+  @Post()
+  async create(@Context() ctx: ExecutionContext, @Body() raw: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const b = body(raw);
+    const customerId = str(b.customerId);
+    if (!customerId) throw new FieldError("customerId required");
+    const customer = await this.customers.getOwned(customerId, user.id); // 404 / 403 as the customers resource answers
+    const date = str(b.date) ?? fieldToday();
+    if (!isValidDate(date)) throw new FieldError("date must be YYYY-MM-DD");
+    const taskTypeId = await taskTypeFrom(this.types, user.id, b);
+    const priceCents = priceOf(b.priceCents);
+    // the worker: named, else the one covering the customer's subscription's zone
+    const subs = (await this.subs.listByUser(user.id)).filter((s) =>
+      s.customerId === customer.id && s.active
+    );
+    const regions = await this.regions.listByUser(user.id);
+    const home = subs.map((s) => regions.find((r) => r.id === s.regionId))
+      .find((r) => r?.workerId);
+    let workerId = str(b.workerId);
+    if (workerId) await ownWorker(this.workers, user.id, workerId);
+    else workerId = home?.workerId;
+    if (!workerId) throw new FieldError("workerId required");
+    const address = str(b.address) ?? subs[0]?.address ??
+      customer.address?.trim() ?? undefined;
+    if (address && address.length > CAP.text) {
+      throw new FieldError("address too long");
+    }
+    const t = oneOffTask({
+      userId: user.id,
+      customerId: customer.id,
+      date,
+      taskTypeId,
+      priceCents,
+      workerId,
+      regionId: home?.id,
+      address,
+      newId,
+    });
+    await this.tasks.put(t);
+    return ctx.json(this.views.task(t, await this.views.names(user.id)), 201);
+  }
+
+  /** REQ-165: the office adds a service to the visit this task belongs to */
+  @Post(":id/services")
+  async addService(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() raw: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const t = await this.tasks.getOwned(id, user.id);
+    const b = body(raw);
+    const taskTypeId = await taskTypeFrom(this.types, user.id, b);
+    const priceCents =
+      b.priceCents === undefined || b.priceCents === null || b.priceCents === ""
+        ? undefined
+        : priceOf(b.priceCents);
+    const subscription = t.subscriptionId
+      ? await this.subs.find(t.subscriptionId) ?? undefined
+      : undefined;
+    const r = officeService({
+      task: t,
+      visit: await this.tasks.listByDay(user.id, t.date),
+      taskTypeId,
+      priceCents,
+      subscription,
+      newId,
+    });
+    if (!r.ok) {
+      throw new FieldError(
+        r.reason === "invoiced" ? "visit already invoiced" : r.reason,
+        409,
+      );
+    }
+    await this.tasks.put(r.task);
+    const n = await this.views.names(user.id);
+    return ctx.json(this.views.task(r.task, n), r.restored ? 200 : 201);
+  }
+
+  /** REQ-163: the office removes a task; one on an invoice stays */
+  @Delete(":id")
+  async remove(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const t = await this.tasks.getOwned(id, user.id);
+    if (t.invoiceId) {
+      throw new FieldError(
+        "task is on an invoice — edit the invoice instead",
+        409,
+      );
+    }
+    // a one-off simply goes; a subscription's task stays as a tombstone so the day's round does not bring it back
+    if (t.oneOff) await this.tasks.delete(t);
+    else await this.tasks.put({ ...t, deleted: true });
+    return { ok: true };
+  }
 
   /** REQ-141: the day's round; today's is generated on first read */
   @Get()
@@ -696,6 +845,19 @@ export class FieldTasksController {
       t.status = st;
       if (st === "complete") t.completedAt = new Date().toISOString();
       else delete t.completedAt;
+    }
+    // REQ-166 — another of the account's workers takes the task, this day only
+    if ("workerId" in b) {
+      const wid = str(b.workerId);
+      if (!wid) throw new FieldError("workerId required");
+      if (t.invoiceId) {
+        throw new FieldError(
+          "task is on an invoice — edit the invoice instead",
+          409,
+        );
+      }
+      await ownWorker(this.workers, user.id, wid);
+      t.workerId = wid;
     }
     if ("priceCents" in b) {
       if (t.invoiceId) {

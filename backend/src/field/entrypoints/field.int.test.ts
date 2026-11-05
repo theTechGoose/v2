@@ -886,3 +886,252 @@ Deno.test("REQ-159 the office completes and re-opens a task; a bad status is 400
     );
   });
 });
+
+/** the fields these tests read off a task row */
+type Row = {
+  id: string;
+  taskTypeName: string;
+  oneOff?: true;
+  workerId: string;
+};
+
+/** REQ-163..166 — a staffed subscription due today, as the office sees it; answers the headers, the worker, the customer and the day's first task */
+async function todaysRound(call: Call, phone = "+15125551630") {
+  const H = await login(call, phone);
+  const today = fieldToday();
+  const customer = (await call("POST", "/customers", {
+    name: "Ana Torres",
+    address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+    phoneNumber: "+18435550199",
+  }, H)).body;
+  const w = (await call("POST", "/field/workers", {
+    name: "Pedro",
+    phoneNumber: "8435550" + phone.slice(-3),
+    pin: "4321",
+  }, H)).body;
+  const sub = (await call("POST", "/field/subscriptions", {
+    customerId: customer.id,
+    address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+    startDate: today,
+    items: [{ taskTypeName: "Cut", priceCents: 6500 }, {
+      taskTypeName: "Edge",
+      priceCents: 2500,
+    }],
+  }, H)).body;
+  await call("PUT", `/field/regions/${sub.region.id}/worker`, {
+    workerId: w.id,
+  }, H);
+  const day = (await call("GET", "/field/tasks", undefined, H)).body;
+  assertEquals(day.length, 2);
+  return {
+    H,
+    today,
+    customer,
+    w,
+    sub,
+    task: day.find((t: Row) => t.taskTypeName === "Cut"),
+    day,
+  };
+}
+
+// REQ-163 — "when in tasks i need a button to delete a task"
+Deno.test("REQ-163 the office deletes a task; an invoiced task is 409; another account's is 403", async () => {
+  await withServer(async (call) => {
+    const { H, today, task, day } = await todaysRound(call);
+    const gone = await call("DELETE", `/field/tasks/${task.id}`, undefined, H);
+    assertEquals([gone.status, gone.body], [200, { ok: true }]);
+    const after =
+      (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body;
+    assertEquals(after.map((t: Row) => t.id), [
+      day.find((t: Row) => t.id !== task.id).id,
+    ]);
+    // the other one, done and invoiced, cannot go
+    const edge = after[0];
+    await call("PUT", `/field/tasks/${edge.id}`, { status: "complete" }, H);
+    const pull = await call("POST", "/field/batches/pull", {
+      from: today,
+      to: today,
+    }, H);
+    assertEquals(pull.status, 201);
+    const locked = await call(
+      "DELETE",
+      `/field/tasks/${edge.id}`,
+      undefined,
+      H,
+    );
+    assertEquals(locked.status, 409);
+    const other = await login(call, "+15125551631", "Other Owner");
+    assertEquals(
+      (await call("DELETE", `/field/tasks/${edge.id}`, undefined, other))
+        .status,
+      403,
+    );
+  });
+});
+
+// REQ-164 — "when in tasks i need a button to manually add a task as a one off"
+Deno.test("REQ-164 the office posts a one-off task; it lists on the day, survives generation, needs a worker, and pulls into a batch", async () => {
+  await withServer(async (call) => {
+    const { H, today, customer, w } = await todaysRound(call, "+15125551632");
+    const tomorrow = shiftDate(today, 1);
+    const made = await call("POST", "/field/tasks", {
+      customerId: customer.id,
+      date: tomorrow,
+      taskTypeName: "Mulch",
+      priceCents: 12000,
+      workerId: w.id,
+    }, H);
+    assertEquals(made.status, 201);
+    assertEquals([
+      made.body.oneOff,
+      made.body.subscriptionId,
+      made.body.taskTypeName,
+      made.body.priceCents,
+      made.body.workerId,
+      made.body.address,
+      made.body.addedBy,
+      made.body.status,
+    ], [
+      true,
+      "",
+      "Mulch",
+      12000,
+      w.id,
+      "4601 Dick Pond Rd, Myrtle Beach, SC",
+      "office",
+      "assigned",
+    ]);
+    // the worker falls back to the customer's subscription's zone when omitted
+    const derived = await call("POST", "/field/tasks", {
+      customerId: customer.id,
+      date: tomorrow,
+      taskTypeName: "Mulch",
+      priceCents: 500,
+    }, H);
+    assertEquals([derived.status, derived.body.workerId], [201, w.id]);
+    // no customer, no worker to derive from → 400; a foreign customer → 404
+    const loner =
+      (await call("POST", "/customers", { name: "Nobody Nearby" }, H)).body;
+    assertEquals(
+      (await call("POST", "/field/tasks", {
+        customerId: loner.id,
+        date: tomorrow,
+        taskTypeName: "Mulch",
+        priceCents: 500,
+      }, H)).status,
+      400,
+    );
+    assertEquals(
+      (await call("POST", "/field/tasks", {
+        customerId: "nope",
+        date: tomorrow,
+        taskTypeName: "Mulch",
+        priceCents: 500,
+        workerId: w.id,
+      }, H)).status,
+      404,
+    );
+    // tomorrow's day lists the round AND both one-offs; generating again changes nothing
+    const list = async () =>
+      (await call("GET", `/field/tasks?date=${tomorrow}`, undefined, H))
+        .body as Row[];
+    const before = await list();
+    await call("POST", "/field/tasks/generate", { date: tomorrow }, H);
+    const after = await list();
+    assertEquals(after.filter((t: Row) => t.oneOff).length, 2);
+    assertEquals(after.length, before.length);
+    // done → on an invoice with its address
+    await call(
+      "PUT",
+      `/field/tasks/${made.body.id}`,
+      { status: "complete" },
+      H,
+    );
+    const pull = await call("POST", "/field/batches/pull", {
+      from: tomorrow,
+      to: tomorrow,
+    }, H);
+    assertEquals(pull.status, 201);
+    assertEquals(pull.body.invoices.length, 1);
+    assertEquals(pull.body.invoices[0].amount, 12000);
+    assert(
+      pull.body.invoices[0].lineItems[0].description.includes(
+        "Mulch — 4601 Dick Pond Rd",
+      ),
+      pull.body.invoices[0].lineItems[0].description,
+    );
+  });
+});
+
+// REQ-165 — "when in tasks i need to be able to add services to a task as a one off."
+Deno.test("REQ-165 the office adds a service to a visit; a duplicate is 409", async () => {
+  await withServer(async (call) => {
+    const { H, today, task, w, sub } = await todaysRound(call, "+15125551633");
+    const added = await call("POST", `/field/tasks/${task.id}/services`, {
+      taskTypeName: "Aeration",
+      priceCents: 4000,
+    }, H);
+    assertEquals(added.status, 201);
+    assertEquals([
+      added.body.taskTypeName,
+      added.body.priceCents,
+      added.body.workerId,
+      added.body.subscriptionId,
+      added.body.date,
+      added.body.addedBy,
+      added.body.customerId,
+    ], ["Aeration", 4000, w.id, sub.id, today, "office", task.customerId]);
+    // the subscription's price when none is given, for a type it lists — but Edge is already on the visit → 409
+    assertEquals(
+      (await call("POST", `/field/tasks/${task.id}/services`, {
+        taskTypeName: "Edge",
+      }, H)).status,
+      409,
+    );
+    assertEquals(
+      (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body
+        .length,
+      3,
+    );
+  });
+});
+
+// REQ-166 — "when in tasks i need to be able to change the worker of a task as a one off"
+Deno.test("REQ-166 the office reassigns a task; a foreign worker is 400; an invoiced task is 409", async () => {
+  await withServer(async (call) => {
+    const { H, today, task, w } = await todaysRound(call, "+15125551634");
+    const w2 = (await call("POST", "/field/workers", {
+      name: "Luis",
+      phoneNumber: "8435550635",
+      pin: "4321",
+    }, H)).body;
+    const moved = await call("PUT", `/field/tasks/${task.id}`, {
+      workerId: w2.id,
+    }, H);
+    assertEquals([moved.status, moved.body.workerId, moved.body.workerName], [
+      200,
+      w2.id,
+      "Luis",
+    ]);
+    // the zone still belongs to the first worker: tomorrow's round goes to them
+    const tomorrow = shiftDate(today, 7);
+    const next =
+      (await call("GET", `/field/tasks?date=${tomorrow}`, undefined, H)).body;
+    assert(
+      next.length === 0 || next.every((t: Row) => t.workerId === w.id),
+      "the subscription's zone is untouched",
+    );
+    assertEquals(
+      (await call("PUT", `/field/tasks/${task.id}`, { workerId: "nope" }, H))
+        .status,
+      400,
+    );
+    await call("PUT", `/field/tasks/${task.id}`, { status: "complete" }, H);
+    await call("POST", "/field/batches/pull", { from: today, to: today }, H);
+    assertEquals(
+      (await call("PUT", `/field/tasks/${task.id}`, { workerId: w.id }, H))
+        .status,
+      409,
+    );
+  });
+});
