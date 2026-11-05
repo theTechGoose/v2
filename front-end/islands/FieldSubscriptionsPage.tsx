@@ -4,6 +4,8 @@
  * New / Edit modal. Ported from the a2z demo's suscripciones.html; the data
  * comes from clients/field.ts and the customer picker from the EXISTING
  * customers resource (REQ-137 — nothing about customers changes here).
+ * REQ-152 — the customer field is the SearchSelect (REQ-136): type to narrow,
+ * pick; the pick fills the address (REQ-144); retyping un-picks.
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
@@ -17,8 +19,14 @@ import { clientsClient } from "../clients/clients.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtMoneyExact, prefillAddress, todayIso } from "../lib/field.ts";
+import {
+  customerOptions,
+  fmtMoneyExact,
+  prefillAddress,
+  todayIso,
+} from "../lib/field.ts";
 import { langSignal, t } from "../lib/i18n.ts";
+import SearchSelect from "./SearchSelect.tsx";
 
 /** the cadence <select>'s values: an interval in weeks, or monthly */
 type CadenceChoice = "1" | "2" | "3" | "4" | "monthly";
@@ -159,6 +167,8 @@ export default function FieldSubscriptionsPage() {
   const [subs, setSubs] = useState<SubscriptionView[] | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  /** REQ-152 — the customer last picked in the open form (its address may sit in the box) */
+  const lastPick = useRef<string | null>(null);
   const [form, setForm] = useState<Form | null>(null);
   /** the card whose Delete is waiting for its Confirm */
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -443,9 +453,24 @@ export default function FieldSubscriptionsPage() {
 
   const list = subs ?? [];
   const activeCount = list.filter((s) => s.active).length;
+  useEffect(() => {
+    if (!form) lastPick.current = null;
+  }, [form === null]);
+
   const customerKnown = form
     ? customers.some((c) => c.id === form.customerId)
     : true;
+  // REQ-152 — the search rows; an edited subscription's customer is listed even before the fetch lands
+  const customerChoices = customerKnown || !form?.customerId
+    ? customerOptions(customers)
+    : [
+      {
+        id: form.customerId,
+        label: list.find((s) => s.id === form.editId)?.customerName ??
+          form.customerId,
+      },
+      ...customerOptions(customers),
+    ];
 
   return (
     <>
@@ -619,50 +644,53 @@ export default function FieldSubscriptionsPage() {
               {form.editId ? t("field.subs.editTitle") : t("field.subs.new")}
             </h2>
 
-            <label class="field">
-              {t("field.subs.client")}
-              <select
-                name="customer"
-                data-cy="subs-customer"
-                required
-                disabled={form.editId !== null}
-                value={form.customerId}
-                onChange={(e) => {
-                  // REQ-144: the pick fills the service address, never over a typed one
-                  const customerId =
-                    (e.currentTarget as HTMLSelectElement).value;
-                  setForm((f) =>
-                    f
-                      ? {
-                        ...f,
-                        customerId,
-                        address: prefillAddress(
-                          f.address,
-                          customers.find((c) => c.id === f.customerId),
-                          customers.find((c) => c.id === customerId),
-                        ),
-                      }
-                      : f
-                  );
-                }}
-              >
-                <option value="">{t("field.subs.pickCustomer")}</option>
-                {!customerKnown && form.customerId && (
-                  <option value={form.customerId}>
-                    {list.find((s) =>
-                      s.id === form.editId
-                    )?.customerName ?? form.customerId}
-                  </option>
-                )}
-                {customers.map((c) => (
-                  <option value={c.id} key={c.id}>{c.name}</option>
-                ))}
-              </select>
+            <div class="field">
+              <span>{t("field.subs.client")}</span>
+              <div data-cy="subs-customer">
+                <SearchSelect
+                  name="customer"
+                  options={customerChoices}
+                  value={form.customerId}
+                  placeholder={t("field.subs.pickCustomer")}
+                  disabled={form.editId !== null}
+                  onSelect={(o) => {
+                    // REQ-144: the pick fills the service address, never over a typed one —
+                    // "over the previous pick's" counts as untouched, even after a retype un-picked it
+                    const previous = customers.find((c) =>
+                      c.id === lastPick.current
+                    );
+                    lastPick.current = o.id;
+                    setForm((f) =>
+                      f
+                        ? {
+                          ...f,
+                          customerId: o.id,
+                          address: prefillAddress(
+                            f.address,
+                            previous,
+                            customers.find((c) => c.id === o.id),
+                          ),
+                        }
+                        : f
+                    );
+                  }}
+                  onQuery={(q) => {
+                    // REQ-152: a cleared or retyped box is no longer a pick
+                    setForm((f) => {
+                      if (!f || !f.customerId) return f;
+                      const cur = customers.find((c) => c.id === f.customerId);
+                      return cur && q === cur.name
+                        ? f
+                        : { ...f, customerId: "" };
+                    });
+                  }}
+                />
+              </div>
               <span class="hint">
                 {t("field.subs.manageCustomers")}{" "}
                 <a href="/customers">{t("nav.customers")}</a>
               </span>
-            </label>
+            </div>
 
             <label class="field">
               {t("field.subs.address")}

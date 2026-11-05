@@ -22,6 +22,11 @@ export default define.page(function FieldFieldSubscriptionsPageRoute(ctx) {
         <title>{tFor(lang, "field.subs.docTitle")}</title>
         <link key="css-dashboard" rel="stylesheet" href="/dashboard.css" />
         <link key="css-field" rel="stylesheet" href="/field.css" />
+        <link
+          key="css-search-select"
+          rel="stylesheet"
+          href="/search-select.css"
+        />
       </Head>
       <div class="app">
         <DashSidebar active="subscriptions" />
