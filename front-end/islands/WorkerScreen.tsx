@@ -37,6 +37,11 @@ const css = `
   .login { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 22px; display: flex; flex-direction: column; gap: 14px; margin-top: 30px; }
   .login input, .login select { font-size: 18px; padding: 14px; }
   .pin { letter-spacing: .4em; text-align: center; font-family: var(--font-mono); }
+  .pinwrap { position: relative; display: flex; }
+  .pinwrap input { flex: 1; min-width: 0; padding-right: 52px; }
+  .pinwrap .eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border: 0; background: transparent; color: var(--fg-muted); border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .pinwrap .eye[aria-pressed="true"] { color: var(--brand-teal); }
+  .pinwrap .eye:focus-visible { outline: 2px solid var(--brand-green); outline-offset: 1px; }
   .progress { height: 8px; background: var(--mint-300); border-radius: 999px; overflow: hidden; }
   .progress i { display: block; height: 100%; background: var(--brand-green); transition: width .3s; }
   .lang { margin-left: auto; display: flex; gap: 2px; background: var(--mint-100); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
@@ -153,6 +158,8 @@ export default function WorkerScreen(
   const [today, setToday] = useState(initialDate ?? "");
   const [cell, setCell] = useState("");
   const [pin, setPin] = useState("");
+  /** REQ-150 — the eye: the PIN shows while pressed, hidden when the page opens */
+  const [showPin, setShowPin] = useState(false);
   const [bad, setBad] = useState("");
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<Toast | null>(null);
@@ -741,20 +748,35 @@ export default function WorkerScreen(
             </label>
             <label class="field">
               {t("worker.pin")}
-              <input
-                class="pin"
-                type="password"
-                name="pin"
-                data-cy="w-pin"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={4}
-                pattern="[0-9]{4}"
-                placeholder="••••"
-                value={pin}
-                required
-                onInput={(e) => setPin((e.target as HTMLInputElement).value)}
-              />
+              <span class="pinwrap">
+                <input
+                  class="pin"
+                  type={showPin ? "text" : "password"}
+                  name="pin"
+                  data-cy="w-pin"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={4}
+                  pattern="[0-9]{4}"
+                  placeholder="••••"
+                  value={pin}
+                  required
+                  onInput={(e) => setPin((e.target as HTMLInputElement).value)}
+                />
+                <button
+                  type="button"
+                  class="eye"
+                  data-cy="w-pin-eye"
+                  aria-pressed={showPin}
+                  aria-label={showPin
+                    ? t("worker.hidePin")
+                    : t("worker.showPin")}
+                  title={showPin ? t("worker.hidePin") : t("worker.showPin")}
+                  onClick={() => setShowPin((v) => !v)}
+                >
+                  <I d={ICN.eye} size={20} />
+                </button>
+              </span>
             </label>
             {bad && <p class="alert" data-cy="w-error">{bad}</p>}
             <button

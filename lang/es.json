@@ -3125,6 +3125,8 @@
   "worker.login": "Entrar",
   "worker.who": "¿Quién eres?",
   "worker.pin": "PIN",
+  "worker.showPin": "Mostrar PIN",
+  "worker.hidePin": "Ocultar PIN",
   "worker.bad": "Trabajador o PIN incorrecto.",
   "worker.locked": "Demasiados intentos — espera un minuto.",
   "worker.hello": "Hola, {name} 👋",
