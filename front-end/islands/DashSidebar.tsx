@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
+import { I, ICN } from "../lib/dash-icons.tsx";
 import { type DashboardStats } from "../clients/dashboard.ts";
 import {
   type CachedDash,
@@ -13,69 +13,12 @@ import {
   adminsClient,
   isActing,
 } from "../clients/admins.ts";
+import { folderPathTo, isFolder, viewAt } from "../lib/nav-folders.ts";
+import { NAV } from "../lib/nav-tree.ts";
 
-interface NavEntry {
-  id: string;
-  icon: IconName;
-  label: string;
-  href: string;
-  countKey?: CountKey;
-}
 type CountKey = "clients" | "quotes" | "invoices";
 
-// Canonical NAV from the reference design (DocuMonster Dashboard.html).
-// `countKey` maps a sidebar entry to a derived count from /analytics/dashboard.
-// We never seed counts client-side — if the fetch fails or returns 0, the
-// badge is omitted (rendering an empty pill on a fresh account looks broken).
-// PDF p4 "Why is contracts back?" — contracts are folded into the unified
-// Quote + Agreement document, so there is deliberately NO separate Contracts
-// entry here (/contracts deep links 302 into /quotes).
-const NAV: NavEntry[] = [
-  { id: "home", icon: "home", label: "Dashboard", href: "/dashboard" },
-  {
-    // P-46: one EN term — the nav, URL, and page all say "customers"
-    // (/clients stays live as an alias route; countKey is the store name).
-    id: "customers",
-    icon: "user",
-    label: "Customers",
-    href: "/customers",
-    countKey: "clients",
-  },
-  {
-    id: "quotes",
-    icon: "quote",
-    label: "Quotes",
-    href: "/quotes",
-    countKey: "quotes",
-  },
-  {
-    id: "invoices",
-    icon: "invoice",
-    label: "Invoices",
-    href: "/invoices",
-    countKey: "invoices",
-  },
-  { id: "payments", icon: "pay", label: "Payments", href: "/payments" },
-  // REQ-143: the field module — recurring maintenance on the existing customers,
-  // billed through the existing invoices.
-  {
-    id: "subscriptions",
-    icon: "repeat",
-    label: "Subscriptions",
-    href: "/field/subscriptions",
-  },
-  {
-    id: "assignments",
-    icon: "map",
-    label: "Assignments",
-    href: "/field/assignments",
-  },
-  { id: "tasks", icon: "cal", label: "Tasks", href: "/field/tasks" },
-  { id: "batches", icon: "batch", label: "Batches", href: "/field/batches" },
-  { id: "workers", icon: "hardhat", label: "Workers", href: "/field/workers" },
-  // REQ-146: the numbers the owner lets into the account
-  { id: "admins", icon: "shield", label: "Admins", href: "/admins" },
-];
+// REQ-176 — the tree itself is data in lib/nav-tree.ts; this island renders one level of it.
 
 interface Props {
   active?: string;
@@ -148,6 +91,12 @@ function projectSidebar(snap: CachedDash | null): SbState {
 export default function DashSidebar(
   { active = "home", showNav = true }: Props,
 ) {
+  // REQ-156 — which folder is open: the active entry's, until Back or a folder row is clicked
+  const [path, setPath] = useState<string[]>(() =>
+    active === "admin" ? ["manage"] : folderPathTo(NAV, active)
+  );
+  const view = viewAt(NAV, path);
+
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof globalThis.localStorage === "undefined") return false;
     return globalThis.localStorage.getItem("pm:sb-collapsed") === "1";
@@ -312,9 +261,58 @@ export default function DashSidebar(
 
           {showNav && (
             <nav class="sb__nav">
-              {NAV.map((item) => {
+              {view.parentPath !== null && (
+                <button
+                  type="button"
+                  class="nav-item nav-item--back"
+                  data-cy="nav-back"
+                  onClick={() => setPath(view.parentPath!)}
+                  title={tFor(lang, "nav.back")}
+                >
+                  <span class="nav-item__icon">
+                    <I d={ICN.chevLeft} size={18} />
+                  </span>
+                  {!collapsed && (
+                    <span class="nav-item__label">
+                      {tFor(lang, "nav.back")}
+                    </span>
+                  )}
+                </button>
+              )}
+              {view.folder && !collapsed && (
+                <div class="sb__label" data-cy="nav-folder-name">
+                  {tFor(lang, `nav.${view.folder.id}`)}
+                </div>
+              )}
+              {view.items.map((item) => {
+                if (isFolder(item)) {
+                  return (
+                    <button
+                      type="button"
+                      key={item.id}
+                      class="nav-item nav-item--folder"
+                      data-cy={`nav-folder-${item.id}`}
+                      onClick={() => setPath([...path, item.id])}
+                      title={tFor(lang, `nav.${item.id}`)}
+                    >
+                      <span class="nav-item__icon">
+                        <I d={ICN[item.icon]} size={18} />
+                      </span>
+                      {!collapsed && (
+                        <span class="nav-item__label">
+                          {tFor(lang, `nav.${item.id}`)}
+                        </span>
+                      )}
+                      {!collapsed && (
+                        <span class="nav-item__chev">
+                          <I d={ICN.chev} size={16} />
+                        </span>
+                      )}
+                    </button>
+                  );
+                }
                 const count = item.countKey
-                  ? s.counts[item.countKey]
+                  ? s.counts[item.countKey as CountKey]
                   : undefined;
                 return (
                   <a
@@ -344,12 +342,12 @@ export default function DashSidebar(
                 );
               })}
               {
-                /* Admin tab — super-admins only. Server enforces the /admin
-                gate too (route middleware + every endpoint); this just hides
-                the entry for everyone else. Label is intentionally not i18n'd
-                (internal operator tool). */
+                /* Super-admin tab — super-admins only, inside the Admin folder
+                (REQ-176). Server enforces the /admin gate too (route middleware
+                + every endpoint); this just hides the entry for everyone else.
+                Label is intentionally not i18n'd (internal operator tool). */
               }
-              {s.superAdmin && (
+              {s.superAdmin && view.folder?.id === "manage" && (
                 <a
                   href="/admin"
                   class={`nav-item ${
@@ -359,7 +357,9 @@ export default function DashSidebar(
                   <span class="nav-item__icon">
                     <I d={ICN.shield} size={18} />
                   </span>
-                  {!collapsed && <span class="nav-item__label">Admin</span>}
+                  {!collapsed && (
+                    <span class="nav-item__label">Super admin</span>
+                  )}
                 </a>
               )}
             </nav>

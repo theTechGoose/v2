@@ -1,0 +1,130 @@
+/**
+ * REQ-176 — the sidebar's root on the real shell: Dashboard, Customers, Billing, Admin and nothing
+ * else; Billing opens to Quotes, Invoices, Payments; Admin to Recurring and Admins; Back climbs one
+ * level at a time; a page inside a nested folder loads inside it.
+ */
+import { story, type StoryTools } from "#shots";
+
+const JSON_HEADERS = { "content-type": "application/json" };
+const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
+
+async function verify(http: StoryTools["http"], phone: string) {
+  const r = await http("/api/auth/verify", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ phoneNumber: phone, code: "000000" }),
+  });
+  let body = await r.json();
+  let cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
+  if (body.recoverable === true) {
+    const f = await http("/api/auth/start-fresh", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ token: body.recoveryToken }),
+    });
+    body = await f.json();
+    cookie = (f.headers.get("set-cookie") ?? "").split(";")[0];
+  }
+  if (!cookie) {
+    throw new Error(`sign-in: no session cookie (${JSON.stringify(body)})`);
+  }
+  return { cookie, auth: { ...JSON_HEADERS, cookie } };
+}
+
+Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Admin; Billing opens to Quotes, Invoices, Payments and Invoices loads inside it; Admin opens to Recurring and Admins; Back climbs one level; /field/tasks loads inside Recurring", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const user = await verify(http, `+1512${digits()}`);
+    await (await http("/api/me", {
+      method: "PUT",
+      headers: user.auth,
+      body: JSON.stringify({ language: "en", name: "Ana Torres" }),
+    })).body?.cancel();
+    const [name, value] = user.cookie.split("=");
+    const hosts = new Set([
+      new URL(baseUrl).hostname,
+      "localhost",
+      "127.0.0.1",
+    ]);
+    await page.context().addCookies([...hosts].flatMap((domain) => [
+      { name, value, domain, path: "/" },
+      { name: "pm_lang", value: "en", domain, path: "/" },
+    ]));
+    const nav = page.locator(".sb__nav");
+    const labels = async () =>
+      (await nav.locator(".nav-item__label").allInnerTexts()).map((s) =>
+        s.trim()
+      );
+    // 1. the root: four rows, nothing else
+    await page.goto("/customers");
+    await nav.locator("[data-cy='nav-folder-billing']").waitFor({
+      timeout: 20_000,
+    });
+    // the rail hydrates in Spanish for a beat, then the profile's English lands — wait for it
+    await nav.locator(".nav-item__label", { hasText: "Customers" }).waitFor({
+      timeout: 20_000,
+    });
+    let seen = await labels();
+    expect.eq(
+      seen.join(" | "),
+      "Dashboard | Customers | Billing | Admin",
+      "the root is the four rows",
+    );
+    // 2. Billing: Back, Quotes, Invoices, Payments; Invoices loads inside it
+    await nav.locator("[data-cy='nav-folder-billing']").click();
+    await nav.locator("[data-cy='nav-back']").waitFor({ timeout: 10_000 });
+    seen = await labels();
+    expect.eq(
+      seen.join(" | "),
+      "Back | Quotes | Invoices | Payments",
+      "inside Billing",
+    );
+    await nav.locator("a[href='/invoices']").click();
+    await page.waitForURL(/\/invoices/, { timeout: 20_000 });
+    await nav.locator("[data-cy='nav-back']").waitFor({ timeout: 20_000 });
+    expect(
+      await nav.locator("a[href='/invoices'].nav-item--active").count() === 1,
+      "Invoices is the active entry, inside Billing on load",
+    );
+    expect(
+      (await labels()).includes("Payments"),
+      "the sidebar opened inside Billing",
+    );
+    // 3. Back to the root, then Admin: Recurring and Admins
+    await nav.locator("[data-cy='nav-back']").click();
+    await nav.locator("[data-cy='nav-folder-manage']").waitFor({
+      timeout: 10_000,
+    });
+    await nav.locator("[data-cy='nav-folder-manage']").click();
+    await nav.locator("[data-cy='nav-folder-recurring']").waitFor({
+      timeout: 10_000,
+    });
+    seen = await labels();
+    expect.eq(seen.join(" | "), "Back | Recurring | Admins", "inside Admin");
+    // 4. Recurring: the five; Back lands on Admin, Back again on the root
+    await nav.locator("[data-cy='nav-folder-recurring']").click();
+    await nav.locator("a[href='/field/workers']").waitFor({ timeout: 10_000 });
+    seen = await labels();
+    expect.eq(
+      seen.join(" | "),
+      "Back | Subscriptions | Assignments | Tasks | Batches | Workers",
+      "inside Recurring",
+    );
+    await nav.locator("[data-cy='nav-back']").click();
+    await nav.locator("[data-cy='nav-folder-recurring']").waitFor({
+      timeout: 10_000,
+    });
+    expect((await labels()).includes("Admins"), "Back landed on Admin");
+    await nav.locator("[data-cy='nav-back']").click();
+    await nav.locator("[data-cy='nav-folder-billing']").waitFor({
+      timeout: 10_000,
+    });
+    expect((await labels()).includes("Customers"), "Back again: the root");
+    // 5. a page two folders deep opens inside its folder
+    await page.goto("/field/tasks");
+    await nav.locator("[data-cy='nav-back']").waitFor({ timeout: 20_000 });
+    seen = await labels();
+    expect(
+      seen.includes("Batches") && !seen.includes("Admins"),
+      `inside Recurring on load (${seen.join(", ")})`,
+    );
+  }));

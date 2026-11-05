@@ -245,13 +245,12 @@ export default function FieldWorkersPage() {
                 })}
             />
           </label>
-        </div>
-        <div class="row" style="margin-top:10px">
-          <label class="field" style="flex:1;min-width:200px">
+          <label class="field" style="flex:0 0 150px;min-width:130px">
             {t("field.wk.language")}
             <select
               name="language"
               data-cy="wk-language"
+              title={t("field.wk.langHint")}
               value={form.language}
               onChange={(e) =>
                 setForm({
@@ -265,9 +264,6 @@ export default function FieldWorkersPage() {
               <option value="es">{t("field.wk.langEs")}</option>
               <option value="en">{t("field.wk.langEn")}</option>
             </select>
-            <span class="hint" style="font-weight:400">
-              {t("field.wk.langHint")}
-            </span>
           </label>
         </div>
         <div

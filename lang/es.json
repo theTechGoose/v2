@@ -3222,5 +3222,9 @@
   "clientsBoard.panel.subsOpen": "Abrir Suscripciones",
   "clientsBoard.subsCount.one": "{n} suscripción",
   "clientsBoard.subsCount.other": "{n} suscripciones",
-  "clientsBoard.panel.perVisit": "por visita"
+  "clientsBoard.panel.perVisit": "por visita",
+  "nav.recurring": "Recurrente",
+  "nav.billing": "Facturación",
+  "nav.manage": "Admin",
+  "nav.back": "Atrás"
 }
