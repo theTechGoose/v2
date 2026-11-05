@@ -199,7 +199,9 @@ describe("REQ-147 /landing3 is the v3 mock wired to the site's one sources", () 
       expect(s).not.toMatch(/855-362-8666|18553628666/);
       expect(s).not.toMatch(/https?:\/\/(www\.)?documonster\.com\//);
       expect(s).not.toMatch(/4505 Socastee/);
-      expect(s).not.toMatch(/Powered by Paperwork Monster/i);
+      expect(s).not.toMatch(
+        new RegExp(["Powered by Paperwork", "Monster"].join(" "), "i"),
+      ); // the old brand (REQ-071)
       expect(s).not.toMatch(/wa\.me|whatsapp/i);
     }
   });

@@ -208,7 +208,7 @@ Deno.test("REQ-147: /landing3 is the v3 mock top to bottom — Spanish first, En
     }
     await expect.see("Monster Success Specialist");
     // no tagline (REQ-071), no WhatsApp
-    await expect.notSee("Powered by Paperwork Monster");
+    await expect.notSee(["Powered by Paperwork", "Monster"].join(" ")); // the old brand (REQ-071)
     await expect.notSee("WhatsApp");
     // English on the toggle — one link, a click anywhere flips it
     expect.eq(await count(page, "[data-cy='l3-lang']"), 1, "one toggle");

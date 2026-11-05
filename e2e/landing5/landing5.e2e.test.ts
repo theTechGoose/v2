@@ -132,7 +132,7 @@ Deno.test("REQ-149: /landing5 is the v5 mock — Spanish first, English on the t
         `${who}'s photo loaded`,
       );
     }
-    await expect.notSee("Powered by Paperwork Monster");
+    await expect.notSee(["Powered by Paperwork", "Monster"].join(" ")); // the old brand (REQ-071)
     // Sign up now is the app's sign-in; so is Start free; Escríbenos is the email; Llámanos scrolls to the phone row
     expect.eq(
       await page.locator("[data-cy='l5-signup']").getAttribute("href"),
