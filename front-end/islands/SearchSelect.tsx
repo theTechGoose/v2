@@ -23,6 +23,8 @@ export interface SearchSelectProps<T extends SearchOption = SearchOption> {
   onSelect?: (option: T) => void;
   /** Called with the box's text as it changes (null once a pick is made). */
   onQuery?: (query: string) => void;
+  /** REQ-152 — the box is locked: it shows the pick and never opens. */
+  disabled?: boolean;
 }
 
 export default function SearchSelect<T extends SearchOption = SearchOption>(
@@ -34,6 +36,7 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
     limit = SEARCH_SELECT_LIMIT,
     onSelect,
     onQuery,
+    disabled = false,
   }: SearchSelectProps<T>,
 ) {
   const initial = value ? options.find((o) => o.id === value) ?? null : null;
@@ -63,6 +66,17 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
+
+  // REQ-152 — the options may arrive after the box did (a list fetched on mount), and the
+  // owner may change `value`: when the box's pick is not the owner's, take the owner's.
+  useEffect(() => {
+    if (!value || picked?.id === value) return;
+    const o = options.find((x) => x.id === value);
+    if (o) {
+      setPicked(o);
+      setQuery(o.label);
+    }
+  }, [value, options]);
 
   useEffect(() => {
     if (active < 0) return;
@@ -146,13 +160,14 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
           spellcheck={false}
           placeholder={placeholder}
           value={query}
+          disabled={disabled}
           onInput={onInput}
           onKeyDown={onKey}
-          onFocus={() => setOpen(true)}
-          onClick={() => setOpen(true)}
+          onFocus={() => !disabled && setOpen(true)}
+          onClick={() => !disabled && setOpen(true)}
           data-cy="search-select-input"
         />
-        {query && (
+        {query && !disabled && (
           <button
             type="button"
             class="ss__clear"
@@ -172,7 +187,7 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
           </button>
         )}
       </div>
-      {open && (
+      {open && !disabled && (
         <div class="ss__pop">
           <ul
             class="ss__list"

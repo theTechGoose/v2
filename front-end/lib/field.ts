@@ -70,6 +70,18 @@ export function prefillAddress(
   return untouched ? picked : current;
 }
 
+/** REQ-152 — the customers as SearchSelect rows: the name is the label, the address on file the hint */
+export function customerOptions(
+  customers: { id: string; name: string; address?: string }[],
+): { id: string; label: string; hint?: string }[] {
+  return customers.map((c) => {
+    const hint = c.address?.trim();
+    return hint
+      ? { id: c.id, label: c.name, hint }
+      : { id: c.id, label: c.name };
+  });
+}
+
 /** REQ-145 — the account's subscriptions by customer, oldest first; a customer with none is absent */
 export function subscriptionsByCustomer<
   T extends { customerId: string; createdAt: string },

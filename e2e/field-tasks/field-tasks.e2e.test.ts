@@ -9,6 +9,15 @@
  */
 import { story, type StoryTools } from "#shots";
 
+/** REQ-152 — the customer field is a search box: type the name, click the match */
+async function pickCustomer(page: StoryTools["page"], name: string) {
+  const box = page.locator("[data-cy='subs-customer'] [data-cy='search-select-input']");
+  await box.waitFor({ timeout: 15_000 });
+  await box.fill(name);
+  await page.locator("[data-cy='subs-customer'] [data-cy='search-select-option']")
+    .filter({ hasText: name }).first().click();
+}
+
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
 
@@ -105,13 +114,7 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
     // 2. a subscription on the existing customer, on /field/subscriptions
     await page.goto("/field/subscriptions");
     await page.locator("[data-cy='subs-new']").click();
-    const sel = page.locator("[data-cy='subs-customer']");
-    await sel.waitFor({ timeout: 15_000 });
-    await sel.locator(`option[value='${customer.id}']`).waitFor({
-      state: "attached",
-      timeout: 15_000,
-    });
-    await sel.selectOption(customer.id);
+    await pickCustomer(page, "Ana Torres");
     await page.locator("[data-cy='subs-address']").fill(
       "4601 Dick Pond Rd, Myrtle Beach, SC",
     );
@@ -284,32 +287,27 @@ Deno.test("REQ-144: picking a customer with an address on file fills the service
     const noAddr = await mk("Nadia Noaddress");
     await page.goto("/field/subscriptions");
     await page.locator("[data-cy='subs-new']").click();
-    const sel = page.locator("[data-cy='subs-customer']");
-    await sel.locator(`option[value='${bob}']`).waitFor({
-      state: "attached",
-      timeout: 15_000,
-    });
     const address = page.locator("[data-cy='subs-address']");
-    await sel.selectOption(ana);
+    await pickCustomer(page, "Ana Torres");
     expect.eq(
       await address.inputValue(),
       "4601 Dick Pond Rd, Myrtle Beach, SC",
       "Ana's address fills the box",
     );
-    await sel.selectOption(bob);
+    await pickCustomer(page, "Bob Marshall");
     expect.eq(
       await address.inputValue(),
       "6219 Forestbrook Rd, Myrtle Beach, SC",
       "the next pick replaces the previous pick's address",
     );
-    await sel.selectOption(noAddr);
+    await pickCustomer(page, "Nadia Noaddress");
     expect.eq(
       await address.inputValue(),
       "6219 Forestbrook Rd, Myrtle Beach, SC",
       "a customer with no address leaves the box alone",
     );
     await address.fill("12 My Own St, Conway, SC");
-    await sel.selectOption(ana);
+    await pickCustomer(page, "Ana Torres");
     expect.eq(
       await address.inputValue(),
       "12 My Own St, Conway, SC",
@@ -386,4 +384,64 @@ Deno.test("REQ-145: Ana has two subscriptions and Bob one — Ana's card says 2 
     await bobRows.first().waitFor({ timeout: 10_000 });
     expect.eq(await bobRows.count(), 1, "Bob's panel lists his one");
     await expect.see("6219 Forestbrook Rd");
+  }));
+
+Deno.test("REQ-152: the customer field is a search box — typing narrows the list to the match with its address, the pick fills the address and a cleared box un-picks", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const mk = async (name: string, address?: string) => {
+      const r = await http("/api/customers", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({
+          name,
+          address,
+          email: `${
+            name.toLowerCase().replace(/\W+/g, ".")
+          }@blackhole.postmarkapp.com`,
+        }),
+      });
+      await r.body?.cancel();
+    };
+    await mk("Ana Torres", "4601 Dick Pond Rd, Myrtle Beach, SC");
+    await mk("Bob Marshall", "6219 Forestbrook Rd, Myrtle Beach, SC");
+    await mk("Carla Ortiz");
+    await page.goto("/field/subscriptions");
+    await page.locator("[data-cy='subs-new']").click();
+    const field = page.locator("[data-cy='subs-customer']");
+    const box = field.locator("[data-cy='search-select-input']");
+    const options = field.locator("[data-cy='search-select-option']");
+    await box.waitFor({ timeout: 15_000 });
+    expect.eq(
+      await page.locator("select[name='customer']").count(),
+      0,
+      "no native customer drop-down",
+    );
+    await box.click();
+    await options.first().waitFor({ timeout: 15_000 });
+    expect.eq(await options.count(), 3, "the open list shows every customer");
+    await box.fill("tor");
+    await expect.see("Ana Torres");
+    expect.eq(await options.count(), 1, "typing narrows the list to the match");
+    await expect.see("4601 Dick Pond Rd, Myrtle Beach, SC");
+    await box.press("Enter");
+    const address = page.locator("[data-cy='subs-address']");
+    expect.eq(
+      await address.inputValue(),
+      "4601 Dick Pond Rd, Myrtle Beach, SC",
+      "the keyboard pick fills the address",
+    );
+    expect.eq(await box.inputValue(), "Ana Torres", "the pick's name sits in the box");
+    await field.locator("[data-cy='search-select-clear']").click();
+    expect.eq(await box.inputValue(), "", "the box is cleared");
+    await page.locator("[data-cy='subs-type-q']").fill("Lawn cut");
+    await page.locator("[data-cy='subs-price']").fill("65");
+    await page.locator("[data-cy='subs-add-item']").click();
+    await page.locator("[data-cy='subs-submit']").click();
+    await page.locator("[data-cy='subs-error']").waitFor({ timeout: 15_000 });
+    expect.eq(
+      await page.locator("[data-cy='subs-card']").count(),
+      0,
+      "nothing is saved without a picked customer",
+    );
   }));
