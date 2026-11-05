@@ -16,6 +16,7 @@ import {
   type TaskType,
 } from "../clients/field.ts";
 import { clientsClient } from "../clients/clients.ts";
+import { profileClient } from "../clients/profile.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
@@ -71,6 +72,8 @@ interface Form {
   picked: Option | null;
   /** the price input for the row being added, as typed */
   price: string;
+  /** REQ-174: days to pay, as typed (prefilled from Settings) */
+  netDays: string;
   err: string | null;
   saving: boolean;
 }
@@ -96,7 +99,7 @@ function weekdayOf(iso: string): number {
   return Number.isNaN(d.getTime()) ? new Date().getDay() : d.getDay();
 }
 
-function blankForm(): Form {
+function blankForm(defaultNetDays = 30): Form {
   const startDate = todayIso();
   return {
     editId: null,
@@ -113,19 +116,21 @@ function blankForm(): Form {
     active: -1,
     picked: null,
     price: "",
+    netDays: String(defaultNetDays),
     err: null,
     saving: false,
   };
 }
 
-function formFor(s: SubscriptionView): Form {
+function formFor(s: SubscriptionView, defaultNetDays = 30): Form {
   const startDate = (s.startDate ?? s.createdAt).slice(0, 10);
   const cadence: CadenceChoice = s.cadence === "monthly" ? "monthly" : (String(
     s.intervalWeeks ?? (s.cadence === "biweekly" ? 2 : 1),
   ) as CadenceChoice);
   return {
-    ...blankForm(),
+    ...blankForm(defaultNetDays),
     editId: s.id,
+    netDays: String(s.netDays ?? defaultNetDays),
     customerId: s.customerId,
     address: s.address,
     cadence: ["1", "2", "3", "4", "monthly"].includes(cadence) ? cadence : "1",
@@ -183,6 +188,8 @@ export default function FieldSubscriptionsPage() {
   /** REQ-152 — the customer last picked in the open form (its address may sit in the box) */
   const lastPick = useRef<string | null>(null);
   const [form, setForm] = useState<Form | null>(null);
+  // REQ-174: the account's default days to pay, from Settings
+  const [defaultNetDays, setDefaultNetDays] = useState(30);
   /** the card whose Delete is waiting for its Confirm */
   const [confirmId, setConfirmId] = useState<string | null>(null);
   /** the card with a request in flight, and the message its last one failed with */
@@ -219,6 +226,12 @@ export default function FieldSubscriptionsPage() {
       if (alive) setCustomers(list);
     }).catch(() => {
       // the picker stays empty; the modal's error line reports the save failure
+    });
+    profileClient.get().then((snap) => {
+      const n = snap.identity?.invoiceNetDays;
+      if (alive && typeof n === "number") setDefaultNetDays(n);
+    }).catch(() => {
+      // 30 stays the default
     });
     return () => {
       alive = false;
@@ -262,12 +275,12 @@ export default function FieldSubscriptionsPage() {
 
   function openNew() {
     setConfirmId(null);
-    setForm(blankForm());
+    setForm(blankForm(defaultNetDays));
   }
 
   function openEdit(s: SubscriptionView) {
     setConfirmId(null);
-    setForm(formFor(s));
+    setForm(formFor(s, defaultNetDays));
   }
 
   function close() {
@@ -411,6 +424,15 @@ export default function FieldSubscriptionsPage() {
       setForm({ ...f, err: t("field.subs.daysHint") });
       return;
     }
+    // REQ-174: a whole number of days, 0–365
+    const netDays = Number(f.netDays);
+    if (
+      f.netDays.trim() === "" || !Number.isInteger(netDays) || netDays < 0 ||
+      netDays > 365
+    ) {
+      setForm({ ...f, err: t("field.subs.netDays") + ": 0–365" });
+      return;
+    }
     const items: SubscriptionItemInput[] = f.items.map((it) => ({
       ...(it.id ? { taskTypeId: it.id } : {}),
       taskTypeName: it.name,
@@ -439,6 +461,7 @@ export default function FieldSubscriptionsPage() {
           address: f.address.trim(),
           ...schedule,
           items,
+          netDays,
         });
       } else {
         await fieldClient.createSubscription({
@@ -446,6 +469,7 @@ export default function FieldSubscriptionsPage() {
           address: f.address.trim(),
           ...schedule,
           items,
+          netDays,
         });
       }
       close();
@@ -780,6 +804,29 @@ export default function FieldSubscriptionsPage() {
                   onChange={(e) =>
                     onStartDate((e.currentTarget as HTMLInputElement).value)}
                 />
+              </label>
+            </div>
+
+            {/* REQ-174: days to pay, from the day the invoice is sent */}
+            <div class="row">
+              <label class="field">
+                {t("field.subs.netDays")}
+                <input
+                  type="number"
+                  name="netDays"
+                  min="0"
+                  max="365"
+                  step="1"
+                  data-cy="subs-net-days"
+                  value={form.netDays}
+                  onInput={(e) =>
+                    patch({
+                      netDays: (e.currentTarget as HTMLInputElement).value,
+                    })}
+                />
+                <span class="hint">
+                  {t("field.subs.netDaysHint", { n: defaultNetDays })}
+                </span>
               </label>
             </div>
 

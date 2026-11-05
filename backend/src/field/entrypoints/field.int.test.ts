@@ -896,3 +896,119 @@ Deno.test("REQ-159 the office completes and re-opens a task; a bad status is 400
     );
   });
 });
+
+// REQ-174 — "subscriptions needs a field to define how long they have to pay the invoice from the
+// date sent. it should default to a field on the customer settings that is a number"
+Deno.test("REQ-174 a subscription's days to pay (defaulting to the account's setting) sets the draft's netDays and due date; the due date is re-dated from the day the batch is sent", async () => {
+  await withServer(async (call) => {
+    const H = await login(call);
+    // the account default
+    const ident = await call("PUT", "/profile/identity", {
+      businessName: "A2Z Landscape LLC",
+      invoiceNetDays: 21,
+    }, H);
+    assertEquals(ident.status, 200, JSON.stringify(ident.body));
+    assertEquals(ident.body.invoiceNetDays, 21);
+    const mk = async (name: string) =>
+      (await call("POST", "/customers", {
+        name,
+        email: `${
+          name.replace(/\W+/g, ".").toLowerCase()
+        }@blackhole.postmarkapp.com`,
+      }, H)).body;
+    const randall = await mk("Randall Belknap");
+    const robert = await mk("Robert Thall");
+    const today = fieldToday();
+    // a subscription with its own days, one without, one refused
+    const s14 = await call("POST", "/field/subscriptions", {
+      customerId: randall.id,
+      address: "725 Frederick Rd, Rockingham, VA",
+      startDate: today,
+      items: [{ taskTypeName: "Lawn", priceCents: 6500 }],
+      netDays: 14,
+    }, H);
+    assertEquals(s14.status, 201, JSON.stringify(s14.body));
+    assertEquals(s14.body.netDays, 14);
+    const sDefault = await call("POST", "/field/subscriptions", {
+      customerId: robert.id,
+      address: "845 Frederick Rd, Rockingham, VA",
+      startDate: today,
+      items: [{ taskTypeName: "Lawn", priceCents: 6500 }],
+    }, H);
+    assertEquals(sDefault.status, 201);
+    assertEquals(sDefault.body.netDays, undefined);
+    const bad = await call("POST", "/field/subscriptions", {
+      customerId: robert.id,
+      address: "x",
+      items: [{ taskTypeName: "Lawn", priceCents: 1 }],
+      netDays: 400,
+    }, H);
+    assertEquals(bad.status, 400);
+    // an edit clears it
+    const cleared = await call("PUT", `/field/subscriptions/${s14.body.id}`, {
+      netDays: null,
+    }, H);
+    assertEquals(cleared.body.netDays, undefined);
+    assertEquals(
+      (await call(
+        "PUT",
+        `/field/subscriptions/${s14.body.id}`,
+        { netDays: 14 },
+        H,
+      )).body.netDays,
+      14,
+    );
+    // the day's tasks, completed by the office, then the batch
+    const w = (await call("POST", "/field/workers", {
+      name: "Mario",
+      phoneNumber: "8435550999",
+      pin: "2468",
+    }, H)).body;
+    const regions = (await call("GET", "/field/regions", undefined, H)).body;
+    for (const r of regions) {
+      await call("PUT", `/field/regions/${r.id}/worker`, { workerId: w.id }, H);
+    }
+    await call("POST", "/field/tasks/generate", { date: today }, H);
+    const tasks =
+      (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body;
+    assertEquals(tasks.length, 2, JSON.stringify(tasks));
+    for (const t of tasks) {
+      assertEquals(
+        (await call("PUT", `/field/tasks/${t.id}`, { status: "complete" }, H))
+          .status,
+        200,
+      );
+    }
+    const pulled = await call("POST", "/field/batches/pull", {
+      from: today,
+      to: today,
+    }, H);
+    assertEquals(pulled.status, 201, JSON.stringify(pulled.body));
+    const draft = (customerId: string) =>
+      pulled.body.invoices.find((i: { customerId: string }) =>
+        i.customerId === customerId
+      );
+    assertEquals([draft(randall.id).netDays, draft(randall.id).dueDate], [
+      14,
+      shiftDate(today, 14),
+    ]);
+    assertEquals([draft(robert.id).netDays, draft(robert.id).dueDate], [
+      21,
+      shiftDate(today, 21),
+    ]);
+    // sent → due = sent day + days to pay (the drafts were due from the pull day; re-dated on send)
+    const sent = await call("POST", `/field/batches/${pulled.body.id}/send`, {
+      invoiceIds: [draft(randall.id).id],
+    }, H);
+    assertEquals(sent.status, 200, JSON.stringify(sent.body));
+    assertEquals(sent.body.sent, 1, JSON.stringify(sent.body));
+    const after =
+      (await call("GET", `/invoices/${draft(randall.id).id}`, undefined, H))
+        .body;
+    assertEquals([after.status, after.dueDate, after.netDays], [
+      "sent",
+      shiftDate(today, 14),
+      14,
+    ]);
+  });
+});

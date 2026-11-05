@@ -3230,5 +3230,9 @@
   "invoicesPage.detail.deleteNo": "Keep it",
   "invoicesPage.detail.errDelete": "Couldn't delete the invoice.",
   "publicInvoice.footer.thanks": "Thank you for trusting {business} with your property — it's a pleasure to take care of it, and we appreciate your prompt payment.",
-  "paperworkSms.body.invoiceClosing": "Thanks for trusting us with your property — reply here with any questions."
+  "paperworkSms.body.invoiceClosing": "Thanks for trusting us with your property — reply here with any questions.",
+  "field.subs.netDays": "Days to pay",
+  "field.subs.netDaysHint": "From the day the invoice is sent. Your default is {n} days — change it in Settings.",
+  "settings.netDays": "Days to pay an invoice",
+  "settings.netDaysHint": "The default for every subscription: how many days the customer has, from the day the invoice is sent."
 }

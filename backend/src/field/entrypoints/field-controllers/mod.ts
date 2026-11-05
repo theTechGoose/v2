@@ -3,6 +3,7 @@
  *   /field/workers, /field/task-types, /field/subscriptions, /field/regions,
  *   /field/tasks, /field/batches. Every record is the calling account's.
  */
+import { parseNetDays } from "@field/domain/business/invoice-terms/mod.ts";
 import {
   Body,
   Context,
@@ -354,6 +355,8 @@ export class FieldSubscriptionsController {
     if (b.startDate !== undefined && !isValidDate(b.startDate)) {
       throw new FieldError("startDate must be YYYY-MM-DD");
     }
+    const netDays = parseNetDays(b.netDays); // REQ-174
+    if (!netDays.ok) throw new FieldError(netDays.reason);
     const { lat, lng } = await this.geocoder.geocode(address); // once, for this address only
     const now = new Date().toISOString();
     const s: Subscription = {
@@ -366,6 +369,7 @@ export class FieldSubscriptionsController {
       items,
       ...sched,
       startDate: isValidDate(b.startDate) ? b.startDate : fieldToday(),
+      ...(netDays.value !== undefined ? { netDays: netDays.value } : {}),
       active: true,
       createdAt: now,
       updatedAt: now,
@@ -411,6 +415,12 @@ export class FieldSubscriptionsController {
     }
     Object.assign(s, sched);
     if (isValidDate(b.startDate)) s.startDate = b.startDate;
+    if (b.netDays !== undefined) { // REQ-174: a number sets it, null clears it
+      const nd = parseNetDays(b.netDays);
+      if (!nd.ok) throw new FieldError(nd.reason);
+      if (nd.value === undefined) delete s.netDays;
+      else s.netDays = nd.value;
+    }
     const address = str(b.address);
     if (address && address !== s.address) {
       if (address.length > CAP.text) throw new FieldError("address too long");

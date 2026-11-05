@@ -116,6 +116,9 @@ export class CreateInvoiceDto {
    *  public invoice (roadmap p.12). `amount` is the net total due. */
   @IsOptional() @IsNumber()
   discountCents?: number;
+  /** REQ-174: days to pay, from the day the invoice is sent (a batch invoice carries its subscription's). */
+  @IsOptional() @IsNumber()
+  netDays?: number;
   @IsOptional() @IsString()
   discountReason?: string;
   @IsOptional() @IsString()
@@ -174,6 +177,9 @@ export class UpdateInvoiceDto {
   amount?: number;
   @IsOptional() @IsNumber()
   discountCents?: number;
+  /** REQ-174: days to pay, from the day the invoice is sent (a batch invoice carries its subscription's). */
+  @IsOptional() @IsNumber()
+  netDays?: number;
   @IsOptional() @IsString()
   discountReason?: string;
   @IsOptional() @IsString()

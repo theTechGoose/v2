@@ -112,8 +112,18 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
     );
 
     // 2. a subscription on the existing customer, on /field/subscriptions
+    // REQ-174: the account's default days to pay, set in Settings, prefills the form
+    const ident = await http("/api/profile/identity", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ invoiceNetDays: 21 }),
+    });
+    await ident.body?.cancel();
     await page.goto("/field/subscriptions");
     await page.locator("[data-cy='subs-new']").click();
+    const netDays = page.locator("[data-cy='subs-net-days']");
+    expect.eq(await netDays.inputValue(), "21", "days to pay defaults to the Settings number");
+    await netDays.fill("14");
     await pickCustomer(page, "Ana Torres");
     await page.locator("[data-cy='subs-address']").fill(
       "4601 Dick Pond Rd, Myrtle Beach, SC",
@@ -248,6 +258,14 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
     );
     expect(!!inv, `one invoice for the customer (${invoices.length} invoices)`);
     expect.eq(inv.status, "draft", "the pulled invoice is a draft");
+    // REQ-174: the draft carries the subscription's days to pay and is due that many days out
+    const due = new Date(today + "T00:00:00Z");
+    due.setUTCDate(due.getUTCDate() + 14);
+    expect.eq(
+      [inv.netDays, inv.dueDate].join("|"),
+      [14, due.toISOString().slice(0, 10)].join("|"),
+      "netDays 14 → due in 14 days",
+    );
     expect.eq(inv.amount, 6500, "the draft totals the task's price");
     expect(
       /Lawn cut — 4601 Dick Pond Rd/.test(

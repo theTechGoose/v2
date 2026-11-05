@@ -142,6 +142,8 @@ function initialsOf(name: string): string {
 }
 
 interface EnrichedInvoice extends Invoice {
+  /** REQ-174: days to pay, from the day it is sent (a batch invoice carries its subscription's) */
+  netDays?: number;
   client: string;
   initials: string;
   invoiceRef: string;
@@ -1697,6 +1699,13 @@ async function discountErrorCopy(r: Response, lang: Lang): Promise<string> {
     : tFor(lang, "invoicesPage.adjust.errDiscountApply");
 }
 
+/** REQ-174: today + n days, as yyyy-mm-dd (UTC) */
+function plusDays(n: number): string {
+  const d = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 function InvoiceCard(
   { inv, idx, now, lang }: {
     inv: EnrichedInvoice;
@@ -1917,6 +1926,10 @@ function InvoiceCard(
           ...(inv.issuedDate
             ? {}
             : { issuedDate: new Date().toISOString().slice(0, 10) }),
+          // REQ-174: due = today + the invoice's days to pay, when it has them
+          ...(typeof inv.netDays === "number"
+            ? { dueDate: plusDays(inv.netDays) }
+            : {}),
         }),
       });
       // Deliver over both channels. Finalizing (draft → sent) proceeds either

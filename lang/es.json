@@ -3230,5 +3230,9 @@
   "invoicesPage.detail.deleteNo": "Conservarla",
   "invoicesPage.detail.errDelete": "No se pudo eliminar la factura.",
   "publicInvoice.footer.thanks": "Gracias por confiar en {business} para el cuidado de tu propiedad — es un gusto atenderla, y agradecemos tu pronto pago.",
-  "paperworkSms.body.invoiceClosing": "Gracias por confiar en nosotros — responde aquí si tienes dudas."
+  "paperworkSms.body.invoiceClosing": "Gracias por confiar en nosotros — responde aquí si tienes dudas.",
+  "field.subs.netDays": "Días para pagar",
+  "field.subs.netDaysHint": "Desde el día en que se envía la factura. Tu valor por defecto es {n} días — cámbialo en Ajustes.",
+  "settings.netDays": "Días para pagar una factura",
+  "settings.netDaysHint": "El valor por defecto de cada suscripción: cuántos días tiene el cliente desde el día en que se envía la factura."
 }

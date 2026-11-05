@@ -126,6 +126,8 @@ function tr(es: boolean) {
     license: tFor(lang, "settings.license"),
     businessName: tFor(lang, "settings.businessName"),
     website: tFor(lang, "settings.website"),
+    netDays: tFor(lang, "settings.netDays"),
+    netDaysHint: tFor(lang, "settings.netDaysHint"),
     // Address
     saveAddress: tFor(lang, "settings.saveAddress"),
     street: tFor(lang, "settings.street"),
@@ -305,6 +307,10 @@ function EditCard(
   const [biz, setBiz] = useState(snapshot.identity?.businessName ?? "");
   // REQ-038 (NW-06b): the business website — surfaces on every From block.
   const [site, setSite] = useState(snapshot.identity?.websiteUrl ?? "");
+  // REQ-174: the default days a customer has to pay an invoice
+  const [netDays, setNetDays] = useState(
+    String(snapshot.identity?.invoiceNetDays ?? 30),
+  );
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
@@ -428,6 +434,35 @@ function EditCard(
             }}
             aria-label={t.ariaEditWebsite}
           />
+        </label>
+        <label style="display:block;grid-column:1 / -1">
+          <span style={labelStyle}>{t.netDays}</span>
+          <input
+            type="number"
+            min="0"
+            max="365"
+            step="1"
+            class="settings-edit__input"
+            style={inputStyle}
+            data-cy="settings-net-days"
+            value={netDays}
+            disabled={busy === "identity"}
+            onInput={(e) => setNetDays((e.target as HTMLInputElement).value)}
+            onBlur={() => {
+              const n = Number(netDays);
+              if (!Number.isInteger(n) || n < 0 || n > 365) {
+                setNetDays(String(snapshot.identity?.invoiceNetDays ?? 30));
+                return;
+              }
+              if (n !== (snapshot.identity?.invoiceNetDays ?? 30)) {
+                saveIdentity({ invoiceNetDays: n });
+              }
+            }}
+            aria-label={t.netDays}
+          />
+          <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)">
+            {t.netDaysHint}
+          </span>
         </label>
         <div style="grid-column:1 / -1;display:flex;align-items:center;gap:12px">
           <button

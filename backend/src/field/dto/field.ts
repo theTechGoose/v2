@@ -54,6 +54,8 @@ export interface Subscription {
   intervalWeeks?: number;
   /** REQ-157 — monthly: the days of the month (1–31, unique, sorted); 29–31 fall on a shorter month's last day. Default: the start date's day. */
   daysOfMonth?: number[];
+  /** REQ-174: days the customer has to pay, from the day the invoice is sent; unset = the account's default */
+  netDays?: number;
   active: boolean;
   /** set by the grouping (REQ-140) — or by the owner's drag */
   regionId?: string;

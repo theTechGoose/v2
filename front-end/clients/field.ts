@@ -63,6 +63,8 @@ export interface SubscriptionView {
   intervalWeeks?: number;
   /** REQ-157 — monthly: the picked days of the month, 1–31 */
   daysOfMonth?: number[];
+  /** REQ-174: days to pay, from the day the invoice is sent; unset = the account's default */
+  netDays?: number;
   active: boolean;
   regionId?: string;
   region: Region | null;
@@ -91,6 +93,8 @@ export interface SubscriptionInput {
   /** REQ-157 — monthly: days of the month, 1–31 */
   daysOfMonth?: number[];
   startDate?: string;
+  /** REQ-174: days to pay; null clears it (back to the account's default) */
+  netDays?: number | null;
 }
 
 export type SubscriptionPatch =
