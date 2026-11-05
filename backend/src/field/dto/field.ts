@@ -15,6 +15,8 @@ export interface FieldWorker {
   pin: string;
   /** a foreman sees and closes every worker's visits */
   role?: "worker" | "foreman";
+  /** REQ-155 — the language the worker is texted in (Spanish by default); absent on workers from before */
+  language?: "en" | "es";
   createdAt: string;
   updatedAt: string;
 }

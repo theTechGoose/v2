@@ -10,3 +10,19 @@ export function workerWelcome(
 ): string {
   return t(lang, "sms.workerWelcome", v);
 }
+
+/** REQ-155 — the language a worker is texted in: their own, else the owner's, else English */
+export function workerLang(
+  worker: { language?: string },
+  owner: { language?: string },
+): Lang {
+  const w = worker.language;
+  if (w === "en" || w === "es") return w;
+  return owner.language === "es" ? "es" : "en";
+}
+
+/** REQ-155 — a language off a request body: "en" | "es", undefined when absent, null when something else */
+export function parseLang(raw: unknown): Lang | undefined | null {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  return raw === "en" || raw === "es" ? raw : null;
+}

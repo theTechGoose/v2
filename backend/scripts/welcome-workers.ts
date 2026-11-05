@@ -36,8 +36,13 @@ const args = [...Deno.args];
 const dryRun = args.includes("--dry-run");
 const bi = args.indexOf("--business");
 const business = bi >= 0 ? args[bi + 1] : undefined;
+const li = args.indexOf("--lang");
+const language = li >= 0 ? args[li + 1] : undefined;
+if (language !== undefined && language !== "en" && language !== "es") {
+  fail("--lang takes en or es"); // REQ-155
+}
 const phone = args.find((a, i) =>
-  /\d{10}/.test(a.replace(/\D/g, "")) && i !== bi + 1
+  /\d{10}/.test(a.replace(/\D/g, "")) && i !== bi + 1 && i !== li + 1
 );
 if (!business && !phone) fail("name the owner: a phone, or --business <name>");
 
@@ -52,7 +57,11 @@ if (!secret) {
   );
 }
 
-const body = business ? { business, dryRun } : { phoneNumber: phone, dryRun };
+const body = {
+  ...(business ? { business } : { phoneNumber: phone }),
+  dryRun,
+  ...(language ? { language } : {}), // REQ-155 — everyone in this language
+};
 console.log(
   `${
     dryRun ? "dry run" : "texting"
@@ -68,7 +77,12 @@ const out = await res.json().catch(() => ({})) as {
   error?: string;
   matches?: { phone: string; business: string }[];
   owner?: { phone: string; business?: string; name?: string; language: string };
-  workers?: { name: string; phone: string; texted?: boolean }[];
+  workers?: {
+    name: string;
+    phone: string;
+    language?: string;
+    texted?: boolean;
+  }[];
 };
 if (!res.ok) fail(`HTTP ${res.status}: ${JSON.stringify(out)}`);
 if (out.ok === false) {
@@ -95,7 +109,7 @@ console.log(
 if (!out.workers!.length) console.log("no workers on this account.");
 for (const w of out.workers!) {
   const mark = dryRun ? "·" : w.texted ? "✓ texted" : "✖ not texted";
-  console.log(`  ${mark} ${w.name} — ${w.phone}`);
+  console.log(`  ${mark} ${w.name} — ${w.phone} · ${w.language ?? "?"}`);
 }
 if (!dryRun) {
   console.log(

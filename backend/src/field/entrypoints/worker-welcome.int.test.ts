@@ -87,6 +87,7 @@ Deno.test("REQ-151 adding a worker texts the cell once with the owner, the /work
       name: "Luis",
       phoneNumber: "843-555-0201",
       pin: "1234",
+      language: "en", // REQ-155 — the worker's language decides; Spanish when absent
     }, H);
     assertEquals(made.status, 201);
     assertEquals(made.body.texted, true, "the answer says the text went out");
@@ -156,6 +157,11 @@ Deno.test("REQ-151 when the text cannot go out the worker is still added and the
 
 // ---- REQ-154 — the owner tool: every existing worker of an account ----
 const SECRET = "test-reset-secret-0123456789";
+/** rows by name — the list comes back in id order, which is random */
+function byName<T extends { name: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 const S = { "x-reset-secret": SECRET };
 
 async function ownerWithWorkers(
@@ -231,9 +237,10 @@ Deno.test("REQ-154 welcome-by-owner — refused without the secret (and with RES
       language: "en",
     });
     assertEquals(
-      dry.body.workers.map((
-        w: { name: string; phone: string; texted?: boolean },
-      ) => [w.name, w.phone, w.texted]),
+      byName(
+        dry.body.workers as { name: string; phone: string; texted?: boolean }[],
+      )
+        .map((w) => [w.name, w.phone, w.texted]),
       [["Luis", "8435550301", undefined], ["Marcos", "8435550302", undefined]],
     );
     assertEquals(texts.length, 0, "a dry run texts nothing");
@@ -255,20 +262,24 @@ Deno.test("REQ-154 welcome-by-owner — the send texts each worker in the owner'
     }, S);
     assertEquals(res.body.ok, true);
     assertEquals(
-      res.body.workers.map((
-        w: { name: string; texted: boolean },
-      ) => [w.name, w.texted]),
+      byName(res.body.workers as { name: string; texted: boolean }[])
+        .map((w) => [w.name, w.texted]),
       [["Luis", true], ["Marcos", true]],
     );
-    assertEquals(texts.map((x) => x.to), ["+18435550311", "+18435550312"]);
+    assertEquals(texts.map((x) => x.to).sort(), [
+      "+18435550311",
+      "+18435550312",
+    ]);
     assert(
       texts[0].body.startsWith(
         "Alex Rivera (Jardines Rivera) te agregó como trabajador en DocuMonster. Entra en http://localhost:5280/worker",
       ),
       texts[0].body,
     );
-    assert(texts[0].body.endsWith("tu PIN 1234."), texts[0].body);
-    assert(texts[1].body.endsWith("tu PIN 2345."), texts[1].body);
+    const luisText = texts.find((x) => x.to === "+18435550311")!;
+    const marcosText = texts.find((x) => x.to === "+18435550312")!;
+    assert(luisText.body.endsWith("tu PIN 1234."), luisText.body);
+    assert(marcosText.body.endsWith("tu PIN 2345."), marcosText.body);
     Deno.env.delete("RESET_SECRET");
   });
 });
@@ -306,6 +317,131 @@ Deno.test("REQ-154 welcome-by-owner — an unknown owner, a business matching no
       { ok: false, error: "owner_required" },
     );
     assertEquals(texts.length, 0);
+    Deno.env.delete("RESET_SECRET");
+  });
+});
+
+// ---- REQ-155 — the worker's language ----
+Deno.test("REQ-155 a worker added with no language is Spanish and texted in Spanish by an English owner; language en is kept and texted in English; a bad language 400s", async () => {
+  await withServer(async (call, texts) => {
+    const H = await login(call, "en");
+    texts.length = 0;
+    const luis = await call("POST", "/field/workers", {
+      name: "Luis",
+      phoneNumber: "8435550401",
+      pin: "1234",
+    }, H);
+    assertEquals(luis.status, 201);
+    assertEquals(luis.body.language, "es", "Spanish by default");
+    assert(
+      texts[0].body.startsWith("Raphael Castro te agregó como trabajador"),
+      texts[0].body,
+    );
+    const sam = await call("POST", "/field/workers", {
+      name: "Sam",
+      phoneNumber: "8435550402",
+      pin: "2345",
+      language: "en",
+    }, H);
+    assertEquals(sam.body.language, "en");
+    assert(
+      texts[1].body.startsWith("Raphael Castro added you as a worker"),
+      texts[1].body,
+    );
+    assertEquals(
+      (await call("POST", "/field/workers", {
+        name: "Bad",
+        phoneNumber: "8435550403",
+        pin: "3456",
+        language: "fr",
+      }, H)).status,
+      400,
+    );
+    assertEquals(texts.length, 2);
+    const list = (await call("GET", "/field/workers", undefined, H)).body as {
+      name: string;
+      language: string;
+    }[];
+    assertEquals(byName(list).map((w) => [w.name, w.language]), [
+      ["Luis", "es"],
+      ["Sam", "en"],
+    ]);
+  });
+});
+
+Deno.test("REQ-155 PUT /field/workers/:id changes the language (the owner's worker only); the tool then texts in the new one; the tool's language override texts everyone in it", async () => {
+  await withServer(async (call, texts) => {
+    const H = await ownerWithWorkers(
+      call,
+      "+15125551470",
+      "Cumbres LLC",
+      "en",
+      [["Luis", "8435550411", "1234"], ["Marcos", "8435550412", "2345"]],
+    );
+    const list = (await call("GET", "/field/workers", undefined, H)).body as {
+      id: string;
+      name: string;
+    }[];
+    const luis = list.find((w) => w.name === "Luis")!;
+    const put = await call("PUT", `/field/workers/${luis.id}`, {
+      language: "en",
+    }, H);
+    assertEquals(put.status, 200);
+    assertEquals(put.body.language, "en");
+    assertEquals("pin" in put.body, false);
+    assertEquals(
+      (await call("PUT", `/field/workers/${luis.id}`, { language: "de" }, H))
+        .status,
+      400,
+    );
+    const other = await login(call, "en");
+    assertEquals(
+      (await call(
+        "PUT",
+        `/field/workers/${luis.id}`,
+        { language: "es" },
+        other,
+      )).status,
+      403,
+      "another account's worker is refused, as every getOwned is",
+    );
+    texts.length = 0;
+    Deno.env.set("RESET_SECRET", SECRET);
+    const res = await call("POST", "/field/workers/welcome-by-owner", {
+      business: "cumbres",
+    }, S);
+    assertEquals(
+      byName(
+        res.body.workers as {
+          name: string;
+          language: string;
+          texted: boolean;
+        }[],
+      )
+        .map((w) => [w.name, w.language, w.texted]),
+      [["Luis", "en", true], ["Marcos", "es", true]],
+    );
+    const toLuis = texts.find((x) => x.to === "+18435550411")!;
+    const toMarcos = texts.find((x) => x.to === "+18435550412")!;
+    assert(toLuis.body.includes("added you as a worker"), toLuis.body);
+    assert(toMarcos.body.includes("te agregó como trabajador"), toMarcos.body);
+    texts.length = 0;
+    const forced = await call("POST", "/field/workers/welcome-by-owner", {
+      business: "cumbres",
+      language: "es",
+    }, S);
+    assertEquals(forced.body.ok, true);
+    assert(
+      texts.every((x) => x.body.includes("te agregó como trabajador")),
+      "everyone in Spanish on the override",
+    );
+    assertEquals(
+      (await call("POST", "/field/workers/welcome-by-owner", {
+        business: "cumbres",
+        language: "fr",
+      }, S)).body,
+      { ok: false, error: "bad_language" },
+    );
     Deno.env.delete("RESET_SECRET");
   });
 });

@@ -157,6 +157,10 @@
   color: var(--fg);
   background: #fff;
 }
+/* REQ-155 — a select is drawn shorter than an input of the same padding; match the inputs beside it */
+.field select {
+  min-height: 47px;
+}
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
