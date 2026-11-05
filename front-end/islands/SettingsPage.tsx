@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
+import { adminsClient, isActing } from "../clients/admins.ts";
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
 import {
   PRICING_PLANS,
@@ -1805,6 +1806,18 @@ function DangerZoneCard(_props: { snapshot: ProfileSnapshot }) {
 
 export default function SettingsPage() {
   const [s, setS] = useState<State>(INITIAL);
+  // REQ-146: an admin acting for the account never sees the danger zone (the
+  // server refuses the wipe to them anyway)
+  const [acting, setActing] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    adminsClient.accounts().then((v) => {
+      if (alive) setActing(isActing(v));
+    }).catch(() => {/* unknown → shown; the server still refuses */});
+    return () => {
+      alive = false;
+    };
+  }, []);
   // REQ-127 — two tabs: Account (everything below) and Billing (the plan). The address opens the
   // one asked for (?tab=billing; a pick's reason or a receipt's marker open Billing too)
   const [tab, setTab] = useState<SettingsTab>(() =>
@@ -1945,7 +1958,7 @@ export default function SettingsPage() {
 
           <PaymentsEditCard snapshot={p} onSaved={onSaved} />
 
-          <DangerZoneCard snapshot={p} />
+          {!acting && <DangerZoneCard snapshot={p} />}
         </>
       )}
     </>
