@@ -97,6 +97,10 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
       timeout: 15_000,
     });
     await expect.see("Luis Herrera");
+    // REQ-151 — the page says the worker was texted the sign-in link and their PIN
+    await expect.see(
+      "We texted Luis Herrera the sign-in link and their PIN.",
+    );
 
     // 2. a subscription on the existing customer, on /field/subscriptions
     await page.goto("/field/subscriptions");

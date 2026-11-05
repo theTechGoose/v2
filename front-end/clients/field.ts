@@ -231,7 +231,7 @@ export const fieldClient = {
       role?: "worker" | "foreman";
     },
     opts?: ApiOptions,
-  ) => api.post<FieldWorker>("/field/workers", b, opts),
+  ) => api.post<FieldWorker & { texted: boolean }>("/field/workers", b, opts), // REQ-151 — texted: the welcome text went out
   deleteWorker: (id: string, opts?: ApiOptions) =>
     api.delete<{ ok: true }>(`/field/workers/${id}`, opts),
 

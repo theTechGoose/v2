@@ -52,6 +52,10 @@ export default function FieldWorkersPage() {
   const [form, setForm] = useState<AddForm>(BLANK);
   const [adding, setAdding] = useState(false);
   const [addErr, setAddErr] = useState<string | null>(null);
+  /** REQ-151 — the last add: whether the worker was texted the link and the PIN */
+  const [added, setAdded] = useState<{ name: string; texted: boolean } | null>(
+    null,
+  );
   /** the row whose Remove is waiting for its Confirm */
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -99,13 +103,15 @@ export default function FieldWorkersPage() {
     if (!canAdd) return;
     setAdding(true);
     setAddErr(null);
+    setAdded(null);
     try {
-      await fieldClient.createWorker({
+      const made = await fieldClient.createWorker({
         name: form.name.trim(),
         phoneNumber: form.phone,
         pin: form.pin,
         role: form.foreman ? "foreman" : "worker",
       });
+      setAdded({ name: made.name, texted: made.texted === true });
       setForm(BLANK);
       await reload();
     } catch (err) {
@@ -245,6 +251,17 @@ export default function FieldWorkersPage() {
           </button>
         </div>
         {addErr && <p class="alert" data-cy="wk-error">{addErr}</p>}
+        {added && (
+          <p
+            class={added.texted ? "hint" : "alert"}
+            data-cy="wk-texted"
+            data-texted={added.texted ? "true" : "false"}
+          >
+            {t(added.texted ? "field.wk.texted" : "field.wk.notTexted", {
+              name: added.name,
+            })}
+          </p>
+        )}
       </form>
 
       {workers === null
