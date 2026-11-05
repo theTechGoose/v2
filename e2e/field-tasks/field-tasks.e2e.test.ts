@@ -97,6 +97,10 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
       timeout: 15_000,
     });
     await expect.see("Luis Herrera");
+    // REQ-151 — the page says the worker was texted the sign-in link and their PIN
+    await expect.see(
+      "We texted Luis Herrera the sign-in link and their PIN.",
+    );
 
     // 2. a subscription on the existing customer, on /field/subscriptions
     await page.goto("/field/subscriptions");
@@ -156,6 +160,46 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
     await page.goto("/worker?lang=en");
     await page.locator("[data-cy='w-cell']").fill(cell);
     await page.locator("[data-cy='w-pin']").fill("1234");
+    // REQ-150 — the eye shows the PIN, a second tap hides it, the PIN typed stays
+    const pinField = page.locator("[data-cy='w-pin']");
+    const eye = page.locator("[data-cy='w-pin-eye']");
+    expect.eq(
+      await pinField.getAttribute("type"),
+      "password",
+      "the PIN is hidden when the page opens",
+    );
+    expect.eq(
+      await eye.getAttribute("aria-label"),
+      "Show PIN",
+      "the eye says Show PIN",
+    );
+    await eye.click();
+    expect.eq(
+      await pinField.getAttribute("type"),
+      "text",
+      "the eye shows the PIN",
+    );
+    expect.eq(
+      await pinField.inputValue(),
+      "1234",
+      "the PIN typed stays through the toggle",
+    );
+    expect.eq(
+      await eye.getAttribute("aria-label"),
+      "Hide PIN",
+      "the eye now says Hide PIN",
+    );
+    expect.eq(
+      await eye.getAttribute("aria-pressed"),
+      "true",
+      "the eye reports pressed",
+    );
+    await eye.click();
+    expect.eq(
+      await pinField.getAttribute("type"),
+      "password",
+      "a second tap hides the PIN again",
+    );
     await page.locator("[data-cy='w-login']").click();
     await page.locator("[data-cy='w-visit']").first().waitFor({
       timeout: 20_000,

@@ -1,13 +1,20 @@
 import { Injectable } from "#danet/core";
 import { t } from "@core/i18n/mod.ts";
-import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { appUrl } from "@users/domain/business/app-url/mod.ts";
 import { AccountAdminStore } from "@users/domain/data/account-admin-store/mod.ts";
-import { type Session, SessionStore } from "@users/domain/data/session-store/mod.ts";
+import {
+  type Session,
+  SessionStore,
+} from "@users/domain/data/session-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
-import { accountLabel, inviteCheck, realName } from "@users/domain/business/account-admins/mod.ts";
+import {
+  accountLabel,
+  inviteCheck,
+  realName,
+} from "@users/domain/business/account-admins/mod.ts";
 import type { AccountAdmin } from "@users/dto/account-admin.ts";
 import type { User } from "@users/dto/user.ts";
 
@@ -31,13 +38,6 @@ export interface AccountsView {
   accounts: AccountEntry[];
 }
 
-/** the app's address in the invite text — the real site on the deploy, localhost otherwise */
-function appUrl(): string {
-  const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
-  if (Deno.env.get("DENO_DEPLOYMENT_ID") !== undefined) return explicit ?? SITE_ORIGIN;
-  return explicit ?? "http://localhost:5280";
-}
-
 /**
  * REQ-146 — AccountAdmins: the owner invites and removes phone numbers; a
  * session reads the accounts it can act in and switches between them.
@@ -53,27 +53,47 @@ export class AccountAdmins {
   ) {}
 
   /** the owner invites a phone: the record, then the text (its failure is logged, never thrown) */
-  async invite(owner: User, input: { phoneNumber?: unknown; name?: unknown }): Promise<AccountAdmin> {
+  async invite(
+    owner: User,
+    input: { phoneNumber?: unknown; name?: unknown },
+  ): Promise<AccountAdmin> {
     let phone: string;
     try {
-      phone = normalizePhone(typeof input.phoneNumber === "string" ? input.phoneNumber : "");
+      phone = normalizePhone(
+        typeof input.phoneNumber === "string" ? input.phoneNumber : "",
+      );
     } catch {
       throw new AccountAdminError("bad_phone", 400);
     }
     const refused = inviteCheck(owner.phoneNumber, phone);
     if (refused) throw new AccountAdminError(refused, 400);
-    if (await this.admins.find(phone, owner.id)) throw new AccountAdminError("already_invited", 409);
-    const name = typeof input.name === "string" && input.name.trim() ? input.name.trim().slice(0, 120) : undefined;
-    const rec = await this.admins.create({ userId: owner.id, phoneNumber: phone, name });
+    if (await this.admins.find(phone, owner.id)) {
+      throw new AccountAdminError("already_invited", 409);
+    }
+    const name = typeof input.name === "string" && input.name.trim()
+      ? input.name.trim().slice(0, 120)
+      : undefined;
+    const rec = await this.admins.create({
+      userId: owner.id,
+      phoneNumber: phone,
+      name,
+    });
     const lang = owner.language === "es" ? "es" : "en";
     const identity = await this.identities.get(owner.id);
     // "Raphael (Monster RG) added you…": the person, the business after them when there is one
     const who = realName(owner.name);
     const biz = identity?.businessName?.trim();
     const ownerText = who && biz ? `${who} (${biz})` : accountLabel(owner, biz);
-    const body = t(lang, "sms.adminInvite", { owner: ownerText, url: appUrl() });
+    const body = t(lang, "sms.adminInvite", {
+      owner: ownerText,
+      url: appUrl(),
+    });
     const sent = await this.sms.send({ to: phone, body });
-    if (!sent.ok) console.error(`[account-admins] invite text to ${phone} failed: ${sent.reason}`);
+    if (!sent.ok) {
+      console.error(
+        `[account-admins] invite text to ${phone} failed: ${sent.reason}`,
+      );
+    }
     return rec;
   }
 
@@ -97,30 +117,48 @@ export class AccountAdmins {
     const actor = await this.actorOf(session, effective);
     const memberships = await this.admins.listByPhone(actor.phoneNumber);
     const ownIdentity = await this.identities.get(actor.id);
-    const accounts: AccountEntry[] = [{ userId: actor.id, label: accountLabel(actor, ownIdentity?.businessName), role: "owner" }];
+    const accounts: AccountEntry[] = [{
+      userId: actor.id,
+      label: accountLabel(actor, ownIdentity?.businessName),
+      role: "owner",
+    }];
     for (const m of memberships) {
       const owner = await this.users.get(m.userId).catch(() => null);
       if (!owner || owner.deletedAt) continue;
       const identity = await this.identities.get(owner.id);
-      accounts.push({ userId: owner.id, label: accountLabel(owner, identity?.businessName), role: "admin" });
+      accounts.push({
+        userId: owner.id,
+        label: accountLabel(owner, identity?.businessName),
+        role: "admin",
+      });
     }
     const name = realName(actor.name) ?? memberships.find((m) => m.name)?.name;
     return {
-      actor: { id: actor.id, phoneNumber: actor.phoneNumber, ...(name ? { name } : {}) },
+      actor: {
+        id: actor.id,
+        phoneNumber: actor.phoneNumber,
+        ...(name ? { name } : {}),
+      },
       currentUserId: effective.id,
       accounts,
     };
   }
 
   /** a new session in `userId` — the person's own account, or one they administer; the old session is dropped */
-  async switchTo(session: Session, effective: User, userId: unknown): Promise<Session> {
+  async switchTo(
+    session: Session,
+    effective: User,
+    userId: unknown,
+  ): Promise<Session> {
     const actor = await this.actorOf(session, effective);
     const target = typeof userId === "string" ? userId : "";
     let next: Session;
     if (target === actor.id) {
       next = await this.sessions.create(actor.id);
     } else {
-      const member = target ? await this.admins.find(actor.phoneNumber, target) : null;
+      const member = target
+        ? await this.admins.find(actor.phoneNumber, target)
+        : null;
       if (!member) throw new AccountAdminError("not_a_member", 403);
       next = await this.sessions.createActing(target, actor.id);
     }

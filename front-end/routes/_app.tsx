@@ -65,7 +65,8 @@ export default define.page(function App(ctx) {
   const url = new URL(ctx.req.url);
   const qLang = url.searchParams.get("lang");
   const spanishFirst = url.pathname === "/" || url.pathname === "/landing" ||
-    url.pathname === "/landing2";
+    url.pathname === "/landing2" || url.pathname === "/landing3" ||
+    url.pathname === "/landing4" || url.pathname === "/landing5";
   const lang: Lang = ctx.state.lang ??
     ((qLang === "en" || qLang === "es")
       ? qLang
