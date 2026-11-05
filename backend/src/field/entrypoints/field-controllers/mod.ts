@@ -681,6 +681,22 @@ export class FieldTasksController {
     if ("adminNote" in b) {
       t.adminNote = String(b.adminNote ?? "").trim() || undefined;
     }
+    // REQ-159 — the office marks the task done, or re-opens it
+    if ("status" in b) {
+      const st = str(b.status);
+      if (st !== "complete" && st !== "assigned") {
+        throw new FieldError("status must be complete or assigned");
+      }
+      if (t.invoiceId) {
+        throw new FieldError(
+          "task is on an invoice — edit the invoice instead",
+          409,
+        );
+      }
+      t.status = st;
+      if (st === "complete") t.completedAt = new Date().toISOString();
+      else delete t.completedAt;
+    }
     if ("priceCents" in b) {
       if (t.invoiceId) {
         throw new FieldError(

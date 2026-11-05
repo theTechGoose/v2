@@ -116,7 +116,11 @@ export default function FieldTasksPage() {
 
   async function save(
     task: TaskView,
-    patch: { adminNote?: string; priceCents?: number },
+    patch: {
+      adminNote?: string;
+      priceCents?: number;
+      status?: "complete" | "assigned";
+    },
   ) {
     setSaving(task.id);
     setError(null);
@@ -225,9 +229,26 @@ export default function FieldTasksPage() {
         data-status={x.status}
         style={isOpen(x) ? undefined : "opacity:.55"}
       >
-        <div class="task__check" aria-hidden="true">
+        {/* REQ-159 — the office marks the task done, or re-opens it; inert once invoiced */}
+        <button
+          type="button"
+          class="task__check"
+          data-cy="tk-done"
+          aria-pressed={x.status === "complete"}
+          aria-label={x.status === "complete"
+            ? t("field.tk.markOpen")
+            : t("field.tk.markDone")}
+          title={x.status === "complete"
+            ? t("field.tk.markOpen")
+            : t("field.tk.markDone")}
+          disabled={locked || saving === x.id}
+          onClick={() =>
+            save(x, {
+              status: x.status === "complete" ? "assigned" : "complete",
+            })}
+        >
           <I d={ICN.check} size={20} sw={3} />
-        </div>
+        </button>
         <div>
           <div class="task__type">
             {x.taskTypeName}

@@ -3050,6 +3050,8 @@
   "field.tk.none": "No tasks for this day: no staffed zone has subscriptions, or it is a past day with no round.",
   "field.tk.assigned": "Assigned",
   "field.tk.done": "Complete",
+  "field.tk.markDone": "Mark done",
+  "field.tk.markOpen": "Mark not done",
   "field.tk.note": "Worker's note",
   "field.tk.invoiced": "Invoiced",
   "field.tk.perVisit": "price",
