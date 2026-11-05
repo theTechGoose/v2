@@ -1,5 +1,6 @@
 import { Injectable } from "#danet/core";
 import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
+import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { computePaymentSplit, type MilestoneRole } from "#payment-split";
 import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
@@ -46,7 +47,9 @@ export interface RenderQuotePdfInput {
  */
 @Injectable()
 export class RenderQuotePdf {
-  async run(input: RenderQuotePdfInput): Promise<Uint8Array> {
+  async run(raw: RenderQuotePdfInput): Promise<Uint8Array> {
+    // REQ-161: the standard fonts encode WinAnsi only
+    const input = winAnsiSafeDeep(raw);
     const { quote, customer, contractor, businessName } = input;
     // Roadmap p.13: the PDF is the customer's copy → outgoing-comms language.
     const es = input.commsLanguage === "es";

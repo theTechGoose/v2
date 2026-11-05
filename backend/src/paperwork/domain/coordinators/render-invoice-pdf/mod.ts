@@ -11,6 +11,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
@@ -51,24 +52,27 @@ export class RenderInvoicePdf {
   ) {}
 
   async run(invoiceId: string): Promise<Uint8Array> {
-    const invoice = await this.invoices.get(invoiceId);
+    // REQ-161: the standard fonts encode WinAnsi only — every string drawn comes from here
+    const invoice = winAnsiSafeDeep(await this.invoices.get(invoiceId));
     // customer / contractor / ident depend only on the invoice, so fan them
     // out concurrently with the quote fetch instead of awaiting serially
     // (this is an uncached, customer-facing "Download PDF" endpoint).
-    const [quote, customer, contractor, ident] = await Promise.all([
-      invoice.quoteId
-        ? this.quotes.get(invoice.quoteId).catch(() =>
-          undefined as Quote | undefined
-        )
-        : Promise.resolve(undefined as Quote | undefined),
-      invoice.customerId
-        ? this.customers.getOwned(invoice.customerId, invoice.userId).catch(
-          () => undefined,
-        )
-        : Promise.resolve(undefined),
-      this.users.get(invoice.userId).catch(() => undefined),
-      this.identity.get(invoice.userId).catch(() => null),
-    ]);
+    const [quote, customer, contractor, ident] = winAnsiSafeDeep(
+      await Promise.all([
+        invoice.quoteId
+          ? this.quotes.get(invoice.quoteId).catch(() =>
+            undefined as Quote | undefined
+          )
+          : Promise.resolve(undefined as Quote | undefined),
+        invoice.customerId
+          ? this.customers.getOwned(invoice.customerId, invoice.userId).catch(
+            () => undefined,
+          )
+          : Promise.resolve(undefined),
+        this.users.get(invoice.userId).catch(() => undefined),
+        this.identity.get(invoice.userId).catch(() => null),
+      ]),
+    );
     const businessName = ident?.businessName ?? ident?.legalName;
     const es = ident?.commsLanguage === "es";
     const lang: "en" | "es" = es ? "es" : "en";
