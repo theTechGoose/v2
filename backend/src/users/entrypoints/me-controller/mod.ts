@@ -5,7 +5,9 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
 import { WipeAccount } from "@users/domain/coordinators/wipe-account/mod.ts";
 import { parseUpdateUser } from "@users/dto/user.ts";
-import { requireUser, readSessionId, UnauthorizedError } from "@users/domain/coordinators/require-user/mod.ts";
+import { readSessionId, requireOwner, requireUser, UnauthorizedError } from "@users/domain/coordinators/require-user/mod.ts";
+import { AccountAdmins } from "@users/domain/coordinators/account-admins/mod.ts"; // REQ-146
+import { buildSessionCookie } from "@users/domain/business/session-cookie/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
@@ -30,7 +32,28 @@ export class MeController {
     private paymentsLink: PaymentsLink,
     private crm: CrmCustomerSync,
     private leads: CrmLeadCapture,
+    /** REQ-146 — the accounts a session can act in, and the switch between them */
+    private accountAdmins: AccountAdmins,
   ) {}
+
+  /** REQ-146 — the person's own account first, then every account they administer */
+  @Get("accounts")
+  async accounts(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const session = (await this.sessions.get(readSessionId(ctx)!))!;
+    return await this.accountAdmins.accountsFor(session, user);
+  }
+
+  /** REQ-146 — `{ userId }`: a new session in that account (own or administered), the cookie swapped, the old session dropped */
+  @Post("switch-account")
+  async switchAccount(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const session = (await this.sessions.get(readSessionId(ctx)!))!;
+    const target = (body as { userId?: unknown } | null)?.userId;
+    const next = await this.accountAdmins.switchTo(session, user, target);
+    ctx.header("Set-Cookie", buildSessionCookie(next.id));
+    return { ok: true, sessionId: next.id, userId: next.userId };
+  }
 
   /** REQ-054 — the plan this account picked; null until a pick (read as free) */
   @Get("plan")
@@ -42,7 +65,7 @@ export class MeController {
   /** REQ-054 — pick a plan: free is stored; a paid pick mints the CRM pay link (pending) */
   @Post("plan")
   async pickPlan(@Context() ctx: ExecutionContext, @Body() body: unknown) {
-    const user = await requireUser(ctx, this.sessions, this.users);
+    const user = await requireOwner(ctx, this.sessions, this.users); // REQ-146 — billing is the owner's
     const { planId, back, merchant } = parseChoosePlan(body);
     return await this.choosePlan.choose(user.id, planId, back, merchant);
   }
@@ -148,7 +171,7 @@ export class MeController {
 
   @Delete()
   async closeAccount(@Context() ctx: ExecutionContext) {
-    const user = await requireUser(ctx, this.sessions, this.users);
+    const user = await requireOwner(ctx, this.sessions, this.users); // REQ-146 — never an admin
     const sessionId = readSessionId(ctx);
     if (!sessionId) throw new UnauthorizedError();
     await this.users.delete(user.id);
@@ -168,7 +191,7 @@ export class MeController {
    */
   @Get("wipe")
   async wipe(@Context() ctx: ExecutionContext) {
-    const user = await requireUser(ctx, this.sessions, this.users);
+    const user = await requireOwner(ctx, this.sessions, this.users); // REQ-146 — never an admin
     return await this.wipeCoord.run(user.id);
   }
 

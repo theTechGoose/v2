@@ -5,6 +5,9 @@ import { AuthController } from "@users/entrypoints/auth-controller/mod.ts";
 import { MeController } from "@users/entrypoints/me-controller/mod.ts";
 import { AdminController } from "@users/entrypoints/admin-controller/mod.ts";
 import { PaymentsController } from "@users/entrypoints/payments-controller/mod.ts"; // REQ-133
+import { AdminsController } from "@users/entrypoints/admins-controller/mod.ts"; // REQ-146
+import { AccountAdminStore } from "@users/domain/data/account-admin-store/mod.ts"; // REQ-146
+import { AccountAdmins } from "@users/domain/coordinators/account-admins/mod.ts"; // REQ-146
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
@@ -72,6 +75,7 @@ import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
     MeController,
     AdminController,
     PaymentsController, // REQ-133
+    AdminsController, // REQ-146
     // profile
     BusinessIdentityController,
     BusinessAddressController,
@@ -101,6 +105,8 @@ import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
     SettleWatch, // REQ-131
     SmsService,
     RateLimiter,
+    AccountAdminStore, // REQ-146
+    AccountAdmins, // REQ-146
     // profile
     BusinessIdentityStore,
     BusinessAddressStore,

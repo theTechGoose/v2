@@ -13,6 +13,10 @@ export interface Session {
   impersonatorId?: string;
   /** The super-admin's own session to hand back to on stop-impersonating. */
   returnSessionId?: string;
+  /** REQ-146: set when the session acts FOR an account as one of its admins —
+   *  the admin's OWN user id. `userId` is then the owner's. requireUser
+   *  re-checks the admin record on every request, so a removal cuts it. */
+  actorId?: string;
 }
 
 const TTL_MS = 30 * 24 * 60 * 60 * 1_000; // 30 days
@@ -61,6 +65,15 @@ export class SessionStore {
       impersonatorId: input.impersonatorId,
       returnSessionId: input.returnSessionId,
     };
+    await kv.set(["session", id], session, { expireIn: TTL_MS });
+    return session;
+  }
+
+  /** REQ-146: a session IN `userId`'s account for `actorId`, one of its admins. */
+  async createActing(userId: string, actorId: string): Promise<Session> {
+    const kv = await getKv();
+    const id = crypto.randomUUID();
+    const session: Session = { id, userId, actorId, createdAt: new Date().toISOString() };
     await kv.set(["session", id], session, { expireIn: TTL_MS });
     return session;
   }
