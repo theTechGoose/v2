@@ -422,6 +422,12 @@ export class FieldSubscriptionsController {
     }
     s.updatedAt = new Date().toISOString();
     await this.subs.put(s);
+    // REQ-170 — open future work follows the change: dropped here, re-derived on the next read
+    await this.day.dropOpen(
+      user.id,
+      fieldToday(),
+      (t) => t.subscriptionId === s.id,
+    );
     const { subs } = await this.zones.regroup(user.id);
     return this.views.subscription(
       subs.find((x) => x.id === s.id) ?? s,
@@ -782,17 +788,34 @@ export class FieldTasksController {
     return { ok: true };
   }
 
-  /** REQ-141: the day's round; today's is generated on first read */
+  /** REQ-141/170: the day's round — any day is materialized on read, so it is always current */
   @Get()
   async list(@Context() ctx: ExecutionContext, @Query("date") date?: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const d = date ?? fieldToday();
     if (!isValidDate(d)) throw new FieldError("date must be YYYY-MM-DD");
-    const rows = d === fieldToday()
-      ? (await this.day.generate(user.id, d)).all
-      : await this.tasks.listByDay(user.id, d);
+    const rows = (await this.day.generate(user.id, d)).all;
     const n = await this.views.names(user.id);
     return rows.map((t) => this.views.task(t, n));
+  }
+
+  /** REQ-170: the subscriptions due that day whose zone has no worker — reported, never silently dropped */
+  @Get("unstaffed")
+  async unstaffed(
+    @Context() ctx: ExecutionContext,
+    @Query("date") date?: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const d = date ?? fieldToday();
+    if (!isValidDate(d)) throw new FieldError("date must be YYYY-MM-DD");
+    const r = await this.day.generate(user.id, d);
+    const n = await this.views.names(user.id);
+    return r.skipped.map((s) => ({
+      subscriptionId: s.id,
+      customerName: n.customer(s.customerId),
+      address: s.address,
+      regionName: n.region(s.regionId)?.name ?? "—",
+    }));
   }
 
   @Post("generate")

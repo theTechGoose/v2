@@ -288,6 +288,12 @@ export const fieldClient = {
     api.get<TaskView[]>("/field/tasks", { ...opts, query: { date } }),
   generate: (date?: string, opts?: ApiOptions) =>
     api.post<GenerateResult>("/field/tasks/generate", { date }, opts),
+  /** REQ-170 — the subscriptions due that day whose zone has no worker */
+  unstaffed: (date?: string, opts?: ApiOptions) =>
+    api.get<GenerateResult["skipped"]>("/field/tasks/unstaffed", {
+      ...opts,
+      query: { date },
+    }),
   updateTask: (
     id: string,
     b: {

@@ -623,3 +623,20 @@ Deno.test("REQ-166: the card's worker picker moves the task to the other worker'
     await expect.see("Marta Ríos · ");
     expect.eq(await page.locator(".panel__title").filter({ hasText: "Luis Herrera" }).count(), 0, "Luis's group is gone");
   }));
+
+Deno.test("REQ-170: no Generate button; a week ahead shows its task on arrival; an unstaffed zone's subscription is listed", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { put, sub } = await officeDay({ page, http, baseUrl });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    expect.eq(await page.locator("[data-cy='tk-generate']").count(), 0, "no Generate button");
+    const ahead = new Date(todayIso() + "T12:00:00Z");
+    ahead.setUTCDate(ahead.getUTCDate() + 7);
+    await page.locator("[data-cy='tk-date']").fill(ahead.toISOString().slice(0, 10));
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    await expect.see("0 of 1 complete");
+    await put(`/api/field/regions/${sub.region.id}/worker`, { workerId: null });
+    await page.reload();
+    await page.locator("[data-cy='tk-unstaffed']").first().waitFor({ timeout: 15_000 });
+    await expect.see("Ana Torres");
+  }));

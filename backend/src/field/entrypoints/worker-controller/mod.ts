@@ -90,7 +90,7 @@ export class FieldWorkerController {
     const w = await need(ctx, this.sessions, this.workers);
     const d = date ?? fieldToday();
     if (!isValidDate(d)) throw new FieldError("date must be YYYY-MM-DD");
-    const rows = d === fieldToday() ? (await this.day.generate(w.userId, d)).all : await this.tasks.listByDay(w.userId, d);
+    const rows = (await this.day.generate(w.userId, d)).all; // REQ-170: any day materializes on read
     const everyone = all === "1" && w.role === "foreman";
     const n = await this.views.names(w.userId);
     return rows

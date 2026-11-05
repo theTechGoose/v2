@@ -1,7 +1,8 @@
 /**
  * REQ-143 — /field/tasks. The day's round, by worker.
  *
- * A date picker (default today, ◀ ▶ and Today), the day's tasks as cards
+ * A date picker (default today, ◀ ▶ and Today) — the day materializes on read
+ * (REQ-170, no Generate button) — the day's tasks as cards
  * grouped by worker · zone (check state, type, customer, address, the worker's
  * note, an inline price input and an office note — both save on blur/Enter),
  * a done/open summary, and the "unstaffed" list (subscriptions due that day
@@ -132,8 +133,13 @@ export default function FieldTasksPage() {
   async function load(d: string) {
     setLoading(true);
     try {
-      const rows = await fieldClient.tasks(d);
+      // REQ-170 — the day materializes on read; the unstaffed list rides along
+      const [rows, un] = await Promise.all([
+        fieldClient.tasks(d),
+        fieldClient.unstaffed(d).catch(() => []),
+      ]);
       setTasks(rows);
+      setSkipped(un);
       setError(null);
     } catch (e) {
       setError(errMsg(e));
@@ -163,26 +169,6 @@ export default function FieldTasksPage() {
     setPriceDraft({});
     setNoteDraft({});
     setDate(d);
-  }
-
-  async function generate() {
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await fieldClient.generate(date);
-      setSkipped(r.skipped ?? []);
-      setFlash(
-        t("field.tk.generated", { n: r.created }) +
-          (r.skipped?.length
-            ? ` · ${t("field.tk.skippedGen", { n: r.skipped.length })}`
-            : ""),
-      );
-      await load(date);
-    } catch (e) {
-      setError(errMsg(e));
-    } finally {
-      setBusy(false);
-    }
   }
 
   function replace(next: TaskView) {
@@ -725,15 +711,6 @@ export default function FieldTasksPage() {
             </button>
           </span>
         </label>
-        <button
-          type="button"
-          class="btn btn--ghost"
-          data-cy="tk-generate"
-          disabled={busy}
-          onClick={generate}
-        >
-          <I d={ICN.cal} size={14} /> {t("field.tk.generate")}
-        </button>
         {/* REQ-164 — the page's one primary action */}
         <button
           type="button"

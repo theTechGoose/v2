@@ -1135,3 +1135,75 @@ Deno.test("REQ-166 the office reassigns a task; a foreign worker is 400; an invo
     );
   });
 });
+
+// REQ-170 — "i dont need a generate button in tasks, just keep it up to date in realtime when subscriptions change."
+Deno.test("REQ-170 a future day materializes on read for the office and the worker; a schedule change re-derives open work, sparing a one-off and a done task; the unstaffed list reads back", async () => {
+  await withServer(async (call) => {
+    const { H, today, customer, w, sub } = await todaysRound(
+      call,
+      "+15125551700",
+    );
+    const nextWeek = shiftDate(today, 7);
+    // a week ahead, read cold: the round is there — nobody generated it
+    const ahead =
+      (await call("GET", `/field/tasks?date=${nextWeek}`, undefined, H))
+        .body as Row[];
+    assertEquals(ahead.map((t) => t.taskTypeName).sort(), ["Cut", "Edge"]);
+    // the worker sees it too, cold
+    const login = await call("POST", "/field/worker/login", {
+      phoneNumber: w.phoneNumber,
+      pin: "4321",
+    });
+    const WC = {
+      cookie: (login.headers.get("set-cookie") ?? "").split(";")[0],
+    };
+    const inTwo = shiftDate(today, 14);
+    const theirs =
+      (await call("GET", `/field/worker/tasks?date=${inTwo}`, undefined, WC))
+        .body as Row[];
+    assertEquals(theirs.length, 2);
+    // a one-off and a done task on that day
+    const one = (await call("POST", "/field/tasks", {
+      customerId: customer.id,
+      date: nextWeek,
+      taskTypeName: "Mulch",
+      priceCents: 500,
+      workerId: w.id,
+    }, H)).body;
+    await call("PUT", `/field/tasks/${ahead[0].id}`, { status: "complete" }, H);
+    // the subscription moves to the next weekday: open work re-derives, the one-off and the done task stay
+    const weekday = (new Date(today + "T12:00:00Z").getUTCDay() + 1) % 7;
+    const moved = await call("PUT", `/field/subscriptions/${sub.id}`, {
+      days: [weekday],
+    }, H);
+    assertEquals(moved.status, 200);
+    const after =
+      (await call("GET", `/field/tasks?date=${nextWeek}`, undefined, H))
+        .body as Row[];
+    assertEquals(after.map((t) => t.id).sort(), [one.id, ahead[0].id].sort());
+    const newDay = (await call(
+      "GET",
+      `/field/tasks?date=${shiftDate(nextWeek, 1)}`,
+      undefined,
+      H,
+    )).body as Row[];
+    assertEquals(newDay.map((t) => t.taskTypeName).sort(), ["Cut", "Edge"]);
+    // the zone loses its worker: the subscription is listed as unstaffed for its day
+    await call("PUT", `/field/regions/${sub.region.id}/worker`, {
+      workerId: null,
+    }, H);
+    const un = await call(
+      "GET",
+      `/field/tasks/unstaffed?date=${shiftDate(nextWeek, 1)}`,
+      undefined,
+      H,
+    );
+    assertEquals(un.status, 200);
+    assertEquals(
+      un.body.map((
+        s: { subscriptionId: string; customerName: string },
+      ) => [s.subscriptionId, s.customerName]),
+      [[sub.id, "Ana Torres"]],
+    );
+  });
+});
