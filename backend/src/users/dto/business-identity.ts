@@ -1,8 +1,11 @@
 import {
   IsArray,
   IsBoolean,
+  IsInt,
   IsOptional,
   IsString,
+  Max,
+  Min,
   ValidateNested,
   validateSync,
 } from "#class-validator";
@@ -132,6 +135,10 @@ export interface BusinessIdentity {
    *  (first enabled) so every existing read keeps working. Unset → derive
    *  from `commsLanguage` (or ["en"]). */
   commsLanguages?: string[];
+  /** REQ-174: the default days a customer has to pay an invoice, from the day it is sent (subscriptions can override). */
+  invoiceNetDays?: number;
+  /** REQ-172: the business's IANA time zone — the 9 am schedule texts follow it (default America/New_York) */
+  timezone?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -168,6 +175,17 @@ export class UpdateBusinessIdentityDto {
   @IsArray()
   @IsString({ each: true })
   commsLanguages?: string[];
+
+  /** REQ-174 */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  invoiceNetDays?: number;
+  /** REQ-172: an IANA zone (validated by the route) */
+  @IsOptional()
+  @IsString()
+  timezone?: string;
 
   @IsOptional()
   @ValidateNested()

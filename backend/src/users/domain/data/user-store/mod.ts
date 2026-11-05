@@ -1,3 +1,4 @@
+import type { FeatureKey } from "#features";
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
@@ -158,6 +159,19 @@ export class UserStore {
     const updated: User = {
       ...existing,
       superAdmin: value,
+      updatedAt: new Date().toISOString(),
+    };
+    const kv = await getKv();
+    await kv.set(["user", id], updated);
+    return updated;
+  }
+
+  /** REQ-177: flip one feature flag — the only write path for `features` (super-admin route). */
+  async setFeature(id: string, key: FeatureKey, on: boolean): Promise<User> {
+    const existing = await this.get(id);
+    const updated: User = {
+      ...existing,
+      features: { ...(existing.features ?? {}), [key]: on },
       updatedAt: new Date().toISOString(),
     };
     const kv = await getKv();

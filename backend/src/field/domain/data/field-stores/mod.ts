@@ -128,16 +128,16 @@ export class FieldTaskStore extends OwnedStore<FieldTask> {
   protected override extraKeys(t: FieldTask): Deno.KvKey[] {
     return [["field_task_by_day", t.userId, t.date, t.id]];
   }
-  /** the account's tasks from one day to another, inclusive */
-  async listByRange(userId: string, from: string, to: string): Promise<FieldTask[]> {
+  /** the account's tasks from one day to another, inclusive — a deleted one (REQ-163) only when asked */
+  async listByRange(userId: string, from: string, to: string, opts: { withDeleted?: boolean } = {}): Promise<FieldTask[]> {
     const kv = await getKv();
     const ids: string[] = [];
     for await (const e of kv.list<string>({ start: ["field_task_by_day", userId, from], end: ["field_task_by_day", userId, to + "\u0000"] })) ids.push(e.value);
     const recs = await readMany<FieldTask>(kv, ids.map((id) => ["field_task", id]));
-    return recs.filter((t): t is FieldTask => !!t);
+    return recs.filter((t): t is FieldTask => !!t && (opts.withDeleted || !t.deleted));
   }
-  listByDay(userId: string, date: string): Promise<FieldTask[]> {
-    return this.listByRange(userId, date, date);
+  listByDay(userId: string, date: string, opts: { withDeleted?: boolean } = {}): Promise<FieldTask[]> {
+    return this.listByRange(userId, date, date, opts);
   }
 }
 

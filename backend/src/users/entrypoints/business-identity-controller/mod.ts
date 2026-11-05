@@ -6,6 +6,15 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { parseUpdateBusinessIdentity } from "@profile/dto/business-identity.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
+import { validTimezone } from "@users/domain/business/timezone/mod.ts";
+
+/** REQ-172 — a time zone Intl does not know is a 400, not a stored string */
+class BadTimezone extends Error {
+  readonly status = 400;
+  constructor(tz: string) {
+    super(`unknown time zone: ${tz}`);
+  }
+}
 
 @Controller("profile/identity")
 export class BusinessIdentityController {
@@ -27,6 +36,7 @@ export class BusinessIdentityController {
   async upsert(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const patch = parseUpdateBusinessIdentity(body);
+    if (patch.timezone !== undefined && !validTimezone(patch.timezone)) throw new BadTimezone(String(patch.timezone));
     const saved = await this.store.upsert(user.id, patch);
     await this.leads.enqueueSync(user.id); // REQ-058/099 — the business name is the CRM customer's name, after this reply
     return saved;

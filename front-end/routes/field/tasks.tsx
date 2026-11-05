@@ -26,6 +26,11 @@ export default define.page(function FieldFieldTasksPageRoute(ctx) {
           href={asset("/dashboard.css")}
         />
         <link key="css-field" rel="stylesheet" href={asset("/field.css")} />
+        <link
+          key="css-search-select"
+          rel="stylesheet"
+          href={asset("/search-select.css")}
+        />
       </Head>
       <div class="app">
         <DashSidebar active="tasks" />

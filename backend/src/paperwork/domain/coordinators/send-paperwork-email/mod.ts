@@ -6,6 +6,10 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import type { BusinessIdentity } from "@users/dto/business-identity.ts";
+import { type EmailLogo, emailLogo } from "@paperwork/domain/business/email-logo/mod.ts";
+import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
+import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
+import { inboundDomain, replyAddress } from "@paperwork/domain/business/inbound-reply/mod.ts";
 import {
   EmailService,
   type SendEmailResult,
@@ -77,6 +81,8 @@ export const SENDER_NAME_REQUIRED_REASON =
  */
 @Injectable()
 export class SendPaperworkEmail {
+  /** REQ-175: the Reply-To token per customer (KV-backed, no constructor dependency) */
+  private replyTokens = new ReplyTokenStore();
   constructor(
     private quotes: QuoteStore,
     private invoices: InvoiceStore,
@@ -203,12 +209,18 @@ export class SendPaperworkEmail {
     // has one set, noreply@ there when it has none.
     const from = input.from ?? aliasFrom(senderBiz?.emailAlias);
 
+    // REQ-175: the customer's reply comes back through the inbound webhook, into their thread
+    const replyTo = customerIdForLog
+      ? replyAddress(await this.replyTokens.forCustomer(userId, customerIdForLog), inboundDomain())
+      : undefined;
+
     const result = await this.email.send({
       to: recipient,
       subject,
       htmlBody,
       from,
       cc,
+      replyTo,
     });
 
     // Stamp the quote's lifecycle: status→"sent" + sentAt→now (idempotent — only if not already set).
@@ -321,6 +333,11 @@ const COLOR_LINE = "#e3e8e6";
 const COLOR_BG = "#f7f6f1";
 const COLOR_CARD = "#ffffff";
 
+/** REQ-169: the name the bill thanks the customer on behalf of — the business, else the sender */
+function bizLabel(b: BusinessIdentity | undefined, u: User | undefined, lang: Lang): string {
+  return b?.businessName?.trim() || b?.legalName?.trim() || senderName(u, lang);
+}
+
 function senderName(u: User | undefined, lang: Lang): string {
   // P-06: the seeded placeholder ("Nuevo usuario"/"New user") reads like a
   // real name but must never be shown to a customer — fall back instead.
@@ -371,6 +388,10 @@ function shell(opts: {
   ctaUrl: string;
   sender: User | undefined;
   lang: Lang;
+  /** REQ-160: the business's own logo when it has one, the house logo otherwise */
+  logo: EmailLogo;
+  /** REQ-168: the business website, linked in the From block */
+  website?: string;
 }): string {
   const {
     preheader,
@@ -384,6 +405,8 @@ function shell(opts: {
     ctaUrl,
     sender,
     lang,
+    logo,
+    website,
   } = opts;
   const senderEmailLine = sender?.email
     ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px"><a href="mailto:${
@@ -396,6 +419,13 @@ function shell(opts: {
     ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px">${
       escapeHtml(sender.phoneNumber)
     }</div>`
+    : "";
+  const senderSiteLine = website?.trim()
+    ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px"><a href="${
+      escapeAttr(website.trim())
+    }" style="color:${COLOR_MUTED};text-decoration:none">${
+      escapeHtml(websiteLabel(website))
+    }</a></div>`
     : "";
 
   return `<!doctype html>
@@ -415,7 +445,7 @@ function shell(opts: {
     <tr><td align="center" style="padding:32px 16px;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width:600px;background:${COLOR_CARD};border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(20,72,82,0.08);">
         <tr><td align="center" style="padding:24px 32px 0;">
-          <img src="${APP_URL}/logo-email.png" alt="DocuMonster" width="160" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:160px;">
+          <img src="${escapeAttr(logo.src)}" alt="${escapeAttr(logo.alt)}" width="160" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:160px;">
         </td></tr>
         <tr><td style="padding:24px 32px 0;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
@@ -467,6 +497,7 @@ function shell(opts: {
   }</div>
           ${senderEmailLine}
           ${senderPhoneLine}
+          ${senderSiteLine}
         </td></tr>
       </table>
     </td></tr>
@@ -981,7 +1012,7 @@ function renderInvoiceHtml(
       : undefined);
   // Standalone invoice → lightweight amount-only email (unchanged behavior).
   if (items.length === 0 && agreementTotal == null) {
-    return renderInvoiceBasicHtml(i, customer, sender, lang, paid);
+    return renderInvoiceBasicHtml(i, customer, sender, senderBiz, lang, paid);
   }
   const amountLabel = invoiceAmountLabel(i, lang, paid);
 
@@ -1192,7 +1223,7 @@ function renderInvoiceHtml(
         <tr><td style="padding:28px 36px 0;">
           <p style="margin:0 0 8px;font-size:16px;font-weight:700;color:${COLOR_INK}">${greeting}</p>
           <p style="margin:0;font-size:15px;color:${COLOR_INK};line-height:1.55">${
-    escapeHtml(t(lang, "paperworkEmail.invoice.intro"))
+    escapeHtml(t(lang, "paperworkEmail.invoice.intro", { business: bizLabel(senderBiz, sender, lang) }))
   }</p>
         </td></tr>
 
@@ -1339,6 +1370,7 @@ function renderInvoiceBasicHtml(
   i: Invoice,
   customer: Customer | undefined,
   sender: User | undefined,
+  senderBiz: BusinessIdentity | undefined,
   lang: Lang,
   paid = false,
 ): string {
@@ -1349,15 +1381,42 @@ function renderInvoiceBasicHtml(
   // Standalone invoices carry their own job title + note (no quote behind
   // them). Surface them so a quote-less invoice email isn't just a bare figure.
   const jobName = (i as { jobName?: string }).jobName?.trim();
-  const description = (i as { description?: string }).description?.trim();
-  const jobBlock = (jobName || description)
+  // REQ-173: a batch invoice shows the address as a heading with the visits under it,
+  // instead of the flat "date — service — address" description
+  const visits = groupVisits(i.lineItems);
+  const description = visits
+    ? undefined
+    : (i as { description?: string }).description?.trim();
+  const visitsBlock = visits
+    ? visits.map((g) =>
+      `<div data-visit-address style="margin:0 0 6px;font-size:15px;font-weight:800;color:${COLOR_TEAL}">${
+        escapeHtml(g.address)
+      }</div>
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:0 0 14px;border-collapse:collapse;">${
+        g.visits.map((v) =>
+          `<tr>
+            <td style="padding:6px 0;border-top:1px solid ${COLOR_LINE};color:${COLOR_MUTED};font-size:13px;width:64px;white-space:nowrap">${
+            escapeHtml(fmtVisitDate(v.date, lang))
+          }</td>
+            <td style="padding:6px 8px;border-top:1px solid ${COLOR_LINE};color:${COLOR_INK};font-size:14px;font-weight:600">${
+            escapeHtml(v.service)
+          }</td>
+            <td style="padding:6px 0;border-top:1px solid ${COLOR_LINE};color:${COLOR_INK};font-size:14px;text-align:right;white-space:nowrap">${
+            fmtUSD(v.price)
+          }</td>
+          </tr>`
+        ).join("")
+      }</table>`
+    ).join("")
+    : "";
+  const jobBlock = (jobName || description || visits)
     ? `${
       jobName
         ? `<div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:22px;letter-spacing:-0.02em;color:${COLOR_TEAL};margin-bottom:${
-          description ? "6" : "16"
+          description || visits ? "10" : "16"
         }px">${escapeHtml(jobName)}</div>`
         : ""
-    }${
+    }${visitsBlock}${
       description
         ? `<p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:${COLOR_INK};white-space:pre-wrap">${
           escapeHtml(description)
@@ -1416,12 +1475,14 @@ function renderInvoiceBasicHtml(
     docNumber,
     drafted,
     greeting: customerGreeting(customer, lang),
-    intro: t(lang, "paperworkEmail.invoice.intro"),
+    intro: t(lang, "paperworkEmail.invoice.intro", { business: bizLabel(senderBiz, sender, lang) }),
     body,
     ctaLabel: t(lang, "paperworkEmail.invoice.cta"),
     ctaUrl: `${APP_URL}/i/${i.id}`,
     sender,
     lang,
+    logo: emailLogo({ appUrl: APP_URL, kind: "invoice", id: i.id, biz: senderBiz }),
+    website: senderBiz?.websiteUrl,
   });
 }
 

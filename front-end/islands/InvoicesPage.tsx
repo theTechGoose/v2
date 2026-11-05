@@ -142,6 +142,8 @@ function initialsOf(name: string): string {
 }
 
 interface EnrichedInvoice extends Invoice {
+  /** REQ-174: days to pay, from the day it is sent (a batch invoice carries its subscription's) */
+  netDays?: number;
   client: string;
   initials: string;
   invoiceRef: string;
@@ -1025,6 +1027,28 @@ function InvoiceDetail(
   );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // REQ-167: delete asks inline first — never a browser dialog
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  async function doDelete() {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/invoices/${inv.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!r.ok) {
+        setErr(tFor(lang, "invoicesPage.detail.errDelete"));
+        return;
+      }
+      onClose();
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // Edit surface (PUT /api/invoices/:id)
   const [editJobName, setEditJobName] = useState(
@@ -1161,6 +1185,9 @@ function InvoiceDetail(
     "appearance:none;cursor:pointer;background:#fff;border:1px solid var(--border,#d8dcd5);border-radius:9px;padding:8px 13px;font:inherit;font-size:13px;font-weight:700;color:var(--brand-teal,#144852)";
   const primaryBtn =
     "appearance:none;cursor:pointer;border:0;border-radius:9px;padding:8px 14px;background:var(--brand-green,#519843);color:#fff;font:inherit;font-size:13px;font-weight:800";
+  // REQ-167: the one destructive button — outlined coral, never a gradient
+  const dangerBtn =
+    "appearance:none;cursor:pointer;background:#fff;border:1px solid var(--brand-pink,#ff6b6b);border-radius:9px;padding:8px 13px;font:inherit;font-size:13px;font-weight:700;color:var(--brand-pink-dark,#d94f4f)";
   const ghostBtn =
     "appearance:none;cursor:pointer;background:none;border:0;padding:8px 10px;font:inherit;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)";
   const fieldStyle =
@@ -1223,6 +1250,43 @@ function InvoiceDetail(
         >
           {tFor(lang, "invoicesPage.detail.changeOrderBtn")}
         </button>
+        {/* REQ-167: delete, with an inline two-step confirm */}
+        {confirmDelete
+          ? (
+            <span
+              data-cy="invoice-delete-ask"
+              style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--fg,#144852)"
+            >
+              {tFor(lang, "invoicesPage.detail.deleteAsk")}
+              <button
+                type="button"
+                data-cy="invoice-delete-confirm"
+                onClick={doDelete}
+                disabled={busy}
+                style={dangerBtn}
+              >
+                {tFor(lang, "invoicesPage.detail.deleteYes")}
+              </button>
+              <button
+                type="button"
+                data-cy="invoice-delete-cancel"
+                onClick={() => setConfirmDelete(false)}
+                style={secondaryBtn}
+              >
+                {tFor(lang, "invoicesPage.detail.deleteNo")}
+              </button>
+            </span>
+          )
+          : (
+            <button
+              type="button"
+              data-cy="invoice-delete"
+              onClick={() => setConfirmDelete(true)}
+              style={secondaryBtn}
+            >
+              {tFor(lang, "invoicesPage.detail.deleteBtn")}
+            </button>
+          )}
         {/* REQ-018 (NW-27): the contractor can say "payment received" on
             anything the customer still owes — no customer claim required. */}
         {(inv.stage === "out" || inv.stage === "overdue" ||
@@ -1635,6 +1699,13 @@ async function discountErrorCopy(r: Response, lang: Lang): Promise<string> {
     : tFor(lang, "invoicesPage.adjust.errDiscountApply");
 }
 
+/** REQ-174: today + n days, as yyyy-mm-dd (UTC) */
+function plusDays(n: number): string {
+  const d = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 function InvoiceCard(
   { inv, idx, now, lang }: {
     inv: EnrichedInvoice;
@@ -1676,6 +1747,22 @@ function InvoiceCard(
   // Roadmap p.12: in-card discount + change-order controls.
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [discountDollars, setDiscountDollars] = useState("");
+  // REQ-167: delete from the card, asked inline first
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  async function doDeleteInvoice() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/invoices/${inv.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (r.ok) globalThis.location.reload();
+      else setSendFail(tFor(lang, "invoicesPage.detail.errDelete"));
+    } finally {
+      setBusy(false);
+    }
+  }
   const [coDesc, setCoDesc] = useState("");
   const [coDollars, setCoDollars] = useState("");
   const [coLink, setCoLink] = useState<string | null>(null);
@@ -1839,6 +1926,10 @@ function InvoiceCard(
           ...(inv.issuedDate
             ? {}
             : { issuedDate: new Date().toISOString().slice(0, 10) }),
+          // REQ-174: due = today + the invoice's days to pay, when it has them
+          ...(typeof inv.netDays === "number"
+            ? { dueDate: plusDays(inv.netDays) }
+            : {}),
         }),
       });
       // Deliver over both channels. Finalizing (draft → sent) proceeds either
@@ -2174,6 +2265,47 @@ function InvoiceCard(
         </div>
         <div class="qcard__back-body">
           {readText && <p class="qcard__read">{readText}</p>}
+          {/* REQ-167: every card can delete its invoice — asks first */}
+          <div
+            style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {confirmDelete
+              ? (
+                <>
+                  <span style="font-size:12.5px;color:var(--fg)">
+                    {tFor(lang, "invoicesPage.detail.deleteAsk")}
+                  </span>
+                  <button
+                    type="button"
+                    data-cy="invoice-card-delete-confirm"
+                    onClick={doDeleteInvoice}
+                    disabled={busy}
+                    style="appearance:none;background:#fff;border:1px solid var(--brand-pink,#ff6b6b);border-radius:7px;padding:4px 10px;font:inherit;font-size:12.5px;font-weight:700;color:var(--brand-pink-dark,#d94f4f);cursor:pointer"
+                  >
+                    {tFor(lang, "invoicesPage.detail.deleteYes")}
+                  </button>
+                  <button
+                    type="button"
+                    data-cy="invoice-card-delete-cancel"
+                    onClick={() => setConfirmDelete(false)}
+                    style="appearance:none;background:none;border:none;color:var(--brand-teal);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;padding:2px 0"
+                  >
+                    {tFor(lang, "invoicesPage.detail.deleteNo")}
+                  </button>
+                </>
+              )
+              : (
+                <button
+                  type="button"
+                  data-cy="invoice-card-delete"
+                  onClick={() => setConfirmDelete(true)}
+                  style="appearance:none;background:none;border:none;color:var(--brand-pink-dark,#d94f4f);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;padding:2px 0"
+                >
+                  {tFor(lang, "invoicesPage.detail.deleteBtn")}
+                </button>
+              )}
+          </div>
           {inv.stage !== "paid" && (
             <div
               style="margin-top:6px"

@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Put,
   Query,
 } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
@@ -14,6 +15,7 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { Impersonate } from "@users/domain/coordinators/impersonate/mod.ts";
 import { BootstrapSuperAdmin } from "@users/domain/coordinators/bootstrap-super-admin/mod.ts";
 import { requireSuperAdmin } from "@users/domain/coordinators/require-super-admin/mod.ts";
+import { isFeatureKey } from "#features";
 import {
   readSessionId,
   requireUser,
@@ -127,6 +129,26 @@ export class AdminController {
   ): Promise<AdminUserView> {
     await requireSuperAdmin(ctx, this.sessions, this.users);
     const user = await this.users.setSuperAdmin(id, true);
+    const identity = await this.identities.get(user.id);
+    return projectAdminUser(user, identity?.businessName);
+  }
+
+  /** REQ-177: PUT /admin/users/:id/features { key, on } — switch one feature for one account. */
+  @Put("users/:id/features")
+  async setFeature(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ): Promise<AdminUserView> {
+    await requireSuperAdmin(ctx, this.sessions, this.users);
+    const b = (body ?? {}) as { key?: unknown; on?: unknown };
+    if (!isFeatureKey(b.key) || typeof b.on !== "boolean") {
+      throw Object.assign(
+        new Error("key must be a registered feature and on a boolean"),
+        { status: 400 },
+      );
+    }
+    const user = await this.users.setFeature(id, b.key, b.on);
     const identity = await this.identities.get(user.id);
     return projectAdminUser(user, identity?.businessName);
   }

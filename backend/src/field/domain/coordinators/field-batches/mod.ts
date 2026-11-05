@@ -7,11 +7,13 @@
 import { Injectable } from "#danet/core";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
+import { netDaysFor } from "@field/domain/business/invoice-terms/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import { BatchStore, FieldTaskStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
-import { lineText, linesFor, summarize } from "@field/domain/business/batch-lines/mod.ts";
+import { lineItem, lineText, linesFor, summarize } from "@field/domain/business/batch-lines/mod.ts";
 import { fieldToday, shiftDate } from "@field/domain/business/schedule/mod.ts";
 import { type Batch, FieldError } from "@field/dto/field.ts";
 import { newId } from "@field/domain/coordinators/field-zones/mod.ts";
@@ -31,6 +33,7 @@ export class FieldBatches {
     private batches: BatchStore,
     private invoices: InvoiceStore,
     private customers: CustomerStore,
+    private identity: BusinessIdentityStore,
     private email: SendPaperworkEmail,
     private sms: SendPaperworkSms,
   ) {}
@@ -43,6 +46,10 @@ export class FieldBatches {
       this.invoices.listByUser(userId),
     ]);
     const live = liveIds(invoices);
+    // REQ-174: days to pay — the subscription's, else the account's default, else 30
+    const accountNetDays = (await this.identity.get(userId).catch(() => null))?.invoiceNetDays;
+    const subById = new Map(subscriptions.map((s) => [s.id, s]));
+    const taskById = new Map(tasks.map((t) => [t.id, t]));
     const summary = summarize({ from, to, tasks, liveInvoiceIds: live });
     const groups = linesFor({ from, to, tasks, subscriptions, taskTypes, liveInvoiceIds: live });
     const today = fieldToday();
@@ -50,14 +57,16 @@ export class FieldBatches {
     const made: Invoice[] = [];
     for (const g of groups) {
       const descriptions = g.lines.map((l) => lineText(l, lang));
+      const netDays = netDaysFor(g.lines.map((l) => subById.get(taskById.get(l.taskId)?.subscriptionId ?? "")?.netDays), accountNetDays);
       const inv = await this.invoices.create(userId, {
         customerId: g.customerId,
         status: "draft",
         jobName: lang === "es" ? `Mantenimiento ${from} → ${to}` : `Maintenance ${from} → ${to}`,
         description: descriptions.join("\n"),
-        lineItems: g.lines.map((l, i) => ({ description: descriptions[i], quantity: 1, unit: lang === "es" ? "visita" : "visit", price: l.priceCents })),
+        lineItems: g.lines.map((l) => lineItem(l, lang)), // REQ-173: structured — date / service / address
         amount: g.amount,
-        dueDate: shiftDate(today, 30),
+        netDays,
+        dueDate: shiftDate(today, netDays),
       });
       made.push(inv);
       batch.invoiceIds.push(inv.id);
@@ -114,7 +123,8 @@ export class FieldBatches {
         reason = e instanceof Error ? e.message : String(e);
       }
       if (ok) {
-        await this.invoices.update(inv.id, userId, { status: "sent", issuedDate: inv.issuedDate ?? today });
+        // REQ-174: due = the day it is sent + its days to pay
+        await this.invoices.update(inv.id, userId, { status: "sent", issuedDate: inv.issuedDate ?? today, ...(typeof inv.netDays === "number" ? { dueDate: shiftDate(today, inv.netDays) } : {}) });
         sent.push(inv.id);
       } else failed.push({ invoiceId: inv.id, reason });
     }

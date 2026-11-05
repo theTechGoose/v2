@@ -12,6 +12,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { adminClient, type AdminUserView } from "../clients/admin.ts";
 import { fmtPhone } from "../lib/format.ts";
+import { type FeatureKey, FEATURES } from "../../shared/features.ts";
 
 const wrap = "max-width:980px;margin:0 auto;padding:8px 4px 48px";
 const card =
@@ -22,6 +23,12 @@ const btnPrimary =
   "padding:9px 16px;border-radius:9px;border:0;background:var(--brand-green,#519843);color:#fff;cursor:pointer;font:inherit;font-weight:700;white-space:nowrap";
 const btnSecondary =
   "padding:7px 12px;border-radius:8px;border:1px solid var(--border,#d8dcd5);background:#fff;color:var(--fg);cursor:pointer;font:inherit;font-weight:600;white-space:nowrap";
+const tabStyle = (on: boolean) =>
+  `padding:8px 14px;border-radius:999px;border:1px solid ${
+    on ? "var(--brand-green,#519843)" : "var(--border,#d8dcd5)"
+  };background:${on ? "var(--brand-green,#519843)" : "#fff"};color:${
+    on ? "#fff" : "var(--fg)"
+  };cursor:pointer;font:inherit;font-weight:700`;
 const btnDanger =
   "padding:7px 12px;border-radius:8px;border:1px solid #e3b7b7;background:#fff;color:#a83b3b;cursor:pointer;font:inherit;font-weight:600;white-space:nowrap";
 
@@ -32,6 +39,8 @@ export default function AdminPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [impersonateId, setImpersonateId] = useState("");
+  // REQ-177: Users (search / super-admin / impersonate) and Accounts (feature switches)
+  const [tab, setTab] = useState<"users" | "accounts">("users");
 
   async function search(e?: Event) {
     e?.preventDefault();
@@ -67,6 +76,19 @@ export default function AdminPage() {
     }
   }
 
+  // REQ-177: one switch per registered feature, per account
+  async function setFeature(u: AdminUserView, key: FeatureKey, on: boolean) {
+    setBusyId(u.id);
+    setError(null);
+    try {
+      const updated = await adminClient.setFeature(u.id, key, on);
+      setRows((rs) => rs.map((r) => (r.id === u.id ? updated : r)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Update failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
   async function impersonate(id: string) {
     if (!id) return;
     setBusyId(id);
@@ -88,8 +110,32 @@ export default function AdminPage() {
           Admin
         </h1>
         <p style="margin:0;color:var(--fg-muted,#6b7560);font-size:13.5px">
-          Search users, grant or revoke super-admin, and impersonate.
+          {tab === "users"
+            ? "Search users, grant or revoke super-admin, and impersonate."
+            : "Switch features on or off per account."}
         </p>
+      </div>
+      <div role="tablist" style="display:flex;gap:8px;margin:0 4px 14px">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "users"}
+          data-cy="adm-tab-users"
+          style={tabStyle(tab === "users")}
+          onClick={() => setTab("users")}
+        >
+          Users
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "accounts"}
+          data-cy="adm-tab-accounts"
+          style={tabStyle(tab === "accounts")}
+          onClick={() => setTab("accounts")}
+        >
+          Accounts
+        </button>
       </div>
 
       <div style={card}>
@@ -121,7 +167,72 @@ export default function AdminPage() {
         </div>
       )}
 
-      {rows.length > 0 && (
+      {tab === "accounts" && rows.length > 0 && (
+        <div style={card} data-cy="adm-accounts">
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:13.5px">
+              <thead>
+                <tr style="text-align:left;color:var(--fg-muted,#6b7560);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase">
+                  <th style="padding:8px 10px">Account</th>
+                  <th style="padding:8px 10px">Phone</th>
+                  {FEATURES.map((f) => (
+                    <th key={f.key} style="padding:8px 10px" title={f.hint}>
+                      {f.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((u) => (
+                  <tr
+                    key={u.id}
+                    data-cy="adm-account"
+                    data-user={u.id}
+                    style="border-top:1px solid var(--border,#eef1ea)"
+                  >
+                    <td style="padding:10px">
+                      <div style="font-weight:600">
+                        {u.businessName || u.name || "—"}
+                      </div>
+                      {u.businessName && u.name && (
+                        <div style="color:var(--fg-muted,#6b7560);font-size:12.5px">
+                          {u.name}
+                        </div>
+                      )}
+                    </td>
+                    <td style="padding:10px;font-variant-numeric:tabular-nums">
+                      {fmtPhone(u.phoneNumber)}
+                    </td>
+                    {FEATURES.map((f) => (
+                      <td key={f.key} style="padding:10px">
+                        <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
+                          <input
+                            type="checkbox"
+                            role="switch"
+                            data-cy={`adm-feature-${f.key}`}
+                            checked={u.features?.[f.key] === true}
+                            disabled={busyId !== null}
+                            onChange={(e) =>
+                              setFeature(
+                                u,
+                                f.key,
+                                (e.target as HTMLInputElement).checked,
+                              )}
+                          />
+                          <span style="font-size:12.5px;color:var(--fg-muted,#6b7560)">
+                            {u.features?.[f.key] === true ? "on" : "off"}
+                          </span>
+                        </label>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {tab === "users" && rows.length > 0 && (
         <div style={card}>
           {
             /* Impersonate dropdown — pick any loaded user, then go. Mirrors
