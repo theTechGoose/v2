@@ -1,5 +1,6 @@
 import { IsIn, IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
+import type { Features } from "#features";
 
 export type Language = "en" | "es";
 
@@ -19,6 +20,11 @@ export interface User {
    * so it can never be set from an arbitrary PUT /me body.
    */
   superAdmin?: boolean;
+  /**
+   * REQ-177: per-account feature flags (keys from shared/features.ts). NEVER part of
+   * UpdateUserDto — the only write path is UserStore.setFeature, behind the super-admin route.
+   */
+  features?: Features;
   /**
    * `onboardedAt` is the server ISO timestamp of the FIRST time the user
    * reached the end of the /welcome wizard or left it; once set it never

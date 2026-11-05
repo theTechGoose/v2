@@ -5,6 +5,7 @@
  * retry, a second click or a restarted isolate never sends it twice. Nothing here throws into a
  * route: a failed text is a log line and `false`.
  */
+import { featureOn } from "#features";
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -72,6 +73,10 @@ export class FieldNotices {
   private async sender(userId: string): Promise<Sender | null> {
     const user = await this.users.get(userId).catch(() => null);
     if (!user) return null;
+    if (!featureOn(user.features, "fieldTexts")) {
+      log(`account ${userId}: fieldTexts is off — no text (REQ-177)`);
+      return null;
+    }
     const identity = await this.identities.get(userId).catch(() => null);
     const biz = identity?.businessName?.trim();
     const business = outboundSenderName({

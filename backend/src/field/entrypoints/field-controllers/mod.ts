@@ -251,8 +251,10 @@ export class FieldWorkersController {
     if ("error" in found) return { ok: false as const, ...found };
     const { user, business } = found;
     const dryRun = b.dryRun === true;
+    // REQ-154 revision: created in the same millisecond → KV order is random; name breaks the tie
     const workers = (await this.workers.listByUser(user.id)).sort((x, y) =>
-      x.createdAt.localeCompare(y.createdAt)
+      x.createdAt.localeCompare(y.createdAt) || x.name.localeCompare(y.name) ||
+      x.id.localeCompare(y.id)
     );
     const out: { id: string; name: string; phone: string; texted?: boolean }[] =
       [];

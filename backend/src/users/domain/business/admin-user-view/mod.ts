@@ -1,4 +1,5 @@
 import type { User } from "@users/dto/user.ts";
+import type { Features } from "#features";
 
 /**
  * AdminUserView — the safe, admin-facing projection of a user for the
@@ -11,6 +12,8 @@ export interface AdminUserView {
   phoneNumber: string;
   businessName?: string;
   superAdmin: boolean;
+  /** REQ-177 */
+  features: Features;
 }
 
 /**
@@ -27,5 +30,6 @@ export function projectAdminUser(
     phoneNumber: user.phoneNumber,
     businessName: businessName ?? undefined,
     superAdmin: user.superAdmin === true,
+    features: user.features ?? {},
   };
 }

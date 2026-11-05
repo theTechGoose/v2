@@ -1035,8 +1035,15 @@ type Row = {
 };
 
 /** REQ-163..166 — a staffed subscription due today, as the office sees it; answers the headers, the worker, the customer and the day's first task */
-async function todaysRound(call: Call, phone = "+15125551630") {
+/** REQ-177: the account's fieldTexts flag — the texts of REQ-171/172 need it on */
+async function textsOn(call: Call, H: HeadersInit) {
+  const me = await call("GET", "/me", undefined, H);
+  await new UserStore().setFeature(me.body.id, "fieldTexts", true);
+}
+
+async function todaysRound(call: Call, phone = "+15125551630", texts = true) {
   const H = await login(call, phone);
+  if (texts) await textsOn(call, H);
   const today = fieldToday();
   const customer = (await call("POST", "/customers", {
     name: "Ana Torres",
@@ -1587,5 +1594,40 @@ Deno.test("REQ-170 two reads of the same day at once make one round; a generated
       reads.flatMap((r) => (r.body as Row[]).map((t) => t.id)),
     );
     assertEquals([...ids], [after[0].id], "every read answered the same task");
+  });
+});
+
+// REQ-177 — "put the texting feature behind a feature flag on the account."
+Deno.test("REQ-177 with the account's fieldTexts flag off nothing is texted and the answers say texted:false; once the flag is on the worker hears", async () => {
+  await withTwilioStub(async (texts) => {
+    await withServer(async (call) => {
+      const { H, today, customer, w } = await todaysRound(
+        call,
+        "+15125551770",
+        false,
+      );
+      const workerPhone = "+1" + w.phoneNumber;
+      const toWorker = () =>
+        texts.filter((x) => x.to === workerPhone && !/PIN/.test(x.body));
+      const off = await call("POST", "/field/tasks", {
+        customerId: customer.id,
+        date: today,
+        taskTypeName: "Mulch",
+        priceCents: 500,
+        workerId: w.id,
+      }, H);
+      assertEquals([off.status, off.body.texted], [201, false]);
+      assertEquals(toWorker().length, 0, "flag off → no text");
+      await textsOn(call, H);
+      const on = await call("POST", "/field/tasks", {
+        customerId: customer.id,
+        date: today,
+        taskTypeName: "Edging",
+        priceCents: 500,
+        workerId: w.id,
+      }, H);
+      assertEquals([on.status, on.body.texted], [201, true]);
+      assertEquals(toWorker().length, 1, "flag on → the worker hears");
+    });
   });
 });
