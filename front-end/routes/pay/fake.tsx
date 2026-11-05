@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, langFromCookie, pickLangFromAcceptLanguage } from "../../lib/lang.ts";
@@ -37,7 +37,7 @@ export default define.page(function PayFake(ctx) {
           {tFor(lang, "payFake.title")} · {tFor(lang, "brand.name")}
         </title>
         <meta name="robots" content="noindex" />
-        <link key="css-verify" rel="stylesheet" href="/verify.css" />
+        <link key="css-verify" rel="stylesheet" href={asset("/verify.css")} />
       </Head>
       <div class="verify-shell">
         <div class="verify-card">

@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { getSessionId } from "../../lib/auth.ts";
@@ -119,7 +119,7 @@ export default define.page(async function AssistantThread(ctx) {
     <>
       <Head>
         <title>{tFor(lang, "assistantThread.pageTitle")}</title>
-        <link rel="stylesheet" href="/assistant-page.css" />
+        <link rel="stylesheet" href={asset("/assistant-page.css")} />
       </Head>
       <div class="app">
         <DashSidebar active="messages" />

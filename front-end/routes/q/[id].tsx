@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import PublicQuoteView from "../../islands/PublicQuoteView.tsx";
@@ -29,7 +29,7 @@ export default define.page(function PublicQuote(ctx) {
       <Head>
         {/* UX-40: localized like /i and /co (tFor docTitle). */}
         <title>{tFor(lang, "quoteDoc.docTitle")}</title>
-        <link key="css-landing" rel="stylesheet" href="/landing.css" />
+        <link key="css-landing" rel="stylesheet" href={asset("/landing.css")} />
         {
           /* P-62: the phone-layout + @media print rules live in a LINKED
             stylesheet, not an inline <style> — Fresh emits a Head <style>
@@ -37,7 +37,7 @@ export default define.page(function PublicQuote(ctx) {
             hydration, so print styles silently never applied in a real
             browser (see front-end/static/public-contract.css). */
         }
-        <link key="css-public-contract" rel="stylesheet" href="/public-contract.css" />
+        <link key="css-public-contract" rel="stylesheet" href={asset("/public-contract.css")} />
       </Head>
       <div
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}

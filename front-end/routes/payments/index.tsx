@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
@@ -44,9 +44,17 @@ export default define.page(function PaymentsRoute(ctx) {
     <>
       <Head>
         <title>{tFor(lang, "paymentsRoute.docTitle")}</title>
-        <link key="css-dashboard" rel="stylesheet" href="/dashboard.css" />
-        <link key="css-quotes" rel="stylesheet" href="/quotes.css" />
-        <link key="css-payments" rel="stylesheet" href="/payments.css" />
+        <link
+          key="css-dashboard"
+          rel="stylesheet"
+          href={asset("/dashboard.css")}
+        />
+        <link key="css-quotes" rel="stylesheet" href={asset("/quotes.css")} />
+        <link
+          key="css-payments"
+          rel="stylesheet"
+          href={asset("/payments.css")}
+        />
       </Head>
       <div class="app">
         <DashSidebar active="payments" />

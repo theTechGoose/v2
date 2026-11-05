@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { getSessionId, loadUser } from "../../lib/auth.ts";
 import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
@@ -41,7 +41,7 @@ export default define.page(async function PlanPay(ctx) {
       <Head>
         <title>{tFor(lang, "planHandoff.title")} · {tFor(lang, "brand.name")}</title>
         <meta name="robots" content="noindex" />
-        <link key="css-verify" rel="stylesheet" href="/verify.css" />
+        <link key="css-verify" rel="stylesheet" href={asset("/verify.css")} />
         {/* no script: the page asks again by itself every few seconds (the island does it every second) */}
         <noscript>
           <meta http-equiv="refresh" content="3" />

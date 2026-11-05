@@ -2,7 +2,7 @@
  * REQ-143 — /field/subscriptions. The dashboard shell around the FieldSubscriptionsPage island;
  * data comes from /api/field/* (clients/field.ts). The sidebar's active tab is "subscriptions".
  */
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
@@ -20,12 +20,16 @@ export default define.page(function FieldFieldSubscriptionsPageRoute(ctx) {
     <>
       <Head>
         <title>{tFor(lang, "field.subs.docTitle")}</title>
-        <link key="css-dashboard" rel="stylesheet" href="/dashboard.css" />
-        <link key="css-field" rel="stylesheet" href="/field.css" />
+        <link
+          key="css-dashboard"
+          rel="stylesheet"
+          href={asset("/dashboard.css")}
+        />
+        <link key="css-field" rel="stylesheet" href={asset("/field.css")} />
         <link
           key="css-search-select"
           rel="stylesheet"
-          href="/search-select.css"
+          href={asset("/search-select.css")}
         />
       </Head>
       <div class="app">
