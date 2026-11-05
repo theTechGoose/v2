@@ -19,6 +19,8 @@ export interface FieldWorker {
   /** digits only — the login name */
   phoneNumber: string;
   role?: "worker" | "foreman";
+  /** REQ-155 — the language the worker is texted in */
+  language?: "en" | "es";
   createdAt: string;
   updatedAt: string;
 }
@@ -229,9 +231,14 @@ export const fieldClient = {
       phoneNumber: string;
       pin: string;
       role?: "worker" | "foreman";
+      /** REQ-155 — Spanish when absent */
+      language?: "en" | "es";
     },
     opts?: ApiOptions,
   ) => api.post<FieldWorker & { texted: boolean }>("/field/workers", b, opts), // REQ-151 — texted: the welcome text went out
+  /** REQ-155 — the worker's language, changed from the row */
+  setWorkerLanguage: (id: string, language: "en" | "es", opts?: ApiOptions) =>
+    api.put<FieldWorker>(`/field/workers/${id}`, { language }, opts),
   deleteWorker: (id: string, opts?: ApiOptions) =>
     api.delete<{ ok: true }>(`/field/workers/${id}`, opts),
 

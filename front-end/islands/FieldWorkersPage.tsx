@@ -22,9 +22,17 @@ interface AddForm {
   /** digits only, at most 4 */
   pin: string;
   foreman: boolean;
+  /** REQ-155 — the language the worker is texted in; Spanish by default */
+  language: "en" | "es";
 }
 
-const BLANK: AddForm = { name: "", phone: "", pin: "", foreman: false };
+const BLANK: AddForm = {
+  name: "",
+  phone: "",
+  pin: "",
+  foreman: false,
+  language: "es",
+};
 
 /** the server's message when it sent one (a 409 names the zones still covered); the house fallback otherwise */
 function errMsg(err: unknown): string {
@@ -110,6 +118,7 @@ export default function FieldWorkersPage() {
         phoneNumber: form.phone,
         pin: form.pin,
         role: form.foreman ? "foreman" : "worker",
+        language: form.language,
       });
       setAdded({ name: made.name, texted: made.texted === true });
       setForm(BLANK);
@@ -118,6 +127,25 @@ export default function FieldWorkersPage() {
       setAddErr(errMsg(err));
     } finally {
       setAdding(false);
+    }
+  }
+
+  /** REQ-155 — the row's switch: the worker's language, saved on the spot */
+  async function setLanguage(w: FieldWorker, language: "en" | "es") {
+    if ((w.language ?? "es") === language) return;
+    setBusyId(w.id);
+    setRowErr(null);
+    try {
+      const saved = await fieldClient.setWorkerLanguage(w.id, language);
+      setWorkers((list) =>
+        (list ?? []).map((x) =>
+          x.id === w.id ? { ...x, language: saved.language } : x
+        )
+      );
+    } catch (err) {
+      setRowErr({ id: w.id, msg: errMsg(err) });
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -218,6 +246,30 @@ export default function FieldWorkersPage() {
             />
           </label>
         </div>
+        <div class="row" style="margin-top:10px">
+          <label class="field" style="flex:1;min-width:200px">
+            {t("field.wk.language")}
+            <select
+              name="language"
+              data-cy="wk-language"
+              value={form.language}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  language:
+                    (e.currentTarget as HTMLSelectElement).value === "en"
+                      ? "en"
+                      : "es",
+                })}
+            >
+              <option value="es">{t("field.wk.langEs")}</option>
+              <option value="en">{t("field.wk.langEn")}</option>
+            </select>
+            <span class="hint" style="font-weight:400">
+              {t("field.wk.langHint")}
+            </span>
+          </label>
+        </div>
         <div
           class="row"
           style="margin-top:10px;align-items:center;justify-content:space-between"
@@ -300,6 +352,36 @@ export default function FieldWorkersPage() {
                   >
                     <I d={ICN.phone} size={12} />{" "}
                     <span data-cy="wk-row-phone">{fmtCell(w.phoneNumber)}</span>
+                    {/* REQ-155 — the language switch: ES | EN, the worker's own */}
+                    <span
+                      data-cy="wk-row-lang"
+                      data-lang={w.language ?? "es"}
+                      role="group"
+                      aria-label={t("field.wk.language")}
+                      style="margin-left:auto;display:inline-flex;gap:2px;border:1px solid var(--border);border-radius:999px;padding:2px"
+                    >
+                      {(["es", "en"] as const).map((l) => {
+                        const on = (w.language ?? "es") === l;
+                        return (
+                          <button
+                            type="button"
+                            key={l}
+                            data-set={l}
+                            aria-pressed={on}
+                            disabled={busy}
+                            title={l === "es"
+                              ? t("field.wk.langEs")
+                              : t("field.wk.langEn")}
+                            style={`border:0;border-radius:999px;padding:3px 9px;font-weight:800;font-size:11px;cursor:pointer;background:${
+                              on ? "var(--brand-green)" : "transparent"
+                            };color:${on ? "#fff" : "var(--fg-muted)"}`}
+                            onClick={() => setLanguage(w, l)}
+                          >
+                            {l.toUpperCase()}
+                          </button>
+                        );
+                      })}
+                    </span>
                   </div>
                   <div class="sub__items">
                     <div>

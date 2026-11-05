@@ -28,7 +28,11 @@ import {
 import { appUrl } from "@users/domain/business/app-url/mod.ts";
 import { secretAllows } from "@users/domain/business/shared-secret/mod.ts";
 import type { User } from "@users/dto/user.ts";
-import { workerWelcome } from "@field/domain/business/worker-welcome/mod.ts";
+import {
+  parseLang,
+  workerLang,
+  workerWelcome,
+} from "@field/domain/business/worker-welcome/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import {
   BatchStore,
@@ -88,8 +92,9 @@ async function welcomeWorker(
   d: WelcomeDeps,
   user: User,
   w: FieldWorker,
+  override?: "en" | "es",
 ): Promise<boolean> {
-  const lang = user.language === "es" ? "es" : "en";
+  const lang = override ?? workerLang(w, user); // REQ-155 — the worker's language
   const identity = await d.identities.get(user.id);
   const who = realName(user.name);
   const biz = identity?.businessName?.trim();
@@ -208,6 +213,8 @@ export class FieldWorkersController {
     if (await this.workers.findByPhone(phone)) {
       throw new FieldError("a worker with that cell already exists", 409);
     }
+    const language = parseLang(b.language);
+    if (language === null) throw new FieldError("language must be en or es");
     const now = new Date().toISOString();
     const w: FieldWorker = {
       id: newId(),
@@ -219,6 +226,7 @@ export class FieldWorkersController {
       updatedAt: now,
     };
     if (b.role === "foreman") w.role = "foreman";
+    w.language = language ?? "es"; // REQ-155 — Spanish by default
     await this.workers.put(w);
     // REQ-151 — the welcome text: who added them, the /worker address, the PIN; its failure is logged, never thrown
     const texted = await welcomeWorker(deps(this), user, w);
@@ -247,15 +255,33 @@ export class FieldWorkersController {
     if ("error" in found) return { ok: false as const, ...found };
     const { user, business } = found;
     const dryRun = b.dryRun === true;
+    const override = parseLang(b.language);
+    if (override === null) return { ok: false as const, error: "bad_language" };
     const workers = (await this.workers.listByUser(user.id)).sort((x, y) =>
       x.createdAt.localeCompare(y.createdAt)
     );
-    const out: { id: string; name: string; phone: string; texted?: boolean }[] =
-      [];
+    const out: {
+      id: string;
+      name: string;
+      phone: string;
+      language: "en" | "es";
+      texted?: boolean;
+    }[] = [];
     for (const w of workers) {
-      const row: { id: string; name: string; phone: string; texted?: boolean } =
-        { id: w.id, name: w.name, phone: w.phoneNumber };
-      if (!dryRun) row.texted = await welcomeWorker(deps(this), user, w);
+      const row: (typeof out)[number] = {
+        id: w.id,
+        name: w.name,
+        phone: w.phoneNumber,
+        language: override ?? workerLang(w, user),
+      };
+      if (!dryRun) {
+        row.texted = await welcomeWorker(
+          deps(this),
+          user,
+          w,
+          override ?? undefined,
+        );
+      }
       out.push(row);
     }
     return {
@@ -269,6 +295,24 @@ export class FieldWorkersController {
       },
       workers: out,
     };
+  }
+
+  /** REQ-155 — the owner changes a worker's language (the one thing the row edits) */
+  @Put(":id")
+  async update(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() raw: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const w = await this.workers.getOwned(id, user.id);
+    const b = body(raw);
+    const language = parseLang(b.language);
+    if (!language) throw new FieldError("language must be en or es");
+    w.language = language;
+    w.updatedAt = new Date().toISOString();
+    await this.workers.put(w);
+    return safeWorker(w);
   }
 
   @Delete(":id")

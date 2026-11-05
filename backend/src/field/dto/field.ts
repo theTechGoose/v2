@@ -15,6 +15,8 @@ export interface FieldWorker {
   pin: string;
   /** a foreman sees and closes every worker's visits */
   role?: "worker" | "foreman";
+  /** REQ-155 — the language the worker is texted in (Spanish by default); absent on workers from before */
+  language?: "en" | "es";
   createdAt: string;
   updatedAt: string;
 }
@@ -116,7 +118,11 @@ export interface Batch {
 
 /** An error with the HTTP status Danet should answer with (`error.status || 500`). */
 export class FieldError extends Error {
-  constructor(message: string, readonly status = 400, readonly detail?: Record<string, unknown>) {
+  constructor(
+    message: string,
+    readonly status = 400,
+    readonly detail?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "FieldError";
   }
@@ -125,6 +131,8 @@ export class FieldError extends Error {
 /** free-text caps */
 export const CAP = { note: 2000, text: 300, taskType: 80 } as const;
 
-export const str = (v: unknown): string | undefined => typeof v === "string" && v.trim() ? v.trim() : undefined;
-export const tooLong = (v: unknown, max: number) => typeof v === "string" && v.length > max;
+export const str = (v: unknown): string | undefined =>
+  typeof v === "string" && v.trim() ? v.trim() : undefined;
+export const tooLong = (v: unknown, max: number) =>
+  typeof v === "string" && v.length > max;
 export const digitsOf = (v: unknown) => String(v ?? "").replace(/\D/g, "");

@@ -11,10 +11,14 @@ import { story, type StoryTools } from "#shots";
 
 /** REQ-152 — the customer field is a search box: type the name, click the match */
 async function pickCustomer(page: StoryTools["page"], name: string) {
-  const box = page.locator("[data-cy='subs-customer'] [data-cy='search-select-input']");
+  const box = page.locator(
+    "[data-cy='subs-customer'] [data-cy='search-select-input']",
+  );
   await box.waitFor({ timeout: 15_000 });
   await box.fill(name);
-  await page.locator("[data-cy='subs-customer'] [data-cy='search-select-option']")
+  await page.locator(
+    "[data-cy='subs-customer'] [data-cy='search-select-option']",
+  )
     .filter({ hasText: name }).first().click();
 }
 
@@ -98,6 +102,12 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
 
     // 1. a worker, on /field/workers
     await page.goto("/field/workers");
+    // REQ-155 — the language picker reads Spanish by default
+    expect.eq(
+      await page.locator("[data-cy='wk-language']").inputValue(),
+      "es",
+      "the picker is Spanish by default",
+    );
     await page.locator("[data-cy='wk-name']").fill("Luis Herrera");
     await page.locator("[data-cy='wk-phone']").fill(cell);
     await page.locator("[data-cy='wk-pin']").fill("1234");
@@ -109,6 +119,29 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
     // REQ-151 — the page says the worker was texted the sign-in link and their PIN
     await expect.see(
       "We texted Luis Herrera the sign-in link and their PIN.",
+    );
+    // REQ-155 — the row shows ES; the switch to EN sticks through a reload
+    const row = page.locator("[data-cy='wk-row']").first();
+    expect.eq(
+      await row.locator("[data-cy='wk-row-lang']").getAttribute("data-lang"),
+      "es",
+      "Luis's row reads ES",
+    );
+    await row.locator("[data-cy='wk-row-lang'] button[data-set='en']").click();
+    await page.waitForFunction(() =>
+      document.querySelector("[data-cy='wk-row'] [data-cy='wk-row-lang']")
+        ?.getAttribute("data-lang") === "en"
+    );
+    await page.reload();
+    await page.locator("[data-cy='wk-row']").first().waitFor({
+      timeout: 15_000,
+    });
+    expect.eq(
+      await page.locator("[data-cy='wk-row']").first().locator(
+        "[data-cy='wk-row-lang']",
+      ).getAttribute("data-lang"),
+      "en",
+      "the switch to EN stuck",
     );
 
     // 2. a subscription on the existing customer, on /field/subscriptions
@@ -431,7 +464,11 @@ Deno.test("REQ-152: the customer field is a search box — typing narrows the li
       "4601 Dick Pond Rd, Myrtle Beach, SC",
       "the keyboard pick fills the address",
     );
-    expect.eq(await box.inputValue(), "Ana Torres", "the pick's name sits in the box");
+    expect.eq(
+      await box.inputValue(),
+      "Ana Torres",
+      "the pick's name sits in the box",
+    );
     await field.locator("[data-cy='search-select-clear']").click();
     expect.eq(await box.inputValue(), "", "the box is cleared");
     await page.locator("[data-cy='subs-type-q']").fill("Lawn cut");
