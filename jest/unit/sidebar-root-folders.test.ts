@@ -32,16 +32,16 @@ describe("REQ-176 the sidebar's root folders", () => {
     ]);
   });
 
-  test("Billing holds Quotes, Invoices, Payments; Recurring the five; Admin holds Admins", () => {
+  test("Billing holds Quotes, Invoices, Payments; Recurring the four; Admin holds Workers and Admins (REQ-178)", () => {
     expect(ids(["billing"])).toEqual(["quotes", "invoices", "payments"]);
-    expect(ids(["manage"])).toEqual(["admins"]);
+    expect(ids(["manage"])).toEqual(["workers", "admins"]); // REQ-178 — Workers is Admin's
     expect(ids(["recurring"])).toEqual([
       "subscriptions",
       "assignments",
       "tasks",
       "batches",
-      "workers",
     ]);
+    expect(folderPathTo(NAV, "workers")).toEqual(["manage"]);
     expect(folderPathTo(NAV, "tasks")).toEqual(["recurring"]);
     expect(folderPathTo(NAV, "invoices")).toEqual(["billing"]);
     expect(folderPathTo(NAV, "admins")).toEqual(["manage"]);
