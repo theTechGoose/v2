@@ -13,6 +13,7 @@ import { LogPaperworkMessage } from "@communication/domain/coordinators/log-pape
 import { ConversationStore as CommConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
 import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { getKv, resetKv } from "@core/data/kv/mod.ts";
+import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
 
 interface SetupResult {
   flow: SendPaperworkEmail;
@@ -519,5 +520,26 @@ Deno.test("REQ-173 send-paperwork-email: a batch invoice's email shows the addre
   assertStringIncludes(html, "Oct 9");
   assertStringIncludes(html, "$65.00");
   assert(!html.includes(`Oct 2 — Lawn — ${addr}`), "the flat line is replaced by the grouped visits");
+  await resetKv();
+});
+
+// REQ-175 — "when a customers customer replies to an invoice it should go to the customer inbox"
+Deno.test("REQ-175 send-paperwork-email: the invoice email carries Reply-To reply+<token>@inbound.documonster.com, the token resolving to this contractor and customer and reused on the next send", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("INBOUND_MAIL_DOMAIN");
+  await resetKv();
+  const { flow, customers, invoices, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Randall Belknap", email: "rb@acme.test" });
+  const invoice = await invoices.create("u-1", { customerId: customer.id, status: "draft", jobName: "Maintenance", amount: 100 });
+  assertEquals((await flow.run("u-1", { kind: "invoice", resourceId: invoice.id })).ok, true);
+  const replyTo = sent[0].replyTo ?? "";
+  const m = /^reply\+([a-z0-9]+)@inbound\.documonster\.com$/.exec(replyTo);
+  assert(m, `Reply-To is reply+<token>@inbound.documonster.com (${replyTo})`);
+  const owner = await new ReplyTokenStore().resolve(m![1]);
+  assertEquals([owner?.userId, owner?.customerId], ["u-1", customer.id]);
+  assertEquals((await flow.run("u-1", { kind: "invoice", resourceId: invoice.id })).ok, true);
+  assertEquals(sent[1].replyTo, replyTo, "the same token next time");
+  assertEquals(await new ReplyTokenStore().resolve("nope00"), null);
   await resetKv();
 });

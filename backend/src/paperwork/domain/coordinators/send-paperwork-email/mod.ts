@@ -8,6 +8,8 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import type { BusinessIdentity } from "@users/dto/business-identity.ts";
 import { type EmailLogo, emailLogo } from "@paperwork/domain/business/email-logo/mod.ts";
 import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
+import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
+import { inboundDomain, replyAddress } from "@paperwork/domain/business/inbound-reply/mod.ts";
 import {
   EmailService,
   type SendEmailResult,
@@ -79,6 +81,8 @@ export const SENDER_NAME_REQUIRED_REASON =
  */
 @Injectable()
 export class SendPaperworkEmail {
+  /** REQ-175: the Reply-To token per customer (KV-backed, no constructor dependency) */
+  private replyTokens = new ReplyTokenStore();
   constructor(
     private quotes: QuoteStore,
     private invoices: InvoiceStore,
@@ -205,12 +209,18 @@ export class SendPaperworkEmail {
     // has one set, noreply@ there when it has none.
     const from = input.from ?? aliasFrom(senderBiz?.emailAlias);
 
+    // REQ-175: the customer's reply comes back through the inbound webhook, into their thread
+    const replyTo = customerIdForLog
+      ? replyAddress(await this.replyTokens.forCustomer(userId, customerIdForLog), inboundDomain())
+      : undefined;
+
     const result = await this.email.send({
       to: recipient,
       subject,
       htmlBody,
       from,
       cc,
+      replyTo,
     });
 
     // Stamp the quote's lifecycle: status→"sent" + sentAt→now (idempotent — only if not already set).
