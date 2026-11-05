@@ -40,13 +40,14 @@ export const NAV: NavNode<IconName>[] = [
       { id: "assignments", icon: "map", href: "/field/assignments" },
       { id: "tasks", icon: "cal", href: "/field/tasks" },
       { id: "batches", icon: "batch", href: "/field/batches" },
-      { id: "workers", icon: "hardhat", href: "/field/workers" },
     ],
   },
   {
     id: "manage",
     icon: "cog",
     items: [
+      // REQ-178 — the crew is managed from Admin, not Recurring
+      { id: "workers", icon: "hardhat", href: "/field/workers" },
       // REQ-146: the numbers the owner lets into the account
       { id: "admins", icon: "shield", href: "/admins" },
     ],

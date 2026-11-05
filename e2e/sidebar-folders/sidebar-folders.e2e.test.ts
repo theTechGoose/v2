@@ -72,7 +72,7 @@ Deno.test("REQ-156: the root shows Recurring and none of the five; opening it sh
     );
     expect(seen.includes("Customers"), "Customers on the root");
     for (
-      const l of ["Subscriptions", "Assignments", "Tasks", "Batches", "Workers"]
+      const l of ["Subscriptions", "Assignments", "Tasks", "Batches"]
     ) expect(!seen.includes(l), `${l} is inside the folder, not on the root`);
     expect(
       await nav.locator("[data-cy='nav-back']").count() === 0,
@@ -83,8 +83,9 @@ Deno.test("REQ-156: the root shows Recurring and none of the five; opening it sh
     await nav.locator("[data-cy='nav-back']").waitFor({ timeout: 10_000 });
     seen = await labels();
     for (
-      const l of ["Subscriptions", "Assignments", "Tasks", "Batches", "Workers"]
+      const l of ["Subscriptions", "Assignments", "Tasks", "Batches"]
     ) expect(seen.includes(l), `${l} inside the folder (${seen.join(", ")})`);
+    expect(!seen.includes("Workers"), "Workers is Admin's (REQ-178)");
     expect(!seen.includes("Customers"), "the root's entries are gone");
     expect(
       !seen.includes("Recurring"),

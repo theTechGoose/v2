@@ -31,7 +31,7 @@ async function verify(http: StoryTools["http"], phone: string) {
   return { cookie, auth: { ...JSON_HEADERS, cookie } };
 }
 
-Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin; Billing opens to Quotes, Invoices, Payments and Invoices loads inside it; Admin opens to Admins; Recurring to the five; Back returns to the root; /field/tasks loads inside Recurring", (t) =>
+Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin; Billing opens to Quotes, Invoices, Payments and Invoices loads inside it; Admin opens to Workers and Admins; Recurring to the four; Back returns to the root; /field/tasks loads inside Recurring", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const user = await verify(http, `+1512${digits()}`);
     await (await http("/api/me", {
@@ -97,18 +97,22 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin;
     await nav.locator("[data-cy='nav-folder-manage']").click();
     await nav.locator("a[href='/admins']").waitFor({ timeout: 10_000 });
     seen = await labels();
-    expect.eq(seen.join(" | "), "Back | Admins", "inside Admin");
+    expect.eq(
+      seen.join(" | "),
+      "Back | Workers | Admins",
+      "inside Admin (Workers moved here — REQ-178)",
+    );
     await nav.locator("[data-cy='nav-back']").click();
     // 4. Recurring, on the root: the five; Back lands on the root
     await nav.locator("[data-cy='nav-folder-recurring']").waitFor({
       timeout: 10_000,
     });
     await nav.locator("[data-cy='nav-folder-recurring']").click();
-    await nav.locator("a[href='/field/workers']").waitFor({ timeout: 10_000 });
+    await nav.locator("a[href='/field/batches']").waitFor({ timeout: 10_000 });
     seen = await labels();
     expect.eq(
       seen.join(" | "),
-      "Back | Subscriptions | Assignments | Tasks | Batches | Workers",
+      "Back | Subscriptions | Assignments | Tasks | Batches",
       "inside Recurring",
     );
     await nav.locator("[data-cy='nav-back']").click();

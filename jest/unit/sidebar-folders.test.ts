@@ -62,7 +62,7 @@ describe("REQ-156 the tree walk", () => {
 });
 
 describe("REQ-156 the sidebar's folders", () => {
-  test("the five field entries are the recurring folder's; the sidebar renders Back and the folder rows", () => {
+  test("the four field entries are the recurring folder's (Workers is Admin's since REQ-178); the sidebar renders Back and the folder rows", () => {
     const src = read("front-end/islands/DashSidebar.tsx");
     // REQ-176 — the tree itself lives in lib/nav-tree.ts; the island renders it
     const tree = read("front-end/lib/nav-tree.ts");
@@ -72,14 +72,9 @@ describe("REQ-156 the sidebar's folders", () => {
       tree.indexOf("]", tree.indexOf('id: "recurring"')),
     );
     for (
-      const id of [
-        "subscriptions",
-        "assignments",
-        "tasks",
-        "batches",
-        "workers",
-      ]
+      const id of ["subscriptions", "assignments", "tasks", "batches"]
     ) expect(folder).toContain(`id: "${id}"`);
+    expect(folder).not.toContain('id: "workers"'); // REQ-178 — Workers moved to Admin
     expect(src).toContain('data-cy="nav-back"');
     expect(src).toContain("data-cy={`nav-folder-${item.id}`}");
     expect(src).toMatch(/tFor\(lang, "nav\.back"\)/);
