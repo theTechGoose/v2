@@ -172,8 +172,8 @@ export default function DemoStage() {
     applyView(next);
   };
 
-  // 0. the stage's own size, and the banner's height (REQ-184: never under it). The banner mounts
-  //    later than the stage (it waits for whoami) and publishes --pm-banner-h on <html>; the stage
+  // 0. the stage's own size, and the banner's height (REQ-181: never under it). The banner mounts
+  //    later than the stage (it waits for whoami) and publishes --banner-h on <html>; the stage
   //    watches that, so it moves down the moment the banner appears or grows.
   useEffect(() => {
     const measure = () => {

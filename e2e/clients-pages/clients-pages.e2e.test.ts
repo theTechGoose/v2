@@ -29,6 +29,27 @@ async function signIn(http: StoryTools["http"], page: StoryTools["page"], baseUr
   return { auth };
 }
 
+/** an island may still be hydrating when its button appears: click until the page shows the effect */
+async function clickUntil(
+  page: StoryTools["page"],
+  selector: string,
+  done: () => Promise<boolean>,
+): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (await done()) return;
+    try {
+      await page.locator(selector).click({ timeout: 2_000 });
+    } catch {
+      // the button is gone or not clickable yet: the polls below say whether the effect landed
+    }
+    for (let i = 0; i < 5; i++) {
+      if (await done()) return;
+      await page.waitForTimeout(200);
+    }
+  }
+  throw new Error(`${selector}: the click never took`);
+}
+
 Deno.test("REQ-135: thirty customers — the page shows twenty-five, says Page 1 of 2, next shows five, a search shows one, the crumb counts thirty", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
@@ -43,7 +64,10 @@ Deno.test("REQ-135: thirty customers — the page shows twenty-five, says Page 1
     await page.locator("[data-cy='clients-next']").waitFor();
     expect((await cards.count()) === 25, `twenty-five cards on page one (${await cards.count()})`);
     await expect.see("Client 01");
-    await page.locator("[data-cy='clients-next']").click();
+    // the island may still be hydrating when the button appears (REQ-135 REVISION: under the
+    // full lane's load the click landed on the dead SSR button and page two never came)
+    await clickUntil(page, "[data-cy='clients-next']", async () =>
+      (await page.locator("body").innerText()).includes("Page 2 of 2"));
     await expect.see("Page 2 of 2");
     await expect.see("Client 30");
     expect((await cards.count()) === 5, `five cards on page two (${await cards.count()})`);

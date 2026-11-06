@@ -1,5 +1,5 @@
 /**
- * REQ-153 + REQ-179 + REQ-180 + REQ-184 + REQ-187 + REQ-188 — demo mode end to end on the real
+ * REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188 — demo mode end to end on the real
  * shell, two browsers: the super admin clicks Demo on a user's row on /admin and their browser
  * lands AT ONCE on the stage (/demo/stage), as the user, the pill waiting for the user's app; End
  * while waiting clears the user's pill. Again: the user's own browser joins on its own (no
@@ -75,7 +75,7 @@ const rectOf = (el: Element) => {
   return { x: r.left, y: r.top, width: r.width, height: r.height };
 };
 
-Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-184 + REQ-187 + REQ-188: the admin clicks Demo on /admin — Opening… at once — and lands on the stage at once, waiting; End clears the user's pill; again, the user's app joins on its own and both connect; the frame is the user's exact screen; the presenter's pointer and click wave land on the user's screen; the user's move glides onto the frame; scroll, drawer, page and map follow; End clears both", (t) =>
+Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin clicks Demo on /admin — Opening… at once — and lands on the stage at once, waiting; End clears the user's pill; again, the user's app joins on its own and both connect; the frame is the user's exact screen; the presenter's pointer and click wave land on the user's screen; the user's move glides onto the frame; scroll, drawer, page and map follow; End clears both", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const userPhone = `+1512${digits()}`;
@@ -213,7 +213,7 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-184 + REQ-187 + REQ-188: the admin 
         hasText: /direct|relay/,
       }).waitFor({ timeout: 20_000 });
 
-      // REQ-184 — the staff page has the impersonation banner; the stage starts below it
+      // REQ-181 — the staff page has the impersonation banner; the stage starts below it
       const room = await page.evaluate(() => {
         const b = document.querySelector("[data-demo-skip]")
           ?.getBoundingClientRect();
@@ -227,7 +227,7 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-184 + REQ-187 + REQ-188: the admin 
       expect(
         room.bannerBottom !== null && room.stageTop !== null &&
           room.stageTop >= room.bannerBottom - 0.5,
-        `REQ-184: the stage (top ${room.stageTop}) starts below the banner (bottom ${room.bannerBottom})`,
+        `REQ-181: the stage (top ${room.stageTop}) starts below the banner (bottom ${room.bannerBottom})`,
       );
 
       // 3. REQ-187 — the frame IS the user's screen: the user's exact viewport, on the user's page,
