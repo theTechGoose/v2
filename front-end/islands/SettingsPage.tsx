@@ -11,7 +11,21 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { adminsClient, isActing } from "../clients/admins.ts";
-import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
+import {
+  type NumberingView,
+  profileClient,
+  type ProfileSnapshot,
+} from "../clients/profile.ts";
+import { DOC_KINDS, type DocKind } from "../../shared/documents/numbering.ts";
+import {
+  formOf,
+  invalidStartKinds,
+  lockedKindsMessage,
+  lockNote,
+  nextLabel,
+  type NumberingForm,
+  numberingPatch,
+} from "../../shared/documents/numbering-settings.ts";
 import {
   PRICING_PLANS,
   type PricingPlan,
@@ -190,6 +204,33 @@ function tr(es: boolean) {
     wipeButton: tFor(lang, "settings.wipeButton"),
     wiping: tFor(lang, "settings.wiping"),
     wipeFailed: tFor(lang, "settings.wipeFailed"),
+    // REQ-198/199 — document numbering (the "{number}" / "{kinds}" templates
+    // are left raw here and filled by the shared pure helpers)
+    numberingTitle: tFor(lang, "settings.numbering.title"),
+    numberingIntro: tFor(lang, "settings.numbering.intro"),
+    numberingAccount: tFor(lang, "settings.numbering.accountNumber"),
+    numberingAccountHint: tFor(lang, "settings.numbering.accountNumberHint"),
+    numberingStart: tFor(lang, "settings.numbering.start"),
+    numberingSave: tFor(lang, "settings.numbering.save"),
+    numberingNext: tFor(lang, "settings.numbering.next"),
+    numberingLockNote: tFor(lang, "settings.numbering.lockNote"),
+    numberingLocked: tFor(lang, "settings.numbering.locked"),
+    numberingStartInvalid: tFor(lang, "settings.numbering.startInvalid"),
+    numberingLoadFailed: tFor(lang, "settings.numbering.loadFailed"),
+    numberingKind: Object.fromEntries(
+      DOC_KINDS.map((k) => [k, tFor(lang, `settings.numbering.kind.${k}`)]),
+    ) as Record<DocKind, string>,
+    // REQ-199 — reset test data
+    resetButton: tFor(lang, "settings.reset.button"),
+    resetTitle: tFor(lang, "settings.reset.title"),
+    resetIntro: tFor(lang, "settings.reset.intro"),
+    resetModalBody: tFor(lang, "settings.reset.modalBody"),
+    resetConfirmLabel: tFor(lang, "settings.reset.confirmLabel"),
+    resetConfirm: tFor(lang, "settings.reset.confirm"),
+    resetCancel: tFor(lang, "settings.reset.cancel"),
+    resetWorking: tFor(lang, "settings.reset.working"),
+    resetDone: tFor(lang, "settings.reset.done"),
+    resetFailed: tFor(lang, "settings.reset.failed"),
     // Aria labels
     ariaEditName: tFor(lang, "settings.aria.editName"),
     ariaEditEmail: tFor(lang, "settings.aria.editEmail"),
@@ -1523,9 +1564,224 @@ function ContractDefaultsEditCard(
   );
 }
 
+/** NumberingCard — REQ-198/199: the account number and, per document kind,
+ *  the next number and an editable starting number. Saves only the changed
+ *  kinds (PUT /profile/numbering); a kind that already issued a number is
+ *  locked (input disabled, lock note) and a 409 `numbering_locked` names the
+ *  kinds inline. `refreshKey` bumps after the setup reset so the card refetches. */
+function NumberingCard({ refreshKey }: { refreshKey: number }) {
+  const [view, setView] = useState<NumberingView | null>(null);
+  const [form, setForm] = useState<NumberingForm | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const t = tr(langSignal.value === "es");
+
+  useEffect(() => {
+    let alive = true;
+    setLoadErr(null);
+    setSaved(false);
+    profileClient.numbering()
+      .then((v) => {
+        if (!alive) return;
+        setView(v);
+        setForm(formOf(v));
+      })
+      .catch(() => {
+        if (alive) setLoadErr(t.numberingLoadFailed);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [refreshKey]);
+
+  async function save() {
+    if (!view || !form) return;
+    const bad = invalidStartKinds(form);
+    if (bad.length) {
+      setErr(lockedKindsMessage(bad, t.numberingKind, t.numberingStartInvalid));
+      return;
+    }
+    const patch = numberingPatch(view, form);
+    setErr(null);
+    if (Object.keys(patch).length === 0) {
+      setSaved(true);
+      return;
+    }
+    setBusy(true);
+    setSaved(false);
+    try {
+      const next = await profileClient.updateNumbering(patch);
+      setView(next);
+      setForm(formOf(next));
+      setSaved(true);
+    } catch (e) {
+      const body = e instanceof ApiError
+        ? e.body as { reason?: string; kinds?: string[] } | null
+        : null;
+      if (
+        e instanceof ApiError && e.status === 409 &&
+        body?.reason === "numbering_locked"
+      ) {
+        setErr(
+          lockedKindsMessage(
+            body.kinds ?? [],
+            t.numberingKind,
+            t.numberingLocked,
+          ),
+        );
+        // show the locks the server knows about; keep what was typed for the open kinds
+        profileClient.numbering().then((v) => {
+          setView(v);
+          setForm((f) => {
+            const fresh = formOf(v);
+            if (!f) return fresh;
+            for (const kind of DOC_KINDS) {
+              if (!v.issued[kind]) fresh[kind] = f[kind];
+            }
+            return fresh;
+          });
+        }).catch(() => {/* the inline error already says what happened */});
+      } else {
+        setErr(e instanceof Error ? e.message : t.saveFailed);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <EditPanel
+      title={t.numberingTitle}
+      busy={busy}
+      saved={saved}
+      saving={t.saving}
+      savedLabel={t.saved}
+      dataCy="settings-numbering"
+    >
+      <p style="margin:0 0 14px;font-size:13px;color:var(--fg-muted,#6b7560)">
+        {t.numberingIntro}
+      </p>
+      {loadErr
+        ? (
+          <div
+            style="color:#a83b3b;font-size:12.5px"
+            data-cy="settings-numbering-load-error"
+          >
+            {loadErr}
+          </div>
+        )
+        : null}
+      {view && form
+        ? (
+          <>
+            <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+              <span style={labelStyle + ";margin:0"}>{t.numberingAccount}</span>
+              <strong
+                data-cy="settings-numbering-account"
+                style="font-size:16px;letter-spacing:.04em;color:var(--fg)"
+              >
+                {view.accountNumber}
+              </strong>
+              <span style="font-size:12px;color:var(--fg-muted,#6b7560)">
+                {t.numberingAccountHint}
+              </span>
+            </div>
+            <div style="display:grid;gap:10px">
+              {DOC_KINDS.map((kind) => {
+                const locked = view.issued[kind];
+                const note = locked
+                  ? lockNote(view, kind, t.numberingLockNote)
+                  : "";
+                return (
+                  <div
+                    key={kind}
+                    data-cy={`settings-numbering-row-${kind}`}
+                    style="display:grid;grid-template-columns:minmax(0,1fr) 160px;gap:6px 16px;align-items:center;padding:10px 12px;border:1px solid var(--border,#d8dcd5);border-radius:10px;background:#fff"
+                  >
+                    <div style="min-width:0">
+                      <div style="font-weight:700;font-size:13.5px;color:var(--fg)">
+                        {t.numberingKind[kind]}
+                      </div>
+                      <div
+                        data-cy={`settings-numbering-next-${kind}`}
+                        style="font-size:12.5px;color:var(--fg-muted,#6b7560)"
+                      >
+                        {nextLabel(view, kind, t.numberingNext)}
+                      </div>
+                      {note
+                        ? (
+                          <div
+                            data-cy={`settings-numbering-lock-${kind}`}
+                            style="font-size:12px;color:#8a6d1f;margin-top:2px"
+                          >
+                            {note}
+                          </div>
+                        )
+                        : null}
+                    </div>
+                    <label style="display:block">
+                      <span style={labelStyle}>{t.numberingStart}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        inputMode="numeric"
+                        data-cy={`settings-numbering-start-${kind}`}
+                        aria-label={`${
+                          t.numberingKind[kind]
+                        } — ${t.numberingStart}`}
+                        style={inputStyle +
+                          (locked
+                            ? ";background:#f3f4f1;color:var(--fg-muted,#6b7560)"
+                            : "")}
+                        value={form[kind]}
+                        disabled={locked || busy}
+                        onInput={(e) => {
+                          const v = (e.target as HTMLInputElement).value;
+                          setForm((f) => f ? { ...f, [kind]: v } : f);
+                          setSaved(false);
+                        }}
+                      />
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+            <div style="margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <button
+                type="button"
+                data-cy="settings-numbering-save"
+                disabled={busy}
+                onClick={save}
+                style={btnPrimary}
+              >
+                {t.numberingSave}
+              </button>
+            </div>
+          </>
+        )
+        : null}
+      {err
+        ? (
+          <div
+            data-cy="settings-numbering-error"
+            style="margin-top:10px;color:#a83b3b;font-size:12.5px"
+          >
+            {err}
+          </div>
+        )
+        : null}
+    </EditPanel>
+  );
+}
+
 /** DangerZoneCard — irreversible account wipe. Type-to-confirm gate, then a
  *  single destructive button hits GET /me/wipe and bounces to the login page
- *  (the wipe drops every session, so the app is logged out anyway). */
+ *  (the wipe drops every session, so the app is logged out anyway).
+ *  REQ-199: also the "Reset test data" action — clears the account's records
+ *  and restarts numbering through a confirm modal, keeps the account. */
 
 // REQ-127 — Raphael, 2026-11-02: "rework the pan ui so that its SUPER clean what plan the user is
 // on. right now its pretty confusing. how about just a billing tab rather than a slot on the page."
@@ -1796,10 +2052,18 @@ function BillingTab({ snapshot }: { snapshot: ProfileSnapshot }) {
   );
 }
 
-function DangerZoneCard(_props: { snapshot: ProfileSnapshot }) {
+function DangerZoneCard(
+  { onReset }: { snapshot: ProfileSnapshot; onReset: () => void },
+) {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // REQ-199 — the reset-test-data modal and its outcome
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetErr, setResetErr] = useState<string | null>(null);
+  const [resetDone, setResetDone] = useState(false);
   const t = tr(langSignal.value === "es");
   // P-65: the confirm keyword is the quoted word inside the localized label
   // ('Type "DELETE" to confirm' / 'Escribe "ELIMINAR" para confirmar') — the
@@ -1807,6 +2071,33 @@ function DangerZoneCard(_props: { snapshot: ProfileSnapshot }) {
   const keyword = (t.wipeConfirmLabel.match(/"([^"]+)"/)?.[1] ?? "DELETE")
     .toUpperCase();
   const armed = confirm.trim().toUpperCase() === keyword;
+  const resetKeyword = (t.resetConfirmLabel.match(/"([^"]+)"/)?.[1] ?? "RESET")
+    .toUpperCase();
+  const resetArmed = resetConfirm.trim().toUpperCase() === resetKeyword;
+
+  function openReset() {
+    setResetConfirm("");
+    setResetErr(null);
+    setResetDone(false);
+    setResetOpen(true);
+  }
+
+  async function reset() {
+    if (!resetArmed || resetBusy) return;
+    setResetBusy(true);
+    setResetErr(null);
+    try {
+      await profileClient.setupReset();
+      setResetOpen(false);
+      setResetDone(true);
+      onReset();
+    } catch (e) {
+      console.error("setup reset failed", e);
+      setResetErr(t.resetFailed);
+    } finally {
+      setResetBusy(false);
+    }
+  }
 
   async function wipe() {
     if (!armed) return;
@@ -1830,6 +2121,112 @@ function DangerZoneCard(_props: { snapshot: ProfileSnapshot }) {
       <div class="panel__head" style="margin-bottom:12px">
         <h3 class="panel__title" style="color:#a83b3b">{t.dangerZone}</h3>
       </div>
+      {/* REQ-199 — reset test data: records go, the account stays */}
+      <div
+        data-cy="settings-reset"
+        style="margin:0 0 18px;padding:0 0 18px;border-bottom:1px solid #e3b4b4"
+      >
+        <div style="font-weight:700;font-size:13.5px;color:var(--fg);margin-bottom:4px">
+          {t.resetTitle}
+        </div>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--fg-muted,#6b7560)">
+          {t.resetIntro}
+        </p>
+        <button
+          type="button"
+          data-cy="settings-reset-open"
+          disabled={busy || resetBusy}
+          onClick={openReset}
+          style="padding:8px 14px;border-radius:8px;border:1px solid #a83b3b;background:#fff;color:#a83b3b;cursor:pointer;font:inherit;font-weight:700"
+        >
+          {t.resetButton}
+        </button>
+        {resetDone
+          ? (
+            <div
+              data-cy="settings-reset-done"
+              style="margin-top:10px;color:var(--brand-green,#519843);font-size:12.5px;font-weight:600"
+            >
+              {t.resetDone}
+            </div>
+          )
+          : null}
+      </div>
+      {resetOpen
+        ? (
+          <div
+            data-cy="settings-reset-modal"
+            style="position:fixed;inset:0;z-index:60;background:rgba(20,72,82,0.35);display:flex;align-items:center;justify-content:center;padding:20px"
+            onClick={() => !resetBusy && setResetOpen(false)}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="settings-reset-title"
+              style="background:#fff;border-radius:16px;padding:20px 22px;width:min(480px,100%);box-shadow:0 20px 60px rgba(20,72,82,0.25);display:flex;flex-direction:column;gap:12px;text-align:left"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                id="settings-reset-title"
+                style="font-size:18px;font-weight:800;color:#a83b3b"
+              >
+                {t.resetTitle}
+              </div>
+              <p style="margin:0;font-size:13.5px;color:var(--fg,#144852)">
+                {t.resetModalBody}
+              </p>
+              <label style="display:block">
+                <span style={labelStyle}>{t.resetConfirmLabel}</span>
+                <input
+                  type="text"
+                  data-cy="settings-reset-confirm-input"
+                  style={inputStyle}
+                  value={resetConfirm}
+                  disabled={resetBusy}
+                  placeholder={resetKeyword}
+                  autoComplete="off"
+                  onInput={(e) =>
+                    setResetConfirm((e.target as HTMLInputElement).value)}
+                />
+              </label>
+              {resetErr
+                ? (
+                  <div
+                    data-cy="settings-reset-error"
+                    style="color:#a83b3b;font-size:12.5px"
+                  >
+                    {resetErr}
+                  </div>
+                )
+                : null}
+              <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+                <button
+                  type="button"
+                  data-cy="settings-reset-cancel"
+                  disabled={resetBusy}
+                  onClick={() => setResetOpen(false)}
+                  style="padding:9px 14px;border-radius:8px;border:0;background:transparent;color:var(--fg-muted,#6b7560);cursor:pointer;font:inherit;font-weight:600"
+                >
+                  {t.resetCancel}
+                </button>
+                <button
+                  type="button"
+                  data-cy="settings-reset-confirm"
+                  disabled={!resetArmed || resetBusy}
+                  onClick={reset}
+                  style={`padding:9px 16px;border-radius:8px;border:0;background:${
+                    resetArmed ? "#a83b3b" : "#d8b4b4"
+                  };color:#fff;cursor:${
+                    resetArmed && !resetBusy ? "pointer" : "not-allowed"
+                  };font:inherit;font-weight:700`}
+                >
+                  {resetBusy ? t.resetWorking : t.resetConfirm}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+        : null}
       <p style="margin:0 0 14px;font-size:13px;color:var(--fg-muted,#6b7560)">
         {t.wipeIntro}
       </p>
@@ -1875,6 +2272,8 @@ export default function SettingsPage() {
   // REQ-146: an admin acting for the account never sees the danger zone (the
   // server refuses the wipe to them anyway)
   const [acting, setActing] = useState(false);
+  // REQ-199: bumped by the setup reset so the numbering card refetches
+  const [numberingKey, setNumberingKey] = useState(0);
   useEffect(() => {
     let alive = true;
     adminsClient.accounts().then((v) => {
@@ -2022,9 +2421,17 @@ export default function SettingsPage() {
             <ContractDefaultsEditCard snapshot={p} onSaved={onSaved} />
           </div>
 
+          {/* REQ-198/199: the account number and the starting numbers */}
+          <NumberingCard refreshKey={numberingKey} />
+
           <PaymentsEditCard snapshot={p} onSaved={onSaved} />
 
-          {!acting && <DangerZoneCard snapshot={p} />}
+          {!acting && (
+            <DangerZoneCard
+              snapshot={p}
+              onReset={() => setNumberingKey((k) => k + 1)}
+            />
+          )}
         </>
       )}
     </>

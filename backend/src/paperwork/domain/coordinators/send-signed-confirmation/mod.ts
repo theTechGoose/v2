@@ -13,6 +13,12 @@ import { reconcileMilestones } from "#quote-flow/milestone-reconcile.ts";
 import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import { computePaymentSplit } from "#payment-split";
 import { type Lang, t } from "@core/i18n/mod.ts";
+import {
+  customerOnDocument,
+  docRef,
+  docRefWithVersion,
+  type RenderedCustomer,
+} from "@paperwork/domain/business/doc-render/mod.ts";
 import type { User } from "@users/dto/user.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
@@ -109,7 +115,11 @@ export class SendSignedConfirmation {
         : Promise.resolve(undefined as Customer | undefined),
     ]);
 
-    const recipient = customer?.email?.trim();
+    // REQ-204: the signed agreement shows the customer as snapshotted when it
+    // was issued; the live address is still where the mail goes (a corrected
+    // typo should reach them), the snapshot's otherwise.
+    const shown = customerOnDocument(quote, customer);
+    const recipient = customer?.email?.trim() || shown?.email?.trim();
 
     const businessName = ident?.businessName?.trim() ||
       ident?.legalName?.trim() || contractor?.name?.trim();
@@ -239,19 +249,22 @@ export class SendSignedConfirmation {
       } catch (err) {
         console.error("[send-signed-confirmation] PDF render failed:", err);
       }
-      const subject = t(lang, "signedConfirm.email.subject", {
-        summary: quote.summary ?? t(lang, "signedConfirm.fallback.contract"),
-      });
+      // REQ-204: the subject and the attachment name the agreement by number
+      const subject = `${
+        t(lang, "signedConfirm.email.subject", {
+          summary: quote.summary ?? t(lang, "signedConfirm.fallback.contract"),
+        })
+      } · ${docRefWithVersion(quote, lang)}`;
       const html = renderSignedConfirmationHtml({
         quote,
-        customer,
+        customer: shown,
         contractor,
         businessName,
         invoiceId,
         invoiceAmount: milestoneAmounts[0] ?? 0,
         lang,
       });
-      const fileName = `Agreement-${quote.id.slice(0, 8).toUpperCase()}.pdf`;
+      const fileName = agreementFileName(quote);
       sent = await this.email.send({
         to: recipient,
         subject,
@@ -291,7 +304,8 @@ export class SendSignedConfirmation {
         // P-30: the shared builder handles the unnamed-customer greeting
         // natively ("Hola, …" / "Hi there, …") — never prefill a fallback
         // name here, or ES renders the doubled "Hola hola, …".
-        const first = (customer?.name ?? "").trim().split(/\s+/)[0] ||
+        const first =
+          (shown?.name ?? shown?.businessName ?? "").trim().split(/\s+/)[0] ||
           undefined;
         const body = buildSignedConfirmSms({
           customerFirstName: first,
@@ -329,6 +343,13 @@ export class SendSignedConfirmation {
 }
 
 /* ---------------- helpers ---------------- */
+
+/** REQ-204: "Agreement-Q-001.pdf" — the attachment is named by the quote's number. */
+export function agreementFileName(
+  quote: { id: string; number?: string },
+): string {
+  return `Agreement-${docRef(quote).replace(/^#/, "")}.pdf`;
+}
 
 /** Normalize a raw phone to E.164 (US-default). Mirrors the helper in
  *  send-paperwork-sms; returns undefined when it can't be made valid. */
@@ -445,7 +466,7 @@ function escapeAttr(s: string): string {
 
 interface SignedHtmlOpts {
   quote: Quote;
-  customer: Customer | undefined;
+  customer: RenderedCustomer | undefined;
   contractor: User | undefined;
   businessName: string | undefined;
   invoiceId: string | undefined;
@@ -463,7 +484,8 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
     invoiceAmount,
     lang,
   } = opts;
-  const customerFirst = customer?.name?.trim().split(/\s+/)[0];
+  const customerFirst = (customer?.name ?? customer?.businessName)?.trim()
+    .split(/\s+/)[0];
   const contractorFirst = contractor?.name?.trim()?.split(/\s+/)[0];
   const biz = businessName ?? contractor?.name ??
     t(lang, "signedConfirm.email.bizFallback");
@@ -472,7 +494,8 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
       /^\s*quote\s*:\s*/i,
       "",
     );
-  const docNumber = `#${quote.id.slice(0, 8).toUpperCase()}`;
+  // REQ-204 / REQ-201: "Q-001 · Version 2", never an id slice
+  const docNumber = docRefWithVersion(quote, lang);
   const invoiceUrl = invoiceId ? `${APP_URL}/i/${invoiceId}` : undefined;
   const agreementUrl = `${APP_URL}/q/${quote.id}`;
   const greeting = customerFirst
@@ -584,9 +607,9 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
   }</div>
               </td>
               <td style="padding:16px 20px 16px 0;vertical-align:middle">
-                <div style="color:${COLOR_INK};font-weight:800;font-size:14px">Agreement-${
-    escapeHtml(quote.id.slice(0, 8).toUpperCase())
-  }.pdf</div>
+                <div style="color:${COLOR_INK};font-weight:800;font-size:14px">${
+    escapeHtml(agreementFileName(quote))
+  }</div>
                 <div style="margin-top:2px;color:${COLOR_MUTED};font-size:12px">${
     t(lang, "signedConfirm.email.attachmentSub")
   }</div>

@@ -8,6 +8,13 @@
  *      GET /analytics/quotes/insight     → { text, kind }
  */
 import { api, type ApiOptions } from "../lib/api.ts";
+import type { QuoteLedger } from "../../shared/documents/ledger.ts";
+import type { DocVersionRecord } from "../../shared/documents/versions.ts";
+
+export type { QuoteLedger };
+
+/** REQ-201: one filed version of the quote; the last one is `current`. */
+export type QuoteVersion = DocVersionRecord & { current?: boolean };
 
 export type QuoteStage =
   | "draft"
@@ -41,6 +48,12 @@ export interface QuoteCard {
   }[];
   estimatedTotal?: number;
   status?: string;
+  /** REQ-198/201: the document's number ("Q-001") and version (1..n). */
+  number?: string;
+  version?: number;
+  publishedAt?: string;
+  /** REQ-201: content edited after the quote was issued, not yet published. */
+  pendingRevision?: Record<string, unknown>;
   /** Onboarding sample quote (P-15): rendered as a badged card, excluded
    *  from every pipeline/money aggregate. */
   isSample?: boolean;
@@ -92,4 +105,21 @@ export const quotesClient = {
     api.get<Insight>("/analytics/quotes/insight", opts),
   delete: (id: string, opts: ApiOptions = {}) =>
     api.delete<{ ok: true }>(`/quotes/${id}`, opts),
+  /** REQ-205: what was agreed, invoiced, paid, owed and still to invoice. */
+  ledger: (id: string, opts: ApiOptions = {}) =>
+    api.get<QuoteLedger>(`/quotes/${id}/ledger`, opts),
+  /** REQ-201: every filed version plus the current one. */
+  versions: (id: string, opts: ApiOptions = {}) =>
+    api.get<QuoteVersion[]>(`/quotes/${id}/versions`, opts),
+  /** REQ-201: publish the pending revision (version+1); `notify` re-sends the same link. */
+  publish: (
+    id: string,
+    body: { notify?: boolean; language?: "en" | "es" } = {},
+    opts: ApiOptions = {},
+  ) =>
+    api.post<QuoteCard & { notified?: Record<string, unknown> }>(
+      `/quotes/${id}/publish`,
+      body,
+      opts,
+    ),
 };

@@ -1,8 +1,20 @@
-import { IsBoolean, IsIn, IsOptional, IsString, validateSync } from "#class-validator";
+import {
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  validateSync,
+} from "#class-validator";
 import { plainToInstance } from "#class-transformer";
+import type { NumberedFields } from "@core/data/numbered-store/mod.ts";
 
 export type ClientSegment = "property_mgmt" | "homeowner" | "small_biz" | "hoa";
-export const CLIENT_SEGMENTS: ClientSegment[] = ["property_mgmt", "homeowner", "small_biz", "hoa"];
+export const CLIENT_SEGMENTS: ClientSegment[] = [
+  "property_mgmt",
+  "homeowner",
+  "small_biz",
+  "hoa",
+];
 
 export class CreateCustomerDto {
   @IsString()
@@ -79,7 +91,8 @@ export class UpdateCustomerDto {
   businessName?: string;
 }
 
-export interface Customer extends CreateCustomerDto {
+export interface Customer
+  extends CreateCustomerDto, Pick<NumberedFields, "number" | "seq"> {
   /** REQ-039 (NW-52): flagged, never erased — lists exclude it. */
   deletedAt?: string;
   id: string;
@@ -97,15 +110,15 @@ export type CustomerLastTone = "hot" | "warm" | "cold";
  * rollups computed by `BuildCustomerCards`. Never persisted — pure projection.
  */
 export interface CustomerCard extends Customer {
-  lastWhen:         string | null;
-  lastWhenRel:      string;
-  lastTone:         CustomerLastTone;
-  balanceCents:     number;
-  balanceSub:       string;
-  activeJobs:       number;
-  jobsSub:          string;
-  status:           CustomerStatus;
-  temp:             number;
+  lastWhen: string | null;
+  lastWhenRel: string;
+  lastTone: CustomerLastTone;
+  balanceCents: number;
+  balanceSub: string;
+  activeJobs: number;
+  jobsSub: string;
+  status: CustomerStatus;
+  temp: number;
   daysSinceContact: number;
   revenue12moCents: number;
 }
@@ -113,13 +126,17 @@ export interface CustomerCard extends Customer {
 export function parseCreateCustomer(input: unknown): CreateCustomerDto {
   const dto = plainToInstance(CreateCustomerDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid customer: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid customer: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }
 
 export function parseUpdateCustomer(input: unknown): UpdateCustomerDto {
   const dto = plainToInstance(UpdateCustomerDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid customer patch: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid customer patch: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }

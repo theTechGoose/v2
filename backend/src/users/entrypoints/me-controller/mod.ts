@@ -5,6 +5,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { Logout } from "@users/domain/coordinators/logout/mod.ts";
 import { WipeAccount } from "@users/domain/coordinators/wipe-account/mod.ts";
+import { SetupReset } from "@users/domain/coordinators/setup-reset/mod.ts"; // REQ-199
 import { parseUpdateUser } from "@users/dto/user.ts";
 import {
   readSessionId,
@@ -37,6 +38,7 @@ export class MeController {
     private sessions: SessionStore,
     private logoutCoord: Logout,
     private wipeCoord: WipeAccount,
+    private setupReset: SetupReset, // REQ-199
     private choosePlan: ChoosePlan,
     private paymentsLink: PaymentsLink,
     private crm: CrmCustomerSync,
@@ -239,6 +241,18 @@ export class MeController {
   async wipe(@Context() ctx: ExecutionContext) {
     const user = await requireOwner(ctx, this.sessions, this.users); // REQ-146 — never an admin
     return await this.wipeCoord.run(user.id);
+  }
+
+  /**
+   * POST /me/setup-reset — REQ-199: clear the account's test records
+   * (customers, documents, payments, conversations, counters) and restart
+   * numbering, keeping the account, its profile, its plan, its admins and
+   * this session. Owner only. Meant for the moment before going live.
+   */
+  @Post("setup-reset")
+  async setupResetAccount(@Context() ctx: ExecutionContext) {
+    const user = await requireOwner(ctx, this.sessions, this.users);
+    return await this.setupReset.run(user.id);
   }
 
   /**

@@ -9,6 +9,7 @@ import {
   validateSync,
 } from "#class-validator";
 import { plainToInstance, Type } from "#class-transformer";
+import type { NumberedFields } from "@core/data/numbered-store/mod.ts";
 
 /**
  * One row in the persisted terms-wizard answers. The customer-facing quote
@@ -195,7 +196,7 @@ export class UpdateQuoteDto {
   declinedName?: string;
 }
 
-export interface Quote extends CreateQuoteDto {
+export interface Quote extends CreateQuoteDto, NumberedFields {
   /** REQ-039 (NW-52): flagged, never erased — lists exclude it. */
   deletedAt?: string;
   id: string;

@@ -11,6 +11,11 @@ import {
   buildAcceptedAlertSubject,
 } from "#quote-flow/sms-i18n.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import {
+  customerOnDocument,
+  docRefWithVersion,
+  docTitle,
+} from "@paperwork/domain/business/doc-render/mod.ts";
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
@@ -62,7 +67,9 @@ export class SendAcceptedAlert {
     if (!contractor) return { ok: false, reason: "no_contractor" };
 
     const lang: Lang = contractor.language === "es" ? "es" : "en";
-    const customerName = customer?.name?.trim() ||
+    // REQ-204: the accepted quote names the customer as snapshotted when issued
+    const shown = customerOnDocument(quote, customer);
+    const customerName = shown?.name?.trim() || shown?.businessName?.trim() ||
       quote.acceptedName?.trim() ||
       t(lang, "notify.fallbackClient");
     // P-50/P-27: project the job name in the CONTRACTOR's language for the
@@ -72,7 +79,11 @@ export class SendAcceptedAlert {
     const url = `${APP_URL}/quotes`;
     // P-50: with-job variant keeps the celebratory tone (es ¡…! 🎉 / en 🎉)
     // and the localized job name — shared source of truth in sms-i18n.ts.
-    const subject = buildAcceptedAlertSubject({ customerName, quote, lang });
+    // REQ-204 / REQ-201: every alert names the document — "… · Q-001 · Version 2"
+    const docLabel = docRefWithVersion(quote, lang);
+    const subject = `${
+      buildAcceptedAlertSubject({ customerName, quote, lang })
+    } · ${docLabel}`;
 
     let sentAny = false;
     if (contractor.email?.trim()) {
@@ -80,7 +91,13 @@ export class SendAcceptedAlert {
         const res = await this.email.send({
           to: contractor.email.trim(),
           subject,
-          htmlBody: renderHtml({ customerName, jobName, url, lang }),
+          htmlBody: renderHtml({
+            customerName,
+            jobName,
+            url,
+            lang,
+            docLabel: docTitle("quote", quote, lang),
+          }),
         });
         console.log(
           `[send-accepted-alert] quote ${quoteId} email → ${contractor.email}: ok=${res.ok}${
@@ -110,7 +127,9 @@ export class SendAcceptedAlert {
     }
     if (contractor.phoneNumber?.trim()) {
       try {
-        const body = buildAcceptedAlertSms({ customerName, quote, url, lang });
+        const body = `${
+          buildAcceptedAlertSms({ customerName, quote, url, lang })
+        }\n${docTitle("quote", quote, lang)}`;
         const res = await this.sms.send({
           to: contractor.phoneNumber.trim(),
           body,
@@ -144,6 +163,8 @@ function renderHtml(opts: {
   jobName: string;
   url: string;
   lang: Lang;
+  /** REQ-204: "Quote Q-001 · Version 2" */
+  docLabel: string;
 }): string {
   const { lang } = opts;
   const headline = opts.jobName
@@ -159,6 +180,9 @@ function renderHtml(opts: {
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
     <div style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#d94e4e">${
     escapeHtml(t(lang, "brand.name"))
+  }</div>
+    <div data-doc-ref style="margin-top:10px;font-size:12px;font-weight:800;color:#6b7a7e">${
+    escapeHtml(opts.docLabel)
   }</div>
     <div style="margin-top:18px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:24px;letter-spacing:-0.02em;color:#144852">${headline}</div>
     <p style="margin:14px 0 0;color:#1c2c30;font-size:15px;line-height:1.55">${

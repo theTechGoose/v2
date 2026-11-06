@@ -12,6 +12,16 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
+import {
+  customerLines,
+  customerOnDocument,
+  docRef,
+  docRefWithVersion,
+  fmtTaxRate,
+  paymentStateLines,
+  renderWord,
+  revisedNote,
+} from "@paperwork/domain/business/doc-render/mod.ts";
 import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
 
 const APP_URL = (() => {
@@ -79,7 +89,8 @@ export class RenderInvoicePdf {
     const lang: "en" | "es" = es ? "es" : "en";
 
     const pdf = await PDFDocument.create();
-    pdf.setTitle(`Invoice #${invoice.id.slice(0, 8).toUpperCase()}`);
+    // REQ-204: the document is named by its number, never an id slice
+    pdf.setTitle(`${renderWord(lang, "invoice")} ${docRef(invoice)}`);
     pdf.setAuthor(contractor?.name ?? businessName ?? "Contractor");
     pdf.setSubject(quote?.summary ?? invoice.jobName ?? "Invoice");
     pdf.setProducer(businessName ?? contractor?.name ?? "Contractor");
@@ -126,9 +137,11 @@ export class RenderInvoicePdf {
     // doc tag pill (left) + status (right)
     y -= 32;
     const docTag = t(lang, "paperworkEmail.invoice.kindLabel").toUpperCase();
-    const docNum = `${docTag} · #${invoice.id.slice(0, 8).toUpperCase()}`;
+    // REQ-204 / REQ-201: "INVOICE · INV-5000 · Version 2"
+    const docNum = `${docTag} · ${docRefWithVersion(invoice, lang)}`;
     page.drawText(docNum, { x: M, y, size: 8.5, font: bold, color: PINK_DARK });
     const paid = invoice.status === "paid" || !!invoice.paidAt;
+    const payState = paymentStateLines(invoice, lang);
     const statusText = paid
       ? t(lang, "status.paid").toUpperCase()
       : (invoice.status ?? "due").toUpperCase();
@@ -140,6 +153,18 @@ export class RenderInvoicePdf {
       font: bold,
       color: paid ? GREEN : PINK_DARK,
     });
+    // REQ-201: a revision says so — "Revised invoice — replaces previous version"
+    const revised = revisedNote("invoice", invoice, lang);
+    if (revised) {
+      y -= 14;
+      page.drawText(revised, {
+        x: M,
+        y,
+        size: 8.5,
+        font: reg,
+        color: PINK_DARK,
+      });
+    }
 
     // Hero title
     y -= 36;
@@ -229,7 +254,9 @@ export class RenderInvoicePdf {
       const colGap = 24;
       const colW2 = (W - 2 * M - colGap) / 2;
       const fromX = M + colW2 + colGap;
-      const cust = customer?.name?.trim();
+      // REQ-204: an issued bill shows the customer as snapshotted (billTo
+      // first); a draft may show the live record.
+      const shown = customerOnDocument(invoice, customer);
       page.drawText(t(lang, "publicInvoice.billTo").toUpperCase(), {
         x: M,
         y,
@@ -245,8 +272,7 @@ export class RenderInvoicePdf {
         color: MUTED,
       });
       y -= 14;
-      const toLines = [cust, customer?.phoneNumber, customer?.email]
-        .filter((v): v is string => !!v && v.trim().length > 0);
+      const toLines = customerLines(shown);
       const fromLines = [
         contractor?.name,
         businessName,
@@ -292,15 +318,22 @@ export class RenderInvoicePdf {
       height: 56,
       color: GREEN_BG,
     });
+    // REQ-201/202: "PAID <date>", "Paid $X · Balance $Y" on a partial
+    // payment, else "Amount due · Due <date>".
+    const partial = !paid && (invoice.paidCents ?? 0) > 0;
     page.drawText(
-      (paid ? t(lang, "status.paid") : t(lang, "publicInvoice.amountDue"))
+      (paid ? renderWord(lang, "paid") : t(lang, "publicInvoice.amountDue"))
         .toUpperCase(),
       { x: M + 16, y: y - 22, size: 9, font: bold, color: GREEN },
     );
-    if (invoice.dueDate) {
-      const sub = paid
-        ? fmtDate(invoice.paidAt)
-        : t(lang, "publicInvoice.dueOn", { date: fmtDate(invoice.dueDate) });
+    const sub = paid
+      ? fmtDate(invoice.paidAt)
+      : partial
+      ? payState.headline
+      : invoice.dueDate
+      ? t(lang, "publicInvoice.dueOn", { date: fmtDate(invoice.dueDate) })
+      : undefined;
+    if (sub) {
       page.drawText(sub, {
         x: M + 16,
         y: y - 36,
@@ -309,7 +342,11 @@ export class RenderInvoicePdf {
         color: MUTED,
       });
     }
-    const dueStr = fmtUSD(invoice.amount);
+    const dueStr = fmtUSD(
+      partial
+        ? Math.max(0, (invoice.amount ?? 0) - (invoice.paidCents ?? 0))
+        : invoice.amount,
+    );
     const dueW = bold.widthOfTextAtSize(dueStr, 26);
     page.drawText(dueStr, {
       x: W - M - 16 - dueW,
@@ -319,6 +356,114 @@ export class RenderInvoicePdf {
       color: TEAL,
     });
     y -= 78;
+    if (payState.overpaid) {
+      // REQ-202: an overpayment is flagged, never hidden
+      page.drawText(payState.overpaid, {
+        x: M,
+        y,
+        size: 9,
+        font: bold,
+        color: PINK_DARK,
+      });
+      y -= 18;
+    }
+
+    // REQ-206: a standalone invoice is complete on its own — where the work
+    // was done, when, the math behind the total, how to pay, and the quote it
+    // bills against.
+    {
+      const rows: Array<[string, string]> = [];
+      if (invoice.serviceAddress?.trim()) {
+        rows.push([
+          renderWord(lang, "serviceAddress"),
+          invoice.serviceAddress.trim(),
+        ]);
+      }
+      if (invoice.serviceDateFrom || invoice.serviceDateTo) {
+        const from = invoice.serviceDateFrom
+          ? fmtDate(invoice.serviceDateFrom)
+          : "";
+        const to = invoice.serviceDateTo ? fmtDate(invoice.serviceDateTo) : "";
+        rows.push([
+          renderWord(lang, "serviceDates"),
+          from && to && from !== to ? `${from} – ${to}` : from || to,
+        ]);
+      }
+      if (typeof invoice.subtotalCents === "number") {
+        rows.push([
+          renderWord(lang, "subtotal"),
+          fmtUSD(invoice.subtotalCents),
+        ]);
+      }
+      if (invoice.discountCents) {
+        const reason = invoice.discountReason?.trim();
+        rows.push([
+          reason
+            ? `${renderWord(lang, "discount")} · ${reason}`
+            : renderWord(lang, "discount"),
+          `-${fmtUSD(invoice.discountCents)}`,
+        ]);
+      }
+      if (
+        typeof invoice.taxCents === "number" ||
+        typeof invoice.taxRateBp === "number"
+      ) {
+        const rate = fmtTaxRate(invoice.taxRateBp);
+        rows.push([
+          rate
+            ? `${renderWord(lang, "tax")} (${rate})`
+            : renderWord(lang, "tax"),
+          fmtUSD(invoice.taxCents ?? 0),
+        ]);
+      }
+      if (quote) {
+        rows.push([renderWord(lang, "originalQuote"), docRef(quote)]);
+      }
+      for (const [label, value] of rows) {
+        addPageIfNeeded(18);
+        page.drawText(label, { x: M, y, size: 9, font: bold, color: MUTED });
+        const valueW = reg.widthOfTextAtSize(value, 9.5);
+        const labelW = bold.widthOfTextAtSize(label, 9);
+        if (labelW + valueW + 16 <= W - 2 * M) {
+          page.drawText(value, {
+            x: W - M - valueW,
+            y,
+            size: 9.5,
+            font: reg,
+            color: INK,
+          });
+          y -= 16;
+        } else {
+          y -= 13;
+          y = drawWrappedText(page, value, M, y, W - 2 * M, reg, 9.5, INK, 13);
+          y -= 4;
+        }
+      }
+      if (invoice.paymentInstructions?.trim()) {
+        addPageIfNeeded(40);
+        page.drawText(renderWord(lang, "paymentInstructions"), {
+          x: M,
+          y,
+          size: 9,
+          font: bold,
+          color: MUTED,
+        });
+        y -= 13;
+        y = drawWrappedText(
+          page,
+          invoice.paymentInstructions.trim(),
+          M,
+          y,
+          W - 2 * M,
+          reg,
+          9.5,
+          INK,
+          13,
+        );
+        y -= 4;
+      }
+      if (rows.length || invoice.paymentInstructions?.trim()) y -= 10;
+    }
 
     const agreementTotal = quote?.estimatedTotal ??
       (quote?.lineItems ?? []).reduce(
@@ -623,12 +768,14 @@ export class RenderInvoicePdf {
       color: LINE,
     });
     y -= 14;
+    // REQ-204: "INV-5000 · Version 2 · Generated <date>"
     drawCenteredText(
       page,
-      t(lang, "renderQuotePdf.footer", {
-        id: invoice.id.slice(0, 8).toUpperCase(),
-        date: fmtDate(new Date().toISOString()),
-      }),
+      `${docRefWithVersion(invoice, lang)} · ${
+        renderWord(lang, "generated", {
+          date: fmtDate(new Date().toISOString()),
+        })
+      }`,
       W,
       y,
       reg,

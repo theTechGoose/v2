@@ -1,18 +1,10 @@
 import { Context, Controller, Get, Query } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
-import {
-  GlobalSearch,
-  type SearchHit,
-} from "@analytics/domain/coordinators/global-search/mod.ts";
+import { GlobalSearch } from "@analytics/domain/coordinators/global-search/mod.ts";
+import { isSearchType } from "#documents/search.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
-
-const ALLOWED_TYPES = new Set<SearchHit["type"]>([
-  "customer",
-  "quote",
-  "invoice",
-]);
 
 @Controller("search")
 export class SearchController {
@@ -25,8 +17,11 @@ export class SearchController {
   /**
    * GET /search?q=&type=&limit=
    *
-   * Powers the topbar `⌘K`. Returns a typed-union array; frontend
-   * switches on `type` to route to the right detail page.
+   * REQ-207: the dashboard search box. Returns `{ results: SearchHit[] }`
+   * ranked (exact number, prefix, substring) across customers, quotes,
+   * invoices, change orders and work orders; every row carries the page
+   * that opens it (`url`) and its related records. `type` narrows to one
+   * kind (an unknown type is ignored); `limit` caps rows per type (1..50).
    */
   @Get()
   async search(
@@ -36,13 +31,10 @@ export class SearchController {
     @Query("limit") limit?: string,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const filteredType = type && ALLOWED_TYPES.has(type as SearchHit["type"])
-      ? (type as SearchHit["type"])
-      : undefined;
     const cap = limit ? Math.min(50, Math.max(1, Number(limit) | 0)) : 10;
     const results = await this.flow.run(user.id, {
       q: q ?? "",
-      type: filteredType,
+      ...(isSearchType(type) ? { type } : {}),
       limit: cap,
     });
     return ctx.json({ results });

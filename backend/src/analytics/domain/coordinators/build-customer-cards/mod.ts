@@ -13,6 +13,7 @@ import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { View } from "@paperwork/dto/view.ts";
 import { relativeTime } from "#quote-flow/format-helpers.ts";
+import { docNumberOf } from "#documents/numbering.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 
 /** Invoice statuses that still count as owed (REQ-016). */
@@ -244,9 +245,10 @@ function buildBalanceSub(
       const dueDays = Math.round(
         (new Date(next.dueDate).getTime() - now.getTime()) / MS_PER_DAY,
       );
-      const ref = next.id.slice(0, 8);
-      if (next.dueDate < today) return `INV-${ref} · overdue`;
-      return `INV-${ref} · due in ${dueDays} day${dueDays === 1 ? "" : "s"}`;
+      // REQ-204: the invoice's own number ("INV-5000"), never an id slice
+      const ref = docNumberOf(next);
+      if (next.dueDate < today) return `${ref} · overdue`;
+      return `${ref} · due in ${dueDays} day${dueDays === 1 ? "" : "s"}`;
     }
     return "owes";
   }

@@ -79,10 +79,12 @@ export class DemoHub {
       if (left) return;
       left = true;
       room.peers.delete(peer);
-      void this.broadcast(sessionId, {
+      // fire-and-forget: a peer leaving after the KV closed (shutdown, test
+      // teardown) must not surface as an unhandled rejection
+      this.broadcast(sessionId, {
         to: otherRole(peer.role),
         msg: { t: "peer", online: false },
-      });
+      }).catch(() => {});
       if (room.peers.size === 0) this.drop(sessionId, room);
     };
     return { peerOnline, leave };

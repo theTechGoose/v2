@@ -28,6 +28,8 @@ import {
 import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
 import { fmtMoney } from "../lib/format.ts";
 import { dueDateLine } from "../../shared/quote-flow/pipeline-stats.ts";
+import { docNumberOf } from "../../shared/documents/numbering.ts";
+import { versionOf } from "../../shared/documents/versions.ts";
 import { readCached, refreshDash } from "../lib/dash-cache.ts";
 import { ShimmerStyle, SkelBlock } from "../components/Skeletons.tsx";
 import SetupChecklist from "./SetupChecklist.tsx";
@@ -154,23 +156,24 @@ function quoteToRow(q: QuoteCard, now: Date, lang: Lang): QuoteRow {
   };
 }
 
-function shortInv(id: string, idx: number): string {
-  const tail = id.replace(/[^0-9]/g, "").slice(-3);
-  return tail || String(200 + idx);
-}
-
 function invoiceToRow(
   inv: Invoice,
   customerNames: Map<string, string>,
   now: Date,
-  idx: number,
+  _idx: number,
   lang: Lang,
 ): OutstandingRow {
   const due = new Date(inv.dueDate + "T00:00:00");
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
   const days = Math.round((due.getTime() - today.getTime()) / 86_400_000);
-  const num = shortInv(inv.id, idx);
+  // REQ-198/201: the invoice's own number ("INV-001"; "#ID" for rows older
+  // than numbering) and its version when it has been revised.
+  const num = versionOf(inv) > 1
+    ? `${docNumberOf(inv)} · ${tFor(lang, "invoices.versionWord")} ${
+      versionOf(inv)
+    }`
+    : docNumberOf(inv);
   let meta: string;
   let metaColor: string;
   let metaWeight = 600;
@@ -178,7 +181,7 @@ function invoiceToRow(
     const overdueDays = -days;
     meta = tFor(
       lang,
-      `dashboardPage.invoice.overdue.${overdueDays === 1 ? "one" : "other"}`,
+      `invoices.dash.overdue.${overdueDays === 1 ? "one" : "other"}`,
       { n: overdueDays, num },
     );
     metaColor = "var(--pink-700)";
@@ -186,12 +189,12 @@ function invoiceToRow(
   } else if (days <= 5) {
     meta = tFor(
       lang,
-      `dashboardPage.invoice.dueIn.${days === 1 ? "one" : "other"}`,
+      `invoices.dash.dueIn.${days === 1 ? "one" : "other"}`,
       { n: days, num },
     );
     metaColor = "var(--coffee-500)";
   } else {
-    meta = tFor(lang, "dashboardPage.invoice.dueOn", {
+    meta = tFor(lang, "invoices.dash.dueOn", {
       date: `${shortMonth(lang, due.getMonth())} ${due.getDate()}`,
       num,
     });

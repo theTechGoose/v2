@@ -37,6 +37,10 @@ import { SendPaymentReminder } from "@paperwork/domain/coordinators/send-payment
 import { ScheduleInvoiceNudges } from "@paperwork/domain/coordinators/schedule-invoice-nudges/mod.ts";
 import { ComputeInvoiceForecast } from "@paperwork/domain/coordinators/compute-invoice-forecast/mod.ts";
 import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/record-payment-from-utterance/mod.ts";
+import { DocNumbering } from "@core/data/doc-numbering/mod.ts"; // REQ-198
+import { RevisionsController } from "@paperwork/entrypoints/revisions-controller/mod.ts"; // REQ-201/205
+import { WorkOrderController } from "@paperwork/entrypoints/work-order-controller/mod.ts"; // REQ-210
+import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts"; // REQ-210
 
 @Module({
   imports: [UsersModule, CrmModule, CommunicationModule, FilesModule],
@@ -50,6 +54,8 @@ import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/recor
     PaperworkEmailController,
     CronController,
     InboundController,
+    RevisionsController, // REQ-201/205
+    WorkOrderController, // REQ-210
   ],
   injectables: [
     QuoteStore,
@@ -77,6 +83,8 @@ import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/recor
     ScheduleInvoiceNudges,
     ComputeInvoiceForecast,
     RecordPaymentFromUtterance,
+    DocNumbering, // REQ-198
+    WorkOrderStore, // REQ-210
   ],
 })
 export class PaperworkModule {}

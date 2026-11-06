@@ -194,7 +194,8 @@ Deno.test("send-paperwork-email integration: quote dispatch is the review-and-si
 
   await flow.run("u-1", { kind: "quote", resourceId: quote.id });
   // Quote-framed subject (not "Sign your contract #…") + the agreement value.
-  assertStringIncludes(sent[0].subject, "Quote for");
+  // REQ-204: the subject names the document — "Quote Q-001 from <Business>".
+  assertStringIncludes(sent[0].subject, "Quote Q-001 from");
   assertStringIncludes(sent[0].htmlBody, "$1,234.00");
 
   await resetKv();
@@ -541,5 +542,28 @@ Deno.test("REQ-175 send-paperwork-email: the invoice email carries Reply-To repl
   assertEquals((await flow.run("u-1", { kind: "invoice", resourceId: invoice.id })).ok, true);
   assertEquals(sent[1].replyTo, replyTo, "the same token next time");
   assertEquals(await new ReplyTokenStore().resolve("nope00"), null);
+  await resetKv();
+});
+
+// REQ-204 / REQ-201 — the dispatched invoice email names the bill by number
+// and version and shows the customer as snapshotted when it was issued.
+Deno.test("REQ-204 send-paperwork-email: a sent invoice's email says 'Invoice INV-001 from <Business>' and keeps the snapshotted customer after a CRM rename", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices, identities, sent } = fresh();
+  await seedContractor("u-1");
+  await identities.upsert("u-1", { businessName: "A2Z Landscape LLC" });
+  const customer = await customers.create("u-1", { name: "Randall Belknap", email: "rb@acme.test" });
+  const invoice = await invoices.create("u-1", { customerId: customer.id, status: "sent", jobName: "Maintenance", amount: 35750, dueDate: "2026-11-15" });
+  assertEquals(invoice.number, "INV-001");
+  await customers.update(customer.id, "u-1", { name: "Someone Else" });
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, true);
+  assertStringIncludes(sent[0].subject, "Invoice INV-001 from A2Z Landscape LLC");
+  assert(!sent[0].subject.includes(invoice.id.slice(0, 8)), "no id slice in the subject");
+  assertStringIncludes(sent[0].htmlBody, "INV-001");
+  assert(!sent[0].htmlBody.includes(`#${invoice.id.slice(0, 8).toUpperCase()}`), "no id slice in the body");
+  assertStringIncludes(sent[0].htmlBody, "Randall");
+  assert(!sent[0].htmlBody.includes("Someone"), "the renamed live record does not rewrite an issued bill");
   await resetKv();
 });

@@ -14,6 +14,9 @@
  */
 import { api, type ApiOptions } from "../lib/api.ts";
 import type { QuoteCard } from "./quotes.ts";
+import type { SearchHit } from "../../shared/documents/search.ts";
+
+export type { SearchHit };
 
 export interface Profile {
   user: {
@@ -26,6 +29,16 @@ export interface Profile {
   businessIdentity?:
     & { displayName?: string; logoUrl?: string }
     & Record<string, unknown>;
+  /** REQ-206: the payment instructions the invoice form starts from. */
+  contractDefaults?:
+    | (
+      & { paymentInstructions?: string; paymentTermsDays?: number }
+      & Record<
+        string,
+        unknown
+      >
+    )
+    | null;
   [k: string]: unknown;
 }
 
@@ -141,8 +154,88 @@ export interface Invoice {
     claimedAt: string;
     claimedBy?: string;
   };
+  /** REQ-198: the document number ("INV-001"); rows older than numbering have none. */
+  number?: string;
+  seq?: number;
+  /** REQ-201: the published version (1..n). */
+  version?: number;
+  publishedAt?: string;
+  /** REQ-201: content edited after issue, waiting to be published. */
+  pendingRevision?: Record<string, unknown>;
+  /** REQ-202: what has been received against this bill, INTEGER CENTS. */
+  paidCents?: number;
+  /** REQ-202: payments above the amount, flagged never hidden (null when 0). */
+  overpaidCents?: number | null;
+  /** REQ-206: the standalone bill's own content. */
+  lineItems?: InvoiceLineItem[];
+  subtotalCents?: number;
+  discountCents?: number;
+  discountReason?: string;
+  taxRateBp?: number;
+  taxCents?: number;
+  netDays?: number;
+  serviceAddress?: string;
+  serviceDateFrom?: string;
+  serviceDateTo?: string;
+  paymentInstructions?: string;
+  billTo?: InvoiceBillTo;
   [k: string]: unknown;
 }
+
+export interface InvoiceLineItem {
+  description: string;
+  quantity: number;
+  unit?: string;
+  /** INTEGER CENTS per unit */
+  price: number;
+  date?: string;
+  service?: string;
+  address?: string;
+}
+
+export interface InvoiceBillTo {
+  name?: string;
+  businessName?: string;
+  email?: string;
+  phoneNumber?: string;
+  address?: string;
+}
+
+/** GET /quotes/:id/ledger (REQ-205) — the part the invoice form reads. */
+export interface QuoteLedger {
+  quote: {
+    id: string;
+    number: string;
+    version: number;
+    status?: string;
+    accepted: boolean;
+    url: string;
+  };
+  quoteTotalCents: number;
+  approvedChangeOrdersCents: number;
+  agreementTotalCents: number;
+  invoicedCents: number;
+  paidCents: number;
+  invoicedUnpaidCents: number;
+  remainingToInvoiceCents: number;
+  overpaidCents: number;
+  invoices: Array<{
+    id: string;
+    number: string;
+    version: number;
+    status: string;
+    amountCents: number;
+    paidCents: number;
+    balanceCents: number;
+    overpaidCents: number;
+    url: string;
+  }>;
+}
+
+/** POST /invoices/:id/publish — the published invoice plus what went out. */
+export type PublishedInvoice = Invoice & {
+  notified?: { email?: unknown; sms?: unknown };
+};
 
 export interface Customer {
   id: string;
@@ -150,6 +243,10 @@ export interface Customer {
   name: string;
   email?: string;
   phoneNumber?: string;
+  address?: string;
+  businessName?: string;
+  /** REQ-198: "C-001" */
+  number?: string;
   [k: string]: unknown;
 }
 
@@ -190,6 +287,16 @@ export const dashboardClient = {
   invoices: (status?: string, opts: ApiOptions = {}) =>
     api.get<Invoice[]>("/invoices", { ...opts, query: { status } }),
   customers: (opts: ApiOptions = {}) => api.get<Customer[]>("/customers", opts),
+  /** REQ-207: the topbar search — GET /search?q= (analytics/.../search-controller). Rows are
+   *  ranked (exact number, prefix, substring) and carry the page that opens them (`url`). */
+  search: (
+    q: string,
+    { limit, ...opts }: ApiOptions & { limit?: number } = {},
+  ) =>
+    api.get<{ results: SearchHit[] }>("/search", {
+      ...opts,
+      query: { q, limit },
+    }),
   /** Create a standalone invoice (no quote). `amount` is INTEGER CENTS.
    *  `jobName`/`description` give the quote-less invoice its own context
    *  (rendered as the hero + note on the public page and email). */
@@ -202,7 +309,21 @@ export const dashboardClient = {
       status?: string;
       jobName?: string;
       description?: string;
+      /** REQ-200: one id per form submission — a retry returns the first invoice. */
+      requestId?: string;
+      [k: string]: unknown;
     },
     opts: ApiOptions = {},
   ) => api.post<Invoice>("/invoices", body, opts),
+  /** REQ-201: publish the pending revision (version + 1); notify re-sends the same link. */
+  publishInvoice: (id: string, notify: boolean, opts: ApiOptions = {}) =>
+    api.post<PublishedInvoice>(`/invoices/${id}/publish`, { notify }, opts),
+  /** REQ-205: what the quote agreed, invoiced, got paid, and still has to invoice. */
+  quoteLedger: (quoteId: string, opts: ApiOptions = {}) =>
+    api.get<QuoteLedger>(`/quotes/${quoteId}/ledger`, opts),
+  /** The quote record — its customer and job name seed the invoice form. */
+  quote: (quoteId: string, opts: ApiOptions = {}) =>
+    api.get<
+      { id: string; customerId?: string; jobName?: string; summary?: string }
+    >(`/quotes/${quoteId}`, opts),
 };

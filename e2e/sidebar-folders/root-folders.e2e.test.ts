@@ -31,7 +31,7 @@ async function verify(http: StoryTools["http"], phone: string) {
   return { cookie, auth: { ...JSON_HEADERS, cookie } };
 }
 
-Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin; Billing opens to Quotes, Invoices, Payments and Invoices loads inside it; Admin opens to Workers and Admins; Recurring to the four; Back returns to the root; /field/tasks loads inside Recurring", (t) =>
+Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin; Billing opens to Quotes, Invoices, Payments, Work orders and Invoices loads inside it; Admin opens to Workers and Admins; Recurring to the four; Back returns to the root; /field/tasks loads inside Recurring", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const user = await verify(http, `+1512${digits()}`);
     await (await http("/api/me", {
@@ -69,14 +69,14 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin;
       "Dashboard | Customers | Billing | Recurring | Roles",
       "the root is the five rows",
     );
-    // 2. Billing: Back, Quotes, Invoices, Payments; Invoices loads inside it
+    // 2. Billing: Back, Quotes, Invoices, Payments, Work orders; Invoices loads inside it
     await nav.locator("[data-cy='nav-folder-billing']").click();
     await nav.locator("[data-cy='nav-back']").waitFor({ timeout: 10_000 });
     seen = await labels();
     expect.eq(
       seen.join(" | "),
-      "Back | Quotes | Invoices | Payments",
-      "inside Billing",
+      "Back | Quotes | Invoices | Payments | Work orders",
+      "inside Billing (REQ-210 added Work orders)",
     );
     await nav.locator("a[href='/invoices']").click();
     await page.waitForURL(/\/invoices/, { timeout: 20_000 });

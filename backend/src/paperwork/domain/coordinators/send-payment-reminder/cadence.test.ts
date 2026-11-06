@@ -140,3 +140,32 @@ Deno.test("composeReminderCopy: handles missing customerFirst gracefully", () =>
   assertEquals(c.smsBody("").includes("undefined"), false);
   assertEquals(c.emailHtml("").includes("undefined"), false);
 });
+
+// REQ-204 — every reminder names the invoice by its number and version.
+Deno.test("REQ-204 composeReminderCopy: subject, email body and text name the invoice INV-5000 (and 'Version 2' on a revision), never an id slice", () => {
+  const c = composeReminderCopy({
+    day: 7,
+    customerFirst: "Hans",
+    senderFirst: "Riley",
+    businessName: "Riley Roofing",
+    invoice: inv({ amount: 18_000, number: "INV-5000", version: 2 }),
+  });
+  assertEquals(c.emailSubject.includes("INV-5000"), true, c.emailSubject);
+  assertEquals(c.emailHtml("http://x/s/abc").includes("INV-5000"), true);
+  assertEquals(c.emailHtml("http://x/s/abc").includes("Version 2"), true);
+  assertEquals(
+    c.smsBody("http://x/s/abc").includes("INV-5000"),
+    true,
+    c.smsBody("http://x/s/abc"),
+  );
+  assertEquals(c.smsBody("http://x/s/abc").includes("i-1"), false);
+  const es = composeReminderCopy({
+    day: 3,
+    customerFirst: "Hans",
+    senderFirst: "Riley",
+    businessName: "Riley Roofing",
+    invoice: inv({ amount: 18_000, number: "INV-5000" }),
+    lang: "es",
+  });
+  assertEquals(es.emailSubject.includes("INV-5000"), true, es.emailSubject);
+});

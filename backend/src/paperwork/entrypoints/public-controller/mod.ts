@@ -1,6 +1,6 @@
 import { Body, Context, Controller, Get, Param, Post } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
-import { IsOptional, IsString, validateSync } from "#class-validator";
+import { IsNumber, IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -24,6 +24,18 @@ import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import { groupVisits } from "#quote-flow/visit-groups.ts";
 import { AcceptedPaymentMethods } from "@profile/dto/business-identity.ts";
+import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
+import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
+import { docNumberOf } from "#documents/numbering.ts";
+import {
+  invoiceBalance,
+  invoiceState,
+  isInvoiceIssued,
+  isQuoteIssued,
+  quoteState,
+  versionOf,
+} from "#documents/versions.ts";
+import type { CustomerSnapshot } from "@core/data/numbered-store/mod.ts";
 
 /**
  * Map a NotFoundError into a 404 JSON response. Public endpoints used to
@@ -44,6 +56,9 @@ class AcceptQuoteDto {
   name?: string;
   @IsOptional() @IsString()
   tin?: string;
+  /** REQ-203: the version the customer is looking at — a stale page cannot sign. */
+  @IsOptional() @IsNumber()
+  version?: number;
 }
 
 class DeclineQuoteDto {
@@ -125,6 +140,7 @@ export class PaperworkPublicController {
     private files: FileStore,
     private invoicePdf: RenderInvoicePdf,
     private quotePdf: RenderQuotePdf,
+    private payments: PaymentStore,
   ) {}
 
   /**
@@ -179,13 +195,15 @@ export class PaperworkPublicController {
   ) {
     try {
       const bytes = await this.invoicePdf.run(id);
+      // REQ-198: the file is named by the document number ("invoice-INV-5000.pdf")
+      const named = await this.invoices.get(id).catch(() => ({ id }));
       return new Response(bytes as BodyInit, {
         status: 200,
         headers: {
           "content-type": "application/pdf",
           "content-length": String(bytes.length),
           "content-disposition": `inline; filename="invoice-${
-            id.slice(0, 8).toUpperCase()
+            docNumberOf(named).replace(/^#/, "")
           }.pdf"`,
           "cache-control": "no-store",
         },
@@ -225,7 +243,9 @@ export class PaperworkPublicController {
         contractor,
         ...(businessName ? { businessName } : {}),
         // REQ-038 (NW-06b): the website joins the PDF's From lines.
-        ...(ident?.websiteUrl?.trim() ? { websiteUrl: ident.websiteUrl.trim() } : {}),
+        ...(ident?.websiteUrl?.trim()
+          ? { websiteUrl: ident.websiteUrl.trim() }
+          : {}),
         ...(ident?.commsLanguage ? { commsLanguage: ident.commsLanguage } : {}),
       });
       return new Response(bytes as BodyInit, {
@@ -234,7 +254,7 @@ export class PaperworkPublicController {
           "content-type": "application/pdf",
           "content-length": String(bytes.length),
           "content-disposition": `inline; filename="agreement-${
-            id.slice(0, 8).toUpperCase()
+            docNumberOf(quote).replace(/^#/, "")
           }.pdf"`,
           "cache-control": "no-store",
         },
@@ -285,12 +305,43 @@ export class PaperworkPublicController {
       // Language the customer document should render in (the contractor's
       // outgoing-comms language). Defaults EN if the identity can't be read.
       let commsLanguage: "en" | "es" = "en";
+      // REQ-205: the documents this order belongs to, as clickable links
+      let invoiceLink: {
+        id: string;
+        number: string;
+        url: string;
+        status?: string;
+      } | undefined;
+      let quoteLink: {
+        id: string;
+        number: string;
+        url: string;
+        accepted: boolean;
+      } | undefined;
       try {
         const inv = await this.invoices.get(co.invoiceId);
         invoiceAmount = inv.amount ?? 0;
+        invoiceLink = {
+          id: inv.id,
+          number: docNumberOf(inv),
+          url: `/i/${inv.id}`,
+          status: inv.status,
+        };
         const ident = await this.identity.get(inv.userId).catch(() => null);
         businessName = ident?.businessName ?? ident?.legalName ?? undefined;
         commsLanguage = ident?.commsLanguage === "es" ? "es" : "en";
+        const quoteId = co.quoteId ?? inv.quoteId;
+        if (quoteId) {
+          const q = await this.quotes.get(quoteId).catch(() => undefined);
+          if (q && q.userId === co.userId) {
+            quoteLink = {
+              id: q.id,
+              number: docNumberOf(q),
+              url: `/q/${q.id}`,
+              accepted: isAccepted(q),
+            };
+          }
+        }
       } catch { /* invoice may be gone; still show the order */ }
       const originalAmount = co.originalAmountCents ??
         (invoiceAmount != null
@@ -300,6 +351,11 @@ export class PaperworkPublicController {
           : undefined);
       return ctx.json({
         id: co.id,
+        number: docNumberOf(co),
+        version: versionOf(co),
+        ...(invoiceLink ? { invoice: invoiceLink } : {}),
+        ...(quoteLink ? { quote: quoteLink } : {}),
+        ...(co.approvedName ? { approvedName: co.approvedName } : {}),
         description: co.description,
         deltaAmountCents: co.deltaAmountCents,
         status: co.status,
@@ -327,6 +383,7 @@ export class PaperworkPublicController {
   async approveChangeOrder(
     @Context() ctx: ExecutionContext,
     @Param("id") id: string,
+    @Body() body?: unknown,
   ) {
     let co;
     try {
@@ -337,22 +394,64 @@ export class PaperworkPublicController {
     if (co.status !== "pending") {
       return ctx.json({ ok: false, reason: `already_${co.status}` }, 409);
     }
-    // Apply the delta to the invoice (owner write — CO carries the userId).
+    const approvedName =
+      typeof (body as { name?: unknown } | null)?.name === "string"
+        ? (body as { name: string }).name.trim().slice(0, 120)
+        : "";
+    // REQ-202: a paid invoice is locked — the order cannot land on it.
+    let inv: Invoice;
+    try {
+      inv = await this.invoices.get(co.invoiceId);
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+    if (inv.status === "paid") {
+      return ctx.json({ ok: false, reason: "invoice_paid" }, 409);
+    }
+    // REQ-200: exactly one decision wins; the loser sees already_<status>.
+    const decided = await this.changeOrders.decide(
+      id,
+      "approved",
+      approvedName ? { approvedName } : {},
+    );
+    if (!decided) {
+      const now = await this.changeOrders.get(id);
+      return ctx.json({ ok: false, reason: `already_${now.status}` }, 409);
+    }
+    // Apply the delta to the invoice as a published revision (REQ-201: same
+    // number, same link, next version, the old one filed — the customer is
+    // the publisher). Owner write — the CO carries the userId.
     let newAmount: number;
     try {
-      const inv = await this.invoices.get(co.invoiceId);
+      const paidCents =
+        (await this.payments.listByInvoice(inv.id, inv.userId).catch(() => []))
+          .reduce((s, p) => s + (p.amount ?? 0), 0);
       newAmount = Math.max(0, (inv.amount ?? 0) + co.deltaAmountCents);
-      await this.invoices.update(co.invoiceId, co.userId, {
-        amount: newAmount,
-      });
+      await this.invoices.publishRevision(
+        co.invoiceId,
+        co.userId,
+        { amount: newAmount },
+        { customer: true, ...(approvedName ? { name: approvedName } : {}) },
+        (next) => {
+          const { overpaidCents } = invoiceBalance(
+            next.amount,
+            next.paidCents ?? paidCents,
+          );
+          const out = { ...next };
+          if (overpaidCents > 0) out.overpaidCents = overpaidCents;
+          else delete out.overpaidCents;
+          return out;
+        },
+      );
     } catch (err) {
       console.error(
         `[change-orders/${id}/approve] invoice update failed:`,
         err,
       );
+      // the customer must never see "approved" while the total didn't move
+      await this.changeOrders.setStatus(id, "pending").catch(() => {});
       return ctx.json({ ok: false, reason: "invoice_update_failed" }, 500);
     }
-    await this.changeOrders.setStatus(id, "approved");
     await emitChangeOrderDecision(
       this.bus,
       this.customers,
@@ -379,7 +478,11 @@ export class PaperworkPublicController {
     if (co.status !== "pending") {
       return ctx.json({ ok: false, reason: `already_${co.status}` }, 409);
     }
-    await this.changeOrders.setStatus(id, "declined");
+    const declined = await this.changeOrders.decide(id, "declined");
+    if (!declined) {
+      const now = await this.changeOrders.get(id);
+      return ctx.json({ ok: false, reason: `already_${now.status}` }, 409);
+    }
     await emitChangeOrderDecision(
       this.bus,
       this.customers,
@@ -428,16 +531,44 @@ export class PaperworkPublicController {
           console.warn(`[quotes/${id}/public] mark-viewed failed:`, err);
         }
       }
-      const [contractor, customer] = await Promise.all([
+      const [contractor, customer, related, cos] = await Promise.all([
         loadContractor(this.users, this.identity, this.addresses, q.userId),
         // Full public customer projection (name/phone/email) — the /q page
-        // renders the agreement's To/Para contact card (P-13).
-        lookupCustomerPublic(this.customers, q.customerId, q.userId),
+        // renders the agreement's To/Para contact card (P-13). REQ-204: an
+        // issued quote shows the customer as they were when it was issued.
+        lookupCustomerPublic(
+          this.customers,
+          q.customerId,
+          q.userId,
+          isQuoteIssued(q) ? q.customerSnapshot : undefined,
+        ),
+        // REQ-205: the invoices billed against this agreement, by number
+        this.invoices.listByUser(q.userId).then((all) =>
+          all.filter((i) => i.quoteId === q.id)
+        ).catch(() => []),
+        this.changeOrders.listByQuote(q.userId, q.id).catch(() => []),
       ]);
+      const invoices = await Promise.all(
+        related
+          .slice()
+          .sort((a, b) => {
+            // number order first (INV-001 before INV-002), then the milestone order, then age
+            if (a.seq != null && b.seq != null && a.seq !== b.seq) {
+              return a.seq - b.seq;
+            }
+            const ai = a.installmentIndex ?? 99;
+            const bi = b.installmentIndex ?? 99;
+            if (ai !== bi) return ai - bi;
+            return (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
+          })
+          .map((i) => projectLinkedInvoice(this.payments, i)),
+      );
       return ctx.json({
         ...redactQuote(q),
         contractor,
         customer,
+        invoices,
+        changeOrders: cos.map(projectLinkedChangeOrder),
       });
     } catch (e) {
       return notFoundResponse(ctx, e);
@@ -469,15 +600,49 @@ export class PaperworkPublicController {
     if (existing.status === "lost") {
       return ctx.json({ ok: false, reason: "declined" }, 409);
     }
-    const updated = await this.quotes.update(id, existing.userId, {
-      status: "accepted",
-      // The accept action augments the quote with signature metadata if provided.
-      // Stored on the quote itself so the contractor can see who accepted.
-      ...(dto.signature ? { acceptedSignature: dto.signature } : {}),
-      ...(dto.name ? { acceptedName: dto.name } : {}),
-      ...(dto.tin ? { acceptedTinMasked: maskTin(dto.tin) } : {}),
-      acceptedAt: new Date().toISOString(),
-    });
+    // REQ-203: a page showing an older version cannot sign the current one.
+    const expected = dto.version;
+    if (expected !== undefined && expected !== versionOf(existing)) {
+      return ctx.json({
+        ok: false,
+        reason: "stale_version",
+        currentVersion: versionOf(existing),
+      }, 409);
+    }
+    // REQ-200: compare-and-set — two concurrent signatures yield one.
+    const updated = await this.quotes.updateIf(
+      id,
+      (q) =>
+        !isAccepted(q) && q.status !== "lost" &&
+        (expected === undefined || versionOf(q) === expected),
+      {
+        status: "accepted",
+        // The accept action augments the quote with signature metadata if provided.
+        // Stored on the quote itself so the contractor can see who accepted.
+        ...(dto.signature ? { acceptedSignature: dto.signature } : {}),
+        ...(dto.name ? { acceptedName: dto.name } : {}),
+        ...(dto.tin ? { acceptedTinMasked: maskTin(dto.tin) } : {}),
+        acceptedAt: new Date().toISOString(),
+      },
+    );
+    if (!updated) {
+      const now = await this.quotes.get(id);
+      if (isAccepted(now)) {
+        return ctx.json({
+          ok: false,
+          reason: "already_accepted",
+          alreadyAccepted: true,
+        }, 409);
+      }
+      if (now.status === "lost") {
+        return ctx.json({ ok: false, reason: "declined" }, 409);
+      }
+      return ctx.json({
+        ok: false,
+        reason: "stale_version",
+        currentVersion: versionOf(now),
+      }, 409);
+    }
 
     const customerName = await lookupCustomerName(
       this.customers,
@@ -631,25 +796,41 @@ export class PaperworkPublicController {
   ) {
     try {
       const i = await this.invoices.get(id);
-      const [contractor, customer, quote, siblings] = await Promise
-        .all([
-          loadContractor(this.users, this.identity, this.addresses, i.userId),
-          lookupCustomerPublic(this.customers, i.customerId, i.userId),
-          // The public page surfaces job context (the linked quote's
-          // summary + jobName) so the customer sees what they're
-          // paying for. Best-effort — a missing quote shouldn't 404.
-          i.quoteId
-            ? this.quotes.get(i.quoteId).catch(() => undefined)
-            : Promise.resolve(undefined),
-          // Sibling invoices for the same quote — used to render the
-          // "Invoice X of Y" framing and the "What you've paid so far"
-          // strip on the public page.
-          i.quoteId
-            ? this.invoices.listByUser(i.userId).then((all) =>
-              all.filter((row) => row.quoteId === i.quoteId)
-            ).catch(() => [])
-            : Promise.resolve([]),
-        ]);
+      const [contractor, customer, quote, siblings, cos, payments] =
+        await Promise
+          .all([
+            loadContractor(this.users, this.identity, this.addresses, i.userId),
+            // REQ-204: an issued invoice shows the customer as they were when it was issued
+            lookupCustomerPublic(
+              this.customers,
+              i.customerId,
+              i.userId,
+              isInvoiceIssued(i) ? (i.billTo ?? i.customerSnapshot) : i.billTo,
+            ),
+            // The public page surfaces job context (the linked quote's
+            // summary + jobName) so the customer sees what they're
+            // paying for. Best-effort — a missing quote shouldn't 404.
+            i.quoteId
+              ? this.quotes.get(i.quoteId).catch(() => undefined)
+              : Promise.resolve(undefined),
+            // Sibling invoices for the same quote — used to render the
+            // "Invoice X of Y" framing and the "What you've paid so far"
+            // strip on the public page.
+            i.quoteId
+              ? this.invoices.listByUser(i.userId).then((all) =>
+                all.filter((row) => row.quoteId === i.quoteId)
+              ).catch(() => [])
+              : Promise.resolve([]),
+            // REQ-205: this invoice's change orders, by number
+            this.changeOrders.listByInvoice(i.userId, i.id).catch(() =>
+              [] as ChangeOrder[]
+            ),
+            this.payments.listByInvoice(i.id, i.userId).catch(() => []),
+          ]);
+      const paidCents = typeof i.paidCents === "number"
+        ? i.paidCents
+        : payments.reduce((s, p) => s + (p.amount ?? 0), 0);
+      const balance = invoiceBalance(i.amount, paidCents);
       // Resolve the linked quote for jobName/summary/lineItems projection.
       let jobDetails: {
         summary?: string;
@@ -695,6 +876,9 @@ export class PaperworkPublicController {
       const sortedSiblings = siblings
         .slice()
         .sort((a, b) => {
+          if (a.seq != null && b.seq != null && a.seq !== b.seq) {
+            return a.seq - b.seq;
+          }
           const ai = a.installmentIndex ?? 99;
           const bi = b.installmentIndex ?? 99;
           if (ai !== bi) return ai - bi;
@@ -702,6 +886,8 @@ export class PaperworkPublicController {
         })
         .map((row) => ({
           id: row.id,
+          number: docNumberOf(row),
+          url: `/i/${row.id}`,
           amount: row.amount,
           status: row.status,
           paidAt: row.paidAt,
@@ -716,11 +902,31 @@ export class PaperworkPublicController {
       const visits = groupVisits(i.lineItems);
       return ctx.json({
         ...redactInvoice(i),
+        // REQ-202: one current balance, whatever page is open
+        paidCents: balance.paidCents,
+        balanceCents: balance.balanceCents,
+        ...(balance.overpaidCents > 0
+          ? { overpaidCents: balance.overpaidCents }
+          : {}),
         contractor,
         customer,
         jobDetails,
         ...(visits ? { visits } : {}),
         siblings: sortedSiblings,
+        changeOrders: cos.map(projectLinkedChangeOrder),
+        // REQ-205: the agreement this bill belongs to, as a clickable number
+        ...(quote && quote.userId === i.userId
+          ? {
+            quote: {
+              id: quote.id,
+              number: docNumberOf(quote),
+              url: `/q/${quote.id}`,
+              version: versionOf(quote),
+              accepted: isAccepted(quote),
+              ...(quote.acceptedAt ? { signedAt: quote.acceptedAt } : {}),
+            },
+          }
+          : {}),
         acceptedMethods,
         // Agreement context mirrored from the linked quote so the invoice
         // renders the same itemized job + term grid as the signed agreement
@@ -793,11 +999,42 @@ export class PaperworkPublicController {
       if (invoice.status === "void") {
         return ctx.json({ ok: false, reason: "void" }, 409);
       }
+      // REQ-203: before taking payment, check the CURRENT balance even if
+      // an older page is open — a stale version or a stale amount is refused
+      // with what the balance is now.
+      const paidCents = typeof invoice.paidCents === "number"
+        ? invoice.paidCents
+        : (await this.payments.listByInvoice(invoice.id, invoice.userId).catch(
+          () => [],
+        ))
+          .reduce((s, p) => s + (p.amount ?? 0), 0);
+      const balance = invoiceBalance(invoice.amount, paidCents);
+      if (balance.balanceCents <= 0) {
+        return ctx.json(
+          { ok: false, reason: "already_paid", balanceCents: 0 },
+          409,
+        );
+      }
+      const staleVersion = dto.version !== undefined &&
+        dto.version !== versionOf(invoice);
+      const staleAmount = dto.amountCents !== undefined &&
+        Math.round(dto.amountCents) !== balance.balanceCents;
+      if (staleVersion || staleAmount) {
+        return ctx.json(
+          {
+            ok: false,
+            reason: "stale_balance",
+            balanceCents: balance.balanceCents,
+            version: versionOf(invoice),
+          },
+          409,
+        );
+      }
       const updated = await this.invoices.update(id, invoice.userId, {
         status: "claimed",
         paymentIntent: {
           method: dto.method as PaymentMethod,
-          amount: invoice.amount ?? 0,
+          amount: balance.balanceCents,
           ...(dto.reference ? { reference: dto.reference } : {}),
           claimedAt: new Date().toISOString(),
           ...(dto.claimedBy ? { claimedBy: dto.claimedBy } : {}),
@@ -838,6 +1075,12 @@ class ClaimPaymentDto {
   reference?: string;
   @IsOptional() @IsString()
   claimedBy?: string;
+  /** REQ-203: the balance the customer saw — must still be the balance. */
+  @IsOptional() @IsNumber()
+  amountCents?: number;
+  /** REQ-203: the version the customer saw. */
+  @IsOptional() @IsNumber()
+  version?: number;
 }
 
 function parseClaim(input: unknown): ClaimPaymentDto {
@@ -946,7 +1189,9 @@ async function loadContractor(
       businessName: ident?.businessName ?? ident?.legalName,
       phoneNumber: user?.phoneNumber,
       email: user?.email,
-      ...(ident?.websiteUrl?.trim() ? { websiteUrl: ident.websiteUrl.trim() } : {}),
+      ...(ident?.websiteUrl?.trim()
+        ? { websiteUrl: ident.websiteUrl.trim() }
+        : {}),
       addressLine: composeAddressLine(addr),
       state: addr?.state?.trim() || undefined,
       acceptedPaymentMethods: redactAcceptedMethods(
@@ -1006,6 +1251,11 @@ export function composeAddressLine(
 function redactQuote(q: Quote) {
   return {
     id: q.id,
+    // REQ-198/201: the document's number, version and headline state
+    number: docNumberOf(q),
+    version: versionOf(q),
+    state: quoteState(q),
+    publishedAt: q.publishedAt,
     summary: q.summary,
     description: q.description,
     descriptionByLang: q.descriptionByLang,
@@ -1039,6 +1289,20 @@ function redactQuote(q: Quote) {
 function redactInvoice(i: Invoice) {
   return {
     id: i.id,
+    // REQ-198/201: the document's number, version and headline state
+    number: docNumberOf(i),
+    version: versionOf(i),
+    state: invoiceState(i),
+    publishedAt: i.publishedAt,
+    // REQ-206: a standalone invoice is complete on its own
+    subtotalCents: i.subtotalCents,
+    taxRateBp: i.taxRateBp,
+    taxCents: i.taxCents,
+    serviceAddress: i.serviceAddress,
+    serviceDateFrom: i.serviceDateFrom,
+    serviceDateTo: i.serviceDateTo,
+    paymentInstructions: i.paymentInstructions,
+    netDays: i.netDays,
     quoteId: i.quoteId,
     customerId: i.customerId,
     amount: i.amount,
@@ -1086,16 +1350,86 @@ async function lookupCustomerPublic(
   customers: CustomerStore,
   customerId: string | undefined,
   ownerId: string,
+  snapshot?: CustomerSnapshot,
 ): Promise<
-  { name?: string; phoneNumber?: string; email?: string } | undefined
+  | {
+    name?: string;
+    phoneNumber?: string;
+    email?: string;
+    address?: string;
+    businessName?: string;
+    number?: string;
+  }
+  | undefined
 > {
+  // REQ-204: an issued document shows the customer as they were — a later
+  // CRM edit never rewrites it. The customer's own number travels along.
+  if (snapshot && (snapshot.name || snapshot.businessName)) {
+    return {
+      name: snapshot.name,
+      phoneNumber: snapshot.phoneNumber,
+      email: snapshot.email,
+      ...(snapshot.address ? { address: snapshot.address } : {}),
+      ...(snapshot.businessName ? { businessName: snapshot.businessName } : {}),
+      ...(snapshot.number ? { number: snapshot.number } : {}),
+    };
+  }
   if (!customerId) return undefined;
   try {
     const c = await customers.getOwned(customerId, ownerId);
-    return { name: c.name, phoneNumber: c.phoneNumber, email: c.email };
+    return {
+      name: c.name,
+      phoneNumber: c.phoneNumber,
+      email: c.email,
+      ...(c.address ? { address: c.address } : {}),
+      ...(c.businessName ? { businessName: c.businessName } : {}),
+      ...(c.number ? { number: c.number } : {}),
+    };
   } catch {
     return undefined;
   }
+}
+
+/** REQ-205: an invoice as a linked record on another document — number, balance, link. */
+async function projectLinkedInvoice(payments: PaymentStore, i: Invoice) {
+  const paidCents = typeof i.paidCents === "number"
+    ? i.paidCents
+    : (await payments.listByInvoice(i.id, i.userId).catch(() => [])).reduce(
+      (s, p) => s + (p.amount ?? 0),
+      0,
+    );
+  const bal = invoiceBalance(i.amount, paidCents);
+  return {
+    id: i.id,
+    number: docNumberOf(i),
+    version: versionOf(i),
+    url: `/i/${i.id}`,
+    status: i.status,
+    state: invoiceState(i),
+    amountCents: bal.amountCents,
+    paidCents: bal.paidCents,
+    balanceCents: bal.balanceCents,
+    dueDate: i.dueDate,
+    paidAt: i.paidAt,
+    installmentIndex: i.installmentIndex,
+    installmentTotal: i.installmentTotal,
+  };
+}
+
+/** REQ-205: a change order as a linked record — number, status, delta, link. */
+function projectLinkedChangeOrder(co: ChangeOrder) {
+  return {
+    id: co.id,
+    number: docNumberOf(co),
+    version: versionOf(co),
+    url: `/co/${co.id}`,
+    status: co.status,
+    description: co.description,
+    deltaAmountCents: co.deltaAmountCents,
+    invoiceId: co.invoiceId,
+    decidedAt: co.decidedAt,
+    ...(co.approvedName ? { approvedName: co.approvedName } : {}),
+  };
 }
 
 /** Signed money string for notification copy: 25050 → "+$250.50". */

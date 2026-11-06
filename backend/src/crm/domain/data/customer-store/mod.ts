@@ -1,6 +1,11 @@
 import { Injectable } from "#danet/core";
 import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
+import { DocNumbering } from "@core/data/doc-numbering/mod.ts";
+import {
+  createNumbered,
+  type CreateNumberedOpts,
+} from "@core/data/numbered-store/mod.ts";
 import type {
   CreateCustomerDto,
   Customer,
@@ -8,7 +13,7 @@ import type {
 } from "@crm/dto/customer.ts";
 
 const PREFIX = "customer";
-const INDEX_PREFIX = "customer_by_user";        // [INDEX_PREFIX, userId, customerId] → customerId
+const INDEX_PREFIX = "customer_by_user"; // [INDEX_PREFIX, userId, customerId] → customerId
 
 /**
  * CustomerStore — per-user customer records.
@@ -32,16 +37,36 @@ const INDEX_PREFIX = "customer_by_user";        // [INDEX_PREFIX, userId, custom
  */
 @Injectable()
 export class CustomerStore {
-  async create(userId: string, input: CreateCustomerDto): Promise<Customer> {
+  constructor(private numbering: DocNumbering = new DocNumbering()) {}
+
+  async create(
+    userId: string,
+    input: CreateCustomerDto,
+    opts: CreateNumberedOpts = {},
+  ): Promise<Customer> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const customer: Customer = { ...input, id, userId, createdAt: now, updatedAt: now };
-    const kv = await getKv();
-    await kv.atomic()
-      .set([PREFIX, id], customer)
-      .set([INDEX_PREFIX, userId, id], id)
-      .commit();
-    return customer;
+    const customer: Customer = {
+      ...input,
+      id,
+      userId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    // REQ-198/200: the next C- number, in the same transaction as the row.
+    const stored = await createNumbered<Customer & { version?: number }>(
+      this.numbering,
+      {
+        userId,
+        kind: "customer",
+        prefix: PREFIX,
+        indexPrefix: INDEX_PREFIX,
+        record: customer,
+      },
+      opts,
+    );
+    const { version: _v, ...out } = stored;
+    return out;
   }
 
   /** REQ-039 (NW-52): a deleted customer reads as not-found unless the
@@ -75,7 +100,11 @@ export class CustomerStore {
     return recs.filter((c): c is Customer => !!c && !c.deletedAt);
   }
 
-  async update(id: string, userId: string, patch: UpdateCustomerDto): Promise<Customer> {
+  async update(
+    id: string,
+    userId: string,
+    patch: UpdateCustomerDto,
+  ): Promise<Customer> {
     const existing = await this.getOwned(id, userId);
     const definedPatch = Object.fromEntries(
       Object.entries(patch).filter(([_, v]) => v !== undefined),

@@ -27,6 +27,9 @@ export const NAV: NavNode<IconName>[] = [
         countKey: "invoices",
       },
       { id: "payments", icon: "pay", href: "/payments" },
+      // REQ-210 (A2Z): the numbered WO- documents, next to the quotes and
+      // invoices they belong to.
+      { id: "workOrders", icon: "wrench", href: "/work-orders" },
     ],
   },
   // REQ-143: the field module — recurring maintenance on the existing customers,

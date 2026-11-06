@@ -35,6 +35,31 @@ import {
   canAdjustInvoice,
   isChangeOrderMutable,
 } from "#quote-flow/adjustment-guards.ts";
+import { requestIdOf } from "@core/business/request-id/mod.ts";
+import {
+  INVOICE_CONTENT_FIELDS,
+  invoiceEditDecision,
+  isInvoiceLocked,
+  splitPatch,
+} from "#documents/versions.ts";
+import {
+  flagOverpayment,
+  publisherOf,
+} from "@paperwork/entrypoints/revisions-controller/mod.ts";
+import {
+  filterInvoicesForExport,
+  invoiceExportCsv,
+  parseExportStatus,
+} from "#documents/exports.ts"; // REQ-208
+import { appUrl } from "@users/domain/business/app-url/mod.ts";
+
+/** number order for an export (INV-001 before INV-002; unnumbered rows by age) */
+const bySeq = (
+  a: { seq?: number; createdAt?: string },
+  b: { seq?: number; createdAt?: string },
+) =>
+  (a.seq ?? 0) - (b.seq ?? 0) ||
+  (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
 
 function project(invoice: Invoice, now: Date): Invoice {
   return { ...invoice, urgency: deriveUrgency(invoice, now) };
@@ -74,6 +99,10 @@ export class InvoiceController {
     const cents = Math.max(0, Math.round(Number(b.discountCents ?? 0)));
     if (!cents) throw new Error("discountCents must be a positive integer");
     const inv = await this.store.getOwned(id, user.id);
+    // REQ-202: a paid invoice is locked — more work gets a new invoice.
+    if (isInvoiceLocked(inv)) {
+      return ctx.json({ ok: false, reason: "locked_paid" }, 409);
+    }
     // P-41 integrity guard: an UNCONFIRMED payment claim means the customer
     // already claimed the OLD total — never silently change it under them.
     // 409 with a machine-readable reason unless explicitly acknowledged.
@@ -93,11 +122,24 @@ export class InvoiceController {
       );
     }
     const newAmount = Math.max(0, (inv.amount ?? 0) - cents);
-    const updated = await this.store.update(id, user.id, {
+    const patch = {
       amount: newAmount,
       discountCents: (inv.discountCents ?? 0) + cents,
       ...(b.reason ? { discountReason: b.reason } : {}),
-    });
+    };
+    // REQ-201: a discount the customer will see is a published revision —
+    // same number, same link, next version — on an issued invoice; a draft
+    // just changes.
+    const updated =
+      inv.status && inv.status !== "draft" && inv.status !== "scheduled"
+        ? await this.store.publishRevision(
+          id,
+          user.id,
+          patch,
+          await publisherOf(ctx, this.sessions, this.users, user),
+          (next) => flagOverpayment(next),
+        )
+        : await this.store.update(id, user.id, patch);
     return ctx.json(project(updated, new Date()));
   }
 
@@ -111,6 +153,11 @@ export class InvoiceController {
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const inv = await this.store.getOwned(id, user.id);
+    // REQ-202: a paid invoice is locked — additional work gets a new invoice.
+    if (isInvoiceLocked(inv)) {
+      return ctx.json({ ok: false, reason: "locked_paid" }, 409);
+    }
+    const requestId = requestIdOf(ctx, body); // REQ-200
     const dto = parseCreateChangeOrder(body);
     const co = await this.changeOrders.create(user.id, id, {
       ...dto,
@@ -119,7 +166,7 @@ export class InvoiceController {
       // Freeze the pre-change total — the public page renders its math from
       // this snapshot so revisiting the link after approval stays correct.
       originalAmountCents: inv.amount ?? 0,
-    });
+    }, { requestId });
     // Trigger approval: alert the contractor (email + SMS) with the shareable
     // /co link to send the customer. Fire-and-forget — delivery problems must
     // never fail the create.
@@ -205,6 +252,7 @@ export class InvoiceController {
   @Post()
   async create(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
+    const requestId = requestIdOf(ctx, body); // REQ-200
     const dto = parseCreateInvoice(body);
 
     // Derive-from-quote (roadmap p.6): the invoice carries all the quote's
@@ -228,7 +276,17 @@ export class InvoiceController {
         .toISOString().slice(0, 10);
     }
 
-    return project(await this.store.create(user.id, dto), new Date());
+    // REQ-206: an invoice issued at birth carries its sentAt.
+    if (
+      dto.status && dto.status !== "draft" && dto.status !== "scheduled" &&
+      !dto.sentAt
+    ) {
+      dto.sentAt = new Date().toISOString();
+    }
+    return project(
+      await this.store.create(user.id, dto, { requestId }),
+      new Date(),
+    );
   }
 
   @Get()
@@ -244,77 +302,79 @@ export class InvoiceController {
     return list.map((i) => project(i, now));
   }
 
-  /** Tax-time CSV export. Streams CSV bytes for the given year — and, with
-   *  ?month=1..12 (REQ-019 / NW-33 "Export this month"), only the invoices
-   *  paid in that month. Declared BEFORE the `:id` route: Danet matches in
-   *  declaration order and `:id` used to swallow "export.csv" as an invoice
-   *  id (404). */
+  /**
+   * REQ-208: the invoice export. `?status=all|paid|unpaid` exports those
+   * invoices with every agreed column (customer and addresses, service
+   * dates, quote and change-order numbers, amounts in dollars, the public
+   * link). Without `status` it is the tax-time export it always was: the
+   * invoices paid in `?year=` (default this year) and, with `?month=1..12`
+   * (REQ-019 / NW-33 "Export this month"), in that month — same columns.
+   * Declared BEFORE the `:id` route: Danet matches in declaration order and
+   * `:id` used to swallow "export.csv" as an invoice id (404).
+   */
   @Get("export.csv")
   async exportCsv(
     @Context() ctx: ExecutionContext,
     @Query("year") yearQ?: string,
     @Query("month") monthQ?: string,
+    @Query("status") statusQ?: string,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const year = yearQ ? Number(yearQ) : new Date().getUTCFullYear();
-    const month = monthQ ? Number(monthQ) : undefined;
-    if (month !== undefined && !(Number.isInteger(month) && month >= 1 && month <= 12)) {
-      throw new Error("month must be 1..12");
-    }
     const all = await this.store.listByUser(user.id);
-    const paid = all.filter((i) => {
-      if (i.status !== "paid" || !i.paidAt) return false;
-      const d = new Date(i.paidAt);
-      if (d.getUTCFullYear() !== year) return false;
-      return month === undefined || d.getUTCMonth() + 1 === month;
-    });
-    // Hydrate customer + job context for the export rows. Best-effort.
-    const customerCache = new Map<string, string>();
-    const jobNameCache = new Map<string, string>();
-    const rows: string[][] = [[
-      "Date",
-      "Customer",
-      "Job",
-      "Amount",
-      "Method",
-      "Reference",
-    ]];
-    for (const inv of paid) {
-      const customerName = await resolveName(
-        this.customers,
-        user.id,
-        inv.customerId,
-        customerCache,
-      );
-      const jobName = await resolveJobName(
-        this.quotes,
-        user.id,
-        inv.quoteId,
-        jobNameCache,
-      );
-      // Payment intent at the moment-of-paid carries the method/reference.
-      // After confirm clears the intent, we lose this — for v1 we mirror
-      // it into the row at confirm-time (already happens via the Payment
-      // entity, but listing payments per invoice would require a join we
-      // skip here; fall back to the intent if still present).
-      const method = inv.paymentIntent?.method ?? "—";
-      const reference = inv.paymentIntent?.reference ?? "";
-      rows.push([
-        inv.paidAt!.slice(0, 10),
-        customerName ?? "—",
-        jobName ?? "—",
-        ((inv.amount ?? 0) / 100).toFixed(2),
-        method,
-        reference,
-      ]);
+    let rows: Invoice[];
+    let filename: string;
+    if (statusQ !== undefined) {
+      const status = parseExportStatus(statusQ);
+      if (!status) {
+        return ctx.json({ ok: false, reason: "invalid", field: "status" }, 400);
+      }
+      rows = filterInvoicesForExport(all, status);
+      filename = `invoices-${status}.csv`;
+    } else {
+      const year = yearQ ? Number(yearQ) : new Date().getUTCFullYear();
+      const month = monthQ ? Number(monthQ) : undefined;
+      if (
+        month !== undefined &&
+        !(Number.isInteger(month) && month >= 1 && month <= 12)
+      ) {
+        return ctx.json({ ok: false, reason: "invalid", field: "month" }, 400);
+      }
+      rows = all.filter((i) => {
+        if (i.status !== "paid" || !i.paidAt) return false;
+        const d = new Date(i.paidAt);
+        if (d.getUTCFullYear() !== year) return false;
+        return month === undefined || d.getUTCMonth() + 1 === month;
+      });
+      filename = `invoices-${year}${
+        month !== undefined ? `-${String(month).padStart(2, "0")}` : ""
+      }.csv`;
     }
-    const csv = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
+    const [customers, quotes, changeOrders] = await Promise.all([
+      this.customers.listByUser(user.id),
+      this.quotes.listByUser(user.id),
+      this.changeOrders.listByUser(user.id),
+    ]);
+    const customerById = new Map(customers.map((c) => [c.id, c]));
+    const quoteById = new Map(quotes.map((q) => [q.id, q]));
+    const cosByInvoice = new Map<string, ChangeOrder[]>();
+    for (const co of changeOrders) {
+      const list = cosByInvoice.get(co.invoiceId);
+      if (list) list.push(co);
+      else cosByInvoice.set(co.invoiceId, [co]);
+    }
+    const base = appUrl();
+    const csv = invoiceExportCsv(rows.slice().sort(bySeq), {
+      customerOf: (
+        i,
+      ) => (i.customerId ? customerById.get(i.customerId) : undefined),
+      quoteOf: (i) => (i.quoteId ? quoteById.get(i.quoteId) : undefined),
+      changeOrdersOf: (i) => (cosByInvoice.get(i.id) ?? []).slice().sort(bySeq),
+      linkOf: (i) => `${base}/i/${i.id}`,
+    });
     return new Response(csv, {
       headers: {
         "content-type": "text/csv; charset=utf-8",
-        "content-disposition": `attachment; filename="invoices-${year}${
-          month !== undefined ? `-${String(month).padStart(2, "0")}` : ""
-        }.csv"`,
+        "content-disposition": `attachment; filename="${filename}"`,
       },
     });
   }
@@ -325,6 +385,13 @@ export class InvoiceController {
     return project(await this.store.getOwned(id, user.id), new Date());
   }
 
+  /**
+   * REQ-201/202: a draft or scheduled invoice edits live. Once issued, a
+   * content edit waits as a pending revision until POST /invoices/:id/publish
+   * (the customer's link keeps showing the published version). A paid
+   * invoice refuses content edits (409 `locked_paid`). Bookkeeping fields
+   * (status, paidAt, reminders, the claim) always apply.
+   */
   @Put(":id")
   async update(
     @Context() ctx: ExecutionContext,
@@ -332,8 +399,40 @@ export class InvoiceController {
     @Body() body: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
+    const patch = parseUpdateInvoice(body);
+    // never from a request: the balance coordinator owns these
+    delete patch.paidCents;
+    delete patch.overpaidCents;
+    const existing = await this.store.getOwned(id, user.id);
+    const decision = invoiceEditDecision(
+      existing,
+      patch as unknown as Record<string, unknown>,
+    );
+    if (decision.mode === "locked") {
+      return ctx.json({
+        ok: false,
+        reason: decision.reason,
+        fields: decision.fields,
+      }, 409);
+    }
+    const { content, meta } = splitPatch(
+      patch as unknown as Record<string, unknown>,
+      INVOICE_CONTENT_FIELDS,
+    );
+    const issuing = typeof meta.status === "string" &&
+      meta.status !== "draft" && meta.status !== "scheduled";
+    if (issuing && !existing.sentAt && !meta.sentAt) {
+      meta.sentAt = new Date().toISOString();
+    }
+    if (decision.mode === "pending") {
+      const updated = Object.keys(meta).length
+        ? await this.store.update(id, user.id, meta)
+        : existing;
+      const pending = await this.store.setPending(id, user.id, content);
+      return project({ ...updated, ...pending }, new Date());
+    }
     return project(
-      await this.store.update(id, user.id, parseUpdateInvoice(body)),
+      await this.store.update(id, user.id, { ...content, ...meta }),
       new Date(),
     );
   }
@@ -341,6 +440,11 @@ export class InvoiceController {
   @Delete(":id")
   async delete(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
+    const inv = await this.store.getOwned(id, user.id);
+    // REQ-202: a paid invoice is part of the record — it stays.
+    if (isInvoiceLocked(inv)) {
+      return ctx.json({ ok: false, reason: "locked_paid" }, 409);
+    }
     await this.store.delete(id, user.id);
     return { ok: true };
   }
@@ -434,7 +538,7 @@ export class InvoiceController {
  *  place). Returns the resulting invoice amount — unchanged when the order was
  *  never approved — for re-snapshotting. Module-level on purpose: Danet
  *  registers every *class method* on a controller as a route, so controller
- *  helpers must be free functions (see resolveName/resolveJobName below). */
+ *  helpers must be free functions (like `bySeq` above). */
 async function revertApprovedDelta(
   store: InvoiceStore,
   co: ChangeOrder,
@@ -446,46 +550,4 @@ async function revertApprovedDelta(
   const reverted = Math.max(0, current - co.deltaAmountCents);
   await store.update(co.invoiceId, userId, { amount: reverted });
   return reverted;
-}
-
-async function resolveName(
-  customers: CustomerStore,
-  userId: string,
-  customerId: string | undefined,
-  cache: Map<string, string>,
-): Promise<string | undefined> {
-  if (!customerId) return undefined;
-  if (cache.has(customerId)) return cache.get(customerId);
-  try {
-    const c = await customers.getOwned(customerId, userId);
-    cache.set(customerId, c.name);
-    return c.name;
-  } catch {
-    return undefined;
-  }
-}
-
-async function resolveJobName(
-  quotes: QuoteStore,
-  userId: string,
-  quoteId: string | undefined,
-  cache: Map<string, string>,
-): Promise<string | undefined> {
-  if (!quoteId) return undefined;
-  if (cache.has(quoteId)) return cache.get(quoteId);
-  try {
-    const q = await quotes.getOwned(quoteId, userId);
-    const name = q.jobName?.trim() || q.summary?.trim() || undefined;
-    if (name) cache.set(quoteId, name);
-    return name;
-  } catch {
-    return undefined;
-  }
-}
-
-function csvCell(s: string): string {
-  // Standard RFC 4180 escaping: wrap in quotes if comma/quote/newline,
-  // and double interior quotes.
-  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
 }

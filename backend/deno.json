@@ -18,6 +18,7 @@
     "#std/encoding/base64": "jsr:@std/encoding@^1/base64",
     "#payment-split": "../front-end/lib/payment-split.ts",
     "#quote-flow/": "../shared/quote-flow/",
+    "#documents/": "../shared/documents/",
     "#features": "../shared/features.ts",
     "#legal/": "../shared/legal/",
     "#demo-booking/": "../shared/demo-booking/",

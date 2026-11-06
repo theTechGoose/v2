@@ -53,6 +53,10 @@ import { CrmCaptureOutbox } from "@users/domain/data/crm-capture-outbox/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { SignupNotice } from "@users/domain/coordinators/signup-notice/mod.ts";
 import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
+import { DocNumbering } from "@core/data/doc-numbering/mod.ts"; // REQ-198
+import { NumberingStore } from "@users/domain/data/numbering-store/mod.ts"; // REQ-199
+import { NumberingController } from "@users/entrypoints/numbering-controller/mod.ts"; // REQ-199
+import { SetupReset } from "@users/domain/coordinators/setup-reset/mod.ts"; // REQ-199
 
 /**
  * UsersModule — owns the full user identity surface:
@@ -85,6 +89,7 @@ import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
     ReferenceController,
     ContractDefaultsController,
     ProfileCompositeController,
+    NumberingController, // REQ-199
   ],
   injectables: [
     // identity
@@ -124,6 +129,9 @@ import { PayLinkMint } from "@users/domain/coordinators/pay-link-mint/mod.ts";
     SignupNotice, // REQ-103
     PayLinkMint, // REQ-106
     ChoosePlan,
+    DocNumbering, // REQ-198
+    NumberingStore, // REQ-199
+    SetupReset, // REQ-199
   ],
 })
 export class UsersModule {}

@@ -1,3 +1,4 @@
+import { DocNumbering } from "@core/data/doc-numbering/mod.ts"; // REQ-198
 import { Module } from "#danet/core";
 import { UsersModule } from "@users/mod-root.ts";
 import { CustomerController } from "@crm/entrypoints/customer-controller/mod.ts";
@@ -11,6 +12,12 @@ import { ComputeAccountBalance } from "@crm/domain/coordinators/compute-account-
 @Module({
   imports: [UsersModule],
   controllers: [CustomerController, AccountController, EntryController],
-  injectables: [CustomerStore, AccountStore, EntryStore, ComputeAccountBalance],
+  injectables: [
+    CustomerStore,
+    AccountStore,
+    EntryStore,
+    ComputeAccountBalance,
+    DocNumbering,
+  ],
 })
 export class CrmModule {}

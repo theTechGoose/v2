@@ -3,6 +3,8 @@ import { GlobalSearch } from "./mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
 function fresh() {
@@ -13,7 +15,13 @@ function fresh() {
     customers,
     quotes,
     invoices,
-    flow: new GlobalSearch(customers, quotes, invoices),
+    flow: new GlobalSearch(
+      customers,
+      quotes,
+      invoices,
+      new ChangeOrderStore(),
+      new WorkOrderStore(),
+    ),
   };
 }
 

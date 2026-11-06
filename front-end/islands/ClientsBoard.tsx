@@ -416,6 +416,15 @@ export default function ClientsBoard(
           {tFor(lang, "clientsBoard.sort.warmth")}{" "}
           <I d={<path d="m6 9 6 6 6-6" />} size={12} sw={2.5} />
         </button>
+        {/* REQ-208: the customers export carries numbers, contacts, documents and balances */}
+        <a
+          class="ctoolbar2__sort"
+          data-cy="clients-export"
+          href="/api/customers/export.csv"
+          style="text-decoration:none"
+        >
+          {tFor(lang, "export.customers")}
+        </a>
       </div>
 
       <div class="clay2">
