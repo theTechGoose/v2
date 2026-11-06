@@ -26,3 +26,6 @@ front-end/_fresh/
 # local-only owner wipe secret (never commit)
 .reset.secret
 backend/.reset.secret
+
+# customer data exports — never commit
+/Customers*.csv
