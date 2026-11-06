@@ -1,12 +1,10 @@
 import { define } from "../utils.ts";
 import MobileViewport from "../islands/MobileViewport.tsx";
 import ImpersonationBanner from "../islands/ImpersonationBanner.tsx";
+import DemoModeOverlay from "../islands/DemoModeOverlay.tsx";
 import HtmlLang from "../islands/HtmlLang.tsx";
 import MetaPixel from "../components/MetaPixel.tsx";
 import GoogleTag from "../components/GoogleTag.tsx";
-import GoogleTagManager, {
-  GoogleTagManagerNoscript,
-} from "../components/GoogleTagManager.tsx";
 import CrazyEgg from "../components/CrazyEgg.tsx";
 import { readSessionCookie } from "../lib/api.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
@@ -37,11 +35,52 @@ console.warn("[pm] purged stale service worker/caches — reloading");
 location.reload();}
 }catch(_e){}})();`;
 
+// REQ-189 — a page whose island code fails to load reloads itself ONCE. A browser that kept an
+// island module from before an edit (Safari did, ignoring Vite's no-cache) imports a module that
+// no longer exists, the module script fails, and nothing on the page hydrates. On the module
+// script's error event (capture — it does not bubble) or the import-failure rejection (Safari:
+// "Importing a module script failed."; Chromium/Firefox: "… dynamically imported module"), every
+// module the page loaded is refetched bypassing the cache and the page reloads. At most once per
+// 30 s per tab (sessionStorage), so a page that is really broken never loops.
+// AMENDMENT — Safari reuses module scripts across navigations whatever the cache headers say (the
+// replica frame ran an old sidebar silently, no error to recover from). On a dev host, after every
+// load, each module the page loaded is refetched bypassing the cache (which refreshes Safari's
+// copy) and its ETag compared with the one this tab saw last time; any change means the page
+// just ran stale code, so it reloads once (same 30 s cooldown) and runs the fresh copy.
+const MODULE_RECOVERY_SCRIPT = `(function(){try{
+var done=false;
+function recover(){
+var last=Number(sessionStorage.getItem("pm:module-reloaded")||0);
+if(done||Date.now()-last<30000)return;
+done=true;sessionStorage.setItem("pm:module-reloaded",String(Date.now()));
+var urls=performance.getEntriesByType("resource").map(function(e){return e.name}).filter(function(u){return /\\/@id\\/|\\/@fs\\/|\\.[jt]sx?(\\?|$)/.test(u)});
+console.warn("[pm] island code failed to load — refetching "+urls.length+" modules and reloading once");
+Promise.all(urls.map(function(u){return fetch(u,{cache:"reload"}).catch(function(){})})).then(function(){location.reload()},function(){location.reload()});
+}
+document.addEventListener("error",function(e){var t=e.target;if(t&&t.tagName==="SCRIPT"&&t.type==="module")recover()},true);
+if(/^(localhost|127\\.0\\.0\\.1)$/.test(location.hostname)){
+window.addEventListener("load",function(){
+var urls=performance.getEntriesByType("resource").map(function(e){return e.name}).filter(function(u){return /\\/@id\\/|\\/@fs\\/|\\.[jt]sx?(\\?|$)/.test(u)});
+var prev={};try{prev=JSON.parse(sessionStorage.getItem("pm:module-etags")||"{}")}catch(_e){}
+var next={},changed=[];
+Promise.all(urls.map(function(u){return fetch(u,{cache:"reload"}).then(function(r){var e=r.headers.get("etag")||"";if(e)next[u]=e;if(e&&prev[u]&&prev[u]!==e)changed.push(u)}).catch(function(){})})).then(function(){
+sessionStorage.setItem("pm:module-etags",JSON.stringify(next));
+if(changed.length===0)return;
+var last=Number(sessionStorage.getItem("pm:module-reloaded")||0);
+if(Date.now()-last<30000)return;
+sessionStorage.setItem("pm:module-reloaded",String(Date.now()));
+console.warn("[pm] "+changed.length+" dev module(s) changed since this tab's cache — reloading once");
+location.reload();
+});
+});}
+window.addEventListener("unhandledrejection",function(e){var m=e.reason&&(e.reason.message||String(e.reason))||"";if(/Importing a module script failed|dynamically imported module/i.test(m))recover()});
+}catch(_e){}})();`;
+
 export default define.page(function App(ctx) {
   const { Component } = ctx;
   const bootScript = (PUBLIC_BACKEND_URL
     ? `window.__PUBLIC_BACKEND_URL=${JSON.stringify(PUBLIC_BACKEND_URL)};`
-    : "") + SW_PURGE_SCRIPT;
+    : "") + SW_PURGE_SCRIPT + MODULE_RECOVERY_SCRIPT;
   // P-67: only mount the impersonation banner when the request actually
   // carries a session cookie. pm_session is HttpOnly, so the island can't
   // gate itself client-side — without this SSR gate it probed
@@ -82,13 +121,6 @@ export default define.page(function App(ctx) {
     <html lang={lang}>
       <head>
         <meta charset="utf-8" />
-        {
-          /* REQ-183: Google Tag Manager's container snippet, "as high as
-            possible inside <head>, on every page" — Google's loader on the
-            real deploy with GTM_ID set, nothing there without it, the app's
-            own fake on the gate and a dev box. */
-        }
-        <GoogleTagManager />
         <meta
           name="viewport"
           content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
@@ -129,11 +161,6 @@ export default define.page(function App(ctx) {
       </head>
       <body>
         {
-          /* REQ-183: Google Tag Manager's noscript iframe, "right after the
-            opening <body> tag, on every page" (the real deploy only). */
-        }
-        <GoogleTagManagerNoscript />
-        {
           /* Global keyboard handling: mirrors visualViewport.height into
             --app-vh on every page. iOS Safari overlays the soft keyboard
             without shrinking 100dvh, so page shells anchored to --app-vh
@@ -157,6 +184,8 @@ export default define.page(function App(ctx) {
             sessions. */
         }
         {hasSession ? <ImpersonationBanner /> : null}
+        {/* REQ-153 — demo mode: self-gates on /demo-mode/active, renders nothing otherwise. */}
+        {hasSession ? <DemoModeOverlay /> : null}
         <Component />
       </body>
     </html>

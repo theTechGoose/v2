@@ -84,6 +84,21 @@ Deno.test("REQ-177: the super admin opens /admin → Accounts, switches Field te
       })).json()) as { id: string }[])[0].id;
 
     await page.goto("/admin");
+    // REQ-191 — the role a person reads: the tab is "Admin", the lead says "admin", never "super"
+    const tab = page.locator("a.nav-item[href='/admin'] .nav-item__label");
+    await tab.waitFor({ timeout: 15_000 });
+    expect.eq(
+      (await tab.textContent())?.trim(),
+      "Admin",
+      "the sidebar tab reads Admin",
+    );
+    const lead =
+      (await page.locator("h1:has-text('Admin') + p").textContent()) ?? "";
+    expect(
+      lead.includes("grant or revoke admin,"),
+      `the lead says admin (${lead})`,
+    );
+    expect(!/super/i.test(lead), "the lead never says super");
     await page.locator("[data-cy='adm-tab-accounts']").click();
     const row = page.locator(`[data-cy='adm-account'][data-user='${otherId}']`);
     await row.waitFor({ timeout: 15_000 });

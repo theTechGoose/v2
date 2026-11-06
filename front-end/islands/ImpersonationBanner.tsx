@@ -8,23 +8,27 @@
  *
  * Renders nothing for ordinary sessions, so it's safe to mount everywhere.
  *
- * REQ-181: the banner makes room for itself. The shells are viewport-high and do not
- * scroll, so a fixed banner over them hid the brand, the top bar and the first card. While
- * shown, the banner publishes its height (`--banner-h` on <html>, re-measured when it wraps)
- * and pads the body; the shells' CSS subtracts it (lib/banner-room.ts).
+ * REQ-184 — it makes room for itself: it sits in the page's flow (sticky at the top, never over the
+ * content) and publishes its height as --pm-banner-h, which the dashboard shell, its mobile top bar
+ * and the mobile sidebar drawer subtract or start below — the staff never loses the top of the
+ * customer's page under the red bar.
+ *
+ * REQ-187 — inside the stage's replica frame it renders nothing: the customer has no banner.
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { adminClient, type WhoAmI } from "../clients/admin.ts";
 import { fmtPhone } from "../lib/format.ts";
-import { clearBannerRoom, setBannerRoom } from "../lib/banner-room.ts";
+import { isReplicaFrame } from "../lib/demo-mode/replica.ts";
 
 export default function ImpersonationBanner() {
   const [who, setWho] = useState<WhoAmI | null>(null);
   const [busy, setBusy] = useState(false);
-  const el = useRef<HTMLDivElement>(null);
-  const shown = Boolean(who?.impersonating);
+  const ref = useRef<HTMLDivElement>(null);
+  const replica = isReplicaFrame();
+  const shown = Boolean(who?.impersonating) && !replica;
 
   useEffect(() => {
+    if (replica) return;
     let alive = true;
     adminClient.whoami()
       .then((w) => {
@@ -36,22 +40,20 @@ export default function ImpersonationBanner() {
     };
   }, []);
 
-  // REQ-181: publish the banner's height while it is on screen; release it when it goes.
   useEffect(() => {
-    const node = el.current;
-    if (!shown || !node) return;
-    const root = document.documentElement.style;
-    const body = document.body.style;
-    const measure = () =>
-      setBannerRoom(root, body, node.getBoundingClientRect().height);
-    measure();
-    const ro = typeof ResizeObserver === "function"
-      ? new ResizeObserver(measure)
-      : null;
-    ro?.observe(node);
+    const el = ref.current;
+    if (!shown || !el) return;
+    const root = document.documentElement;
+    const publish = () =>
+      root.style.setProperty("--pm-banner-h", `${el.offsetHeight}px`);
+    publish();
+    const ro = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(publish);
+    ro?.observe(el);
     return () => {
       ro?.disconnect();
-      clearBannerRoom(root, body);
+      root.style.removeProperty("--pm-banner-h");
     };
   }, [shown]);
 
@@ -74,10 +76,11 @@ export default function ImpersonationBanner() {
 
   return (
     <div
-      ref={el}
+      ref={ref}
+      // REQ-153 — demo mode's pointer paths never count this banner (the staff side alone has it)
+      data-demo-skip
       role="status"
-      data-cy="imp-banner"
-      style="position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:8px 14px;background:#7a2e2e;color:#fff;font:inherit;font-size:13px;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.25)"
+      style="position:sticky;top:0;z-index:9999;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:8px 14px;background:#7a2e2e;color:#fff;font:inherit;font-size:13px;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.25)"
     >
       <span>
         Impersonating <strong>{actingLabel}</strong>

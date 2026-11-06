@@ -11,8 +11,46 @@ const BACKEND_URL = process.env.BACKEND_URL ??
   `http://localhost:${process.env.BACKEND_PORT ?? 4280}`;
 const BACKEND_WS = BACKEND_URL.replace(/^http/, "ws");
 
+/**
+ * REQ-189 — dev modules are never cached. Vite answers every transformed module with
+ * `Cache-Control: no-cache` + ETag and trusts the browser to revalidate; the staff's Safari did
+ * not, kept an island from before an edit (importing a module since deleted) and the page never
+ * hydrated. Vite's `send()` sets the header AFTER any middleware ran, so this wraps
+ * `res.setHeader` and rewrites `no-cache` to `no-store` — pre-bundled deps (`immutable`) are
+ * untouched.
+ */
+const devNoStore = () => ({
+  name: "pm-dev-no-store",
+  configureServer(server: {
+    middlewares: {
+      use(
+        fn: (
+          req: unknown,
+          res: {
+            setHeader(name: string, value: unknown): unknown;
+          },
+          next: () => void,
+        ) => void,
+      ): void;
+    };
+  }) {
+    server.middlewares.use((_req, res, next) => {
+      const set = res.setHeader.bind(res);
+      res.setHeader = (name: string, value: unknown) =>
+        set(
+          name,
+          name.toLowerCase() === "cache-control" && value === "no-cache"
+            ? "no-store"
+            : value,
+        );
+      next();
+    });
+  },
+});
+
 export default defineConfig({
   plugins: [
+    devNoStore(),
     fresh({
       islandSpecifiers: ["@/denostories/src/components/Menu.tsx"],
     }),
@@ -36,6 +74,14 @@ export default defineConfig({
     // `/api/...` HTTP traffic is still handled by the Fresh forward
     // proxy in routes/api/[...path].ts.
     proxy: {
+      // REQ-153 — demo mode's signaling socket. Forwarded UNCHANGED: the backend serves it at
+      // /api/demo-mode/ws on purpose, because on the deploy the root router hands an upgrade to
+      // the backend with the original request and path (compose-router.ts).
+      "/api/demo-mode/ws": {
+        target: BACKEND_WS,
+        ws: true,
+        changeOrigin: true,
+      },
       "/api/voice/stream": {
         target: BACKEND_WS,
         ws: true,

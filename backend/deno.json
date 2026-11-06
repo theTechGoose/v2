@@ -21,6 +21,7 @@
     "#features": "../shared/features.ts",
     "#legal/": "../shared/legal/",
     "#demo-booking/": "../shared/demo-booking/",
+    "#demo-mode/": "../shared/demo-mode/",
     "@core/": "./src/core/",
     "@crm/": "./src/crm/",
     "@paperwork/": "./src/paperwork/",
@@ -30,7 +31,8 @@
     "@agents/": "./src/agents/",
     "@analytics/": "./src/analytics/",
     "@files/": "./src/files/",
-    "@field/": "./src/field/"
+    "@field/": "./src/field/",
+    "@demo-mode/": "./src/demo-mode/"
   },
   "compilerOptions": {
     "experimentalDecorators": true,

@@ -11,6 +11,7 @@ import { FilesModule } from "@files/mod-root.ts";
 import { AnalyticsModule } from "@analytics/mod-root.ts";
 import { FieldModule } from "@field/mod-root.ts";
 import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
+import { DemoModeModule } from "@demo-mode/mod-root.ts";
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
     FilesModule,
     AnalyticsModule,
     FieldModule,
+    DemoModeModule, // REQ-153
   ],
 })
 class AppModule {}

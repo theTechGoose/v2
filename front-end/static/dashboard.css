@@ -377,10 +377,9 @@ body {
      shell ran taller than the screen — the topbar scrolled away and the bottom hid
      under the browser bar. --app-vh tracks the *visual* viewport (mirrors
      visualViewport.height via MobileViewport), so it also shrinks when the soft
-     keyboard opens; falls back to 100dvh without JS. */
-  /* REQ-181: minus the impersonation banner's room (--banner-h, set by the
-     banner island while it is on screen; 0 otherwise), so nothing hides under it. */
-  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px));
+     keyboard opens; falls back to 100dvh without JS. REQ-184: minus the impersonation
+     banner above it (--pm-banner-h, published by the banner; 0 when there is none). */
+  height: calc(var(--app-vh, 100dvh) - var(--pm-banner-h, 0px));
   display: flex;
   min-height: 0;
   overflow: hidden;
@@ -2535,7 +2534,7 @@ a.activity-item--link:hover {
 @media (max-width: 640px) {
   .sb {
     position: fixed;
-    top: 0;
+    top: var(--pm-banner-h, 0px); /* REQ-184: below the impersonation banner */
     left: 0;
     bottom: 0;
     z-index: 60;
@@ -2584,7 +2583,7 @@ a.activity-item--link:hover {
   }
   .topbar {
     position: sticky;
-    top: var(--banner-h, 0px); /* REQ-181: pins under the impersonation banner */
+    top: var(--pm-banner-h, 0px); /* REQ-184: pins below the impersonation banner */
     z-index: 30;
     padding: 0 12px;
     gap: 8px;

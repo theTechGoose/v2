@@ -48,12 +48,13 @@ describe("REQ-176 the sidebar's root folders", () => {
     expect(folderPathTo(NAV, "customers")).toEqual([]);
   });
 
-  test("the sidebar renders the tree module and keeps the super-admin tab inside Admin", () => {
+  test("the sidebar renders the tree module and keeps the super-admin tab inside the Roles folder — labelled Admin (REQ-191)", () => {
     const src = read("front-end/islands/DashSidebar.tsx");
     expect(src).toMatch(/import \{ NAV \} from "\.\.\/lib\/nav-tree\.ts"/);
     expect(src).not.toMatch(/const NAV\b/);
     expect(src).toMatch(/view\.folder\?\.id === "manage"/);
-    expect(src).toContain("Super admin");
+    expect(src).toMatch(/<span class="nav-item__label">Admin<\/span>/); // REQ-191
+    expect(src).not.toContain("Super admin");
   });
 
   test("both dictionaries carry the two folder names", () => {
@@ -61,7 +62,10 @@ describe("REQ-176 the sidebar's root folders", () => {
     const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
     expect(en["nav.billing"]).toBe("Billing");
     expect(es["nav.billing"]).toBe("Facturación");
-    expect(en["nav.manage"]).toBe("Admin");
-    expect(es["nav.manage"]).toBe("Admin");
+    // REQ-190 — the folder is Roles, its people are Workers and Editors
+    expect(en["nav.manage"]).toBe("Roles");
+    expect(en["nav.admins"]).toBe("Editors");
+    expect(es["nav.manage"]).toBe("Roles");
+    expect(es["nav.admins"]).toBe("Editores");
   });
 });

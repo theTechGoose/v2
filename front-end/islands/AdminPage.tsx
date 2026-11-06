@@ -11,6 +11,11 @@
  */
 import { useEffect, useState } from "preact/hooks";
 import { adminClient, type AdminUserView } from "../clients/admin.ts";
+import {
+  DEMO_OPENING_EVENT,
+  DEMO_STARTED_EVENT,
+  demoModeClient,
+} from "../clients/demo-mode.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { type FeatureKey, FEATURES } from "../../shared/features.ts";
 
@@ -89,6 +94,35 @@ export default function AdminPage() {
       setBusyId(null);
     }
   }
+  /** REQ-153 — demo mode: open the invitation for this user and stay here. The overlay
+   *  (mounted in the shell) picks the demo up at once and waits in its pill; when the
+   *  customer accepts, it impersonates them and opens the page they are on. */
+  async function demo(id: string, targetName: string) {
+    if (!id) return;
+    setBusyId(id);
+    setError(null);
+    // REQ-179 — instant feedback: the button reads Opening… and the pill shows before any answer
+    globalThis.dispatchEvent(
+      new CustomEvent(DEMO_OPENING_EVENT, {
+        detail: { targetUserId: id, targetName },
+      }),
+    );
+    try {
+      const started = await demoModeClient.start(id);
+      globalThis.dispatchEvent(
+        new CustomEvent(DEMO_STARTED_EVENT, {
+          detail: { ...started, targetName },
+        }),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Demo failed");
+      // no detail: the overlay asks the server and clears its Opening… pill
+      globalThis.dispatchEvent(new Event(DEMO_STARTED_EVENT));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function impersonate(id: string) {
     if (!id) return;
     setBusyId(id);
@@ -111,7 +145,7 @@ export default function AdminPage() {
         </h1>
         <p style="margin:0;color:var(--fg-muted,#6b7560);font-size:13.5px">
           {tab === "users"
-            ? "Search users, grant or revoke super-admin, and impersonate."
+            ? "Search users, grant or revoke admin, and impersonate."
             : "Switch features on or off per account."}
         </p>
       </div>
@@ -144,6 +178,7 @@ export default function AdminPage() {
           style="display:flex;gap:10px;align-items:center"
         >
           <input
+            data-cy="adm-q"
             style={inputStyle}
             type="search"
             inputMode="tel"
@@ -152,7 +187,12 @@ export default function AdminPage() {
             onInput={(e) => setQ((e.target as HTMLInputElement).value)}
             aria-label="Search users by phone number"
           />
-          <button type="submit" style={btnPrimary} disabled={loading}>
+          <button
+            type="submit"
+            data-cy="adm-search"
+            style={btnPrimary}
+            disabled={loading}
+          >
             {loading ? "Searching…" : "Search"}
           </button>
         </form>
@@ -277,7 +317,7 @@ export default function AdminPage() {
                   <th style="padding:8px 10px">Name</th>
                   <th style="padding:8px 10px">Phone</th>
                   <th style="padding:8px 10px">Business</th>
-                  <th style="padding:8px 10px">Super</th>
+                  <th style="padding:8px 10px">Admin</th>
                   <th style="padding:8px 10px;text-align:right">Actions</th>
                 </tr>
               </thead>
@@ -325,6 +365,17 @@ export default function AdminPage() {
                         onClick={() => impersonate(u.id)}
                       >
                         Impersonate
+                      </button>
+                      <button
+                        type="button"
+                        data-cy="adm-demo"
+                        title="Demo mode: guide this user with a live pointer on their screen"
+                        style={btnSecondary + ";margin-left:8px" +
+                          (busyId === u.id ? ";opacity:.65;cursor:wait" : "")}
+                        disabled={busyId !== null}
+                        onClick={() => demo(u.id, u.name || u.phoneNumber)}
+                      >
+                        {busyId === u.id ? "Opening…" : "Demo"}
                       </button>
                     </td>
                   </tr>
