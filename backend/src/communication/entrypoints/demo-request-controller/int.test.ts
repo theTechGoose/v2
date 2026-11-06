@@ -233,3 +233,32 @@ Deno.test("REQ-149 demo-request int — a call with a name: the team's subject a
   assertMatch(phone.sent[0].body, /Ana López/);
   assertEquals(leads.phones, ["+15125550199"]);
 });
+
+// REQ-211 — Raphael, 2026-11-06: "There is something that says what landing page it is coming
+// from?" — the booking's page and ad reach the team's email and ride the lead to the CRM.
+Deno.test("REQ-211 demo-request int — the page and the ad are in the team's email and go with the lead", async () => {
+  class OriginLeads {
+    calls: unknown[][] = [];
+    enqueue(...args: unknown[]): Promise<void> {
+      this.calls.push(args);
+      return Promise.resolve();
+    }
+  }
+  const inbox = new CapturingInbox();
+  const leads = new OriginLeads();
+  const controller = new DemoRequestController(
+    inbox as unknown as EmailService,
+    new CapturingPhone() as unknown as SmsService,
+    leads as unknown as CrmLeadCapture,
+    openGate,
+  );
+  const res = await controller.submit(context().ctx, { mode: "call", phone: "(512) 555-0211", consent: true, lang: "es", page: "/landing5", ad: "sabado" }) as unknown as Reply;
+  assertEquals(res.ok, true);
+  assertMatch(inbox.sent[0].htmlBody ?? "", /from \/landing5\?ad=sabado<\/h2>/);
+  assertMatch(inbox.sent[0].htmlBody ?? "", /Page:<\/strong> \/landing5\?ad=sabado/);
+  assertEquals(leads.calls, [["+15125550211", { page: "/landing5", ad: "sabado" }]], "the lead carries its origin");
+  // without them: as before — the lead by phone, no origin
+  const bare = await controller.submit(context().ctx, { mode: "call", phone: "(512) 555-0212", consent: true }) as unknown as Reply;
+  assertEquals(bare.ok, true);
+  assertEquals(leads.calls[1], ["+15125550212", undefined]);
+});

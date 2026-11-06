@@ -187,3 +187,24 @@ Deno.test("REQ-039 NW-52 verify-otp: a deleted account is recoverable — no ses
   assertEquals(stillOld?.id, old.id);
   await resetKv();
 });
+
+// REQ-211 — the account born from a landing signup keeps where it came from (the page, the ad),
+// stamped once at creation; an existing account is never re-stamped by a later login.
+Deno.test("REQ-211 verify-otp integration: a brand-new user is born with the OTP record's origin; an existing user keeps theirs", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { otps, users, flow } = freshFlow();
+  await otps.put({ phoneNumber: "+15125550211", code: "123456", language: "es", origin: { page: "/landing5", ad: "cumple" } });
+  const born = await flow.run({ phoneNumber: "+15125550211", code: "123456" });
+  assertEquals((await users.get(born.userId)).origin, { page: "/landing5", ad: "cumple" });
+  // the same account logs in again from another page: the origin is the first one
+  await otps.put({ phoneNumber: "+15125550211", code: "654321", language: "es", origin: { page: "/landing2" } });
+  const again = await flow.run({ phoneNumber: "+15125550211", code: "654321" });
+  assertEquals(again.userId, born.userId);
+  assertEquals((await users.get(born.userId)).origin, { page: "/landing5", ad: "cumple" });
+  // a signup that carried no origin: none on the account
+  await otps.put({ phoneNumber: "+15125550212", code: "111111", language: "en" });
+  const plain = await flow.run({ phoneNumber: "+15125550212", code: "111111" });
+  assertEquals((await users.get(plain.userId)).origin, undefined);
+  await resetKv();
+});

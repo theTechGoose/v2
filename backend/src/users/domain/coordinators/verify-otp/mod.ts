@@ -106,15 +106,15 @@ export class VerifyOtp {
       // Honor the language the landing toggle sent via send-otp, even on the
       // master-OTP bypass: a brand-new user inherits the OTP record's language
       // (so dev signups with 000000 still respect the EN/ES toggle).
-      const otpLang = existing
-        ? undefined
-        : (await this.otps.get(phone).catch(() => null))?.language;
+      const otpRec = existing ? null : await this.otps.get(phone).catch(() => null);
+      const otpLang = otpRec?.language;
       const newLang = deriveLanguageOnVerify(null, otpLang) ?? "es";
       let user = existing
         ?? await this.users.create({
           phoneNumber: phone,
           language: newLang,
           name: placeholderNameFor(newLang),
+          origin: otpRec?.origin, // REQ-211 — born with where it came from
         });
       if (SEED_DEV_DEFAULTS) {
         // Legacy opt-in only. Seeds the onboarding-gate requirements
@@ -160,6 +160,7 @@ export class VerifyOtp {
           phoneNumber: phone,
           language,
           name: placeholderNameFor(language),
+          origin: otp.origin, // REQ-211 — born with where it came from; never re-stamped on a later login
         });
 
     return await this.openSession(user, !existing);

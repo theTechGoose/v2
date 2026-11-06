@@ -6,10 +6,22 @@
  */
 import { api, type ApiOptions } from "../lib/api.ts";
 import type { Lang } from "../lib/lang.ts";
+import { leadOriginHere } from "../../shared/lead-origin/mod.ts";
+
+/** REQ-211 — every landing post also says the page it was made on and the ad on its URL (`?ad=`),
+ *  read from the browser's location; on the server (no location) the input goes as it is */
+export function withLeadOrigin<T extends object>(
+  input: T,
+): T & { page?: string; ad?: string } {
+  return { ...input, ...leadOriginHere() };
+}
 
 export interface SendOtpInput {
   phoneNumber: string;
   language?: Lang;
+  /** REQ-211 — attached by the client from the browser's location */
+  page?: string;
+  ad?: string;
 }
 
 export interface SendOtpResult {
@@ -27,6 +39,9 @@ export interface ContactInput {
   message: string;
   /** REQ-068 — the SMS consent box, unchecked by default, never required. */
   smsConsent: boolean;
+  /** REQ-211 — attached by the client from the browser's location */
+  page?: string;
+  ad?: string;
 }
 
 export interface ContactResult {
@@ -51,6 +66,9 @@ export interface DemoRequestInput {
   lang: Lang;
   /** the TCPA consent box — the page only posts once it is ticked */
   consent: boolean;
+  /** REQ-211 — attached by the client from the browser's location */
+  page?: string;
+  ad?: string;
 }
 
 export type DemoRequestResult =
@@ -70,7 +88,11 @@ export type DemoRequestResult =
 export const landingClient = {
   /** POST /auth/send-otp — initiate OTP login flow. */
   sendOtp(input: SendOtpInput, opts: ApiOptions = {}): Promise<SendOtpResult> {
-    return api.post<SendOtpResult>("/auth/send-otp", input, opts);
+    return api.post<SendOtpResult>(
+      "/auth/send-otp",
+      withLeadOrigin(input),
+      opts,
+    );
   },
 
   /** REQ-081/090/108 — POST /demo-request — the demo booking (backend DemoRequestController). */
@@ -78,7 +100,11 @@ export const landingClient = {
     input: DemoRequestInput,
     opts: ApiOptions = {},
   ): Promise<DemoRequestResult> {
-    return api.post<DemoRequestResult>("/demo-request", input, opts);
+    return api.post<DemoRequestResult>(
+      "/demo-request",
+      withLeadOrigin(input),
+      opts,
+    );
   },
 
   /** POST /contact — public inquiry form (backend ContactPublicController). */
@@ -86,6 +112,6 @@ export const landingClient = {
     input: ContactInput,
     opts: ApiOptions = {},
   ): Promise<ContactResult> {
-    return api.post<ContactResult>("/contact", input, opts);
+    return api.post<ContactResult>("/contact", withLeadOrigin(input), opts);
   },
 };

@@ -4,6 +4,7 @@
  * live lease) is left alone. Pure — the outbox stores these fields, the sweep reads them.
  */
 import type { UserPlan } from "@users/dto/plan.ts";
+import type { LeadOrigin } from "#lead-origin/mod.ts";
 
 /** REQ-131 — how long a minted due is watched for its settlement before the watch ends unpaid */
 export const WATCH_FOR_MS = 48 * 60 * 60_000;
@@ -14,6 +15,8 @@ export const WATCH_EVERY_MS = 55_000;
 export interface PendingCapture {
   /** the lead's phone (REQ-072); "" on a customer sync record */
   phone: string;
+  /** REQ-211 — a lead record: the landing page and the ad it came from, for the CRM's lead source */
+  origin?: LeadOrigin;
   /** REQ-098 — a customer sync record: the account whose CRM customer the sweep makes or revises
    *  (CrmCustomerSync.ensure), keyed apart from the leads */
   userId?: string;

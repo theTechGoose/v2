@@ -157,3 +157,17 @@ Deno.test("REQ-071 send-otp — the code SMS names DocuMonster, in both language
   for (const call of smsCalls) assert(!/paperwork\s*monster/i.test(call.body), `the old brand is gone: ${call.body}`);
   await resetKv();
 });
+
+// REQ-211 — the page and the ad the signup was made on ride the OTP record, so the account born
+// from this code (verify-otp) can keep them.
+Deno.test("REQ-211 send-otp integration: the lead origin is stored on the OTP record", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { otps, flow } = freshFlow();
+  await flow.run({ phoneNumber: "(512) 555-0211", language: "es", origin: { page: "/landing5", ad: "cumple" } });
+  assertEquals((await otps.get("+15125550211"))?.origin, { page: "/landing5", ad: "cumple" });
+  await resetKv();
+  await flow.run({ phoneNumber: "(512) 555-0212", language: "es" });
+  assertEquals((await otps.get("+15125550212"))?.origin, undefined);
+  await resetKv();
+});

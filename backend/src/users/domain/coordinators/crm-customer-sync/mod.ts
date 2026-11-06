@@ -20,6 +20,7 @@ import { isPlaceholderName } from "@users/domain/business/placeholder-name/mod.t
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import type { UserPlan } from "@users/dto/plan.ts";
 import type { User } from "@users/dto/user.ts";
+import { type LeadOrigin, leadSourceFor } from "#lead-origin/mod.ts";
 
 /** pure: the CRM customer an account reads as, right now — REQ-062: named "unknown dragon
  *  mcdragonson" until the person says who they are, its tier the plan's (Lead until paid) */
@@ -48,7 +49,8 @@ export function customerFor(
     ...(said(address?.city) ? { city: said(address?.city) } : {}),
     ...(said(address?.state) ? { state: said(address?.state)?.toUpperCase() } : {}),
     ...(said(identity?.websiteUrl) ? { website: said(identity?.websiteUrl) } : {}),
-    leadSource: LEAD_SOURCE,
+    // REQ-211 — the landing page and the ad the account came from, on the source: "paperworkmonster.com · /landing5?ad=cumple"
+    leadSource: leadSourceFor(LEAD_SOURCE, user.origin),
   };
   return {
     customerName: customerNameFor({ name, email: user.email, phoneNumber: user.phoneNumber }, identity),
@@ -86,9 +88,10 @@ export class CrmCustomerSync {
 
   /** REQ-060 — the phone typed into login is a CRM lead at once, unnamed, no email, no ref;
    *  REQ-072 — the CRM's refusal is thrown: the outbox sweep (CrmLeadCapture) decides the retry */
-  capture(phoneNumber: string): Promise<{ customerId: string }> {
+  capture(phoneNumber: string, origin?: LeadOrigin): Promise<{ customerId: string }> {
     const phone = normalizePhone(phoneNumber);
-    return this.link.createCustomer({ customerName: UNNAMED_CUSTOMER, customerEmail: "", customerPhone: phone, tier: LEAD_TIER, leadSource: LEAD_SOURCE });
+    // REQ-211 — the lead's source names the landing page and the ad it came from
+    return this.link.createCustomer({ customerName: UNNAMED_CUSTOMER, customerEmail: "", customerPhone: phone, tier: LEAD_TIER, leadSource: leadSourceFor(LEAD_SOURCE, origin) });
   }
 
   /** what the CRM holds for this account; null before its first sync */

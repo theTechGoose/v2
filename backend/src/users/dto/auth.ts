@@ -16,6 +16,16 @@ export class SendOtpDto {
   @IsOptional()
   @IsIn(["en", "es"])
   language?: Language;
+
+  /** REQ-211 — the landing page the signup was made on and the ad on its URL; read leniently
+   *  by leadOriginOf, never a refused send */
+  @IsOptional()
+  @IsString()
+  page?: string;
+
+  @IsOptional()
+  @IsString()
+  ad?: string;
 }
 
 export class VerifyOtpDto {

@@ -1,3 +1,4 @@
+import type { LeadOrigin } from "#lead-origin/mod.ts";
 import type { FeatureKey } from "#features";
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
@@ -54,7 +55,7 @@ export class UserStore {
    * on documents and texted by the alerts) and it gets no phone index.
    */
   async create(
-    input: { phoneNumber?: string; email?: string; language?: Language; name?: string },
+    input: { phoneNumber?: string; email?: string; language?: Language; name?: string; origin?: LeadOrigin },
   ): Promise<User> {
     const kv = await getKv();
     const id = crypto.randomUUID();
@@ -66,6 +67,7 @@ export class UserStore {
       email: input.email,
       name: input.name,
       language: input.language,
+      ...(input.origin ? { origin: input.origin } : {}), // REQ-211
       createdAt: now,
       updatedAt: now,
     };

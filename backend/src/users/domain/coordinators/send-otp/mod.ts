@@ -5,11 +5,14 @@ import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import { generateOtpCode } from "@users/domain/business/generate-otp-code/mod.ts";
 import { evaluateSendOtp } from "#quote-flow/otp-rate-limit.ts";
 import type { Language } from "@users/dto/user.ts";
+import type { LeadOrigin } from "#lead-origin/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 
 export interface SendOtpInput {
   phoneNumber: string;
   language?: Language;
+  /** REQ-211 — the landing page and the ad the signup came from; stored on the OTP record */
+  origin?: LeadOrigin;
 }
 
 /**
@@ -71,7 +74,7 @@ export class SendOtp {
     if (!gate.allowed) throw new SendOtpCooldownError(gate.retryAfterSeconds);
 
     const code = generateOtpCode();
-    await this.otps.put({ phoneNumber: normalizedPhone, code, language: input.language });
+    await this.otps.put({ phoneNumber: normalizedPhone, code, language: input.language, origin: input.origin });
 
     const body = renderSmsBody(code, input.language ?? "es");
     if (Deno.env.get("DEV_LOG_OTP") === "1") {

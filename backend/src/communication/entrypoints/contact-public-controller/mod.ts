@@ -13,6 +13,7 @@ import { plainToInstance } from "#class-transformer";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { RateLimiter } from "@core/data/rate-limit/mod.ts";
 import { teamInbox } from "@communication/domain/business/team-inbox/mod.ts";
+import { type LeadOrigin, leadOriginLabel, leadOriginOf } from "#lead-origin/mod.ts";
 
 const MAX_PER_WINDOW = 5;
 const WINDOW_MS = 60 * 60 * 1000;
@@ -66,6 +67,8 @@ export class ContactPublicController {
   @Post()
   async submit(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const dto = parseContact(body);
+    // REQ-211 — the landing page and the ad the form was on, read leniently off the raw body: junk is dropped, never a refused inquiry
+    const origin = leadOriginOf(body);
     const decision = await this.rateLimiter.take(
       "contact-form",
       dto.email.toLowerCase(),
@@ -81,7 +84,7 @@ export class ContactPublicController {
     }
 
     const subject = `[contact] ${dto.subject}`;
-    const htmlBody = renderContactHtml(dto);
+    const htmlBody = renderContactHtml(dto, origin);
     // the team inboxes, the one list the demo booking reaches too (REQ-081)
     const recipient = teamInbox();
 
@@ -94,10 +97,12 @@ export class ContactPublicController {
  * REQ-068 — the phone (when given) and the SMS consent are printed with the
  * inquiry, so the team's inbox is the record of who agreed to be texted.
  */
-function renderContactHtml(c: ContactDto): string {
+function renderContactHtml(c: ContactDto, origin?: LeadOrigin): string {
   const phone = c.phone?.trim();
+  const page = leadOriginLabel(origin); // REQ-211
   return `
 <h2>New contact-form submission</h2>
+<p><strong>Page:</strong> ${page ? escapeHtml(page) : "—"}</p>
 <p><strong>From:</strong> ${escapeHtml(c.name)} &lt;${
     escapeHtml(c.email)
   }&gt;</p>

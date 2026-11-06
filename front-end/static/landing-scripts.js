@@ -828,7 +828,13 @@
         const res = await fetch("/api/auth/send-otp", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ phoneNumber: e164, language: curLang }),
+          // REQ-211 — the page this signup was made on and the ad on its URL ride with it
+          body: JSON.stringify({
+            phoneNumber: e164,
+            language: curLang,
+            page: location.pathname,
+            ad: new URLSearchParams(location.search).get("ad") || undefined,
+          }),
         });
         // UX-33: a 429 cooldown means a valid code is ALREADY in the user's
         // SMS — hand them to the code screen ("Te enviamos un código a …")

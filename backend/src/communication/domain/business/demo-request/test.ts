@@ -188,11 +188,35 @@ Deno.test("REQ-117 demoSummary + demoConfirmationSms + demoTeamEmail — a call 
   assertMatch(demoConfirmationSms(parseDemoRequest({ ...call, lang: "es" }, NOW)), /^DocuMonster: ¡listo! Te llamamos — Llamada · lo antes posible\. ¿Cambios\?/);
   const mail = demoTeamEmail(parseDemoRequest(call, NOW));
   assertEquals(mail.subject, "[call] +15125550199 — as soon as possible");
-  assertMatch(mail.htmlBody, /<h2>New Phone call request from \/landing2<\/h2>/);
+  assertMatch(mail.htmlBody, /<h2>New Phone call request<\/h2>/); // REQ-211 — the page is named only when the post said it
   assertMatch(mail.htmlBody, /When:<\/strong> as soon as possible/);
   assertMatch(mail.htmlBody, /Name:<\/strong> —/);
   assertMatch(mail.htmlBody, /Email:<\/strong> —/);
   assertMatch(mail.htmlBody, /Phone:<\/strong> \+15125550199/);
   assertMatch(mail.htmlBody, /Consent:<\/strong> yes/);
   assertMatch(demoTeamEmail(parseDemoRequest(demo, NOW)).subject, /^\[demo\] José García — 2026-10-20 10:30 AM Eastern$/);
+});
+
+// REQ-211 — Raphael, 2026-11-06: "There is something that says what landing page it is coming
+// from?" — the booking carries the page it was made on and the ad that brought the person, and
+// the team's email names them; junk in those two fields is dropped, never a refused booking.
+Deno.test("REQ-211 parseDemoRequest — the page and the ad ride with the booking; junk is dropped, the booking stands", () => {
+  const req = parseDemoRequest({ ...demo, page: "/landing5", ad: "Cumple" }, NOW);
+  assertEquals(req.origin, { page: "/landing5", ad: "cumple" });
+  assertEquals(parseDemoRequest({ ...demo, page: "/landing2" }, NOW).origin, { page: "/landing2" });
+  assertEquals(parseDemoRequest(demo, NOW).origin, undefined, "a post without them: no origin, as before");
+  assertEquals(parseDemoRequest({ ...demo, page: "javascript:alert(1)", ad: "<b>" }, NOW).origin, undefined, "junk is dropped");
+  const call = parseDemoRequest({ mode: "call", phone: "(512) 555-0199", consent: true, page: "/landing5", ad: "sabado" }, NOW);
+  assertEquals([call.mode, call.origin], ["call", { page: "/landing5", ad: "sabado" }]);
+});
+
+Deno.test("REQ-211 demoTeamEmail — the heading and a Page row name the page and the ad; without them the row says —", () => {
+  const withPage = demoTeamEmail(parseDemoRequest({ ...demo, page: "/landing5", ad: "cumple" }, NOW));
+  assertMatch(withPage.htmlBody, /<h2>New 15-min demo request from \/landing5\?ad=cumple<\/h2>/);
+  assertMatch(withPage.htmlBody, /Page:<\/strong> \/landing5\?ad=cumple/);
+  const call = demoTeamEmail(parseDemoRequest({ mode: "call", phone: "(512) 555-0199", consent: true, page: "/landing2" }, NOW));
+  assertMatch(call.htmlBody, /<h2>New Phone call request from \/landing2<\/h2>/);
+  const none = demoTeamEmail(parseDemoRequest(demo, NOW));
+  assertMatch(none.htmlBody, /<h2>New 15-min demo request<\/h2>/, "no page known: no page named");
+  assertMatch(none.htmlBody, /Page:<\/strong> —/);
 });

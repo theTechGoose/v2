@@ -137,3 +137,21 @@ Deno.test("REQ-133 outbox — later() sets the watch's next look and drops the l
   assertEquals(await outbox.watchByDue("d-133"), null, "the old due's watch is gone with the re-mark");
   await resetKv();
 });
+
+// REQ-211 — the lead's origin (the page, the ad) is on the outbox record and survives a deferral
+Deno.test("REQ-211 outbox — add keeps the lead's origin, defer carries it to the next attempt, a second add keeps the first", async () => {
+  const outbox = await fresh();
+  await outbox.add("+15125550211", t0, { page: "/landing5", ad: "cumple" });
+  let [rec] = await outbox.list();
+  assertEquals(rec.origin, { page: "/landing5", ad: "cumple" });
+  const deferred = await outbox.defer(rec, t0 + 1000, "boom");
+  assertEquals(deferred.origin, { page: "/landing5", ad: "cumple" }, "the deferral keeps it");
+  [rec] = await outbox.list();
+  assertEquals(rec.origin, { page: "/landing5", ad: "cumple" });
+  await outbox.add("+15125550211", t0 + 2000, { page: "/landing2" });
+  [rec] = await outbox.list();
+  assertEquals(rec.origin, { page: "/landing5", ad: "cumple" }, "an existing record is kept as it is");
+  await outbox.add("+15125550212", t0);
+  assertEquals((await outbox.list()).find((r) => r.phone === "+15125550212")?.origin, undefined);
+  await resetKv();
+});
