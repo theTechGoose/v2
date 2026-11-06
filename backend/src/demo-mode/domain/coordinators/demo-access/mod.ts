@@ -11,7 +11,10 @@ import {
 } from "@users/domain/coordinators/require-user/mod.ts";
 import type { User } from "@users/dto/user.ts";
 import type { Role } from "#demo-mode/protocol.ts";
-import { roleFor } from "@demo-mode/domain/business/demo-role/mod.ts";
+import {
+  presenterIdFor,
+  roleFor,
+} from "@demo-mode/domain/business/demo-role/mod.ts";
 import { DemoSessionStore } from "@demo-mode/domain/data/demo-session-store/mod.ts";
 import type { DemoSession } from "@demo-mode/dto/demo-session.ts";
 
@@ -63,27 +66,29 @@ export class DemoAccess {
     return { session, user };
   }
 
-  /** the demo `id` and the caller's role in it; 404 when there is no such demo, 403 when they are nobody in it */
+  /** the demo `id` and the caller's role in it (REQ-214: and which presenter they are, `pid`);
+   *  404 when there is no such demo, 403 when they are nobody in it */
   async roleIn(
     caller: Caller,
     id: string,
     opts: { evenEnded?: boolean } = {},
-  ): Promise<{ demo: DemoSession; role: Role }> {
+  ): Promise<{ demo: DemoSession; role: Role; pid: string | null }> {
     const demo = await this.demos.get(id);
     if (!demo) throw new DemoNotFoundError();
-    const role = roleFor(
-      caller.session,
-      caller.user,
-      opts.evenEnded ? { ...demo, endedAt: undefined } : demo,
-    );
+    const seen = opts.evenEnded ? { ...demo, endedAt: undefined } : demo;
+    const role = roleFor(caller.session, caller.user, seen);
     if (!role) throw new DemoForbiddenError();
-    return { demo, role };
+    return {
+      demo,
+      role,
+      pid: presenterIdFor(caller.session, caller.user, seen),
+    };
   }
 
   /** the live demo the caller is in, as presenter (own or impersonation session) or viewer */
   async current(
     caller: Caller,
-  ): Promise<{ demo: DemoSession; role: Role } | null> {
+  ): Promise<{ demo: DemoSession; role: Role; pid: string | null } | null> {
     const { session, user } = caller;
     const candidates = session.impersonatorId
       ? [await this.demos.presentingBy(session.impersonatorId)]
@@ -94,7 +99,9 @@ export class DemoAccess {
     for (const demo of candidates) {
       if (!demo) continue;
       const role = roleFor(session, user, demo);
-      if (role) return { demo, role };
+      if (role) {
+        return { demo, role, pid: presenterIdFor(session, user, demo) };
+      }
     }
     return null;
   }

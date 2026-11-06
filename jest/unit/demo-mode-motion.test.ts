@@ -155,9 +155,15 @@ describe("REQ-180 — the overlay and the stage are wired to it", () => {
       );
       expect(island).toMatch(/newerMove\(/);
       expect(island).toMatch(/MOVE_GAP_DIRECT_MS : MOVE_GAP_RELAY_MS/);
-      expect(island).toMatch(/useGlide\(\)/);
-      expect(island).toMatch(/glide\.glideTo\(/);
     }
+    // REQ-214 (2026-11-06): the overlay draws one pointer PER PRESENTER through PeerPointer,
+    // which owns that pointer's glide; the stage keeps its own glide for the customer's pointer
+    const peer = read("front-end/components/demo-mode/PeerPointer.tsx");
+    expect(peer).toMatch(/useGlide\(\)/);
+    expect(peer).toMatch(/glide\.glideTo\(/);
+    expect(overlay).toMatch(/<PeerPointer/);
+    expect(stage).toMatch(/useGlide\(\)/);
+    expect(stage).toMatch(/glide\.glideTo\(/);
     expect(glide).toMatch(/glideStep\(/);
     // the drawn position is written frame by frame, never a snap through a CSS transition
     expect(glide).not.toMatch(/transition:transform/);

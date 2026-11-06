@@ -9,6 +9,9 @@
  * fractions of the frame (REQ-188) and never reach it. The customer's pointer is drawn at the
  * same fraction of the frame. The pill: the customer's name, the link status, the frame size,
  * End — which hands the presenter their own account back (stop-impersonating → /admin).
+ *
+ * REQ-214 — several staff may present at once: the other presenters' pointers are drawn on the
+ * frame too, each in their colour with their name, and the pill lists who is presenting.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t } from "../lib/i18n.ts";
@@ -16,12 +19,14 @@ import { demoModeClient } from "../clients/demo-mode.ts";
 import { adminClient } from "../clients/admin.ts";
 import {
   ACTIVE_POLL_MS,
+  CUSTOMER_COLOR,
   DEFAULT_VIEW,
   fitScale,
   fracToPoint,
   mergeView,
   type PeerMessage,
   pointToFrac,
+  type Presenter,
   type View,
 } from "../../shared/demo-mode/protocol.ts";
 import {
@@ -35,6 +40,7 @@ import {
   connectDemo,
   type DemoLink,
   type LinkStatus,
+  type PeerFrom,
 } from "../lib/demo-mode/transport.ts";
 import {
   applyScroll,
@@ -46,13 +52,25 @@ import DemoPointer, {
   type Wave,
   WAVE_MS,
 } from "../components/demo-mode/DemoPointer.tsx";
+import PeerPointer, {
+  type PointerCmd,
+} from "../components/demo-mode/PeerPointer.tsx";
+import PresenterChips from "../components/demo-mode/PresenterChips.tsx";
 
 interface Demo {
   id: string;
   presenterName: string;
   targetName: string;
   targetUserId: string;
+  /** REQ-214 — everyone presenting, and which of them this browser is */
+  presenters: Presenter[];
+  pid: string | null;
 }
+
+/** the same demo with the same presenters (a roster change re-renders, a poll's echo does not) */
+const sameDemo = (a: Demo | null, b: Demo) =>
+  a?.id === b.id &&
+  JSON.stringify(a.presenters) === JSON.stringify(b.presenters);
 
 const Z = 2147483000;
 /** room around the frame: the pill sits in the bottom band */
@@ -80,6 +98,11 @@ export default function DemoStage() {
   const [stage, setStage] = useState({ w: 1, h: 1 });
   const [bannerH, setBannerH] = useState(0);
   const [waves, setWaves] = useState<Wave[]>([]);
+  /** REQ-214 — the latest thing each colleague did, by pid */
+  const [cmds, setCmds] = useState<Record<string, PointerCmd>>({});
+  const seq = useRef(0);
+  const demoRef = useRef<Demo | null>(null);
+  demoRef.current = demo;
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const frameLoaded = useRef(false);
   const linkRef = useRef<DemoLink | null>(null);
@@ -207,8 +230,8 @@ export default function DemoStage() {
         const a = await demoModeClient.active();
         if (!alive) return;
         if (a.session && a.role === "presenter") {
-          const found: Demo = { ...a.session };
-          setDemo((d) => d?.id === found.id ? d : found);
+          const found: Demo = { ...a.session, pid: a.pid };
+          setDemo((d) => sameDemo(d, found) ? d : found);
           setGone(false);
           // AMENDMENT — same screen at once: the customer's last reported page, until they report
           if (!heardRef.current && a.targetPath) {
@@ -239,10 +262,29 @@ export default function DemoStage() {
   useEffect(() => {
     if (!demo) return;
     let lastT = 0;
+    /** REQ-180 — the last move clock seen, per colleague */
+    const lastTOf = new Map<string, number>();
     let wasOnline = false;
+    /** REQ-214 — a colleague's pointer; one the roster does not know yet triggers a fresh ask */
+    const command = (pid: string, cmd: Omit<PointerCmd, "seq">) => {
+      if (!demoRef.current?.presenters.some((p) => p.userId === pid)) {
+        pollRef.current?.();
+      }
+      setCmds((c) => ({ ...c, [pid]: { seq: ++seq.current, ...cmd } }));
+    };
     const link = connectDemo({
       sessionId: demo.id,
       role: "presenter",
+      pid: demo.pid ?? undefined,
+      onPresence: (pid, online) => {
+        if (!online) {
+          setCmds((c) => ({
+            ...c,
+            [pid]: { seq: ++seq.current, kind: "leave" },
+          }));
+        }
+        pollRef.current?.();
+      },
       onStatus: (s) => {
         setStatus(s);
         const online = s === "direct" || s === "relay";
@@ -261,7 +303,22 @@ export default function DemoStage() {
       onPeerOnline: () => {
         // the customer reports the whole view on its own
       },
-      onPeer: (m: PeerMessage) => {
+      onPeer: (m: PeerMessage, from: PeerFrom) => {
+        if (from.role === "presenter") {
+          // REQ-214 — a colleague's pointer, at the same fraction of the frame
+          const pid = from.pid ?? "";
+          if (!pid || pid === demoRef.current?.pid) return;
+          if (m.k === "move") {
+            if (!newerMove(lastTOf.get(pid) ?? 0, m.t)) return;
+            lastTOf.set(pid, m.t ?? lastTOf.get(pid) ?? 0);
+            command(pid, { kind: "move", at: fracToPoint(m.a, fitBox()) });
+          } else if (m.k === "click") {
+            command(pid, { kind: "click", at: fracToPoint(m.a, fitBox()) });
+          } else if (m.k === "leave") {
+            command(pid, { kind: "leave" });
+          }
+          return;
+        }
         switch (m.k) {
           case "move":
             if (!newerMove(lastT, m.t)) break;
@@ -291,6 +348,7 @@ export default function DemoStage() {
       onEnded: () => {
         setEnded(true);
         glide.hide();
+        setCmds({});
         setTimeout(() => {
           setDemo(null);
           setEnded(false);
@@ -304,6 +362,7 @@ export default function DemoStage() {
       link.close();
       linkRef.current = null;
       glide.hide();
+      setCmds({});
       setPeerOnline(false);
       setStatus("connecting");
     };
@@ -429,14 +488,24 @@ export default function DemoStage() {
         pointer={glide.pointer}
         waves={waves}
         name={name}
-        color="#e8562a"
+        color={CUSTOMER_COLOR}
         z={Z + 1}
         attach={glide.attach}
       />
+      {demo?.presenters.filter((p) => p.userId !== demo.pid).map((p) => (
+        <PeerPointer
+          key={p.userId}
+          name={p.name}
+          color={p.color}
+          z={Z + 1}
+          cmd={cmds[p.userId] ?? null}
+        />
+      ))}
       {demo && (
         <div data-cy="demo-pill" role="status" style={pillStyle}>
           <strong>{t("demoMode.title")}</strong>
           <span>{t("demoMode.presenting", { name })}</span>
+          <PresenterChips presenters={demo.presenters} me={demo.pid} />
           <span
             data-cy="demo-status"
             style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
