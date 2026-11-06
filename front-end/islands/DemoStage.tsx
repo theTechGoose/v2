@@ -1,0 +1,466 @@
+/**
+ * REQ-187 — the stage: the staff's demo page. A dark stage with ONE frame — the app, as the
+ * customer (impersonation), rendered at exactly the customer's layout viewport and scaled to fit
+ * this window. The customer's app reports its view over the link and the stage applies it:
+ * the frame's size, its page (navigated in place), the same scrolled elements, and the page-local
+ * state (sidebar flags, map centre/zoom) handed into the frame for its islands to take.
+ *
+ * Point only: a transparent layer covers the frame; the presenter's moves and clicks go out as
+ * fractions of the frame (REQ-188) and never reach it. The customer's pointer is drawn at the
+ * same fraction of the frame. The pill: the customer's name, the link status, the frame size,
+ * End — which hands the presenter their own account back (stop-impersonating → /admin).
+ */
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { t } from "../lib/i18n.ts";
+import { demoModeClient } from "../clients/demo-mode.ts";
+import { adminClient } from "../clients/admin.ts";
+import {
+  ACTIVE_POLL_MS,
+  DEFAULT_VIEW,
+  fitScale,
+  fracToPoint,
+  mergeView,
+  type PeerMessage,
+  pointToFrac,
+  type View,
+} from "../../shared/demo-mode/protocol.ts";
+import {
+  MOVE_GAP_DIRECT_MS,
+  MOVE_GAP_RELAY_MS,
+  moveThrottle,
+  newerMove,
+  type Pt,
+} from "../../shared/demo-mode/motion.ts";
+import {
+  connectDemo,
+  type DemoLink,
+  type LinkStatus,
+} from "../lib/demo-mode/transport.ts";
+import {
+  applyScroll,
+  pushViewTo,
+  REPLICA_FRAME_NAME,
+} from "../lib/demo-mode/replica.ts";
+import { useGlide } from "../lib/demo-mode/use-glide.ts";
+import DemoPointer, {
+  type Wave,
+  WAVE_MS,
+} from "../components/demo-mode/DemoPointer.tsx";
+
+interface Demo {
+  id: string;
+  presenterName: string;
+  targetName: string;
+  targetUserId: string;
+}
+
+const Z = 2147483000;
+/** room around the frame: the pill sits in the bottom band */
+const INSET = { top: 16, right: 16, bottom: 76, left: 16 };
+
+const framePath = (win: Window | null) => {
+  try {
+    return win ? win.location.pathname + win.location.search : null;
+  } catch {
+    return null;
+  }
+};
+
+export default function DemoStage() {
+  const [demo, setDemo] = useState<Demo | null>(null);
+  /** the server said there is no demo for this session */
+  const [gone, setGone] = useState(false);
+  const [status, setStatus] = useState<LinkStatus>("connecting");
+  const [peerOnline, setPeerOnline] = useState(false);
+  const [ended, setEnded] = useState(false);
+  const [view, setView] = useState<View>(DEFAULT_VIEW);
+  const viewRef = useRef<View>(DEFAULT_VIEW);
+  /** the customer's app has reported at least once (before that, targetPath from the poll stands in) */
+  const heardRef = useRef(false);
+  const [stage, setStage] = useState({ w: 1, h: 1 });
+  const [bannerH, setBannerH] = useState(0);
+  const [waves, setWaves] = useState<Wave[]>([]);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const frameLoaded = useRef(false);
+  const linkRef = useRef<DemoLink | null>(null);
+  const peerOnlineRef = useRef(false);
+  peerOnlineRef.current = peerOnline;
+  const pollRef = useRef<(() => void) | null>(null);
+  const waveId = useRef(0);
+  const glide = useGlide();
+  /** the frame's first page; later pages are navigated in place (a new src would reload it) */
+  const firstSrc = useRef<string | null>(null);
+
+  const fit = useMemo(
+    () => fitScale(stage, view, { ...INSET, top: INSET.top + bannerH }),
+    [stage.w, stage.h, view.w, view.h, bannerH],
+  );
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
+  /** REQ-188 — the frame's box on this screen: fractions of the customer's viewport map onto it */
+  const fitBox = () => fitRef.current;
+
+  /** this side's moves, rated leading + trailing so the rest position always goes out */
+  const throttle = useMemo(() =>
+    moveThrottle<Pt>({
+      gap: () =>
+        linkRef.current?.isDirect() ? MOVE_GAP_DIRECT_MS : MOVE_GAP_RELAY_MS,
+      send: ({ x, y }) =>
+        linkRef.current?.send(
+          {
+            k: "move",
+            a: pointToFrac({ x, y }, fitBox()),
+            t: performance.now(),
+          },
+          true,
+        ),
+    }), []);
+
+  /** the view into the frame: its page, its scrolls, and the page islands' state */
+  const applyView = (v: View) => {
+    const frame = frameRef.current;
+    const win = frame?.contentWindow ?? null;
+    if (!frame || !win) return;
+    if (!frameLoaded.current) return; // applied on load
+    const at = framePath(win);
+    if (at !== null && at !== v.path) {
+      frameLoaded.current = false;
+      try {
+        win.location.replace(v.path);
+      } catch {
+        frameLoaded.current = true;
+      }
+      return; // the rest lands on load
+    }
+    try {
+      applyScroll(win, v.scroll);
+    } catch {
+      // the frame is mid-navigation
+    }
+    pushViewTo(frame, v);
+  };
+  const onFrameLoad = () => {
+    frameLoaded.current = true;
+    const v = viewRef.current;
+    const win = frameRef.current?.contentWindow ?? null;
+    // a page may have redirected inside the frame; the customer's view still rules
+    const at = framePath(win);
+    if (at !== null && at !== v.path && heardRef.current) {
+      applyView(v);
+      return;
+    }
+    try {
+      if (win) applyScroll(win, v.scroll);
+    } catch {
+      // not ours to scroll yet
+    }
+    if (frameRef.current) pushViewTo(frameRef.current, v);
+    // scrolls settle after layout; once more a beat later
+    setTimeout(() => {
+      try {
+        if (win && frameLoaded.current) {
+          applyScroll(win, viewRef.current.scroll);
+        }
+      } catch {
+        // gone
+      }
+    }, 120);
+  };
+  const takeView = (next: View) => {
+    viewRef.current = next;
+    setView(next);
+    applyView(next);
+  };
+
+  // 0. the stage's own size, and the banner's height (REQ-184: never under it). The banner mounts
+  //    later than the stage (it waits for whoami) and publishes --pm-banner-h on <html>; the stage
+  //    watches that, so it moves down the moment the banner appears or grows.
+  useEffect(() => {
+    const measure = () => {
+      setStage({ w: globalThis.innerWidth, h: globalThis.innerHeight });
+      const b = document.querySelector("[data-demo-skip]");
+      setBannerH(b ? b.getBoundingClientRect().height : 0);
+    };
+    measure();
+    addEventListener("resize", measure);
+    const mo = typeof MutationObserver === "undefined"
+      ? null
+      : new MutationObserver(measure);
+    mo?.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["style"],
+    });
+    mo?.observe(document.body, { childList: true });
+    return () => {
+      removeEventListener("resize", measure);
+      mo?.disconnect();
+    };
+  }, []);
+
+  // 1. which demo: on load, every 5 s while the customer's app is not connected
+  useEffect(() => {
+    let alive = true;
+    let timer: number | undefined;
+    const check = async () => {
+      clearTimeout(timer);
+      try {
+        const a = await demoModeClient.active();
+        if (!alive) return;
+        if (a.session && a.role === "presenter") {
+          const found: Demo = { ...a.session };
+          setDemo((d) => d?.id === found.id ? d : found);
+          setGone(false);
+          // AMENDMENT — same screen at once: the customer's last reported page, until they report
+          if (!heardRef.current && a.targetPath) {
+            const v = viewRef.current;
+            if (v.path !== a.targetPath) takeView({ ...v, path: a.targetPath });
+          }
+        } else {
+          setDemo(null);
+          setGone(true);
+        }
+      } catch {
+        // signed out, or the backend is away
+      }
+      if (alive && !peerOnlineRef.current) {
+        timer = setTimeout(check, ACTIVE_POLL_MS);
+      }
+    };
+    pollRef.current = () => void check();
+    void check();
+    return () => {
+      alive = false;
+      pollRef.current = null;
+      clearTimeout(timer);
+    };
+  }, []);
+
+  // 2. the link
+  useEffect(() => {
+    if (!demo) return;
+    let lastT = 0;
+    let wasOnline = false;
+    const link = connectDemo({
+      sessionId: demo.id,
+      role: "presenter",
+      onStatus: (s) => {
+        setStatus(s);
+        const online = s === "direct" || s === "relay";
+        setPeerOnline(online);
+        if (wasOnline && !online && s !== "ended") pollRef.current?.();
+        wasOnline = online;
+        if (s === "closed") {
+          demoModeClient.active().then((a) => {
+            if (!a.session) {
+              setDemo(null);
+              setGone(true);
+            }
+          }).catch(() => setDemo(null));
+        }
+      },
+      onPeerOnline: () => {
+        // the customer reports the whole view on its own
+      },
+      onPeer: (m: PeerMessage) => {
+        switch (m.k) {
+          case "move":
+            if (!newerMove(lastT, m.t)) break;
+            lastT = m.t ?? lastT;
+            glide.glideTo(fracToPoint(m.a, fitBox()));
+            break;
+          case "click": {
+            const at = fracToPoint(m.a, fitBox());
+            glide.glideTo(at);
+            const id = ++waveId.current;
+            setWaves((w) => [...w, { id, ...at }]);
+            setTimeout(
+              () => setWaves((w) => w.filter((x) => x.id !== id)),
+              WAVE_MS,
+            );
+            break;
+          }
+          case "leave":
+            glide.hide();
+            break;
+          case "view":
+            heardRef.current = true;
+            takeView(mergeView(viewRef.current, m.v));
+            break;
+        }
+      },
+      onEnded: () => {
+        setEnded(true);
+        glide.hide();
+        setTimeout(() => {
+          setDemo(null);
+          setEnded(false);
+          void backToOwnAccount();
+        }, 1500);
+      },
+    });
+    linkRef.current = link;
+    return () => {
+      throttle.cancel();
+      link.close();
+      linkRef.current = null;
+      glide.hide();
+      setPeerOnline(false);
+      setStatus("connecting");
+    };
+  }, [demo?.id]);
+
+  /** REQ-153 — the demo over, the presenter is handed their own account back */
+  async function backToOwnAccount() {
+    try {
+      const who = await adminClient.whoami();
+      if (who.impersonating) await adminClient.stopImpersonating();
+    } catch {
+      // not impersonating, or signed out
+    }
+    globalThis.location.href = "/admin";
+  }
+
+  async function end() {
+    linkRef.current?.end();
+    try {
+      if (demo) await demoModeClient.end(demo.id);
+    } catch {
+      // the socket's end reaches the server too
+    }
+    setEnded(true);
+    setTimeout(() => void backToOwnAccount(), 800);
+  }
+
+  const sendClick = (x: number, y: number) =>
+    linkRef.current?.send({ k: "click", a: pointToFrac({ x, y }, fitBox()) });
+
+  if (firstSrc.current === null && (heardRef.current || demo)) {
+    firstSrc.current = view.path;
+  }
+  const name = demo?.targetName ?? "";
+  const statusLabel = ended || status === "ended"
+    ? t("demoMode.ended")
+    : status === "direct"
+    ? t("demoMode.direct")
+    : status === "relay"
+    ? t("demoMode.relay")
+    : status === "waiting"
+    ? t("demoMode.waitingFor", { name })
+    : "…";
+  const pillStyle =
+    `position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:${
+      Z + 3
+    };display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 24px);padding:9px 14px;border-radius:14px;background:#1f3d1b;color:#fff;font:inherit;font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35)`;
+
+  return (
+    <div
+      data-demo-overlay
+      data-cy="demo-stage"
+      style={`position:fixed;left:0;right:0;bottom:0;top:${bannerH}px;background:#121a16;overflow:hidden;z-index:${
+        Z - 1
+      }`}
+    >
+      {gone && !demo
+        ? (
+          <div
+            data-cy="demo-stage-empty"
+            style="position:absolute;inset:0;display:grid;place-items:center;color:#fff;font:inherit"
+          >
+            <div style="text-align:center;display:grid;gap:12px">
+              <strong>{t("demoMode.noDemo")}</strong>
+              <a
+                href="/admin"
+                style="color:#fff;text-decoration:underline;font-size:13px"
+              >
+                {t("demoMode.backToAdmin")}
+              </a>
+            </div>
+          </div>
+        )
+        : (
+          <>
+            <div
+              style={`position:absolute;left:${fit.left}px;top:${
+                fit.top - bannerH
+              }px;width:${fit.width}px;height:${fit.height}px;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.6);background:#fff;overflow:hidden`}
+            >
+              {firstSrc.current !== null && (
+                <iframe
+                  ref={frameRef}
+                  data-cy="demo-frame"
+                  name={REPLICA_FRAME_NAME}
+                  title={t("demoMode.theirScreen", {
+                    name,
+                    w: view.w,
+                    h: view.h,
+                  })}
+                  src={firstSrc.current}
+                  width={view.w}
+                  height={view.h}
+                  onLoad={onFrameLoad}
+                  style={`display:block;border:0;width:${view.w}px;height:${view.h}px;transform:scale(${fit.s});transform-origin:0 0;pointer-events:none;background:#fff`}
+                />
+              )}
+            </div>
+            <div
+              data-cy="demo-stage-layer"
+              aria-hidden="true"
+              style={`position:absolute;left:${fit.left}px;top:${
+                fit.top - bannerH
+              }px;width:${fit.width}px;height:${fit.height}px;z-index:${Z};cursor:crosshair;touch-action:none;background:transparent`}
+              onPointerMove={(e) => {
+                if (linkRef.current) {
+                  throttle.push({
+                    x: e.clientX,
+                    y: e.clientY,
+                  });
+                }
+              }}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                sendClick(e.clientX, e.clientY);
+              }}
+              onPointerLeave={() => linkRef.current?.send({ k: "leave" })}
+              onContextMenu={(e) => e.preventDefault()}
+            />
+          </>
+        )}
+      <DemoPointer
+        pointer={glide.pointer}
+        waves={waves}
+        name={name}
+        color="#e8562a"
+        z={Z + 1}
+        attach={glide.attach}
+      />
+      {demo && (
+        <div data-cy="demo-pill" role="status" style={pillStyle}>
+          <strong>{t("demoMode.title")}</strong>
+          <span>{t("demoMode.presenting", { name })}</span>
+          <span
+            data-cy="demo-status"
+            style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
+          >
+            {statusLabel}
+          </span>
+          <span
+            data-cy="demo-screen"
+            style="opacity:.8;font-size:12px"
+          >
+            {t("demoMode.theirScreen", { name, w: view.w, h: view.h })} ·{" "}
+            {t("demoMode.pointOnlyHint")}
+          </span>
+          <button
+            type="button"
+            data-cy="demo-end"
+            disabled={ended}
+            onClick={end}
+            style="padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#7a2e2e;cursor:pointer;font:inherit;font-size:12px;font-weight:700"
+          >
+            {t("demoMode.end")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

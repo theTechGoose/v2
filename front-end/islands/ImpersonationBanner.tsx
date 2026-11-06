@@ -7,16 +7,28 @@
  * hits /admin/stop-impersonating (server swaps the cookie back) and reloads.
  *
  * Renders nothing for ordinary sessions, so it's safe to mount everywhere.
+ *
+ * REQ-184 — it makes room for itself: it sits in the page's flow (sticky at the top, never over the
+ * content) and publishes its height as --pm-banner-h, which the dashboard shell, its mobile top bar
+ * and the mobile sidebar drawer subtract or start below — the staff never loses the top of the
+ * customer's page under the red bar.
+ *
+ * REQ-187 — inside the stage's replica frame it renders nothing: the customer has no banner.
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { adminClient, type WhoAmI } from "../clients/admin.ts";
 import { fmtPhone } from "../lib/format.ts";
+import { isReplicaFrame } from "../lib/demo-mode/replica.ts";
 
 export default function ImpersonationBanner() {
   const [who, setWho] = useState<WhoAmI | null>(null);
   const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const replica = isReplicaFrame();
+  const shown = Boolean(who?.impersonating) && !replica;
 
   useEffect(() => {
+    if (replica) return;
     let alive = true;
     adminClient.whoami()
       .then((w) => {
@@ -28,7 +40,24 @@ export default function ImpersonationBanner() {
     };
   }, []);
 
-  if (!who?.impersonating) return null;
+  useEffect(() => {
+    const el = ref.current;
+    if (!shown || !el) return;
+    const root = document.documentElement;
+    const publish = () =>
+      root.style.setProperty("--pm-banner-h", `${el.offsetHeight}px`);
+    publish();
+    const ro = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(publish);
+    ro?.observe(el);
+    return () => {
+      ro?.disconnect();
+      root.style.removeProperty("--pm-banner-h");
+    };
+  }, [shown]);
+
+  if (!shown || !who) return null;
 
   const acting = who.user;
   const actingLabel = acting
@@ -47,8 +76,11 @@ export default function ImpersonationBanner() {
 
   return (
     <div
+      ref={ref}
+      // REQ-153 — demo mode's pointer paths never count this banner (the staff side alone has it)
+      data-demo-skip
       role="status"
-      style="position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:8px 14px;background:#7a2e2e;color:#fff;font:inherit;font-size:13px;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.25)"
+      style="position:sticky;top:0;z-index:9999;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:8px 14px;background:#7a2e2e;color:#fff;font:inherit;font-size:13px;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.25)"
     >
       <span>
         Impersonating <strong>{actingLabel}</strong>

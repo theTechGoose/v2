@@ -66,7 +66,7 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin;
     let seen = await labels();
     expect.eq(
       seen.join(" | "),
-      "Dashboard | Customers | Billing | Recurring | Admin",
+      "Dashboard | Customers | Billing | Recurring | Roles",
       "the root is the five rows",
     );
     // 2. Billing: Back, Quotes, Invoices, Payments; Invoices loads inside it
@@ -99,7 +99,7 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin;
     seen = await labels();
     expect.eq(
       seen.join(" | "),
-      "Back | Workers | Admins",
+      "Back | Workers | Editors",
       "inside Admin (Workers moved here — REQ-178)",
     );
     await nav.locator("[data-cy='nav-back']").click();
@@ -125,7 +125,7 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin;
     await nav.locator("[data-cy='nav-back']").waitFor({ timeout: 20_000 });
     seen = await labels();
     expect(
-      seen.includes("Batches") && !seen.includes("Admins"),
+      seen.includes("Batches") && !seen.includes("Editors"),
       `inside Recurring on load (${seen.join(", ")})`,
     );
   }));
