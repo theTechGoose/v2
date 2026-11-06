@@ -385,3 +385,44 @@ Deno.test("send-signed-confirmation run: no customer email → invoices still cr
     assertEquals((await s.invoices.listByUser("u-1")).length, 1);
   });
 });
+
+// REQ-204 / REQ-201 — the signed confirmation names the agreement by its number
+// (Q-001), never an id slice, and shows the customer as snapshotted.
+Deno.test("REQ-204 send-signed-confirmation run: the email subject, body and PDF attachment name say Q-001 (no id slice), and the customer is the snapshot", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const customer = await s.customers.create("u-1", {
+      name: "Randall Belknap",
+      email: "rb@acme.test",
+    });
+    const quote = await s.quotes.create("u-1", {
+      customerId: customer.id,
+      summary: "Deck build",
+      lineItems: [],
+      estimatedTotal: 1_000_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      acceptedName: "Randall Belknap",
+    });
+    assertEquals(quote.number, "Q-001");
+    await s.customers.update(customer.id, "u-1", { name: "Someone Else" });
+
+    const result = await s.flow.run(quote.id);
+    assertEquals(result.ok, true);
+    assertEquals(s.sentEmails.length, 1);
+    const mail = s.sentEmails[0];
+    const idSlice = quote.id.slice(0, 8).toUpperCase();
+    assert(
+      mail.subject.includes("Q-001"),
+      `subject names Q-001: ${mail.subject}`,
+    );
+    assert(mail.htmlBody.includes("Q-001"), "body names Q-001");
+    assert(!mail.htmlBody.includes(`#${idSlice}`), "no id slice in the body");
+    assertEquals(mail.attachments?.[0]?.name, "Agreement-Q-001.pdf");
+    assert(mail.htmlBody.includes("Randall"), "the snapshotted customer");
+    assert(
+      !mail.htmlBody.includes("Someone"),
+      "the renamed live record does not rewrite the agreement",
+    );
+  });
+});

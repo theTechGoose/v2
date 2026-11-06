@@ -37,12 +37,104 @@ import {
 } from "../../shared/quote-flow/format-helpers.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 import {
+  type DispatchChannel,
   interpretSendResult,
   type SendOutcome,
   sendResultLangKey,
   summarizeDispatch,
-  type DispatchChannel,
 } from "../../shared/quote-flow/send-result.ts";
+import { docNumberOf } from "../../shared/documents/numbering.ts";
+import {
+  type DocState,
+  isInvoiceLocked,
+  workingCopy,
+} from "../../shared/documents/versions.ts";
+import {
+  type BillTo,
+  billToFromCustomer,
+  bpToPercent,
+  buildInvoiceBody,
+  centsToDollars,
+  computeTotals,
+  dollarsToCents,
+  dueDateFrom,
+  EMPTY_BILL_TO,
+  formatInvoiceHeadline,
+  type FormLine,
+  type LedgerPrefill,
+  missingInfo,
+  NET_DAYS_OPTIONS,
+  paymentSummary,
+  percentToBp,
+  prefillFromLedger,
+} from "../../shared/documents/invoice-form.ts";
+
+/** REQ-201: the state words a headline uses, in the page language. */
+function headlineLabels(lang: Lang): Partial<Record<DocState, string>> {
+  return {
+    draft: tFor(lang, "invoices.state.draft"),
+    sent: tFor(lang, "invoices.state.sent"),
+    revised: tFor(lang, "invoices.state.revised"),
+    claimed: tFor(lang, "invoices.state.claimed"),
+    paid: tFor(lang, "invoices.state.paid"),
+    void: tFor(lang, "invoices.state.void"),
+  };
+}
+
+/** "INV-5000 · Version 2 · Revised invoice — replaces previous version" */
+function headlineOf(inv: Invoice, lang: Lang): string {
+  return formatInvoiceHeadline(
+    inv,
+    headlineLabels(lang),
+    tFor(lang, "invoices.versionWord"),
+  );
+}
+
+/** REQ-202: the partial / overpaid line under an amount, or null when there is nothing to say. */
+function PaymentState({ inv, lang }: { inv: Invoice; lang: Lang }) {
+  const p = paymentSummary(inv);
+  if (p.kind === "unpaid" || p.kind === "paid") return null;
+  return (
+    <div
+      data-cy={p.kind === "overpaid" ? "invoice-overpaid" : "invoice-partial"}
+      style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;font-weight:700"
+    >
+      {p.kind === "partial"
+        ? (
+          <span style="color:var(--brand-teal,#144852)">
+            {tFor(lang, "invoices.paidOf", {
+              paid: fmtMoneyExact(p.paidCents),
+              total: fmtMoneyExact(p.amountCents),
+              balance: fmtMoneyExact(p.balanceCents),
+            })}
+          </span>
+        )
+        : (
+          <span style="padding:2px 8px;border-radius:999px;background:#FFE7B5;color:#5A3D08;letter-spacing:.04em;text-transform:uppercase;font-size:10.5px;font-weight:800">
+            {tFor(lang, "invoices.overpaidBy", {
+              amount: fmtMoneyExact(p.overpaidCents),
+            })}
+          </span>
+        )}
+    </div>
+  );
+}
+
+/** REQ-201: the "Unpublished changes" badge. */
+function UnpublishedBadge({ lang }: { lang: Lang }) {
+  return (
+    <span
+      data-cy="invoice-unpublished"
+      style="display:inline-block;padding:2px 8px;border-radius:999px;background:#E4E0F7;color:#2C254A;letter-spacing:.04em;text-transform:uppercase;font-size:10.5px;font-weight:800;white-space:nowrap"
+    >
+      {tFor(lang, "invoices.unpublished")}
+    </span>
+  );
+}
+
+function hasPendingRevision(inv: Invoice): boolean {
+  return !!inv.pendingRevision && Object.keys(inv.pendingRevision).length > 0;
+}
 
 interface State {
   loading: boolean;
@@ -212,7 +304,8 @@ function enrich(
     ...inv,
     client,
     initials: initialsOf(client),
-    invoiceRef: `INV-${inv.id.slice(0, 6).toUpperCase()}`,
+    // REQ-198: the document number; rows older than numbering keep "#ID"
+    invoiceRef: docNumberOf(inv),
     daysOverdue,
     daysIn,
     stage,
@@ -323,6 +416,13 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   const [newOpen, setNewOpen] = useState(() =>
     typeof globalThis.location !== "undefined" &&
     new URLSearchParams(globalThis.location.search).get("new") === "1"
+  );
+  // REQ-206: /invoices?new=1&quoteId=<id> (the QuotesPage link) prefills the
+  // form from the quote's ledger and keeps the invoice linked to the quote.
+  const [newQuoteId] = useState<string | null>(() =>
+    typeof globalThis.location !== "undefined"
+      ? new URLSearchParams(globalThis.location.search).get("quoteId")
+      : null
   );
   // Deep link: /invoices?open=<id> opens that invoice's detail view
   // automatically (PDF p6 editing + p18 adjustments land here).
@@ -480,6 +580,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
         <NewInvoiceModal
           customers={Array.isArray(s.customers) ? s.customers : []}
           lang={lang}
+          quoteId={newQuoteId}
           onClose={() => setNewOpen(false)}
         />
       )}
@@ -816,6 +917,27 @@ function InvoicesHero(
               })}
             </a>
           )}
+          {/* REQ-208: the full exports — every invoice, or only the open ones */}
+          {!trulyEmpty && (
+            <a
+              class="qph__cta qph__cta--ghost"
+              data-cy="invoice-export-all"
+              href="/api/invoices/export.csv?status=all"
+              style="margin-left:10px;background:transparent;border:1px solid var(--brand-teal);color:var(--brand-teal)"
+            >
+              {tFor(lang, "export.invoicesAll")}
+            </a>
+          )}
+          {!trulyEmpty && (
+            <a
+              class="qph__cta qph__cta--ghost"
+              data-cy="invoice-export-unpaid"
+              href="/api/invoices/export.csv?status=unpaid"
+              style="margin-left:10px;background:transparent;border:1px solid var(--brand-teal);color:var(--brand-teal)"
+            >
+              {tFor(lang, "export.invoicesUnpaid")}
+            </a>
+          )}
         </div>
       </div>
     </header>
@@ -1050,19 +1172,74 @@ function InvoiceDetail(
     }
   }
 
-  // Edit surface (PUT /api/invoices/:id)
+  // Edit surface (PUT /api/invoices/:id). REQ-201: an issued invoice's
+  // edits wait as a pending revision — the form shows the WORKING copy (the
+  // live record with the pending edits folded in), never the stale published one.
+  const draft = workingCopy(inv) as EnrichedInvoice;
+  const locked = isInvoiceLocked(inv);
   const [editJobName, setEditJobName] = useState(
-    strField(inv, "jobName") ?? "",
+    strField(draft, "jobName") ?? "",
   );
   const [editDesc, setEditDesc] = useState(
-    strField(inv, "description") ?? "",
+    strField(draft, "description") ?? "",
   );
   const [editAmount, setEditAmount] = useState(
-    inv.amount != null ? String(inv.amount / 100) : "",
+    draft.amount != null ? String(draft.amount / 100) : "",
   );
   const [editItems, setEditItems] = useState<EditableLine[]>(() =>
-    lineItemsOf(inv)
+    lineItemsOf(draft)
   );
+  /** A line changed: the total follows the lines (discount + tax as stored). */
+  function updateLines(next: EditableLine[]) {
+    setEditItems(next);
+    const totals = computeTotals({
+      lineItems: next.map((li) => ({
+        description: li.description,
+        quantity: li.quantity,
+        price: dollarsToCents(li.price),
+      })),
+      discountCents: typeof draft.discountCents === "number"
+        ? draft.discountCents
+        : 0,
+      taxRateBp: typeof draft.taxRateBp === "number" ? draft.taxRateBp : 0,
+    });
+    setEditAmount(centsToDollars(totals.totalCents));
+  }
+
+  // REQ-201: publish the pending revision — version + 1 on the same link.
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishNote, setPublishNote] = useState<string | null>(null);
+  async function doPublish(notify: boolean) {
+    if (publishBusy) return;
+    setPublishBusy(true);
+    setErr(null);
+    setPublishNote(null);
+    try {
+      const published = await dashboardClient.publishInvoice(inv.id, notify);
+      setPublishNote(
+        tFor(
+          lang,
+          notify ? "invoices.published" : "invoices.publishedQuiet",
+          { n: published.version ?? 0, customer: inv.client },
+        ),
+      );
+      await onChanged();
+    } catch (e) {
+      const reason = e && typeof e === "object" &&
+          typeof (e as { body?: { reason?: unknown } }).body === "object"
+        ? (e as { body: { reason?: unknown } }).body?.reason
+        : undefined;
+      setErr(
+        reason === "locked_paid"
+          ? tFor(lang, "invoices.publishLocked")
+          : reason === "nothing_to_publish"
+          ? tFor(lang, "invoices.publishNothing")
+          : tFor(lang, "invoices.publishFailed"),
+      );
+    } finally {
+      setPublishBusy(false);
+    }
+  }
 
   // Discount — the input takes FOCUS the moment the form opens (the spec
   // types straight into cy.focused()). Focused via a callback ref, which
@@ -1190,6 +1367,9 @@ function InvoiceDetail(
     "appearance:none;cursor:pointer;background:#fff;border:1px solid var(--brand-pink,#ff6b6b);border-radius:9px;padding:8px 13px;font:inherit;font-size:13px;font-weight:700;color:var(--brand-pink-dark,#d94f4f)";
   const ghostBtn =
     "appearance:none;cursor:pointer;background:none;border:0;padding:8px 10px;font:inherit;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)";
+  // REQ-202: a locked action — visibly off, the tooltip says why
+  const lockedBtn =
+    "appearance:none;cursor:not-allowed;opacity:.5;background:#fff;border:1px solid var(--border,#d8dcd5);border-radius:9px;padding:8px 13px;font:inherit;font-size:13px;font-weight:700;color:var(--brand-teal,#144852)";
   const fieldStyle =
     "width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px";
   const formBox =
@@ -1211,6 +1391,22 @@ function InvoiceDetail(
           <div style="margin-top:2px;font-size:12.5px;color:var(--fg-muted,#6b7560)">
             {inv.client} · {inv.invoiceRef}
           </div>
+          {/* REQ-201: number · version · state */}
+          <div
+            data-cy="invoice-headline"
+            style="margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;font-weight:700;color:var(--fg,#144852)"
+          >
+            <span>{headlineOf(inv, lang)}</span>
+            {hasPendingRevision(inv) && <UnpublishedBadge lang={lang} />}
+          </div>
+          {locked && (
+            <div
+              data-cy="invoice-locked"
+              style="margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)"
+            >
+              🔒 {tFor(lang, "invoices.lockedPaid")}
+            </div>
+          )}
         </div>
         <span style="font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border-radius:999px;border:1px solid currentColor;color:var(--brand-teal,#144852);white-space:nowrap">
           {moodLabel}
@@ -1225,12 +1421,56 @@ function InvoiceDetail(
         </button>
       </div>
 
+      {/* REQ-201: a pending revision — publish it (and tell the customer) */}
+      {hasPendingRevision(inv) && !locked && (
+        <div
+          data-cy="invoice-pending-revision"
+          style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:rgba(139,125,191,0.10);border-radius:10px;padding:10px 12px"
+        >
+          <span style="flex:1;min-width:0;font-size:12.5px;color:var(--fg-muted,#6b7560)">
+            {tFor(lang, "invoices.unpublished")}
+          </span>
+          <button
+            type="button"
+            data-cy="invoice-publish-quiet"
+            onClick={() => doPublish(false)}
+            disabled={publishBusy || busy}
+            style={ghostBtn}
+          >
+            {tFor(lang, "invoices.publishQuiet")}
+          </button>
+          <button
+            type="button"
+            data-cy="invoice-publish-notify"
+            onClick={() => doPublish(true)}
+            disabled={publishBusy || busy}
+            style={primaryBtn}
+          >
+            {publishBusy
+              ? tFor(lang, "invoices.publishing")
+              : tFor(lang, "invoices.publishNotify")}
+          </button>
+        </div>
+      )}
+      {publishNote && (
+        <p
+          role="status"
+          data-cy="invoice-published-note"
+          style="margin:10px 0 0;font-size:13px;font-weight:700;color:var(--brand-green,#519843)"
+        >
+          {publishNote}
+        </p>
+      )}
+
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+        {/* REQ-202: a paid invoice is locked — edit / discount / change order / delete are off */}
         <button
           type="button"
           data-cy="invoice-edit"
           onClick={() => switchMode("edit")}
-          style={secondaryBtn}
+          disabled={locked}
+          title={locked ? tFor(lang, "invoices.lockedPaid") : undefined}
+          style={locked ? lockedBtn : secondaryBtn}
         >
           {tFor(lang, "invoicesPage.detail.editBtn")}
         </button>
@@ -1238,7 +1478,9 @@ function InvoiceDetail(
           type="button"
           data-cy="invoice-discount-btn"
           onClick={() => switchMode("discount")}
-          style={secondaryBtn}
+          disabled={locked}
+          title={locked ? tFor(lang, "invoices.lockedPaid") : undefined}
+          style={locked ? lockedBtn : secondaryBtn}
         >
           {tFor(lang, "invoicesPage.detail.discountBtn")}
         </button>
@@ -1246,7 +1488,9 @@ function InvoiceDetail(
           type="button"
           data-cy="invoice-change-order-btn"
           onClick={() => switchMode("co")}
-          style={secondaryBtn}
+          disabled={locked}
+          title={locked ? tFor(lang, "invoices.lockedPaid") : undefined}
+          style={locked ? lockedBtn : secondaryBtn}
         >
           {tFor(lang, "invoicesPage.detail.changeOrderBtn")}
         </button>
@@ -1282,13 +1526,17 @@ function InvoiceDetail(
               type="button"
               data-cy="invoice-delete"
               onClick={() => setConfirmDelete(true)}
-              style={secondaryBtn}
+              disabled={locked}
+              title={locked ? tFor(lang, "invoices.lockedPaid") : undefined}
+              style={locked ? lockedBtn : secondaryBtn}
             >
               {tFor(lang, "invoicesPage.detail.deleteBtn")}
             </button>
           )}
-        {/* REQ-018 (NW-27): the contractor can say "payment received" on
-            anything the customer still owes — no customer claim required. */}
+        {
+          /* REQ-018 (NW-27): the contractor can say "payment received" on
+            anything the customer still owes — no customer claim required. */
+        }
         {(inv.stage === "out" || inv.stage === "overdue" ||
           inv.stage === "claimed") && (
           <button
@@ -1350,6 +1598,7 @@ function InvoiceDetail(
                 <div key={i} style="display:flex;gap:6px">
                   <input
                     type="text"
+                    data-cy={`invoice-edit-line-desc-${i}`}
                     value={li.description}
                     disabled={busy}
                     onInput={(e) => {
@@ -1364,15 +1613,35 @@ function InvoiceDetail(
                   />
                   <input
                     type="number"
+                    min="0"
+                    step="1"
+                    data-cy={`invoice-edit-line-qty-${i}`}
+                    value={li.quantity}
+                    disabled={busy}
+                    onInput={(e) => {
+                      const v = Number((e.target as HTMLInputElement).value);
+                      updateLines(
+                        editItems.map((it, j) =>
+                          j === i
+                            ? { ...it, quantity: Number.isFinite(v) ? v : 0 }
+                            : it
+                        ),
+                      );
+                    }}
+                    style={`${fieldStyle};width:70px;flex:none`}
+                  />
+                  <input
+                    type="number"
                     step="0.01"
+                    data-cy={`invoice-edit-line-price-${i}`}
                     value={li.price}
                     disabled={busy}
                     onInput={(e) => {
                       const v = (e.target as HTMLInputElement).value;
-                      setEditItems((items) =>
-                        items.map((it, j) =>
+                      updateLines(
+                        editItems.map((it, j) =>
                           j === i ? { ...it, price: v } : it
-                        )
+                        ),
                       );
                     }}
                     style={`${fieldStyle};width:110px;flex:none`}
@@ -1406,6 +1675,7 @@ function InvoiceDetail(
             </button>
             <button
               type="button"
+              data-cy="invoice-edit-save"
               onClick={doSaveEdit}
               disabled={busy}
               style={primaryBtn}
@@ -1571,6 +1841,10 @@ function InvoiceDetail(
         >
           {fmtMoneyExact(inv.amount)}
         </span>
+      </div>
+      {/* REQ-202: partial payments count down; an overpayment is flagged */}
+      <div style="display:flex;justify-content:flex-end">
+        <PaymentState inv={inv} lang={lang} />
       </div>
     </section>
   );
@@ -2187,11 +2461,24 @@ function InvoiceCard(
       <div class="qcard__av">{inv.initials}</div>
       <div class="qcard__body">
         <div class="qcard__client-name">{inv.client} · {inv.invoiceRef}</div>
+        {/* REQ-201: number · version · state, and the unpublished badge */}
+        <div
+          data-cy="invoice-card-headline"
+          style="margin-top:2px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:11.5px;font-weight:700;color:var(--fg-muted,#6b7560)"
+        >
+          <span>{headlineOf(inv, lang)}</span>
+          {hasPendingRevision(inv) && <UnpublishedBadge lang={lang} />}
+        </div>
         {/* NW-30 (REQ-011): the job name tells invoices apart. */}
         {inv.jobName
-          ? <div class="qcard__job" data-cy="invoice-card-job">{inv.jobName}</div>
+          ? (
+            <div class="qcard__job" data-cy="invoice-card-job">
+              {inv.jobName}
+            </div>
+          )
           : null}
         <h3 class="qcard__title">{fmtMoney(inv.amount)}</h3>
+        <PaymentState inv={inv} lang={lang} />
         <p class="qcard__story">{subline}</p>
       </div>
       <div class="qcard__foot">
@@ -2300,11 +2587,28 @@ function InvoiceCard(
                   type="button"
                   data-cy="invoice-card-delete"
                   onClick={() => setConfirmDelete(true)}
-                  style="appearance:none;background:none;border:none;color:var(--brand-pink-dark,#d94f4f);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;padding:2px 0"
+                  /* REQ-202: a paid invoice is locked — nothing on it changes */
+                  disabled={isInvoiceLocked(inv)}
+                  title={isInvoiceLocked(inv)
+                    ? tFor(lang, "invoices.lockedPaid")
+                    : undefined}
+                  style={`appearance:none;background:none;border:none;color:var(--brand-pink-dark,#d94f4f);font:inherit;font-size:12.5px;font-weight:700;padding:2px 0;${
+                    isInvoiceLocked(inv)
+                      ? "cursor:not-allowed;opacity:.5"
+                      : "cursor:pointer"
+                  }`}
                 >
                   {tFor(lang, "invoicesPage.detail.deleteBtn")}
                 </button>
               )}
+            {isInvoiceLocked(inv) && (
+              <span
+                data-cy="invoice-card-locked"
+                style="font-size:11.5px;color:var(--fg-muted,#6b7560)"
+              >
+                {tFor(lang, "invoices.lockedPaid")}
+              </span>
+            )}
           </div>
           {inv.stage !== "paid" && (
             <div
@@ -2660,7 +2964,9 @@ function InvoiceCard(
               data-cy="invoice-change-date"
               onClick={(e) => {
                 e.stopPropagation();
-                setDateEdit((v) => v === null ? (inv.scheduledFor ?? "") : null);
+                setDateEdit((v) =>
+                  v === null ? (inv.scheduledFor ?? "") : null
+                );
               }}
               disabled={busy}
             >
@@ -2704,56 +3010,188 @@ function InvoiceCard(
   );
 }
 
-/* ---------------- New invoice modal ---------------- */
+/* ---------------- New invoice modal (REQ-206) ---------------- */
 
 const NEW_SENTINEL = "__new__";
+/** Where the form remembers the payment instructions when Settings has none. */
+const PAY_INSTR_KEY = "pm:invoice-payment-instructions";
 
-/** Create a standalone invoice — no quote behind it. Pick (or add)
- *  a client, set an amount + due date, and it lands as a draft in the
- *  Drafting track. Mirrors the add-client modal pattern on /clients. */
+/** A line as typed: dollars and quantity as strings, converted on submit. */
+interface TypedLine {
+  description: string;
+  quantity: string;
+  unit: string;
+  price: string;
+}
+
+function toFormLines(lines: TypedLine[]): FormLine[] {
+  return lines.map((l) => ({
+    description: l.description.trim(),
+    quantity: Number(l.quantity) > 0 ? Number(l.quantity) : 0,
+    ...(l.unit.trim() ? { unit: l.unit.trim() } : {}),
+    price: dollarsToCents(l.price),
+  }));
+}
+
+/**
+ * A standalone invoice is complete on its own (REQ-206): bill-to (prefilled
+ * from the customer, editable), service address and dates, line items,
+ * subtotal / discount / tax / total in cents, payment terms → due date,
+ * payment instructions (from Settings, else remembered here), a
+ * "what's missing" prompt that warns but never blocks, and Save draft /
+ * Issue invoice. No acceptance, no signature. One `requestId` per open
+ * modal, so a retried submit cannot create two invoices (REQ-200).
+ *
+ * With `quoteId` (the /invoices?new=1&quoteId= link from a quote) the form
+ * is prefilled from the quote's ledger — its customer, job name and the
+ * amount still to invoice — and the invoice stays linked to the quote.
+ */
 function NewInvoiceModal(
-  { customers, lang, onClose }: {
+  { customers, lang, quoteId, onClose }: {
     customers: Customer[];
     lang: Lang;
+    quoteId?: string | null;
     onClose: () => void;
   },
 ) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [requestId] = useState(() => crypto.randomUUID());
   const [clientSel, setClientSel] = useState("");
   const [newName, setNewName] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [newEmail, setNewEmail] = useState("");
+  const [jobName, setJobName] = useState("");
+  const [description, setDescription] = useState("");
+  const [billTo, setBillTo] = useState<BillTo>(EMPTY_BILL_TO);
+  const [serviceAddress, setServiceAddress] = useState("");
+  const [serviceFrom, setServiceFrom] = useState("");
+  const [serviceTo, setServiceTo] = useState("");
+  const [lines, setLines] = useState<TypedLine[]>([]);
+  /** the one-amount bill: used only while there are no line items */
   const [amount, setAmount] = useState("");
+  const [discount, setDiscount] = useState("");
+  const [discountReason, setDiscountReason] = useState("");
+  const [taxRate, setTaxRate] = useState("");
+  const [issuedDate, setIssuedDate] = useState(today);
+  const [netDays, setNetDays] = useState<number>(30);
+  const [customTerms, setCustomTerms] = useState(false);
+  const [dueDate, setDueDate] = useState(() => dueDateFrom(today, 30));
+  const [paymentInstructions, setPaymentInstructions] = useState("");
   // REQ-022 (NW-31c): "Send on" — optional; when set the invoice is created
   // scheduled (Upcoming) instead of drafted/sent.
   const [scheduledFor, setScheduledFor] = useState("");
-  const [dueDate, setDueDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 30);
-    return d.toISOString().slice(0, 10);
-  });
-  const [jobName, setJobName] = useState("");
-  const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // REQ-205: the quote's ledger, when the form opened from a quote
+  const [ledger, setLedger] = useState<LedgerPrefill | null>(null);
+  const [ledgerErr, setLedgerErr] = useState(false);
 
-  // Whether the chosen client is reachable — gates the "Create & send" button
-  // (a send with no email/phone on file would just no-op).
+  // Payment instructions: Settings' contract defaults first, else the last
+  // ones typed here.
+  useEffect(() => {
+    let alive = true;
+    try {
+      const remembered = globalThis.localStorage?.getItem(PAY_INSTR_KEY);
+      if (remembered) setPaymentInstructions(remembered);
+    } catch { /* storage unavailable */ }
+    dashboardClient.profile().then((p) => {
+      const fromSettings = p?.contractDefaults?.paymentInstructions;
+      if (alive && typeof fromSettings === "string" && fromSettings.trim()) {
+        setPaymentInstructions(fromSettings);
+      }
+    }).catch(() => {/* the field stays editable */});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // REQ-205: prefill from the quote's ledger
+  useEffect(() => {
+    if (!quoteId) return;
+    let alive = true;
+    Promise.all([
+      dashboardClient.quoteLedger(quoteId),
+      dashboardClient.quote(quoteId).catch(() => null),
+    ]).then(([l, q]) => {
+      if (!alive) return;
+      const p = prefillFromLedger(l, q);
+      setLedger(p);
+      if (p.customerId) pickCustomer(p.customerId);
+      if (p.jobName) setJobName(p.jobName);
+      setAmount(centsToDollars(p.amountCents));
+    }).catch(() => {
+      if (alive) setLedgerErr(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [quoteId]);
+
+  /** Pick a customer: bill-to and the service address follow (editable after). */
+  function pickCustomer(id: string) {
+    setClientSel(id);
+    if (id && id !== NEW_SENTINEL) {
+      const c = customers.find((x) => x.id === id);
+      const bt = billToFromCustomer(c);
+      setBillTo(bt);
+      setServiceAddress(bt.address);
+    } else {
+      setBillTo(EMPTY_BILL_TO);
+      setServiceAddress("");
+    }
+  }
+
+  function pickTerms(value: string) {
+    if (value === "custom") {
+      setCustomTerms(true);
+      return;
+    }
+    const n = Number(value);
+    setCustomTerms(false);
+    setNetDays(n);
+    setDueDate(dueDateFrom(issuedDate, n));
+  }
+
+  function changeIssued(value: string) {
+    setIssuedDate(value);
+    if (!customTerms && value) setDueDate(dueDateFrom(value, netDays));
+  }
+
+  const formLines = toFormLines(lines);
+  const totals = computeTotals({
+    lineItems: formLines,
+    amountCents: dollarsToCents(amount),
+    discountCents: dollarsToCents(discount),
+    taxRateBp: percentToBp(taxRate),
+  });
+  const missing = missingInfo({
+    billTo,
+    serviceAddress,
+    lineItems: formLines,
+    amountCents: totals.totalCents,
+  });
+
+  // Whether the chosen client is reachable — gates the dispatch, never the issue.
   const selectedCustomer = clientSel && clientSel !== NEW_SENTINEL
     ? customers.find((c) => c.id === clientSel)
     : undefined;
   const canSend = clientSel === NEW_SENTINEL
     ? !!(newEmail.trim() || newPhone.trim())
-    : !!(selectedCustomer?.email || selectedCustomer?.phoneNumber);
+    : !!(selectedCustomer?.email || selectedCustomer?.phoneNumber ||
+      billTo.email.trim() || billTo.phoneNumber.trim());
 
   const labelStyle =
     "display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)";
   const inputStyle =
     "padding:11px 13px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)";
+  const smallInput =
+    "padding:8px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px;font-weight:400;color:var(--fg);min-width:0";
+  const sectionTitle =
+    "margin:6px 0 0;font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-muted,#6b7560)";
 
-  async function submit(send: boolean) {
+  async function submit(issue: boolean) {
     if (busy) return;
-    const cents = Math.round(Number(amount) * 100);
-    if (!cents || cents <= 0) {
+    if (totals.totalCents <= 0) {
       setError(tFor(lang, "invoicesPage.new.errAmount"));
       return;
     }
@@ -2769,6 +3207,7 @@ function NewInvoiceModal(
     setError(null);
     try {
       let customerId: string | undefined;
+      let bt = billTo;
       if (clientSel === NEW_SENTINEL) {
         const created = await clientsClient.create({
           name: newName.trim(),
@@ -2776,25 +3215,59 @@ function NewInvoiceModal(
           ...(newEmail.trim() ? { email: newEmail.trim() } : {}),
         });
         customerId = created.id;
+        bt = {
+          ...billTo,
+          name: billTo.name.trim() || newName.trim(),
+          email: billTo.email.trim() || newEmail.trim(),
+          phoneNumber: billTo.phoneNumber.trim() || newPhone.trim(),
+        };
       } else if (clientSel) {
         customerId = clientSel;
       }
-      const invoice = await dashboardClient.createInvoice({
-        ...(customerId ? { customerId } : {}),
-        amount: cents,
-        dueDate,
-        issuedDate: new Date().toISOString().slice(0, 10),
-        // Send → mark it sent up front (the send coordinators don't stamp
-        // invoice status); draft → lands in the Drafting track to send later;
-        // a "Send on" date (REQ-022) → scheduled, in the Upcoming track.
-        status: send ? "sent" : scheduledFor ? "scheduled" : "draft",
-        ...(!send && scheduledFor ? { scheduledFor } : {}),
-        ...(jobName.trim() ? { jobName: jobName.trim() } : {}),
-        ...(description.trim() ? { description: description.trim() } : {}),
-      });
-      // One-step send: dispatch the pay link over both channels. The backend
-      // handles "no email/phone on file" gracefully.
-      if (send && invoice?.id) {
+      try {
+        if (paymentInstructions.trim()) {
+          globalThis.localStorage?.setItem(
+            PAY_INSTR_KEY,
+            paymentInstructions.trim(),
+          );
+        }
+      } catch { /* storage unavailable */ }
+      const body = buildInvoiceBody(
+        {
+          customerId,
+          quoteId: quoteId ?? undefined,
+          jobName,
+          description,
+          lineItems: formLines,
+          amountCents: dollarsToCents(amount),
+          discountCents: dollarsToCents(discount),
+          discountReason,
+          taxRateBp: percentToBp(taxRate),
+          netDays,
+          issuedDate,
+          dueDate,
+          serviceAddress,
+          serviceDateFrom: serviceFrom || undefined,
+          serviceDateTo: serviceTo || undefined,
+          paymentInstructions,
+          billTo: bt,
+        },
+        {
+          requestId,
+          // Issue → sent up front (the send coordinators don't stamp invoice
+          // status); draft → the Drafting track; a "Send on" date (REQ-022)
+          // → scheduled, in the Upcoming track.
+          status: issue ? "sent" : scheduledFor ? "scheduled" : "draft",
+          ...(!issue && scheduledFor ? { scheduledFor } : {}),
+        },
+      );
+      const invoice = await dashboardClient.createInvoice(
+        body as { dueDate: string } & Record<string, unknown>,
+      );
+      // Issue + reachable: dispatch the pay link over both channels. The
+      // backend handles "no email/phone on file" gracefully; unreachable is
+      // one of the "missing info" prompts, never a block.
+      if (issue && canSend && invoice?.id) {
         const d = await dispatchInvoice(invoice.id);
         // REQ-030 (NW-25): never drop a channel failure on the way to the
         // reload — the page shows it after navigating.
@@ -2816,6 +3289,7 @@ function NewInvoiceModal(
       // ?new=1 deep link, or the modal would reopen over the fresh card.
       const back = new URL(globalThis.location.href);
       back.searchParams.delete("new");
+      back.searchParams.delete("quoteId");
       globalThis.location.assign(back.toString());
     } catch (err) {
       setError(
@@ -2828,19 +3302,26 @@ function NewInvoiceModal(
   }
   function onFormSubmit(e: Event) {
     e.preventDefault();
-    submit(canSend);
+    submit(true);
+  }
+
+  function setLine(i: number, patch: Partial<TypedLine>) {
+    setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  }
+  function setBill(patch: Partial<BillTo>) {
+    setBillTo((b) => ({ ...b, ...patch }));
   }
 
   return (
     <div
       onClick={() => !busy && onClose()}
-      style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px"
+      style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:flex-start;justify-content:center;z-index:1000;padding:20px;overflow-y:auto"
     >
       <form
         data-cy="new-invoice-modal"
         onClick={(e) => e.stopPropagation()}
         onSubmit={onFormSubmit}
-        style="background:#fff;border-radius:16px;padding:24px 26px;max-width:460px;width:100%;box-shadow:0 24px 64px rgba(20,72,82,0.22);display:flex;flex-direction:column;gap:14px"
+        style="background:#fff;border-radius:16px;padding:24px 26px;max-width:640px;width:100%;box-shadow:0 24px 64px rgba(20,72,82,0.22);display:flex;flex-direction:column;gap:14px;margin:auto"
       >
         <h2 style="margin:0;font-size:20px;font-weight:800;color:var(--fg,#144852)">
           {tFor(lang, "invoicesPage.new.title")}
@@ -2849,20 +3330,43 @@ function NewInvoiceModal(
           {tFor(lang, "invoicesPage.new.intro")}
         </p>
 
+        {/* REQ-205: the quote this bill draws on */}
+        {ledger && (
+          <p
+            data-cy="new-invoice-ledger"
+            style="margin:0;font-size:13px;font-weight:700;color:var(--brand-teal,#144852);background:rgba(20,72,82,0.06);border-radius:10px;padding:10px 12px"
+          >
+            {tFor(lang, "invoices.form.originalQuote", {
+              number: ledger.quoteNumber,
+              agreed: fmtMoneyExact(ledger.agreedCents),
+              invoiced: fmtMoneyExact(ledger.invoicedCents),
+              remaining: fmtMoneyExact(ledger.remainingCents),
+            })}
+          </p>
+        )}
+        {ledgerErr && (
+          <p style="margin:0;font-size:12.5px;color:#a83b3b">
+            {tFor(lang, "invoices.form.quoteLoadFailed")}
+          </p>
+        )}
+
         <label style={labelStyle}>
           {tFor(lang, "invoicesPage.new.client")}
           <select
             data-cy="new-invoice-client"
             value={clientSel}
             disabled={busy}
-            onInput={(e) => setClientSel((e.target as HTMLSelectElement).value)}
+            onInput={(e) => pickCustomer((e.target as HTMLSelectElement).value)}
             style={inputStyle}
           >
             <option value="">
               {tFor(lang, "invoicesPage.new.clientNone")}
             </option>
             {customers.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+              <option key={c.id} value={c.id}>
+                {c.number ? `${c.number} · ` : ""}
+                {c.name}
+              </option>
             ))}
             <option value={NEW_SENTINEL}>
               {tFor(lang, "invoicesPage.new.newClient")}
@@ -2937,6 +3441,203 @@ function NewInvoiceModal(
           />
         </label>
 
+        {/* ---- bill to ---- */}
+        <div style={sectionTitle}>{tFor(lang, "invoices.form.billTo")}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label style={labelStyle}>
+            {tFor(lang, "invoices.form.billName")}
+            <input
+              type="text"
+              data-cy="new-invoice-bill-name"
+              value={billTo.name}
+              disabled={busy}
+              onInput={(e) =>
+                setBill({ name: (e.target as HTMLInputElement).value })}
+              style={smallInput}
+            />
+          </label>
+          <label style={labelStyle}>
+            {tFor(lang, "invoices.form.billBusiness")}
+            <input
+              type="text"
+              data-cy="new-invoice-bill-business"
+              value={billTo.businessName}
+              disabled={busy}
+              onInput={(e) =>
+                setBill({ businessName: (e.target as HTMLInputElement).value })}
+              style={smallInput}
+            />
+          </label>
+          <label style={labelStyle}>
+            {tFor(lang, "invoices.form.billEmail")}
+            <input
+              type="email"
+              data-cy="new-invoice-bill-email"
+              value={billTo.email}
+              disabled={busy}
+              onInput={(e) =>
+                setBill({ email: (e.target as HTMLInputElement).value })}
+              style={smallInput}
+            />
+          </label>
+          <label style={labelStyle}>
+            {tFor(lang, "invoices.form.billPhone")}
+            <input
+              type="tel"
+              data-cy="new-invoice-bill-phone"
+              value={billTo.phoneNumber}
+              disabled={busy}
+              onInput={(e) =>
+                setBill({ phoneNumber: (e.target as HTMLInputElement).value })}
+              style={smallInput}
+            />
+          </label>
+        </div>
+        <label style={labelStyle}>
+          {tFor(lang, "invoices.form.billAddress")}
+          <input
+            type="text"
+            data-cy="new-invoice-bill-address"
+            value={billTo.address}
+            disabled={busy}
+            onInput={(e) =>
+              setBill({ address: (e.target as HTMLInputElement).value })}
+            style={smallInput}
+          />
+        </label>
+
+        {/* ---- service ---- */}
+        <label style={labelStyle}>
+          {tFor(lang, "invoices.form.serviceAddress")}
+          <input
+            type="text"
+            data-cy="new-invoice-service-address"
+            value={serviceAddress}
+            disabled={busy}
+            onInput={(e) =>
+              setServiceAddress((e.target as HTMLInputElement).value)}
+            style={smallInput}
+          />
+        </label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label style={labelStyle}>
+            {tFor(lang, "invoices.form.serviceFrom")}
+            <input
+              type="date"
+              data-cy="new-invoice-service-from"
+              value={serviceFrom}
+              disabled={busy}
+              onInput={(e) =>
+                setServiceFrom((e.target as HTMLInputElement).value)}
+              style={smallInput}
+            />
+          </label>
+          <label style={labelStyle}>
+            {tFor(lang, "invoices.form.serviceTo")}
+            <input
+              type="date"
+              data-cy="new-invoice-service-to"
+              value={serviceTo}
+              disabled={busy}
+              onInput={(e) =>
+                setServiceTo((e.target as HTMLInputElement).value)}
+              style={smallInput}
+            />
+          </label>
+        </div>
+
+        {/* ---- line items ---- */}
+        <div style={sectionTitle}>{tFor(lang, "invoices.form.lineItems")}</div>
+        {lines.length > 0 && (
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="display:grid;grid-template-columns:1fr 64px 76px 110px 28px;gap:6px;font-size:11px;font-weight:700;color:var(--fg-muted,#6b7560)">
+              <span>{tFor(lang, "invoices.form.lineDesc")}</span>
+              <span>{tFor(lang, "invoices.form.lineQty")}</span>
+              <span>{tFor(lang, "invoices.form.lineUnit")}</span>
+              <span>{tFor(lang, "invoices.form.linePrice")}</span>
+              <span />
+            </div>
+            {lines.map((l, i) => (
+              <div
+                key={i}
+                data-cy={`new-invoice-line-${i}`}
+                style="display:grid;grid-template-columns:1fr 64px 76px 110px 28px;gap:6px;align-items:center"
+              >
+                <input
+                  type="text"
+                  data-cy={`new-invoice-line-desc-${i}`}
+                  value={l.description}
+                  disabled={busy}
+                  onInput={(e) =>
+                    setLine(i, {
+                      description: (e.target as HTMLInputElement).value,
+                    })}
+                  style={smallInput}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  data-cy={`new-invoice-line-qty-${i}`}
+                  value={l.quantity}
+                  disabled={busy}
+                  onInput={(e) =>
+                    setLine(i, {
+                      quantity: (e.target as HTMLInputElement).value,
+                    })}
+                  style={smallInput}
+                />
+                <input
+                  type="text"
+                  data-cy={`new-invoice-line-unit-${i}`}
+                  value={l.unit}
+                  disabled={busy}
+                  onInput={(e) =>
+                    setLine(i, { unit: (e.target as HTMLInputElement).value })}
+                  style={smallInput}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-cy={`new-invoice-line-price-${i}`}
+                  value={l.price}
+                  disabled={busy}
+                  onInput={(e) =>
+                    setLine(i, { price: (e.target as HTMLInputElement).value })}
+                  style={smallInput}
+                />
+                <button
+                  type="button"
+                  data-cy={`new-invoice-line-remove-${i}`}
+                  aria-label={tFor(lang, "invoices.form.removeLine")}
+                  title={tFor(lang, "invoices.form.removeLine")}
+                  disabled={busy}
+                  onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
+                  style="appearance:none;cursor:pointer;background:none;border:0;padding:4px;color:var(--fg-muted,#6b7560)"
+                >
+                  <I d={ICN.x} size={14} sw={2.5} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div>
+          <button
+            type="button"
+            data-cy="new-invoice-line-add"
+            disabled={busy}
+            onClick={() => setLines((ls) => [
+              ...ls,
+              { description: "", quantity: "1", unit: "", price: "" },
+            ])}
+            style="appearance:none;cursor:pointer;background:none;border:1px dashed var(--border,#d8dcd5);border-radius:8px;padding:7px 12px;font:inherit;font-size:13px;font-weight:700;color:var(--brand-teal,#144852)"
+          >
+            {tFor(lang, "invoices.form.addLine")}
+          </button>
+        </div>
+
+        {/* ---- money ---- */}
         <label style={labelStyle}>
           {tFor(lang, "invoicesPage.new.amount")}
           <input
@@ -2946,22 +3647,159 @@ function NewInvoiceModal(
             inputMode="decimal"
             data-cy="new-invoice-amount"
             placeholder="0.00"
-            value={amount}
+            value={lines.length > 0
+              ? centsToDollars(totals.subtotalCents)
+              : amount}
+            readOnly={lines.length > 0}
             disabled={busy}
             onInput={(e) => setAmount((e.target as HTMLInputElement).value)}
-            style={inputStyle}
+            style={`${inputStyle}${
+              lines.length > 0 ? ";background:rgba(0,0,0,0.03)" : ""
+            }`}
           />
         </label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label style={labelStyle}>
+            {tFor(lang, "invoices.form.discount")}
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              data-cy="new-invoice-discount"
+              placeholder="0.00"
+              value={discount}
+              disabled={busy}
+              onInput={(e) => setDiscount((e.target as HTMLInputElement).value)}
+              style={smallInput}
+            />
+          </label>
+          <label style={labelStyle}>
+            {tFor(lang, "invoices.form.discountReason")}
+            <input
+              type="text"
+              data-cy="new-invoice-discount-reason"
+              value={discountReason}
+              disabled={busy}
+              onInput={(e) =>
+                setDiscountReason((e.target as HTMLInputElement).value)}
+              style={smallInput}
+            />
+          </label>
+          <label style={labelStyle}>
+            {tFor(lang, "invoices.form.taxRate")}
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              data-cy="new-invoice-tax"
+              placeholder="0"
+              value={taxRate}
+              disabled={busy}
+              onInput={(e) => setTaxRate((e.target as HTMLInputElement).value)}
+              style={smallInput}
+            />
+          </label>
+          <label style={labelStyle}>
+            {tFor(lang, "invoices.form.issueDate")}
+            <input
+              type="date"
+              data-cy="new-invoice-issued"
+              value={issuedDate}
+              disabled={busy}
+              onInput={(e) =>
+                changeIssued((e.target as HTMLInputElement).value)}
+              style={smallInput}
+            />
+          </label>
+        </div>
+
+        {/* totals */}
+        <div
+          data-cy="new-invoice-totals"
+          style="display:flex;flex-direction:column;gap:4px;background:rgba(0,0,0,0.03);border-radius:10px;padding:10px 12px;font-size:13px;font-variant-numeric:tabular-nums"
+        >
+          <div style="display:flex;justify-content:space-between">
+            <span>{tFor(lang, "invoices.form.subtotal")}</span>
+            <span data-cy="new-invoice-subtotal">
+              {fmtMoneyExact(totals.subtotalCents)}
+            </span>
+          </div>
+          {totals.discountCents > 0 && (
+            <div style="display:flex;justify-content:space-between;color:var(--brand-green,#519843)">
+              <span>{tFor(lang, "invoices.form.discount")}</span>
+              <span>−{fmtMoneyExact(totals.discountCents)}</span>
+            </div>
+          )}
+          <div style="display:flex;justify-content:space-between">
+            <span>
+              {tFor(lang, "invoices.form.tax")}
+              {percentToBp(taxRate) > 0
+                ? ` (${bpToPercent(percentToBp(taxRate))}%)`
+                : ""}
+            </span>
+            <span data-cy="new-invoice-tax-cents">
+              {fmtMoneyExact(totals.taxCents)}
+            </span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-weight:900;font-size:16px;color:var(--fg,#144852);border-top:1px solid var(--border,#d8dcd5);padding-top:6px;margin-top:2px">
+            <span>{tFor(lang, "invoices.form.total")}</span>
+            <span data-cy="new-invoice-total">
+              {fmtMoneyExact(totals.totalCents)}
+            </span>
+          </div>
+        </div>
+
+        {/* ---- terms ---- */}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label style={labelStyle}>
+            {tFor(lang, "invoices.form.terms")}
+            <select
+              data-cy="new-invoice-terms"
+              value={customTerms ? "custom" : String(netDays)}
+              disabled={busy}
+              onInput={(e) => pickTerms((e.target as HTMLSelectElement).value)}
+              style={smallInput}
+            >
+              {NET_DAYS_OPTIONS.map((n) => (
+                <option key={n} value={String(n)}>
+                  {tFor(lang, `invoices.form.net${n}`)}
+                </option>
+              ))}
+              <option value="custom">
+                {tFor(lang, "invoices.form.netCustom")}
+              </option>
+            </select>
+          </label>
+          <label style={labelStyle}>
+            {tFor(lang, "invoicesPage.new.dueDate")}
+            <input
+              type="date"
+              data-cy="new-invoice-due"
+              value={dueDate}
+              disabled={busy}
+              onInput={(e) => {
+                setCustomTerms(true);
+                setDueDate((e.target as HTMLInputElement).value);
+              }}
+              style={smallInput}
+            />
+          </label>
+        </div>
 
         <label style={labelStyle}>
-          {tFor(lang, "invoicesPage.new.dueDate")}
-          <input
-            type="date"
-            data-cy="new-invoice-due"
-            value={dueDate}
+          {tFor(lang, "invoices.form.paymentInstructions")}
+          <textarea
+            rows={2}
+            data-cy="new-invoice-payment-instructions"
+            placeholder={tFor(
+              lang,
+              "invoices.form.paymentInstructionsPlaceholder",
+            )}
+            value={paymentInstructions}
             disabled={busy}
-            onInput={(e) => setDueDate((e.target as HTMLInputElement).value)}
-            style={inputStyle}
+            onInput={(e) =>
+              setPaymentInstructions((e.target as HTMLTextAreaElement).value)}
+            style={`${inputStyle};resize:vertical`}
           />
         </label>
 
@@ -2972,10 +3810,28 @@ function NewInvoiceModal(
             data-cy="invoice-schedule-date"
             value={scheduledFor}
             disabled={busy}
-            onInput={(e) => setScheduledFor((e.target as HTMLInputElement).value)}
+            onInput={(e) =>
+              setScheduledFor((e.target as HTMLInputElement).value)}
             style={inputStyle}
           />
         </label>
+
+        {/* REQ-206: what's missing — a prompt, never a gate */}
+        {missing.length > 0 && (
+          <div
+            data-cy="new-invoice-missing"
+            style="font-size:12.5px;color:#5A3D08;background:#FFF4DC;border-radius:10px;padding:10px 12px"
+          >
+            <div style="font-weight:800">
+              {tFor(lang, "invoices.form.missingTitle")}
+            </div>
+            <ul style="margin:4px 0 0;padding-left:18px">
+              {missing.map((m) => (
+                <li key={m}>{tFor(lang, `invoices.form.missing.${m}`)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {error && (
           <p
@@ -2986,6 +3842,7 @@ function NewInvoiceModal(
           </p>
         )}
 
+        {/* one solid primary (Issue), one outlined secondary (Save draft), a ghost cancel */}
         <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:6px;flex-wrap:wrap">
           <button
             type="button"
@@ -3002,22 +3859,19 @@ function NewInvoiceModal(
             onClick={() => submit(false)}
             style="padding:10px 16px;border:1px solid var(--brand-green,#519843);border-radius:10px;background:#fff;color:var(--brand-green,#519843);font:inherit;font-weight:800;cursor:pointer"
           >
-            {scheduledFor ? tFor(lang, "invoicesPage.new.schedule") : tFor(lang, "invoicesPage.new.saveDraft")}
+            {scheduledFor
+              ? tFor(lang, "invoicesPage.new.schedule")
+              : tFor(lang, "invoices.form.saveDraft")}
           </button>
           <button
             type="submit"
             data-cy="new-invoice-submit"
-            disabled={busy || !canSend}
-            title={!canSend
-              ? tFor(lang, "invoicesPage.new.needContact")
-              : undefined}
-            style={`padding:10px 20px;border:0;border-radius:10px;background:var(--brand-green,#519843);color:#fff;font:inherit;font-weight:800;cursor:${
-              canSend ? "pointer" : "not-allowed"
-            };opacity:${canSend ? "1" : "0.55"}`}
+            disabled={busy}
+            style="padding:10px 20px;border:0;border-radius:10px;background:var(--brand-green,#519843);color:#fff;font:inherit;font-weight:800;cursor:pointer"
           >
             {busy
-              ? tFor(lang, "invoicesPage.new.sending")
-              : tFor(lang, "invoicesPage.new.createSend")}
+              ? tFor(lang, "invoices.form.issuing")
+              : tFor(lang, "invoices.form.issue")}
           </button>
         </div>
         {!canSend && (

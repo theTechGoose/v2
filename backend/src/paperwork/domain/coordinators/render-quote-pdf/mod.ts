@@ -10,6 +10,14 @@ import { isAccepted } from "#quote-flow/quote-status.ts";
 import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
 import { websiteLabel } from "#quote-flow/format-helpers.ts";
 import { agreementTitle } from "#quote-flow/agreement-title.ts";
+import {
+  customerLines,
+  customerOnDocument,
+  docRef,
+  docRefWithVersion,
+  renderWord,
+  revisedNote,
+} from "@paperwork/domain/business/doc-render/mod.ts";
 
 export interface RenderQuotePdfInput {
   quote: Quote;
@@ -50,13 +58,16 @@ export class RenderQuotePdf {
   async run(raw: RenderQuotePdfInput): Promise<Uint8Array> {
     // REQ-161: the standard fonts encode WinAnsi only
     const input = winAnsiSafeDeep(raw);
-    const { quote, customer, contractor, businessName } = input;
+    const { quote, contractor, businessName } = input;
     // Roadmap p.13: the PDF is the customer's copy → outgoing-comms language.
     const es = input.commsLanguage === "es";
     const lang: "en" | "es" = es ? "es" : "en";
+    // REQ-204: an issued agreement shows the customer as snapshotted when it
+    // was issued; a draft may show the live record.
+    const customer = customerOnDocument(quote, input.customer);
 
     const pdf = await PDFDocument.create();
-    pdf.setTitle(`Quote & Agreement #${quote.id.slice(0, 8).toUpperCase()}`);
+    pdf.setTitle(`${renderWord(lang, "quote")} ${docRef(quote)}`);
     pdf.setAuthor(contractor?.name ?? businessName ?? "Contractor");
     pdf.setSubject(quote.summary ?? "Service Agreement");
     pdf.setProducer(businessName ?? contractor?.name ?? "Contractor");
@@ -103,14 +114,14 @@ export class RenderQuotePdf {
 
     // doc tag pill (left) + status (right)
     y -= 32;
-    const docNum = `${t(lang, "renderQuotePdf.docTag")} · #${
-      quote.id.slice(0, 8).toUpperCase()
+    // REQ-204 / REQ-201: "QUOTE & AGREEMENT · Q-001 · Version 2"
+    const docNum = `${t(lang, "renderQuotePdf.docTag")} · ${
+      docRefWithVersion(quote, lang)
     }`;
     page.drawText(docNum, { x: M, y, size: 8.5, font: bold, color: PINK_DARK });
+    // REQ-202: "Accepted and signed · <date>" once the customer signed
     const statusText = isAccepted(quote)
-      ? t(lang, "renderQuotePdf.status.signed", {
-        date: fmtDateUpper(quote.acceptedAt),
-      })
+      ? `${renderWord(lang, "acceptedSigned")} · ${fmtDate(quote.acceptedAt)}`
       : (quote.status ?? "DRAFT").toUpperCase();
     const statusW = bold.widthOfTextAtSize(statusText, 8.5);
     page.drawText(statusText, {
@@ -120,6 +131,18 @@ export class RenderQuotePdf {
       font: bold,
       color: GREEN,
     });
+    // REQ-201: a revision says so — "Revised quote — replaces previous version"
+    const revised = revisedNote("quote", quote, lang);
+    if (revised) {
+      y -= 14;
+      page.drawText(revised, {
+        x: M,
+        y,
+        size: 8.5,
+        font: reg,
+        color: PINK_DARK,
+      });
+    }
 
     // Hero title — REQ-036 (NW-57): "<Customer>'s <Job> Agreement", the
     // same shared helper the web document uses.
@@ -176,8 +199,7 @@ export class RenderQuotePdf {
         color: MUTED,
       });
       y -= 14;
-      const toLines = [cust, customer?.phoneNumber, customer?.email]
-        .filter((v): v is string => !!v && v.trim().length > 0);
+      const toLines = customerLines(customer);
       const fromLines = [
         contractor?.name,
         businessName,
@@ -727,12 +749,14 @@ export class RenderQuotePdf {
       color: LINE,
     });
     y -= 14;
+    // REQ-204: "Q-001 · Version 2 · Generated <date>"
     drawCenteredText(
       page,
-      t(lang, "renderQuotePdf.footer", {
-        id: quote.id.slice(0, 8).toUpperCase(),
-        date: fmtDate(new Date().toISOString()),
-      }),
+      `${docRefWithVersion(quote, lang)} · ${
+        renderWord(lang, "generated", {
+          date: fmtDate(new Date().toISOString()),
+        })
+      }`,
       W,
       y,
       reg,
@@ -865,10 +889,6 @@ function fmtDate(iso: string | undefined): string {
     year: "numeric",
     timeZone: "UTC",
   });
-}
-
-function fmtDateUpper(iso: string | undefined): string {
-  return fmtDate(iso).toUpperCase();
 }
 
 function dataUrlToBytes(dataUrl: string): Uint8Array | undefined {

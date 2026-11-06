@@ -1,5 +1,10 @@
 import { useState } from "preact/hooks";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import { fmtMoneyExact } from "../lib/format.ts";
+import {
+  claimBody,
+  claimDecision,
+} from "../../shared/documents/linked-view.ts";
 
 interface Method {
   method: string;
@@ -10,6 +15,11 @@ interface Props {
   invoiceId: string;
   acceptedMethods: Method[];
   customerName?: string;
+  /** REQ-203: the balance this page shows — the claim is for THIS amount;
+   *  a changed balance comes back as 409 stale_balance with the current one. */
+  balanceCents?: number;
+  /** REQ-203: the version this page shows. */
+  version?: number;
   /** Outgoing-comms language (roadmap p.13). Customer-facing. */
   lang?: "en" | "es";
 }
@@ -39,7 +49,14 @@ const PINK_DARK = "#d94e4e";
  * "reach out to coordinate payment" message and a tel/mailto pair.
  */
 export default function PublicInvoiceClaim(
-  { invoiceId, acceptedMethods, customerName, lang = "en" }: Props,
+  {
+    invoiceId,
+    acceptedMethods,
+    customerName,
+    balanceCents,
+    version: initialVersion,
+    lang = "en",
+  }: Props,
 ) {
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const [reference, setReference] = useState("");
@@ -47,6 +64,33 @@ export default function PublicInvoiceClaim(
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  // REQ-203: the balance + version this island claims against. A 409
+  // stale_balance replaces them with the server's current ones and the page
+  // re-renders with that balance (the SSR amount block is patched in place).
+  const [balance, setBalance] = useState<number | undefined>(balanceCents);
+  const [version, setVersion] = useState<number | undefined>(initialVersion);
+  const [stale, setStale] = useState(false);
+  const [alreadyPaid, setAlreadyPaid] = useState(false);
+
+  if (alreadyPaid) {
+    return (
+      <section
+        data-cy="claim-already-paid"
+        style={`margin-top:24px;background:rgba(81,152,67,0.08);border:1px solid rgba(81,152,67,0.30);border-radius:14px;padding:20px 24px`}
+      >
+        <div
+          style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}
+        >
+          {tFor(lang, "status.paid")}
+        </div>
+        <p
+          style={`margin:8px 0 0;color:${INK};font-size:15px;line-height:1.55`}
+        >
+          {tFor(lang, "public.doc.alreadyPaid")}
+        </p>
+      </section>
+    );
+  }
 
   if (acceptedMethods.length === 0) {
     return (
@@ -92,19 +136,58 @@ export default function PublicInvoiceClaim(
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          method: selected,
-          ...(reference.trim() ? { reference: reference.trim() } : {}),
-          ...(claimedBy.trim() ? { claimedBy: claimedBy.trim() } : {}),
-        }),
+        body: JSON.stringify(
+          typeof balance === "number"
+            // REQ-203: claim the balance shown, on the version shown
+            ? claimBody({ method: selected, reference, claimedBy }, {
+              balanceCents: balance,
+              ...(typeof version === "number" ? { version } : {}),
+            })
+            : {
+              method: selected,
+              ...(reference.trim() ? { reference: reference.trim() } : {}),
+              ...(claimedBy.trim() ? { claimedBy: claimedBy.trim() } : {}),
+            },
+        ),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
+      const body = await res.json().catch(() => ({}));
+      const decision = claimDecision(res.status, body);
+      if (decision.kind === "stale_balance") {
+        // The balance moved under this page: show the current one and let
+        // the customer confirm against it. The SSR amount block is patched
+        // in place so the whole page agrees.
+        setBalance(decision.balanceCents);
+        if (typeof decision.version === "number") setVersion(decision.version);
+        setStale(true);
+        try {
+          const amt = document.querySelector<HTMLElement>(
+            "[data-cy='invoice-balance-due']",
+          );
+          if (amt) amt.textContent = fmtMoneyExact(decision.balanceCents);
+        } catch { /* decorative — the island's own note carries the balance */ }
+        return;
+      }
+      if (decision.kind === "already_paid") {
+        setAlreadyPaid(true);
+        try {
+          const pill = document.querySelector<HTMLElement>(
+            "[data-status-pill]",
+          );
+          if (pill) {
+            pill.textContent = tFor(lang, "status.paid");
+            pill.style.background = "rgba(81,152,67,0.15)";
+            pill.style.color = GREEN;
+          }
+        } catch { /* decorative */ }
+        return;
+      }
+      if (decision.kind === "error") {
         throw new Error(
-          body.reason ??
-            tFor(lang, "publicInvoiceClaim.submitError", {
+          decision.reason === String(res.status)
+            ? tFor(lang, "publicInvoiceClaim.submitError", {
               status: res.status,
-            }),
+            })
+            : decision.reason,
         );
       }
       setDone(true);
@@ -140,10 +223,33 @@ export default function PublicInvoiceClaim(
 
   return (
     <section style="margin-top:28px" data-cy="claim-form">
+      {stale && typeof balance === "number"
+        ? (
+          <div
+            data-cy="claim-stale-balance"
+            role="status"
+            style="margin-bottom:12px;background:#fff6e5;border:1px solid rgba(255,170,40,0.35);border-radius:12px;padding:12px 14px;color:#8a5a10;font-weight:700;font-size:13.5px"
+          >
+            {tFor(lang, "public.doc.staleBalance", {
+              amount: fmtMoneyExact(balance),
+            })}
+          </div>
+        )
+        : null}
       <div
         style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
       >
         {tFor(lang, "publicInvoiceClaim.howToPay")}
+        {typeof balance === "number"
+          ? (
+            <span
+              data-cy="claim-balance"
+              style={`margin-left:8px;color:${TEAL};letter-spacing:0;text-transform:none;font-size:12px`}
+            >
+              {fmtMoneyExact(balance)}
+            </span>
+          )
+          : null}
       </div>
       <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px">
         {acceptedMethods.map((m) => {

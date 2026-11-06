@@ -1,5 +1,6 @@
 import { IsNumber, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
+import type { NumberedFields } from "@core/data/numbered-store/mod.ts";
 
 /**
  * ChangeOrder — a contractor-proposed adjustment to an already-issued
@@ -9,7 +10,7 @@ import { plainToInstance } from "#class-transformer";
  */
 export type ChangeOrderStatus = "pending" | "approved" | "declined";
 
-export interface ChangeOrder {
+export interface ChangeOrder extends NumberedFields {
   id: string;
   userId: string;
   invoiceId: string;
@@ -29,6 +30,8 @@ export interface ChangeOrder {
   updatedAt: string;
   /** Stamped when the customer approves/declines via the public link. */
   decidedAt?: string;
+  /** REQ-202: who approved it, as typed on the public page. */
+  approvedName?: string;
 }
 
 export class CreateChangeOrderDto {

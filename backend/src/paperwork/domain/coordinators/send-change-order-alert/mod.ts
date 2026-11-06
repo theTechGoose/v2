@@ -1,6 +1,11 @@
 import { Injectable } from "#danet/core";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import {
+  changeOrderRef,
+  customerOnDocument,
+} from "@paperwork/domain/business/doc-render/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
@@ -53,11 +58,12 @@ export class SendChangeOrderAlert {
     private identity: BusinessIdentityStore,
     private email: EmailService,
     private sms: SmsService,
+    private invoices: InvoiceStore,
   ) {}
 
   async run(changeOrderId: string): Promise<{ ok: boolean; reason?: string }> {
     const co = await this.changeOrders.get(changeOrderId);
-    const [contractor, customer, ident] = await Promise.all([
+    const [contractor, liveCustomer, ident, invoice] = await Promise.all([
       this.users.get(co.userId).catch(() => undefined),
       co.customerId
         ? this.customers.getOwned(co.customerId, co.userId).catch(() =>
@@ -65,8 +71,16 @@ export class SendChangeOrderAlert {
         )
         : Promise.resolve(undefined),
       this.identity.get(co.userId).catch(() => null),
+      // REQ-204: the alert names "CO-001 on INV-5000"
+      this.invoices.get(co.invoiceId).catch(() => undefined),
     ]);
     if (!contractor) return { ok: false, reason: "no_contractor" };
+    // REQ-204: the change order names the customer as snapshotted when it was raised
+    const customer = customerOnDocument(co, liveCustomer);
+    const contact = {
+      email: liveCustomer?.email?.trim() || customer?.email?.trim(),
+      phoneNumber: liveCustomer?.phoneNumber?.trim() || customer?.phoneNumber?.trim(),
+    };
 
     // Contractor copy = their UI language; customer copy = outgoing-comms
     // language (roadmap p.13), like every other customer-facing document.
@@ -75,31 +89,36 @@ export class SendChangeOrderAlert {
     const businessName = ident?.businessName?.trim() ||
       (ident as { legalName?: string } | null)?.legalName?.trim() ||
       contractor.name?.trim() || t(coLang, "brand.name");
-    const customerName = customer?.name?.trim() ||
+    const customerName = customer?.name?.trim() || customer?.businessName?.trim() ||
       t(cxLang, "notify.fallbackClient");
     const delta = fmtDelta(co.deltaAmountCents);
     const url = `${APP_URL}/co/${co.id}`;
+    const refCo = changeOrderRef(co, invoice, coLang);
+    const refCx = changeOrderRef(co, invoice, cxLang);
 
     let sentAny = false;
 
     // ── Customer: the actual approval request ───────────────────────────
-    if (customer?.email?.trim()) {
+    if (contact.email) {
       try {
         const res = await this.email.send({
-          to: customer.email.trim(),
-          subject: t(coLang, "changeOrderRequest.email.subject", {
-            business: businessName,
-          }),
+          to: contact.email,
+          subject: `${
+            t(coLang, "changeOrderRequest.email.subject", {
+              business: businessName,
+            })
+          } — ${refCo}`,
           htmlBody: renderCustomerHtml({
             businessName,
             delta,
             description: co.description,
             url,
             lang: coLang,
+            ref: refCo,
           }),
         });
         console.log(
-          `[send-change-order-alert] co ${co.id} customer-email → ${customer.email}: ok=${res.ok}${
+          `[send-change-order-alert] co ${co.id} customer-email → ${contact.email}: ok=${res.ok}${
             res.reason ? ` (${res.reason})` : ""
           }`,
         );
@@ -108,18 +127,20 @@ export class SendChangeOrderAlert {
         console.error("[send-change-order-alert] customer email failed:", err);
       }
     }
-    if (customer?.phoneNumber?.trim()) {
+    if (contact.phoneNumber) {
       try {
         const res = await this.sms.send({
-          to: customer.phoneNumber.trim(),
-          body: t(coLang, "changeOrderRequest.sms.body", {
-            business: businessName,
-            delta,
-            url,
-          }),
+          to: contact.phoneNumber,
+          body: `${refCo}: ${
+            t(coLang, "changeOrderRequest.sms.body", {
+              business: businessName,
+              delta,
+              url,
+            })
+          }`,
         });
         console.log(
-          `[send-change-order-alert] co ${co.id} customer-sms → ${customer.phoneNumber}: ok=${res.ok}${
+          `[send-change-order-alert] co ${co.id} customer-sms → ${contact.phoneNumber}: ok=${res.ok}${
             res.reason ? ` (${res.reason})` : ""
           }`,
         );
@@ -134,16 +155,19 @@ export class SendChangeOrderAlert {
       try {
         const res = await this.email.send({
           to: contractor.email.trim(),
-          subject: t(cxLang, "changeOrderAlert.email.subject", {
-            name: customerName,
-            delta,
-          }),
+          subject: `${
+            t(cxLang, "changeOrderAlert.email.subject", {
+              name: customerName,
+              delta,
+            })
+          } — ${refCx}`,
           htmlBody: renderContractorHtml({
             customerName,
             delta,
             description: co.description,
             url,
             lang: cxLang,
+            ref: refCx,
           }),
         });
         console.log(
@@ -160,11 +184,13 @@ export class SendChangeOrderAlert {
       try {
         const res = await this.sms.send({
           to: contractor.phoneNumber.trim(),
-          body: t(cxLang, "changeOrderAlert.sms.body", {
-            name: customerName,
-            delta,
-            url,
-          }),
+          body: `${refCx}: ${
+            t(cxLang, "changeOrderAlert.sms.body", {
+              name: customerName,
+              delta,
+              url,
+            })
+          }`,
         });
         console.log(
           `[send-change-order-alert] co ${co.id} sms → ${contractor.phoneNumber}: ok=${res.ok}${
@@ -188,6 +214,8 @@ function renderCustomerHtml(opts: {
   description: string;
   url: string;
   lang: Lang;
+  /** REQ-204: "CO-001 on INV-5000" */
+  ref: string;
 }): string {
   const { lang } = opts;
   const headline = t(lang, "changeOrderRequest.email.headline", {
@@ -198,6 +226,9 @@ function renderCustomerHtml(opts: {
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
     <div style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#d94e4e">${
     escapeHtml(opts.businessName)
+  }</div>
+    <div data-doc-ref style="margin-top:10px;font-size:12px;font-weight:800;color:#6b7a7e">${
+    escapeHtml(opts.ref)
   }</div>
     <div style="margin-top:18px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:24px;letter-spacing:-0.02em;color:#144852">${headline}</div>
     <p style="margin:14px 0 0;color:#1c2c30;font-size:15px;line-height:1.55">${
@@ -228,6 +259,8 @@ function renderContractorHtml(opts: {
   description: string;
   url: string;
   lang: Lang;
+  /** REQ-204: "CO-001 on INV-5000" */
+  ref: string;
 }): string {
   const { lang } = opts;
   const headline = t(lang, "changeOrderAlert.email.headline", {
@@ -239,6 +272,9 @@ function renderContractorHtml(opts: {
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
     <div style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#d94e4e">${
     escapeHtml(t(lang, "brand.name"))
+  }</div>
+    <div data-doc-ref style="margin-top:10px;font-size:12px;font-weight:800;color:#6b7a7e">${
+    escapeHtml(opts.ref)
   }</div>
     <div style="margin-top:18px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:24px;letter-spacing:-0.02em;color:#144852">${headline}</div>
     <p style="margin:14px 0 0;color:#1c2c30;font-size:15px;line-height:1.55">${

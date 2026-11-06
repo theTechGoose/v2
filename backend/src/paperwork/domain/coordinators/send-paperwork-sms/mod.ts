@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { publishPendingInvoice, publishPendingQuote } from "@paperwork/domain/business/publish-pending/mod.ts";
 import { isFictionalUsNumber } from "@users/domain/business/normalize-phone/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
@@ -15,6 +16,12 @@ import {
   senderIdentityRefusal,
 } from "#quote-flow/outbound-identity.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
+import {
+  customerOnDocument,
+  docRefWithVersion,
+  docTitle,
+  type RenderedCustomer,
+} from "@paperwork/domain/business/doc-render/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
@@ -119,21 +126,23 @@ export class SendPaperworkSms {
     let quoteForStamp: Quote | undefined;
 
     if (input.kind === "quote") {
-      const quote = await this.quotes.getOwned(input.resourceId, userId);
+      // REQ-201: a send publishes what is pending — the link must show what was sent
+      const quote = await publishPendingQuote(this.quotes, input.resourceId, userId);
       quoteForStamp = quote;
       const customer = await this.tryGetCustomer(userId, quote.customerId);
       customerIdForLog = customer?.id;
-      if (!recipient) recipient = customer?.phoneNumber ?? undefined;
+      // the live number first (a corrected typo should reach them), the snapshot's otherwise
+      if (!recipient) recipient = customer?.phoneNumber ?? customerOnDocument(quote, customer)?.phoneNumber;
       const shortUrl = await this.mintShortUrl(userId, {
         kind: "quote",
         id: quote.id,
       });
       body = renderQuoteBody(quote, customer, sender, senderBiz, shortUrl);
     } else {
-      const invoice = await this.invoices.getOwned(input.resourceId, userId);
+      const invoice = await publishPendingInvoice(this.invoices, input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
       customerIdForLog = customer?.id;
-      if (!recipient) recipient = customer?.phoneNumber ?? undefined;
+      if (!recipient) recipient = customer?.phoneNumber ?? customerOnDocument(invoice, customer)?.phoneNumber;
       const shortUrl = await this.mintShortUrl(userId, {
         kind: "invoice",
         id: invoice.id,
@@ -286,8 +295,8 @@ function senderFirst(u: User | undefined): string | undefined {
   return outboundSenderFirstName(u?.name);
 }
 
-function customerFirst(c: Customer | undefined): string | undefined {
-  return c?.name?.trim()?.split(/\s+/)[0] || undefined;
+function customerFirst(c: RenderedCustomer | undefined): string | undefined {
+  return (c?.name?.trim() || c?.businessName?.trim())?.split(/\s+/)[0] || undefined;
 }
 
 function fmtUSD(cents: number | undefined): string {
@@ -311,7 +320,7 @@ function fmtUSD(cents: number | undefined): string {
  *  drop the "from {businessName}" suffix when businessName is missing,
  *  fall back to `summary` then "your project" when jobName is missing.
  */
-function renderQuoteBody(
+export function renderQuoteBody(
   q: Quote,
   c: Customer | undefined,
   sender: User | undefined,
@@ -319,12 +328,14 @@ function renderQuoteBody(
   url: string,
 ): string {
   const lang = senderBiz?.commsLanguage === "es" ? "es" : "en";
-  const hi = customerFirst(c);
+  // REQ-204: an issued quote greets the customer as snapshotted when issued
+  const hi = customerFirst(customerOnDocument(q, c));
   const who = senderFirst(sender);
   const biz = businessName(senderBiz);
   // P-27: project the job name in the send language (jobNameByLang[lang]),
   // exactly like the email path — never the raw wrong-language jobName.
-  const jobName = smsJobName(q, lang);
+  // REQ-204 / REQ-201: the text names the document — "… for <job> (Q-001 · Version 2)".
+  const jobName = `${smsJobName(q, lang)} (${docRefWithVersion(q, lang)})`;
   return composeSmsBody({
     hi,
     who,
@@ -375,7 +386,7 @@ function businessName(b: BusinessIdentity | undefined): string | undefined {
   return name || undefined;
 }
 
-function renderInvoiceBody(
+export function renderInvoiceBody(
   i: Invoice,
   cust: Customer | undefined,
   sender: User | undefined,
@@ -385,13 +396,15 @@ function renderInvoiceBody(
   // P-49: the shared builder guarantees a capitalized sentence start for
   // unnamed customers ("Tu factura…" / "Your invoice…"), greeting otherwise.
   // REQ-169: the bill closes by thanking the customer, not "I look forward to working with you"
+  // REQ-204 / REQ-201: the customer as snapshotted when the bill was issued,
+  // and the bill named by number and version ("Invoice INV-5000 · Version 2").
   return buildInvoiceSms({
-    customerFirstName: customerFirst(cust),
+    customerFirstName: customerFirst(customerOnDocument(i, cust)),
     contractorFirstName: senderFirst(sender),
     amount: fmtUSD(i.amount),
     url,
     lang,
-  }) + "\n\n" + t(lang, "paperworkSms.body.invoiceClosing");
+  }) + "\n\n" + docTitle("invoice", i, lang) + "\n\n" + t(lang, "paperworkSms.body.invoiceClosing");
 }
 
 // ---------- phone normalization --------------------------------------------

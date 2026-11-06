@@ -12,6 +12,11 @@ import {
 } from "../../../shared/quote-flow/visit-groups.ts";
 import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
 import {
+  invoiceHeadline,
+  shortDate,
+  stateLabel,
+} from "../../../shared/documents/linked-view.ts";
+import {
   BG,
   computeMilestones,
   fmtDate,
@@ -53,6 +58,44 @@ interface Contractor {
 
 interface InvoicePublic {
   id: string;
+  /** REQ-198/201: the document's number ("INV-5000"), version and headline state. */
+  number?: string;
+  version?: number;
+  state?: string;
+  publishedAt?: string;
+  /** REQ-202: one current balance, whatever page is open. */
+  paidCents?: number;
+  balanceCents?: number;
+  overpaidCents?: number;
+  /** REQ-205: the agreement this bill belongs to, by number. */
+  quote?: {
+    id: string;
+    number: string;
+    url: string;
+    version?: number;
+    accepted?: boolean;
+    signedAt?: string;
+  };
+  changeOrders?: Array<{
+    id: string;
+    number: string;
+    url: string;
+    status?: string;
+    description?: string;
+    deltaAmountCents: number;
+    approvedName?: string;
+  }>;
+  /** REQ-206: a standalone invoice is complete on its own. */
+  subtotalCents?: number;
+  taxRateBp?: number;
+  taxCents?: number;
+  discountCents?: number;
+  discountReason?: string;
+  serviceAddress?: string;
+  serviceDateFrom?: string;
+  serviceDateTo?: string;
+  paymentInstructions?: string;
+  netDays?: number;
   /** REQ-173: a batch invoice's visits, grouped under their address */
   visits?: VisitGroup[];
   quoteId?: string;
@@ -98,6 +141,9 @@ interface InvoicePublic {
   signedAgreement?: { id: string; signedAt?: string };
   siblings?: Array<{
     id: string;
+    /** REQ-205: the sibling's own number and public link */
+    number?: string;
+    url?: string;
     amount?: number;
     status?: string;
     paidAt?: string;
@@ -197,7 +243,42 @@ function InvoiceDoc(
       s.id !== invoice.id &&
       (s.status === "paid" || (s as { paidAt?: string }).paidAt)
     )
-    .map((s) => ({ amount: s.amount ?? 0, index: s.installmentIndex }));
+    .map((s) => ({
+      amount: s.amount ?? 0,
+      index: s.installmentIndex,
+      number: s.number,
+    }));
+  // REQ-205: the other installments of the same agreement, by number
+  const otherInstallments = (invoice.siblings ?? []).filter((s) =>
+    s.id !== invoice.id
+  );
+  // REQ-201/202: "INV-5000 · Version 2 · Revised invoice — replaces previous
+  // version" / "· Paid", and the one current balance.
+  const docNumber = invoice.number ??
+    `#${invoice.id.slice(0, 8).toUpperCase()}`;
+  const headline = invoiceHeadline(
+    {
+      number: docNumber,
+      version: invoice.version ?? 1,
+      state: invoice.state ?? (paid ? "paid" : claimed ? "claimed" : "sent"),
+      date: paid ? invoice.paidAt : invoice.publishedAt,
+    },
+    lang,
+  );
+  const amountCents = invoice.amount ?? 0;
+  const paidCents = invoice.paidCents ?? (paid ? amountCents : 0);
+  const balanceCents = invoice.balanceCents ??
+    Math.max(0, amountCents - paidCents);
+  const overpaidCents = invoice.overpaidCents ?? 0;
+  const serviceDates = invoice.serviceDateFrom || invoice.serviceDateTo
+    ? [invoice.serviceDateFrom, invoice.serviceDateTo]
+      .filter((d): d is string => !!d)
+      .map((d) => fmtDate(d, lang))
+      .join(" → ")
+    : undefined;
+  const hasExtras = !!(invoice.serviceAddress || serviceDates ||
+    invoice.paymentInstructions || invoice.taxCents || invoice.discountCents ||
+    invoice.subtotalCents);
 
   // Agreement mirror — present only for quote-linked invoices (getInvoicePublic
   // projects the linked quote's line items, total, and term grid). Standalone
@@ -249,6 +330,13 @@ function InvoiceDoc(
                 style={`font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:${PINK_DARK}`}
               >
                 {businessLabel}
+              </div>
+              {/* REQ-201: number · version · state (· date) */}
+              <div
+                data-cy="invoice-headline"
+                style={`margin-top:6px;font-size:13px;font-weight:800;color:${TEAL}`}
+              >
+                {headline}
               </div>
               {invoice.contractor?.addressLine
                 ? (
@@ -370,9 +458,14 @@ function InvoiceDoc(
             )
             : null}
 
-          {/* Amount card */}
+          {
+            /* Balance block (REQ-202): Amount, Paid, Balance due — one
+              current balance whatever page is open; an overpayment is
+              flagged, never hidden. */
+          }
           <div
-            style={`margin-top:22px;background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:18px;padding:22px 24px;display:flex;justify-content:space-between;align-items:center`}
+            data-cy="invoice-balance-block"
+            style={`margin-top:22px;background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:18px;padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap`}
           >
             <div>
               <div
@@ -380,7 +473,7 @@ function InvoiceDoc(
               >
                 {paid
                   ? tFor(lang, "status.paid")
-                  : tFor(lang, "publicInvoice.amountDue")}
+                  : tFor(lang, "public.doc.balanceDue")}
               </div>
               {invoice.dueDate
                 ? (
@@ -395,13 +488,158 @@ function InvoiceDoc(
                   </div>
                 )
                 : null}
+              <div
+                style={`margin-top:8px;display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:${INK}`}
+              >
+                <span data-cy="invoice-amount">
+                  {tFor(lang, "public.doc.amountLabel")}{" "}
+                  <strong style="font-variant-numeric:tabular-nums">
+                    {fmtMoneyExact(amountCents)}
+                  </strong>
+                </span>
+                <span data-cy="invoice-paid">
+                  {tFor(lang, "public.doc.paidLabel")}{" "}
+                  <strong style="font-variant-numeric:tabular-nums">
+                    {fmtMoneyExact(paidCents)}
+                  </strong>
+                </span>
+              </div>
+              {overpaidCents > 0
+                ? (
+                  <div
+                    data-cy="invoice-overpaid"
+                    style="margin-top:6px;font-size:12.5px;font-weight:800;color:#a83b3b"
+                  >
+                    {tFor(lang, "public.doc.overpaid", {
+                      amount: fmtMoneyExact(overpaidCents),
+                    })}
+                  </div>
+                )
+                : null}
             </div>
             <div
+              data-cy="invoice-balance-due"
               style={`font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:38px;letter-spacing:-0.03em;color:${TEAL};line-height:1;font-variant-numeric:tabular-nums`}
             >
-              {fmtMoneyExact(invoice.amount)}
+              {fmtMoneyExact(paid ? amountCents : balanceCents)}
             </div>
           </div>
+
+          {
+            /* REQ-206: what a standalone invoice carries on its own —
+              where the work was done, when, how to pay, and the tax /
+              discount lines. Rendered only when present. */
+          }
+          {hasExtras
+            ? (
+              <section
+                data-cy="invoice-extras"
+                style={`margin-top:18px;border:1px solid ${LINE};border-radius:14px;padding:14px 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;font-size:14px`}
+              >
+                {invoice.serviceAddress
+                  ? (
+                    <div data-cy="invoice-service-address">
+                      <div
+                        style={`font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${MUTED}`}
+                      >
+                        {tFor(lang, "public.doc.serviceAddress")}
+                      </div>
+                      <div style={`margin-top:3px;color:${INK}`}>
+                        {invoice.serviceAddress}
+                      </div>
+                    </div>
+                  )
+                  : null}
+                {serviceDates
+                  ? (
+                    <div data-cy="invoice-service-dates">
+                      <div
+                        style={`font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${MUTED}`}
+                      >
+                        {tFor(lang, "public.doc.serviceDates")}
+                      </div>
+                      <div style={`margin-top:3px;color:${INK}`}>
+                        {serviceDates}
+                      </div>
+                    </div>
+                  )
+                  : null}
+                {invoice.paymentInstructions
+                  ? (
+                    <div
+                      data-cy="invoice-payment-instructions"
+                      style="grid-column:1 / -1"
+                    >
+                      <div
+                        style={`font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${MUTED}`}
+                      >
+                        {tFor(lang, "public.doc.paymentInstructions")}
+                      </div>
+                      <div
+                        style={`margin-top:3px;color:${INK};white-space:pre-wrap`}
+                      >
+                        {invoice.paymentInstructions}
+                      </div>
+                    </div>
+                  )
+                  : null}
+                {(invoice.subtotalCents || invoice.taxCents ||
+                    invoice.discountCents)
+                  ? (
+                    <div
+                      data-cy="invoice-tax-lines"
+                      style="grid-column:1 / -1;display:flex;flex-direction:column;gap:4px"
+                    >
+                      {invoice.subtotalCents != null
+                        ? (
+                          <div style="display:flex;justify-content:space-between">
+                            <span style={`color:${MUTED}`}>
+                              {tFor(lang, "public.doc.subtotal")}
+                            </span>
+                            <span style="font-variant-numeric:tabular-nums">
+                              {fmtMoneyExact(invoice.subtotalCents)}
+                            </span>
+                          </div>
+                        )
+                        : null}
+                      {invoice.discountCents
+                        ? (
+                          <div style="display:flex;justify-content:space-between">
+                            <span style={`color:${MUTED}`}>
+                              {tFor(lang, "public.doc.discount")}
+                              {invoice.discountReason
+                                ? ` · ${invoice.discountReason}`
+                                : ""}
+                            </span>
+                            <span
+                              style={`color:${GREEN};font-variant-numeric:tabular-nums`}
+                            >
+                              −{fmtMoneyExact(invoice.discountCents)}
+                            </span>
+                          </div>
+                        )
+                        : null}
+                      {invoice.taxCents
+                        ? (
+                          <div style="display:flex;justify-content:space-between">
+                            <span style={`color:${MUTED}`}>
+                              {tFor(lang, "public.doc.tax")}
+                              {invoice.taxRateBp
+                                ? ` (${(invoice.taxRateBp / 100).toFixed(2)}%)`
+                                : ""}
+                            </span>
+                            <span style="font-variant-numeric:tabular-nums">
+                              {fmtMoneyExact(invoice.taxCents)}
+                            </span>
+                          </div>
+                        )
+                        : null}
+                    </div>
+                  )
+                  : null}
+              </section>
+            )
+            : null}
 
           {/* Paid-so-far strip — only when there's prior installments paid. */}
           {paidSoFar.length > 0
@@ -418,7 +656,11 @@ function InvoiceDoc(
                       key={i}
                       style={`background:rgba(81,152,67,0.10);color:${GREEN};font-size:12px;font-weight:700;padding:6px 12px;border-radius:999px`}
                     >
-                      {p.index ? `#${p.index} · ` : ""}
+                      {p.number
+                        ? `${p.number} · `
+                        : p.index
+                        ? `#${p.index} · `
+                        : ""}
                       {fmtMoneyExact(p.amount)}
                     </span>
                   ))}
@@ -449,6 +691,8 @@ function InvoiceDoc(
                 invoiceId={invoice.id}
                 acceptedMethods={invoice.acceptedMethods ?? []}
                 customerName={invoice.customer?.name}
+                balanceCents={balanceCents}
+                version={invoice.version}
                 lang={es ? "es" : "en"}
               />
             )}
@@ -541,6 +785,97 @@ function InvoiceDoc(
             : null}
 
           {
+            /* REQ-205: the change orders on this bill, by number, each a
+              link to its own page — approved ones already moved the total. */
+          }
+          {invoice.changeOrders?.length
+            ? (
+              <section data-cy="invoice-change-orders" style="margin-top:24px">
+                <div
+                  style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
+                >
+                  {tFor(lang, "public.doc.changeOrders")}
+                </div>
+                <div style="margin-top:6px">
+                  {invoice.changeOrders.map((co) => (
+                    <a
+                      key={co.id}
+                      data-cy="invoice-change-order"
+                      href={co.url}
+                      style={`display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:8px 0;border-bottom:1px solid ${LINE};text-decoration:none;color:${INK};font-size:14px`}
+                    >
+                      <span style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline">
+                        <strong style={`color:${TEAL}`}>{co.number}</strong>
+                        <span style={`color:${MUTED};font-size:12.5px`}>
+                          {stateLabel(co.status ?? "pending", lang)}
+                        </span>
+                        {co.description
+                          ? (
+                            <span style={`color:${MUTED};font-size:12.5px`}>
+                              {co.description}
+                            </span>
+                          )
+                          : null}
+                      </span>
+                      <strong style="font-variant-numeric:tabular-nums;white-space:nowrap">
+                        {co.deltaAmountCents >= 0 ? "+" : "−"}
+                        {fmtMoneyExact(Math.abs(co.deltaAmountCents))}
+                      </strong>
+                    </a>
+                  ))}
+                </div>
+              </section>
+            )
+            : null}
+
+          {/* REQ-205: the other installments of the same agreement, by number */}
+          {otherInstallments.length > 0
+            ? (
+              <section data-cy="invoice-installments" style="margin-top:24px">
+                <div
+                  style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
+                >
+                  {tFor(lang, "public.doc.installments")}
+                </div>
+                <div style="margin-top:6px">
+                  {otherInstallments.map((s) => (
+                    <a
+                      key={s.id}
+                      data-cy="invoice-installment"
+                      href={s.url ?? `/i/${s.id}`}
+                      style={`display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:8px 0;border-bottom:1px solid ${LINE};text-decoration:none;color:${INK};font-size:14px`}
+                    >
+                      <span style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline">
+                        <strong style={`color:${TEAL}`}>
+                          {s.number ?? `#${s.id.slice(0, 8).toUpperCase()}`}
+                        </strong>
+                        <span style={`color:${MUTED};font-size:12.5px`}>
+                          {s.status === "paid" || s.paidAt
+                            ? tFor(lang, "status.paid")
+                            : stateLabel(
+                              s.status === "claimed" ? "claimed" : "sent",
+                              lang,
+                            )}
+                        </span>
+                        {s.paidAt
+                          ? (
+                            <span style={`color:${MUTED};font-size:12.5px`}>
+                              {shortDate(s.paidAt, lang)}
+                            </span>
+                          )
+                          : null}
+                      </span>
+                      <strong style="font-variant-numeric:tabular-nums;white-space:nowrap">
+                        {fmtMoneyExact(s.amount)}
+                      </strong>
+                    </a>
+                  ))}
+                </div>
+              </section>
+            )
+            : null}
+
+          {
             /* Download PDF — works for any invoice (mirrors the agreement,
             minus clauses + signature) */
           }
@@ -628,23 +963,25 @@ function InvoiceDoc(
             height="16"
             style="height:16px;width:auto;opacity:0.7;display:block"
           />
-          {tFor(lang, "publicInvoice.poweredBy", {
-            id: invoice.id.slice(0, 8).toUpperCase(),
-          })}
+          {tFor(lang, "public.doc.poweredByInvoice", { number: docNumber })}
         </div>
       </article>
 
       {
-        /* p6: "include a link to the signed quote if one exists". Rendered
-        OUTSIDE [data-cy=invoice-doc] — the invoice document itself carries
-        no signature language in any language. */
+        /* REQ-205: "Original quote: Q-001" — the agreement this bill belongs
+        to, by number, whether or not it is signed yet (signed adds the date).
+        Rendered OUTSIDE [data-cy=invoice-doc] — the invoice document itself
+        carries no signature language in any language. Pre-numbering rows
+        keep the old signed-agreement link. */
       }
-      {(invoice.signedQuoteUrl || invoice.signedAgreement)
+      {(invoice.quote || invoice.signedQuoteUrl || invoice.signedAgreement)
         ? (
           <div style="margin-top:20px;display:flex;justify-content:center">
             <a
-              data-cy="invoice-signed-quote-link"
-              href={invoice.signedQuoteUrl ??
+              data-cy={invoice.quote
+                ? "invoice-quote-link"
+                : "invoice-signed-quote-link"}
+              href={invoice.quote?.url ?? invoice.signedQuoteUrl ??
                 `/c/${invoice.signedAgreement!.id}`}
               style={`display:inline-flex;align-items:center;gap:10px;padding:13px 18px;border:1px solid ${LINE};border-radius:12px;background:#fff;color:${TEAL};text-decoration:none;font-weight:700;font-size:14px;box-shadow:0 6px 22px rgba(20,72,82,0.06)`}
             >
@@ -663,14 +1000,22 @@ function InvoiceDoc(
                 <path d="m9 15 2 2 4-4" />
               </svg>
               <span>
-                {tFor(lang, "publicInvoice.viewSignedAgreement")}
-                {invoice.signedAgreement?.signedAt
+                {invoice.quote
+                  ? tFor(lang, "public.doc.originalQuote", {
+                    number: invoice.quote.number,
+                  })
+                  : tFor(lang, "publicInvoice.viewSignedAgreement")}
+                {(invoice.quote?.signedAt ?? invoice.signedAgreement?.signedAt)
                   ? (
                     <span
                       style={`display:block;font-weight:600;font-size:12px;color:${MUTED}`}
                     >
                       {tFor(lang, "publicInvoice.signedOn", {
-                        date: fmtDate(invoice.signedAgreement.signedAt, lang),
+                        date: fmtDate(
+                          (invoice.quote?.signedAt ??
+                            invoice.signedAgreement?.signedAt)!,
+                          lang,
+                        ),
                       })}
                     </span>
                   )

@@ -310,3 +310,22 @@ for (const status of ["paid", "void", "scheduled", "draft"]) {
     });
   });
 }
+
+// REQ-204 — the /clients balance line names the invoice by its number, not an id slice.
+Deno.test("REQ-204 balanceSub: an overdue invoice reads 'INV-5000 · overdue' (its document number, no id slice)", async () => {
+  await withKv(async () => {
+    const { customers, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Acme" });
+    const inv = await invoices.create("u-1", {
+      quoteId: "k",
+      customerId: c.id,
+      dueDate: "2026-04-01",
+      status: "pending",
+      amount: 500_00,
+    });
+    assertEquals(inv.number, "INV-001");
+    const [card] = await flow.run("u-1", NOW_FIXED);
+    assertEquals(card.balanceSub, "INV-001 · overdue");
+    assert(!card.balanceSub.includes(inv.id.slice(0, 8)), "no id slice");
+  });
+});

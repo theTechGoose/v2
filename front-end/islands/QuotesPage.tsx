@@ -7,12 +7,21 @@ import { useEffect, useState } from "preact/hooks";
 import {
   type Insight,
   type QuoteCard as BackendQuoteCard,
+  type QuoteLedger,
   quotesClient,
+  type QuoteVersion,
   type WinRate,
 } from "../clients/quotes.ts";
-import { api } from "../lib/api.ts";
+import { api, ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtMoney } from "../lib/format.ts";
+import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
+import {
+  docHeadline,
+  ledgerSummary,
+  shortDate,
+  versionHistoryLine,
+} from "../../shared/documents/linked-view.ts";
+import { invoiceState, quoteState } from "../../shared/documents/versions.ts";
 import {
   DecidedRow,
   QSideBig,
@@ -120,17 +129,375 @@ interface OpenQuoteState {
   receipts: CustomerReceipt[];
   /** "Viewed by the client" receipt when the doc was actually opened. */
   viewed: ViewedReceipt | null;
+  /** REQ-205: the documents ledger — null when the backend has none. */
+  ledger: QuoteLedger | null;
+  /** REQ-201: the quote's own version history (current last). */
+  versions: QuoteVersion[];
+}
+
+/** REQ-205 — the "Documents" ledger under the open quote: the headline
+ *  (number · version · state · date), the totals, one row per invoice /
+ *  change order / work order, the version history, and the publish /
+ *  next-invoice actions. */
+function QuoteLedgerSection(
+  { lang, q, ledger, versions, onPublished }: {
+    lang: "en" | "es";
+    q: BackendQuoteCard;
+    ledger: QuoteLedger;
+    versions: QuoteVersion[];
+    onPublished: () => void;
+  },
+) {
+  const [publishing, setPublishing] = useState(false);
+  const [publishErr, setPublishErr] = useState<string | null>(null);
+  const [published, setPublished] = useState(false);
+  const summary = ledgerSummary(ledger);
+  const state = quoteState(q);
+  const headline = docHeadline(
+    {
+      number: ledger.quote.number,
+      version: ledger.quote.version,
+      state,
+      date: state === "accepted" ? q.acceptedAt : q.publishedAt ?? q.sentAt,
+    },
+    lang,
+  );
+  const pending = q.pendingRevision &&
+    Object.keys(q.pendingRevision).length > 0;
+  const locked = ledger.quote.accepted;
+  const rowStyle =
+    "display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid rgba(26,83,92,0.08);font-size:13px";
+  const numStyle = "font-weight:800;color:var(--brand-teal,#144852)";
+  const mutedStyle = "color:var(--fg-muted,#6b7560)";
+  const linkStyle =
+    "color:var(--brand-teal,#144852);text-decoration:none;font-weight:700";
+
+  async function publish() {
+    if (publishing) return;
+    setPublishing(true);
+    setPublishErr(null);
+    try {
+      await quotesClient.publish(q.id, { notify: true, language: lang });
+      setPublished(true);
+      onPublished();
+    } catch (err) {
+      const reason = err instanceof ApiError
+        ? (err.body as { reason?: string } | null)?.reason
+        : undefined;
+      setPublishErr(
+        reason === "locked_signed"
+          ? tFor(lang, "quotes.ledger.lockedNote")
+          : reason === "nothing_to_publish"
+          ? tFor(lang, "quotes.ledger.nothingToPublish")
+          : tFor(lang, "quotes.ledger.publishError"),
+      );
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  return (
+    <section
+      class="qopen__ledger"
+      data-cy="quote-ledger"
+      style="margin-top:16px;padding-top:14px;border-top:1px dashed rgba(26,83,92,0.16)"
+    >
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+        <div>
+          <div class="qopen__eyebrow">
+            {tFor(lang, "quotes.ledger.title")}
+          </div>
+          <div
+            data-cy="quote-headline"
+            style="font-weight:800;color:var(--brand-teal,#144852);font-size:14px"
+          >
+            {headline}
+          </div>
+        </div>
+        {pending && !locked && (
+          <span
+            data-cy="quote-pending-badge"
+            style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#fff6e5;color:#8a5a10;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase"
+          >
+            {tFor(lang, "quotes.ledger.unpublished")}
+          </span>
+        )}
+      </div>
+
+      {locked && (
+        <p
+          data-cy="quote-lock-note"
+          style={`margin:8px 0 0;font-size:12.5px;${mutedStyle}`}
+        >
+          {tFor(lang, "quotes.ledger.lockedNote")}
+        </p>
+      )}
+
+      {/* Totals */}
+      <div
+        data-cy="quote-ledger-totals"
+        style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px"
+      >
+        {summary.rows.map((r) => (
+          <div
+            key={r.key}
+            data-cy={`ledger-${r.key}`}
+            style={`padding:10px 12px;border-radius:10px;background:${
+              r.key === "remaining"
+                ? "rgba(81,152,67,0.08)"
+                : "rgba(26,83,92,0.04)"
+            };font-size:13px;${mutedStyle}`}
+          >
+            {tFor(lang, `quotes.ledger.${r.key}`)}{" "}
+            <strong style="display:block;font-size:16px;color:var(--brand-teal,#144852);font-variant-numeric:tabular-nums">
+              {fmtMoneyExact(r.cents)}
+            </strong>
+          </div>
+        ))}
+        {summary.overpaid && (
+          <div
+            data-cy="ledger-overpaid"
+            style="padding:10px 12px;border-radius:10px;background:rgba(168,59,59,0.08);font-size:13px;color:#a83b3b;font-weight:700"
+          >
+            {tFor(lang, "quotes.ledger.overpaid")}{" "}
+            <strong style="display:block;font-size:16px;font-variant-numeric:tabular-nums">
+              {fmtMoneyExact(summary.overpaidCents)}
+            </strong>
+          </div>
+        )}
+      </div>
+
+      {/* Invoices */}
+      <div style="margin-top:14px">
+        <div class="qopen__eyebrow">
+          {tFor(lang, "quotes.ledger.invoices")}
+        </div>
+        {ledger.invoices.length === 0
+          ? (
+            <p style={`margin:4px 0 0;font-size:13px;${mutedStyle}`}>
+              {tFor(lang, "quotes.ledger.noInvoices")}
+            </p>
+          )
+          : ledger.invoices.map((inv) => (
+            <a
+              key={inv.id}
+              data-cy="ledger-invoice-row"
+              href={`/invoices?open=${encodeURIComponent(inv.id)}`}
+              style={`${rowStyle};text-decoration:none;color:inherit`}
+            >
+              <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline">
+                <span style={numStyle}>{inv.number}</span>
+                <span style={mutedStyle}>
+                  {tFor(lang, "quotes.ledger.versionN", { n: inv.version })}
+                </span>
+                <span style={mutedStyle}>
+                  {tFor(
+                    lang,
+                    `public.doc.state.${
+                      invoiceState({ status: inv.status, version: inv.version })
+                    }`,
+                  )}
+                </span>
+                {inv.dueDate && (
+                  <span style={mutedStyle}>
+                    {tFor(lang, "quotes.ledger.due", {
+                      date: shortDate(inv.dueDate, lang),
+                    })}
+                  </span>
+                )}
+              </span>
+              <span style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">
+                <strong>{fmtMoneyExact(inv.amountCents)}</strong>
+                <span style={`display:block;font-size:11.5px;${mutedStyle}`}>
+                  {tFor(lang, "quotes.ledger.paidBalance", {
+                    paid: fmtMoneyExact(inv.paidCents),
+                    balance: fmtMoneyExact(inv.balanceCents),
+                  })}
+                </span>
+              </span>
+            </a>
+          ))}
+      </div>
+
+      {/* Change orders */}
+      {ledger.changeOrders.length > 0 && (
+        <div style="margin-top:14px">
+          <div class="qopen__eyebrow">
+            {tFor(lang, "quotes.ledger.changeOrders")}
+          </div>
+          {ledger.changeOrders.map((co) => (
+            <div key={co.id} data-cy="ledger-co-row" style={rowStyle}>
+              <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline">
+                <a
+                  href={co.url}
+                  target="_blank"
+                  rel="noopener"
+                  style={linkStyle}
+                >
+                  {co.number}
+                </a>
+                <span style={mutedStyle}>
+                  {tFor(lang, `public.doc.state.${co.status}`)}
+                </span>
+                {co.invoiceNumber && (
+                  <span style={mutedStyle}>
+                    {tFor(lang, "quotes.ledger.onInvoice", {
+                      number: co.invoiceNumber,
+                    })}
+                  </span>
+                )}
+              </span>
+              <strong style="font-variant-numeric:tabular-nums;white-space:nowrap">
+                {co.deltaAmountCents >= 0 ? "+" : "−"}
+                {fmtMoneyExact(Math.abs(co.deltaAmountCents))}
+              </strong>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Work orders */}
+      {ledger.workOrders.length > 0 && (
+        <div style="margin-top:14px">
+          <div class="qopen__eyebrow">
+            {tFor(lang, "quotes.ledger.workOrders")}
+          </div>
+          {ledger.workOrders.map((wo) => (
+            <a
+              key={wo.id}
+              data-cy="ledger-wo-row"
+              href={wo.url}
+              style={`${rowStyle};text-decoration:none;color:inherit`}
+            >
+              <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline">
+                <span style={numStyle}>{wo.number}</span>
+                <span style={mutedStyle}>
+                  {tFor(lang, `workOrders.status.${wo.status}`)}
+                </span>
+                {wo.assignee && <span>{wo.assignee}</span>}
+                {wo.scheduledFor && (
+                  <span style={mutedStyle}>
+                    {shortDate(wo.scheduledFor, lang)}
+                  </span>
+                )}
+              </span>
+              {wo.description && (
+                <span
+                  style={`${mutedStyle};text-align:right;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap`}
+                >
+                  {wo.description}
+                </span>
+              )}
+            </a>
+          ))}
+        </div>
+      )}
+
+      {/* Version history */}
+      {versions.length > 0 && (
+        <details style="margin-top:12px" data-cy="quote-versions">
+          <summary
+            style={`cursor:pointer;font-size:12.5px;font-weight:700;${mutedStyle}`}
+          >
+            {tFor(lang, "quotes.ledger.versionHistory", {
+              n: versions.length,
+            })}
+          </summary>
+          <ul style="margin:6px 0 0;padding-left:18px;font-size:12.5px;line-height:1.7">
+            {versions.map((v) => (
+              <li key={v.version}>
+                {versionHistoryLine(v, lang)}
+                {v.current && (
+                  <span style={` ${mutedStyle}`}>
+                    {` · ${tFor(lang, "quotes.ledger.current")}`}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {/* Actions: one solid primary, the rest outlined */}
+      <div
+        class="qopen__actions"
+        style="margin-top:14px;align-items:center"
+      >
+        {pending && !locked
+          ? (
+            <button
+              type="button"
+              class="qopen__btn qopen__btn--primary"
+              data-cy="quote-publish"
+              disabled={publishing}
+              onClick={publish}
+            >
+              {publishing
+                ? tFor(lang, "quotes.ledger.publishing")
+                : tFor(lang, "quotes.ledger.publish")}
+            </button>
+          )
+          : null}
+        {summary.canCreateNextInvoice
+          ? (
+            <a
+              class={`qopen__btn${
+                pending && !locked ? "" : " qopen__btn--primary"
+              }`}
+              data-cy="quote-create-next-invoice"
+              href={`/invoices?new=1&quoteId=${encodeURIComponent(q.id)}`}
+            >
+              {tFor(lang, "quotes.ledger.createNextInvoice")}
+            </a>
+          )
+          : (
+            <span
+              data-cy="quote-create-next-invoice"
+              aria-disabled="true"
+              class="qopen__btn"
+              style="opacity:.55;cursor:not-allowed"
+              title={tFor(lang, "quotes.ledger.fullyInvoiced")}
+            >
+              {tFor(lang, "quotes.ledger.createNextInvoice")}
+            </span>
+          )}
+        {!summary.canCreateNextInvoice && (
+          <span style={`font-size:12px;${mutedStyle}`}>
+            {tFor(lang, "quotes.ledger.fullyInvoiced")}
+          </span>
+        )}
+      </div>
+      {published && (
+        <p
+          data-cy="quote-published-note"
+          style="margin:8px 0 0;font-size:12.5px;color:var(--brand-green,#519843);font-weight:700"
+        >
+          {tFor(lang, "quotes.ledger.published")}
+        </p>
+      )}
+      {publishErr && (
+        <p
+          role="alert"
+          style="margin:8px 0 0;font-size:12.5px;color:#a83b3b;font-weight:600"
+        >
+          {publishErr}
+        </p>
+      )}
+    </section>
+  );
 }
 
 /** Detail surface for /quotes?open=<id> — job name, lifecycle status badge,
  *  full-quote actions, and the "emailed to … / texted to …" receipt strip
  *  built from the per-document comms trail (roadmap p.8). */
 function OpenQuotePanel(
-  { lang, state, onClose }: {
+  { lang, state, onClose, onRefresh }: {
     lang: "en" | "es";
     state: OpenQuoteState;
     /** REQ-034 (NW-43f): the panel can be closed — X strips ?open=. */
     onClose: () => void;
+    /** REQ-201: after a publish the panel re-reads the quote + ledger. */
+    onRefresh: () => void;
   },
 ) {
   const [copied, setCopied] = useState(false);
@@ -216,8 +583,11 @@ function OpenQuotePanel(
           >
             {tFor(lang, "quotesPage.open.viewAsClient")}
           </a>
-          {/* UX-02: the won quote's obvious next step — never a dead end. */}
-          {badge === "accepted" && (
+          {
+            /* UX-02: the won quote's obvious next step — never a dead end.
+              REQ-205: once the ledger is loaded its own CTA takes over. */
+          }
+          {badge === "accepted" && !state.ledger && (
             <a
               class="qopen__btn qopen__btn--primary"
               href={`/invoices?new=1&quoteId=${encodeURIComponent(q.id)}`}
@@ -256,6 +626,15 @@ function OpenQuotePanel(
           ))}
         </div>
       )}
+      {state.ledger && (
+        <QuoteLedgerSection
+          lang={lang}
+          q={q}
+          ledger={state.ledger}
+          versions={state.versions}
+          onPublished={onRefresh}
+        />
+      )}
     </section>
   );
 }
@@ -286,10 +665,21 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
     quote: null,
     receipts: [],
     viewed: null,
+    ledger: null,
+    versions: [],
   });
+  // REQ-201: bumped after a publish so the panel re-reads quote + ledger.
+  const [openTick, setOpenTick] = useState(0);
 
   function openQuote(id: string) {
-    setOpenQ({ loading: true, quote: null, receipts: [], viewed: null });
+    setOpenQ({
+      loading: true,
+      quote: null,
+      receipts: [],
+      viewed: null,
+      ledger: null,
+      versions: [],
+    });
     setOpenId(id);
     try {
       const url = new URL(globalThis.location.href);
@@ -317,7 +707,12 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
       // customer so the panel can say WHO the deal is with.
       api.get<{ id: string; name?: string }[]>("/customers")
         .catch(() => [] as { id: string; name?: string }[]),
-    ]).then(([quoteRaw, messages, me, opensRes, customersList]) => {
+      // REQ-205 / REQ-201: the documents ledger and the version history.
+      quotesClient.ledger(openId).catch(() => null as QuoteLedger | null),
+      quotesClient.versions(openId).catch(() => [] as QuoteVersion[]),
+    ]).then((
+      [quoteRaw, messages, me, opensRes, customersList, ledger, versions],
+    ) => {
       if (!alive) return;
       let quote = quoteRaw as BackendQuoteCard | null;
       if (quote && !quote.customerName && quote.customerId) {
@@ -337,12 +732,21 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         lastOpenAt: opens[opens.length - 1]?.at ?? null,
         opens: opens.length,
       });
-      setOpenQ({ loading: false, quote, receipts, viewed });
+      setOpenQ({
+        loading: false,
+        quote,
+        receipts,
+        viewed,
+        ledger: ledger && typeof ledger === "object" && "quote" in ledger
+          ? ledger
+          : null,
+        versions: Array.isArray(versions) ? versions : [],
+      });
     });
     return () => {
       alive = false;
     };
-  }, [openId]);
+  }, [openId, openTick]);
 
   // UX-08: once the opened panel has data, make sure it is actually on
   // screen — at 390px it renders below the hero + 4 stacked KPI cells and a
@@ -470,6 +874,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         <OpenQuotePanel
           lang={lang}
           state={openQ}
+          onRefresh={() => setOpenTick((n) => n + 1)}
           onClose={() => {
             setOpenId(null);
             try {

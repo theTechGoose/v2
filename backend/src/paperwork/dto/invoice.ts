@@ -2,6 +2,7 @@ import {
   IsArray,
   IsBoolean,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   ValidateNested,
@@ -9,6 +10,10 @@ import {
 } from "#class-validator";
 import { plainToInstance, Type } from "#class-transformer";
 import type { InvoiceUrgency } from "@paperwork/domain/business/invoice-urgency/mod.ts";
+import type {
+  CustomerSnapshot,
+  NumberedFields,
+} from "@core/data/numbered-store/mod.ts";
 
 /** Canonical invoice lifecycle. String-typed for backward compatibility with
  *  existing rows in KV, but new code should narrow to this union. */
@@ -150,6 +155,33 @@ export class CreateInvoiceDto {
    *  on confirm (which writes a Payment row) or on "didn't get it." */
   @IsOptional() @ValidateNested() @Type(() => PaymentIntentDto)
   paymentIntent?: PaymentIntentDto;
+
+  // ---- REQ-206: a standalone invoice is complete on its own ----
+  /** Sum of the line items before discount and tax, INTEGER CENTS. */
+  @IsOptional() @IsNumber()
+  subtotalCents?: number;
+  /** Tax rate in basis points (825 = 8.25%). */
+  @IsOptional() @IsNumber()
+  taxRateBp?: number;
+  /** Tax charged, INTEGER CENTS. */
+  @IsOptional() @IsNumber()
+  taxCents?: number;
+  /** Where the work was done, when it differs from the billing address. */
+  @IsOptional() @IsString()
+  serviceAddress?: string;
+  @IsOptional() @IsString()
+  serviceDateFrom?: string;
+  @IsOptional() @IsString()
+  serviceDateTo?: string;
+  /** How to pay, in the contractor's words (defaults from Settings at creation). */
+  @IsOptional() @IsString()
+  paymentInstructions?: string;
+  /** The billing details as typed on this invoice (overrides the customer snapshot). */
+  @IsOptional() @IsObject()
+  billTo?: CustomerSnapshot;
+  /** When the invoice was first put in front of the customer. */
+  @IsOptional() @IsString()
+  sentAt?: string;
 }
 
 export class UpdateInvoiceDto {
@@ -208,9 +240,39 @@ export class UpdateInvoiceDto {
   // `undefined` means "leave it untouched" (the store filters undefined out).
   @IsOptional() @ValidateNested() @Type(() => PaymentIntentDto)
   paymentIntent?: PaymentIntentDto | null;
+
+  // ---- REQ-206 ----
+  @IsOptional() @IsNumber()
+  subtotalCents?: number;
+  @IsOptional() @IsNumber()
+  taxRateBp?: number;
+  @IsOptional() @IsNumber()
+  taxCents?: number;
+  @IsOptional() @IsString()
+  serviceAddress?: string;
+  @IsOptional() @IsString()
+  serviceDateFrom?: string;
+  @IsOptional() @IsString()
+  serviceDateTo?: string;
+  @IsOptional() @IsString()
+  paymentInstructions?: string;
+  @IsOptional() @IsObject()
+  billTo?: CustomerSnapshot;
+  @IsOptional() @IsString()
+  sentAt?: string;
+  /** REQ-202: set by the balance coordinator when payments exceed the amount; never from a request. */
+  @IsOptional() @IsNumber()
+  overpaidCents?: number | null;
+  /** REQ-202: sum of confirmed payments, maintained by the balance coordinator. */
+  @IsOptional() @IsNumber()
+  paidCents?: number | null;
 }
 
-export interface Invoice extends CreateInvoiceDto {
+export interface Invoice extends CreateInvoiceDto, NumberedFields {
+  /** REQ-202: payments exceed the amount by this much (absent when they do not). */
+  overpaidCents?: number;
+  /** REQ-202: sum of confirmed payments. */
+  paidCents?: number;
   id: string;
   /** Owner. Populated server-side from the auth context — never accept from request body. */
   userId: string;

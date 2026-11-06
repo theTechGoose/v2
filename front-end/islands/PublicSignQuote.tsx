@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { tFor } from "../lib/i18n.ts";
+import { acceptDecision } from "../../shared/documents/linked-view.ts";
 
 interface Props {
   quoteId: string;
+  /** REQ-203: the version this page shows — a stale page cannot sign the
+   *  current one; the backend answers 409 stale_version and we reload. */
+  version?: number;
   /** Customer-facing copy language (defaults to en; non-breaking). */
   lang?: "en" | "es";
 }
@@ -38,15 +42,29 @@ const LINE = "#e3e8e6";
  *   - Resize-aware redraw (so the signature doesn't disappear if the
  *     viewport changes mid-flow).
  */
-export default function PublicSignQuote({ quoteId, lang = "en" }: Props) {
+export default function PublicSignQuote(
+  { quoteId, version, lang = "en" }: Props,
+) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const strokesRef = useRef<Stroke[]>([]);
   const drawingRef = useRef<Stroke | null>(null);
   const [hasInk, setHasInk] = useState(false);
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
+  // REQ-203: "stale" — the quote was republished under this page; "already"
+  // — someone signed it meanwhile. Both reload into the current document.
+  const [status, setStatus] = useState<
+    "idle" | "ok" | "error" | "stale" | "already"
+  >("idle");
   const [err, setErr] = useState<string | undefined>();
+
+  function reloadSoon(ms: number) {
+    setTimeout(() => {
+      try {
+        globalThis.location.reload();
+      } catch { /* SSR-safe */ }
+    }, ms);
+  }
 
   // ---- canvas plumbing ------------------------------------------------------
 
@@ -255,10 +273,32 @@ export default function PublicSignQuote({ quoteId, lang = "en" }: Props) {
       const r = await fetch(`/api/quotes/${quoteId}/accept`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: trimmed, signature: dataUrl }),
+        body: JSON.stringify({
+          name: trimmed,
+          signature: dataUrl,
+          // REQ-203: the version the customer is looking at
+          ...(typeof version === "number" ? { version } : {}),
+        }),
       });
-      if (!r.ok) {
-        const text = await r.text().catch(() => "");
+      const text = await r.text().catch(() => "");
+      let body: unknown = text;
+      try {
+        body = JSON.parse(text);
+      } catch { /* not JSON — the decision falls through to "error" */ }
+      const decision = acceptDecision(r.status, body);
+      if (decision.kind === "stale_version") {
+        // The quote was republished under this page: say so, then reload
+        // into the latest version (the customer signs THAT one).
+        setStatus("stale");
+        reloadSoon(1400);
+        return;
+      }
+      if (decision.kind === "already_accepted") {
+        setStatus("already");
+        reloadSoon(900);
+        return;
+      }
+      if (decision.kind !== "ok") {
         throw new Error(text.slice(0, 200) || `${r.status}`);
       }
       setStatus("ok");
@@ -266,11 +306,7 @@ export default function PublicSignQuote({ quoteId, lang = "en" }: Props) {
       // takes over: the customer-signature card on the right fills in
       // with the typed name + date, matching the contractor card on the
       // left.
-      setTimeout(() => {
-        try {
-          globalThis.location.reload();
-        } catch { /* SSR-safe */ }
-      }, 900);
+      reloadSoon(900);
     } catch (e) {
       setStatus("error");
       setErr((e as Error).message);
@@ -281,7 +317,19 @@ export default function PublicSignQuote({ quoteId, lang = "en" }: Props) {
 
   // ---- render ---------------------------------------------------------------
 
-  if (status === "ok") {
+  if (status === "stale") {
+    return (
+      <div
+        data-cy="sign-stale-version"
+        role="status"
+        style={`margin-top:24px;background:#fff6e5;border:1px solid rgba(255,170,40,0.35);border-radius:18px;padding:20px;text-align:center;color:#8a5a10;font-weight:700;font-size:14px`}
+      >
+        {tFor(lang, "public.doc.staleVersion")}
+      </div>
+    );
+  }
+
+  if (status === "ok" || status === "already") {
     return (
       <div
         style={`margin-top:24px;background:linear-gradient(135deg,rgba(81,152,67,0.10) 0%,rgba(81,152,67,0.04) 100%);border:1px solid rgba(72,158,95,0.35);border-radius:18px;padding:24px;text-align:center`}
@@ -303,12 +351,16 @@ export default function PublicSignQuote({ quoteId, lang = "en" }: Props) {
           </svg>
         </div>
         <div style={`font-weight:800;color:${GREEN};font-size:18px`}>
-          {tFor(lang, "publicSign.success.title")}
+          {status === "already"
+            ? tFor(lang, "public.doc.alreadyAccepted")
+            : tFor(lang, "publicSign.success.title")}
         </div>
         <div
           style={`margin-top:6px;color:${MUTED};font-size:13px;max-width:320px;margin-left:auto;margin-right:auto`}
         >
-          {tFor(lang, "publicSign.success.body")}
+          {status === "already"
+            ? tFor(lang, "public.doc.alreadyAcceptedBody")
+            : tFor(lang, "publicSign.success.body")}
         </div>
       </div>
     );

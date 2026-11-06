@@ -5,9 +5,16 @@ import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import { resolvePublicLang } from "../../../shared/quote-flow/public-lang.ts";
 import PublicChangeOrderActions from "../../islands/PublicChangeOrderActions.tsx";
+import { docHeadline } from "../../../shared/documents/linked-view.ts";
 
 interface ChangeOrderPublic {
   id: string;
+  /** REQ-198/201/205: the order's number, version, and the documents it belongs to. */
+  number?: string;
+  version?: number;
+  invoice?: { id: string; number: string; url: string; status?: string };
+  quote?: { id: string; number: string; url: string; accepted?: boolean };
+  approvedName?: string;
   description: string;
   deltaAmountCents: number;
   status: "pending" | "approved" | "declined";
@@ -92,6 +99,62 @@ export default define.page(async function PublicChangeOrder(ctx) {
                   >
                     {tFor(lang, "changeOrderPublic.heading")}
                   </h1>
+                  {
+                    /* REQ-205: "CO-001 · Version 1 · Approved · Nov 6, 2026"
+                      and the documents this order belongs to, by number. */
+                  }
+                  <div
+                    data-cy="co-headline"
+                    style={`margin-top:8px;font-size:13px;font-weight:800;color:${TEAL}`}
+                  >
+                    {docHeadline(
+                      {
+                        number: co.number ??
+                          `#${co.id.slice(0, 8).toUpperCase()}`,
+                        version: co.version ?? 1,
+                        state: co.status,
+                        date: co.status === "pending"
+                          ? undefined
+                          : co.decidedAt,
+                      },
+                      lang,
+                    )}
+                  </div>
+                  {(co.invoice || co.quote)
+                    ? (
+                      <div
+                        data-cy="co-links"
+                        style={`margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;font-size:13px`}
+                      >
+                        {co.invoice
+                          ? (
+                            <a
+                              data-cy="co-invoice-link"
+                              href={co.invoice.url}
+                              style={`color:${TEAL};font-weight:700;text-decoration:none`}
+                            >
+                              {tFor(lang, "public.doc.coInvoice", {
+                                number: co.invoice.number,
+                              })}
+                            </a>
+                          )
+                          : null}
+                        {co.quote
+                          ? (
+                            <a
+                              data-cy="co-quote-link"
+                              href={co.quote.url}
+                              style={`color:${TEAL};font-weight:700;text-decoration:none`}
+                            >
+                              {tFor(lang, "public.doc.coQuote", {
+                                number: co.quote.number,
+                              })}
+                            </a>
+                          )
+                          : null}
+                      </div>
+                    )
+                    : null}
                   <p style={`margin:10px 0 0;color:${MUTED};font-size:14px`}>
                     {tFor(lang, "changeOrderPublic.intro")}
                   </p>
@@ -178,6 +241,7 @@ export default define.page(async function PublicChangeOrder(ctx) {
                   <PublicChangeOrderActions
                     changeOrderId={co.id}
                     initialStatus={co.status}
+                    approvedName={co.approvedName}
                     lang={lang}
                   />
                 </div>

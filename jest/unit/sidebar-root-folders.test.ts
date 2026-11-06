@@ -32,8 +32,9 @@ describe("REQ-176 the sidebar's root folders", () => {
     ]);
   });
 
-  test("Billing holds Quotes, Invoices, Payments; Recurring the four; Admin holds Workers and Admins (REQ-178)", () => {
-    expect(ids(["billing"])).toEqual(["quotes", "invoices", "payments"]);
+  test("Billing holds Quotes, Invoices, Payments, Work orders; Recurring the four; Admin holds Workers and Admins (REQ-178)", () => {
+    // REQ-210: Work orders joined Billing next to the documents they belong to
+    expect(ids(["billing"])).toEqual(["quotes", "invoices", "payments", "workOrders"]);
     expect(ids(["manage"])).toEqual(["workers", "admins"]); // REQ-178 — Workers is Admin's
     expect(ids(["recurring"])).toEqual([
       "subscriptions",

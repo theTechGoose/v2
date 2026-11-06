@@ -38,6 +38,7 @@ import {
 import { fmtMoney } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
+import { docNumberOf } from "../../shared/documents/numbering.ts";
 
 /** Plural helper bound to an explicit language (the reactive `tn` reads the
  *  global lang signal; the logged-in app threads `lang` explicitly). */
@@ -251,7 +252,9 @@ function enrich(
     ...p,
     client,
     initials: initialsOf(client),
-    invoiceRef: `INV-${p.invoiceId.slice(0, 6).toUpperCase()}`,
+    // REQ-198: the invoice's own number ("INV-001"); "#ID" when the invoice
+    // predates numbering or is no longer on the books.
+    invoiceRef: docNumberOf(inv ?? { id: p.invoiceId }),
     daysAgo,
     whenLabel: whenLabel(lang, daysAgo),
     note: noteFor(lang, p.method, daysAgo, client, status),

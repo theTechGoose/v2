@@ -21,7 +21,14 @@ import PublicQuoteActions from "../islands/PublicQuoteActions.tsx";
 import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
 import { agreementTitle } from "../../shared/quote-flow/agreement-title.ts";
 import { deriveQuoteView } from "../../shared/quote-flow/public-doc-state.ts";
-import { fmtPhone, telHref } from "../lib/format.ts";
+import {
+  docHeadline,
+  type LinkedChangeOrderLike,
+  type LinkedInvoiceLike,
+  relatedDocumentRows,
+  shortDate,
+} from "../../shared/documents/linked-view.ts";
+import { fmtMoneyExact, fmtPhone, telHref } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import {
   computeMilestones,
@@ -67,6 +74,14 @@ interface Contractor {
 
 export interface QuotePublic {
   id: string;
+  /** REQ-198/201: the document's number ("Q-001"), version and headline state. */
+  number?: string;
+  version?: number;
+  state?: string;
+  publishedAt?: string;
+  /** REQ-205: the documents billed / changed against this agreement. */
+  invoices?: LinkedInvoiceLike[];
+  changeOrders?: LinkedChangeOrderLike[];
   customerId?: string;
   status?: string;
   estimatedTotal?: number;
@@ -263,6 +278,23 @@ export function QuoteDoc(
   const effective = quote.effectiveDate ?? quote.createdAt;
   const milestones = computeMilestones(total, quote.terms, lang);
 
+  // REQ-201/205: "Q-001 · Version 2 · Accepted and signed · Nov 6, 2026" —
+  // the number is for life, the version advances on publish, the state and
+  // its date come from the public projection. Rows written before numbering
+  // keep the old #ID reference.
+  const docNumber = quote.number ?? `#${quote.id.slice(0, 8).toUpperCase()}`;
+  const headline = docHeadline(
+    {
+      number: docNumber,
+      version: quote.version ?? 1,
+      state: quote.state ??
+        (signed ? "accepted" : declined ? "declined" : "sent"),
+      date: signed ? view.acceptedAt : quote.publishedAt,
+    },
+    lang,
+  );
+  const related = relatedDocumentRows(quote, lang);
+
   // Signature-block copy (deck p14) — shared with the backend renderers via
   // the pure module so the web page, the PDF, and the email never drift.
   // REQ-032 (NW-28): the module speaks both languages — no EN-only fork.
@@ -335,8 +367,23 @@ export function QuoteDoc(
               <span
                 style={`display:inline-block;background:rgba(20,72,82,0.10);color:${TEAL};font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;padding:6px 12px;border-radius:999px`}
               >
-                {t.docTag} · #{quote.id.slice(0, 8).toUpperCase()}
+                {t.docTag}
               </span>
+              <div
+                data-cy="quote-doc-headline"
+                style={`margin-top:8px;font-size:13px;font-weight:800;color:${TEAL};letter-spacing:.01em`}
+              >
+                {headline}
+              </div>
+              {!signed && quote.publishedAt
+                ? (
+                  <div style={`margin-top:2px;font-size:12px;color:${MUTED}`}>
+                    {tFor(lang, "public.doc.publishedOn", {
+                      date: shortDate(quote.publishedAt, lang),
+                    })}
+                  </div>
+                )
+                : null}
             </div>
             {signed
               ? (
@@ -589,21 +636,35 @@ export function QuoteDoc(
                           : t.clientSignature}
                       </div>
                       {
-                        /* Mirrors the contractor column exactly — bold name,
-                          cursive typed name, By: and Date: lines. The stored
-                          signature mark (drawn strokes) deliberately does NOT
-                          render here so both cards read the same. */
+                        /* Mirrors the contractor column — bold name, the
+                          signature, By: and Date: lines. REQ-205: the
+                          customer's own drawn mark (P-40) IS the signature
+                          on the accepted document; the cursive typed name
+                          stands in only when no mark was stored. */
                       }
                       <div
                         style={`margin-top:2px;font-size:14px;font-weight:800;color:${INK}`}
                       >
                         {customerName ?? quote.acceptedName ?? "—"}
                       </div>
-                      <div
-                        style={`margin-top:6px;font-family:'Snell Roundhand','Brush Script MT',cursive;font-size:26px;color:${TEAL};line-height:1.1`}
-                      >
-                        {quote.acceptedName ?? customerName ?? "—"}
-                      </div>
+                      {view.signatureImage
+                        ? (
+                          <img
+                            data-cy="quote-signature-image"
+                            src={view.signatureImage}
+                            alt={tFor(lang, "public.doc.signedBy", {
+                              name: quote.acceptedName ?? customerName ?? "",
+                            })}
+                            style="margin-top:6px;max-height:64px;max-width:240px;object-fit:contain;display:block"
+                          />
+                        )
+                        : (
+                          <div
+                            style={`margin-top:6px;font-family:'Snell Roundhand','Brush Script MT',cursive;font-size:26px;color:${TEAL};line-height:1.1`}
+                          >
+                            {quote.acceptedName ?? customerName ?? "—"}
+                          </div>
+                        )}
                       <div
                         style={`margin-top:6px;font-size:11px;color:${MUTED}`}
                       >
@@ -642,7 +703,11 @@ export function QuoteDoc(
                       >
                         {customerInstruction}
                       </div>
-                      <PublicSignQuote quoteId={quote.id} lang={lang} />
+                      <PublicSignQuote
+                        quoteId={quote.id}
+                        version={quote.version}
+                        lang={lang}
+                      />
                     </div>
                   )}
               </div>
@@ -789,6 +854,71 @@ export function QuoteDoc(
           )}
         </div>
       </article>
+      {
+        /* REQ-205: the documents that belong to this agreement — every
+          invoice billed against it (number, state, amount, balance) and the
+          approved change orders — each a link to its own public page. */
+      }
+      {related.length > 0 && (
+        <section
+          class="ctr__no-print"
+          data-cy="related-documents"
+          style={`margin-top:20px;background:#fff;border:1px solid ${LINE};border-radius:16px;padding:16px 20px`}
+        >
+          <div
+            style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
+          >
+            {tFor(lang, "public.doc.relatedDocuments")}
+          </div>
+          <div style="margin-top:8px">
+            {related.map((r) => (
+              <a
+                key={`${r.kind}:${r.id}`}
+                data-cy={r.kind === "invoice"
+                  ? "related-doc-invoice"
+                  : "related-doc-change-order"}
+                href={r.url}
+                style={`display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:9px 0;border-bottom:1px solid ${LINE};text-decoration:none;color:${INK};font-size:14px`}
+              >
+                <span style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline">
+                  <strong style={`color:${TEAL}`}>{r.number}</strong>
+                  <span style={`color:${MUTED};font-size:12.5px`}>
+                    {r.stateLabel}
+                  </span>
+                  {r.description
+                    ? (
+                      <span style={`color:${MUTED};font-size:12.5px`}>
+                        {r.description}
+                      </span>
+                    )
+                    : null}
+                </span>
+                <span style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">
+                  {r.kind === "invoice"
+                    ? (
+                      <>
+                        <strong>{fmtMoneyExact(r.amountCents)}</strong>
+                        <span
+                          style={`display:block;font-size:11.5px;color:${MUTED}`}
+                        >
+                          {tFor(lang, "public.doc.balance", {
+                            amount: fmtMoneyExact(r.balanceCents),
+                          })}
+                        </span>
+                      </>
+                    )
+                    : (
+                      <strong>
+                        {(r.deltaAmountCents ?? 0) >= 0 ? "+" : "−"}
+                        {fmtMoneyExact(Math.abs(r.deltaAmountCents ?? 0))}
+                      </strong>
+                    )}
+                </span>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
       <div
         style={`display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px;font-size:11px;color:#a8b2b3;letter-spacing:.04em`}
       >
@@ -798,7 +928,7 @@ export function QuoteDoc(
           height="16"
           style="height:16px;width:auto;opacity:0.7;display:block"
         />
-        {t.poweredBy} #{quote.id.slice(0, 8).toUpperCase()}
+        {t.poweredBy} {docNumber}
       </div>
     </>
   );

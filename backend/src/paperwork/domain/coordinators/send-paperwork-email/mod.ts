@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { publishPendingInvoice, publishPendingQuote } from "@paperwork/domain/business/publish-pending/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -17,12 +18,22 @@ import {
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { aliasFrom } from "@communication/domain/business/sender/mod.ts";
 import {
-  buildLocalizedQuoteEmailSubject,
   fmtPaperworkDate,
   invoiceStatusLabel,
   titleCaseJobName,
   unitLabel,
 } from "#quote-flow/email-format.ts";
+import {
+  customerOnDocument,
+  docRef,
+  docRefWithVersion,
+  fmtTaxRate,
+  paymentStateLines,
+  type RenderedCustomer,
+  renderWord,
+  revisedNote,
+  versionLabel,
+} from "@paperwork/domain/business/doc-render/mod.ts";
 import { websiteLabel } from "#quote-flow/format-helpers.ts";
 import {
   isPlaceholderName,
@@ -151,20 +162,22 @@ export class SendPaperworkEmail {
     let quoteForStamp: Quote | undefined;
     let customerIdForLog: string | undefined;
     if (input.kind === "quote") {
-      const quote = await this.quotes.getOwned(input.resourceId, userId);
+      // REQ-201: a send publishes what is pending — the link must show what was sent
+      const quote = await publishPendingQuote(this.quotes, input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, quote.customerId);
       customerIdForLog = customer?.id;
-      if (!recipient) recipient = customer?.email ?? undefined;
+      // the live address first (a corrected typo should reach them), the snapshot's otherwise
+      if (!recipient) recipient = customer?.email ?? customerOnDocument(quote, customer)?.email;
       // The customer-facing flow goes: email → /q page → sign. The quote IS
       // the agreement, so this one email carries the review-and-sign CTA.
       subject = renderQuoteSubject(quote, safeSender, senderBiz, customer);
       htmlBody = renderQuoteHtml(quote, customer, safeSender, senderBiz);
       quoteForStamp = quote;
     } else {
-      const invoice = await this.invoices.getOwned(input.resourceId, userId);
+      const invoice = await publishPendingInvoice(this.invoices, input.resourceId, userId);
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
       customerIdForLog = customer?.id;
-      if (!recipient) recipient = customer?.email ?? undefined;
+      if (!recipient) recipient = customer?.email ?? customerOnDocument(invoice, customer)?.email;
       // The email goes to the customer, so it follows the contractor's
       // outgoing-comms language (default en), not their UI language.
       const lang: Lang = senderBiz?.commsLanguage === "es" ? "es" : "en";
@@ -181,7 +194,7 @@ export class SendPaperworkEmail {
       const paid = input.variant === "paid";
       subject = paid
         ? renderInvoicePaidSubject(invoice, senderBiz, safeSender, lang)
-        : renderInvoiceSubject(invoice, safeSender, lang);
+        : renderInvoiceSubject(invoice, safeSender, lang, senderBiz);
       htmlBody = renderInvoiceHtml(
         invoice,
         customer,
@@ -347,11 +360,82 @@ function senderName(u: User | undefined, lang: Lang): string {
     : name!;
 }
 
-function customerGreeting(c: Customer | undefined, lang: Lang): string {
-  const name = c?.name?.trim();
+function customerGreeting(c: RenderedCustomer | undefined, lang: Lang): string {
+  const name = c?.name?.trim() || c?.businessName?.trim();
   return name
     ? t(lang, "paperworkEmail.shell.greeting", { name: escapeHtml(name) })
     : t(lang, "paperworkEmail.shell.greetingFallback");
+}
+
+/** REQ-204: who the subject says the document is from — the business, else the (real) sender. */
+function fromWho(senderBiz: BusinessIdentity | undefined, sender: User | undefined, lang: Lang): string {
+  const trimmed = sender?.name?.trim();
+  return senderBiz?.businessName?.trim() || senderBiz?.legalName?.trim() ||
+    (isPlaceholderName(trimmed) ? undefined : trimmed) || t(lang, "brand.name");
+}
+
+/** REQ-201: the "Revised … — replaces previous version" banner an email carries on a revision. */
+function revisedBanner(kind: "invoice" | "quote", doc: { version?: number }, lang: Lang): string {
+  const note = revisedNote(kind, doc, lang);
+  return note
+    ? `<div data-revised style="margin-top:8px;color:${COLOR_PINK_DARK};font-size:12px;font-weight:700">${escapeHtml(note)}</div>`
+    : "";
+}
+
+/**
+ * REQ-206 / REQ-202: the facts a bill carries beyond its total — where and
+ * when the work was done, the math (subtotal / discount / tax), the quote it
+ * bills against, how to pay, and the payment state (partial / overpaid).
+ */
+function invoiceFactsHtml(i: Invoice, quote: Quote | undefined, lang: Lang): string {
+  const rows: Array<[string, string]> = [];
+  if (i.serviceAddress?.trim()) rows.push([renderWord(lang, "serviceAddress"), i.serviceAddress.trim()]);
+  if (i.serviceDateFrom || i.serviceDateTo) {
+    const from = i.serviceDateFrom ? fmtDate(i.serviceDateFrom, lang) : "";
+    const to = i.serviceDateTo ? fmtDate(i.serviceDateTo, lang) : "";
+    rows.push([renderWord(lang, "serviceDates"), from && to && from !== to ? `${from} – ${to}` : from || to]);
+  }
+  if (typeof i.subtotalCents === "number") rows.push([renderWord(lang, "subtotal"), fmtUSD(i.subtotalCents)]);
+  if (i.discountCents) {
+    const reason = i.discountReason?.trim();
+    rows.push([
+      reason ? `${renderWord(lang, "discount")} · ${reason}` : renderWord(lang, "discount"),
+      `-${fmtUSD(i.discountCents)}`,
+    ]);
+  }
+  if (typeof i.taxCents === "number" || typeof i.taxRateBp === "number") {
+    const rate = fmtTaxRate(i.taxRateBp);
+    rows.push([rate ? `${renderWord(lang, "tax")} (${rate})` : renderWord(lang, "tax"), fmtUSD(i.taxCents ?? 0)]);
+  }
+  if (quote) rows.push([renderWord(lang, "originalQuote"), docRef(quote)]);
+  const state = paymentStateLines(i, lang);
+  const partial = !(i.status === "paid" || i.paidAt) && (i.paidCents ?? 0) > 0;
+  const stateLine = partial && state.headline
+    ? `<div data-paid-partial style="margin-top:10px;font-size:14px;font-weight:800;color:${COLOR_TEAL}">${escapeHtml(state.headline)}</div>`
+    : "";
+  const overLine = state.overpaid
+    ? `<div data-overpaid style="margin-top:6px;font-size:13px;font-weight:700;color:${COLOR_PINK_DARK}">${escapeHtml(state.overpaid)}</div>`
+    : "";
+  const instructions = i.paymentInstructions?.trim()
+    ? `<div style="margin-top:12px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED}">${
+      escapeHtml(renderWord(lang, "paymentInstructions"))
+    }</div><p data-payment-instructions style="margin:4px 0 0;font-size:14px;line-height:1.5;color:${COLOR_INK};white-space:pre-wrap">${
+      escapeHtml(i.paymentInstructions.trim())
+    }</p>`
+    : "";
+  if (!rows.length && !stateLine && !overLine && !instructions) return "";
+  const table = rows.length
+    ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse:collapse;">${
+      rows.map(([k, v]) =>
+        `<tr><td style="padding:5px 0;color:${COLOR_MUTED};font-size:13px;vertical-align:top">${
+          escapeHtml(k)
+        }</td><td style="padding:5px 0 5px 12px;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;vertical-align:top">${
+          escapeHtml(v)
+        }</td></tr>`
+      ).join("")
+    }</table>`
+    : "";
+  return `<div data-invoice-facts>${table}${stateLine}${overLine}${instructions}</div>`;
 }
 
 function fmtUSD(cents: number | undefined): string {
@@ -511,11 +595,11 @@ function shell(opts: {
 const COLOR_PINK = "#FF6B6B";
 const COLOR_PINK_DARK = "#d94e4e";
 
-function renderQuoteSubject(
+export function renderQuoteSubject(
   q: Quote,
   sender: User | undefined,
   senderBiz: BusinessIdentity | undefined,
-  customer: Customer | undefined,
+  _customer: RenderedCustomer | undefined,
 ): string {
   // Roadmap p.13: the SUBJECT goes to the customer, so it follows the
   // contractor's outgoing-comms language (default en), not their UI language.
@@ -527,19 +611,16 @@ function renderQuoteSubject(
     [senderBiz?.businessName, senderBiz?.legalName, sender?.name]
       .map((n) => (isPlaceholderName(n) ? undefined : n?.trim()))
       .find((n): n is string => Boolean(n)) ?? t(lang, "brand.name");
-  const customerName = customer?.name?.trim() ||
-    t(lang, "paperworkEmail.subject.customerFallback");
   const jobName = (q.jobNameByLang?.[lang] ?? q.jobName)?.trim() ||
     (q.summaryByLang?.[lang] ?? q.summary)?.replace(/^\s*quote\s*:\s*/i, "")
       .trim() ||
     t(lang, "paperworkEmail.subject.jobFallback");
-  // P-44: localized word order — es leads "Cotización de {businessName}
-  // para {customerName}, …", never the English shape. Kept in sync with
-  // lang/*.json "paperworkEmail.quote.subject".
-  return buildLocalizedQuoteEmailSubject(
-    { businessName, customerName, jobName },
-    lang,
-  );
+  // REQ-204 / REQ-201: "Quote Q-001 from <Business> — <job>", and the
+  // version once revised ("… — Version 2 — <job>"); es "Cotización Q-001 de …".
+  const version = versionLabel(q, lang);
+  return `${renderWord(lang, "quote")} ${docRef(q)} ${renderWord(lang, "from")} ${businessName}${
+    version ? ` — ${version}` : ""
+  } — ${jobName}`;
 }
 
 /**
@@ -560,17 +641,20 @@ function renderQuoteSubject(
  * All inline styles, table-based layout for Gmail/Outlook safety, no
  * remote images that mail clients block.
  */
-function renderQuoteHtml(
+export function renderQuoteHtml(
   q: Quote,
-  customer: Customer | undefined,
+  liveCustomer: RenderedCustomer | undefined,
   sender: User | undefined,
   senderBiz: BusinessIdentity | undefined,
 ): string {
-  const docNumber = `#${q.id.slice(0, 8).toUpperCase()}`;
   // Roadmap p.13: the email goes to the customer, so it follows the
   // contractor's outgoing-comms language (default en), not their UI language.
   const es = senderBiz?.commsLanguage === "es";
   const lang: Lang = es ? "es" : "en";
+  // REQ-204 / REQ-201: "Q-001 · Version 2", never an id slice; an issued
+  // quote shows the customer as snapshotted when it was issued.
+  const docNumber = docRefWithVersion(q, lang);
+  const customer = customerOnDocument(q, liveCustomer);
   const drafted = fmtDate(q.createdAt, lang);
   const total = q.estimatedTotal ??
     q.lineItems.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0);
@@ -757,6 +841,7 @@ function renderQuoteHtml(
                 <span style="display:inline-block;background:rgba(255,107,107,0.10);color:${COLOR_PINK_DARK};font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;padding:6px 12px;border-radius:999px">${L.quoteTag} · ${
     escapeHtml(docNumber)
   }</span>
+                ${revisedBanner("quote", q, lang)}
               </td>
               <td style="vertical-align:top;text-align:right;color:${COLOR_MUTED};font-size:12px;font-weight:600">
                 ${L.drafted} ${escapeHtml(drafted)}
@@ -941,38 +1026,37 @@ function renderQuoteHtml(
 
 // ---------- invoice -----------------------------------------------------------
 
-function renderInvoiceSubject(
+/** REQ-204 / REQ-201: "Invoice INV-5000 from <Business> — due <date>", with
+ *  "— Version 2" once revised; es "Factura INV-5000 de <Business> — vence …". */
+export function renderInvoiceSubject(
   i: Invoice,
   sender: User | undefined,
   lang: Lang,
+  senderBiz?: BusinessIdentity,
 ): string {
-  // P-06: never sign a subject "from Nuevo usuario" — drop the placeholder.
-  const trimmed = sender?.name?.trim();
-  const who = isPlaceholderName(trimmed) ? undefined : trimmed;
-  const tail = t(lang, "paperworkEmail.invoice.subjectTail", {
-    docNumber: i.id.slice(0, 8),
-    dueDate: fmtDate(i.dueDate, lang),
-  });
-  return who
-    ? t(lang, "paperworkEmail.invoice.subjectFrom", { tail, who })
-    : tail;
+  // P-06: never sign a subject "from Nuevo usuario" — fromWho drops the placeholder.
+  const who = fromWho(senderBiz, sender, lang);
+  const version = versionLabel(i, lang);
+  const due = i.dueDate
+    ? ` — ${lang === "es" ? "vence" : "due"} ${fmtDate(i.dueDate, lang)}`
+    : "";
+  return `${renderWord(lang, "invoice")} ${docRef(i)} ${renderWord(lang, "from")} ${who}${
+    version ? ` — ${version}` : ""
+  }${due}`;
 }
 
-/** REQ-020 (NW-29): "Paid — invoice #… from <business>" — the invoice
+/** REQ-020 (NW-29): "Paid — Invoice INV-5000 from <business>" — the invoice
  *  stamped paid, never a receipt. */
-function renderInvoicePaidSubject(
+export function renderInvoicePaidSubject(
   i: Invoice,
   senderBiz: BusinessIdentity | undefined,
   sender: User | undefined,
   lang: Lang,
 ): string {
-  const trimmed = sender?.name?.trim();
-  const who = senderBiz?.businessName?.trim() || senderBiz?.legalName?.trim() ||
-    (isPlaceholderName(trimmed) ? undefined : trimmed);
-  const docNumber = i.id.slice(0, 8).toUpperCase();
-  return who
-    ? t(lang, "paperworkEmail.invoicePaid.subject", { docNumber, businessName: who })
-    : t(lang, "paperworkEmail.invoicePaid.subjectNoBiz", { docNumber });
+  const who = fromWho(senderBiz, sender, lang);
+  return `${lang === "es" ? "Pagada" : "Paid"} — ${renderWord(lang, "invoice")} ${docRefWithVersion(i, lang)} ${
+    renderWord(lang, "from")
+  } ${who}`;
 }
 
 /**
@@ -995,9 +1079,9 @@ function invoiceAmountLabel(i: Invoice, lang: Lang, paid: boolean): string {
     : t(lang, "paperworkEmail.invoice.amountDueLabel");
 }
 
-function renderInvoiceHtml(
+export function renderInvoiceHtml(
   i: Invoice,
-  customer: Customer | undefined,
+  liveCustomer: RenderedCustomer | undefined,
   sender: User | undefined,
   senderBiz: BusinessIdentity | undefined,
   quote?: Quote,
@@ -1005,6 +1089,8 @@ function renderInvoiceHtml(
 ): string {
   const es = senderBiz?.commsLanguage === "es";
   const lang: Lang = es ? "es" : "en";
+  // REQ-204: an issued bill shows the customer as snapshotted (billTo first)
+  const customer = customerOnDocument(i, liveCustomer);
   const items = quote?.lineItems ?? [];
   const agreementTotal = quote?.estimatedTotal ??
     (items.length
@@ -1016,7 +1102,8 @@ function renderInvoiceHtml(
   }
   const amountLabel = invoiceAmountLabel(i, lang, paid);
 
-  const docNumber = `#${i.id.slice(0, 8).toUpperCase()}`;
+  // REQ-204 / REQ-201: "INV-5000 · Version 2", never an id slice
+  const docNumber = docRefWithVersion(i, lang);
   const issued = fmtDate(i.issuedDate ?? i.createdAt, lang);
   const amount = i.amount;
   const isMilestone = (i.installmentTotal ?? 1) > 1;
@@ -1136,6 +1223,8 @@ function renderInvoiceHtml(
     }</p>`;
 
   const greeting = customerGreeting(customer, lang);
+  // REQ-206 / REQ-202: the bill's facts and payment state
+  const facts = invoiceFactsHtml(i, quote, lang);
   // REQ-020: a paid invoice has no "due on" line under its PAID card.
   const dueSub = i.dueDate && !paid
     ? `<div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">${
@@ -1191,6 +1280,7 @@ function renderInvoiceHtml(
                 <span style="display:inline-block;background:rgba(255,107,107,0.10);color:${COLOR_PINK_DARK};font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;padding:6px 12px;border-radius:999px">${
     escapeHtml(L.kindLabel)
   } · ${escapeHtml(docNumber)}</span>
+                ${revisedBanner("invoice", i, lang)}
               </td>
               <td style="vertical-align:top;text-align:right;color:${COLOR_MUTED};font-size:12px;font-weight:600">
                 ${escapeHtml(L.issuedLabel)} ${escapeHtml(issued)}
@@ -1274,6 +1364,11 @@ function renderInvoiceHtml(
             </tr>
           </table>
         </td></tr>
+        ${
+    facts
+      ? `<tr><td style="padding:18px 36px 0">${facts}</td></tr>`
+      : ""
+  }
 
         <!-- big CTA -->
         <tr><td style="padding:28px 36px 0;text-align:center">
@@ -1366,16 +1461,19 @@ function renderInvoiceHtml(
 
 /** Lightweight amount-only invoice email (the original) — used for standalone
  *  invoices with no linked quote to itemize. */
-function renderInvoiceBasicHtml(
+export function renderInvoiceBasicHtml(
   i: Invoice,
-  customer: Customer | undefined,
+  liveCustomer: RenderedCustomer | undefined,
   sender: User | undefined,
   senderBiz: BusinessIdentity | undefined,
   lang: Lang,
   paid = false,
 ): string {
   const amountLabel = invoiceAmountLabel(i, lang, paid);
-  const docNumber = `#${i.id.slice(0, 8)}`;
+  // REQ-204 / REQ-201: "INV-5000 · Version 2", never an id slice; the
+  // customer as snapshotted when the bill was issued.
+  const docNumber = docRefWithVersion(i, lang);
+  const customer = customerOnDocument(i, liveCustomer);
   const drafted = fmtDate(i.issuedDate ?? new Date().toISOString(), lang);
   const amount = i.amount;
   // Standalone invoices carry their own job title + note (no quote behind
@@ -1425,7 +1523,7 @@ function renderInvoiceBasicHtml(
     }`
     : "";
 
-  const body = `${jobBlock}
+  const body = `${revisedBanner("invoice", i, lang)}${jobBlock}
     <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED};">${
     escapeHtml(t(lang, "paperworkEmail.invoice.detailsLabel"))
   }</div>
@@ -1463,7 +1561,8 @@ function renderInvoiceBasicHtml(
   }</div>
         </td>
       </tr>
-    </table>`;
+    </table>
+    ${invoiceFactsHtml(i, undefined, lang) ? `<div style="margin-top:16px">${invoiceFactsHtml(i, undefined, lang)}</div>` : ""}`;
 
   return shell({
     preheader: t(lang, "paperworkEmail.invoice.preheader", {

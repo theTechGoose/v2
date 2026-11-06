@@ -5,6 +5,12 @@ import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
+import {
+  customerOnDocument,
+  docRef,
+  docRefWithVersion,
+  renderWord,
+} from "@paperwork/domain/business/doc-render/mod.ts";
 
 export interface RenderReceiptPdfInput {
   invoice: Invoice;
@@ -40,7 +46,6 @@ export class RenderReceiptPdf {
     const input = winAnsiSafeDeep(raw);
     const {
       invoice,
-      customer,
       contractor,
       businessName,
       method,
@@ -48,14 +53,19 @@ export class RenderReceiptPdf {
       confirmedAt,
     } = input;
     const lang: Lang = contractor?.language ?? "en";
+    // REQ-204: the receipt shows the customer the bill was issued to
+    const customer = customerOnDocument(invoice, input.customer);
     const pdf = await PDFDocument.create();
-    pdf.setTitle(`Receipt #${invoice.id.slice(0, 8).toUpperCase()}`);
+    // REQ-204: named by the invoice number, never an id slice
+    pdf.setTitle(renderWord(lang, "receiptFor", { number: docRef(invoice) }));
     pdf.setAuthor(
       contractor?.name ?? businessName ??
         t(lang, "receiptPdf.contractorFallback"),
     );
     pdf.setSubject(
-      `Receipt for invoice #${invoice.id.slice(0, 8).toUpperCase()}`,
+      renderWord(lang, "receiptFor", {
+        number: docRefWithVersion(invoice, lang),
+      }),
     );
     pdf.setCreationDate(new Date());
 
@@ -93,7 +103,7 @@ export class RenderReceiptPdf {
       font: bold,
       color: rgb(0.32, 0.60, 0.26),
     });
-    page.drawText(`#${invoice.id.slice(0, 8).toUpperCase()}`, {
+    page.drawText(docRef(invoice), {
       x: M,
       y: H - 120,
       size: 24,
@@ -180,14 +190,14 @@ export class RenderReceiptPdf {
       color: rgb(0.42, 0.48, 0.49),
     });
     y -= 16;
-    page.drawText(`#${invoice.id.slice(0, 8).toUpperCase()}`, {
+    page.drawText(docRefWithVersion(invoice, lang), {
       x: M,
       y,
       size: 12,
       font: bold,
       color: rgb(0.11, 0.17, 0.19),
     });
-    page.drawText(customer?.name ?? "—", {
+    page.drawText(customer?.name ?? customer?.businessName ?? "—", {
       x: W / 2,
       y,
       size: 12,

@@ -6,6 +6,7 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import { docNumberOf } from "#documents/numbering.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -142,7 +143,7 @@ export class SendInvoice {
         ...(fresh.customerId ? { customerId: fresh.customerId } : {}),
         lineItems: [{
           description: t(lang, "sendInvoice.lineItem.jobTotal", {
-            ref: quote.id.slice(0, 8),
+            ref: docNumberOf(quote),
           }),
           amountCents: totalCents,
         }],

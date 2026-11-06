@@ -2,43 +2,39 @@ import { Injectable } from "#danet/core";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
+import {
+  type SearchHit,
+  searchRecords,
+  type SearchType,
+} from "#documents/search.ts";
 
-/**
- * Result of a `⌘K` search hit. Discriminated by `type` so the frontend
- * can render the right icon + open the right destination.
- */
-export type SearchHit =
-  | { type: "customer"; id: string; label: string; sub?: string }
-  | { type: "quote"; id: string; label: string; sub?: string; total?: number }
-  | {
-    type: "invoice";
-    id: string;
-    label: string;
-    sub?: string;
-    amount?: number;
-  };
+export type { SearchHit, SearchType };
 
 export interface SearchOptions {
   q: string;
-  /** Restrict to a single entity type. If omitted, searches all three. */
-  type?: SearchHit["type"];
-  /** Cap on per-type results. Default 10 (so 4×10 = 40 max with full scan). */
+  /** Restrict to a single entity type. If omitted, searches all five. */
+  type?: SearchType;
+  /** Cap on per-type results. Default 10. */
   limit?: number;
 }
 
 /**
- * GlobalSearch — substring search across customers, quotes, invoices for
- * the topbar `⌘K`.
+ * GlobalSearch — REQ-207: the dashboard's search box.
  *
- * Per-user scope; full scan + filter is fine up to ~10k records per
- * tenant. When that becomes a bottleneck, swap for a per-token KV index
- * or a real search engine without changing the surface.
+ * Loads ONE account's customers, quotes, invoices, change orders and work
+ * orders and hands them to the pure `searchRecords` (shared/documents/
+ * search.ts), which matches numbers (full or partial, prefix-insensitive),
+ * customer names and numbers, addresses, dates and job text, ranks exact
+ * number hits first, then prefixes, then substrings, and attaches the
+ * related records (an invoice's quote, a quote's invoices, a customer's
+ * counts) to every row.
  *
- * Match rules:
- *   - case-insensitive substring
- *   - searches `name`/`summary`/`quoteId` etc. — see per-type
- *     impl below
- *   - empty query returns []
+ * Per-account scope is the store index: every list is `listByUser(userId)`,
+ * so nothing from another account can enter the candidate set. A full scan
+ * is fine up to ~10k records per account (REQ-135 made listByUser one
+ * batched read); when it is not, index by token without changing the surface.
  */
 @Injectable()
 export class GlobalSearch {
@@ -46,74 +42,28 @@ export class GlobalSearch {
     private customers: CustomerStore,
     private quotes: QuoteStore,
     private invoices: InvoiceStore,
+    private changeOrders: ChangeOrderStore,
+    private workOrders: WorkOrderStore,
   ) {}
 
   async run(userId: string, options: SearchOptions): Promise<SearchHit[]> {
-    const q = options.q.trim().toLowerCase();
+    const q = options.q.trim();
     if (!q) return [];
-    const limit = options.limit ?? 10;
-    const results: SearchHit[] = [];
-
-    if (!options.type || options.type === "customer") {
-      const customers = await this.customers.listByUser(userId);
-      for (const c of customers) {
-        if (matches(q, c.name, c.email, c.phoneNumber, c.address, c.notes)) {
-          results.push({
-            type: "customer",
-            id: c.id,
-            label: c.name,
-            sub: c.email ?? c.phoneNumber,
-          });
-          if (perTypeCount(results, "customer") >= limit) break;
-        }
-      }
-    }
-
-    if (!options.type || options.type === "quote") {
-      const quotes = await this.quotes.listByUser(userId);
-      for (const q1 of quotes) {
-        if (matches(q, q1.summary, q1.id)) {
-          results.push({
-            type: "quote",
-            id: q1.id,
-            label: q1.summary,
-            sub: q1.status,
-            total: q1.estimatedTotal,
-          });
-          if (perTypeCount(results, "quote") >= limit) break;
-        }
-      }
-    }
-
-    if (!options.type || options.type === "invoice") {
-      const invoices = await this.invoices.listByUser(userId);
-      for (const i of invoices) {
-        if (matches(q, i.id, i.quoteId, i.status)) {
-          results.push({
-            type: "invoice",
-            id: i.id,
-            label: `Invoice ${i.id.slice(0, 8)}…`,
-            sub: i.status,
-            amount: i.amount,
-          });
-          if (perTypeCount(results, "invoice") >= limit) break;
-        }
-      }
-    }
-
-    return results;
+    const [customers, quotes, invoices, changeOrders, workOrders] =
+      await Promise.all([
+        this.customers.listByUser(userId),
+        this.quotes.listByUser(userId),
+        this.invoices.listByUser(userId),
+        this.changeOrders.listByUser(userId),
+        this.workOrders.listByUser(userId),
+      ]);
+    return searchRecords(
+      { customers, quotes, invoices, changeOrders, workOrders },
+      q,
+      {
+        limit: options.limit ?? 10,
+        ...(options.type ? { types: [options.type] } : {}),
+      },
+    );
   }
-}
-
-function matches(
-  needle: string,
-  ...haystacks: Array<string | undefined>
-): boolean {
-  return haystacks.some((h) =>
-    typeof h === "string" && h.toLowerCase().includes(needle)
-  );
-}
-
-function perTypeCount(results: SearchHit[], type: SearchHit["type"]): number {
-  return results.filter((r) => r.type === type).length;
 }

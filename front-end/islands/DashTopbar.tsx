@@ -4,6 +4,7 @@ import { dashboardClient, type Notification } from "../clients/dashboard.ts";
 import { langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { profileClient } from "../clients/profile.ts";
 import { capitalizeDateLine } from "../../shared/quote-flow/format-helpers.ts";
+import GlobalSearch from "./GlobalSearch.tsx";
 
 interface Props {
   /** @deprecated Ignored — the date is now computed reactively in-component
@@ -136,7 +137,9 @@ export default function DashTopbar(
     : null;
 
   return (
-    <header class="topbar">
+    // REQ-207: the bar is its own stacking context (backdrop-filter); lifted
+    // above the content so the search panel is not painted under the cards.
+    <header class="topbar" style="position:relative;z-index:40">
       <button
         class="topbar__menu"
         type="button"
@@ -157,11 +160,12 @@ export default function DashTopbar(
         </div>
       </div>
       {
-        /* Search + notifications drawer are not built yet; hide their
-          affordances until the underlying features ship rather than
-          advertise dead controls (audit #6, #7). */
+        /* REQ-207: the account search — numbers, customers, addresses,
+          dates — with `/` to focus. It takes the flexible middle of the bar.
+          The notifications drawer is still not built; its affordance stays
+          hidden rather than advertise a dead control (audit #7). */
       }
-      <div style="flex:1" aria-hidden="true" />
+      <GlobalSearch />
       {ticker
         ? (
           // Anchored to /dashboard#activity so the pill is no longer inert:

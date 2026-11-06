@@ -5,6 +5,10 @@
  *   GET /profile                       → ProfileSnapshot (auth)
  */
 import { api, type ApiOptions } from "../lib/api.ts";
+import type { NumberingStarts } from "../../shared/documents/numbering.ts";
+import type { NumberingView } from "../../shared/documents/numbering-settings.ts";
+
+export type { NumberingStarts, NumberingView };
 
 export interface BusinessIdentity {
   userId: string;
@@ -158,6 +162,8 @@ export interface ProfileSnapshot {
   /** REQ-054 — null until a pick (read as free) */
   plan?: UserPlan | null;
   initials: string;
+  /** REQ-198 — the account's own number ("DM-0001") */
+  accountNumber?: string;
   /** Phone-area-code guess for the business state — present only when we
    *  have a guess AND no address state is set yet. Drives the /welcome
    *  wizard's tap-to-confirm state pre-selection. */
@@ -192,6 +198,19 @@ export const profileClient = {
    *  Hits GET /me/wipe (scoped to the caller's session) and logs them out. */
   wipeAccount: (opts: ApiOptions = {}) =>
     api.get<{ ok: true; deleted: number }>("/me/wipe", opts),
+  /** REQ-198/199 — the account number, the starting numbers, the next number
+   *  of every kind and which kinds already issued (locked). */
+  numbering: (opts: ApiOptions = {}) =>
+    api.get<NumberingView>("/profile/numbering", opts),
+  /** REQ-199 — set starting numbers (only the changed kinds). 409
+   *  `numbering_locked` {kinds} when a kind already issued a number. */
+  updateNumbering: (patch: NumberingStarts, opts: ApiOptions = {}) =>
+    api.put<NumberingView>("/profile/numbering", patch, opts),
+  /** REQ-199 — clear every record of the account (customers, quotes,
+   *  invoices, change orders, work orders, payments) and restart numbering;
+   *  keeps the account, its settings and this session. Owner only. */
+  setupReset: (opts: ApiOptions = {}) =>
+    api.post<{ ok: true }>("/me/setup-reset", undefined, opts),
 };
 
 /** REQ-058 — the CRM customer this account is (null before the first sync). Mirrors the backend's CrmCustomer. */

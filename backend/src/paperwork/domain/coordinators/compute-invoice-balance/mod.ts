@@ -3,6 +3,7 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import { balanceDue } from "@paperwork/domain/business/invoice-balance/mod.ts";
 import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
+import { invoiceBalance } from "#documents/versions.ts";
 
 export interface InvoiceBalanceResult {
   invoiceId: string;
@@ -12,6 +13,8 @@ export interface InvoiceBalanceResult {
   paidTotal: number;
   /** Outstanding balance. INTEGER CENTS — `amount - paidTotal`. */
   balance: number;
+  /** REQ-202: payments beyond the amount, flagged rather than hidden. */
+  overpaidCents: number;
   status: string;
 }
 
@@ -39,16 +42,22 @@ export class ComputeInvoiceBalance {
     const paidTotal = payments.reduce((sum, p) => sum + (p.amount ?? 0), 0);
     const amount = invoice.amount ?? 0;
     const balance = balanceDue(invoice, paidTotal);
+    const { overpaidCents } = invoiceBalance(amount, paidTotal);
     const closed = balance <= 0 && amount > 0;
     const desiredStatus = closed ? "paid" : "pending";
     const desiredPaidAt = closed ? latestReceivedAt(payments) : undefined;
 
     const statusChanged = invoice.status !== desiredStatus;
     const paidAtChanged = (invoice.paidAt ?? undefined) !== desiredPaidAt;
-    if (statusChanged || paidAtChanged) {
+    const paidChanged = (invoice.paidCents ?? 0) !== paidTotal ||
+      (invoice.overpaidCents ?? 0) !== overpaidCents;
+    if (statusChanged || paidAtChanged || paidChanged) {
       await this.invoices.update(invoiceId, userId, {
         status: desiredStatus,
-        paidAt: desiredPaidAt,
+        // `null` clears a stale paidAt when the bill reopens (undefined is "leave it")
+        paidAt: desiredPaidAt ?? (null as unknown as undefined),
+        paidCents: paidTotal,
+        overpaidCents: overpaidCents > 0 ? overpaidCents : null,
       });
     }
     // REQ-020 (NW-29): the moment the balance closes, the customer gets the
@@ -58,11 +67,20 @@ export class ComputeInvoiceBalance {
       await this.markPaid.run(userId, invoiceId);
     }
 
-    return { invoiceId, amount, paidTotal, balance, status: desiredStatus };
+    return {
+      invoiceId,
+      amount,
+      paidTotal,
+      balance,
+      overpaidCents,
+      status: desiredStatus,
+    };
   }
 }
 
-function latestReceivedAt(payments: { receivedAt: string }[]): string | undefined {
+function latestReceivedAt(
+  payments: { receivedAt: string }[],
+): string | undefined {
   if (payments.length === 0) return undefined;
   return payments.map((p) => p.receivedAt).sort().at(-1);
 }

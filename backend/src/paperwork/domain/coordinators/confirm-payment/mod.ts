@@ -9,6 +9,7 @@ import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
+import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-invoice-balance/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
@@ -16,6 +17,13 @@ import { outboundSenderFirstName } from "#quote-flow/outbound-identity.ts";
 import type { PaymentMethod } from "@paperwork/dto/invoice.ts";
 import type { PaymentMethod as PaymentStorageMethod } from "@paperwork/dto/payment.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import {
+  customerOnDocument,
+  docRef,
+  docTitle,
+  type RenderedCustomer,
+  renderWord,
+} from "@paperwork/domain/business/doc-render/mod.ts";
 
 /**
  * ConfirmPayment — contractor-side "I got it" coordinator.
@@ -49,6 +57,7 @@ export class ConfirmPayment {
     private commsLog: LogPaperworkMessage,
     private bus: EventBus,
     private markPaid: MarkInvoicePaid,
+    private balance: ComputeInvoiceBalance,
   ) {}
 
   async run(
@@ -73,18 +82,14 @@ export class ConfirmPayment {
       ...(intent.reference ? { reference: intent.reference } : {}),
     });
 
-    // 2. Flip invoice to paid. We pass `paymentIntent: undefined` as a
-    // hint, but the store filters undefined out so the intent stays
-    // until we explicitly wipe it. The intent isn't surfaced once the
-    // status is `paid` (the public page renders the receipt note instead).
+    // 2. REQ-202: one bill, one balance. The ledger decides whether this
+    // payment closes the invoice (status paid; the balance coordinator sends
+    // the invoice stamped PAID, REQ-020) or leaves a balance (a partial
+    // payment: the invoice reopens for the rest). The claim is consumed
+    // either way.
+    await this.balance.run(invoice.id, userId);
     const paidAt = new Date().toISOString();
-    const updated = await this.invoices.update(invoice.id, userId, {
-      status: "paid",
-      paidAt,
-    });
-    // REQ-020 (NW-29): the invoice stamped PAID goes to the customer on every
-    // paid path; the receipt below stays on top for the claim path.
-    await this.markPaid.run(userId, invoice.id);
+    const updated = await this.invoices.update(invoice.id, userId, { paymentIntent: null });
 
     // 3. Best-effort receipt dispatch.
     try {
@@ -111,10 +116,10 @@ export class ConfirmPayment {
       });
 
       if (customer?.email) {
-        const subject = t(lang, "confirmPayment.email.subject", {
-          id: invoice.id.slice(0, 8).toUpperCase(),
-        });
+        // REQ-204: "Receipt for INV-5000" — the receipt names the bill by number
+        const subject = renderReceiptSubject(updated, lang);
         const htmlBody = renderReceiptHtml({
+          invoice: updated,
           customer,
           contractor,
           businessName,
@@ -129,7 +134,7 @@ export class ConfirmPayment {
           ...(contractor?.email ? { cc: [contractor.email] } : {}),
           attachments: [{
             name: t(lang, "confirmPayment.email.attachmentName", {
-              id: invoice.id.slice(0, 8).toUpperCase(),
+              id: docRef(updated).replace(/^#/, ""),
             }),
             content: pdfBytes,
             contentType: "application/pdf",
@@ -166,7 +171,9 @@ export class ConfirmPayment {
             SITE_ORIGIN;
           shortUrl = `${appUrl}/s/${link.code}`;
         } catch { /* fall through to no-url body */ }
-        const customerFirst = customer.name?.trim().split(/\s+/)[0];
+        // REQ-204: greet the customer as snapshotted on the bill
+        const shownCustomer = customerOnDocument(updated, customer);
+        const customerFirst = (shownCustomer?.name ?? shownCustomer?.businessName)?.trim().split(/\s+/)[0];
         // UX-26: the receipt sender token goes through the shared identity
         // helper — the seeded placeholder ("Nuevo"/"New") never leaks out.
         const senderFirst = outboundSenderFirstName(contractor?.name);
@@ -176,12 +183,15 @@ export class ConfirmPayment {
         const tail = senderFirst
           ? t(lang, "confirmPayment.sms.tail", { name: senderFirst })
           : "";
-        const body = t(lang, "confirmPayment.sms.body", {
-          lead,
-          amount: fmtUSD(intent.amount),
-          url: shortUrl,
-          tail,
-        });
+        // REQ-204: the text names the bill — "… Receipt: <url> (INV-5000)"
+        const body = `${
+          t(lang, "confirmPayment.sms.body", {
+            lead,
+            amount: fmtUSD(intent.amount),
+            url: shortUrl,
+            tail,
+          })
+        } (${docRef(updated)})`;
         await this.sms.send({ to: customer.phoneNumber, body });
         // UX-30: log the receipt SMS to the comms trail.
         await this.commsLog.run({
@@ -255,8 +265,15 @@ function fmtUSD(cents: number): string {
   }`;
 }
 
-function renderReceiptHtml(opts: {
-  customer?: { name?: string; email?: string };
+/** REQ-204: "Receipt for INV-5000" / "Recibo de INV-5000" — the receipt names the invoice. */
+export function renderReceiptSubject(invoice: { id: string; number?: string }, lang: Lang): string {
+  return renderWord(lang, "receiptFor", { number: docRef(invoice) });
+}
+
+export function renderReceiptHtml(opts: {
+  /** REQ-204: the bill the receipt is for — named by number, customer as snapshotted */
+  invoice: { id: string; number?: string; version?: number; status?: string; sentAt?: string; publishedAt?: string; billTo?: RenderedCustomer; customerSnapshot?: RenderedCustomer };
+  customer?: RenderedCustomer;
   contractor?: { name?: string };
   businessName?: string;
   intent: { method: PaymentMethod; reference?: string };
@@ -266,7 +283,8 @@ function renderReceiptHtml(opts: {
   const { lang } = opts;
   const businessLabel = opts.businessName ?? opts.contractor?.name ??
     t(lang, "brand.name");
-  const customerFirst = opts.customer?.name?.trim().split(/\s+/)[0];
+  const shown = customerOnDocument(opts.invoice, opts.customer);
+  const customerFirst = (shown?.name ?? shown?.businessName)?.trim().split(/\s+/)[0];
   const headline = customerFirst
     ? t(lang, "confirmPayment.email.headline", {
       name: escapeHtml(customerFirst),
@@ -282,6 +300,9 @@ function renderReceiptHtml(opts: {
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
     <div style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#d94e4e">${
     escapeHtml(businessLabel)
+  }</div>
+    <div data-doc-ref style="margin-top:10px;font-size:12px;font-weight:800;color:#6b7a7e">${
+    escapeHtml(docTitle("invoice", opts.invoice, lang))
   }</div>
     <div style="margin-top:18px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:24px;letter-spacing:-0.02em;color:#144852">${headline}</div>
     <p style="margin:14px 0 0;color:#1c2c30;font-size:15px;line-height:1.55">

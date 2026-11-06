@@ -8,10 +8,11 @@ import { BusinessInsuranceStore } from "@profile/domain/data/business-insurance-
 import { TaxIdentityStore } from "@profile/domain/data/tax-identity-store/mod.ts";
 import { ReferenceStore } from "@profile/domain/data/reference-store/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
+import { DocNumbering } from "@core/data/doc-numbering/mod.ts";
 import { computeInitials } from "@profile/domain/business/initials/mod.ts";
 import {
-  type PublicBusinessIdentity,
   projectPublicBusinessIdentity,
+  type PublicBusinessIdentity,
 } from "@profile/domain/business/public-profile-projection/mod.ts";
 import type { User } from "@users/dto/user.ts";
 import type { BusinessIdentity } from "@profile/dto/business-identity.ts";
@@ -34,14 +35,16 @@ export interface OwnerTaxIdentity {
 
 export interface ProfileSnapshot {
   user: User;
-  identity:         BusinessIdentity   | null;
-  address:          BusinessAddress    | null;
-  insurance:        BusinessInsurance  | null;
-  tax:              OwnerTaxIdentity   | null;
-  contractDefaults: ContractDefaults   | null;
-  references:       Reference[];
+  identity: BusinessIdentity | null;
+  address: BusinessAddress | null;
+  insurance: BusinessInsurance | null;
+  tax: OwnerTaxIdentity | null;
+  contractDefaults: ContractDefaults | null;
+  references: Reference[];
   /** REQ-054 — the plan picked in onboarding or settings; null until a pick (read as free) */
-  plan:             UserPlan | null;
+  plan: UserPlan | null;
+  /** REQ-198: the account's own number ("DM-0001"), assigned on first read and fixed for life. */
+  accountNumber: string;
   /** Convenience derived field — sidebar avatar initials. */
   initials: string;
   /**
@@ -71,17 +74,28 @@ export interface PublicProfileSnapshot {
 export class LoadProfile {
   constructor(
     private users: UserStore,
-    private identity:  BusinessIdentityStore,
-    private address:   BusinessAddressStore,
+    private identity: BusinessIdentityStore,
+    private address: BusinessAddressStore,
     private insurance: BusinessInsuranceStore,
-    private tax:       TaxIdentityStore,
-    private defaults:  ContractDefaultsStore,
-    private refs:      ReferenceStore,
+    private tax: TaxIdentityStore,
+    private defaults: ContractDefaultsStore,
+    private refs: ReferenceStore,
     private choosePlan: ChoosePlan,
+    private numbering: DocNumbering = new DocNumbering(),
   ) {}
 
   async load(userId: string): Promise<ProfileSnapshot> {
-    const [user, identity, address, insurance, tax, contractDefaults, references, plan] = await Promise.all([
+    const [
+      user,
+      identity,
+      address,
+      insurance,
+      tax,
+      contractDefaults,
+      references,
+      plan,
+      accountNumber,
+    ] = await Promise.all([
       this.users.get(userId),
       this.identity.get(userId),
       this.address.get(userId),
@@ -90,6 +104,7 @@ export class LoadProfile {
       this.defaults.get(userId),
       this.refs.listByUser(userId),
       this.choosePlan.current(userId), // REQ-061: as the CRM's billing says it stands
+      this.numbering.accountNumber(userId), // REQ-198
     ]);
     const suggestedState = address?.state
       ? undefined
@@ -103,6 +118,7 @@ export class LoadProfile {
       contractDefaults,
       references,
       plan,
+      accountNumber,
       initials: computeInitials(user.name, identity?.businessName),
       ...(suggestedState ? { suggestedState } : {}),
     };
@@ -116,10 +132,17 @@ export class LoadProfile {
       this.tax.get(userId),
     ]);
     return {
-      identity:  projectPublicBusinessIdentity(identity),
-      address:   address ? { city: address.city, state: address.state, country: address.country } : null,
-      insurance: insurance ? { provider: insurance.provider, coverageCents: insurance.coverageCents } : null,
-      hasW9:     Boolean(tax?.w9FileId),
+      identity: projectPublicBusinessIdentity(identity),
+      address: address
+        ? { city: address.city, state: address.state, country: address.country }
+        : null,
+      insurance: insurance
+        ? {
+          provider: insurance.provider,
+          coverageCents: insurance.coverageCents,
+        }
+        : null,
+      hasW9: Boolean(tax?.w9FileId),
     };
   }
 }
@@ -127,11 +150,11 @@ export class LoadProfile {
 function redactTaxForOwner(t: TaxIdentity | null): OwnerTaxIdentity | null {
   if (!t) return null;
   return {
-    userId:       t.userId,
-    w9FileId:     t.w9FileId,
+    userId: t.userId,
+    w9FileId: t.w9FileId,
     w9UploadedAt: t.w9UploadedAt,
-    tinMasked:    t.tinMasked,
-    createdAt:    t.createdAt,
-    updatedAt:    t.updatedAt,
+    tinMasked: t.tinMasked,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
   };
 }

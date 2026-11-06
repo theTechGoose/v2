@@ -52,13 +52,16 @@ location.reload();}
 // just ran stale code, so it reloads once (same 30 s cooldown) and runs the fresh copy.
 const MODULE_RECOVERY_SCRIPT = `(function(){try{
 var done=false;
+// a fetch whose body is never read stays open in the browser's network stack (Playwright's
+// networkidle never fires, DevTools shows it pending): read nothing, release everything
+function drain(r){try{if(r&&r.body)return r.body.cancel().catch(function(){})}catch(_e){}}
 function recover(){
 var last=Number(sessionStorage.getItem("pm:module-reloaded")||0);
 if(done||Date.now()-last<30000)return;
 done=true;sessionStorage.setItem("pm:module-reloaded",String(Date.now()));
 var urls=performance.getEntriesByType("resource").map(function(e){return e.name}).filter(function(u){return /\\/@id\\/|\\/@fs\\/|\\.[jt]sx?(\\?|$)/.test(u)});
 console.warn("[pm] island code failed to load — refetching "+urls.length+" modules and reloading once");
-Promise.all(urls.map(function(u){return fetch(u,{cache:"reload"}).catch(function(){})})).then(function(){location.reload()},function(){location.reload()});
+Promise.all(urls.map(function(u){return fetch(u,{cache:"reload"}).then(drain).catch(function(){})})).then(function(){location.reload()},function(){location.reload()});
 }
 document.addEventListener("error",function(e){var t=e.target;if(t&&t.tagName==="SCRIPT"&&t.type==="module")recover()},true);
 if(/^(localhost|127\\.0\\.0\\.1)$/.test(location.hostname)){
@@ -66,7 +69,7 @@ window.addEventListener("load",function(){
 var urls=performance.getEntriesByType("resource").map(function(e){return e.name}).filter(function(u){return /\\/@id\\/|\\/@fs\\/|\\.[jt]sx?(\\?|$)/.test(u)});
 var prev={};try{prev=JSON.parse(sessionStorage.getItem("pm:module-etags")||"{}")}catch(_e){}
 var next={},changed=[];
-Promise.all(urls.map(function(u){return fetch(u,{cache:"reload"}).then(function(r){var e=r.headers.get("etag")||"";if(e)next[u]=e;if(e&&prev[u]&&prev[u]!==e)changed.push(u)}).catch(function(){})})).then(function(){
+Promise.all(urls.map(function(u){return fetch(u,{cache:"reload"}).then(function(r){var e=r.headers.get("etag")||"";if(e)next[u]=e;if(e&&prev[u]&&prev[u]!==e)changed.push(u);return drain(r)}).catch(function(){})})).then(function(){
 sessionStorage.setItem("pm:module-etags",JSON.stringify(next));
 if(changed.length===0)return;
 var last=Number(sessionStorage.getItem("pm:module-reloaded")||0);

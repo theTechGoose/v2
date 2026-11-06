@@ -10,6 +10,12 @@ import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import {
+  customerOnDocument,
+  docRef,
+  docRefWithVersion,
+  docTitle,
+} from "@paperwork/domain/business/doc-render/mod.ts";
 
 /** The cadence steps fired by the overdue-reminder cron. */
 export const CADENCE_DAYS = [3, 7, 14, 30] as const;
@@ -116,7 +122,9 @@ export class SendPaymentReminder {
     ]);
     const lang: "en" | "es" = biz?.commsLanguage === "es" ? "es" : "en";
     const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || sender?.name?.trim() || t(lang, "brand.name");
-    const customerFirst = customer?.name?.trim().split(/\s+/)[0];
+    // REQ-204: the reminder greets the customer as snapshotted on the bill
+    const shown = customerOnDocument(invoice, customer);
+    const customerFirst = (shown?.name ?? shown?.businessName)?.trim().split(/\s+/)[0];
     const senderFirst = sender?.name?.trim().split(/\s+/)[0];
     const copy = composeReminderCopy({ day, customerFirst, senderFirst, businessName, invoice, lang });
 
@@ -129,10 +137,12 @@ export class SendPaymentReminder {
     } catch { /* fall through */ }
 
     const channels: string[] = [];
-    if (customer?.email) {
+    const toEmail = customer?.email || shown?.email;
+    const toPhone = customer?.phoneNumber || shown?.phoneNumber;
+    if (toEmail) {
       try {
         await this.email.send({
-          to: customer.email,
+          to: toEmail,
           subject: copy.emailSubject,
           htmlBody: copy.emailHtml(url),
           ...(sender?.email ? { cc: [sender.email] } : {}),
@@ -142,9 +152,9 @@ export class SendPaymentReminder {
         console.error("[send-payment-reminder] email failed:", err);
       }
     }
-    if (customer?.phoneNumber) {
+    if (toPhone) {
       try {
-        await this.sms.send({ to: customer.phoneNumber, body: copy.smsBody(url) });
+        await this.sms.send({ to: toPhone, body: copy.smsBody(url) });
         channels.push("sms");
       } catch (err) {
         console.error("[send-payment-reminder] sms failed:", err);
@@ -227,22 +237,27 @@ export function composeReminderCopy(opts: {
     ? t(lang, "paymentReminder.tone.day7", { businessName })
     : t(lang, "paymentReminder.tone.day14", { businessName });
   const dueLine = invoice.dueDate ? t(lang, "paymentReminder.dueSuffix", { dueDate: invoice.dueDate }) : "";
+  // REQ-204 / REQ-201: every reminder names the bill — "INV-5000 · Version 2"
+  const ref = docRef(invoice);
+  const refVersion = docRefWithVersion(invoice, lang);
+  const subjectBase = day === 3
+    ? t(lang, "paymentReminder.subject.day3", { businessName })
+    : day === 7
+    ? t(lang, "paymentReminder.subject.day7", { businessName })
+    : t(lang, "paymentReminder.subject.day14", { sender });
   return {
-    emailSubject:
-      day === 3
-        ? t(lang, "paymentReminder.subject.day3", { businessName })
-        : day === 7
-        ? t(lang, "paymentReminder.subject.day7", { businessName })
-        : t(lang, "paymentReminder.subject.day14", { sender }),
+    emailSubject: `${subjectBase} · ${ref}`,
     emailHtml: (url: string) => `<!doctype html>
 <html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px">
+    <div data-doc-ref style="margin:0 0 12px;font-size:12px;font-weight:800;color:#6b7a7e">${docTitle("invoice", invoice, lang)}</div>
     <p style="margin:0;font-size:15px;line-height:1.55">${hi}${tone}</p>
     <p style="margin:14px 0 0;font-size:15px"><strong>${t(lang, "paymentReminder.amountDueLabel")}</strong> ${amount}${dueLine}</p>
     ${url ? `<p style="margin:18px 0 0"><a href="${url}" style="display:inline-block;background:#519843;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:10px">${t(lang, "paymentReminder.openInvoiceCta")}</a></p>` : ""}
     <p style="margin:18px 0 0;font-size:13px;color:#6b7a7e">${sender}</p>
   </div>
 </body></html>`,
-    smsBody: (url: string) => `${hi}${tone} ${amount}${url ? ` — ${url}` : ""}${senderFirst ? ` — ${senderFirst}` : ""}`,
+    smsBody: (url: string) =>
+      `${hi}${tone} ${amount} (${refVersion})${url ? ` — ${url}` : ""}${senderFirst ? ` — ${senderFirst}` : ""}`,
   };
 }
