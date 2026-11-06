@@ -2,13 +2,13 @@
  * REQ-153 — HTTP client for demo mode.
  *
  * Backend reference: demo-mode/entrypoints/demo-mode-controller/mod.ts
- *   POST /demo-mode/sessions { userId }   → { id, targetUserId, targetPath, createdAt }   (super-admin)
+ *   POST /demo-mode/sessions { userId }   → { id, targetUserId, targetPath, createdAt }   (super-admin; 200 = joined/same)
  *   GET  /demo-mode/active?path=/x        → DemoActive                        (any session; `path` = where this app is)
  *   POST /demo-mode/sessions/:id/end      → { ok: true }                      (a participant)
  * The socket is lib/demo-mode/transport.ts.
  */
 import { api, type ApiOptions } from "../lib/api.ts";
-import type { Role } from "../../shared/demo-mode/protocol.ts";
+import type { Presenter, Role } from "../../shared/demo-mode/protocol.ts";
 
 export interface DemoActive {
   role: Role | null;
@@ -17,9 +17,13 @@ export interface DemoActive {
     presenterName: string;
     targetName: string;
     targetUserId: string;
+    /** REQ-214 — everyone presenting, each with a name and a colour of their own */
+    presenters: Presenter[];
   } | null;
   /** the presenter only: where the customer's app last said it was (within 20 s), else null */
   targetPath: string | null;
+  /** REQ-214 — which presenter the caller is; null for the customer */
+  pid: string | null;
 }
 
 export interface DemoStarted {

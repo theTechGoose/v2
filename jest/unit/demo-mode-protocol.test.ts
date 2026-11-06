@@ -232,7 +232,8 @@ describe("REQ-153 demo mode wiring", () => {
     for (const cy of ["demo-pointer", "demo-wave"]) {
       expect(pointer).toContain(`data-cy="${cy}"`);
     }
-    expect(island).toMatch(/<DemoPointer/);
+    // REQ-214 (2026-11-06): the overlay draws a PeerPointer per presenter (a DemoPointer each)
+    expect(island).toMatch(/<PeerPointer/);
     expect(stage).toMatch(/<DemoPointer/);
   });
 

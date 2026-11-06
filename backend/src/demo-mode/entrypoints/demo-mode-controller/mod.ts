@@ -18,7 +18,8 @@ import {
   DemoAccess,
   DemoNotFoundError,
 } from "@demo-mode/domain/coordinators/demo-access/mod.ts";
-import { isSafePath } from "#demo-mode/protocol.ts";
+import { isSafePath, nextColor } from "#demo-mode/protocol.ts";
+import { presentersOf } from "@demo-mode/domain/business/demo-role/mod.ts";
 
 const nameOf = (u: User) => u.name?.trim() || u.phoneNumber;
 
@@ -26,12 +27,16 @@ const nameOf = (u: User) => u.name?.trim() || u.phoneNumber;
  * REQ-153 — demo mode over HTTP (the socket is DemoModeSocketController, at `api/demo-mode`).
  *
  *   POST /demo-mode/sessions { userId }   super admin → 201 { id, targetUserId, targetPath, createdAt }; the demo this
- *                                         admin already presents to that user → 200, the same one; a demo for another
- *                                         user ends it. `targetPath` (REQ-179): where the customer is, so the staff
- *                                         browser moves on this one answer
- *   GET  /demo-mode/active?path=/x        any session → { role, session: { id, presenterName, targetName, targetUserId } | null,
- *                                         targetPath }: `path` is where the caller's own app is (recorded WHERE_TTL_MS, never
- *                                         from an impersonation session); `targetPath` tells the presenter where the customer is
+ *                                         admin already presents to that user → 200, the same one; a demo someone ELSE
+ *                                         is running for that user → 200, JOINED as another presenter with the next free
+ *                                         colour (REQ-214); a demo for another user takes this admin off their current
+ *                                         one (it ends when nobody is left on it). `targetPath` (REQ-179): where the
+ *                                         customer is, so the staff browser moves on this one answer
+ *   GET  /demo-mode/active?path=/x        any session → { role, session: { id, presenterName, targetName, targetUserId,
+ *                                         presenters: [{ userId, name, color }] } | null, targetPath, pid }: `path` is where
+ *                                         the caller's own app is (recorded WHERE_TTL_MS, never from an impersonation
+ *                                         session); `targetPath` tells the presenter where the customer is; `pid` is which
+ *                                         presenter the caller is (REQ-214)
  *   POST /demo-mode/sessions/:id/end      a participant, `{ reason?: "declined" }` → { ok: true }; 403 anyone else; 404 unknown
  */
 @Controller("demo-mode")
@@ -55,7 +60,8 @@ export class DemoModeController {
     } catch {
       throw new DemoNotFoundError();
     }
-    // AMENDMENT — same screen at once: five clicks are one invitation; a new customer ends the old demo
+    // AMENDMENT — same screen at once: five clicks are one invitation; REQ-214 — a new customer
+    // takes this presenter off the old demo (it goes on for the others; nobody left, it ends)
     const prev = await this.demos.presentingBy(admin.id);
     const targetPath = await this.demos.whereIs(target.id);
     if (prev && prev.targetUserId === target.id) {
@@ -67,10 +73,36 @@ export class DemoModeController {
       }, 200);
     }
     if (prev) {
-      await this.demos.end(prev.id);
-      await this.hub.end(prev.id, "presenter");
+      const rest = await this.demos.leave(prev.id, admin.id);
+      if (rest && !rest.endedAt && presentersOf(rest).length === 0) {
+        await this.demos.end(prev.id);
+        await this.hub.end(prev.id, "presenter");
+      } else if (rest && !rest.endedAt) {
+        await this.hub.dropPresenter(prev.id, admin.id);
+      }
     }
-    const demo = await this.demos.create(target.id, admin.id);
+    // REQ-214 — the customer is already being guided: join that demo as another presenter
+    const live = await this.demos.activeFor(target.id);
+    if (live) {
+      const joined = await this.demos.join(live.id, {
+        userId: admin.id,
+        name: nameOf(admin),
+        color: nextColor(presentersOf(live).map((p) => p.color)),
+      });
+      if (joined) {
+        return ctx.json({
+          id: joined.id,
+          targetUserId: joined.targetUserId,
+          targetPath,
+          createdAt: joined.createdAt,
+        }, 200);
+      }
+    }
+    const demo = await this.demos.create(target.id, {
+      userId: admin.id,
+      name: nameOf(admin),
+      color: nextColor([]),
+    });
     return ctx.json({
       id: demo.id,
       targetUserId: demo.targetUserId,
@@ -90,9 +122,14 @@ export class DemoModeController {
       await this.demos.here(caller.user.id, path);
     }
     const current = await this.access.current(caller);
-    if (!current) return { role: null, session: null, targetPath: null };
-    const [presenter, target, targetPath] = await Promise.all([
-      this.users.get(current.demo.presenterUserId).catch(() => null),
+    if (!current) {
+      return { role: null, session: null, targetPath: null, pid: null };
+    }
+    const presenters = presentersOf(current.demo);
+    const [opener, target, targetPath] = await Promise.all([
+      presenters[0]?.name
+        ? Promise.resolve(null)
+        : this.users.get(current.demo.presenterUserId).catch(() => null),
       this.users.get(current.demo.targetUserId).catch(() => null),
       current.role === "presenter"
         ? this.demos.whereIs(current.demo.targetUserId)
@@ -102,11 +139,15 @@ export class DemoModeController {
       role: current.role,
       session: {
         id: current.demo.id,
-        presenterName: presenter ? nameOf(presenter) : "",
+        presenterName: presenters[0]?.name || (opener ? nameOf(opener) : ""),
         targetName: target ? nameOf(target) : "",
         targetUserId: current.demo.targetUserId,
+        // REQ-214 — everyone presenting, each with their colour
+        presenters,
       },
       targetPath,
+      // REQ-214 — which presenter the caller is (null for the viewer)
+      pid: current.pid,
     };
   }
 

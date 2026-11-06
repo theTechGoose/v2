@@ -19,6 +19,34 @@
  */
 export type Role = "presenter" | "viewer";
 
+/** REQ-214 — one of the staff presenting a demo: their id (the `pid` on the wire), name and colour */
+export interface Presenter {
+  userId: string;
+  name: string;
+  color: string;
+}
+
+/** REQ-214 — the customer's pointer on a stage: never one of the presenters' colours */
+export const CUSTOMER_COLOR = "#e8562a";
+/** REQ-214 — the presenters' palette: distinct, readable on white, the first the demo's green */
+export const PRESENTER_COLORS: readonly string[] = [
+  "#2f6d29",
+  "#1f5fa8",
+  "#7a3fb3",
+  "#b8860b",
+  "#0f7f8a",
+  "#c2185b",
+  "#5d4037",
+  "#4e5d6c",
+];
+
+/** REQ-214 — the first colour none of `taken` has; every colour taken, the palette starts over */
+export function nextColor(taken: readonly string[]): string {
+  const free = PRESENTER_COLORS.find((c) => !taken.includes(c));
+  if (free) return free;
+  return PRESENTER_COLORS[taken.length % PRESENTER_COLORS.length];
+}
+
 /** REQ-188 — where the pointer is: the fraction of the sender's layout viewport */
 export interface Anchor {
   vx: number;
@@ -56,16 +84,26 @@ export type PeerMessage =
   | { k: "leave" }
   | { k: "view"; v: ViewPatch };
 
+/** REQ-214 — `to`: the viewer's signal may address ONE presenter (by pid); a presenter's relay
+ *  may go to the other presenters only (their pointer rides to the customer directly) */
 export type ClientMessage =
-  | { t: "signal"; data: unknown }
-  | { t: "relay"; data: PeerMessage }
+  | { t: "signal"; data: unknown; to?: string }
+  | { t: "relay"; data: PeerMessage; to?: "presenters" }
   | { t: "end" };
 
+/** REQ-214 — `pid`: which presenter a message is from (never on the viewer's), which presenter
+ *  came or went (a `peer` without one is the viewer), and a presenter's own id on their welcome */
 export type ServerMessage =
-  | { t: "welcome"; role: Role; sessionId: string; peerOnline: boolean }
-  | { t: "peer"; online: boolean }
-  | { t: "signal"; from: Role; data: unknown }
-  | { t: "relay"; from: Role; data: PeerMessage }
+  | {
+    t: "welcome";
+    role: Role;
+    sessionId: string;
+    peerOnline: boolean;
+    pid?: string;
+  }
+  | { t: "peer"; online: boolean; pid?: string }
+  | { t: "signal"; from: Role; pid?: string; data: unknown }
+  | { t: "relay"; from: Role; pid?: string; data: PeerMessage }
   | { t: "ended"; by: Role; reason?: "declined" };
 
 /** how often a browser with no demo asks `active` again — the customer sees the invitation within this */
@@ -223,10 +261,16 @@ export function parseClientMessage(raw: string): ClientMessage | null {
   if (!o) return null;
   switch (o.t) {
     case "signal":
-      return o.data === undefined ? null : { t: "signal", data: o.data };
+      if (o.data === undefined) return null;
+      return typeof o.to === "string" && o.to
+        ? { t: "signal", data: o.data, to: o.to }
+        : { t: "signal", data: o.data };
     case "relay": {
       const data = parsePeerMessage(o.data);
-      return data ? { t: "relay", data } : null;
+      if (!data) return null;
+      return o.to === "presenters"
+        ? { t: "relay", data, to: "presenters" }
+        : { t: "relay", data };
     }
     case "end":
       return { t: "end" };
@@ -234,6 +278,9 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       return null;
   }
 }
+
+const pidOf = (o: Record<string, unknown>): { pid?: string } =>
+  typeof o.pid === "string" && o.pid ? { pid: o.pid } : {};
 
 export function parseServerMessage(raw: string): ServerMessage | null {
   const o = parseJson(raw);
@@ -247,19 +294,22 @@ export function parseServerMessage(raw: string): ServerMessage | null {
           role: o.role,
           sessionId: o.sessionId,
           peerOnline: o.peerOnline,
+          ...pidOf(o),
         }
         : null;
     case "peer":
       return typeof o.online === "boolean"
-        ? { t: "peer", online: o.online }
+        ? { t: "peer", online: o.online, ...pidOf(o) }
         : null;
     case "signal":
       return isRole(o.from) && o.data !== undefined
-        ? { t: "signal", from: o.from, data: o.data }
+        ? { t: "signal", from: o.from, ...pidOf(o), data: o.data }
         : null;
     case "relay": {
       const data = parsePeerMessage(o.data);
-      return isRole(o.from) && data ? { t: "relay", from: o.from, data } : null;
+      return isRole(o.from) && data
+        ? { t: "relay", from: o.from, ...pidOf(o), data }
+        : null;
     }
     case "ended":
       if (!isRole(o.by)) return null;

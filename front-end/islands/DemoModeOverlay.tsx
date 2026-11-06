@@ -17,6 +17,9 @@
  * fraction of its own viewport (REQ-188) plus a loud expanding wave where they clicked, above the
  * app with pointer events off: a click there is never an action here. Inside the stage's frame
  * and on the stage itself this island is inert.
+ *
+ * REQ-214 — several staff may present at once: one pointer per presenter, each in that
+ * presenter's colour with their name on it; the pill names them all with their colour dots.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t } from "../lib/i18n.ts";
@@ -32,6 +35,7 @@ import {
   fracToPoint,
   type PeerMessage,
   pointToFrac,
+  type Presenter,
   type Role,
   STAGE_PATH,
   VIEW_GAP_MS,
@@ -48,6 +52,7 @@ import {
   connectDemo,
   type DemoLink,
   type LinkStatus,
+  type PeerFrom,
 } from "../lib/demo-mode/transport.ts";
 import {
   collectScroll,
@@ -56,11 +61,10 @@ import {
   requestViews,
   scrollPosOf,
 } from "../lib/demo-mode/replica.ts";
-import { useGlide } from "../lib/demo-mode/use-glide.ts";
-import DemoPointer, {
-  type Wave,
-  WAVE_MS,
-} from "../components/demo-mode/DemoPointer.tsx";
+import PeerPointer, {
+  type PointerCmd,
+} from "../components/demo-mode/PeerPointer.tsx";
+import PresenterChips from "../components/demo-mode/PresenterChips.tsx";
 
 interface Demo {
   id: string;
@@ -68,7 +72,14 @@ interface Demo {
   presenterName: string;
   targetName: string;
   targetUserId: string;
+  /** REQ-214 — everyone presenting, each with a name and a colour */
+  presenters: Presenter[];
 }
+
+/** the same demo, with the same presenters (a roster change re-renders, a poll's echo does not) */
+const sameDemo = (a: Demo | null, b: Demo) =>
+  a?.id === b.id &&
+  JSON.stringify(a.presenters) === JSON.stringify(b.presenters);
 
 const Z = 2147483000;
 
@@ -90,7 +101,9 @@ export default function DemoModeOverlay() {
   const [opening, setOpening] = useState<{ targetName: string } | null>(null);
   const [status, setStatus] = useState<LinkStatus>("connecting");
   const [peerOnline, setPeerOnline] = useState(false);
-  const [waves, setWaves] = useState<Wave[]>([]);
+  /** REQ-214 — the latest thing each presenter did, by pid */
+  const [cmds, setCmds] = useState<Record<string, PointerCmd>>({});
+  const seq = useRef(0);
   const [ended, setEnded] = useState(false);
   const linkRef = useRef<DemoLink | null>(null);
   const impersonatingRef = useRef<boolean | null>(null);
@@ -104,8 +117,8 @@ export default function DemoModeOverlay() {
     whoRef.current ??= adminClient.whoami()
       .then((w) => Boolean(w.impersonating))
       .catch(() => false);
-  const waveId = useRef(0);
-  const glide = useGlide();
+  const demoRef = useRef<Demo | null>(null);
+  demoRef.current = demo;
 
   /** this side's moves, rated leading + trailing so the rest position always goes out */
   const throttle = useMemo(() =>
@@ -196,7 +209,7 @@ export default function DemoModeOverlay() {
         if (!alive) return;
         if (a.session && a.role) {
           const found: Demo = { role: a.role, ...a.session };
-          setDemo((d) => d?.id === found.id ? d : found);
+          setDemo((d) => sameDemo(d, found) ? d : found);
           if (a.role === "presenter") void placePresenter(found);
         } else {
           setDemo(null);
@@ -233,6 +246,7 @@ export default function DemoModeOverlay() {
         presenterName: "",
         targetName: d.targetName ?? "",
         targetUserId: d.targetUserId,
+        presenters: [],
       };
       setDemo((cur) => cur?.id === found.id ? cur : found);
       void placePresenter(found);
@@ -254,11 +268,22 @@ export default function DemoModeOverlay() {
   // 2. the link — the customer's side (the presenter's lives on the stage)
   useEffect(() => {
     if (!demo || demo.role !== "viewer") return;
-    let lastT = 0;
+    /** REQ-180 — the last move clock seen, per presenter */
+    const lastT = new Map<string, number>();
     let wasOnline = false;
+    /** REQ-214 — which presenter a message is from; one the roster does not know yet triggers a fresh ask */
+    const who = (from: PeerFrom): string => {
+      const known = demoRef.current?.presenters ?? [];
+      const pid = from.pid ?? known[0]?.userId ?? "";
+      if (pid && !known.some((p) => p.userId === pid)) pollRef.current?.();
+      return pid;
+    };
+    const command = (pid: string, cmd: Omit<PointerCmd, "seq">) =>
+      setCmds((c) => ({ ...c, [pid]: { seq: ++seq.current, ...cmd } }));
     const link = connectDemo({
       sessionId: demo.id,
       role: demo.role,
+      onPresence: () => pollRef.current?.(),
       onStatus: (s) => {
         setStatus(s);
         const online = s === "direct" || s === "relay";
@@ -278,27 +303,24 @@ export default function DemoModeOverlay() {
         report(wholeView());
         requestViews();
       },
-      onPeer: (m: PeerMessage) => {
+      onPeer: (m: PeerMessage, from: PeerFrom) => {
+        if (from.role !== "presenter") return;
+        const pid = who(from);
         switch (m.k) {
           case "move":
             // REQ-180: a move that arrives after a later one is ignored; the rest glide
-            if (!newerMove(lastT, m.t)) break;
-            lastT = m.t ?? lastT;
-            glide.glideTo(fracToPoint(m.a, viewportBox()));
+            if (!newerMove(lastT.get(pid) ?? 0, m.t)) break;
+            lastT.set(pid, m.t ?? lastT.get(pid) ?? 0);
+            command(pid, { kind: "move", at: fracToPoint(m.a, viewportBox()) });
             break;
-          case "click": {
-            const at = fracToPoint(m.a, viewportBox());
-            glide.glideTo(at);
-            const id = ++waveId.current;
-            setWaves((w) => [...w, { id, ...at }]);
-            setTimeout(
-              () => setWaves((w) => w.filter((x) => x.id !== id)),
-              WAVE_MS,
-            );
+          case "click":
+            command(pid, {
+              kind: "click",
+              at: fracToPoint(m.a, viewportBox()),
+            });
             break;
-          }
           case "leave":
-            glide.hide();
+            command(pid, { kind: "leave" });
             break;
           case "view":
             // the stage never reports; nothing to apply here
@@ -307,7 +329,7 @@ export default function DemoModeOverlay() {
       },
       onEnded: () => {
         setEnded(true);
-        glide.hide();
+        setCmds({});
         setTimeout(() => {
           setDemo(null);
           setEnded(false);
@@ -322,7 +344,7 @@ export default function DemoModeOverlay() {
       pending.current = null;
       link.close();
       linkRef.current = null;
-      glide.hide();
+      setCmds({});
       setPeerOnline(false);
       setStatus("connecting");
     };
@@ -434,7 +456,11 @@ export default function DemoModeOverlay() {
     );
   }
 
-  const name = demo.presenterName;
+  // REQ-214 — the presenters, by name; a demo written before the list has the one
+  const presenters: Presenter[] = demo.presenters.length > 0
+    ? demo.presenters
+    : [{ userId: "", name: demo.presenterName, color: "#2f6d29" }];
+  const names = presenters.map((p) => p.name).join(", ");
   const statusLabel = ended || status === "ended"
     ? t("demoMode.ended")
     : status === "direct"
@@ -462,17 +488,23 @@ export default function DemoModeOverlay() {
 
   return (
     <div data-demo-overlay>
-      <DemoPointer
-        pointer={glide.pointer}
-        waves={waves}
-        name={name}
-        color="#2f6d29"
-        z={Z + 1}
-        attach={glide.attach}
-      />
+      {presenters.map((p) => (
+        <PeerPointer
+          key={p.userId}
+          name={p.name}
+          color={p.color}
+          z={Z + 1}
+          cmd={cmds[p.userId] ?? null}
+        />
+      ))}
       <div data-cy="demo-pill" role="status" style={pillStyle}>
         <strong>{t("demoMode.title")}</strong>
-        <span>{t("demoMode.guiding", { name })}</span>
+        <span>
+          {presenters.length > 1
+            ? t("demoMode.guidingMany", { names })
+            : t("demoMode.guiding", { name: names })}
+        </span>
+        <PresenterChips presenters={presenters} />
         <span
           data-cy="demo-status"
           style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"

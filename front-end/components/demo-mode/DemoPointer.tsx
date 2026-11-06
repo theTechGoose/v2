@@ -39,6 +39,7 @@ export default function DemoPointer(
       {pointer && (
         <div
           data-cy="demo-pointer"
+          data-presenter={name}
           ref={attach}
           style={`position:fixed;left:0;top:0;width:24px;height:30px;overflow:visible;pointer-events:none;z-index:${
             z + 1

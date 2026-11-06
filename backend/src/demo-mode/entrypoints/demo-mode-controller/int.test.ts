@@ -14,7 +14,11 @@ import { resetKv } from "@core/data/kv/mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { composeRouter } from "../../../../../compose-router.ts";
-import { parseServerMessage, type ServerMessage } from "#demo-mode/protocol.ts";
+import {
+  parseServerMessage,
+  PRESENTER_COLORS,
+  type ServerMessage,
+} from "#demo-mode/protocol.ts";
 
 @Module({ imports: [UsersModule, DemoModeModule] })
 class TestApp {}
@@ -190,8 +194,15 @@ Deno.test("REQ-153 a super admin opens a demo for a user; the user sees it on ac
         presenterName: "Hans",
         targetName: "Ana Torres",
         targetUserId: ana.body.userId,
+        // REQ-214 — who is presenting, each with their colour
+        presenters: [{
+          userId: hans.body.userId,
+          name: "Hans",
+          color: PRESENTER_COLORS[0],
+        }],
       },
       targetPath: null,
+      pid: null,
     });
     assertEquals(
       (await call(
@@ -200,7 +211,7 @@ Deno.test("REQ-153 a super admin opens a demo for a user; the user sees it on ac
         undefined,
         H(carl.body.sessionId),
       )).body,
-      { role: null, session: null, targetPath: null },
+      { role: null, session: null, targetPath: null, pid: null },
     );
     assertEquals(
       (await call(
@@ -264,7 +275,7 @@ Deno.test("REQ-153 a super admin opens a demo for a user; the user sees it on ac
         undefined,
         H(ana.body.sessionId),
       )).body,
-      { role: null, session: null, targetPath: null },
+      { role: null, session: null, targetPath: null, pid: null },
     );
   });
 });
@@ -310,6 +321,7 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
       role: "presenter",
       sessionId: made.body.id,
       peerOnline: false,
+      pid: hans.body.userId,
     });
     const viewer = open(made.body.id, ana.body.sessionId);
     const w2 = await viewer.next("the viewer's welcome");
@@ -318,6 +330,12 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
       role: "viewer",
       sessionId: made.body.id,
       peerOnline: true,
+    });
+    // REQ-214 — after the welcome the viewer is told which presenters are here, by pid
+    assertEquals(await viewer.next("who is presenting"), {
+      t: "peer",
+      online: true,
+      pid: hans.body.userId,
     });
     assertEquals(await presenter.next("the presenter hears the viewer"), {
       t: "peer",
@@ -328,6 +346,7 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
     assertEquals(await viewer.next("the offer"), {
       t: "signal",
       from: "presenter",
+      pid: hans.body.userId,
       data: { type: "offer", sdp: "v=0" },
     });
     viewer.send({ t: "signal", data: { type: "answer", sdp: "v=1" } });
@@ -353,6 +372,7 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
     assertEquals(await viewer.next("the click"), {
       t: "relay",
       from: "presenter",
+      pid: hans.body.userId,
       data: { k: "click", a: { vx: 0.2, vy: 0.3 } },
     });
     presenter.send("junk");
@@ -364,6 +384,7 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
     assertEquals(await viewer.next("only the good message after junk"), {
       t: "relay",
       from: "presenter",
+      pid: hans.body.userId,
       data: { k: "leave" },
     });
 
@@ -382,7 +403,7 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
         undefined,
         H(ana.body.sessionId),
       )).body,
-      { role: null, session: null, targetPath: null },
+      { role: null, session: null, targetPath: null, pid: null },
     );
     const late = open(made.body.id, ana.body.sessionId);
     await late.closed;
@@ -420,7 +441,7 @@ Deno.test("REQ-153 AMENDMENT — Not now: the viewer declines over HTTP and the 
         undefined,
         H(hans.body.sessionId),
       )).body,
-      { role: null, session: null, targetPath: null },
+      { role: null, session: null, targetPath: null, pid: null },
     );
   });
 });
@@ -442,7 +463,7 @@ Deno.test("REQ-153 AMENDMENT — same screen at once: the customer's poll record
         undefined,
         A,
       )).body,
-      { role: null, session: null, targetPath: null },
+      { role: null, session: null, targetPath: null, pid: null },
     );
     const made = await call("POST", "/api/demo-mode/sessions", {
       userId: ana.body.userId,
@@ -539,7 +560,7 @@ Deno.test("REQ-153 AMENDMENT — same screen at once: the customer's poll record
     assert(other.body.id !== made.body.id);
     assertEquals(
       (await call("GET", "/api/demo-mode/active", undefined, A)).body,
-      { role: null, session: null, targetPath: null },
+      { role: null, session: null, targetPath: null, pid: null },
     );
     assertEquals(
       (await call(
@@ -560,6 +581,264 @@ Deno.test("REQ-153 AMENDMENT — same screen at once: the customer's poll record
         .targetPath,
       null,
       "Bo's page is not known yet",
+    );
+  });
+});
+
+Deno.test("REQ-214 two staff present to one customer: the second Demo joins the live demo; active lists both with distinct colours and the caller's pid; the sockets stamp and route; a demo for another customer leaves the first (and ends it when nobody is left); End ends it for all", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553041");
+    await call(
+      "PUT",
+      "/api/me",
+      { name: "Ana Torres", language: "en" },
+      H(ana.body.sessionId),
+    );
+    const bo = await signIn(call, "+15125553042");
+    const hans = await signIn(call, "+15125553043");
+    await call(
+      "PUT",
+      "/api/me",
+      { name: "Hans", language: "en" },
+      H(hans.body.sessionId),
+    );
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553043" });
+    const lia = await signIn(call, "+15125553044");
+    await call(
+      "PUT",
+      "/api/me",
+      { name: "Lia", language: "en" },
+      H(lia.body.sessionId),
+    );
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553044" });
+    const A = H(ana.body.sessionId);
+    const P = H(hans.body.sessionId);
+    const L = H(lia.body.sessionId);
+
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, P);
+    assertEquals(made.status, 201, JSON.stringify(made.body));
+    // Lia clicks Demo on Ana too: she JOINS Hans's demo
+    const joined = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, L);
+    assertEquals(joined.status, 200, JSON.stringify(joined.body));
+    assertEquals(joined.body.id, made.body.id);
+
+    const forAna = await call("GET", "/api/demo-mode/active", undefined, A);
+    assertEquals(forAna.body.role, "viewer");
+    assertEquals(forAna.body.pid, null);
+    assertEquals(forAna.body.session.presenterName, "Hans");
+    assertEquals(forAna.body.session.presenters, [
+      { userId: hans.body.userId, name: "Hans", color: PRESENTER_COLORS[0] },
+      { userId: lia.body.userId, name: "Lia", color: PRESENTER_COLORS[1] },
+    ], "both presenters, each with a colour of their own");
+    const forLia = await call("GET", "/api/demo-mode/active", undefined, L);
+    assertEquals(forLia.body.role, "presenter");
+    assertEquals(
+      forLia.body.pid,
+      lia.body.userId,
+      "the caller's own presenter id",
+    );
+    assertEquals(forLia.body.session.id, made.body.id);
+    const imp = await call(
+      "POST",
+      `/api/admin/impersonate/${ana.body.userId}`,
+      undefined,
+      L,
+    );
+    assertEquals(imp.status, 200, JSON.stringify(imp.body));
+    const I = H(imp.body.sessionId);
+    const fromImp = await call("GET", "/api/demo-mode/active", undefined, I);
+    assertEquals(fromImp.body.role, "presenter");
+    assertEquals(
+      fromImp.body.pid,
+      lia.body.userId,
+      "impersonating Ana, Lia is still Lia",
+    );
+
+    // the sockets: Hans on his own session, Lia impersonating, then Ana
+    const ph = open(made.body.id, hans.body.sessionId);
+    assertEquals(await ph.next("Hans's welcome"), {
+      t: "welcome",
+      role: "presenter",
+      sessionId: made.body.id,
+      peerOnline: false,
+      pid: hans.body.userId,
+    });
+    const pl = open(made.body.id, imp.body.sessionId);
+    assertEquals(await pl.next("Lia's welcome"), {
+      t: "welcome",
+      role: "presenter",
+      sessionId: made.body.id,
+      peerOnline: false,
+      pid: lia.body.userId,
+    });
+    assertEquals(await pl.next("Lia is told Hans is here"), {
+      t: "peer",
+      online: true,
+      pid: hans.body.userId,
+    });
+    assertEquals(await ph.next("Hans hears Lia arrive"), {
+      t: "peer",
+      online: true,
+      pid: lia.body.userId,
+    });
+    const v = open(made.body.id, ana.body.sessionId);
+    assertEquals(await v.next("Ana's welcome"), {
+      t: "welcome",
+      role: "viewer",
+      sessionId: made.body.id,
+      peerOnline: true,
+    });
+    assertEquals(await v.next("who is here: Hans"), {
+      t: "peer",
+      online: true,
+      pid: hans.body.userId,
+    });
+    assertEquals(await v.next("who is here: Lia"), {
+      t: "peer",
+      online: true,
+      pid: lia.body.userId,
+    });
+    assertEquals(await ph.next("Hans hears Ana"), { t: "peer", online: true });
+    assertEquals(await pl.next("Lia hears Ana"), { t: "peer", online: true });
+
+    // Hans's click: Ana and Lia get it stamped hans
+    ph.send({ t: "relay", data: { k: "click", a: { vx: 0.2, vy: 0.3 } } });
+    const click: ServerMessage = {
+      t: "relay",
+      from: "presenter",
+      pid: hans.body.userId,
+      data: { k: "click", a: { vx: 0.2, vy: 0.3 } },
+    };
+    assertEquals(await v.next("Ana gets Hans's click"), click);
+    assertEquals(await pl.next("Lia gets Hans's click"), click);
+    // Lia's pointer for her colleagues only: Hans gets it, Ana never (her next message is Hans's next click)
+    pl.send({ t: "relay", data: { k: "leave" }, to: "presenters" });
+    assertEquals(await ph.next("Hans gets Lia's leave"), {
+      t: "relay",
+      from: "presenter",
+      pid: lia.body.userId,
+      data: { k: "leave" },
+    });
+    ph.send({ t: "relay", data: { k: "click", a: { vx: 0.5, vy: 0.5 } } });
+    assertEquals(
+      await v.next(
+        "Ana's next message is Hans's second click, not Lia's leave",
+      ),
+      {
+        ...click,
+        data: { k: "click", a: { vx: 0.5, vy: 0.5 } },
+      },
+    );
+    await pl.next("Lia gets it too");
+    // Ana's signal addressed to Lia reaches Lia only; Ana's move reaches both
+    v.send({
+      t: "signal",
+      data: { type: "answer", sdp: "v=1" },
+      to: lia.body.userId,
+    });
+    assertEquals(await pl.next("Lia gets the answer"), {
+      t: "signal",
+      from: "viewer",
+      data: { type: "answer", sdp: "v=1" },
+    });
+    v.send({ t: "relay", data: { k: "move", a: { vx: 0.1, vy: 0.1 } } });
+    const move: ServerMessage = {
+      t: "relay",
+      from: "viewer",
+      data: { k: "move", a: { vx: 0.1, vy: 0.1 } },
+    };
+    assertEquals(
+      await ph.next("Hans gets Ana's move (and never the answer for Lia)"),
+      move,
+    );
+    assertEquals(await pl.next("Lia gets Ana's move"), move);
+
+    // Lia opens a demo for Bo: she leaves Ana's demo, which goes on with Hans
+    const other = await call("POST", "/api/demo-mode/sessions", {
+      userId: bo.body.userId,
+    }, L);
+    assertEquals(other.status, 201, JSON.stringify(other.body));
+    assert(other.body.id !== made.body.id);
+    assertEquals(await ph.next("Hans hears Lia go"), {
+      t: "peer",
+      online: false,
+      pid: lia.body.userId,
+    });
+    assertEquals(await v.next("Ana hears Lia go"), {
+      t: "peer",
+      online: false,
+      pid: lia.body.userId,
+    });
+    await pl.closed;
+    const still = await call("GET", "/api/demo-mode/active", undefined, A);
+    assertEquals(still.body.session.id, made.body.id, "Ana's demo goes on");
+    assertEquals(
+      still.body.session.presenters.map((p: { name: string }) => p.name),
+      ["Hans"],
+    );
+    assertEquals(
+      (await call("GET", "/api/demo-mode/active", undefined, L)).body.session
+        .id,
+      other.body.id,
+    );
+    assertEquals(
+      (await call(
+        "GET",
+        "/api/demo-mode/active",
+        undefined,
+        H(bo.body.sessionId),
+      )).body.session.presenters,
+      [
+        { userId: lia.body.userId, name: "Lia", color: PRESENTER_COLORS[0] },
+      ],
+      "a fresh demo starts the palette over",
+    );
+
+    // Hans ends: everyone on Ana's demo hears it; Lia's demo for Bo is untouched
+    ph.send({ t: "end" });
+    assertEquals(await v.next("Ana hears the end"), {
+      t: "ended",
+      by: "presenter",
+    });
+    assertEquals(await ph.next("Hans hears it too"), {
+      t: "ended",
+      by: "presenter",
+    });
+    await v.closed;
+    await ph.closed;
+    assertEquals(
+      (await call("GET", "/api/demo-mode/active", undefined, A)).body,
+      { role: null, session: null, targetPath: null, pid: null },
+    );
+    assertEquals(
+      (await call("GET", "/api/demo-mode/active", undefined, L)).body.session
+        .id,
+      other.body.id,
+    );
+
+    // the last presenter leaving ends a demo: Lia opens one for Ana again, so Bo's is over
+    const again = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, L);
+    assertEquals(again.status, 201);
+    assertEquals(
+      (await call(
+        "GET",
+        "/api/demo-mode/active",
+        undefined,
+        H(bo.body.sessionId),
+      )).body.session,
+      null,
+      "nobody left on Bo's demo: it ended",
+    );
+    assertEquals(
+      (await call("GET", "/api/demo-mode/active", undefined, A)).body.session
+        .id,
+      again.body.id,
     );
   });
 });

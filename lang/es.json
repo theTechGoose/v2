@@ -3386,6 +3386,8 @@
   "clientsBoard.panel.perVisit": "por visita",
   "demoMode.title": "Modo demo",
   "demoMode.guiding": "{name} te está guiando",
+  "demoMode.guidingMany": "{names} te están guiando",
+  "demoMode.you": "tú",
   "demoMode.presenting": "Guiando a {name}",
   "demoMode.waiting": "Esperando al otro lado…",
   "demoMode.direct": "directo",
