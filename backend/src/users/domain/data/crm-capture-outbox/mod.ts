@@ -17,6 +17,7 @@ import { getKv } from "@core/data/kv/mod.ts";
  *  wizard's saves re-mark a record a handful of times in a row, never more */
 const SETTLE_ATTEMPTS = 8;
 import { backoffMs, LEASE_MS, type PendingCapture, WATCH_FOR_MS } from "@users/domain/business/lead-capture-retry/mod.ts";
+import type { LeadOrigin } from "#lead-origin/mod.ts";
 import type { UserPlan } from "@users/dto/plan.ts";
 
 const PREFIX = "crm-capture";
@@ -44,12 +45,12 @@ export class CrmCaptureOutbox {
   }
 
   /** a record for the phone; an existing one is kept as it is (its attempts, its clock) */
-  async add(phone: string, now: number): Promise<void> {
+  async add(phone: string, now: number, origin?: LeadOrigin): Promise<void> {
     const kv = await this.kv();
     const key = [PREFIX, phone];
     const existing = await kv.get<PendingCapture>(key);
     if (existing.value) return;
-    const rec: PendingCapture = { phone, enqueuedAt: new Date(now).toISOString(), attempts: 0, nextAt: new Date(now).toISOString() };
+    const rec: PendingCapture = { phone, ...(origin ? { origin } : {}), enqueuedAt: new Date(now).toISOString(), attempts: 0, nextAt: new Date(now).toISOString() };
     await kv.atomic().check(existing).set(key, rec).commit();
   }
 
@@ -204,7 +205,7 @@ export class CrmCaptureOutbox {
       const current = await kv.get<PendingCapture>(key);
       const base = current.value ?? rec;
       const attempts = base.attempts + 1;
-      next = { phone: base.phone, ...(base.userId ? { userId: base.userId } : {}), ...(base.kind ? { kind: base.kind } : {}), ...(base.back ? { back: base.back } : {}), ...(base.reason ? { reason: base.reason } : {}), ...(base.dueId ? { dueId: base.dueId } : {}), ...(base.pick ? { pick: base.pick } : {}), ...(base.watchUntil ? { watchUntil: base.watchUntil } : {}), enqueuedAt: base.enqueuedAt, attempts, nextAt: new Date(now + backoffMs(attempts)).toISOString(), lastError: error.slice(0, 300) };
+      next = { phone: base.phone, ...(base.origin ? { origin: base.origin } : {}), ...(base.userId ? { userId: base.userId } : {}), ...(base.kind ? { kind: base.kind } : {}), ...(base.back ? { back: base.back } : {}), ...(base.reason ? { reason: base.reason } : {}), ...(base.dueId ? { dueId: base.dueId } : {}), ...(base.pick ? { pick: base.pick } : {}), ...(base.watchUntil ? { watchUntil: base.watchUntil } : {}), enqueuedAt: base.enqueuedAt, attempts, nextAt: new Date(now + backoffMs(attempts)).toISOString(), lastError: error.slice(0, 300) };
       if ((await kv.atomic().check(current).set(key, next).commit()).ok) return next;
     }
     await kv.set(key, next); // moved under every attempt: the last write wins, as it used to

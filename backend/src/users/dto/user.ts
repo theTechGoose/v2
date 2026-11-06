@@ -1,3 +1,4 @@
+import type { LeadOrigin } from "#lead-origin/mod.ts";
 import { IsIn, IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
 import type { Features } from "#features";
@@ -7,6 +8,12 @@ export type Language = "en" | "es";
 export interface User {
   id: string;
   phoneNumber: string;
+  /**
+   * REQ-211 — where the account came from: the landing page its signup was made on and the ad
+   * that brought the person. Stamped once at creation from the OTP record; NEVER part of
+   * UpdateUserDto — the CRM's lead source reads it on every sync.
+   */
+  origin?: LeadOrigin;
   /** REQ-039 (NW-52): set when the account was closed — the row and the
    *  phone index stay so the person can recover it later. */
   deletedAt?: string;

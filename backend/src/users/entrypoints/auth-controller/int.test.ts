@@ -354,3 +354,41 @@ Deno.test("REQ-103 a sign-up — by phone on /auth/verify-otp and /auth/verify, 
     await resetKv();
   }
 });
+
+/**
+ * REQ-211 — Raphael, 2026-11-06: "There is something that says what landing page it is coming
+ * from?" — POST /auth/send-otp takes the page and the ad the signup was made on, and the CRM's
+ * lead says them as its source.
+ */
+Deno.test("REQ-211 send-otp carries the page and the ad to the CRM lead's source", async () => {
+  const seen: { phone: string; source?: string }[] = [];
+  const door = {
+    createCustomer(input: { customerPhone?: string; leadSource?: string }) {
+      seen.push({ phone: input.customerPhone ?? "", source: input.leadSource });
+      return Promise.resolve({ customerId: "c-lead-211" });
+    },
+  } as unknown as PaymentsLinkPort;
+  const twilio = Deno.env.get("TWILIO_ACCOUNT_SID");
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("TWILIO_ACCOUNT_SID");
+  await resetKv();
+  const app = new DanetApplication();
+  await app.init(TestApp);
+  app.get(PaymentsLink).portOverride = door;
+  await app.listen(PORT + 7);
+  try {
+    const res = await fetch(`http://localhost:${PORT + 7}/auth/send-otp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phoneNumber: "+15125550211", language: "es", page: "/landing5", ad: "cumple" }),
+    });
+    assertEquals((await res.json()).sent, true);
+    const t0 = Date.now();
+    while (seen.length === 0 && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 20));
+    assertEquals(seen, [{ phone: "+15125550211", source: "paperworkmonster.com · /landing5?ad=cumple" }]);
+  } finally {
+    await app.close();
+    twilio === undefined ? Deno.env.delete("TWILIO_ACCOUNT_SID") : Deno.env.set("TWILIO_ACCOUNT_SID", twilio);
+    await resetKv();
+  }
+});

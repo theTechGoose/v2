@@ -74,7 +74,7 @@ export class DemoRequestController {
       to: req.phone,
       body: demoConfirmationSms(req),
     });
-    await this.leads.enqueue(req.phone);
+    await this.leads.enqueue(req.phone, req.origin); // REQ-211 — the lead says where it came from
 
     return ctx.json({
       ok: true,

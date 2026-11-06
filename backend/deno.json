@@ -22,6 +22,7 @@
     "#features": "../shared/features.ts",
     "#legal/": "../shared/legal/",
     "#demo-booking/": "../shared/demo-booking/",
+    "#lead-origin/": "../shared/lead-origin/",
     "#demo-mode/": "../shared/demo-mode/",
     "@core/": "./src/core/",
     "@crm/": "./src/crm/",

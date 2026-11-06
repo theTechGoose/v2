@@ -25,6 +25,7 @@ import {
 } from "@users/domain/coordinators/send-email-otp/mod.ts";
 import { VerifyEmailOtp } from "@users/domain/coordinators/verify-email-otp/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
+import { leadOriginOf } from "#lead-origin/mod.ts";
 import { AccountRecovery } from "@users/domain/coordinators/account-recovery/mod.ts";
 import { SignInLanding } from "@users/domain/coordinators/sign-in-landing/mod.ts";
 import { InvalidRecoveryTokenError } from "@users/domain/data/recovery-token-store/mod.ts";
@@ -214,18 +215,22 @@ export class AuthController {
   @Post("send-otp")
   async send(@Body() body: unknown) {
     const dto = parseSendOtp(body);
+    // REQ-211 — the landing page and the ad the signup was made on: on the OTP record (for the
+    // account born from it) and on the lead (the CRM's source)
+    const origin = leadOriginOf(dto);
     let devCode: string | undefined;
     try {
       const sent = await this.sendOtp.run({
         phoneNumber: dto.phoneNumber,
         language: dto.language,
+        origin,
       });
       devCode = devCodeFor(sent.codeForDispatch);
       // REQ-060 — the phone is a CRM lead the moment the code goes out, code entered or not.
       // REQ-072 — fire and forget, guaranteed: the lead is a KV outbox record before this
       // replies (ms), and the sweep carries it to the CRM and retries until the CRM confirms.
       // The CRM's Quickbase calls wait 10 s per 429; the login sat on "…" 22–31 s awaiting them.
-      await this.leads.enqueue(dto.phoneNumber);
+      await this.leads.enqueue(dto.phoneNumber, origin);
     } catch (err) {
       if (err instanceof SendOtpCooldownError) {
         return jsonResponse(

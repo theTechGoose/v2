@@ -14,6 +14,7 @@
  * "remove the callback". Pure: no I/O, no env; the controller does the sending.
  */
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
+import { type LeadOrigin, leadOriginLabel, leadOriginOf } from "#lead-origin/mod.ts";
 import { SUPPORT_PHONE_DISPLAY } from "#legal/contact.ts";
 import {
   DEMO_DAY_WINDOW,
@@ -45,6 +46,8 @@ export interface DemoRequest {
   /** HH:MM Eastern, one of DEMO_TIMES; "" for a call */
   time: string;
   lang: DemoLang;
+  /** REQ-211 — the landing page the booking was made on and the ad that brought the person, when the page sent them */
+  origin?: LeadOrigin;
   /** the consent box the person ticked — the one field never optional (TCPA / 10DLC) */
   consent: true;
 }
@@ -142,7 +145,9 @@ export function parseDemoRequest(
     throw new DemoRequestInvalid("lang", `"${lang}" is not es or en`);
   }
 
-  return { mode, name, phone, email, day, time, lang, consent: true };
+  // REQ-211 — read leniently: junk here is dropped, never a refused booking
+  const origin = leadOriginOf(b);
+  return { mode, name, phone, email, day, time, lang, consent: true, ...(origin ? { origin } : {}) };
 }
 
 const MODE_LABEL: Record<DemoLang, Record<DemoMode, string>> = {
@@ -186,8 +191,10 @@ export function demoTeamEmail(
   const time = `${demoTime(req.time)?.label ?? req.time} Eastern`;
   const when = req.mode === "call" ? ASAP_LABEL.en : `${demoDayLabel(req.day, "en")} (${req.day}) · ${time}`;
   const subject = `[${req.mode}] ${req.name || req.phone} — ${req.mode === "call" ? ASAP_LABEL.en : `${req.day} ${time}`}`;
+  const from = leadOriginLabel(req.origin); // REQ-211 — the page it came from, when known
   const htmlBody = [
-    `<h2>New ${MODE_LABEL.en[req.mode]} request from /landing2</h2>`,
+    `<h2>New ${MODE_LABEL.en[req.mode]} request${from ? ` from ${escapeHtml(from)}` : ""}</h2>`,
+    row("Page", from),
     row("When", when),
     row("Name", req.name),
     row("Phone", req.phone),

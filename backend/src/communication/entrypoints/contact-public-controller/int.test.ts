@@ -88,3 +88,20 @@ Deno.test("REQ-068 contact int — the inquiry email carries the phone and the S
   assertNotMatch(inbox.sent[2].htmlBody, /Phone:/);
   assertMatch(inbox.sent[2].htmlBody, /SMS consent:<\/strong> no/);
 });
+
+// REQ-211 — Raphael, 2026-11-06: "There is something that says what landing page it is coming
+// from?" — the inquiry email says the page the form was on and the ad that brought the person.
+Deno.test("REQ-211 contact int — the email carries a Page row with the page and the ad; without them the row says —", async () => {
+  const inbox = new CapturingInbox();
+  const controller = new ContactPublicController(inbox as unknown as EmailService, openGate);
+  const base = { name: "Ana", email: "ana@example.test", subject: "Hola", message: "¿Precio?" };
+  await controller.submit(ctx, { ...base, page: "/landing3", ad: "graduacion" });
+  assertMatch(inbox.sent[0].htmlBody ?? "", /Page:<\/strong> \/landing3\?ad=graduacion/);
+  await controller.submit(ctx, { ...base, page: "/landing3" });
+  assertMatch(inbox.sent[1].htmlBody ?? "", /Page:<\/strong> \/landing3</);
+  await controller.submit(ctx, base);
+  assertMatch(inbox.sent[2].htmlBody ?? "", /Page:<\/strong> —/);
+  const junk = await controller.submit(ctx, { ...base, page: "<script>", ad: 7 }) as { ok: boolean };
+  assertEquals(junk.ok, true, "junk in the two fields never refuses the inquiry");
+  assertMatch(inbox.sent[3].htmlBody ?? "", /Page:<\/strong> —/);
+});

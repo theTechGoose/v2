@@ -185,3 +185,33 @@ Deno.test("REQ-111 crm-customer-sync — the selected plan and the exact stage r
   assertEquals([crm.tier, crm.signupPlan, crm.signupStage], ["Free", "Monster Free", "onboarding complete"]);
   assertEquals(fakePaymentsWorld().customers.length, 1, "one record throughout");
 });
+
+// REQ-211 — Raphael, 2026-11-06: "There is something that says what landing page it is coming
+// from?" — the lead's source names the page and the ad; the account born from that signup keeps
+// saying it through every later sync, so the CRM never loses it.
+Deno.test("REQ-211 crm-customer-sync — the lead's source names the page and the ad, and the account keeps it on every sync", async () => {
+  const { users, identity, sync } = await fresh();
+  await sync.capture("(512) 555-0211", { page: "/landing5", ad: "cumple" });
+  const world = fakePaymentsWorld();
+  assertEquals(world.customers[0].leadSource, "paperworkmonster.com · /landing5?ad=cumple");
+  // the account born from that signup carries the origin; its syncs keep the source
+  const user = await users.create({ phoneNumber: "+15125550211", language: "es", name: placeholderNameFor("es"), origin: { page: "/landing5", ad: "cumple" } });
+  await sync.ensure(user.id);
+  assertEquals((await sync.read(user.id))?.leadSource, "paperworkmonster.com · /landing5?ad=cumple");
+  await users.update(user.id, { name: "Rosa Demo" });
+  await identity.upsert(user.id, { businessName: "Rosa Paint LLC" });
+  await sync.ensure(user.id);
+  assertEquals([(await sync.read(user.id))?.customerName, (await sync.read(user.id))?.leadSource], ["Rosa Paint LLC", "paperworkmonster.com · /landing5?ad=cumple"]);
+  assertEquals(world.customers.length, 1);
+  // a lead and an account without an origin: the source as it always was
+  await sync.capture("+15125550212");
+  assertEquals(world.customers[1].leadSource, LEAD_SOURCE);
+  const plain = await users.create({ phoneNumber: "+15125550213", language: "en", name: placeholderNameFor("en") });
+  await sync.ensure(plain.id);
+  assertEquals((await sync.read(plain.id))?.leadSource, LEAD_SOURCE);
+});
+
+Deno.test("REQ-211 customerFor — pure: the account's origin is the lead source", () => {
+  const user = { id: "u-211", name: "Ana", phoneNumber: "+15125550211", origin: { page: "/landing2" } } as unknown as Parameters<typeof customerFor>[0];
+  assertEquals(customerFor(user, null, null).leadSource, "paperworkmonster.com · /landing2");
+});

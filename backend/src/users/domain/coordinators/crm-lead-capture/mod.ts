@@ -53,6 +53,7 @@ import { type PickBack, pickBackOf } from "@users/domain/business/plan/mod.ts";
 import { isDue, type PendingCapture, WATCH_EVERY_MS } from "@users/domain/business/lead-capture-retry/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import type { UserPlan } from "@users/dto/plan.ts";
+import type { LeadOrigin } from "#lead-origin/mod.ts";
 
 export interface SweepResult {
   landed: number;
@@ -86,8 +87,8 @@ export class CrmLeadCapture {
   constructor(private outbox: CrmCaptureOutbox, private crm: CrmCustomerSync, private notice: SignupNotice, private payLink: PayLinkMint, private watch: SettleWatch) {}
 
   /** durable at once; the CRM is reached by the sweep this starts, never by the caller's request */
-  async enqueue(phoneNumber: string): Promise<void> {
-    await this.outbox.add(normalizePhone(phoneNumber), Date.now());
+  async enqueue(phoneNumber: string, origin?: LeadOrigin): Promise<void> {
+    await this.outbox.add(normalizePhone(phoneNumber), Date.now(), origin); // REQ-211 — where it came from rides along
     this.kick();
   }
 
@@ -245,7 +246,7 @@ export class CrmLeadCapture {
         // REQ-131 — the due is watched from the moment its page is on the record
         if (page?.status === "pending" && page.dueId && page.payUrl) await this.outbox.addSettleWatch(rec.userId ?? "", page, Date.now());
       } else if (rec.userId) await this.crm.ensure(rec.userId); // REQ-098
-      else await this.crm.capture(rec.phone);
+      else await this.crm.capture(rec.phone, rec.origin); // REQ-211
       await this.outbox.done(rec);
       result.landed++;
     } catch (e) {

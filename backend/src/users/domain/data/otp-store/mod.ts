@@ -2,11 +2,14 @@ import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
 import { mergeOtpRecordOnResend } from "#quote-flow/otp-rate-limit.ts";
 import type { Language } from "@users/dto/user.ts";
+import type { LeadOrigin } from "#lead-origin/mod.ts";
 
 export interface OtpRecord {
   phoneNumber: string;
   code: string;
   language?: Language;
+  /** REQ-211 — the landing page and the ad the signup came from, for the account born from this code */
+  origin?: LeadOrigin;
   attempts: number;
   sentAt: string;
 }
@@ -28,11 +31,12 @@ const TTL_MS = 5 * 60 * 1_000;     // 5 minutes
  */
 @Injectable()
 export class OtpStore {
-  async put(input: { phoneNumber: string; code: string; language?: Language }): Promise<OtpRecord> {
+  async put(input: { phoneNumber: string; code: string; language?: Language; origin?: LeadOrigin }): Promise<OtpRecord> {
     const fresh: OtpRecord = {
       phoneNumber: input.phoneNumber,
       code: input.code,
       language: input.language,
+      ...(input.origin ? { origin: input.origin } : {}),
       attempts: 0,
       sentAt: new Date().toISOString(),
     };

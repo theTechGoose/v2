@@ -673,3 +673,31 @@ Deno.test("REQ-133 lookNow(dueId) — the CRM's settled notice: the watch on tha
   assertEquals((await plans.get(user.id))?.status, "active");
   await done();
 });
+
+// REQ-211 — the sweep hands the lead's origin to the CRM: the lead source names the page and the ad
+Deno.test("REQ-211 the sweep carries the lead's origin to the CRM as its source", async () => {
+  const sources: (string | undefined)[] = [];
+  const outbox = new CrmCaptureOutbox();
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const link = {
+    createCustomer(input: { customerPhone?: string; leadSource?: string }) {
+      sources.push(input.leadSource);
+      return Promise.resolve({ customerId: "c-lead" });
+    },
+  } as unknown as PaymentsLink;
+  const users = new UserStore();
+  const crm = new CrmCustomerSync(users, new BusinessIdentityStore(), link, new PlanStore());
+  const leads = new CrmLeadCapture(outbox, crm, new SignupNotice(users), new PayLinkMint(new PlanStore(), link, crm), new SettleWatch(new PlanStore(), link));
+  await leads.enqueue("(512) 555-0211", { page: "/landing5", ad: "cumple" });
+  await leads.drain();
+  await leads.idle();
+  await until(() => sources.length >= 1);
+  assertEquals(sources, ["paperworkmonster.com · /landing5?ad=cumple"]);
+  await leads.enqueue("(512) 555-0212");
+  await leads.drain();
+  await leads.idle();
+  await until(() => sources.length >= 2);
+  assertEquals(sources[1], "paperworkmonster.com", "no origin: the source as it always was");
+  await done();
+});
