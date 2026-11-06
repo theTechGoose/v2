@@ -1549,3 +1549,5 @@ A once-per-tab guard made the safety net single-use: a later, genuine failure in
 **Requirement:** The Billing folder reads Quotes, Invoices, Payments, Work orders (`nav.workOrders`: "Work orders" / "Órdenes de trabajo").
 **Tests:** unit `jest/unit/sidebar-root-folders.test.ts` (amended) · e2e `e2e/sidebar-folders/root-folders.e2e.test.ts` (amended: "Back | Quotes | Invoices | Payments | Work orders").
 **Evidence (2026-11-06):** the unit test failed on the new entry first (`+ "workOrders"`), both amended; jest 4/4, the story green in the 40-pass and 119-pass runs above.
+
+**Prod (2026-11-06) for REQ-198..210 and the REQ-189/176 amendments:** main `b233696` (develop `474f09d`'s tree, byte-identical) pushed 07:26:33 UTC; by 07:27:20 UTC documonster.com served the new revision: `/api/profile/numbering` and `/api/work-orders` answer 401 (404 before), `/work-orders` 302 to the login, and the served shell carries the body-cancelling module refetch (`function drain(r)`).
