@@ -1,38 +1,88 @@
 /**
- * REQ-184 — the impersonation banner makes room for itself: it sits in the page's flow (sticky at
- * the top, not fixed over the content), publishes its height as --pm-banner-h, and the dashboard
- * shell, its mobile top bar and the mobile sidebar drawer all start below it — so the staff never
- * loses the top of the customer's page under the red bar.
+ * REQ-181 — the impersonation banner makes room for itself: it publishes its height as
+ * `--banner-h` on <html> and pads the body, and every viewport-height shell subtracts it.
  */
 import * as fs from "fs";
 import * as path from "path";
+import {
+  BANNER_VAR,
+  clearBannerRoom,
+  setBannerRoom,
+} from "../../front-end/lib/banner-room";
 
 const ROOT = path.resolve(__dirname, "../..");
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
+const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
-describe("REQ-184 — the banner makes room for itself", () => {
-  const banner = read("front-end/islands/ImpersonationBanner.tsx");
-  const css = read("front-end/static/dashboard.css");
+function fakeStyle() {
+  const vars = new Map<string, string>();
+  return {
+    vars,
+    style: {
+      setProperty: (k: string, v: string) => void vars.set(k, v),
+      removeProperty: (k: string) => void vars.delete(k),
+      getPropertyValue: (k: string) => vars.get(k) ?? "",
+    },
+  };
+}
 
-  test("the banner is in the flow (sticky), not fixed over the page", () => {
-    expect(banner).toMatch(/position:sticky;top:0/);
-    expect(banner).not.toMatch(/position:fixed/);
+describe("REQ-181 the banner's room", () => {
+  test("setBannerRoom publishes --banner-h on the root and pads the body by it; clearBannerRoom releases both", () => {
+    const root = fakeStyle();
+    const body = fakeStyle();
+    setBannerRoom(root.style, body.style, 46);
+    expect(BANNER_VAR).toBe("--banner-h");
+    expect(root.vars.get("--banner-h")).toBe("46px");
+    expect(body.vars.get("padding-top")).toBe("var(--banner-h, 0px)");
+    setBannerRoom(root.style, body.style, 63.5); // the banner wrapped on a narrow window
+    expect(root.vars.get("--banner-h")).toBe("64px");
+    clearBannerRoom(root.style, body.style);
+    expect(root.vars.has("--banner-h")).toBe(false);
+    expect(body.vars.has("padding-top")).toBe(false);
   });
 
-  test("it publishes its height as --pm-banner-h while shown and clears it when gone", () => {
-    expect(banner).toMatch(/setProperty\(\s*"--pm-banner-h"/);
-    expect(banner).toMatch(/ResizeObserver/);
-    expect(banner).toMatch(/removeProperty\(\s*"--pm-banner-h"\s*\)/);
+  test("a zero or negative height clears the room instead of publishing 0px", () => {
+    const root = fakeStyle();
+    const body = fakeStyle();
+    setBannerRoom(root.style, body.style, 46);
+    setBannerRoom(root.style, body.style, 0);
+    expect(root.vars.has("--banner-h")).toBe(false);
+    expect(body.vars.has("padding-top")).toBe(false);
   });
 
-  test("the shell, the mobile top bar and the mobile sidebar drawer start below it", () => {
-    expect(css).toMatch(
-      /\.app\s*\{[^}]*height:\s*calc\(var\(--app-vh,\s*100dvh\)\s*-\s*var\(--pm-banner-h,\s*0px\)\)/s,
+  test("the banner island measures itself and publishes through banner-room, and is tagged for the stories", () => {
+    const src = read("front-end/islands/ImpersonationBanner.tsx");
+    expect(src).toMatch(/from "\.\.\/lib\/banner-room\.ts"/);
+    expect(src).toMatch(/setBannerRoom\(/);
+    expect(src).toMatch(/clearBannerRoom\(/);
+    expect(src).toMatch(/ResizeObserver/);
+    expect(src).toMatch(/data-cy="imp-banner"/);
+  });
+
+  test("every viewport-height shell subtracts --banner-h", () => {
+    const dash = read("front-end/static/dashboard.css");
+    const asst = read("front-end/static/assistant-page.css");
+    const sub =
+      /height:\s*calc\(var\(--app-vh,\s*100dvh\)\s*-\s*var\(--banner-h,\s*0px\)\)/g;
+    expect(dash.match(sub)?.length ?? 0).toBeGreaterThanOrEqual(1);
+    expect(asst.match(sub)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    // no shell left on the bare viewport height
+    expect(dash).not.toMatch(/height:\s*var\(--app-vh,\s*100dvh\);/);
+    expect(asst).not.toMatch(/height:\s*var\(--app-vh,\s*100dvh\);/);
+    // the phone chat overlay starts under the banner and is shorter by it
+    expect(asst).toMatch(/top:\s*var\(--banner-h,\s*0px\);/);
+    expect(asst).toMatch(
+      /height:\s*calc\(var\(--vvh,\s*100dvh\)\s*-\s*var\(--banner-h,\s*0px\)\)/,
     );
+    // the phone's sticky top bar pins under the banner, not under it
+    expect(dash).toMatch(
+      /position:\s*sticky;\s*top:\s*var\(--banner-h,\s*0px\);/,
+    );
+  });
+
+  test("REQ-181 AMENDMENT: the mobile sidebar drawer is fixed too, so it starts under the banner", () => {
+    const css = read("front-end/static/dashboard.css");
     const mobile = css.slice(css.indexOf("@media (max-width: 640px)"));
-    expect(mobile).toMatch(/\.sb\s*\{[^}]*top:\s*var\(--pm-banner-h,\s*0px\)/s);
-    expect(mobile).toMatch(
-      /\.topbar\s*\{[^}]*top:\s*var\(--pm-banner-h,\s*0px\)/s,
-    );
+    expect(mobile).toMatch(/\.sb\s*\{[^}]*top:\s*var\(--banner-h,\s*0px\)/s);
+    expect(css).not.toMatch(/pm-banner-h/);
   });
 });
