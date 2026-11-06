@@ -1467,3 +1467,6 @@ A once-per-tab guard made the safety net single-use: a later, genuine failure in
 **Source:** the merge of REQ-181 with REQ-184 (the same fix, built in parallel): REQ-184 also moved the mobile sidebar drawer, which is `position: fixed` and so ignores the body padding REQ-181 adds.
 **Requirement:** On narrow screens the sidebar drawer's top is `var(--banner-h, 0px)`; nothing in the shells references the retired `--pm-banner-h`.
 **Tests:** unit `jest/unit/impersonation-banner-room.test.ts` (last test) · integration n/a · e2e `e2e/demo-mode/demo-mode.e2e.test.ts` (the stage starts below the banner's bottom edge).
+
+**Prod (2026-11-06):** main cbf370b (develop d9931a8's tree, byte-identical) pushed; within 10 s documonster.com served the new revision: `/demo/stage` answers 302 (an unknown `/demo/…` path 404s), `/api/demo-mode/active` 401, the boot script carries the ETag check (`pm:module-etags`, inert off localhost), the GTM loader is on the page and the shells' CSS subtracts `--banner-h`. NOTE: the first release of this batch (main 7bcfe40) was cut from a local develop that was 3 commits behind origin (REQ-181, REQ-183) and briefly shipped without them; the merge release cbf370b followed about ten minutes later.
+
