@@ -251,6 +251,31 @@ export class UserStore {
     return withHardcodedSuperAdmin(restored);
   }
 
+  /**
+   * REQ-220 ("Transfer account"): the account moves to `phoneNumber` — the record and the phone
+   * index in one atomic write, so the new number signs in to this same account and the old one is
+   * free. Null when the number already has an account (or the record changed underneath): nothing
+   * is written. The ONLY write path for a live account's phone — `update` never touches it.
+   */
+  async changePhone(id: string, phoneNumber: string): Promise<User | null> {
+    const kv = await getKv();
+    const current = await kv.get<User>(["user", id]);
+    if (!current.value) throw new NotFoundError("user", id);
+    const old = current.value.phoneNumber;
+    const updated: User = { ...current.value, phoneNumber, updatedAt: new Date().toISOString() };
+    let atomic = kv.atomic()
+      .check(current)
+      .check({ key: ["user_by_phone", phoneNumber], versionstamp: null })
+      .set(["user", id], updated)
+      .set(["user_by_phone", phoneNumber], id);
+    if (old) {
+      const idx = await kv.get<string>(["user_by_phone", old]);
+      if (idx.value === id) atomic = atomic.check(idx).delete(["user_by_phone", old]);
+    }
+    const res = await atomic.commit();
+    return res.ok ? withHardcodedSuperAdmin(updated) : null;
+  }
+
   /** REQ-039: "create a new account" — the closed account keeps its data
    *  under an archived phone ("<phone>#archived-<ts>") and the number is
    *  freed for a fresh account. */

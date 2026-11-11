@@ -44,6 +44,7 @@ import {
 import { filesClient } from "../clients/files.ts";
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
+import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
 import { type Lang, langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { normalizeWebsiteUrl } from "../../shared/quote-flow/format-helpers.ts";
 import {
@@ -252,7 +253,8 @@ function tr(es: boolean) {
 function Card(
   { title, rows, empty = tFor("en", "settings.nothingSet") }: {
     title: string;
-    rows: Array<[string, string | undefined | null]>;
+    // REQ-220: a value may be a node (the phone and its "Transfer account" button)
+    rows: Array<[string, ComponentChildren | undefined | null]>;
     empty?: string;
   },
 ) {
@@ -2383,7 +2385,18 @@ export default function SettingsPage() {
                 [t.name, p.user.name],
                 [
                   t.phone,
-                  p.user.phoneNumber ? fmtPhone(p.user.phoneNumber) : undefined,
+                  // REQ-220: the phone is the sign-in, so it is not a field — it moves by
+                  // "Transfer account" (owner only; an admin acting never sees the button)
+                  p.user.phoneNumber
+                    ? (
+                      <span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">
+                        <span data-cy="settings-phone">
+                          {fmtPhone(p.user.phoneNumber)}
+                        </span>
+                        {!acting && <TransferAccount lang={lang} />}
+                      </span>
+                    )
+                    : undefined,
                 ],
                 // UX-35: the email lives on ONE surface — the editable form
                 // below. Repeating it read-only here competed with the form and

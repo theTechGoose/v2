@@ -1,5 +1,6 @@
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
+import { ownSession } from "@users/domain/business/transfer-account/mod.ts";
 
 export interface Session {
   id: string;
@@ -82,6 +83,23 @@ export class SessionStore {
     const kv = await getKv();
     const result = await kv.get<Session>(["session", sessionId]);
     return result.value ?? null;
+  }
+
+  /**
+   * REQ-220: drop every session that is `userId` signed in as themselves — an admin's acting
+   * session and an impersonation stay (ownSession). There is no per-user index; the scan is the
+   * same whole-prefix sweep WipeAccount does. Returns how many went.
+   */
+  async deleteOwn(userId: string): Promise<number> {
+    const kv = await getKv();
+    let gone = 0;
+    for await (const entry of kv.list<Session>({ prefix: ["session"] })) {
+      if (entry.value && ownSession(entry.value, userId)) {
+        await kv.delete(entry.key);
+        gone++;
+      }
+    }
+    return gone;
   }
 
   async delete(sessionId: string): Promise<void> {
