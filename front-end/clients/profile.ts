@@ -211,20 +211,13 @@ export const profileClient = {
    *  keeps the account, its settings and this session. Owner only. */
   setupReset: (opts: ApiOptions = {}) =>
     api.post<{ ok: true }>("/me/setup-reset", undefined, opts),
-  /** REQ-220 — "Transfer account", step 1: text the new owner's number a code. Nothing moves.
-   *  409 `same_number` | `phone_taken`, 400 `bad_phone`, 429 `cooldown`. `devCode` on the fakes. */
-  transferStart: (phoneNumber: string, opts: ApiOptions = {}) =>
-    api.post<{ sent: true; phoneNumber: string; devCode?: string }>(
-      "/me/transfer/start",
-      { phoneNumber },
-      opts,
-    ),
-  /** REQ-220 — step 2: the code moves the account onto the new number and ends this session.
-   *  422 `invalid_code`, 410 `expired`, 429 `rate_limited`, 409 `phone_taken`. */
-  transferConfirm: (code: string, opts: ApiOptions = {}) =>
+  /** REQ-220 (+ AMENDMENT: no code) — "Transfer account": the account moves onto
+   *  `phoneNumber` at once and this session ends. 409 `same_number` | `phone_taken`,
+   *  400 `bad_phone`; 403 for an admin acting for the account. */
+  transferAccount: (phoneNumber: string, opts: ApiOptions = {}) =>
     api.post<{ ok: true; phoneNumber: string }>(
-      "/me/transfer/confirm",
-      { code },
+      "/me/transfer",
+      { phoneNumber },
       opts,
     ),
 };

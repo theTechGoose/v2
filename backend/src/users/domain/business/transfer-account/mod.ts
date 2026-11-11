@@ -2,11 +2,8 @@
 
 export type TransferRefusal = "same_number" | "phone_taken";
 
-/** wrong codes before the pending transfer locks (the sign-in code's own limit) */
-export const TRANSFER_MAX_ATTEMPTS = 5;
-
 /**
- * What a transfer refuses before any text goes out: the owner's own number, and a number that
+ * What a transfer refuses: the owner's own number, and a number that
  * already has an account — open or closed (a closed account keeps its number for recovery,
  * REQ-039).
  */

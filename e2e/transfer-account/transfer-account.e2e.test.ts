@@ -1,6 +1,6 @@
 /**
- * REQ-220 — "Transfer account", end to end in a browser: Settings shows the button next to the
- * phone; the dialog takes the new owner's number, then the code texted to it (shown on the fakes);
+ * REQ-220 (+ AMENDMENT: no code) — "Transfer account", end to end in a browser: Settings shows
+ * the button next to the phone; the dialog takes the new owner's number and nothing else;
  * the account moves — this browser lands on /login, the new number signs in and sees the old
  * owner's customer, and the old number's sign-in is a brand-new, empty account.
  */
@@ -51,7 +51,7 @@ async function useCookie(
 const pretty = (e164: string) =>
   `(${e164.slice(2, 5)}) ${e164.slice(5, 8)}-${e164.slice(8)}`;
 
-Deno.test("REQ-220: Settings → Transfer account next to the phone; the new number's code moves the account; this browser is signed out; the new number sees the old owner's customer and the old number starts empty", (t) =>
+Deno.test("REQ-220: Settings → Transfer account next to the phone; the new number alone (no code) moves the account; this browser is signed out; the new number sees the old owner's customer and the old number starts empty", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const oldPhone = `+1512${digits()}`;
     const newPhone = `+1843${digits()}`;
@@ -85,35 +85,25 @@ Deno.test("REQ-220: Settings → Transfer account next to the phone; the new num
       "the dialog is closed until asked for",
     );
 
-    // 2. the dialog: the owner's own number is refused, the new one gets a code
+    // 2. the dialog: the owner's own number is refused
     const phoneInput = page.locator("[data-cy='transfer-phone']");
     for (let i = 0; i < 20 && !(await phoneInput.count()); i++) {
       await open.click(); // a click before hydration is lost — click until the dialog is there
       await page.waitForTimeout(250);
     }
     await phoneInput.fill(oldPhone.slice(2));
-    await page.locator("[data-cy='transfer-send']").click();
-    await page.locator("[data-cy='transfer-error']").waitFor({
-      timeout: 10_000,
-    });
-    await expect.see("already the number on this account");
-    await phoneInput.fill(newPhone.slice(2));
-    await page.locator("[data-cy='transfer-send']").click();
-    const dev = page.locator("[data-cy='transfer-dev-code']");
-    await dev.waitFor({ timeout: 10_000 });
-    await expect.see(pretty(newPhone));
-    const code = ((await dev.textContent()) ?? "").match(/\d{6}/)?.[0] ?? "";
-    expect(code.length === 6, `the fakes show the code (${code})`);
-
-    // 3. a wrong code keeps the dialog; the right one moves the account and signs this browser out
-    const wrong = code === "111111" ? "222222" : "111111";
-    await page.locator("[data-cy='transfer-code']").fill(wrong);
     await page.locator("[data-cy='transfer-confirm']").click();
     await page.locator("[data-cy='transfer-error']").waitFor({
       timeout: 10_000,
     });
-    await expect.see("That code is not right");
-    await page.locator("[data-cy='transfer-code']").fill(code);
+    await expect.see("already the number on this account");
+    // 3. the new number and the button — no code — move the account and sign this browser out
+    await phoneInput.fill(newPhone.slice(2));
+    expect.eq(
+      await page.locator("[data-cy='transfer-code']").count(),
+      0,
+      "there is no code to type",
+    );
     await page.locator("[data-cy='transfer-confirm']").click();
     await page.waitForURL(/\/login/, { timeout: 20_000 });
     const dead = await http("/api/me", { headers: owner.auth });

@@ -16,7 +16,6 @@ import {
 import { AccountAdmins } from "@users/domain/coordinators/account-admins/mod.ts"; // REQ-146
 import { buildSessionCookie, clearSessionCookie } from "@users/domain/business/session-cookie/mod.ts";
 import { TransferAccount, TransferError } from "@users/domain/coordinators/transfer-account/mod.ts"; // REQ-220
-import { devCodeFor } from "@users/domain/business/dev-code/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
@@ -260,36 +259,17 @@ export class MeController {
   }
 
   /**
-   * POST /me/transfer/start — REQ-220: `{ phoneNumber }`, the new owner's number. Texts THAT
-   * number a 6-digit code (its own text, not the sign-in code) and moves nothing. Owner only.
-   *   - 200 { sent:true, phoneNumber, devCode? }   (devCode off the real deploy, REQ-082)
-   *   - 400 bad_phone · 409 same_number | phone_taken · 429 cooldown (+ Retry-After)
-   */
-  @Post("transfer/start")
-  async transferStart(@Context() ctx: ExecutionContext, @Body() body: unknown) {
-    const user = await requireOwner(ctx, this.sessions, this.users);
-    try {
-      const raw = (body as { phoneNumber?: unknown } | null)?.phoneNumber;
-      const { phoneNumber, code } = await this.transfer.start(user, raw);
-      const devCode = devCodeFor(code);
-      return { sent: true, phoneNumber, ...(devCode ? { devCode } : {}) };
-    } catch (err) {
-      return transferRefusal(err);
-    }
-  }
-
-  /**
-   * POST /me/transfer/confirm — REQ-220: `{ code }`, the code the new number received. Moves the
-   * account onto that number (same id, every record), frees the old number, drops the owner's own
-   * sessions and clears this browser's cookie. Owner only.
+   * POST /me/transfer — REQ-220 (+ AMENDMENT: no code): `{ phoneNumber }`, the new owner's
+   * number. Moves the account onto that number at once (same id, every record), frees the old
+   * number, drops the owner's own sessions and clears this browser's cookie. Owner only.
    *   - 200 { ok:true, phoneNumber }
-   *   - 422 invalid_code (not 401: the app leaves for /login on a 401) · 409 phone_taken · 410 expired · 429 rate_limited
+   *   - 400 bad_phone · 409 same_number | phone_taken
    */
-  @Post("transfer/confirm")
-  async transferConfirm(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+  @Post("transfer")
+  async transferAccount(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireOwner(ctx, this.sessions, this.users);
     try {
-      const moved = await this.transfer.confirm(user, (body as { code?: unknown } | null)?.code);
+      const moved = await this.transfer.run(user, (body as { phoneNumber?: unknown } | null)?.phoneNumber);
       await this.leads.enqueueSync(user.id); // REQ-058/099 — the CRM customer reads the new phone, after this reply
       ctx.header("Set-Cookie", clearSessionCookie());
       return { ok: true, phoneNumber: moved.phoneNumber };
@@ -339,14 +319,10 @@ export class MeController {
 /** REQ-220 — a refused transfer as `{ ok:false, error }` under its status; anything else is rethrown */
 function transferRefusal(err: unknown): Response {
   if (!(err instanceof TransferError)) throw err;
-  const retry = err.retryAfterSeconds;
-  return new Response(
-    JSON.stringify({ ok: false, error: err.error, ...(retry ? { retryAfterSeconds: retry } : {}) }),
-    {
-      status: err.status,
-      headers: { "content-type": "application/json", ...(retry ? { "retry-after": String(retry) } : {}) },
-    },
-  );
+  return new Response(JSON.stringify({ ok: false, error: err.error }), {
+    status: err.status,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 /** Normalize a US phone to the stored E.164 form, or "" if unusable. */
