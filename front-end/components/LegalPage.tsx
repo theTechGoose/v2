@@ -8,6 +8,7 @@ import {
   type LegalDocId,
   legalPathFor,
 } from "../../shared/legal/terms.ts";
+import { absoluteUrl } from "../../shared/quote-flow/site-meta.ts";
 
 /**
  * REQ-066 — one legal document on its own page, under the SAME header the
@@ -38,6 +39,12 @@ export default function LegalPage(
         <title>
           {doc.title} · {tFor(lang, "brand.name")}
         </title>
+        {
+          /* REQ-218: the document answers at three URLs (bare, ?lang=en,
+            ?lang=es); this names the one that is the page, so a crawler does
+            not have to pick among duplicates. */
+        }
+        <link rel="canonical" href={absoluteUrl(path)} />
         <link rel="stylesheet" href={asset("/landing.css")} key="css-landing" />
         <link rel="stylesheet" href={asset("/legal.css")} key="css-legal" />
       </Head>
@@ -49,7 +56,9 @@ export default function LegalPage(
             <img src="/logo-monster.png" alt="DocuMonster" />
             <span>
               {site.brand1}
-              <em style="font-style:normal;color:var(--brand-green)">{site.brand2}</em>
+              <em style="font-style:normal;color:var(--brand-green)">
+                {site.brand2}
+              </em>
             </span>
           </a>
           <div class="lang-toggle" role="group" aria-label="Language">

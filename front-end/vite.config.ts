@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import { fresh } from "@fresh/plugin-vite";
 import process from "node:process";
+import { RETIRED_HOSTS } from "../shared/site-host/retired.ts";
 
 // Dev ports — match serve.ts's defaults but allow env override so anyone
 // running vite directly (without serve.ts) can still pin them. PORT is
@@ -63,7 +64,15 @@ export default defineConfig({
   server: {
     port: FRONTEND_PORT,
     strictPort: true,
-    allowedHosts: [".ngrok.app", ".ngrok-free.app", ".trycloudflare.com"],
+    allowedHosts: [
+      ".ngrok.app",
+      ".ngrok-free.app",
+      ".trycloudflare.com",
+      // REQ-219: the site's own name and the retired hosts, so a request
+      // naming one reaches the app's redirect rule in dev as it does in prod
+      "documonster.com",
+      ...RETIRED_HOSTS,
+    ],
     // Allow importing the shared string catalog from the repo root
     // (/lang/*.json), which sits one level above the front-end project root.
     fs: { allow: [".."] },
