@@ -1,8 +1,21 @@
 import { App, staticFiles } from "fresh";
 import { define, type State } from "./utils.ts";
 import denostories from "denostories";
+import { retiredHostRedirect } from "../shared/site-host/retired.ts";
 
 export const app = new App<State>();
+
+// REQ-219: a request for a retired host (the old domain, any "www") is sent to
+// the same path on the site's own origin — before anything else answers, so a
+// static file is not served under a second name either.
+app.use((ctx) => {
+  const path = ctx.url.pathname + ctx.url.search;
+  const to = retiredHostRedirect(ctx.req.headers.get("host"), path) ??
+    retiredHostRedirect(ctx.url.host, path);
+  return to
+    ? new Response(null, { status: 301, headers: { location: to } })
+    : ctx.next();
+});
 
 app.use(staticFiles());
 

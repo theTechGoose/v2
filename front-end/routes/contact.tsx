@@ -13,6 +13,7 @@ import {
   SUPPORT_PHONE_HREF,
 } from "../../shared/legal/contact.ts";
 import { legalPathFor } from "../../shared/legal/terms.ts";
+import { absoluteUrl } from "../../shared/quote-flow/site-meta.ts";
 
 /** /contact — a public page like the four legal pages (REQ-122): an explicit
  *  ?lang= wins and is persisted, then the visitor's saved choice, then
@@ -60,6 +61,11 @@ export default define.page<typeof handler>(function Contact(ctx) {
         <title>
           {tFor(lang, "contactPage.title")} · {tFor(lang, "brand.name")}
         </title>
+        {
+          /* REQ-218: /contact, /contact?lang=en and /contact?lang=es are one
+            page; the sitemap lists the bare URL, and so does this. */
+        }
+        <link rel="canonical" href={absoluteUrl("/contact")} />
         <link rel="stylesheet" href={asset("/verify.css")} />
       </Head>
       <div class="verify-shell">
@@ -76,7 +82,9 @@ export default define.page<typeof handler>(function Contact(ctx) {
             />
             <span>
               {tFor(lang, "brand.namePrefix")}
-              <em style="font-style:normal;color:var(--brand-green)">{tFor(lang, "brand.nameSuffix")}</em>
+              <em style="font-style:normal;color:var(--brand-green)">
+                {tFor(lang, "brand.nameSuffix")}
+              </em>
             </span>
           </a>
           <h1 style="font-size:30px;margin:6px 0 0;text-align:center">
