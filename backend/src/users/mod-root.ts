@@ -57,6 +57,8 @@ import { DocNumbering } from "@core/data/doc-numbering/mod.ts"; // REQ-198
 import { NumberingStore } from "@users/domain/data/numbering-store/mod.ts"; // REQ-199
 import { NumberingController } from "@users/entrypoints/numbering-controller/mod.ts"; // REQ-199
 import { SetupReset } from "@users/domain/coordinators/setup-reset/mod.ts"; // REQ-199
+import { TransferAccount } from "@users/domain/coordinators/transfer-account/mod.ts"; // REQ-220
+import { TransferCodeStore } from "@users/domain/data/transfer-code-store/mod.ts"; // REQ-220
 
 /**
  * UsersModule — owns the full user identity surface:
@@ -132,6 +134,8 @@ import { SetupReset } from "@users/domain/coordinators/setup-reset/mod.ts"; // R
     DocNumbering, // REQ-198
     NumberingStore, // REQ-199
     SetupReset, // REQ-199
+    TransferCodeStore, // REQ-220
+    TransferAccount, // REQ-220
   ],
 })
 export class UsersModule {}
