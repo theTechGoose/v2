@@ -23,36 +23,35 @@ describe("REQ-220 transfer account — the settings wiring", () => {
     expect(row.indexOf("<TransferAccount")).toBeLessThan(row.indexOf("t.language"));
   });
 
-  test("the dialog: the button, the phone step, the code step, the dev code, the errors", () => {
+  test("REQ-220 AMENDMENT — the dialog is one step: the number and the button; no code anywhere", () => {
     for (
       const cy of [
         "transfer-open",
         "transfer-modal",
         "transfer-phone",
-        "transfer-send",
-        "transfer-code",
-        "transfer-dev-code",
         "transfer-confirm",
         "transfer-cancel",
         "transfer-error",
       ]
     ) expect(dialog).toContain(`data-cy="${cy}"`);
     expect(dialog).toMatch(/role="dialog"/);
-    expect(dialog).toMatch(/profileClient\.transferStart\(/);
-    expect(dialog).toMatch(/profileClient\.transferConfirm\(/);
+    expect(dialog).toMatch(/profileClient\.transferAccount\(/);
     // moved → this browser is signed out
     expect(dialog).toMatch(/location\.href = "\/login"/);
+    for (const code of ["same_number", "phone_taken", "bad_phone"]) {
+      expect(dialog).toContain(code);
+    }
     for (
-      const code of [
-        "same_number",
-        "phone_taken",
-        "bad_phone",
-        "cooldown",
+      const gone of [
+        "transfer-code",
+        "transfer-send",
+        "transfer-dev-code",
+        "transferStart",
+        "transferConfirm",
         "invalid_code",
-        "expired",
-        "rate_limited",
+        "devCode",
       ]
-    ) expect(dialog).toContain(code);
+    ) expect(dialog).not.toContain(gone);
   });
 
   test("one solid action per step; the cancel is a ghost (the action-row rule)", () => {
@@ -60,22 +59,24 @@ describe("REQ-220 transfer account — the settings wiring", () => {
     expect(dialog).toMatch(/background:transparent/);
   });
 
-  test("the client posts to the two routes", () => {
-    expect(client).toMatch(/transferStart:[\s\S]{0,200}"\/me\/transfer\/start"/);
-    expect(client).toMatch(/transferConfirm:[\s\S]{0,200}"\/me\/transfer\/confirm"/);
+  test("REQ-220 AMENDMENT — the client posts the number to the one route", () => {
+    expect(client).toMatch(/transferAccount:[\s\S]{0,200}"\/me\/transfer"/);
+    expect(client).not.toMatch(/transfer\/start|transfer\/confirm/);
   });
 
-  test("both languages carry every key the dialog and the text use", () => {
+  test("both languages carry every key the dialog uses, and none of the code's", () => {
     const keys = [...new Set([...dialog.matchAll(/"(settings\.transfer\.[a-zA-Z_.]+)"/g)].map((m) => m[1]))];
-    expect(keys.length).toBeGreaterThan(10);
+    expect(keys.length).toBeGreaterThan(8);
     for (const file of ["lang/en.json", "lang/es.json"]) {
       const dict = JSON.parse(read(file));
-      for (const k of [...keys, "sms.transferCode"]) {
+      for (const k of keys) {
         expect(typeof dict[k]).toBe("string");
         expect(dict[k].length).toBeGreaterThan(0);
       }
-      expect(dict["sms.transferCode"]).toContain("{code}");
-      expect(dict["sms.transferCode"]).toContain("{account}");
+      const all = Object.keys(dict).filter((k) => k.startsWith("settings.transfer."));
+      expect(all.sort()).toEqual([...keys].sort()); // nothing left over from the code step
+      expect(dict["sms.transferCode"]).toBeUndefined();
+      expect(JSON.stringify(all.map((k) => dict[k]))).not.toMatch(/code|código/i);
     }
     expect(JSON.parse(read("lang/en.json"))["settings.transfer.button"]).toBe("Transfer account");
   });
