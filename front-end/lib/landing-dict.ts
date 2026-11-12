@@ -38,6 +38,8 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "nav.pricing": "Pricing",
     "nav.cta": "Get Started",
     "nav.login": "Log in",
+    // REQ-510: the legal pages' header, signed in
+    "nav.backToApp": "Back to app",
     // REQ-413: aria-labels follow the page language (data-i18n-aria).
     "aria.language": "Language",
     "aria.signInSteps": "Sign-in steps",
@@ -213,6 +215,7 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "nav.pricing": "Precios",
     "nav.cta": "Empezar",
     "nav.login": "Entrar",
+    "nav.backToApp": "Volver a la app",
     "aria.language": "Idioma",
     "aria.signInSteps": "Pasos para entrar",
     "hero.kickerPill": "Para pros",
