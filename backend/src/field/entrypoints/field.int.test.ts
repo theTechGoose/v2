@@ -1120,6 +1120,49 @@ Deno.test("REQ-163 the office deletes a task; an invoiced task is 409; another a
   });
 });
 
+// REQ-340 (demo-loop cycle 1, M37) — the task's address carries over to a customer who had none
+Deno.test("REQ-340 a one-off task's address becomes the customer's when they had none; a customer with one keeps it", async () => {
+  await withServer(async (call) => {
+    const { H, today, w } = await todaysRound(call, "+15125551633");
+    // the demo's order: the customer was added from the form before the address was typed
+    const dave =
+      (await call("POST", "/customers", { name: "Dave Kowalski" }, H))
+        .body;
+    assertEquals(dave.address ?? undefined, undefined);
+    const made = await call("POST", "/field/tasks", {
+      customerId: dave.id,
+      date: today,
+      taskTypeName: "Gutter clean",
+      priceCents: 15000,
+      workerId: w.id,
+      address: "8807 Spicewood Springs Rd, Austin, TX",
+    }, H);
+    assertEquals(made.status, 201);
+    assertEquals(made.body.address, "8807 Spicewood Springs Rd, Austin, TX");
+    const after =
+      (await call("GET", `/customers/${dave.id}`, undefined, H)).body;
+    assertEquals(
+      after.address,
+      "8807 Spicewood Springs Rd, Austin, TX",
+      "the customer now has the task's address on file",
+    );
+    // a customer with an address keeps it: the task's is that job's service address only
+    const other = await call("POST", "/field/tasks", {
+      customerId: dave.id,
+      date: today,
+      taskTypeName: "Gutter clean",
+      priceCents: 15000,
+      workerId: w.id,
+      address: "1 Rental Unit Ln, Austin, TX",
+    }, H);
+    assertEquals(other.status, 201);
+    assertEquals(other.body.address, "1 Rental Unit Ln, Austin, TX");
+    const kept =
+      (await call("GET", `/customers/${dave.id}`, undefined, H)).body;
+    assertEquals(kept.address, "8807 Spicewood Springs Rd, Austin, TX");
+  });
+});
+
 // REQ-164 — "when in tasks i need a button to manually add a task as a one off"
 Deno.test("REQ-164 the office posts a one-off task; it lists on the day, survives generation, needs a worker, and pulls into a batch", async () => {
   await withServer(async (call) => {

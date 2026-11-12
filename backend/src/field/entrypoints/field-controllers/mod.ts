@@ -799,6 +799,13 @@ export class FieldTasksController {
       newId,
     });
     await this.tasks.put(t);
+    // REQ-340 (demo M37): a typed address lands on a customer who had none,
+    // whatever order the form was filled in. A customer with an address keeps
+    // it — the task's is that job's service address only.
+    const typed = str(b.address);
+    if (typed && !customer.address?.trim()) {
+      await this.customers.update(customer.id, user.id, { address: typed });
+    }
     const texted = await this.notices.workerNewTask(user.id, t); // REQ-171: today's news reaches the worker
     return ctx.json(
       { ...this.views.task(t, await this.views.names(user.id)), texted },

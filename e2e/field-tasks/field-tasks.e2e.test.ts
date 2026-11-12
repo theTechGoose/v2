@@ -701,6 +701,34 @@ Deno.test("REQ-283 (demo M38): Add task with no customer picked says so and send
     expect((body.items ?? []).some((c: { name: string }) => c.name === "Jim Baker"), "Jim Baker is a customer now");
   }));
 
+Deno.test("REQ-340 (demo M37): a new customer added from the form BEFORE the address is typed gets the task's address on file once the task saves", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth, worker } = await officeDay({ page, http, baseUrl });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-add']").click();
+    const form = page.locator("[data-cy='tk-add-form']");
+    await form.waitFor({ timeout: 15_000 });
+    const box = form.locator("[data-cy='tk-customer'] [data-cy='search-select-input']");
+    await box.fill("Dave Kowalski");
+    const create = form.locator("[data-cy='tk-customer'] [data-cy='search-select-create']");
+    await create.waitFor({ timeout: 15_000 });
+    await create.click(); // the demo's order: the customer is made with no address…
+    await page.waitForFunction(() => document.querySelector("[data-cy='tk-customer'] input[name='customer']")?.getAttribute("value"));
+    await form.locator("[data-cy='tk-add-type']").fill("Gutter clean");
+    await form.locator("[data-cy='tk-add-price']").fill("150");
+    await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
+    await form.locator("[data-cy='tk-add-address']").fill("8807 Spicewood Springs Rd, Austin, TX"); // …and the address is typed after
+    await form.locator("[data-cy='tk-add-save']").click();
+    await page.locator("[data-cy='tk-task'][data-oneoff='true']").first().waitFor({ timeout: 15_000 });
+    await expect.see("8807 Spicewood Springs Rd, Austin, TX");
+    const list = await http("/api/customers?q=Dave%20Kowalski", { headers: auth });
+    const body = await list.json();
+    const dave = (body.items ?? []).find((c: { name: string }) => c.name === "Dave Kowalski");
+    expect(!!dave, "Dave Kowalski is a customer");
+    expect.eq(dave.address, "8807 Spicewood Springs Rd, Austin, TX", "the customer carries the task's address — not 'No address on file'");
+  }));
+
 Deno.test("REQ-165: Add service on the card → Edging $25 → a second card in the same group", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await officeDay({ page, http, baseUrl });
