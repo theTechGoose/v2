@@ -145,6 +145,7 @@ export default define.page(async function AssistantThread(ctx) {
                   initialMessages={detail?.messages ?? []}
                   initialCustomer={detail?.customer}
                   initialQuote={detail?.quote}
+                  initialDraft={detail?.draft}
                   userInitials={userInitials}
                   from={{
                     business: businessName,

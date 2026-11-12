@@ -50,6 +50,12 @@ import {
   websiteLabel,
 } from "../../shared/quote-flow/format-helpers.ts";
 import { summarizeJobName } from "../../shared/quote-flow/job-name.ts";
+import {
+  type AssistantDraft,
+  maxBulletSeq,
+  parseAssistantDraft,
+  restorableDraft,
+} from "../../shared/quote-flow/assistant-draft.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import {
   TimeoutError,
@@ -405,6 +411,10 @@ interface Props {
   initialCustomer?: CustomerLite;
   /** Quote (the agreement) bound to this conversation. */
   initialQuote?: AsstQuote;
+  /** REQ-230 (demo M14): the in-flight flow stored on the conversation
+   *  (options, pick, price, open panel) — seeds the view so ANY window's
+   *  load, SSR included, rebuilds where the contractor is. */
+  initialDraft?: AssistantDraft;
   /** 1-2 letter user-avatar string. Pre-derived on the server so we don't
    *  flash a stale or default value while hydrating. */
   userInitials?: string;
@@ -545,10 +555,22 @@ export default function AsstChat({
   initialMessages,
   initialCustomer,
   initialQuote,
+  initialDraft,
   userInitials = "?",
   from,
   sendLanguages,
 }: Props) {
+  // REQ-230 (demo M14): what a load paints from the server's copy of the
+  // flow. Computed once (SSR included) and used as every flow state's seed.
+  const [seed] = useState<AssistantDraft | null>(() => {
+    if (!initialDraft) return null;
+    const d = restorableDraft(initialDraft, {
+      quoteBound: Boolean(initialQuote?.id),
+      messageIds: initialMessages.map((m) => m.id),
+    });
+    bulletSeq = Math.max(bulletSeq, maxBulletSeq(d));
+    return d;
+  });
   // Self-source the reactive UI language so this island re-renders live when
   // the contractor flips the language in Settings. `lang?: Lang` remains on
   // Props as an optional SSR seed but is intentionally ignored here.
@@ -620,8 +642,8 @@ export default function AsstChat({
    *  empty-state prompt. When set, renders the MoneyInput card in place
    *  of the three preset prompts. `priceCents` tracks the live value so
    *  Continue can hand the value to the phase-2 kickoff. */
-  const [priceCaptureOpen, setPriceCaptureOpen] = useState(false);
-  const [priceCents, setPriceCents] = useState<number | null>(null);
+  const [priceCaptureOpen, setPriceCaptureOpen] = useState(seed?.priceCaptureOpen ?? false);
+  const [priceCents, setPriceCents] = useState<number | null>(seed?.priceCents ?? null);
   /** UX-04: the "para <Name>" candidate regex-extracted from the typed
    *  quick-quote sentence — prefills the customer step's name input. */
   const [prefillCustomerName, setPrefillCustomerName] = useState<
@@ -631,12 +653,12 @@ export default function AsstChat({
    *  the chat input no longer routes to the LLM chat — instead its
    *  next submission is treated as raw job-details, sent through the
    *  polish endpoint, then used to seed the new quote + phase 2 wizard. */
-  const [awaitingJobDetails, setAwaitingJobDetails] = useState(false);
+  const [awaitingJobDetails, setAwaitingJobDetails] = useState(seed?.awaitingJobDetails ?? false);
   /** Which starter chip opened the current flow (P-20). Drives the
    *  intent-appropriate first reply on the job-details screen — the
    *  "job done, need to invoice" chip must never be answered with quote
    *  copy. Null before any chip is tapped. */
-  const [flowChip, setFlowChip] = useState<ChipKey | null>(null);
+  const [flowChip, setFlowChip] = useState<ChipKey | null>((seed?.flowChip as ChipKey | null) ?? null);
   const [pendingPriceCents, setPendingPriceCents] = useState<number | null>(
     null,
   );
@@ -646,32 +668,28 @@ export default function AsstChat({
    *  submits, we flip to the price-capture screen with this populated,
    *  and the price-Continue handler combines both pieces to build the
    *  quote. (The other two flows ignore this — they go through the LLM.) */
-  const [pendingJobDetailsRaw, setPendingJobDetailsRaw] = useState<
-    string | null
-  >(null);
+  const [pendingJobDetailsRaw, setPendingJobDetailsRaw] = useState<string | null>(seed?.jobDetailsRaw ?? null);
   /** Captures the raw text the user submitted at the job-details step
    *  so we can render an optimistic user bubble + "Polishing…" indicator
    *  while the polish + create-quote + transition chain runs. */
-  const [submittedJobDetails, setSubmittedJobDetails] = useState<string | null>(
-    null,
-  );
+  const [submittedJobDetails, setSubmittedJobDetails] = useState<string | null>(seed?.submittedJobDetails ?? null);
   /** "Job Details" picker screen (the LLM-generated scope-of-work options).
    *  Shown at the END of phase 2, right before the quote review. */
-  const [jobOptionsOpen, setJobOptionsOpen] = useState(false);
+  const [jobOptionsOpen, setJobOptionsOpen] = useState(seed?.jobOptionsOpen ?? false);
   // Roadmap p.10: "I know the job, help me price it." — when set, the
   // price-capture screen shows three LLM-suggested tiers (+ custom entry).
-  const [suggestPricing, setSuggestPricing] = useState(false);
+  const [suggestPricing, setSuggestPricing] = useState(seed?.suggestPricing ?? false);
   const [priceSuggestions, setPriceSuggestions] = useState<
     Array<
       { tier: "competitive" | "market" | "premium"; label: string; priceCents: number; rationale: string }
     > | null
-  >(null);
+  >(seed?.priceSuggestions ?? null);
   const [optionsLoading, setOptionsLoading] = useState(false);
   /** REQ-027 (NW-11): the model could not draft the options — the cards
    *  are heuristic scope bullets and the picker says so. */
-  const [optionsDegraded, setOptionsDegraded] = useState(false);
-  const [jobOptions, setJobOptions] = useState<JobOptionDraft[] | null>(null);
-  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  const [optionsDegraded, setOptionsDegraded] = useState(seed?.optionsDegraded ?? false);
+  const [jobOptions, setJobOptions] = useState<JobOptionDraft[] | null>(seed?.jobOptions ?? null);
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(seed?.selectedOptionId ?? null);
   /** Which bullet is open for inline edit, keyed by option+bullet id. */
   const [editingBullet, setEditingBullet] = useState<
     { optionId: string; bulletId: string } | null
@@ -779,11 +797,11 @@ export default function AsstChat({
    *  that patches the existing quote. "confirm" = the roadmap p.18 order for
    *  "I know the job, help me price it.": details → CONFIRM → pricing →
    *  wizard — the picker runs pre-quote and its pick feeds quote creation. */
-  const [pickerMode, setPickerMode] = useState<"polish" | "confirm">("polish");
+  const [pickerMode, setPickerMode] = useState<"polish" | "confirm">(seed?.pickerMode ?? "polish");
   /** The option confirmed in "confirm" mode — consumed by startQuoteFromRaw
    *  so the quote is created with the confirmed title/summary/bullets (and
    *  the end-of-flow picker is skipped). */
-  const confirmedOptionRef = useRef<JobOptionDraft | null>(null);
+  const confirmedOptionRef = useRef<JobOptionDraft | null>(seed?.confirmedOption ?? null);
   /** Doc type for the finished-flow review (roadmap: "swap between quote and
    *  invoice"). "invoice" sends a standalone invoice — no signature, no
    *  terms — instead of the Quote + Agreement. */
@@ -810,7 +828,7 @@ export default function AsstChat({
    *  it transitions with docKind=invoice and runs the SAME wizard as a quote
    *  (customer → completion date → payment terms → warranty) to the shared
    *  preview in invoice mode. */
-  const [invoiceFlow, setInvoiceFlow] = useState(false);
+  const [invoiceFlow, setInvoiceFlow] = useState(seed?.invoiceFlow ?? false);
   /** UX-31: the facturar flow REVIEWS before it saves — customer resolved,
    *  waiting on the contractor to confirm amount + an editable due date.
    *  Nothing is persisted until they confirm. */
@@ -904,7 +922,7 @@ export default function AsstChat({
    * inline agreement preview card (total/customer/dates) so the user can
    * actually look the document over before clicking "Send to client".
    */
-  const [previewCtaId, setPreviewCtaId] = useState<string | null>(null);
+  const [previewCtaId, setPreviewCtaId] = useState<string | null>(seed?.previewCtaId ?? null);
   // REQ-024: after a reload the open CTA still says which wizard produced
   // it — keep the preview in invoice mode for the invoice wizard.
   useEffect(() => {
@@ -1355,6 +1373,11 @@ export default function AsstChat({
       raw = globalThis.sessionStorage?.getItem(`pm:jobpolish:${convoId}`) ??
         null;
     } catch { /* sessionStorage unavailable — skip */ }
+    // REQ-230: another window (or a cleared tab) has no sessionStorage
+    // marker — the server's copy of the flow carries it.
+    if ((!raw || !raw.trim()) && convoId === conversationId) {
+      raw = seed?.polishRaw ?? null;
+    }
     if (!raw || !raw.trim()) return;
     jobPolishRawRef.current = raw;
     setNeedsJobPolish(true);
@@ -1384,6 +1407,77 @@ export default function AsstChat({
       }
     } catch { /* sessionStorage unavailable — no prefill */ }
   }, [convoId]);
+
+  // ── REQ-230 (demo M14): the flow lives on the server ───────────────
+  // Every change to the in-flight flow (options, pick, price, open panel)
+  // is written to the conversation (debounced), so a reload in ANY window —
+  // the contractor's own, the demo stage — rebuilds it from GET /:id instead
+  // of the typed note alone. Compared in the server's canonical shape so an
+  // unchanged flow (a plain chat, a window that only restored it) never
+  // writes.
+  function currentDraft(): AssistantDraft {
+    return {
+      flowChip,
+      suggestPricing,
+      invoiceFlow,
+      awaitingJobDetails,
+      jobDetailsRaw: pendingJobDetailsRaw,
+      submittedJobDetails,
+      jobOptionsOpen,
+      pickerMode,
+      jobOptions,
+      optionsDegraded,
+      selectedOptionId,
+      confirmedOption: confirmedOptionRef.current,
+      priceCaptureOpen,
+      priceCents,
+      priceSuggestions,
+      previewCtaId,
+      polishRaw: needsJobPolish ? jobPolishRawRef.current : null,
+    };
+  }
+  const canonicalDraft = (d: unknown) => JSON.stringify(parseAssistantDraft(d));
+  const savedDraftRef = useRef<string>(canonicalDraft(initialDraft ?? {}));
+  /** Set while price Continue hands off (its own final write wins). */
+  const draftFrozenRef = useRef(false);
+  function saveDraft(id: string, d: AssistantDraft): Promise<unknown> {
+    savedDraftRef.current = canonicalDraft(d);
+    return api.post(`/agents/conversations/${id}/draft`, { draft: d })
+      .catch(() => {
+        savedDraftRef.current = "";
+      });
+  }
+  const draftJson = canonicalDraft(currentDraft());
+  useEffect(() => {
+    if (!convoId || draftFrozenRef.current) return;
+    if (draftJson === savedDraftRef.current) return;
+    const d = currentDraft();
+    const t = setTimeout(() => {
+      if (!draftFrozenRef.current) void saveDraft(convoId, d);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [convoId, draftJson]);
+
+  // A load that lands mid-request (options still generating, price tiers
+  // not back yet) re-asks for them — the server holds the request's input,
+  // not a promise.
+  useEffect(() => {
+    if (!seed) return;
+    const raw = seed.jobDetailsRaw ?? seed.submittedJobDetails ?? "";
+    if (
+      seed.jobOptionsOpen && seed.pickerMode === "confirm" && !seed.jobOptions &&
+      raw.trim()
+    ) {
+      void openJobPickerForConfirm(raw);
+    }
+    if (
+      seed.priceCaptureOpen && seed.suggestPricing && !seed.priceSuggestions &&
+      raw.trim()
+    ) {
+      void fetchPriceSuggestions(raw);
+    }
+  }, []);
+  // ── end REQ-230 ─────────────────────────────────────────────────
 
   // ?seed=… pre-fills the composer from a deeplink (e.g. hero CTAs on
   // /payments / /invoices → "Ask Bossie to record a payment").
@@ -2285,6 +2379,22 @@ export default function AsstChat({
       }
       const conv = { id: convId };
 
+      // REQ-230 (demo M14): the pick and the price outlive the page load
+      // below — on the server, for every window. The pre-quote panels are
+      // closed in this copy: the next load is the wizard.
+      draftFrozenRef.current = true;
+      await saveDraft(convId, {
+        ...currentDraft(),
+        awaitingJobDetails: false,
+        jobDetailsRaw: raw.trim(),
+        submittedJobDetails: raw.trim(),
+        jobOptionsOpen: false,
+        confirmedOption: confirmed,
+        priceCaptureOpen: false,
+        priceCents: cents,
+        polishRaw: confirmed ? null : raw.trim(),
+      });
+
       // Leaving the price step for the wizard is a forward move like any
       // other: snapshot it, persisted under the thread id because the
       // navigation below is a full page load.
@@ -2312,6 +2422,7 @@ export default function AsstChat({
 
       globalThis.location.href = `/assistant/${conv.id}`;
     } catch (err) {
+      draftFrozenRef.current = false;
       setError(err instanceof Error ? err.message : "couldn't start");
       setSubmittedJobDetails(null);
       setSending(false);
