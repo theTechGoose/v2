@@ -16,6 +16,8 @@ import { t } from "@core/i18n/mod.ts";
 import { suggestedOptionId } from "@agents/domain/business/terms-prefill/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
+import { tradeKindFor } from "#quote-flow/trade-fit.ts";
 
 export interface TransitionToTermsResult {
   conversation: AgentConversation;
@@ -43,6 +45,10 @@ export class TransitionToTerms {
   constructor(
     private conversations: AgentConversationStore,
     private messages: AgentMessageStore,
+    /** REQ-343: the business name decides the trade's wizard (service
+     *  trades get hours and no warranty step). Optional so a caller without
+     *  it gets the generic wizard. */
+    private identity?: BusinessIdentityStore,
   ) {}
 
   async run(
@@ -94,7 +100,8 @@ export class TransitionToTerms {
     }
 
     const docKind = input.docKind ?? conv.docKind ?? "quote";
-    const spec = wizardSpecFor(docKind);
+    const business = await this.identity?.get(input.userId).catch(() => null);
+    const spec = wizardSpecFor(docKind, tradeKindFor(business?.businessName));
     const transitioned = transitionPhase(conv, "terms");
     const updated = await this.conversations.update(transitioned.id, {
       currentPhase: "terms",

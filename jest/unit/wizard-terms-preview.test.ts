@@ -170,3 +170,30 @@ describe("REQ-347 M16 the preview's terms start from the English base", () => {
     expect(coord).toMatch(/termFromPick\(/);
   });
 });
+
+// Reconciled on demo-fixes: REQ-343's service wizard reuses the step id
+// `wraps` with hour presets. A service pick in the transcript must still
+// resolve to its English term in the preview (the shared default step list
+// searches the step that offers the option), not drop the duration row.
+describe("REQ-343 + REQ-347 a service trade's hour pick previews", () => {
+  test("REQ-343: wraps/2_hours with no quote.terms → 'Estimated: 2 hours'", () => {
+    const rows = previewTermRows({
+      quoteTerms: undefined,
+      messages: [{
+        kind: "text",
+        content: "Tiempo para completar: 2 horas",
+        payload: { wizardStepId: "wraps", optionId: "2_hours" },
+      }],
+      previewLang: "en",
+      t,
+      localize: localizeEn,
+    });
+    expect(rows).toEqual([{
+      stepId: "wraps",
+      label: DICTS.en["termsWizard.wraps.label"],
+      value: t("en", "asstChat.preview.estimatedValue", {
+        value: DICTS.en["termsWizard.wraps.twoHours"],
+      }),
+    }]);
+  });
+});

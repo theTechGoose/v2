@@ -30,6 +30,8 @@ export function localizeTermValue(value: string, lang: Lang): string {
     "Due Now": "quoteDoc.termValue.dueNow",
     // REQ-046/047: the wizard's TBD pick on start date / duration.
     "TBD": "quoteDoc.termValue.tbd",
+    // REQ-343: the service-trade wizard's "Half a day" duration.
+    "Half a day": "quoteDoc.termValue.halfDay",
   };
   if (exact[trimmed]) return tFor(lang, exact[trimmed]);
   return trimmed
@@ -37,5 +39,7 @@ export function localizeTermValue(value: string, lang: Lang): string {
     .replace(/\byears\b/gi, "años").replace(/\byear\b/gi, "año")
     .replace(/\bmonths\b/gi, "meses").replace(/\bmonth\b/gi, "mes")
     .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
+    // REQ-343: service-trade durations ("2 hours", "4 hours").
+    .replace(/\bhours\b/gi, "horas").replace(/\bhour\b/gi, "hora")
     .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");
 }

@@ -75,8 +75,7 @@ export const TERMS_WIZARD_V1: WizardSpecDef = {
         // lands "TBD" on the agreement's Start row.
         { id: "tbd", label: "termsWizard.startDate.tbd" },
         // NW-23 (REQ-009): "Job completed" is NOT a start date — the client
-        // asked for Right away / Next week / Next month / Pick a date. The
-        // duration (wraps) step keeps its own job_completed option.
+        // asked for Right away / Next week / Next month / Pick a date.
         { id: "custom", label: "termsWizard.startDate.custom", isCustom: true },
       ],
     },
@@ -89,10 +88,9 @@ export const TERMS_WIZARD_V1: WizardSpecDef = {
         { id: "2_3_days", label: "termsWizard.wraps.twoThreeDays" },
         { id: "1_week", label: "termsWizard.wraps.oneWeek" },
         { id: "2_weeks", label: "termsWizard.wraps.twoWeeks" },
-        {
-          id: "job_completed",
-          label: "termsWizard.wraps.jobCompleted",
-        },
+        // REQ-343 (demo-loop cycle 1, p6): no "Job completed" here — a quote
+        // is for a job that has not started, so it is not a duration. Old
+        // quotes that stored it keep localizing (term-i18n / PDF maps).
         // REQ-047: "… and how long will the job take" — the stored "TBD"
         // prints bare on every reader (no "Estimated" wrapper).
         { id: "tbd", label: "termsWizard.wraps.tbd" },
@@ -167,6 +165,38 @@ function sharedStep(id: string): WizardStepDef {
 }
 
 /**
+ * REQ-343 (demo-loop cycle 1, p3 + p6): the quote wizard for a SERVICE trade
+ * (cleaning, lawn care, junk removal — see `tradeKindFor`). Its jobs are
+ * measured in hours, so the duration step leads with 2 hours / 4 hours /
+ * half a day; and it carries no workmanship warranty, so the warranty step is
+ * gone (the same as answering "No warranty": no warranty row is printed).
+ * Customer, start date and payment terms are the generic wizard's step
+ * objects. Its own id, so a mid-wizard answer resolves it by `specId`.
+ */
+export const TERMS_WIZARD_SERVICE_V1: WizardSpecDef = {
+  id: "terms-service-v1",
+  steps: [
+    sharedStep("customer"),
+    sharedStep("start_date"),
+    {
+      id: "wraps",
+      label: "termsWizard.wraps.label",
+      question: "termsWizard.wraps.question",
+      options: [
+        { id: "2_hours", label: "termsWizard.wraps.twoHours" },
+        { id: "4_hours", label: "termsWizard.wraps.fourHours" },
+        { id: "half_day", label: "termsWizard.wraps.halfDay" },
+        { id: "1_day", label: "termsWizard.wraps.oneDay" },
+        { id: "2_3_days", label: "termsWizard.wraps.twoThreeDays" },
+        { id: "tbd", label: "termsWizard.wraps.tbd" },
+        { id: "custom", label: "termsWizard.wraps.custom", isCustom: true },
+      ],
+    },
+    sharedStep("payment_terms"),
+  ],
+};
+
+/**
  * REQ-024 (NW-13 / NW-18): "Job done, need to invoice" without an accepted
  * quote runs the SAME wizard as a quote — minus start date and duration,
  * plus the completion date ("skip how long it took, but ask for the
@@ -197,12 +227,14 @@ export const INVOICE_WIZARD_V1: WizardSpecDef = {
   ],
 };
 
-/** Every step either wizard knows (step ids are unique across them). */
+/** Every step any wizard knows. A step id can repeat across wizards with
+ *  different options (the service wizard's `wraps`, REQ-343), so a pick is
+ *  resolved against the step that actually offers its option. */
 const ALL_STEPS: readonly WizardStepDef[] = [
   ...TERMS_WIZARD_V1.steps,
-  ...INVOICE_WIZARD_V1.steps.filter((s) =>
-    !TERMS_WIZARD_V1.steps.some((q) => q.id === s.id)
-  ),
+  ...[...INVOICE_WIZARD_V1.steps, ...TERMS_WIZARD_SERVICE_V1.steps].filter((
+    s,
+  ) => !TERMS_WIZARD_V1.steps.includes(s)),
 ];
 
 export interface AgreementTerm {
@@ -221,7 +253,10 @@ export function termFromPick(
   t: Translate,
   steps: readonly WizardStepDef[] = ALL_STEPS,
 ): AgreementTerm | null {
-  const stepDef = steps.find((s) => s.id === pick.stepId);
+  const candidates = steps.filter((s) => s.id === pick.stepId);
+  const stepDef =
+    candidates.find((s) => s.options.some((o) => o.id === pick.optionId)) ??
+      candidates[0];
   if (!stepDef) return null;
   const optionDef = stepDef.options.find((o) => o.id === pick.optionId);
   const value = (!optionDef || optionDef.isCustom)

@@ -9,7 +9,8 @@
  * AsstChat.tsx:7705 (duration), 8075-8081 (warranty), 8479-8483 (payment).
  */
 
-export type DurationUnit = "days" | "weeks" | "months";
+/** REQ-343: service trades (cleaning, lawn, junk) quote jobs in hours. */
+export type DurationUnit = "hours" | "days" | "weeks" | "months";
 
 export type Term =
   | { kind: "duration"; value: { n: number; unit: DurationUnit } }
@@ -20,12 +21,14 @@ type Lang = "en" | "es";
 
 const UNIT_LABELS: Record<Lang, Record<string, { one: string; other: string }>> = {
   en: {
+    hours: { one: "hour", other: "hours" },
     days: { one: "day", other: "days" },
     weeks: { one: "week", other: "weeks" },
     months: { one: "month", other: "months" },
     years: { one: "year", other: "years" },
   },
   es: {
+    hours: { one: "hora", other: "horas" },
     days: { one: "día", other: "días" },
     weeks: { one: "semana", other: "semanas" },
     months: { one: "mes", other: "meses" },

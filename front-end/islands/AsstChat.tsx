@@ -62,6 +62,8 @@ import {
 } from "../../shared/quote-flow/customer-step.ts";
 import { customerMatchesQuery } from "../../shared/quote-flow/customer-search.ts";
 import { termLabel } from "../../shared/quote-flow/terms-i18n.ts";
+import { composerPlaceholderKey } from "../../shared/quote-flow/trade-fit.ts"; // REQ-343
+import type { ExtractedDuration } from "../../shared/quote-flow/quote-facts.ts";
 import { reviewJobDetails } from "../../shared/quote-flow/review-job-details.ts";
 import { versionTitle } from "../../shared/quote-flow/version-titles.ts";
 import {
@@ -422,8 +424,14 @@ interface ActionCardPayload {
 /** Compose the composer placeholder. During onboarding we want it to
  *  echo the question Bossie is asking rather than the generic job-mode
  *  slab example, otherwise new users wonder if they're in the right
- *  surface. After onboarding hands off, revert to the job example. */
-function composerPlaceholder(msgs: Message[], lang: Lang): string {
+ *  surface. After onboarding hands off, revert to the job example —
+ *  REQ-343: the example of THIS business's trade (a cleaner never sees the
+ *  concrete slab), the generic one when the name names no trade. */
+function composerPlaceholder(
+  msgs: Message[],
+  lang: Lang,
+  businessName?: string,
+): string {
   const lastAssistant = [...msgs].reverse().find((m) =>
     m.role === "assistant" && m.kind === "text"
   );
@@ -444,7 +452,7 @@ function composerPlaceholder(msgs: Message[], lang: Lang): string {
   if (/payment|venmo|zelle|cash app|how.*get paid/.test(text)) {
     return tFor(lang, "asstChat.composer.payment");
   }
-  return tFor(lang, "asstChat.composer.default");
+  return tFor(lang, composerPlaceholderKey(businessName));
 }
 
 /** Map a quote status to the human-facing chip label on the in-chat
@@ -7846,6 +7854,7 @@ export default function AsstChat({
                               ) {
                                 return (
                                   <CustomDurationPickerForm
+                                    initial={quoteFacts.duration}
                                     sending={sending}
                                     lang={lang}
                                     onSubmit={(durationStr) => {
@@ -8564,7 +8573,7 @@ export default function AsstChat({
                     <textarea
                       ref={taRef}
                       class="composer__input"
-                      placeholder={composerPlaceholder(messages, lang)}
+                      placeholder={composerPlaceholder(messages, lang, from?.business)}
                       rows={2}
                       value={draft}
                       onInput={(e) => {
@@ -9828,15 +9837,17 @@ function CustomDatePickerForm(props: {
  *  numeric matches, "guess" when we had to interpret words/fractions. */
 function parseDurationGuess(text: string): {
   n: number;
-  unit: "days" | "weeks" | "months";
+  unit: "hours" | "days" | "weeks" | "months";
   confidence: "ok" | "guess";
 } | null {
   const t = text.toLowerCase().trim();
   if (!t) return null;
-  let unit: "days" | "weeks" | "months";
+  let unit: "hours" | "days" | "weeks" | "months";
   if (/\bmonths?\b|\bmos?\b|\bmo\b/.test(t)) unit = "months";
   else if (/\bweeks?\b|\bwks?\b/.test(t)) unit = "weeks";
   else if (/\bdays?\b|\bd\b/.test(t)) unit = "days";
+  // REQ-343: service jobs are quoted in hours.
+  else if (/\bhours?\b|\bhrs?\b|\bhoras?\b/.test(t)) unit = "hours";
   else return null;
   let n: number | null = null;
   let confidence: "ok" | "guess" = "guess";
@@ -9883,6 +9894,8 @@ function parseDurationGuess(text: string): {
  *  agreement value always comes from the verify form so an LLM/parser miss
  *  never propagates — the user has the final word. */
 function CustomDurationPickerForm(props: {
+  /** REQ-343: the duration the user already typed into the job, if any. */
+  initial?: ExtractedDuration | null;
   sending: boolean;
   lang?: Lang;
   onSubmit: (durationStr: string) => void;
@@ -9897,13 +9910,20 @@ function CustomDurationPickerForm(props: {
   const [phase, setPhase] = useState<"ask" | "verify">("verify");
   const [freeText, setFreeText] = useState("");
   const [parseFailed, setParseFailed] = useState(false);
-  const [n, setN] = useState("3");
-  const [unit, setUnit] = useState<"days" | "weeks" | "months">("weeks");
+  // REQ-343 (p6): open on the duration the job already names, else an EMPTY
+  // number — never a made-up "3 weeks".
+  const [n, setN] = useState(
+    props.initial?.n != null ? String(props.initial.n) : "",
+  );
+  const [unit, setUnit] = useState<"hours" | "days" | "weeks" | "months">(
+    props.initial?.unit ?? "days",
+  );
   const [confidence, setConfidence] = useState<"ok" | "guess" | "fail">("ok");
   const [heardFrom, setHeardFrom] = useState("");
 
   const num = Math.max(1, Math.min(99, Number(n) || 0));
-  const valid = Number.isFinite(num) && num >= 1 && num <= 99;
+  const valid = n.trim() !== "" && Number.isFinite(num) && num >= 1 &&
+    num <= 99;
   // P-25: the manual duration control used to build the EN string
   // ("3 weeks") and submit it verbatim into a Spanish agreement. Preview AND
   // submitted value now go through termLabel, so an ES contractor locks in
@@ -10093,7 +10113,9 @@ function CustomDurationPickerForm(props: {
             else setN(String(Math.max(1, Math.min(99, Number(raw) || 1))));
           }}
           onBlur={() => {
-            if (!n || Number(n) < 1) setN("1");
+            // REQ-343: an untouched empty number stays empty (Lock in
+            // stays disabled) instead of inventing a "1".
+            if (n && Number(n) < 1) setN("1");
           }}
           autoFocus
           aria-label={tFor(lang, "asstChat.verify.number")}
@@ -10107,6 +10129,7 @@ function CustomDurationPickerForm(props: {
             )}
           aria-label={tFor(lang, "asstChat.verify.unit")}
         >
+          <option value="hours">{tFor(lang, "asstChat.unit.hours")}</option>
           <option value="days">{tFor(lang, "asstChat.unit.days")}</option>
           <option value="weeks">{tFor(lang, "asstChat.unit.weeks")}</option>
           <option value="months">{tFor(lang, "asstChat.unit.months")}</option>

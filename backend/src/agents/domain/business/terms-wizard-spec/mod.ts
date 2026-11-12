@@ -6,8 +6,10 @@ import type {
 import { t } from "@core/i18n/mod.ts";
 import {
   INVOICE_WIZARD_V1 as SHARED_INVOICE_WIZARD_V1,
+  TERMS_WIZARD_SERVICE_V1 as SHARED_TERMS_WIZARD_SERVICE_V1,
   TERMS_WIZARD_V1 as SHARED_TERMS_WIZARD_V1,
 } from "#quote-flow/wizard-terms.ts";
+import type { TradeKind } from "#quote-flow/trade-fit.ts";
 
 /**
  * The quote's terms wizard (5 steps) and the invoice wizard (REQ-024). The
@@ -24,10 +26,16 @@ export const TERMS_WIZARD_V1: WizardSpec = SHARED_TERMS_WIZARD_V1;
  *  → payment → warranty (the shared module documents the why). */
 export const INVOICE_WIZARD_V1: WizardSpec = SHARED_INVOICE_WIZARD_V1;
 
+/** REQ-343 (demo-loop cycle 1, p3 + p6): the quote wizard for a SERVICE
+ *  trade — hours presets, no warranty step (the shared module documents it). */
+export const TERMS_WIZARD_SERVICE_V1: WizardSpec =
+  SHARED_TERMS_WIZARD_SERVICE_V1;
+
 /** Every wizard this module knows, by id. */
 export const WIZARD_SPECS: Record<string, WizardSpec> = {
   [TERMS_WIZARD_V1.id]: TERMS_WIZARD_V1,
   [INVOICE_WIZARD_V1.id]: INVOICE_WIZARD_V1,
+  [TERMS_WIZARD_SERVICE_V1.id]: TERMS_WIZARD_SERVICE_V1,
 };
 
 /** Fetch a spec by id — the quote wizard ("terms-v1") or the invoice
@@ -38,11 +46,15 @@ export function getWizardSpec(specId: string): WizardSpec {
   throw new Error(`unknown wizard spec: ${specId}`);
 }
 
-/** The wizard for a document kind (REQ-024). */
+/** The wizard for a document kind (REQ-024) and the business's trade
+ *  (REQ-343): a service trade's quote gets hours and no warranty step. The
+ *  invoice wizard ignores the trade. */
 export function wizardSpecFor(
   docKind: "quote" | "invoice" | undefined,
+  tradeKind: TradeKind = "project",
 ): WizardSpec {
-  return docKind === "invoice" ? INVOICE_WIZARD_V1 : TERMS_WIZARD_V1;
+  if (docKind === "invoice") return INVOICE_WIZARD_V1;
+  return tradeKind === "service" ? TERMS_WIZARD_SERVICE_V1 : TERMS_WIZARD_V1;
 }
 
 /**
