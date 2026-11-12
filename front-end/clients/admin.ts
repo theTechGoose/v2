@@ -22,6 +22,8 @@ export interface AdminUserView {
   superAdmin: boolean;
   /** REQ-177: the account's feature flags */
   features?: Features;
+  /** REQ-341: the identity's own language (whoami's `impersonator.language` is the presenter's) */
+  language?: "en" | "es";
 }
 
 export interface ImpersonationResponse {
