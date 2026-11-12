@@ -3526,6 +3526,7 @@
   "settings.netDays": "Días para pagar una factura",
   "settings.netDaysHint": "El valor por defecto de cada suscripción: cuántos días tiene el cliente desde el día en que se envía la factura.",
   "demoMode.waitingFor": "Esperando la app de {name}…",
+  "demoMode.waitingKeep": "Su última pantalla se queda aquí hasta que vuelva su app.",
   "demoMode.elsewhere": "Abierta en otra ventana",
   "demoMode.useHere": "Usar esta ventana",
   "demoMode.rejoin": "Volver a la demo",

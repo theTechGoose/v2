@@ -3526,6 +3526,7 @@
   "settings.netDays": "Days to pay an invoice",
   "settings.netDaysHint": "The default for every subscription: how many days the customer has, from the day the invoice is sent.",
   "demoMode.waitingFor": "Waiting for {name}'s app…",
+  "demoMode.waitingKeep": "Their last screen stays here until their app is back.",
   "demoMode.elsewhere": "Open in another window",
   "demoMode.useHere": "Use this window",
   "demoMode.rejoin": "Back to the demo",
