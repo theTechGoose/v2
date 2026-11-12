@@ -109,6 +109,36 @@ export function pickClientLang(
 }
 
 /**
+ * REQ-494 (demo-loop cycle 3, M43) — the browser's own stored language
+ * (pm:lang, else the pm_lang cookie), or null. Client-only.
+ */
+export function storedLang(): Lang | null {
+  if (typeof document === "undefined") return null;
+  try {
+    const ls = asLang(globalThis.localStorage?.getItem("pm:lang"));
+    if (ls) return ls;
+  } catch { /* storage disabled */ }
+  try {
+    return langFromCookie(document.cookie);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * REQ-494 — the language the demo chrome (DemoModeOverlay's pill) speaks. On
+ * /worker the page shows a signed-in worker's language for the session only
+ * (REQ-285/416) — that is the worker's, not the viewer's — so the chrome keeps
+ * the viewer's stored choice there. Everywhere else it follows the page.
+ */
+export function demoChromeLang(
+  src: { path: string; live: Lang; stored: Lang | null },
+): Lang {
+  const onWorker = src.path === "/worker" || src.path.startsWith("/worker/");
+  return onWorker ? src.stored ?? src.live : src.live;
+}
+
+/**
  * REQ-345 — the event a plain (non-island) script dispatches to change the
  * language: `document.dispatchEvent(new CustomEvent("pm:lang", { detail }))`.
  * The landing page's EN/ES toggle lives in static/landing-scripts.js, outside

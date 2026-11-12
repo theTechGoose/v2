@@ -53,7 +53,8 @@
  * pointer off this screen (`o: 1`) is a small marker on the edge, no name tag.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { t } from "../lib/i18n.ts";
+import { langSignal, tFor, type Vars } from "../lib/i18n.ts";
+import { demoChromeLang, storedLang } from "../lib/lang.ts";
 import {
   DEMO_OPENING_EVENT,
   DEMO_STARTED_EVENT,
@@ -152,6 +153,21 @@ import {
 } from "../../shared/demo-mode/pill.ts";
 import { pillCopy } from "../../shared/demo-mode/pill-copy.ts";
 import type { PillFace, Rect } from "../../shared/demo-mode/protocol.ts";
+
+/**
+ * REQ-494 (demo-loop cycle 3, M43) — the demo chrome speaks the viewer's
+ * language. On /worker the page runs in a signed-in worker's language for the
+ * session (REQ-285/416); the pill keeps the viewer's stored choice there
+ * (demoChromeLang). Reads langSignal, so a toggle still re-renders it.
+ */
+function t(key: string, vars?: Vars): string {
+  const lang = demoChromeLang({
+    path: globalThis.location?.pathname ?? "",
+    live: langSignal.value,
+    stored: storedLang(),
+  });
+  return tFor(lang, key, vars);
+}
 
 interface Demo {
   id: string;

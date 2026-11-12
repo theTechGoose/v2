@@ -215,6 +215,53 @@ export function workerScreenLang(
   return who.language === "en" || who.language === "es" ? who.language : null;
 }
 
+/**
+ * REQ-494 (demo-loop cycle 3, M43) — an EN/ES pick made on the /worker switch
+ * is remembered under its own cookie, apart from pm_lang (which a plain
+ * default or another page also writes), so re-opening /worker without ?lang=
+ * still knows the person chose and REQ-285's worker language does not undo it.
+ * A browser-session cookie; Salir forgets it so the next worker's language
+ * applies.
+ */
+export const WORKER_LANG_COOKIE = "pm_worker_lang";
+
+/** REQ-494 — the /worker pick from a request Cookie header (SSR), or null. */
+export function workerLangPickFromCookie(
+  cookieHeader: string | null | undefined,
+): Lang | null {
+  if (!cookieHeader) return null;
+  // "," too: HTTP/2 cookies are re-joined with ", " (see langFromCookie)
+  const m = cookieHeader.match(/(?:^|[;,]\s*)pm_worker_lang=(en|es)(?:[;,]|$)/);
+  return m ? (m[1] as Lang) : null;
+}
+
+/** REQ-494 — remember (or with null, forget) the /worker pick. Client-only. */
+export function rememberWorkerLangPick(lang: Lang | null): void {
+  if (typeof document === "undefined") return;
+  try {
+    document.cookie = lang
+      ? `${WORKER_LANG_COOKIE}=${lang};path=/;samesite=lax`
+      : `${WORKER_LANG_COOKIE}=;path=/;max-age=0;samesite=lax`;
+  } catch { /* noop */ }
+}
+
+/**
+ * REQ-494 — the /worker route's language: ?lang= > the /worker pick > pm_lang
+ * > Spanish. `chosen` = the address chose it; `picked` = the switch did, earlier.
+ */
+export function workerRouteLang(src: {
+  query: string | null;
+  picked: Lang | null;
+  stored: Lang | null;
+}): { lang: Lang; chosen: boolean; picked: boolean } {
+  const q = src.query === "en" || src.query === "es" ? src.query : null;
+  return {
+    lang: q ?? src.picked ?? src.stored ?? "es",
+    chosen: q !== null,
+    picked: src.picked !== null,
+  };
+}
+
 /** REQ-288 — the continental US: the map's view when nothing better is known (never the dev seed's town) */
 export const US_MAP_VIEW = { lat: 39.5, lng: -98.35, zoom: 4 } as const;
 
