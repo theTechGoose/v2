@@ -47,6 +47,8 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { parseChangeOrderRequest } from "@agents/domain/business/change-order-intent/mod.ts";
+import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -150,6 +152,7 @@ export class HandleChatMessage {
     private bus: EventBus,
     private emailer: SendPaperworkEmail,
     @Inject(LLM_CLIENT) private llm: LLMClient,
+    private changeOrder: ApplyChatChangeOrder,
   ) {}
 
   async run(input: HandleChatInput): Promise<HandleChatResult> {
@@ -640,6 +643,33 @@ export class HandleChatMessage {
       }
     }
 
+    // ---- REQ-238 (demo M27): "change order for Maria: add … $40" ----
+    // A change order changes an EXISTING job. When the sentence carries what
+    // and how much, act on it without the LLM (as N5 does for "send it");
+    // otherwise the LLM reads it — and if it still reaches for create_quote
+    // (all it had in the demo), that is turned into the change order below.
+    const changeOrderAsk = typeof input.content === "string"
+      ? parseChangeOrderRequest(input.content)
+      : undefined;
+    if (
+      !llmResponse && changeOrderAsk?.description &&
+      typeof changeOrderAsk.deltaAmountCents === "number"
+    ) {
+      llmResponse = {
+        text: "",
+        action: {
+          type: "change_order",
+          payload: {
+            ...(changeOrderAsk.customerName
+              ? { customerName: changeOrderAsk.customerName }
+              : {}),
+            description: changeOrderAsk.description,
+            deltaAmountCents: changeOrderAsk.deltaAmountCents,
+          },
+        },
+      };
+    }
+
     // ---- N3: action_card / continue_cta → synthetic text turns so the LLM
     // can answer status questions ("what's the total?") about a quote it
     // already drafted. Without this, the filter below dropped these kinds
@@ -716,6 +746,58 @@ export class HandleChatMessage {
         messages: llmTurns,
         userId: input.userId,
       });
+    }
+
+    // REQ-238: a create_quote on a change-order request is the demo's bug
+    // (a new separate quote) — run it as the change order it was asked for.
+    if (changeOrderAsk && llmResponse.action?.type === "create_quote") {
+      const items = llmResponse.action.payload.lineItems;
+      llmResponse = {
+        text: "",
+        action: {
+          type: "change_order",
+          payload: {
+            ...(changeOrderAsk.customerName
+              ? { customerName: changeOrderAsk.customerName }
+              : {}),
+            description: changeOrderAsk.description ??
+              (items.length === 1
+                ? items[0].description
+                : llmResponse.action.payload.summary),
+            deltaAmountCents: changeOrderAsk.deltaAmountCents ??
+              items.reduce((s, l) => s + l.amountCents, 0),
+          },
+        },
+      };
+    }
+    // The change-order reply is the coordinator's, not the model's prose.
+    if (llmResponse.action?.type === "change_order") {
+      const result = await this.changeOrder.run({
+        userId: input.userId,
+        lang: replyLang,
+        boundQuoteId: conv.quoteId,
+        customerName: llmResponse.action.payload.customerName,
+        description: llmResponse.action.payload.description,
+        deltaAmountCents: llmResponse.action.payload.deltaAmountCents,
+      });
+      const reply = await this.messages.append({
+        conversationId: conv.id,
+        role: "assistant",
+        kind: "text",
+        content: result.text,
+        payload: { changeOrder: result.outcome },
+      });
+      const patch: Partial<AgentConversation> = {
+        preview: derivePreview(reply.content),
+      };
+      if (
+        history.length === 0 ||
+        (history.length === 1 && history[0].id === userMsg.id)
+      ) {
+        patch.title = deriveTitleFromFirstUserMessage(input.content);
+      }
+      const updated = await this.conversations.update(conv.id, patch);
+      return { conversation: updated, newMessages: [userMsg, reply] };
     }
 
     // Whether this turn produces a rich follow-up bubble (action_card, etc.)

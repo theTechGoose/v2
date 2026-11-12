@@ -20,6 +20,9 @@ import { ConversationStore as CommConversationStore } from "@communication/domai
 import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
 import { getKv, resetKv } from "@core/data/kv/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+import type { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
+import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
 
 /**
  * Seed a fully-onboarded contractor profile for `userId` so the phase-1
@@ -83,6 +86,22 @@ function fresh() {
   );
   const files = new FileStore();
   const addresses = new BusinessAddressStore();
+  // REQ-238: the change-order path. The alert is captured, not sent.
+  const changeOrders = new ChangeOrderStore();
+  const alerted: string[] = [];
+  const alert = {
+    run: (id: string) => {
+      alerted.push(id);
+      return Promise.resolve({ ok: true });
+    },
+  } as unknown as SendChangeOrderAlert;
+  const changeOrder = new ApplyChatChangeOrder(
+    quotes,
+    invoices,
+    changeOrders,
+    customers,
+    alert,
+  );
   const flow = new HandleChatMessage(
     conversations,
     messages,
@@ -94,8 +113,11 @@ function fresh() {
     bus,
     emailer,
     llm,
+    changeOrder,
   );
   return {
+    changeOrders,
+    alerted,
     conversations,
     messages,
     llm,
@@ -594,5 +616,325 @@ Deno.test("REQ-008 NW-47 handle-chat-message integration: a first turn that is t
   assertEquals(after.name ?? undefined, undefined);
   const ident = await identity.get(me!.id);
   assertEquals(ident?.businessName ?? undefined, undefined);
+  await resetKv();
+});
+
+// ---------------------------------------------------------------------------
+// REQ-238 (demo M27): "Change order for Maria: add …" must change Maria's
+// existing job — a change order on her invoice, a pending revision on her
+// issued quote, a new line on her draft — and never create a new quote.
+// ---------------------------------------------------------------------------
+
+const DEMO = "Change order for Maria: add fridge cleaning $40";
+
+/** Maria with a $350 quote in the given state (demo pair 3's setup). */
+async function seedMaria(
+  f: ReturnType<typeof fresh>,
+  status: "draft" | "sent" | "accepted",
+) {
+  await seedOnboarded("u-1");
+  const maria = await f.customers.create("u-1", { name: "Maria Lopez" });
+  const quote = await f.quotes.create("u-1", {
+    summary: "Deep clean — Maria",
+    jobName: "Deep clean",
+    customerId: maria.id,
+    lineItems: [{
+      description: "Deep clean",
+      quantity: 1,
+      unit: "ea",
+      price: 35_000,
+    }],
+    estimatedTotal: 35_000,
+  });
+  const live = status === "draft"
+    ? quote
+    : await f.quotes.update(quote.id, "u-1", {
+      status,
+      sentAt: new Date().toISOString(),
+      ...(status === "accepted"
+        ? { acceptedAt: new Date().toISOString() }
+        : {}),
+    });
+  return { maria, quote: live };
+}
+
+/** The demo's mistake, as the real model made it: a fresh $40 create_quote. */
+const NEW_QUOTE_MISTAKE = {
+  text: "Drafting a quote.",
+  action: {
+    type: "create_quote" as const,
+    payload: {
+      summary: "Fridge cleaning — Maria",
+      lineItems: [{ description: "Fridge cleaning", amountCents: 4_000 }],
+    },
+  },
+};
+
+async function onlyQuoteIs(f: ReturnType<typeof fresh>, id: string) {
+  const all = await f.quotes.listByUser("u-1");
+  assertEquals(all.map((q) => q.id), [id], "no new quote was created");
+}
+
+Deno.test("REQ-238 M27: the demo's sentence on Maria's sent, unsigned quote writes a pending revision (+$40) — no new $40 quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedMaria(f, "sent");
+  // the model would have drafted a new quote; it must not matter
+  f.llm.setScript([NEW_QUOTE_MISTAKE]);
+  // a NEW conversation — nothing bound, as in the demo
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: DEMO,
+  });
+
+  await onlyQuoteIs(f, quote.id);
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  // the live (published) version the customer sees is untouched…
+  assertEquals(stored.lineItems.length, 1);
+  assertEquals(stored.estimatedTotal, 35_000);
+  // …and the change waits as the next revision (REQ-201)
+  const pending = stored.pendingRevision as {
+    lineItems: { description: string; price: number }[];
+    estimatedTotal: number;
+  };
+  assertEquals(pending.lineItems.map((l) => [l.description, l.price]), [[
+    "Deep clean",
+    35_000,
+  ], ["Fridge cleaning", 4_000]]);
+  assertEquals(pending.estimatedTotal, 39_000);
+  // no quote card, and the reply says what happened and what to do next
+  assertEquals(result.newMessages.some((m) => m.kind === "action_card"), false);
+  const reply = result.newMessages[result.newMessages.length - 1];
+  assertEquals(reply.role, "assistant");
+  assert(reply.content.includes("Fridge cleaning"), reply.content);
+  assert(reply.content.includes("$40.00"), reply.content);
+  assert(reply.content.includes("Publish revision"), reply.content);
+  assertEquals(
+    (reply.payload as { changeOrder?: { kind: string; quoteId: string } })
+      ?.changeOrder,
+    {
+      kind: "pending_revision",
+      quoteId: quote.id,
+    },
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-238 M27: Maria's signed quote with an invoice gets a pending change order on that invoice (+$40)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { maria, quote } = await seedMaria(f, "accepted");
+  const inv = await f.invoices.create("u-1", {
+    quoteId: quote.id,
+    customerId: maria.id,
+    amount: 35_000,
+    status: "sent",
+  } as never);
+  f.llm.setScript([NEW_QUOTE_MISTAKE]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: DEMO,
+  });
+
+  await onlyQuoteIs(f, quote.id);
+  const cos = await f.changeOrders.listByInvoice("u-1", inv.id);
+  assertEquals(cos.length, 1);
+  assertEquals(cos[0].status, "pending");
+  assertEquals(cos[0].description, "Fridge cleaning");
+  assertEquals(cos[0].deltaAmountCents, 4_000);
+  assertEquals(cos[0].quoteId, quote.id);
+  assertEquals(cos[0].customerId, maria.id);
+  assertEquals(cos[0].originalAmountCents, 35_000);
+  // the invoice only moves when Maria approves at /co/:id
+  assertEquals((await f.invoices.getOwned(inv.id, "u-1")).amount, 35_000);
+  assertEquals(
+    f.alerted,
+    [cos[0].id],
+    "the contractor is sent the approval link",
+  );
+  const reply = result.newMessages[result.newMessages.length - 1];
+  assert(reply.content.includes("approv"), reply.content);
+  assertEquals(
+    (reply.payload as { changeOrder?: Record<string, string> })?.changeOrder,
+    {
+      kind: "change_order",
+      quoteId: quote.id,
+      invoiceId: inv.id,
+      changeOrderId: cos[0].id,
+    },
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-238 M27: when the model fires create_quote on a change-order request the parser can't complete, it is turned into the change order", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedMaria(f, "sent");
+  f.llm.setScript([NEW_QUOTE_MISTAKE]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Change order for Maria, she wants the fridge cleaned too, forty bucks",
+  });
+  await onlyQuoteIs(f, quote.id);
+  const pending = (await f.quotes.getOwned(quote.id, "u-1"))
+    .pendingRevision as {
+      lineItems: {
+        description: string;
+        quantity: number;
+        unit: string;
+        price: number;
+      }[];
+    };
+  assertEquals(pending.lineItems[1], {
+    description: "Fridge cleaning",
+    quantity: 1,
+    unit: "ea",
+    price: 4_000,
+  });
+  await resetKv();
+});
+
+Deno.test("REQ-238 M27: the model's own change_order tool call is executed against the customer's quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedMaria(f, "sent");
+  f.llm.setScript([{
+    text: "",
+    action: {
+      type: "change_order",
+      payload: {
+        customerName: "Maria",
+        description: "Oven cleaning",
+        deltaAmountCents: 6_000,
+      },
+    },
+  }]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Maria also wants the oven done, add 60 to her job",
+  });
+  await onlyQuoteIs(f, quote.id);
+  const pending = (await f.quotes.getOwned(quote.id, "u-1"))
+    .pendingRevision as { estimatedTotal: number };
+  assertEquals(pending.estimatedTotal, 41_000);
+  assert(result.newMessages.at(-1)!.content.includes("Oven cleaning"));
+  await resetKv();
+});
+
+Deno.test("REQ-238 M27: two customers called Maria → a clarifying question; nothing is written", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedMaria(f, "sent");
+  const other = await f.customers.create("u-1", { name: "Maria Gomez" });
+  const q2 = await f.quotes.create("u-1", {
+    summary: "Window wash — Maria G",
+    jobName: "Window wash",
+    customerId: other.id,
+    lineItems: [{
+      description: "Windows",
+      quantity: 1,
+      unit: "ea",
+      price: 20_000,
+    }],
+    estimatedTotal: 20_000,
+    status: "sent",
+  });
+  f.llm.setScript([NEW_QUOTE_MISTAKE]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: DEMO,
+  });
+
+  assertEquals((await f.quotes.listByUser("u-1")).length, 2, "no new quote");
+  assertEquals(
+    (await f.quotes.getOwned(quote.id, "u-1")).pendingRevision,
+    undefined,
+  );
+  assertEquals(
+    (await f.quotes.getOwned(q2.id, "u-1")).pendingRevision,
+    undefined,
+  );
+  const reply = result.newMessages.at(-1)!;
+  assert(reply.content.includes("Which"), reply.content);
+  assert(
+    reply.content.includes("Maria Lopez") &&
+      reply.content.includes("Maria Gomez"),
+    reply.content,
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-238 M27: no quote for the named customer → says so; no new quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  await seedOnboarded("u-1");
+  f.llm.setScript([NEW_QUOTE_MISTAKE]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: DEMO,
+  });
+  assertEquals((await f.quotes.listByUser("u-1")).length, 0, "no new quote");
+  assert(result.newMessages.at(-1)!.content.includes("Maria"));
+  await resetKv();
+});
+
+Deno.test("REQ-238 M27: a signed quote with no invoice is left alone and the reply says to invoice it first; no new quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedMaria(f, "accepted");
+  f.llm.setScript([NEW_QUOTE_MISTAKE]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: DEMO,
+  });
+  await onlyQuoteIs(f, quote.id);
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.pendingRevision, undefined);
+  assertEquals(stored.estimatedTotal, 35_000);
+  assert(result.newMessages.at(-1)!.content.toLowerCase().includes("invoice"));
+  await resetKv();
+});
+
+Deno.test("REQ-238 M27: a change order on the conversation's own draft adds the line to that draft", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedMaria(f, "draft");
+  const conv = await f.conversations.create({ userId: "u-1" });
+  await f.conversations.update(conv.id, { quoteId: quote.id });
+  await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "change order: add fridge cleaning $40",
+  });
+  await onlyQuoteIs(f, quote.id);
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.lineItems.map((l) => l.description), [
+    "Deep clean",
+    "Fridge cleaning",
+  ]);
+  assertEquals(stored.estimatedTotal, 39_000);
   await resetKv();
 });
