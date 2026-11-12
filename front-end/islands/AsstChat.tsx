@@ -55,6 +55,7 @@ import {
   cardChipKey,
   isLockedOrIssued,
 } from "../../shared/quote-flow/quote-lock.ts";
+import { deriveChatHeader } from "../../shared/quote-flow/chat-header.ts";
 import { scopeBulletsFromRaw } from "../../shared/quote-flow/scope-from-raw.ts";
 import {
   MAX_OPTION_BULLETS,
@@ -673,6 +674,9 @@ export default function AsstChat({
        *  (UX-02: the thread must reflect it and stop offering re-sends). */
       status?: string;
       acceptedAt?: string | null;
+      /** REQ-245: when it was sent / when its price was locked (REQ-234). */
+      sentAt?: string | null;
+      lockedAt?: string | null;
       /** Wizard-captured agreement terms — the quote IS the agreement. */
       terms?: { stepId: string; label: string; value: string }[];
       /** REQ-236: the latest send's outcome + first delivery time. */
@@ -1420,6 +1424,9 @@ export default function AsstChat({
             // customer acceptance and stop offering re-sends.
             status: (q as { status?: string }).status,
             acceptedAt: (q as { acceptedAt?: string | null }).acceptedAt,
+            // REQ-245: the chat header reads the lock / send stamps.
+            sentAt: (q as { sentAt?: string | null }).sentAt,
+            lockedAt: (q as { lockedAt?: string | null }).lockedAt,
             terms: (q as {
               terms?: { stepId: string; label: string; value: string }[];
             }).terms,
@@ -1624,47 +1631,43 @@ export default function AsstChat({
   // swap the title in place — no page reload needed.
   useEffect(() => {
     if (typeof globalThis.window === "undefined") return;
-    const client = customer?.name?.trim();
-    // Find the most recent quote action_card to derive a meaningful
-    // status. "Drafting…" used to fire as soon as a conversation existed,
-    // which mis-labelled the header on the literal first turn (audit #13).
+    // REQ-245 (demo m6): the header follows the quote's lifecycle and the
+    // server's send record, not the last divider / card — see
+    // shared/quote-flow/chat-header.ts for the precedence.
+    const header = deriveChatHeader({
+      customerName: customer?.name,
+      quote,
+      messages,
+    });
+    // REQ-236 (demo M8) on top of REQ-245: a send that reached nobody reads
+    // "Not delivered" — the quote's persisted lastDelivery counts too, not
+    // only the chat's send divider (reconciled on demo-fixes).
+    const lastDivider = [...messages]
+      .reverse()
+      .find((m) => m.kind === "phase_divider");
     const lastQuoteCard = [...messages].reverse().find((m) => {
       if (m.kind !== "action_card") return false;
       const p = m.payload as ActionCardPayload | undefined;
       return p?.actionType === "quote" || p?.actionType == null;
     });
-    const quoteStatus = (
-      lastQuoteCard?.payload as ActionCardPayload | undefined
-    )?.status;
-    // The most recent phase_divider tells us where the conversation is in
-    // the wizard timeline. Phase 2 (terms) lands the moment the user
-    // clicks Continue, BEFORE the terms land on the quote — without this
-    // hook the header sat at "Quote sent" through the entire wizard, which
-    // broke #15 (chip didn't update on transition).
-    const lastDivider = [...messages]
-      .reverse()
-      .find((m) => m.kind === "phase_divider");
-    // UX-02: the customer's acceptance is the loudest state this thread can
-    // reach. REQ-236: a send that reached nobody reads "Not delivered", never
-    // "Out for signature" / "Quote sent".
+    const undelivered = header.statusKey !== "asstChat.header.quoteAccepted" &&
+      headerStatusKey({
+          quoteAccepted,
+          quote,
+          lastDividerPayload: lastDivider?.payload as
+            | SendDividerPayload
+            | undefined,
+          lastCardStatus: (
+            lastQuoteCard?.payload as ActionCardPayload | undefined
+          )?.status,
+          hasQuoteCard: !!lastQuoteCard,
+        }) === "asstChat.header.notDelivered";
     const status = tFor(
       lang,
-      headerStatusKey({
-        quoteAccepted,
-        quote,
-        lastDividerPayload: lastDivider?.payload as
-          | SendDividerPayload
-          | undefined,
-        lastCardStatus: quoteStatus,
-        hasQuoteCard: !!lastQuoteCard,
-      }),
+      undelivered ? "asstChat.header.notDelivered" : header.statusKey,
     );
-    // No status chip at all on a brand-new thread — "Drafting…" before
-    // anything has been drafted reads as broken state.
-    const headerClient = client ??
-      (lastQuoteCard
-        ? tFor(lang, "asstChat.header.conversation")
-        : tFor(lang, "asstChat.header.newConversation"));
+    const headerClient = header.clientName ??
+      tFor(lang, header.clientKey ?? "asstChat.header.newConversation");
     globalThis.window.dispatchEvent(
       new CustomEvent("pm:asst-header", {
         detail: { client: headerClient, status },
@@ -1676,6 +1679,10 @@ export default function AsstChat({
     quote?.status,
     quote?.acceptedAt,
     quote?.lastDelivery,
+    quote?.terms,
+    quote?.lockedAt,
+    quote?.sentAt,
+    quote?.jobName,
     convoId,
     messages.length,
     lang,
