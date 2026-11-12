@@ -14,7 +14,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as lib from "../../front-end/lib/welcome-steps";
-import { indexAfterPlan, openSteps } from "../../front-end/lib/welcome-steps";
+import { indexAfterPlan, openSteps, stepCounter } from "../../front-end/lib/welcome-steps";
 import {
   isAnswered,
   ONBOARDING_QUESTIONS,
@@ -95,17 +95,17 @@ describe("REQ-121 the wizard asks only the questions still open, and resumes pas
   });
 
   test("REQ-121 the wizard is bound to the rule: the open steps at mount, the first of them or the one after the plan; the asked hook and the first-incomplete search are gone", () => {
-    expect(Object.keys(lib).filter((k) => k !== "__esModule").sort()).toEqual(["indexAfterPlan", "openSteps"]);
+    expect(Object.keys(lib).filter((k) => k !== "__esModule").sort()).toEqual(["indexAfterPlan", "openSteps", "stepCounter"]);
     const src = read("front-end/lib/welcome-steps.ts");
     expect(src).not.toMatch(/asksPlan|askedSteps|AskedStep|signupPlan|awaitsNamedPick|planStepView/);
     const wizard = read("front-end/islands/WelcomeWizard.tsx");
-    expect(wizard).toMatch(/import \{ indexAfterPlan, openSteps \} from "\.\.\/lib\/welcome-steps\.ts";/);
+    expect(wizard).toMatch(/import \{ indexAfterPlan, openSteps, stepCounter \} from "\.\.\/lib\/welcome-steps\.ts";/);
     expect(wizard).toMatch(/openSteps\(registry, snapshot\)/);
     expect(wizard).toMatch(/indexAfterPlan\(registry, steps\)\n\s*: 0\b/);
     expect(wizard).not.toMatch(/firstIncomplete|asked\?:|asked: |asksPlan|askedSteps/);
     // the plan step is answered once a plan is on record active: no visit shows "✓ plan active" any more
     expect(wizard).not.toMatch(/plan-active|welcome__plan-active/);
-    // the progress bar counts the open steps alone
+    // the visit's open steps drive the navigation; the counter the person reads is REQ-253's, the whole onboarding
     expect(wizard).toMatch(/const total = steps\.length;/);
   });
 });
@@ -157,5 +157,61 @@ describe("REQ-120 nothing from /landing2 changes the wizard's plan step: it is t
     expect(src).toMatch(/t\("plan\.continue"\)/);
     expect(read("front-end/clients/profile.ts")).not.toMatch(/signupPlan/);
     expect(read("front-end/islands/Landing2Signup.tsx")).not.toMatch(/data-plan|setPlan/);
+  });
+});
+
+/**
+ * REQ-253 — Raphael, 2026-11-11: "fix every issue the demo found." Demo issue
+ * onboarding-dashboard-settings-p1: the counter read "Step 4 of 10" on the plan and "Step 1 of 6"
+ * on the state right after it. The plan pick is a full page navigation (PlanCards' form POST →
+ * 303), the wizard remounts, and REQ-121's open-steps list is recomputed shorter; the counter
+ * counted "steps this visit". It now counts the whole onboarding: the total is the registry, and
+ * the current step is the steps answered before this visit plus the place in it — so the reload
+ * after the plan goes on to "Step 5 of 10", never back to 1.
+ */
+describe("REQ-253 the step counter counts the whole onboarding, so the plan pick's reload never restarts it", () => {
+  const label = (open: readonly { id: string }[], index: number) => {
+    const c = stepCounter(REGISTRY, open, index);
+    return `Step ${c.current} of ${c.total}`;
+  };
+
+  test("REQ-253 a new account: Step 4 of 10 on the plan, then Step 5 of 10 on the state after the pick's reload (demo: Step 1 of 6)", () => {
+    const first = openSteps(REGISTRY, NOTHING);
+    expect(first[3].id).toBe("plan");
+    expect(label(first, 0)).toBe("Step 1 of 10");
+    expect(label(first, 3)).toBe("Step 4 of 10");
+    // Monster Free picked: the page reloads at /welcome?after=plan with name, business, email and plan on record
+    const afterPick = openSteps(REGISTRY, answered(["name", "businessName", "email", "plan"]));
+    const at = indexAfterPlan(REGISTRY, afterPick);
+    expect(afterPick[at].id).toBe("state");
+    expect(label(afterPick, at)).toBe("Step 5 of 10");
+    // and on to the closing screen, the tenth
+    expect(label(afterPick, afterPick.length - 1)).toBe("Step 10 of 10");
+    // a paid pick, back from its pay page with the plan active: the same
+    const paid = openSteps(REGISTRY, answered(["name", "businessName", "email", "plan"], { status: "active" }));
+    expect(label(paid, indexAfterPlan(REGISTRY, paid))).toBe("Step 5 of 10");
+  });
+
+  test("REQ-253 a question skipped on the way to the plan does not move the counter backwards after the reload", () => {
+    // the email skipped: the plan was Step 4 of 10 all the same; after the pick the state is the fifth
+    const skipped = openSteps(REGISTRY, answered(["name", "businessName", "plan"]));
+    expect(label(skipped, indexAfterPlan(REGISTRY, skipped))).toBe("Step 5 of 10");
+  });
+
+  test("REQ-253 a later login keeps the same total: the two questions left and the closing screen are Step 8, 9 and 10 of 10", () => {
+    const later = openSteps(REGISTRY, answered(["name", "email", "plan", "state", "address", "payment", "insurance"]));
+    expect([0, 1, 2].map((i) => label(later, i))).toEqual(["Step 8 of 10", "Step 9 of 10", "Step 10 of 10"]);
+    // everything answered: the closing screen is the last of ten
+    expect(label(openSteps(REGISTRY, EVERYTHING), 0)).toBe("Step 10 of 10");
+  });
+
+  test("REQ-253 the wizard renders the counter, the bar and its aria values from stepCounter", () => {
+    const wizard = read("front-end/islands/WelcomeWizard.tsx");
+    expect(wizard).toMatch(/import \{ indexAfterPlan, openSteps, stepCounter \} from "\.\.\/lib\/welcome-steps\.ts";/);
+    expect(wizard).toMatch(/stepCounter\(registry, steps, index\)/);
+    // every progress number reads the counter, none the visit's own index
+    expect(wizard).not.toMatch(/current: index \+ 1/);
+    expect(wizard).not.toMatch(/aria-valuenow=\{index \+ 1\}/);
+    expect(wizard).not.toMatch(/\(\(index \+ 1\) \/ total\)/);
   });
 });

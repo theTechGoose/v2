@@ -41,3 +41,20 @@ export function indexAfterPlan<T extends { id: string }>(
   const i = open.findIndex((step) => registry.findIndex((r) => r.id === step.id) > planAt);
   return i === -1 ? Math.max(0, open.length - 1) : i;
 }
+
+/**
+ * REQ-253 (demo issue onboarding-dashboard-settings-p1) — the counter counts the whole
+ * onboarding, not this visit: the total is the registry, and the current step is the steps
+ * answered before the wizard opened plus the place in this visit. The plan pick is a full page
+ * navigation that remounts the wizard with a shorter open list; counted this way the step after
+ * the plan reads "Step 5 of 10", never "Step 1 of 6".
+ */
+export function stepCounter(
+  registry: readonly unknown[],
+  open: readonly unknown[],
+  index: number,
+): { current: number; total: number } {
+  const total = registry.length;
+  const answeredBefore = Math.max(0, total - open.length);
+  return { current: Math.min(total, answeredBefore + index + 1), total };
+}
