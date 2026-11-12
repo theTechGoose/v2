@@ -49,6 +49,12 @@ import {
   websiteLabel,
 } from "../../shared/quote-flow/format-helpers.ts";
 import { summarizeJobName } from "../../shared/quote-flow/job-name.ts";
+import { CustomerFields } from "../components/CustomerForm.tsx"; // REQ-625
+import {
+  customerCreatePayload,
+  type CustomerFormValues,
+  validateCustomerForm,
+} from "../../shared/customer-form/mod.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import {
   TimeoutError,
@@ -3236,6 +3242,11 @@ export default function AsstChat({
           phoneNumber?: string;
           isBusiness?: boolean;
           businessName?: string;
+          street?: string; // REQ-625
+          city?: string;
+          state?: string;
+          zip?: string;
+          notes?: string;
         };
       };
     },
@@ -3262,6 +3273,11 @@ export default function AsstChat({
           phoneNumber?: string;
           isBusiness?: boolean;
           businessName?: string;
+          street?: string; // REQ-625
+          city?: string;
+          state?: string;
+          zip?: string;
+          notes?: string;
         };
       };
       followUpValues?: Record<string, string | number>;
@@ -3502,8 +3518,9 @@ export default function AsstChat({
       let custEmail: string | undefined;
       let custPhone: string | undefined;
       if (customerId) {
-        const picked = await clientsClient.list()
-          .then((cs) => cs.find((c) => c.id === customerId))
+        // GET /clients is a page envelope (REQ-135), not an array — read
+        // the one customer by id (it used to throw here, so never matched).
+        const picked = await clientsClient.get(customerId)
           .catch(() => undefined);
         custEmail = picked?.email ?? undefined;
         custPhone = picked?.phoneNumber ?? undefined;
@@ -8100,6 +8117,11 @@ function CustomerStepPanel(props: {
           phoneNumber?: string;
           isBusiness?: boolean;
           businessName?: string;
+          street?: string; // REQ-625
+          city?: string;
+          state?: string;
+          zip?: string;
+          notes?: string;
         };
       };
     },
@@ -8150,6 +8172,14 @@ function CustomerStepPanel(props: {
   const [createBusiness, setCreateBusiness] = useState("");
   const [createEmail, setCreateEmail] = useState("");
   const [createPhone, setCreatePhone] = useState("");
+  // REQ-625: the rest of the shared customer form — the address parts + notes
+  const [createMore, setCreateMore] = useState({
+    street: "",
+    city: "",
+    state: "",
+    zip: "",
+    notes: "",
+  });
   const [localErr, setLocalErr] = useState<string | undefined>();
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -8248,57 +8278,57 @@ function CustomerStepPanel(props: {
       : !hasContact
       ? tFor(lang, "asstChat.customerStep.needContact")
       : undefined;
+    // REQ-625: the shared form's values and its lenient phone/email checks
+    const createValues: CustomerFormValues = {
+      name: createName,
+      businessName: createBusiness,
+      phone: createPhone,
+      email: createEmail,
+      ...createMore,
+    };
+    const { name: _nameErr, ...formErrors } = validateCustomerForm(
+      createValues,
+    );
     const submitDisabled = sending || trimmedName.length === 0 ||
-      !hasContact || emailIsOwn || phoneIsOwn;
+      !hasContact || emailIsOwn || phoneIsOwn ||
+      Object.keys(formErrors).length > 0;
     const formHeading = tFor(lang, "asstChat.customerStep.whoFor");
     const namePlaceholder = tFor(lang, "asstChat.customerStep.name");
     return (
       <div ref={rootRef}>
         <h3 class="wiz__step-q">{formHeading}</h3>
         <div class="cust-create" style="margin-top:8px">
-          <input
-            type="text"
-            class="cust-pick__search"
-            placeholder={namePlaceholder}
-            aria-label={namePlaceholder}
-            value={createName}
-            onInput={(e) => setCreateName((e.target as HTMLInputElement).value)}
+          {/* REQ-625: the ONE customer form, in the assistant's look */}
+          <CustomerFields
+            variant="asst"
+            lang={lang}
+            values={createValues}
+            disabled={sending}
             autoFocus
+            errors={formErrors}
+            placeholders={{
+              name: namePlaceholder,
+              businessName: tFor(
+                lang,
+                "asstChat.customerStep.businessNamePlaceholder",
+              ),
+              phone: tFor(lang, "asstChat.customerStep.phonePlaceholder"),
+              email: tFor(lang, "asstChat.customerStep.emailPlaceholder"),
+            }}
+            onChange={(p) => {
+              if (p.name !== undefined) setCreateName(p.name);
+              if (p.businessName !== undefined) {
+                setCreateBusiness(p.businessName);
+              }
+              if (p.phone !== undefined) setCreatePhone(p.phone);
+              if (p.email !== undefined) setCreateEmail(p.email);
+              const { name: _n, businessName: _b, phone: _p, email: _e, ...more } =
+                p;
+              if (Object.keys(more).length) {
+                setCreateMore((m) => ({ ...m, ...more }));
+              }
+            }}
           />
-          <input
-            type="text"
-            data-cy="wizard-business-name"
-            class="cust-pick__search"
-            placeholder={tFor(
-              lang,
-              "asstChat.customerStep.businessNamePlaceholder",
-            )}
-            aria-label={tFor(
-              lang,
-              "asstChat.customerStep.businessNamePlaceholder",
-            )}
-            value={createBusiness}
-            onInput={(e) =>
-              setCreateBusiness((e.target as HTMLInputElement).value)}
-          />
-          <div class="cust-create__row">
-            <input
-              type="tel"
-              class="cust-pick__search"
-              placeholder={tFor(lang, "asstChat.customerStep.phonePlaceholder")}
-              value={formatPhoneInput(createPhone)} /* NW-34 (REQ-012) */
-              onInput={(e) =>
-                setCreatePhone((e.target as HTMLInputElement).value)}
-            />
-            <input
-              type="email"
-              class="cust-pick__search"
-              placeholder={tFor(lang, "asstChat.customerStep.emailPlaceholder")}
-              value={createEmail}
-              onInput={(e) =>
-                setCreateEmail((e.target as HTMLInputElement).value)}
-            />
-          </div>
           {localErr ?? contactErr
             ? (
               <div class="cust-pick__err" data-cy="cust-contact-hint">
@@ -8315,17 +8345,8 @@ function CustomerStepPanel(props: {
                 onSubmit("create_new", {
                   customer: {
                     create: {
-                      name: trimmedName,
-                      ...(createEmail.trim()
-                        ? { email: createEmail.trim() }
-                        : {}),
-                      ...(createPhone.trim()
-                        ? { phoneNumber: createPhone.trim() }
-                        : {}),
+                      ...customerCreatePayload(createValues),
                       isBusiness,
-                      ...(createBusiness.trim()
-                        ? { businessName: createBusiness.trim() }
-                        : {}),
                     },
                   },
                 })}

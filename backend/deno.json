@@ -19,6 +19,7 @@
     "#payment-split": "../front-end/lib/payment-split.ts",
     "#quote-flow/": "../shared/quote-flow/",
     "#documents/": "../shared/documents/",
+    "#customer-address/": "../shared/customer-address/",
     "#features": "../shared/features.ts",
     "#legal/": "../shared/legal/",
     "#demo-booking/": "../shared/demo-booking/",

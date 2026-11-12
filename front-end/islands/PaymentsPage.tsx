@@ -149,6 +149,8 @@ type PaymentStatus = "landed" | "transit" | "attention";
 
 interface EnrichedPayment extends Payment {
   client: string;
+  /** REQ-626: the invoice's customer — "Text client" opens their sheet */
+  customerId?: string;
   initials: string;
   invoiceRef: string;
   daysAgo: number;
@@ -251,6 +253,7 @@ function enrich(
   return {
     ...p,
     client,
+    ...(customerId ? { customerId } : {}),
     initials: initialsOf(client),
     // REQ-198: the invoice's own number ("INV-001"); "#ID" when the invoice
     // predates numbering or is no longer on the books.
@@ -787,6 +790,21 @@ function PaymentCard(
   const mood = STATUS_MOOD[p.status];
   const moodLabel = tFor(lang, `paymentsPage.mood.${p.status}.label`);
   const moodCta = tFor(lang, `paymentsPage.mood.${p.status}.cta`);
+  // REQ-626: every card button goes somewhere real
+  const invoiceHref = `/invoices?open=${encodeURIComponent(p.invoiceId)}`;
+  const receiptHref = `/i/${encodeURIComponent(p.invoiceId)}`;
+  const clientHref = p.customerId
+    ? `/clients?open=${encodeURIComponent(p.customerId)}`
+    : invoiceHref;
+  function onCta(e: Event) {
+    e.stopPropagation();
+    // "View timeline": the trail is the card's back
+    if (p.status === "transit") return setFlipped(true);
+    // "View receipt": the paid invoice; "Text client": the client's sheet
+    globalThis.location.assign(
+      p.status === "landed" ? invoiceHref : clientHref,
+    );
+  }
   return (
     <article
       class={`qcard ${flipped ? "qcard--flipped" : ""}`}
@@ -818,7 +836,8 @@ function PaymentCard(
         <button
           type="button"
           class="qcard__cta"
-          onClick={(e) => e.stopPropagation()}
+          data-cy="pay-card-cta"
+          onClick={onCta}
         >
           {moodCta}{" "}
           <span style="display:inline-block;transition:transform 240ms">→</span>
@@ -862,15 +881,32 @@ function PaymentCard(
           <p class="qcard__read">{p.note}</p>
         </div>
         <div class="qcard__back-foot">
-          <button type="button" onClick={(e) => e.stopPropagation()}>
+          {/* REQ-626: the customer's copy of the invoice is the receipt */}
+          <a
+            data-cy="pay-card-receipt"
+            href={receiptHref}
+            target="_blank"
+            rel="noopener"
+            onClick={(e) => e.stopPropagation()}
+          >
             {tFor(lang, "paymentsPage.card.receipt")}
-          </button>
-          <button type="button" onClick={(e) => e.stopPropagation()}>
+          </a>
+          {/* the invoice this payment is matched to, in its editable panel */}
+          <a
+            data-cy="pay-card-match"
+            href={invoiceHref}
+            onClick={(e) => e.stopPropagation()}
+          >
             {tFor(lang, "paymentsPage.card.matchInvoice")}
-          </button>
-          <button type="button" onClick={(e) => e.stopPropagation()}>
+          </a>
+          {/* the client's sheet: Message (a text) and their details */}
+          <a
+            data-cy="pay-card-text"
+            href={clientHref}
+            onClick={(e) => e.stopPropagation()}
+          >
             {tFor(lang, "paymentsPage.card.textClient")}
-          </button>
+          </a>
         </div>
       </div>
     </article>

@@ -11,6 +11,7 @@ import type {
   Customer,
   UpdateCustomerDto,
 } from "@crm/dto/customer.ts";
+import { addressWrite } from "@crm/domain/business/customer-address/mod.ts"; // REQ-625
 
 const PREFIX = "customer";
 const INDEX_PREFIX = "customer_by_user"; // [INDEX_PREFIX, userId, customerId] → customerId
@@ -48,6 +49,7 @@ export class CustomerStore {
     const now = new Date().toISOString();
     const customer: Customer = {
       ...input,
+      ...addressWrite(undefined, input), // REQ-625: parts → the composed address
       id,
       userId,
       createdAt: now,
@@ -112,6 +114,7 @@ export class CustomerStore {
     const updated: Customer = {
       ...existing,
       ...definedPatch,
+      ...addressWrite(existing, patch), // REQ-625: recompose from the merged parts
       id: existing.id,
       userId: existing.userId,
       createdAt: existing.createdAt,
