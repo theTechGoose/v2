@@ -147,7 +147,12 @@ interface Toast {
 }
 
 export default function WorkerScreen(
-  { initialLang, initialDate }: { initialLang: Lang; initialDate?: string },
+  { initialLang, initialDate, office }: {
+    initialLang: Lang;
+    initialDate?: string;
+    /** REQ-282 — an owner session rode in: show the way back to the office */
+    office?: boolean;
+  },
 ) {
   const lang = langSignal.value;
   // `undefined` = not asked yet; `null` = asked, nobody is signed in
@@ -704,6 +709,16 @@ export default function WorkerScreen(
             </button>
           ))}
         </div>
+        {office && (
+          <a
+            href="/field/tasks"
+            class="btn btn--ghost btn--sm"
+            data-cy="w-office"
+            style="min-height:44px"
+          >
+            {t("worker.backToOffice")}
+          </a>
+        )}
         {me && (
           <button
             type="button"

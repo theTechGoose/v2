@@ -3317,6 +3317,7 @@
   "worker.save": "Save",
   "worker.saved": "Note saved",
   "worker.logout": "Sign out",
+  "worker.backToOffice": "Back to office",
   "worker.allDone": "Round complete! Nice work.",
   "worker.note": "Note",
   "worker.services": "Services",
