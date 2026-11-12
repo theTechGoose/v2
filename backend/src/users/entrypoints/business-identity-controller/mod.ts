@@ -23,7 +23,7 @@ class BadTimezone extends Error {
   }
 }
 
-/** REQ-501 (demo M35) — a blank business name once one is set is a 400 naming welcome.nameBlank */
+/** REQ-501 (demo M35) — a blank business name once one is set is a 400 naming its key (REQ-598: empty → settings.businessNameRequired, spaces → welcome.nameBlank) */
 class BlankBusinessName extends Error {
   readonly status = 400;
   constructor(key: string) {

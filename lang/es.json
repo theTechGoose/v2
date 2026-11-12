@@ -2945,6 +2945,7 @@
   "settings.aria.wipeConfirm": "Escribe ELIMINAR para confirmar el borrado de la cuenta",
   "settings.businessIdentity": "Identidad del negocio",
   "settings.businessName": "Nombre del negocio",
+  "settings.businessNameRequired": "Escribe el nombre de tu negocio.",
   "settings.certHint": "PDF o imagen · prueba de seguro / COI",
   "settings.certOnFile": "Certificado en archivo",
   "settings.city": "Ciudad",
