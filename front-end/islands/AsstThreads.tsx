@@ -25,6 +25,8 @@ interface Props {
 }
 
 const POLL_MS = 8_000;
+/** REQ-424 (cycle 2, p2) — the slowest an idle assistant re-reads its threads */
+const IDLE_POLL_MAX_MS = 60_000;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
@@ -137,7 +139,10 @@ export default function AsstThreads(
         // on a transient network blip.
       }
     }
-    const stop = startPoll(refresh, POLL_MS, { immediate: true });
+    const stop = startPoll(refresh, POLL_MS, {
+      immediate: true,
+      idleMaxMs: IDLE_POLL_MAX_MS,
+    });
     // REQ-369 (demo m2): the open chat pushes its thread's status the moment
     // it changes. Its row shows it at once; the list refreshes now — not at
     // the next poll — when its row is missing (a thread just started) or

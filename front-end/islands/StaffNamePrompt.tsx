@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { langSignal, tFor } from "../lib/i18n.ts";
 import { profileClient } from "../clients/profile.ts";
 import { announceProfile } from "../lib/profile-events.ts";
@@ -18,6 +18,9 @@ export default function StaffNamePrompt() {
   const [name, setName] = useState("");
   const [open, setOpen] = useState(true);
   const [busy, setBusy] = useState(false);
+  // REQ-424 (cycle 2, p2): the in-flight guard is a ref — `busy` is state, and a fast Enter +
+  // click both ran before the re-render, so one save sent two PUT /api/me.
+  const inFlightRef = useRef(false);
   const [err, setErr] = useState(false);
   // the input is marked ready only once hydrated, so nothing types into a dead form
   const [mounted, setMounted] = useState(false);
@@ -28,7 +31,8 @@ export default function StaffNamePrompt() {
   async function save(e: Event) {
     e.preventDefault();
     const trimmed = name.trim();
-    if (isPlaceholderName(trimmed) || busy) return;
+    if (isPlaceholderName(trimmed) || inFlightRef.current) return;
+    inFlightRef.current = true;
     setBusy(true);
     setErr(false);
     try {
@@ -38,6 +42,7 @@ export default function StaffNamePrompt() {
     } catch {
       setErr(true);
     } finally {
+      inFlightRef.current = false;
       setBusy(false);
     }
   }

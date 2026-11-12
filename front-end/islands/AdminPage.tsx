@@ -76,6 +76,8 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
   const busyRef = useRef(false);
   const lockRef = useRef<AdminLock | null>(null);
   lockRef.current = lock;
+  /** REQ-424 — stops the users-list refresh (once the page locks) */
+  const stopRefreshRef = useRef<(() => void) | null>(null);
   const qRef = useRef(q);
   qRef.current = q;
 
@@ -115,7 +117,9 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
   // (this tab or any other of the same browser) locks the page at once.
   useEffect(() => {
     search();
-    const stopRefresh = refreshWhileVisible(() => void search(undefined, true));
+    const stopRefresh = stopRefreshRef.current = refreshWhileVisible(() =>
+      void search(undefined, true)
+    );
     const stopSignal = onImpersonation((d) =>
       setLock({ kind: "demo", customer: d.targetName })
     );
@@ -124,6 +128,11 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
       stopSignal();
     };
   }, []);
+  // REQ-424 (cycle 2, p2) — a locked page (a demo made this browser the customer, or the
+  // session is gone) has nothing to refresh: its timer and listeners stop for good.
+  useEffect(() => {
+    if (lock) stopRefreshRef.current?.();
+  }, [lock]);
 
   async function toggleSuper(u: AdminUserView) {
     setBusyId(u.id);
