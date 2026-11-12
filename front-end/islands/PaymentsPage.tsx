@@ -11,9 +11,13 @@
  *     aside.qside → PSideFlow, PSideTopPayors, PSideMix, PSideTip
  *
  * Status taxonomy:
- *   - landed:    payment has been recorded (current data model only carries this)
- *   - transit:   reserved for future when a "pending settlement" status exists
- *   - attention: reserved for future declined/returned tracking
+ *   - landed:    payment has been recorded and is past its settling window
+ *   - transit:   recorded ACH/check still inside its settling window
+ *   - attention: a customer's "I paid by X" claim waiting for the contractor
+ *                to confirm or reject it (REQ-281, demo M34). A claim is not
+ *                a Payment row — it lives on the invoice (status "claimed" +
+ *                paymentIntent) — so it is derived from the invoice list by
+ *                lib/payment-claims.ts.
  *
  * Tracks for transit/attention render conditionally — when there's no data
  * for them the page reads cleanly without empty sections.
@@ -39,6 +43,7 @@ import { fmtMoney } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
+import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
 
 /** Plural helper bound to an explicit language (the reactive `tn` reads the
  *  global lang signal; the logged-in app threads `lang` explicitly). */
@@ -333,13 +338,13 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
   const monthCutoff = new Date(now.getFullYear(), now.getMonth(), 1);
   // Partition by derived status. Landed = settled this month. Transit =
   // still inside the method's settlement window (ACH < 2d, check < 5d).
-  // Attention is reserved for declined/returned signals once the schema
-  // carries them; right now the section conditionally hides itself.
+  // Attention = customer claims awaiting confirm/reject (REQ-281): they are
+  // on the invoices, not the payments, until the contractor confirms.
   const landed = enriched.filter((p) =>
     p.status === "landed" && new Date(p.receivedAt) >= monthCutoff
   );
   const transit = enriched.filter((p) => p.status === "transit");
-  const attention = enriched.filter((p) => p.status === "attention");
+  const attention = pendingClaims(s.invoices, customerNames, now);
   const recentLanded = landed.filter((p) => p.daysAgo <= 1);
   const olderLanded = landed.filter((p) => p.daysAgo > 1);
 
@@ -400,13 +405,19 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
               num="01"
               title={tFor(lang, "paymentsPage.track.attention")}
               count={attention.length}
-              unit={tFor(lang, "paymentsPage.unit.payment")}
+              unit={tFor(lang, "paymentsPage.unit.claim")}
               defaultOpen
               storageKey="payments:track:attention"
             >
               <div class="qcards">
-                {attention.map((p, i) => (
-                  <PaymentCard key={p.id} lang={lang} p={p} idx={i} />
+                {attention.map((c, i) => (
+                  <ClaimCard
+                    key={c.invoiceId}
+                    lang={lang}
+                    c={c}
+                    idx={i}
+                    onSettled={load}
+                  />
                 ))}
               </div>
             </QuoteTrack>
@@ -727,7 +738,9 @@ function PaymentsKpis(
         <div class="qkpi__lbl">
           {tFor(lang, "paymentsPage.kpi.attentionLabel")}
         </div>
-        <div class="qkpi__val">{attentionCount}</div>
+        <div class="qkpi__val" data-cy="payments-kpi-attention">
+          {attentionCount}
+        </div>
         <div class="qkpi__sub">
           {tFor(lang, "paymentsPage.kpi.heldUp", {
             amount: fmtMoney(attentionTotal),
@@ -872,6 +885,111 @@ function PaymentCard(
             {tFor(lang, "paymentsPage.card.textClient")}
           </button>
         </div>
+      </div>
+    </article>
+  );
+}
+
+/* ---------------- Claim card (attention) ---------------- */
+
+/** REQ-281 (demo M34): a customer's "I paid by X" claim, waiting for the
+ *  contractor. Confirm records the Payment (confirm-payment); reject reopens
+ *  the invoice (reject-claim). Either way the page reloads its data. */
+function ClaimCard(
+  { lang, c, idx, onSettled }: {
+    lang: Lang;
+    c: PaymentClaim;
+    idx: number;
+    onSettled: () => Promise<void>;
+  },
+) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const mood = STATUS_MOOD.attention;
+  const name = (c.claimedBy?.trim() || c.client).split(/\s+/)[0];
+  const method = methodLabel(lang, c.method);
+  const note = c.reference
+    ? tFor(lang, "paymentsPage.claim.noteRef", {
+      name,
+      method,
+      ref: c.reference,
+    })
+    : tFor(lang, "paymentsPage.claim.note", { name, method });
+
+  async function act(action: "confirm" | "reject") {
+    if (busy) return;
+    setBusy(true);
+    setFailed(false);
+    const url = action === "confirm"
+      ? `/api/invoices/${c.invoiceId}/confirm-payment`
+      : `/api/invoices/${c.invoiceId}/reject-claim`;
+    try {
+      const r = await fetch(url, {
+        method: "POST",
+        credentials: "include",
+      });
+      await r.body?.cancel();
+      if (!r.ok) {
+        setFailed(true);
+        return;
+      }
+      await onSettled();
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article
+      class="qcard"
+      data-cy="payment-claim"
+      style={`--mood-from:${mood.from};--mood-to:${mood.to};--mood-shadow:${mood.shadow};--mood-status:${mood.statusFg}`}
+    >
+      <div class="qcard__mood">
+        <div class="qcard__numeral">{String(idx + 1).padStart(2, "0")}</div>
+        <div class="qcard__status">
+          <span class="qcard__status-dot" />{" "}
+          {tFor(lang, "paymentsPage.claim.label")}
+        </div>
+        <div class="qcard__opens" style="text-transform:uppercase">
+          <I d={METHOD_ICON[c.method]} size={12} sw={2} /> {method}
+        </div>
+      </div>
+      <div class="qcard__av">{c.initials}</div>
+      <div class="qcard__body">
+        <div class="qcard__client-name">{c.client} · {c.invoiceRef}</div>
+        <div class="pcard__amount">{fmtMoney(c.amount)}</div>
+        <p class="qcard__story">
+          {note} · {whenLabel(lang, c.daysAgo)}
+        </p>
+        {failed && (
+          <p class="qcard__story" role="alert" style="color:#B3261E">
+            {tFor(lang, "paymentsPage.claim.failed")}
+          </p>
+        )}
+      </div>
+      <div class="qcard__foot">
+        <button
+          type="button"
+          class="qcard__cta"
+          data-cy="payment-claim-confirm"
+          disabled={busy}
+          onClick={() => act("confirm")}
+        >
+          {tFor(lang, "paymentsPage.claim.confirm")}{" "}
+          <span style="display:inline-block;transition:transform 240ms">→</span>
+        </button>
+        <button
+          type="button"
+          class="pph__ghost"
+          data-cy="payment-claim-reject"
+          disabled={busy}
+          onClick={() => act("reject")}
+        >
+          {tFor(lang, "paymentsPage.claim.reject")}
+        </button>
       </div>
     </article>
   );
