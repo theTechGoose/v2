@@ -563,8 +563,12 @@ Deno.test("REQ-264 (M15) send-quote translates a Spanish quote's line items befo
     };
   });
   const quotes = new QuoteStore();
-  const ctx = fresh(new TranslateQuote(quotes, new TranslateBullets(llm)));
-  await seedContractor("u-1");
+  const ctx = fresh(
+    new TranslateQuote(quotes, new TranslateBullets(llm), new UserStore()),
+  );
+  // REQ-333: a Spanish contractor typed the Spanish lines — Spanish is the
+  // base, English the translation.
+  await seedContractor("u-1", "es");
   const customer = await ctx.customers.create("u-1", {
     name: "Tom",
     email: "tom@example.com",

@@ -11,6 +11,10 @@ export interface TranslateBulletsInput {
   texts: string[];
   /** Target language. */
   to: "en" | "es";
+  /** REQ-333 (M24): the language the lines were written in. When it equals
+   *  `to` there is nothing to translate — the lines come back verbatim and
+   *  the model is never asked (it paraphrases "already-English" lines). */
+  from?: "en" | "es";
 }
 
 export interface TranslateBulletsResult {
@@ -39,6 +43,11 @@ export class TranslateBullets {
       Boolean,
     );
     if (texts.length === 0) return { texts: [], translated: true };
+    // REQ-333 (M24): same language in and out is not a translation. The
+    // prompt's "return it unchanged" is not a guarantee — gpt-4o-mini turned
+    // "Demo and haul-off" into "Demolition and removal" — so the short-circuit
+    // is code, not prose.
+    if (input.from === input.to) return { texts, translated: true };
     const target = input.to === "es"
       ? "neutral Latin-American Spanish"
       : "English";

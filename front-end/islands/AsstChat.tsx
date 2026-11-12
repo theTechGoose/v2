@@ -694,6 +694,8 @@ export default function AsstChat({
       jobName?: string;
       description?: string;
       descriptionByLang?: Record<string, string>;
+      /** REQ-333 (M24): the language the text was typed in. */
+      lang?: string;
       lineItems?: {
         description: string;
         /** REQ-264 (M15): server-filled per-language text. */
@@ -5863,8 +5865,13 @@ export default function AsstChat({
                     const quoteLineItems = (quote?.lineItems ?? []).map((
                       li,
                     ) => ({
-                      // REQ-264 (M15): in the preview language.
-                      description: lineItemDescription(li, previewLang),
+                      // REQ-264 (M15): in the preview language. REQ-333
+                      // (M24): the quote's own language is the typed text.
+                      description: lineItemDescription(
+                        li,
+                        previewLang,
+                        quote?.lang,
+                      ),
                       amountCents: Math.round(
                         (li.price ?? 0) * (li.quantity ?? 1),
                       ),
@@ -5877,7 +5884,11 @@ export default function AsstChat({
                         return ql && ql.description === li.description
                           ? {
                             ...li,
-                            description: lineItemDescription(ql, previewLang),
+                            description: lineItemDescription(
+                              ql,
+                              previewLang,
+                              quote?.lang,
+                            ),
                           }
                           : li;
                       })

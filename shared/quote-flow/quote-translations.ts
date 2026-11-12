@@ -18,6 +18,9 @@ export interface TranslatableLineItem {
 }
 
 export interface TranslatableQuote {
+  /** REQ-333 (M24): the language the base text was typed in — stored by
+   *  TranslateQuote. That language is never a translation. */
+  lang?: string;
   description?: string;
   descriptionByLang?: Record<string, string>;
   lineItems?: TranslatableLineItem[];
@@ -42,14 +45,19 @@ export function descriptionLines(description: string | undefined): string[] {
 }
 
 /** Per language, the parts of the quote with text but no translation yet.
- *  Languages with nothing missing are omitted. */
+ *  Languages with nothing missing are omitted. REQ-333 (M24): the base
+ *  language (`baseLang`, else the quote's stored `lang`) is never missing —
+ *  its text is the typed text, not something to translate. */
 export function missingQuoteTranslations(
   quote: TranslatableQuote | undefined | null,
   langs: readonly string[] = QUOTE_LANGS,
+  baseLang?: string,
 ): MissingTranslation[] {
   if (!quote) return [];
+  const base = baseLang ?? quote.lang;
   const out: MissingTranslation[] = [];
   for (const lang of langs) {
+    if (lang === base) continue;
     const lines = has(quote.descriptionByLang, lang)
       ? []
       : descriptionLines(quote.description);
@@ -74,11 +82,15 @@ export function previewTranslationMissing(
   return missingQuoteTranslations(quote, [lang]).length > 0;
 }
 
-/** A line item's text in `lang`, else its base text. */
+/** A line item's text in `lang`, else its base text. REQ-333 (M24): asked
+ *  for the base language (`baseLang`) it is the typed text itself — a cache
+ *  in that slot is never a translation (an older run may have paraphrased). */
 export function lineItemDescription(
   li: TranslatableLineItem,
   lang: string,
+  baseLang?: string,
 ): string {
+  if (baseLang !== undefined && lang === baseLang) return li.description;
   return has(li.descriptionByLang, lang)
     ? li.descriptionByLang![lang]
     : li.description;
@@ -88,10 +100,11 @@ export function lineItemDescription(
 export function localizeLineItems<T extends TranslatableLineItem>(
   items: T[] | undefined | null,
   lang: string,
+  baseLang?: string,
 ): T[] {
   return (items ?? []).map((li) => ({
     ...li,
-    description: lineItemDescription(li, lang),
+    description: lineItemDescription(li, lang, baseLang),
   }));
 }
 
@@ -144,11 +157,16 @@ export function descriptionTranslationsStale(
     patch.descriptionByLang === undefined;
 }
 
-/** The job-details description in `lang`, else the base description. */
+/** The job-details description in `lang`, else the base description.
+ *  REQ-333 (M24): in the base language (`baseLang`, else the quote's stored
+ *  `lang`) it is the typed description itself. */
 export function quoteDescription(
   quote: TranslatableQuote,
   lang: string,
+  baseLang?: string,
 ): string | undefined {
+  const base = baseLang ?? quote.lang;
+  if (base !== undefined && lang === base) return quote.description;
   return has(quote.descriptionByLang, lang)
     ? quote.descriptionByLang![lang]
     : quote.description;

@@ -208,3 +208,66 @@ describe("REQ-264 (M15) an edited text drops its stale translations", () => {
     expect(descriptionTranslationsStale(prev, {})).toBe(false);
   });
 });
+
+/**
+ * REQ-333 (demo-loop cycle 1, M24), Raphael: "fix every issue the demo
+ * found, loop until there are none".
+ *
+ * M24: the AI silently reworded line items. At lock, TranslateQuote treated
+ * the quote's OWN language as "missing" and sent the typed English lines
+ * through the model with to:'en'; the model normalized them ("Demo and
+ * haul-off" → "Demolition and removal") and every reader preferred that
+ * cache. The base language is never a translation: it is never "missing",
+ * and a reader asked for the base language renders the typed text.
+ */
+describe("REQ-333 (M24) the base language is never translated", () => {
+  const englishQuote = {
+    lang: "en",
+    description: "Demo and haul-off\nPlumbing fixtures",
+    lineItems: [
+      { description: "Demo and haul-off", quantity: 1, unit: "ea", price: 1 },
+      { description: "Plumbing fixtures", quantity: 1, unit: "ea", price: 2 },
+    ],
+  };
+
+  it("REQ-333 the base language is never missing — only the other language is asked", () => {
+    expect(missingQuoteTranslations(englishQuote, ["en", "es"], "en")).toEqual([
+      {
+        lang: "es",
+        descriptionLines: ["Demo and haul-off", "Plumbing fixtures"],
+        lineIndexes: [0, 1],
+      },
+    ]);
+  });
+
+  it("REQ-333 the quote's stored lang is the default base", () => {
+    expect(missingQuoteTranslations(englishQuote).map((m) => m.lang)).toEqual([
+      "es",
+    ]);
+  });
+
+  it("REQ-333 a line item read in its base language is the typed text, even over a paraphrased cache", () => {
+    const li = {
+      description: "Demo and haul-off",
+      descriptionByLang: {
+        en: "Demolition and removal",
+        es: "Demolición y retiro",
+      },
+    };
+    expect(lineItemDescription(li, "en", "en")).toBe("Demo and haul-off");
+    expect(lineItemDescription(li, "es", "en")).toBe("Demolición y retiro");
+    expect(localizeLineItems([li], "en", "en")[0].description).toBe(
+      "Demo and haul-off",
+    );
+  });
+
+  it("REQ-333 the description read in the quote's own language is the typed text", () => {
+    const q = {
+      lang: "en",
+      description: "Demo and haul-off",
+      descriptionByLang: { en: "Demolition and removal" },
+    };
+    expect(quoteDescription(q, "en")).toBe("Demo and haul-off");
+    expect(quoteDescription(q, "en", "en")).toBe("Demo and haul-off");
+  });
+});

@@ -75,7 +75,8 @@ describe("REQ-256 the sample quote fits the business, in both languages", () => 
     expect(doc).toMatch(/quoteDoc\.sampleHeadline/);
     // reconciled on demo-fixes: the per-language line text comes through
     // REQ-264's localizeLineItems, which reads descriptionByLang[lang]
-    expect(doc).toMatch(/localizeLineItems\(quote\.lineItems, lang\)/);
+    // (REQ-333: with the quote's own language as the base)
+    expect(doc).toMatch(/localizeLineItems\(quote\.lineItems, lang, quote\.lang\)/);
     expect(read("shared/quote-flow/quote-translations.ts")).toMatch(
       /li\.descriptionByLang!\[lang\]/,
     );

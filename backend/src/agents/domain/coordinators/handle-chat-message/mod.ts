@@ -1176,7 +1176,11 @@ export class HandleChatMessage {
           // REQ-264 (M15): translate when the quote locks, so the review
           // card and the later send carry every language. REQ-234: locking
           // never emails or sends — only the translation runs here.
-          await this.translator?.run({ userId: input.userId, quoteId })
+          await this.translator?.run({
+            userId: input.userId,
+            quoteId,
+            baseLang: replyLang, // REQ-333 (M24): typed in the app language
+          })
             .catch((err) =>
               console.error(`[chat:lock_quote] translate failed:`, err)
             );
