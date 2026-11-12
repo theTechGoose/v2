@@ -83,3 +83,59 @@ export function formatTyping(raw: string): string {
   const intFmt = intPart === "" ? "" : Number(intPart).toLocaleString("en-US");
   return intFmt + decPart;
 }
+
+/* ------------------------------------------------------------------------------------------- */
+/* REQ-329 (demo p15-13): quick chips and the magnitude bar scale to an anchor amount.          */
+/* ------------------------------------------------------------------------------------------- */
+
+/** The chips with no anchor — the fixed list the pad always showed. */
+export const CHIP_PRESETS_CENTS = [50_00, 100_00, 500_00, 1_000_00, 5_000_00];
+
+/** Without an anchor the bar is log-scaled and fills at $100M. */
+export const MAGNITUDE_REF_CENTS = 100_000_000_00;
+
+/** The chips as fractions/multiples of the anchor — the 1× chip is the anchor itself. */
+export const CHIP_ANCHOR_FACTORS = [0.5, 0.75, 1, 1.25, 1.5];
+
+/**
+ * The grid the chips snap to: half a step of the anchor's second significant digit, in cents.
+ * $18,000 → $500 · $1,850 → $50 · $347 → $5 · $42 → $0.50; never below one cent.
+ */
+export function chipGridCents(anchorCents: number): number {
+  const dollars = anchorCents / 100;
+  const secondDigitDollars = Math.pow(10, Math.floor(Math.log10(dollars)) - 1);
+  return Math.max(1, Math.round(secondDigitDollars * 100 / 2));
+}
+
+/**
+ * Quick-amount chips for an amount pad. With a positive anchor (the AI's market price, the draft
+ * total) the chips are 0.5×, 0.75×, 1×, 1.25×, 1.5× of it snapped to `chipGridCents`, unique and
+ * ascending; without one the fixed list.
+ */
+export function chipPresetsFor(anchorCents?: number | null): number[] {
+  if (!anchorCents || !Number.isFinite(anchorCents) || anchorCents <= 0) {
+    return CHIP_PRESETS_CENTS;
+  }
+  const anchor = Math.round(anchorCents);
+  const grid = chipGridCents(anchor);
+  const chips = CHIP_ANCHOR_FACTORS.map((f) =>
+    f === 1 ? anchor : Math.round((anchor * f) / grid) * grid
+  ).filter((c) => c > 0);
+  return [...new Set(chips)].sort((a, b) => a - b);
+}
+
+/**
+ * The magnitude bar's fill, 0..1. With an anchor it is linear and full at the top chip (1.5×);
+ * without one it is log-scaled so $50 reads and $5k still has headroom.
+ */
+export function magnitudeFill(
+  cents: number | null | undefined,
+  anchorCents?: number | null,
+): number {
+  const v = cents ?? 0;
+  if (v <= 0) return 0;
+  if (anchorCents && anchorCents > 0) {
+    return Math.min(1, v / (anchorCents * 1.5));
+  }
+  return Math.min(1, Math.log10(1 + v) / Math.log10(1 + MAGNITUDE_REF_CENTS));
+}

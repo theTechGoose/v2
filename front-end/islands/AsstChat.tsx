@@ -856,6 +856,12 @@ export default function AsstChat({
   const [priceBasis, setPriceBasis] = useState<
     "labor_and_materials" | "labor_materials_as_noted"
   >(seed?.priceBasis ?? "labor_and_materials");
+  /** REQ-329 (demo p15-13): the size of the job the amount pad scales its
+   *  quick chips to — the market tier (the first tier if none is "market"). */
+  const priceAnchorCents = priceSuggestions === null
+    ? null
+    : (priceSuggestions.find((t) => t.tier === "market") ?? priceSuggestions[0])
+      ?.priceCents ?? null;
   const [optionsLoading, setOptionsLoading] = useState(false);
   /** REQ-027 (NW-11): the model could not draft the options — the cards
    *  are heuristic scope bullets and the picker says so. */
@@ -5841,6 +5847,9 @@ export default function AsstChat({
                         // a re-entered flow never shows a stale value.
                         key={pendingJobDetailsRaw ?? "blank"}
                         initialCents={priceCents ?? 0}
+                        // REQ-329 (demo p15-13): the quick chips scale to the
+                        // AI's market price instead of a fixed $50…$5k.
+                        anchorCents={priceAnchorCents}
                         // REQ-041 (NW-53f): the number field is focused in
                         // the help-me-price flow too.
                         autoFocus
