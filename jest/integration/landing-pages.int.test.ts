@@ -13,7 +13,7 @@
  *
  *   GET /api/admin/landing-offers   (authed session)
  *   → 200 {
- *       trialDays: number,
+ *       // no trialDays — REQ-505 (demo cycle 3, m5): billing has no trial
  *       priceFromCents: number,
  *       unlimitedTier: string,
  *       socialProof: { contractors: number, docsSent: number },
@@ -168,12 +168,27 @@ describe("REQ-413 (demo-loop cycle 2, p5 / m49) the landing SSR speaks one langu
   });
 });
 
+describe("REQ-505 (demo cycle 3, m5) neither landing page promises a free trial billing doesn't have", () => {
+  for (const lang of ["en", "es"]) {
+    for (const path of ["/", "/landing"]) {
+      it(`REQ-505 ${lang} ${path}: no trial claim in the SSR HTML`, async () => {
+        const html = await pageHtml(path, lang);
+        const hit = html.match(
+          /free trial|free for \d+ days|\d+ days free|prueba gratis|gratis por \d+|\d+ d[ií]as gratis/i,
+        );
+        expect(hit?.[0] ?? null).toBeNull();
+      });
+    }
+  }
+});
+
 describe("P-08 admin-configurable landing offers (PROPOSED CONTRACT — see header)", () => {
   it("P-08 authed GET /admin/landing-offers returns the single offer config (red today: 404)", async () => {
     const s = await contractor("+15125552900");
     const { status, body } = await s.get("/admin/landing-offers");
     expect(status).toBe(200);
-    expect(Number.isInteger(body?.trialDays)).toBe(true);
+    // REQ-505 (demo cycle 3, m5): billing has no trial, so the offer has none.
+    expect(body).not.toHaveProperty("trialDays");
     expect(body?.priceFromCents).toBeGreaterThan(0);
     expect(typeof body?.unlimitedTier).toBe("string");
     expect(Number.isInteger(body?.socialProof?.contractors)).toBe(true);
