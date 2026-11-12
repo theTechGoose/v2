@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { detailLines } from "../lib/format.ts";
+import { settledSendCtaIds } from "../lib/send-cta-settled.ts";
 import {
   computePaymentSplit,
   type MilestoneRole,
@@ -1672,19 +1673,24 @@ export default function AsstChat({
   // (felt redundant), so this effect is the single entry point. Tracked
   // per-message-id in a ref so cancelling the preview doesn't re-trigger.
   const autoOpenedCtasRef = useRef<Set<string>>(new Set());
+  // REQ-244: a send CTA the thread itself shows as sent/signed (a later
+  // phase-3/4 divider, or an accepted quote) counts as reviewed — the
+  // in-memory set starts empty on every load, and re-opening the review
+  // over a sent quote hid the message box (demo m5).
+  const settledCtas = settledSendCtaIds(messages, quote);
   useEffect(() => {
     if (previewCtaId !== null) return;
     for (const m of messages) {
       if (m.kind !== "continue_cta") continue;
       const p = (m.payload ?? {}) as { toPhase?: string };
       if (p.toPhase !== "send") continue;
-      if (reviewedCtas.has(m.id)) continue;
+      if (reviewedCtas.has(m.id) || settledCtas.has(m.id)) continue;
       if (autoOpenedCtasRef.current.has(m.id)) continue;
       autoOpenedCtasRef.current.add(m.id);
       submitContinueCta(m).catch(() => {});
       break;
     }
-  }, [messages, previewCtaId, reviewedCtas]);
+  }, [messages, previewCtaId, reviewedCtas, quote?.status]);
 
   function autosize() {
     const ta = taRef.current;
@@ -5411,7 +5417,7 @@ export default function AsstChat({
                   };
                   const reviewed = (payload.toPhase === "send" ||
                     payload.toPhase === "invoice") &&
-                    reviewedCtas.has(m.id);
+                    (reviewedCtas.has(m.id) || settledCtas.has(m.id));
                   // Pull the actual delivery outcome from the phase_divider
                   // the server emits AFTER this CTA fires. Falls back to the
                   // local customer.email when no divider is in scope yet
