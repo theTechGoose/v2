@@ -24,6 +24,8 @@ import type {
 
 const PREFIX = "quote";
 const INDEX_PREFIX = "quote_by_user";
+/** REQ-241: the onboarding sample's number when no localized one is given. */
+const SAMPLE_NUMBER = "SAMPLE";
 
 @Injectable()
 export class QuoteStore {
@@ -32,7 +34,11 @@ export class QuoteStore {
   async create(
     userId: string,
     input: CreateQuoteDto,
-    opts?: { jobNameLang?: "en" | "es" } & CreateNumberedOpts,
+    opts?: {
+      jobNameLang?: "en" | "es";
+      /** REQ-241: the mark an isSample quote shows instead of a Q- number */
+      sampleNumber?: string;
+    } & CreateNumberedOpts,
   ): Promise<Quote> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -60,6 +66,20 @@ export class QuoteStore {
     // REQ-204: the customer as they are today travels with the document.
     const customerSnapshot = await snapshotCustomer(quote.customerId, userId);
     if (customerSnapshot) quote.customerSnapshot = customerSnapshot;
+    // REQ-241: the onboarding sample (P-15) stays out of the owner's Q-
+    // sequence — it would use up Q-001 and lock the starting number
+    // (REQ-199). It carries its own mark instead of a Q- number.
+    if (quote.isSample === true) {
+      quote.number = opts?.sampleNumber ?? SAMPLE_NUMBER;
+      quote.version = 1;
+      const kv = await getKv();
+      const res = await kv.atomic()
+        .set([PREFIX, id], quote)
+        .set([INDEX_PREFIX, userId, id], id)
+        .commit();
+      if (!res.ok) throw new Error("quote-store: sample create failed");
+      return quote;
+    }
     // REQ-198/200: the next Q- number, in the same transaction as the row.
     return await createNumbered(this.numbering, {
       userId,

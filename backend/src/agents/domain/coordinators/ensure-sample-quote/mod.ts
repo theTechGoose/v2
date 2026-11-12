@@ -52,6 +52,10 @@ export class EnsureSampleQuote {
       ],
       estimatedTotal: 3_700_00,
       status: "sent",
+    }, {
+      // REQ-241: the sample is marked, not numbered — the owner's first
+      // real quote is Q-001.
+      sampleNumber: t(lang, "ensureSampleQuote.number"),
     });
     return { quoteId: quote.id, created: true };
   }

@@ -112,6 +112,21 @@ export function docNumberOf(doc: { number?: string; id: string }): string {
 }
 
 /**
+ * REQ-241: the number the assistant's review card shows for `docId` — the
+ * fetched quote's own number ("Q-001", the one every document carries) when
+ * that quote is this one; the old hex reference only when none is known.
+ */
+export function reviewCardNumber(
+  docId: string,
+  quote: { id?: string; number?: string } | null | undefined,
+): string {
+  return docNumberOf({
+    id: docId,
+    number: quote && quote.id === docId ? quote.number : undefined,
+  });
+}
+
+/**
  * Does `query` name this number? Full or partial, case-insensitive, with or
  * without the prefix or dash: "inv-5", "5000", "INV5000" and "5" all hit
  * "INV-5000"; "600" does not.
