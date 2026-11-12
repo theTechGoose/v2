@@ -35,7 +35,7 @@ interface LLayerGroup extends LLayer {
   clearLayers(): void;
 }
 interface LMap {
-  setView(center: LatLng, zoom: number): LMap;
+  setView(center: LatLng, zoom: number, opts?: { animate?: boolean }): LMap;
   fitBounds(bounds: LatLng[], opts?: { padding?: [number, number] }): LMap;
   remove(): void;
   invalidateSize(): void;
