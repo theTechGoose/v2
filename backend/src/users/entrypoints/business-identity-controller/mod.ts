@@ -10,12 +10,21 @@ import { validTimezone } from "@users/domain/business/timezone/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import { sniffLogoImage } from "#quote-flow/logo-image.ts";
 import { commsLanguagesSeed } from "#quote-flow/comms-language.ts";
+import { businessNameError } from "#quote-flow/settings-fields.ts";
 
 /** REQ-172 — a time zone Intl does not know is a 400, not a stored string */
 class BadTimezone extends Error {
   readonly status = 400;
   constructor(tz: string) {
     super(`unknown time zone: ${tz}`);
+  }
+}
+
+/** REQ-501 (demo M35) — a blank business name once one is set is a 400 naming welcome.nameBlank */
+class BlankBusinessName extends Error {
+  readonly status = 400;
+  constructor(key: string) {
+    super(key);
   }
 }
 
@@ -55,9 +64,14 @@ export class BusinessIdentityController {
     if (patch.logoFileId && !(await isOwnImage(this.files, patch.logoFileId, user.id))) {
       return ctx.json({ error: "logo_not_image" }, 422);
     }
+    const current = await this.store.get(user.id);
+    // REQ-501 (demo M35): Settings blurred an emptied business name and the PUT stored ""
+    const nameErr = businessNameError(patch.businessName, current?.businessName);
+    if (nameErr) throw new BlankBusinessName(nameErr);
+    if (patch.businessName !== undefined) patch.businessName = patch.businessName.trim();
     // REQ-348 (demo m34): an identity with no send-in languages picked takes the default from the
     // contractor's own language (es → en + es) — Settings used to show English alone for a Spanish signup
-    const seed = commsLanguagesSeed(await this.store.get(user.id), patch, user.language);
+    const seed = commsLanguagesSeed(current, patch, user.language);
     const saved = await this.store.upsert(user.id, seed ? { ...patch, commsLanguages: seed } : patch);
     await this.leads.enqueueSync(user.id); // REQ-058/099 — the business name is the CRM customer's name, after this reply
     return saved;

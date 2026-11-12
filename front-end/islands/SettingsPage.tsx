@@ -55,6 +55,10 @@ import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
 import { type Lang, langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { normalizeWebsiteUrl } from "../../shared/quote-flow/format-helpers.ts";
 import {
+  accountEmailError,
+  businessNameError,
+} from "../../shared/quote-flow/settings-fields.ts"; // REQ-501
+import {
   businessTimezone,
   PICKER_TIMEZONES,
   timezoneLabelKey,
@@ -374,8 +378,13 @@ function EditCard(
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // REQ-501 (demo M35): a bad email / an emptied business name is shown under its field and NOT
+  // saved — the stored value stays (the keys come from shared/quote-flow/settings-fields.ts)
+  const [emailErr, setEmailErr] = useState<string | null>(null);
+  const [bizErr, setBizErr] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const t = tr(langSignal.value === "es");
+  const fieldLang: Lang = langSignal.value === "es" ? "es" : "en";
   /** REQ-172/255 — the zone picked, else the address's state's, else New York */
   const zone = businessTimezone({
     timezone: snapshot.identity?.timezone,
@@ -469,14 +478,35 @@ function EditCard(
             type="email"
             class="settings-edit__input"
             style={inputStyle}
+            data-cy="settings-email"
             value={email}
             disabled={busy === "user"}
-            onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
-            onBlur={() =>
-              email.trim() !== (snapshot.user.email ?? "") &&
-              saveUser({ email: email.trim() })}
+            aria-invalid={emailErr ? "true" : undefined}
+            onInput={(e) => {
+              setEmail((e.target as HTMLInputElement).value);
+              setEmailErr(null);
+            }}
+            onBlur={() => {
+              const key = accountEmailError(email);
+              setEmailErr(key);
+              if (key) return;
+              if (email.trim() !== (snapshot.user.email ?? "")) {
+                saveUser({ email: email.trim() });
+              }
+            }}
             aria-label={t.ariaEditEmail}
           />
+          {emailErr
+            ? (
+              <span
+                role="alert"
+                data-cy="settings-email-error"
+                style="display:block;margin-top:4px;font-size:12px;color:#a83b3b"
+              >
+                {tFor(fieldLang, emailErr)}
+              </span>
+            )
+            : null}
         </label>
         <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.businessName}</span>
@@ -484,14 +514,38 @@ function EditCard(
             type="text"
             class="settings-edit__input"
             style={inputStyle}
+            data-cy="settings-biz"
             value={biz}
             disabled={busy === "identity"}
-            onInput={(e) => setBiz((e.target as HTMLInputElement).value)}
-            onBlur={() =>
-              biz.trim() !== (snapshot.identity?.businessName ?? "") &&
-              saveIdentity({ businessName: biz.trim() })}
+            aria-invalid={bizErr ? "true" : undefined}
+            onInput={(e) => {
+              setBiz((e.target as HTMLInputElement).value);
+              setBizErr(null);
+            }}
+            onBlur={() => {
+              const key = businessNameError(
+                biz,
+                snapshot.identity?.businessName,
+              );
+              setBizErr(key);
+              if (key) return;
+              if (biz.trim() !== (snapshot.identity?.businessName ?? "")) {
+                saveIdentity({ businessName: biz.trim() });
+              }
+            }}
             aria-label={t.ariaEditBusinessName}
           />
+          {bizErr
+            ? (
+              <span
+                role="alert"
+                data-cy="settings-biz-error"
+                style="display:block;margin-top:4px;font-size:12px;color:#a83b3b"
+              >
+                {tFor(fieldLang, bizErr)}
+              </span>
+            )
+            : null}
         </label>
         <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.website}</span>
@@ -2396,8 +2450,9 @@ export default function SettingsPage() {
       <section class="hero" style="grid-template-columns:1fr">
         <div class="hero__copy">
           <h1 class="hero__title">
-            {p.identity?.businessName ?? p.identity?.displayName ??
-              p.user.name ?? tFor(lang, "settings.yourBusiness")}
+            {/* REQ-501 (demo M35): `||` — an empty business name falls through to the next */}
+            {p.identity?.businessName || p.identity?.displayName ||
+              p.user.name || tFor(lang, "settings.yourBusiness")}
           </h1>
           <p class="hero__sub">{t.heroSub}</p>
         </div>
@@ -2461,7 +2516,7 @@ export default function SettingsPage() {
               rows={[
                 [
                   t.businessName,
-                  p.identity?.businessName ?? p.identity?.displayName,
+                  p.identity?.businessName || p.identity?.displayName,
                 ],
                 [t.legalName, p.identity?.legalName],
                 [t.license, p.identity?.businessLicense],

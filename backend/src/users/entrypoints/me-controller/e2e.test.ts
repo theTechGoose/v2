@@ -320,3 +320,32 @@ Deno.test("me e2e: DELETE /me closes the account", async () => {
     assertEquals(okAfter, false, "session is gone after account close");
   });
 });
+
+// REQ-501 (demo-loop cycle 3, M35): Settings saved "carl@@jensen" as the account email — PUT /me
+// took any string. A malformed email is a 400 naming the dictionary key and the stored one stays;
+// an empty email still clears it.
+Deno.test("REQ-501 M35 me e2e: PUT /me refuses a malformed email with 400 customer.invalidEmail; blank clears", async () => {
+  await withServer(async (port) => {
+    const session = await login(port, "+15125551235");
+    const headers = { "content-type": "application/json", "x-session-id": session.sessionId };
+    const put = (body: unknown) =>
+      fetch(`http://localhost:${port}/me`, { method: "PUT", headers, body: JSON.stringify(body) });
+
+    const ok = await put({ name: "Carl Jensen", email: "carl@jensen.com" });
+    assertEquals(ok.status, 200);
+    await drain(ok);
+
+    for (const bad of ["carl@@jensen", "carl@", "carl@jensen"]) {
+      const res = await put({ email: bad });
+      const text = await res.text();
+      assertEquals(res.status, 400, `${bad}: ${text}`);
+      assert(text.includes("customer.invalidEmail"), text);
+    }
+    const kept = await fetch(`http://localhost:${port}/me`, { headers }).then((r) => r.json());
+    assertEquals(kept.email, "carl@jensen.com");
+
+    const cleared = await put({ email: "" });
+    assertEquals(cleared.status, 200);
+    assertEquals((await cleared.json()).email, "");
+  });
+});

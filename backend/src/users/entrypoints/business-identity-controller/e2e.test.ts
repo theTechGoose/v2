@@ -234,3 +234,33 @@ Deno.test("REQ-348 business-identity e2e: a pick is never overridden — an expl
     assertEquals(kept.commsLanguages, undefined, "a legacy single choice stands — nothing is seeded over it");
   });
 });
+
+// REQ-501 (demo-loop cycle 3, M35): Settings saved an empty business name — PUT /profile/identity
+// took "". Once a business has a name, a blank one is a 400 naming welcome.nameBlank and the
+// stored name stays.
+Deno.test("REQ-501 M35 business-identity e2e: a blank businessName is refused once one is set", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const headers = { "content-type": "application/json", "x-session-id": sid };
+    const put = (body: unknown) =>
+      fetch(`http://localhost:${port}/profile/identity`, { method: "PUT", headers, body: JSON.stringify(body) });
+
+    const first = await put({ businessName: "Jensen Roofing" });
+    assertEquals(first.status, 200);
+    await drain(first);
+
+    for (const blank of ["", "   "]) {
+      const res = await put({ businessName: blank });
+      const text = await res.text();
+      assertEquals(res.status, 400, `${JSON.stringify(blank)}: ${text}`);
+      assertEquals(text.includes("welcome.nameBlank"), true, text);
+    }
+    const kept = await fetch(`http://localhost:${port}/profile/identity`, { headers }).then((r) => r.json());
+    assertEquals(kept.businessName, "Jensen Roofing");
+
+    // other fields still save without touching the name
+    const site = await put({ websiteUrl: "https://jensen.example" });
+    assertEquals(site.status, 200);
+    await drain(site);
+  });
+});
