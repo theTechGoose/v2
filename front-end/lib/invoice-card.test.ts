@@ -13,6 +13,7 @@ import { assert, assertEquals } from "@std/assert";
 import {
   cardDate,
   hasSecondaryPaymentReceived,
+  paymentReceivedTarget,
   scheduledSubline,
 } from "./invoice-card.ts";
 import { tFor } from "./i18n.ts";
@@ -52,4 +53,38 @@ Deno.test("REQ-407: cardDate keeps the card's existing due-date format", () => {
   assertEquals(cardDate("2026-11-19", NOW, "en"), "Nov 19");
   assertEquals(cardDate("2027-01-05", NOW, "en"), "Jan 5, 2027");
   assertEquals(cardDate(undefined, NOW, "en"), "—");
+});
+
+// REQ-489 — demo-loop cycle 3, issue p8-pair1-d: "'Payment received' does a
+// full page load". On /invoices the card opens the detail in pay mode IN
+// PLACE (setOpenId + history.replaceState); only a call from another page
+// navigates.
+Deno.test("REQ-489 p8-pair1-d: on /invoices, 'Payment received' opens in place and keeps the other params", () => {
+  const t = paymentReceivedTarget(
+    "https://app.test/invoices?lang=es&open=old&pay=0#top",
+    "inv_42",
+  );
+  assertEquals(t.inPlace, true);
+  const u = new URL(t.url, "https://app.test");
+  assertEquals(u.pathname, "/invoices");
+  assertEquals(u.searchParams.get("open"), "inv_42");
+  assertEquals(u.searchParams.get("pay"), "1");
+  assertEquals(u.searchParams.get("lang"), "es");
+});
+
+Deno.test("REQ-489 p8-pair1-d: from another page, 'Payment received' navigates to the /invoices deep link", () => {
+  for (
+    const href of [
+      "https://app.test/dashboard",
+      "https://app.test/invoices-old",
+    ]
+  ) {
+    const t = paymentReceivedTarget(href, "inv 7");
+    assertEquals(t.inPlace, false, href);
+    assertEquals(t.url, "/invoices?open=inv+7&pay=1", href);
+  }
+  assertEquals(
+    paymentReceivedTarget("https://app.test/invoices/", "a").inPlace,
+    true,
+  );
 });
