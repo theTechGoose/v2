@@ -98,3 +98,14 @@ export function paymentReceivedTarget(
   here.hash = "";
   return { inPlace: true, url: here.pathname + here.search };
 }
+
+/**
+ * REQ-477 (demo-loop cycle 3, M31): which cards carry the outlined
+ * "Send a nudge" beside the stage CTA. A claimed card asks first (REQ-250);
+ * an out card — sent, not yet overdue — sends straight away, so a contractor
+ * can remind a client before the cadence's first rung. An overdue card's
+ * stage CTA already IS the nudge, so it gets no second one.
+ */
+export function hasNudgeButton(stage: CardStage): boolean {
+  return stage === "claimed" || stage === "out";
+}
