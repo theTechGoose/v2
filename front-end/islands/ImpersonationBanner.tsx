@@ -31,9 +31,10 @@ export default function ImpersonationBanner() {
   const [who, setWho] = useState<WhoAmI | null>(null);
   const [busy, setBusy] = useState(false);
   /** REQ-232 — the demo this staff presents, while the banner asks whether to leave it */
-  const [leaving, setLeaving] = useState<{ id: string; name: string } | null>(
-    null,
-  );
+  /** REQ-298 — `presenters`: how many present; alone, leaving ends the demo for the customer */
+  const [leaving, setLeaving] = useState<
+    { id: string; name: string; presenters: number } | null
+  >(null);
   const el = useRef<HTMLDivElement>(null);
   const shown = Boolean(who?.impersonating);
 
@@ -78,7 +79,11 @@ export default function ImpersonationBanner() {
       try {
         const a = await demoModeClient.active();
         if (a.session && a.role === "presenter") {
-          setLeaving({ id: a.session.id, name: a.session.targetName });
+          setLeaving({
+            id: a.session.id,
+            name: a.session.targetName,
+            presenters: a.session.presenters.length,
+          });
           setBusy(false);
           return;
         }

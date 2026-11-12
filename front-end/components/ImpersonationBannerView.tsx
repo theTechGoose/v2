@@ -2,6 +2,7 @@ import type { Ref } from "preact";
 import type { WhoAmI } from "../clients/admin.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { t } from "../lib/i18n.ts";
+import { returnAskText } from "../../shared/demo-mode/restart.ts";
 
 /**
  * REQ-269 (demo i18n-formatting-m2) — the bar itself, in the app language: its copy comes
@@ -14,8 +15,9 @@ export function ImpersonationBannerView(
     busy: boolean;
     onStop: () => void;
     el?: Ref<HTMLDivElement>;
-    /** REQ-232 (M21) — the demo this staff presents, while the bar asks whether to leave it */
-    leaving?: { id: string; name: string } | null;
+    /** REQ-232 (M21) — the demo this staff presents, while the bar asks whether to leave it;
+     *  REQ-298 — `presenters`: how many present (alone, the question says leaving ends it) */
+    leaving?: { id: string; name: string; presenters: number } | null;
     onLeave?: () => void;
     onCancelLeave?: () => void;
   },
@@ -26,6 +28,9 @@ export function ImpersonationBannerView(
   const actingLabel = acting
     ? (acting.name || acting.businessName || fmtPhone(acting.phoneNumber))
     : t("impersonation.anotherUser");
+
+  // REQ-298 — alone on the demo, leaving ends it for the customer: the question says so
+  const ask = leaving ? returnAskText(leaving.presenters, leaving.name) : null;
 
   return (
     <div
@@ -42,10 +47,10 @@ export function ImpersonationBannerView(
           ? ` ${t("impersonation.as", { name: who.impersonator.name })}`
           : ""}
       </span>
-      {leaving
+      {leaving && ask
         ? (
           <>
-            <span>{t("demoMode.returnAsk", { name: leaving.name })}</span>
+            <span data-cy="imp-leave-ask">{t(ask.key, ask.vars)}</span>
             <button
               type="button"
               data-cy="imp-leave-demo"

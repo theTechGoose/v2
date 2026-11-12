@@ -4,6 +4,8 @@
  * and connects; Hans ends it, Ana's pill goes; Hans opens a new one and Ana's app — never
  * reloaded — joins it within the 5 s poll. Then Ana ends it from her own pill, Hans opens a third,
  * and Ana's app joins that one too.
+ * REQ-298 (demo-loop cycle 1, M5 + M17) — each restart is SAID on Ana's side: her pill reads
+ * "Hans started a new demo" when the next demo reaches her, never a silent swap of the notice.
  */
 import { story, type StoryTools } from "#shots";
 
@@ -56,7 +58,7 @@ async function setName(
   })).body?.cancel();
 }
 
-Deno.test("REQ-222 (M11): a connected demo ends — from the staff side, then from the customer's — and a new demo reaches the customer's app within the 5 s poll, with no reload", (t) =>
+Deno.test("REQ-222 (M11) + REQ-298: a connected demo ends — from the staff side, then from the customer's — and a new demo reaches the customer's app within the 5 s poll, with no reload, said as a new demo", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const userPhone = `+1512${digits()}`;
@@ -102,17 +104,24 @@ Deno.test("REQ-222 (M11): a connected demo ends — from the staff side, then fr
           timeout: 15_000,
         });
       };
-      /** both sides connected — the customer's poll is idle while this lasts (by design) */
+      /** both sides connected — the customer's poll is idle while this lasts (by design).
+       *  REQ-232 (demo-lifecycle-p1): the pills say Connected (customer) and Live (staff) */
       const connected = async (what: string) => {
         // ACTIVE_POLL_MS (5 s) + the join + the WebRTC/relay handshake
         await userPage.locator("[data-cy='demo-status']").filter({
-          hasText: /direct|relay/,
+          hasText: /^\s*Connected\s*$/,
         }).waitFor({ timeout: 20_000 }).catch(() => {
           throw new Error(`${what}: the customer's app never connected`);
         });
         await page.locator("[data-cy='demo-status']").filter({
-          hasText: /direct|relay/,
+          hasText: /^\s*Live\s*$/,
         }).waitFor({ timeout: 20_000 });
+      };
+      /** REQ-235 — End asks first: Yes counts once armed (Playwright waits for it) */
+      // deno-lint-ignore no-explicit-any
+      const endFrom = async (p: any) => {
+        await p.locator("[data-cy='demo-end']").click();
+        await p.locator("[data-cy='demo-end-confirm']").click();
       };
       const pillGone = () =>
         userPage.locator("[data-cy='demo-pill']").waitFor({
@@ -125,17 +134,29 @@ Deno.test("REQ-222 (M11): a connected demo ends — from the staff side, then fr
       await connected("the first demo");
 
       // 2. Hans ends it: Ana's pill goes; Hans is handed back /admin
-      await page.locator("[data-cy='demo-end']").click();
+      await endFrom(page);
       await pillGone();
       await page.waitForURL(/\/admin/, { timeout: 20_000 });
       await page.locator("[data-cy='adm-q']").waitFor({ timeout: 20_000 });
 
-      // 3. a new demo: Ana's app — not reloaded — joins on its own
+      // 3. a new demo: Ana's app — not reloaded — joins on its own, and says it is a NEW one
+      //    (REQ-298; the line stays a few seconds, so it is watched for from before the open)
+      const restarted = userPage.locator("[data-cy='demo-restarted']");
+      const said = restarted.waitFor({ timeout: 25_000 }).then(
+        () => restarted.innerText(),
+        () => null,
+      );
       await openDemo();
+      const line = await said;
+      expect.eq(
+        line,
+        "Hans started a new demo",
+        "REQ-298: the customer's pill says a new demo started, not a silent swap",
+      );
       await connected("the demo after a staff End");
 
       // 4. Ana ends it from her own pill; a third demo reaches her too
-      await userPage.locator("[data-cy='demo-end']").click();
+      await endFrom(userPage);
       await pillGone();
       await page.waitForURL(/\/admin/, { timeout: 20_000 });
       await page.locator("[data-cy='adm-q']").waitFor({ timeout: 20_000 });
@@ -144,7 +165,7 @@ Deno.test("REQ-222 (M11): a connected demo ends — from the staff side, then fr
 
       expect.eq(loads, 0, "the customer's page was never reloaded");
 
-      await page.locator("[data-cy='demo-end']").click();
+      await endFrom(page);
       await pillGone();
     } finally {
       await userCtx.close();
