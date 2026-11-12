@@ -109,7 +109,8 @@ import {
   type ComposerFlow,
   composerFlowFor,
   composerPlaceholderKey,
-} from "../../shared/quote-flow/trade-fit.ts"; // REQ-343, REQ-450
+  editHintKey,
+} from "../../shared/quote-flow/trade-fit.ts"; // REQ-343, REQ-450, REQ-581
 import { openOnboardingAsk } from "../../shared/quote-flow/onboarding-composer.ts"; // REQ-582
 import type { ExtractedDuration } from "../../shared/quote-flow/quote-facts.ts";
 import { reviewJobDetails } from "../../shared/quote-flow/review-job-details.ts";
@@ -10055,7 +10056,7 @@ export default function AsstChat({
                   </div>
                   <div class="composer__hint">
                     {showEditHint(draft, editSeed)
-                      ? tFor(lang, "asstChat.actionCard.editHint")
+                      ? tFor(lang, editHintKey(from?.business)) // REQ-581
                       : tFor(lang, "asstChat.composer.hint")}
                   </div>
                 </>

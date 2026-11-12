@@ -81,7 +81,9 @@ describe("REQ-464: the Edit seed does not outlive the draft it targets", () => {
   });
 
   test("REQ-464: both languages carry the edit hint", () => {
-    expect(en[HINT]).toBe("Type the change, e.g. tile $3,600");
+    // REQ-581 (cycle 4 p3): the generic hint is trade-free; trades get
+    // their own (composer-placeholder-flow.test.ts).
+    expect(en[HINT]).toBe("Type the change, e.g. add cleanup $150");
     expect(typeof es[HINT]).toBe("string");
     expect(es[HINT].trim().length).toBeGreaterThan(0);
     expect(es[HINT]).not.toBe(en[HINT]);
@@ -94,6 +96,6 @@ describe("REQ-464: the Edit seed does not outlive the draft it targets", () => {
     expect(fnBody(src, "reopenActionCard")).toMatch(/dropBareEditSeed\(/);
     expect(fnBody(src, "sendText")).toMatch(/isBareEditSeed\(/);
     expect(src).toMatch(/showEditHint\(draft, editSeed\)/);
-    expect(src).toMatch(/asstChat\.actionCard\.editHint/);
+    expect(src).toMatch(/editHintKey\(from\?\.business\)/); // REQ-581
   });
 });

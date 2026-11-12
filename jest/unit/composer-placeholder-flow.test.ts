@@ -20,6 +20,7 @@ import {
   composerFlowFor,
   composerPlaceholderKey,
   composerTradeFor,
+  editHintKey,
   invoiceJobNamePlaceholderKey,
 } from "../../shared/quote-flow/trade-fit";
 
@@ -165,5 +166,62 @@ describe("REQ-450 p4 — the quote prompt's greeting does not list trades", () =
         /Input: 'hello' \/ 'hey'\n\s+Reply: 'Hey! Tell me about the job/,
       );
     }
+  });
+});
+
+/**
+ * REQ-581 — demo-loop cycle 4 (run r857a9d67), issue p3: "Examples don't fit
+ * the trade ('tile $3,600' for fence company)". The hint under the composer
+ * while Edit's "Change the quote: " seed sits there was one fixed key,
+ * asstChat.actionCard.editHint = "Type the change, e.g. tile $3,600", left out
+ * of REQ-450's trade pass. It is now keyed by trade like the placeholder.
+ */
+describe("REQ-581 c4 p3 — the Edit hint fits the trade", () => {
+  it("REQ-581: the edit-hint key follows the business name; a tradeless name gets the generic key", () => {
+    expect(editHintKey("Lone Star Fence Co.")).toBe(
+      "asstChat.actionCard.editHint.fencing",
+    );
+    expect(editHintKey("Sparkle Home Cleaning")).toBe(
+      "asstChat.actionCard.editHint.cleaning",
+    );
+    expect(editHintKey("Acme LLC")).toBe("asstChat.actionCard.editHint");
+    expect(editHintKey(undefined)).toBe("asstChat.actionCard.editHint");
+  });
+
+  it("REQ-581: every trade has an edit hint in en AND es that names a change with a price", () => {
+    for (const trade of COMPOSER_TRADES) {
+      const key = trade === "general"
+        ? "asstChat.actionCard.editHint"
+        : `asstChat.actionCard.editHint.${trade}`;
+      expect(typeof en[key]).toBe("string");
+      expect(typeof es[key]).toBe("string");
+      expect(en[key]).toMatch(/^Type the change, e\.g\. .*\$\d/);
+      expect(es[key]).toMatch(/^Escribe el cambio, p\. ej\. .*\$\d/);
+    }
+  });
+
+  it("REQ-581: only the kitchen & bath hint talks about tile; the generic one is trade-free", () => {
+    for (const trade of COMPOSER_TRADES) {
+      if (trade === "kitchenbath") continue;
+      const key = trade === "general"
+        ? "asstChat.actionCard.editHint"
+        : `asstChat.actionCard.editHint.${trade}`;
+      expect(en[key]).not.toMatch(/tile/i);
+      expect(es[key]).not.toMatch(/azulejo/i);
+    }
+    expect(en["asstChat.actionCard.editHint"]).toBe(
+      "Type the change, e.g. add cleanup $150",
+    );
+    expect(en["asstChat.actionCard.editHint.fencing"]).toMatch(
+      /fence|gate|post/i,
+    );
+  });
+
+  it("REQ-581: the island reads the edit hint off the business name", () => {
+    const src = read("front-end/islands/AsstChat.tsx");
+    expect(src).toMatch(
+      /showEditHint\(draft, editSeed\)\s*\?\s*tFor\(lang, editHintKey\(from\?\.business\)\)/,
+    );
+    expect(src).not.toMatch(/tFor\(lang, "asstChat\.actionCard\.editHint"\)/);
   });
 });
