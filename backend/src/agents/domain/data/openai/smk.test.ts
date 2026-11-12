@@ -97,8 +97,9 @@ Deno.test("OpenAILLMClient smoke: respond() sends Bearer auth + system prompt + 
   // REQ-315 (demo-loop cycle 1, M26): + revise_quote;
   // REQ-462 (demo-loop cycle 3, M26): + update_change_order;
   // REQ-583 (demo-loop cycle 4, M2): + send_invoice + record_payment
-  assertEquals(body.tools.length, 9);
-  assertEquals(body.tools.map((t) => t.function.name).sort(), ["change_order", "create_quote", "lock_quote", "record_payment", "request_terms_transition", "revise_quote", "send_invoice", "update_change_order", "update_job_details"]);
+  // REQ-585 (demo-loop cycle 4, M4 + M30): + update_terms
+  assertEquals(body.tools.length, 10);
+  assertEquals(body.tools.map((t) => t.function.name).sort(), ["change_order", "create_quote", "lock_quote", "record_payment", "request_terms_transition", "revise_quote", "send_invoice", "update_change_order", "update_job_details", "update_terms"]);
 });
 
 Deno.test("REQ-315 OpenAILLMClient smoke: a revise_quote tool_call → the revise_quote action (reprice the line, never append)", async () => {
@@ -298,6 +299,7 @@ Deno.test("REQ-368 OpenAILLMClient smoke: no allowlist keeps every tool (callers
     "update_job_details",
     "send_invoice", // REQ-583
     "record_payment", // REQ-583
+    "update_terms", // REQ-585
   ]);
 });
 

@@ -87,6 +87,10 @@ export type LLMAction =
       /** REQ-258 (demo M22): a payment split the contractor stated ("half
        *  deposit" → "50_50") — a payment_terms wizard option id. */
       paymentTerms?: string;
+      /** REQ-585 (demo-loop cycle 4, M4): the job details of an
+       *  update_job_details the model made in the same turn — folded into
+       *  the create by planToolCalls, never a tool argument of its own. */
+      descriptionByLang?: Partial<Record<"en" | "es", string>>;
     };
   }
   | { type: "lock_quote"; payload: { quoteId: string } }
@@ -168,6 +172,15 @@ export type LLMAction =
       which?: "deposit" | "balance";
       reference?: string;
     };
+  }
+  /** REQ-585 (demo-loop cycle 4, M4 + M30): change the agreement terms the
+   *  terms wizard asks for — the start, the time to complete, the payment
+   *  terms — in the contractor's own words ("monday nov 23", "next week",
+   *  "2 and a half weeks", "50_50"). The coordinator reads each value against
+   *  today and the bound conversation's wizard, never the model's dates. */
+  | {
+    type: "update_terms";
+    payload: { startDate?: string; duration?: string; paymentTerms?: string };
   };
 
 /** REQ-368: a chat tool's name — one per LLMAction variant. */

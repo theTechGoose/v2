@@ -257,6 +257,26 @@ export const TOOL_DEFS = [
       },
     },
   },
+  // REQ-585 (demo-loop cycle 4, M4 + M30): "we start monday nov 23",
+  // "empezamos la próxima semana, no el próximo mes", "its 2 and a half weeks
+  // not 2" had no tool — the agreement terms are changed here, in the
+  // contractor's own words; the coordinator reads them against today.
+  {
+    type: "function" as const,
+    function: {
+      name: "update_terms",
+      description: t("en", "prompts.tools.updateTerms.description"),
+      parameters: {
+        type: "object",
+        properties: {
+          startDate: { type: "string", description: t("en", "prompts.tools.updateTerms.startDate") },
+          duration: { type: "string", description: t("en", "prompts.tools.updateTerms.duration") },
+          paymentTerms: { type: "string", description: t("en", "prompts.tools.updateTerms.paymentTerms") },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
 ] as const;
 
 /**
@@ -450,6 +470,17 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
           ...(reference ? { reference } : {}),
         },
       };
+    }
+    // REQ-585 (M4 + M30): each term the model gave, trimmed — the server reads
+    // the words; nothing given → undefined.
+    case "update_terms": {
+      const payload: { startDate?: string; duration?: string; paymentTerms?: string } = {};
+      for (const k of ["startDate", "duration", "paymentTerms"] as const) {
+        const v = typeof args[k] === "string" ? (args[k] as string).trim() : "";
+        if (v) payload[k] = v;
+      }
+      if (!Object.keys(payload).length) return undefined;
+      return { type: "update_terms", payload };
     }
     default:
       return undefined;

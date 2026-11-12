@@ -28,6 +28,13 @@
  *                         model; only a price correction re-prices
  *   priceStepContext    — what that model answers from: the job, the details
  *                         and the tiers on screen, and what the tiers include
+ *
+ * REQ-585 (demo-loop cycle 4, M4) — on the start-date card pair 7 got an
+ * answer to the Pick-a-price request she had made two steps earlier:
+ *
+ *   appliedStepTurnIds  — the earlier step turns whose request was applied,
+ *                         and their replies, left out of the chat model's
+ *                         history so it never re-issues them
  */
 import { type Lang, t } from "@core/i18n/mod.ts";
 import {
@@ -110,6 +117,64 @@ export function stepTools(
     tools.push("revise_quote");
   }
   return tools;
+}
+
+/** An outcome on a reply that changed something (a question asked back —
+ *  "which customer?", "how much?" — changed nothing). */
+const LANDED: Record<string, ReadonlySet<string>> = {
+  changeOrder: new Set(["change_order", "pending_revision", "draft_updated"]),
+  quoteRevision: new Set(["pending_revision", "draft_updated"]),
+  changeOrderEdit: new Set(["updated", "withdrawn"]),
+};
+
+/** REQ-585: the reply applied the step turn before it — a step reply (it
+ *  carries the step: re-priced tiers, rewritten versions), the quote re-read
+ *  (`quoteUpdated`), a line / change-order outcome that landed, or terms set
+ *  (`termsChanged`). */
+function appliedReply(payload: unknown): boolean {
+  const p = (payload ?? {}) as Record<string, unknown>;
+  if (p.step || p.quoteUpdated || p.termsChanged) return true;
+  return Object.entries(LANDED).some(([key, kinds]) => {
+    const kind = (p[key] as { kind?: unknown } | undefined)?.kind;
+    return typeof kind === "string" && kinds.has(kind);
+  });
+}
+
+/**
+ * REQ-585 (demo-loop cycle 4, M4) — the ids to leave out of the chat model's
+ * history: every earlier step-tagged user turn (typed in the compact box on a
+ * guided step) whose request a reply applied, with those replies. On the
+ * start-date card pair 7's "we start monday nov 23…" was answered with her
+ * old Pick-a-price request ("take out the floor stays line") — gpt-4o-mini
+ * re-issued it from the history (fleet-6 stdout:226). Untagged turns, cards,
+ * wizard picks, turns answered with a question and `currentId` all stay.
+ */
+export function appliedStepTurnIds(
+  history: readonly {
+    id: string;
+    role: string;
+    kind: string;
+    payload?: unknown;
+  }[],
+  currentId: string,
+): Set<string> {
+  const out = new Set<string>();
+  history.forEach((m, i) => {
+    if (m.id === currentId || m.role !== "user" || m.kind !== "text") return;
+    if (!(m.payload as { step?: unknown } | undefined)?.step) return;
+    const replies: string[] = [];
+    let applied = false;
+    for (const r of history.slice(i + 1)) {
+      if (r.role === "user") break;
+      if (r.role !== "assistant" || r.kind !== "text") continue;
+      replies.push(r.id);
+      applied ||= appliedReply(r.payload);
+    }
+    if (!applied) return;
+    out.add(m.id);
+    for (const id of replies) out.add(id);
+  });
+  return out;
 }
 
 /** The tiers' rationale lines the pricing engine writes on its generic answer
