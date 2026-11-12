@@ -43,6 +43,7 @@ import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-cha
 import { ReviseQuote } from "@agents/domain/coordinators/revise-quote/mod.ts";
 import { plausibilityFloorCents } from "@agents/domain/business/price-floor/mod.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
+import { t } from "@core/i18n/mod.ts";
 
 /** The demo's correction (fleet-6 l.135). */
 const DEMO_FIX =
@@ -502,5 +503,71 @@ Deno.test("REQ-445: a first draft at the contractor's own typed prices is saved 
       .estimatedTotal,
     1_210_000,
   );
+  await resetKv();
+});
+
+// ---------------------------------------------------------------------------
+// REQ-578 (demo-loop cycle 4, m34) — no $0.00 line on a stated-price draft
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-578 m34: the demo's vanity swap at a typed $2,250 is saved with no $0.00 line — the unpriced steps fold into the priced line", async () => {
+  const ctx = await fresh();
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  // pair 5's answer from gpt-4o-mini (fleet-5 stdout l.217)
+  script(ctx.llm, [{
+    text: "Drafting a quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Bathroom vanity swap — Derek Chen",
+        lineItems: [
+          { description: "Remove old vanity", amountCents: 0 },
+          { description: "Install 36in vanity", amountCents: 225_000 },
+          { description: "Install faucet", amountCents: 0 },
+        ],
+      },
+    },
+  }]);
+  const result = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Bathroom vanity swap for Derek Chen, remove the old vanity, install a 36in vanity and the faucet, $2,400 — actually make it $2,250",
+  });
+  const quoteId = result.conversation.quoteId!;
+  assert(quoteId, "a draft is bound");
+  const stored = await ctx.quotes.getOwned(quoteId, "u-1");
+  assertEquals(stored.estimatedTotal, 225_000);
+  for (const l of stored.lineItems) {
+    assert(l.price > 0, `a $0.00 line was saved: ${l.description}`);
+  }
+  assertEquals(
+    stored.lineItems.map((l) => l.description),
+    ["Install 36in vanity (incl. remove old vanity, install faucet)"],
+  );
+  const card = cardOf(result.newMessages)!;
+  assertEquals((card.payload as { totalCents: number }).totalCents, 225_000);
+  await resetKv();
+});
+
+Deno.test("REQ-578 m34: the quote-phase prompt (en and es) says never output a $0 line — group unpriced steps into a priced line", async () => {
+  const ctx = await fresh();
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  const seen = script(ctx.llm, [draftCall(NEAR_18K)]);
+  await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Bathroom vanity swap for Derek Chen, $2,250",
+  });
+  for (
+    const prompt of [
+      seen[0].systemPrompt,
+      t("en", "prompts.systemQuote"),
+      t("es", "prompts.systemQuote"),
+    ]
+  ) {
+    assertStringIncludes(prompt, "Never output a line at 0");
+    assertStringIncludes(prompt, "group the unpriced steps into a priced line");
+  }
   await resetKv();
 });

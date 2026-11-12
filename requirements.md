@@ -3707,3 +3707,20 @@ The cycle 3 root-cause pass (M2) found that switching tabs with Playwright in a 
 - unit: n/a — a prompt string; covered by the harness test.
 - int: `demo-loop/demo20b_test.ts` "REQ-533 …" runs the real harness with a fake fleet-claude and checks both prompts.
 - e2e: n/a — the next demo cycle is the run that uses it.
+
+## REQ-578 — No $0.00 line on an assistant draft: unpriced steps fold into the priced line (demo-loop cycle 4, m34)
+
+**User's words:** "fix every issue the demo found, loop until there are none" — demo-loop cycle 4 (run r857a9d67), issue **m34** "$0.00 line items on assistant draft".
+
+**Demo evidence:** pair 5 typed "Bathroom vanity swap for Derek Chen … $2,400 — actually make it $2,250"; the card read "Remove old vanity $0.00 / Install 36in vanity $2,250.00 / Install faucet $0.00". To a client that reads as free work.
+
+**RCA (analyst + skeptic, UPHELD, at ad104a19):** gpt-4o-mini split the job into steps, put the whole price on one line and 0 on the others. Nothing rejected zero-priced lines. `quotePriceProblem` (shared/quote-flow/quote-price-guard.ts) flags only a negative line or a total <= 0. `settleQuotePrice` keeps lines that match the price, and `scaleLinesToTotal` keeps 0 lines at 0. Confirmed while fixing: `statedTotalCents` reads no stated total from this two-amount message, so the $2,250 came from the model.
+
+**Requirement:** before a chat `create_quote` is saved (`stated-price/settleCreateQuote`), when the contractor gave the whole job's price (a stated total, or an amount typed in this message that the lines add up to) and the lines mix priced and $0 lines, the $0 lines fold into the largest priced line's description: "Install 36in vanity (incl. remove old vanity, install faucet)" / es "(incluye …)" (`chatCoordinator.priceCheck.includes`). The total, the summary and the other lines stay as they were. When the contractor gave no price, a $0 included line stays legal (REQ-267 "Paint supplied by Castro Painting", REQ-302). `prompts.systemQuote` (en + es) gains a NO $0 LINES rule: "Never output a line at 0 … group the unpriced steps into a priced line".
+
+**Decision:** the fold happens at save, not in display ("Included" on card/PDF/q). The stored quote then has no $0 line, so the card, the PDF, /q and the email all agree with no change to their renderers.
+
+**Tests:**
+- unit: `backend/src/agents/domain/business/stated-price/test.ts` "REQ-578 m34 …": `foldZeroLines` (en, es, the largest host line, unchanged when all lines or no lines are priced). `settleCreateQuote` folds the demo draft with a stated total, after scaling, and with no stated total when the lines add up to a typed amount. A REQ-267 $0 included line with no price from the contractor stays put. `statedTotalCents` reads nothing from the demo message.
+- int: `backend/src/agents/domain/coordinators/handle-chat-message/price-target.int.test.ts` "REQ-578 m34 …": the real coordinator, fed the demo model's payload, saves one $2,250 line with no $0.00 line and the card total is $2,250. The prompt the model receives (and both en/es `prompts.systemQuote`) carries the NO $0 LINES rule.
+- e2e: n/a: the browser lane can't script gpt-4o-mini into a mixed $0 payload. The integration test drives the real coordinator and checks the persisted quote the card, PDF and /q render.

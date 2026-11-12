@@ -24,6 +24,7 @@ import {
   lineKey,
   totalOf,
 } from "@agents/domain/business/quote-line-revision/mod.ts";
+import { jobNameInSentence } from "#quote-flow/job-name.ts";
 import {
   describeJobSize,
   plausibilityFloorCents,
@@ -478,6 +479,43 @@ export function scaleLinesToTotal<T extends PricedLine>(
   return out;
 }
 
+/**
+ * REQ-578 (demo-loop cycle 4, m34) — the lines with no price folded into the
+ * largest priced line's description: "Remove old vanity $0 / Install 36in
+ * vanity $2,250 / Install faucet $0" → "Install 36in vanity (incl. remove old
+ * vanity, install faucet) $2,250". Same total, same work named, no line the
+ * client reads as free. Lines that are all priced, or none priced, come back
+ * unchanged (a priceless quote is REQ-302's to refuse).
+ */
+export function foldZeroLines<T extends PricedLine>(
+  lines: readonly T[],
+  lang: Lang,
+): T[] {
+  const zero = lines.filter((l) => l.amountCents === 0);
+  const priced = lines.filter((l) => l.amountCents > 0);
+  if (zero.length === 0 || priced.length === 0) {
+    return lines.map((l) => ({ ...l }));
+  }
+  const host = priced.reduce((a, b) => b.amountCents > a.amountCents ? b : a);
+  const included = zero
+    .map((l) => jobNameInSentence(l.description))
+    .filter((d) => d.length > 0)
+    .join(", ");
+  return lines
+    .filter((l) => l.amountCents !== 0)
+    .map((l) =>
+      l === host && included
+        ? {
+          ...l,
+          description: t(lang, "chatCoordinator.priceCheck.includes", {
+            line: l.description.trim(),
+            included,
+          }),
+        }
+        : { ...l }
+    );
+}
+
 export interface RevisionJump {
   fromCents: number;
   toCents: number;
@@ -752,12 +790,24 @@ export async function settleCreateQuote<
         { role: "user", content: note },
       ]),
   });
-  if (settled.kind === "keep") return settled;
   if (settled.kind === "ask") {
     return { kind: "ask", text: priceJumpAsk(input.lang, settled.jump) };
   }
-  return {
-    kind: "save",
-    payload: { ...payload, lineItems: settled.lineItems },
-  };
+  const lines = settled.kind === "lines" ? settled.lineItems : undefined;
+  // REQ-578 (m34): the contractor gave the whole job's price — a stated
+  // total, or an amount typed in this message that the lines add up to
+  // ("$2,400 — actually make it $2,250") — and the model put all of it on
+  // one step and 0 on the rest: the 0 lines fold into the priced one. With
+  // no price from the contractor a $0 line stays an included item (REQ-267:
+  // "Paint supplied by Castro Painting").
+  const all = lines ?? payload.lineItems;
+  const typed = moneyAmounts(input.userText).map((a) => a.cents);
+  if (input.statedCents || typed.includes(sumOf(all))) {
+    const folded = foldZeroLines(all, input.lang);
+    if (folded.length !== all.length) {
+      return { kind: "save", payload: { ...payload, lineItems: folded } };
+    }
+  }
+  if (!lines) return { kind: "keep" };
+  return { kind: "save", payload: { ...payload, lineItems: lines } };
 }
