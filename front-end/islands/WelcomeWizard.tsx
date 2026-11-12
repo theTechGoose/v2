@@ -62,9 +62,11 @@ import {
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
 import {
   type HandleMethod,
+  insurerError,
   paymentHandleError,
+  policyNumberError,
   zipError,
-} from "../../shared/quote-flow/business-fields.ts"; // REQ-352
+} from "../../shared/quote-flow/business-fields.ts"; // REQ-352, REQ-503
 import { api } from "../lib/api.ts";
 import { type AddressSuggestion, suggestAddresses } from "../lib/mapbox.ts";
 
@@ -1075,6 +1077,20 @@ function LogoStep({ ctx }: { ctx: StepCtx }) {
   );
 }
 
+/** REQ-503: a field's format message — a hint while typing, an alert once left. */
+function FieldMessage(
+  { id, msgKey, touched }: {
+    id: string;
+    msgKey: string | null;
+    touched: boolean;
+  },
+) {
+  if (!msgKey) return null;
+  return touched
+    ? <p id={id} class="welcome__error" role="alert">{t(msgKey)}</p>
+    : <p id={id} class="welcome__hint">{t(msgKey)}</p>;
+}
+
 function InsuranceStep({ ctx }: { ctx: StepCtx }) {
   const [provider, setProvider] = useState(ctx.snap.insurance?.provider ?? "");
   const [policyNumber, setPolicyNumber] = useState(
@@ -1082,7 +1098,19 @@ function InsuranceStep({ ctx }: { ctx: StepCtx }) {
   );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const valid = provider.trim().length > 0;
+  // REQ-503 (demo m62, cycle 3): insurer "!!!" and a 120-character policy
+  // number were accepted. Both get a format rule; like the ZIP (REQ-390) the
+  // reason shows as a hint while typing and as an error once the field is left.
+  const [providerTouched, setProviderTouched] = useState(
+    Boolean(ctx.snap.insurance?.provider),
+  );
+  const [policyTouched, setPolicyTouched] = useState(
+    Boolean(ctx.snap.insurance?.policyNumber),
+  );
+  const providerErr = insurerError(provider);
+  const policyErr = policyNumberError(policyNumber);
+  const valid = provider.trim().length > 0 && providerErr === null &&
+    policyErr === null;
 
   async function save() {
     if (!valid || busy) return;
@@ -1114,18 +1142,34 @@ function InsuranceStep({ ctx }: { ctx: StepCtx }) {
         type="text"
         aria-label={t("welcome.insurance.provider")}
         placeholder={t("welcome.insurance.provider")}
+        aria-invalid={providerTouched && providerErr ? "true" : undefined}
+        aria-describedby={providerErr ? "welcome-insurer-msg" : undefined}
         value={provider}
         // deno-lint-ignore no-explicit-any
         onInput={(e: any) => setProvider(e.currentTarget.value)}
+        onBlur={() => setProviderTouched(true)}
+      />
+      <FieldMessage
+        id="welcome-insurer-msg"
+        msgKey={providerErr}
+        touched={providerTouched}
       />
       <input
         class="welcome__input"
         type="text"
         aria-label={t("welcome.insurance.policy")}
         placeholder={t("welcome.insurance.policy")}
+        aria-invalid={policyTouched && policyErr ? "true" : undefined}
+        aria-describedby={policyErr ? "welcome-policy-msg" : undefined}
         value={policyNumber}
         // deno-lint-ignore no-explicit-any
         onInput={(e: any) => setPolicyNumber(e.currentTarget.value)}
+        onBlur={() => setPolicyTouched(true)}
+      />
+      <FieldMessage
+        id="welcome-policy-msg"
+        msgKey={policyErr}
+        touched={policyTouched}
       />
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
       <StepFooter ctx={ctx} valid={valid} busy={busy} onContinue={save} />

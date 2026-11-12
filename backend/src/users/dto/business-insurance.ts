@@ -1,5 +1,21 @@
-import { IsInt, IsOptional, IsString, Min, validateSync } from "#class-validator";
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  Min,
+  validateSync,
+} from "#class-validator";
 import { plainToInstance } from "#class-transformer";
+// REQ-503 (demo-loop cycle 3, m62): the same insurer / policy-number rules the
+// wizard and Settings show — "!!!" and a 120-character policy are refused.
+import {
+  INSURER_MAX,
+  INSURER_PATTERN,
+  POLICY_NUMBER_MAX,
+  POLICY_NUMBER_PATTERN,
+} from "#quote-flow/business-fields.ts";
 
 export interface BusinessInsurance {
   userId: string;
@@ -18,8 +34,10 @@ export interface BusinessInsurance {
 }
 
 export class UpdateBusinessInsuranceDto {
-  @IsOptional() @IsString() provider?: string;
-  @IsOptional() @IsString() policyNumber?: string;
+  @IsOptional() @IsString() @MaxLength(INSURER_MAX) @Matches(INSURER_PATTERN)
+  provider?: string;
+  @IsOptional() @IsString() @MaxLength(POLICY_NUMBER_MAX) @Matches(POLICY_NUMBER_PATTERN)
+  policyNumber?: string;
   @IsOptional() @IsInt() @Min(0) coverageCents?: number;
   @IsOptional() @IsString() expiresAt?: string;
   @IsOptional() @IsString() insuranceFileId?: string;

@@ -51,3 +51,39 @@ export function paymentHandleError(
   if (method === "cashapp" && CASHTAG.test(v)) return null;
   return `welcome.payment.invalid.${method}`;
 }
+
+/**
+ * REQ-503 (demo-loop cycle 3, demo m62) — the insurance answers. The wizard
+ * took insurer "!!!" and a 120-character policy number. The patterns accept a
+ * blank value (a cleared field) so the backend DTO can apply them as-is; the
+ * step decides whether the insurer is required.
+ */
+export const INSURER_MAX = 80;
+export const POLICY_NUMBER_MAX = 40;
+
+/** Blank, or a name with at least two letters, in any script. */
+export const INSURER_PATTERN = /^\s*$|^(?=(?:[^\p{L}]*\p{L}){2})[\s\S]*$/u;
+/** Blank, or letters, digits and dashes with at least one letter or digit. */
+export const POLICY_NUMBER_PATTERN =
+  /^\s*$|^\s*(?=[^-]*[A-Za-z0-9])[A-Za-z0-9-]+\s*$/;
+
+export type InsurerErrorKey = "welcome.insurance.providerInvalid";
+export type PolicyNumberErrorKey = "welcome.insurance.policyInvalid";
+
+/** The message key for an insurer name no one could look up, or null (blank or fine). */
+export function insurerError(raw: string): InsurerErrorKey | null {
+  const v = (raw ?? "").trim();
+  if (!v) return null;
+  return v.length <= INSURER_MAX && INSURER_PATTERN.test(v)
+    ? null
+    : "welcome.insurance.providerInvalid";
+}
+
+/** The message key for a malformed policy number, or null (blank or fine). */
+export function policyNumberError(raw: string): PolicyNumberErrorKey | null {
+  const v = (raw ?? "").trim();
+  if (!v) return null;
+  return v.length <= POLICY_NUMBER_MAX && POLICY_NUMBER_PATTERN.test(v)
+    ? null
+    : "welcome.insurance.policyInvalid";
+}

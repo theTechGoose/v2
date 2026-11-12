@@ -145,3 +145,64 @@ Deno.test("REQ-257: Enter submits the wizard's address and insurance steps — E
       "Enter saved the insurance provider",
     );
   }));
+
+Deno.test("REQ-503 (demo m62, cycle 3): the wizard's insurance step refuses insurer '!!!' and a 120-character policy number, says why, and saves a real answer", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize(DESKTOP);
+    const host = new URL(baseUrl).hostname;
+    const english = () =>
+      page.context().addCookies([{
+        name: "pm_lang",
+        value: "en",
+        domain: host,
+        path: "/",
+      }]);
+    await english();
+    const local = `512${digits()}`;
+
+    // a new account with only the insurance left open
+    let landed = await codeIn(page, local);
+    expect.eq(landed.pathname, "/welcome", `lands in the wizard (${landed})`);
+    const auth = await sessionAuth(page);
+    await answerQuestions(http, auth, { except: ["insurance"] });
+    await page.context().clearCookies();
+    await english();
+    landed = await codeIn(page, local);
+    expect.eq(
+      landed.pathname,
+      "/welcome",
+      `insurance open → wizard (${landed})`,
+    );
+    await expect.see("Are you insured?");
+
+    const provider = "input[aria-label='Insurance provider']";
+    const policy = "input[aria-label='Policy number (optional)']";
+    const enabled = "[data-cy='welcome-continue']:not([disabled])";
+    const disabled = "[data-cy='welcome-continue'][disabled]";
+    // hydrated: a good provider enables Continue
+    await typeIn(page, provider, "State Farm");
+
+    // the demo's insurer "!!!" — Continue goes disabled and the step says why
+    await page.locator(provider).fill("!!!");
+    await page.locator(provider).blur();
+    await page.locator(disabled).waitFor({ timeout: 5_000 });
+    await expect.see("Enter the insurer's name");
+
+    // a real insurer, but the demo's 120-character policy number
+    await page.locator(provider).fill("State Farm");
+    await page.locator(policy).fill("1".repeat(120));
+    await page.locator(policy).blur();
+    await page.locator(disabled).waitFor({ timeout: 5_000 });
+    await expect.see("Policy numbers use letters, numbers and dashes");
+
+    // a real policy number — Continue comes back and the answer is saved
+    await page.locator(policy).fill("POL-1234");
+    await page.locator(enabled).waitFor({ timeout: 5_000 });
+    await page.locator(policy).press("Enter");
+    await expect.see("See what your customer sees");
+    const snap =
+      await (await http("/api/profile", { headers: await sessionAuth(page) }))
+        .json() as { insurance?: { provider?: string; policyNumber?: string } };
+    expect.eq(snap.insurance?.provider, "State Farm", "the insurer saved");
+    expect.eq(snap.insurance?.policyNumber, "POL-1234", "the policy saved");
+  }));
