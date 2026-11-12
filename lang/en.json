@@ -1314,6 +1314,8 @@
   "invoicesPage.pay.errMethod": "Pick how they paid.",
   "invoicesPage.pay.errAmount": "Enter the amount received.",
   "invoicesPage.pay.errSave": "Couldn't record the payment.",
+  "invoicesPage.pay.errDate": "Pick the day you received it.",
+  "invoicesPage.pay.recorded": "Payment of {amount} recorded",
   "invoicesPage.docTitle": "Invoices · DocuMonster",
   "invoicesPage.empty.awaiting": "No claimed payments waiting for you to confirm.",
   "invoicesPage.empty.drafting": "No drafts in progress. Open the assistant to start one.",

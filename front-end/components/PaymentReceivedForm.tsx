@@ -13,6 +13,10 @@
 import { useState } from "preact/hooks";
 import { type PaymentMethod, paymentsClient } from "../clients/payments.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import {
+  paymentErrorText,
+  validatePaymentReceived,
+} from "../lib/payment-received.ts";
 
 const METHODS: PaymentMethod[] = [
   "cash",
@@ -48,7 +52,9 @@ export default function PaymentReceivedForm(
     /** Invoice total, INTEGER CENTS — prefills the amount field. */
     amountCents?: number;
     lang: Lang;
-    onSaved: () => void | Promise<void>;
+    /** REQ-322: told the recorded amount (INTEGER CENTS) so the page can
+     *  confirm "Payment of $X recorded". */
+    onSaved: (cents: number) => void | Promise<void>;
     onCancel: () => void;
   },
 ) {
@@ -69,13 +75,12 @@ export default function PaymentReceivedForm(
   async function submit(e: Event) {
     e.preventDefault();
     if (busy) return;
-    if (!method) {
-      setErr(tFor(lang, "invoicesPage.pay.errMethod"));
-      return;
-    }
-    const cents = Math.round(Number(dollars) * 100);
-    if (!Number.isFinite(cents) || cents <= 0) {
-      setErr(tFor(lang, "invoicesPage.pay.errAmount"));
+    // REQ-322 (demo m36): method → amount → date, each with its own reason,
+    // and the date is checked BEFORE any instant is built so a cleared
+    // "Received on" never throws its way into the generic errSave.
+    const v = validatePaymentReceived({ method, dollars, date });
+    if (!v.ok) {
+      setErr(tFor(lang, v.errKey));
       return;
     }
     setErr(null);
@@ -83,16 +88,14 @@ export default function PaymentReceivedForm(
     try {
       await paymentsClient.create({
         invoiceId,
-        amount: cents,
-        method,
-        // Noon local on the picked day, so the date never shifts across a
-        // timezone boundary when the backend stores it as an instant.
-        receivedAt: new Date(`${date}T12:00:00`).toISOString(),
+        amount: v.cents,
+        method: v.method,
+        receivedAt: v.receivedAt,
         ...(reference.trim() ? { reference: reference.trim() } : {}),
       });
-      await onSaved();
-    } catch {
-      setErr(tFor(lang, "invoicesPage.pay.errSave"));
+      await onSaved(v.cents);
+    } catch (e) {
+      setErr(paymentErrorText(lang, e));
     } finally {
       setBusy(false);
     }
@@ -101,6 +104,10 @@ export default function PaymentReceivedForm(
   return (
     <form
       onSubmit={submit}
+      // REQ-322: the form's own localized reasons (method, amount, date) are
+      // the feedback — the browser's native bubble would swallow the submit
+      // and say nothing in the user's language.
+      noValidate
       data-cy="pay-received-form"
       style="display:flex;flex-direction:column;gap:10px"
     >
@@ -146,6 +153,7 @@ export default function PaymentReceivedForm(
           {tFor(lang, "invoicesPage.pay.dateLabel")}
           <input
             type="date"
+            required
             data-cy="pay-received-date"
             value={date}
             onInput={(e) => setDate((e.target as HTMLInputElement).value)}
