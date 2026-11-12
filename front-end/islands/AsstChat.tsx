@@ -22,7 +22,6 @@ import {
   isExceedsAgreement,
   swapInvoiceCents,
 } from "../../shared/documents/ledger.ts";
-import { isTbdTermValue } from "../../shared/quote-flow/terms-i18n.ts";
 import { smsRecoveryAsk } from "../../shared/quote-flow/sms-failure.ts";
 import {
   lineItemDescription,
@@ -32,6 +31,10 @@ import { clientsClient } from "../clients/clients.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { localizeTermValue } from "../lib/term-i18n.ts";
+import {
+  mergeFreshTerms,
+  previewTermRows,
+} from "../../shared/quote-flow/wizard-terms.ts"; // REQ-347
 import { quoteUpdatedBy } from "../lib/chat-quote-refresh.ts";
 import { chatQuoteLink } from "../lib/chat-quote-link.ts";
 import {
@@ -3740,6 +3743,15 @@ export default function AsstChat({
       if (Array.isArray(res.newMessages) && res.newMessages.length > 0) {
         setMessages((m) => [...m, ...res.newMessages]);
       }
+      // REQ-347 (demo M16): the last answer persists the terms onto the
+      // quote — re-read it so the send card that opens next renders the
+      // stored (English-base) terms, not the stale pre-wizard copy.
+      const qid = quote?.id;
+      if (qid) {
+        quotesClient.get(qid).then((fresh) =>
+          setQuote((cur) => mergeFreshTerms(cur, fresh))
+        ).catch(() => {/* the transcript fallback still resolves by id */});
+      }
     } catch (err) {
       // Prefer the server's own message ("customer contact must not match…",
       // "expected answer for…") over the transport line ("POST … failed: 500")
@@ -6000,108 +6012,18 @@ export default function AsstChat({
                       description: quote?.description,
                       lineItems,
                     });
-                    // Wizard terms — every text msg with a wizardStepId is one
-                    // answered step ("Start: ASAP", "Wraps: 1 week", ...). Skip
-                    // the customer step since we render the customer block below.
-                    // Prefer quote.terms (the source of truth) when present.
-                    // Fall back to a chronological walk over wizardStepId-tagged
-                    // chat messages (older threads, in-flight wizard runs that
-                    // haven't persisted terms onto the quote yet). Either way,
-                    // dedupe by stepId — a re-edit emits another tagged message
-                    // but the term row should only render once.
-                    const quoteTerms = Array.isArray(quote?.terms)
-                      ? quote!.terms!
-                      : null;
-                    const termsByStep = new Map<
-                      string,
-                      {
-                        stepId: string;
-                        label: string;
-                        value: string;
-                        firstIdx: number;
-                      }
-                    >();
-                    if (quoteTerms && quoteTerms.length > 0) {
-                      quoteTerms.forEach((t, i) => {
-                        if (!t?.stepId || t.stepId === "customer") return;
-                        termsByStep.set(t.stepId, {
-                          stepId: t.stepId,
-                          label: t.label,
-                          value: t.value,
-                          firstIdx: i,
-                        });
-                      });
-                    } else {
-                      for (let i = messages.length - 1; i >= 0; i--) {
-                        const x = messages[i];
-                        const p = x.payload as
-                          | { wizardStepId?: string }
-                          | undefined;
-                        const sid = p?.wizardStepId;
-                        if (x.kind !== "text" || !sid || sid === "customer") {
-                          continue;
-                        }
-                        if (termsByStep.has(sid)) continue;
-                        const raw = x.content ?? "";
-                        const colon = raw.indexOf(":");
-                        const label = colon === -1
-                          ? raw
-                          : raw.slice(0, colon).trim();
-                        const value = colon === -1
-                          ? ""
-                          : raw.slice(colon + 1).trim();
-                        termsByStep.set(sid, {
-                          stepId: sid,
-                          label,
-                          value,
-                          firstIdx: i,
-                        });
-                      }
-                    }
-                    const termAnswers = Array.from(termsByStep.values())
-                      .sort((a, b) => a.firstIdx - b.firstIdx)
-                      // Drop warranty row entirely when the contractor picked
-                      // "No warranty" — the legal-text warranty clause in the
-                      // agreement's Fine Print still applies.
-                      .filter(({ stepId, value }) => {
-                        if (stepId !== "warranty") return true;
-                        const v = value.trim().toLowerCase();
-                        return !(v === "" || v === "no warranty" ||
-                          v === "none" || v === "n/a" || v === "no");
-                      })
-                      .map(({ stepId, label, value }) => {
-                        // Stored terms are English (the neutral base) — localize
-                        // the value into the preview language so the card matches
-                        // the agreement the customer actually receives (the public
-                        // doc uses the same helper).
-                        const v = localizeTermValue(value, previewLang);
-                        // Time-to-complete reads as an estimate, not a hard
-                        // promise — surface that on the card to match the
-                        // customer-facing wording. Strip any existing
-                        // "Estimated/Estimado" prefix(es) first so the wrapper is
-                        // idempotent (legacy rows sometimes stored it pre-wrapped).
-                        const isDuration = stepId === "time_to_complete" ||
-                          stepId === "wraps";
-                        const bare = isDuration
-                          ? v.replace(
-                            /^(?:\s*estima(?:ted|d[oa])\b\s*:?\s*)+/i,
-                            "",
-                          ).trim()
-                          : v;
-                        return {
-                          stepId,
-                          label,
-                          // REQ-047: a TBD duration is not an estimate —
-                          // the card prints it bare, like the agreement.
-                          value: isDuration && bare && !isTbdTermValue(value)
-                            ? tFor(
-                              previewLang,
-                              "asstChat.preview.estimatedValue",
-                              { value: bare },
-                            )
-                            : v,
-                        };
-                      });
+                    // Wizard terms (REQ-347, demo M16): quote.terms (English,
+                    // the agreement's own base) when present, else the wizard
+                    // picks resolved from their step/option ids — never the
+                    // transcript text, which is in the contractor's UI language.
+                    // Localized into the preview language like the public doc.
+                    const termAnswers = previewTermRows({
+                      quoteTerms: quote?.terms,
+                      messages,
+                      previewLang,
+                      t: tFor,
+                      localize: localizeTermValue,
+                    });
                     const totalCentsForBreakdown =
                       typeof quote?.estimatedTotal === "number"
                         ? quote.estimatedTotal
