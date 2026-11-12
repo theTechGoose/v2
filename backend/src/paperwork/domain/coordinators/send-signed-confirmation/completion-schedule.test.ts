@@ -13,6 +13,7 @@ import { assert, assertEquals } from "#std/assert";
 import {
   completionScheduledFor,
   completionTerms,
+  computeScheduledDates,
   SendSignedConfirmation,
 } from "./mod.ts";
 import { t } from "@core/i18n/mod.ts";
@@ -200,5 +201,98 @@ Deno.test("REQ-411 (m34 + m35) send-signed-confirmation run: 'Next week' + '4 we
       plusDaysIso(56),
       "the account's 21 days to pay",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REQ-475 (demo-loop cycle 3, m63): "Deposit + balance" on a 1-day job that
+// starts Nov 20 scheduled its balance invoice "Nov 26, DUE Dec 3" — signing
+// (Nov 12) + 14 — because computeScheduledDates read only the quote's ISO
+// startDate / estimatedCompletionDate (never set by the quote wizard) and
+// ignored the start + duration TERMS that completionScheduledFor reads.
+
+function splitTerms(start: string, wraps: string): QuoteTerm[] {
+  return [
+    { stepId: "start_date", label: "Start", value: start },
+    { stepId: "wraps", label: "Time to complete", value: wraps },
+    {
+      stepId: "payment_terms",
+      label: "Payment terms",
+      value: "Deposit + balance",
+    },
+  ];
+}
+
+Deno.test("REQ-475 (m63) computeScheduledDates: Deposit + balance, start 11/20/2026, 1 day → the balance is scheduled for the job's end (Nov 21), not signing + 14 (Nov 26)", () => {
+  assertEquals(
+    computeScheduledDates(
+      2,
+      undefined,
+      undefined,
+      SIGNED,
+      splitTerms("11/20/2026", "1 day"),
+    ),
+    ["2026-11-12", "2026-11-21"],
+  );
+});
+
+Deno.test("REQ-475 (m63) computeScheduledDates: 30/30/40 over 'Next week' + '2 weeks' spans the job (Nov 19 → Dec 3); a start term with no duration keeps the 14-day window from that start", () => {
+  const t = (start: string, wraps?: string): QuoteTerm[] => [
+    { stepId: "start_date", label: "Start", value: start },
+    ...(wraps
+      ? [{ stepId: "wraps", label: "Time to complete", value: wraps }]
+      : []),
+  ];
+  assertEquals(
+    computeScheduledDates(
+      3,
+      undefined,
+      undefined,
+      SIGNED,
+      t("Next week", "2 weeks"),
+    ),
+    ["2026-11-12", "2026-11-26", "2026-12-03"],
+  );
+  assertEquals(
+    computeScheduledDates(2, undefined, undefined, SIGNED, t("2026-12-01")),
+    ["2026-11-12", "2026-12-15"],
+  );
+  // an ISO estimatedCompletionDate still wins over the duration term
+  assertEquals(
+    computeScheduledDates(
+      2,
+      undefined,
+      "2026-12-10",
+      SIGNED,
+      t("Next week", "1 day"),
+    ),
+    ["2026-11-12", "2026-12-10"],
+  );
+});
+
+Deno.test("REQ-475 (m63) send-signed-confirmation run: Deposit + balance on a 1-day job starting in 8 days → the balance invoice is scheduled for the job's end (today + 9), due 7 days later", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const quote = await s.quotes.create("u-1", {
+      summary: "Deep clean",
+      lineItems: [],
+      estimatedTotal: 450_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      terms: splitTerms(plusDaysIso(8), "1 day"),
+    });
+
+    await s.flow.run(quote.id);
+
+    const rows = (await s.invoices.listByUser("u-1"))
+      .sort((a, b) => (a.installmentIndex ?? 0) - (b.installmentIndex ?? 0));
+    assertEquals(rows.length, 2);
+    assertEquals(rows[1].status, "scheduled");
+    assertEquals(
+      rows[1].scheduledFor,
+      plusDaysIso(9),
+      "the balance bills when the 1-day job ends",
+    );
+    assertEquals(rows[1].dueDate, plusDaysIso(16));
   });
 });
