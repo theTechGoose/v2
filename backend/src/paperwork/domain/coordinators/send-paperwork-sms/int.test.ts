@@ -120,3 +120,79 @@ Deno.test("REQ-342 send-paperwork-sms: a send with no pick carries the resolved 
   );
   await resetKv();
 });
+
+// REQ-480 (demo-loop cycle 3, M18): an unissued invoice becomes "sent" only
+// when a channel actually delivers it — a text that goes out issues it; a text
+// that fails (a fictional 555 number) leaves it unissued.
+function freshWithInvoices() {
+  const invoices = new InvoiceStore();
+  const customers = new CustomerStore();
+  const sms = new SmsService();
+  const sent: SendSmsInput[] = [];
+  sms.send = (input: SendSmsInput) => {
+    sent.push(input);
+    return Promise.resolve({ ok: true, sid: "SM-test" });
+  };
+  const flow = new SendPaperworkSms(
+    new QuoteStore(),
+    invoices,
+    customers,
+    new UserStore(),
+    new BusinessIdentityStore(),
+    sms,
+    new ShortLinkStore(),
+    new LogPaperworkMessage(
+      new CommConversationStore(),
+      new CommMessageStore(),
+    ),
+  );
+  return { flow, invoices, customers, sent };
+}
+
+Deno.test("REQ-480 M18 send-paperwork-sms: a draft invoice that is texted becomes sent (sentAt stamped)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, invoices, customers, sent } = freshWithInvoices();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", {
+    name: "Ana",
+    phoneNumber: "+15125551234",
+  });
+  const invoice = await invoices.create("u-1", {
+    customerId: customer.id,
+    dueDate: "2099-01-01",
+    amount: 120_000,
+    status: "draft",
+  });
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, true, r.reason);
+  assertEquals(sent.length, 1);
+  const after = await invoices.getOwned(invoice.id, "u-1");
+  assertEquals(after.status, "sent");
+  assert(after.sentAt, "sentAt stamped on delivery");
+  await resetKv();
+});
+
+Deno.test("REQ-480 M18 send-paperwork-sms: a draft invoice whose text fails (fictional 555 number) stays a draft", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, invoices, customers, sent } = freshWithInvoices();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", {
+    name: "Ana",
+    phoneNumber: "+15125550188",
+  });
+  const invoice = await invoices.create("u-1", {
+    customerId: customer.id,
+    dueDate: "2099-01-01",
+    amount: 120_000,
+    status: "draft",
+  });
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, false);
+  assertEquals(sent.length, 0);
+  const after = await invoices.getOwned(invoice.id, "u-1");
+  assertEquals(after.status, "draft");
+  assertEquals(after.sentAt, undefined);
+  await resetKv();
+});

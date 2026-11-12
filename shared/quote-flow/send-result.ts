@@ -71,3 +71,60 @@ export function summarizeDispatch(
     failedChannels,
   };
 }
+
+/** One channel's result as the invoice page holds it: the interpreted
+ *  outcome plus the backend's own (already translated) reason. */
+export interface ChannelResult {
+  outcome: SendOutcome;
+  rawReason?: string;
+}
+
+export type Translate = (
+  key: string,
+  params?: Record<string, string>,
+) => string;
+
+/** The send endpoints' "nothing to send to" reason ("no recipient: …"), or no
+ *  reason at all on a missing-contact verdict. Anything else is a real
+ *  failure whose reason the contractor must read — the 555 reason mentions
+ *  "email", so the classified reason alone can't tell these apart. */
+function missingRecipient(r: ChannelResult): boolean {
+  if (r.rawReason) return /^no recipient\b/i.test(r.rawReason.trim());
+  return r.outcome.reason === "noEmail" || r.outcome.reason === "noPhone";
+}
+
+/**
+ * REQ-480 (demo-loop cycle 3, M18): the invoice's own "not delivered" copy
+ * for a dispatch where NO channel delivered — never the quote divider's
+ * "Quote + Agreement drafted …" wording, and never dropping either channel's
+ * reason: "INV-002 not delivered — no email on file; the text failed: …".
+ * `keptDraft` adds that the invoice stays a draft until it reaches the client.
+ */
+export function invoiceNotDeliveredCopy(
+  t: Translate,
+  input: {
+    number?: string;
+    email: ChannelResult;
+    text: ChannelResult;
+    keptDraft?: boolean;
+  },
+): string {
+  const reasonOf = (r: ChannelResult) =>
+    r.rawReason ?? r.outcome.reason ?? "unknown";
+  const emailPart = missingRecipient(input.email)
+    ? t("invoicesPage.send.noEmailOnFile")
+    : t("invoicesPage.send.emailFailedReason", {
+      reason: reasonOf(input.email),
+    });
+  const textPart = missingRecipient(input.text)
+    ? t("invoicesPage.send.noPhoneOnFile")
+    : t("invoicesPage.send.textFailedReason", { reason: reasonOf(input.text) });
+  const copy = t("invoicesPage.send.notDelivered", {
+    number: input.number?.trim() || t("invoicesPage.send.invoiceFallback"),
+    emailPart,
+    textPart,
+  });
+  return input.keptDraft
+    ? `${copy}. ${t("invoicesPage.send.keptDraft")}`
+    : copy;
+}

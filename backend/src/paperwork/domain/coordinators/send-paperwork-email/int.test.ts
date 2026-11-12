@@ -623,3 +623,88 @@ Deno.test("REQ-342 send-paperwork-email: a Spanish send's CTA is /q/<id>?lang=es
   );
   await resetKv();
 });
+
+// REQ-480 (demo-loop cycle 3, M18): "Issue invoice" no longer stamps "sent"
+// before anything was delivered. An unissued (draft / scheduled) invoice
+// becomes "sent" only when a channel actually delivers it — the email it goes
+// out in already reads "Sent" — and stays unissued when nothing went.
+Deno.test("REQ-480 M18 send-paperwork-email: a draft invoice that is emailed becomes sent (sentAt stamped) and its email reads Sent, never Draft", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Ana", email: "ana@acme.test" });
+  const invoice = await invoices.create("u-1", {
+    customerId: customer.id,
+    dueDate: "2099-01-01",
+    amount: 120_000,
+    status: "draft",
+  });
+
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, true, r.reason);
+  assert(!/>\s*Draft\s*</.test(sent[0].htmlBody), "the email never reads Draft");
+  assertStringIncludes(sent[0].htmlBody, "Sent");
+  const after = await invoices.getOwned(invoice.id, "u-1");
+  assertEquals(after.status, "sent");
+  assert(after.sentAt, "sentAt stamped on delivery");
+  await resetKv();
+});
+
+Deno.test("REQ-480 M18 send-paperwork-email: a scheduled invoice sent now becomes sent once the email delivers", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Ana", email: "ana@acme.test" });
+  const invoice = await invoices.create("u-1", {
+    customerId: customer.id,
+    dueDate: "2099-01-01",
+    amount: 120_000,
+    status: "scheduled",
+    scheduledFor: "2099-01-01",
+  });
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, true, r.reason);
+  assertEquals((await invoices.getOwned(invoice.id, "u-1")).status, "sent");
+  await resetKv();
+});
+
+Deno.test("REQ-480 M18 send-paperwork-email: a draft invoice with no email on file stays a draft — nothing delivered, nothing stamped", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Ana" });
+  const invoice = await invoices.create("u-1", {
+    customerId: customer.id,
+    dueDate: "2099-01-01",
+    amount: 120_000,
+    status: "draft",
+  });
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, false);
+  assertEquals(sent.length, 0);
+  const after = await invoices.getOwned(invoice.id, "u-1");
+  assertEquals(after.status, "draft");
+  assertEquals(after.sentAt, undefined);
+  await resetKv();
+});
+
+Deno.test("REQ-480 M18 send-paperwork-email: re-emailing an already viewed invoice never moves its status back to sent", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Ana", email: "ana@acme.test" });
+  const invoice = await invoices.create("u-1", {
+    customerId: customer.id,
+    dueDate: "2099-01-01",
+    amount: 120_000,
+    status: "viewed",
+  });
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, true, r.reason);
+  assertEquals((await invoices.getOwned(invoice.id, "u-1")).status, "viewed");
+  await resetKv();
+});

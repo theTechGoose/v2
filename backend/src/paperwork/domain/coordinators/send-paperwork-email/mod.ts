@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { publishPendingInvoice, publishPendingQuote, senderAsPublisher } from "@paperwork/domain/business/publish-pending/mod.ts";
+import { asDelivered, isUnissuedInvoice, publishPendingInvoice, publishPendingQuote, senderAsPublisher, stampInvoiceDelivered } from "@paperwork/domain/business/publish-pending/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -165,6 +165,7 @@ export class SendPaperworkEmail {
     let recipient: string | undefined = input.to;
 
     let quoteForStamp: Quote | undefined;
+    let invoiceToIssue = false;
     let customerIdForLog: string | undefined;
     if (input.kind === "quote") {
       // REQ-201: a send publishes what is pending — the link must show what was sent
@@ -179,7 +180,11 @@ export class SendPaperworkEmail {
       htmlBody = renderQuoteHtml(quote, customer, safeSender, senderBiz);
       quoteForStamp = quote;
     } else {
-      const invoice = await publishPendingInvoice(this.invoices, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
+      const stored = await publishPendingInvoice(this.invoices, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
+      // REQ-480: an unissued invoice is issued by this delivery — the email
+      // reads "Sent", and the stamp lands only once it actually went.
+      invoiceToIssue = isUnissuedInvoice(stored) && input.variant !== "paid";
+      const invoice = invoiceToIssue ? asDelivered(stored) : stored;
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
       customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.email ?? customerOnDocument(invoice, customer)?.email;
@@ -251,6 +256,12 @@ export class SendPaperworkEmail {
         status: "sent",
         sentAt: new Date().toISOString(),
       });
+    }
+
+    // REQ-480 (demo-loop cycle 3, M18): a draft / scheduled invoice becomes
+    // "sent" only now that the email was delivered.
+    if (result.ok && invoiceToIssue) {
+      await stampInvoiceDelivered(this.invoices, input.resourceId, userId);
     }
 
     // Comms trail (roadmap p.8): record the dispatch in the customer's

@@ -212,6 +212,21 @@ function nonEmpty(s: string | undefined): string | undefined {
   return v ? v : undefined;
 }
 
+/**
+ * REQ-480 (demo-loop cycle 3, M18): the status a New invoice is created with.
+ * "Issue" with a dispatch to follow creates it UNISSUED (draft): the send
+ * endpoints stamp it "sent" only once a channel actually delivers, so an
+ * invoice nobody received is never listed as Sent. "Issue" for a client with
+ * no contact (nothing to dispatch) is the contractor issuing it by hand —
+ * sent. Saving keeps the draft / scheduled tracks.
+ */
+export function newInvoiceStatus(
+  opts: { issue: boolean; dispatch: boolean; scheduledFor?: string },
+): "draft" | "sent" | "scheduled" {
+  if (opts.issue) return opts.dispatch ? "draft" : "sent";
+  return opts.scheduledFor ? "scheduled" : "draft";
+}
+
 /** The POST /invoices body for the form: cents, basis points, trimmed strings, nothing empty. */
 export function buildInvoiceBody(
   form: InvoiceFormValues,

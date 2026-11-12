@@ -66,3 +66,34 @@ export async function publishPendingInvoice(
     },
   );
 }
+
+/**
+ * REQ-480 (demo-loop cycle 3, M18): an invoice the contractor has not issued
+ * yet (draft / scheduled) is issued BY its delivery — the send endpoints
+ * stamp it "sent" only once a channel actually delivers, so an invoice nobody
+ * received is never listed as Sent. Until then the message it goes out in
+ * already reads as issued.
+ */
+export function isUnissuedInvoice(invoice: { status?: string }): boolean {
+  return invoice.status === "draft" || invoice.status === "scheduled";
+}
+
+/** REQ-480: the invoice as its outgoing message shows it — issued. */
+export function asDelivered<T extends { status?: string }>(invoice: T): T {
+  return isUnissuedInvoice(invoice) ? { ...invoice, status: "sent" } : invoice;
+}
+
+/** REQ-480: stamp an unissued invoice "sent" + sentAt after a delivery
+ *  succeeded (idempotent: an issued invoice is left alone). */
+export async function stampInvoiceDelivered(
+  invoices: InvoiceStore,
+  id: string,
+  userId: string,
+): Promise<void> {
+  const current = await invoices.getOwned(id, userId);
+  if (!isUnissuedInvoice(current)) return;
+  await invoices.update(id, userId, {
+    status: "sent",
+    sentAt: current.sentAt ?? new Date().toISOString(),
+  });
+}
