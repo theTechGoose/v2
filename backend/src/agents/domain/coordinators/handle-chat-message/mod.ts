@@ -105,6 +105,10 @@ import { messageLang } from "@agents/domain/business/message-language/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { isInvoiceLocked } from "#documents/versions.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
+import {
+  liveUnsentChangeOrder,
+  parseSendChangeOrderAsk,
+} from "@agents/domain/business/change-order-delivery/mod.ts";
 import { UpdateChatChangeOrder } from "@agents/domain/coordinators/update-chat-change-order/mod.ts"; // REQ-462
 // REQ-583 (demo-loop cycle 4, M2): send the invoice / record a payment.
 import { ChatBilling } from "@agents/domain/coordinators/chat-billing/mod.ts";
@@ -1882,6 +1886,37 @@ export class HandleChatMessage {
       })
       : undefined;
     if (recorded) return await finishEarly(recorded);
+    // ---- REQ-652 (demo-loop cycle 5, M8): a chat change order is MADE
+    // unsent; "Send CO-001" (its Send button's words) or "send it to her"
+    // right after it sends it — the alert emails and texts the customer.
+    const coSendAsk = !llmResponse && typeof input.content === "string"
+      ? parseSendChangeOrderAsk(input.content)
+      : undefined;
+    const coToSend = coSendAsk
+      ? coSendAsk.changeOrderNumber
+        ? { changeOrderNumber: coSendAsk.changeOrderNumber }
+        : liveUnsentChangeOrder(history.filter((m) => m.id !== userMsg.id))
+      : undefined;
+    const coSent = coToSend
+      ? await this.changeOrder.send({
+        userId: input.userId,
+        lang: replyLang,
+        ...coToSend,
+      })
+      : undefined;
+    if (coSent) {
+      const reply = await this.messages.append({
+        conversationId: conv.id,
+        role: "assistant",
+        kind: "text",
+        content: coSent.text,
+        payload: { changeOrder: coSent.outcome },
+      });
+      const updated = await this.conversations.update(conv.id, {
+        preview: derivePreview(reply.content),
+      });
+      return await finishEarly({ conversation: updated, newMessages: [reply] });
+    }
     const sendAsk = this.billing && billingText
       ? parseSendInvoiceAsk(billingText)
       : undefined;

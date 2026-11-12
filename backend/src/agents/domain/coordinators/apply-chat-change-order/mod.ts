@@ -7,7 +7,10 @@ import {
   type ChangeOrderAlertResult,
   SendChangeOrderAlert,
 } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
-import { changeOrderSentLine } from "@agents/domain/business/change-order-delivery/mod.ts";
+import {
+  asksToSendChangeOrder,
+  changeOrderSentLine,
+} from "@agents/domain/business/change-order-delivery/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import {
   isInvoiceLocked,
@@ -56,6 +59,10 @@ export type ChatChangeOrderOutcome =
     changeOrderNumber?: string;
     /** REQ-456: the customer's approval page, origin-free ("/co/<id>?lang=en"). */
     approvalPath: string;
+    /** REQ-652 (cycle 5, M8): false when the change order was only MADE —
+     *  nothing went to the customer; the chat offers Send / Copy link /
+     *  Preview. True once the alert ran (an explicit send). */
+    sent?: boolean;
     /** REQ-456: what reached the customer — absent when the alert failed. */
     delivery?: {
       emailedTo?: string;
@@ -285,44 +292,40 @@ export class ApplyChatChangeOrder {
           : {}),
         originalAmountCents: invoice.amount ?? 0,
       });
-      // REQ-456 (demo-loop cycle 3, M25): the alert emails and texts the
-      // CUSTOMER the /co link. Wait for it, so the reply says what actually
-      // reached them instead of "I've sent you the link to share".
-      let sent: ChangeOrderAlertResult | undefined;
-      let alertError: string | undefined;
-      try {
-        sent = await this.alert.run(co.id);
-      } catch (err) {
-        console.error(`[chat:change_order] alert failed for ${co.id}:`, err);
-        alertError = err instanceof Error ? err.message : String(err);
+      const onInvoice = {
+        quoteId: quote.id,
+        quoteNumber: quote.number,
+        invoiceId: invoice.id,
+      };
+      // REQ-652 (demo-loop cycle 5, M8): "make a change order" MAKES it.
+      // The customer is emailed and texted only when the message says so
+      // ("… and send it to her"); otherwise the reply offers Send / Copy
+      // link / Preview, and "Send CO-001" (the button's words) sends it.
+      if (!input.userText || !asksToSendChangeOrder(input.userText)) {
+        const number = co.number ?? co.id;
+        return {
+          text: t(lang, "chatCoordinator.changeOrder.createdNotSent", {
+            ...vars,
+            number,
+          }),
+          outcome: {
+            kind: "change_order",
+            ...onInvoice,
+            changeOrderId: co.id,
+            changeOrderNumber: number,
+            approvalPath: `/co/${co.id}`,
+            sent: false,
+          },
+        };
       }
-      const delivered = sent?.customer;
-      const number = delivered?.number ?? co.number ?? co.id;
-      const { number: _n, approvalPath, ...delivery } = delivered ??
-        { number, approvalPath: `/co/${co.id}` };
-      const sentLine = changeOrderSentLine(lang, {
-        number,
-        name: vars.name,
-        ...(delivered
-          ? delivery
-          : { error: alertError ?? sent?.reason ?? "not sent" }),
-      });
+      const sent = await this.deliver(lang, co, vars.name);
       return {
         text: t(lang, "chatCoordinator.changeOrder.created", {
           ...vars,
-          number,
-          sent: sentLine,
+          number: sent.number,
+          sent: sent.line,
         }),
-        outcome: {
-          kind: "change_order",
-          quoteId: quote.id,
-          quoteNumber: quote.number,
-          invoiceId: invoice.id,
-          changeOrderId: co.id,
-          changeOrderNumber: number,
-          approvalPath,
-          ...(delivered ? { delivery } : {}),
-        },
+        outcome: { kind: "change_order", ...onInvoice, ...sent.outcome },
       };
     }
 
@@ -374,6 +377,101 @@ export class ApplyChatChangeOrder {
         kind: "draft_updated",
         quoteId: quote.id,
         quoteNumber: quote.number,
+      },
+    };
+  }
+
+  /**
+   * REQ-652 (cycle 5, M8): send a change order the chat made earlier — the
+   * reply's "Send CO-001" button, or "send it to her" right after it. Only
+   * a PENDING order of this contractor's is sent; anything else (not found,
+   * approved, declined) is undefined and the chat carries on as usual.
+   */
+  async send(input: {
+    userId: string;
+    lang: Lang;
+    changeOrderId?: string;
+    changeOrderNumber?: string;
+  }): Promise<ChatChangeOrderResult | undefined> {
+    const { userId, lang } = input;
+    const co = input.changeOrderId
+      ? await this.changeOrders.getOwned(input.changeOrderId, userId)
+        .catch(() => undefined)
+      : (await this.changeOrders.listByUser(userId)).find((c) =>
+        !!c.number && !!input.changeOrderNumber &&
+        c.number.toUpperCase() === input.changeOrderNumber.toUpperCase()
+      );
+    if (!co || co.status !== "pending") return undefined;
+    const [quote, customer] = await Promise.all([
+      co.quoteId
+        ? this.quotes.getOwned(co.quoteId, userId).catch(() => undefined)
+        : Promise.resolve(undefined),
+      co.customerId
+        ? this.customers.getOwned(co.customerId, userId).catch(() => undefined)
+        : Promise.resolve(undefined),
+    ]);
+    const name = customer?.name ?? co.customerSnapshot?.name ??
+      quote?.customerSnapshot?.name ??
+      t(lang, "chatCoordinator.changeOrder.theCustomer");
+    const sent = await this.deliver(lang, co, name);
+    return {
+      text: sent.line,
+      outcome: {
+        kind: "change_order",
+        quoteId: co.quoteId ?? "",
+        ...(quote?.number ? { quoteNumber: quote.number } : {}),
+        invoiceId: co.invoiceId,
+        ...sent.outcome,
+      },
+    };
+  }
+
+  /** REQ-456: run the alert (it emails and texts the CUSTOMER the /co link)
+   *  and wait for it, so the reply says what actually reached them. */
+  private async deliver(
+    lang: Lang,
+    co: { id: string; number?: string },
+    name: string,
+  ): Promise<{
+    number: string;
+    line: string;
+    outcome: Pick<
+      Extract<ChatChangeOrderOutcome, { kind: "change_order" }>,
+      | "changeOrderId"
+      | "changeOrderNumber"
+      | "approvalPath"
+      | "sent"
+      | "delivery"
+    >;
+  }> {
+    let sent: ChangeOrderAlertResult | undefined;
+    let alertError: string | undefined;
+    try {
+      sent = await this.alert.run(co.id);
+    } catch (err) {
+      console.error(`[chat:change_order] alert failed for ${co.id}:`, err);
+      alertError = err instanceof Error ? err.message : String(err);
+    }
+    const delivered = sent?.customer;
+    const number = delivered?.number ?? co.number ?? co.id;
+    const { number: _n, approvalPath, ...delivery } = delivered ??
+      { number, approvalPath: `/co/${co.id}` };
+    const line = changeOrderSentLine(lang, {
+      number,
+      name,
+      ...(delivered
+        ? delivery
+        : { error: alertError ?? sent?.reason ?? "not sent" }),
+    });
+    return {
+      number,
+      line,
+      outcome: {
+        changeOrderId: co.id,
+        changeOrderNumber: number,
+        approvalPath,
+        sent: true,
+        ...(delivered ? { delivery } : {}),
       },
     };
   }

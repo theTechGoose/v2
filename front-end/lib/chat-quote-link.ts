@@ -76,6 +76,8 @@ export interface ChatChangeOrderLink {
   number?: string;
   /** Origin-free "/co/<id>[?lang=xx]". */
   path: string;
+  /** REQ-652 (cycle 5, M8): made but not sent to the customer yet. */
+  unsent?: true;
 }
 
 export function chatChangeOrderLink(
@@ -84,7 +86,7 @@ export function chatChangeOrderLink(
   if (!payload || typeof payload !== "object") return undefined;
   const outcome = (payload as Record<string, unknown>).changeOrder;
   if (!outcome || typeof outcome !== "object") return undefined;
-  const { kind, changeOrderId, changeOrderNumber, approvalPath } =
+  const { kind, changeOrderId, changeOrderNumber, approvalPath, sent } =
     outcome as Record<string, unknown>;
   if (kind !== "change_order") return undefined;
   if (typeof changeOrderId !== "string" || !changeOrderId) return undefined;
@@ -99,5 +101,20 @@ export function chatChangeOrderLink(
       ? changeOrderNumber
       : undefined,
     path,
+    ...(sent === false ? { unsent: true as const } : {}),
   };
+}
+
+/**
+ * REQ-652 (demo-loop cycle 5, M8) — the reply whose change order offers
+ * "Send CO-001": the NEWEST message, when it is the assistant's and its
+ * change order was made but not sent. An older reply never offers it (the
+ * server reads "send it" against the latest reply only).
+ */
+export function liveChangeOrderSendId(
+  messages: readonly { id: string; role: string; payload?: unknown }[],
+): string | undefined {
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "assistant") return undefined;
+  return chatChangeOrderLink(last.payload)?.unsent ? last.id : undefined;
 }

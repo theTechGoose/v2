@@ -4358,3 +4358,36 @@ Tests:
 - unit: `demo-loop/demo20b_test.ts` "REQ-621: the rules file names every category, in order, each with an action" (the rules file is executed by agents, so it gets a content test).
 - int: `demo-loop/demo20b_test.ts` "REQ-621: both testers are told to read the rules and tag every issue" runs the real harness with a fake fleet-claude.
 - e2e: the next demo cycle; its reports carry category tags.
+
+## REQ-652 — The assistant makes a change order when asked to make one; it reaches the customer only on an explicit send (demo-loop cycle 5, issue M8)
+**Source:** Raphael, 2026-11-12: "fix every issue the demo found, loop until there are none." Demo-loop cycle 5 (run r37f88707, demo-report.md), issue `M8`: "Assistant emails a change order to the client when asked only to make one". fleet-4 stdout:222 shows "Sent CO-002 to Dana Whitfield by email" after "Make a change order on Q-001: credit $500…", and fleet-0 stdout:254 shows the same after "add $400 change order". RCA analyst CONFIRMED and skeptic UPHELD at demo-fixes `2444608a`.
+**Cause (RCA, re-checked):** on a job with an open invoice, `ApplyChatChangeOrder.run` (`backend/src/agents/domain/coordinators/apply-chat-change-order/mod.ts`:274-317) called `changeOrders.create`, then `await this.alert.run(co.id)`. That is `SendChangeOrderAlert`, which emails and texts the CUSTOMER the /co link. No make-vs-send intent was ever checked. The alert was wired in f4a3f731 (REQ-238), and REQ-456 made the chat wait for it. Note: the invoice page's own `POST /invoices/:id/change-orders` also fires the alert on create (invoice-controller/mod.ts:221-226). The RCA's claim that the hand-made path "waits for Send" does not hold, and that path is unchanged here because it is out of this issue's scope.
+**Requirement:**
+- A chat change order is created **unsent**. Its outcome carries `sent: false`, and the reply (`chatCoordinator.changeOrder.createdNotSent`, en + es) says it has not been sent to the customer yet.
+- The newest reply offers three actions: **Send CO-00N** (the one solid primary), **Open CO-00N as customer** (the preview) and **Copy CO-00N link** (both outlined).
+- The customer is emailed and texted only when the contractor says so:
+  - in the same message ("… and send it to her", "email it to Dana", "mándasela"), read by `asksToSendChangeOrder` using parseSendInvoiceAsk's cues per clause, so "not yet" and "later" are not a send;
+  - or afterwards, with the Send button's words "Send CO-001" / "Enviar CO-001", or "send it to her" right after the unsent reply (`parseSendChangeOrderAsk` + `liveUnsentChangeOrder`, then `ApplyChatChangeOrder.send`).
+- A send reports delivery in REQ-456's wording, with `sent: true`.
+- Only a pending change order of the contractor's own is sent.
+**Tests:**
+- unit:
+  - `backend/src/agents/domain/business/change-order-delivery/test.ts` ("REQ-652 M8 …"): the demo's plain make/add asks are not a send, and neither is "don't send it yet" / "later" / "tomorrow"; explicit send/email/text/mándasela/envíasela is a send; the button's words and "ok send it to her" parse, while "don't send CO-002" and "Send INV-001" do not; `liveUnsentChangeOrder` returns only the newest reply's unsent order; the en/es keys exist and the button's words parse.
+  - `jest/unit/chat-change-order-link.test.ts` ("REQ-652 M8 …"): `unsent` flag, `liveChangeOrderSendId`, AsstChat `msg-co-send` → `sendText`, en/es keys.
+- integration: `backend/src/agents/domain/coordinators/handle-chat-message/int.test.ts`:
+  - new: "REQ-652 M8 (cycle 5): 'Make a change order …' makes it and sends nothing…", "… the Send button's words 'Send CO-001' sends it…", "… a typed 'ok send it to her' sends it…";
+  - amended: REQ-238 M27 now expects no alert and `sent: false`; both REQ-456 tests now say "Send it to her." and expect `sent: true`.
+- e2e: `e2e/chat-change-order-no-autosend/chat-change-order-no-autosend.e2e.test.ts` ("REQ-652 M8 (cycle 5): 'Make a change order' in chat makes it unsent with Send / Preview / Copy link; tapping Send CO-00N sends it to the customer").
+**Evidence (2026-11-12, branch fix/c5-chat-co-no-autosend off demo-fixes 2444608a):**
+- RED first:
+  - `deno test -A --unstable-kv src/agents/domain/business/change-order-delivery/test.ts` failed type-checking, because `asksToSendChangeOrder` / `liveUnsentChangeOrder` / `parseSendChangeOrderAsk` were not exported.
+  - handle-chat-message int (filter REQ-652|REQ-456|REQ-238): "FAILED | 1 passed | 5 failed", with "Values are not equal: a plain 'make' never sends it" and "Maria is not emailed or texted".
+  - `npx jest --selectProjects unit --testPathPattern chat-change-order-link`: "3 failed, 7 passed".
+  - `shots run e2e/chat-change-order-no-autosend` on the old code: "expectation failed: and NOT sent to Dana — expected false, got undefined".
+- GREEN:
+  - change-order-delivery unit: "ok | 12 passed".
+  - `deno test -A --unstable-kv --parallel` over handle-chat-message/, change-order-delivery/, chat-billing-intent/, change-order-intent/, send-change-order-alert/ and chat-controller/: "ok | 286 passed | 0 failed".
+  - jest unit project: "Test Suites: 392 passed · Tests: 1 skipped, 3853 passed".
+  - `front-end deno test -A lib/`: "ok | 397 passed".
+  - `deno lint` + `deno check` are clean on AsstChat.tsx, chat-quote-link.ts and the touched backend modules.
+  - `shots run e2e/chat-change-order-no-autosend e2e/chat-change-order-sent`: "tests finished rc 0" (REQ-652 ✓, REQ-456 ✓).

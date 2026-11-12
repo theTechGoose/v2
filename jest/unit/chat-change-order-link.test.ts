@@ -107,3 +107,73 @@ describe("REQ-456 M25 chatChangeOrderLink — the reply names the change order a
     expect(sentKeys(en).length).toBeGreaterThanOrEqual(8);
   });
 });
+
+/**
+ * REQ-652 (demo-loop cycle 5, M8) — a chat change order is MADE unsent
+ * (`sent: false`); the newest reply offers "Send CO-001" (its words are what
+ * the chat reads as the send), with Preview (Open as customer) and Copy link
+ * as the outlined secondaries.
+ */
+describe("REQ-652 M8 an unsent chat change order offers Send / Copy link / Preview", () => {
+  const unsent = {
+    changeOrder: {
+      kind: "change_order",
+      quoteId: "q1",
+      invoiceId: "i1",
+      changeOrderId: "co1",
+      changeOrderNumber: "CO-001",
+      approvalPath: "/co/co1",
+      sent: false,
+    },
+  };
+
+  it("chatChangeOrderLink marks an unsent change order", () => {
+    expect(mod().chatChangeOrderLink(unsent)).toEqual({
+      changeOrderId: "co1",
+      number: "CO-001",
+      path: "/co/co1",
+      unsent: true,
+    });
+    expect(
+      mod().chatChangeOrderLink({
+        changeOrder: { ...unsent.changeOrder, sent: true },
+      })?.unsent,
+    ).toBeUndefined();
+  });
+
+  it("liveChangeOrderSendId: only the newest message, only an assistant reply with an unsent change order", () => {
+    const { liveChangeOrderSendId } = mod();
+    const reply = { id: "m2", role: "assistant", payload: unsent };
+    const user = { id: "m1", role: "user", payload: undefined };
+    expect(liveChangeOrderSendId([user, reply])).toBe("m2");
+    expect(
+      liveChangeOrderSendId([reply, { id: "m3", role: "user" }]),
+    ).toBeUndefined();
+    expect(
+      liveChangeOrderSendId([{
+        ...reply,
+        payload: { changeOrder: { ...unsent.changeOrder, sent: true } },
+      }]),
+    ).toBeUndefined();
+    expect(liveChangeOrderSendId([])).toBeUndefined();
+  });
+
+  it("AsstChat renders the Send button on the live unsent reply and sends its own words", () => {
+    const src = read("front-end/islands/AsstChat.tsx");
+    expect(src).toContain("liveChangeOrderSendId(visible)");
+    expect(src).toContain(`data-cy="msg-co-send"`);
+    expect(src).toContain(`"asstChat.changeOrderLink.send"`);
+    const i = src.indexOf(`data-cy="msg-co-send"`);
+    expect(src.slice(i, i + 600)).toContain("sendText(");
+  });
+
+  it("en and es carry the Send label and the not-sent reply", () => {
+    for (const l of ["en", "es"]) {
+      const d = JSON.parse(read(`lang/${l}.json`));
+      expect(d["asstChat.changeOrderLink.send"]).toContain("{number}");
+      expect(d["chatCoordinator.changeOrder.createdNotSent"]).toContain(
+        "{number}",
+      );
+    }
+  });
+});
