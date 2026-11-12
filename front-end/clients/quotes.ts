@@ -119,6 +119,9 @@ export const quotesClient = {
   /** REQ-201: every filed version plus the current one. */
   versions: (id: string, opts: ApiOptions = {}) =>
     api.get<QuoteVersion[]>(`/quotes/${id}/versions`, opts),
+  /** REQ-395 (demo M12): drop the pending revision; the customer keeps the published version. */
+  discardRevision: (id: string, opts: ApiOptions = {}) =>
+    api.post<QuoteCard>(`/quotes/${id}/discard-revision`, {}, opts),
   /** REQ-201: publish the pending revision (version+1); `notify` re-sends the same link. */
   publish: (
     id: string,

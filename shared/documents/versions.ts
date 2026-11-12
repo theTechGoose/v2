@@ -272,6 +272,12 @@ export function pendingRevisionNotice(
   return { nextVersion: versionOf(q) + 1 };
 }
 
+/** REQ-395 (demo m24): one line as a change summary names it — description + line total. */
+export interface LineSummary {
+  description: string;
+  totalCents: number;
+}
+
 /** REQ-248: what one version changed against the one before it. */
 export interface VersionChanges {
   totalFromCents?: number;
@@ -279,6 +285,10 @@ export interface VersionChanges {
   linesAdded: number;
   linesRemoved: number;
   linesChanged: number;
+  /** REQ-395: the lines added / removed / changed, by name (present when any). */
+  added?: LineSummary[];
+  removed?: LineSummary[];
+  changed?: { from: LineSummary; to: LineSummary }[];
 }
 
 interface LineLike {
@@ -309,25 +319,118 @@ export function versionChanges(
   const a = linesOf(before);
   const b = linesOf(after);
   const shared = Math.min(a.length, b.length);
-  let linesChanged = 0;
+  const changed: { from: LineSummary; to: LineSummary }[] = [];
   for (let i = 0; i < shared; i++) {
     const x = a[i] ?? {};
     const y = b[i] ?? {};
-    if (
-      (x.description ?? "") !== (y.description ?? "") ||
-      (x.quantity ?? 1) !== (y.quantity ?? 1) ||
-      (x.unit ?? "") !== (y.unit ?? "") ||
-      (x.price ?? 0) !== (y.price ?? 0)
-    ) linesChanged++;
+    if (!sameLine(x, y)) {
+      changed.push({ from: lineSummary(x), to: lineSummary(y) });
+    }
   }
+  const added = b.slice(shared).map(lineSummary);
+  const removed = a.slice(shared).map(lineSummary);
   return {
     ...(from !== to
       ? { totalFromCents: from ?? 0, totalToCents: to ?? 0 }
       : {}),
-    linesAdded: Math.max(0, b.length - a.length),
-    linesRemoved: Math.max(0, a.length - b.length),
-    linesChanged,
+    linesAdded: added.length,
+    linesRemoved: removed.length,
+    linesChanged: changed.length,
+    ...(added.length ? { added } : {}),
+    ...(removed.length ? { removed } : {}),
+    ...(changed.length ? { changed } : {}),
   };
+}
+
+function sameLine(x: LineLike, y: LineLike): boolean {
+  return (x.description ?? "") === (y.description ?? "") &&
+    (x.quantity ?? 1) === (y.quantity ?? 1) &&
+    (x.unit ?? "") === (y.unit ?? "") &&
+    (x.price ?? 0) === (y.price ?? 0);
+}
+
+function lineSummary(l: LineLike): LineSummary {
+  const qty = typeof l.quantity === "number" ? l.quantity : 1;
+  const price = typeof l.price === "number" ? l.price : 0;
+  return {
+    description: (l.description ?? "").trim(),
+    totalCents: Math.round(price * qty),
+  };
+}
+
+function linesOfValue(v: unknown): LineLike[] {
+  return Array.isArray(v) ? (v as LineLike[]) : [];
+}
+
+/** Order-insensitive structural equality for plain JSON-ish values. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== typeof b) return false;
+  if (Array.isArray(a)) {
+    return Array.isArray(b) && a.length === b.length &&
+      a.every((x, i) => sameValue(x, b[i]));
+  }
+  if (typeof a === "object") {
+    const ao = a as Record<string, unknown>;
+    const bo = b as Record<string, unknown>;
+    const keys = new Set(
+      [...Object.keys(ao), ...Object.keys(bo)].filter((k) =>
+        ao[k] !== undefined || bo[k] !== undefined
+      ),
+    );
+    return [...keys].every((k) => sameValue(ao[k], bo[k]));
+  }
+  return false;
+}
+
+/**
+ * REQ-395 (demo M12): the part of a pending revision that actually differs
+ * from the live record. Line items compare on what the customer sees
+ * (description / quantity / unit / price, by position) — the live rows carry
+ * translations the editor never sends — and every other field structurally.
+ * `{}` means the revision is the live version: nothing to publish.
+ */
+export function effectivePendingRevision(
+  live: Record<string, unknown> | null | undefined,
+  pending: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(pending ?? {})) {
+    if (v === undefined) continue;
+    if (k === "lineItems") {
+      const a = linesOfValue(live?.lineItems);
+      const b = linesOfValue(v);
+      if (
+        a.length === b.length &&
+        a.every((x, i) => sameLine(x ?? {}, b[i] ?? {}))
+      ) {
+        continue;
+      }
+    } else if (sameValue(live?.[k], v)) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/** The fields whose change the line summary already says. */
+const LINE_SUMMARY_FIELDS = new Set(["lineItems", "estimatedTotal", "amount"]);
+
+/**
+ * REQ-395 (demo M12): does the pending revision change anything the line
+ * summary does not say — wording, terms, dates? Only then may the publish
+ * box read "Wording or terms updated".
+ */
+export function pendingOtherContentChanged(
+  doc:
+    | (Record<string, unknown> & { pendingRevision?: Record<string, unknown> })
+    | null
+    | undefined,
+): boolean {
+  if (!doc?.pendingRevision) return false;
+  const { pendingRevision, ...live } = doc;
+  return Object.keys(effectivePendingRevision(live, pendingRevision)).some(
+    (k) => !LINE_SUMMARY_FIELDS.has(k),
+  );
 }
 
 /**

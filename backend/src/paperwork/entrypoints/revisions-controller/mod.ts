@@ -29,6 +29,7 @@ import { quoteLedger } from "#documents/ledger.ts";
  * RevisionsController — REQ-201/202/205: publishing, versions, the ledger.
  *
  *   POST quotes/:id/publish    { notify?: boolean }  → the published quote (version +1)
+ *   POST quotes/:id/discard-revision                  → the quote, its pending revision dropped (REQ-395)
  *   GET  quotes/:id/versions                          → every filed version + the current one
  *   GET  quotes/:id/ledger                            → invoices / change orders / totals
  *   POST invoices/:id/publish  { notify?: boolean }  → the published invoice (version +1)
@@ -80,6 +81,20 @@ export class RevisionsController {
       ? await notify(this.email, this.sms, user.id, "quote", id, opts.language)
       : undefined;
     return ctx.json({ ...published, ...(notified ? { notified } : {}) });
+  }
+
+  /** REQ-395 (demo M12): throw away an unwanted draft revision; the customer's version is untouched. */
+  @Post("quotes/:id/discard-revision")
+  async discardQuoteRevision(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const quote = await this.quotes.getOwned(id, user.id);
+    if (isQuoteLocked(quote)) {
+      return ctx.json({ ok: false, reason: "locked_signed" }, 409);
+    }
+    return ctx.json(await this.quotes.clearPending(id, user.id));
   }
 
   @Get("quotes/:id/versions")

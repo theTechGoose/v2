@@ -25,6 +25,7 @@ import {
 } from "../../shared/documents/linked-view.ts";
 import {
   invoiceState,
+  pendingOtherContentChanged,
   pendingRevisionChanges,
   quoteState,
   versionChanges,
@@ -178,6 +179,8 @@ function QuoteLedgerSection(
   // REQ-304 (demo M28): publishing is a two-step — the button opens a
   // preview that says what Version N changes, and only its Publish posts.
   const [confirming, setConfirming] = useState(false);
+  // REQ-395 (demo M12): an unwanted draft revision can be thrown away.
+  const [discarding, setDiscarding] = useState(false);
   const summary = ledgerSummary(ledger);
   const state = quoteState(q);
   const headline = docHeadline(
@@ -199,6 +202,14 @@ function QuoteLedgerSection(
   const previewLine = previewChanges
     ? versionChangeLine(previewChanges, lang)
     : "";
+  // REQ-395 (demo M12): "Wording or terms updated" only when such a field
+  // really differs; a revision equal to the live version has nothing to publish.
+  const otherChanged = pendingOtherContentChanged(
+    q as Record<string, unknown> & {
+      pendingRevision?: Record<string, unknown>;
+    },
+  );
+  const nothingToPublish = !previewLine && !otherChanged;
   const locked = ledger.quote.accepted;
   const rowStyle =
     "display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid rgba(26,83,92,0.08);font-size:13px";
@@ -206,6 +217,21 @@ function QuoteLedgerSection(
   const mutedStyle = "color:var(--fg-muted,#6b7560)";
   const linkStyle =
     "color:var(--brand-teal,#144852);text-decoration:none;font-weight:700";
+
+  async function discard() {
+    if (discarding || publishing) return;
+    setDiscarding(true);
+    setPublishErr(null);
+    try {
+      await quotesClient.discardRevision(q.id);
+      setConfirming(false);
+      onPublished();
+    } catch {
+      setPublishErr(tFor(lang, "quotes.ledger.discardError"));
+    } finally {
+      setDiscarding(false);
+    }
+  }
 
   async function publish() {
     if (publishing) return;
@@ -251,11 +277,26 @@ function QuoteLedgerSection(
           </div>
         </div>
         {pending && !locked && (
-          <span
-            data-cy="quote-pending-badge"
-            style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#fff6e5;color:#8a5a10;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase"
-          >
-            {tFor(lang, "quotes.ledger.unpublished")}
+          <span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span
+              data-cy="quote-pending-badge"
+              style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#fff6e5;color:#8a5a10;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase"
+            >
+              {tFor(lang, "quotes.ledger.unpublished")}
+            </span>
+            {/* REQ-395 (demo M12): a quiet ghost — the customer keeps the published version */}
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="quote-discard-draft"
+              disabled={discarding || publishing}
+              onClick={discard}
+              style="background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560);padding:4px 8px;font-size:12px"
+            >
+              {discarding
+                ? tFor(lang, "quotes.ledger.discarding")
+                : tFor(lang, "quotes.ledger.discardDraft")}
+            </button>
           </span>
         )}
       </div>
@@ -486,7 +527,10 @@ function QuoteLedgerSection(
             data-cy="quote-publish-changes"
             style="margin-top:4px;font-size:13px;font-weight:700"
           >
-            {previewLine || tFor(lang, "quotes.ledger.publishOtherChanges")}
+            {previewLine ||
+              (otherChanged
+                ? tFor(lang, "quotes.ledger.publishOtherChanges")
+                : tFor(lang, "quotes.ledger.nothingToPublish"))}
           </div>
           <div style={`margin-top:2px;font-size:12px;${mutedStyle}`}>
             {tFor(lang, "quotes.ledger.publishPreviewNote")}
@@ -496,7 +540,7 @@ function QuoteLedgerSection(
               type="button"
               class="qopen__btn qopen__btn--primary"
               data-cy="quote-publish-confirm"
-              disabled={publishing}
+              disabled={publishing || nothingToPublish}
               onClick={publish}
             >
               {publishing
@@ -664,6 +708,8 @@ function QuoteLineEditor(
           <input
             type="text"
             data-cy={`quote-edit-line-desc-${i}`}
+            aria-label={`${tFor(lang, "quotesPage.edit.description")} ${i + 1}`}
+            placeholder={tFor(lang, "quotesPage.edit.descriptionPlaceholder")}
             value={l.description}
             disabled={busy}
             onInput={(e) =>
@@ -675,6 +721,8 @@ function QuoteLineEditor(
             min="1"
             step="1"
             data-cy={`quote-edit-line-qty-${i}`}
+            aria-label={`${tFor(lang, "quotesPage.edit.qty")} ${i + 1}`}
+            placeholder={tFor(lang, "quotesPage.edit.qty")}
             value={l.quantity}
             disabled={busy}
             onInput={(e) =>
@@ -686,6 +734,8 @@ function QuoteLineEditor(
             step="0.01"
             inputMode="decimal"
             data-cy={`quote-edit-line-price-${i}`}
+            aria-label={`${tFor(lang, "quotesPage.edit.price")} ${i + 1}`}
+            placeholder={tFor(lang, "quotesPage.edit.pricePlaceholder")}
             value={l.price}
             disabled={busy}
             onInput={(e) =>
@@ -916,7 +966,8 @@ function OpenQuotePanel(
           }}
         />
       )}
-      {savedVersion !== null && !editing && (
+      {/* REQ-395 (demo m27): only while that unpublished version still waits */}
+      {savedVersion !== null && hasPending && !editing && (
         <p
           data-cy="quote-edit-saved"
           style="margin:10px 0 0;font-size:12.5px;color:var(--brand-green,#519843);font-weight:700"
@@ -958,7 +1009,12 @@ function OpenQuotePanel(
           q={q}
           ledger={state.ledger}
           versions={state.versions}
-          onPublished={onRefresh}
+          onPublished={() => {
+            // REQ-395 (demo m27): the "Saved as unpublished Version N" line
+            // is stale once that version is published (or discarded).
+            setSavedVersion(null);
+            onRefresh();
+          }}
         />
       )}
     </section>
