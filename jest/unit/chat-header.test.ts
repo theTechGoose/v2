@@ -18,7 +18,10 @@ import * as path from "path";
 import {
   type ChatHeaderMessage,
   deriveChatHeader,
+  draftOwesDetails,
+  threadChip,
 } from "../../shared/quote-flow/chat-header";
+import { threadTitle } from "../../shared/quote-flow/thread-title";
 
 const H = "asstChat.header.";
 
@@ -245,13 +248,13 @@ describe("REQ-245 deriveChatHeader — status", () => {
 });
 
 describe("REQ-245 deriveChatHeader — title", () => {
-  it("the bound customer's name wins", () => {
+  it("the bound customer's name is appended to the job name (REQ-385, cycle 2 m6)", () => {
     const h = deriveChatHeader({
       customerName: "  Ana Ruiz ",
       quote: { status: "draft", jobName: "Roof repair" },
       messages: [],
     });
-    expect(h.clientName).toBe("Ana Ruiz");
+    expect(h.clientName).toBe("Roof repair · Ana Ruiz");
     expect(h.clientKey).toBeUndefined();
   });
 
@@ -330,5 +333,109 @@ describe("REQ-245 wiring + copy", () => {
     }
     expect(en[`${H}readyToSend`]).toBe("Ready to send");
     expect(en[`${H}notDelivered`]).toBe("Not delivered");
+  });
+});
+
+/**
+ * REQ-385 (demo-loop cycle 2, demo issue m6) — the thread's labels agree
+ * wherever it is named: the chat list said "Redactando" for a plain question
+ * while the header said "Nueva conversación"; the header's title went
+ * "New conversation" → job name → customer name; "Ready to send" sat over a
+ * re-opened job-details picker; the customer card said "BORRADOR" beside the
+ * assistant's "LISTA PARA ENVIAR".
+ */
+describe("REQ-385 (cycle 2, m6) status labels and headers agree", () => {
+  const root = path.resolve(__dirname, "../..");
+  const read = (p: string) => fs.readFileSync(path.join(root, p), "utf8");
+  const en = JSON.parse(read("lang/en.json"));
+  const es = JSON.parse(read("lang/es.json"));
+
+  it("a thread with no quote gets no chip — never 'Drafting' / 'Redactando' beside a 'New conversation' header", () => {
+    expect(threadChip("none")).toBeNull();
+    expect(threadChip(undefined)).toBeNull();
+    expect(threadChip(null)).toBeNull();
+    // the bill still rides on top once it is out
+    expect(threadChip("none", "paid")?.key).toBe("status.paid");
+    // a real status keeps its chip
+    expect(threadChip("readyToSend")?.key).toBe(`${H}readyToSend`);
+  });
+
+  it("AsstThreads renders no chip when threadChip gives none", () => {
+    const threads = read("front-end/islands/AsstThreads.tsx");
+    expect(threads).toMatch(/chip\s*&&/);
+  });
+
+  it("the header title is ONE rule: the job name, then '· customer' appended — the list's title, never replaced", () => {
+    const steps = [
+      { jobName: undefined, customerName: undefined },
+      { jobName: "Fence install", customerName: undefined },
+      { jobName: "Fence install", customerName: "Ana Ruiz" },
+    ];
+    const titles = steps.map((p) =>
+      deriveChatHeader({
+        customerName: p.customerName,
+        quote: p.jobName ? { status: "draft", jobName: p.jobName } : undefined,
+        messages: [],
+      }).clientName
+    );
+    expect(titles).toEqual([
+      undefined,
+      "Fence install",
+      "Fence install · Ana Ruiz",
+    ]);
+    // the conversation list names the thread the same way
+    for (const p of steps.slice(1)) {
+      const h = deriveChatHeader({
+        customerName: p.customerName,
+        quote: { status: "draft", jobName: p.jobName },
+        messages: [],
+      });
+      expect(h.clientName).toBe(threadTitle(p, "en"));
+    }
+    // a customer with no job name yet is still the title
+    expect(
+      deriveChatHeader({ customerName: " Ana Ruiz ", messages: [] })
+        .clientName,
+    ).toBe("Ana Ruiz");
+  });
+
+  it("the server-rendered title follows the same rule, not conversation.customerName ?? title", () => {
+    const route = read("front-end/routes/assistant/[threadId].tsx");
+    expect(route).not.toMatch(/detail\?\.conversation\?\.customerName \?\?/);
+    expect(route).toMatch(/clientName \?\?/);
+  });
+
+  it("a re-opened job-details picker is 'Picking job details', not 'Ready to send'", () => {
+    expect(draftOwesDetails({ polishRaw: "Fence, 40 ft" })).toBe(true);
+    expect(draftOwesDetails({ jobOptionsOpen: true, pickerMode: "polish" }))
+      .toBe(true);
+    // the pre-quote "help me price it" confirm picker is not the job pick
+    expect(draftOwesDetails({ jobOptionsOpen: true, pickerMode: "confirm" }))
+      .toBe(false);
+    expect(draftOwesDetails({ jobOptionsOpen: false, polishRaw: "  " }))
+      .toBe(false);
+    expect(draftOwesDetails(null)).toBe(false);
+    const h = deriveChatHeader({
+      quote: { status: "draft", jobName: "Fence install", terms: [{}] },
+      messages: [readyToSendCta],
+      detailsPending: draftOwesDetails({
+        jobOptionsOpen: true,
+        pickerMode: "polish",
+      }),
+    });
+    expect(h.status).toBe("pickingDetails");
+  });
+
+  it("AsstChat's header counts the open job picker (the pencil re-open) as details pending", () => {
+    const chat = read("front-end/islands/AsstChat.tsx");
+    const at = chat.indexOf("const threadHeader = deriveChatHeader(");
+    expect(at).toBeGreaterThan(-1);
+    const call = chat.slice(at, chat.indexOf("});", at));
+    expect(call).toMatch(/detailsPending:[^,]*jobOptionsOpen/);
+  });
+
+  it("the customer card's unsent quote reads 'Not sent', never 'Draft' beside 'Ready to send'", () => {
+    expect(en["clientsBoard.docState.draft"]).toBe("Not sent");
+    expect(es["clientsBoard.docState.draft"]).toBe("Sin enviar");
   });
 });

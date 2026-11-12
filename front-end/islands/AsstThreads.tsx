@@ -274,11 +274,15 @@ export default function AsstThreads(
                         </span>
                       </div>
                       <div class="thread__preview">{c.preview ?? "—"}</div>
-                      <div class="thread__chips">
-                        <span class={`thread__chip thread__chip--${chip.kind}`}>
-                          {chip.label}
-                        </span>
-                      </div>
+                      {chip && (
+                        <div class="thread__chips">
+                          <span
+                            class={`thread__chip thread__chip--${chip.kind}`}
+                          >
+                            {chip.label}
+                          </span>
+                        </div>
+                      )}
                     </a>
                   );
                 })}
@@ -311,9 +315,10 @@ function chipFor(
   c: Conversation,
   live: ThreadStatusDetail | null,
   lang: Lang,
-): { kind: ThreadChipKind; label: string } {
-  const { kind, key } = threadChip(listStatusFor(c, live), c.invoiceStatus);
-  return { kind, label: tFor(lang, key) };
+): { kind: ThreadChipKind; label: string } | null {
+  // REQ-385 (cycle 2, m6): a thread with no quote has no chip.
+  const chip = threadChip(listStatusFor(c, live), c.invoiceStatus);
+  return chip ? { kind: chip.kind, label: tFor(lang, chip.key) } : null;
 }
 
 function tsOf(iso: string): number {

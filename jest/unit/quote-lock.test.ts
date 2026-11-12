@@ -74,7 +74,7 @@ describe("REQ-234 the chat card's chip and helpers know the locked state", () =>
       expect(es[key]).not.toMatch(/enviad/i);
     }
     // REQ-369: the thread list names a locked quote in the header's words.
-    expect(threadChip("locked").key).toBe("asstChat.header.quoteLocked");
+    expect(threadChip("locked")?.key).toBe("asstChat.header.quoteLocked");
   });
 });
 

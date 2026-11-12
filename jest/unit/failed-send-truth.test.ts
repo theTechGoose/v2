@@ -312,7 +312,7 @@ describe("REQ-236: wiring — icons, list chip, header, send", () => {
       },
     });
     expect(status).toBe("undelivered");
-    expect(threadChip(status).key).toBe("asstChat.header.notDelivered");
+    expect(threadChip(status)?.key).toBe("asstChat.header.notDelivered");
     expect(threads).toMatch(/threadChip\(/);
     expect(en["asstChat.header.notDelivered"]).toBeTruthy();
     expect(es["asstChat.header.notDelivered"]).toBeTruthy();

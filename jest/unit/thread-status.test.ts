@@ -261,12 +261,12 @@ describe("REQ-369 the conversation list's chip is the same status", () => {
   it("for every quote status the chip's words ARE the header's words", () => {
     for (const s of THREAD_STATUSES) {
       if (s === "none") continue;
-      expect(threadChip(s).key).toBe(threadStatusKey(s));
+      expect(threadChip(s)?.key).toBe(threadStatusKey(s));
     }
   });
 
-  it("a thread with no quote yet reads 'Drafting'; the bill rides on top once it is out", () => {
-    expect(threadChip("none").key).toBe("asstThreads.chip.drafting");
+  it("a thread with no quote yet has no chip (REQ-385, cycle 2 m6); the bill rides on top once it is out", () => {
+    expect(threadChip("none")).toBeNull();
     expect(threadChip("accepted", "sent")).toEqual({
       kind: "sent",
       key: "asstThreads.chip.invoiced",
@@ -278,10 +278,9 @@ describe("REQ-369 the conversation list's chip is the same status", () => {
   });
 
   it("chip colours follow the status: signed paid-green, out sent-green, drafts quiet, the rest needs-you", () => {
-    expect(threadChip("accepted").kind).toBe("paid");
-    expect(threadChip("sent").kind).toBe("sent");
-    expect(threadChip("drafted").kind).toBe("draft");
-    expect(threadChip("none").kind).toBe("draft");
+    expect(threadChip("accepted")?.kind).toBe("paid");
+    expect(threadChip("sent")?.kind).toBe("sent");
+    expect(threadChip("drafted")?.kind).toBe("draft");
     for (
       const s of [
         "locked",
@@ -292,7 +291,7 @@ describe("REQ-369 the conversation list's chip is the same status", () => {
         "declined",
       ] as ThreadStatus[]
     ) {
-      expect(threadChip(s).kind).toBe("needs");
+      expect(threadChip(s)?.kind).toBe("needs");
     }
   });
 });

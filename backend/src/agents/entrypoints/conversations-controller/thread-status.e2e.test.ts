@@ -15,7 +15,7 @@ import { AgentsModule } from "@agents/mod-root.ts";
 import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { getKv, resetKv } from "@core/data/kv/mod.ts";
-import { deriveChatHeader } from "#quote-flow/chat-header.ts";
+import { deriveChatHeader, draftOwesDetails } from "#quote-flow/chat-header.ts";
 
 @Module({ imports: [AgentsModule] })
 class TestApp {}
@@ -101,7 +101,7 @@ Deno.test("REQ-369 e2e: GET /agents/conversations and the chat header name one s
         customerName: detail.customer?.name,
         quote: detail.quote,
         messages: detail.messages ?? [],
-        detailsPending: !!detail.draft?.polishRaw,
+        detailsPending: draftOwesDetails(detail.draft),
       }).status;
       assertEquals(
         { step, list: row?.threadStatus, header },
@@ -150,6 +150,15 @@ Deno.test("REQ-369 e2e: GET /agents/conversations and the chat header name one s
 
     await post(`/agents/conversations/${convId}/draft`, { draft: null });
     await bothSay("readyToSend", "the job description picked");
+
+    // REQ-385 (cycle 2, m6): the pencil re-opens the job-details picker —
+    // the parked draft has the picker open, no polishRaw.
+    await post(`/agents/conversations/${convId}/draft`, {
+      draft: { jobOptionsOpen: true, pickerMode: "polish" },
+    });
+    await bothSay("pickingDetails", "the job details being rewritten");
+    await post(`/agents/conversations/${convId}/draft`, { draft: null });
+    await bothSay("readyToSend", "the picker closed again");
 
     await post(`/agents/conversations/${convId}/send-quote`, {
       quoteId: quote.id,

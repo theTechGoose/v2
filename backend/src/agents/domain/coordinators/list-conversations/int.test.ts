@@ -16,7 +16,7 @@
  * the snapshot the client loads (LoadConversation).
  */
 import { assertEquals } from "#std/assert";
-import { deriveChatHeader } from "#quote-flow/chat-header.ts";
+import { deriveChatHeader, draftOwesDetails } from "#quote-flow/chat-header.ts";
 import { emptyAssistantDraft } from "#quote-flow/assistant-draft.ts";
 import { ListConversations } from "./mod.ts";
 import { SendQuote } from "@agents/domain/coordinators/send-quote/mod.ts";
@@ -144,7 +144,7 @@ async function headerStatus(s: ReturnType<typeof fresh>, id: string) {
     customerName: snap.customer?.name,
     quote: snap.quote as Parameters<typeof deriveChatHeader>[0]["quote"],
     messages: snap.messages,
-    detailsPending: !!snap.draft?.polishRaw?.trim(),
+    detailsPending: draftOwesDetails(snap.draft),
   }).status;
 }
 
@@ -337,5 +337,48 @@ Deno.test("REQ-369 every row carries its own status: a chat with no quote yet, a
 
     await bothSay(s, chatOnly.id, "none", "a chat with no quote");
     await bothSay(s, inWizard.id, "gathering", "a quote in the wizard");
+  });
+});
+
+Deno.test("REQ-385 (cycle 2, m6) the job-details picker re-opened from the review card: the list and the header say 'Picking job details', then 'Ready to send' once it closes", async () => {
+  await withKv(async () => {
+    const s = fresh();
+    const quote = await s.quotes.create(USER, {
+      summary: "Fence install",
+      jobName: "Fence install",
+      lineItems: [{
+        description: "Fence",
+        quantity: 1,
+        unit: "ea",
+        price: 480_000,
+      }],
+      estimatedTotal: 480_000,
+      status: "draft",
+    });
+    const conv = await s.conversations.create({
+      userId: USER,
+      currentPhase: "quote",
+      quoteId: quote.id,
+    });
+    await s.toTerms.run({ userId: USER, conversationId: conv.id });
+    await answerAll(s, conv.id);
+    await bothSay(s, conv.id, "readyToSend", "the wizard done");
+
+    // The pencil re-opens the picker: the client parks the open picker
+    // (REQ-230 draft) — no polishRaw, the end-of-wizard pick was made.
+    await s.conversations.putDraft(conv.id, {
+      ...emptyAssistantDraft(),
+      jobOptionsOpen: true,
+      pickerMode: "polish",
+    });
+    await bothSay(
+      s,
+      conv.id,
+      "pickingDetails",
+      "the job details being rewritten",
+    );
+
+    await s.conversations.putDraft(conv.id, emptyAssistantDraft());
+    await bothSay(s, conv.id, "readyToSend", "the picker closed");
   });
 });

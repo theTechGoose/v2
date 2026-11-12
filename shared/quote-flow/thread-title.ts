@@ -32,10 +32,22 @@ export function threadTitle(
   parts: ThreadTitleParts,
   lang: "en" | "es",
 ): string {
+  return threadName(parts) ?? part(parts.title) ??
+    NEW_CONVERSATION[lang];
+}
+
+/**
+ * REQ-385 (demo-loop cycle 2, m6): the thread's name from its job and its
+ * customer — the job name, then "· customer" appended — or undefined when it
+ * has neither. The chat header (`deriveChatHeader`) and the list
+ * (`threadTitle`) both name a thread through this, so the title only ever
+ * grows; it never swaps the job for the customer.
+ */
+export function threadName(
+  parts: Pick<ThreadTitleParts, "jobName" | "customerName">,
+): string | undefined {
   const job = part(parts.jobName);
   const customer = part(parts.customerName);
   if (job && customer) return `${job} · ${customer}`;
-  if (customer) return customer;
-  if (job) return job;
-  return part(parts.title) ?? NEW_CONVERSATION[lang];
+  return job ?? customer;
 }
