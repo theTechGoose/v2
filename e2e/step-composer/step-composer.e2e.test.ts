@@ -403,3 +403,106 @@ Deno.test("REQ-392 M7: on Ready to send the contractor can still talk to the ass
       "and the box with it",
     );
   }));
+
+// REQ-442 — demo-loop cycle 3, issues M22 ("User's own chat messages don't
+// appear until reload") and m49 ("'Setting up…' card shows the original
+// message, not the correction"): on the Job details picker the panel covers
+// the thread, so the contractor's correction shows on the step itself — while
+// it is rewritten ("Rewriting with your change…" + their words, the confirm
+// strip and Continue untouched) and after (their line, the assistant's note,
+// and the confirm strip's echo carrying the correction).
+const CORRECTION = "also include the heated floor and the haul-away";
+
+Deno.test("REQ-442 M22/m49: a correction typed on the Job details picker shows on the step while it is rewritten and after — the confirm strip never says 'Setting up…' over the old message", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/assistant");
+    await clickUntil(
+      page,
+      "button.chat__empty-prompt:has-text('help me price it')",
+      () => page.locator(".chat__details-prompt-bubble").isVisible(),
+    );
+    await bigComposer(page).fill(TYPED);
+    await page.locator("button.composer__send").click();
+    await page.locator("[data-cy=confirm-details]").waitFor({
+      state: "visible",
+      timeout: 30_000,
+    });
+    const label = page.locator(
+      "[data-cy=confirm-details] .chat__confirm-details-label",
+    );
+    const ctaLabel = (await label.innerText()).trim();
+
+    // Hold the step turn so its in-flight state can be read.
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => release = r);
+    await page.route("**/agents/chat", async (route) => {
+      if (route.request().method() === "POST") await held;
+      await route.continue();
+    });
+    await clickUntil(
+      page,
+      "[data-cy=step-composer-open]",
+      async () =>
+        (await page.locator("[data-cy=step-composer-input]").count()) > 0,
+    );
+    const input = page.locator("[data-cy=step-composer-input]");
+    await input.fill(CORRECTION);
+    const answered = page.waitForResponse((r) =>
+      r.url().includes("/agents/chat") && r.request().method() === "POST"
+    );
+    answered.catch(() => {});
+    await input.press("Enter");
+
+    const pending = page.locator("[data-cy=step-composer-pending]");
+    await pending.waitFor({ state: "visible", timeout: 10_000 });
+    const during = await pending.innerText();
+    expect(
+      during.includes("Rewriting with your change"),
+      `the step says it is rewriting (${during})`,
+    );
+    expect(
+      during.includes(CORRECTION),
+      `with the correction the contractor typed (${during})`,
+    );
+    expect.eq(
+      (await label.innerText()).trim(),
+      ctaLabel,
+      "the confirm strip keeps its label (never 'Setting up…')",
+    );
+    const cont = page.locator(".chat__jobopts .chat__price-continue").first();
+    expect(
+      !(await cont.innerText()).includes("Setting up"),
+      "Continue does not say 'Setting up…'",
+    );
+
+    release();
+    await answered;
+    await page.unroute("**/agents/chat");
+    await pending.waitFor({ state: "detached", timeout: 30_000 });
+
+    const said = page.locator("[data-cy=step-composer-said]").last();
+    await said.waitFor({ state: "visible", timeout: 10_000 });
+    expect(
+      (await said.innerText()).includes(CORRECTION),
+      "the contractor's own line shows on the step",
+    );
+    const note = page.locator("[data-cy=step-composer-note]").last();
+    await note.waitFor({ state: "visible", timeout: 10_000 });
+    expect(
+      (await note.innerText()).trim().length > 0,
+      "with the assistant's answer under it",
+    );
+    const echo = await page.locator(
+      "[data-cy=confirm-details] .chat__confirm-details-text",
+    ).innerText();
+    expect(
+      echo.includes(CORRECTION),
+      `the confirm strip echoes the correction now (${echo})`,
+    );
+    expect(
+      echo.includes(TYPED.slice(0, 30)),
+      "after the message it was typed against",
+    );
+  }));

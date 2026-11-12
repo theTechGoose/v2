@@ -15,6 +15,7 @@ import {
   serverDisagreement,
   THREAD_SERVER_STATUS_EVENT,
   THREAD_STATUS_EVENT,
+  THREAD_TURN_EVENT,
   type ThreadStatusDetail,
 } from "../lib/thread-status-sync.ts";
 
@@ -160,6 +161,14 @@ export default function AsstThreads(
     const onStatus = (e: Event) =>
       showLive((e as CustomEvent<ThreadStatusDetail>).detail);
     globalThis.addEventListener(THREAD_STATUS_EVENT, onStatus);
+    // REQ-442 (demo-loop cycle 3, M22): the thread's first turn named it —
+    // show its title now, not at the next poll.
+    const onTurn = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      clearTimeout(soon);
+      soon = setTimeout(refresh, 300);
+    };
+    globalThis.addEventListener(THREAD_TURN_EVENT, onTurn);
     // The chat may have hydrated (and pushed) before this list did.
     showLive(latestThreadStatus());
     return () => {
@@ -167,6 +176,7 @@ export default function AsstThreads(
       stop();
       clearTimeout(soon);
       globalThis.removeEventListener(THREAD_STATUS_EVENT, onStatus);
+      globalThis.removeEventListener(THREAD_TURN_EVENT, onTurn);
     };
   }, []);
 

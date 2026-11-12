@@ -48,9 +48,12 @@ import {
 import { CustomerLinkRow, LinkToast } from "../components/CustomerLinkRow.tsx";
 import StepComposer, { StepComposerOpen } from "../components/StepComposer.tsx"; // REQ-392
 import {
+  addStepExchange,
   type ChatStepHint,
   type ChatStepId,
   composerMode,
+  echoWithCorrection, // REQ-442
+  type StepLog, // REQ-442
   stepScopeOf, // REQ-444
   withStepScope, // REQ-444
 } from "../../shared/quote-flow/step-composer.ts"; // REQ-392
@@ -190,7 +193,9 @@ import {
 // the conversation list shows it.
 import { threadStatusKey } from "../../shared/quote-flow/chat-header.ts";
 import {
+  isFirstUserTurn,
   publishThreadStatus,
+  publishThreadTurn,
   THREAD_SERVER_STATUS_EVENT,
   type ThreadStatusDetail,
 } from "../lib/thread-status-sync.ts";
@@ -925,10 +930,14 @@ export default function AsstChat({
   const [priceBasis, setPriceBasis] = useState<
     "labor_and_materials" | "labor_materials_as_noted"
   >(seed?.priceBasis ?? "labor_and_materials");
-  /** REQ-392 (demo-loop cycle 2, M7): the assistant's answer to a message
-   *  typed in the compact composer on Pick a price / the Job details picker —
-   *  their panel covers the thread, so it shows on the step. */
-  const [stepNote, setStepNote] = useState<
+  /** REQ-392 (demo-loop cycle 2, M7) + REQ-442 (cycle 3, M22): what was
+   *  typed in the compact composer on Pick a price / the Job details picker
+   *  and the assistant's answers — their panel covers the thread, so the
+   *  exchange shows on the step. */
+  const [stepLog, setStepLog] = useState<StepLog | null>(null);
+  /** REQ-442 (m49): the step message in flight, shown on the step with its
+   *  words ("Rewriting with your change…"). */
+  const [stepPending, setStepPending] = useState<
     { step: ChatStepId; text: string } | null
   >(null);
   /** REQ-392: bumped when a correction names the price ("more like $28k") —
@@ -1333,6 +1342,11 @@ export default function AsstChat({
     return snap?.stats?.invoices.overdue ?? null;
   });
   const [sending, setSending] = useState(false);
+  /** REQ-442 (demo-loop cycle 3, m49): a step-composer turn is in flight. Its
+   *  own flag — on the shared `sending` the confirm strip and Continue read
+   *  "Setting up…" over the ORIGINAL message while the correction was being
+   *  rewritten. */
+  const [stepSending, setStepSending] = useState(false);
   // REQ-399 (demo M16): the synchronous "a Send is in flight" lock — state
   // lags a render, so a double-click's second click read `sending` false.
   const sendInFlight = useRef(false);
@@ -2283,12 +2297,17 @@ export default function AsstChat({
       conversationId?: string;
     }>,
     onError?: () => void,
+    /** REQ-442: the busy flag this turn holds — a step-composer turn holds
+     *  `stepSending`, never the shared `sending`. */
+    setBusy: (busy: boolean) => void = setSending,
   ) {
-    if (sending) return;
+    if (sending || stepSending) return;
     setError(undefined);
     retryTurnRef.current = null;
     setCanRetryTurn(false);
-    setSending(true);
+    setBusy(true);
+    // REQ-442 (M22): the thread's first turn names it — the list refreshes.
+    const firstTurn = optimistic.role === "user" && isFirstUserTurn(messages);
     const tmpId = `tmp-${Date.now()}`;
     const stub: Message = {
       id: tmpId,
@@ -2311,6 +2330,12 @@ export default function AsstChat({
         if (!convoId && typeof globalThis.history !== "undefined") {
           globalThis.history.replaceState(null, "", `/assistant/${newConvoId}`);
         }
+      }
+      const turnConvoId = newConvoId ?? convoId;
+      if (
+        firstTurn && turnConvoId && typeof globalThis.window !== "undefined"
+      ) {
+        publishThreadTurn(turnConvoId);
       }
       // REQ-331 (demo m7): the turn resolved "for <Name>" to one of the
       // contractor's customers and bound them — show them as known now, so
@@ -2422,12 +2447,13 @@ export default function AsstChat({
           ? err.message
           : "send failed",
       );
-      retryTurnRef.current = () => void submitTurn(optimistic, submit, onError);
+      retryTurnRef.current = () =>
+        void submitTurn(optimistic, submit, onError, setBusy);
       setCanRetryTurn(true);
       setMessages((m) => m.filter((msg) => msg.id !== tmpId));
       onError?.();
     } finally {
-      setSending(false);
+      setBusy(false);
     }
   }
 
@@ -2548,29 +2574,38 @@ export default function AsstChat({
     wizardStepId?: string,
   ): Promise<boolean> {
     const said = text.trim();
-    if (!said || sending) return false;
+    if (!said || sending || stepSending) return false;
     const hint = stepHintFor(step, wizardStepId);
     let answered: Message[] | undefined;
-    await submitTurn(
-      { role: "user", kind: "text", content: said },
-      async () => {
-        const res = await assistantClient.chat({
-          conversationId: convoId,
-          content: said,
-          kind: "text",
-          step: hint,
-        }) as {
-          conversation?: { id: string };
-          newMessages?: Message[];
-          message?: Message;
-          conversationId?: string;
-        };
-        answered = res.newMessages ?? [];
-        return res;
-      },
-    );
+    // REQ-442 (m49): the step shows the correction while it runs, on its own
+    // `stepSending` — the confirm strip and Continue keep their labels.
+    setStepPending({ step, text: said });
+    try {
+      await submitTurn(
+        { role: "user", kind: "text", content: said },
+        async () => {
+          const res = await assistantClient.chat({
+            conversationId: convoId,
+            content: said,
+            kind: "text",
+            step: hint,
+          }) as {
+            conversation?: { id: string };
+            newMessages?: Message[];
+            message?: Message;
+            conversationId?: string;
+          };
+          answered = res.newMessages ?? [];
+          return res;
+        },
+        undefined,
+        setStepSending,
+      );
+    } finally {
+      setStepPending(null);
+    }
     if (!answered) return false;
-    applyStepAnswer(step, answered);
+    applyStepAnswer(step, answered, said);
     return true;
   }
 
@@ -2622,11 +2657,23 @@ export default function AsstChat({
     return { id: "review" };
   }
 
-  /** REQ-392: the step takes the server's answer. */
-  function applyStepAnswer(step: ChatStepId, newMessages: Message[]) {
+  /** REQ-392: the step takes the server's answer. REQ-442 (M22): what was
+   *  said and the answer join the step's transcript. */
+  function applyStepAnswer(
+    step: ChatStepId,
+    newMessages: Message[],
+    said: string,
+  ) {
     const answer = [...newMessages].reverse().find((m) =>
       m.role === "assistant" &&
       (m.payload as { step?: unknown } | undefined)?.step === step
+    );
+    const reply = answer ??
+      [...newMessages].reverse().find((m) =>
+        m.role === "assistant" && m.kind === "text"
+      );
+    setStepLog((log) =>
+      addStepExchange(log, step, said, reply?.content ?? "")
     );
     if (!answer) return;
     const p = (answer.payload ?? {}) as {
@@ -2682,7 +2729,11 @@ export default function AsstChat({
       // place — never back to card 1.
       setSelectedOptionId((cur) => carryPickedOptionId(jobOptions, cur, opts));
     }
-    setStepNote({ step, text: answer.content });
+    // REQ-442 (m49): the confirm strip confirms what it echoes — the message
+    // as typed AND the correction the versions were rewritten with.
+    if (step === "job_details" && pickerMode === "confirm") {
+      setPendingJobDetailsRaw((raw) => echoWithCorrection(raw, said));
+    }
   }
 
   /**
@@ -3219,7 +3270,7 @@ export default function AsstChat({
   /** `picked` set: apply that option (the confirm strip's own words);
    *  null: apply the card the contractor selected. */
   async function applyOption(picked: JobOptionDraft | null) {
-    if (sending) return;
+    if (sending || stepSending) return;
     let opt = picked ?? jobOptions?.find((o) => o.id === selectedOptionId);
     // "Write it myself" — synthesize a draft from the free-text box: each
     // non-empty line becomes a bullet, the first line seeds the title/summary.
@@ -5108,7 +5159,7 @@ export default function AsstChat({
   // A new step starts without the last step's answer and with its own price
   // box focus (REQ-041 NW-53f).
   useEffect(() => {
-    setStepNote(null);
+    setStepLog(null);
     setPriceSeedRev(0);
     setStepBoxOpenKey((k) => (k === composerStepKey ? k : null));
   }, [composerStepKey]);
@@ -5654,7 +5705,7 @@ export default function AsstChat({
                                   type="button"
                                   data-cy="confirm-details"
                                   class="chat__confirm-details"
-                                  disabled={sending}
+                                  disabled={sending || stepSending}
                                   onClick={confirmOwnWords}
                                 >
                                   <span class="chat__confirm-details-label">
@@ -5721,7 +5772,7 @@ export default function AsstChat({
                                   <button
                                     type="button"
                                     class="chat__price-continue"
-                                    disabled={sending}
+                                    disabled={sending || stepSending}
                                     onClick={applyJobOption}
                                   >
                                     {sending
@@ -5745,7 +5796,8 @@ export default function AsstChat({
                                 <button
                                   type="button"
                                   class="chat__price-continue"
-                                  disabled={!selectedOptionId || sending}
+                                  disabled={!selectedOptionId || sending ||
+                                    stepSending}
                                   onClick={applyJobOption}
                                 >
                                   {sending
@@ -6318,7 +6370,7 @@ export default function AsstChat({
                               key={t.tier}
                               type="button"
                               data-cy="pricing-option"
-                              disabled={sending}
+                              disabled={sending || stepSending}
                               onClick={() => onPriceContinue(t.priceCents)}
                               style="display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:12px 14px;border:1px solid var(--border,#d8dcd5);border-radius:12px;background:#fff;cursor:pointer;font:inherit"
                             >
@@ -6346,7 +6398,7 @@ export default function AsstChat({
                           type="button"
                           data-cy="pricing-option-custom"
                           class="chat__price-custom-cta"
-                          disabled={sending}
+                          disabled={sending || stepSending}
                           onClick={() => {
                             const el = moneyBoxRef.current?.querySelector(
                               "input",
@@ -6376,7 +6428,7 @@ export default function AsstChat({
                         autoFocus={priceSeedRev === 0}
                         onChange={setPriceCents}
                         onSubmit={(cents) => {
-                          if (sending) return;
+                          if (sending || stepSending) return;
                           onPriceContinue(cents);
                         }}
                       />
@@ -6386,7 +6438,8 @@ export default function AsstChat({
                       <button
                         type="button"
                         class="chat__price-continue"
-                        disabled={(priceCents ?? 0) <= 0 || sending}
+                        disabled={(priceCents ?? 0) <= 0 || sending ||
+                          stepSending}
                         onClick={() => onPriceContinue(priceCents!)}
                       >
                         {sending
@@ -9331,7 +9384,7 @@ export default function AsstChat({
             })()
           )}
         {!empty &&
-            sending &&
+            (sending || stepSending) &&
             messages.length > 0 &&
             messages[messages.length - 1].role === "user"
           ? (
@@ -9380,7 +9433,7 @@ export default function AsstChat({
               key={composerStepKey}
               step={composer.step}
               lang={lang}
-              sending={sending}
+              sending={sending || stepSending}
               error={error}
               onRetry={canRetryTurn && retryTurnRef.current
                 ? () => {
@@ -9391,7 +9444,10 @@ export default function AsstChat({
                   fn?.();
                 }
                 : undefined}
-              note={stepNote?.step === composer.step ? stepNote.text : null}
+              log={stepLog?.step === composer.step ? stepLog.exchanges : null}
+              pending={stepPending?.step === composer.step
+                ? stepPending.text
+                : null}
               onSend={(text) =>
                 sendStepText(text, composer.step, composer.wizardStepId)}
               {...(stepBoxDocked

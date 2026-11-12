@@ -411,3 +411,57 @@ export function statedPriceCents(t: string): number | null {
   const cued = PRICE_BEFORE.test(near) || PRICE_AFTER.test(after);
   return cued ? a.cents : null;
 }
+
+// ---------------------------------------------------------------------------
+// The step's own transcript (REQ-442, demo-loop cycle 3, M22 + m49)
+// ---------------------------------------------------------------------------
+
+/** One message typed in the compact composer and the assistant's answer. */
+export interface StepExchange {
+  said: string;
+  answer: string;
+}
+
+/** The exchanges on the step on screen. Pick a price and the Job details
+ *  picker cover the thread, so what the contractor typed there — and the
+ *  answer — show on the step itself (REQ-442). */
+export interface StepLog {
+  step: ChatStepId;
+  exchanges: StepExchange[];
+}
+
+/** The strip keeps the latest few exchanges; the thread has them all. */
+export const STEP_LOG_MAX = 3;
+
+/** The log with one more exchange: appended on the same step, a fresh log on
+ *  another. A blank message is not logged (the log comes back unchanged). */
+export function addStepExchange(
+  log: StepLog | null,
+  step: ChatStepId,
+  said: string,
+  answer: string,
+): StepLog {
+  const s = (said ?? "").trim();
+  if (!s) return log ?? { step, exchanges: [] };
+  const prior = log && log.step === step ? log.exchanges : [];
+  return {
+    step,
+    exchanges: [...prior, { said: s, answer: (answer ?? "").trim() }].slice(
+      -STEP_LOG_MAX,
+    ),
+  };
+}
+
+/** The confirm strip's echo once a correction was rewritten in: the message
+ *  as typed, then the correction on its own line (not added twice). */
+export function echoWithCorrection(
+  raw: string | null | undefined,
+  correction: string,
+): string {
+  const base = (raw ?? "").trim();
+  const fix = (correction ?? "").trim();
+  if (!fix) return base;
+  if (!base) return fix;
+  if (base.split("\n").some((line) => line.trim() === fix)) return base;
+  return `${base}\n${fix}`;
+}

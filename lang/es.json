@@ -182,6 +182,8 @@
   "asstChat.stepComposer.open": "Dile al asistente…",
   "asstChat.stepComposer.close": "Cerrar",
   "asstChat.stepComposer.thinking": "El asistente está en eso…",
+  "asstChat.stepComposer.rewriting": "Reescribiendo con tu cambio…",
+  "asstChat.stepComposer.you": "Tú",
   "asstChat.stepComposer.placeholder.price": "¿Qué está mal? Ej.: \"es todo el trabajo — más bien $28k\"",
   "asstChat.stepComposer.placeholder.job_details": "¿Qué hay que cambiar? Ej.: \"agrega el permiso\"",
   "asstChat.stepComposer.placeholder.wizard": "Pregúntale o dile algo al asistente",

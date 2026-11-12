@@ -8,8 +8,11 @@
  * they are tapping options there should be no input field"), so this is a
  * quiet secondary button — "Tell the assistant…" — that opens a one-line
  * field only when tapped. Enter (or the arrow) sends; what is sent goes to the
- * assistant WITH the step (AsstChat's sendStepText), and the assistant's
- * answer shows here on the two steps whose panel covers the thread (`note`).
+ * assistant WITH the step (AsstChat's sendStepText). On the two steps whose
+ * panel covers the thread, the exchange shows here (REQ-442, demo-loop cycle
+ * 3, M22 + m49): the contractor's own line and the assistant's answer (`log`),
+ * and while it runs their words under "Rewriting with your change…"
+ * (`pending`).
  *
  * Which steps get it: `composerMode` in shared/quote-flow/step-composer.ts.
  *
@@ -22,7 +25,10 @@
 import { useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
-import type { ChatStepId } from "../../shared/quote-flow/step-composer.ts";
+import type {
+  ChatStepId,
+  StepExchange,
+} from "../../shared/quote-flow/step-composer.ts";
 
 export interface StepComposerProps {
   step: ChatStepId;
@@ -33,8 +39,12 @@ export interface StepComposerProps {
   error?: string;
   /** One-tap retry for a failed turn (the full composer's P-10 affordance). */
   onRetry?: () => void;
-  /** The assistant's answer to a message typed here, shown on the step. */
-  note?: string | null;
+  /** REQ-442: this step's exchanges — what was typed here and the
+   *  assistant's answer — shown on the step (its panel covers the thread). */
+  log?: readonly StepExchange[] | null;
+  /** REQ-442: the message typed here that is in flight, shown with
+   *  "Rewriting with your change…" until the answer lands. */
+  pending?: string | null;
   /** Send the text; resolves true once the assistant answered (false keeps
    *  the text in the field for another try). */
   onSend: (text: string) => Promise<boolean>;
@@ -71,16 +81,13 @@ export function StepComposerOpen(
 }
 
 export default function StepComposer(props: StepComposerProps) {
-  const { step, lang, sending, error, onRetry, note, onSend } = props;
+  const { step, lang, sending, error, onRetry, log, pending, onSend } = props;
   const docked = props.open !== undefined;
   const [ownOpen, setOwnOpen] = useState(false);
   const open = docked ? props.open === true : ownOpen;
   const setOpen = (v: boolean) =>
     docked ? props.onOpenChange?.(v) : setOwnOpen(v);
   const [text, setText] = useState("");
-  /** This box's own message is in flight (not just any turn — the price
-   *  step's Continue also sets `sending`). */
-  const [asking, setAsking] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   /** Set when the box opens (its own button or the step's); the field
    *  focuses itself as it mounts — during the render the tap scheduled, so a
@@ -98,8 +105,7 @@ export default function StepComposer(props: StepComposerProps) {
     const said = text.trim();
     if (!said || sending) return;
     setText("");
-    setAsking(true);
-    const ok = await onSend(said).finally(() => setAsking(false));
+    const ok = await onSend(said);
     if (!ok) setText(said);
     inputRef.current?.focus({ preventScroll: true });
   }
@@ -124,11 +130,67 @@ export default function StepComposer(props: StepComposerProps) {
     )
     : null;
 
+  // REQ-442 (M22 + m49): the step's own transcript — the contractor's line,
+  // the assistant's answer, and the message in flight with its words.
+  const exchanges = ownsAnswer ? log ?? [] : [];
+  const inFlight = ownsAnswer && pending ? pending : null;
+  const transcript = exchanges.length > 0 || inFlight
+    ? (
+      <div class="composer__step-log" aria-live="polite">
+        {exchanges.map((x, i) => (
+          <div key={i} class="composer__step-exchange">
+            <div class="composer__step-said" data-cy="step-composer-said">
+              <strong>{tFor(lang, "asstChat.stepComposer.you")}:</strong>{" "}
+              {x.said}
+            </div>
+            {x.answer
+              ? (
+                <div class="composer__step-note" data-cy="step-composer-note">
+                  <img src="/logo-monster.png" alt="" />
+                  <span>{x.answer}</span>
+                </div>
+              )
+              : null}
+          </div>
+        ))}
+        {inFlight
+          ? (
+            <div
+              class="composer__step-exchange"
+              data-cy="step-composer-pending"
+            >
+              <div class="composer__step-said">
+                <strong>{tFor(lang, "asstChat.stepComposer.you")}:</strong>{" "}
+                {inFlight}
+              </div>
+              <div class="composer__step-note">
+                <span class="spinner" aria-hidden="true" />
+                <span>
+                  {tFor(
+                    lang,
+                    step === "job_details"
+                      ? "asstChat.stepComposer.rewriting"
+                      : "asstChat.stepComposer.thinking",
+                  )}
+                </span>
+              </div>
+            </div>
+          )
+          : null}
+      </div>
+    )
+    : null;
+
   // Docked and closed: the button is in the step's own row — nothing under
-  // the panel but a failed turn's error.
+  // the panel but a failed turn's error and the step's transcript.
   if (docked && !open) {
-    return errorStrip
-      ? <div class="composer composer--step">{errorStrip}</div>
+    return errorStrip || transcript
+      ? (
+        <div class="composer composer--step" data-step={step}>
+          {errorStrip}
+          {transcript}
+        </div>
+      )
       : null;
   }
 
@@ -139,20 +201,7 @@ export default function StepComposer(props: StepComposerProps) {
       data-step={step}
     >
       {errorStrip}
-      {ownsAnswer && (asking || note)
-        ? (
-          <div
-            class="composer__step-note"
-            data-cy="step-composer-note"
-            aria-live="polite"
-          >
-            <img src="/logo-monster.png" alt="" />
-            <span>
-              {asking ? tFor(lang, "asstChat.stepComposer.thinking") : note}
-            </span>
-          </div>
-        )
-        : null}
+      {transcript}
       {open
         ? (
           <form

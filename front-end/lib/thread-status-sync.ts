@@ -83,3 +83,29 @@ export function serverDisagreement(
   const server = rows.find((r) => r.id === live.conversationId)?.threadStatus;
   return server && server !== live.status ? server : undefined;
 }
+
+/** REQ-442 (demo-loop cycle 3, M22): AsstChat → AsstThreads — this thread's
+ *  first turn landed (its title is set on it), so the list refreshes now
+ *  rather than at its next poll. */
+export const THREAD_TURN_EVENT = "pm:asst-thread-turn";
+
+export interface ThreadTurnDetail {
+  conversationId: string;
+}
+
+/** The chat's first-turn push. Browser-only. */
+export function publishThreadTurn(conversationId: string): void {
+  globalThis.dispatchEvent(
+    new CustomEvent<ThreadTurnDetail>(THREAD_TURN_EVENT, {
+      detail: { conversationId },
+    }),
+  );
+}
+
+/** A turn sent while the thread holds no message of the contractor's is its
+ *  first — the one the server names the thread from. */
+export function isFirstUserTurn(
+  messages: readonly { role?: string }[],
+): boolean {
+  return !messages.some((m) => m.role === "user");
+}
