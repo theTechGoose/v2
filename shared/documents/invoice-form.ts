@@ -289,21 +289,40 @@ export function billToFromCustomer(
 
 export type MissingInfo =
   | "noBillingName"
-  | "noBillingEmail"
+  | "noContact"
   | "noServiceAddress"
   | "noLineItems"
   | "noAmount";
 
+/** How an issued bill reaches the client (REQ-567): by email, by text, both,
+ *  or not at all (copy the link). */
+export type SendChannel = "email" | "text" | "both" | "none";
+
+export function sendChannel(
+  c: { email?: string; phoneNumber?: string },
+): SendChannel {
+  const email = !!c.email?.trim();
+  const phone = !!c.phoneNumber?.trim();
+  if (email && phone) return "both";
+  if (email) return "email";
+  if (phone) return "text";
+  return "none";
+}
+
 /** What the bill still lacks — a prompt before sending, never a block. */
 export function missingInfo(form: {
-  billTo: Pick<BillTo, "name" | "email" | "address">;
+  billTo: Pick<BillTo, "name" | "email" | "address"> & {
+    phoneNumber?: string;
+  };
   serviceAddress: string;
   lineItems: FormLine[];
   amountCents: number;
 }): MissingInfo[] {
   const out: MissingInfo[] = [];
   if (!form.billTo.name.trim()) out.push("noBillingName");
-  if (!form.billTo.email.trim()) out.push("noBillingEmail");
+  // REQ-567 (cycle 4, m37): a phone is a way to send it (by text) — only a
+  // client with neither email nor phone is unreachable.
+  if (sendChannel(form.billTo) === "none") out.push("noContact");
   if (!form.serviceAddress.trim() && !form.billTo.address.trim()) {
     out.push("noServiceAddress");
   }
