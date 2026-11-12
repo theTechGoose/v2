@@ -32,6 +32,8 @@ import {
 } from "../../shared/documents/ledger.ts";
 import { smsRecoveryAsk } from "../../shared/quote-flow/sms-failure.ts";
 import {
+  confirmedDescriptionByLang,
+  descriptionLines,
   lineItemDescription,
   previewTranslationMissing,
 } from "../../shared/quote-flow/quote-translations.ts";
@@ -3089,6 +3091,30 @@ export default function AsstChat({
         jobNameCase(confirmed.jobName, lang)) ||
         summarizeJobName(summary, lang);
       const byLang = confirmed?.byLang;
+      // REQ-441 (cycle 3, M23): reuse a pre-generated translation only when
+      // the confirmed bullets are unedited — a line added with "Add your
+      // own…" (or any edit) makes the other languages stale, so translate
+      // the live lines for them; on failure leave them out for
+      // TranslateQuote to fill, never the pre-edit copy.
+      let descriptionByLang: Record<string, string> = {};
+      if (byLang) {
+        const picked = confirmedDescriptionByLang(byLang, lang, raw);
+        descriptionByLang = picked.descriptionByLang;
+        const liveLines = descriptionLines(raw);
+        for (const ol of picked.stale) {
+          try {
+            const res = await assistantClient.translate(
+              liveLines,
+              ol as "en" | "es",
+            );
+            if (res?.texts && res.texts.length === liveLines.length) {
+              descriptionByLang[ol] = res.texts.map((t) => t.trim()).join(
+                "\n",
+              );
+            }
+          } catch { /* TranslateQuote fills it on preview / send */ }
+        }
+      }
       const byLangFields = byLang
         ? {
           jobNameByLang: Object.fromEntries(
@@ -3105,11 +3131,7 @@ export default function AsstChat({
               [l, v],
             ) => [l, l === lang ? summary : v.summary]),
           ),
-          descriptionByLang: Object.fromEntries(
-            Object.entries(byLang).map((
-              [l, v],
-            ) => [l, l === lang ? raw.trim() : v.bullets.join("\n")]),
-          ),
+          descriptionByLang,
         }
         : {};
       // Use the api helper (same base as quotesClient/assistantClient) — NOT
