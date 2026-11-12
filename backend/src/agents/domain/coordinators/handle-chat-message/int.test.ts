@@ -1,4 +1,5 @@
 import { assert, assertEquals, assertRejects } from "#std/assert";
+import { t } from "@core/i18n/mod.ts";
 import { HandleChatMessage } from "./mod.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
@@ -116,6 +117,8 @@ function fresh() {
     emailer,
     llm,
     changeOrder,
+    undefined,
+    customers, // REQ-331
   );
   return {
     changeOrders,
@@ -1298,7 +1301,8 @@ Deno.test("REQ-258 handle-chat-message integration: create_quote with paymentTer
         payload: {
           summary: "Interior painting",
           lineItems: [{
-            description: "Interior painting (3 bedrooms, walls and ceilings, 2 coats, paint supplied by contractor)",
+            description:
+              "Interior painting (3 bedrooms, walls and ceilings, 2 coats, paint supplied by contractor)",
             amountCents: 240_000,
           }],
           paymentTerms: "50_50",
@@ -1311,7 +1315,10 @@ Deno.test("REQ-258 handle-chat-message integration: create_quote with paymentTer
         type: "create_quote",
         payload: {
           summary: "Interior painting",
-          lineItems: [{ description: "Interior painting", amountCents: 250_000 }],
+          lineItems: [{
+            description: "Interior painting",
+            amountCents: 250_000,
+          }],
         },
       },
     },
@@ -1321,12 +1328,19 @@ Deno.test("REQ-258 handle-chat-message integration: create_quote with paymentTer
   const first = await flow.run({
     userId: "u-1",
     conversationId: conv.id,
-    content: "Interior paint, 3 bedrooms, walls and ceilings, 2 coats, I supply paint. $2,400 total, half deposit.",
+    content:
+      "Interior paint, 3 bedrooms, walls and ceilings, 2 coats, I supply paint. $2,400 total, half deposit.",
   });
   assertEquals(first.conversation.termsPrefill, { payment_terms: "50_50" });
-  assertEquals((await conversations.get(conv.id)).termsPrefill, { payment_terms: "50_50" });
+  assertEquals((await conversations.get(conv.id)).termsPrefill, {
+    payment_terms: "50_50",
+  });
 
-  const second = await flow.run({ userId: "u-1", conversationId: conv.id, content: "make it $2,500" });
+  const second = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "make it $2,500",
+  });
   assertEquals(second.conversation.termsPrefill, { payment_terms: "50_50" });
   await resetKv();
 });
@@ -1340,11 +1354,18 @@ Deno.test("REQ-258 handle-chat-message integration: create_quote without payment
     text: "Drafting a quote.",
     action: {
       type: "create_quote",
-      payload: { summary: "Gutter cleaning", lineItems: [{ description: "Gutter cleaning", amountCents: 22_000 }] },
+      payload: {
+        summary: "Gutter cleaning",
+        lineItems: [{ description: "Gutter cleaning", amountCents: 22_000 }],
+      },
     },
   }]);
   const conv = await conversations.create({ userId: "u-1" });
-  const r = await flow.run({ userId: "u-1", conversationId: conv.id, content: "gutter cleaning $220" });
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "gutter cleaning $220",
+  });
   assertEquals(r.conversation.termsPrefill, undefined);
   await resetKv();
 });
@@ -1454,7 +1475,10 @@ Deno.test("REQ-262 handle-chat-message integration: update_job_details writes de
     en: "Repaint kitchen walls\nTwo coats, semi-gloss",
     es: "Repintar las paredes de la cocina\nDos capas, semibrillo",
   });
-  assertEquals(stored.description, "Repaint kitchen walls\nTwo coats, semi-gloss");
+  assertEquals(
+    stored.description,
+    "Repaint kitchen walls\nTwo coats, semi-gloss",
+  );
   // Prices untouched.
   assertEquals(stored.estimatedTotal, 180_000);
   const reply = res.newMessages.find((m) =>
@@ -1491,7 +1515,10 @@ Deno.test("REQ-262 handle-chat-message integration: update_job_details never tou
   const reply = res.newMessages.find((m) =>
     m.role === "assistant" && m.kind === "text"
   );
-  assert(reply && reply.content !== "Done.", "claimed success on a signed quote");
+  assert(
+    reply && reply.content !== "Done.",
+    "claimed success on a signed quote",
+  );
   assertEquals(
     (reply!.payload as { quoteUpdated?: string } | undefined)?.quoteUpdated,
     undefined,
@@ -1505,7 +1532,8 @@ Deno.test("REQ-262 handle-chat-message integration: a markdown reply is stored a
   const fx = fresh();
   const { conv } = await wizardQuoteInTerms(fx);
   fx.llm.setScript([{
-    text: "- **English:** Repaint kitchen walls\n- **Spanish:** Repintar paredes",
+    text:
+      "- **English:** Repaint kitchen walls\n- **Spanish:** Repintar paredes",
   }]);
   const res = await fx.flow.run({
     userId: "u-1",
@@ -1538,6 +1566,110 @@ Deno.test("REQ-262 handle-chat-message integration: the quote-phase prompt deman
     conversationId: conv.id,
     content: "Quote for Bryant: gutter cleaning $220.",
   });
-  assert(/plain text/i.test(prompt) && /markdown/i.test(prompt), "no plain-text rule in systemQuote");
+  assert(
+    /plain text/i.test(prompt) && /markdown/i.test(prompt),
+    "no plain-text rule in systemQuote",
+  );
+  await resetKv();
+});
+
+// --- REQ-331 (demo-loop cycle 1, m7): the chat path binds a named customer --
+
+Deno.test("REQ-331 m7: create_quote 'for <Name>' resolves an existing same-owner customer and binds conv.customerId + quote.customerId", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, customers, flow } = fresh();
+  await seedOnboarded("u-1");
+  const maria = await customers.create("u-1", {
+    name: "María López",
+    phoneNumber: "(512) 555-0199",
+  });
+  await customers.create("u-2", { name: "Maria Lopez" }); // another owner's
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Quote: Interior paint",
+        lineItems: [{ description: "Paint 3 rooms", amountCents: 90_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Quote for customer Maria Lopez, paint 3 rooms, $900, start Monday",
+  });
+  assertEquals(result.conversation.customerId, maria.id);
+  const card = result.newMessages.find((m) => m.kind === "action_card")!;
+  const quoteId = (card.payload as { quoteId: string }).quoteId;
+  assertEquals((await quotes.getOwned(quoteId, "u-1")).customerId, maria.id);
+  await resetKv();
+});
+
+Deno.test("REQ-331 m7: create_quote for a name nobody has binds nothing (never a guess)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, customers, flow } = fresh();
+  await seedOnboarded("u-1");
+  await customers.create("u-1", { name: "María López" });
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Quote: Fence",
+        lineItems: [{ description: "Fence", amountCents: 50_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Quote for Ana Ruiz, fence $500",
+  });
+  assertEquals(result.conversation.customerId, undefined);
+  await resetKv();
+});
+
+Deno.test("REQ-331 m7/m44: with a customer bound, the lock CTA names them instead of asking Business or Person", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, customers, flow } = fresh();
+  await seedOnboarded("u-1");
+  const maria = await customers.create("u-1", { name: "María López" });
+  const draft = await quotes.create("u-1", {
+    summary: "x",
+    lineItems: [],
+    status: "draft",
+    customerId: maria.id,
+  });
+  const conv = await conversations.create({
+    userId: "u-1",
+    quoteId: draft.id,
+    customerId: maria.id,
+  });
+  llm.setScript([{
+    text: "Locked.",
+    action: { type: "lock_quote", payload: { quoteId: draft.id } },
+  }]);
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "lock it in",
+  });
+  const cta = result.newMessages.find((m) => m.kind === "continue_cta")!;
+  assertEquals(
+    cta.content,
+    t("en", "chatCoordinator.lockedToTermsCtaKnown", { name: "María López" }),
+  );
+  assertEquals(
+    (cta.payload as { customerName?: string }).customerName,
+    "María López",
+  );
+  assert(!/business or a person/i.test(cta.content));
   await resetKv();
 });

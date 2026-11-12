@@ -6,8 +6,8 @@ import {
   computeProgress,
 } from "@agents/domain/business/wizard-progress/mod.ts";
 import {
-  localizeOptions,
   getWizardSpec,
+  localizeOptions,
 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -16,9 +16,15 @@ import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { suggestedOptionId } from "@agents/domain/business/terms-prefill/mod.ts";
 import { customerContactError } from "#quote-flow/customer-contact.ts"; // REQ-278
+import { findExistingCustomer } from "#quote-flow/customer-dedupe.ts"; // REQ-331
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
-import type { WizardAnswer, WizardSpec, WizardState } from "@agents/dto/wizard.ts";
+import type { Customer } from "@crm/dto/customer.ts";
+import type {
+  WizardAnswer,
+  WizardSpec,
+  WizardState,
+} from "@agents/dto/wizard.ts";
 
 export interface WizardAnswerInput {
   userId: string;
@@ -38,6 +44,9 @@ export interface WizardAnswerInput {
       phoneNumber?: string;
       isBusiness?: boolean;
       businessName?: string;
+      /** REQ-331 (demo m44): the contractor saw "<name> already exists" and
+       *  chose "create anyway" — skip the same-owner dedupe. */
+      allowDuplicate?: boolean;
     };
   };
 }
@@ -313,6 +322,28 @@ export class HandleWizardAnswer {
           throw new Error(t(lang, "termsWizard.customer.ownContact"));
         }
       }
+      // REQ-331 (demo m44): "+ New customer" let the demo create a second
+      // "x" while C-001 "x" already existed. The same owner's customers are
+      // looked up by phone, email and accent-folded name first; a match is
+      // bound instead of duplicated — unless the contractor saw the
+      // "already exists" hint and chose "create anyway".
+      if (!create?.allowDuplicate) {
+        const mine: Customer[] = await this.customers.listByUser(input.userId)
+          .catch(() => []);
+        const existing = findExistingCustomer(mine, {
+          name,
+          email,
+          phoneNumber: phone,
+        });
+        if (existing) {
+          return {
+            customerId: existing.id,
+            customerName: existing.name,
+            customValue: existing.name,
+            customerAddress: existing.address,
+          };
+        }
+      }
       const created = await this.customers.create(input.userId, {
         name,
         ...(create?.email ? { email: create.email.trim() } : {}),
@@ -352,7 +383,10 @@ export class HandleWizardAnswer {
     if (input.optionId === "use_active" && conversationId) {
       const conv = await this.conversations.get(conversationId);
       if (conv.customerId) {
-        const bound = await this.customers.getOwned(conv.customerId, input.userId)
+        const bound = await this.customers.getOwned(
+          conv.customerId,
+          input.userId,
+        )
           .catch(() => null);
         if (bound?.address) return { customerAddress: bound.address };
       }
@@ -488,7 +522,9 @@ export class HandleWizardAnswer {
  *  today / yesterday / last_week relative to now; a custom pick must be an
  *  ISO date, anything else falls back to today. Undefined when the wizard
  *  had no completion step (the quote wizard). */
-function completionDateFromAnswers(answers: WizardAnswer[]): string | undefined {
+function completionDateFromAnswers(
+  answers: WizardAnswer[],
+): string | undefined {
   const a = answers.find((x) => x.stepId === "completion_date");
   if (!a) return undefined;
   const iso = (offsetDays: number) =>

@@ -485,16 +485,29 @@ Deno.test("REQ-024 handle-wizard-answer integration: the invoice wizard walks cu
     lineItems: [],
     estimatedTotal: 90_000,
   });
-  const conv = await ctx.conversations.create({ userId: "u-1", quoteId: quote.id, customerId: "cust-1" });
-  await ctx.transitionFlow.run({ userId: "u-1", conversationId: conv.id, docKind: "invoice" });
+  const conv = await ctx.conversations.create({
+    userId: "u-1",
+    quoteId: quote.id,
+    customerId: "cust-1",
+  });
+  await ctx.transitionFlow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    docKind: "invoice",
+  });
 
   const answer = (stepId: string, optionId: string) =>
     ctx.flow.run({ userId: "u-1", conversationId: conv.id, stepId, optionId });
 
   await answer("customer", "use_active");
   const afterCustomer = await ctx.messages.listByConversation(conv.id);
-  const nextStep = [...afterCustomer].reverse().find((m) => m.kind === "wizard")!;
-  assertEquals((nextStep.payload as { stepId: string }).stepId, "completion_date");
+  const nextStep = [...afterCustomer].reverse().find((m) =>
+    m.kind === "wizard"
+  )!;
+  assertEquals(
+    (nextStep.payload as { stepId: string }).stepId,
+    "completion_date",
+  );
   assertEquals((nextStep.payload as { specId: string }).specId, "invoice-v1");
 
   await answer("completion_date", "today");
@@ -502,7 +515,11 @@ Deno.test("REQ-024 handle-wizard-answer integration: the invoice wizard walks cu
   const last = await answer("warranty", "none");
 
   const cta = last.newMessages.find((m) => m.kind === "continue_cta")!;
-  const payload = cta.payload as { toPhase: string; quoteId?: string; docKind?: string };
+  const payload = cta.payload as {
+    toPhase: string;
+    quoteId?: string;
+    docKind?: string;
+  };
   assertEquals(payload.toPhase, "send");
   assertEquals(payload.quoteId, quote.id);
   assertEquals(payload.docKind, "invoice");
@@ -511,8 +528,13 @@ Deno.test("REQ-024 handle-wizard-answer integration: the invoice wizard walks cu
   const today = new Date().toISOString().slice(0, 10);
   assertEquals(q.estimatedCompletionDate, today);
   const terms = q.terms ?? [];
-  assert(terms.some((t) => t.stepId === "completion_date"), "completion_date persisted as a term");
-  assert(terms.some((t) => t.stepId === "payment_terms" && t.value === "Due Now"));
+  assert(
+    terms.some((t) => t.stepId === "completion_date"),
+    "completion_date persisted as a term",
+  );
+  assert(
+    terms.some((t) => t.stepId === "payment_terms" && t.value === "Due Now"),
+  );
   assert(!terms.some((t) => t.stepId === "wraps"));
   await resetKv();
 });
@@ -648,27 +670,57 @@ Deno.test("REQ-258 handle-wizard-answer integration: a conversation whose chat s
   await resetKv();
   const { conversations, transitionFlow, flow } = fresh();
   const conv = await conversations.create({ userId: "u-1" });
-  await conversations.update(conv.id, { termsPrefill: { payment_terms: "50_50" } });
-  const t0 = await transitionFlow.run({ userId: "u-1", conversationId: conv.id });
+  await conversations.update(conv.id, {
+    termsPrefill: { payment_terms: "50_50" },
+  });
+  const t0 = await transitionFlow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+  });
   // The first step (customer) has no suggestion.
-  assertEquals((t0.newMessages[1].payload as { suggestedOptionId?: string }).suggestedOptionId, undefined);
+  assertEquals(
+    (t0.newMessages[1].payload as { suggestedOptionId?: string })
+      .suggestedOptionId,
+    undefined,
+  );
 
   let paymentMsg: AgentMessage | undefined;
   for (const step of TERMS_WIZARD_V1.steps) {
     if (step.id === "payment_terms") break;
     const opt = step.options.find((o) => !o.isCustom)!;
-    const r = await flow.run({ userId: "u-1", conversationId: conv.id, stepId: step.id, optionId: opt.id });
+    const r = await flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
     const next = r.newMessages[1];
     const p = next.payload as { stepId: string; suggestedOptionId?: string };
     if (p.stepId === "payment_terms") paymentMsg = next;
     else assertEquals(p.suggestedOptionId, undefined);
   }
   assert(paymentMsg, "the payment_terms step was emitted");
-  assertEquals((paymentMsg!.payload as { suggestedOptionId?: string }).suggestedOptionId, "50_50");
+  assertEquals(
+    (paymentMsg!.payload as { suggestedOptionId?: string }).suggestedOptionId,
+    "50_50",
+  );
   // Still a confirmable choice: the contractor taps it (or another option).
-  const r = await flow.run({ userId: "u-1", conversationId: conv.id, stepId: "payment_terms", optionId: "50_50" });
-  assertEquals((r.newMessages[1].payload as { stepId: string; suggestedOptionId?: string }).stepId, "warranty");
-  assertEquals((r.newMessages[1].payload as { suggestedOptionId?: string }).suggestedOptionId, undefined);
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "payment_terms",
+    optionId: "50_50",
+  });
+  assertEquals(
+    (r.newMessages[1].payload as { stepId: string; suggestedOptionId?: string })
+      .stepId,
+    "warranty",
+  );
+  assertEquals(
+    (r.newMessages[1].payload as { suggestedOptionId?: string })
+      .suggestedOptionId,
+    undefined,
+  );
   await resetKv();
 });
 
@@ -680,7 +732,12 @@ Deno.test("REQ-258 handle-wizard-answer integration: no prefill → the payment_
   for (const step of TERMS_WIZARD_V1.steps) {
     if (step.id === "payment_terms") break;
     const opt = step.options.find((o) => !o.isCustom)!;
-    const r = await flow.run({ userId: "u-1", conversationId: conv.id, stepId: step.id, optionId: opt.id });
+    const r = await flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
     payload = r.newMessages[1].payload as typeof payload;
   }
   assertEquals(payload?.stepId, "payment_terms");
@@ -803,7 +860,11 @@ for (
   const [label, create, key] of [
     ["phone 123", { phoneNumber: "123" }, "customer.invalidPhone"],
     ["phone 555-12", { phoneNumber: "555-12" }, "customer.invalidPhone"],
-    ["phone 512-555-01", { phoneNumber: "512-555-01" }, "customer.invalidPhone"],
+    [
+      "phone 512-555-01",
+      { phoneNumber: "512-555-01" },
+      "customer.invalidPhone",
+    ],
     ["email davis@@gmail", { email: "davis@@gmail" }, "customer.invalidEmail"],
   ] as const
 ) {
@@ -832,3 +893,97 @@ for (
     });
   }
 }
+
+// --- REQ-331 (demo-loop cycle 1, m44): create_new never duplicates ----------
+
+Deno.test("REQ-331 m44: create_new whose name matches a same-owner customer binds the existing one — no second row", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, conversations, conv } =
+    await setupTermsConversation();
+  const existing = await customers.create("u-1", {
+    name: "María López",
+    phoneNumber: "(512) 555-0199",
+  });
+
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: { create: { name: "maria lopez", email: "ml@example.com" } },
+  });
+
+  assertEquals(
+    (await customers.listByUser("u-1")).length,
+    1,
+    "no duplicate row",
+  );
+  assertEquals(r.conversation.customerId, existing.id);
+  assertEquals(r.newMessages[0].content, "Customer: María López");
+  const state = await conversations.getWizardState(conv.id);
+  assertEquals(state?.answers[0].customValue, "María López");
+  await resetKv();
+});
+
+Deno.test("REQ-331 m44: create_new with an existing customer's phone / email binds that customer", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, conv } = await setupTermsConversation();
+  const existing = await customers.create("u-1", {
+    name: "Tom Henderson",
+    email: "tom@example.com",
+    phoneNumber: "+15125550100",
+  });
+
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: { create: { name: "Tommy H.", phoneNumber: "512-555-0100" } },
+  });
+  assertEquals(r.conversation.customerId, existing.id);
+  assertEquals((await customers.listByUser("u-1")).length, 1);
+  await resetKv();
+});
+
+Deno.test("REQ-331 m44: create_new with allowDuplicate (the contractor said 'create anyway') makes the second row; another owner's customer is never a match", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, conv } = await setupTermsConversation();
+  await customers.create("u-1", { name: "x", phoneNumber: "512-555-0333" });
+  await customers.create("u-2", {
+    name: "Ana Ruiz",
+    phoneNumber: "512-555-0444",
+  });
+
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: {
+      create: { name: "x", phoneNumber: "512-555-0999", allowDuplicate: true },
+    },
+  });
+  const mine = await customers.listByUser("u-1");
+  assertEquals(mine.length, 2, "create anyway makes a second x");
+  assert(mine.some((c) => c.id === r.conversation.customerId));
+
+  const conv2 = await (await setupTermsConversation("u-1")).conv;
+  const r2 = await flow.run({
+    userId: "u-1",
+    conversationId: conv2.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: { create: { name: "Ana Ruiz", phoneNumber: "512-555-0444" } },
+  });
+  const ana = await customers.getOwned(r2.conversation.customerId!, "u-1");
+  assertEquals(
+    ana.name,
+    "Ana Ruiz",
+    "u-2's Ana is not u-1's — a new row for u-1",
+  );
+  await resetKv();
+});

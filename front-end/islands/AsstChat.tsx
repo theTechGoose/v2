@@ -101,6 +101,10 @@ import {
   type QuoteFacts,
   wizardPrefillFor,
 } from "../../shared/quote-flow/quote-facts.ts";
+import {
+  findExistingCustomer,
+  knownCustomerForStep,
+} from "../../shared/quote-flow/customer-dedupe.ts"; // REQ-331
 import { editDraftSeed } from "../../shared/quote-flow/draft-edit.ts";
 import { customerContactError } from "../../shared/quote-flow/customer-contact.ts"; // REQ-278
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
@@ -1983,6 +1987,17 @@ export default function AsstChat({
           globalThis.history.replaceState(null, "", `/assistant/${newConvoId}`);
         }
       }
+      // REQ-331 (demo m7): the turn resolved "for <Name>" to one of the
+      // contractor's customers and bound them — show them as known now, so
+      // the lock CTA and the customer step offer "Use María López ✓".
+      const boundId =
+        (res.conversation as { id: string; customerId?: string } | undefined)
+          ?.customerId;
+      if (boundId && boundId !== customer?.id) {
+        clientsClient.get(boundId)
+          .then((c) => setCustomer(c as unknown as CustomerLite))
+          .catch(() => {/* the next load shows it */});
+      }
       if (Array.isArray(res.newMessages) && res.newMessages.length > 0) {
         setMessages((m) => [
           ...m.filter((msg) => msg.id !== tmpId),
@@ -3558,6 +3573,7 @@ export default function AsstChat({
           phoneNumber?: string;
           isBusiness?: boolean;
           businessName?: string;
+          allowDuplicate?: boolean; // REQ-331
         };
       };
     },
@@ -7534,8 +7550,13 @@ export default function AsstChat({
                           </div>
                           {reviewed
                             ? null
-                            : payload.toPhase === "terms"
+                            : payload.toPhase === "terms" &&
+                                !(payload as { customerName?: string })
+                                  .customerName && !customer
                             ? (
+                              /* REQ-331 (demo m7/m44): Business / Person is
+                                 only asked when nobody is known yet — a
+                                 bound customer gets a single Continue. */
                               <div style="display:flex;gap:8px;flex-shrink:0">
                                 <button
                                   type="button"
@@ -8647,6 +8668,7 @@ function CustomerStepPanel(props: {
           phoneNumber?: string;
           isBusiness?: boolean;
           businessName?: string;
+          allowDuplicate?: boolean; // REQ-331
         };
       };
     },
@@ -8724,10 +8746,19 @@ function CustomerStepPanel(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialServiceAddress]);
   const [localErr, setLocalErr] = useState<string | undefined>();
+  // REQ-331 (demo m7/m44): the one customer the step can offer with a tap —
+  // the thread's bound customer, else the existing customer the typed facts
+  // name. Rendered as "Use María López ✓ / Change" instead of a pick list
+  // (or "Business or person?") the contractor has to work through again.
+  const known = useMemo(
+    () => knownCustomerForStep(boundCustomer, customers, prefillFacts),
+    [boundCustomer, customers, prefillFacts],
+  );
+  const [changed, setChanged] = useState(false);
   // REQ-265: once the account's customers AND the typed facts are known,
-  // decide once — a typed customer the account has is searched for on the
-  // pick list; a new one opens the create form (already filled). A customer
-  // already bound to the thread wins.
+  // decide once — a typed customer the account has is offered as the known
+  // customer above; a new one opens the create form (already filled). A
+  // customer already bound to the thread wins.
   const prefillAppliedRef = useRef(false);
   useEffect(() => {
     if (prefillAppliedRef.current || boundCustomer) return;
@@ -8738,14 +8769,13 @@ function CustomerStepPanel(props: {
     ) return;
     prefillAppliedRef.current = true;
     const match = matchPrefillCustomer(customers, prefillFacts);
-    if (match) {
-      setSearch(match.name);
-      setPickerOpen(true);
-      return;
-    }
+    if (match) return;
     setView((v) => customerStepPrefillView(v, prefillFacts, false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customers, prefillFacts]);
+  // REQ-331 (demo m44): the contractor saw "<name> already exists" on the
+  // create form and chose to create a second one anyway.
+  const [createAnyway, setCreateAnyway] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -8849,6 +8879,15 @@ function CustomerStepPanel(props: {
       : undefined;
     const submitDisabled = sending || trimmedName.length === 0 ||
       !hasContact || emailIsOwn || phoneIsOwn || !!contactFormatErr;
+    // REQ-331 (demo m44): live-search what is typed against the account's
+    // customers — the same phone / email / accent-folded name rule the
+    // server applies — and offer the existing one before a second "x" is
+    // made. "Create anyway" sends allowDuplicate.
+    const dupe = createAnyway ? null : findExistingCustomer(customers, {
+      name: trimmedName,
+      email: trimmedEmail,
+      phoneNumber: trimmedPhone,
+    });
     const formHeading = tFor(lang, "asstChat.customerStep.whoFor");
     const namePlaceholder = tFor(lang, "asstChat.customerStep.name");
     return (
@@ -8924,10 +8963,52 @@ function CustomerStepPanel(props: {
               </div>
             )
             : null}
+          {dupe
+            ? (
+              <div class="cust-pick__err" data-cy="cust-already-exists">
+                {tFor(lang, "asstChat.customerStep.alreadyExists", {
+                  name: dupe.name,
+                })}
+              </div>
+            )
+            : null}
           <div class="cust-create__actions">
+            {dupe
+              ? (
+                <>
+                  <button
+                    type="button"
+                    class="cust-create__btn cust-create__btn--primary"
+                    data-cy="cust-use-existing"
+                    disabled={sending}
+                    onClick={() =>
+                      onSubmit("pick_existing", {
+                        ...(createAddress.trim()
+                          ? { serviceAddress: createAddress.trim() }
+                          : {}),
+                        customer: { id: dupe.id },
+                      })}
+                  >
+                    {tFor(lang, "asstChat.customerStep.useExisting", {
+                      name: dupe.name,
+                    })}
+                  </button>
+                  <button
+                    type="button"
+                    class="cust-create__btn"
+                    data-cy="cust-create-anyway"
+                    disabled={sending}
+                    onClick={() => setCreateAnyway(true)}
+                  >
+                    {tFor(lang, "asstChat.customerStep.createAnyway")}
+                  </button>
+                </>
+              )
+              : null}
             <button
               type="button"
               class="cust-create__btn cust-create__btn--primary"
+              style={dupe ? "display:none" : undefined}
               disabled={submitDisabled}
               onClick={() =>
                 onSubmit("create_new", {
@@ -8947,6 +9028,7 @@ function CustomerStepPanel(props: {
                       ...(createBusiness.trim()
                         ? { businessName: createBusiness.trim() }
                         : {}),
+                      ...(createAnyway ? { allowDuplicate: true } : {}), // REQ-331
                     },
                   },
                 })}
@@ -8972,6 +9054,56 @@ function CustomerStepPanel(props: {
               </button>
             )}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- View: known customer (REQ-331) — one tap, or "Change" to the list ----
+  if (known && !changed) {
+    const k = known.customer;
+    return (
+      <div ref={rootRef}>
+        <h3 class="wiz__step-q">
+          {tFor(lang, "asstChat.customerStep.whoFor")}
+        </h3>
+        <div class="wiz__step-hint">
+          {tFor(
+            lang,
+            known.source === "bound"
+              ? "asstChat.customerStep.knownFromChat"
+              : "asstChat.customerStep.knownFromTyped",
+          )}
+        </div>
+        <div
+          class="wiz__opts"
+          style="flex-direction:column;align-items:stretch;gap:8px;margin-top:8px"
+        >
+          <button
+            type="button"
+            class="wiz-opt"
+            data-cy="customer-use-known"
+            onClick={() =>
+              known.source === "bound"
+                ? onSubmit("use_active")
+                : onSubmit("pick_existing", { customer: { id: k.id } })}
+            disabled={sending}
+          >
+            {tFor(lang, "asstChat.customerStep.useKnown", { name: k.name })}
+            {k.email || k.phoneNumber
+              ? <span class="wiz-opt__sub">{k.email ?? k.phoneNumber}</span>
+              : null}
+          </button>
+          {localErr ? <div class="cust-pick__err">{localErr}</div> : null}
+          <button
+            type="button"
+            class="wiz-opt wiz-opt--custom"
+            data-cy="customer-change"
+            onClick={() => setChanged(true)}
+            disabled={sending}
+          >
+            {tFor(lang, "asstChat.customerStep.change")}
+          </button>
         </div>
       </div>
     );

@@ -216,18 +216,30 @@ export function quoteLineItemsFromPrefill(
 
 /** A run token: Capitalized Unicode-letter word (apostrophes/hyphens ok). */
 const CAP_TOKEN = /^[\p{Lu}][\p{L}'’-]*$/u;
+/** REQ-331: a lowercase word that can only be a name after "customer" /
+ *  "cliente" ("quote for customer x") — letters only, never a filler word. */
+const LOWER_NAME_TOKEN = /^[\p{Ll}][\p{L}'’-]*$/u;
+const NOT_A_NAME =
+  /^(?:who|that|which|de|del|en|con|y|o|a|the|and|or|in|at|on|with|for|para|que|is|es|named|llamado|llamada)$/i;
 
 /**
  * The "para/for <Name>" customer candidate:
  *   - the run of Capitalized tokens after "para"/"for" (+ optional article
  *     el/la/los/las/the); the run stops at a comma, a digit, a "$" or a
  *     lowercase token;
+ *   - REQ-331 (demo m7/m44): a lowercase connector or honorific between
+ *     the lead and the name is skipped — "for customer Maria Lopez", "para
+ *     el cliente Juan", "para la señora López", "for Mrs. Henderson" — and
+ *     "this is <Name>" / "es para <Name>" also name the customer; right
+ *     after "customer"/"cliente" a single lowercase word is the name too
+ *     ("quote for customer x" → "X");
  *   - ES household form: "para la familia Nguyen" → "Familia Nguyen";
  *   - EN postfix form: "for the Smith family" → "Smith family";
  *   - no phrase → null (never a hallucinated name).
  */
 export function extractCustomerName(raw: string): string | null {
-  const lead = /\b(?:para|for)\s+(?:(?:el|la|los|las|the)\s+)?/giu;
+  const lead =
+    /\b(?:this\s+is|para|for)\s+(?:(?:el|la|los|las|the|un|una|a)\s+)?(?:(?<conn>cliente|clienta|customer|client)\s+|(?:se[ñn]ora?|srt?a\.?|sr\.?|don|do[ñn]a|mr\.?|mrs\.?|ms\.?|miss|dr\.?)\s+)?/giu;
   for (const m of raw.matchAll(lead)) {
     const rest = raw.slice(m.index! + m[0].length);
     const tokens = rest.split(/\s+/);
@@ -251,6 +263,12 @@ export function extractCustomerName(raw: string): string | null {
         // EN postfix household word closes the run.
         if (run.length > 0 && /^family$/i.test(tok)) {
           run.push(tok.toLowerCase());
+        } else if (
+          run.length === 0 && m.groups?.conn && LOWER_NAME_TOKEN.test(tok) &&
+          !NOT_A_NAME.test(tok)
+        ) {
+          // "for customer x" — the word after the connector IS the name.
+          run.push(tok[0].toUpperCase() + tok.slice(1));
         }
         break;
       }
@@ -288,25 +306,56 @@ export function extractServiceAddress(raw: string): string | null {
     "u",
   );
   const m = street.exec(raw);
-  if (!m) return null;
-  let out = `${m[1]} ${m[2]}${m[3]}`.replace(/\s+/g, " ").trim();
-  // "…Lake Avenue. Total $900" — a full street word then a period ends it.
-  if (m[0].endsWith(".") && !STREET_ABBREV.test(m[3])) return out;
-  // City / state / ZIP: Capitalized words, a 2-letter state, a 5(+4)-digit
-  // ZIP, separated by spaces or single commas.
-  const rest = raw.slice(m.index + m[0].length);
+  if (m) {
+    const out = `${m[1]} ${m[2]}${m[3]}`.replace(/\s+/g, " ").trim();
+    // "…Lake Avenue. Total $900" — a full street word then a period ends it.
+    if (m[0].endsWith(".") && !STREET_ABBREV.test(m[3])) return out;
+    return out + cityTail(raw.slice(m.index + m[0].length)).text;
+  }
+  // REQ-331 (demo m7 / M21): the ES street-first form — "calle Elm 512",
+  // "avenida Reforma 100" — street word, one to four name words, the number.
+  const es = new RegExp(
+    `\\b(calle|avenida|av\\.?|carrera|carretera|camino|paseo|bulevar|boulevard)\\s+((?:[\\p{Lu}\\d][\\p{L}\\d'’.-]*\\s+){1,4}?)(\\d{1,6}[A-Za-z]?)(?=[\\s,;:]|$)`,
+    "iu",
+  );
+  const e = es.exec(raw);
+  if (e) {
+    const word = e[1][0].toUpperCase() + e[1].slice(1).toLowerCase();
+    const out = `${word} ${e[2]}${e[3]}`.replace(/\s+/g, " ").trim();
+    return out + cityTail(raw.slice(e.index + e[0].length)).text;
+  }
+  // REQ-331: the number-less "on <Street> <St> … <ZIP>" form — only when a
+  // ZIP closes it, so "on Monday" or "on the roof" are never an address.
+  const bare = new RegExp(
+    `\\bon\\s+((?:[\\p{Lu}][\\p{L}'’.-]*\\s+){1,4}?)(${STREET_SUFFIX})\\.?(?=[\\s,;:]|$)`,
+    "u",
+  );
+  const b = bare.exec(raw);
+  if (b) {
+    const tail = cityTail(raw.slice(b.index + b[0].length));
+    if (tail.zip) {
+      return `${b[1]}${b[2]}`.replace(/\s+/g, " ").trim() + tail.text;
+    }
+  }
+  return null;
+}
+
+/** City / state / ZIP after the street: Capitalized words, a 2-letter
+ *  state, a 5(+4)-digit ZIP, separated by spaces or single commas. */
+function cityTail(rest: string): { text: string; zip: boolean } {
   const tail = /^(\s*,?\s*)([\p{Lu}][\p{L}'’-]*|\d{5}(?:-\d{4})?)/u;
   let cursor = rest;
+  let text = "";
   let words = 0;
   for (;;) {
     const t = tail.exec(cursor);
     if (!t || words >= 5) break;
-    out += `${t[1].includes(",") ? ", " : " "}${t[2]}`;
+    text += `${t[1].includes(",") ? ", " : " "}${t[2]}`;
     cursor = cursor.slice(t[0].length);
     words++;
-    if (/^\d/.test(t[2])) break; // the ZIP closes it
+    if (/^\d/.test(t[2])) return { text, zip: true }; // the ZIP closes it
   }
-  return out;
+  return { text, zip: false };
 }
 
 /** All the deterministic facts in one call. */

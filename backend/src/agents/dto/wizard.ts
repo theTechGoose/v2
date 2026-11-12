@@ -75,7 +75,15 @@ export class WizardAnswerDto {
   @IsOptional()
   customer?: {
     id?: string;
-    create?: { name: string; email?: string; phoneNumber?: string };
+    create?: {
+      name: string;
+      email?: string;
+      phoneNumber?: string;
+      isBusiness?: boolean;
+      businessName?: string;
+      /** REQ-331: skip the same-owner dedupe ("create anyway"). */
+      allowDuplicate?: boolean;
+    };
   };
 }
 
