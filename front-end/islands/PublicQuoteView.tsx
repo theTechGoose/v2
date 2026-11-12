@@ -33,6 +33,15 @@ export default function PublicQuoteView(
   const [lang, setLang] = useState<Lang>(initialLang);
   const LINK_GONE = tFor(lang, "publicQuote.linkExpired");
   const [s, setS] = useState<State>({ phase: "loading" });
+  // REQ-306: the page's query — `?as=customer&confirm=1` is the in-person
+  // override that shows the pad to the business's own viewer. Read on the
+  // client only (SSR has no location); the document re-renders once set.
+  const [search, setSearch] = useState<string>("");
+  useEffect(() => {
+    try {
+      setSearch(globalThis.location?.search ?? "");
+    } catch { /* SSR-safe */ }
+  }, []);
 
   // REQ-048: one tap flips the whole document — no reload — and the pick is
   // remembered (cookie + localStorage) and mirrored into ?lang= so the link
@@ -93,7 +102,7 @@ export default function PublicQuoteView(
     return (
       <>
         {toggle}
-        <QuoteDoc quote={s.quote} lang={lang} />
+        <QuoteDoc quote={s.quote} lang={lang} search={search} />
       </>
     );
   }

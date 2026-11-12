@@ -22,6 +22,7 @@ import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
+import { hasSignOverride } from "#quote-flow/public-doc-state.ts";
 import { groupVisits } from "#quote-flow/visit-groups.ts";
 import { sniffLogoImage } from "#quote-flow/logo-image.ts";
 import { AcceptedPaymentMethods } from "@profile/dto/business-identity.ts";
@@ -592,6 +593,10 @@ export class PaperworkPublicController {
         customer,
         invoices,
         changeOrders: cos.map(projectLinkedChangeOrder),
+        // REQ-306 (demo B3): tell the business's own viewer they are
+        // previewing — the page swaps the pad for a banner. Absent for the
+        // customer so the public shape is unchanged for them.
+        ...(internal ? { internal: true } : {}),
       });
     } catch (e) {
       return notFoundResponse(ctx, e);
@@ -606,6 +611,21 @@ export class PaperworkPublicController {
   ) {
     const dto = parseAccept(body);
     const existing = await this.quotes.get(id);
+    // REQ-306 (demo B3): the business's own session — the owner on "View as
+    // customer", an admin acting for them, staff behind an impersonation —
+    // cannot sign its customer's agreement. The one way through is the
+    // explicit in-person override (?as=customer&confirm=1) the preview
+    // banner links to, for when the customer is handed the device.
+    const sessionId = readSessionId(ctx);
+    const session = sessionId
+      ? await this.sessions.get(sessionId).catch(() => null)
+      : null;
+    if (
+      isInternalViewer(session, existing.userId) &&
+      !hasSignOverride(new URL(ctx.req.url).search)
+    ) {
+      return ctx.json({ ok: false, reason: "owner_cannot_sign" }, 409);
+    }
     // "accepted" is the terminal signed state (roadmap p.10) — the quote IS
     // the agreement, and accepting it is the one signature ceremony.
     if (isAccepted(existing)) {

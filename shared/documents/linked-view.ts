@@ -439,6 +439,8 @@ export type AcceptDecision =
   | { kind: "ok" }
   | { kind: "stale_version"; currentVersion?: number }
   | { kind: "already_accepted" }
+  /** REQ-306: the business's own session tried to sign its customer's quote. */
+  | { kind: "owner_cannot_sign" }
   | { kind: "error"; reason: string };
 
 /** What the quote page does with the accept response. */
@@ -454,6 +456,9 @@ export function acceptDecision(status: number, body: unknown): AcceptDecision {
   }
   if (status === 409 && reason === "already_accepted") {
     return { kind: "already_accepted" };
+  }
+  if (status === 409 && reason === "owner_cannot_sign") {
+    return { kind: "owner_cannot_sign" };
   }
   return { kind: "error", reason };
 }

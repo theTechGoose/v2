@@ -20,7 +20,10 @@ import PublicSignQuote from "../islands/PublicSignQuote.tsx";
 import PublicQuoteActions from "../islands/PublicQuoteActions.tsx";
 import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
 import { agreementTitle } from "../../shared/quote-flow/agreement-title.ts";
-import { deriveQuoteView } from "../../shared/quote-flow/public-doc-state.ts";
+import {
+  deriveQuoteView,
+  internalPreview,
+} from "../../shared/quote-flow/public-doc-state.ts";
 import {
   localizeLineItems,
   quoteDescription,
@@ -115,6 +118,10 @@ export interface QuotePublic {
   /** REQ-256: the onboarding "see what your customer sees" sample — shown
    *  as a sample (no number, not sent) to a placeholder customer. */
   isSample?: boolean;
+  /** REQ-306 (demo B3): the viewer is the business itself (owner, acting
+   *  admin, impersonation) — a preview, not the customer; the pad is
+   *  replaced by a banner. Never present for the customer. */
+  internal?: boolean;
   lineItems?: LineItem[];
   terms?: Term[];
   createdAt?: string;
@@ -240,14 +247,27 @@ export function ErrorCard(
 }
 
 export function QuoteDoc(
-  { quote, lang }: {
+  { quote, lang, search }: {
     quote: QuotePublic;
     /** REQ-048: the viewer's language — English first, or their own pick /
      *  toggle (PublicQuoteView owns it). The contractor's outgoing-comms
      *  language no longer decides what the customer sees first. */
     lang: Lang;
+    /** REQ-306: the page's query string — `?as=customer&confirm=1` is the
+     *  in-person override that shows the pad to the business's own viewer. */
+    search?: string;
   },
 ) {
+  // REQ-306 (demo B3): the business's own preview — banner instead of pad.
+  const preview = internalPreview(quote, search);
+  const overrideHref = (() => {
+    const q = new URLSearchParams(
+      (search ?? "").startsWith("?") ? (search ?? "").slice(1) : search ?? "",
+    );
+    q.set("as", "customer");
+    q.set("confirm", "1");
+    return `?${q.toString()}`;
+  })();
   // Shared view derivation (P-11/P-13/P-40/P-63) — accepted state, the
   // stored signature image, the post-signed footer variant, and the PDF
   // download URL all come from the same pure module the tests pin.
@@ -747,11 +767,40 @@ export function QuoteDoc(
                       >
                         {customerInstruction}
                       </div>
-                      <PublicSignQuote
-                        quoteId={quote.id}
-                        version={quote.version}
-                        lang={lang}
-                      />
+                      {preview
+                        ? (
+                          <div
+                            data-cy="quote-internal-preview"
+                            role="status"
+                            class="ctr__no-print"
+                            style="margin-top:12px;background:#fff6e5;border:1px solid rgba(255,170,40,0.45);border-radius:14px;padding:16px 18px;color:#8a5a10;font-size:13px;line-height:1.5"
+                          >
+                            <div style="font-weight:800;font-size:14px">
+                              {tFor(lang, "public.doc.internalPreview")}
+                            </div>
+                            <div style="margin-top:4px">
+                              {tFor(lang, "public.doc.internalPreviewBody")}
+                            </div>
+                            <a
+                              href={overrideHref}
+                              data-cy="quote-sign-in-person"
+                              style="display:inline-block;margin-top:10px;font-weight:700;color:#8a5a10;text-decoration:underline"
+                            >
+                              {tFor(
+                                lang,
+                                "public.doc.internalPreviewSignInPerson",
+                              )}
+                            </a>
+                          </div>
+                        )
+                        : (
+                          <PublicSignQuote
+                            quoteId={quote.id}
+                            version={quote.version}
+                            lang={lang}
+                            override={quote.internal === true}
+                          />
+                        )}
                     </div>
                   )}
               </div>
