@@ -66,6 +66,7 @@ import {
   sendResultLangKey,
 } from "../../shared/quote-flow/send-result.ts";
 import MoneyInput from "./MoneyInput.tsx";
+import { startPoll } from "../lib/poll.ts";
 
 /**
  * REQ-024 (NW-18): the invoice's due date derives from the agreement the
@@ -1755,10 +1756,11 @@ export default function AsstChat({
         /* swallow — next tick will retry */
       }
     };
-    const id = globalThis.setInterval(tick, 8_000);
+    // REQ-221: not in the demo replica frame, not while the tab is hidden.
+    const stop = startPoll(tick, 8_000);
     return () => {
       cancelled = true;
-      globalThis.clearInterval(id);
+      stop();
     };
   }, [previewCtaId, quote?.id, quote?.status]);
 

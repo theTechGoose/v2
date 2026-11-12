@@ -3,6 +3,7 @@ import { I, ICN } from "../lib/dash-icons.tsx";
 import { assistantClient, type Conversation } from "../clients/assistant.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { threadTitle } from "../../shared/quote-flow/thread-title.ts";
+import { startPoll } from "../lib/poll.ts";
 
 interface Props {
   initialThreads: Conversation[];
@@ -89,10 +90,11 @@ export default function AsstThreads(
     setCollapsed(next);
   }
 
-  // Live-refresh: poll on an interval so a customer accept (which flips
-  // hasUnreadEvent + bumps updatedAt server-side) shows up here without
-  // a hard reload, and re-fetch on tab focus so coming back from another
-  // tab is snappy.
+  // Live-refresh: poll so a customer accept (which flips hasUnreadEvent +
+  // bumps updatedAt server-side) shows up here without a hard reload. One
+  // sync on mount in case SSR's snapshot is already stale. REQ-221: the
+  // shared scheduler skips the demo replica frame and hidden tabs, and
+  // catches up once when the tab is shown again.
   useEffect(() => {
     let cancelled = false;
     async function refresh() {
@@ -104,17 +106,10 @@ export default function AsstThreads(
         // on a transient network blip.
       }
     }
-    const interval = setInterval(refresh, POLL_MS);
-    function onVis() {
-      if (document.visibilityState === "visible") refresh();
-    }
-    document.addEventListener("visibilitychange", onVis);
-    // Sync once on mount in case SSR's snapshot is already stale.
-    refresh();
+    const stop = startPoll(refresh, POLL_MS, { immediate: true });
     return () => {
       cancelled = true;
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVis);
+      stop();
     };
   }, []);
 
