@@ -985,6 +985,8 @@
   "conversationTitle.newConversation": "Nueva conversación",
   "counter.decrement": "-1",
   "counter.increment": "+1",
+  "customer.invalidEmail": "Escribe un correo electrónico válido, como nombre@ejemplo.com.",
+  "customer.invalidPhone": "Escribe un número de teléfono completo, como (512) 555-1234.",
   "dashAssistantCta.callSupport": "Llamar a soporte",
   "dashAssistantCta.sub": "Tu asistente crea cotizaciones, envía acuerdos y cobra facturas — solo cuéntale del trabajo.",
   "dashAssistantCta.title": "Habla con tu Asistente",

@@ -567,3 +567,41 @@ Deno.test("REQ-029 NW-22 own-contact create_new rejects with the English diction
   );
   await resetKv();
 });
+
+// REQ-278 (demo M16): the assistant's "Who is this for?" create_new path
+// never went through the customer DTO, so "123" / "555-12" / "512-555-01" /
+// "davis@@gmail" were saved as the customer's contact. Now refused with the
+// contractor's dictionary copy, and no Customer row is created.
+for (
+  const [label, create, key] of [
+    ["phone 123", { phoneNumber: "123" }, "customer.invalidPhone"],
+    ["phone 555-12", { phoneNumber: "555-12" }, "customer.invalidPhone"],
+    ["phone 512-555-01", { phoneNumber: "512-555-01" }, "customer.invalidPhone"],
+    ["email davis@@gmail", { email: "davis@@gmail" }, "customer.invalidEmail"],
+  ] as const
+) {
+  for (const language of ["en", "es"] as const) {
+    Deno.test(`REQ-278 M16 create_new refuses ${label} (${language}) and saves no customer`, async () => {
+      Deno.env.set("KV_PATH", ":memory:");
+      await resetKv();
+      const { flow, user, conv, customers } = await setupTermsForRealUser({
+        phoneNumber: "+15403331334",
+        language,
+      });
+      await assertRejects(
+        () =>
+          flow.run({
+            userId: user.id,
+            conversationId: conv.id,
+            stepId: "customer",
+            optionId: "create_new",
+            customer: { create: { name: "Davis", ...create } },
+          }),
+        Error,
+        t(language, key),
+      );
+      assertEquals((await customers.listByUser(user.id)).length, 0);
+      await resetKv();
+    });
+  }
+}

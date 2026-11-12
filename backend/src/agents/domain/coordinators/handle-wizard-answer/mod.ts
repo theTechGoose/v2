@@ -14,6 +14,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import { customerContactError } from "#quote-flow/customer-contact.ts"; // REQ-278
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { WizardAnswer, WizardSpec, WizardState } from "@agents/dto/wizard.ts";
@@ -257,6 +258,11 @@ export class HandleWizardAnswer {
       // email/phone and the agreement was delivered back to the contractor.
       const email = create?.email?.trim();
       const phone = create?.phoneNumber?.trim();
+      // REQ-278 (demo M16): this path never went through the customer DTO,
+      // so "123" / "555-12" / "davis@@gmail" were saved as the contact.
+      // Same rule as parseCreateCustomer, in the contractor's language.
+      const contactErr = customerContactError({ email, phoneNumber: phone });
+      if (contactErr) throw new Error(t(lang, contactErr));
       if (email || phone) {
         const creator = await this.users.get(input.userId).catch(() => null);
         const normEmail = (e?: string) => (e ?? "").trim().toLowerCase();

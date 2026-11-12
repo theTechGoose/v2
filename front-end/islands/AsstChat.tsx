@@ -49,6 +49,7 @@ import {
   websiteLabel,
 } from "../../shared/quote-flow/format-helpers.ts";
 import { summarizeJobName } from "../../shared/quote-flow/job-name.ts";
+import { customerContactError } from "../../shared/quote-flow/customer-contact.ts"; // REQ-278
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import {
   TimeoutError,
@@ -8239,6 +8240,13 @@ function CustomerStepPanel(props: {
       normEmail(trimmedEmail) === normEmail(ownerEmail);
     const phoneIsOwn = !!ownerPhone && trimmedPhone.length > 0 &&
       normPhone(trimmedPhone) === normPhone(ownerPhone);
+    // REQ-278 (demo M16): "123" / "555-12" / "davis@@gmail" are not a way
+    // to reach the customer — the inputs sit outside a <form>, so the
+    // browser's own type=email check never ran. Same rule as the backend.
+    const contactFormatErr = customerContactError({
+      email: trimmedEmail,
+      phoneNumber: trimmedPhone,
+    });
     // REQ-029 (NW-22): the missing-contact reason is visible from the start
     // — a silently disabled Next read as "it did not save".
     const contactErr = emailIsOwn
@@ -8247,9 +8255,11 @@ function CustomerStepPanel(props: {
       ? tFor(lang, "asstChat.customerStep.ownPhone")
       : !hasContact
       ? tFor(lang, "asstChat.customerStep.needContact")
+      : contactFormatErr
+      ? tFor(lang, contactFormatErr)
       : undefined;
     const submitDisabled = sending || trimmedName.length === 0 ||
-      !hasContact || emailIsOwn || phoneIsOwn;
+      !hasContact || emailIsOwn || phoneIsOwn || !!contactFormatErr;
     const formHeading = tFor(lang, "asstChat.customerStep.whoFor");
     const namePlaceholder = tFor(lang, "asstChat.customerStep.name");
     return (
