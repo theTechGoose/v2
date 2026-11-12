@@ -17,6 +17,7 @@ import {
 import { type DocVersionRecord, firstIssueStamp } from "#documents/versions.ts";
 import {
   descriptionTranslationsStale,
+  headingTranslationsStale,
   reconcileLineItemTranslations,
 } from "#quote-flow/quote-translations.ts";
 import type {
@@ -247,12 +248,18 @@ export class QuoteStore {
       );
     }
     const staleDescription = descriptionTranslationsStale(existing, patch);
+    // REQ-400 (M5): a renamed job (or a new summary) without new per-language
+    // text — the cached names describe the old one; the next translate run
+    // (lock, preview, send) fills them again.
+    const staleHeading = headingTranslationsStale(existing, patch);
     const updated: Quote = {
       ...existing,
       // REQ-248: the first issue is version 1's publication — who and when
       ...firstIssueStamp(existing, definedPatch),
       ...definedPatch,
       ...(staleDescription ? { descriptionByLang: undefined } : {}),
+      ...(staleHeading.jobName ? { jobNameByLang: undefined } : {}),
+      ...(staleHeading.summary ? { summaryByLang: undefined } : {}),
       id: existing.id,
       userId: existing.userId,
       createdAt: existing.createdAt,

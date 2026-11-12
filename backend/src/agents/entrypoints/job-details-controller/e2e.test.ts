@@ -5,6 +5,11 @@ import { bootstrapServer } from "#mrg-keystone/danet";
 import { AgentsModule } from "@agents/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
+import type {
+  LLMRequest,
+  LLMResponse,
+} from "@agents/domain/business/llm/base/mod.ts";
 
 /**
  * REQ-260 — demo issue M24 over the booted app: "Suggested prices far too
@@ -142,4 +147,183 @@ Deno.test("REQ-332 m30 e2e: POST /agents/job-details/professionalize keeps 'A + 
       `permit is its own item: ${items}`,
     );
   });
+});
+
+// ── REQ-400 — demo-loop cycle 2 (M5, M21, m32) over the booted app ─────────
+// The app's LLM is the StubLLMClient its injector builds; these stories script
+// it for their length (the prototype is this test file's own — deno test runs
+// each file in its own worker).
+
+async function withScriptedLlm(
+  handler: (req: LLMRequest) => LLMResponse,
+  fn: () => Promise<void>,
+) {
+  const original = StubLLMClient.prototype.respond;
+  StubLLMClient.prototype.respond = (req: LLMRequest) =>
+    Promise.resolve(handler(req));
+  try {
+    await fn();
+  } finally {
+    StubLLMClient.prototype.respond = original;
+  }
+}
+
+const isTranslate = (req: LLMRequest) =>
+  /translate short construction scope-of-work/i.test(req.systemPrompt ?? "");
+
+/** TranslateBullets' contract: {"texts": [...]} in, same count out. */
+function translated(req: LLMRequest, map: Record<string, string>): LLMResponse {
+  const { texts } = JSON.parse(String(req.messages[0].content)) as {
+    texts: string[];
+  };
+  return { text: JSON.stringify({ texts: texts.map((t) => map[t] ?? t) }) };
+}
+
+Deno.test("REQ-400 M5 e2e: a Spanish chat quote, locked, carries its job name and summary in English for the customer's document (pair 6)", async () => {
+  const EN: Record<string, string> = {
+    "Reparación de puerta": "door repair",
+    "Reparación de puerta de baño — Maria Lopez":
+      "Bathroom door repair — Maria Lopez",
+    "Reparación de puerta de baño": "Bathroom door repair",
+  };
+  await withScriptedLlm(
+    (req) => isTranslate(req) ? translated(req, EN) : { text: "{}" },
+    () =>
+      withServer(async (base) => {
+        const sid = await login(base, "+15125554000");
+        const h = { ...J, "x-session-id": sid };
+        await (await fetch(`${base}/me`, {
+          method: "PUT",
+          headers: h,
+          body: JSON.stringify({ language: "es" }),
+        })).body?.cancel();
+        // What the chat's create_quote stores: summary, jobName, lines.
+        const quote = await (await fetch(`${base}/quotes`, {
+          method: "POST",
+          headers: h,
+          body: JSON.stringify({
+            summary: "Reparación de puerta de baño — Maria Lopez",
+            jobName: "Reparación de puerta",
+            lineItems: [{
+              description: "Reparación de puerta de baño",
+              quantity: 1,
+              unit: "ea",
+              price: 25_000,
+            }],
+            estimatedTotal: 25_000,
+          }),
+        })).json();
+        const conv = await (await fetch(`${base}/agents/conversations`, {
+          method: "POST",
+          headers: h,
+          body: "{}",
+        })).json();
+        const lock = await fetch(
+          `${base}/agents/conversations/${conv.id}/lock-quote`,
+          {
+            method: "POST",
+            headers: h,
+            body: JSON.stringify({ quoteId: quote.id }),
+          },
+        );
+        assertEquals(lock.status, 200);
+        await lock.body?.cancel();
+
+        // What /q?lang=en renders from: "Maria Lopez's Door Repair Agreement".
+        const pub = await (await fetch(`${base}/quotes/${quote.id}/public`))
+          .json();
+        assertEquals(pub.jobNameByLang, {
+          es: "Reparación de puerta",
+          en: "Door Repair",
+        });
+        assertEquals(
+          pub.summaryByLang?.en,
+          "Bathroom door repair — Maria Lopez",
+        );
+        assertEquals(
+          pub.lineItems[0].descriptionByLang?.en,
+          "Bathroom door repair",
+        );
+      }),
+  );
+});
+
+Deno.test("REQ-400 M21 + m32 e2e: POST /agents/job-details/options answers whole-job versions with no customer bullet, even when the model splits the job", async () => {
+  const third = (bullets: string[], name: string) => ({
+    en: { jobName: name, summary: name, bullets },
+  });
+  const split = JSON.stringify({
+    options: [
+      third([
+        "Remove old tub/shower combo",
+        "Install walk-in shower with curbless entry",
+        "Customer: Maria Gutierrez",
+      ], "Master Bath Remodel"),
+      third(
+        ["Linear drain and niche", "Frameless glass panel", "Double vanity"],
+        "Master Bath Upgrade",
+      ),
+      third(
+        [
+          "Move drain on slab",
+          "Exhaust fan and recessed lights",
+          "Heated floor",
+        ],
+        "Complete Bathroom Renovation",
+      ),
+    ],
+  });
+  let asked = 0;
+  await withScriptedLlm(
+    (req) =>
+      isTranslate(req) ? translated(req, {}) : (asked++, { text: split }),
+    () =>
+      withServer(async (base) => {
+        const sid = await login(base, "+15125554001");
+        // Priya works in English (a new account defaults to Spanish).
+        await (await fetch(`${base}/me`, {
+          method: "PUT",
+          headers: { ...J, "x-session-id": sid },
+          body: JSON.stringify({ language: "en" }),
+        })).body?.cancel();
+        const res = await fetch(`${base}/agents/job-details/options`, {
+          method: "POST",
+          headers: { ...J, "x-session-id": sid },
+          body: JSON.stringify({
+            raw:
+              "Master bath gut for Maria Gutierrez: tub/shower combo out, curbless shower, " +
+              "linear drain + niche, frameless glass, double vanity, move drain on slab, " +
+              "fan + recessed lights, heated floor",
+          }),
+        });
+        assertEquals(res.status, 200);
+        const body = await res.json() as {
+          options: Array<{ jobName: string; bullets: string[] }>;
+          degraded: boolean;
+        };
+        assertEquals(body.degraded, false);
+        assertEquals(asked, 2, "the split answer was asked again once");
+        for (const o of body.options) {
+          const text = o.bullets.join(" | ").toLowerCase();
+          for (
+            const k of [
+              "tub",
+              "curbless",
+              "niche",
+              "glass",
+              "vanity",
+              "slab",
+              "fan",
+              "heated",
+            ]
+          ) {
+            assert(text.includes(k), `"${o.jobName}" leaves out ${k}: ${text}`);
+          }
+          assert(
+            !/maria|gutierrez|customer:/i.test(text),
+            `a customer bullet: ${text}`,
+          );
+        }
+      }),
+  );
 });

@@ -91,3 +91,52 @@ Deno.test("REQ-264 (M15) editing the job-details description drops its stale tra
   });
   await resetKv();
 });
+
+/**
+ * REQ-400 (demo-loop cycle 2, M5): the job name and the summary are
+ * translated like the description (TranslateQuote fills jobNameByLang /
+ * summaryByLang), so a rename must drop the names made from the old one —
+ * else the Spanish agreement keeps the old job's title.
+ */
+Deno.test("REQ-400 (M5) renaming the job drops its stale per-language names; a rename that writes new ones keeps them", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const store = new QuoteStore();
+  const q = await store.create("u-1", {
+    summary: "Replace the roof",
+    summaryByLang: { en: "Replace the roof", es: "Reemplazar el techo" },
+    jobName: "Roof Replacement",
+    jobNameByLang: { en: "Roof Replacement", es: "Reemplazo de techo" },
+    lineItems: [{
+      description: "Roof",
+      quantity: 1,
+      unit: "ea",
+      price: 1_000,
+    }],
+    status: "draft",
+  });
+
+  const renamed = await store.update(q.id, "u-1", { jobName: "Deck Repair" });
+  assertEquals(renamed.jobNameByLang, undefined);
+  // the summary did not change — its translations stand
+  assertEquals(renamed.summaryByLang?.es, "Reemplazar el techo");
+
+  const resummed = await store.update(q.id, "u-1", {
+    summary: "Repair the deck",
+  });
+  assertEquals(resummed.summaryByLang, undefined);
+
+  // the picker writes the name WITH its translations — kept as written
+  const picked = await store.update(q.id, "u-1", {
+    jobName: "Fence Repair",
+    jobNameByLang: { en: "Fence Repair", es: "Reparación de cerca" },
+  });
+  assertEquals(picked.jobNameByLang, {
+    en: "Fence Repair",
+    es: "Reparación de cerca",
+  });
+  // an unchanged name never drops them
+  const same = await store.update(q.id, "u-1", { jobName: "Fence Repair" });
+  assertEquals(same.jobNameByLang?.es, "Reparación de cerca");
+  await resetKv();
+});

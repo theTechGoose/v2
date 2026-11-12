@@ -207,6 +207,44 @@ export function jobNameCase(name: string, lang?: "en" | "es"): string {
     .join(" ");
 }
 
+/** English words a Title Case name keeps lowercase unless they open it. */
+const EN_MINOR = new Set([
+  "a",
+  "an",
+  "and",
+  "as",
+  "at",
+  "by",
+  "for",
+  "from",
+  "in",
+  "into",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "with",
+]);
+
+/**
+ * REQ-400 (demo-loop cycle 2, M5): the casing a TRANSLATED job name is stored
+ * in. A model's translation comes back in sentence case ("door repair"),
+ * while an English job name is Title Case everywhere it titles a document
+ * ("Maria Lopez's Door Repair Agreement"); Spanish is sentence case
+ * (jobNameCase, REQ-276). Only the case changes, never the words.
+ */
+export function translatedJobNameCase(name: string, lang: "en" | "es"): string {
+  if (lang === "es") return jobNameCase(name, "es");
+  return name.trim().split(/\s+/).filter((w) => w.length > 0)
+    .map((w, i) =>
+      i > 0 && EN_MINOR.has(w.toLowerCase())
+        ? w.toLowerCase()
+        : capitalizeFirst(w)
+    )
+    .join(" ");
+}
+
 /** A valid job name is non-empty and inside the budget (REQ-337: at most
  *  JOB_NAME_MAX_WORDS words and JOB_NAME_MAX_CHARS characters). */
 export function isValidJobName(name: string): boolean {

@@ -74,6 +74,77 @@ export function missingQuoteTranslations(
   return out;
 }
 
+/**
+ * REQ-400 (demo-loop cycle 2, M5) — a quote's heading text: the job name
+ * (agreement title, "for {job}" recital, e-mail subject, SMS, PDF, invoice)
+ * and the summary, each with its per-language cache.
+ */
+export interface TranslatableHeading {
+  lang?: string;
+  jobName?: string;
+  jobNameByLang?: Record<string, string>;
+  summary?: string;
+  summaryByLang?: Record<string, string>;
+}
+
+/** What one language still needs of the heading. */
+export interface MissingHeading {
+  lang: string;
+  /** The base job name, when this language has no cached one. */
+  jobName?: string;
+  /** The base summary, when this language has no cached one. */
+  summary?: string;
+}
+
+/**
+ * REQ-400 (M5): per language, the job name and summary with text but no
+ * translation yet — "Maria Lopez's Reparación de puerta Agreement" was a
+ * Spanish name nobody ever translated. Mirrors missingQuoteTranslations: the
+ * base language (`baseLang`, else the quote's stored `lang`) is never
+ * missing; ask with `""` to see the base slots themselves.
+ */
+export function missingHeadingTranslations(
+  quote: TranslatableHeading | undefined | null,
+  langs: readonly string[] = QUOTE_LANGS,
+  baseLang?: string,
+): MissingHeading[] {
+  if (!quote) return [];
+  const base = baseLang ?? quote.lang;
+  const jobName = quote.jobName?.trim();
+  const summary = quote.summary?.trim();
+  const out: MissingHeading[] = [];
+  for (const lang of langs) {
+    if (lang === base) continue;
+    const m: MissingHeading = { lang };
+    if (jobName && !has(quote.jobNameByLang, lang)) m.jobName = jobName;
+    if (summary && !has(quote.summaryByLang, lang)) m.summary = summary;
+    if (m.jobName || m.summary) out.push(m);
+  }
+  return out;
+}
+
+/**
+ * REQ-400 (M5): like descriptionTranslationsStale, for the heading — an edit
+ * that changes the job name (or the summary) without writing a new map with
+ * it leaves the cached translations describing the OLD text.
+ */
+export function headingTranslationsStale(
+  prev: TranslatableHeading,
+  patch: {
+    jobName?: string;
+    jobNameByLang?: Record<string, string>;
+    summary?: string;
+    summaryByLang?: Record<string, string>;
+  },
+): { jobName: boolean; summary: boolean } {
+  return {
+    jobName: patch.jobName !== undefined && patch.jobName !== prev.jobName &&
+      patch.jobNameByLang === undefined,
+    summary: patch.summary !== undefined && patch.summary !== prev.summary &&
+      patch.summaryByLang === undefined,
+  };
+}
+
 /** The preview's UX-06 notice: something in this language is untranslated. */
 export function previewTranslationMissing(
   quote: TranslatableQuote | undefined | null,

@@ -4,10 +4,14 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import {
+  type MissingHeading,
+  missingHeadingTranslations,
   missingQuoteTranslations,
+  type MissingTranslation,
   QUOTE_LANGS,
   type QuoteLang,
 } from "#quote-flow/quote-translations.ts";
+import { jobNameCase, translatedJobNameCase } from "#quote-flow/job-name.ts";
 
 export interface TranslateQuoteInput {
   userId: string;
@@ -42,6 +46,16 @@ export interface TranslateQuoteInput {
  * every reader preferred that cache. Now the base language's cache is the
  * typed text verbatim, written without a model call, and the base language
  * is stored on the quote (`lang`) so readers can tell.
+ *
+ * REQ-400 (demo-loop cycle 2, M5) — the job name and the summary are
+ * translated too. Every reader (the agreement's title and "for {job}"
+ * recital, the e-mail subject, the SMS, the PDF, the invoice) prefers
+ * `jobNameByLang[lang]` / `summaryByLang[lang]`, and only the picker ever
+ * wrote them — so a chat quote, or an option generated in one language,
+ * titled the other-language document in the base language ("Maria Lopez's
+ * Reparación de puerta Agreement"). They ride the same batch as the lines:
+ * the base language verbatim, the other through TranslateBullets, the name
+ * cased for its language.
  */
 @Injectable()
 export class TranslateQuote {
@@ -55,21 +69,31 @@ export class TranslateQuote {
     const quote = await this.quotes.getOwned(input.quoteId, input.userId);
     const base = await this.baseLang(quote, input);
     const langs = input.langs ?? QUOTE_LANGS;
-    const missing = missingQuoteTranslations(quote, langs, base);
+    const missing = batches(
+      missingQuoteTranslations(quote, langs, base),
+      missingHeadingTranslations(quote, langs, base),
+    );
     // The base slots still empty (a line added since the last run): `""` as
     // the base so the stored `lang` does not hide them from this check.
     const baseMissing = langs.includes(base)
-      ? missingQuoteTranslations(quote, [base], "")
+      ? batches(
+        missingQuoteTranslations(quote, [base], ""),
+        missingHeadingTranslations(quote, [base], ""),
+      )
       : [];
     if (missing.length === 0 && baseMissing.length === 0 && quote.lang) {
       return quote;
     }
 
+    const textsOf = (m: Batch) => [
+      ...m.descriptionLines,
+      ...m.lineIndexes.map((i) => quote.lineItems[i].description.trim()),
+      // REQ-400 (M5): the heading rides the same call.
+      ...(m.jobName ? [m.jobName] : []),
+      ...(m.summary ? [m.summary] : []),
+    ];
     const results = await Promise.all(missing.map(async (m) => {
-      const lineTexts = m.lineIndexes.map((i) =>
-        quote.lineItems[i].description.trim()
-      );
-      const texts = [...m.descriptionLines, ...lineTexts];
+      const texts = textsOf(m);
       const res = await this.translator.run({
         userId: input.userId,
         texts,
@@ -80,10 +104,7 @@ export class TranslateQuote {
     }));
     // REQ-333: the base language is the typed text itself — no model call.
     for (const m of baseMissing) {
-      const lineTexts = m.lineIndexes.map((i) =>
-        quote.lineItems[i].description.trim()
-      );
-      const texts = [...m.descriptionLines, ...lineTexts];
+      const texts = textsOf(m);
       results.push({ m, res: { texts, translated: true }, texts });
     }
 
@@ -92,6 +113,8 @@ export class TranslateQuote {
     // is unchanged.
     const fresh = await this.quotes.getOwned(input.quoteId, input.userId);
     let descriptionByLang = fresh.descriptionByLang;
+    let jobNameByLang = fresh.jobNameByLang;
+    let summaryByLang = fresh.summaryByLang;
     const lineItems = (fresh.lineItems ?? []).map((li) => ({ ...li }));
     let changed = false;
 
@@ -114,6 +137,30 @@ export class TranslateQuote {
         };
         changed = true;
       });
+      // REQ-400 (M5): the heading, unless it was renamed meanwhile. The base
+      // name keeps its words (cased for its language, REQ-276); a translated
+      // one is cased like a name in that language ("Door Repair").
+      let k = nDesc + m.lineIndexes.length;
+      const lang = m.lang as QuoteLang;
+      if (m.jobName) {
+        const text = res.texts[k++];
+        if (fresh.jobName === quote.jobName) {
+          jobNameByLang = {
+            ...(jobNameByLang ?? {}),
+            [m.lang]: lang === base
+              ? jobNameCase(text, lang)
+              : translatedJobNameCase(text, lang),
+          };
+          changed = true;
+        }
+      }
+      if (m.summary) {
+        const text = res.texts[k++];
+        if (fresh.summary === quote.summary) {
+          summaryByLang = { ...(summaryByLang ?? {}), [m.lang]: text };
+          changed = true;
+        }
+      }
     }
 
     const stampLang = fresh.lang !== base;
@@ -121,6 +168,8 @@ export class TranslateQuote {
     return await this.quotes.update(fresh.id, input.userId, {
       ...(stampLang ? { lang: base } : {}),
       ...(descriptionByLang ? { descriptionByLang } : {}),
+      ...(jobNameByLang ? { jobNameByLang } : {}),
+      ...(summaryByLang ? { summaryByLang } : {}),
       lineItems,
     });
   }
@@ -137,4 +186,26 @@ export class TranslateQuote {
     const me = await this.users?.get(input.userId).catch(() => null);
     return me?.language === "es" ? "es" : "en";
   }
+}
+
+/** One language's work: the description lines and line items it lacks
+ *  (REQ-264) plus its job name and summary (REQ-400). */
+type Batch = MissingTranslation & Omit<MissingHeading, "lang">;
+
+/** REQ-400 (M5): merge what each language lacks into one batch per
+ *  language, so one model call carries the lines and the heading. */
+function batches(
+  body: readonly MissingTranslation[],
+  heading: readonly MissingHeading[],
+): Batch[] {
+  const out = new Map<string, Batch>();
+  for (const m of body) out.set(m.lang, { ...m });
+  for (const h of heading) {
+    const b = out.get(h.lang) ??
+      { lang: h.lang, descriptionLines: [], lineIndexes: [] };
+    if (h.jobName) b.jobName = h.jobName;
+    if (h.summary) b.summary = h.summary;
+    out.set(h.lang, b);
+  }
+  return [...out.values()];
 }

@@ -2,6 +2,7 @@ import { Inject, Injectable } from "#danet/core";
 import {
   LLM_CLIENT,
   type LLMClient,
+  type LLMTurn,
 } from "@agents/domain/business/llm/base/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { disambiguateTitle, versionTitle } from "#quote-flow/version-titles.ts";
@@ -13,8 +14,16 @@ import {
 import { clampSummary } from "#quote-flow/summary-clamp.ts";
 import { scopeBulletsFromRaw } from "#quote-flow/scope-from-raw.ts";
 import {
+  cleanScopeBullet,
+  type CustomerFacts,
+  customerFactsFrom,
   dedupeOptionsByBullets,
+  distinctScopeIndexes,
+  distinctScopeItems,
+  groupedBullets,
+  partitionByCoverage,
   sameBullets,
+  stripCustomerDetails,
   widerBullets,
 } from "#quote-flow/option-bullets.ts";
 import { mentionsMoney } from "#quote-flow/private-cost.ts";
@@ -83,6 +92,17 @@ function normalizeLangs(input?: string[]): Lang[] {
  * contractor's app-language copy; the customer's quote uses the comms-language
  * copy. The user edits bullets and picks one option, whose surviving bullets
  * become the quote description.
+ *
+ * REQ-400 (demo-loop cycle 2, M21): every option is a version of the WHOLE
+ * job. The prompt's output example used to give each option exactly three
+ * bullets, and nothing checked the reply, so a nine-item bath gut came back
+ * as three "versions" holding a third of the job each. A reply whose options
+ * do not each cover the job (partitionByCoverage), or whose most detailed
+ * option holds less than half of what the contractor typed, is asked again
+ * ONCE with the job's items listed; the better reply is kept. Options that
+ * still hold part of the job are dropped, and when none holds all of it the
+ * parts are merged into one version that does. m32: bullets never carry the
+ * customer's name, their contact or the job's duration (cleanScopeBullet).
  */
 @Injectable()
 export class GenerateJobOptions {
@@ -116,53 +136,194 @@ export class GenerateJobOptions {
     // extra "byLang" nesting made gpt-4o-mini emit ONE option carrying three
     // duplicate "byLang" keys (JSON.parse keeps the last → one card). The
     // example spells out all three options; nothing is left to "...".
+    // REQ-400 (M21): the bullets example is open-ended — a fixed three-line
+    // example made the model split a nine-item job into three thirds.
     const optionShape = `{ ${
       langs.map((l) =>
-        `"${l}": { "jobName": "...", "summary": "...", "bullets": ["...", "...", "..."] }`
+        `"${l}": { "jobName": "...", "summary": "...", "bullets": ["<scope line>", "…"] }`
       ).join(", ")
     } }`;
     const multiLangLine =
-      `\n\nOUTPUT STRUCTURE OVERRIDE: return JSON { "options": [ ${optionShape}, ${optionShape}, ${optionShape} ] } — an ARRAY of exactly 3 option objects; each option object has exactly these language keys: ${langList}. Within an option, the bullets in each language MUST be 1:1 translations of the same scope (same count and order). jobName/summary/bullets follow all the rules above, in each language.`;
+      `\n\nOUTPUT STRUCTURE OVERRIDE: return JSON { "options": [ ${optionShape}, ${optionShape}, ${optionShape} ] } — an ARRAY of exactly 3 option objects; each option object has exactly these language keys: ${langList}. "bullets" has as many lines as the option needs: EVERY option covers the WHOLE job (every scope item, in every option) and the three differ only in wording and grouping — never split the job's items across them. No bullet names the customer, their contact or the job's duration. Within an option, the bullets in each language MUST be 1:1 translations of the same scope (same count and order). jobName/summary/bullets follow all the rules above, in each language.`;
+
+    // REQ-400 (m32): the customer the message names — never a bullet.
+    const facts = customerFactsFrom(raw);
+    const ask: LLMTurn = {
+      role: "user",
+      content: `${
+        t("en", "prompts.generateJobOptions.userPrefix", { raw })
+      }${priceLine}${multiLangLine}`,
+    };
 
     let text: string;
     try {
       const res = await this.llm.respond({
         systemPrompt: SYSTEM_PROMPT,
-        messages: [{
-          role: "user",
-          content: `${
-            t("en", "prompts.generateJobOptions.userPrefix", { raw })
-          }${priceLine}${multiLangLine}`,
-        }],
+        messages: [ask],
         userId: input.userId,
         responseFormat: "json",
       });
       text = res.text ?? "";
     } catch (err) {
       console.error("[generate-job-options] llm call failed:", err);
-      return { options: fallbackOptions(raw, langs), langs, degraded: true };
+      return {
+        options: fallbackOptions(raw, langs, facts),
+        langs,
+        degraded: true,
+      };
     }
 
-    const parsed = tryParseJson(text);
-    const options = normalizeOptions(parsed?.options, langs, primary);
-    if (options.length > 0 && options.length < 3) {
+    let options = normalizeOptions(
+      tryParseJson(text)?.options,
+      langs,
+      primary,
+      facts,
+    );
+    if (options.length === 0) {
+      // REQ-026: a degraded answer must be diagnosable — say what came back.
+      console.warn(
+        "[generate-job-options] reply not usable, using honest fallback:",
+        JSON.stringify(text.slice(0, 400)),
+      );
+      return {
+        options: fallbackOptions(raw, langs, facts),
+        langs,
+        degraded: true,
+      };
+    }
+
+    // REQ-400 (M21): every option must be the whole job. When none is — or
+    // the most detailed one holds less than half of what was typed — ask
+    // once more with the job's items listed, and keep the better reply.
+    const typed = typedScopeItems(raw, primary, facts);
+    let verdict = coverageVerdict(options, typed);
+    if (verdict.score < 2) {
+      const items = distinctScopeItems([
+        ...options.flatMap((o) => o.bullets),
+        ...(verdict.shortOfTyped ? typed : []),
+      ]);
+      console.warn(
+        `[generate-job-options] options do not each cover the job (${verdict.complete.length}/${options.length} whole, ${verdict.detail} of ${typed.length} typed items) — asking again:`,
+        JSON.stringify(text.slice(0, 600)),
+      );
+      try {
+        const again = await this.llm.respond({
+          systemPrompt: SYSTEM_PROMPT,
+          messages: [ask, { role: "assistant", content: text }, {
+            role: "user",
+            content: t("en", "prompts.generateJobOptions.coverageRetry", {
+              items: items.map((i) => `- ${i}`).join("\n"),
+            }),
+          }],
+          userId: input.userId,
+          responseFormat: "json",
+        });
+        const retried = normalizeOptions(
+          tryParseJson(again.text ?? "")?.options,
+          langs,
+          primary,
+          facts,
+        );
+        const retriedVerdict = retried.length
+          ? coverageVerdict(retried, typed)
+          : null;
+        if (retriedVerdict && better(retriedVerdict, verdict)) {
+          options = retried;
+          verdict = retriedVerdict;
+        }
+      } catch (err) {
+        console.error("[generate-job-options] coverage re-ask failed:", err);
+      }
+    }
+    // Parts of the job are never offered as versions of it: keep the whole
+    // ones, else merge the parts into one version that holds every item.
+    const whole = verdict.complete.length > 0
+      ? verdict.complete
+      : [mergeParts(options, langs)];
+    if (whole.length < 3) {
       // The picker promises three versions (P-24); a short answer is worth
       // a look in the logs even though it is usable.
       console.warn(
-        `[generate-job-options] model returned ${options.length} option(s):`,
+        `[generate-job-options] ${whole.length} whole-job option(s) of ${options.length}:`,
         JSON.stringify(text.slice(0, 600)),
       );
     }
-    if (options.length > 0) {
-      return { options: padToThree(options, langs), langs, degraded: false };
-    }
-    // REQ-026: a degraded answer must be diagnosable — say what came back.
-    console.warn(
-      "[generate-job-options] reply not usable, using honest fallback:",
-      JSON.stringify(text.slice(0, 400)),
-    );
-    return { options: fallbackOptions(raw, langs), langs, degraded: true };
+    return {
+      options: padToThree(renumber(whole), langs),
+      langs,
+      degraded: false,
+    };
   }
+}
+
+/** REQ-400 (M21): how well one reply covers the job. */
+interface CoverageVerdict {
+  /** The options that hold the whole job (partitionByCoverage). */
+  complete: JobOption[];
+  /** Bullets in the reply's most detailed option. */
+  detail: number;
+  /** That option holds less than half of the items the contractor typed. */
+  shortOfTyped: boolean;
+  /** 2 = whole-job options, 1 = whole but short of what was typed, 0 = parts. */
+  score: number;
+}
+
+function coverageVerdict(
+  options: JobOption[],
+  typed: readonly string[],
+): CoverageVerdict {
+  const { complete } = partitionByCoverage(options);
+  const detail = Math.max(0, ...options.map((o) => o.bullets.length));
+  const shortOfTyped = typed.length >= 6 && detail * 2 < typed.length;
+  const score = complete.length === 0 ? 0 : shortOfTyped ? 1 : 2;
+  return { complete, detail, shortOfTyped, score };
+}
+
+function better(a: CoverageVerdict, b: CoverageVerdict): boolean {
+  return a.score > b.score || (a.score === b.score && a.detail > b.detail);
+}
+
+/** REQ-400 (M21): the items the contractor typed — the message's lines and
+ *  their comma-separated parts, without the customer's name, contact or a
+ *  duration — to tell a reply that dropped most of the job. */
+function typedScopeItems(
+  raw: string,
+  lang: Lang,
+  facts: CustomerFacts,
+): string[] {
+  const scoped = scopeBulletsFromRaw(raw, lang);
+  if (scoped.degraded) return [];
+  const parts = scoped.bullets
+    .flatMap((line) => line.split(/\s*,\s+/))
+    .map((part) => stripCustomerDetails(part, facts))
+    .filter((part): part is string => !!part);
+  return distinctScopeItems(parts);
+}
+
+/**
+ * REQ-400 (M21): no option holds the whole job (the model split it twice) —
+ * the parts become ONE version holding every item: each distinct item once,
+ * in the reply's order. A language whose bullets line up with the primary's
+ * takes the same lines; otherwise its own distinct items.
+ */
+function mergeParts(options: JobOption[], langs: Lang[]): JobOption {
+  const primary = langs[0];
+  const lines = (l: Lang) =>
+    options.flatMap((o) => (o.byLang[l] ?? o.byLang[primary]).bullets);
+  const picked = distinctScopeIndexes(lines(primary));
+  const byLang: Record<string, JobOptionLang> = {};
+  for (const l of langs) {
+    const aligned = options.every((o) =>
+      (o.byLang[l] ?? o.byLang[primary]).bullets.length ===
+        o.byLang[primary].bullets.length
+    );
+    const all = lines(l);
+    byLang[l] = {
+      ...(options[0].byLang[l] ?? options[0].byLang[primary]),
+      bullets: aligned ? picked.map((i) => all[i]) : distinctScopeItems(all),
+    };
+  }
+  return { id: "opt1", ...byLang[primary], byLang };
 }
 
 /** A prompt-example placeholder echoed back ("...", "…", "<scope line>") —
@@ -176,7 +337,11 @@ function realText(v: unknown): string | undefined {
   return s && !PLACEHOLDER.test(s) ? s : undefined;
 }
 
-function normalizeOneLang(o: unknown, lang: Lang): JobOptionLang | null {
+function normalizeOneLang(
+  o: unknown,
+  lang: Lang,
+  facts: CustomerFacts,
+): JobOptionLang | null {
   const obj = o as { jobName?: unknown; summary?: unknown; bullets?: unknown };
   const bullets = Array.isArray(obj?.bullets)
     ? obj.bullets
@@ -186,6 +351,10 @@ function normalizeOneLang(o: unknown, lang: Lang): JobOptionLang | null {
       // ("Plumber Ray charges $2,800") — never customer job details.
       .filter((b) => !mentionsMoney(b))
       .map((b) => b.replace(/\s+/g, " ").replace(/[.;]+$/, ""))
+      // REQ-400 (m32): "Servicio para Ana López", "Cliente: Ana López", her
+      // phone, "Duración de 4 semanas" — never a scope line.
+      .map((b) => cleanScopeBullet(b, facts))
+      .filter((b): b is string => !!b)
     // REQ-330 (M21/M23): NO cap — REQ-266's 12 still cut a fourteen-item gut
     // job (recessed lights, permit, vanity). The prompt groups past twelve.
     : [];
@@ -205,6 +374,7 @@ function normalizeOptions(
   raw: unknown,
   langs: Lang[],
   primary: Lang,
+  facts: CustomerFacts,
 ): JobOption[] {
   if (!Array.isArray(raw)) return [];
   const out: JobOption[] = [];
@@ -218,11 +388,13 @@ function normalizeOptions(
     const primaryLang = normalizeOneLang(
       (src as Record<string, unknown>)?.[primary],
       primary,
+      facts,
     );
     if (!primaryLang) continue;
     for (const l of langs) {
-      byLang[l] = normalizeOneLang((src as Record<string, unknown>)?.[l], l) ??
-        primaryLang;
+      byLang[l] =
+        normalizeOneLang((src as Record<string, unknown>)?.[l], l, facts) ??
+          primaryLang;
     }
     // Disambiguate duplicate primary jobNames across the option set.
     const unique = disambiguate(byLang[primary].jobName, seenNames, primary);
@@ -300,8 +472,10 @@ function titleCaseWord(w: string): string {
 /**
  * REQ-028 (P-24): the picker promises three versions. A usable but short
  * model answer (1–2 options) is padded with honest variants of the first
- * option — "· Short version" (fewer bullets) and "· Wider scope" (+ jobsite
- * cleanup) — exactly the way the heuristic fallback builds its three.
+ * option — "· Short version" and "· Wider scope" (+ jobsite cleanup) —
+ * exactly the way the heuristic fallback builds its three. REQ-400 (M21):
+ * the short version holds EVERY item in fewer lines (groupedBullets); it used
+ * to drop the last line, i.e. be part of the job.
  * REQ-330 (p15-7): a variant whose bullets equal an option already on the
  * list is skipped — a one-bullet job gets one or two cards, never two alike.
  */
@@ -318,7 +492,7 @@ function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
     for (const l of langs) {
       const src = base.byLang[l] ?? base.byLang[primary];
       const bullets = variant === "short"
-        ? src.bullets.slice(0, Math.max(1, src.bullets.length - 1))
+        ? groupedBullets(src.bullets)
         : widerBullets(src.bullets, t(l, "generateJobOptions.jobsiteCleanup"));
       byLang[l] = {
         jobName: versionTitle(src.jobName, variant, l),
@@ -347,12 +521,21 @@ function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
  * question stripped — never the sentence echoed back (which also titled the
  * cards "I Need To"). When nothing scope-like survives, the one bullet is the
  * localized "New job". Three light variations per requested language keep the
- * picker functional.
+ * picker functional. REQ-400: each variation is the whole job (the short one
+ * groups lines, never drops one), and a line keeps its scope but loses the
+ * customer's name, phone, e-mail and a ", 4 semanas" part (m32).
  */
-function fallbackOptions(raw: string, langs: Lang[]): JobOption[] {
+function fallbackOptions(
+  raw: string,
+  langs: Lang[],
+  facts: CustomerFacts,
+): JobOption[] {
   const scoped = scopeBulletsFromRaw(raw, langs[0]);
   // REQ-330: every typed line survives — no cap.
-  const scopeBase = scoped.degraded ? null : scoped.bullets;
+  const lines = scoped.degraded ? [] : scoped.bullets
+    .map((line) => stripCustomerDetails(line, facts))
+    .filter((line): line is string => !!line);
+  const scopeBase = lines.length > 0 ? lines : null;
 
   const perLang = (lang: Lang, variant: 0 | 1 | 2): JobOptionLang => {
     const base = scopeBase ?? [t(lang, "generateJobOptions.newJob")];
@@ -361,7 +544,7 @@ function fallbackOptions(raw: string, langs: Lang[]): JobOption[] {
     const bullets = variant === 0
       ? base
       : variant === 1
-      ? base.slice(0, 3)
+      ? groupedBullets(base)
       : widerBullets(base, t(lang, "generateJobOptions.jobsiteCleanup"));
     // P-24: the three fallback variants get honest, localized qualifiers
     // ("· Versión breve" / "· Alcance ampliado") instead of "(2)" / "(3)",
@@ -378,9 +561,9 @@ function fallbackOptions(raw: string, langs: Lang[]): JobOption[] {
   };
 
   const primary = langs[0];
-  // REQ-330 (p15-7): a one- to three-line job makes the "short" variant equal
-  // to the full one — equal bullet sets collapse, so the picker never shows
-  // two cards with the same scope.
+  // REQ-330 (p15-7): a one-line job makes the "short" variant equal to the
+  // full one — equal bullet sets collapse, so the picker never shows two
+  // cards with the same scope.
   return renumber(dedupeOptionsByBullets(
     ([0, 1, 2] as const).map((variant) => {
       const byLang: Record<string, JobOptionLang> = {};

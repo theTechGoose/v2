@@ -11,6 +11,9 @@
  * twelve, never to drop one; the picker scrolls.
  */
 
+import { extractCustomerName } from "./quick-quote-prefill.ts";
+import { extractEmail, extractPhone } from "./quote-facts.ts";
+
 /** The "· Wider scope" version: EVERY bullet plus jobsite cleanup (once) —
  *  never fewer items than the full version. */
 export function widerBullets(bullets: string[], cleanup: string): string[] {
@@ -98,4 +101,636 @@ export function seedPickerOptions<T extends PickerOption>(
   generated: readonly T[] | null | undefined,
 ): T[] {
   return dedupeOptionsByBullets([current, ...(generated ?? [])]);
+}
+
+// ── REQ-400 (demo-loop cycle 2, M21): every version is the WHOLE job ───────
+// Pair 7's master-bath gut came back as three "versions" that each held a
+// third of the job (v1 tub out / curbless shower / tile, v2 drain + niche /
+// glass / vanity, v3 drain move / fan + lights / heated floor) and nothing
+// checked it. An option is a version of the job when it MENTIONS every item
+// the job has — grouping and rewording allowed, leaving items out not.
+
+/** Words that name no scope item on their own: function words, generic trade
+ *  verbs ("install", "remove"), "new", "complete", numbers in words. */
+const FILLER_TERMS = new Set([
+  // EN
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "into",
+  "onto",
+  "per",
+  "all",
+  "any",
+  "each",
+  "both",
+  "its",
+  "their",
+  "this",
+  "that",
+  "these",
+  "those",
+  "our",
+  "your",
+  "his",
+  "her",
+  "out",
+  "off",
+  "over",
+  "under",
+  "new",
+  "old",
+  "existing",
+  "install",
+  "installs",
+  "installed",
+  "installing",
+  "installation",
+  "remove",
+  "removes",
+  "removed",
+  "removing",
+  "removal",
+  "replace",
+  "replaces",
+  "replaced",
+  "replacing",
+  "replacement",
+  "repair",
+  "repairs",
+  "repaired",
+  "repairing",
+  "full",
+  "complete",
+  "completed",
+  "entire",
+  "whole",
+  "total",
+  "master",
+  "remodel",
+  "remodeling",
+  "remodelling",
+  "renovation",
+  "renovate",
+  "renovating",
+  "upgrade",
+  "upgrades",
+  "upgraded",
+  "project",
+  "job",
+  "jobs",
+  "work",
+  "works",
+  "service",
+  "services",
+  "labor",
+  "labour",
+  "material",
+  "materials",
+  "provide",
+  "provided",
+  "providing",
+  "include",
+  "includes",
+  "including",
+  "included",
+  "needed",
+  "required",
+  "are",
+  "was",
+  "were",
+  "will",
+  "can",
+  "also",
+  "plus",
+  "only",
+  "just",
+  "more",
+  "less",
+  "about",
+  "approx",
+  "approximately",
+  "every",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+  "eleven",
+  "twelve",
+  "customer",
+  "client",
+  "owner",
+  "homeowner",
+  "call",
+  "text",
+  "contact",
+  "then",
+  "before",
+  "after",
+  "during",
+  "while",
+  "add",
+  "added",
+  "adding",
+  "prep",
+  "prepare",
+  "preparation",
+  // ES (accents stripped)
+  "los",
+  "las",
+  "del",
+  "con",
+  "para",
+  "por",
+  "una",
+  "uno",
+  "unos",
+  "unas",
+  "sin",
+  "sus",
+  "que",
+  "como",
+  "mas",
+  "todo",
+  "toda",
+  "todos",
+  "todas",
+  "este",
+  "esta",
+  "estos",
+  "estas",
+  "ese",
+  "esa",
+  "nuevo",
+  "nueva",
+  "nuevos",
+  "nuevas",
+  "viejo",
+  "vieja",
+  "viejos",
+  "viejas",
+  "antiguo",
+  "antigua",
+  "antiguos",
+  "antiguas",
+  "existente",
+  "existentes",
+  "actual",
+  "actuales",
+  "instalar",
+  "instala",
+  "instalado",
+  "instalada",
+  "instalados",
+  "instalacion",
+  "instalaciones",
+  "retirar",
+  "retiro",
+  "retirado",
+  "quitar",
+  "remover",
+  "remocion",
+  "reemplazar",
+  "reemplazo",
+  "reemplazado",
+  "cambiar",
+  "cambio",
+  "reparar",
+  "reparacion",
+  "reparado",
+  "completo",
+  "completa",
+  "completos",
+  "totales",
+  "remodelacion",
+  "remodelar",
+  "renovacion",
+  "renovar",
+  "mejora",
+  "mejoras",
+  "proyecto",
+  "trabajo",
+  "trabajos",
+  "servicio",
+  "servicios",
+  "mano",
+  "obra",
+  "materiales",
+  "incluye",
+  "incluido",
+  "incluida",
+  "incluir",
+  "incluyendo",
+  "tambien",
+  "principal",
+  "cliente",
+  "clienta",
+  "dos",
+  "tres",
+  "cuatro",
+  "cinco",
+  "seis",
+  "siete",
+  "ocho",
+  "nueve",
+  "diez",
+  "preparar",
+  "preparacion",
+  "agregar",
+  "anadir",
+  "cada",
+  "llamar",
+  "contactar",
+  "avisar",
+  "notify",
+  "email",
+  "correo",
+  "telefono",
+  "phone",
+]);
+
+/** One scope line's content terms: lowercase, accents and punctuation off,
+ *  filler words and bare numbers dropped ("12x24", "60in" stay). */
+export function scopeTerms(line: string): string[] {
+  return (line ?? "").normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length >= 3 && /\p{L}/u.test(w) && !FILLER_TERMS.has(w));
+}
+
+/** Two terms name the same thing when they share their first letters — up to
+ *  five, at least three: "gut"/"gutted", "tile"/"tiles", "install"/
+ *  "installation", "baño"/"baños". */
+function sameTerm(a: string, b: string): boolean {
+  const k = Math.min(5, a.length, b.length);
+  return k >= 3 && a.slice(0, k) === b.slice(0, k);
+}
+
+function mentions(terms: readonly string[], item: readonly string[]): boolean {
+  return item.some((t) => terms.some((s) => sameTerm(s, t)));
+}
+
+/** Indexes of the lines that each name something no earlier line did — the
+ *  job's distinct items, in order (a reworded repeat adds nothing). */
+export function distinctScopeIndexes(lines: readonly string[]): number[] {
+  const seen: string[] = [];
+  const out: number[] = [];
+  lines.forEach((line, i) => {
+    const terms = scopeTerms(line);
+    if (!terms.some((t) => !seen.some((s) => sameTerm(s, t)))) return;
+    out.push(i);
+    seen.push(...terms);
+  });
+  return out;
+}
+
+/** The job's distinct scope items across `lines`, each once, in order. */
+export function distinctScopeItems(lines: readonly string[]): string[] {
+  return distinctScopeIndexes(lines).map((i) => lines[i]);
+}
+
+/** The items `bullets` never mention (an item naming nothing is never
+ *  missed). */
+export function missedScopeItems(
+  bullets: readonly string[],
+  items: readonly string[],
+): string[] {
+  const terms = bullets.flatMap(scopeTerms);
+  return items.filter((item) => {
+    const it = scopeTerms(item);
+    return it.length > 0 && !mentions(terms, it);
+  });
+}
+
+/** How many of a job's items a version may leave unmentioned and still be
+ *  the whole job — none under five; then one in five, for wording drift (a
+ *  synonym, an item folded into another's line, an added cleanup line). */
+export function allowedMisses(itemCount: number): number {
+  return Math.floor(itemCount / 5);
+}
+
+/**
+ * REQ-400 (M21): which options are versions of the WHOLE job and which hold
+ * only part of it. The job's items are the distinct items across every
+ * option; an option that leaves out more than allowedMisses of them is a
+ * part — the demo's three thirds are all parts (none is complete).
+ */
+export function partitionByCoverage<T extends { bullets: string[] }>(
+  options: readonly T[],
+): { complete: T[]; partial: T[]; items: string[] } {
+  const items = distinctScopeItems(options.flatMap((o) => o.bullets));
+  const allowed = allowedMisses(items.length);
+  const complete: T[] = [];
+  const partial: T[] = [];
+  for (const o of options) {
+    (missedScopeItems(o.bullets, items).length <= allowed ? complete : partial)
+      .push(o);
+  }
+  return { complete, partial, items };
+}
+
+/** A line's first letter lowered for joining — an acronym ("LED", "AC")
+ *  keeps its case. */
+function lowerFirst(s: string): string {
+  return /^\p{Lu}\p{Ll}/u.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s;
+}
+
+/**
+ * REQ-400 (M21): the "· Short version" — EVERY item, in fewer lines (two to
+ * a line). It used to be the first three lines, or every line but the last,
+ * which is exactly a version holding part of the job.
+ */
+export function groupedBullets(bullets: readonly string[]): string[] {
+  if (bullets.length <= 1) return bullets.slice();
+  const out: string[] = [];
+  for (let i = 0; i < bullets.length; i += 2) {
+    const a = bullets[i].trim();
+    const b = bullets[i + 1]?.trim();
+    out.push(b ? `${a}; ${lowerFirst(b)}` : a);
+  }
+  return out;
+}
+
+// ── REQ-400 (demo-loop cycle 2, m32): a bullet is scope, never the customer ─
+// Pair 2's lawn job got "Servicio para Ana López" and "Cliente: Ana López" as
+// scope lines, and the first reached the sent agreement.
+
+/** The customer the typed message names, and their contact. */
+export interface CustomerFacts {
+  name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+}
+
+export function customerFactsFrom(raw: string): CustomerFacts {
+  const text = raw ?? "";
+  return {
+    name: extractCustomerName(text),
+    phone: extractPhone(text),
+    email: extractEmail(text),
+  };
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** A word in either case. The patterns below run WITHOUT the `i` flag —
+ *  with it, \p{Lu} would match any letter and every word would be a name. */
+function ci(word: string): string {
+  return [...word].map((c) => {
+    const lo = c.toLowerCase();
+    const up = c.toUpperCase();
+    if (/\s/.test(c)) return "\\s+";
+    return lo === up ? escapeRe(c) : `[${lo}${up}]`;
+  }).join("");
+}
+
+function anyOf(words: readonly string[]): string {
+  return `(?:${words.map(ci).join("|")})`;
+}
+
+const SERVICE_WORDS = anyOf([
+  "servicio",
+  "service",
+  "trabajo",
+  "work",
+  "job",
+  "cotización",
+  "cotizacion",
+  "quote",
+  "presupuesto",
+  "estimate",
+]);
+const CONNECTORS = anyOf(["para", "for", "del", "de", "al", "a", "to"]);
+const ARTICLES = anyOf(["los", "las", "la", "el", "the"]);
+const HONORIFICS = `${
+  anyOf([
+    "familia",
+    "family",
+    "clienta",
+    "cliente",
+    "customer",
+    "client",
+    "señora",
+    "senora",
+    "señor",
+    "senor",
+    "srta",
+    "sra",
+    "sr",
+    "mrs",
+    "mr",
+    "ms",
+    "miss",
+    "dr",
+    "doña",
+    "dona",
+    "don",
+  ])
+}\\.?`;
+const NOT_WORD_BEFORE = "(?<![\\p{L}\\p{N}])";
+const NOT_WORD_AFTER = "(?![\\p{L}\\p{N}])";
+/** "Customer: …", "Teléfono: …", "Duración: …" — a label, not a scope line.
+ *  A hyphen counts only spaced ("Customer - Ana"): "Customer-supplied vanity"
+ *  is scope. */
+const LABEL_LINE = new RegExp(
+  `^\\s*${
+    anyOf([
+      "customer name",
+      "customer",
+      "client",
+      "clienta",
+      "cliente",
+      "homeowner",
+      "owner",
+      "propietaria",
+      "propietario",
+      "dueña",
+      "dueño",
+      "contacto",
+      "contact",
+      "nombre",
+      "name",
+      "teléfono",
+      "telefono",
+      "phone",
+      "cell",
+      "celular",
+      "tel",
+      "e-mail",
+      "email",
+      "correo",
+      "dirección",
+      "direccion",
+      "domicilio",
+      "address",
+      "duración",
+      "duracion",
+      "duration",
+      "timeline",
+      "plazo",
+      "tiempo estimado",
+      "estimated time",
+      "estimated duration",
+      "fecha de inicio",
+      "start date",
+    ])
+  }(?:\\s*[:：–—]|\\s+-)`,
+  "u",
+);
+/** A capitalized name word — "Ana", "López", "McKay", "O'Brien"; never an
+ *  acronym ("Service for HVAC" is scope). */
+const NAME_WORD = "\\p{Lu}(?:['’]\\p{Lu})?\\p{Ll}[\\p{L}'’.-]*";
+/** "Servicio para Ana", "Service for Dave Roof", "Cliente Ana López": a
+ *  label naming a capitalized someone, nothing else. */
+const NAME_LABEL_LINE = new RegExp(
+  `^\\s*(?:(?:${SERVICE_WORDS}s?\\s+(?:${ci("para")}|${
+    ci("for")
+  })\\s+(?:${ARTICLES}\\s+)?(?:${HONORIFICS}\\s+)?)|(?:${
+    anyOf(["clienta", "cliente", "customer", "client"])
+  }\\s+))${NAME_WORD}(?:\\s+${NAME_WORD})*\\s*[.;:]?\\s*$`,
+  "u",
+);
+
+const VOWEL_SETS: Record<string, string> = {
+  a: "aáàäâ",
+  e: "eéèëê",
+  i: "iíìïî",
+  o: "oóòöô",
+  u: "uúùüû",
+};
+
+/** One letter of a name, accent-insensitive; a name word's first letter
+ *  must be a capital (so "Kitchen remodel" is never the name "Kitchen
+ *  Remodel"). */
+function nameLetter(c: string, capital: boolean): string {
+  const base = c.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase();
+  const vowels = VOWEL_SETS[base];
+  if (vowels) {
+    return `[${
+      capital ? vowels.toUpperCase() : vowels + vowels.toUpperCase()
+    }]`;
+  }
+  if (!/\p{L}/u.test(c)) return escapeRe(c);
+  return capital
+    ? escapeRe(c.toUpperCase())
+    : `[${c.toLowerCase()}${c.toUpperCase()}]`;
+}
+
+function namePattern(name: string): string {
+  return name.trim().split(/\s+/).filter(Boolean)
+    .map((w) => [...w].map((c, i) => nameLetter(c, i === 0)).join(""))
+    .join("\\s+");
+}
+
+/** The customer's name with whatever introduces it ("servicio para la
+ *  señora …", "for …", "Cliente …") — every way the name sits in a line. */
+function nameRegex(name: string | null | undefined): RegExp | null {
+  const n = (name ?? "").trim();
+  if (!n) return null;
+  const forms = new Set([n]);
+  const bare = n.replace(/^familia\s+/i, "").replace(/\s+family$/i, "");
+  if (bare && bare !== n) forms.add(bare);
+  const names = [...forms].map(namePattern).join("|");
+  return new RegExp(
+    `${NOT_WORD_BEFORE}(?:${SERVICE_WORDS}\\s+)?(?:${CONNECTORS}\\s+)?(?:${ARTICLES}\\s+)?(?:${HONORIFICS}\\s+)?(?:${names})${NOT_WORD_AFTER}`,
+    "gu",
+  );
+}
+
+const DUR_NUM =
+  "(?:\\d{1,3}(?:[.,]\\d+)?|an?|one|two|three|four|five|six|seven|eight|nine|ten|twelve|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce)";
+const DUR_UNIT =
+  "(?:hours?|hrs?|days?|weeks?|wks?|months?|mos?|horas?|dias?|semanas?|meses|mes)";
+/** "Duración de 4 semanas", "4-week duration", "approximately 2 weeks",
+ *  "2–3 días" — a time to complete and nothing else (matched on the
+ *  lowercased, accent-free line). */
+const DURATION_ONLY = new RegExp(
+  `^(?:(?:duration|duracion|plazo|tiempo|timeline|estimated|estimado|estimada|approximately|approx|aprox|aproximadamente|about|around|roughly|thinking|for|por|during|durante|over|unos|unas|of|de|del|total|job|work|trabajo|the|el|la)\\s+)*${DUR_NUM}(?:\\s*(?:-|–|—|to|a)\\s*${DUR_NUM})?\\s*-?\\s*${DUR_UNIT}(?:\\s+(?:duration|de\\s+duracion|duracion|total|en\\s+total|in\\s+total|approx|approximately|aprox|aproximadamente|of\\s+work|de\\s+trabajo))?$`,
+);
+
+function isDurationOnly(text: string): boolean {
+  const t = text.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase()
+    .replace(/[.;:!?]+$/, "").replace(/\s+/g, " ").trim();
+  return DURATION_ONLY.test(t);
+}
+
+/** Collapse what a removal leaves behind: doubled spaces, a space before
+ *  punctuation, empty parentheses, dangling separators at either end. */
+function tidy(text: string): string {
+  return text
+    .replace(/\(\s*\)/g, " ")
+    .replace(/\s+([,;:.!?)])/g, "$1")
+    .replace(/([(])\s+/g, "$1")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s,;:.\-–—/]+/, "")
+    .replace(/[\s,;:\-–—/]+$/, "")
+    .trim();
+}
+
+/** Comma-separated parts of a line ("…, 4 semanas") — a decimal or
+ *  thousands comma ("1,200") is not a separator. */
+function dropDurationParts(text: string): string {
+  const parts = text.split(/\s*,\s+/);
+  if (parts.length < 2) return text;
+  const kept = parts.filter((p) => !isDurationOnly(p));
+  return kept.length === parts.length || kept.length === 0
+    ? text
+    : kept.join(", ");
+}
+
+function removeName(text: string, facts: CustomerFacts): string {
+  const re = nameRegex(facts.name);
+  return re ? text.replace(re, " ") : text;
+}
+
+/**
+ * REQ-400 (m32): a MODEL bullet as a scope line, or null when it is not one:
+ * a customer / contact / duration label ("Cliente: Ana López", "Duration: 3
+ * days"), a line carrying a phone or an e-mail, "Servicio para <Name>", the
+ * customer's name alone, a duration on its own ("Duración de 4 semanas").
+ * A scope line that also names the customer keeps the scope ("Weekly lawn
+ * mowing for Ana López" → "Weekly lawn mowing").
+ */
+export function cleanScopeBullet(
+  bullet: string,
+  facts: CustomerFacts = {},
+): string | null {
+  const text = (bullet ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  if (extractEmail(text) || extractPhone(text)) return null;
+  if (LABEL_LINE.test(text) || NAME_LABEL_LINE.test(text)) return null;
+  if (isDurationOnly(text)) return null;
+  const stripped = tidy(dropDurationParts(removeName(text, facts)));
+  return scopeTerms(stripped).length > 0 ? stripped : null;
+}
+
+/**
+ * REQ-400 (m32): a line derived from the TYPED message (the honest fallback,
+ * REQ-026) keeps its scope and loses the customer: their name with what
+ * introduces it, their phone and e-mail, a ", 4 semanas" part. Null when
+ * nothing scope-like is left.
+ */
+export function stripCustomerDetails(
+  line: string,
+  facts: CustomerFacts = {},
+): string | null {
+  let text = (line ?? "").replace(/\s+/g, " ").trim();
+  for (let i = 0; i < 8; i++) {
+    const hit = extractEmail(text) ?? extractPhone(text);
+    if (!hit) break;
+    text = text.replace(hit, " ");
+  }
+  if (isDurationOnly(text)) return null;
+  text = tidy(dropDurationParts(tidy(removeName(text, facts))));
+  if (scopeTerms(text).length === 0) return null;
+  return text;
 }
