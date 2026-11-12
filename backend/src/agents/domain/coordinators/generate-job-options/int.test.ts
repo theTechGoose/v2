@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "#std/assert";
 import { GenerateJobOptions } from "./mod.ts";
+import { t } from "@core/i18n/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
 
 /**
@@ -304,4 +305,44 @@ Deno.test("REQ-261 M26 a model bullet naming a money amount is dropped in every 
     "Instalación de plomería del baño",
     "Instalar válvulas de cierre",
   ]);
+});
+
+// REQ-337 (demo-loop cycle 1, p15-1): "Bedroom Repaint" for bedrooms AND a
+// hallway — the 3-word cap made a name covering both areas impossible.
+Deno.test("REQ-337 p15-1 the model's jobName naming every area survives whole, in both languages", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [{
+        byLang: {
+          en: {
+            jobName: "Bedroom & Hallway Repaint",
+            summary: "Repaint three bedrooms and the hallway",
+            bullets: ["Repaint three bedrooms", "Repaint the hallway", "Jobsite cleanup"],
+          },
+          es: {
+            jobName: "Repintar dormitorios y pasillo",
+            summary: "Repintar tres dormitorios y el pasillo",
+            bullets: ["Repintar tres dormitorios", "Repintar el pasillo", "Limpieza"],
+          },
+        },
+      }],
+    }),
+  }));
+  const res = await coord.run({
+    userId: "u1",
+    raw: "repaint 3 bedrooms and the hallway",
+    langs: ["en", "es"],
+  });
+  assertEquals(res.options[0].jobName, "Bedroom & Hallway Repaint");
+  assertEquals(res.options[0].byLang.es.jobName, "Repintar dormitorios y pasillo");
+});
+
+Deno.test("REQ-337 p15-1 the prompt asks for a jobName that names every area within the budget, not 'three words or fewer'", () => {
+  for (const lang of ["en", "es"] as const) {
+    const p = t(lang, "prompts.generateJobOptions");
+    assert(!/three words or fewer/i.test(p), `${lang}: still caps at three words`);
+    assert(/every area/i.test(p), `${lang}: does not ask to cover every area`);
+    assert(/30 characters/.test(p), `${lang}: no character budget`);
+  }
 });

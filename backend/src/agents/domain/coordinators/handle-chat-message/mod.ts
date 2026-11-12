@@ -54,6 +54,7 @@ import { lockStatusFor, QUOTE_LOCKED } from "#quote-flow/quote-lock.ts";
 import { parseChangeOrderRequest } from "@agents/domain/business/change-order-intent/mod.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
 import { extractServiceAddress } from "#quote-flow/quick-quote-prefill.ts";
+import { isValidJobName, jobNameCase } from "#quote-flow/job-name.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -1057,14 +1058,23 @@ export class HandleChatMessage {
           }
         }
         if (!quote) {
+          // REQ-337 (demo m6): the model's own job name when it gave a
+          // valid one; otherwise the store derives it — in the CONTRACTOR's
+          // language (a Spanish summary must not come out "Mantenimiento De
+          // Jardín"), the summary's "— <customer>" tail stripped.
+          const modelJobName = action.payload.jobName?.trim() ?? "";
+          const jobName = isValidJobName(modelJobName)
+            ? jobNameCase(modelJobName, replyLang)
+            : undefined;
           quote = await this.quotes.create(input.userId, {
             summary: action.payload.summary,
+            ...(jobName ? { jobName } : {}),
             lineItems: dtoLineItems,
             estimatedTotal,
             status: "draft",
             ...(customerId ? { customerId } : {}),
             ...(serviceAddress ? { serviceAddress } : {}),
-          });
+          }, { jobNameLang: replyLang });
         }
 
         const card = await this.messages.append({
