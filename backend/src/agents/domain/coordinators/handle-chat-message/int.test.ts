@@ -2820,3 +2820,69 @@ Deno.test("REQ-418 handle-chat-message integration: the typed address wins over 
   );
   assertEquals(stored.serviceAddress, "412 Oak St Austin");
 });
+
+// ── REQ-439 (demo-loop cycle 3, M9): a first draft has a line for every item
+// the contractor typed. Pair 7's all-Spanish master bath named a shower bench
+// and possible mold; the first create_quote had neither, and nothing checked.
+const M9_BATH =
+  'Baño principal: quitar la tina vieja, regadera walk-in con vidrio frameless de 60", ' +
+  "145 sq ft de porcelanato en piso y paredes, vanity doble, extractor nuevo, mover el contacto GFCI, " +
+  "pintura y drywall. Banco en la regadera. Posible moho detrás de la pared, allowance para remediación. " +
+  "Empezamos después de Año Nuevo.";
+const M9_DRAFT = [
+  { description: "Quitar la tina vieja", amountCents: 40_000 },
+  { description: 'Regadera walk-in con vidrio frameless de 60"', amountCents: 600_000 },
+  { description: "Porcelanato en piso y paredes, 145 sq ft", amountCents: 450_000 },
+  { description: "Instalar vanity doble", amountCents: 180_000 },
+  { description: "Extractor nuevo", amountCents: 35_000 },
+  { description: "Mover el contacto GFCI", amountCents: 25_000 },
+  { description: "Pintura y drywall", amountCents: 120_000 },
+];
+const M9_FULL = [
+  ...M9_DRAFT,
+  { description: "Banco en la regadera", amountCents: 90_000 },
+  { description: "Allowance de remediación de moho", amountCents: 150_000 },
+];
+const createQuote = (lineItems: typeof M9_DRAFT) => ({
+  text: "",
+  action: { type: "create_quote" as const, payload: { summary: "Remodelación de baño principal", lineItems } },
+});
+
+Deno.test("REQ-439 (M9) a first draft missing typed items (the bench, the mold) is asked again once with them listed; the draft with their lines is stored", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  const calls: string[][] = [];
+  llm.setHandler((req) => {
+    calls.push(req.messages.map((m) => String(m.content)));
+    return calls.length === 1 ? createQuote(M9_DRAFT) : createQuote(M9_FULL);
+  });
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({ userId: "u-1", conversationId: conv.id, content: M9_BATH });
+  assertEquals(calls.length, 2, "re-asked exactly once");
+  const reask = calls[1].at(-1) ?? "";
+  assert(/banco en la regadera/i.test(reask), `the re-ask names the bench: ${reask}`);
+  assert(/moho/i.test(reask), `the re-ask names the mold: ${reask}`);
+  assert(!/tina vieja|vanity doble/i.test(reask), `the re-ask lists items the draft already has: ${reask}`);
+  const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
+  const lines = stored.lineItems.map((l) => l.description);
+  assert(lines.some((d) => /banco/i.test(d)), JSON.stringify(lines));
+  assert(lines.some((d) => /moho/i.test(d)), JSON.stringify(lines));
+  await resetKv();
+});
+
+Deno.test("REQ-439 (M9) a first draft with a line for every typed item is not asked again", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  let n = 0;
+  llm.setHandler(() => (n++, createQuote(M9_FULL)));
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({ userId: "u-1", conversationId: conv.id, content: M9_BATH });
+  assertEquals(n, 1);
+  const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
+  assertEquals(stored.lineItems.length, M9_FULL.length);
+  await resetKv();
+});

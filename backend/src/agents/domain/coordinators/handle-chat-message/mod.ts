@@ -156,6 +156,11 @@ import {
 } from "@agents/domain/business/tool-calls/mod.ts";
 import { typedAmountsCents } from "@agents/domain/business/change-order-intent/mod.ts";
 import { GenerateJobOptions } from "@agents/domain/coordinators/generate-job-options/mod.ts";
+import {
+  missedTypedItems,
+  typedWorkItems,
+} from "#quote-flow/typed-coverage.ts";
+import { customerFactsFrom } from "#quote-flow/option-bullets.ts";
 import { getWizardSpec } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 
 /** Confirmation phrases that mean "lock the active draft quote." When the
@@ -532,6 +537,9 @@ export class HandleChatMessage {
     const res = await new GenerateJobOptions(this.llm).run({
       userId: input.userId,
       raw: stepJobOptionsRaw(job, step.scope, correction),
+      // REQ-439 (M9): the job and the correction are what every version is
+      // checked against — the request's framing is not the contractor's.
+      typed: `${job}\n${correction}`,
       langs: stepLangs(lang, comms, `${job}\n${correction}`),
     });
     return await this.finishStep(conv, history, userMsg, job, {
@@ -1903,6 +1911,72 @@ export class HandleChatMessage {
         tools,
       };
       llmResponse = await this.llm.respond(request);
+
+      // REQ-439 (demo-loop cycle 3, M9): a FIRST draft has a line for every
+      // item the contractor typed. Pair 7's master bath named a shower bench
+      // and possible mold; the draft had neither and nothing checked. A
+      // draft that leaves typed items out is asked again once, naming them;
+      // the answer is used when it is still a priced draft that leaves out
+      // fewer of them.
+      const draft = llmResponse.action;
+      if (draft?.type === "create_quote" && !conv.quoteId && !changeOrderAsk) {
+        const typedText = history
+          .filter((m) => m.role === "user" && typeof m.content === "string")
+          .map((m) => m.content as string)
+          .join("\n");
+        const work = typedWorkItems(
+          typedText,
+          replyLang,
+          customerFactsFrom(typedText),
+        );
+        const linesOf = (p: typeof draft.payload) => [
+          p.summary,
+          ...p.lineItems.map((l) => l.description),
+        ];
+        const missed = work.length >= 3
+          ? missedTypedItems(linesOf(draft.payload), work)
+          : [];
+        if (missed.length > 0) {
+          console.warn(
+            "[handle-chat] first draft leaves typed items out — asking again:",
+            JSON.stringify(missed),
+          );
+          const again = await this.llm.respond({
+            systemPrompt,
+            messages: [
+              ...llmTurns,
+              {
+                role: "assistant",
+                content: draft.payload.lineItems.map((l) =>
+                  `- ${l.description}: $${(l.amountCents / 100).toFixed(2)}`
+                ).join("\n"),
+              },
+              {
+                role: "user",
+                content: t("en", "prompts.createQuote.missingLines", {
+                  items: missed.map((i) => `- ${i}`).join("\n"),
+                }),
+              },
+            ],
+            userId: input.userId,
+            ...(businessContext ? { businessContext } : {}),
+            tools,
+          }).catch((err) => {
+            console.error("[handle-chat] first-draft re-ask failed:", err);
+            return undefined;
+          });
+          const redo = again?.action;
+          if (
+            redo?.type === "create_quote" &&
+            !quotePriceProblem(redo.payload.lineItems) &&
+            redo.payload.lineItems.length >= draft.payload.lineItems.length &&
+            missedTypedItems(linesOf(redo.payload), work).length < missed.length
+          ) {
+            llmResponse = { ...again!, text: again!.text || llmResponse.text };
+          }
+        }
+      }
+
       // REQ-445: the model's create_quote is checked before it is saved — a
       // missed stated total (re-asked once, then scaled in code), a revision
       // that more than triples with prices nobody typed (asked, nothing

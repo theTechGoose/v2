@@ -368,7 +368,7 @@ export function scopeTerms(line: string): string[] {
 /** Two terms name the same thing when they share their first letters — up to
  *  five, at least three: "gut"/"gutted", "tile"/"tiles", "install"/
  *  "installation", "baño"/"baños". */
-function sameTerm(a: string, b: string): boolean {
+export function sameTerm(a: string, b: string): boolean {
   const k = Math.min(5, a.length, b.length);
   return k >= 3 && a.slice(0, k) === b.slice(0, k);
 }
