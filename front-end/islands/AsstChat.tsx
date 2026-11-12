@@ -332,6 +332,11 @@ interface JobOptionDraft {
  *  the contractor types verbatim instead of picking a generated option. */
 const CUSTOM_OPTION_ID = "__custom__";
 
+/** REQ-338: does the confirm strip's echo need a "show more" past its 3-line clamp? */
+function isLongRawEcho(raw: string): boolean {
+  return raw.length > 180 || raw.split("\n").length > 3;
+}
+
 let bulletSeq = 0;
 function toOptionDrafts(options: JobOption[]): JobOptionDraft[] {
   return options.map((o) => ({
@@ -823,6 +828,8 @@ export default function AsstChat({
    *  and the price-Continue handler combines both pieces to build the
    *  quote. (The other two flows ignore this — they go through the LLM.) */
   const [pendingJobDetailsRaw, setPendingJobDetailsRaw] = useState<string | null>(seed?.jobDetailsRaw ?? null);
+  /** REQ-338: the confirm strip's echo of the typed message, opened past its 3-line clamp */
+  const [rawEchoOpen, setRawEchoOpen] = useState(false);
   /** Captures the raw text the user submitted at the job-details step
    *  so we can render an optimistic user bubble + "Polishing…" indicator
    *  while the polish + create-quote + transition chain runs. */
@@ -4670,7 +4677,11 @@ export default function AsstChat({
       <div class="chat__scroll" ref={scrollRef}>
         {(empty || panelOpen)
           ? (
-            <div class="chat__empty">
+            <div
+              class={`chat__empty${
+                jobOptionsOpen ? " chat__empty--picker" : ""
+              }`}
+            >
               {!priceCaptureOpen && !awaitingJobDetails && !jobOptionsOpen &&
                 !invoiceReview && !invoiceResult && (
                 <>
@@ -5061,8 +5072,51 @@ export default function AsstChat({
                                   </span>
                                   {pendingJobDetailsRaw
                                     ? (
-                                      <span class="chat__confirm-details-text">
+                                      <span
+                                        class={`chat__confirm-details-text${
+                                          rawEchoOpen ? " is-open" : ""
+                                        }`}
+                                      >
                                         {pendingJobDetailsRaw}
+                                      </span>
+                                    )
+                                    : null}
+                                  {/* REQ-338 (demo m31): the echo is clamped
+                                      to three lines; this opens/closes it
+                                      without confirming (the strip is the
+                                      confirm button, so the click must not
+                                      bubble). A span, not a button — a
+                                      button inside a button is invalid. */}
+                                  {pendingJobDetailsRaw &&
+                                      isLongRawEcho(pendingJobDetailsRaw)
+                                    ? (
+                                      <span
+                                        role="button"
+                                        tabIndex={0}
+                                        data-cy="confirm-details-more"
+                                        class="chat__confirm-details-more"
+                                        aria-expanded={rawEchoOpen}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setRawEchoOpen((v) => !v);
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter" || e.key === " ") {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setRawEchoOpen((v) => !v);
+                                          }
+                                        }}
+                                      >
+                                        {rawEchoOpen
+                                          ? tFor(
+                                            lang,
+                                            "asstChat.confirmDetails.showLess",
+                                          )
+                                          : tFor(
+                                            lang,
+                                            "asstChat.confirmDetails.showMore",
+                                          )}
                                       </span>
                                     )
                                     : null}
