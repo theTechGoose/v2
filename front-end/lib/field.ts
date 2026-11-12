@@ -26,6 +26,35 @@ export function shiftIso(iso: string, days: number): string {
   return todayIso(d);
 }
 
+/** one link of the /worker day navigator: where it goes and its label's i18n key */
+export type DayLink = { href: string; key: string };
+
+/**
+ * REQ-362 (demo M35) — the /worker day navigator. Today: "← Yesterday ·
+ * Tomorrow →". Any other day: "← Previous day · Today · Next day →". A day
+ * after today is a read-only preview (REQ-141: no acting on the future).
+ */
+export function workerDayNav(date: string, today: string): {
+  prev: DayLink;
+  today: string | null;
+  next: DayLink;
+  preview: boolean;
+} {
+  const onToday = date === today;
+  return {
+    prev: {
+      href: `/worker?date=${shiftIso(date, -1)}`,
+      key: onToday ? "worker.yesterday" : "worker.prevDay",
+    },
+    today: onToday ? null : "/worker",
+    next: {
+      href: `/worker?date=${shiftIso(date, 1)}`,
+      key: onToday ? "worker.tomorrow" : "worker.nextDay",
+    },
+    preview: date > today,
+  };
+}
+
 /** "Mon, Oct 12" / "lun, 12 oct" */
 export function fmtDay(iso: string, lang: Lang): string {
   const d = new Date(`${iso}T00:00:00`);

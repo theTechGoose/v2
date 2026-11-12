@@ -19,7 +19,12 @@ import {
 } from "../clients/field.ts";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtDay, shiftIso, todayIso, workerScreenLang } from "../lib/field.ts";
+import {
+  fmtDay,
+  todayIso,
+  workerDayNav,
+  workerScreenLang,
+} from "../lib/field.ts";
 import { type Lang, langSignal, setLang, t } from "../lib/i18n.ts";
 
 const CELL_KEY = "pm:worker-cell";
@@ -372,6 +377,10 @@ export default function WorkerScreen(
   const noteOf = (v: Visit) =>
     v.services.map((s) => s.note).find(Boolean) ?? "";
 
+  /** REQ-362 — the day navigator; a day after today is a read-only preview */
+  const nav = date && today ? workerDayNav(date, today) : null;
+  const preview = !!nav?.preview;
+
   const dayLine = () => {
     if (!date) return "";
     const s = fmtDay(date, lang);
@@ -383,7 +392,7 @@ export default function WorkerScreen(
     const done = act_.filter((s) => s.status === "complete").length;
     const all = act_.length > 0 && done === act_.length;
     const note = noteOf(v);
-    const locked = v.services.some((s) => s.locked);
+    const locked = preview || v.services.some((s) => s.locked);
     const onVisit = new Set(
       v.services.filter((s) => s.status !== "skipped").map((s) => s.taskTypeId),
     );
@@ -419,7 +428,7 @@ export default function WorkerScreen(
             <div
               key={s.id}
               class={`svc${s.status === "complete" ? " svc--done" : ""}${
-                s.locked ? " svc--locked" : ""
+                s.locked || preview ? " svc--locked" : ""
               }`}
               data-id={s.id}
             >
@@ -429,7 +438,7 @@ export default function WorkerScreen(
                 data-cy="w-check"
                 aria-label={t("worker.done")}
                 aria-pressed={s.status === "complete"}
-                disabled={s.locked || busy.has(s.id)}
+                disabled={s.locked || preview || busy.has(s.id)}
                 onClick={() =>
                   act(
                     s.id,
@@ -848,20 +857,29 @@ export default function WorkerScreen(
               {dayLine()} · {t("worker.today", { done, n: liveTasks.length })}
             </small>
           </div>
-          <div class="day">
-            {today && date === today
-              ? (
-                <a href={`/worker?date=${shiftIso(today, -1)}`}>
-                  ← {t("worker.yesterday")}
-                </a>
-              )
-              : (
+          {nav && (
+            <div class="day">
+              <a href={nav.prev.href} data-cy="w-day-prev">
+                ← {t(nav.prev.key)}
+              </a>
+              {nav.today && (
                 <>
-                  <span>{t("worker.viewing")} {date}</span> ·{" "}
-                  <a href="/worker">{t("worker.todayLink")} →</a>
+                  <span>{t("worker.viewing")} {date}</span>
+                  <a href={nav.today} data-cy="w-day-today">
+                    {t("worker.todayLink")}
+                  </a>
                 </>
               )}
-          </div>
+              <a href={nav.next.href} data-cy="w-day-next">
+                {t(nav.next.key)} →
+              </a>
+            </div>
+          )}
+          {preview && (
+            <div class="hint" data-cy="w-preview">
+              🔒 {t("worker.preview")}
+            </div>
+          )}
           <div
             class="progress"
             data-cy="w-progress"
