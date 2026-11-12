@@ -9,8 +9,14 @@
  * REQ-269 (demo i18n-formatting-m2): every string comes from the dictionaries
  * (`adminPage.*`) through t(), so the console follows the app language and the
  * topbar's EN/ES toggle like every other page.
+ *
+ * REQ-301 (demo cycle 1, M18 + m35): a refused call — or the overlay's word
+ * that Demo made this browser the customer — LOCKS the page with a plain
+ * notice (never api.ts's raw `GET … failed: 403`), and the users list stays
+ * live: it re-reads on focus/visibility, every ADMIN_REFRESH_MS while visible
+ * and right after a Demo opens; a placeholder name shows as "(no name yet)".
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { adminClient, type AdminUserView } from "../clients/admin.ts";
 import {
   DEMO_OPENING_EVENT,
@@ -20,6 +26,14 @@ import {
 import { fmtPhone } from "../lib/format.ts";
 import { t } from "../lib/i18n.ts";
 import { type FeatureKey, FEATURES } from "../../shared/features.ts";
+import {
+  type AdminLock,
+  displayName,
+  lockFor,
+  refreshWhileVisible,
+} from "../lib/admin-console.ts";
+import { onImpersonation } from "../lib/demo-mode/impersonation-signal.ts";
+import { STAGE_PATH } from "../../shared/demo-mode/protocol.ts";
 
 const wrap = "max-width:980px;margin:0 auto;padding:8px 4px 48px";
 const card =
@@ -57,24 +71,58 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
   const [impersonateId, setImpersonateId] = useState("");
   // REQ-177: Users (search / super-admin / impersonate) and Accounts (feature switches)
   const [tab, setTab] = useState<"users" | "accounts">("users");
+  /** REQ-301 (M18) — this browser's session is not the admin's any more: the page is locked */
+  const [lock, setLock] = useState<AdminLock | null>(null);
+  const busyRef = useRef(false);
+  const lockRef = useRef<AdminLock | null>(null);
+  lockRef.current = lock;
+  const qRef = useRef(q);
+  qRef.current = q;
 
-  async function search(e?: Event) {
+  /** REQ-301 — a failed call: lock the page when the session is refused or an impersonation,
+   *  else the dictionary's plain message (never api.ts's `GET … failed: 403`) */
+  async function fail(err: unknown, fallbackKey: string) {
+    const who = await adminClient.whoami().catch(() => null);
+    const l = lockFor(err, who);
+    if (l) setLock(l);
+    else setError(t(fallbackKey));
+  }
+
+  /** `quiet`: a background refresh — no Searching… flicker, no error clobbered */
+  async function search(e?: Event, quiet = false) {
     e?.preventDefault();
-    setLoading(true);
-    setError(null);
+    if (lockRef.current) return;
+    if (quiet && busyRef.current) return;
+    busyRef.current = true;
+    if (!quiet) {
+      setLoading(true);
+      setError(null);
+    }
     try {
-      setRows(await adminClient.search(q.trim()));
+      setRows(await adminClient.search(qRef.current.trim()));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("adminPage.err.search"));
+      await fail(err, "adminPage.err.search");
     } finally {
-      setLoading(false);
+      busyRef.current = false;
+      if (!quiet) setLoading(false);
     }
   }
 
   // List all users on first load (empty query → the server returns everyone,
-  // capped). Searching then narrows it.
+  // capped). Searching then narrows it. REQ-301 (m35) — and keep it live: on
+  // focus / visibility and every ADMIN_REFRESH_MS while the tab is visible.
+  // REQ-301 (M18) — the overlay's word that Demo made this browser the customer
+  // (this tab or any other of the same browser) locks the page at once.
   useEffect(() => {
     search();
+    const stopRefresh = refreshWhileVisible(() => void search(undefined, true));
+    const stopSignal = onImpersonation((d) =>
+      setLock({ kind: "demo", customer: d.targetName })
+    );
+    return () => {
+      stopRefresh();
+      stopSignal();
+    };
   }, []);
 
   async function toggleSuper(u: AdminUserView) {
@@ -86,7 +134,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
         : await adminClient.grant(u.id);
       setRows((rs) => rs.map((r) => (r.id === u.id ? updated : r)));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("adminPage.err.update"));
+      await fail(err, "adminPage.err.update");
     } finally {
       setBusyId(null);
     }
@@ -100,7 +148,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
       const updated = await adminClient.setFeature(u.id, key, on);
       setRows((rs) => rs.map((r) => (r.id === u.id ? updated : r)));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("adminPage.err.update"));
+      await fail(err, "adminPage.err.update");
     } finally {
       setBusyId(null);
     }
@@ -125,8 +173,10 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
           detail: { ...started, targetName },
         }),
       );
+      // REQ-301 (m35) — the row is re-read the moment a demo opens
+      void search(undefined, true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("adminPage.err.demo"));
+      await fail(err, "adminPage.err.demo");
       // no detail: the overlay asks the server and clears its Opening… pill
       globalThis.dispatchEvent(new Event(DEMO_STARTED_EVENT));
     } finally {
@@ -143,12 +193,14 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
       // The server swapped the pm_session cookie; reload as the target user.
       globalThis.location.href = "/dashboard";
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : t("adminPage.err.impersonate"),
-      );
+      await fail(err, "adminPage.err.impersonate");
       setBusyId(null);
     }
   }
+
+  /** REQ-301 — every action is off while the page is locked */
+  const frozen = busyId !== null || lock !== null;
+  const noName = t("adminPage.noNameYet");
 
   return (
     <div style={wrap}>
@@ -204,14 +256,46 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
             type="submit"
             data-cy="adm-search"
             style={btnPrimary}
-            disabled={loading}
+            disabled={loading || lock !== null}
           >
             {loading ? t("adminPage.searching") : t("adminPage.search")}
           </button>
         </form>
       </div>
 
-      {error && (
+      {lock && (
+        <div
+          role="alert"
+          data-cy="adm-lock"
+          style="background:#fff8e6;border:1px solid #e8d49a;color:#6b5412;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13.5px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"
+        >
+          <span style="flex:1;min-width:200px">
+            {lock.kind === "demo"
+              ? t("adminPage.lock.demo", { customer: lock.customer })
+              : t("adminPage.lock.session")}
+          </span>
+          {lock.kind === "demo" && (
+            <button
+              type="button"
+              data-cy="adm-lock-back"
+              style={btnPrimary}
+              onClick={() => globalThis.location.assign(STAGE_PATH)}
+            >
+              {t("adminPage.lock.back")}
+            </button>
+          )}
+          <button
+            type="button"
+            data-cy="adm-lock-reload"
+            style={btnSecondary}
+            onClick={() => globalThis.location.reload()}
+          >
+            {t("adminPage.lock.reload")}
+          </button>
+        </div>
+      )}
+
+      {error && !lock && (
         <div
           role="alert"
           style="background:#fdecec;border:1px solid #e3b7b7;color:#a83b3b;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13.5px"
@@ -252,11 +336,11 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                   >
                     <td style="padding:10px">
                       <div style="font-weight:600">
-                        {u.businessName || u.name || "—"}
+                        {u.businessName || displayName(u.name, noName)}
                       </div>
-                      {u.businessName && u.name && (
+                      {u.businessName && (
                         <div style="color:var(--fg-muted,#6b7560);font-size:12.5px">
-                          {u.name}
+                          {displayName(u.name, noName)}
                         </div>
                       )}
                     </td>
@@ -271,7 +355,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                             role="switch"
                             data-cy={`adm-feature-${f.key}`}
                             checked={u.features?.[f.key] === true}
-                            disabled={busyId !== null}
+                            disabled={frozen}
                             onChange={(e) =>
                               setFeature(
                                 u,
@@ -317,7 +401,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
               <option value="">{t("adminPage.selectUser")}</option>
               {rows.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {(u.name || u.businessName || t("adminPage.unnamed")) +
+                  {(u.businessName || displayName(u.name, noName)) +
                     " · " +
                     fmtPhone(u.phoneNumber)}
                 </option>
@@ -326,7 +410,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
             <button
               type="button"
               style={btnSecondary}
-              disabled={!impersonateId || busyId !== null}
+              disabled={!impersonateId || frozen}
               onClick={() => impersonate(impersonateId)}
             >
               {t("adminPage.go")}
@@ -354,13 +438,16 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                     key={u.id}
                     style="border-top:1px solid var(--border,#eef1ea)"
                   >
-                    <td style="padding:10px;font-weight:600">
-                      {u.name || "—"}
+                    <td style="padding:10px;font-weight:600" data-cy="adm-name">
+                      {displayName(u.name, noName)}
                     </td>
                     <td style="padding:10px;font-variant-numeric:tabular-nums">
                       {fmtPhone(u.phoneNumber)}
                     </td>
-                    <td style="padding:10px;color:var(--fg-muted,#6b7560)">
+                    <td
+                      style="padding:10px;color:var(--fg-muted,#6b7560)"
+                      data-cy="adm-business"
+                    >
                       {u.businessName || "—"}
                     </td>
                     <td style="padding:10px">
@@ -380,7 +467,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                       <button
                         type="button"
                         style={u.superAdmin ? btnDanger : btnSecondary}
-                        disabled={busyId !== null}
+                        disabled={frozen}
                         onClick={() => toggleSuper(u)}
                       >
                         {busyId === u.id
@@ -394,7 +481,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                           <button
                             type="button"
                             style={btnSecondary + ";margin-left:8px"}
-                            disabled={busyId !== null}
+                            disabled={frozen}
                             onClick={() => impersonate(u.id)}
                           >
                             {t("adminPage.impersonate")}
@@ -407,8 +494,12 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                               (busyId === u.id
                                 ? ";opacity:.65;cursor:wait"
                                 : "")}
-                            disabled={busyId !== null}
-                            onClick={() => demo(u.id, u.name || u.phoneNumber)}
+                            disabled={frozen}
+                            onClick={() =>
+                              demo(
+                                u.id,
+                                displayName(u.name, u.phoneNumber),
+                              )}
                           >
                             {busyId === u.id
                               ? t("adminPage.opening")
