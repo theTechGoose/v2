@@ -352,6 +352,8 @@ export default define.page(async function PublicChangeOrder(ctx) {
                     internal={co.internal === true}
                     search={url.search}
                     version={co.version}
+                    invoiceId={co.invoice?.id}
+                    quoteId={co.quote?.id}
                   />
                 </div>
               </article>

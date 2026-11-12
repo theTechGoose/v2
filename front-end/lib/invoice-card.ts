@@ -109,3 +109,61 @@ export function paymentReceivedTarget(
 export function hasNudgeButton(stage: CardStage): boolean {
   return stage === "claimed" || stage === "out";
 }
+
+/** yyyy-mm-dd + n days (UTC calendar arithmetic) */
+function addDaysIso(iso: string, n: number): string {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** whole days from `a` to `b` (yyyy-mm-dd), or null when either is no date */
+function daysBetween(a?: string, b?: string): number | null {
+  if (!a || !b) return null;
+  const from = Date.parse(a.slice(0, 10) + "T00:00:00Z");
+  const to = Date.parse(b.slice(0, 10) + "T00:00:00Z");
+  if (Number.isNaN(from) || Number.isNaN(to)) return null;
+  return Math.round((to - from) / 86_400_000);
+}
+
+/**
+ * REQ-554 (demo-loop cycle 4, m52): "Send now" issues a scheduled invoice
+ * TODAY, so its dates follow — issued today, due today + its days to pay.
+ * Those are its `netDays` when on file, else the span its schedule had
+ * (scheduledFor → dueDate: a milestone placeholder is due 7 days after its
+ * slot). Never due before it is issued. With neither, only the issue date.
+ */
+export function sendNowDates(
+  inv: { netDays?: number; scheduledFor?: string; dueDate?: string },
+  todayIso: string,
+): { issuedDate: string; dueDate?: string } {
+  const span = typeof inv.netDays === "number"
+    ? inv.netDays
+    : daysBetween(inv.scheduledFor, inv.dueDate);
+  if (span === null) return { issuedDate: todayIso };
+  return {
+    issuedDate: todayIso,
+    dueDate: addDaysIso(todayIso, Math.max(0, span)),
+  };
+}
+
+/**
+ * REQ-554 (m52): a half-delivered send is two facts — the channel that went
+ * (good news, shown green) and the one that failed (shown red) — not one
+ * sentence in the failure red.
+ */
+export function partialSendParts(
+  lang: Lang,
+  failedChannel: "email" | "text",
+  reason: string,
+): { went: string; failed: string } {
+  return failedChannel === "text"
+    ? {
+      went: tFor(lang, "invoicesPage.send.wentEmail"),
+      failed: tFor(lang, "invoicesPage.send.failedText", { reason }),
+    }
+    : {
+      went: tFor(lang, "invoicesPage.send.wentText"),
+      failed: tFor(lang, "invoicesPage.send.failedEmail", { reason }),
+    };
+}

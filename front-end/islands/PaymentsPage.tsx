@@ -47,6 +47,7 @@ import PaymentsKpis from "../components/PaymentsKpis.tsx";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
 import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
+import { refreshDash } from "../lib/dash-cache.ts";
 
 /** Plural helper bound to an explicit language (the reactive `tn` reads the
  *  global lang signal; the logged-in app threads `lang` explicitly). */
@@ -880,6 +881,9 @@ function ClaimCard(
         setFailed(true);
         return;
       }
+      // REQ-554 (demo-loop cycle 4, m23): the sidebar's Invoices badge
+      // reads the dash cache — a settled claim re-counts it.
+      refreshDash().catch(() => {/* the badge keeps its last count */});
       await onSettled();
     } catch {
       setFailed(true);
