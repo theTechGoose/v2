@@ -31,7 +31,11 @@ import {
 import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import { type Lang, langSignal, tFor, tnFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
-import { invoicesHeroMode, reloadInvoiceData } from "../lib/headline-counts.ts";
+import {
+  invoicesHeroMode,
+  reloadInvoiceData,
+  scheduledHeroSubKey,
+} from "../lib/headline-counts.ts";
 import { isChangeOrderMutable } from "../../shared/quote-flow/adjustment-guards.ts";
 import {
   formatPhoneInput,
@@ -556,8 +560,8 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
     (sum, i) => sum + (i.amount ?? 0),
     0,
   );
-  const nextScheduledFor = scheduled.find((i) => !!i.scheduledFor)
-    ?.scheduledFor;
+  const nextScheduled = scheduled.find((i) => !!i.scheduledFor);
+  const nextScheduledFor = nextScheduled?.scheduledFor;
   const paidThisMonthTotal = paidThisMonth.reduce(
     (sum, i) => sum + (i.amount ?? 0),
     0,
@@ -614,6 +618,9 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
         scheduledCount={scheduled.length}
         scheduledCents={scheduledTotal}
         nextScheduledFor={nextScheduledFor}
+        // REQ-411 (m34): a single after-completion bill reads "Bills on
+        // completion", not "Next installment".
+        nextScheduled={nextScheduled}
         overdueCount={overdue.length}
         totalInvoiceCount={enriched.length}
         forecast={forecast}
@@ -808,6 +815,7 @@ function InvoicesHero(
     scheduledCount = 0,
     scheduledCents = 0,
     nextScheduledFor,
+    nextScheduled,
     overdueCount,
     totalInvoiceCount,
     forecast,
@@ -820,6 +828,7 @@ function InvoicesHero(
     scheduledCount?: number;
     scheduledCents?: number;
     nextScheduledFor?: string;
+    nextScheduled?: { installmentTotal?: number };
     overdueCount: number;
     totalInvoiceCount: number;
     forecast?: ForecastResult;
@@ -937,7 +946,7 @@ function InvoicesHero(
             : mode === "scheduled"
             ? (
               <span data-cy="hero-scheduled-next">
-                {tFor(lang, "invoicesPage.sub.scheduledNext")}{" "}
+                {tFor(lang, scheduledHeroSubKey(nextScheduled))}{" "}
                 <strong>
                   {nextScheduledFor
                     ? formatShortDate(nextScheduledFor, lang)

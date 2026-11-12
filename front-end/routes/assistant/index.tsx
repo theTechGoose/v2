@@ -116,6 +116,7 @@ export default define.page(async function AssistantHome(ctx) {
                     (profile?.identity?.commsLanguage
                       ? [profile.identity.commsLanguage]
                       : ["en"])}
+                  invoiceNetDays={profile?.identity?.invoiceNetDays}
                 />
               </section>
             </div>

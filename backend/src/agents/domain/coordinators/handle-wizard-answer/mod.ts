@@ -18,6 +18,8 @@ import { suggestedOptionId } from "@agents/domain/business/terms-prefill/mod.ts"
 import { customerContactError } from "#quote-flow/customer-contact.ts"; // REQ-278
 import { findExistingCustomer } from "#quote-flow/customer-dedupe.ts"; // REQ-331
 import { termFromPick } from "#quote-flow/wizard-terms.ts"; // REQ-347
+import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-411
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { Customer } from "@crm/dto/customer.ts";
@@ -86,6 +88,9 @@ export class HandleWizardAnswer {
     private customers: CustomerStore,
     private users: UserStore,
     private bus: EventBus,
+    /** REQ-411 (m35): the account's days to pay fill the payment step's
+     *  "within {n} days" sub-line. Optional — without it, the default. */
+    private identity?: BusinessIdentityStore,
   ) {}
 
   async run(input: WizardAnswerInput): Promise<WizardAnswerResult> {
@@ -234,6 +239,10 @@ export class HandleWizardAnswer {
       newMessages.push(cta);
     } else {
       const step = progress.activeStep!;
+      const n = accountNetDays(
+        (await this.identity?.get(input.userId).catch(() => null))
+          ?.invoiceNetDays,
+      );
       const wizardMsg = await this.messages.append({
         conversationId: input.conversationId,
         role: "assistant",
@@ -243,7 +252,7 @@ export class HandleWizardAnswer {
           specId: spec.id,
           stepIdx: next.activeStepIdx,
           stepId: step.id,
-          options: localizeOptions(step.options, lang),
+          options: localizeOptions(step.options, lang, { n }),
           hint: step.hint,
           suggestedOptionId: suggestedOptionId(conv.termsPrefill, step),
         },

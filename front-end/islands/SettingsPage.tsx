@@ -34,6 +34,7 @@ import {
   UPGRADE_PLANS,
 } from "../../shared/quote-flow/pricing-plans.ts";
 import { switchQuote } from "../../shared/quote-flow/plan-switch.ts";
+import { accountNetDays } from "../../shared/quote-flow/completion-schedule.ts"; // REQ-411
 import { dollars, PlanCards } from "../components/PlanCards.tsx";
 import {
   handoffOf,
@@ -369,7 +370,7 @@ function EditCard(
   const [site, setSite] = useState(snapshot.identity?.websiteUrl ?? "");
   // REQ-174: the default days a customer has to pay an invoice
   const [netDays, setNetDays] = useState(
-    String(snapshot.identity?.invoiceNetDays ?? 30),
+    String(accountNetDays(snapshot.identity?.invoiceNetDays)),
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -529,10 +530,12 @@ function EditCard(
             onBlur={() => {
               const n = Number(netDays);
               if (!Number.isInteger(n) || n < 0 || n > 365) {
-                setNetDays(String(snapshot.identity?.invoiceNetDays ?? 30));
+                setNetDays(
+                  String(accountNetDays(snapshot.identity?.invoiceNetDays)),
+                );
                 return;
               }
-              if (n !== (snapshot.identity?.invoiceNetDays ?? 30)) {
+              if (n !== accountNetDays(snapshot.identity?.invoiceNetDays)) {
                 saveIdentity({ invoiceNetDays: n });
               }
             }}

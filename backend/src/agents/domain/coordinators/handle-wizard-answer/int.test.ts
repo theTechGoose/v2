@@ -1056,3 +1056,48 @@ Deno.test("REQ-347 M16 a Spanish contractor's transcript previews as the same En
   });
   await resetKv();
 });
+
+Deno.test("REQ-411 (demo-loop cycle 2, m35) handle-wizard-answer integration: the payment step's 'Payment upon completion' sub-line names the account's Settings days to pay (21), not a hard-coded 15", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { BusinessIdentityStore } = await import(
+    "@profile/domain/data/business-identity-store/mod.ts"
+  );
+  const identity = new BusinessIdentityStore();
+  await identity.upsert("u-1", { invoiceNetDays: 21 });
+  const ctx = fresh();
+  const flow = new HandleWizardAnswer(
+    ctx.conversations,
+    ctx.messages,
+    ctx.quotes,
+    ctx.customers,
+    ctx.users,
+    ctx.bus,
+    identity,
+  );
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  await ctx.transitionFlow.run({ userId: "u-1", conversationId: conv.id });
+  let paymentMsg: AgentMessage | undefined;
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") break;
+    const opt = step.options.find((o) => !o.isCustom)!;
+    const r = await flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
+    const next = r.newMessages[1];
+    if ((next.payload as { stepId: string }).stepId === "payment_terms") {
+      paymentMsg = next;
+    }
+  }
+  assert(paymentMsg, "the payment_terms step was emitted");
+  const opts = (paymentMsg!.payload as {
+    options: { id: string; sub?: string }[];
+  }).options;
+  const sub = opts.find((o) => o.id === "net_15")?.sub ?? "";
+  assert(/\b21 days\b/.test(sub), `sub names 21 days: ${sub}`);
+  assert(!/\b15\b/.test(sub), `sub no longer says 15: ${sub}`);
+  await resetKv();
+});

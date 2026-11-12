@@ -507,9 +507,11 @@ Deno.test("REQ-204 send-signed-confirmation run: the email subject, body and PDF
 // "Pay now".
 // ---------------------------------------------------------------------------
 
-Deno.test("REQ-316 (M12) completionTerms: 'Payment upon completion' is a completion term with 15 net days; 'Net N' carries N; due-now / splits / custom are not", () => {
-  assertEquals(completionTerms("Payment upon completion"), { netDays: 15 });
-  assertEquals(completionTerms("payment on completion"), { netDays: 15 });
+// REQ-411 (cycle 2, m35) AMENDMENT: "upon completion" carries the account's
+// days to pay — unset, the 30 Settings shows (was a hard-coded 15).
+Deno.test("REQ-316 (M12) completionTerms: 'Payment upon completion' is a completion term with the account's net days (default 30, REQ-411); 'Net N' carries N; due-now / splits / custom are not", () => {
+  assertEquals(completionTerms("Payment upon completion"), { netDays: 30 });
+  assertEquals(completionTerms("payment on completion", 15), { netDays: 15 });
   assertEquals(completionTerms("Net 30"), { netDays: 30 });
   assertEquals(completionTerms("net-7"), { netDays: 7 });
   assertEquals(completionTerms("Due now"), undefined);
@@ -535,9 +537,12 @@ Deno.test("REQ-316 (M12) the net_15 option's sub-line no longer contradicts its 
       !/mismo día/i.test(t("es", key)),
       `${key} (es) still says mismo día: ${t("es", key)}`,
     );
+    // REQ-411: the wizard keys name the account's days ({n}); the
+    // marketing demo keeps its fixed example.
+    const days = key === "assistantDemo.wiz.optCompletionSub" ? /15/ : /\{n\}/;
     assert(
-      /15/.test(t("en", key)) && /15/.test(t("es", key)),
-      `${key} names the 15 days`,
+      days.test(t("en", key)) && days.test(t("es", key)),
+      `${key} names the days to pay`,
     );
   }
   // The label is the stored EN base every reader localizes — unchanged.
@@ -547,7 +552,7 @@ Deno.test("REQ-316 (M12) the net_15 option's sub-line no longer contradicts its 
   );
 });
 
-Deno.test("REQ-316 (M12) send-signed-confirmation run: 'Payment upon completion' + a completion date → ONE scheduled invoice for that date, due +15, nothing sent, no Pay now", async () => {
+Deno.test("REQ-316 (M12) send-signed-confirmation run: 'Payment upon completion' + a completion date → ONE scheduled invoice for that date, due +30 (the account default, REQ-411), nothing sent, no Pay now", async () => {
   await withKv(async () => {
     const s = freshRun();
     const completion = plusDaysIso(30);
@@ -576,8 +581,8 @@ Deno.test("REQ-316 (M12) send-signed-confirmation run: 'Payment upon completion'
     assertEquals(rows[0].scheduledFor, completion);
     assertEquals(
       rows[0].dueDate,
-      plusDaysIso(45),
-      "due 15 days after completion",
+      plusDaysIso(60),
+      "due the account's default 30 days after completion (REQ-411)",
     );
     assertEquals(rows[0].installmentIndex, 1);
     assertEquals(rows[0].installmentTotal, 1);
@@ -625,7 +630,7 @@ Deno.test("REQ-316 (M12) send-signed-confirmation run: 'Payment upon completion'
     assertEquals(rows.length, 1);
     assertEquals(rows[0].status, "scheduled");
     assertEquals(rows[0].scheduledFor, plusDaysIso(14));
-    assertEquals(rows[0].dueDate, plusDaysIso(29));
+    assertEquals(rows[0].dueDate, plusDaysIso(44)); // REQ-411: +30 default
   });
 });
 
