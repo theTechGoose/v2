@@ -234,3 +234,21 @@ Deno.test("REQ-348 business-identity e2e: a pick is never overridden — an expl
     assertEquals(kept.commsLanguages, undefined, "a legacy single choice stands — nothing is seeded over it");
   });
 });
+
+Deno.test("REQ-500 business-identity e2e: an empty send-in list is a 400 and the languages on record stand (demo cycle 3, M34)", async () => {
+  await withServer(async (port) => {
+    const sid = await loginIn(port, "+15125550105", "es");
+    assertEquals((await putIdentity(port, sid, { commsLanguages: ["es"] })).commsLanguages, ["es"]);
+    for (const commsLanguages of [[], ["fr"], ["  "]]) {
+      const res = await fetch(`http://localhost:${port}/profile/identity`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", "x-session-id": sid },
+        body: JSON.stringify({ commsLanguages }),
+      });
+      assertEquals(res.status, 400, `commsLanguages ${JSON.stringify(commsLanguages)} is refused`);
+      await drain(res);
+    }
+    const now = await fetch(`http://localhost:${port}/profile/identity`, { headers: { "x-session-id": sid } }).then((r) => r.json());
+    assertEquals(now.commsLanguages, ["es"], "the refused writes changed nothing");
+  });
+});

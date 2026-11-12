@@ -9,13 +9,21 @@ import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.
 import { validTimezone } from "@users/domain/business/timezone/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import { sniffLogoImage } from "#quote-flow/logo-image.ts";
-import { commsLanguagesSeed } from "#quote-flow/comms-language.ts";
+import { commsLanguagesSeed, hasSendLanguage } from "#quote-flow/comms-language.ts";
 
 /** REQ-172 — a time zone Intl does not know is a 400, not a stored string */
 class BadTimezone extends Error {
   readonly status = 400;
   constructor(tz: string) {
     super(`unknown time zone: ${tz}`);
+  }
+}
+
+/** REQ-500 (demo cycle 3, M34) — at least one send-in language stays on: an empty list is a 400, not a stored [] */
+class NoSendLanguage extends Error {
+  readonly status = 400;
+  constructor() {
+    super("commsLanguages must name at least one language (en, es)");
   }
 }
 
@@ -52,6 +60,7 @@ export class BusinessIdentityController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const patch = parseUpdateBusinessIdentity(body);
     if (patch.timezone !== undefined && !validTimezone(patch.timezone)) throw new BadTimezone(String(patch.timezone));
+    if (patch.commsLanguages != null && !hasSendLanguage(patch.commsLanguages)) throw new NoSendLanguage();
     if (patch.logoFileId && !(await isOwnImage(this.files, patch.logoFileId, user.id))) {
       return ctx.json({ error: "logo_not_image" }, 422);
     }

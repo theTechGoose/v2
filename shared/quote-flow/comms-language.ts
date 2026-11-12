@@ -92,3 +92,43 @@ export function commsLanguagesSeed(
   if (chosen(existing) || chosen(patch)) return undefined;
   return defaultCommsLanguages(userLanguage);
 }
+
+/**
+ * REQ-500 (demo-loop cycle 3, M34) — at least one send-in language always
+ * stays on. `true` when `code` is the only one ticked: Settings and the wizard
+ * disable that box and show the keep-one hint.
+ */
+export function isLastSendLanguage(
+  selected: readonly string[],
+  code: string,
+): boolean {
+  const list = validList([...selected]);
+  return list.length === 1 && list[0] === normalize(code);
+}
+
+/**
+ * REQ-500 — the send-in list after ticking (`on`) or unticking `code`, in
+ * en, es order; `null` when unticking would leave none (the write is refused,
+ * never sent — the backend answers an empty list with 400).
+ */
+export function toggleSendLanguage(
+  selected: readonly string[],
+  code: string,
+  on: boolean,
+): CommsLang[] | null {
+  const set = new Set<string>(validList([...selected]));
+  const c = normalize(code);
+  if (!c) return null;
+  if (on) set.add(c);
+  else set.delete(c);
+  const list = (["en", "es"] as const).filter((l) => set.has(l));
+  return list.length ? list : null;
+}
+
+/**
+ * REQ-500 — a write that carries `commsLanguages` must name at least one
+ * language we send in (en/es); an empty or all-unknown list is refused.
+ */
+export function hasSendLanguage(list: readonly string[]): boolean {
+  return validList([...list]).length > 0;
+}
