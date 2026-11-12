@@ -33,6 +33,10 @@ interface BoundQuote {
  *  3 = sent (SendQuote), 4 = accepted (AcceptQuote). */
 const DISPATCHED_PHASE = 3;
 
+/** The phase of the divider SendQuote appends — the only divider whose time
+ *  is a send time (REQ-668). AcceptQuote's phase-4 divider is the signing. */
+const SENT_PHASE = 3;
+
 export function settledSendCtaIds(
   messages: readonly ThreadMessage[],
   quote?: BoundQuote | null,
@@ -67,11 +71,16 @@ export function settledSendCtaIds(
  * REQ-339 (demo-loop cycle 1, issue p2 "Chat timestamps a minute early"):
  * the time to stamp on a send CTA. The "Quote + Agreement sent — emailed
  * to …" card is the CTA re-rendered in its sent state, so once it is sent
- * its time is the dispatch — the createdAt of the matching phase-3/4
- * `phase_divider` the server appends after it (the latest one, so a
+ * its time is the dispatch — the createdAt of the matching phase-3
+ * `phase_divider` SendQuote appends after it (the latest one, so a
  * retry after a failed attempt shows the retry) — not the moment the
  * terms wizard finished, 1–2 minutes earlier. Unsent (or settled only by
  * `quote.status`, with no divider in the thread) it keeps its own time.
+ *
+ * REQ-668 (demo-loop cycle 5, issue m66 "A sent message's timestamp
+ * changed from 7:21 to 7:23"): only SEND dividers (phase 3) count. The
+ * phase-4 divider AcceptQuote appends when the customer signs is not a
+ * send, so it must not restamp the sent card with the signing time.
  */
 export function sentCtaTimestamp(
   messages: readonly (ThreadMessage & { createdAt: number })[],
@@ -88,7 +97,7 @@ export function sentCtaTimestamp(
     const d = messages[j];
     if (d.kind !== "phase_divider") continue;
     const dp = (d.payload ?? {}) as { phase?: number; quoteId?: string };
-    if ((dp.phase ?? 0) >= DISPATCHED_PHASE && sameQuote(dp.quoteId)) {
+    if (dp.phase === SENT_PHASE && sameQuote(dp.quoteId)) {
       dispatchedAt = d.createdAt;
     }
   }
