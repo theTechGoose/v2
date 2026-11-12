@@ -700,8 +700,18 @@ Deno.test("REQ-267 ai-assistant-p1-noreply: a correction that re-drafts the quot
   const draft = await quotes.create("u-1", {
     summary: "Interior repaint",
     lineItems: [
-      { description: "Interior walls — 2 coats", quantity: 1, unit: "ea", price: 180_000 },
-      { description: "Paint (materials)", quantity: 1, unit: "ea", price: 30_000 },
+      {
+        description: "Interior walls — 2 coats",
+        quantity: 1,
+        unit: "ea",
+        price: 180_000,
+      },
+      {
+        description: "Paint (materials)",
+        quantity: 1,
+        unit: "ea",
+        price: 30_000,
+      },
     ],
     estimatedTotal: 210_000,
     status: "draft",
@@ -724,12 +734,17 @@ Deno.test("REQ-267 ai-assistant-p1-noreply: a correction that re-drafts the quot
   const result = await flow.run({
     userId: "u-1",
     conversationId: conv.id,
-    content: "Castro Painting will supply the paint myself, and I want a 50% deposit",
+    content:
+      "Castro Painting will supply the paint myself, and I want a 50% deposit",
   });
   const texts = result.newMessages.filter((m) =>
     m.role === "assistant" && m.kind === "text"
   );
-  assertEquals(texts.length, 1, "a correction must not be answered by a bare card");
+  assertEquals(
+    texts.length,
+    1,
+    "a correction must not be answered by a bare card",
+  );
   const reply = texts[0].content;
   assert(reply.includes("removed Paint (materials)"), reply);
   assert(reply.includes("added Paint supplied by Castro Painting"), reply);
@@ -762,7 +777,9 @@ Deno.test("REQ-267 ai-assistant-p1-noreply: the FIRST draft keeps the #36 suppre
     content: "quote interior repaint 1200 sqft",
   });
   assertEquals(
-    result.newMessages.filter((m) => m.kind === "text" && m.role === "assistant").length,
+    result.newMessages.filter((m) =>
+      m.kind === "text" && m.role === "assistant"
+    ).length,
     0,
   );
   await resetKv();
