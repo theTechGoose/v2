@@ -1445,6 +1445,11 @@ function OpenQuotePanel(
       {summaryText && q.jobName?.trim() && (
         <p class="qopen__summary">{summaryText}</p>
       )}
+      {q.isSample && (
+        <p class="qopen__summary" data-cy="quote-sample-note">
+          {tFor(lang, "quotesPage.open.sampleNote")}
+        </p>
+      )}
       {q.customerName && (
         <p class="qopen__client" style="font-size:13px;color:var(--fg-muted)">
           {tFor(lang, "quotesPage.open.customer", { name: q.customerName })}
@@ -1453,11 +1458,17 @@ function OpenQuotePanel(
       <div class="qopen__meta">
         <div class="qopen__amount">{fmtMoney(q.estimatedTotal ?? 0)}</div>
         <div class="qopen__actions">
-          <button type="button" class="qopen__btn" onClick={copyLink}>
-            {copied
-              ? tFor(lang, "quotesPage.open.linkCopied")
-              : tFor(lang, "quotesPage.open.copyLink")}
-          </button>
+          {
+            /* REQ-614 (cycle 4, m16): the onboarding sample has no customer —
+              nothing here shares or sends it (REQ-360 did the card's back). */
+          }
+          {!q.isSample && (
+            <button type="button" class="qopen__btn" onClick={copyLink}>
+              {copied
+                ? tFor(lang, "quotesPage.open.linkCopied")
+                : tFor(lang, "quotesPage.open.copyLink")}
+            </button>
+          )}
           <a
             class="qopen__btn"
             href={`/q/${q.id}`}
