@@ -23,6 +23,10 @@ import { DemoAccess } from "@demo-mode/domain/coordinators/demo-access/mod.ts";
  * always), a tab's `claim`, a stage's `sync`, `replaced` (this staff account opened the demo in a
  * newer window) and `ended` — after the last two the socket is closed. The fan-out (across
  * isolates too) is DemoHub.
+ *
+ * REQ-391 — two messages stay with the socket: `time` is answered with the deploy's clock (each
+ * browser's offset to it, so the stage can measure how late a frame is), and `leaving` keeps why
+ * the page is going on the peer — its departure (`peer … online:false`) carries it.
  */
 @Controller("api/demo-mode")
 export class DemoModeSocketController {
@@ -97,6 +101,14 @@ export class DemoModeSocketController {
       if (typeof e.data !== "string") return;
       const m = parseClientMessage(e.data);
       if (!m) return;
+      // REQ-391 — the browser asks the deploy's time: answered at once, to this socket only
+      if (m.t === "time") return sendJson({ t: "time", c: m.c, s: Date.now() });
+      // REQ-391 — this socket's page is going, and says why: kept (before anything is awaited:
+      // the close comes right behind it) for the departure the hub announces
+      if (m.t === "leaving") {
+        peer.leaving = m.why;
+        return;
+      }
       // A message still in flight when the store goes away (a shutdown, a test's teardown) must
       // not become an unhandled rejection — Deno ends the whole process on one.
       try {

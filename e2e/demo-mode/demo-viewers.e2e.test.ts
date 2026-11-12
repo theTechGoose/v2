@@ -218,14 +218,23 @@ Deno.test("REQ-232 (demo-lifecycle-m1): the customer changes page twice — each
       );
       await sleep(1_500);
       await recordStatus(page);
-      await tab1.goto(`${baseUrl}/customers`);
-      await tab1.locator("[data-cy='demo-status']").waitFor({
-        timeout: 15_000,
-      });
-      await tab1.goto(`${baseUrl}/settings`);
-      await tab1.locator("[data-cy='demo-status']").waitFor({
-        timeout: 15_000,
-      });
+      // REQ-391 AMENDMENT — page changes the APP makes (as its links and the assistant do): a
+      // page pointed elsewhere from outside (the address bar, page.goto) cannot tell that from
+      // leaving the app, and now says "closing" — that is REQ-391's own story
+      const appGoesTo = async (path: string) => {
+        await tab1.evaluate((p: string) =>
+          setTimeout(() => {
+            location.href = p;
+          }, 0), path);
+        await tab1.waitForURL((u: URL) => u.pathname === path, {
+          timeout: 15_000,
+        });
+        await tab1.locator("[data-cy='demo-status']").waitFor({
+          timeout: 15_000,
+        });
+      };
+      await appGoesTo("/customers");
+      await appGoesTo("/settings");
       await sleep(PAST_GRACE_MS);
       const during = await recorded(page);
       expect(

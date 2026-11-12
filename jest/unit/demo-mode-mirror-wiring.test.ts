@@ -261,13 +261,15 @@ describe("REQ-309 (demo M19/m14/m26) — a gap is found while the customer is id
   });
 
   test("the stage pill says Live only once the followed tab's snapshot is in the frame — the fact the connecting overlay uses", () => {
+    // REQ-391 AMENDMENT — the words come from stageStatus, handed the frame's truth (`mirrored`);
+    // "connecting until mirrored" is pinned on stageStatus itself (demo-stage-live.test.ts)
     const label = stage.slice(
       stage.indexOf("const statusLabel ="),
       stage.indexOf("const pillStyle ="),
     );
-    expect(label).toMatch(
-      /status === "direct" \|\| status === "relay"\)?\s*\?\s*mirrored\s*\?\s*t\("demoMode\.live"\)\s*:\s*t\("demoMode\.connecting"\)/,
-    );
+    expect(stage).toMatch(/stageStatus\(\{[\s\S]{0,300}mirrored: !!mirrored/);
+    expect(label).toMatch(/t\("demoMode\.live"\)/);
+    expect(label).toMatch(/t\("demoMode\.connecting"\)/);
   });
 
   test("a frame that does not fit marks the stage dirty, and it keeps asking (every MIRROR_GAP_MS) until a snapshot lands — a stall asks the same way", () => {

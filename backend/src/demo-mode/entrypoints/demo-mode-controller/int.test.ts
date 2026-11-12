@@ -1557,3 +1557,62 @@ Deno.test("REQ-296 a demo that reaches its TTL: the presenter's and the customer
     Deno.env.delete("DEMO_SESSION_TTL_MS");
   }
 });
+
+Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21) over the composed router's socket: a tab that says why it goes is announced gone WITH that reason — navigating, closing — one that says nothing without one, junk is ignored; a browser that asks the time is answered with the deploy's clock", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553091");
+    const hans = await signIn(call, "+15125553092");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553092" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    await stage.next("the stage's welcome");
+
+    // the clock: the browser's own time comes back with the deploy's
+    const before = Date.now();
+    stage.send({ t: "time", c: 1234 });
+    const tm = await stage.next("the deploy's time");
+    assert(tm.t === "time", JSON.stringify(tm));
+    assertEquals(tm.c, 1234);
+    assert(
+      tm.s >= before && tm.s <= Date.now(),
+      `the deploy's clock (${tm.s}) is now`,
+    );
+
+    /** a tab joins, says `why` (or nothing), and closes: what the stage hears of it */
+    const goes = async (why: unknown, what: string) => {
+      const tab = open(made.body.id, ana.body.sessionId);
+      const c = cidOf(await tab.next(`${what}: welcome`));
+      await tab.next(`${what}: the stage is here`);
+      assertEquals(await stage.next(`${what}: arrives`), {
+        t: "peer",
+        online: true,
+        cid: c,
+      });
+      if (why !== undefined) tab.send({ t: "leaving", why });
+      await tab.close();
+      return { c, gone: await stage.next(`${what}: leaves`, 1500) };
+    };
+    const nav = await goes("navigating", "a page change");
+    assertEquals(nav.gone, {
+      t: "peer",
+      online: false,
+      cid: nav.c,
+      why: "navigating",
+    });
+    const closing = await goes("closing", "a closed tab");
+    assertEquals(closing.gone, {
+      t: "peer",
+      online: false,
+      cid: closing.c,
+      why: "closing",
+    });
+    const silent = await goes(undefined, "a tab that said nothing");
+    assertEquals(silent.gone, { t: "peer", online: false, cid: silent.c });
+    const junk = await goes("bored", "a tab that said junk");
+    assertEquals(junk.gone, { t: "peer", online: false, cid: junk.c });
+    await quiet(stage, "the leaving itself is never relayed");
+    await stage.close();
+  });
+});

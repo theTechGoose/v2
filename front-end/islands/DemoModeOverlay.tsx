@@ -44,6 +44,9 @@
  * REQ-298 (demo-loop cycle 1, M5 + M17) — a restart is said: a demo that arrives while the ended
  * notice is up, or within 30 s of an end, puts "{name} started a new demo" in the pill (with a
  * pulse) for a few seconds before the plain "is guiding you" line — never a silent replacement.
+ * REQ-391 (demo-loop cycle 2, M4 + m21) — as the page goes it tells the stage why (navigating to
+ * another page of the app, or closing — leave-hint.ts), and every mirrored frame carries its push
+ * time on the deploy's clock, so the stage can say how late it is.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t } from "../lib/i18n.ts";
@@ -94,6 +97,10 @@ import {
   createRecorder,
   type Recorder,
 } from "../lib/demo-mode/mirror-record.ts";
+import {
+  type LeaveHintHost,
+  watchLeaveHint,
+} from "../lib/demo-mode/leave-hint.ts";
 import PeerPointer, {
   type PointerCmd,
 } from "../components/demo-mode/PeerPointer.tsx";
@@ -594,9 +601,13 @@ export default function DemoModeOverlay() {
     const shifted = () => {
       if (!raf) raf = requestAnimationFrame(replace);
     };
-    // REQ-242 — this screen, recorded (paused until a presenter is there) and sent over the link
+    // REQ-242 — this screen, recorded (paused until a presenter is there) and sent over the link;
+    // REQ-391 — every frame stamped with the deploy's clock, so the stage can tell how late it is
     let link: DemoLink | null = null;
-    const sender = createMirrorSender({ send: (m) => link?.send(m) });
+    const sender = createMirrorSender({
+      send: (m) => link?.send(m),
+      clock: () => link?.now() ?? Date.now(),
+    });
     const recorder = createRecorder(document, {
       emit: (f) => {
         void sender.push(f);
@@ -685,8 +696,15 @@ export default function DemoModeOverlay() {
       },
     });
     linkRef.current = link;
-    // the page is going (a reload, another page): its pointer goes with it
-    const onHide = () => link?.send({ k: "leave" });
+    // REQ-391 (M4 + m21) — what this page knows of what comes next: a page of the app (it saw the
+    // navigation start) or none (closed, the address bar elsewhere)
+    const hint = watchLeaveHint(globalThis as unknown as LeaveHintHost);
+    // the page is going (a reload, another page): it says why first — the stage then waits for
+    // its next page or says at once that it is waiting — and its pointer goes with it
+    const onHide = () => {
+      link?.leaving(hint.why());
+      link?.send({ k: "leave" });
+    };
     globalThis.addEventListener("pagehide", onHide);
     // REQ-305 — the page moves under the pointers: a scroll of any scroller, a resize, the body
     // growing (an image in, a panel opened)
@@ -714,6 +732,7 @@ export default function DemoModeOverlay() {
     });
     return () => {
       globalThis.removeEventListener("pagehide", onHide);
+      hint.stop();
       globalThis.removeEventListener("focus", claim);
       document.removeEventListener("visibilitychange", onVisible);
       document.removeEventListener("pointerdown", claim, { capture: true });

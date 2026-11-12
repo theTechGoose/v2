@@ -3,6 +3,7 @@ import { getKv } from "@core/data/kv/mod.ts";
 import {
   type ClientMessage,
   type EndReason,
+  type LeaveWhy,
   otherRole,
   type Role,
   type ServerMessage,
@@ -19,6 +20,9 @@ export interface Peer {
   send(m: ServerMessage): void;
   /** the demo ended (or this presenter was dropped or replaced): the hub asks the socket to close after the last message */
   close?(): void;
+  /** REQ-391 — what a customer tab's page said as it went (the controller keeps it from the
+   *  socket's `leaving`): its departure carries it, so a stage knows whether a next page comes */
+  leaving?: LeaveWhy;
 }
 
 /** REQ-214 — who a message is from: the viewer, or a presenter by pid; REQ-232 — and which socket */
@@ -160,7 +164,8 @@ export class DemoHub {
   }
 
   /** REQ-214 — a presenter's presence goes to everyone else (never to their own account's other
-   *  sockets), named; a customer tab's to the presenters. REQ-232 — each says which socket */
+   *  sockets), named; a customer tab's to the presenters. REQ-232 — each says which socket.
+   *  REQ-391 — a customer tab's departure says why it went, when its page said so */
   private presence(
     peer: Peer,
     online: boolean,
@@ -175,9 +180,10 @@ export class DemoHub {
         reply,
       };
     }
+    const why = !online && peer.leaving ? { why: peer.leaving } : {};
     return {
       to: otherRole(peer.role),
-      msg: { t: "peer", online, ...cid },
+      msg: { t: "peer", online, ...cid, ...why },
       reply,
     };
   }
@@ -190,7 +196,8 @@ export class DemoHub {
   send(
     sessionId: string,
     from: From,
-    m: Exclude<ClientMessage, { t: "end" }>,
+    // REQ-391 — `leaving` and `time` are the socket's own business (the controller's), never sent on
+    m: Exclude<ClientMessage, { t: "end" | "leaving" | "time" }>,
   ): Promise<void> {
     const stamp = {
       ...(from.pid ? { pid: from.pid } : {}),
