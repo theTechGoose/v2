@@ -67,12 +67,19 @@ export function deferTask(t: FieldTask, to: string, note: string | undefined, ne
   return { copy };
 }
 
-export type WorkerTaskView = Omit<FieldTask, "priceCents" | "invoiceId" | "adminNote"> & { locked: boolean };
+/** REQ-401: why a task is locked — on a draft invoice not sent yet, or invoiced (sent or later) */
+export type LockState = "draft" | "invoiced" | null;
+export type WorkerTaskView = Omit<FieldTask, "priceCents" | "invoiceId" | "adminNote"> & { locked: boolean; lockState: LockState };
 
-/** what a worker is allowed to see of a task — no price, no invoice, no office note */
-export function workerView(t: FieldTask): WorkerTaskView {
+/**
+ * what a worker is allowed to see of a task — no price, no invoice, no office note.
+ * `invoiceStatus` is the status of the task's invoice (when known): a draft is only
+ * "on a draft invoice" (REQ-401, demo m45); anything else — or unknown — is "invoiced".
+ */
+export function workerView(t: FieldTask, invoiceStatus?: string): WorkerTaskView {
   const { priceCents: _p, invoiceId, adminNote: _a, ...rest } = t;
-  return { ...rest, locked: !!invoiceId };
+  const lockState: LockState = !invoiceId ? null : invoiceStatus === "draft" ? "draft" : "invoiced";
+  return { ...rest, locked: !!invoiceId, lockState };
 }
 
 /** how far back a worker may act — today and two days before; a foreman two weeks */

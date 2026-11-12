@@ -105,9 +105,11 @@ export class FieldBatches {
     if (zero.length && !allowZero) throw new FieldError("some drafts have $0 lines — price them, or send with allowZero", 409, { invoiceIds: zero.map((i) => i.id) });
     const today = fieldToday();
     const sent: string[] = [];
-    const failed: { invoiceId: string; reason: string }[] = [];
+    // REQ-401 (demo M30): `code` is what the page translates; `reason` stays for logs and older clients
+    const failed: { invoiceId: string; reason: string; code?: "noRecipient"; customerId?: string }[] = [];
     for (const inv of chosen) {
       const customer = inv.customerId ? await this.customers.get(inv.customerId).catch(() => null) : null;
+      const noRecipient = !customer?.email && !customer?.phoneNumber;
       let ok = false, reason = "no recipient: the customer has no email or phone";
       try {
         if (customer?.email) {
@@ -126,7 +128,7 @@ export class FieldBatches {
         // REQ-174: due = the day it is sent + its days to pay
         await this.invoices.update(inv.id, userId, { status: "sent", issuedDate: inv.issuedDate ?? today, ...(typeof inv.netDays === "number" ? { dueDate: shiftDate(today, inv.netDays) } : {}) });
         sent.push(inv.id);
-      } else failed.push({ invoiceId: inv.id, reason });
+      } else failed.push({ invoiceId: inv.id, reason, ...(noRecipient ? { code: "noRecipient" as const } : {}), ...(inv.customerId ? { customerId: inv.customerId } : {}) });
     }
     return { sent: sent.length, sentIds: sent, failed, batch: await this.get(userId, batchId) };
   }

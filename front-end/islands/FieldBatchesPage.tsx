@@ -19,14 +19,17 @@ import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoneyExact, shiftIso, todayIso } from "../lib/field.ts";
-import { langSignal, t, type Vars } from "../lib/i18n.ts";
+import {
+  batchCounts,
+  describeSend,
+  pluralParens,
+  type SendFailureLine,
+} from "../lib/field-batches.ts";
+import { langSignal, t, tn, type Vars } from "../lib/i18n.ts";
 
 /** "{n} invoice(s)" → "1 invoice" / "3 invoices" (the lang files carry the "(s)") */
 function tp(key: string, vars: Vars): string {
-  return t(key, vars).replace(
-    /\((s|es)\)/g,
-    (_m, x: string) => (vars.n === 1 ? "" : x),
-  );
+  return pluralParens(t(key, vars), Number(vars.n));
 }
 
 const KNOWN_STATUS = new Set([
@@ -85,6 +88,8 @@ export default function FieldBatchesPage() {
   const [summary, setSummary] = useState<PullSummary | null>(null);
   const [flash, setFlash] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // REQ-401: a send's failures, each with its fix (demo M30)
+  const [failures, setFailures] = useState<SendFailureLine[]>([]);
   /** a send refused with 409 because of a $0 line — offer "Send anyway" */
   const [zeroBlocked, setZeroBlocked] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -122,6 +127,7 @@ export default function FieldBatchesPage() {
     if (busy || !from || !to) return;
     setBusy("pull");
     setError(null);
+    setFailures([]);
     setZeroBlocked(false);
     try {
       const r = await fieldClient.pull(from, to);
@@ -159,18 +165,14 @@ export default function FieldBatchesPage() {
     if (busy || !current || checked.size === 0) return;
     setBusy("send");
     setError(null);
+    setFailures([]);
     try {
       const r = await fieldClient.send(current.id, [...checked], allowZero);
       setZeroBlocked(false);
-      setFlash(tp("field.lt.sent", { n: r.sent }));
-      if (r.failed.length) {
-        setError(
-          r.failed.map((f) => {
-            const inv = current.invoices.find((i) => i.id === f.invoiceId);
-            return `${inv?.customerName ?? f.invoiceId}: ${f.reason}`;
-          }).join(" · "),
-        );
-      }
+      // REQ-401 (demo M30): "each client got theirs" only when something went out
+      const told = describeSend(r, current.invoices, t);
+      setFlash(told.flash);
+      setFailures(told.failures);
       setChecked(new Set());
       setCurrent(r.batch);
       await load(r.batch.id);
@@ -191,6 +193,7 @@ export default function FieldBatchesPage() {
     setSummary(null);
     setFlash("");
     setError(null);
+    setFailures([]);
     setZeroBlocked(false);
     setChecked(new Set());
   }
@@ -273,6 +276,17 @@ export default function FieldBatchesPage() {
           </div>
         )}
         {error && <p class="alert">{error}</p>}
+        {failures.map((f, i) => (
+          <p class="alert" data-cy="lt-send-failure" key={i}>
+            {f.text}
+            {f.fix && (
+              <>
+                {" "}
+                <a href="/customers" data-cy="lt-send-fix">{f.fix}</a>
+              </>
+            )}
+          </p>
+        ))}
       </div>
 
       {current && (
@@ -359,14 +373,7 @@ export default function FieldBatchesPage() {
                   >
                     <td>{fmtD(b.from, lang)} → {fmtD(b.to, lang)}</td>
                     <td>
-                      {t("field.lt.counts", {
-                        d: b.invoices.filter((i) => i.status === "draft")
-                          .length,
-                        s: b.invoices.filter((i) => i.status === "sent")
-                          .length,
-                        p: b.invoices.filter((i) => i.status === "paid")
-                          .length,
-                      })}
+                      {batchCounts(b.invoices, tn)}
                     </td>
                     <td class="money">{fmtMoneyExact(batchTotal(b))}</td>
                   </tr>
