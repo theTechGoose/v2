@@ -280,6 +280,28 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
         "",
         "every link and button of the sidebar is on top at its own middle",
       );
+      // REQ-536 (cycle 4, m29) — at desktop width "Connected" is a plain status: no details
+      // toggle that is always "expanded" and whose click changes nothing
+      const desktopStatus = await userPage.evaluate(() => {
+        const pill = document.querySelector("[data-cy='demo-pill']");
+        const status = pill?.querySelector("[data-cy='demo-status']");
+        return {
+          more: pill?.querySelectorAll("[data-cy='demo-more']").length ?? -1,
+          expanded: pill?.querySelectorAll("[aria-expanded]").length ?? -1,
+          inButton: Boolean(status?.closest("button")),
+          text: (status?.textContent ?? "").trim(),
+        };
+      });
+      expect.eq(
+        JSON.stringify(desktopStatus),
+        JSON.stringify({
+          more: 0,
+          expanded: 0,
+          inButton: false,
+          text: "Connected",
+        }),
+        "REQ-536 m29: the desktop pill's status is a plain span, not a dead expanded button",
+      );
 
       // 2. M28 — after a reload, the sidebar's Dashboard link works (a real click: Playwright
       //    refuses a click another element would take)
