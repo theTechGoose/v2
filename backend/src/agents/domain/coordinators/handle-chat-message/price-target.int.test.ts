@@ -504,3 +504,98 @@ Deno.test("REQ-445: a first draft at the contractor's own typed prices is saved 
   );
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-575 (demo-loop cycle 4, M13): a fence (deck, roof) has a floor too
+// ---------------------------------------------------------------------------
+
+/** Pair 8's message, as Hank typed it (fleet-7 stdout:231). */
+const FENCE_JOB =
+  "Quote 120 ft of 6 ft cedar privacy fence with one gate for Joe Patterson";
+const FENCE_SUMMARY = "Cedar privacy fence installation — Joe Patterson";
+/** The demo model's draft: $10/ft + a $400 gate (fleet-7 stdout:233). */
+const FENCE_DEMO: Line[] = [
+  {
+    description: "Cedar privacy fence installation (120 ft, 6 ft height)",
+    amountCents: 120_000,
+  },
+  { description: "Gate installation", amountCents: 40_000 },
+];
+/** A re-ask at a real price: $38/ft + a $600 gate. */
+const FENCE_REAL: Line[] = [
+  {
+    description: "Cedar privacy fence installation (120 ft, 6 ft height)",
+    amountCents: 456_000,
+  },
+  { description: "Gate installation", amountCents: 60_000 },
+];
+const fenceCall = (lineItems: Line[]): LLMResponse => ({
+  text: "",
+  action: {
+    type: "create_quote",
+    payload: { summary: FENCE_SUMMARY, lineItems },
+  },
+});
+
+Deno.test("REQ-575 M13: pair 8's 120 ft cedar fence drafted at $10/ft is re-asked once naming the fence; a model that stays low is lifted to the floor", async () => {
+  const ctx = await fresh();
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  const seen = script(ctx.llm, [fenceCall(FENCE_DEMO)]);
+  const result = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: FENCE_JOB,
+  });
+  assertEquals(seen.length, 2, "one draft, one re-ask");
+  const last = seen[1];
+  const note = last.messages[last.messages.length - 1].content;
+  assertStringIncludes(note, "$1,600");
+  assertStringIncludes(note, "120");
+  assertStringIncludes(note, "fence");
+  const floor = plausibilityFloorCents(FENCE_JOB);
+  assert(floor > sum(FENCE_DEMO), `floor ${floor} is over the demo's $1,600`);
+  const stored = await ctx.quotes.getOwned(result.conversation.quoteId!, "u-1");
+  assertEquals(stored.estimatedTotal, floor);
+  assertEquals(storedTotal(stored), floor);
+  await resetKv();
+});
+
+Deno.test("REQ-575 M13: a fence re-ask that comes back at a real per-foot price is saved as the model wrote it", async () => {
+  const ctx = await fresh();
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  const seen = script(ctx.llm, [fenceCall(FENCE_DEMO), fenceCall(FENCE_REAL)]);
+  const result = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: FENCE_JOB,
+  });
+  assertEquals(seen.length, 2);
+  const stored = await ctx.quotes.getOwned(result.conversation.quoteId!, "u-1");
+  assertEquals(stored.estimatedTotal, sum(FENCE_REAL));
+  await resetKv();
+});
+
+Deno.test("REQ-575 M13: a fence priced by the contractor ('$40 a foot, gate $650') is theirs — never re-asked or lifted", async () => {
+  const ctx = await fresh();
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  const typed: Line[] = [
+    {
+      description: "Cedar privacy fence installation (120 ft)",
+      amountCents: 480_000,
+    },
+    { description: "Gate installation", amountCents: 65_000 },
+  ];
+  const seen = script(ctx.llm, [fenceCall(typed)]);
+  const result = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: `${FENCE_JOB}. fence $4,800 ($40 a foot), gate $650`,
+  });
+  assertEquals(seen.length, 1);
+  assertEquals(
+    (await ctx.quotes.getOwned(result.conversation.quoteId!, "u-1"))
+      .estimatedTotal,
+    545_000,
+  );
+  await resetKv();
+});

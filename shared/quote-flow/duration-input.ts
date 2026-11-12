@@ -5,6 +5,8 @@
  * whole number from 1 to 99, else a message. Empty is not an error yet —
  * "Lock in" just waits for a number.
  */
+import type { DurationUnit } from "./terms-i18n.ts";
+
 export type DurationNumberErrorKey = "asstChat.duration.invalidNumber";
 
 export interface DurationNumber {
@@ -37,4 +39,25 @@ export function durationPreviewHint(
   raw: string | null | undefined,
 ): "asstChat.duration.previewEmpty" | null {
   return (raw ?? "").trim() ? null : "asstChat.duration.previewEmpty";
+}
+
+/**
+ * REQ-575 (demo-loop cycle 4, M3) — a typed duration keeps its half ("Dos
+ * semanas y media" → 2.5 weeks, offered as "2.5 semanas"), but the custom
+ * picker takes whole numbers only (REQ-390 above). It opens on the same
+ * length in a whole unit: a half week or month in days (2.5 weeks → 18 days,
+ * 1.5 months → 45 days), else the next whole number of the unit (3.5 days →
+ * 4 days). A whole duration comes back as it is.
+ */
+export function wholeDuration(
+  d: { n: number; unit: DurationUnit },
+): { n: number; unit: DurationUnit } {
+  if (Number.isInteger(d.n)) return { n: d.n, unit: d.unit };
+  const days = d.unit === "weeks"
+    ? Math.ceil(d.n * 7)
+    : d.unit === "months"
+    ? Math.ceil(d.n * 30)
+    : 0;
+  if (days > 0 && days <= 99) return { n: days, unit: "days" };
+  return { n: Math.min(99, Math.ceil(d.n)), unit: d.unit };
 }

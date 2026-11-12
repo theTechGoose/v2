@@ -532,3 +532,23 @@ Deno.test("REQ-445 B2 priceJumpAsk: names both totals and the unpriced lines (la
   assertStringIncludes(es, "más");
   assert(es !== en);
 });
+
+// ---------------------------------------------------------------------------
+// REQ-575 (demo-loop cycle 4, M3 + M13): one money reader for both sides
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-575 the stated-price money reader IS the shared one — the client's price picker and the suggest-prices floor read 'k' / 'mil' the same way", async () => {
+  const shared = await import("#quote-flow/money-amounts.ts");
+  assertEquals(moneyAmounts, shared.moneyAmounts);
+  // pair 7's spoken Spanish total and her stated costs
+  assertEquals(
+    moneyAmounts("Ponle precio, no sé, como 18 mil?").map((a) => a.cents),
+    [1_800_000],
+  );
+  assertEquals(
+    moneyAmounts(
+      "my crew is 3 guys x 3 weeks x $65/hr = ~$23k labor alone, cabinets are $9.5k",
+    ).map((a) => [a.cents, a.rate]),
+    [[6_500, true], [2_300_000, false], [950_000, false]],
+  );
+});

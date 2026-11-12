@@ -189,8 +189,10 @@ import {
 import {
   customerStepPrefillView,
   extractQuoteFacts,
+  factsSourceText,
   matchPrefillCustomer,
   type QuoteFacts,
+  weekdayLabel,
   wizardPrefillFor,
 } from "../../shared/quote-flow/quote-facts.ts";
 import {
@@ -208,7 +210,8 @@ import { customerStepFeedback } from "../../shared/quote-flow/customer-contact.t
 import {
   durationPreviewHint,
   parseDurationNumber,
-} from "../../shared/quote-flow/duration-input.ts"; // REQ-390, REQ-458
+  wholeDuration,
+} from "../../shared/quote-flow/duration-input.ts"; // REQ-390, REQ-458, REQ-575
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import {
   TimeoutError,
@@ -568,17 +571,19 @@ function composerPlaceholder(
 /** REQ-265 (demo ai-assistant-m1): the text the user typed for THIS job —
  *  the quote's description (the starter-chip flow stores the raw sentence
  *  there) and the thread's own user text (the free-chat flow). Both are
- *  persisted, so the wizard's pre-fills survive a reload. */
+ *  persisted, so the wizard's pre-fills survive a reload. REQ-575 (demo-loop
+ *  cycle 4, M3): the user's own turns are read FIRST — pair 7's description
+ *  "…for the Hendersons" won over her typed "Carol Henderson". */
 function quoteFactsSource(
   quoteDescription: string | undefined,
   msgs: Message[],
 ): string {
-  return [
-    quoteDescription ?? "",
-    ...msgs
+  return factsSourceText(
+    quoteDescription,
+    msgs
       .filter((m) => m.role === "user" && (m.kind ?? "text") === "text")
       .map((m) => m.content ?? ""),
-  ].filter((s) => s.trim().length > 0).join("\n");
+  );
 }
 
 function statusChipLabel(status: string | undefined, lang: Lang): string {
@@ -8862,7 +8867,8 @@ export default function AsstChat({
                               ) {
                                 return (
                                   <CustomDurationPickerForm
-                                    initial={quoteFacts.duration}
+                                    initial={quoteFacts.duration &&
+                                      wholeDuration(quoteFacts.duration)}
                                     sending={sending}
                                     lang={lang}
                                     onSubmit={(durationStr) => {
@@ -8959,6 +8965,31 @@ export default function AsstChat({
                                             )
                                             : prefillOpt.label}
                                         </strong>
+                                        {
+                                          /* REQ-575 (demo-loop cycle 4, M3):
+                                            the typed date wins over the
+                                            typed weekday ("monday nov 24") —
+                                            and says which day it is. */
+                                        }
+                                        {payload.stepId === "start_date" &&
+                                            quoteFacts.startDate
+                                              ?.weekdayMismatch
+                                          ? (
+                                            <span data-testid="wiz-prefill-weekday">
+                                              {" — "}
+                                              {tFor(
+                                                lang,
+                                                "asstChat.wiz.weekdayMismatch",
+                                                {
+                                                  weekday: weekdayLabel(
+                                                    quoteFacts.startDate.iso,
+                                                    lang,
+                                                  ),
+                                                },
+                                              )}
+                                            </span>
+                                          )
+                                          : null}
                                       </span>
                                       <button
                                         type="button"
@@ -10351,6 +10382,20 @@ function CustomerStepPanel(props: {
               aria-describedby={feedback.email ? "cust-email-err" : undefined}
             />
           </div>
+          {
+            /* REQ-575 (demo-loop cycle 4, M3): pair 10's typed phone "555"
+              was dropped without a word — while the phone box is empty, the
+              form says the number in the message is not a full one. */
+          }
+          {prefillFacts?.unusablePhone && !trimmedPhone
+            ? (
+              <div class="cust-pick__hint" data-cy="cust-phone-unusable">
+                {tFor(lang, "asstChat.customerStep.phoneUnusable", {
+                  phone: prefillFacts.unusablePhone,
+                })}
+              </div>
+            )
+            : null}
           {feedback.phone
             ? (
               <div
