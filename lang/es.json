@@ -1245,7 +1245,7 @@
   "invoicesPage.detail.saveBtn": "Guardar cambios",
   "invoicesPage.detail.total": "Total",
   "invoicesPage.detail.paymentReceivedBtn": "Pago recibido",
-  "invoicesPage.cta.outReceived": "Pago recibido →",
+  "invoicesPage.cta.outReceived": "Pago recibido",
   "invoicesPage.pay.title": "¿Cómo pagaron?",
   "invoicesPage.pay.amountLabel": "Monto recibido ($)",
   "invoicesPage.pay.dateLabel": "Recibido el",
