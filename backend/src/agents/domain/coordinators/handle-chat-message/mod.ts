@@ -94,7 +94,10 @@ import {
   type ReviseQuoteResult,
 } from "@agents/domain/coordinators/revise-quote/mod.ts";
 import { changeOrderAsReprice } from "@agents/domain/business/quote-line-revision/mod.ts";
-import { extractServiceAddress } from "#quote-flow/quick-quote-prefill.ts";
+import {
+  acceptModelServiceAddress,
+  extractServiceAddress,
+} from "#quote-flow/quick-quote-prefill.ts";
 import { extractQuoteFacts } from "#quote-flow/quote-facts.ts"; // REQ-331
 import {
   findCustomerNamedInText, // REQ-386
@@ -1818,15 +1821,21 @@ export class HandleChatMessage {
           }
         }
 
-        // REQ-263 (demo ai-assistant-m2): the job address. The model's
-        // `serviceAddress` when it set one; otherwise the address the user
-        // typed in this conversation (latest user turn first) — "412 Oak St
+        // REQ-263 (demo ai-assistant-m2): the job address — "412 Oak St
         // Austin" must never be thrown away because the model left it off.
-        const serviceAddress = action.payload.serviceAddress?.trim() ||
-          [...history].reverse()
-            .filter((m) => m.role === "user" && typeof m.content === "string")
-            .map((m) => extractServiceAddress(m.content))
-            .find((a): a is string => !!a);
+        // REQ-418 (demo-loop cycle 2, M27): the address the user typed in
+        // this conversation (latest user turn first) wins; the model's
+        // `serviceAddress` is only a fallback, and only when it is
+        // address-shaped (never a phone or email) and grounded in a user
+        // turn — the model once returned "512-555-0199" as the address.
+        const userTexts = history
+          .filter((m) => m.role === "user" && typeof m.content === "string")
+          .map((m) => m.content as string);
+        const serviceAddress = [...userTexts].reverse()
+          .map((text) => extractServiceAddress(text))
+          .find((a): a is string => !!a) ||
+          acceptModelServiceAddress(action.payload.serviceAddress, userTexts) ||
+          undefined;
 
         // N7 — update-in-place when the conversation already has a draft
         // quote bound. Previously each create_quote re-issue created a new

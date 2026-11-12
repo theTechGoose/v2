@@ -447,6 +447,55 @@ export function extractServiceAddress(raw: string): string | null {
   return null;
 }
 
+/** A North-American phone anywhere in the value: 512-555-0199,
+ *  (512) 555-0199, +1 512 555 0199, 5125550199. A ZIP+4 (78701-1234) is
+ *  5-4 and never matches. */
+const PHONE_IN =
+  /(?<!\d)(?:\+?1[\s.-]?)?(?:\(\d{3}\)\s?|\d{3}[\s.-]?)\d{3}[\s.-]?\d{4}(?!\d)/;
+const EMAIL_IN = /[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+/;
+
+/**
+ * REQ-418 (demo-loop cycle 2, M27): could this value be a job address at
+ * all? It needs letters, and it carries no phone number and no email — the
+ * model once returned the customer's phone as the address and it seeded the
+ * customer step's job-address box.
+ */
+export function isAddressShaped(value: string): boolean {
+  const v = value.trim();
+  if (!/\p{L}/u.test(v)) return false;
+  if (PHONE_IN.test(v) || EMAIL_IN.test(v)) return false;
+  return true;
+}
+
+/** Lower-case, accent-free words of a text. */
+function addressWords(text: string): string[] {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+/**
+ * REQ-418: the model's create_quote `serviceAddress`, kept only when it is
+ * address-shaped and grounded in what the user typed — every number in it
+ * appears in a user turn, and so does at least one of its words (3+
+ * letters). Rewording ("412 oak st in austin" → "412 Oak St, Austin TX") is
+ * fine; an address nobody typed is not. Returns the trimmed value or null.
+ */
+export function acceptModelServiceAddress(
+  value: string | null | undefined,
+  userTexts: readonly string[],
+): string | null {
+  const v = (value ?? "").trim();
+  if (!v || !isAddressShaped(v)) return null;
+  const typed = new Set(userTexts.flatMap(addressWords));
+  const words = addressWords(v);
+  const numbers = words.filter((w) => /\d/.test(w));
+  if (!numbers.every((n) => typed.has(n))) return null;
+  if (!words.some((w) => !/\d/.test(w) && w.length >= 3 && typed.has(w))) {
+    return null;
+  }
+  return v;
+}
+
 /** City / state / ZIP after the street: Capitalized words, a 2-letter
  *  state, a 5(+4)-digit ZIP, separated by spaces or single commas. */
 function cityTail(rest: string): { text: string; zip: boolean } {

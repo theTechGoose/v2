@@ -1043,7 +1043,9 @@ Deno.test("REQ-263 handle-chat-message integration: create_quote's serviceAddres
   const result = await flow.run({
     userId: "u-1",
     conversationId: conv.id,
-    content: "Deep clean for Maria Lopez at her place, $350",
+    // REQ-418: the model's address must be grounded in what the user typed
+    // (here in a form the deterministic extractor cannot read: lower case).
+    content: "Deep clean for Maria Lopez at 412 oak st in austin, $350",
   });
   const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
   assertEquals(stored.serviceAddress, "412 Oak St, Austin TX");
@@ -2763,4 +2765,58 @@ Deno.test("REQ-375 M11: a locked, unsent quote with its card in the thread — R
   });
   assert(TAP_REOPEN.test(prompt), prompt);
   await resetKv();
+});
+
+// REQ-418 (demo-loop cycle 2, M27): "Client form prefills the phone number
+// into the job address". The model's serviceAddress is only kept when it is
+// address-shaped and grounded in a user turn; the deterministic extractor
+// wins over it.
+// ---------------------------------------------------------------------------
+
+const M27_DEMO =
+  "Cotización rápida: reparar puerta de baño para Maria Lopez, 512-555-0199, $250";
+
+async function runWithModelAddress(content: string, serviceAddress: string) {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  // the model's value goes straight into the payload, as a hostile/buggy
+  // provider would send it — the coordinator must check it itself.
+  llm.setScript([{
+    text: "Aquí está tu cotización.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Cotización: reparar puerta de baño — Maria Lopez",
+        serviceAddress,
+        lineItems: [{ description: "Reparar puerta de baño", amountCents: 25_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({ userId: "u-1", conversationId: conv.id, content });
+  const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
+  await resetKv();
+  return stored;
+}
+
+Deno.test("REQ-418 handle-chat-message integration: the model's phone-as-address is not stored (the demo's exact sentence)", async () => {
+  for (const bad of ["512-555-0199", "Maria Lopez, 512-555-0199"]) {
+    const stored = await runWithModelAddress(M27_DEMO, bad);
+    assertEquals(stored.serviceAddress ?? null, null, `stored ${bad}`);
+  }
+});
+
+Deno.test("REQ-418 handle-chat-message integration: an address the user never typed is not stored", async () => {
+  const stored = await runWithModelAddress(M27_DEMO, "123 Main St, Austin TX");
+  assertEquals(stored.serviceAddress ?? null, null);
+});
+
+Deno.test("REQ-418 handle-chat-message integration: the typed address wins over the model's", async () => {
+  const stored = await runWithModelAddress(
+    "Deep clean for Maria Lopez, 412 Oak St Austin, $350",
+    "Oak St",
+  );
+  assertEquals(stored.serviceAddress, "412 Oak St Austin");
 });

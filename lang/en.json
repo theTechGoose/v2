@@ -2183,7 +2183,7 @@
   "prompts.tools.createQuote.paymentTerms": "Set ONLY when the user states a deposit or payment split; omit otherwise. 'half deposit' / 'half down' / '50% upfront' → '50_50'; a deposit then the balance (no split given) → 'deposit_bal'; '30/30/40' → '30_30_40'; full payment on signing → 'due_now'; payment when the job is done → 'net_15'.",
   "prompts.tools.createQuote.summary": "One-line headline like 'Quote: 2-Car Garage Epoxy Floor'.",
   "prompts.tools.createQuote.jobName": "The job's short name for document titles, at most 30 characters / 5 words, Title Case, naming every area the work covers ('Bedroom & Hallway Repaint', 'Monthly Garden Care'). Never the customer's name, never a price. In the contractor's language.",
-  "prompts.tools.createQuote.serviceAddress": "The job site address when the user gave one (e.g. '412 Oak St Austin'), copied as typed. Leave it out when no address was given — never invent one.",
+  "prompts.tools.createQuote.serviceAddress": "The job site address when the user gave one (e.g. '412 Oak St Austin'), copied as typed. Leave it out when no address was given — never invent one, and never a phone number or email (those are the customer's contact details, not where the job is).",
   "prompts.tools.lockQuote.description": "Lock the active quote so it can't be edited. Fire when the user confirms (e.g. 'lock it in', 'send it', 'yes').",
   "prompts.tools.lockQuote.quoteId": "The id of the quote to lock — typically the most recently drafted quote in this conversation.",
   "prompts.tools.requestTermsTransition.description": "Offer to advance from phase 1 (quote) to phase 2 (agreement terms wizard). Fire AFTER lock_quote in the same response.",
