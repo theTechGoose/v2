@@ -128,7 +128,8 @@ describe("REQ-251 the signed quote page renders the Pay now button", () => {
   it("REQ-251 quote-doc.tsx derives the target with payNowTarget and renders data-cy='quote-pay-now' linking its url", () => {
     expect(doc).toMatch(/payNowTarget\(/);
     expect(doc).toMatch(/data-cy="quote-pay-now"/);
-    expect(doc).toMatch(/href=\{payNow\.url\}/);
+    // REQ-492: the link carries the page language (withLang)
+    expect(doc).toMatch(/href=\{withLang\(payNow\.url, lang\)\}/);
     expect(doc).toMatch(/quoteDoc\.payNow/);
   });
 

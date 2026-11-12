@@ -43,11 +43,11 @@ async function signIn(
     body: JSON.stringify({ language: lang, name: "Signed Next Step Story" }),
   });
   await me.body?.cancel();
-  const [name, value] = cookie.split("=");
+  // The browser is the CUSTOMER's: only their pm_lang pick, never the
+  // owner's session (the owner gets a preview with no sign form, REQ-306).
   const hosts = new Set([new URL(baseUrl).hostname, "localhost", "127.0.0.1"]);
   await page.context().addCookies(
     [...hosts].flatMap((domain) => [
-      { name, value, domain, path: "/" },
       { name: "pm_lang", value: lang, domain, path: "/" },
     ]),
   );
@@ -192,7 +192,7 @@ Deno.test("REQ-311: signing keeps the customer where they signed — no reload, 
       await banner.locator("[data-cy='quote-signed-banner-pay']").getAttribute(
         "href",
       ),
-      `/i/${billed[0].id}`,
+      `/i/${billed[0].id}?lang=en`, // REQ-492: carries the page language
       "the banner's next step links the billed invoice",
     );
   }));

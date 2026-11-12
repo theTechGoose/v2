@@ -43,6 +43,7 @@ import {
   versionChangeLine,
 } from "../../shared/documents/linked-view.ts";
 import type { VersionChanges } from "../../shared/documents/versions.ts";
+import { withLang } from "../../shared/quote-flow/public-lang.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import {
@@ -424,7 +425,7 @@ export function QuoteDoc(
                 ? (
                   <a
                     data-cy="quote-signed-banner-pay"
-                    href={payNow.url}
+                    href={withLang(payNow.url, lang)}
                     style={`color:${PINK_DARK};font-weight:800;text-decoration:none`}
                   >
                     {tFor(lang, "quoteDoc.signedBanner.next", {
@@ -943,7 +944,7 @@ export function QuoteDoc(
                 >
                   <a
                     data-cy="quote-pay-now"
-                    href={payNow.url}
+                    href={withLang(payNow.url, lang)}
                     style={`display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:12px 28px;border-radius:999px;background:${PINK};color:#fff;text-decoration:none;font-weight:800;font-size:16px;box-shadow:0 6px 18px rgba(255,107,107,0.35)`}
                   >
                     {tFor(lang, "quoteDoc.payNow", {
@@ -1093,7 +1094,7 @@ export function QuoteDoc(
                 data-cy={r.kind === "invoice"
                   ? "related-doc-invoice"
                   : "related-doc-change-order"}
-                href={r.url}
+                href={withLang(r.url, lang)}
                 style={`display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:9px 0;border-bottom:1px solid ${LINE};text-decoration:none;color:${INK};font-size:14px`}
               >
                 <span style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline">
