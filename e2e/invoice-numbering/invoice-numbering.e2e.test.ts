@@ -250,9 +250,11 @@ Deno.test("REQ-206: the standalone invoice form — customer prefills bill-to, t
       await page.locator("[data-cy='invoice-edit']").isDisabled(),
       "edit is disabled on a paid invoice",
     );
-    expect(
-      await page.locator("[data-cy='invoice-delete']").isDisabled(),
-      "delete is disabled on a paid invoice",
+    // REQ-485 (m22): Delete is not offered at all on a paid invoice.
+    expect.eq(
+      await page.locator("[data-cy='invoice-delete']").count(),
+      0,
+      "no delete on a paid invoice",
     );
     expect(
       await page.locator("[data-cy='invoice-discount-btn']").isDisabled(),
