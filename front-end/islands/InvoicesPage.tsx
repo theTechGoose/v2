@@ -35,6 +35,7 @@ import QuoteTrack from "./QuoteTrack.tsx";
 import {
   cardDate,
   hasSecondaryPaymentReceived,
+  paymentReceivedTarget,
   scheduledSubline,
 } from "../lib/invoice-card.ts";
 import { Icon } from "../components/ui/Icon.tsx";
@@ -441,6 +442,24 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
       ? new URLSearchParams(globalThis.location.search).get("open")
       : null
   );
+  // REQ-489 (demo-loop cycle 3, p8-pair1-d): bumped each time a card opens the
+  // detail in pay mode, so the panel remounts and its REQ-018 initializer
+  // reads the fresh ?pay=1 even when that invoice was already open.
+  const [payNonce, setPayNonce] = useState(0);
+  /** REQ-489: "Payment received" on a card opens the detail in pay mode IN
+   *  PLACE — no page load. Only a call from another page navigates. */
+  function openForPayment(id: string) {
+    const target = paymentReceivedTarget(globalThis.location.href, id);
+    if (!target.inPlace) {
+      globalThis.location.assign(target.url);
+      return;
+    }
+    history.replaceState(null, "", target.url);
+    setOpenId(id);
+    setPayNonce((n) => n + 1);
+    // The detail renders above the hero — bring it into view.
+    globalThis.scrollTo?.({ top: 0, behavior: "smooth" });
+  }
 
   // Re-pull the invoice list after a mutation (discount / edit / change
   // order / payment received) so every displayed total is the live
@@ -591,6 +610,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
       }
       {openInv && (
         <InvoiceDetail
+          key={`${openInv.id}:${payNonce}`}
           inv={openInv}
           lang={lang}
           onClose={() => {
@@ -665,6 +685,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       idx={i}
                       now={now}
                       lang={lang}
+                      onPaymentReceived={openForPayment}
                     />
                   ))}
                 </div>
@@ -690,6 +711,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       idx={i}
                       now={now}
                       lang={lang}
+                      onPaymentReceived={openForPayment}
                     />
                   ))}
                 </div>
@@ -715,6 +737,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       idx={i}
                       now={now}
                       lang={lang}
+                      onPaymentReceived={openForPayment}
                     />
                   ))}
                 </div>
@@ -742,6 +765,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       idx={i}
                       now={now}
                       lang={lang}
+                      onPaymentReceived={openForPayment}
                     />
                   ))}
                 </div>
@@ -767,6 +791,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       idx={i}
                       now={now}
                       lang={lang}
+                      onPaymentReceived={openForPayment}
                     />
                   ))}
                 </div>
@@ -792,6 +817,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       idx={i}
                       now={now}
                       lang={lang}
+                      onPaymentReceived={openForPayment}
                     />
                   ))}
                 </div>
@@ -2101,11 +2127,13 @@ function plusDays(n: number): string {
 }
 
 function InvoiceCard(
-  { inv, idx, now, lang }: {
+  { inv, idx, now, lang, onPaymentReceived }: {
     inv: EnrichedInvoice;
     idx: number;
     now: Date;
     lang: Lang;
+    /** REQ-489: opens this invoice in pay mode in place (no page load). */
+    onPaymentReceived: (id: string) => void;
   },
 ) {
   const [flipped, setFlipped] = useState(false);
@@ -2359,10 +2387,11 @@ function InvoiceCard(
     }
   }
   /** REQ-018 (NW-27): open this invoice's detail panel in "Payment received"
-   *  mode via the deep link the panel already honours. */
+   *  mode. REQ-489 (cycle 3, p8-pair1-d): in place on /invoices — never a
+   *  full page load. */
   function doPaymentReceived(e: Event) {
     e.stopPropagation();
-    globalThis.location.assign(`/invoices?open=${inv.id}&pay=1`);
+    onPaymentReceived(inv.id);
   }
   /** REQ-021 (NW-31a): a nudge is the reminder CADENCE (day 3 / 7 / 14 / 30
    *  by how overdue the invoice is), never the full invoice re-texted. */

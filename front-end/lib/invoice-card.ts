@@ -75,3 +75,26 @@ export function scheduledSubline(
     date: cardDate(scheduledFor, now, lang),
   });
 }
+
+/**
+ * REQ-489 (demo-loop cycle 3, p8-pair1-d): where "Payment received" takes the
+ * contractor. Already on /invoices → open the detail IN PLACE (the island
+ * sets its openId and replaces the URL with this one, keeping the other
+ * params); from any other page → navigate to the /invoices deep link
+ * REQ-018 honours.
+ */
+export function paymentReceivedTarget(
+  currentHref: string,
+  invoiceId: string,
+): { inPlace: boolean; url: string } {
+  const here = new URL(currentHref);
+  const onInvoices = here.pathname.replace(/\/+$/, "") === "/invoices";
+  if (!onInvoices) {
+    const q = new URLSearchParams({ open: invoiceId, pay: "1" });
+    return { inPlace: false, url: `/invoices?${q}` };
+  }
+  here.searchParams.set("open", invoiceId);
+  here.searchParams.set("pay", "1");
+  here.hash = "";
+  return { inPlace: true, url: here.pathname + here.search };
+}
