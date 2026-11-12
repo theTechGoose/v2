@@ -2569,3 +2569,65 @@ Deno.test("REQ-377 B1: change_order's targetTotalCents (the tool's new-total fie
   assertEquals(pending.estimatedTotal, 1_975_000);
   await resetKv();
 });
+
+// --- REQ-386 (demo-loop cycle 2, m17): "Bob wants …" binds the existing Bob --
+
+Deno.test("REQ-386 m17: create_quote after 'Bob wants 6 recessed lights' binds the contractor's existing Bob", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, customers, flow } = fresh();
+  await seedOnboarded("u-1");
+  const bob = await customers.create("u-1", {
+    name: "Bob",
+    phoneNumber: "(512) 555-0142",
+  });
+  await customers.create("u-2", { name: "Bob" }); // another owner's
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Quote: Recessed lights",
+        lineItems: [{ description: "6 recessed lights", amountCents: 90_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Need a quote: Bob wants 6 recessed lights kitchen $900",
+  });
+  assertEquals(result.conversation.customerId, bob.id);
+  const card = result.newMessages.find((m) => m.kind === "action_card")!;
+  const quoteId = (card.payload as { quoteId: string }).quoteId;
+  assertEquals((await quotes.getOwned(quoteId, "u-1")).customerId, bob.id);
+  await resetKv();
+});
+
+Deno.test("REQ-386 m17: a known customer named mid-sentence without a lead-in ('… Maria Gutierrez, zip 78745') is bound", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, customers, flow } = fresh();
+  await seedOnboarded("u-1");
+  const maria = await customers.create("u-1", { name: "Maria Gutierrez" });
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Quote: Master bath",
+        lineItems: [{ description: "Bath gut", amountCents: 2_800_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Master bath gut for the Gutierrez family. Maria Gutierrez, zip 78745, $28,000",
+  });
+  assertEquals(result.conversation.customerId, maria.id);
+  await resetKv();
+});

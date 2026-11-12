@@ -140,12 +140,14 @@ export class HandleWizardAnswer {
     let customerCustomValue = input.customValue;
     let boundCustomerId = conv.customerId;
     let boundCustomerName: string | undefined;
+    /** REQ-386 (demo m17): the job address the customer step settled on. */
+    let stepAddress: string | undefined;
     if (input.stepId === "customer") {
       const handled = await this.handleCustomerStep(conv.id, input, lang);
       boundCustomerId = handled.customerId ?? boundCustomerId;
       boundCustomerName = handled.customerName;
       customerCustomValue = handled.customValue ?? customerCustomValue;
-      await this.applyServiceAddress(
+      stepAddress = await this.applyServiceAddress(
         conv,
         input.userId,
         input.serviceAddress,
@@ -171,14 +173,24 @@ export class HandleWizardAnswer {
       ? (customerCustomValue ?? t(lang, "wizardAnswer.pick.customFallback"))
       : t(lang, optionDef.label);
 
+    // REQ-386 (demo m17): the customer line also carries the job address, so
+    // the thread still shows it after a reload ("Customer: Dave Roof — 88 Oak
+    // Hollow Dr, Austin TX 78745").
+    const pickLine = stepAddress
+      ? t(lang, "wizardAnswer.pick.transcriptAddress", {
+        label: t(lang, stepDef.label),
+        value: pickValue,
+        address: stepAddress,
+      })
+      : t(lang, "wizardAnswer.pick.transcript", {
+        label: t(lang, stepDef.label),
+        value: pickValue,
+      });
     const userPick = await this.messages.append({
       conversationId: input.conversationId,
       role: "user",
       kind: "text",
-      content: t(lang, "wizardAnswer.pick.transcript", {
-        label: t(lang, stepDef.label),
-        value: pickValue,
-      }),
+      content: pickLine,
       payload: {
         wizardStepId: input.stepId,
         optionId: input.optionId,
@@ -189,12 +201,7 @@ export class HandleWizardAnswer {
     const newMessages: AgentMessage[] = [userPick];
     const progress = computeProgress(spec, next);
 
-    const convPatch: Partial<AgentConversation> = {
-      preview: t(lang, "wizardAnswer.pick.transcript", {
-        label: t(lang, stepDef.label),
-        value: pickValue,
-      }),
-    };
+    const convPatch: Partial<AgentConversation> = { preview: pickLine };
     if (
       input.stepId === "customer" && boundCustomerId &&
       boundCustomerId !== conv.customerId
@@ -409,22 +416,27 @@ export class HandleWizardAnswer {
    * customer step. An address typed in the step wins (the contractor saw it,
    * pre-filled or not, and confirmed it); otherwise an empty job address is
    * filled from the customer's own address. An address already on the quote
-   * is never replaced by the customer's.
+   * is never replaced by the customer's. REQ-386: returns the job address
+   * the step settled on (the quote's, or — with no quote yet — the typed /
+   * customer's one), for the transcript line.
    */
   private async applyServiceAddress(
     conv: AgentConversation,
     userId: string,
     typed: string | undefined,
     customerAddress: string | undefined,
-  ): Promise<void> {
-    if (!conv.quoteId) return;
+  ): Promise<string | undefined> {
+    const fallback = typed?.trim() || customerAddress?.trim() || undefined;
+    if (!conv.quoteId) return fallback;
     const quote = await this.quotes.getOwned(conv.quoteId, userId)
       .catch(() => null);
-    if (!quote) return;
+    if (!quote) return fallback;
+    const current = quote.serviceAddress?.trim() || undefined;
     const next = typed?.trim() ||
-      (quote.serviceAddress?.trim() ? undefined : customerAddress?.trim());
-    if (!next || next === quote.serviceAddress) return;
+      (current ? undefined : customerAddress?.trim());
+    if (!next || next === quote.serviceAddress) return current;
     await this.quotes.update(quote.id, userId, { serviceAddress: next });
+    return next;
   }
 
   /**

@@ -2933,6 +2933,7 @@
   "wizardAnswer.cta.readyToSendSummary": "Todos los términos respondidos. Revisa y envía a tu cliente.",
   "wizardAnswer.pick.customFallback": "Personalizado",
   "wizardAnswer.pick.transcript": "{label}: {value}",
+  "wizardAnswer.pick.transcriptAddress": "{label}: {value} — {address}",
   "quotesPage.status.accepted": "Aceptada",
   "welcome.plan.question": "Elige tu plan",
   "welcome.plan.why": "Empieza gratis o pasa a pago hoy — puedes cambiar cuando quieras desde Configuración.",
