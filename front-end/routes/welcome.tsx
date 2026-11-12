@@ -12,10 +12,8 @@ import { loadProfileSnapshot } from "../lib/onboarding-gate.ts";
 import { onboardingAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
 import WelcomeWizard from "../islands/WelcomeWizard.tsx";
 import { MetaPixelEvent } from "../components/MetaPixel.tsx";
-import {
-  registrationEvent,
-  subscribeEventFrom,
-} from "../../shared/meta-pixel/pixel.ts";
+import { subscribeEventFrom } from "../../shared/meta-pixel/pixel.ts";
+import { registrationForRequest } from "../lib/pixel-registration.ts";
 
 /**
  * /welcome — the onboarding wizard.
@@ -54,6 +52,9 @@ export default define.page(async function Welcome(ctx) {
   }
 
   const subscribed = subscribeEventFrom(ctx.url.searchParams.get("px"));
+  // REQ-229: the person on their own account — not a staff login, not a
+  // staff member impersonating them (the demo stage's frame).
+  const registered = await registrationForRequest(ctx.req);
 
   const lang: Lang = (snapshot?.user?.language === "es" ||
       snapshot?.user?.language === "en")
@@ -75,10 +76,12 @@ export default define.page(async function Welcome(ctx) {
         />
         {
           /* REQ-080: a new account on the wizard is a CompleteRegistration
-            for the ads (once per account on this browser); the receipt's way
-            back (/plan/return ?px=sub:…) is a Subscribe with the plan's price. */
+            for the ads (once per account on this browser) — REQ-229: only
+            the account's own session, never staff or an impersonation; the
+            receipt's way back (/plan/return ?px=sub:…) is a Subscribe with
+            the plan's price. */
         }
-        <MetaPixelEvent event={registrationEvent(user.id)} />
+        {registered ? <MetaPixelEvent event={registered} /> : null}
         {subscribed ? <MetaPixelEvent event={subscribed} /> : null}
       </Head>
       <div class="welcome-shell">

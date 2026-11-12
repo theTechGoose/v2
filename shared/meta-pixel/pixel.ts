@@ -78,19 +78,30 @@ export function isPixelPage(pathname: string): boolean {
 }
 
 /**
+ * REQ-229 — the demo stage's replica frame (front-end/lib/demo-mode/replica.ts REPLICA_FRAME_NAME:
+ * the stage names its iframe so, and the name survives every navigation inside it). That frame is
+ * the customer's page rendered in the STAFF's browser: no PageView and no conversion from it.
+ */
+export const REPLICA_FRAME_NAME = "pm-demo-replica";
+const IN_REPLICA_FRAME = `window.name===${
+  JSON.stringify(REPLICA_FRAME_NAME)
+}&&window.parent!==window`;
+
+/**
  * Meta's own snippet, the loader's url swapped in, then init + PageView, then
  * the flush of any conversion script that ran BEFORE this one (a page's
  * <Head> content may land in the head ahead of the app's own; see
  * pixelEventScript).
  */
 export function pixelBootScript(cfg: PixelConfig): string {
-  return "!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?" +
+  return `if(!(${IN_REPLICA_FRAME})){` +
+    "!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?" +
     "n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;" +
     "n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;" +
     "t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window," +
     `document,'script','${cfg.loader}');` +
     `fbq('init','${cfg.id}');fbq('track','PageView');` +
-    "if(window.__pmPxQ){window.__pmPxQ.forEach(function(e){fbq('track',e[0],e[1],{eventID:e[2]})});window.__pmPxQ=null}";
+    "if(window.__pmPxQ){window.__pmPxQ.forEach(function(e){fbq('track',e[0],e[1],{eventID:e[2]})});window.__pmPxQ=null}}";
 }
 
 /** the no-script image Meta prescribes next to the snippet (the real loader only) */
@@ -130,6 +141,30 @@ export function leadEvent(phoneE164: string): PixelEvent {
 /** CompleteRegistration — a new account reached the welcome wizard */
 export function registrationEvent(userId: string): PixelEvent {
   return { name: "CompleteRegistration", eventId: `reg:${userId}` };
+}
+
+/** the session's own context, as GET /admin/whoami answers it */
+export interface PixelSession {
+  authenticated?: boolean;
+  user?: { id: string };
+  superAdmin?: boolean;
+  impersonating?: boolean;
+}
+
+/**
+ * REQ-229 (demo issues test-setup-claims-pixel-staff-registration, demo-lifecycle-m4) — WHO
+ * reached /welcome decides whether it is a CompleteRegistration: the person on their own account.
+ * Never a super admin (a staff login whose onboarding is still open), never an impersonation (a
+ * staff member acting as the person — the session the demo stage's frame runs on), and never a
+ * session this cannot read: an ads conversion that cannot be shown to be the account's own is
+ * not sent.
+ */
+export function registrationEventFor(
+  who: PixelSession | null | undefined,
+): PixelEvent | null {
+  if (!who || who.authenticated !== true || !who.user?.id) return null;
+  if (who.superAdmin !== false || who.impersonating !== false) return null;
+  return registrationEvent(who.user.id);
 }
 
 export interface SubscribedPlan {
@@ -185,12 +220,14 @@ export function subscribeEventFrom(
  * localStorage key by event id (a reload of the code page, of the wizard or
  * of the receipt's landing never counts twice). If the snippet has not run
  * yet (head order), the call waits on `__pmPxQ` and the snippet flushes it.
+ * Nothing at all inside the demo stage's replica frame (REQ-229).
  */
 export function pixelEventScript(ev: PixelEvent): string {
   const key = JSON.stringify(`pm:px:${ev.eventId}`);
   const params = JSON.stringify(ev.params ?? {});
   const id = JSON.stringify(ev.eventId);
-  return "(function(){try{if(localStorage.getItem(" + key +
+  return `(function(){if(${IN_REPLICA_FRAME})return;` +
+    "try{if(localStorage.getItem(" + key +
     "))return;localStorage.setItem(" + key +
     ',"1")}catch(e){}' +
     `if(window.fbq){fbq("track",${
