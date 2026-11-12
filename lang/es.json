@@ -440,6 +440,7 @@
   "asstChat.recovery.checkPhone": "Corrige el número y vuelve a enviar",
   "asstChat.recovery.emailPlaceholder": "cliente@correo.com",
   "asstChat.recovery.phonePlaceholder": "(555) 555-5555",
+  "asstChat.recovery.phoneLetters": "El teléfono lleva solo dígitos — quita la letra.",
   "asstChat.recovery.saveResend": "Guardar y reenviar",
   "asstChat.recovery.savedHint": "Lo guardaremos en la ficha de {name} para la próxima vez.",
   "asstChat.recovery.saving": "Guardando…",

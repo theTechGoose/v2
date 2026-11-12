@@ -5335,6 +5335,16 @@ body {
   cursor: not-allowed;
   box-shadow: none;
 }
+/* REQ-603 (demo M23): a field's error, under the recovery box's fields. */
+.recovery-card__error {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #c0392b;
+}
+.recovery-card__input[aria-invalid="true"] {
+  border-color: #d94e4e;
+}
 
 /* ============================================================
    Continue-to-terms inline CTA

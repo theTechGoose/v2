@@ -182,6 +182,8 @@ import {
   defaultSendChannel,
   newSendRequestId,
   recommendedChannel,
+  recoveryContactErrors,
+  recoveryPhoneValue,
   runExclusive,
   sendDialogErrorKey,
   sendOpenLabelKey,
@@ -3937,6 +3939,10 @@ export default function AsstChat({
     const email = draft.email?.trim();
     const phone = draft.phone?.trim();
     if (!email && !phone) return;
+    // REQ-603 (demo M23): check before the PUT — a letter or a short number
+    // is shown under its box (and Save is disabled), never sent to the server.
+    const fieldErrs = recoveryContactErrors({ email, phone });
+    if (fieldErrs.phone || fieldErrs.email) return;
 
     setRecoverySavingId(dividerId);
     setError(undefined);
@@ -3969,7 +3975,8 @@ export default function AsstChat({
         return next;
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "couldn't save & resend");
+      // REQ-603 (demo M23, as REQ-399): copy, never lib/api's transport line.
+      setError(tFor(lang, contactSaveErrorKey(err)));
     } finally {
       setRecoverySavingId(null);
     }
@@ -6774,6 +6781,11 @@ export default function AsstChat({
                   const saving = recoverySavingId === m.id;
                   const askEmail = needRecovery && emailMissing;
                   const askPhone = needRecovery && phoneMissing;
+                  // REQ-603 (demo M23): per-field check of what was typed.
+                  const recoveryErrs = recoveryContactErrors({
+                    email: askEmail ? draft.email : "",
+                    phone: askPhone ? draft.phone : "",
+                  });
                   return (
                     <div key={m.id}>
                       <div class="phase-divider">
@@ -6838,6 +6850,9 @@ export default function AsstChat({
                                     )}
                                     value={draft.email ?? ""}
                                     disabled={saving}
+                                    aria-invalid={recoveryErrs.email
+                                      ? "true"
+                                      : undefined}
                                     onInput={(e) => {
                                       const v =
                                         (e.target as HTMLInputElement).value;
@@ -6858,13 +6873,16 @@ export default function AsstChat({
                                       lang,
                                       "asstChat.recovery.phonePlaceholder",
                                     )}
-                                    value={formatPhoneInput(
+                                    value={recoveryPhoneValue(
                                       draft.phone ??
                                         (phoneAsk === "check"
                                           ? customer?.phoneNumber ?? ""
                                           : ""),
-                                    )} /* NW-34 (REQ-012); REQ-226: "check" pre-fills the number on file */
+                                    )} /* NW-34 (REQ-012); REQ-226: "check" pre-fills the number on file; REQ-603: a typed letter stays visible */
                                     disabled={saving}
+                                    aria-invalid={recoveryErrs.phone
+                                      ? "true"
+                                      : undefined}
                                     onInput={(e) => {
                                       const v =
                                         (e.target as HTMLInputElement).value;
@@ -6885,7 +6903,8 @@ export default function AsstChat({
                                   (askEmail && !askPhone &&
                                     !draft.email?.trim()) ||
                                   (askPhone && !askEmail &&
-                                    !draft.phone?.trim())}
+                                    !draft.phone?.trim()) ||
+                                  !!recoveryErrs.phone || !!recoveryErrs.email}
                                 onClick={() =>
                                   saveContactAndRetry(m.id, {
                                     quoteId: dp.quoteId!,
@@ -6897,6 +6916,28 @@ export default function AsstChat({
                                   : tFor(lang, "asstChat.recovery.saveResend")}
                               </button>
                             </div>
+                            {recoveryErrs.phone
+                              ? (
+                                <p
+                                  class="recovery-card__error"
+                                  role="alert"
+                                  data-cy="recovery-phone-error"
+                                >
+                                  {tFor(lang, recoveryErrs.phone)}
+                                </p>
+                              )
+                              : null}
+                            {recoveryErrs.email
+                              ? (
+                                <p
+                                  class="recovery-card__error"
+                                  role="alert"
+                                  data-cy="recovery-email-error"
+                                >
+                                  {tFor(lang, recoveryErrs.email)}
+                                </p>
+                              )
+                              : null}
                           </div>
                         )
                         : null}
