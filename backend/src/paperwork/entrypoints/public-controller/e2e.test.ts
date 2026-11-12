@@ -6,6 +6,9 @@ import { PaperworkModule } from "@paperwork/mod-root.ts";
 import { UsersModule } from "@users/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { SessionStore } from "@users/domain/data/session-store/mod.ts";
+import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
+import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 
 @Module({ imports: [UsersModule, PaperworkModule] })
 class TestApp {}
@@ -571,6 +574,57 @@ Deno.test("public e2e: claim-payment is 409 when invoice already paid", async ()
     );
     assertEquals(res.status, 409);
     await res.body?.cancel();
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+// REQ-225 (demo M18 / test-setup-claims-m3): the owner previewing their own
+// link, the /welcome sample iframe (owner cookie), and staff behind an
+// impersonation session (demo stage replica) are not the client opening it.
+Deno.test("REQ-225 public e2e: GET /quotes/:id/public by the owner or staff records no open and keeps 'sent'; the anonymous customer does", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const q = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ summary: "Job", lineItems: [], status: "sent" }),
+    }).then((r) => r.json());
+    const owner = (await new SessionStore().get(sid))!;
+    // the link went out (POST /quotes always lands as a draft)
+    await new QuoteStore().update(q.id, owner.userId, { status: "sent" });
+    const staff = await new SessionStore().createImpersonation({
+      targetUserId: owner.userId,
+      impersonatorId: "staff-super-admin",
+      returnSessionId: "staff-own-session",
+    });
+    const opens = async () =>
+      (await new ViewStore().listByPaperwork("quote", q.id)).length;
+    const get = async (headers: Record<string, string>) => {
+      const res = await fetch(
+        `http://localhost:${PORT}/quotes/${q.id}/public`,
+        { headers },
+      );
+      assertEquals(res.status, 200);
+      return (await res.json()).status as string;
+    };
+
+    // owner via the SDK header, owner via the browser cookie (what the
+    // Fresh /api proxy forwards from /q/:id and the /welcome iframe),
+    // staff's impersonation session (the demo stage replica)
+    assertEquals(await get({ "x-session-id": sid }), "sent");
+    assertEquals(await get({ cookie: `pm_lang=en; pm_session=${sid}` }), "sent");
+    assertEquals(await get({ cookie: `pm_session=${staff.id}` }), "sent");
+    assertEquals(await opens(), 0, "internal views must not record an open");
+
+    // the end customer (no session) is the first real open
+    assertEquals(await get({}), "viewed");
+    assertEquals(await opens(), 1);
   } finally {
     await server.stop();
     await resetKv();
