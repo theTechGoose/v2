@@ -63,10 +63,13 @@ describe("REQ-294 the pill keeps the guide's name (demo m21: 'ended th…', 'Ale
     expect(details).toMatch(
       /\{!compact && <strong>\{t\("demoMode\.title"\)\}<\/strong>\}/,
     );
-    // the live pill itself stays one line (REQ-228) until the details are opened
+    // the live pill itself stays one line (REQ-228) until the details are opened — or, REQ-548
+    // (cycle 4, p4-p3e), End asks (pillWraps; its truth table is in demo-end-ask-compact.test.ts)
     const at = o.indexOf('data-cy="demo-details"');
     const live = o.slice(o.lastIndexOf('data-cy="demo-pill"', at), at);
-    expect(live).toMatch(/compact && open \? ";flex-wrap:wrap" : ""/);
+    expect(live).toMatch(
+      /pillWraps\(\{ compact, open, asking \}\) \? ";flex-wrap:wrap" : ""/,
+    );
   });
 });
 

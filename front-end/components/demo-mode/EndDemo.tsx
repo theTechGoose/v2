@@ -18,16 +18,37 @@ const BTN =
   "padding:5px 12px;border-radius:8px;border:0;cursor:pointer;font:inherit;font-size:12px;font-weight:700;pointer-events:auto";
 
 export default function EndDemo(
-  { onEnd, disabled = false }: { onEnd: () => void; disabled?: boolean },
+  { onEnd, disabled = false, ownRow = false, onAsking }: {
+    onEnd: () => void;
+    disabled?: boolean;
+    /** REQ-548 — the question takes a whole row of a wrapping host (the phone's compact pill) */
+    ownRow?: boolean;
+    /** REQ-548 — the host hears when the question goes up and comes down */
+    onAsking?: (asking: boolean) => void;
+  },
 ) {
   const [s, setS] = useState<EndAsk>({ asking: false, armed: false });
   const onEndRef = useRef(onEnd);
   onEndRef.current = onEnd;
+  const onAskingRef = useRef(onAsking);
+  onAskingRef.current = onAsking;
   const ask = useMemo(
-    () => endConfirm({ onChange: setS, onEnd: () => onEndRef.current() }),
+    () =>
+      endConfirm({
+        // REQ-548 — the host hears it in the same render as the question (no frame of a squeeze)
+        onChange: (next) => {
+          setS(next);
+          onAskingRef.current?.(next.asking);
+        },
+        onEnd: () => onEndRef.current(),
+      }),
     [],
   );
-  useEffect(() => ask.dispose, []);
+  useEffect(() => () => {
+    ask.dispose();
+    // REQ-548 — gone (the demo ended): the host is no longer asked anything
+    onAskingRef.current?.(false);
+  }, []);
   // the demo ended some other way while asking: nothing left to ask
   useEffect(() => {
     if (disabled) ask.cancel();
@@ -75,7 +96,8 @@ export default function EndDemo(
       onKeyDown={(e) => {
         if (e.key === "Escape") ask.cancel();
       }}
-      style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;pointer-events:auto"
+      style={"display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;pointer-events:auto" +
+        (ownRow ? ";flex-basis:100%;white-space:normal;min-width:0" : "")}
     >
       <span style="font-weight:700">{t("demoMode.endAsk")}</span>
       <button

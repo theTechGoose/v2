@@ -25,6 +25,15 @@ export { PILL_LABEL_MAX } from "./protocol.ts";
 export const PILL_MARGIN = 12;
 /** at or below this width the customer's pill shows only its status and End (details on tap) */
 export const PILL_COMPACT_MAX_W = 640;
+/** REQ-548 (demo-loop cycle 4, p4-p3e) — the customer's pill takes a second row only on the
+ *  phone's compact form, while its details are open or End is asking: the question then gets its
+ *  own row, so it never squeezes the guide's name (REQ-373) to "A..". At rest the pill stays one
+ *  row (a long name is cut, REQ-228); the desktop pill has room for the question on its row. */
+export function pillWraps(
+  o: { compact: boolean; open: boolean; asking: boolean },
+): boolean {
+  return o.compact && (o.open || o.asking);
+}
 /** REQ-294 — the pills' own font: the app's `--font-body` stack, so a pill reads the same on a
  *  page that loads no app stylesheet (the 404 page), where `font:inherit` fell back to the
  *  browser's default face */

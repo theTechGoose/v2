@@ -147,6 +147,7 @@ import {
   pillHome,
   pillOverflows,
   pillStore,
+  pillWraps,
   recallPillOpen,
   rememberPillOpen,
   samplePoints,
@@ -344,6 +345,8 @@ export default function DemoModeOverlay() {
   const faceRef = useRef<PillFace>({});
   const sentFaceRef = useRef<string>("");
   const [open, setOpen] = useState(false);
+  /** REQ-548 — End is asking (the compact pill gives the question its own row) */
+  const [asking, setAsking] = useState(false);
   const impersonatingRef = useRef<boolean | null>(null);
   const placingRef = useRef(false);
   /** REQ-232 — this staff page is on its way to the stage (the pill says Opening…) */
@@ -1276,7 +1279,10 @@ export default function DemoModeOverlay() {
         role="status"
         style={(started
           ? `${pillStyle};animation:pmDemoPulse 1.1s ease-out 3`
-          : pillStyle) + (compact && open ? ";flex-wrap:wrap" : "")}
+          : pillStyle) +
+          // REQ-548 (cycle 4, p4-p3e) — opened details, or End asking, take a row of their own on
+          // the phone: never a squeeze of the guide's name
+          (pillWraps({ compact, open, asking }) ? ";flex-wrap:wrap" : "")}
       >
         <span
           data-cy="demo-details"
@@ -1337,7 +1343,7 @@ export default function DemoModeOverlay() {
           </span>
         </button>
         {/* REQ-235 — End asks first */}
-        <EndDemo onEnd={end} />
+        <EndDemo onEnd={end} ownRow={compact} onAsking={setAsking} />
       </div>
     </div>
   );
