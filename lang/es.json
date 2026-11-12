@@ -2938,7 +2938,7 @@
   "welcome.state.searchLabel": "Buscar estados",
   "welcome.state.why": "Define el estado que rige tus acuerdos.",
   "welcome.stepOf": "Paso {current} de {total}",
-  "welcomeBackToast.nameFallback": "amigo",
+  "welcomeBackToast.noName": "¡Bienvenido de nuevo!",
   "wizardAnswer.cta.readyToSend": "Listo para enviar",
   "wizardAnswer.cta.readyToSendSummary": "Todos los términos respondidos. Revisa y envía a tu cliente.",
   "wizardAnswer.pick.customFallback": "Personalizado",
