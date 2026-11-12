@@ -42,6 +42,7 @@ import {
   formOffersPickExisting,
 } from "../../shared/quote-flow/customer-step.ts";
 import { termLabel } from "../../shared/quote-flow/terms-i18n.ts";
+import { reviewJobDetails } from "../../shared/quote-flow/review-job-details.ts";
 import { versionTitle } from "../../shared/quote-flow/version-titles.ts";
 import {
   cardChipKey,
@@ -5668,9 +5669,15 @@ export default function AsstChat({
                     // Job-details description in the preview language. Falls
                     // back to the stored single-language description until the
                     // lazy translate (ensureDescriptionLang) fills it in.
-                    const polishedDescription =
-                      quote?.descriptionByLang?.[previewLang] ??
-                        lockedPayload.description ?? quote?.description;
+                    // REQ-237 (M17): resolved in shared/quote-flow so the
+                    // tests drive the same rule the card renders.
+                    const jobDetailRows = reviewJobDetails({
+                      previewLang,
+                      descriptionByLang: quote?.descriptionByLang,
+                      lockedDescription: lockedPayload.description,
+                      description: quote?.description,
+                      lineItems,
+                    });
                     // Wizard terms — every text msg with a wizardStepId is one
                     // answered step ("Start: ASAP", "Wraps: 1 week", ...). Skip
                     // the customer step since we render the customer block below.
@@ -6302,7 +6309,7 @@ export default function AsstChat({
                             : null}
 
                           {(() => {
-                            const lines = detailLines(polishedDescription);
+                            const lines = jobDetailRows.map((r) => r.text);
                             // NW-19b (REQ-006): Job Details is editable on the
                             // review card like every other field — the pencil
                             // reopens the job picker on the CURRENT details and
@@ -6345,7 +6352,35 @@ export default function AsstChat({
                                     ✎
                                   </button>
                                 </div>
-                                {lines.length > 1
+                                {jobDetailRows.some((r) =>
+                                    r.amountCents !== undefined
+                                  )
+                                  ? (
+                                    // REQ-237 (M17): a chat-drafted quote's
+                                    // scope is its line items — each with
+                                    // its amount, like the action card.
+                                    <ul class="quote-review__details">
+                                      {jobDetailRows.map((r, i) => (
+                                        <li
+                                          key={i}
+                                          data-cy="review-job-detail-line"
+                                        >
+                                          {r.text}
+                                          {r.amountCents !== undefined
+                                            ? (
+                                              <strong
+                                                data-cy="review-job-detail-amount"
+                                                style="float:right;margin-left:12px"
+                                              >
+                                                {fmtUSD(r.amountCents)}
+                                              </strong>
+                                            )
+                                            : null}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )
+                                  : lines.length > 1
                                   ? (
                                     <ul class="quote-review__details">
                                       {lines.map((l, i) => (
