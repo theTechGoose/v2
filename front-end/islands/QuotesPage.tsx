@@ -24,6 +24,7 @@ import {
 } from "../../shared/documents/linked-view.ts";
 import {
   invoiceState,
+  pendingRevisionChanges,
   quoteState,
   versionChanges,
 } from "../../shared/documents/versions.ts";
@@ -162,6 +163,9 @@ function QuoteLedgerSection(
   const [publishing, setPublishing] = useState(false);
   const [publishErr, setPublishErr] = useState<string | null>(null);
   const [published, setPublished] = useState(false);
+  // REQ-304 (demo M28): publishing is a two-step — the button opens a
+  // preview that says what Version N changes, and only its Publish posts.
+  const [confirming, setConfirming] = useState(false);
   const summary = ledgerSummary(ledger);
   const state = quoteState(q);
   const headline = docHeadline(
@@ -175,6 +179,14 @@ function QuoteLedgerSection(
   );
   const pending = q.pendingRevision &&
     Object.keys(q.pendingRevision).length > 0;
+  const previewChanges = pendingRevisionChanges(
+    q as Record<string, unknown> & {
+      pendingRevision?: Record<string, unknown>;
+    },
+  );
+  const previewLine = previewChanges
+    ? versionChangeLine(previewChanges, lang)
+    : "";
   const locked = ledger.quote.accepted;
   const rowStyle =
     "display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid rgba(26,83,92,0.08);font-size:13px";
@@ -190,6 +202,7 @@ function QuoteLedgerSection(
     try {
       await quotesClient.publish(q.id, { notify: true, language: lang });
       setPublished(true);
+      setConfirming(false);
       onPublished();
     } catch (err) {
       const reason = err instanceof ApiError
@@ -446,19 +459,67 @@ function QuoteLedgerSection(
         </details>
       )}
 
+      {/* REQ-304: the publish preview — what Version N changes, Publish / Cancel */}
+      {pending && !locked && confirming && (
+        <div
+          data-cy="quote-publish-preview"
+          style="margin-top:14px;padding:12px 14px;border:1px solid rgba(26,83,92,0.18);border-radius:10px;background:rgba(26,83,92,0.04)"
+        >
+          <div style={`font-size:13.5px;font-weight:800;${numStyle}`}>
+            {tFor(lang, "quotes.ledger.publishPreviewTitle", {
+              n: ledger.quote.version + 1,
+            })}
+          </div>
+          <div
+            data-cy="quote-publish-changes"
+            style="margin-top:4px;font-size:13px;font-weight:700"
+          >
+            {previewLine || tFor(lang, "quotes.ledger.publishOtherChanges")}
+          </div>
+          <div style={`margin-top:2px;font-size:12px;${mutedStyle}`}>
+            {tFor(lang, "quotes.ledger.publishPreviewNote")}
+          </div>
+          <div class="qopen__actions" style="margin-top:10px">
+            <button
+              type="button"
+              class="qopen__btn qopen__btn--primary"
+              data-cy="quote-publish-confirm"
+              disabled={publishing}
+              onClick={publish}
+            >
+              {publishing
+                ? tFor(lang, "quotes.ledger.publishing")
+                : tFor(lang, "quotes.ledger.publishConfirm")}
+            </button>
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="quote-publish-cancel"
+              disabled={publishing}
+              onClick={() => setConfirming(false)}
+            >
+              {tFor(lang, "quotes.ledger.publishCancel")}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Actions: one solid primary, the rest outlined */}
       <div
         class="qopen__actions"
         style="margin-top:14px;align-items:center"
       >
-        {pending && !locked
+        {pending && !locked && !confirming
           ? (
             <button
               type="button"
               class="qopen__btn qopen__btn--primary"
               data-cy="quote-publish"
               disabled={publishing}
-              onClick={publish}
+              onClick={() => {
+                setPublishErr(null);
+                setConfirming(true);
+              }}
             >
               {publishing
                 ? tFor(lang, "quotes.ledger.publishing")
@@ -787,7 +848,11 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
     });
   }, [openId, openQ.loading, openQ.quote?.id]);
 
-  useEffect(() => {
+  // REQ-304 (demo M27): the cards / hero / KPI loader is a function, not a
+  // mount-only effect — the panel calls it again after a publish (or any
+  // money-changing mutation) so the pipeline's totals follow without a
+  // reload. Returns a cancel so a stale answer never lands.
+  function loadPipeline(): () => void {
     let alive = true;
     Promise.all([
       quotesClient.list().catch(() => [] as BackendQuoteCard[]),
@@ -810,7 +875,9 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
     return () => {
       alive = false;
     };
-  }, [lang]);
+  }
+
+  useEffect(() => loadPipeline(), [lang]);
 
   if (s.loading) {
     return (
@@ -899,7 +966,10 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         <OpenQuotePanel
           lang={lang}
           state={openQ}
-          onRefresh={() => setOpenTick((n) => n + 1)}
+          onRefresh={() => {
+            setOpenTick((n) => n + 1);
+            loadPipeline();
+          }}
           onClose={() => {
             setOpenId(null);
             try {

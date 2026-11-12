@@ -34,6 +34,7 @@ import {
   isInvoiceIssued,
   isQuoteIssued,
   quoteState,
+  versionChanges,
   versionOf,
 } from "#documents/versions.ts";
 import type { CustomerSnapshot } from "@core/data/numbered-store/mod.ts";
@@ -548,7 +549,7 @@ export class PaperworkPublicController {
           console.warn(`[quotes/${id}/public] mark-viewed failed:`, err);
         }
       }
-      const [contractor, customer, related, cos] = await Promise.all([
+      const [contractor, customer, related, cos, filed] = await Promise.all([
         loadContractor(
           this.users,
           this.identity,
@@ -570,7 +571,19 @@ export class PaperworkPublicController {
           all.filter((i) => i.quoteId === q.id)
         ).catch(() => []),
         this.changeOrders.listByQuote(q.userId, q.id).catch(() => []),
+        // REQ-304 (demo M28): the version before this one, so the page can
+        // say what changed.
+        versionOf(q) > 1
+          ? this.quotes.listVersions(q.id, q.userId).catch(() => [])
+          : Promise.resolve([]),
       ]);
+      const previous = filed.find((v) => v.version === versionOf(q) - 1);
+      const changesFromPrevious = previous
+        ? versionChanges(
+          previous.content,
+          q as unknown as Record<string, unknown>,
+        )
+        : undefined;
       const invoices = await Promise.all(
         related
           .slice()
@@ -592,6 +605,7 @@ export class PaperworkPublicController {
         customer,
         invoices,
         changeOrders: cos.map(projectLinkedChangeOrder),
+        ...(changesFromPrevious ? { changesFromPrevious } : {}),
       });
     } catch (e) {
       return notFoundResponse(ctx, e);

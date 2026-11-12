@@ -150,3 +150,117 @@ Deno.test("REQ-248: a published revision shows who published each version and wh
       "Version 2 says what changed",
     );
   }));
+
+/**
+ * REQ-304 — demo cycle 1 issues M27 + M28: the panel's Publish opens a
+ * preview that says what Version 2 changes and asks once; confirming
+ * publishes and the pipeline's hero reads the new total without a reload;
+ * the customer's page says what changed under its headline.
+ */
+Deno.test("REQ-304: Publish previews 'Total $1,000.00 → $1,200.00', asks once, the hero follows without a reload, and /q says what changed", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const customer = await call(http, auth, "POST", "/api/customers", {
+      name: "Dana Perez",
+      email: "dana@blackhole.postmarkapp.com",
+      address: "12 Oak St, Austin, TX",
+    });
+    const quote = await call(http, auth, "POST", "/api/quotes", {
+      customerId: customer.id,
+      summary: "Fence install — Dana Perez",
+      jobName: "Fence install",
+      lineItems: [{
+        description: "Fence install",
+        quantity: 1,
+        unit: "job",
+        price: 100000,
+      }],
+      estimatedTotal: 100000,
+      status: "draft",
+    });
+    await call(http, auth, "PUT", `/api/quotes/${quote.id}`, {
+      status: "sent",
+    });
+    await call(http, auth, "PUT", `/api/quotes/${quote.id}`, {
+      estimatedTotal: 120000,
+    });
+
+    await page.goto(`/quotes?open=${quote.id}`);
+    // a marker that survives only while the page is NOT reloaded
+    await page.evaluate(() => {
+      (globalThis as unknown as { __req304: number }).__req304 = 1;
+    });
+    const hero = page.locator(".qph__title");
+    await hero.waitFor({ timeout: 15_000 });
+    expect(
+      /\$1,000/.test(await hero.innerText()),
+      `hero shows the live total before publishing: "${await hero
+        .innerText()}"`,
+    );
+
+    const publish = page.locator("[data-cy='quote-publish']");
+    await publish.waitFor({ timeout: 15_000 });
+    await publish.click();
+    // no POST yet — the preview asks first
+    const preview = page.locator("[data-cy='quote-publish-preview']");
+    await preview.waitFor({ timeout: 10_000 });
+    const previewText = (await preview.innerText()).replace(/\s+/g, " ");
+    expect(
+      /Publish Version 2/.test(previewText),
+      `preview names the version: "${previewText}"`,
+    );
+    expect(
+      /Total \$1,000\.00 → \$1,200\.00/.test(previewText),
+      `preview says what changes: "${previewText}"`,
+    );
+    const still = await call(
+      http,
+      auth,
+      "GET",
+      `/api/quotes/${quote.id}`,
+      undefined,
+    );
+    expect.eq(still.version ?? 1, 1, "the preview alone publishes nothing");
+
+    // Cancel keeps it unpublished and closes the preview
+    await page.locator("[data-cy='quote-publish-cancel']").click();
+    expect.eq(await preview.count(), 0, "cancel closes the preview");
+    await publish.click();
+    await preview.waitFor({ timeout: 10_000 });
+    await page.locator("[data-cy='quote-publish-confirm']").click();
+
+    // M27: the hero follows the published total without a reload
+    await page.waitForFunction(
+      () =>
+        /\$1,200/.test(
+          document.querySelector(".qph__title")?.textContent ?? "",
+        ),
+      undefined,
+      { timeout: 15_000 },
+    );
+    expect.eq(
+      await page.evaluate(() =>
+        (globalThis as unknown as { __req304?: number }).__req304
+      ),
+      1,
+      "the page was not reloaded",
+    );
+    const now = await call(
+      http,
+      auth,
+      "GET",
+      `/api/quotes/${quote.id}`,
+      undefined,
+    );
+    expect.eq(now.version, 2, "confirm published Version 2");
+
+    // M28: the customer's page says what changed
+    await page.goto(`/q/${quote.id}`);
+    const changes = page.locator("[data-cy='public-doc-changes']");
+    await changes.waitFor({ timeout: 15_000 });
+    const line = (await changes.innerText()).replace(/\s+/g, " ").trim();
+    expect(
+      /Version 2/.test(line) && /Total \$1,000\.00 → \$1,200\.00/.test(line),
+      `the public page says what changed: "${line}"`,
+    );
+  }));
