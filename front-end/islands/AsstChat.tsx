@@ -205,7 +205,10 @@ import {
   sendResultLangKey,
 } from "../../shared/quote-flow/send-result.ts";
 import MoneyInput from "./MoneyInput.tsx";
-import { priceChipAnchorCents } from "../lib/money-input.ts";
+import {
+  priceChipAnchorCents,
+  selectedTierIndex,
+} from "../lib/money-input.ts";
 import { startPoll } from "../lib/poll.ts";
 import { followChanges } from "../lib/change-feed.ts";
 import { boundQuoteMoved } from "../lib/live-doc-refresh.ts";
@@ -2711,6 +2714,19 @@ export default function AsstChat({
    * config step — leaving the user on the customer step.
    */
   /**
+   * REQ-449 (demo-loop cycle 3, m48): a tier tap on Pick a price SELECTS —
+   * the tier's price fills the price box (remounted with it) and the card
+   * reads selected; Continue is what moves on. It used to call
+   * onPriceContinue and create the quote on the spot.
+   */
+  function selectPriceTier(cents: number) {
+    if (sending || cents <= 0) return;
+    setError(undefined);
+    setPriceCents(cents);
+    setPriceSeedRev((n) => n + 1);
+  }
+
+  /**
    * Continue handler for the inline "I already have my price" flow.
    * Stashes the captured price and flips into the "tell me the job details"
    * mode — the chat input becomes the answer surface for that step.
@@ -3115,6 +3131,7 @@ export default function AsstChat({
       };
 
       let convId: string;
+      let boundQuoteId: string | undefined;
       if (quoteId && convoId) {
         // Back brought the user to the price (or details) step of a quote
         // that already exists: this is an EDIT of that quote, not a second
@@ -3122,11 +3139,13 @@ export default function AsstChat({
         // navigation below re-enters the wizard with the new numbers.
         await quotesClient.update(quoteId, quoteFields);
         convId = convoId;
+        boundQuoteId = quoteId;
       } else {
         // NW-10 (REQ-003): a quote is BORN a draft — the store defaults
         // status to "draft"; only a real dispatch (send-quote) flips it.
         const quote = await api.post<{ id?: string }>("/quotes", quoteFields);
         if (!quote?.id) throw new Error("failed to create quote");
+        boundQuoteId = quote.id;
 
         // P-22: reuse the conversation minted when the details were
         // submitted (its id is already in the URL) instead of orphaning it
@@ -3170,8 +3189,8 @@ export default function AsstChat({
       });
 
       // Leaving the price step for the wizard is a forward move like any
-      // other: snapshot it, persisted under the thread id because the
-      // navigation below is a full page load.
+      // other: snapshot it, persisted under the thread id so a later reload
+      // of the thread keeps the path.
       pushHistory();
       persistStackAs(convId);
 
@@ -3183,18 +3202,59 @@ export default function AsstChat({
           );
         } catch { /* sessionStorage unavailable — picker just won't auto-open */ }
       }
-      // UX-04: carry the extracted customer-name candidate across the real
-      // page navigation below (island state does not survive it).
-      if (prefillCustomerName) {
-        try {
-          globalThis.sessionStorage?.setItem(
-            `pm:custprefill:${conv.id}`,
-            prefillCustomerName,
-          );
-        } catch { /* sessionStorage unavailable — no prefill */ }
-      }
 
-      globalThis.location.href = `/assistant/${conv.id}`;
+      // REQ-449 (demo-loop cycle 3, m48): hand off into the wizard IN PLACE —
+      // no page load (it re-fetched the shell, re-synced the demo stage and
+      // replaced every element). Paint what /assistant/<id> would: the
+      // thread's messages (the wizard's first question), its customer and
+      // quote, the pre-quote panels closed (restorableDraft with a quote
+      // bound), and the end-of-wizard Job Details polish owed.
+      const detail = await assistantClient.conversation(convId).catch(
+        () => null,
+      );
+      if (!detail || !Array.isArray(detail.messages)) {
+        // Couldn't read the thread back: fall back to loading its page.
+        // UX-04: carry the extracted customer-name candidate across it
+        // (island state does not survive a page load).
+        if (prefillCustomerName) {
+          try {
+            globalThis.sessionStorage?.setItem(
+              `pm:custprefill:${conv.id}`,
+              prefillCustomerName,
+            );
+          } catch { /* sessionStorage unavailable — no prefill */ }
+        }
+        globalThis.location.href = `/assistant/${conv.id}`;
+        return;
+      }
+      setMessages(detail.messages);
+      if (detail.customer) setCustomer(detail.customer);
+      const detailQuoteId =
+        (detail.conversation as { quoteId?: string } | undefined)?.quoteId ??
+          detail.quote?.id ?? boundQuoteId;
+      if (detailQuoteId) setQuoteId(detailQuoteId);
+      setAwaitingJobDetails(false);
+      setJobOptionsOpen(false);
+      setPriceCaptureOpen(false);
+      setPriceCents(cents);
+      if (!confirmed) {
+        jobPolishRawRef.current = raw.trim();
+        setNeedsJobPolish(true);
+        // Fresh for THESE details, as the page load did (Back may have
+        // re-edited them since an earlier run).
+        optionsInFlightRef.current = assistantClient
+          .generateJobOptions(raw.trim())
+          .catch((err) => {
+            console.warn("[asst] phase-2 job-options generation failed:", err);
+            return null;
+          });
+      }
+      setConvoId(convId);
+      if (typeof globalThis.history !== "undefined") {
+        globalThis.history.replaceState(null, "", `/assistant/${convId}`);
+      }
+      draftFrozenRef.current = false;
+      setSending(false);
     } catch (err) {
       draftFrozenRef.current = false;
       setError(err instanceof Error ? err.message : "couldn't start");
@@ -6333,14 +6393,26 @@ export default function AsstChat({
                               {tFor(lang, "asstChat.price.pricing")}
                             </div>
                           )
-                          : priceSuggestions.map((t) => (
+                          : priceSuggestions.map((t, i) => {
+                            // REQ-449 (m48): a tap selects; Continue moves on.
+                            const picked = i ===
+                              selectedTierIndex(priceSuggestions, priceCents);
+                            return (
                             <button
                               key={t.tier}
                               type="button"
                               data-cy="pricing-option"
+                              class={picked
+                                ? "chat__price-tier is-selected"
+                                : "chat__price-tier"}
+                              aria-pressed={picked}
                               disabled={sending || stepSending}
-                              onClick={() => onPriceContinue(t.priceCents)}
-                              style="display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:12px 14px;border:1px solid var(--border,#d8dcd5);border-radius:12px;background:#fff;cursor:pointer;font:inherit"
+                              onClick={() => selectPriceTier(t.priceCents)}
+                              style={`display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:12px 14px;border-radius:12px;cursor:pointer;font:inherit;${
+                                picked
+                                  ? "border:2px solid var(--brand-green,#519843);background:var(--brand-green-50,#eef6ec)"
+                                  : "border:1px solid var(--border,#d8dcd5);background:#fff"
+                              }`}
                             >
                               <span style="min-width:0">
                                 <span style="display:block;font-weight:800;font-size:14px;color:var(--fg)">
@@ -6358,7 +6430,8 @@ export default function AsstChat({
                                 ${(t.priceCents / 100).toLocaleString("en-US")}
                               </span>
                             </button>
-                          ))}
+                            );
+                          })}
                         {/* 4th option (roadmap p.16): custom price — clicking
                             focuses the MoneyInput below so the contractor can
                             type their own number and press Enter. */}

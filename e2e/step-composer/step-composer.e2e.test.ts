@@ -244,20 +244,10 @@ Deno.test("REQ-392 M7: on Pick a price the contractor can tell the assistant it'
     );
 
     // Continue at that price → the wizard's first question ("Who is this
-    // for?"): the compact box is there too. Continue creates the quote and
-    // loads the thread's page afresh ~30 ms after the click; the harness's
-    // post-click frame can hang for its full 90 s when that load lands
-    // mid-capture, so this one click goes through the raw mouse (no frame)
-    // and the story waits for the load instead.
-    const cont = page.locator(
-      ".chat__price-capture button.chat__price-continue",
-    );
-    await cont.scrollIntoViewIfNeeded();
-    const at = await cont.boundingBox();
-    expect(at !== null, "Continue is on screen");
-    const loaded = page.waitForEvent("load", { timeout: 30_000 });
-    await page.mouse.click(at!.x + at!.width / 2, at!.y + at!.height / 2);
-    await loaded;
+    // for?"): the compact box is there too. REQ-449: Continue creates the
+    // quote and opens the wizard in place (no page load).
+    await page.locator(".chat__price-capture button.chat__price-continue")
+      .click();
     await page.locator(".wiz__opts, .cust-create, .cust-pick").first().waitFor({
       state: "visible",
       timeout: 30_000,
