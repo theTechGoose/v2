@@ -2552,10 +2552,14 @@ a.activity-item--link:hover {
        page bottom (e.g. Settings) can scroll above the on-screen keyboard. */
     padding-bottom: var(--kb-inset, 0px);
     scroll-padding-bottom: var(--kb-inset, 0px);
+    overflow-x: clip; /* REQ-353 (M40): no sideways scroll on a phone */
   }
   .main {
     display: block;
     overflow: visible;
+    /* REQ-353 (M40): never a sideways scroll or a beige strip on a phone —
+       clip, not hidden, so the sticky topbar keeps working. */
+    overflow-x: clip;
   }
   .topbar {
     position: sticky;

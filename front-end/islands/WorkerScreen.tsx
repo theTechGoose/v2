@@ -47,6 +47,13 @@ const css = `
   .lang { margin-left: auto; display: flex; gap: 2px; background: var(--mint-100); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
   .lang button { border: 0; background: transparent; font-weight: 800; font-size: 13px; color: var(--fg-muted); padding: 10px 14px; border-radius: 999px; min-height: 44px; cursor: pointer; }
   .lang button.on { background: #fff; color: var(--brand-teal); box-shadow: 0 1px 3px rgba(20,72,82,.12); }
+  /* REQ-353 (m23): on a phone the header wraps — the title and the EN/ES pill
+     on the first row, "Volver a la oficina" and "Salir" on the next — instead
+     of squeezing "Mis tareas" under the pill with Salir at the edge */
+  @media (max-width: 480px) {
+    .top { flex-wrap: wrap; row-gap: 8px; }
+    .top .brand { flex: 1 0 auto; }
+  }
   /* one card per visit, its services as check-offs, Note + Services on each */
   .crew { font-family: var(--font-heading); font-weight: 800; font-size: 15px; color: var(--brand-teal); display: flex; align-items: center; gap: 8px; margin-top: 6px; }
   .crew .count { font-size: 12px; background: var(--mint-100); border-radius: 999px; padding: 2px 8px; color: var(--fg-muted); font-weight: 700; }
