@@ -43,6 +43,7 @@ import {
 import { describeQuoteRevision } from "@agents/domain/business/quote-revision-reply/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -156,6 +157,8 @@ export class HandleChatMessage {
     private emailer: SendPaperworkEmail,
     @Inject(LLM_CLIENT) private llm: LLMClient,
     private changeOrder: ApplyChatChangeOrder,
+    /** REQ-264 (M15): fills every document language before dispatch. */
+    private translator?: TranslateQuote,
   ) {}
 
   async run(input: HandleChatInput): Promise<HandleChatResult> {
@@ -1054,6 +1057,13 @@ export class HandleChatMessage {
             },
           });
           newMessages.push(cta);
+          // REQ-264 (M15): translate when the quote locks, so the review
+          // card and the later send carry every language. REQ-234: locking
+          // never emails or sends — only the translation runs here.
+          await this.translator?.run({ userId: input.userId, quoteId })
+            .catch((err) =>
+              console.error(`[chat:lock_quote] translate failed:`, err)
+            );
         }
       } // ---- request_terms_transition: surface a "Continue to terms" card ----
       else if (action.type === "request_terms_transition") {

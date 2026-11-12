@@ -22,6 +22,10 @@ import {
 } from "../../shared/documents/ledger.ts";
 import { isTbdTermValue } from "../../shared/quote-flow/terms-i18n.ts";
 import { smsRecoveryAsk } from "../../shared/quote-flow/sms-failure.ts";
+import {
+  lineItemDescription,
+  previewTranslationMissing,
+} from "../../shared/quote-flow/quote-translations.ts";
 import { clientsClient } from "../clients/clients.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
@@ -651,6 +655,8 @@ export default function AsstChat({
       descriptionByLang?: Record<string, string>;
       lineItems?: {
         description: string;
+        /** REQ-264 (M15): server-filled per-language text. */
+        descriptionByLang?: Record<string, string>;
         quantity?: number;
         unit?: string;
         price?: number;
@@ -984,10 +990,11 @@ export default function AsstChat({
     if (kind === "invoice") setReviewDocType("invoice");
   }, [previewCtaId, messages]);
 
-  // Lazily fill quote.descriptionByLang[lang] so the preview (and the sent
-  // agreement, which reads the same field) render the job-details description
-  // in the reader's language. Translates once per language, cached on the
-  // quote, and only when a language is actually previewed/sent.
+  // REQ-264 (M15): when the preview shows a language the quote is not yet
+  // translated into, ask the SERVER to fill it — job-details description AND
+  // line items (TranslateQuote, the same pass SendQuote runs before
+  // dispatch). Chat-created quotes have no description, so the old
+  // description-only client translate never ran and the notice never cleared.
   const descLangInFlight = useRef<Set<string>>(new Set<string>());
   /** UX-06: visible translation state per language — the preview must never
    *  silently fall back to the base language without saying so. */
@@ -996,27 +1003,26 @@ export default function AsstChat({
   >(new Set<string>());
   async function ensureDescriptionLang(targetLang: "en" | "es") {
     const id = quoteId ?? quote?.id;
-    const base = (quote?.description ?? "").trim();
-    if (!id || !base) return;
-    if (quote?.descriptionByLang?.[targetLang]?.trim()) return;
+    if (!id || !previewTranslationMissing(quote, targetLang)) return;
     if (descLangInFlight.current.has(targetLang)) return;
     descLangInFlight.current.add(targetLang);
     setTranslationPendingLangs((s) => new Set(s).add(targetLang));
     try {
-      const lines = base.split("\n").map((l) => l.trim()).filter(Boolean);
-      const res = await assistantClient.translate(lines, targetLang);
-      const translated =
-        (res?.texts && res.texts.length === lines.length ? res.texts : lines)
-          .join("\n");
-      const merged = {
-        ...(quote?.descriptionByLang ?? {}),
-        [targetLang]: translated,
-      };
-      setQuote((q) => q ? { ...q, descriptionByLang: merged } : q);
-      quotesClient.update(id, { descriptionByLang: merged }).catch(() => {});
+      const res = await assistantClient.translateQuote(id, [targetLang]);
+      if (res) {
+        setQuote((q) =>
+          q
+            ? {
+              ...q,
+              descriptionByLang: res.descriptionByLang ?? q.descriptionByLang,
+              lineItems: res.lineItems ?? q.lineItems,
+            }
+            : q
+        );
+      }
     } catch {
-      /* keep the base description — the preview's missing-translation
-         notice (UX-06) says so instead of failing silently. */
+      /* keep the base text — the preview's missing-translation notice
+         (UX-06) says so instead of failing silently. */
     } finally {
       descLangInFlight.current.delete(targetLang);
       setTranslationPendingLangs((s) => {
@@ -1027,12 +1033,14 @@ export default function AsstChat({
     }
   }
 
-  // When the preview is open, make sure the current preview language has a
-  // translated description (keyed on description, not descriptionByLang, so
-  // filling the cache doesn't re-trigger this effect).
+  // When the preview is open, make sure the current preview language is
+  // translated (keyed on the base texts, not the caches, so filling the cache
+  // doesn't re-trigger this effect).
+  const lineItemTexts = (quote?.lineItems ?? []).map((li) => li.description)
+    .join("\n");
   useEffect(() => {
     if (previewCtaId) ensureDescriptionLang(previewLang);
-  }, [previewCtaId, previewLang, quote?.id, quote?.description]);
+  }, [previewCtaId, previewLang, quote?.id, quote?.description, lineItemTexts]);
   /**
    * When the user picks a wizard option that carries a `followUp`, we stash
    * the (messageId, optionId) here and render the inline form instead of
@@ -5718,13 +5726,24 @@ export default function AsstChat({
                     const quoteLineItems = (quote?.lineItems ?? []).map((
                       li,
                     ) => ({
-                      description: li.description,
+                      // REQ-264 (M15): in the preview language.
+                      description: lineItemDescription(li, previewLang),
                       amountCents: Math.round(
                         (li.price ?? 0) * (li.quantity ?? 1),
                       ),
                     }));
+                    // REQ-264 (M15): a card line still matching the quote's
+                    // line renders that line's preview-language text.
                     const lineItems = lockedPayload.lineItems?.length
-                      ? lockedPayload.lineItems
+                      ? lockedPayload.lineItems.map((li, i) => {
+                        const ql = quote?.lineItems?.[i];
+                        return ql && ql.description === li.description
+                          ? {
+                            ...li,
+                            description: lineItemDescription(ql, previewLang),
+                          }
+                          : li;
+                      })
                       : quoteLineItems;
                     const lineTotalCents = lockedPayload.totalCents ??
                       quote?.estimatedTotal ??
@@ -6045,8 +6064,7 @@ export default function AsstChat({
                               </div>
                             )
                             : previewLang !== lang &&
-                                !quote?.descriptionByLang?.[previewLang]
-                                  ?.trim()
+                                previewTranslationMissing(quote, previewLang)
                             ? (
                               <div
                                 class="quote-review__translation-state"

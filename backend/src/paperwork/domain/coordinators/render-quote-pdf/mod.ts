@@ -10,6 +10,7 @@ import { isAccepted } from "#quote-flow/quote-status.ts";
 import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
 import { websiteLabel } from "#quote-flow/format-helpers.ts";
 import { agreementTitle } from "#quote-flow/agreement-title.ts";
+import { lineItemDescription } from "#quote-flow/quote-translations.ts";
 import {
   customerLines,
   customerOnDocument,
@@ -297,7 +298,8 @@ export class RenderQuotePdf {
       for (const li of quote.lineItems) {
         addPageIfNeeded(28);
         const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
-        page.drawText(li.description, {
+        // REQ-264 (M15): the line in the document's language.
+        page.drawText(lineItemDescription(li, lang), {
           x: M,
           y,
           size: 11,

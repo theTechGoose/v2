@@ -5,6 +5,7 @@ import { GenerateJobOptions } from "@agents/domain/coordinators/generate-job-opt
 import { SuggestPrices } from "@agents/domain/coordinators/suggest-prices/mod.ts";
 import { ProfessionalizeBullet } from "@agents/domain/coordinators/professionalize-bullet/mod.ts";
 import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
+import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -70,6 +71,7 @@ export class JobDetailsController {
     private prices: SuggestPrices,
     private professionalize: ProfessionalizeBullet,
     private translate: TranslateBullets,
+    private translateQuoteFlow: TranslateQuote,
     private users: UserStore,
     private sessions: SessionStore,
     private identity: BusinessIdentityStore,
@@ -229,5 +231,36 @@ export class JobDetailsController {
       : [];
     const to = b.to === "es" ? "es" : "en";
     return ctx.json(await this.translate.run({ userId: user.id, texts, to }));
+  }
+
+  /**
+   * POST /agents/job-details/translate-quote
+   * Body: { quoteId: string, langs?: ("en" | "es")[] }
+   * Returns: the quote, with every missing translation filled
+   *
+   * REQ-264 (M15): the contractor's preview asks the SERVER to fill the
+   * quote's translations — job-details description AND line items — for the
+   * language it shows, the same pass SendQuote runs before dispatch.
+   */
+  @Post("translate-quote")
+  async translateQuote(
+    @Context() ctx: ExecutionContext,
+    @Body() body: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const b = (body ?? {}) as { quoteId?: unknown; langs?: unknown };
+    if (typeof b.quoteId !== "string" || !b.quoteId) {
+      throw new Error("quoteId is required");
+    }
+    const langs = Array.isArray(b.langs)
+      ? [...new Set(b.langs.map((l): "en" | "es" => l === "es" ? "es" : "en"))]
+      : undefined;
+    return ctx.json(
+      await this.translateQuoteFlow.run({
+        userId: user.id,
+        quoteId: b.quoteId,
+        langs,
+      }),
+    );
   }
 }

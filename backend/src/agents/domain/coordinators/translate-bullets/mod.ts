@@ -15,6 +15,10 @@ export interface TranslateBulletsInput {
 export interface TranslateBulletsResult {
   /** Translated lines, same count + order as the input. */
   texts: string[];
+  /** REQ-264: true only when `texts` came from the model — false when the
+   *  call failed or the reply was unusable and `texts` are the originals,
+   *  so callers can avoid caching an untranslated fallback. */
+  translated?: boolean;
 }
 
 /**
@@ -33,7 +37,7 @@ export class TranslateBullets {
     const texts = (input.texts ?? []).map((t) => (t ?? "").trim()).filter(
       Boolean,
     );
-    if (texts.length === 0) return { texts: [] };
+    if (texts.length === 0) return { texts: [], translated: true };
     const target = input.to === "es"
       ? "neutral Latin-American Spanish"
       : "English";
@@ -49,11 +53,14 @@ export class TranslateBullets {
         systemPrompt: sys,
         messages: [{ role: "user", content: JSON.stringify({ texts }) }],
         userId: input.userId,
+        // REQ-264 (M15): JSON mode — without it the OpenAI client attaches
+        // the chat tools and a tool call silently returns the originals.
+        responseFormat: "json",
       });
       raw = res.text ?? "";
     } catch (err) {
       console.error("[translate-bullets] llm call failed:", err);
-      return { texts };
+      return { texts, translated: false };
     }
 
     const parsed = tryParseJson(raw);
@@ -64,7 +71,9 @@ export class TranslateBullets {
       : [];
     // Length mismatch ⇒ the model dropped/merged lines; fall back to the
     // originals rather than risk misaligned bullets.
-    return out.length === texts.length ? { texts: out } : { texts };
+    return out.length === texts.length
+      ? { texts: out, translated: true }
+      : { texts, translated: false };
   }
 }
 

@@ -6,6 +6,7 @@ import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import { resolvePublicLang } from "../../../shared/quote-flow/public-lang.ts";
 import { projectLineItems } from "../../../shared/quote-flow/public-doc-state.ts";
+import { localizeLineItems } from "../../../shared/quote-flow/quote-translations.ts";
 import {
   fmtVisitDate,
   type VisitGroup,
@@ -285,8 +286,9 @@ function InvoiceDoc(
   // invoices have none of this and keep the lightweight amount-only document.
   // The itemized job in the BILL's language (descriptions only — the money
   // is language-neutral).
+  // REQ-264 (M15): each line's server-filled translation first.
   const items = projectLineItems(
-    invoice.jobDetails?.lineItems,
+    localizeLineItems(invoice.jobDetails?.lineItems, lang),
     invoice.jobDetails?.lineItemsByLang,
     lang,
   );

@@ -3,6 +3,7 @@ import { AgentConversationStore } from "@agents/domain/data/agent-conversation-s
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { lockStatusFor, QUOTE_LOCKED } from "#quote-flow/quote-lock.ts";
+import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
@@ -56,6 +57,8 @@ export class LockQuote {
     private messages: AgentMessageStore,
     private quotes: QuoteStore,
     private users: UserStore,
+    /** REQ-264 (M15): fills every document language before dispatch. */
+    private translator?: TranslateQuote,
   ) {}
 
   async run(input: LockQuoteInput): Promise<LockQuoteResult> {
@@ -72,6 +75,13 @@ export class LockQuote {
       await this.quotes.update(quote.id, input.userId, {
         lockedAt: new Date().toISOString(),
       });
+      // REQ-264 (M15): the customer reads the document in either language
+      // (/q?lang=…, the email's) — translate at lock so the review card and
+      // the later send carry both; never blocks. REQ-234: lock never sends.
+      await this.translator?.run({ userId: input.userId, quoteId: quote.id })
+        .catch((err) =>
+          console.error(`[lock-quote] translate failed for ${quote.id}:`, err)
+        );
     }
 
     // Re-read so the action_card mirrors what's actually persisted.
