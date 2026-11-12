@@ -159,7 +159,6 @@ function tr(es: boolean) {
     mailingAddress: tFor(lang, "settings.mailingAddress"),
     insurance: tFor(lang, "settings.insurance"),
     tax: tFor(lang, "settings.tax"),
-    contractDefaults: tFor(lang, "settings.contractDefaults"),
     payments: tFor(lang, "settings.payments"),
     editDetails: tFor(lang, "settings.editDetails"),
     // Account / identity rows + fields
@@ -215,10 +214,6 @@ function tr(es: boolean) {
     uploaded: tFor(lang, "settings.uploaded"),
     w9Hint: tFor(lang, "settings.w9Hint"),
     // Contract defaults
-    paymentTerms: tFor(lang, "settings.paymentTerms"),
-    deposit: tFor(lang, "settings.deposit"),
-    warranty: tFor(lang, "settings.warranty"),
-    days: tFor(lang, "settings.days"),
     // Payments
     paymentsIntro: tFor(lang, "settings.paymentsIntro"),
     yourHandle: tFor(lang, "settings.yourHandle"),
@@ -1619,124 +1614,6 @@ function PaymentsEditCard(
   );
 }
 
-/** ContractDefaultsEditCard — the "Valores del contrato" card, made live
- *  (P-42): three editable fields wired to GET/PUT /profile/contract-defaults
- *  ({ paymentTermsDays, depositPct, warrantyDays }), instant-saved on
- *  change/blur like everything else on this page. */
-function ContractDefaultsEditCard(
-  { snapshot, onSaved }: {
-    snapshot: ProfileSnapshot;
-    onSaved: (partial: Partial<ProfileSnapshot>) => void;
-  },
-) {
-  const cd = snapshot.contractDefaults;
-  const [terms, setTerms] = useState(
-    cd?.paymentTermsDays != null ? String(cd.paymentTermsDays) : "",
-  );
-  const [deposit, setDeposit] = useState(
-    cd?.depositPct != null ? String(cd.depositPct) : "",
-  );
-  const [warranty, setWarranty] = useState(
-    cd?.warrantyDays != null ? String(cd.warrantyDays) : "",
-  );
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const t = tr(langSignal.value === "es");
-
-  function autosave(
-    patch: Partial<Record<"terms" | "deposit" | "warranty", string>> = {},
-  ) {
-    const num = (raw: string) => {
-      const n = Math.round(Number(raw));
-      return raw.trim() !== "" && Number.isFinite(n) && n >= 0 ? n : undefined;
-    };
-    const body = {
-      ...(num(patch.terms ?? terms) != null
-        ? { paymentTermsDays: num(patch.terms ?? terms) }
-        : {}),
-      ...(num(patch.deposit ?? deposit) != null
-        ? { depositPct: num(patch.deposit ?? deposit) }
-        : {}),
-      ...(num(patch.warranty ?? warranty) != null
-        ? { warrantyDays: num(patch.warranty ?? warranty) }
-        : {}),
-    };
-    if (Object.keys(body).length === 0) return;
-    setBusy(true);
-    setErr(null);
-    putKeepalive("/profile/contract-defaults", body)
-      .then(async (r) => {
-        if (!r.ok) throw new Error(t.saveFailed);
-        const next = await r.json().catch(() => null);
-        if (next) onSaved({ contractDefaults: next });
-        setSaved(true);
-      })
-      .catch((e) => setErr(e instanceof Error ? e.message : t.saveFailed))
-      .finally(() => setBusy(false));
-  }
-
-  const fields: Array<{
-    key: "terms" | "deposit" | "warranty";
-    label: string;
-    suffix: string;
-    value: string;
-    set: (v: string) => void;
-  }> = [
-    {
-      key: "terms",
-      label: t.paymentTerms,
-      suffix: t.days,
-      value: terms,
-      set: setTerms,
-    },
-    {
-      key: "deposit",
-      label: t.deposit,
-      suffix: "%",
-      value: deposit,
-      set: setDeposit,
-    },
-    {
-      key: "warranty",
-      label: t.warranty,
-      suffix: t.days,
-      value: warranty,
-      set: setWarranty,
-    },
-  ];
-
-  return (
-    <EditPanel
-      title={t.contractDefaults}
-      busy={busy}
-      err={err}
-      saved={saved}
-      saving={t.saving}
-      savedLabel={t.saved}
-      dataCy="settings-contract-defaults"
-    >
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
-        {fields.map((f) => (
-          <label key={f.key} style="display:block">
-            <span style={labelStyle}>{f.label} ({f.suffix})</span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              style={inputStyle}
-              value={f.value}
-              onInput={(e) => f.set((e.target as HTMLInputElement).value)}
-              onBlur={(e) =>
-                autosave({ [f.key]: (e.target as HTMLInputElement).value })}
-            />
-          </label>
-        ))}
-      </div>
-    </EditPanel>
-  );
-}
-
 /** NumberingCard — REQ-198/199: the account number and, per document kind,
  *  the next number and an editable starting number. Saves only the changed
  *  kinds (PUT /profile/numbering); a kind that already issued a number is
@@ -2616,14 +2493,12 @@ export default function SettingsPage() {
             <InsuranceEditCard snapshot={p} onSaved={onSaved} />
           </div>
 
-          <div class="grid">
-            <TaxEditCard snapshot={p} onSaved={onSaved} />
-            {
-              /* P-42: live editor wired to GET/PUT /profile/contract-defaults —
-            the card is no longer a dead read-only panel. */
-            }
-            <ContractDefaultsEditCard snapshot={p} onSaved={onSaved} />
-          </div>
+          {
+            /* REQ-622 (demo cycle 4, p4-p6c): no Contract defaults card — its
+            payment terms / deposit / warranty days were read by nothing; the
+            payment terms are "Days to pay an invoice" in Edit details. */
+          }
+          <TaxEditCard snapshot={p} onSaved={onSaved} />
 
           {/* REQ-198/199: the account number and the starting numbers */}
           <NumberingCard refreshKey={numberingKey} />
