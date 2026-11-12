@@ -1,6 +1,7 @@
 import { asset, Head } from "fresh/runtime";
 import {
   greetingFirstName,
+  personLanguage,
   personName,
 } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
@@ -59,7 +60,9 @@ export default define.page(async function AssistantHome(ctx) {
   const profile = await profileClient.get({ sessionId }).catch(() =>
     null as ProfileSnapshot | null
   );
-  const lang = profile?.user?.language === "es" ? "es" : "en";
+  const lang = personLanguage(profile?.user, profile?.actor) === "es"
+    ? "es"
+    : "en";
 
   const greetingName = greetingFirstName(user) ||
     tFor(lang, "common.thereFallback");

@@ -14,6 +14,8 @@ import {
   accountLabel,
   actorName,
   inviteCheck,
+  inviteName,
+  personLanguage,
   realName,
 } from "@users/domain/business/account-admins/mod.ts";
 import type { AccountAdmin } from "@users/dto/account-admin.ts";
@@ -44,6 +46,8 @@ export interface ActorView {
   phoneNumber: string;
   /** her own email (Settings edits hers while acting) */
   email?: string;
+  /** REQ-631 — HER UI language (her own record's; the account's while she has none) */
+  language?: "en" | "es";
 }
 
 export interface AccountsView {
@@ -79,14 +83,14 @@ export class AccountAdmins {
     } catch {
       throw new AccountAdminError("bad_phone", 400);
     }
+    // REQ-632: the editor's name is required — what the app greets her by
+    const name = inviteName(input.name);
+    if (name === null) throw new AccountAdminError("name_required", 400);
     const refused = inviteCheck(owner.phoneNumber, phone);
     if (refused) throw new AccountAdminError(refused, 400);
     if (await this.admins.find(phone, owner.id)) {
       throw new AccountAdminError("already_invited", 409);
     }
-    const name = typeof input.name === "string" && input.name.trim()
-      ? input.name.trim().slice(0, 120)
-      : undefined;
     const rec = await this.admins.create({
       userId: owner.id,
       phoneNumber: phone,
@@ -162,17 +166,37 @@ export class AccountAdmins {
     };
   }
 
-  /** REQ-624 — the acting person as the app names her in `accountId` */
-  async actorView(actor: User, accountId: string): Promise<ActorView> {
+  /** REQ-624 — the acting person as the app names her in `accountId`; REQ-631 — and her language */
+  async actorView(actor: User, accountId: string, account?: User): Promise<ActorView> {
     const invite = await this.admins.find(actor.phoneNumber, accountId);
     const { name, needsName } = actorName(actor, invite?.name);
+    const language = personLanguage(account ?? {}, actor);
     return {
       id: actor.id,
       name,
       needsName,
       phoneNumber: actor.phoneNumber,
       ...(actor.email ? { email: actor.email } : {}),
+      ...(language ? { language } : {}),
     };
+  }
+
+  /**
+   * REQ-632 — a LEGACY invite, as one made before the name was required sits in the store: no
+   * name, no text. Only the fakes-only dev seam calls it (so a story can reach the REQ-624 name
+   * prompt, the fallback such an invite still gets); the real deploy has no route to it.
+   */
+  async plantLegacyInvite(owner: User, phoneNumber: unknown): Promise<AccountAdmin> {
+    let phone: string;
+    try {
+      phone = normalizePhone(typeof phoneNumber === "string" ? phoneNumber : "");
+    } catch {
+      throw new AccountAdminError("bad_phone", 400);
+    }
+    const refused = inviteCheck(owner.phoneNumber, phone);
+    if (refused) throw new AccountAdminError(refused, 400);
+    if (await this.admins.find(phone, owner.id)) throw new AccountAdminError("already_invited", 409);
+    return await this.admins.create({ userId: owner.id, phoneNumber: phone });
   }
 
   /** a new session in `userId` — the person's own account, or one they administer; the old session is dropped */

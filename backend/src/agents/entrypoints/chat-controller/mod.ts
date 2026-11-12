@@ -7,7 +7,7 @@ import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import { ProcessVoiceMemo } from "@files/domain/coordinators/process-voice-memo/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
-import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import { requireSession, uiLangOf } from "@users/domain/coordinators/require-user/mod.ts";
 
 /**
  * POST /agents/chat
@@ -37,7 +37,8 @@ export class ChatController {
 
   @Post()
   async chat(@Context() ctx: ExecutionContext, @Body() body: unknown) {
-    const user = await requireUser(ctx, this.sessions, this.users);
+    const signedIn = await requireSession(ctx, this.sessions, this.users);
+    const user = signedIn.user;
     const dto = parseChatInput(body);
 
     let conversationId = dto.conversationId;
@@ -78,6 +79,7 @@ export class ChatController {
       content,
       kind: dto.kind,
       ...(payload ? { payload } : {}),
+      uiLang: uiLangOf(signedIn), // REQ-631: the assistant answers the person in HER language
     });
 
     return ctx.json(result);

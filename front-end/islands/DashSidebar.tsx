@@ -22,7 +22,7 @@ import {
 } from "../clients/admins.ts";
 import { folderPathTo, isFolder, viewAt } from "../lib/nav-folders.ts";
 import { NAV } from "../lib/nav-tree.ts";
-import { personName } from "../../shared/person-name/mod.ts"; // REQ-624
+import { personLanguage, personName } from "../../shared/person-name/mod.ts"; // REQ-624
 import { ActorNamePrompt } from "../components/ActorNamePrompt.tsx"; // REQ-624
 
 type CountKey = "clients" | "quotes" | "invoices";
@@ -90,7 +90,9 @@ function projectSidebar(snap: CachedDash | null): SbState {
   const bizName =
     (profile?.identity?.businessName ?? profile?.identity?.displayName)?.trim();
   const counts = stats ? pickCounts(stats) : {};
-  const lang = profile?.user.language === "es" ? "es" : "en";
+  const lang = personLanguage(profile?.user, profile?.actor) === "es"
+    ? "es"
+    : "en"; // REQ-631
   const superAdmin = profile?.user.superAdmin === true;
   const actor = profile?.actor
     ? { id: profile.actor.id, needsName: profile.actor.needsName === true }

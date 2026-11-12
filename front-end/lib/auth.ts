@@ -27,6 +27,8 @@ export interface User {
     needsName: boolean;
     phoneNumber: string;
     email?: string;
+    /** REQ-631 — HER UI language (her own record's); every SSR route renders in it */
+    language?: "en" | "es";
   };
   createdAt: number;
   updatedAt: number;

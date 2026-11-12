@@ -62,6 +62,7 @@ import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mo
 import { ConnectStripe } from "@users/domain/coordinators/connect-stripe/mod.ts"; // REQ-212
 import { StripeSettingsController } from "@users/entrypoints/stripe-settings-controller/mod.ts"; // REQ-212
 import { DevStripeController } from "@users/entrypoints/dev-stripe-controller/mod.ts"; // REQ-212
+import { DevAccountAdminsController } from "@users/entrypoints/dev-account-admins-controller/mod.ts"; // REQ-632
 import { StripeGateway } from "@core/data/stripe-gateway/mod.ts"; // REQ-212
 
 /**
@@ -98,6 +99,7 @@ import { StripeGateway } from "@core/data/stripe-gateway/mod.ts"; // REQ-212
     NumberingController, // REQ-199
     StripeSettingsController, // REQ-212
     DevStripeController, // REQ-212
+    DevAccountAdminsController, // REQ-632 — fakes only
   ],
   injectables: [
     // identity

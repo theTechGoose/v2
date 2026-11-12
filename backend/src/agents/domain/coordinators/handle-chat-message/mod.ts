@@ -104,6 +104,9 @@ export interface HandleChatInput {
    *  render an image bubble pointing at /api/files/:fileId — and so
    *  history-replay can re-fetch image bytes for the LLM each turn. */
   payload?: Record<string, unknown>;
+  /** REQ-631 — the signed-in person's UI language (an editor's own while acting); the server-authored
+   *  replies follow it. Absent → the account's user.language, as before. */
+  uiLang?: "en" | "es";
 }
 
 export interface HandleChatResult {
@@ -182,7 +185,7 @@ export class HandleChatMessage {
       typeof input.content === "string";
     if (inputIsText) {
       const me = await this.users.get(input.userId).catch(() => null);
-      const lang = me?.language === "es" ? "es" : "en";
+      const lang = input.uiLang ?? (me?.language === "es" ? "es" : "en"); // REQ-631
       const ident = await this.identity.get(input.userId).catch(() => null);
       const addr = await this.addresses.get(input.userId).catch(() => null);
       const needsName = !me?.name || me.name.trim().length === 0;
@@ -610,7 +613,7 @@ export class HandleChatMessage {
     const contractor = await this.users.get(input.userId).catch(() =>
       undefined
     );
-    const replyLang = contractor?.language === "es" ? "es" : "en";
+    const replyLang = input.uiLang ?? (contractor?.language === "es" ? "es" : "en"); // REQ-631: the person's
 
     // ---- N5 fast-path: confirmation → fire lock_quote without the LLM ----
     // The model is unreliable at calling lock_quote on short confirmations

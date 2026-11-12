@@ -168,6 +168,10 @@
   border-color: var(--brand-green);
   box-shadow: var(--shadow-focus);
 }
+/* REQ-632 — a required field left empty says so on its border too, not only in the line below it */
+.field input[aria-invalid="true"] {
+  border-color: #a83b3b;
+}
 .row {
   display: flex;
   gap: 10px;

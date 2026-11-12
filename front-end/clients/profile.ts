@@ -114,6 +114,8 @@ export interface ActorView {
   /** her own number */
   phoneNumber: string;
   email?: string;
+  /** REQ-631 — HER UI language (PUT /me { language } while acting writes her record, never the owner's) */
+  language?: "en" | "es";
 }
 
 export interface ProfileUser {

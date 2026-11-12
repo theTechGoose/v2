@@ -1,6 +1,14 @@
 /** REQ-146 — the pure rules of account admins: where a sign-in lands, how an account is labelled, what an invite refuses. */
 import { assertEquals } from "#std/assert";
-import { accountLabel, actorName, inviteCheck, pickSignInAccount, splitActingPatch } from "./mod.ts";
+import {
+  accountLabel,
+  actorName,
+  inviteCheck,
+  inviteName,
+  personLanguage,
+  pickSignInAccount,
+  splitActingPatch,
+} from "./mod.ts";
 
 Deno.test("REQ-146 pickSignInAccount — no memberships: the person's own account, not acting", () => {
   assertEquals(pickSignInAccount("u-self", []), { userId: "u-self", actorId: undefined });
@@ -54,11 +62,28 @@ Deno.test("REQ-624 actorName — neither: her formatted phone, and she is asked 
   assertEquals(actorName({ phoneNumber: "+447700900123" }, undefined).name, "+447700900123", "a non-US number as stored");
 });
 
-Deno.test("REQ-624 actorPatch — while acting, the name and the email are the person's own; the language stays the account's", () => {
+Deno.test("REQ-631 actorPatch — while acting, the name, the email AND the language are the person's own; nothing reaches the account", () => {
   assertEquals(splitActingPatch({ name: "Daughter Test", email: "d@x.co", language: "es" }), {
-    actor: { name: "Daughter Test", email: "d@x.co" },
-    account: { language: "es" },
+    actor: { name: "Daughter Test", email: "d@x.co", language: "es" },
+    account: {},
   });
   assertEquals(splitActingPatch({ name: "Daughter Test" }), { actor: { name: "Daughter Test" }, account: {} });
-  assertEquals(splitActingPatch({ language: "en" }), { actor: {}, account: { language: "en" } });
+  assertEquals(splitActingPatch({ language: "en" }), { actor: { language: "en" }, account: {} });
+});
+
+Deno.test("REQ-631 personLanguage — the signed-in person's language: hers while acting, the account's on its own session", () => {
+  const owner = { language: "en" as const };
+  assertEquals(personLanguage(owner, null), "en", "the owner's own session");
+  assertEquals(personLanguage(owner, { language: "es" }), "es", "the editor's, never the owner's");
+  assertEquals(personLanguage({ language: "es" as const }, { language: "en" }), "en");
+  assertEquals(personLanguage(owner, {}), "en", "an editor with no language of her own yet: the account's");
+  assertEquals(personLanguage({}, null), undefined, "neither: unset (callers keep their default)");
+});
+
+Deno.test("REQ-632 inviteName — a real name is required: missing, blank, whitespace and the sign-up placeholder are refused", () => {
+  assertEquals(inviteName("  Sofia Jerez "), "Sofia Jerez");
+  assertEquals(inviteName("x".repeat(200))?.length, 120, "capped at 120");
+  for (const bad of [undefined, null, 42, "", "   ", "\t\n", "New user", "Nuevo usuario", " nuevo usuario "]) {
+    assertEquals(inviteName(bad), null, `refused: ${JSON.stringify(bad)}`);
+  }
 });
