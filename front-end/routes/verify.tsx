@@ -12,6 +12,7 @@ import { tFor } from "../lib/i18n.ts";
 import CodeInput from "../islands/CodeInput.tsx";
 import { MetaPixelEvent } from "../components/MetaPixel.tsx";
 import { leadEvent } from "../../shared/meta-pixel/pixel.ts";
+import { verifyEditHref } from "../lib/verify-edit-href.ts";
 
 function formatPhoneDisplay(e164: string): string {
   const digits = e164.replace(/\D/g, "").slice(-10);
@@ -43,13 +44,11 @@ export default define.page(async function Verify(ctx) {
   const s = STRINGS[lang];
   const display = formatPhoneDisplay(phone);
 
-  // P-39: "Wrong number? Edit" returns to the form the user came from.
-  // Origin travels as ?from= (set by the /landing trial form) so it
-  // survives reload. Allowlisted — never reflect an arbitrary URL.
-  // "#trial" jumps straight to the phone-form section on /landing.
-  const editHref = url.searchParams.get("from") === "landing"
-    ? "/landing#trial"
-    : "/";
+  // P-39 / REQ-351: "Wrong number? Edit" returns to the form the user came
+  // from. Every sign-in form sends ?from=<origin> (survives reload); the
+  // allow-list in lib/verify-edit-href.ts maps it — never reflect a URL — and
+  // a missing/unknown origin goes to /login, not the marketing page.
+  const editHref = verifyEditHref(url.searchParams.get("from"));
 
   return (
     <>

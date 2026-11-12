@@ -4,6 +4,7 @@ import { t } from "../lib/i18n.ts";
 import { verifyClient } from "../clients/verify.ts";
 import { takeDevCode } from "../lib/dev-code.ts";
 import DevCodeCard from "../components/DevCodeCard.tsx";
+import { DEFAULT_VERIFY_EDIT_HREF } from "../lib/verify-edit-href.ts";
 
 interface Props {
   /** The phone the code was texted to — the /verify flow. */
@@ -293,7 +294,9 @@ export default function CodeInput(
         {submitting ? t("verify.busy") : s["verify.cta"]}
       </button>
       <div class="meta">
-        <a href={editHref ?? "/"}>{editLabel ?? s["verify.editPhone"]}</a>
+        <a href={editHref ?? DEFAULT_VERIFY_EDIT_HREF}>
+          {editLabel ?? s["verify.editPhone"]}
+        </a>
         <button type="button" onClick={resend} disabled={cooldown > 0}>
           {cooldown > 0
             ? s["verify.resendIn"].replace("{n}", String(cooldown))
