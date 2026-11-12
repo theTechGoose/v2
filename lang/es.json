@@ -4105,6 +4105,8 @@
   "quotesPage.open.edit": "Editar → Versión {n}",
   "quotesPage.edit.heading": "Los cambios se guardan como Versión {n} y quedan sin publicar hasta que toques \"Publicar revisión\".",
   "quotesPage.edit.description": "Descripción",
+  "quotesPage.edit.jobDetails": "Detalles del trabajo (lo que lee el cliente)",
+  "quotesPage.edit.jobDetailsHint": "Un punto por línea.",
   "quotesPage.edit.descriptionPlaceholder": "Descripción de la línea",
   "quotesPage.edit.qty": "Cant.",
   "quotesPage.edit.price": "Precio ($)",

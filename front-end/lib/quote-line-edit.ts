@@ -170,3 +170,38 @@ export function linesPatch(
     estimatedTotal: lineItems.reduce((s, l) => s + l.price * l.quantity, 0),
   };
 }
+
+/**
+ * REQ-561 (demo-loop cycle 4, M28): the job-detail bullets the customer
+ * reads (quote.description, one bullet per line) as the editor starts them —
+ * the pending revision's text when one is waiting, else the live text.
+ */
+export function editableJobDetails(
+  q:
+    | { description?: unknown; pendingRevision?: Record<string, unknown> }
+    | null
+    | undefined,
+): string {
+  if (!q) return "";
+  const pending = q.pendingRevision?.description;
+  if (typeof pending === "string") return pending;
+  return typeof q.description === "string" ? q.description : "";
+}
+
+/** One bullet per line: each line trimmed, blank lines dropped. */
+function jobDetailsText(text: string): string {
+  return text.split("\n").map((l) => l.trim()).filter(Boolean).join("\n");
+}
+
+/**
+ * REQ-561 (M28): the save body's part for the job details — `{ description }`
+ * when the text really changed from what the editor started with, else `{}`
+ * (so a line-only edit never touches the bullets or their translations).
+ */
+export function jobDetailsPatch(
+  initial: string,
+  current: string,
+): { description?: string } {
+  const next = jobDetailsText(current);
+  return next === jobDetailsText(initial) ? {} : { description: next };
+}

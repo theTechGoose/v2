@@ -4106,6 +4106,8 @@
   "quotesPage.open.edit": "Edit → Version {n}",
   "quotesPage.edit.heading": "Changes are saved as Version {n} and stay unpublished until you tap \"Publish revision\".",
   "quotesPage.edit.description": "Description",
+  "quotesPage.edit.jobDetails": "Job details (what the customer reads)",
+  "quotesPage.edit.jobDetailsHint": "One bullet per line.",
   "quotesPage.edit.descriptionPlaceholder": "Line description",
   "quotesPage.edit.qty": "Qty",
   "quotesPage.edit.price": "Price ($)",
