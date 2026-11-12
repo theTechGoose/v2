@@ -68,6 +68,16 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
   const [adding, setAdding] = useState(false);
   const [addErr, setAddErr] = useState<string | null>(null);
   const [addName, setAddName] = useState("");
+  // REQ-289: the New customer modal is a dialog — Escape closes it, as the
+  // backdrop click does (not while the save is in flight)
+  useEffect(() => {
+    if (!addOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !adding) setAddOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [addOpen, adding]);
   const [addBusiness, setAddBusiness] = useState("");
   const [addPhone, setAddPhone] = useState("");
   const [addEmail, setAddEmail] = useState("");
@@ -232,11 +242,17 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
           style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px"
         >
           <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-client-title"
             onClick={(e) => e.stopPropagation()}
             onSubmit={submitAddClient}
             style="background:#fff;border-radius:16px;padding:24px 26px;max-width:440px;width:100%;box-shadow:0 24px 64px rgba(20,72,82,0.22);display:flex;flex-direction:column;gap:14px"
           >
-            <h2 style="margin:0;font-size:20px;font-weight:800;color:var(--fg,#144852)">
+            <h2
+              id="add-client-title"
+              style="margin:0;font-size:20px;font-weight:800;color:var(--fg,#144852)"
+            >
               {tFor(lang, "clientsHero.addClient")}
             </h2>
             <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)">

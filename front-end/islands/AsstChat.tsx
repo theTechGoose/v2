@@ -8878,6 +8878,7 @@ function CustomerStepPanel(props: {
               type="tel"
               class="cust-pick__search"
               placeholder={tFor(lang, "asstChat.customerStep.phonePlaceholder")}
+              aria-label={tFor(lang, "asstChat.customerStep.phonePlaceholder")} /* REQ-289 */
               value={formatPhoneInput(createPhone)} /* NW-34 (REQ-012) */
               onInput={(e) =>
                 setCreatePhone((e.target as HTMLInputElement).value)}
@@ -8886,6 +8887,7 @@ function CustomerStepPanel(props: {
               type="email"
               class="cust-pick__search"
               placeholder={tFor(lang, "asstChat.customerStep.emailPlaceholder")}
+              aria-label={tFor(lang, "asstChat.customerStep.emailPlaceholder")} /* REQ-289 */
               value={createEmail}
               onInput={(e) =>
                 setCreateEmail((e.target as HTMLInputElement).value)}
