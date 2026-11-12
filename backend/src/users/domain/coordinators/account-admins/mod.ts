@@ -12,6 +12,7 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import {
   accountLabel,
+  actorName,
   inviteCheck,
   realName,
 } from "@users/domain/business/account-admins/mod.ts";
@@ -30,6 +31,19 @@ export interface AccountEntry {
   userId: string;
   label: string;
   role: "owner" | "admin";
+}
+
+/** REQ-624 — the person signed in while acting for an account: who the app names */
+export interface ActorView {
+  id: string;
+  /** never the owner's name — hers, else this account's invite name, else her phone */
+  name: string;
+  /** she has no name anywhere: the app asks her once */
+  needsName: boolean;
+  /** her own number — the one she signs in with */
+  phoneNumber: string;
+  /** her own email (Settings edits hers while acting) */
+  email?: string;
 }
 
 export interface AccountsView {
@@ -132,7 +146,11 @@ export class AccountAdmins {
         role: "admin",
       });
     }
-    const name = realName(actor.name) ?? memberships.find((m) => m.name)?.name;
+    // REQ-624: the name for THIS account — her own, else the invite of the account she is in
+    const acting = effective.id !== actor.id;
+    const name = acting
+      ? actorName(actor, memberships.find((m) => m.userId === effective.id)?.name).name
+      : realName(actor.name) ?? memberships.find((m) => m.name)?.name;
     return {
       actor: {
         id: actor.id,
@@ -141,6 +159,19 @@ export class AccountAdmins {
       },
       currentUserId: effective.id,
       accounts,
+    };
+  }
+
+  /** REQ-624 — the acting person as the app names her in `accountId` */
+  async actorView(actor: User, accountId: string): Promise<ActorView> {
+    const invite = await this.admins.find(actor.phoneNumber, accountId);
+    const { name, needsName } = actorName(actor, invite?.name);
+    return {
+      id: actor.id,
+      name,
+      needsName,
+      phoneNumber: actor.phoneNumber,
+      ...(actor.email ? { email: actor.email } : {}),
     };
   }
 

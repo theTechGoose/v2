@@ -90,6 +90,20 @@ export default function DashTopbar(
   // pre-hydration clicks were the "hamburger does not work" bug (PDF p8).
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  // REQ-624: an editor who just named herself (ActorNamePrompt) is greeted by it without a reload
+  const [namedAs, setNamedAs] = useState<string | null>(null);
+  useEffect(() => {
+    const onNamed = (e: Event) => {
+      const n = String((e as CustomEvent).detail ?? "").trim().split(/\s+/)[0];
+      if (n) setNamedAs(n);
+    };
+    globalThis.addEventListener("pm:person-named", onNamed);
+    return () => globalThis.removeEventListener("pm:person-named", onNamed);
+  }, []);
+  const nameOverride =
+    namedAs && greetingOverrideKey === "dashTopbar.greetingNoName"
+      ? undefined
+      : greetingOverrideKey;
 
   useEffect(() => {
     let stopped = false;
@@ -152,11 +166,11 @@ export default function DashTopbar(
       </button>
       <div class="topbar__greet">
         <div class="topbar__greet-line">{greetingDate}</div>
-        <div class="topbar__greet-name">
-          {(greetingOverrideKey
-            ? tFor(lang, greetingOverrideKey)
-            : greetingOverride) ??
-            tFor(lang, "dashTopbar.greeting", { name: greetingName })}
+        <div class="topbar__greet-name" data-cy="topbar-greeting">
+          {(nameOverride ? tFor(lang, nameOverride) : greetingOverride) ??
+            tFor(lang, "dashTopbar.greeting", {
+              name: namedAs ?? greetingName,
+            })}
         </div>
       </div>
       {

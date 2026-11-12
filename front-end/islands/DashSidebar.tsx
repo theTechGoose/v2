@@ -9,6 +9,7 @@ import { I, ICN } from "../lib/dash-icons.tsx";
 import { type DashboardStats } from "../clients/dashboard.ts";
 import {
   type CachedDash,
+  clearDashCache,
   readCached,
   refreshDash,
   subscribeDash,
@@ -21,6 +22,8 @@ import {
 } from "../clients/admins.ts";
 import { folderPathTo, isFolder, viewAt } from "../lib/nav-folders.ts";
 import { NAV } from "../lib/nav-tree.ts";
+import { personName } from "../../shared/person-name/mod.ts"; // REQ-624
+import { ActorNamePrompt } from "../components/ActorNamePrompt.tsx"; // REQ-624
 
 type CountKey = "clients" | "quotes" | "invoices";
 
@@ -43,6 +46,8 @@ interface SbState {
   /** Super-admin flag — gates the Admin tab. Server-enforced; this only
    *  controls visibility. */
   superAdmin: boolean;
+  /** REQ-624 — the editor signed in while acting for another's account (null on one's own) */
+  actor: { id: string; needsName: boolean } | null;
 }
 
 const INITIAL_STATE: SbState = {
@@ -50,6 +55,7 @@ const INITIAL_STATE: SbState = {
   identity: null,
   lang: "en",
   superAdmin: false,
+  actor: null,
 };
 
 function deriveInitials(
@@ -77,21 +83,36 @@ function pickCounts(stats: DashboardStats): Partial<Record<CountKey, number>> {
 function projectSidebar(snap: CachedDash | null): SbState {
   if (!snap) return INITIAL_STATE;
   const { stats, profile } = snap;
-  const userName = profile?.user.name?.trim();
+  // REQ-624: the person signed in — the editor's own name while she acts for the owner's account
+  const userName = profile
+    ? personName(profile.user, profile.actor)
+    : undefined;
   const bizName =
     (profile?.identity?.businessName ?? profile?.identity?.displayName)?.trim();
   const counts = stats ? pickCounts(stats) : {};
   const lang = profile?.user.language === "es" ? "es" : "en";
   const superAdmin = profile?.user.superAdmin === true;
+  const actor = profile?.actor
+    ? { id: profile.actor.id, needsName: profile.actor.needsName === true }
+    : null;
   if (!userName && !bizName) {
-    return { counts, identity: null, lang, superAdmin };
+    return { counts, identity: null, lang, superAdmin, actor };
   }
   const display = userName || bizName || tFor(lang, "common.account");
   const biz = userName && bizName ? bizName : undefined;
   const fallback = profile?.initials?.trim();
-  const initials = (fallback && fallback !== "?" ? fallback : null) ??
-    deriveInitials(userName, bizName);
-  return { counts, identity: { display, biz, initials }, lang, superAdmin };
+  // an editor with no name yet: her phone stands in for the name, never for the letters
+  const initials = actor?.needsName
+    ? "•"
+    : (fallback && fallback !== "?" ? fallback : null) ??
+      deriveInitials(userName, bizName);
+  return {
+    counts,
+    identity: { display, biz, initials },
+    lang,
+    superAdmin,
+    actor,
+  };
 }
 
 export default function DashSidebar(
@@ -150,9 +171,7 @@ export default function DashSidebar(
     } catch {
       return;
     }
-    try {
-      globalThis.sessionStorage?.removeItem("pm:dash-cache:v1");
-    } catch { /* private mode */ }
+    clearDashCache();
     globalThis.location.href = "/dashboard";
   }
 
@@ -204,6 +223,7 @@ export default function DashSidebar(
     // P-67: tell polling islands (DashTopbar) to stand down BEFORE the
     // session dies, so no in-flight poll lands mid-transition.
     globalThis.dispatchEvent(new Event("pm:logout"));
+    clearDashCache(); // REQ-624: the next person in this tab never sees this one's name
     try {
       await fetch("/api/auth/logout", {
         method: "POST",
@@ -221,6 +241,20 @@ export default function DashSidebar(
 
   return (
     <>
+      {s.actor && (
+        <ActorNamePrompt
+          actorId={s.actor.id}
+          needsName={s.actor.needsName}
+          lang={s.lang}
+          onSaved={(name) => {
+            // the topbar's SSR greeting learns it too (DashTopbar listens)
+            globalThis.dispatchEvent(
+              new CustomEvent("pm:person-named", { detail: name }),
+            );
+            refreshDash();
+          }}
+        />
+      )}
       {mobileOpen && (
         <div
           class="sb-backdrop"
@@ -391,6 +425,7 @@ export default function DashSidebar(
               <a
                 href="/settings"
                 class="sb__footer"
+                data-cy="sb-user"
                 style="display:flex;align-items:center;gap:10px;padding:10px 8px;margin:0 0 6px;border-radius:10px;text-decoration:none;color:inherit;background:rgba(255,255,255,0.04);"
                 title={s.identity.biz
                   ? `${s.identity.display} · ${s.identity.biz}`
@@ -398,6 +433,7 @@ export default function DashSidebar(
               >
                 <span
                   aria-hidden="true"
+                  data-cy="sb-user-initials"
                   style="flex:0 0 auto;width:32px;height:32px;border-radius:50%;background:var(--brand-green,#519843);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;letter-spacing:0.04em"
                 >
                   {s.identity.initials}
@@ -406,11 +442,17 @@ export default function DashSidebar(
                   class="sb__footer-text"
                   style="min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.2;overflow:hidden"
                 >
-                  <span style="font-size:13px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                  <span
+                    data-cy="sb-user-name"
+                    style="font-size:13px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+                  >
                     {s.identity.display}
                   </span>
                   {s.identity.biz && (
-                    <span style="font-size:11px;color:rgba(255,255,255,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                    <span
+                      data-cy="sb-user-biz"
+                      style="font-size:11px;color:rgba(255,255,255,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+                    >
                       {s.identity.biz}
                     </span>
                   )}

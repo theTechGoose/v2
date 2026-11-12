@@ -1,5 +1,6 @@
 /** REQ-146 — the pure rules of account admins. */
 import type { AccountAdmin } from "@users/dto/account-admin.ts";
+import type { Language } from "@users/dto/user.ts";
 import { isPlaceholderName } from "@users/domain/business/placeholder-name/mod.ts";
 
 export interface SignInAccount {
@@ -35,4 +36,43 @@ export function accountLabel(owner: { phoneNumber: string; name?: string }, busi
 /** what an invite refuses before anything is stored: the owner's own number */
 export function inviteCheck(ownerPhone: string, phone: string): "own_number" | null {
   return ownerPhone === phone ? "own_number" : null;
+}
+
+/** REQ-624 — how the signed-in person is named while acting for an account, and whether to ask */
+export interface ActorName {
+  /** never the owner's: her own real name, else the invite's name for THIS account, else her phone */
+  name: string;
+  /** true when she has no name anywhere — the app asks her once */
+  needsName: boolean;
+}
+
+/** a US E.164 number as people read it ("(843) 555-0101"); any other number as stored */
+export function readablePhone(phone: string): string {
+  const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(phone);
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : phone;
+}
+
+/** REQ-624 — the acting person's name: her own, else this account's invite name, else her phone */
+export function actorName(actor: { phoneNumber: string; name?: string }, inviteName: string | undefined): ActorName {
+  const own = realName(actor.name);
+  if (own) return { name: own, needsName: false };
+  const invited = inviteName?.trim();
+  if (invited) return { name: invited, needsName: false };
+  return { name: readablePhone(actor.phoneNumber), needsName: true };
+}
+
+/**
+ * REQ-624 — PUT /me while acting: the name and the email are the person's own and go to HER record;
+ * the language is the account's (it drives the account's UI and the server's replies, read off the
+ * account record everywhere) and stays where it was.
+ */
+export function splitActingPatch(
+  patch: { name?: string; email?: string; language?: Language },
+): { actor: { name?: string; email?: string }; account: { language?: Language } } {
+  const actor: { name?: string; email?: string } = {};
+  const account: { language?: Language } = {};
+  if (patch.name !== undefined) actor.name = patch.name;
+  if (patch.email !== undefined) actor.email = patch.email;
+  if (patch.language !== undefined) account.language = patch.language;
+  return { actor, account };
 }

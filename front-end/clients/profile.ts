@@ -104,6 +104,18 @@ export interface ContractDefaults {
   updatedAt: string;
 }
 
+/** REQ-624 — the person signed in while acting for someone else's account (an invited editor) */
+export interface ActorView {
+  id: string;
+  /** never the owner's: her own name, else the invite's for this account, else her phone */
+  name: string;
+  /** she has no name anywhere — the app asks her once (ActorNamePrompt) */
+  needsName: boolean;
+  /** her own number */
+  phoneNumber: string;
+  email?: string;
+}
+
 export interface ProfileUser {
   id: string;
   phoneNumber: string;
@@ -118,6 +130,8 @@ export interface ProfileUser {
   onboardedAt?: string;
   /** Whether that first time was a skip vs. a real finish. */
   onboardingSkipped?: boolean;
+  /** REQ-624 — present while acting: the person signed in (PUT /me answers with it too) */
+  actor?: ActorView;
   createdAt: number;
   updatedAt: number;
 }
@@ -169,6 +183,8 @@ export interface ProfileSnapshot {
   /** REQ-054 — null until a pick (read as free) */
   plan?: UserPlan | null;
   initials: string;
+  /** REQ-624 — present while acting: the person signed in; `initials` are then hers */
+  actor?: ActorView;
   /** REQ-198 — the account's own number ("DM-0001") */
   accountNumber?: string;
   /** Phone-area-code guess for the business state — present only when we
