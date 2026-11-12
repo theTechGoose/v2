@@ -154,7 +154,12 @@ describe("REQ-180 — the overlay and the stage are wired to it", () => {
       expect(island).toMatch(
         /k: "move",\s*a: anchorOf\(\{ x, y \}\),\s*t: performance\.now\(\)/,
       );
-      expect(island).toMatch(/const a = pointToFrac\(p, /);
+      // REQ-371 (demo m10, cycle 2): the overlay's anchoring lives in pointer-anchor.ts (anchorAt)
+      expect(
+        island === overlay
+          ? read("front-end/lib/demo-mode/pointer-anchor.ts")
+          : island,
+      ).toMatch(/const a = pointToFrac\(p, /);
       expect(island).toMatch(/newerMove\(/);
       expect(island).toMatch(/MOVE_GAP_DIRECT_MS : MOVE_GAP_RELAY_MS/);
     }

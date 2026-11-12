@@ -89,6 +89,7 @@ import {
   type Replayer,
 } from "../lib/demo-mode/mirror-replay.ts";
 import { useGlide } from "../lib/demo-mode/use-glide.ts";
+import { placeWavesAgain } from "../lib/demo-mode/pointer-anchor.ts";
 import DemoPointer, {
   type Wave,
   WAVE_MS,
@@ -184,7 +185,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-228 — the pill's real height: the frame keeps out of that band, however it wraps */
   const [pillH, setPillH] = useState(0);
   const pillRef = useRef<HTMLDivElement | null>(null);
-  const [waves, setWaves] = useState<Wave[]>([]);
+  /** REQ-371 (demo m10) — each wave keeps the anchor it was sent with: placed again with the pointer */
+  const [waves, setWaves] = useState<(Wave & { a: Anchor })[]>([]);
   /** REQ-214 — the latest thing each colleague did, by pid */
   const [cmds, setCmds] = useState<Record<string, PointerCmd>>({});
   const seq = useRef(0);
@@ -343,6 +345,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  under it once the replay is styled */
   const replace = () => {
     showCustomer();
+    setWaves((w) => placeWavesAgain(w, (a) => placeOnStage(a).at));
     for (const [pid, a] of peersRef.current) {
       const p = placeOnStage(a);
       const was = placedRef.current.get(pid);
@@ -665,7 +668,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             const p = placeOnStage(m.a);
             glide.glideTo(p.at, p.outside);
             const id = ++waveId.current;
-            setWaves((w) => [...w, { id, ...p.at }]);
+            setWaves((w) => [...w, { id, ...p.at, a: m.a }]);
             setTimeout(
               () => setWaves((w) => w.filter((x) => x.id !== id)),
               WAVE_MS,

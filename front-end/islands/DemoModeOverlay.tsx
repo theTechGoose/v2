@@ -60,12 +60,16 @@ import {
   type Anchor,
   fracToPoint,
   type PeerMessage,
-  pointToFrac,
   type Presenter,
   type Role,
   sameAnchor,
   STAGE_PATH,
 } from "../../shared/demo-mode/protocol.ts";
+import {
+  anchorAt,
+  createTouchFade,
+  TOUCH_REST_MS,
+} from "../lib/demo-mode/pointer-anchor.ts";
 import {
   createMirrorSender,
   type MirrorSender,
@@ -269,7 +273,6 @@ const viewportBox = () => ({
   width: globalThis.innerWidth || 1,
   height: globalThis.innerHeight || 1,
 });
-const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
 export default function DemoModeOverlay() {
   /** M5 — in a nested frame (an app page embedded in a page), or on the stage: never part of the demo */
@@ -345,26 +348,18 @@ export default function DemoModeOverlay() {
   /** REQ-242 — a point of this screen for the presenters: the fraction of this viewport and the
    *  mirrored element under it (their stage puts the pointer on that same element) */
   const anchorOf = (p: Pt): Anchor => {
-    const a = pointToFrac(p, viewportBox());
-    sentRef.current = a; // REQ-305 — every anchor of this pointer goes out: the last one sent
     const recorder = recorderRef.current;
     const sender = senderRef.current;
-    if (!recorder || !sender) return a;
-    const id = recorder.idOf(document.elementFromPoint(p.x, p.y));
-    const el = id === null ? null : recorder.nodeOf(id);
-    if (id === null || !el) return a;
-    const r = el.getBoundingClientRect();
-    if (r.width <= 0 || r.height <= 0) return a;
-    const out = {
-      ...a,
-      n: {
-        id,
-        x: clamp01((p.x - r.left) / r.width),
-        y: clamp01((p.y - r.top) / r.height),
-        l: sender.load,
-      },
-    };
-    sentRef.current = out;
+    // REQ-371 (demo m10) — from the hit-test stack, the demo's own pill skipped: a point under
+    // the pill names the page's element under it, never an ancestor's box
+    const out = anchorAt(
+      p,
+      viewportBox(),
+      recorder && sender ? document.elementsFromPoint(p.x, p.y) : [],
+      recorder,
+      sender?.load ?? null,
+    );
+    sentRef.current = out; // REQ-305 — every anchor of this pointer goes out: the last one sent
     return out;
   };
   /** a presenter's pointer on this screen: on the element they point at when this page has it */
@@ -737,19 +732,26 @@ export default function DemoModeOverlay() {
   // 3. this side's pointer, document-wide (REQ-188: as a fraction of this viewport)
   useEffect(() => {
     if (!demo || demo.role !== "viewer") return;
+    const onLeave = () => {
+      touchFade.cancel();
+      lastMoveRef.current = null;
+      sentRef.current = null;
+      linkRef.current?.send({ k: "leave" });
+    };
+    // REQ-371 (demo m10) — a touch has no pointerleave: a last tap stayed drawn on the stage like
+    // a hover; it is let go a few seconds after the last touch
+    const touchFade = createTouchFade({ ms: TOUCH_REST_MS, fade: onLeave });
     const onMove = (e: PointerEvent) => {
+      touchFade.seen(e.pointerType);
       lastMoveRef.current = { x: e.clientX, y: e.clientY };
       if (linkRef.current) throttle.push({ x: e.clientX, y: e.clientY });
     };
-    const onDown = (e: PointerEvent) =>
+    const onDown = (e: PointerEvent) => {
+      touchFade.seen(e.pointerType);
       linkRef.current?.send({
         k: "click",
         a: anchorOf({ x: e.clientX, y: e.clientY }),
       });
-    const onLeave = () => {
-      lastMoveRef.current = null;
-      sentRef.current = null;
-      linkRef.current?.send({ k: "leave" });
     };
     document.addEventListener("pointermove", onMove, {
       capture: true,
@@ -761,6 +763,7 @@ export default function DemoModeOverlay() {
     });
     document.documentElement.addEventListener("pointerleave", onLeave);
     return () => {
+      touchFade.cancel();
       document.removeEventListener("pointermove", onMove, { capture: true });
       document.removeEventListener("pointerdown", onDown, { capture: true });
       document.documentElement.removeEventListener("pointerleave", onLeave);
