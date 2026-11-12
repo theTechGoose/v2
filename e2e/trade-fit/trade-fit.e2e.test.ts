@@ -225,3 +225,93 @@ Deno.test("REQ-450 p4: 'I know my price' shows a priced example of the trade; 'h
       `help-me-price asks what to charge (${ask})`,
     );
   }));
+
+/**
+ * REQ-581 — demo-loop cycle 4 (run r857a9d67), issue p3: "Examples don't fit
+ * the trade ('tile $3,600' for fence company)". A fencing business taps Edit
+ * on a draft quote card: the hint under the composer gives a fence change,
+ * not the tile one. The conversation load is answered by page.route, so no
+ * LLM is involved.
+ */
+Deno.test("REQ-581 c4 p3: a fencing business's Edit hint gives a fence change, not 'tile $3,600'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(
+      "+15125553435",
+      "Lone Star Fence Co.",
+      http,
+      page,
+      baseUrl,
+    );
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const res = await http("/api/agents/conversations", {
+      method: "POST",
+      headers: auth,
+      body: "{}",
+    });
+    const conversation = await res.json();
+    const id = conversation.id as string;
+    const now = Date.now();
+    await page.route(
+      `**/api/agents/conversations/${id}`,
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            conversation,
+            messages: [
+              {
+                id: "m-user",
+                conversationId: id,
+                role: "user",
+                kind: "text",
+                content: "150 ft cedar privacy fence, $6,750",
+                createdAt: now - 2000,
+              },
+              {
+                id: "m-card",
+                conversationId: id,
+                role: "assistant",
+                kind: "action_card",
+                content: "Quote drafted",
+                createdAt: now - 1000,
+                payload: {
+                  actionType: "quote",
+                  status: "draft",
+                  quoteId: "q-req581",
+                  lineItems: [
+                    { description: "Cedar privacy fence", amountCents: 600000 },
+                    { description: "Gate", amountCents: 75000 },
+                  ],
+                  totalCents: 675000,
+                },
+              },
+            ],
+          }),
+        }),
+    );
+    await page.goto(`/assistant?c=${id}`);
+    const draftCard = page.locator(".action-card", {
+      hasText: "Cedar privacy fence",
+    });
+    await draftCard.waitFor({ state: "visible", timeout: 20_000 });
+    const composer = page.locator("textarea.composer__input");
+    await composer.waitFor({ state: "visible" });
+    await composer.fill("");
+    const edit = draftCard.locator("button.action-card__btn", {
+      hasText: "Edit",
+    });
+    // Click until the island has hydrated and seeded the composer.
+    for (let i = 0; i < 20; i++) {
+      await edit.click().catch(() => {});
+      if ((await composer.inputValue()) === "Change the quote: ") break;
+      await page.waitForTimeout(250);
+    }
+    const hint = page.locator(".composer__hint", {
+      hasText: "Type the change",
+    });
+    await hint.waitFor({ state: "visible", timeout: 5000 });
+    const text = (await hint.first().textContent()) ?? "";
+    expect(!/tile/i.test(text), `no tile example for a fencer (${text})`);
+    expect(/fence|gate|post/i.test(text), `a fencing change (${text})`);
+  }));

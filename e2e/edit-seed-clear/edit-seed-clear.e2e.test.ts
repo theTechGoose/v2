@@ -134,7 +134,8 @@ Deno.test("REQ-464: Lock it in clears a bare Edit seed; the seed shows a hint", 
       "Edit seeds the composer (REQ-246)",
     );
     const hint = page.locator(".composer__hint", {
-      hasText: "Type the change, e.g. tile $3,600",
+      // REQ-581: the generic hint is trade-free.
+      hasText: "Type the change, e.g. add cleanup $150",
     });
     await hint.waitFor({ state: "visible", timeout: 5000 });
 
