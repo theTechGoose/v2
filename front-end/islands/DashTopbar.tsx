@@ -150,7 +150,9 @@ export default function DashTopbar(
   return (
     // REQ-207: the bar is its own stacking context (backdrop-filter); lifted
     // above the content so the search panel is not painted under the cards.
-    <header class="topbar" style="position:relative;z-index:40">
+    // REQ-406 (demo m47): that position:relative + z-index lives in
+    // TOPBAR_CSS, not inline — an inline position beat the phone's sticky.
+    <header class="topbar">
       {/* REQ-223: the toggle's and the phone bar's rules ride with the island, so /assistant (no dashboard.css) gets them too */}
       <style>{TOPBAR_CSS}</style>
       <button
