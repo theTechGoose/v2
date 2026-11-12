@@ -80,7 +80,11 @@ import {
 } from "../../shared/quote-flow/customer-step.ts";
 import { customerMatchesQuery } from "../../shared/quote-flow/customer-search.ts";
 import { termLabel } from "../../shared/quote-flow/terms-i18n.ts";
-import { composerPlaceholderKey } from "../../shared/quote-flow/trade-fit.ts"; // REQ-343
+import {
+  type ComposerFlow,
+  composerFlowFor,
+  composerPlaceholderKey,
+} from "../../shared/quote-flow/trade-fit.ts"; // REQ-343, REQ-450
 import type { ExtractedDuration } from "../../shared/quote-flow/quote-facts.ts";
 import { reviewJobDetails } from "../../shared/quote-flow/review-job-details.ts";
 import { versionTitle } from "../../shared/quote-flow/version-titles.ts";
@@ -477,11 +481,14 @@ interface ActionCardPayload {
  *  slab example, otherwise new users wonder if they're in the right
  *  surface. After onboarding hands off, revert to the job example —
  *  REQ-343: the example of THIS business's trade (a cleaner never sees the
- *  concrete slab), the generic one when the name names no trade. */
+ *  concrete slab), the generic one when the name names no trade.
+ *  REQ-450: and of THIS flow — "I know my price" shows a priced job, "help
+ *  me price it" asks what to charge. */
 function composerPlaceholder(
   msgs: Message[],
   lang: Lang,
   businessName?: string,
+  flow: ComposerFlow = "ask",
 ): string {
   const lastAssistant = [...msgs].reverse().find((m) =>
     m.role === "assistant" && m.kind === "text"
@@ -503,7 +510,7 @@ function composerPlaceholder(
   if (/payment|venmo|zelle|cash app|how.*get paid/.test(text)) {
     return tFor(lang, "asstChat.composer.payment");
   }
-  return tFor(lang, composerPlaceholderKey(businessName));
+  return tFor(lang, composerPlaceholderKey(businessName, flow));
 }
 
 /** Map a quote status to the human-facing chip label on the in-chat
@@ -9264,7 +9271,12 @@ export default function AsstChat({
                     <textarea
                       ref={taRef}
                       class="composer__input"
-                      placeholder={composerPlaceholder(messages, lang, from?.business)}
+                      placeholder={composerPlaceholder(
+                        messages,
+                        lang,
+                        from?.business,
+                        composerFlowFor(flowChip),
+                      )}
                       rows={2}
                       value={draft}
                       onInput={(e) => {

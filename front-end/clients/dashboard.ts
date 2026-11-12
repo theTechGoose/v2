@@ -29,6 +29,9 @@ export interface Profile {
   businessIdentity?:
     & { displayName?: string; logoUrl?: string }
     & Record<string, unknown>;
+  /** REQ-450: GET /profile's business identity — its name picks the trade
+   *  examples on the New-invoice form. */
+  identity?: { businessName?: string; displayName?: string } | null;
   /** REQ-206: the payment instructions the invoice form starts from. */
   contractDefaults?:
     | (
