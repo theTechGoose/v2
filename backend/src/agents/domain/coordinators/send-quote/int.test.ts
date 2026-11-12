@@ -75,6 +75,7 @@ function fresh(translator?: TranslateQuote) {
     bus,
     emailer,
     smser,
+    users,
     translator,
   );
   return {
@@ -92,7 +93,7 @@ function fresh(translator?: TranslateQuote) {
 /** The emailer refuses to send without a contractor name on file. UserStore
  *  create() assigns a random id, so write the user row (keyed ["user", id])
  *  directly. */
-async function seedContractor(userId: string) {
+async function seedContractor(userId: string, language?: "en" | "es") {
   const kv = await getKv();
   const now = new Date().toISOString();
   await kv.set(["user", userId], {
@@ -100,6 +101,7 @@ async function seedContractor(userId: string) {
     phoneNumber: "+15125550000",
     name: "Test Contractor",
     email: "me@test.dev",
+    ...(language ? { language } : {}),
     createdAt: now,
     updatedAt: now,
   });
@@ -698,4 +700,85 @@ Deno.test("REQ-248 send-quote: a re-Send that publishes a pending edit names Ver
   assertEquals(filed.length, 1);
   assertEquals(filed[0].publishedBy, { userId: "u-1" });
   assertEquals(filed[0].publishedAt, filed[0].content.sentAt);
+});
+
+Deno.test("REQ-276 send-quote: the send note is ONE language — the contractor's UI language, even when the document goes out in English (demo i18n-formatting-m8)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  // A Spanish-UI contractor sends the quote in ENGLISH by text to a
+  // fictional 555 number: the SMS reason comes back in Spanish (REQ-030),
+  // and the note around it used to be the English template.
+  await seedContractor("u-es", "es");
+  const customer = await ctx.customers.create("u-es", {
+    name: "Tom K.",
+    phoneNumber: "+15555550123",
+  });
+  const quote = await ctx.quotes.create("u-es", {
+    summary: "Roof",
+    lineItems: [],
+    estimatedTotal: 12_500,
+    status: "draft",
+    customerId: customer.id,
+  });
+  const conv = await ctx.conversations.create({
+    userId: "u-es",
+    quoteId: quote.id,
+    customerId: customer.id,
+  });
+
+  const r = await ctx.flow.run({
+    userId: "u-es",
+    conversationId: conv.id,
+    quoteId: quote.id,
+    channel: "sms",
+    language: "en",
+  });
+
+  const note = r.newMessages[0].content;
+  assert(
+    note.startsWith(
+      "Error al enviar la Cotización + Acuerdo por mensaje de texto",
+    ),
+    `divider in Spanish: ${note}`,
+  );
+  assert(/número 555 ficticio/.test(note), `Spanish reason: ${note}`);
+  assert(!/Quote \+ Agreement/.test(note), `no English template: ${note}`);
+  await resetKv();
+});
+
+Deno.test("REQ-276 send-quote: a missing recipient reads in the contractor's language, not the dispatcher's English machine reason", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  await seedContractor("u-es2", "es");
+  const customer = await ctx.customers.create("u-es2", { name: "Sin Correo" });
+  const quote = await ctx.quotes.create("u-es2", {
+    summary: "Roof",
+    lineItems: [],
+    estimatedTotal: 12_500,
+    status: "draft",
+    customerId: customer.id,
+  });
+  const conv = await ctx.conversations.create({
+    userId: "u-es2",
+    quoteId: quote.id,
+    customerId: customer.id,
+  });
+
+  const r = await ctx.flow.run({
+    userId: "u-es2",
+    conversationId: conv.id,
+    quoteId: quote.id,
+    channel: "both",
+  });
+
+  const note = r.newMessages[0].content;
+  assert(/^Cotización \+ Acuerdo no entregada/.test(note), `Spanish: ${note}`);
+  assert(
+    !/no recipient|pass `to`|attach a customer/.test(note),
+    `no English reason: ${note}`,
+  );
+  assert(/sin destinatario/.test(note), `Spanish reason: ${note}`);
+  await resetKv();
 });

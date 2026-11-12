@@ -16,6 +16,7 @@
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
+import { amountInWords } from "../../shared/quote-flow/locale-format.ts";
 
 interface MoneyInputProps {
   initialCents?: number;
@@ -174,7 +175,7 @@ export default function MoneyInput(
   }
 
   const hasValue = (cents ?? 0) > 0;
-  const words = hasValue ? centsToWords(cents!, lang) : "";
+  const words = hasValue ? amountInWords(cents!, lang) : "";
 
   // Auto-shrink hero font so big numbers always fit. Counts the rendered
   // chars (digits + commas + ".00" tail + glyph buffer) and divides the
@@ -400,65 +401,6 @@ function shortMoney(cents: number): string {
   const d = cents / 100;
   if (d >= 1000) return (d / 1000) + "k";
   return String(d);
-}
-
-function centsToWords(cents: number, lang: Lang): string {
-  if (!Number.isFinite(cents) || cents < 0) return "";
-  if (cents === 0) return tFor(lang, "moneyInput.words.zeroDollars");
-  const dollars = Math.floor(cents / 100);
-  const c = cents % 100;
-  const dStr = numToWords(dollars, lang);
-  const dLabel = tFor(
-    lang,
-    dollars === 1 ? "moneyInput.words.dollar" : "moneyInput.words.dollars",
-  );
-  if (c === 0) return `${dStr} ${dLabel}`;
-  const cStr = numToWords(c, lang);
-  const cLabel = tFor(
-    lang,
-    c === 1 ? "moneyInput.words.cent" : "moneyInput.words.cents",
-  );
-  return `${dStr} ${dLabel} ${tFor(lang, "moneyInput.words.and")} ${cStr} ${cLabel}`;
-}
-function ones(lang: Lang, i: number): string {
-  return tFor(lang, `moneyInput.ones.${i}`);
-}
-function tens(lang: Lang, i: number): string {
-  return tFor(lang, `moneyInput.tens.${i}`);
-}
-function numToWords(n: number, lang: Lang): string {
-  if (n < 0 || !Number.isFinite(n)) return "";
-  if (n < 20) return ones(lang, n);
-  if (n < 100) {
-    const t = Math.floor(n / 10);
-    const o = n % 10;
-    return o === 0 ? tens(lang, t) : `${tens(lang, t)}-${ones(lang, o)}`;
-  }
-  if (n < 1000) {
-    const h = Math.floor(n / 100);
-    const r = n % 100;
-    return r === 0
-      ? `${ones(lang, h)} ${tFor(lang, "moneyInput.words.hundred")}`
-      : `${ones(lang, h)} ${tFor(lang, "moneyInput.words.hundred")} ${
-        numToWords(r, lang)
-      }`;
-  }
-  if (n < 1_000_000) {
-    const k = Math.floor(n / 1000);
-    const r = n % 1000;
-    return r === 0
-      ? `${numToWords(k, lang)} ${tFor(lang, "moneyInput.words.thousand")}`
-      : `${numToWords(k, lang)} ${tFor(lang, "moneyInput.words.thousand")} ${
-        numToWords(r, lang)
-      }`;
-  }
-  const m = Math.floor(n / 1_000_000);
-  const r = n % 1_000_000;
-  return r === 0
-    ? `${numToWords(m, lang)} ${tFor(lang, "moneyInput.words.million")}`
-    : `${numToWords(m, lang)} ${tFor(lang, "moneyInput.words.million")} ${
-      numToWords(r, lang)
-    }`;
 }
 
 /* --------------------------------------------------------------------- */

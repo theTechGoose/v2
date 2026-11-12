@@ -73,7 +73,11 @@ import {
   formatPhoneInput,
   websiteLabel,
 } from "../../shared/quote-flow/format-helpers.ts";
-import { summarizeJobName } from "../../shared/quote-flow/job-name.ts";
+import {
+  jobNameCase,
+  summarizeJobName,
+} from "../../shared/quote-flow/job-name.ts";
+import { formatClockTime } from "../../shared/quote-flow/locale-format.ts";
 import {
   type AssistantDraft,
   maxBulletSeq,
@@ -540,9 +544,9 @@ export function deriveUserInitials(input: {
   return "👤";
 }
 
-function fmtTime(ts: number | string): string {
-  const d = typeof ts === "string" ? new Date(ts) : new Date(ts);
-  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+// REQ-276: the app language, not the browser locale ("8:55 p. m." in es).
+function fmtTime(ts: number | string, lang: Lang): string {
+  return formatClockTime(ts, lang);
 }
 
 function fmtKB(bytes: number): string {
@@ -2450,14 +2454,20 @@ export default function AsstChat({
         tFor(lang, "asstChat.newJob");
       // UX-29: the shared lang-aware derivation — a bare 3-word slice
       // produced titles like "El patio de".
-      const jobName = confirmed?.jobName || summarizeJobName(summary, lang);
+      const jobName = (confirmed?.jobName &&
+        jobNameCase(confirmed.jobName, lang)) ||
+        summarizeJobName(summary, lang);
       const byLang = confirmed?.byLang;
       const byLangFields = byLang
         ? {
           jobNameByLang: Object.fromEntries(
             Object.entries(byLang).map((
               [l, v],
-            ) => [l, l === lang ? jobName : v.jobName]),
+            ) => [
+              l,
+              // REQ-276: an LLM's pre-generated name arrives Title Cased.
+              l === lang ? jobName : jobNameCase(v.jobName, l as Lang),
+            ]),
           ),
           summaryByLang: Object.fromEntries(
             Object.entries(byLang).map((
@@ -2708,15 +2718,20 @@ export default function AsstChat({
         const b = opt.byLang?.[ol];
         if (b?.summary?.trim()) summByLang[ol] = b.summary.trim();
         if (ol === appLang) continue;
+        // REQ-276: a translated / pre-generated name is stored in its
+        // language's casing ("Corte de césped", never "Corte De Césped").
         if (!nameEdited && b?.jobName?.trim()) {
-          nameByLang[ol] = b.jobName.trim();
+          nameByLang[ol] = jobNameCase(b.jobName, ol as Lang);
         } else if (jobName) {
           try {
             const res = await assistantClient.translate(
               [jobName],
               ol as "en" | "es",
             );
-            nameByLang[ol] = (res?.texts?.[0] ?? jobName).trim();
+            nameByLang[ol] = jobNameCase(
+              res?.texts?.[0] ?? jobName,
+              ol as Lang,
+            );
           } catch {
             nameByLang[ol] = jobName;
           }
@@ -7583,7 +7598,7 @@ export default function AsstChat({
                             </button>
                           )
                           : null}
-                        <div class="msg__time">{fmtTime(m.createdAt)}</div>
+                        <div class="msg__time">{fmtTime(m.createdAt, lang)}</div>
                       </div>
                     </div>
                   );
@@ -7930,7 +7945,7 @@ export default function AsstChat({
                             }
                           </div>
                         </div>
-                        <div class="msg__time">{fmtTime(m.createdAt)}</div>
+                        <div class="msg__time">{fmtTime(m.createdAt, lang)}</div>
                       </div>
                     </div>
                   );
@@ -8084,7 +8099,7 @@ export default function AsstChat({
                             )
                             : null}
                         </div>
-                        <div class="msg__time">{fmtTime(m.createdAt)}</div>
+                        <div class="msg__time">{fmtTime(m.createdAt, lang)}</div>
                       </div>
                     </div>
                   );
@@ -8151,7 +8166,7 @@ export default function AsstChat({
                             →
                           </span>
                         </a>
-                        <div class="msg__time">{fmtTime(m.createdAt)}</div>
+                        <div class="msg__time">{fmtTime(m.createdAt, lang)}</div>
                       </div>
                     </div>
                   );
@@ -8201,7 +8216,7 @@ export default function AsstChat({
                       <div class="msg__bubble" style="white-space:pre-wrap">
                         {m.content}
                       </div>
-                      <div class="msg__time">{fmtTime(m.createdAt)}</div>
+                      <div class="msg__time">{fmtTime(m.createdAt, lang)}</div>
                     </div>
                   </div>
                 );

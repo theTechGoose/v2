@@ -90,7 +90,15 @@ function fresh() {
       users,
       bus,
     ),
-    send: new SendQuote(conversations, messages, quotes, bus, emailer, smser),
+    send: new SendQuote(
+      conversations,
+      messages,
+      quotes,
+      bus,
+      emailer,
+      smser,
+      users, // REQ-276: the note is in the contractor's UI language
+    ),
     load: new LoadConversation(conversations, messages, quotes, customers),
   };
 }
