@@ -4,6 +4,7 @@ import type {
   LLMClient,
   LLMRequest,
   LLMResponse,
+  LLMToolName,
 } from "@agents/domain/business/llm/base/mod.ts";
 import {
   parseToolCall,
@@ -79,20 +80,26 @@ export class OpenAILLMClient implements LLMClient {
     messages: Array<any>,
     model: string = this.model,
     responseFormat?: "json",
+    allowed?: readonly LLMToolName[],
   ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
     const ctl = new AbortController();
     const timer = setTimeout(
       () => ctl.abort(),
       DEFAULT_CHAT_TIMEOUT_MS + 1_000,
     );
+    // REQ-368 (M32): only the tools the coordinator allowed this turn.
+    const defs = allowed
+      ? TOOL_DEFS.filter((d) => allowed.includes(d.function.name))
+      : TOOL_DEFS;
     // REQ-028: a JSON-mode call is a one-shot structured answer — no chat
     // tools (they could only divert the reply into a tool call) and the
     // provider guarantees a syntactically valid object.
     const toolParams = responseFormat === "json"
       ? { response_format: { type: "json_object" as const } }
+      : defs.length === 0
+      ? {}
       : {
-        tools:
-          TOOL_DEFS as unknown as OpenAI.Chat.Completions.ChatCompletionTool[],
+        tools: defs as unknown as OpenAI.Chat.Completions.ChatCompletionTool[],
         tool_choice: "auto" as const,
       };
     const call = this.client.chat.completions.create({
@@ -149,14 +156,24 @@ export class OpenAILLMClient implements LLMClient {
     // worth the latency cost (~1s when it triggers).
     // REQ-017: a coordinator may ask for a specific model for this call.
     const model = req.model?.trim() || this.model;
-    let completion = await this.complete(messages, model, req.responseFormat);
+    let completion = await this.complete(
+      messages,
+      model,
+      req.responseFormat,
+      req.tools,
+    );
     let choice = completion.choices[0];
     const isEmpty = (c: typeof choice) =>
       !((c?.message?.content ?? "").trim()) &&
       (c?.message?.tool_calls ?? []).length === 0;
     if (isEmpty(choice)) {
       console.warn("[openai-llm] empty response on first try; retrying once");
-      completion = await this.complete(messages, model, req.responseFormat);
+      completion = await this.complete(
+        messages,
+        model,
+        req.responseFormat,
+        req.tools,
+      );
       choice = completion.choices[0];
     }
 
@@ -169,6 +186,8 @@ export class OpenAILLMClient implements LLMClient {
     for (const tc of toolCalls) {
       if (tc.type !== "function") continue;
       const action = parseToolCall(tc);
+      // REQ-368: a tool this turn did not offer is never acted on.
+      if (action && req.tools && !req.tools.includes(action.type)) continue;
       if (action) return { text: text || fallbackTextFor(action), action };
     }
     return { text };

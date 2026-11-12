@@ -230,3 +230,92 @@ Deno.test("OpenAILLMClient smoke: respects OPENAI_MODEL env var when no model op
     Deno.env.delete("OPENAI_MODEL");
   }
 });
+// ---------------------------------------------------------------------------
+// REQ-368 (demo-loop cycle 1, M32): the model only sees the tools the
+// conversation's state allows. Pair 1's terms-phase turn carried EVERY tool,
+// so "send him the deposit invoice" became lock_quote on a signed quote.
+// ---------------------------------------------------------------------------
+
+function toolNames(body: unknown): string[] | undefined {
+  const tools = (body as { tools?: { function: { name: string } }[] }).tools;
+  return tools?.map((t) => t.function.name);
+}
+
+Deno.test("REQ-368 OpenAILLMClient smoke: only the allowed tools ride along", async () => {
+  const mock = makeMockFetch(() => chatCompletion("ok"));
+  const client = new OpenAILLMClient({
+    apiKey: "sk-test-1234",
+    fetch: mock.fetch,
+  });
+  await client.respond({
+    systemPrompt: "p",
+    messages: [{ role: "user", content: "John signed!" }],
+    userId: "u-1",
+    tools: ["change_order", "update_job_details"],
+  });
+  const body = mock.calls[0].body as { tool_choice?: string };
+  assertEquals(toolNames(body), ["change_order", "update_job_details"]);
+  assertEquals(body.tool_choice, "auto");
+});
+
+Deno.test("REQ-368 OpenAILLMClient smoke: an empty allowlist sends no tools at all", async () => {
+  const mock = makeMockFetch(() => chatCompletion("ok"));
+  const client = new OpenAILLMClient({
+    apiKey: "sk-test-1234",
+    fetch: mock.fetch,
+  });
+  await client.respond({
+    systemPrompt: "p",
+    messages: [{ role: "user", content: "hi" }],
+    userId: "u-1",
+    tools: [],
+  });
+  const body = mock.calls[0].body as { tools?: unknown; tool_choice?: unknown };
+  assertEquals(body.tools, undefined);
+  assertEquals(body.tool_choice, undefined);
+});
+
+Deno.test("REQ-368 OpenAILLMClient smoke: no allowlist keeps every tool (callers that don't gate are unchanged)", async () => {
+  const mock = makeMockFetch(() => chatCompletion("ok"));
+  const client = new OpenAILLMClient({
+    apiKey: "sk-test-1234",
+    fetch: mock.fetch,
+  });
+  await client.respond({
+    systemPrompt: "p",
+    messages: [{ role: "user", content: "hi" }],
+    userId: "u-1",
+  });
+  assertEquals(toolNames(mock.calls[0].body), [
+    "create_quote",
+    "lock_quote",
+    "request_terms_transition",
+    "change_order",
+    "update_job_details",
+  ]);
+});
+
+Deno.test("REQ-368 OpenAILLMClient smoke: a tool call the turn did not allow is dropped, the text kept", async () => {
+  const mock = makeMockFetch(() =>
+    chatCompletion(
+      "Here's where it stands.",
+      [{
+        id: "call_x",
+        name: "lock_quote",
+        arguments: JSON.stringify({ quoteId: "q-1" }),
+      }],
+    )
+  );
+  const client = new OpenAILLMClient({
+    apiKey: "sk-test-1234",
+    fetch: mock.fetch,
+  });
+  const out = await client.respond({
+    systemPrompt: "p",
+    messages: [{ role: "user", content: "send him the invoice" }],
+    userId: "u-1",
+    tools: ["change_order", "update_job_details"],
+  });
+  assertEquals(out.action, undefined);
+  assertEquals(out.text, "Here's where it stands.");
+});

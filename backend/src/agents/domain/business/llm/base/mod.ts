@@ -58,6 +58,14 @@ export interface LLMRequest {
    * a missing brace. The stub ignores it.
    */
   responseFormat?: "json";
+  /**
+   * REQ-368 (demo-loop cycle 1, M32): the chat tools the model may call this
+   * turn — the coordinator's call, from the conversation's phase and its
+   * quote's state. Omitted → every tool (callers that don't gate); [] → none.
+   * A signed quote's terms-phase turn carried lock_quote, and "send him the
+   * deposit invoice" became a re-lock of the signed quote.
+   */
+  tools?: readonly LLMToolName[];
 }
 
 /**
@@ -114,6 +122,9 @@ export type LLMAction =
     type: "update_job_details";
     payload: { descriptionByLang: Partial<Record<"en" | "es", string>> };
   };
+
+/** REQ-368: a chat tool's name — one per LLMAction variant. */
+export type LLMToolName = LLMAction["type"];
 
 export interface LLMResponse {
   text: string;
