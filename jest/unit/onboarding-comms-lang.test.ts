@@ -70,7 +70,8 @@ describe("REQ-348 the languages a contractor sends in default from their own lan
     expect(settings).toMatch(/sendLanguagesOf\(/);
     expect(settings).not.toMatch(/\[snapshot\.identity\?\.commsLanguage \?\? "en"\]/);
     const wizard = read("front-end/islands/WelcomeWizard.tsx");
-    expect(wizard).toMatch(/sendLanguagesOf\(/);
+    // REQ-498: via onboardingSendLanguages, which reads sendLanguagesOf
+    expect(wizard).toMatch(/onboardingSendLanguages\(/);
     expect(wizard).toMatch(/commsLanguages:/);
   });
 

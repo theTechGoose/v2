@@ -136,3 +136,65 @@ Deno.test("REQ-348: a Spanish-landing signup meets an EN/ES switch in onboarding
     }
     expect.eq(language, "en", "the switch saved user.language");
   }));
+
+/**
+ * REQ-498 — demo-loop cycle 3, issue m42: "Onboarding from ?lang=es defaults 'Languages you send
+ * in' to English only". A contractor created in Spanish who taps EN on the name step still meets
+ * English AND Spanish ticked on the business step — the default remembers the language the account
+ * was created in, it does not follow the live switch — and Continue saves both.
+ */
+Deno.test("REQ-498: a Spanish-landing signup who switches to EN on step 1 still sends in English and Spanish by default (demo m42, cycle 3)", (t) =>
+  story(t, async ({ page, expect, http }) => {
+    await page.setViewportSize(DESKTOP);
+    const local = `512${digits()}`;
+
+    await page.goto("/login?lang=es");
+    await page.locator("input[type='tel']").fill(local);
+    await clickAway(page, "button[type='submit']");
+    await page.waitForURL((u: URL) => u.pathname === "/verify", {
+      timeout: 60_000,
+    });
+    await page.locator("[data-cy='dev-code']").waitFor({
+      state: "visible",
+      timeout: 15_000,
+    });
+    await clickAway(page, "[data-cy='dev-code-use']");
+    await page.waitForURL((u: URL) => u.pathname === "/welcome", {
+      timeout: 20_000,
+    });
+    await expect.see("Lo primero — ¿cómo te llamamos?");
+
+    // step 1: hydrate (the name takes), then flip the wizard to English
+    await typeIn(page, "input[autocomplete='name']", "Rafa Morales");
+    await clickAway(page, "[data-cy='welcome-lang-en']");
+    await page.locator("[data-cy='welcome-lang-en'][aria-pressed='true']")
+      .waitFor({ timeout: 15_000 });
+    await clickAway(page, "[data-cy='welcome-continue']");
+
+    // step 2 in English — both send-in languages still ticked
+    await page.locator("input[autocomplete='organization']").waitFor({
+      timeout: 30_000,
+    });
+    expect.eq(
+      await page.locator("[data-cy='welcome-comms-en']").isChecked(),
+      true,
+      "English is checked",
+    );
+    expect.eq(
+      await page.locator("[data-cy='welcome-comms-es']").isChecked(),
+      true,
+      "Spanish is still checked after switching the wizard to EN",
+    );
+    await typeIn(page, "input[autocomplete='organization']", "Techos Morales");
+    await clickAway(page, "[data-cy='welcome-continue']");
+    await page.locator("input[type='email']").waitFor({ timeout: 30_000 });
+
+    const snap = await (await http("/api/profile", {
+      headers: await sessionAuth(page),
+    })).json() as { identity?: { commsLanguages?: string[] } };
+    expect.eq(
+      JSON.stringify(snap.identity?.commsLanguages),
+      JSON.stringify(["en", "es"]),
+      "the business is saved sending in English and Spanish",
+    );
+  }));
