@@ -5,6 +5,7 @@ import { langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { profileClient } from "../clients/profile.ts";
 import { capitalizeDateLine } from "../../shared/quote-flow/format-helpers.ts";
 import GlobalSearch from "./GlobalSearch.tsx";
+import { TOPBAR_CSS } from "../lib/topbar-css.ts";
 
 interface Props {
   /** @deprecated Ignored — the date is now computed reactively in-component
@@ -140,6 +141,8 @@ export default function DashTopbar(
     // REQ-207: the bar is its own stacking context (backdrop-filter); lifted
     // above the content so the search panel is not painted under the cards.
     <header class="topbar" style="position:relative;z-index:40">
+      {/* REQ-223: the toggle's and the phone bar's rules ride with the island, so /assistant (no dashboard.css) gets them too */}
+      <style>{TOPBAR_CSS}</style>
       <button
         class="topbar__menu"
         type="button"

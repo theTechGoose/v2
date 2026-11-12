@@ -754,37 +754,9 @@ body {
   display: block;
 }
 
-/* EN/ES language switch — always present in the app chrome */
-.topbar__lang {
-  display: flex;
-  gap: 2px;
-  background: var(--mint-100);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 3px;
-  flex-shrink: 0;
-  margin-left: 10px;
-}
-.topbar__lang-btn {
-  border: none;
-  background: transparent;
-  font-weight: 800;
-  font-size: 11px;
-  letter-spacing: 0.05em;
-  color: var(--fg-muted);
-  padding: 4px 10px;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background 160ms, color 160ms;
-}
-.topbar__lang-btn:hover {
-  color: var(--brand-teal);
-}
-.topbar__lang-btn--on {
-  background: #fff;
-  color: var(--brand-teal);
-  box-shadow: 0 1px 3px rgba(20, 72, 82, 0.12);
-}
+/* EN/ES language switch: its rules ship with the DashTopbar island
+   (front-end/lib/topbar-css.ts, REQ-223) so every page that renders the bar
+   gets them, not only the ones that link this file. */
 
 /* Live activity ticker — rotates through recent events */
 .topbar__ticker {
@@ -2595,12 +2567,8 @@ a.activity-item--link:hover {
   .topbar__greet-name {
     font-size: 14px;
   }
-  .topbar__search {
-    display: none;
-  }
-  .topbar__ticker {
-    display: none;
-  }
+  /* The phone bar hides .topbar__search and .topbar__ticker from the island's
+     own CSS (front-end/lib/topbar-css.ts, REQ-223). */
   /* Stack every two-column section on phones — the fixed 1fr/240px and
      1.45fr/1fr tracks otherwise squeeze content into unreadable slivers
      (the dashboard hero wrapped one word per line). */
