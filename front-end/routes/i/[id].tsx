@@ -260,7 +260,7 @@ export default define.page(async function PublicInvoice(ctx) {
             )
             : <InvoiceDoc invoice={invoice} lang={lang} search={url.search} />}
         </div>
-        <SiteFooter lang={lang} document />
+        <SiteFooter lang={lang} document credited />
       </div>
     </>
   );

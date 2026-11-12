@@ -42,11 +42,21 @@ export function siteFooterCopy(lang: Lang): SiteFooterCopy {
  * under the contractor's own contact block.
  */
 export default function SiteFooter(
-  { lang = "en", compact = false, document: forDocument = false }: {
+  {
+    lang = "en",
+    compact = false,
+    document: forDocument = false,
+    credited = false,
+  }: {
     lang?: Lang;
     compact?: boolean;
     /** REQ-509: the footer of the contractor's customer documents */
     document?: boolean;
+    /**
+     * REQ-573 (cycle 4, p4-p3c): the document's body already ends with
+     * "Powered by DocuMonster · …" (/q, /i), so the footer drops its credit
+     */
+    credited?: boolean;
   },
 ) {
   return (
@@ -54,6 +64,7 @@ export default function SiteFooter(
       lang={lang}
       compact={compact}
       document={forDocument}
+      credited={credited}
       copy={{ en: siteFooterCopy("en"), es: siteFooterCopy("es") }}
     />
   );
