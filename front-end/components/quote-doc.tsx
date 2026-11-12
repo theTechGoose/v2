@@ -38,6 +38,7 @@ import {
   type LinkedChangeOrderLike,
   type LinkedInvoiceLike,
   payNowTarget,
+  pendingChangeOrderNotices,
   relatedDocumentRows,
   shortDate,
   versionChangeLine,
@@ -351,6 +352,10 @@ export function QuoteDoc(
   // REQ-251 (demo m13): a signed agreement hands the customer straight to
   // the open invoice the signature billed — not just a small related row.
   const payNow = signed ? payNowTarget(quote) : undefined;
+  // REQ-457 (demo M27, cycle 3): a change order still waiting for the
+  // customer is named on the signed agreement with the job's new total —
+  // not hidden until they find the /co link some other way.
+  const pendingCos = signed ? pendingChangeOrderNotices(quote) : [];
 
   // Signature-block copy (deck p14) — shared with the backend renderers via
   // the pure module so the web page, the PDF, and the email never drift.
@@ -437,6 +442,31 @@ export function QuoteDoc(
           </div>
         </div>
       )}
+      {pendingCos.map((co) => (
+        <div
+          key={co.id}
+          data-cy="quote-pending-change-order"
+          role="status"
+          class="ctr__no-print"
+          style={`margin-bottom:18px;padding:14px 20px;background:#fff8e6;border:1px solid #f0c96a;border-radius:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:14px;color:${INK}`}
+        >
+          <span style="flex:1;min-width:200px;font-weight:700">
+            {tFor(lang, "quoteDoc.pendingChangeOrder", {
+              number: co.number,
+              delta: `${co.deltaAmountCents >= 0 ? "+" : "−"}${
+                fmtMoneyExact(Math.abs(co.deltaAmountCents))
+              }`,
+              total: fmtMoneyExact(co.newTotalCents),
+            })}
+          </span>
+          <a
+            href={co.url}
+            style={`color:${PINK_DARK};font-weight:800;text-decoration:none;white-space:nowrap`}
+          >
+            {tFor(lang, "quoteDoc.pendingChangeOrderCta")} →
+          </a>
+        </div>
+      ))}
       {/* Sticky brand strip */}
       <div class="ctr__no-print" style={`text-align:center;margin-bottom:18px`}>
         {contractor?.hasLogo
@@ -1073,7 +1103,8 @@ export function QuoteDoc(
       {
         /* REQ-205: the documents that belong to this agreement — every
           invoice billed against it (number, state, amount, balance) and the
-          approved change orders — each a link to its own public page. */
+          approved change orders, plus (REQ-457) the ones waiting for the
+          customer's approval — each a link to its own public page. */
       }
       {related.length > 0 && (
         <section

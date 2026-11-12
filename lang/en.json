@@ -1010,6 +1010,8 @@
   "quoteDoc.docTitle": "Quote + Agreement · DocuMonster",
   "quoteDoc.downloadPdf": "Download PDF",
   "quoteDoc.payNow": "Pay now {amount}",
+  "quoteDoc.pendingChangeOrder": "A change order ({number}, {delta}) is waiting for your approval — new job total {total}",
+  "quoteDoc.pendingChangeOrderCta": "Review and approve",
   "quoteDoc.forJob": "for",
   "quoteDoc.effective": "effective",
   "quoteDoc.emailWord": "email",

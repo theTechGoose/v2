@@ -163,15 +163,26 @@ describe("REQ-205 relatedDocumentRows — what a public page lists under the doc
     });
   });
 
-  it("REQ-205 only APPROVED change orders are listed, with their signed delta", () => {
+  // REQ-457 (demo M27) amends this: a PENDING change order is listed too,
+  // "Waiting for your approval"; a declined one is still left off.
+  it("REQ-205 / REQ-457 approved and pending change orders are listed (declined are not), with their delta", () => {
     const { relatedDocumentRows } = lv();
     const rows = relatedDocumentRows(payload, "en");
     const cos = rows.filter((r: { kind: string }) => r.kind === "changeOrder");
-    expect(cos.map((r: { number: string }) => r.number)).toEqual(["CO-001"]);
+    expect(cos.map((r: { number: string }) => r.number)).toEqual([
+      "CO-001",
+      "CO-002",
+    ]);
     expect(cos[0]).toMatchObject({
       url: "/co/c1",
       deltaAmountCents: 5000,
       stateLabel: "Approved",
+    });
+    expect(cos[1]).toMatchObject({
+      url: "/co/c2",
+      deltaAmountCents: 1000,
+      stateLabel: "Waiting for your approval",
+      pending: true,
     });
   });
 

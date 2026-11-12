@@ -1010,6 +1010,8 @@
   "quoteDoc.docTitle": "Cotización + Acuerdo · DocuMonster",
   "quoteDoc.downloadPdf": "Descargar PDF",
   "quoteDoc.payNow": "Pagar ahora {amount}",
+  "quoteDoc.pendingChangeOrder": "Una orden de cambio ({number}, {delta}) espera tu aprobación — nuevo total del trabajo {total}",
+  "quoteDoc.pendingChangeOrderCta": "Revisar y aprobar",
   "quoteDoc.forJob": "para",
   "quoteDoc.effective": "vigente",
   "quoteDoc.emailWord": "escribe a",
