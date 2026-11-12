@@ -660,6 +660,33 @@ Deno.test("REQ-164: Add task → customer, type, price, worker → the card show
     await expect.see("0 of 2 complete");
   }));
 
+Deno.test("REQ-526 (demo m50, cycle 3): Add task for another day → Save moves the list to that day, the card is there and the flash names the day", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { worker } = await officeDay({ page, http, baseUrl });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    const later = new Date(todayIso() + "T12:00:00Z");
+    later.setUTCDate(later.getUTCDate() + 5);
+    const day = later.toISOString().slice(0, 10);
+    await page.locator("[data-cy='tk-add']").click();
+    const form = page.locator("[data-cy='tk-add-form']");
+    await form.waitFor({ timeout: 15_000 });
+    await form.locator("[data-cy='tk-customer'] [data-cy='search-select-input']").fill("Ana");
+    await form.locator("[data-cy='tk-customer'] [data-cy='search-select-option']").filter({ hasText: "Ana Torres" }).first().click();
+    await form.locator("[data-cy='tk-add-type']").fill("Mulch");
+    await form.locator("[data-cy='tk-add-price']").fill("120");
+    await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
+    await form.locator("[data-cy='tk-add-date']").fill(day);
+    await form.locator("[data-cy='tk-add-save']").click();
+    await form.waitFor({ state: "detached", timeout: 15_000 });
+    await page.waitForFunction((d) => (document.querySelector("[data-cy='tk-date']") as HTMLInputElement | null)?.value === d, day, { timeout: 15_000 });
+    await page.locator("[data-cy='tk-task'][data-oneoff='true']").first().waitFor({ timeout: 15_000 });
+    await expect.see("Mulch");
+    const flash = (await page.locator("[data-cy='tk-flash']").innerText()).trim();
+    const label = later.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+    expect(flash.toLowerCase().includes(label.toLowerCase()), `the flash names the task's day ${label} (got "${flash}")`);
+  }));
+
 Deno.test("REQ-283 (demo M38): Add task with no customer picked says so and sends nothing; a new name is added as a customer from the form and the task saves", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth, worker } = await officeDay({ page, http, baseUrl });

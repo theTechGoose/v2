@@ -3476,6 +3476,7 @@
   "field.tk.pickWorker": "Elige un trabajador",
   "field.tk.address": "Dirección",
   "field.tk.added": "Tarea agregada",
+  "field.tk.addedFor": "Tarea agregada para {day}",
   "field.tk.needCustomer": "Elige un cliente de la lista o agrega uno nuevo.",
   "field.tk.needType": "Escribe el servicio (p. ej. Servicio semanal, Visita de reparación…).",
   "field.tk.needTypeFrom": "Escribe el servicio (p. ej. {examples}…).",
