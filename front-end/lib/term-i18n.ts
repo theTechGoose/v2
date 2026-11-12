@@ -16,6 +16,7 @@ import {
   formatTermDate,
   termDateIso,
 } from "../../shared/quote-flow/format-helpers.ts";
+import { localizeDepositTerm } from "../../shared/quote-flow/deposit-term.ts"; // REQ-678
 
 export function localizeTermValue(value: string, lang: Lang): string {
   // REQ-495 (m17): a picked start date is stored ISO (older quotes carry
@@ -23,6 +24,9 @@ export function localizeTermValue(value: string, lang: Lang): string {
   if (termDateIso(value)) return formatTermDate(value, lang);
   if (lang !== "es") return value;
   const trimmed = (value ?? "").trim();
+  // REQ-678 (c3-m60): the picked deposit — "Depósito 30% + saldo".
+  const deposit = localizeDepositTerm(trimmed, lang, tFor);
+  if (deposit) return deposit;
   const exact: Record<string, string> = {
     "Payment upon completion": "quoteDoc.termValue.paymentUponCompletion",
     "Deposit + balance": "quoteDoc.termValue.depositBalance",

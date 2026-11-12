@@ -49,3 +49,13 @@ for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] 
     assertEquals(fn("3 weeks", "es"), "3 semanas");
   });
 }
+
+// REQ-678 (demo-loop cycle 5, c3-m60): the picked deposit prints in the
+// reader's language on both PDFs.
+for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] as const) {
+  Deno.test(`REQ-678 c3-m60 ${name}: 'Deposit 30% + balance' → 'Depósito 30% + saldo' (es), unchanged (en)`, () => {
+    assertEquals(fn("Deposit 30% + balance", "es"), "Depósito 30% + saldo");
+    assertEquals(fn("Deposit $500 + balance", "es"), "Depósito $500 + saldo");
+    assertEquals(fn("Deposit 30% + balance", "en"), "Deposit 30% + balance");
+  });
+}

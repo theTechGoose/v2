@@ -19,6 +19,8 @@
  * localization stay with each consumer — only the MONEY lives here.
  */
 
+import { parseDepositTerm } from "../../shared/quote-flow/deposit-term.ts"; // REQ-678
+
 export type MilestoneRole =
   | "deposit"
   | "midpoint"
@@ -26,8 +28,9 @@ export type MilestoneRole =
   | "completion"
   | "full";
 
-/** REQ-491 (demo m60): the share "Deposit + balance" bills upfront. The
- *  wizard option's sub-line names it, so it is never a silent number. */
+/** REQ-491 (demo m60): the share a plain "Deposit + balance" bills upfront.
+ *  The wizard option's sub-line names it, so it is never a silent number.
+ *  REQ-678: the wizard now asks the amount (shared/quote-flow/deposit-term). */
 export const DEPOSIT_BALANCE_PCT = 20;
 
 export interface PaymentSplitPart {
@@ -53,8 +56,12 @@ export function computePaymentSplit(
   const v = (termValue ?? "").trim().toLowerCase();
   if (!v || !Number.isFinite(totalCents) || totalCents <= 0) return [];
 
+  // REQ-678: an amount-carrying deposit term is read before the ratio parse,
+  // so "$1,050,050" can never be mistaken for a "50, 50" split.
+  const picked = parseDepositTerm(v);
+
   // 1. Explicit percentage split: "30 / 30 / 40", "50/50", "25, 25, 50".
-  const numbers = v
+  const numbers = picked ? [] : v
     .split(/[\/,]+/)
     .map((s) => parseFloat(s.trim()))
     .filter((n) => Number.isFinite(n));
@@ -77,15 +84,30 @@ export function computePaymentSplit(
     return [{ role: "full", pct: 100, amountCents: totalCents }];
   }
 
-  // 3. "Deposit + balance" — DEPOSIT_BALANCE_PCT upfront, the rest on
-  //    completion.
+  // 3. "Deposit + balance" — the picked deposit upfront, the rest on
+  //    completion. REQ-678 (c3-m60): the wizard stores the amount the
+  //    contractor picked — "Deposit 30% + balance" or "Deposit $500 +
+  //    balance"; a plain "Deposit + balance" (older quotes) is
+  //    DEPOSIT_BALANCE_PCT.
   if (v.includes("deposit") && v.includes("balance")) {
-    const deposit = Math.round((totalCents * DEPOSIT_BALANCE_PCT) / 100);
+    let deposit: number;
+    let pct: number;
+    if (picked && "cents" in picked) {
+      deposit = Math.min(picked.cents, totalCents);
+      pct = (deposit / totalCents) * 100;
+    } else {
+      pct = picked?.pct ?? DEPOSIT_BALANCE_PCT;
+      deposit = Math.round((totalCents * pct) / 100);
+    }
+    // A dollar deposit that covers the whole job is one upfront payment.
+    if (deposit >= totalCents) {
+      return [{ role: "deposit", pct: 100, amountCents: totalCents }];
+    }
     return [
-      { role: "deposit", pct: DEPOSIT_BALANCE_PCT, amountCents: deposit },
+      { role: "deposit", pct, amountCents: deposit },
       {
         role: "completion",
-        pct: 100 - DEPOSIT_BALANCE_PCT,
+        pct: 100 - pct,
         amountCents: totalCents - deposit,
       },
     ];

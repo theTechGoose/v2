@@ -3,6 +3,7 @@ import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
 import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { computePaymentSplit, type MilestoneRole } from "#payment-split";
+import { localizeDepositTerm } from "#quote-flow/deposit-term.ts"; // REQ-678
 import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
@@ -941,6 +942,9 @@ export function localizeTermValue(value: string, lang: "en" | "es"): string {
   if (termDateIso(value)) return formatTermDate(value, lang);
   if (lang === "en") return value;
   const trimmed = (value ?? "").trim();
+  // REQ-678 (c3-m60): the picked deposit — "Depósito 30% + saldo".
+  const deposit = localizeDepositTerm(trimmed, lang, t);
+  if (deposit) return deposit;
   // Map known wizard preset labels to localized i18n keys.
   const exactKey: Record<string, string> = {
     "Payment upon completion": "renderQuotePdf.termValue.paymentUponCompletion",

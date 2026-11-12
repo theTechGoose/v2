@@ -24,6 +24,10 @@ import type { WizardStep } from "@agents/dto/wizard.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { formatTermDate } from "#quote-flow/format-helpers.ts";
 import {
+  localizeDepositTerm,
+  normalizeDepositTerm,
+} from "#quote-flow/deposit-term.ts"; // REQ-678
+import {
   extractPaymentTerms,
   wizardPrefillFor,
 } from "#quote-flow/quote-facts.ts";
@@ -514,6 +518,9 @@ const ES_UNITS: [RegExp, string][] = [
  *  language ("23 nov 2026"), a duration's units in Spanish ("2.5 semanas"). */
 export function termValueText(value: string, lang: Lang): string {
   const v = (value ?? "").trim();
+  // REQ-678 (c3-m60): a picked deposit — "Depósito 30% + saldo".
+  const deposit = localizeDepositTerm(v, lang, t);
+  if (deposit) return deposit;
   const dated = formatTermDate(v, lang);
   if (dated !== v || lang !== "es") return dated;
   if (v === "Half a day") return t(lang, "termsWizard.wraps.halfDay");
@@ -528,6 +535,10 @@ export function stepValueText(
   value: TermValue,
 ): string {
   const option = step.options.find((o) => o.id === value.optionId);
+  // REQ-678: the deposit option reads with the amount the contractor picked.
+  if (option?.amountPicker && normalizeDepositTerm(value.customValue)) {
+    return termValueText(value.customValue ?? "", lang);
+  }
   if (option && !option.isCustom) return t(lang, option.label);
   return termValueText(value.customValue ?? "", lang);
 }

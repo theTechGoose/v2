@@ -18,6 +18,7 @@ import { suggestedOptionId } from "@agents/domain/business/terms-prefill/mod.ts"
 import { customerContactError } from "#quote-flow/customer-contact.ts"; // REQ-278
 import { findExistingCustomer } from "#quote-flow/customer-dedupe.ts"; // REQ-331
 import { termFromPick } from "#quote-flow/wizard-terms.ts"; // REQ-347
+import { normalizeDepositTerm } from "#quote-flow/deposit-term.ts"; // REQ-678
 import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-411
 import { isQuoteIssued, isQuoteLocked } from "#documents/versions.ts"; // REQ-460, REQ-585
 import { docNumberOf } from "#documents/numbering.ts"; // REQ-460
@@ -241,9 +242,16 @@ export class HandleWizardAnswer {
       input.stepId === "customer" || formatTermDate(v, "es") !== v
         ? { date: v }
         : { byLang: { en: termValueText(v, "en"), es: termValueText(v, "es") } };
+    // REQ-678 (c3-m60): "Deposit + balance" names the amount picked —
+    // "Payment: Deposit 30% + balance" / "Pago: Depósito 30% + saldo".
+    const pickedDeposit = optionDef.amountPicker
+      ? normalizeDepositTerm(input.customValue)
+      : null;
     const pickValue: ChatI18nVar =
       input.stepId === "customer" && boundCustomerName
         ? boundCustomerName
+        : pickedDeposit
+        ? customVar(pickedDeposit)
         : optionDef.isCustom
         ? (customerCustomValue !== undefined
           ? customVar(customerCustomValue)
@@ -450,7 +458,9 @@ export class HandleWizardAnswer {
     const option = step.options.find((o) => o.id === to.optionId)!;
     const content = t(lang, "wizardAnswer.pick.transcript", {
       label: t(lang, step.label),
-      value: option.isCustom
+      // REQ-678: a picked deposit amount reads like a custom value.
+      value: option.isCustom ||
+          (option.amountPicker && normalizeDepositTerm(to.customValue))
         ? termValueText(to.customValue ?? "", lang)
         : t(lang, option.label),
     });

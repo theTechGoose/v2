@@ -23,6 +23,8 @@ export interface WizardOption {
   subAmounts?: string;
   /** When true, the user is expected to supply a free-text customValue. */
   isCustom?: boolean;
+  /** REQ-678: opens the deposit amount picker; customValue is the term. */
+  amountPicker?: "deposit";
   /** REQ-589: on an emitted option, the keys its label/sub came from. */
   i18n?: ChatOptionI18n;
 }
