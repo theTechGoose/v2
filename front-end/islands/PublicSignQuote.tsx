@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { tFor } from "../lib/i18n.ts";
+import { Icon } from "../components/ui/Icon.tsx";
 import { acceptDecision } from "../../shared/documents/linked-view.ts";
 
 interface Props {
@@ -458,7 +459,7 @@ export default function PublicSignQuote(
           aria-hidden="true"
           style={`position:absolute;left:24px;bottom:30px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;color:rgba(255,107,107,0.45);font-size:18px;pointer-events:none`}
         >
-          ✕
+          <Icon name="x" size={16} stroke-width={3.2} style="display:block" />
         </div>
         <canvas
           ref={canvasRef}

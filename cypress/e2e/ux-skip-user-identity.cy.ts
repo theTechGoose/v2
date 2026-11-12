@@ -93,16 +93,15 @@ describe("UX-27: the placeholder name is not treated as a real name", () => {
     cy.contains("a", /^(Tu nombre|Your name)$/, { timeout: 10_000 })
       .closest("li")
       .within(() => {
-        // The done-state renders "✓" inside the leading status span
-        // (SetupChecklist.tsx:149-156). RED today: done=true for
-        // "Nuevo usuario" (:54 — !!snap.user.name?.trim()).
+        // The done-state renders a check icon (an inline <svg>, REQ-366 —
+        // no longer a literal "✓") inside the leading status span.
         cy.get("span")
           .first()
           .should(($el) => {
             expect(
-              $el.text().trim(),
+              $el.find("svg").length,
               "'Tu nombre' must stay INCOMPLETE while the name is the placeholder",
-            ).not.to.contain("✓");
+            ).to.equal(0);
           });
       });
   });

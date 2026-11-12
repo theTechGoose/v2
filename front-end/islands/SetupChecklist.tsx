@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
 import { langSignal, tFor } from "../lib/i18n.ts";
+import { Icon } from "../components/ui/Icon.tsx";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 
 /**
@@ -155,7 +156,9 @@ export default function SetupChecklist() {
                 it.done ? "#519843" : "rgba(20,72,82,0.10)"
               };color:#fff;font-size:12px;font-weight:800;flex-shrink:0`}
             >
-              {it.done ? "✓" : ""}
+              {it.done
+                ? <Icon name="check" size={12} stroke-width={3} />
+                : null}
             </span>
             <a
               href={it.href}

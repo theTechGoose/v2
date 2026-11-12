@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
+import { Icon } from "../components/ui/Icon.tsx";
 
 const PINK = "#FF6B6B";
 const PINK_DARK = "#d94e4e";
@@ -197,7 +198,7 @@ export default function OnboardingProgress(
             done ? GREEN : PINK
           };color:#fff;font-weight:800;flex-shrink:0;font-size:15px;transition:background 280ms`}
         >
-          {done ? "✓" : "👋"}
+          {done ? <Icon name="check" size={16} stroke-width={3} /> : "👋"}
         </span>
         <div style="flex:1;min-width:160px">
           <div

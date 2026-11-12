@@ -4,6 +4,7 @@ import { t } from "../lib/i18n.ts";
 import { verifyClient } from "../clients/verify.ts";
 import { takeDevCode } from "../lib/dev-code.ts";
 import DevCodeCard from "../components/DevCodeCard.tsx";
+import { CHECK_SVG_MARKUP } from "../components/ui/Icon.tsx";
 
 interface Props {
   /** The phone the code was texted to — the /verify flow. */
@@ -150,11 +151,11 @@ export default function CodeInput(
           codeStep.classList.remove("pm-steps__item--active");
           codeStep.classList.add("pm-steps__item--done");
           const codeDot = codeStep.querySelector(".pm-steps__dot");
-          if (codeDot) codeDot.textContent = "✓";
+          if (codeDot) codeDot.innerHTML = CHECK_SVG_MARKUP;
           if (bar2) bar2.classList.add("pm-steps__bar--done");
           inStep.classList.add("pm-steps__item--active");
           const inDot = inStep.querySelector(".pm-steps__dot");
-          if (inDot) inDot.textContent = "✓";
+          if (inDot) inDot.innerHTML = CHECK_SVG_MARKUP;
         }
         setTimeout(() => {
           globalThis.location.href = result.redirectTo;

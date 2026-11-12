@@ -114,6 +114,7 @@ import {
 } from "../../shared/quote-flow/send-result.ts";
 import MoneyInput from "./MoneyInput.tsx";
 import { startPoll } from "../lib/poll.ts";
+import { Icon } from "../components/ui/Icon.tsx";
 
 /**
  * REQ-024 (NW-18): the invoice's due date derives from the agreement the
@@ -4563,7 +4564,7 @@ export default function AsstChat({
                                               );
                                             }}
                                           >
-                                            ✎
+                                            <Icon name="pencil" size={14} style="display:block" />
                                           </button>
                                         </>
                                       )}
@@ -4955,7 +4956,8 @@ export default function AsstChat({
                           {/* NW-17 (REQ-010): the pill is a sentence under the
                               prompt bubble — it ends with a period. The picker
                               tile keeps the period-less customTitle. */}
-                          ✎ {tFor(lang, "asstChat.jobOpts.customCta")}
+                          <Icon name="pencil" size={14} style="vertical-align:-2px" />{" "}
+                          {tFor(lang, "asstChat.jobOpts.customCta")}
                         </button>
                       )
                       : null}
@@ -6584,7 +6586,7 @@ export default function AsstChat({
                                     )}
                                     onClick={editJobDetails}
                                   >
-                                    ✎
+                                    <Icon name="pencil" size={14} style="display:block" />
                                   </button>
                                 </div>
                                 {jobDetailRows.some((r) =>

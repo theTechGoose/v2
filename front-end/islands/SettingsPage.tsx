@@ -52,6 +52,7 @@ import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
 import { type Lang, langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { normalizeWebsiteUrl } from "../../shared/quote-flow/format-helpers.ts";
 import { businessTimezone } from "../../shared/quote-flow/business-timezone.ts";
+import { Icon } from "../components/ui/Icon.tsx";
 import {
   CardGridSkeleton,
   PageHeaderSkeleton,
@@ -328,8 +329,9 @@ function EditPanel(
           ? <span style="font-size:11.5px;color:var(--fg-muted)">{saving}</span>
           : saved
           ? (
-            <span style="font-size:11.5px;color:var(--brand-green,#519843)">
+            <span style="font-size:11.5px;color:var(--brand-green,#519843);display:inline-flex;align-items:center;gap:4px">
               {savedLabel}
+              <Icon name="check" size={12} stroke-width={3} />
             </span>
           )
           : null}
