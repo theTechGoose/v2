@@ -180,3 +180,51 @@ export function duplicateNotice(
     params: { name, contact },
   };
 }
+
+/**
+ * REQ-576 (demo-loop cycle 4, m26) — the customer the model named at the end
+ * of a quote summary after a spaced dash ("Electrical outlet installation —
+ * Bob Smith" → "Bob Smith"). Only a name-shaped tail counts: one to four
+ * letter words, no digits ("Deck — 2 lines of work" → null). A hint only —
+ * it binds nobody by itself and is never stored as a customer.
+ */
+export function customerNameFromSummary(
+  summary: string | null | undefined,
+): string | null {
+  const m = (summary ?? "").match(/\s[—–-]\s+([^—–]+?)\s*$/u);
+  if (!m) return null;
+  const tail = m[1].trim();
+  if (!/^\p{L}[\p{L}'’.-]*(?:\s+\p{L}[\p{L}'’.-]*){0,3}$/u.test(tail)) {
+    return null;
+  }
+  return tail;
+}
+
+/**
+ * REQ-576 (m26) — the ONE same-owner customer whose whole name is the
+ * summary's "— <Name>" tail, accent- and case-blind; null when nobody or more
+ * than one customer has that name (never a guess). `customers` must be the
+ * account's own list.
+ */
+export function findCustomerNamedInSummary<C extends DedupableCustomer>(
+  customers: C[] | null | undefined,
+  summary: string | null | undefined,
+): C | null {
+  const name = foldName(customerNameFromSummary(summary));
+  if (!name) return null;
+  const hits = (customers ?? []).filter((c) => foldName(c.name) === name);
+  return hits.length === 1 ? hits[0] : null;
+}
+
+/**
+ * REQ-576 (m26) — the customer step's facts: what the contractor typed wins;
+ * with no typed name, the quote summary's "— <Name>" fills it, so the step
+ * offers that saved customer or opens its create form already filled.
+ */
+export function withSummaryCustomerName<
+  F extends { customerName?: string | null },
+>(facts: F, summary: string | null | undefined): F {
+  if (facts.customerName) return facts;
+  const name = customerNameFromSummary(summary);
+  return name ? { ...facts, customerName: name } : facts;
+}
