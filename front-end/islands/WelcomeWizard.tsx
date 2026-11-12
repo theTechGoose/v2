@@ -103,10 +103,13 @@ interface StepDef {
 // ---------------------------------------------------------------------------
 
 function StepBody(
-  { question, why, children }: {
+  { question, why, children, noForm }: {
     question: string;
     why?: string;
     children: ComponentChildren;
+    /** REQ-257: a step whose body carries its own <form>s (the plan cards) can't sit in the step's
+     *  form — HTML does not nest forms — so it opts out. It has no text field to press Enter in. */
+    noForm?: boolean;
   },
 ) {
   // On each step mount (every advance remounts the keyed step component) move
@@ -115,7 +118,10 @@ function StepBody(
   // announce it. Steps with no input (the education screens) fall back to
   // focusing the heading so the new screen is still announced.
   const headingRef = useRef<HTMLHeadingElement | null>(null);
-  const fieldRef = useRef<HTMLDivElement | null>(null);
+  const fieldRef = useRef<HTMLElement | null>(null);
+  const setField = (el: HTMLElement | null) => {
+    fieldRef.current = el;
+  };
   useEffect(() => {
     const focusable = fieldRef.current?.querySelector<HTMLElement>(
       'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled])',
@@ -129,7 +135,20 @@ function StepBody(
         {question}
       </h1>
       {why ? <p class="welcome__why">{why}</p> : null}
-      <div class="welcome__field" ref={fieldRef}>{children}</div>
+      {noForm ? <div class="welcome__field" ref={setField}>{children}</div> : (
+        // REQ-257 (demo onboarding-dashboard-settings-p3): the step's fields sit in a form whose
+        // default button is the footer's Continue (type="submit"), so Enter in any field does what
+        // Continue does — and nothing while Continue is disabled. Continue's own onClick saves;
+        // the submit itself never navigates.
+        <form
+          class="welcome__field"
+          ref={setField}
+          noValidate
+          onSubmit={(e) => e.preventDefault()}
+        >
+          {children}
+        </form>
+      )}
     </div>
   );
 }
@@ -176,7 +195,7 @@ function StepFooter(
           : null}
         {!hideContinue && (
           <button
-            type="button"
+            type="submit"
             class="welcome__btn welcome__btn--primary"
             data-cy="welcome-continue"
             onClick={() => onContinue()}
@@ -1058,7 +1077,7 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
   const why = cards ? t("welcome.plan.why") : t("welcome.plan.yoursWhy");
 
   return (
-    <StepBody question={question} why={why}>
+    <StepBody question={question} why={why} noForm>
       {view === "pay" && plan
         ? (
           <div class="welcome__plan-pending" data-cy="plan-pending">
